@@ -11,7 +11,6 @@ A simple way to shape hundreds of clients and reduce bufferbloat using fq_codel 
 * VM or physical server
 * One management network interface
 * Two dedicated network interface cards, preferably SFP+ capable
-* 8GB RAM or more recommended
 * Python 3
 * Recent Linux kernel
 * tc (usually pre-installed)
@@ -19,6 +18,11 @@ A simple way to shape hundreds of clients and reduce bufferbloat using fq_codel 
 ## Server Spec Recommendations
 * For up to 1Gbps
     * 4+ CPU cores
+    * 4GB RAM
+    * 32GB Disk Space
+    * Passmark score of 13,000 or more (AMD Ryzen 5 2600 or better)
+* For up to 2Gbps
+    * 6+ CPU cores
     * 8GB RAM
     * 32GB Disk Space
     * Passmark score of 17,000 or more (AMD Ryzen 5 3600 or better)
@@ -32,8 +36,8 @@ A simple way to shape hundreds of clients and reduce bufferbloat using fq_codel 
     * 32GB RAM
     * 32GB Disk Space
     * Passmark score of 38,000 or more (AMD Ryzen 9 3950X or better)
-https://www.cpubenchmark.net/high_end_cpus.html
 
+https://www.cpubenchmark.net/high_end_cpus.html
 
 ## Features
 * fq_codel
