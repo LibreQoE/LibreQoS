@@ -1,19 +1,26 @@
 # Copyright (C) 2020  Robert Chacón
 # This file is part of LibreQoS.
-
+#
 # LibreQoS is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 2 of the License, or
 # (at your option) any later version.
-
+#
 # LibreQoS is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-
+#
 # You should have received a copy of the GNU General Public License
 # along with LibreQoS.  If not, see <http://www.gnu.org/licenses/>.
-
+#
+#            _     _ _               ___       ____  
+#           | |   (_) |__  _ __ ___ / _ \  ___/ ___| 
+#           | |   | | '_ \| '__/ _ \ | | |/ _ \___ \ 
+#           | |___| | |_) | | |  __/ |_| | (_) |__) |
+#           |_____|_|_.__/|_|  \___|\__\_\\___/____/
+#                           v.0.3-alpha
+#
 import random
 import os
 import subprocess
@@ -78,7 +85,7 @@ fqOrCAKE = 'fq_codel'                       #'fq_codel' or 'cake'
                                             # Cake requires many specific packages and kernel changes.
                                             # For more information visit https://www.bufferbloat.net/projects/codel/wiki/Cake/
                                             # 	and https://github.com/dtaht/tc-adv
-pipeBandwidthCapacityMbps = 500             # How many symmetrical Mbps is available to the edge of this test network
+pipeBandwidthCapacityMbps = 500             # How many symmetrical Mbps are available to the edge of this test network
 interfaceA = 'eth4'                         # Interface connected to edge
 interfaceB = 'eth5'                         # Interface connected to core
 downSpeedDict = {25:30,  50:55, 100:115}
