@@ -140,7 +140,7 @@ for slash16 in listOfSlash16SubnetsInvolved:
 				twoDigitHashString = hex(int(dec4)).replace('0x','')
 				shell('tc class add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ':1 classid ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' htb rate '+ str(downSpeedDict[planID]) + 'mbit ceil '+ str(downSpeedDict[planID]) + 'mbit prio 3') 
 				shell('tc qdisc add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' ' + fqOrCAKE)
-				shell('tc filter add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ': prio 5 u32 ht ' + str(hashIDCounter) + ':' + twoDigitHashString + ' match ip ' + srcOrDst + ' ' + ipAddr + ' flowid 1:' + str(classIDCounter))
+				shell('tc filter add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ': prio 5 u32 ht ' + str(hashIDCounter) + ':' + twoDigitHashString + ' match ip ' + srcOrDst + ' ' + ipAddr + ' flowid ' + str(parentIDFirstPart) + ':' + str(classIDCounter))
 				classIDCounter += 1
 		thirdDigitCounter += 1
 	if (srcOrDst == 'dst'):
@@ -181,7 +181,7 @@ for slash16 in listOfSlash16SubnetsInvolved:
 				twoDigitHashString = hex(int(dec4)).replace('0x','')
 				shell('tc class add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ':1 classid ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' htb rate '+ str(upSpeedDict[planID]) + 'mbit ceil '+ str(upSpeedDict[planID]) + 'mbit prio 3') 
 				shell('tc qdisc add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' ' + fqOrCAKE)
-				shell('tc filter add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ': prio 5 u32 ht ' + str(hashIDCounter) + ':' + twoDigitHashString + ' match ip ' + srcOrDst + ' ' + ipAddr + ' flowid 1:' + str(classIDCounter))
+				shell('tc filter add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ': prio 5 u32 ht ' + str(hashIDCounter) + ':' + twoDigitHashString + ' match ip ' + srcOrDst + ' ' + ipAddr + ' flowid ' + str(parentIDFirstPart) + ':' + str(classIDCounter))
 				classIDCounter += 1
 		thirdDigitCounter += 1
 	if (srcOrDst == 'dst'):
