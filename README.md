@@ -30,7 +30,7 @@ sudo python3 ./LibreQoS.py
 Thank you to the hundreds of contributors to the cake and fq_codel projects.
 
 ## License
-Copyright (C) 2020 Robert Chacon
+Copyright (C) 2020 Robert Chacón
 
 LibreQoS is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
