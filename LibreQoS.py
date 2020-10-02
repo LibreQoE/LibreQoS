@@ -1,4 +1,4 @@
-# Copyright (C) 2020  Robert Chacon
+# Copyright (C) 2020  Robert Chacón
 # This file is part of LibreQoS.
 
 # LibreQoS is free software: you can redistribute it and/or modify
