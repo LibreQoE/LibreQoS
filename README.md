@@ -27,7 +27,7 @@ A simple way to shape hundreds of clients and reduce bufferbloat using cake or f
 sudo python3 ./LibreQoS.py
 
 ## Special Thanks
-Thank you to the hundreds of contributors to the cake and fq_codel projects for making such incredible code!
+Thank you to the hundreds of contributors to the cake and fq_codel projects.
 
 ## License
 Copyright (C) 2020 Robert Chacon
