@@ -1,6 +1,8 @@
 # LibreQoS
 A simple way to shape hundreds of clients and reduce bufferbloat using cake or fq_codel.
+
 ## Requirements
+* Python 3
 * Recent Linux kernel
 * tc (available via package iproute2)
 * Cake
@@ -11,9 +13,10 @@ A simple way to shape hundreds of clients and reduce bufferbloat using cake or f
     make; sudo make install
 
 ## Features
-* Cake
+* Cake (Common Applications Kept Enhanced)
 * fq_codel
-* tc filters divided into hash tables to significantly increase efficiency
+* HTB (Hierarchy Token Bucket)
+* tc filters divided into groups with hashing filters to significantly increase efficiency
 
 ## Server requirements
 * 8GB RAM or more recommended
