@@ -78,13 +78,13 @@ fqOrCAKE = 'fq_codel'						#'fq_codel' or 'cake'
 											# Cake requires many specific packages and kernel changes.
 											# For more information visit https://www.bufferbloat.net/projects/codel/wiki/Cake/
 											# 	as well as https://github.com/dtaht/tc-adv
-pipeBandwidthCapacityMbps = 500 			# How many symmetrical Mbps is available to the edge of this test network
-interfaceA = 'eth4' 						# Interface connected to edge
-interfaceB = 'eth5' 						# Interface connected to core
+pipeBandwidthCapacityMbps = 500				# How many symmetrical Mbps is available to the edge of this test network
+interfaceA = 'eth4'							# Interface connected to edge
+interfaceB = 'eth5'							# Interface connected to core
 downSpeedDict = {25:30,  50:55, 100:115}
 upSpeedDict = {25:3 , 50:5, 100:15}
-enableActualShellCommands = False 			# Allow execution of these shell commands. Default is False where commands print to console.
-runShellCommandsAsSudo = False 				# Add 'sudo' before execution of any shell commands. Default is False.
+enableActualShellCommands = False			# Allow execution of these shell commands. Default is False where commands print to console.
+runShellCommandsAsSudo = False				# Add 'sudo' before execution of any shell commands. Default is False.
 
 #Clients
 clientsList = []
