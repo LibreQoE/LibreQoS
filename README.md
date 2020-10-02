@@ -21,6 +21,14 @@ A simple way to shape hundreds of clients and reduce bufferbloat using cake or f
 ## Server requirements
 * 8GB RAM or more recommended
 
+## How to use
+* Modify setting parameters in LibreQoS.py to suit your environment
+* Run:
+sudo python3 ./LibreQoS.py
+
+## Special Thanks
+Thank you to the hundreds of contributors to the cake and fq_codel projects for making such incredible code!
+
 ## License
 Copyright (C) 2020 Robert Chacon
 
