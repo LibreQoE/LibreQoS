@@ -11,14 +11,9 @@
     make; sudo make install
 
 ## Features
-* Download
-* Upload
-* Ping
-* Jitter
-* IP Address, ISP, distance from server (optional)
-* Telemetry (optional)
-* Results sharing (optional)
-* Multiple Points of Test (optional)
+* Cake
+* fq_codel
+* tc filters divided into hash tables to significantly increase efficiency
 
 ## Server requirements
 * 8GB RAM or more recommended
