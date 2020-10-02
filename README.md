@@ -1,5 +1,5 @@
 # LibreQoS
-
+A simple way to shape hundreds of clients using cake or fq_codel.
 ## Requirements
 * Recent Linux kernel
 * tc (available via package iproute2)
