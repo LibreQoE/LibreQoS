@@ -19,6 +19,7 @@ A simple way to shape hundreds of clients and reduce bufferbloat using cake or f
 * tc filters divided into groups with hashing filters to significantly increase efficiency
 
 ## Server requirements
+* Two dedicated or virtualized network interface cards, preferably SFP+ capable
 * 8GB RAM or more recommended
 
 ## How to use
