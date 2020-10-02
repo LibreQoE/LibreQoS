@@ -18,7 +18,6 @@ import random
 import os
 import subprocess
 import time
-import ipaddress
 from datetime import date
 
 def shell(inputCommand):
@@ -79,8 +78,8 @@ def createTestClientsPool(slash16, quantity):
 
 fqOrCAKE = 'cake' #'fq_codel' or 'cake'
 pipeBandwidthCapacityMbps = 2000 # How many symmetrical Mbps is available to the edge of this test network
-interfaceA = 'ens19' # Interface connected to edge
-interfaceB = 'ens20' # Interface connected to core
+interfaceA = 'eth4' # Interface connected to edge
+interfaceB = 'eth5' # Interface connected to core
 downSpeedDict = {25:30,  50:55, 100:115}
 upSpeedDict = {25:3 , 50:5, 100:15}
 enableActualShellCommands = False # Allow execution of these shell commands. Default is False where commands print to console.
