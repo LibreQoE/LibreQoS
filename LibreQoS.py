@@ -57,11 +57,11 @@ def getHashList():
 	return twoDigitHash
 
 def createTestClientsPool(slash16, quantity):
-	if quantity<5000:
+	if quantity<65534:
 		tempList = []
-		counterC = 1
+		counterC = 0
 		counterD = 1
-		mainCounter = 1
+		mainCounter = 0
 		while mainCounter < quantity:
 			if counterD <= 255:
 				ipAddr = slash16.replace('X.X', '') + str(counterC) + '.' + str(counterD)
@@ -95,10 +95,10 @@ runShellCommandsAsSudo = False              # Add 'sudo' before execution of any
 
 #Clients
 clientsList = []
-#Add arbitrary number of test clients
-clientsList = createTestClientsPool('100.64.X.X', 500)
+#Add arbitrary number of test clients in /16 subnet
+clientsList = createTestClientsPool('100.64.X.X', 5)
 #Add specific test clients
-clientsList.append((100, '100.65.8.2'))
+#clientsList.append((100, '100.65.8.2'))
 
 ########################################################################################################################################
 
