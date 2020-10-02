@@ -30,10 +30,19 @@ A simple way to shape hundreds of clients and reduce bufferbloat using cake or f
 
 ## How to use
 * Add linux interface bridge br0 to the two dedicated interfaces
+    * For example on Ubuntu 20.04 which uses NetPlan, you would add the following to the .yaml file in /etc/netplan/
+```
+bridges:
+    br0:
+      interfaces:
+           - eth3
+           - eth4
+```
 * Modify setting parameters in LibreQoS.py to suit your environment
 * Run:
+```
 sudo python3 ./LibreQoS.py
-
+```
 ## Special Thanks
 Thank you to the hundreds of contributors to the cake and fq_codel projects.
 
