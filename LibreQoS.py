@@ -179,7 +179,7 @@ for slash16 in listOfSlash16SubnetsInvolved:
 			for cust in currentCustomerList:
 				planID, ipAddr, slash16, dec1, dec2, dec3, dec4 = cust
 				twoDigitHashString = hex(int(dec4)).replace('0x','')
-				shell('tc class add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ':1 classid ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' htb rate '+ str(downSpeedDict[planID]) + 'mbit ceil '+ str(downSpeedDict[planID]) + 'mbit prio 3') 
+				shell('tc class add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ':1 classid ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' htb rate '+ str(upSpeedDict[planID]) + 'mbit ceil '+ str(upSpeedDict[planID]) + 'mbit prio 3') 
 				shell('tc qdisc add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' ' + fqOrCAKE)
 				shell('tc filter add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ': prio 5 u32 ht ' + str(hashIDCounter) + ':' + twoDigitHashString + ' match ip ' + srcOrDst + ' ' + ipAddr + ' flowid 1:' + str(classIDCounter))
 				classIDCounter += 1
