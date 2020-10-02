@@ -68,31 +68,32 @@ def createTestClientsPool(slash16, quantity):
 	else:
 		raise Exception
 
-#########################################################################################################
-#########################################################################################################
-#######################################                           #######################################
-#######################################       Main Settings       #######################################
-#######################################                           #######################################
-#########################################################################################################
-#########################################################################################################
+########################################################################################################################################
+########################################################                        ########################################################
+########################################################      Main Settings     ########################################################
+########################################################                        ########################################################
+########################################################################################################################################
 
-fqOrCAKE = 'cake' #'fq_codel' or 'cake'
-pipeBandwidthCapacityMbps = 2000 # How many symmetrical Mbps is available to the edge of this test network
-interfaceA = 'eth4' # Interface connected to edge
-interfaceB = 'eth5' # Interface connected to core
+fqOrCAKE = 'fq_codel'						#'fq_codel' or 'cake'
+											# Cake requires many specific packages and kernel changes.
+											# For more information visit https://www.bufferbloat.net/projects/codel/wiki/Cake/
+											# 	as well as https://github.com/dtaht/tc-adv
+pipeBandwidthCapacityMbps = 500 			# How many symmetrical Mbps is available to the edge of this test network
+interfaceA = 'eth4' 						# Interface connected to edge
+interfaceB = 'eth5' 						# Interface connected to core
 downSpeedDict = {25:30,  50:55, 100:115}
 upSpeedDict = {25:3 , 50:5, 100:15}
-enableActualShellCommands = False # Allow execution of these shell commands. Default is False where commands print to console.
-runShellCommandsAsSudo = False # Add 'sudo' before execution of any shell commands. Default is False.
+enableActualShellCommands = False 			# Allow execution of these shell commands. Default is False where commands print to console.
+runShellCommandsAsSudo = False 				# Add 'sudo' before execution of any shell commands. Default is False.
 
 #Clients
 clientsList = []
 #Add arbitrary number of test clients
-clientsList = createTestClientsPool('100.64.X.X', 50)
+clientsList = createTestClientsPool('100.64.X.X', 500)
 #Add specific test clients
 clientsList.append((100, '100.65.8.2'))
 
-#########################################################################################################
+########################################################################################################################################
 
 #Categorize Clients By IPv4 /16
 listOfSlash16SubnetsInvolved = []
@@ -138,7 +139,7 @@ for slash16 in listOfSlash16SubnetsInvolved:
 				planID, ipAddr, slash16, dec1, dec2, dec3, dec4 = cust
 				twoDigitHashString = hex(int(dec4)).replace('0x','')
 				shell('tc class add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ':1 classid ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' htb rate '+ str(downSpeedDict[planID]) + 'mbit ceil '+ str(downSpeedDict[planID]) + 'mbit prio 3') 
-				shell('tc qdisc add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' cake')
+				shell('tc qdisc add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' ' + fqOrCAKE)
 				shell('tc filter add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ': prio 5 u32 ht ' + str(hashIDCounter) + ':' + twoDigitHashString + ' match ip ' + srcOrDst + ' ' + ipAddr + ' flowid 1:' + str(classIDCounter))
 				classIDCounter += 1
 		thirdDigitCounter += 1
@@ -179,7 +180,7 @@ for slash16 in listOfSlash16SubnetsInvolved:
 				planID, ipAddr, slash16, dec1, dec2, dec3, dec4 = cust
 				twoDigitHashString = hex(int(dec4)).replace('0x','')
 				shell('tc class add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ':1 classid ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' htb rate '+ str(downSpeedDict[planID]) + 'mbit ceil '+ str(downSpeedDict[planID]) + 'mbit prio 3') 
-				shell('tc qdisc add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' cake')
+				shell('tc qdisc add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' ' + fqOrCAKE)
 				shell('tc filter add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ': prio 5 u32 ht ' + str(hashIDCounter) + ':' + twoDigitHashString + ' match ip ' + srcOrDst + ' ' + ipAddr + ' flowid 1:' + str(classIDCounter))
 				classIDCounter += 1
 		thirdDigitCounter += 1
