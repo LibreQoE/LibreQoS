@@ -1,7 +1,16 @@
 # LibreQoS
 A simple way to shape hundreds of clients and reduce bufferbloat using cake or fq_codel. This is alpha software, please do not deploy in production.
 
-## Requirements
+## Lab Requirements
+* OSPF primary link (low cost) through the server running LibreQoS
+* MTU 1500 for the traffic flowing through LibreQoS
+* OSPF backup link recommended
+
+## Server Requirements
+* VM or physical server
+    * One management network interface
+    * Two dedicated network interface cards, preferably SFP+ capable
+* 8GB RAM or more recommended
 * Python 3
 * Recent Linux kernel
 * tc (available via package iproute2)
@@ -17,11 +26,6 @@ A simple way to shape hundreds of clients and reduce bufferbloat using cake or f
 * fq_codel
 * HTB (Hierarchy Token Bucket)
 * tc filters divided into groups with hashing filters to significantly increase efficiency
-
-## Server requirements
-* One management network interface
-* Two dedicated network interface cards, preferably SFP+ capable
-* 8GB RAM or more recommended
 
 ## How to use
 * Modify setting parameters in LibreQoS.py to suit your environment
