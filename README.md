@@ -1,5 +1,5 @@
 # LibreQoS
-A simple way to shape hundreds of clients and reduce bufferbloat using fq_codel or CAKE. This is alpha software, please do not deploy in production.
+A tool to traffic shape hundreds of clients and reduce bufferbloat using fq_codel. This is alpha software, please do not deploy in production.
 
 ## Lab Requirements
 * Edge and Core routers with MTU 1500 on links between them
@@ -13,7 +13,7 @@ A simple way to shape hundreds of clients and reduce bufferbloat using fq_codel 
 * Two dedicated network interface cards, preferably SFP+ capable
 * Python 3
 * Recent Linux kernel
-* tc (usually pre-installed)
+* recent tc-fq_codel provided by package iproute2
 
 ## Server Spec Recommendations
 * For up to 1Gbps
@@ -40,10 +40,9 @@ A simple way to shape hundreds of clients and reduce bufferbloat using fq_codel 
 https://www.cpubenchmark.net/high_end_cpus.html
 
 ## Features
-* fq_codel
-* Cake (Common Applications Kept Enhanced) [Experimental]
-* HTB (Hierarchy Token Bucket)
-* tc filters divided into groups with hashing filters to significantly increase efficiency
+* HTB + fq_codel
+* Experimental support for CAKE (Common Applications Kept Enhanced)
+* TC filters divided into groups with hashing filters to significantly increase efficiency and minimize RAM usage
 
 ## How to use
 * Add linux interface bridge br0 to the two dedicated interfaces
@@ -60,6 +59,7 @@ bridges:
 ```
 sudo python3 ./LibreQoS.py
 ```
+
 ## Special Thanks
 Thank you to the hundreds of contributors to the cake and fq_codel projects. Thank you to Phil Sutter, Bert Hubert, Gregory Maxwell, Remco van Mook, Martijn van Oosterhout, Paul B Schroeder, and Jasper Spaans for contributing to the guides and documentation listed below.
 
