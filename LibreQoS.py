@@ -78,7 +78,7 @@ def createTestClientsPool(slash16, quantity):
 #########################################################################################################
 
 fqOrCAKE = 'cake' #'fq_codel' or 'cake'
-pipeBandwidthCapacityMbps = 1500 # How many symmetrical Mbps is the edge of this test network
+pipeBandwidthCapacityMbps = 2000 # How many symmetrical Mbps is available to the edge of this test network
 interfaceA = 'ens19' # Interface connected to edge
 interfaceB = 'ens20' # Interface connected to core
 downSpeedDict = {25:30,  50:55, 100:115}
