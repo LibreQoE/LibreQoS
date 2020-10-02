@@ -8,8 +8,8 @@ A simple way to shape hundreds of clients and reduce bufferbloat using cake or f
 
 ## Server Requirements
 * VM or physical server
-    * One management network interface
-    * Two dedicated network interface cards, preferably SFP+ capable
+* One management network interface
+* Two dedicated network interface cards, preferably SFP+ capable
 * 8GB RAM or more recommended
 * Python 3
 * Recent Linux kernel
