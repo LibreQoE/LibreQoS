@@ -1,5 +1,5 @@
 # LibreQoS
-A simple way to shape hundreds of clients and reduce bufferbloat using cake or fq_codel. This is alpha software, please do not deploy in production.
+A simple way to shape hundreds of clients and reduce bufferbloat using fq_codel or CAKE. This is alpha software, please do not deploy in production.
 
 ## Lab Requirements
 * Edge and Core routers with MTU 1500 on links between them
@@ -14,13 +14,7 @@ A simple way to shape hundreds of clients and reduce bufferbloat using cake or f
 * 8GB RAM or more recommended
 * Python 3
 * Recent Linux kernel
-* tc (available via package iproute2)
-* Cake
-
-    git clone https://github.com/dtaht/sch_cake.git
-
-    cd sch_cake
-    make; sudo make install
+* tc (usually pre-installed)
 
 ## Server Spec Recommendations
 * For up to 1Gbps
@@ -42,8 +36,8 @@ https://www.cpubenchmark.net/high_end_cpus.html
 
 
 ## Features
-* Cake (Common Applications Kept Enhanced)
 * fq_codel
+* Cake (Common Applications Kept Enhanced) [Experimental]
 * HTB (Hierarchy Token Bucket)
 * tc filters divided into groups with hashing filters to significantly increase efficiency
 
