@@ -22,6 +22,25 @@ A simple way to shape hundreds of clients and reduce bufferbloat using cake or f
     cd sch_cake
     make; sudo make install
 
+## Server Spec Recommendations
+* For up to 1Gbps
+    * 4+ CPU cores
+    * 8GB RAM
+    * 32GB Disk Space
+    * Passmark score of 17,000 or more (AMD Ryzen 5 3600 or better)
+* For up to 5Gbps
+    * 8+ CPU cores
+    * 16GB RAM
+    * 32GB Disk Space
+    * Passmark score of 23,000 or more (AMD Ryzen 7 3800X or better)
+* For up to 10Gbps
+    * 16+ CPU cores
+    * 32GB RAM
+    * 32GB Disk Space
+    * Passmark score of 38,000 or more (AMD Ryzen 9 3950X or better)
+https://www.cpubenchmark.net/high_end_cpus.html
+
+
 ## Features
 * Cake (Common Applications Kept Enhanced)
 * fq_codel
