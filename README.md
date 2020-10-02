@@ -1,5 +1,5 @@
 # LibreQoS
-A simple way to shape hundreds of clients and reduce bufferbloat using cake or fq_codel.
+A simple way to shape hundreds of clients and reduce bufferbloat using cake or fq_codel. This is alpha software, please do not deploy in production.
 
 ## Requirements
 * Python 3
