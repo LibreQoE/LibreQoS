@@ -2,8 +2,8 @@
 A simple way to shape hundreds of clients and reduce bufferbloat using cake or fq_codel. This is alpha software, please do not deploy in production.
 
 ## Lab Requirements
+* Edge and Core routers with MTU 1500 on links between them
 * OSPF primary link (low cost) through the server running LibreQoS
-* MTU 1500 for the traffic flowing through LibreQoS
 * OSPF backup link recommended
 
 ## Server Requirements
@@ -28,12 +28,17 @@ A simple way to shape hundreds of clients and reduce bufferbloat using cake or f
 * tc filters divided into groups with hashing filters to significantly increase efficiency
 
 ## How to use
+* Add linux interface bridge br0 to the two dedicated interfaces
 * Modify setting parameters in LibreQoS.py to suit your environment
 * Run:
 sudo python3 ./LibreQoS.py
 
 ## Special Thanks
 Thank you to the hundreds of contributors to the cake and fq_codel projects.
+
+## References
+* https://tldp.org/HOWTO/Adv-Routing-HOWTO/lartc.adv-filter.hashing.html
+* http://linux-ip.net/gl/tc-filters/tc-filters.html
 
 ## License
 Copyright (C) 2020 Robert Chacón
