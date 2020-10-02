@@ -5,6 +5,7 @@ A simple way to shape hundreds of clients and reduce bufferbloat using cake or f
 * Edge and Core routers with MTU 1500 on links between them
 * OSPF primary link (low cost) through the server running LibreQoS
 * OSPF backup link recommended
+![Diagram](docs/diagram.png?raw=true "Diagram")
 
 ## Server Requirements
 * VM or physical server
