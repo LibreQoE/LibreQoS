@@ -26,6 +26,7 @@ import os
 import subprocess
 import time
 from datetime import date
+from UCRM_Integration import pullUCRMCustomers, getUCRMCaps
 
 def shell(inputCommand):
 	if enableActualShellCommands:
@@ -81,26 +82,46 @@ def createTestClientsPool(slash16, quantity):
 ########################################################                        ########################################################
 ########################################################################################################################################
 
-fqOrCAKE = 'fq_codel'                       #'fq_codel' or 'cake'
-                                            # Cake requires many specific packages and kernel changes.
-                                            # For more information visit https://www.bufferbloat.net/projects/codel/wiki/Cake/
-                                            # 	and https://github.com/dtaht/tc-adv
-pipeBandwidthCapacityMbps = 500             # How many symmetrical Mbps are available to the edge of this test network
-interfaceA = 'eth4'                         # Interface connected to edge
-interfaceB = 'eth5'                         # Interface connected to core
-downSpeedDict = {25:30,  50:55, 100:115}
-upSpeedDict = {25:3 , 50:5, 100:15}
-enableActualShellCommands = False           # Allow execution of these shell commands. Default is False where commands print to console.
-runShellCommandsAsSudo = False              # Add 'sudo' before execution of any shell commands. Default is False.
+fqOrCAKE = 'fq_codel'                                         #'fq_codel' or 'cake'
+                                                              # Cake requires many specific packages and kernel changes.
+                                                              #     https://www.bufferbloat.net/projects/codel/wiki/Cake/
+                                                              #     https://github.com/dtaht/tc-adv
+pipeBandwidthCapacityMbps = 500                               # How many symmetrical Mbps are available to the edge of this test network
+interfaceA = 'eth4'                                           # Interface connected to edge
+interfaceB = 'eth5'                                           # Interface connected to core
+downSpeedDict = {25:30,  50:55, 100:115, 200:215, 300:315}    # Define Client Plan download speed. 25, 50, 100 etc are plan identifiers.
+upSpeedDict = {25:3 , 50:5, 100:15, 200:30, 300:50}           # Define Client Plan upload speed
+enableActualShellCommands = False                             # Allow shell commands. Default is False; commands print to console.
+runShellCommandsAsSudo = False                                # Add 'sudo' before execution of any shell commands. Default is False.
+importFromUCRM = False                                        # Experimental UCRM integration
 
 #Clients
 clientsList = []
 #Add arbitrary number of test clients in /16 subnet
 clientsList = createTestClientsPool('100.64.X.X', 5)
 #Add specific test clients
-#clientsList.append((100, '100.65.8.2'))
+#clientsList.append((100, '100.65.1.1'))
 
 ########################################################################################################################################
+
+#Bring in clients from UCRM if enabled
+if importFromUCRM:
+	tempList = pullUCRMCustomers()
+	for cust in tempList:
+		clientID, ipAddr, download, upload = cust
+		#Use UCRM plan speed values to place into corresponding plan defined here in LibreQoS
+		if download >= 300:
+			clientsList.append((300, ipAddr))
+		elif download >= 200:
+			clientsList.append((200, ipAddr))
+		elif download >= 100:
+			clientsList.append((100, ipAddr))
+		elif download >= 50:
+			clientsList.append((50, ipAddr))
+		elif download >= 25:
+			clientsList.append((25, ipAddr))
+		else:
+			print("Could not match customer ID " + clientID + " with a speed plan. They will be left uncapped.")
 
 #Categorize Clients By IPv4 /16
 listOfSlash16SubnetsInvolved = []
