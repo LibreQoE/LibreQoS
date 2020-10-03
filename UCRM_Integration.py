@@ -49,7 +49,7 @@ def pullUCRMCustomers():
 	
 def getUCRMCaps(idNum):
 	url = 'https://unms.exampleISP.com/crm/api/v1.0/clients/services?clientId=' + str(idNum)
-	headers = {'accept':'application/json', 'x-auth-token': ''}
+	headers = {'accept':'application/json', 'x-auth-token': orgUCRMxAuthToken}
 	r = requests.get(url, headers=headers)
 	jsonData = r.json()
 	for customer in jsonData:
