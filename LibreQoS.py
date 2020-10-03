@@ -26,7 +26,8 @@ import os
 import subprocess
 import time
 from datetime import date
-from UCRM_Integration import pullUCRMCustomers, getUCRMCaps
+from UNMS_Integration import pullUNMSCustomers
+from ispConfig import fqOrCAKE, pipeBandwidthCapacityMbps, interfaceA, interfaceB, enableActualShellCommands, runShellCommandsAsSudo, importFromUNMS
 
 def shell(inputCommand):
 	if enableActualShellCommands:
@@ -66,7 +67,7 @@ def createTestClientsPool(slash16, quantity):
 		while mainCounter < quantity:
 			if counterD <= 255:
 				ipAddr = slash16.replace('X.X', '') + str(counterC) + '.' + str(counterD)
-				tempList.append((100, ipAddr))
+				tempList.append((ipAddr, 100, 15))
 				counterD += 1
 			else:
 				counterC += 1
@@ -76,63 +77,35 @@ def createTestClientsPool(slash16, quantity):
 	else:
 		raise Exception
 
-########################################################################################################################################
-########################################################                        ########################################################
-########################################################      Main Settings     ########################################################
-########################################################                        ########################################################
-########################################################################################################################################
-
-fqOrCAKE = 'fq_codel'                                         #'fq_codel' or 'cake'
-                                                              # Cake requires many specific packages and kernel changes.
-                                                              #     https://www.bufferbloat.net/projects/codel/wiki/Cake/
-                                                              #     https://github.com/dtaht/tc-adv
-pipeBandwidthCapacityMbps = 500                               # How many symmetrical Mbps are available to the edge of this test network
-interfaceA = 'eth4'                                           # Interface connected to edge
-interfaceB = 'eth5'                                           # Interface connected to core
-downSpeedDict = {25:30,  50:55, 100:115, 200:215, 300:315}    # Define Client Plan download speed. 25, 50, 100 etc are plan identifiers.
-upSpeedDict = {25:3 , 50:5, 100:15, 200:30, 300:50}           # Define Client Plan upload speed
-enableActualShellCommands = False                             # Allow shell commands. Default is False; commands print to console.
-runShellCommandsAsSudo = False                                # Add 'sudo' before execution of any shell commands. Default is False.
-importFromUCRM = False                                        # Experimental UCRM integration
-
 #Clients
 clientsList = []
 #Add arbitrary number of test clients in /16 subnet
-clientsList = createTestClientsPool('100.64.X.X', 5)
+#clientsList = createTestClientsPool('100.64.X.X', 5)
 #Add specific test clients
 #clientsList.append((100, '100.65.1.1'))
 
-########################################################################################################################################
-
 #Bring in clients from UCRM if enabled
-if importFromUCRM:
-	tempList = pullUCRMCustomers()
+if importFromUNMS:
+	tempList = pullUNMSCustomers()
 	for cust in tempList:
-		clientID, ipAddr, download, upload = cust
-		#Use UCRM plan speed values to place into corresponding plan defined here in LibreQoS
-		if download >= 300:
-			clientsList.append((300, ipAddr))
-		elif download >= 200:
-			clientsList.append((200, ipAddr))
-		elif download >= 100:
-			clientsList.append((100, ipAddr))
-		elif download >= 50:
-			clientsList.append((50, ipAddr))
-		elif download >= 25:
-			clientsList.append((25, ipAddr))
-		else:
-			print("Could not match customer ID " + clientID + " with a speed plan. They will be left uncapped.")
+		downloadSpeed = cust['downloadSpeed']
+		uploadSpeed = cust['uploadSpeed']
+		for ipAddr in cust['deviceIPs']:
+			if '/' in ipAddr:
+				ipAddr = ipAddr.split('/')[0]
+			#Use UCRM plan speed values to place into corresponding plan defined here in LibreQoS
+			clientsList.append((ipAddr, downloadSpeed, uploadSpeed))
 
 #Categorize Clients By IPv4 /16
 listOfSlash16SubnetsInvolved = []
 clientsListWithSubnet = []
 for customer in clientsList:
-	planID, ipAddr = customer
+	ipAddr, downloadSpeed, uploadSpeed = customer
 	dec1, dec2, dec3, dec4 = ipAddr.split('.')
 	slash16 = dec1 + '.' + dec2 + '.0.0'
 	if slash16 not in listOfSlash16SubnetsInvolved:
 		listOfSlash16SubnetsInvolved.append(slash16)
-	clientsListWithSubnet.append((planID, ipAddr, slash16, dec1, dec2, dec3, dec4))
+	clientsListWithSubnet.append((ipAddr, downloadSpeed, uploadSpeed, slash16, dec1, dec2, dec3, dec4))
 #Clear Prior Configs
 clearPriorSettings(interfaceA, interfaceB)
 #InterfaceA
@@ -150,7 +123,7 @@ for slash16 in listOfSlash16SubnetsInvolved:
 	for i in range(255):
 		tempList = []
 		for customer in clientsListWithSubnet:
-			planID, ipAddr, slash16, dec1, dec2, dec3, dec4 = customer
+			ipAddr, downloadSpeed, uploadSpeed, slash16, dec1, dec2, dec3, dec4 = customer
 			if (dec1 == thisSlash16Dec1) and (dec2 == thisSlash16Dec2) and (dec4 == str(i)):
 				tempList.append(customer)
 		if len(tempList) > 0:
@@ -164,9 +137,9 @@ for slash16 in listOfSlash16SubnetsInvolved:
 			currentCustomerList = groupedCustomers.pop()
 			tempHashList = getHashList()
 			for cust in currentCustomerList:
-				planID, ipAddr, slash16, dec1, dec2, dec3, dec4 = cust
+				ipAddr, downloadSpeed, uploadSpeed, slash16, dec1, dec2, dec3, dec4 = cust
 				twoDigitHashString = hex(int(dec4)).replace('0x','')
-				shell('tc class add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ':1 classid ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' htb rate '+ str(downSpeedDict[planID]) + 'mbit ceil '+ str(downSpeedDict[planID]) + 'mbit prio 3') 
+				shell('tc class add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ':1 classid ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' htb rate '+ str(downloadSpeed) + 'mbit ceil '+ str(downloadSpeed) + 'mbit prio 3') 
 				shell('tc qdisc add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' ' + fqOrCAKE)
 				shell('tc filter add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ': prio 5 u32 ht ' + str(hashIDCounter) + ':' + twoDigitHashString + ' match ip ' + srcOrDst + ' ' + ipAddr + ' flowid ' + str(parentIDFirstPart) + ':' + str(classIDCounter))
 				classIDCounter += 1
@@ -191,7 +164,7 @@ for slash16 in listOfSlash16SubnetsInvolved:
 	for i in range(255):
 		tempList = []
 		for customer in clientsListWithSubnet:
-			planID, ipAddr, slash16, dec1, dec2, dec3, dec4 = customer
+			ipAddr, downloadSpeed, uploadSpeed, slash16, dec1, dec2, dec3, dec4 = customer
 			if (dec1 == thisSlash16Dec1) and (dec2 == thisSlash16Dec2) and (dec4 == str(i)):
 				tempList.append(customer)
 		if len(tempList) > 0:
@@ -205,9 +178,9 @@ for slash16 in listOfSlash16SubnetsInvolved:
 			currentCustomerList = groupedCustomers.pop()
 			tempHashList = getHashList()
 			for cust in currentCustomerList:
-				planID, ipAddr, slash16, dec1, dec2, dec3, dec4 = cust
+				ipAddr, downloadSpeed, uploadSpeed, slash16, dec1, dec2, dec3, dec4 = cust
 				twoDigitHashString = hex(int(dec4)).replace('0x','')
-				shell('tc class add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ':1 classid ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' htb rate '+ str(upSpeedDict[planID]) + 'mbit ceil '+ str(upSpeedDict[planID]) + 'mbit prio 3') 
+				shell('tc class add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ':1 classid ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' htb rate '+ str(uploadSpeed) + 'mbit ceil '+ str(uploadSpeed) + 'mbit prio 3') 
 				shell('tc qdisc add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' ' + fqOrCAKE)
 				shell('tc filter add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ': prio 5 u32 ht ' + str(hashIDCounter) + ':' + twoDigitHashString + ' match ip ' + srcOrDst + ' ' + ipAddr + ' flowid ' + str(parentIDFirstPart) + ':' + str(classIDCounter))
 				classIDCounter += 1
