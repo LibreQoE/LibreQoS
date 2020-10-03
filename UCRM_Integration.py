@@ -42,7 +42,7 @@ def pullUCRMCustomers():
 					download, upload = getCaps(idNum)
 					customerList.append((idNum, ipAddr, download, upload))
 				except:
-					print("Customer ", street, " did not have IP on UCRM")
+					print("Customer ID ", idNum, " did not have IP address listed on UCRM")
 		except:
 			print("Failed to load customer #", customer['id'])
 	return customerList
