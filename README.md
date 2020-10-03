@@ -59,6 +59,9 @@ bridges:
 ```
 sudo python3 ./LibreQoS.py
 ```
+## Integration
+* Experimental UCRM integration added
+   * Assumes you have a custom field on UCRM for customer CPE IPv4 address
 
 ## Special Thanks
 Thank you to the hundreds of contributors to the cake and fq_codel projects. Thank you to Phil Sutter, Bert Hubert, Gregory Maxwell, Remco van Mook, Martijn van Oosterhout, Paul B Schroeder, and Jasper Spaans for contributing to the guides and documentation listed below.
