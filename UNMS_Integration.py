@@ -19,13 +19,13 @@
 #           | |   | | '_ \| '__/ _ \ | | |/ _ \___ \ 
 #           | |___| | |_) | | |  __/ |_| | (_) |__) |
 #           |_____|_|_.__/|_|  \___|\__\_\\___/____/
-#                           v.0.3-alpha
+#                           v.0.4-alpha
 #
 import requests
 from ispConfig import orgUNMSxAuthToken, unmsBaseURL
 
 #To omit bridged CPEs from shaping
-#deviceModelBlacklist = ['Litebeam AC Gen2', 'LTU Pro', 'LTU LR']
+#deviceModelBlacklist = ['LBE-5AC-Gen2', 'LBE-5AC-Gen2', 'LBE-5AC-LR', 'AF-LTU5', 'AFLTULR', 'AFLTUPro', 'LTU-LITE']
 deviceModelBlacklist = []
 
 def pullUNMSCustomers():
@@ -36,19 +36,24 @@ def pullUNMSCustomers():
 	#print(jsonData)
 	unmsCustomers = []
 	for unmsClientSite in jsonData:
-		downloadSpeedMbps = int(round(unmsClientSite['qos']['downloadSpeed']/1000000))
-		uploadSpeedMbps = int(round(unmsClientSite['qos']['uploadSpeed']/1000000))
-		address = unmsClientSite['description']['address']
-		unmsClientSiteID = unmsClientSite['id']
-		deviceList = getUNMSclientSiteDevices(unmsClientSiteID)
-		thisCustomer = {
-		'address'		:	address,
-		'downloadSpeed'	:	downloadSpeedMbps,
-		'uploadSpeed'	:	uploadSpeedMbps,
-		}
-		for device in deviceList:
-			thisCustomer['deviceIPs'] = deviceList
-		unmsCustomers.append(thisCustomer)
+		try:
+			downloadSpeedMbps = int(round(unmsClientSite['qos']['downloadSpeed']/1000000))
+			uploadSpeedMbps = int(round(unmsClientSite['qos']['uploadSpeed']/1000000))
+			address = unmsClientSite['description']['address']
+			unmsClientSiteID = unmsClientSite['id']
+			deviceList = getUNMSclientSiteDevices(unmsClientSiteID)
+			thisCustomer = {
+			'address'		:	address,
+			'downloadSpeed'	:	downloadSpeedMbps,
+			'uploadSpeed'	:	uploadSpeedMbps,
+			}
+			for device in deviceList:
+				thisCustomer['deviceIPs'] = deviceList
+			if deviceList:
+				unmsCustomers.append(thisCustomer)
+				print("Imported " + address)
+		except:
+			print("Failed to import customer " + unmsClientSite['description']['address'])
 	return unmsCustomers
 
 def getUNMSclientSiteDevices(siteID):
@@ -64,6 +69,7 @@ def getUNMSclientSiteDevices(siteID):
 		deviceModel = device['identification']['model']
 		if deviceModel not in deviceModelBlacklist:
 			deviceIPs.append(deviceIP)
+			print("Added " + deviceModel + " device " + deviceName)
 	return deviceIPs
 
 
