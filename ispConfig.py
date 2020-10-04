@@ -27,3 +27,6 @@ orgUNMSxAuthToken = ''
 
 # Everything before /nms/. Use https:// For example: https://unms.exampleISP.com (no slash after)
 unmsBaseURL = ''
+
+# For bridged CPE radios, you can exclude matching radio models from rate limiting
+deviceModelBlacklistEnabled = False
