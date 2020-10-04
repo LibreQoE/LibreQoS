@@ -192,6 +192,12 @@ def refreshShapers():
 			startPointForHash = '12' #Position of src-address in IP header
 		shell('tc filter add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ': prio 5 u32 ht 800:: match ip ' + srcOrDst + ' '+ thisSlash16Dec1 + '.' + thisSlash16Dec2 + '.0.0/16 hashkey mask 0x000000ff at ' + startPointForHash + ' link ' + str(hashIDCounter) + ':')
 		hashIDCounter += 1
+	#Recap
+	for customer in clientsList:
+		ipAddr, downloadSpeed, uploadSpeed = customer
+		downloadSpeed = str(downloadSpeed)
+		uploadSpeed = str(uploadSpeed)
+		print("Applied rate limiting |\t" + ipAddr + "\t| " + downloadSpeed + " down " + uploadSpeed + " up")
 	#Done
 	today = date.today()
 	d1 = today.strftime("%d/%m/%Y")

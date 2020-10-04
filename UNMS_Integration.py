@@ -22,11 +22,13 @@
 #                           v.0.4-alpha
 #
 import requests
-from ispConfig import orgUNMSxAuthToken, unmsBaseURL
+from ispConfig import orgUNMSxAuthToken, unmsBaseURL, deviceModelBlacklistEnabled
 
 #To omit bridged CPEs from shaping
-#deviceModelBlacklist = ['LBE-5AC-Gen2', 'LBE-5AC-Gen2', 'LBE-5AC-LR', 'AF-LTU5', 'AFLTULR', 'AFLTUPro', 'LTU-LITE']
-deviceModelBlacklist = []
+if deviceModelBlacklistEnabled:
+	deviceModelBlacklist = ['LBE-5AC-Gen2', 'LBE-5AC-Gen2', 'LBE-5AC-LR', 'AF-LTU5', 'AFLTULR', 'AFLTUPro', 'LTU-LITE']
+else:
+	deviceModelBlacklist = []
 
 def pullUNMSCustomers():
 	url = unmsBaseURL + "/nms/api/v2.1/sites?type=client&ucrm=true&ucrmDetails=true"
@@ -67,10 +69,13 @@ def getUNMSclientSiteDevices(siteID):
 		deviceMAC = device['identification']['mac']
 		deviceIP = device['ipAddress']
 		deviceModel = device['identification']['model']
+		if not deviceModel:
+			deviceModel = device['identification']['modelName']
 		if deviceModel not in deviceModelBlacklist:
 			deviceIPs.append(deviceIP)
-			print("Added " + deviceModel + " device " + deviceName)
+			print("Added " + deviceModel + ":\t" + deviceName)
 	return deviceIPs
+
 
 
 
