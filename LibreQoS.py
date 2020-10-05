@@ -19,7 +19,7 @@
 #           | |   | | '_ \| '__/ _ \ | | |/ _ \___ \ 
 #           | |___| | |_) | | |  __/ |_| | (_) |__) |
 #           |_____|_|_.__/|_|  \___|\__\_\\___/____/
-#                           v.0.6-alpha
+#                          v.0.65-alpha
 #
 import random
 import logging
@@ -29,7 +29,8 @@ from subprocess import PIPE
 import time
 from datetime import date
 from UNMS_Integration import pullUNMSDevices
-from ispConfig import fqOrCAKE, pipeBandwidthCapacityMbps, interfaceA, interfaceB, enableActualShellCommands, runShellCommandsAsSudo, importFromUNMS
+from LibreNMS_Integration import pullLibreNMSDevices
+from ispConfig import fqOrCAKE, pipeBandwidthCapacityMbps, interfaceA, interfaceB, enableActualShellCommands, runShellCommandsAsSudo, importFromUNMS, importFromLibreNMS
 
 def shell(inputCommand):
 	if enableActualShellCommands:
@@ -87,9 +88,11 @@ def refreshShapers():
 	#Add specific test clients
 	#clientsList.append((100, '100.65.1.1'))
 
-	#Bring in clients from UCRM if enabled
+	#Bring in clients from UNMS or LibreNMS if enabled
 	if importFromUNMS:
 		shapableDevices.extend(pullUNMSDevices())
+	if importFromLibreNMS:
+		shapableDevices.extend(pullLibreNMSDevices())
 
 	#Categorize Clients By IPv4 /16
 	listOfSlash16SubnetsInvolved = []

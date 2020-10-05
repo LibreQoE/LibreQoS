@@ -22,11 +22,32 @@ runShellCommandsAsSudo = False
 # Import customer QoS rules from UNMS
 importFromUNMS = False
 
+# Import customer QoS rules from LibreNMS
+importFromLibreNMS = False
+
+# Available on LibreNMS site as https://exampleLibreNMSsite.net/api-access
+orgLibreNMSxAuthToken = ''
+
+# Do not include trailing forward slash. For example https://exampleLibreNMSsite.net
+libreNMSBaseURL = ''
+
+# Which LibreNMS groups to import. Please create groups in LibreNMS to match these group names such as Plan A
+libreNMSDeviceGroups = {
+	'Plan A':	{
+				'downloadMbps': 25,
+				'uploadMbps': 3
+				},
+	'Plan B':	{
+				'downloadMbps': 50,
+				'uploadMbps': 5
+				}
+}
+
 # Available under UNMS > Settings > Users
 orgUNMSxAuthToken = ''
 
 # Everything before /nms/. Use https:// For example: https://unms.exampleISP.com (no slash after)
 unmsBaseURL = ''
 
-# For bridged CPE radios, you can exclude matching radio models from rate limiting
+# For bridged CPE radios on UNMS, you can exclude matching radio models from rate limiting
 deviceModelBlacklistEnabled = False
