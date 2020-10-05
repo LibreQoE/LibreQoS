@@ -37,12 +37,12 @@ bridges:
            - eth4
            - eth5
 ```
-* Modify setting parameters in LibreQoS.py to suit your environment
+## Run LibreQoS
+* Modify setting parameters in ispConfig.py to suit your environment
 * Run:
 ```
 sudo python3 ./LibreQoS.py
 ```
-
 ## Running as a service
 You can use the scheduled.py file to set the time of day you want the shapers to be refreshed at after the initial run.
 On linux distributions that use systemd, such as Ubuntu, add the following to /etc/systemd/system/LibreQoS.service
