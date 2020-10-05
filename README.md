@@ -63,8 +63,9 @@ Then run
 sudo systemctl start LibreQoS.service
 ```
 ## Real World Performance
-This customer is using a Ubiquiti LTU-LR CPE.
-<img src="docs/customerExample.jpg" width="200">
+This customer is using a Ubiquiti LTU-LR CPE with QoS shaping applied at 215Mbps down and 30Mbps up.
+
+<img src="docs/customerExample.jpg" width="500">
 
 ## Server Spec Recommendations
 * For up to 1Gbps
