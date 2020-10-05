@@ -1,6 +1,15 @@
 # LibreQoS
 A tool to traffic shape hundreds of clients and reduce bufferbloat using fq_codel. Features device import integration with LibreNMS and UNMS. This is alpha software, please do not deploy in production without thorough testing.
 
+## Features
+* HTB + fq_codel
+* Experimental support for CAKE (Common Applications Kept Enhanced)
+* TC filters divided into groups with hashing filters to significantly increase efficiency and minimize RAM usage
+
+## Integration
+* LibreNMS device import
+* UNMS/UCRM device import
+
 ## Lab Requirements
 * Edge and Core routers with MTU 1500 on links between them
 * OSPF primary link (low cost) through the server running LibreQoS
@@ -15,6 +24,44 @@ A tool to traffic shape hundreds of clients and reduce bufferbloat using fq_code
 * Recent Linux kernel
 * recent tc-fq_codel provided by package iproute2
 
+## Known limitations
+* Linux TC filters are apparently not cleared from memory after being removed/disassociated with qdiscs. This leads to gradually increasing memory use. One solution is to reboot the VM or server once a week. With an OSPF setup that would mean just 10 or so total seconds of client downtime per week. Still, there must be a better solution. Please contact me if you know of a way to clear linux tc filters' memory usage without a reboot.
+
+## Adding the bridge between in/out interface NICs
+* Add linux interface bridge br0 to the two dedicated interfaces
+    * For example on Ubuntu Server 20.04 which uses NetPlan, you would add the following to the .yaml file in /etc/netplan/
+```
+bridges:
+    br0:
+      interfaces:
+           - eth4
+           - eth5
+```
+* Modify setting parameters in LibreQoS.py to suit your environment
+* Run:
+```
+sudo python3 ./LibreQoS.py
+```
+
+## Running as a service
+You can use the scheduled.py file to set the time of day you want the shapers to be refreshed at after the initial run.
+On linux distributions that use systemd, such as Ubuntu, add the following to /etc/systemd/system/LibreQoS.service
+```
+[Unit]
+After=network.service
+
+[Service]
+WorkingDirectory=/home/$USER/LibreQoSDirectory
+ExecStart=/usr/bin/python3 /home/$USER/LibreQoSDirectory/scheduled.py
+Restart=always
+
+[Install]
+WantedBy=default.target
+```
+Then run
+```
+sudo systemctl start LibreQoS.service
+```
 ## Server Spec Recommendations
 * For up to 1Gbps
     * 4+ CPU cores
@@ -38,33 +85,6 @@ A tool to traffic shape hundreds of clients and reduce bufferbloat using fq_code
     * Passmark score of 38,000 or more (AMD Ryzen 9 3950X or better)
 
 https://www.cpubenchmark.net/high_end_cpus.html
-
-## Features
-* HTB + fq_codel
-* Experimental support for CAKE (Common Applications Kept Enhanced)
-* TC filters divided into groups with hashing filters to significantly increase efficiency and minimize RAM usage
-
-## Known limitations
-* Linux TC filters are apparently not cleared from memory after being removed/disassociated with qdiscs. This leads to gradually increasing memory use. One solution is to reboot the VM or server once a week. With an OSPF setup that would mean just 10 or so total seconds of client downtime per week. Still, there must be a better solution. Please contact me if you know of a way to clear linux tc filters' memory usage without a reboot.
-
-## How to use
-* Add linux interface bridge br0 to the two dedicated interfaces
-    * For example on Ubuntu Server 20.04 which uses NetPlan, you would add the following to the .yaml file in /etc/netplan/
-```
-bridges:
-    br0:
-      interfaces:
-           - eth4
-           - eth5
-```
-* Modify setting parameters in LibreQoS.py to suit your environment
-* Run:
-```
-sudo python3 ./LibreQoS.py
-```
-## Integration
-* LibreNMS device import
-* UNMS/UCRM device import
 
 ## Special Thanks
 Thank you to the hundreds of contributors to the cake and fq_codel projects. Thank you to Phil Sutter, Bert Hubert, Gregory Maxwell, Remco van Mook, Martijn van Oosterhout, Paul B Schroeder, and Jasper Spaans for contributing to the guides and documentation listed below.
