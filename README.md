@@ -45,7 +45,7 @@ https://www.cpubenchmark.net/high_end_cpus.html
 * TC filters divided into groups with hashing filters to significantly increase efficiency and minimize RAM usage
 
 ## Known limitations
-* Linux TC filters are apparently not cleared from memory after being removed/disassociated with qdiscs. This leads to gradual increased memory use. One solution is to reboot, but I would prefer a better solution. Please contact me if you know of a way to clear tc filters' memory usage without a reboot.
+* Linux TC filters are apparently not cleared from memory after being removed/disassociated with qdiscs. This leads to gradually increasing memory use. One solution is to reboot the VM or server once a week. With an OSPF setup that would mean just 10 or so total seconds of client downtime per week. Still, there must be a better solution. Please contact me if you know of a way to clear linux tc filters' memory usage without a reboot.
 
 ## How to use
 * Add linux interface bridge br0 to the two dedicated interfaces
