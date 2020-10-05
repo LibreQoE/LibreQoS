@@ -1,5 +1,5 @@
 # LibreQoS
-A tool to traffic shape hundreds of clients and reduce bufferbloat using fq_codel. This is alpha software, please do not deploy in production.
+A tool to traffic shape hundreds of clients and reduce bufferbloat using fq_codel. Features device import integration with LibreNMS and UNMS. This is alpha software, please do not deploy in production without thorough testing.
 
 ## Lab Requirements
 * Edge and Core routers with MTU 1500 on links between them
