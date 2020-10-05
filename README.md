@@ -44,6 +44,9 @@ https://www.cpubenchmark.net/high_end_cpus.html
 * Experimental support for CAKE (Common Applications Kept Enhanced)
 * TC filters divided into groups with hashing filters to significantly increase efficiency and minimize RAM usage
 
+## Known limitations
+* Linux TC filters are apparently not cleared from memory after being removed/disassociated with qdiscs. This leads to gradual increased memory use. One solution is to reboot, but I would prefer a better solution. Please contact me if you know of a way to clear tc filters' memory usage without a reboot.
+
 ## How to use
 * Add linux interface bridge br0 to the two dedicated interfaces
     * For example on Ubuntu Server 20.04 which uses NetPlan, you would add the following to the .yaml file in /etc/netplan/
