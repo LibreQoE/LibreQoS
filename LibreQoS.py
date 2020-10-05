@@ -22,11 +22,13 @@
 #                           v.0.4-alpha
 #
 import random
+import logging
 import os
 import subprocess
+from subprocess import PIPE
 import time
 from datetime import date
-from UNMS_Integration import pullUNMSCustomers
+from UNMS_Integration import pullUNMSDevices
 from ispConfig import fqOrCAKE, pipeBandwidthCapacityMbps, interfaceA, interfaceB, enableActualShellCommands, runShellCommandsAsSudo, importFromUNMS
 
 def shell(inputCommand):
@@ -79,34 +81,25 @@ def createTestClientsPool(slash16, quantity):
 
 def refreshShapers():
 	#Clients
-	clientsList = []
+	shapableDevices = []
 	#Add arbitrary number of test clients in /16 subnet
 	#clientsList = createTestClientsPool('100.64.X.X', 5)
 	#Add specific test clients
 	#clientsList.append((100, '100.65.1.1'))
 
 	#Bring in clients from UCRM if enabled
-	if importFromUNMS:
-		tempList = pullUNMSCustomers()
-		for cust in tempList:
-			downloadSpeed = cust['downloadSpeed']
-			uploadSpeed = cust['uploadSpeed']
-			for ipAddr in cust['deviceIPs']:
-				if '/' in ipAddr:
-					ipAddr = ipAddr.split('/')[0]
-				#Use UCRM plan speed values to place into corresponding plan defined here in LibreQoS
-				clientsList.append((ipAddr, downloadSpeed, uploadSpeed))
+	shapableDevices.extend(pullUNMSDevices())
 
 	#Categorize Clients By IPv4 /16
 	listOfSlash16SubnetsInvolved = []
-	clientsListWithSubnet = []
-	for customer in clientsList:
-		ipAddr, downloadSpeed, uploadSpeed = customer
+	shapableDevicesListWithSubnet = []
+	for device in shapableDevices:
+		ipAddr = device['identification']['ipAddr']
 		dec1, dec2, dec3, dec4 = ipAddr.split('.')
 		slash16 = dec1 + '.' + dec2 + '.0.0'
 		if slash16 not in listOfSlash16SubnetsInvolved:
 			listOfSlash16SubnetsInvolved.append(slash16)
-		clientsListWithSubnet.append((ipAddr, downloadSpeed, uploadSpeed, slash16, dec1, dec2, dec3, dec4))
+		shapableDevicesListWithSubnet.append((ipAddr))
 	#Clear Prior Configs
 	clearPriorSettings(interfaceA, interfaceB)
 	#InterfaceA
@@ -123,10 +116,10 @@ def refreshShapers():
 		groupedCustomers = []	
 		for i in range(255):
 			tempList = []
-			for customer in clientsListWithSubnet:
-				ipAddr, downloadSpeed, uploadSpeed, slash16, dec1, dec2, dec3, dec4 = customer
+			for ipAddr in shapableDevicesListWithSubnet:
+				dec1, dec2, dec3, dec4 = ipAddr.split('.')
 				if (dec1 == thisSlash16Dec1) and (dec2 == thisSlash16Dec2) and (dec4 == str(i)):
-					tempList.append(customer)
+					tempList.append(ipAddr)
 			if len(tempList) > 0:
 				groupedCustomers.append(tempList)
 		shell('tc filter add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ': prio 5 u32')
@@ -135,14 +128,22 @@ def refreshShapers():
 		handleIDSecond = 1
 		while thirdDigitCounter <= 255:	
 			if len(groupedCustomers) > 0:
-				currentCustomerList = groupedCustomers.pop()
+				currentIPList = groupedCustomers.pop()
 				tempHashList = getHashList()
-				for cust in currentCustomerList:
-					ipAddr, downloadSpeed, uploadSpeed, slash16, dec1, dec2, dec3, dec4 = cust
+				for ipAddr in currentIPList:
+					for device in shapableDevices:
+						if device['identification']['ipAddr'] == ipAddr:
+							downloadSpeed = device['qos']['downloadMbps']
+							uploadSpeed = device['qos']['uploadMbps']
+					dec1, dec2, dec3, dec4 = ipAddr.split('.')
 					twoDigitHashString = hex(int(dec4)).replace('0x','')
-					shell('tc class add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ':1 classid ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' htb rate '+ str(downloadSpeed) + 'mbit ceil '+ str(downloadSpeed) + 'mbit prio 3') 
+					shell('tc class add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ':1 classid ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' htb rate '+ str(uploadSpeed) + 'mbit ceil '+ str(uploadSpeed) + 'mbit prio 3') 
 					shell('tc qdisc add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' ' + fqOrCAKE)
 					shell('tc filter add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ': prio 5 u32 ht ' + str(hashIDCounter) + ':' + twoDigitHashString + ' match ip ' + srcOrDst + ' ' + ipAddr + ' flowid ' + str(parentIDFirstPart) + ':' + str(classIDCounter))
+					deviceFlowID = str(parentIDFirstPart) + ':' + str(classIDCounter)
+					for device in shapableDevices:
+						if device['identification']['ipAddr'] == ipAddr:
+							device['identification']['flowID'] = deviceFlowID
 					classIDCounter += 1
 			thirdDigitCounter += 1
 		if (srcOrDst == 'dst'):
@@ -164,10 +165,10 @@ def refreshShapers():
 		groupedCustomers = []	
 		for i in range(255):
 			tempList = []
-			for customer in clientsListWithSubnet:
-				ipAddr, downloadSpeed, uploadSpeed, slash16, dec1, dec2, dec3, dec4 = customer
+			for ipAddr in shapableDevicesListWithSubnet:
+				dec1, dec2, dec3, dec4 = ipAddr.split('.')
 				if (dec1 == thisSlash16Dec1) and (dec2 == thisSlash16Dec2) and (dec4 == str(i)):
-					tempList.append(customer)
+					tempList.append(ipAddr)
 			if len(tempList) > 0:
 				groupedCustomers.append(tempList)
 		shell('tc filter add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ': prio 5 u32')
@@ -176,14 +177,22 @@ def refreshShapers():
 		handleIDSecond = 1
 		while thirdDigitCounter <= 255:	
 			if len(groupedCustomers) > 0:
-				currentCustomerList = groupedCustomers.pop()
+				currentIPList = groupedCustomers.pop()
 				tempHashList = getHashList()
-				for cust in currentCustomerList:
-					ipAddr, downloadSpeed, uploadSpeed, slash16, dec1, dec2, dec3, dec4 = cust
+				for ipAddr in currentIPList:
+					for device in shapableDevices:
+						if device['identification']['ipAddr'] == ipAddr:
+							downloadSpeed = device['qos']['downloadMbps']
+							uploadSpeed = device['qos']['uploadMbps']
+					dec1, dec2, dec3, dec4 = ipAddr.split('.')
 					twoDigitHashString = hex(int(dec4)).replace('0x','')
 					shell('tc class add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ':1 classid ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' htb rate '+ str(uploadSpeed) + 'mbit ceil '+ str(uploadSpeed) + 'mbit prio 3') 
 					shell('tc qdisc add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' ' + fqOrCAKE)
 					shell('tc filter add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ': prio 5 u32 ht ' + str(hashIDCounter) + ':' + twoDigitHashString + ' match ip ' + srcOrDst + ' ' + ipAddr + ' flowid ' + str(parentIDFirstPart) + ':' + str(classIDCounter))
+					deviceFlowID = str(parentIDFirstPart) + ':' + str(classIDCounter)
+					for device in shapableDevices:
+						if device['identification']['ipAddr'] == ipAddr:
+							device['identification']['flowID'] = deviceFlowID
 					classIDCounter += 1
 			thirdDigitCounter += 1
 		if (srcOrDst == 'dst'):
@@ -192,12 +201,16 @@ def refreshShapers():
 			startPointForHash = '12' #Position of src-address in IP header
 		shell('tc filter add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ': prio 5 u32 ht 800:: match ip ' + srcOrDst + ' '+ thisSlash16Dec1 + '.' + thisSlash16Dec2 + '.0.0/16 hashkey mask 0x000000ff at ' + startPointForHash + ' link ' + str(hashIDCounter) + ':')
 		hashIDCounter += 1
-	#Recap
-	for customer in clientsList:
-		ipAddr, downloadSpeed, uploadSpeed = customer
-		downloadSpeed = str(downloadSpeed)
-		uploadSpeed = str(uploadSpeed)
-		print("Applied rate limiting |\t" + ipAddr + "\t| " + downloadSpeed + " down " + uploadSpeed + " up")
+	#Recap and log
+	logging.basicConfig(level=logging.INFO, filename="log", filemode="a+",	format="%(asctime)-15s %(levelname)-8s %(message)s")
+	for device in shapableDevices:
+		ipAddr = device['identification']['ipAddr']
+		hostname = device['identification']['hostname']
+		downloadSpeed = str(device['qos']['downloadMbps'])
+		uploadSpeed = str(device['qos']['uploadMbps'])
+		recap = "Applied rate limiting of " + downloadSpeed + " down " + uploadSpeed + " up to device " + hostname
+		logging.info(recap)
+		print(recap)
 	#Done
 	today = date.today()
 	d1 = today.strftime("%d/%m/%Y")

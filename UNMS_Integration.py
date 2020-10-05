@@ -30,51 +30,58 @@ if deviceModelBlacklistEnabled:
 else:
 	deviceModelBlacklist = []
 
-def pullUNMSCustomers():
+def pullUNMSDevices():
 	url = unmsBaseURL + "/nms/api/v2.1/sites?type=client&ucrm=true&ucrmDetails=true"
 	headers = {'accept':'application/json', 'x-auth-token': orgUNMSxAuthToken}
 	r = requests.get(url, headers=headers)
 	jsonData = r.json()
 	#print(jsonData)
-	unmsCustomers = []
+	unmsDevicesToImport = []
 	for unmsClientSite in jsonData:
 		try:
 			downloadSpeedMbps = int(round(unmsClientSite['qos']['downloadSpeed']/1000000))
 			uploadSpeedMbps = int(round(unmsClientSite['qos']['uploadSpeed']/1000000))
 			address = unmsClientSite['description']['address']
 			unmsClientSiteID = unmsClientSite['id']
-			deviceList = getUNMSclientSiteDevices(unmsClientSiteID)
-			thisCustomer = {
-			'address'		:	address,
-			'downloadSpeed'	:	downloadSpeedMbps,
-			'uploadSpeed'	:	uploadSpeedMbps,
-			}
-			for device in deviceList:
-				thisCustomer['deviceIPs'] = deviceList
-			if deviceList:
-				unmsCustomers.append(thisCustomer)
-				print("Imported " + address)
+			deviceInUNMSsite = getUNMSdevicesAtClientSite(unmsClientSiteID)
+			for device in deviceInUNMSsite:
+				deviceName = device['identification']['name']
+				deviceMAC = device['identification']['mac']
+				deviceIP = device['ipAddress']
+				deviceModel = device['identification']['model']
+				deviceModelName = device['identification']['modelName']
+				if '/' in deviceIP:
+					deviceIP = deviceIP.split('/')[0]
+				if deviceModel not in deviceModelBlacklist:
+					print("Added " + deviceModel + ":\t" + deviceName)
+					thisShapedDevice = {
+						"identification": {
+						  "name": deviceName,
+						  "hostname": deviceName,
+						  "ipAddr": deviceIP,
+						  "mac": deviceMAC,
+						  "model": deviceModel,
+						  "modelName": deviceModelName,
+						  "unmsSiteID": device['identification']['site']['id'],
+						  "libreNMSSiteID": ""
+						},
+						"qos": {
+						  "downloadMbps": downloadSpeedMbps,
+						  "uploadMbps": uploadSpeedMbps,
+						  "accessPoint": ""
+						},
+					}
+					unmsDevicesToImport.append(thisShapedDevice)
+			print("Imported " + address)
 		except:
-			print("Failed to import customer " + unmsClientSite['description']['address'])
-	return unmsCustomers
+			print("Failed to import devices from customer at " + unmsClientSite['description']['address'])
+	return unmsDevicesToImport
 
-def getUNMSclientSiteDevices(siteID):
+def getUNMSdevicesAtClientSite(siteID):
 	url = unmsBaseURL + "/nms/api/v2.1/devices?siteId=" + siteID
 	headers = {'accept':'application/json', 'x-auth-token': orgUNMSxAuthToken}
 	r = requests.get(url, headers=headers)
-	jsonData = r.json()
-	deviceIPs = []
-	for device in jsonData:
-		deviceName = device['identification']['name']
-		deviceMAC = device['identification']['mac']
-		deviceIP = device['ipAddress']
-		deviceModel = device['identification']['model']
-		if not deviceModel:
-			deviceModel = device['identification']['modelName']
-		if deviceModel not in deviceModelBlacklist:
-			deviceIPs.append(deviceIP)
-			print("Added " + deviceModel + ":\t" + deviceName)
-	return deviceIPs
+	return (r.json())
 
 
 
