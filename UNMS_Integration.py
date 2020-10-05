@@ -38,7 +38,7 @@ def pullUNMSDevices():
 	#print(jsonData)
 	unmsDevicesToImport = []
 	for unmsClientSite in jsonData:
-		try:
+		if (unmsClientSite['identification']['status'] == 'active') and (unmsClientSite['qos']['downloadSpeed']) and (unmsClientSite['qos']['uploadSpeed']):
 			downloadSpeedMbps = int(round(unmsClientSite['qos']['downloadSpeed']/1000000))
 			uploadSpeedMbps = int(round(unmsClientSite['qos']['uploadSpeed']/1000000))
 			address = unmsClientSite['description']['address']
@@ -53,7 +53,7 @@ def pullUNMSDevices():
 				if '/' in deviceIP:
 					deviceIP = deviceIP.split('/')[0]
 				if deviceModel not in deviceModelBlacklist:
-					print("Added " + deviceModel + ":\t" + deviceName)
+					print("Added " + ":\t" + deviceName)
 					thisShapedDevice = {
 						"identification": {
 						  "name": deviceName,
@@ -73,8 +73,8 @@ def pullUNMSDevices():
 					}
 					unmsDevicesToImport.append(thisShapedDevice)
 			print("Imported " + address)
-		except:
-			print("Failed to import devices from customer at " + unmsClientSite['description']['address'])
+		else:
+			print("Failed to import devices from " + unmsClientSite['description']['address'] + ". Missing QoS.")
 	return unmsDevicesToImport
 
 def getUNMSdevicesAtClientSite(siteID):

@@ -88,7 +88,8 @@ def refreshShapers():
 	#clientsList.append((100, '100.65.1.1'))
 
 	#Bring in clients from UCRM if enabled
-	shapableDevices.extend(pullUNMSDevices())
+	if importFromUNMS:
+		shapableDevices.extend(pullUNMSDevices())
 
 	#Categorize Clients By IPv4 /16
 	listOfSlash16SubnetsInvolved = []
