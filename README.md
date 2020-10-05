@@ -62,6 +62,8 @@ Then run
 ```
 sudo systemctl start LibreQoS.service
 ```
+## Real World Performance
+![Customer Example](docs/customerExample.png?raw=true "Customer Example")
 ## Server Spec Recommendations
 * For up to 1Gbps
     * 4+ CPU cores
