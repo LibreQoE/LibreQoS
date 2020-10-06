@@ -1,5 +1,5 @@
 # LibreQoS
-A tool to traffic shape hundreds of clients and reduce bufferbloat using fq_codel. Features device import integration with LibreNMS and UNMS. This is alpha software, please do not deploy in production without thorough testing.
+LibreQoS is a python application that allows you to apply fq_codel traffic shaping on hundreds of customers. Fq_codel is Free and Open Source Active Queue Management algorithm that reduces bufferbloat, and can improve the quality of customer connections significantly. LibreQoS features the ability to import devices from LibreNMS and UNMS at runtime using API calls. It then apples hundreds of filter rules to direct customer traffic through individual fq_codel instances within an HTB (HTB+fq_codel). By utilizing hashing filters, thousands of rules can be applied with minimal impact on traffic throughput and CPU use. This is alpha software, please do not deploy in production without thorough testing. If you need a stable paid commercial alternative, please check out <a href="https://www.preseem.com/">Preseem</a>, which has great metrics tools and integration with many CRM and NMS platforms.
 
 ## Features
 * HTB + fq_codel
@@ -10,10 +10,11 @@ A tool to traffic shape hundreds of clients and reduce bufferbloat using fq_code
 * LibreNMS device import
 * UNMS/UCRM device import
 
-## Lab Requirements
+## Requirements
 * Edge and Core routers with MTU 1500 on links between them
+   * If you use MPLS, you would terminate MPLS traffic at the core router
 * OSPF primary link (low cost) through the server running LibreQoS
-* OSPF backup link recommended
+* OSPF backup link
 ![Diagram](docs/diagram.png?raw=true "Diagram")
 
 ## Server Requirements
