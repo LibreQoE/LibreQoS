@@ -25,9 +25,12 @@ LibreQoS is a python application that allows you to apply fq_codel traffic shapi
 * Recent Linux kernel
 * recent tc-fq_codel provided by package iproute2
 
-## Known limitations
-* Linux TC filters are apparently not cleared from memory after being removed/disassociated with qdiscs. This leads to gradually increasing memory use. One solution is to reboot the VM or server once a week. With an OSPF setup that would mean just 10 or so total seconds of client downtime per week. Still, there must be a better solution. Please contact me if you know of a way to clear linux tc filters' memory usage without a reboot.
-
+## Known issues
+* Linux TC filters may be left in the memory cache after being removed/disassociated with qdiscs. However, that memory space tends to get overwritten as long as the IP scheme of your network isn't changing constantly somehow. If after a few months you need to clear memory cache, use
+```
+sudo sh -c 'echo 1 >/proc/sys/vm/drop_caches'
+```
+On <a href="https://www.reddit.com/r/Proxmox/comments/asakcb/problem_with_ram_cache/">ProxMox VMs</a> you need to do some tweaks to allow that freed up memory to be reflected on the hypervisor. 
 ## Adding the bridge between in/out interface NICs
 * Add linux interface bridge br0 to the two dedicated interfaces
     * For example on Ubuntu Server 20.04 which uses NetPlan, you would add the following to the .yaml file in /etc/netplan/
