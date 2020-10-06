@@ -74,22 +74,22 @@ This customer is using a Ubiquiti LTU-LR CPE with QoS shaping applied at 215Mbps
 ## Server Spec Recommendations
 * For up to 1Gbps
     * 4+ CPU cores
-    * 6GB RAM
+    * 4GB RAM
     * 32GB Disk Space
     * Passmark score of 13,000 or more (AMD Ryzen 5 2600 or better)
 * For up to 2Gbps
     * 6+ CPU cores
-    * 8GB RAM
+    * 6GB RAM
     * 32GB Disk Space
     * Passmark score of 17,000 or more (AMD Ryzen 5 3600 or better)
 * For up to 5Gbps
     * 8+ CPU cores
-    * 16GB RAM
+    * 8GB RAM
     * 32GB Disk Space
     * Passmark score of 23,000 or more (AMD Ryzen 7 3800X or better)
 * For up to 10Gbps
     * 16+ CPU cores
-    * 32GB RAM
+    * 16GB RAM
     * 32GB Disk Space
     * Passmark score of 38,000 or more (AMD Ryzen 9 3950X or better)
 
