@@ -19,7 +19,7 @@
 #           | |   | | '_ \| '__/ _ \ | | |/ _ \___ \ 
 #           | |___| | |_) | | |  __/ |_| | (_) |__) |
 #           |_____|_|_.__/|_|  \___|\__\_\\___/____/
-#                          v.0.65-alpha
+#                          v.0.7-alpha
 #
 import requests
 from ispConfig import orgUNMSxAuthToken, unmsBaseURL, deviceModelBlacklistEnabled
@@ -63,12 +63,12 @@ def pullUNMSDevices():
 						  "model": deviceModel,
 						  "modelName": deviceModelName,
 						  "unmsSiteID": device['identification']['site']['id'],
-						  "libreNMSSiteID": ""
+						  "libreNMSSiteID": None
 						},
 						"qos": {
 						  "downloadMbps": downloadSpeedMbps,
 						  "uploadMbps": uploadSpeedMbps,
-						  "accessPoint": ""
+						  "accessPoint": None
 						},
 					}
 					unmsDevicesToImport.append(thisShapedDevice)

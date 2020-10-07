@@ -19,18 +19,20 @@
 #           | |   | | '_ \| '__/ _ \ | | |/ _ \___ \ 
 #           | |___| | |_) | | |  __/ |_| | (_) |__) |
 #           |_____|_|_.__/|_|  \___|\__\_\\___/____/
-#                          v.0.65-alpha
+#                          v.0.7-alpha
 #
 import random
 import logging
 import os
+import json
 import subprocess
 from subprocess import PIPE
+import ipaddress
 import time
-from datetime import date
+from datetime import date, datetime
 from UNMS_Integration import pullUNMSDevices
 from LibreNMS_Integration import pullLibreNMSDevices
-from ispConfig import fqOrCAKE, pipeBandwidthCapacityMbps, interfaceA, interfaceB, enableActualShellCommands, runShellCommandsAsSudo, importFromUNMS, importFromLibreNMS
+from ispConfig import fqOrCAKE, pipeBandwidthCapacityMbps, interfaceA, interfaceB, addTheseSubnets, enableActualShellCommands, runShellCommandsAsSudo, importFromUNMS, importFromLibreNMS
 
 def shell(inputCommand):
 	if enableActualShellCommands:
@@ -61,38 +63,52 @@ def getHashList():
 			twoDigitHash.append(str(i) + letters[x])
 	return twoDigitHash
 
-def createTestClientsPool(slash16, quantity):
-	if quantity<65534:
-		tempList = []
-		counterC = 0
-		counterD = 1
-		mainCounter = 0
-		while mainCounter < quantity:
-			if counterD <= 255:
-				ipAddr = slash16.replace('X.X', '') + str(counterC) + '.' + str(counterD)
-				tempList.append((ipAddr, 100, 15))
-				counterD += 1
-			else:
-				counterC += 1
-				counterD = 1
-			mainCounter += 1
-		return tempList
-	else:
-		raise Exception
+def addCustomersBySubnet(inputBlock):
+	addTheseSubnets, existingShapableDevices = inputBlock
+	customersToAdd = []
+	for subnetItem in addTheseSubnets:
+		ipcidr, downloadMbps, uploadMbps = subnetItem
+		theseHosts = list(ipaddress.ip_network(ipcidr).hosts())
+		for host in theseHosts:
+			deviceIP = str(host)
+			alreadyAssigned = False
+			for device in existingShapableDevices:
+				if deviceIP == device['identification']['ipAddr']:
+					alreadyAssigned = True
+			if not alreadyAssigned:
+				thisShapedDevice = {
+					"identification": {
+					  "name": None,
+					  "hostname": None,
+					  "ipAddr": deviceIP,
+					  "mac": None,
+					  "model": None,
+					  "modelName": None,
+					  "unmsSiteID": None,
+					  "libreNMSSiteID": None
+					},
+					"qos": {
+					  "downloadMbps": downloadMbps,
+					  "uploadMbps": uploadMbps,
+					  "accessPoint": None
+					},
+				}
+				customersToAdd.append(thisShapedDevice)
+	return customersToAdd
 
 def refreshShapers():
 	#Clients
 	shapableDevices = []
-	#Add arbitrary number of test clients in /16 subnet
-	#clientsList = createTestClientsPool('100.64.X.X', 5)
-	#Add specific test clients
-	#clientsList.append((100, '100.65.1.1'))
-
+	
 	#Bring in clients from UNMS or LibreNMS if enabled
 	if importFromUNMS:
 		shapableDevices.extend(pullUNMSDevices())
 	if importFromLibreNMS:
 		shapableDevices.extend(pullLibreNMSDevices())
+
+	#Add customers by subnet. Will not replace those that already exist
+	if addTheseSubnets:
+		shapableDevices.extend(addCustomersBySubnet((addTheseSubnets, shapableDevices)))
 
 	#Categorize Clients By IPv4 /16
 	listOfSlash16SubnetsInvolved = []
@@ -104,8 +120,10 @@ def refreshShapers():
 		if slash16 not in listOfSlash16SubnetsInvolved:
 			listOfSlash16SubnetsInvolved.append(slash16)
 		shapableDevicesListWithSubnet.append((ipAddr))
+	
 	#Clear Prior Configs
 	clearPriorSettings(interfaceA, interfaceB)
+	
 	#InterfaceA
 	parentIDFirstPart = 1
 	srcOrDst = 'dst'
@@ -118,7 +136,7 @@ def refreshShapers():
 		thisSlash16Dec1 = slash16.split('.')[0]
 		thisSlash16Dec2 = slash16.split('.')[1]
 		groupedCustomers = []	
-		for i in range(255):
+		for i in range(256):
 			tempList = []
 			for ipAddr in shapableDevicesListWithSubnet:
 				dec1, dec2, dec3, dec4 = ipAddr.split('.')
@@ -144,10 +162,14 @@ def refreshShapers():
 					shell('tc class add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ':1 classid ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' htb rate '+ str(downloadSpeed) + 'mbit ceil '+ str(downloadSpeed) + 'mbit prio 3') 
 					shell('tc qdisc add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' ' + fqOrCAKE)
 					shell('tc filter add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ': prio 5 u32 ht ' + str(hashIDCounter) + ':' + twoDigitHashString + ' match ip ' + srcOrDst + ' ' + ipAddr + ' flowid ' + str(parentIDFirstPart) + ':' + str(classIDCounter))
-					deviceFlowID = str(parentIDFirstPart) + ':' + str(classIDCounter)
+					deviceQDiscID = str(parentIDFirstPart) + ':' + str(classIDCounter)
 					for device in shapableDevices:
 						if device['identification']['ipAddr'] == ipAddr:
-							device['identification']['flowID'] = deviceFlowID
+							if srcOrDst == 'src':
+								qdiscDict ={'qDiscSrc': deviceQDiscID}
+							elif srcOrDst == 'dst':
+								qdiscDict ={'qDiscDst': deviceQDiscID}
+							device['identification'].update(qdiscDict)
 					classIDCounter += 1
 			thirdDigitCounter += 1
 		if (srcOrDst == 'dst'):
@@ -156,6 +178,7 @@ def refreshShapers():
 			startPointForHash = '12' #Position of src-address in IP header
 		shell('tc filter add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ': prio 5 u32 ht 800:: match ip ' + srcOrDst + ' '+ thisSlash16Dec1 + '.' + thisSlash16Dec2 + '.0.0/16 hashkey mask 0x000000ff at ' + startPointForHash + ' link ' + str(hashIDCounter) + ':')
 		hashIDCounter += 1
+	
 	#InterfaceB
 	parentIDFirstPart = hashIDCounter + 1
 	hashIDCounter = parentIDFirstPart + 1
@@ -167,7 +190,7 @@ def refreshShapers():
 		thisSlash16Dec1 = slash16.split('.')[0]
 		thisSlash16Dec2 = slash16.split('.')[1]
 		groupedCustomers = []	
-		for i in range(255):
+		for i in range(256):
 			tempList = []
 			for ipAddr in shapableDevicesListWithSubnet:
 				dec1, dec2, dec3, dec4 = ipAddr.split('.')
@@ -193,10 +216,14 @@ def refreshShapers():
 					shell('tc class add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ':1 classid ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' htb rate '+ str(uploadSpeed) + 'mbit ceil '+ str(uploadSpeed) + 'mbit prio 3') 
 					shell('tc qdisc add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' ' + fqOrCAKE)
 					shell('tc filter add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ': prio 5 u32 ht ' + str(hashIDCounter) + ':' + twoDigitHashString + ' match ip ' + srcOrDst + ' ' + ipAddr + ' flowid ' + str(parentIDFirstPart) + ':' + str(classIDCounter))
-					deviceFlowID = str(parentIDFirstPart) + ':' + str(classIDCounter)
+					deviceQDiscID = str(parentIDFirstPart) + ':' + str(classIDCounter)
 					for device in shapableDevices:
 						if device['identification']['ipAddr'] == ipAddr:
-							device['identification']['flowID'] = deviceFlowID
+							if srcOrDst == 'src':
+								qdiscDict ={'qDiscSrc': deviceQDiscID}
+							elif srcOrDst == 'dst':
+								qdiscDict ={'qDiscDst': deviceQDiscID}
+							device['identification'].update(qdiscDict)
 					classIDCounter += 1
 			thirdDigitCounter += 1
 		if (srcOrDst == 'dst'):
@@ -205,6 +232,11 @@ def refreshShapers():
 			startPointForHash = '12' #Position of src-address in IP header
 		shell('tc filter add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ': prio 5 u32 ht 800:: match ip ' + srcOrDst + ' '+ thisSlash16Dec1 + '.' + thisSlash16Dec2 + '.0.0/16 hashkey mask 0x000000ff at ' + startPointForHash + ' link ' + str(hashIDCounter) + ':')
 		hashIDCounter += 1
+	
+	#Save shapableDevices to file to allow for debugging and statistics runs
+	with open('shapableDevices.json', 'w') as outfile:
+		json.dump(shapableDevices, outfile)
+	
 	#Recap and log
 	logging.basicConfig(level=logging.INFO, filename="log", filemode="a+",	format="%(asctime)-15s %(levelname)-8s %(message)s")
 	for device in shapableDevices:
@@ -212,13 +244,17 @@ def refreshShapers():
 		hostname = device['identification']['hostname']
 		downloadSpeed = str(device['qos']['downloadMbps'])
 		uploadSpeed = str(device['qos']['uploadMbps'])
-		recap = "Applied rate limiting of " + downloadSpeed + " down " + uploadSpeed + " up to device " + hostname
+		if hostname:
+			recap = "Applied rate limiting of " + downloadSpeed + " down " + uploadSpeed + " up to device " + hostname
+		else:
+			recap = "Applied rate limiting of " + downloadSpeed + " down " + uploadSpeed + " up to device " + ipAddr
 		logging.info(recap)
 		print(recap)
+	print(str(len(shapableDevices)) + " device rules (" + str(len(shapableDevices)*2) + " filter rules) were applied this round")
+	
 	#Done
-	today = date.today()
-	d1 = today.strftime("%d/%m/%Y")
-	print("Successful run completed at ", d1)
+	currentTimeString = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+	print("Successful run completed on " + currentTimeString)
 
 if __name__ == '__main__':
 	refreshShapers()
