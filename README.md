@@ -17,11 +17,12 @@ LibreQoS is a python application that allows you to apply fq_codel traffic shapi
 ![Diagram](docs/diagram.png?raw=true "Diagram")
 ### Server Requirements
 * VM or physical server
-* One management network interface
-* Two dedicated network interface cards, preferably SFP+ capable
+* One management network interface, completely seperate from the traffic shaping interface NIC. Can be NATed behind motherboard Gigabit Ethernet, that's fine.
+* Network interface NIC supporting two virtual interfaces for traffic shaping (in/out), preferably SFP+ capable
+  * <a href="https://www.fs.com/products/75600.html">Intel X710</a> recommended for anything over 1Gbps.
 * Python 3
   * pip install ipaddress
-* Recent Linux kernel. Ubuntu Server 20.04.1+ recommended
+* Recent Linux kernel for up-to-date linux tc package. Ubuntu Server 20.04.1+ recommended
 ### VM Performance
 #### Memory use
 On ProxMox VMs you need to do <a href="https://www.reddit.com/r/Proxmox/comments/asakcb/problem_with_ram_cache/">some tweaks</a>  to allow freed up memory to be reclaimed by the hypervisor. Generally memory use should be under 2GB if you have less than 2000 hosts. If for any reason memory exceeds what it should be, try
