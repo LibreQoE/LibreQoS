@@ -57,7 +57,7 @@ bridges:
 ## Run LibreQoS
 Cd to your preferred directory and download the latest release
 ```
-git clone https://github.com/rchac/LibreQoS/archive/v.0.7-alpha.zip
+git clone https://github.com/rchac/LibreQoS.git
 ```
 * Modify setting parameters in ispConfig.py to suit your environment
 * Run:
