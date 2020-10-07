@@ -5,7 +5,7 @@ LibreQoS is a python application that allows you to apply fq_codel traffic shapi
 * HTB + fq_codel
 * Experimental support for CAKE (Common Applications Kept Enhanced)
 * TC filters divided into groups with hashing filters to significantly increase efficiency and minimize resource use
-* High-efficiency
+   * VM running LibreQoS with 2500 IP rules uses just 1.5GB RAM total
 * Basic statistics (Top 10 CPEs experiencing packet loss)
 
 ## Integration
