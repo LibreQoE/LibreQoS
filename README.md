@@ -3,7 +3,7 @@
 LibreQoS is a python application that allows you to apply fq_codel traffic shaping to hundreds of customers. <a href="https://www.bufferbloat.net/projects/codel/wiki/">Fq_codel</a> is a Free and Open Source Active Queue Management algorithm that reduces bufferbloat, and can improve the quality of customer connections significantly. LibreQoS features the ability to import devices from LibreNMS and UNMS at runtime using API calls. It then apples hundreds of filter rules to direct customer traffic through individual fq_codel instances within an <a href="https://linux.die.net/man/8/tc-htb">HTB</a> (HTB+fq_codel). By utilizing <a href="https://tldp.org/HOWTO/Adv-Routing-HOWTO/lartc.adv-filter.hashing.html">hashing filters</a>, thousands of rules can be applied with minimal impact on traffic throughput or CPU use. This is alpha software, please do not deploy in production without thorough testing.
 ## How does fq_codel work?
 fq-codel distinguishes interactive flows of traffic (web browsing, audio streaming, VoIP, gaming) from bulk traffic (video streaming, software updates). Interactive flows are prioritized to optimize their performance, while bulk traffic gets steady throughput.
-![fq_codel](docs/fq_codel.png "fq_codel")
+<center><img src="docs/fq_codel.png" width="500"></center>
 The impact of fq_codel on a DSL connection — a 100x latency reduction.
 >“FQ_Codel provides great isolation... if you've got low-rate videoconferencing and low rate web traffic they never get dropped. A lot of issues with IW10 go away, because all the other traffic sees is the front of the queue. You don't know how big its window is, but you don't care because you are not affected by it. FQ_Codel increases utilization across your entire networking fabric, especially for bidirectional traffic... If we're sticking code into boxes to deploy codel, don't do that. Deploy fq_codel. It's just an across the board win.”
 > - Van Jacobson | IETF 84 Talk
@@ -86,7 +86,7 @@ sudo systemctl start LibreQoS.service
 ## Real World Performance
 This customer is using a Ubiquiti LTU-LR CPE with QoS shaping applied at 215Mbps down and 30Mbps up.
 
-<img src="docs/customerExample.jpg" width="500">
+<center><img src="docs/customerExample.jpg" width="500"></center>
 
 ## Server Spec Recommendations
 * For up to 1Gbps
