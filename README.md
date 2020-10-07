@@ -5,6 +5,8 @@ LibreQoS is a python application that allows you to apply fq_codel traffic shapi
 * HTB + fq_codel
 * Experimental support for CAKE (Common Applications Kept Enhanced)
 * TC filters divided into groups with hashing filters to significantly increase efficiency and minimize resource use
+* High-efficiency
+* Basic statistics (Top 10 CPEs experiencing packet loss)
 
 ## Integration
 * LibreNMS device import
@@ -47,6 +49,12 @@ bridges:
 ```
 sudo python3 ./LibreQoS.py
 ```
+## Statistics
+Basic statistics are now available by running
+```
+python3 ./stats.py
+```
+after successful execution of ./LibreQoS.py or ./scheduled.py
 ## Running as a service
 You can use the scheduled.py file to set the time of day you want the shapers to be refreshed at after the initial run.
 On linux distributions that use systemd, such as Ubuntu, add the following to /etc/systemd/system/LibreQoS.service
