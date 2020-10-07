@@ -2,7 +2,7 @@
 ![Banner](docs/Banner.png "Banner")
 LibreQoS is an application that allows you to apply fq_codel traffic shaping to hundreds of customers. <a href="https://www.bufferbloat.net/projects/codel/wiki/">Fq_codel</a> is a Free and Open Source Active Queue Management algorithm that reduces bufferbloat, and can improve the quality of customer connections significantly. LibreQoS features the ability to import devices from LibreNMS and UNMS at runtime using API calls. It then apples hundreds of filter rules to direct customer traffic through individual fq_codel instances within an <a href="https://linux.die.net/man/8/tc-htb">HTB</a> (HTB+fq_codel). By utilizing <a href="https://tldp.org/HOWTO/Adv-Routing-HOWTO/lartc.adv-filter.hashing.html">hashing filters</a>, thousands of rules can be applied with minimal impact on traffic throughput or CPU use. This is alpha software, please do not deploy in production without thorough testing.
 ## How does fq_codel work?
-FQ-codel distinguishes interactive flows of traffic (web browsing, audio streaming, VoIP, gaming) from bulk traffic (streaming video services, software updates). Interactive flows are prioritized to optimize their performance, while bulk traffic gets steady throughput and variable latency. The general reduction of connection latency offered by fq_codel is highly beneficial to end-users.
+Fq_codel distinguishes interactive flows of traffic (web browsing, audio streaming, VoIP, gaming) from bulk traffic (streaming video services, software updates). Interactive flows are prioritized to optimize their performance, while bulk traffic gets steady throughput and variable latency. The general reduction of connection latency offered by fq_codel is highly beneficial to end-users.
 
 <img src="docs/fq_codel.png" width="500">
 
@@ -13,7 +13,7 @@ The impact of fq_codel on a DSL connection — a 100x latency reduction.
 * HTB + fq_codel
 * Experimental support for CAKE (Common Applications Kept Enhanced)
 * TC filters divided into groups with hashing filters to significantly increase efficiency and minimize resource use
-   * VM running LibreQoS with 2500 IP rules uses just 1.5GB RAM total
+   * VM running LibreQoS with 2500 IP rules uses just 2GB RAM total
 * Basic statistics (Top 10 CPEs experiencing packet loss)
 ## Integration
 * LibreNMS device import
