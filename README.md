@@ -1,31 +1,27 @@
 # LibreQoS
 LibreQoS is a python application that allows you to apply fq_codel traffic shaping on hundreds of customers. <a href="https://www.bufferbloat.net/projects/codel/wiki/">Fq_codel</a> is a Free and Open Source Active Queue Management algorithm that reduces bufferbloat, and can improve the quality of customer connections significantly. LibreQoS features the ability to import devices from LibreNMS and UNMS at runtime using API calls. It then apples hundreds of filter rules to direct customer traffic through individual fq_codel instances within an <a href="https://linux.die.net/man/8/tc-htb">HTB</a> (HTB+fq_codel). By utilizing <a href="https://tldp.org/HOWTO/Adv-Routing-HOWTO/lartc.adv-filter.hashing.html">hashing filters</a>, thousands of rules can be applied with minimal impact on traffic throughput or CPU use. This is alpha software, please do not deploy in production without thorough testing. If you need a stable paid commercial alternative, please check out <a href="https://www.preseem.com/">Preseem</a>, which has great metrics tools and integration with many CRM and NMS platforms.
-
 ## Features
 * HTB + fq_codel
 * Experimental support for CAKE (Common Applications Kept Enhanced)
 * TC filters divided into groups with hashing filters to significantly increase efficiency and minimize resource use
    * VM running LibreQoS with 2500 IP rules uses just 1.5GB RAM total
 * Basic statistics (Top 10 CPEs experiencing packet loss)
-
 ## Integration
 * LibreNMS device import
 * UNMS/UCRM device import
-
 ## Requirements
 * Edge and Core routers with MTU 1500 on links between them
-   * If you use MPLS, you would terminate MPLS traffic at the core router
+   * If you use MPLS, you would terminate MPLS traffic at the core router. LibreQoS cannot decapsulate MPLS on its own.
 * OSPF primary link (low cost) through the server running LibreQoS
 * OSPF backup link
 ![Diagram](docs/diagram.png?raw=true "Diagram")
-
 ### Server Requirements
 * VM or physical server
 * One management network interface
 * Two dedicated network interface cards, preferably SFP+ capable
 * Python 3
-* Recent Linux kernel
-* recent tc-fq_codel provided by package iproute2
+  * pip install ipaddress
+* Recent Linux kernel. Ubuntu Server 20.04.1+ recommended
 ### VM Performance
 #### Memory use
 On ProxMox VMs you need to do <a href="https://www.reddit.com/r/Proxmox/comments/asakcb/problem_with_ram_cache/">some tweaks</a>  to allow freed up memory to be reclaimed by the hypervisor. Generally memory use should be under 2GB if you have less than 2000 hosts. If for any reason memory exceeds what it should be, try
@@ -38,7 +34,6 @@ Performance can greatly benefit from disabling certain hardware offloading insid
 #!/bin/sh
 /sbin/ethtool -K eth0 tso off
 ```
-
 ### Add a bridge between in/out interface NICs
 * Add linux interface bridge br0 to the two dedicated interfaces
     * For example on Ubuntu Server 20.04 which uses NetPlan, you would add the following to the .yaml file in /etc/netplan/
