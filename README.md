@@ -104,7 +104,7 @@ This customer is using a Ubiquiti LTU-LR CPE with QoS shaping applied at 215Mbps
 https://www.cpubenchmark.net/high_end_cpus.html
 
 ## Special Thanks
-Thank you to the hundreds of contributors to the cake and fq_codel projects. Thank you to Phil Sutter, Bert Hubert, Gregory Maxwell, Remco van Mook, Martijn van Oosterhout, Paul B Schroeder, and Jasper Spaans for contributing to the guides and documentation listed below.
+Thank you to the hundreds of contributors to the fq_codel and cake projects. Thank you to Phil Sutter, Bert Hubert, Gregory Maxwell, Remco van Mook, Martijn van Oosterhout, Paul B Schroeder, and Jasper Spaans for contributing to the guides and documentation listed below.
 
 ## References
 * https://tldp.org/HOWTO/Adv-Routing-HOWTO/lartc.adv-filter.hashing.html
