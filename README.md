@@ -36,7 +36,7 @@ Performance can greatly benefit from disabling certain hardware offloading insid
 #!/bin/sh
 /sbin/ethtool -K eth0 tso off
 ```
-### Add a bridge between in/out interface NICs
+### Add a bridge between in/out interfaces
 * Add linux interface bridge br0 to the two dedicated interfaces
     * For example on Ubuntu Server 20.04 which uses NetPlan, you would add the following to the .yaml file in /etc/netplan/
 ```
