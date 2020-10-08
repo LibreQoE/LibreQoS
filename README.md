@@ -31,6 +31,7 @@ The impact of fq_codel on a DSL connection — a 100x latency reduction.
   * <a href="https://www.fs.com/products/75600.html">Intel X710</a> recommended for anything over 1Gbps.
 * Python 3
   * pip install ipaddress
+  * pip install prettytable
 * Recent Linux kernel for up-to-date linux tc package. Ubuntu Server 20.04.1+ recommended
 ### VM Performance
 #### Memory use
