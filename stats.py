@@ -19,7 +19,7 @@
 #           | |   | | '_ \| '__/ _ \ | | |/ _ \___ \ 
 #           | |___| | |_) | | |  __/ |_| | (_) |__) |
 #           |_____|_|_.__/|_|  \___|\__\_\\___/____/
-#                          v.0.7-alpha
+#                          v.0.71-alpha
 #
 import os
 import subprocess
@@ -27,6 +27,7 @@ from subprocess import PIPE
 import io
 import json
 from operator import itemgetter 
+from prettytable import PrettyTable
 
 def getStatistics():
 	tcShowResults = []
@@ -78,7 +79,7 @@ def getStatistics():
 			allQDiscStats.append(thisFlow)
 			thisFlowStats = {}
 			thisFlow = {}
-	#Load identifiers from json file
+	#Load shapableDevices
 	updatedFlowStats = []
 	with open('shapableDevices.json', 'r') as infile:
 		shapableDevices = json.load(infile)
@@ -86,8 +87,8 @@ def getStatistics():
 		shapableDeviceQDiscSrc = shapableDevice['identification']['qDiscSrc']
 		shapableDeviceQDiscDst = shapableDevice['identification']['qDiscDst']
 		for device in allQDiscStats:
-			deviceDiscID = device['qDiscID']
-			if shapableDeviceQDiscSrc == deviceDiscID:
+			deviceFlowID = device['qDiscID']
+			if shapableDeviceQDiscSrc == deviceFlowID:
 				name = shapableDevice['identification']['name']
 				ipAddr = shapableDevice['identification']['ipAddr']
 				srcOrDst = 'src'
@@ -101,30 +102,81 @@ def getStatistics():
 				tempDict = {'name': name, 'ipAddr': ipAddr, 'srcOrDst': srcOrDst}
 				device['identification'] = tempDict
 				updatedFlowStats.append(device)
-	return updatedFlowStats
+	mergedStats = []
+	for item in updatedFlowStats:
+		if item['identification']['srcOrDst'] == 'src':
+			newStat = {
+				'identification': {
+					'name': item['identification']['name'],
+					'ipAddr': item['identification']['ipAddr']
+				},
+				'src': {
+					'MegabytesSent': item['stats']['MegabytesSent'],
+					'PacketsSent': item['stats']['PacketsSent'],
+					'droppedPackets': item['stats']['droppedPackets'],
+					'overlimitsPackets': item['stats']['overlimitsPackets'],
+					'requeuedPackets': item['stats']['requeuedPackets'],
+					'backlogBytes': item['stats']['backlogBytes'],
+					'backlogPackets': item['stats']['backlogPackets'],
+					'requeues': item['stats']['requeues'],
+					'maxPacket': item['stats']['maxPacket'],
+					'dropOverlimit': item['stats']['dropOverlimit'],
+					'newFlowCount': item['stats']['newFlowCount'],
+					'ecnMark': item['stats']['ecnMark'],
+					'newFlowsLen': item['stats']['newFlowsLen'],
+					'oldFlowsLen': item['stats']['oldFlowsLen'],
+					'percentageDropped': item['stats']['percentageDropped'],
+				}
+			}
+			mergedStats.append(newStat)
+	for item in updatedFlowStats:
+		if item['identification']['srcOrDst'] == 'dst':
+			ipAddr = item['identification']['ipAddr']
+			newStat = {
+				'dst': {
+					'MegabytesSent': item['stats']['MegabytesSent'],
+					'PacketsSent': item['stats']['PacketsSent'],
+					'droppedPackets': item['stats']['droppedPackets'],
+					'overlimitsPackets': item['stats']['overlimitsPackets'],
+					'requeuedPackets': item['stats']['requeuedPackets'] ,
+					'backlogBytes': item['stats']['backlogBytes'],
+					'backlogPackets': item['stats']['backlogPackets'],
+					'requeues': item['stats']['requeues'],
+					'maxPacket': item['stats']['maxPacket'],
+					'dropOverlimit': item['stats']['dropOverlimit'],
+					'newFlowCount': item['stats']['newFlowCount'],
+					'ecnMark': item['stats']['ecnMark'],
+					'newFlowsLen': item['stats']['newFlowsLen'],
+					'oldFlowsLen': item['stats']['oldFlowsLen'],
+					'percentageDropped': item['stats']['percentageDropped']
+					}
+			}
+			for item2 in mergedStats:
+				if ipAddr in item2['identification']['ipAddr']:
+					item2 = item2.update(newStat)
+	return mergedStats
 			
 if __name__ == '__main__':
-	allQDiscStats = getStatistics()
-	#Customer CPEs with most packet drops
-	packetDropsCPEs = []
-	sumOfPercentDropped  = 0
-	pickTop = 10
-	for item in allQDiscStats:
-		packetDropsCPEs.append((item['identification']['name'], item['identification']['ipAddr'], item['stats']['percentageDropped'], item['identification']['srcOrDst']))
-		sumOfPercentDropped += item['stats']['percentageDropped']
-	averageOfPercentDropped = sumOfPercentDropped/len(allQDiscStats)
-	res = sorted(packetDropsCPEs, key = itemgetter(2), reverse = True)[:pickTop]
-	for item in res:
-		name, ipAddr, percentageDropped, srcOrDst = item
-		v1 = percentageDropped
-		v2 = averageOfPercentDropped
-		difference = abs(v1-v2)/((v1+v2)/2)
-		downOrUp = ''
-		if srcOrDst == 'src':
-			downOrUp = ' upload'
-		elif srcOrDst == 'dst':
-			downOrUp = ' download'
-		if name:
-			print(name + downOrUp + " has high packet drop rate of {0:.2%}".format(percentageDropped) + ", {0:.0%}".format(difference) + " above the average of {0:.2%}".format(averageOfPercentDropped))
-		else:
-			print(ipAddr + downOrUp + " has high packet drop rate of {0:.2%}".format(percentageDropped) + ", {0:.0%}".format(difference) + " above the average of {0:.2%}".format(averageOfPercentDropped))
+	mergedStats = getStatistics()
+	
+	# Display table of Customer CPEs with most packets dropped
+	x = PrettyTable()
+	x.field_names = ["Device Name", "IP Address", "Upload % Dropped", "Download % Dropped"]
+	sortableList = []
+	pickTop = 30
+	for stat in mergedStats:
+		name = stat['identification']['name']
+		ipAddr = stat['identification']['ipAddr']
+		srcDropped = stat['src']['percentageDropped']
+		dstDropped = stat['dst']['percentageDropped']
+		avgDropped = (srcDropped + dstDropped)/2
+		sortableList.append((name, ipAddr, srcDropped, dstDropped, avgDropped))
+	res = sorted(sortableList, key = itemgetter(4), reverse = True)[:pickTop]
+	for stat in res:
+		name, ipAddr, srcDropped, dstDropped, avgDropped = stat
+		if not name:
+			name = ipAddr
+		srcDroppedString =  "{0:.2%}".format(srcDropped)
+		dstDroppedString =  "{0:.2%}".format(dstDropped)
+		x.add_row([name, ipAddr, srcDroppedString, dstDroppedString])
+	print(x)

@@ -19,7 +19,7 @@
 #           | |   | | '_ \| '__/ _ \ | | |/ _ \___ \ 
 #           | |___| | |_) | | |  __/ |_| | (_) |__) |
 #           |_____|_|_.__/|_|  \___|\__\_\\___/____/
-#                          v.0.7-alpha
+#                          v.0.71-alpha
 #
 import requests
 from ispConfig import orgLibreNMSxAuthToken, libreNMSBaseURL, libreNMSDeviceGroups

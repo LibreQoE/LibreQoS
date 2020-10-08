@@ -19,7 +19,7 @@
 #           | |   | | '_ \| '__/ _ \ | | |/ _ \___ \ 
 #           | |___| | |_) | | |  __/ |_| | (_) |__) |
 #           |_____|_|_.__/|_|  \___|\__\_\\___/____/
-#                          v.0.7-alpha
+#                          v.0.71-alpha
 #
 import random
 import logging
@@ -250,7 +250,9 @@ def refreshShapers():
 			recap = "Applied rate limiting of " + downloadSpeed + " down " + uploadSpeed + " up to device " + ipAddr
 		logging.info(recap)
 		print(recap)
-	print(str(len(shapableDevices)) + " device rules (" + str(len(shapableDevices)*2) + " filter rules) were applied this round")
+	totalChanges = str(len(shapableDevices)) + " device rules (" + str(len(shapableDevices)*2) + " filter rules) were applied this round"
+	logging.info(totalChanges)
+	print(totalChanges)
 	
 	#Done
 	currentTimeString = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
