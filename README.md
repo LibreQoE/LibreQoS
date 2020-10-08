@@ -35,10 +35,7 @@ The impact of fq_codel on a DSL connection — a 100x latency reduction.
 * Recent Linux kernel for up-to-date linux tc package. Ubuntu Server 20.04.1+ recommended
 ### VM Performance
 #### Memory use
-On ProxMox VMs you need to do <a href="https://www.reddit.com/r/Proxmox/comments/asakcb/problem_with_ram_cache/">some tweaks</a>  to allow freed up memory to be reclaimed by the hypervisor. Generally memory use should be under 2GB if you have less than 2000 hosts. If for any reason memory exceeds what it should be, try
-```
-sudo sh -c 'echo 1 >/proc/sys/vm/drop_caches'
-```
+On ProxMox VMs you need to do <a href="https://www.reddit.com/r/Proxmox/comments/asakcb/problem_with_ram_cache/">some tweaks</a>  to allow freed up memory to be reclaimed by the hypervisor.
 #### Disable Offloading in Guest VM
 Performance can greatly benefit from disabling certain hardware offloading inside the guest VM. If you're using a system that uses Netplan (e.g. Ubuntu) to configure the network then you can use a Netplan post-up script to configure offloading. You create a script in the following directory with a name prefixed by a number to indicate load order e.g. /etc/networkd-dispatcher/routable.d/40-offloading-config - which is executable and owned by root. e.g. To switch off TCP Segment Offloading on eth0:
 ```
@@ -90,6 +87,11 @@ Then run
 ```
 sudo systemctl start LibreQoS.service
 ```
+## Memory use
+Generally memory use should be under 2GB if you have less than 4000 host rules. If for any reason memory exceeds what it should be, try
+```
+sudo sh -c 'echo 1 >/proc/sys/vm/drop_caches'
+```
 ## Real World Performance
 This customer is using a Ubiquiti LTU-LR CPE with QoS shaping applied at 215Mbps down and 30Mbps up.
 
@@ -103,17 +105,17 @@ This customer is using a Ubiquiti LTU-LR CPE with QoS shaping applied at 215Mbps
     * Passmark score of 13,000 or more (AMD Ryzen 5 2600 or better)
 * For up to 2Gbps
     * 6+ CPU cores
-    * 6GB RAM
+    * 4GB RAM
     * 32GB Disk Space
     * Passmark score of 17,000 or more (AMD Ryzen 5 3600 or better)
 * For up to 5Gbps
     * 8+ CPU cores
-    * 8GB RAM
+    * 6GB RAM
     * 32GB Disk Space
     * Passmark score of 23,000 or more (AMD Ryzen 7 3800X or better)
 * For up to 10Gbps
     * 16+ CPU cores
-    * 16GB RAM
+    * 8GB RAM
     * 32GB Disk Space
     * Passmark score of 38,000 or more (AMD Ryzen 9 3950X or better)
 
