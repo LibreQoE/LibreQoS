@@ -19,241 +19,231 @@
 #           | |   | | '_ \| '__/ _ \ | | |/ _ \___ \ 
 #           | |___| | |_) | | |  __/ |_| | (_) |__) |
 #           |_____|_|_.__/|_|  \___|\__\_\\___/____/
-#                          v.0.71-alpha
+#                          v.0.75-alpha
 #
 import random
 import logging
 import os
+import io
 import json
+import csv
 import subprocess
 from subprocess import PIPE
 import ipaddress
+from ipaddress import IPv4Address, IPv6Address
 import time
 from datetime import date, datetime
-from UNMS_Integration import pullUNMSDevices
-from LibreNMS_Integration import pullLibreNMSDevices
-from ispConfig import fqOrCAKE, pipeBandwidthCapacityMbps, interfaceA, interfaceB, addTheseSubnets, enableActualShellCommands, runShellCommandsAsSudo, importFromUNMS, importFromLibreNMS
+from ispConfig import fqOrCAKE, pipeBandwidthCapacityMbps, interfaceA, interfaceB, enableActualShellCommands, runShellCommandsAsSudo
 
-def shell(inputCommand):
+def shell(command):
 	if enableActualShellCommands:
 		if runShellCommandsAsSudo:
-			inputCommand = 'sudo ' + inputCommand
-		inputCommandSplit = inputCommand.split(' ')
-		print(inputCommand)
-		result = subprocess.run(inputCommandSplit, stdout=subprocess.PIPE)
-		print(result.stdout)
+			command = 'sudo ' + command
+		commands = command.split(' ')
+		print(command)
+		proc = subprocess.Popen(commands, stdout=subprocess.PIPE)
+		for line in io.TextIOWrapper(proc.stdout, encoding="utf-8"):  # or another encoding
+			print(line)
 	else:
-		print(inputCommand)
-	
+		print(command)
+
+def clearMemoryCache():
+	command = "sudo sh -c 'echo 1 >/proc/sys/vm/drop_caches'"
+	commands = command.split(' ')
+	proc = subprocess.Popen(commands, stdout=subprocess.PIPE)
+	for line in io.TextIOWrapper(proc.stdout, encoding="utf-8"):
+		print(line)
+
 def clearPriorSettings(interfaceA, interfaceB):
 	shell('tc filter delete dev ' + interfaceA)
 	shell('tc filter delete dev ' + interfaceA + ' root')
-	shell('tc qdisc delete dev ' + interfaceA)
 	shell('tc qdisc delete dev ' + interfaceA + ' root')
+	shell('tc qdisc delete dev ' + interfaceA)
 	shell('tc filter delete dev ' + interfaceB)
 	shell('tc filter delete dev ' + interfaceB + ' root')
+	shell('tc qdisc delete dev ' + interfaceB + ' root')
 	shell('tc qdisc delete dev ' + interfaceB)
-	shell('tc qdisc delete dev ' + interfaceB + ' root') 
-
-def getHashList():
-	twoDigitHash = []
-	letters = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z']
-	for i in range(10):
-		for x in range(26):
-			twoDigitHash.append(str(i) + letters[x])
-	return twoDigitHash
-
-def addCustomersBySubnet(inputBlock):
-	addTheseSubnets, existingShapableDevices = inputBlock
-	customersToAdd = []
-	for subnetItem in addTheseSubnets:
-		ipcidr, downloadMbps, uploadMbps = subnetItem
-		theseHosts = list(ipaddress.ip_network(ipcidr).hosts())
-		for host in theseHosts:
-			deviceIP = str(host)
-			alreadyAssigned = False
-			for device in existingShapableDevices:
-				if deviceIP == device['identification']['ipAddr']:
-					alreadyAssigned = True
-			if not alreadyAssigned:
-				thisShapedDevice = {
-					"identification": {
-					  "name": None,
-					  "hostname": None,
-					  "ipAddr": deviceIP,
-					  "mac": None,
-					  "model": None,
-					  "modelName": None,
-					  "unmsSiteID": None,
-					  "libreNMSSiteID": None
-					},
-					"qos": {
-					  "downloadMbps": downloadMbps,
-					  "uploadMbps": uploadMbps,
-					  "accessPoint": None
-					},
-				}
-				customersToAdd.append(thisShapedDevice)
-	return customersToAdd
+	if runShellCommandsAsSudo:
+		clearMemoryCache()
 
 def refreshShapers():
-	#Clients
-	shapableDevices = []
-	
-	#Bring in clients from UNMS or LibreNMS if enabled
-	if importFromUNMS:
-		shapableDevices.extend(pullUNMSDevices())
-	if importFromLibreNMS:
-		shapableDevices.extend(pullLibreNMSDevices())
-
-	#Add customers by subnet. Will not replace those that already exist
-	if addTheseSubnets:
-		shapableDevices.extend(addCustomersBySubnet((addTheseSubnets, shapableDevices)))
-
-	#Categorize Clients By IPv4 /16
-	listOfSlash16SubnetsInvolved = []
-	shapableDevicesListWithSubnet = []
-	for device in shapableDevices:
-		ipAddr = device['identification']['ipAddr']
-		dec1, dec2, dec3, dec4 = ipAddr.split('.')
-		slash16 = dec1 + '.' + dec2 + '.0.0'
-		if slash16 not in listOfSlash16SubnetsInvolved:
-			listOfSlash16SubnetsInvolved.append(slash16)
-		shapableDevicesListWithSubnet.append((ipAddr))
+	devices = []
+	filterHandleCounter = 101
+	#Load Devices
+	with open('Shaper.csv') as csv_file:
+		csv_reader = csv.reader(csv_file, delimiter=',')
+		next(csv_reader)
+		for row in csv_reader:
+			deviceID, hostname,	ipv4, ipv6, download, upload = row
+			thisDevice = {
+			  "id": deviceID,
+			  "hostname": hostname,
+			  "ipv4": ipv4,
+			  "ipv6": ipv6,
+			  "download": int(download),
+			  "upload": int(upload),
+			  "qdiscSrc": '',
+			  "qdiscDst": '',
+			}
+			devices.append(thisDevice)
 	
 	#Clear Prior Configs
 	clearPriorSettings(interfaceA, interfaceB)
 	
+	shell('tc filter delete dev ' + interfaceA + ' parent 1: u32')
+	shell('tc filter delete dev ' + interfaceB + ' parent 2: u32')
+	
+	ipv4FiltersSrc = []		
+	ipv4FiltersDst = []
+	ipv6FiltersSrc = []
+	ipv6FiltersDst = []
+	
 	#InterfaceA
 	parentIDFirstPart = 1
 	srcOrDst = 'dst'
+	thisInterface = interfaceA
 	classIDCounter = 101
 	hashIDCounter = parentIDFirstPart + 1
-	shell('tc qdisc replace dev ' + interfaceA + ' root handle ' + str(parentIDFirstPart) + ': htb default 1') 
-	shell('tc class add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ': classid ' + str(parentIDFirstPart) + ':1 htb rate '+ str(pipeBandwidthCapacityMbps) + 'mbit')
-	for slash16 in listOfSlash16SubnetsInvolved:
-		#X.X.0.0
-		thisSlash16Dec1 = slash16.split('.')[0]
-		thisSlash16Dec2 = slash16.split('.')[1]
-		groupedCustomers = []	
-		for i in range(256):
-			tempList = []
-			for ipAddr in shapableDevicesListWithSubnet:
-				dec1, dec2, dec3, dec4 = ipAddr.split('.')
-				if (dec1 == thisSlash16Dec1) and (dec2 == thisSlash16Dec2) and (dec4 == str(i)):
-					tempList.append(ipAddr)
-			if len(tempList) > 0:
-				groupedCustomers.append(tempList)
-		shell('tc filter add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ': prio 5 u32')
-		shell('tc filter add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ': prio 5 handle ' + str(hashIDCounter) + ': u32 divisor 256')
-		thirdDigitCounter = 0
-		handleIDSecond = 1
-		while thirdDigitCounter <= 255:	
-			if len(groupedCustomers) > 0:
-				currentIPList = groupedCustomers.pop()
-				tempHashList = getHashList()
-				for ipAddr in currentIPList:
-					for device in shapableDevices:
-						if device['identification']['ipAddr'] == ipAddr:
-							downloadSpeed = device['qos']['downloadMbps']
-							uploadSpeed = device['qos']['uploadMbps']
-					dec1, dec2, dec3, dec4 = ipAddr.split('.')
-					twoDigitHashString = hex(int(dec4)).replace('0x','')
-					shell('tc class add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ':1 classid ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' htb rate '+ str(downloadSpeed) + 'mbit ceil '+ str(downloadSpeed) + 'mbit prio 3') 
-					shell('tc qdisc add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' ' + fqOrCAKE)
-					shell('tc filter add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ': prio 5 u32 ht ' + str(hashIDCounter) + ':' + twoDigitHashString + ' match ip ' + srcOrDst + ' ' + ipAddr + ' flowid ' + str(parentIDFirstPart) + ':' + str(classIDCounter))
-					deviceQDiscID = str(parentIDFirstPart) + ':' + str(classIDCounter)
-					for device in shapableDevices:
-						if device['identification']['ipAddr'] == ipAddr:
-							if srcOrDst == 'src':
-								qdiscDict ={'qDiscSrc': deviceQDiscID}
-							elif srcOrDst == 'dst':
-								qdiscDict ={'qDiscDst': deviceQDiscID}
-							device['identification'].update(qdiscDict)
-					classIDCounter += 1
-			thirdDigitCounter += 1
-		if (srcOrDst == 'dst'):
-			startPointForHash = '16' #Position of dst-address in IP header
-		elif  (srcOrDst == 'src'):
-			startPointForHash = '12' #Position of src-address in IP header
-		shell('tc filter add dev ' + interfaceA + ' parent ' + str(parentIDFirstPart) + ': prio 5 u32 ht 800:: match ip ' + srcOrDst + ' '+ thisSlash16Dec1 + '.' + thisSlash16Dec2 + '.0.0/16 hashkey mask 0x000000ff at ' + startPointForHash + ' link ' + str(hashIDCounter) + ':')
-		hashIDCounter += 1
+	shell('tc qdisc replace dev ' + thisInterface + ' root handle ' + str(parentIDFirstPart) + ': htb default 15') 
+	shell('tc class add dev ' + thisInterface + ' parent ' + str(parentIDFirstPart) + ': classid ' + str(parentIDFirstPart) + ':1 htb rate '+ str(pipeBandwidthCapacityMbps) + 'mbit')
+	shell('tc qdisc add dev ' + thisInterface + ' parent 1:1 fq_codel')
+	#Default class - traffic gets passed through this limiter if not otherwise classified by the Shaper.csv
+	shell('tc class add dev ' + thisInterface + ' parent 1:1 classid 1:15 htb rate 750mbit ceil 750mbit prio 5')
+	shell('tc qdisc add dev ' + thisInterface + ' parent 1:15 fq_codel')
+	handleIDSecond = 1
+	for device in devices:
+		speedcap = 0
+		if srcOrDst == 'dst':
+			speedcap = device['download']
+		elif srcOrDst == 'src':
+			 speedcap = device['upload']
+		#Create Hash Table
+		shell('tc class add dev ' + thisInterface + ' parent 1:1 classid 1:' + str(classIDCounter) + ' htb rate '+ str(speedcap) + 'mbit ceil '+ str(round(speedcap*1.1)) + 'mbit prio 3') 
+		shell('tc qdisc add dev ' + thisInterface + ' parent 1:' + str(classIDCounter) + ' ' + fqOrCAKE)
+		if device['ipv4']:
+			parentString = '1:'
+			flowIDstring = str(parentIDFirstPart) + ':' + str(classIDCounter)
+			ipv4FiltersDst.append((device['ipv4'], parentString, flowIDstring))
+		if device['ipv6']:
+			parentString = '1:'
+			flowIDstring = str(parentIDFirstPart) + ':' + str(classIDCounter)
+			ipv6FiltersDst.append((device['ipv6'], parentString, flowIDstring))
+		deviceQDiscID = str(parentIDFirstPart) + ':' + str(classIDCounter)
+		if srcOrDst == 'src':
+			device['qdiscSrc'] = deviceQDiscID
+		elif srcOrDst == 'dst':
+			device['qdiscDst'] = deviceQDiscID
+		classIDCounter += 1
+	hashIDCounter += 1
 	
 	#InterfaceB
-	parentIDFirstPart = hashIDCounter + 1
-	hashIDCounter = parentIDFirstPart + 1
+	parentIDFirstPart = 2
 	srcOrDst = 'src'
-	shell('tc qdisc replace dev ' + interfaceB + ' root handle ' + str(parentIDFirstPart) + ': htb default 1') 
-	shell('tc class add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ': classid ' + str(parentIDFirstPart) + ':1 htb rate '+ str(pipeBandwidthCapacityMbps) + 'mbit')
-	for slash16 in listOfSlash16SubnetsInvolved:
-		#X.X.0.0
-		thisSlash16Dec1 = slash16.split('.')[0]
-		thisSlash16Dec2 = slash16.split('.')[1]
-		groupedCustomers = []	
-		for i in range(256):
-			tempList = []
-			for ipAddr in shapableDevicesListWithSubnet:
-				dec1, dec2, dec3, dec4 = ipAddr.split('.')
-				if (dec1 == thisSlash16Dec1) and (dec2 == thisSlash16Dec2) and (dec4 == str(i)):
-					tempList.append(ipAddr)
-			if len(tempList) > 0:
-				groupedCustomers.append(tempList)
-		shell('tc filter add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ': prio 5 u32')
-		shell('tc filter add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ': prio 5 handle ' + str(hashIDCounter) + ': u32 divisor 256')
-		thirdDigitCounter = 0
-		handleIDSecond = 1
-		while thirdDigitCounter <= 255:	
-			if len(groupedCustomers) > 0:
-				currentIPList = groupedCustomers.pop()
-				tempHashList = getHashList()
-				for ipAddr in currentIPList:
-					for device in shapableDevices:
-						if device['identification']['ipAddr'] == ipAddr:
-							downloadSpeed = device['qos']['downloadMbps']
-							uploadSpeed = device['qos']['uploadMbps']
-					dec1, dec2, dec3, dec4 = ipAddr.split('.')
-					twoDigitHashString = hex(int(dec4)).replace('0x','')
-					shell('tc class add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ':1 classid ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' htb rate '+ str(uploadSpeed) + 'mbit ceil '+ str(uploadSpeed) + 'mbit prio 3') 
-					shell('tc qdisc add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ':' + str(classIDCounter) + ' ' + fqOrCAKE)
-					shell('tc filter add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ': prio 5 u32 ht ' + str(hashIDCounter) + ':' + twoDigitHashString + ' match ip ' + srcOrDst + ' ' + ipAddr + ' flowid ' + str(parentIDFirstPart) + ':' + str(classIDCounter))
-					deviceQDiscID = str(parentIDFirstPart) + ':' + str(classIDCounter)
-					for device in shapableDevices:
-						if device['identification']['ipAddr'] == ipAddr:
-							if srcOrDst == 'src':
-								qdiscDict ={'qDiscSrc': deviceQDiscID}
-							elif srcOrDst == 'dst':
-								qdiscDict ={'qDiscDst': deviceQDiscID}
-							device['identification'].update(qdiscDict)
-					classIDCounter += 1
-			thirdDigitCounter += 1
-		if (srcOrDst == 'dst'):
-			startPointForHash = '16' #Position of dst-address in IP header
-		elif  (srcOrDst == 'src'):
-			startPointForHash = '12' #Position of src-address in IP header
-		shell('tc filter add dev ' + interfaceB + ' parent ' + str(parentIDFirstPart) + ': prio 5 u32 ht 800:: match ip ' + srcOrDst + ' '+ thisSlash16Dec1 + '.' + thisSlash16Dec2 + '.0.0/16 hashkey mask 0x000000ff at ' + startPointForHash + ' link ' + str(hashIDCounter) + ':')
-		hashIDCounter += 1
+	thisInterface = interfaceB
+	classIDCounter = 101
+	hashIDCounter = parentIDFirstPart + 1
+	shell('tc qdisc replace dev ' + thisInterface + ' root handle ' + str(parentIDFirstPart) + ': htb default 15') 
+	shell('tc class add dev ' + thisInterface + ' parent ' + str(parentIDFirstPart) + ': classid ' + str(parentIDFirstPart) + ':1 htb rate '+ str(pipeBandwidthCapacityMbps) + 'mbit')
+	#Default class - traffic gets passed through this limiter if not otherwise classified by the Shaper.csv
+	shell('tc class add dev ' + thisInterface + ' parent 2:1 classid 2:15 htb rate 750mbit ceil 750mbit prio 5')
+	shell('tc qdisc add dev ' + thisInterface + ' parent 2:15 fq_codel')
+	handleIDSecond = 1
+	for device in devices:
+		speedcap = 0
+		if srcOrDst == 'dst':
+			speedcap = device['download']
+		elif srcOrDst == 'src':
+			 speedcap = device['upload']
+		#Create Hash Table
+		shell('tc class add dev ' + thisInterface + ' parent 2:1 classid 2:' + str(classIDCounter) + ' htb rate '+ str(speedcap) + 'mbit ceil '+ str(round(speedcap*1.1)) + 'mbit prio 3') 
+		shell('tc qdisc add dev ' + thisInterface + ' parent 2:' + str(classIDCounter) + ' ' + fqOrCAKE)
+		if device['ipv4']:
+			parentString = '2:'
+			flowIDstring = str(parentIDFirstPart) + ':' + str(classIDCounter)
+			ipv4FiltersSrc.append((device['ipv4'], parentString, flowIDstring))
+		if device['ipv6']:
+			parentString = '2:'
+			flowIDstring = str(parentIDFirstPart) + ':' + str(classIDCounter)
+			ipv6FiltersSrc.append((device['ipv6'], parentString, flowIDstring))
+		deviceQDiscID = str(parentIDFirstPart) + ':' + str(classIDCounter)
+		if srcOrDst == 'src':
+			device['qdiscSrc'] = deviceQDiscID
+		elif srcOrDst == 'dst':
+			device['qdiscDst'] = deviceQDiscID
+		classIDCounter += 1
+	hashIDCounter += 1
+
+	shell('tc filter add dev ' + interfaceA + ' parent 1: protocol all u32')
+	shell('tc filter add dev ' + interfaceB + ' parent 2: protocol all u32')
 	
-	#Save shapableDevices to file to allow for debugging and statistics runs
-	with open('shapableDevices.json', 'w') as outfile:
-		json.dump(shapableDevices, outfile)
+	#IPv4 Hash Filters
+	#Dst
+	interface = interfaceA
+	shell('tc filter add dev ' + interface + ' parent 1: protocol ip handle 3: u32 divisor 256')
+
+	for i in range (256):
+		hexID = str(hex(i)).replace('0x','')
+		for ipv4Filter in ipv4FiltersDst:
+			ipv4, parent, classid = ipv4Filter
+			if '/' in ipv4:
+				ipv4 = ipv4.split('/')[0]
+			if (ipv4.split('.', 3)[3]) == str(i):
+				filterHandle = hex(filterHandleCounter)
+				shell('tc filter add dev ' + interface + ' handle ' + filterHandle + ' protocol ip parent 1:1 u32 ht 3:' + hexID + ': match ip dst ' + ipv4 + ' flowid ' + classid)
+				filterHandleCounter += 1 
+	shell('tc filter add dev ' + interface + ' protocol ip parent 1: u32 ht 800: match ip dst 0.0.0.0/0 hashkey mask 0x000000ff at 16 link 3:')
 	
-	#Recap and log
-	logging.basicConfig(level=logging.INFO, filename="log", filemode="a+",	format="%(asctime)-15s %(levelname)-8s %(message)s")
-	for device in shapableDevices:
-		ipAddr = device['identification']['ipAddr']
-		hostname = device['identification']['hostname']
-		downloadSpeed = str(device['qos']['downloadMbps'])
-		uploadSpeed = str(device['qos']['uploadMbps'])
-		if hostname:
-			recap = "Applied rate limiting of " + downloadSpeed + " down " + uploadSpeed + " up to device " + hostname
-		else:
-			recap = "Applied rate limiting of " + downloadSpeed + " down " + uploadSpeed + " up to device " + ipAddr
-		logging.info(recap)
-		print(recap)
-	totalChanges = str(len(shapableDevices)) + " device rules (" + str(len(shapableDevices)*2) + " filter rules) were applied this round"
-	logging.info(totalChanges)
-	print(totalChanges)
+	#Src
+	interface = interfaceB
+	shell('tc filter add dev ' + interface + ' parent 2: protocol ip handle 4: u32 divisor 256')
+
+	for i in range (256):
+		hexID = str(hex(i)).replace('0x','')
+		for ipv4Filter in ipv4FiltersSrc:
+			ipv4, parent, classid = ipv4Filter
+			if '/' in ipv4:
+				ipv4 = ipv4.split('/')[0]
+			if (ipv4.split('.', 3)[3]) == str(i):
+				filterHandle = hex(filterHandleCounter)
+				shell('tc filter add dev ' + interface + ' handle ' + filterHandle + ' protocol ip parent 2:1 u32 ht 4:' + hexID + ': match ip src ' + ipv4 + ' flowid ' + classid)
+				filterHandleCounter += 1
+	shell('tc filter add dev ' + interface + ' protocol ip parent 2: u32 ht 800: match ip src 0.0.0.0/0 hashkey mask 0x000000ff at 12 link 4:')
+
+	#IPv6 Hash Filters
+	#Dst
+	interface = interfaceA
+	shell('tc filter add dev ' + interface + ' parent 1: handle 5: protocol ipv6 u32 divisor 256')
+
+	for ipv6Filter in ipv6FiltersDst:
+		ipv6, parent, classid = ipv6Filter
+		withoutCIDR = ipv6.split('/')[0]
+		third = str(IPv6Address(withoutCIDR).exploded).split(':',5)[3]
+		usefulPart = third[:2]
+		hexID = usefulPart
+		filterHandle = hex(filterHandleCounter)
+		shell('tc filter add dev ' + interface + ' handle ' + filterHandle + ' protocol ipv6 parent 1: u32 ht 5:' + hexID + ': match ip6 dst ' + ipv6 + ' flowid ' + classid)
+		filterHandleCounter += 1
+	filterHandle = hex(filterHandleCounter)
+	shell('tc filter add dev ' + interface + ' protocol ipv6 parent 1: u32 ht 800:: match ip6 dst ::/0 hashkey mask 0x0000ff00 at 28 link 5:')
+	filterHandleCounter += 1
 	
+	#Src
+	interface = interfaceB
+	shell('tc filter add dev ' + interface + ' parent 2: handle 6: protocol ipv6 u32 divisor 256')
+
+	for ipv6Filter in ipv6FiltersSrc:
+		ipv6, parent, classid = ipv6Filter
+		withoutCIDR = ipv6.split('/')[0]
+		third = str(IPv6Address(withoutCIDR).exploded).split(':',5)[3]
+		usefulPart = third[:2]
+		hexID = usefulPart
+		filterHandle = hex(filterHandleCounter)
+		shell('tc filter add dev ' + interface + ' handle ' + filterHandle + ' protocol ipv6 parent 2: u32 ht 6:' + hexID + ': match ip6 src ' + ipv6 + ' flowid ' + classid)
+		filterHandleCounter += 1
+	filterHandle = hex(filterHandleCounter)
+	shell('tc filter add dev ' + interface + ' protocol ipv6 parent 2: u32 ht 800:: match ip6 src ::/0 hashkey mask 0x0000ff00 at 12 link 6:')
+	filterHandleCounter += 1
+
 	#Done
 	currentTimeString = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 	print("Successful run completed on " + currentTimeString)
