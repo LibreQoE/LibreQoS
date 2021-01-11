@@ -4,7 +4,7 @@ LibreQoS is an application that allows you to apply fq_codel traffic shaping to 
 ## How does fq_codel work?
 Fq_codel distinguishes interactive flows of traffic (web browsing, audio streaming, VoIP, gaming) from bulk traffic (streaming video services, software updates). Interactive flows are prioritized to optimize their performance, while bulk traffic gets steady throughput and variable latency. The general reduction of connection latency offered by fq_codel is highly beneficial to end-users.
 
-<img src="docs/latency_reduction" width="500">
+<img src="docs/latency_reduction.png" width="500">
 
 The impact of fq_codel on a 3000Mbps connection — a 30x latency reduction.
 >“FQ_Codel provides great isolation... if you've got low-rate videoconferencing and low rate web traffic they never get dropped. A lot of issues with IW10 go away, because all the other traffic sees is the front of the queue. You don't know how big its window is, but you don't care because you are not affected by it. FQ_Codel increases utilization across your entire networking fabric, especially for bidirectional traffic... If we're sticking code into boxes to deploy codel, don't do that. Deploy fq_codel. It's just an across the board win.”
