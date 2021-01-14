@@ -98,7 +98,11 @@ sudo sh -c 'echo 1 >/proc/sys/vm/drop_caches'
 * Choose a CPU with solid single-thread performance within your budget
 * Generally speaking any new CPU above $200 can probably handle shaping over 2Gbps
 https://www.cpubenchmark.net/high_end_cpus.html
+## Donate
+To support 1000 subscribers using proprietary implementations of fq_codel would cost the average small ISP $6000 per year. LibreQoS is developed by a fledgling ISP that hopes to help fellow ISPs grow. We are asking you to donate any reasonable amount you feel is within your means. For example if this application helps you traffic shape 500 subscribers, please consider donating $0.2/sub/month ($100/month). That's 60% less than any proprietary solution, and you get direct access to source code to tinker with LibreQoS and its HTB+fq_codel shaper to optimize your network's performance. Supporting us allows us to continue improving and scaling up LibreQoS.
 
+[![Donate with Liberapay](docs/donate1.png?raw=true)](https://liberapay.com/libreqos/)
+[![Donate with PayPal](docs/donate2.png?raw=true)](https://www.paypal.com/donate?hosted_button_id=EFAFBW9E66MB8)
 ## Special Thanks
 Thank you to the hundreds of contributors to the fq_codel and cake projects, especially Dave Taht. Thank you to Phil Sutter, Bert Hubert, Gregory Maxwell, Remco van Mook, Martijn van Oosterhout, Paul B Schroeder, and Jasper Spaans for contributing to the guides and documentation listed below.
 
