@@ -18,6 +18,7 @@ The impact of fq_codel on a 3000Mbps connection — a 30x latency reduction.
    * VM running LibreQoS with 1000 client rules uses just 250MB RAM on average
 * Simple client management through csv file
 * Simple statistics - table shows top 20 subscribers by packet loss, with APs listed
+![Stats](docs/stats.png?raw=true "Stats")
 ## Limitations
 * Linux tc hash tables can only handle ~4000 rules each. This limits total possible clients to 2000 single-protocol clients (IPv4 only / IPv6 only) or 1000 dual stack clients. Eventually we will rework the code to allow for more clients by linking more hash tables.
 ## Requirements
