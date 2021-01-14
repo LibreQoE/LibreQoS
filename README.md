@@ -17,8 +17,9 @@ The impact of fq_codel on a 3000Mbps connection — a 30x latency reduction.
 * TC filters divided into groups with hashing filters to significantly increase efficiency and minimize resource use
    * VM running LibreQoS with 1000 client rules uses just 250MB RAM on average
 * Simple client management through csv file
+* Simple statistics - table shows top 20 subscribers by packet loss, with APs listed
 ## Limitations
-* Linux tc hash tables can only handle ~4000 rules each. This limits total possible clients to 2000 single-protocol clients (IPv4 only / IPv6 only) or 1000 dual stack clients. Eventually we will rework the code to allow for more clients by linking to hash tables.
+* Linux tc hash tables can only handle ~4000 rules each. This limits total possible clients to 2000 single-protocol clients (IPv4 only / IPv6 only) or 1000 dual stack clients. Eventually we will rework the code to allow for more clients by linking more hash tables.
 ## Requirements
 * Edge and Core routers with MTU 1500 on links between them
    * If you use MPLS, you would terminate MPLS traffic at the core router. LibreQoS cannot decapsulate MPLS on its own.
@@ -31,9 +32,9 @@ The impact of fq_codel on a 3000Mbps connection — a 30x latency reduction.
 * Network interface NIC supporting two virtual interfaces for traffic shaping (in/out), preferably SFP+ capable
   * <a href="https://www.fs.com/products/75600.html">Intel X710</a> recommended for anything over 1Gbps.
 * Python 3
-  * python3 -m pip install ipaddress schedule
+  * python3 -m pip install ipaddress schedule prettytable
   * If running as service:
-   * sudo python3 -m pip install ipaddress schedule
+   * sudo python3 -m pip install ipaddress schedule prettytable
 * Recent Linux kernel for up-to-date linux tc package. Ubuntu Server 20.04.1+ recommended
 ### VM Performance
 #### Memory use
