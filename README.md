@@ -101,10 +101,7 @@ https://www.cpubenchmark.net/high_end_cpus.html
 ## Donate
 LibreQoS is based on fq_codel - an open source project led by Dave Taht, and contrinuted to by dozens of others. Without Dave's work, there would be no LibreQoS, Preseem, or Sensei. Please contribute to Dave's patreon here: https://www.patreon.com/dtaht
 
-To support 1000 subscribers using proprietary wrappers for fq_codel would cost the average small ISP $6000 per year. If this application helps your network, please consider donating to Dave's patreon or LibreQoS. Donating just $0.2/sub/month ($100/month for 500 subs) comes out to be 60% less than any proprietary solution, and you get direct access to source code to tinker with LibreQoS and its HTB+fq_codel shaper to optimize your network's performance.
-
-[![Donate with Liberapay](docs/donate1.png?raw=true)](https://liberapay.com/libreqos/donate)
-[![Donate with PayPal](docs/donate2.png?raw=true)](https://www.paypal.com/donate?hosted_button_id=EFAFBW9E66MB8)
+To support 1000 subscribers using proprietary wrappers for fq_codel would cost the average small ISP $6000 per year. If this application helps your network, please consider donating to Dave's patreon. Donating just $0.2/sub/month ($100/month for 500 subs) comes out to be 60% less than any proprietary solution, and you get direct access to our source code to tinker with LibreQoS and its HTB+fq_codel shaper to optimize your network's performance.
 ## Special Thanks
 Thank you to the hundreds of contributors to the fq_codel and cake projects, especially Dave Taht. Thank you to Phil Sutter, Bert Hubert, Gregory Maxwell, Remco van Mook, Martijn van Oosterhout, Paul B Schroeder, and Jasper Spaans for contributing to the guides and documentation listed below.
 
