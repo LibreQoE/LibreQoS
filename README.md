@@ -91,27 +91,13 @@ Generally memory use should be under 2GB. If for any reason memory exceeds that,
 ```
 sudo sh -c 'echo 1 >/proc/sys/vm/drop_caches'
 ```
-## Server Spec Recommendations
+## Server CPU Recommendations
 * For up to 1Gbps
-    * 4+ CPU cores
-    * 4GB RAM
-    * 32GB Disk Space
     * Passmark score of 13,000 or more (AMD Ryzen 5 2600 or better)
 * For up to 2Gbps
-    * 6+ CPU cores
-    * 4GB RAM
-    * 32GB Disk Space
     * Passmark score of 17,000 or more (AMD Ryzen 5 3600 or better)
 * For up to 5Gbps
-    * 8+ CPU cores
-    * 6GB RAM
-    * 32GB Disk Space
     * Passmark score of 23,000 or more (AMD Ryzen 7 3800X or better)
-* For up to 10Gbps
-    * 16+ CPU cores
-    * 8GB RAM
-    * 32GB Disk Space
-    * Passmark score of 38,000 or more (AMD Ryzen 9 3950X or better)
 
 https://www.cpubenchmark.net/high_end_cpus.html
 
