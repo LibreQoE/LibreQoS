@@ -91,11 +91,6 @@ Generally memory use should be under 2GB. If for any reason memory exceeds that,
 ```
 sudo sh -c 'echo 1 >/proc/sys/vm/drop_caches'
 ```
-## Real World Performance
-This customer is using a Ubiquiti LTU-LR CPE with QoS shaping applied at 215Mbps down and 30Mbps up.
-
-<img src="docs/customerExample.jpg" width="500">
-
 ## Server Spec Recommendations
 * For up to 1Gbps
     * 4+ CPU cores
