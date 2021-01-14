@@ -14,11 +14,9 @@ The impact of fq_codel on a 3000Mbps connection — a 30x latency reduction.
 * Up to 2000 IPv4 clients or up to 1000 dual stack clients
 * HTB + fq_codel
 * Experimental support for CAKE (Common Applications Kept Enhanced)
-* TC filters divided into groups with hashing filters to significantly increase efficiency and minimize resource use
-   * VM running LibreQoS with 1000 client rules uses just 250MB RAM on average
-* Simple client management through csv file
+* TC filters split into groups through hashing filters to significantly increase throughput
+* Simple client management via csv file
 * Simple statistics - table shows top 20 subscribers by packet loss, with APs listed
-![Stats](docs/stats.png?raw=true "Stats")
 ## Limitations
 * Linux tc hash tables can only handle ~4000 rules each. This limits total possible clients to 2000 single-protocol clients (IPv4 only / IPv6 only) or 1000 dual stack clients. Eventually we will rework the code to allow for more clients by linking more hash tables.
 ## Requirements
@@ -29,8 +27,8 @@ The impact of fq_codel on a 3000Mbps connection — a 30x latency reduction.
 ![Diagram](docs/diagram.png?raw=true "Diagram")
 ### Server Requirements
 * VM or physical server
-* One management network interface, completely seperate from the traffic shaping interface NIC. Can be NATed behind motherboard Gigabit Ethernet, that's fine.
-* Network interface NIC supporting two virtual interfaces for traffic shaping (in/out), preferably SFP+ capable
+* One management network interface, completely seperate from the traffic shaping interface NIC.
+* NIC supporting two virtual interfaces for traffic shaping (in/out), preferably SFP+ capable
   * <a href="https://www.fs.com/products/75600.html">Intel X710</a> recommended for anything over 1Gbps.
 * Python 3
   * python3 -m pip install ipaddress schedule prettytable
@@ -39,7 +37,7 @@ The impact of fq_codel on a 3000Mbps connection — a 30x latency reduction.
 * Recent Linux kernel for up-to-date linux tc package. Ubuntu Server 20.04.1+ recommended
 ### VM Performance
 #### Memory use
-On ProxMox VMs you need to do <a href="https://www.reddit.com/r/Proxmox/comments/asakcb/problem_with_ram_cache/">some tweaks</a>  to allow freed up memory to be reclaimed by the hypervisor.
+On ProxMox VMs you can enable <a href="https://www.reddit.com/r/Proxmox/comments/asakcb/problem_with_ram_cache/">ballooning memory</a>  to allow freed up memory to be reclaimed by the hypervisor.
 #### Enable Offloading in Guest VM
 Performance can greatly benefit from enabling certrain hardware offloading inside the guest VM. If you're using a system that uses Netplan (e.g. Ubuntu) to configure the network then you can use a Netplan post-up script to configure offloading. You create a script in the following directory with a name prefixed by a number to indicate load order e.g. /usr/lib/networkd-dispatcher/routable.d/10-enable-offloading - which is executable and owned by root. e.g.
 ```
@@ -86,19 +84,19 @@ Then run
 ```
 sudo systemctl start LibreQoS.service
 ```
+## Statistics
+```
+python3 ./stats.py
+```
+![Stats](docs/stats.png?raw=true "Stats")
 ## Memory use
 Generally memory use should be under 2GB. If for any reason memory exceeds that, please make sure memory ballooning is enabled on VM host, and try
 ```
 sudo sh -c 'echo 1 >/proc/sys/vm/drop_caches'
 ```
 ## Server CPU Recommendations
-* For up to 1Gbps
-    * Passmark score of 13,000 or more (AMD Ryzen 5 2600 or better)
-* For up to 2Gbps
-    * Passmark score of 17,000 or more (AMD Ryzen 5 3600 or better)
-* For up to 5Gbps
-    * Passmark score of 23,000 or more (AMD Ryzen 7 3800X or better)
-
+* Choose a CPU with solid single-thread performance within your budget
+* Generally speaking any new CPU above $200 can probably handle shaping over 2Gbps
 https://www.cpubenchmark.net/high_end_cpus.html
 
 ## Special Thanks
