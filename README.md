@@ -18,7 +18,8 @@ The impact of fq_codel on a 3000Mbps connection — a 30x latency reduction.
 * Simple client management via csv file
 * Simple statistics - table shows top 20 subscribers by packet loss, with APs listed
 ## Limitations
-* Linux tc hash tables can only handle ~4000 rules each. This limits total possible clients to 2000 single-protocol clients (IPv4 only / IPv6 only) or 1000 dual stack clients. Eventually we will rework the code to allow for more clients by linking more hash tables.
+* Tested up to 5Gbps/500Mbps asymmetrical throughput. Qdisc locking problem may require integrating <a href="https://github.com/netoptimizer/xdp-cpumap-tc">xdp-cpumap-tc</a> in future to increase bandwidth capacity.
+* Linux tc hash tables can only handle ~4000 rules each. This limits total possible clients to 1000 at this time. Eventually we will rework the code to allow for more clients by linking more hash tables.
 ## Requirements
 * Edge and Core routers with MTU 1500 on links between them
    * If you use MPLS, you would terminate MPLS traffic at the core router. LibreQoS cannot decapsulate MPLS on its own.
