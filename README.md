@@ -6,7 +6,7 @@ Fq_codel distinguishes interactive flows of traffic (web browsing, audio streami
 
 <img src="docs/latency.png" width="900">
 
-The impact of fq_codel on a 3000Mbps connection — a 30x latency reduction.
+The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x latency reduction.
 >“FQ_Codel provides great isolation... if you've got low-rate videoconferencing and low rate web traffic they never get dropped. A lot of issues with IW10 go away, because all the other traffic sees is the front of the queue. You don't know how big its window is, but you don't care because you are not affected by it. FQ_Codel increases utilization across your entire networking fabric, especially for bidirectional traffic... If we're sticking code into boxes to deploy codel, don't do that. Deploy fq_codel. It's just an across the board win.”
 > - Van Jacobson | IETF 84 Talk
 ## Features
