@@ -11,7 +11,7 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
 > - Van Jacobson | IETF 84 Talk
 ## Features
 * Dual stack: client can be shaped by same qdisc for both IPv4 and IPv6
-* Up to 2000 IPv4 clients or up to 1000 dual stack clients
+* Up to 1000 clients (IPv4/IPv6)
 * HTB + fq_codel
 * Experimental support for CAKE (Common Applications Kept Enhanced)
 * TC filters split into groups through hashing filters to significantly increase throughput
