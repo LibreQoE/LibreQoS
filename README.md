@@ -112,6 +112,7 @@ Thank you to the hundreds of contributors to the fq_codel and cake projects, esp
 * http://linux-tc-notes.sourceforge.net/tc/doc/cls_u32.txt
 * https://github.com/netoptimizer/xdp-cpumap-tc
 * https://stackoverflow.com/questions/21454155/linux-tc-u32-filters-strange-error
+* https://netdevconf.info/0x14/pub/papers/44/0x14-paper44-talk-paper.pdf
 
 ## License
 Copyright (C) 2020-2021 Robert Chacón
