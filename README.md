@@ -32,8 +32,10 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
 * NIC supporting two virtual interfaces for traffic shaping (in/out), preferably SFP+ capable
   * <a href="https://www.fs.com/products/75600.html">Intel X710</a> recommended for anything over 1Gbps.
 * Recent Linux kernel for up-to-date linux tc package. Ubuntu Server 20.04.1+ recommended
-* Python 3
+* Python 3, PIP, and some modules
 ```
+sudo apt update
+sudo apt install python3-pip
 python3 -m pip install ipaddress schedule prettytable
 sudo python3 -m pip install ipaddress schedule prettytable
 ```
