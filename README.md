@@ -31,11 +31,12 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
 * One management network interface, completely seperate from the traffic shaping interface NIC.
 * NIC supporting two virtual interfaces for traffic shaping (in/out), preferably SFP+ capable
   * <a href="https://www.fs.com/products/75600.html">Intel X710</a> recommended for anything over 1Gbps.
-* Python 3
-  * python3 -m pip install ipaddress schedule prettytable
-  * If running as service:
-   * sudo python3 -m pip install ipaddress schedule prettytable
 * Recent Linux kernel for up-to-date linux tc package. Ubuntu Server 20.04.1+ recommended
+* Python 3
+```
+python3 -m pip install ipaddress schedule prettytable
+sudo python3 -m pip install ipaddress schedule prettytable
+```
 ### VM Performance
 #### Memory use
 On ProxMox VMs you can enable <a href="https://www.reddit.com/r/Proxmox/comments/asakcb/problem_with_ram_cache/">ballooning memory</a>  to allow freed up memory to be reclaimed by the hypervisor.
