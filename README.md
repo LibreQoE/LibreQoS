@@ -83,6 +83,7 @@ WantedBy=default.target
 ```
 Then run
 ```
+sudo systemctl daemon-reload
 sudo systemctl start LibreQoS.service
 ```
 ## Statistics
