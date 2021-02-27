@@ -79,7 +79,8 @@ to allow the program to actually run the commands.
 ### Configure for your clients
 * Modify the Shaper.csv file using your preferred spreadsheet editor (LibreOffice Calc, Excel, etc), following the template.
 * Either an IPv4 or IPv6 address is required for each entry, and Hostname is recommended.
-## One-Time Runs
+![Shaper.conf](docs/isconfigscreenshot.png?raw=true "Shaper.conf")
+### One-Time Runs
 One-time runs show the response from the terminal for each filter rule applied, and can be very helpful for debugging and to make sure it is correctly configured.
 
 Cd to your preferred directory and download the latest release
