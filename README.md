@@ -139,7 +139,7 @@ LibreQoS is based on fq_codel - an open source project led by Dave Taht, and con
 
 To support 1000 subscribers using proprietary wrappers for fq_codel would cost the average small ISP $6000 per year. If this application helps your network, please consider donating to Dave's patreon. Donating just $0.2/sub/month ($100/month for 500 subs) comes out to be 60% less than any proprietary solution, and you get direct access to our source code to tinker with LibreQoS and its HTB+fq_codel shaper to optimize your network's performance.
 ## Special Thanks
-Thank you to the hundreds of contributors to the fq_codel and cake projects, especially Dave Taht and Toke Høiland-Jørgensen. Thank you to Jesper Dangaard Brouer, Phil Sutter, Bert Hubert, Gregory Maxwell, Remco van Mook, Martijn van Oosterhout, Paul B Schroeder, and Jasper Spaans for contributing to the guides and documentation listed below.
+Thank you to the hundreds of contributors to the fq_codel and cake projects, especially Dave Taht and Toke Høiland-Jørgensen. Thank you to Leo Manuel Magpayo for his help improving documentation and for testing. Thank you to Jesper Dangaard Brouer, Phil Sutter, Bert Hubert, Gregory Maxwell, Remco van Mook, Martijn van Oosterhout, Paul B Schroeder, and Jasper Spaans for contributing to the guides and documentation listed below.
 
 ## References
 * https://tldp.org/HOWTO/Adv-Routing-HOWTO/lartc.adv-filter.hashing.html
