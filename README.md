@@ -76,7 +76,8 @@ enableActualShellCommands = True
 ```
 to allow the program to actually run the commands.
 ### Configure for your clients
-Modify the Shaper.csv file using your preferred 
+* Modify the Shaper.csv file using your preferred spreadsheet editor (LibreOffice Calc, Excel, etc), following the template.
+* Either an IPv4 or IPv6 address is required for each entry, and Hostname is recommended.
 ## Run LibreQoS
 Cd to your preferred directory and download the latest release
 ```
