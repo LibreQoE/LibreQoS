@@ -1,6 +1,8 @@
 # LibreQoS
 ![Banner](docs/Banner.png "Banner")
 LibreQoS is an application that allows you to apply fq_codel traffic shaping to hundreds of clients. <a href="https://www.bufferbloat.net/projects/codel/wiki/">Fq_codel</a> is a Free and Open Source Active Queue Management algorithm that reduces bufferbloat, and can improve the quality of customer connections significantly. LibreQoS works with both IPv4 and IPv6. It apples hundreds of filter rules to direct customer traffic through individual fq_codel instances within an <a href="https://linux.die.net/man/8/tc-htb">HTB</a> (HTB+fq_codel). By utilizing <a href="https://tldp.org/HOWTO/Adv-Routing-HOWTO/lartc.adv-filter.hashing.html">hashing filters</a>, thousands of rules can be applied with minimal impact on traffic throughput or CPU use. This is beta software - please do not deploy in production without testing to ensure compatability with your network architecture and design.
+## Who should use LibreQoS?
+This software is intended for small Internet Service Providers. Large Internet Service Providers would likely benefit more from using commercially supported alternatives with better NMS/CRM integrations such as Preseem or Sensei.
 ## How does fq_codel work?
 Fq_codel distinguishes interactive flows of traffic (web browsing, audio streaming, VoIP, gaming) from bulk traffic (streaming video services, software updates). Interactive flows are prioritized to optimize their performance, while bulk traffic gets steady throughput and variable latency. The general reduction of connection latency offered by fq_codel is highly beneficial to end-users.
 
@@ -31,7 +33,7 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
 * One management network interface, completely seperate from the traffic shaping interface NIC.
 * NIC supporting two virtual interfaces for traffic shaping (in/out), preferably SFP+ capable
   * <a href="https://www.fs.com/products/75600.html">Intel X710</a> recommended for anything over 1Gbps.
-* Recent Linux kernel for up-to-date linux tc package. Ubuntu Server 20.04.1+ recommended
+* Tested with Ubuntu Server 20.04.1+, which is recommended. Ubuntu Desktop not recommended as it uses NetworkManager instead of Netplan.
 * Python 3, PIP, and some modules
 ```
 sudo apt update
@@ -59,19 +61,35 @@ bridges:
            - eth4
            - eth5
 ```
+Then run
+```
+sudo netplan apply
+```
+### Configure for your environment
+Modify the ispConfig.py
+* Set pipeBandwidthCapacityMbps to match the bandwidth in Mbps of your network's (presumably symmetrical) WAN Internet connection
+* Set interfaceA to be the interface facing your edge router
+* Set interfaceB to be the interface facing your core router (or bridged internal network if your network is bridged)
+* Set
+```
+enableActualShellCommands = True
+```
+to allow the program to actually run the commands.
+### Configure for your clients
+Modify the Shaper.csv file using your preferred 
 ## Run LibreQoS
 Cd to your preferred directory and download the latest release
 ```
 git clone https://github.com/rchac/LibreQoS.git
 ```
 * Modify setting parameters in ispConfig.py to suit your environment
-* Run:
+* For one-time runs, use
 ```
 sudo python3 ./LibreQoS.py
 ```
 ## Running as a service
 You can use the scheduled.py file to set the time of day you want the shapers to be refreshed at after the initial run.
-On linux distributions that use systemd, such as Ubuntu, add the following to /etc/systemd/system/LibreQoS.service
+On linux distributions that use systemd, such as Ubuntu, add the following to /etc/systemd/system/LibreQoS.service, replacing "/home/$USER/LibreQoSDirectory" with wherever you downloaded LibreQoS to:
 ```
 [Unit]
 After=network.service
@@ -88,6 +106,14 @@ Then run
 ```
 sudo systemctl daemon-reload
 sudo systemctl start LibreQoS.service
+```
+You can check the status of the service using
+```
+sudo systemctl status LibreQoS.service
+```
+You can restart the service to refresh any changes you've made to the Shaper.csv file by doing
+```
+sudo systemctl restart LibreQoS.service
 ```
 ## Statistics
 ```
