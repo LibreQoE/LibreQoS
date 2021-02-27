@@ -13,8 +13,8 @@ interfaceA = 'eth1'
 # Interface connected to core
 interfaceB = 'eth2'
 
-# Allow shell commands. Default is False where commands print to console. MUST BE ENABLED FOR PROGRAM TO FUNCTION
-enableActualShellCommands = False
+# Allow shell commands. False causes commands print to console only without being executed. MUST BE ENABLED FOR PROGRAM TO FUNCTION
+enableActualShellCommands = True
 
 # Add 'sudo' before execution of any shell commands. May be required depending on distribution and environment.
 runShellCommandsAsSudo = False
