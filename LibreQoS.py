@@ -19,7 +19,7 @@
 #           | |   | | '_ \| '__/ _ \ | | |/ _ \___ \ 
 #           | |___| | |_) | | |  __/ |_| | (_) |__) |
 #           |_____|_|_.__/|_|  \___|\__\_\\___/____/
-#                          v.0.76-alpha
+#                          v.0.78-alpha
 #
 import random
 import logging
@@ -33,7 +33,7 @@ import ipaddress
 from ipaddress import IPv4Address, IPv6Address
 import time
 from datetime import date, datetime
-from ispConfig import fqOrCAKE, pipeBandwidthCapacityMbps, interfaceA, interfaceB, enableActualShellCommands, runShellCommandsAsSudo
+from ispConfig import fqOrCAKE, pipeBandwidthCapacityMbps, defaultClassCapacityMbps,interfaceA, interfaceB, enableActualShellCommands, runShellCommandsAsSudo
 
 def shell(command):
 	if enableActualShellCommands:
@@ -108,11 +108,11 @@ def refreshShapers():
 	thisInterface = interfaceA
 	classIDCounter = 101
 	hashIDCounter = parentIDFirstPart + 1
-	shell('tc qdisc replace dev ' + thisInterface + ' root handle 1: htb default 15') 
-	shell('tc class add dev ' + thisInterface + ' parent 1: classid 1:1 htb rate '+ str(pipeBandwidthCapacityMbps) + 'mbit')
+	shell('tc qdisc replace dev ' + thisInterface + ' root handle 1: htb default 15 r2q 1514') 
+	shell('tc class add dev ' + thisInterface + ' parent 1: classid 1:1 htb rate '+ str(pipeBandwidthCapacityMbps) + 'mbit ceil ' + str(pipeBandwidthCapacityMbps) + 'mbit')
 	shell('tc qdisc add dev ' + thisInterface + ' parent 1:1 ' + fqOrCAKE)
 	#Default class - traffic gets passed through this limiter if not otherwise classified by the Shaper.csv
-	shell('tc class add dev ' + thisInterface + ' parent 1:1 classid 1:15 htb rate 750mbit ceil 750mbit prio 5')
+	shell('tc class add dev ' + thisInterface + ' parent 1:1 classid 1:15 htb rate ' + str(defaultClassCapacityMbps) + 'mbit ceil ' + str(defaultClassCapacityMbps) + 'mbit prio 5')
 	shell('tc qdisc add dev ' + thisInterface + ' parent 1:15 ' + fqOrCAKE)
 	handleIDSecond = 1
 	for device in devices:
@@ -147,11 +147,11 @@ def refreshShapers():
 	thisInterface = interfaceB
 	classIDCounter = 101
 	hashIDCounter = parentIDFirstPart + 1
-	shell('tc qdisc replace dev ' + thisInterface + ' root handle 2: htb default 15') 
-	shell('tc class add dev ' + thisInterface + ' parent 2: classid 2:1 htb rate '+ str(pipeBandwidthCapacityMbps) + 'mbit')
+	shell('tc qdisc replace dev ' + thisInterface + ' root handle 2: htb default 15 r2q 1514') 
+	shell('tc class add dev ' + thisInterface + ' parent 2: classid 2:1 htb rate '+ str(pipeBandwidthCapacityMbps) + 'mbit ceil ' + str(pipeBandwidthCapacityMbps) + 'mbit')
 	shell('tc qdisc add dev ' + thisInterface + ' parent 2:1 ' + fqOrCAKE)
 	#Default class - traffic gets passed through this limiter if not otherwise classified by the Shaper.csv
-	shell('tc class add dev ' + thisInterface + ' parent 2:1 classid 2:15 htb rate 750mbit ceil 750mbit prio 5')
+	shell('tc class add dev ' + thisInterface + ' parent 2:1 classid 2:15 htb rate ' + str(defaultClassCapacityMbps) + 'mbit ceil ' + str(defaultClassCapacityMbps) + 'mbit prio 5')
 	shell('tc qdisc add dev ' + thisInterface + ' parent 2:15 ' + fqOrCAKE)
 	handleIDSecond = 1
 	for device in devices:
@@ -196,7 +196,7 @@ def refreshShapers():
 				ipv4 = ipv4.split('/')[0]
 			if (ipv4.split('.', 3)[3]) == str(i):
 				filterHandle = hex(filterHandleCounter)
-				shell('tc filter add dev ' + interface + ' handle ' + filterHandle + ' protocol ip parent 1:1 u32 ht 3:' + hexID + ': match ip dst ' + ipv4 + ' flowid ' + classid)
+				shell('tc filter add dev ' + interface + ' handle ' + filterHandle + ' protocol ip parent 1: u32 ht 3:' + hexID + ': match ip dst ' + ipv4 + ' flowid ' + classid)
 				filterHandleCounter += 1 
 	shell('tc filter add dev ' + interface + ' protocol ip parent 1: u32 ht 800: match ip dst 0.0.0.0/0 hashkey mask 0x000000ff at 16 link 3:')
 	
@@ -212,7 +212,7 @@ def refreshShapers():
 				ipv4 = ipv4.split('/')[0]
 			if (ipv4.split('.', 3)[3]) == str(i):
 				filterHandle = hex(filterHandleCounter)
-				shell('tc filter add dev ' + interface + ' handle ' + filterHandle + ' protocol ip parent 2:1 u32 ht 4:' + hexID + ': match ip src ' + ipv4 + ' flowid ' + classid)
+				shell('tc filter add dev ' + interface + ' handle ' + filterHandle + ' protocol ip parent 2: u32 ht 4:' + hexID + ': match ip src ' + ipv4 + ' flowid ' + classid)
 				filterHandleCounter += 1
 	shell('tc filter add dev ' + interface + ' protocol ip parent 2: u32 ht 800: match ip src 0.0.0.0/0 hashkey mask 0x000000ff at 12 link 4:')
 
