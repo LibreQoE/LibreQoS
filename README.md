@@ -69,8 +69,8 @@ sudo netplan apply
 ### Configure for your environment
 Modify the ispConfig.py
 * Set pipeBandwidthCapacityMbps to match the bandwidth in Mbps of your network's (presumably symmetrical) WAN Internet connection
-* Set interfaceA to be the interface facing your edge router
-* Set interfaceB to be the interface facing your core router (or bridged internal network if your network is bridged)
+* Set interfaceA to the interface facing your core router (or bridged internal network if your network is bridged)
+* Set interfaceB to the interface facing your edge router
 * Set
 ```
 enableActualShellCommands = True
