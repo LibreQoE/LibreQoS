@@ -7,10 +7,12 @@ fqOrCAKE = 'fq_codel'
 # How many symmetrical Mbps are available to the edge of this network
 pipeBandwidthCapacityMbps = 1000
 
-# Interface connected to edge
+defaultClassCapacityMbps = 750
+
+# Interface connected to core router
 interfaceA = 'eth1'
 
-# Interface connected to core
+# Interface connected to edge router
 interfaceB = 'eth2'
 
 # Allow shell commands. False causes commands print to console only without being executed. MUST BE ENABLED FOR PROGRAM TO FUNCTION
