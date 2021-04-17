@@ -2,7 +2,7 @@
 ![Banner](docs/Banner.png "Banner")
 LibreQoS is an application that allows you to apply fq_codel traffic shaping to hundreds of clients. <a href="https://www.bufferbloat.net/projects/codel/wiki/">Fq_codel</a> is a Free and Open Source Active Queue Management algorithm that reduces bufferbloat, and can improve the quality of customer connections significantly. LibreQoS works with both IPv4 and IPv6. It apples hundreds of filter rules to direct customer traffic through individual fq_codel instances within an <a href="https://linux.die.net/man/8/tc-htb">HTB</a> (HTB+fq_codel). By utilizing <a href="https://tldp.org/HOWTO/Adv-Routing-HOWTO/lartc.adv-filter.hashing.html">hashing filters</a>, thousands of rules can be applied with minimal impact on traffic throughput or CPU use. This is beta software - please do not deploy in production without testing to ensure compatability with your network architecture and design.
 ## Who is LibreQoS for?
-This software is intended for small Internet Service Providers (<1000 subscribers). Larger Internet Service Providers may benefit more from using commercially supported alternatives with better NMS/CRM integrations such as Preseem or Sensei. Individuals wanting to reduce bufferbloat or latency on their home internet connections may want to try a home router supporting fq_codel, such as Ubiquiti's EdgeRouter-X (must enable advanced queue fq_codel).
+This software is intended for small Internet Service Providers (<1000 subscribers). Larger Internet Service Providers may benefit more from using commercially supported alternatives with better NMS/CRM integrations such as Preseem or Saisei. Individuals wanting to reduce bufferbloat or latency on their home internet connections may want to try a home router supporting fq_codel, such as Ubiquiti's EdgeRouter-X (must enable advanced queue fq_codel).
 ## How does fq_codel work?
 Fq_codel distinguishes interactive flows of traffic (web browsing, audio streaming, VoIP, gaming) from bulk traffic (streaming video services, software updates). Interactive flows are prioritized to optimize their performance, while bulk traffic gets steady throughput and variable latency. The general reduction of connection latency offered by fq_codel is highly beneficial to end-users.
 
@@ -136,7 +136,7 @@ sudo sh -c 'echo 1 >/proc/sys/vm/drop_caches'
 * Generally speaking any new CPU above $200 can probably handle shaping over 2Gbps
 https://www.cpubenchmark.net/high_end_cpus.html
 ## Donate
-LibreQoS is based on fq_codel - an open source project led by Dave Taht, and contrinuted to by dozens of others. Without Dave's work, there would be no LibreQoS, Preseem, or Sensei. Please contribute to Dave's patreon here: https://www.patreon.com/dtaht
+LibreQoS is based on fq_codel - an open source project led by Dave Taht, and contrinuted to by dozens of others. Without Dave's work, there would be no LibreQoS, Preseem, or Saisei. Please contribute to Dave's patreon here: https://www.patreon.com/dtaht
 
 To support 1000 subscribers using proprietary wrappers for fq_codel would cost the average small ISP $6000 per year. If this application helps your network, please consider donating to Dave's patreon. Donating just $0.2/sub/month ($100/month for 500 subs) comes out to be 60% less than any proprietary solution, and you get direct access to our source code to tinker with LibreQoS and its HTB+fq_codel shaper to optimize your network's performance.
 ## Special Thanks
