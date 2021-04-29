@@ -41,96 +41,9 @@ sudo apt install python3-pip
 python3 -m pip install ipaddress schedule prettytable
 sudo python3 -m pip install ipaddress schedule prettytable
 ```
-### VM Performance
-#### Memory use
-On ProxMox VMs you can enable <a href="https://www.reddit.com/r/Proxmox/comments/asakcb/problem_with_ram_cache/">ballooning memory</a>  to allow freed up memory to be reclaimed by the hypervisor.
-## How to run LibreQoS
-### Enable Offloading in Guest VM
-Performance can greatly benefit from enabling certrain hardware offloading inside the guest VM. If you're using a system that uses Netplan (e.g. Ubuntu) to configure the network then you can use a Netplan post-up script to configure offloading. You create a script in the following directory with a name prefixed by a number to indicate load order e.g. /usr/lib/networkd-dispatcher/routable.d/10-enable-offloading - which is executable and owned by root. e.g.
-```
-#!/bin/sh
-ethtool --offload [interfaceA] rx on tx on gso on tso on lro on sg on gro on
-ethtool --offload [interfaceB] rx on tx on gso on tso on lro on sg on gro on
-```
-### Add a bridge between in/out interfaces
-* Add linux interface bridge br0 to the two dedicated interfaces
-    * For example on Ubuntu Server 20.04 which uses NetPlan, you would add the following to the .yaml file in /etc/netplan/
-```
-bridges:
-    br0:
-      interfaces:
-           - eth4
-           - eth5
-```
-Then run
-```
-sudo netplan apply
-```
-### Configure for your environment
-Modify the ispConfig.py
-* Set pipeBandwidthCapacityMbps to match the bandwidth in Mbps of your network's (presumably symmetrical) WAN Internet connection
-* Set interfaceA to the interface facing your core router (or bridged internal network if your network is bridged)
-* Set interfaceB to the interface facing your edge router
-* Set
-```
-enableActualShellCommands = True
-```
-to allow the program to actually run the commands.
-### Configure for your clients
-* Modify the Shaper.csv file using your preferred spreadsheet editor (LibreOffice Calc, Excel, etc), following the template.
-* Either an IPv4 or IPv6 address is required for each entry, and Hostname is recommended.
-![Shaper.conf](docs/isconfigscreenshot.png?raw=true "Shaper.conf")
-### One-Time Runs
-One-time runs show the response from the terminal for each filter rule applied, and can be very helpful for debugging and to make sure it is correctly configured.
+## Installation and Usage Guide
+<a href="https://github.com/rchac/LibreQoS/wiki/Installation-Usage-Guide---Proxmox-and-Ubuntu-20.04">LibreQoS Installation and Usage Guide - Proxmox and Ubuntu 20.04 LTS</a>
 
-Cd to your preferred directory and download the latest release
-```
-git clone https://github.com/rchac/LibreQoS.git
-```
-* Modify setting parameters in ispConfig.py to suit your environment
-* For one-time runs, use
-```
-sudo python3 ./LibreQoS.py
-```
-### Running as a service
-You can use the scheduled.py file to set the time of day you want the shapers to be refreshed at after the initial run.
-On linux distributions that use systemd, such as Ubuntu, add the following to /etc/systemd/system/LibreQoS.service, replacing "/home/$USER/LibreQoSDirectory" with wherever you downloaded LibreQoS to:
-```
-[Unit]
-After=network.service
-
-[Service]
-WorkingDirectory=/home/$USER/LibreQoSDirectory
-ExecStart=/usr/bin/python3 /home/$USER/LibreQoSDirectory/scheduled.py
-Restart=always
-
-[Install]
-WantedBy=default.target
-```
-Then run
-```
-sudo systemctl daemon-reload
-sudo systemctl start LibreQoS.service
-```
-You can check the status of the service using
-```
-sudo systemctl status LibreQoS.service
-```
-You can restart the service to refresh any changes you've made to the Shaper.csv file by doing
-```
-sudo systemctl restart LibreQoS.service
-```
-### Statistics
-```
-python3 ./stats.py
-```
-![Stats](docs/stats.png?raw=true "Stats")
-## Performance tips
-### Memory use
-Generally memory use should be under 2GB. If for any reason memory exceeds that, please make sure memory ballooning is enabled on VM host, and try
-```
-sudo sh -c 'echo 1 >/proc/sys/vm/drop_caches'
-```
 ### Server CPU Recommendations
 * Choose a CPU with solid single-thread performance within your budget
 * Generally speaking any new CPU above $200 can probably handle shaping over 2Gbps
