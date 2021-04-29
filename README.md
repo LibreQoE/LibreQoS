@@ -41,13 +41,15 @@ sudo apt install python3-pip
 python3 -m pip install ipaddress schedule prettytable
 sudo python3 -m pip install ipaddress schedule prettytable
 ```
-## Installation and Usage Guide
-<a href="https://github.com/rchac/LibreQoS/wiki/Installation-Usage-Guide---Proxmox-and-Ubuntu-20.04">LibreQoS Installation and Usage Guide - Proxmox and Ubuntu 20.04 LTS</a>
 
 ### Server CPU Recommendations
 * Choose a CPU with solid single-thread performance within your budget
 * Generally speaking any new CPU above $200 can probably handle shaping over 2Gbps
 https://www.cpubenchmark.net/high_end_cpus.html
+
+## Installation and Usage Guide
+<a href="https://github.com/rchac/LibreQoS/wiki/Installation-Usage-Guide---Proxmox-and-Ubuntu-20.04">LibreQoS Installation and Usage Guide - Proxmox and Ubuntu 20.04 LTS</a>
+
 ## Donate
 LibreQoS is based on fq_codel - an open source project led by Dave Taht, and contrinuted to by dozens of others. Without Dave's work, there would be no LibreQoS, Preseem, or Saisei. Please contribute to Dave's patreon here: https://www.patreon.com/dtaht
 
