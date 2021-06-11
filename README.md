@@ -14,13 +14,15 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
 ## Features
 * Dual stack: client can be shaped by same qdisc for both IPv4 and IPv6
 * Up to 1000 clients (IPv4/IPv6)
+* Up to 4Gbps throughput
 * HTB + fq_codel
+* Shape Clients by Access Point / Node capacity
 * Experimental support for CAKE (Common Applications Kept Enhanced)
 * TC filters split into groups through hashing filters to significantly increase throughput
 * Simple client management via csv file
 * Simple statistics - table shows top 20 subscribers by packet loss, with APs listed
 ## Limitations
-* Tested up to 5Gbps/500Mbps asymmetrical throughput. Qdisc locking problem may require integrating <a href="https://github.com/netoptimizer/xdp-cpumap-tc">xdp-cpumap-tc</a> in future to increase bandwidth capacity.
+* Tested up to 4Gbps/500Mbps asymmetrical throughput. Qdisc locking problem will require integrating <a href="https://github.com/netoptimizer/xdp-cpumap-tc">xdp-cpumap-tc</a> or Mellanox-specific HTB offload feature in future verions to increase bandwidth capacity.
 * Linux tc hash tables can only handle ~4000 rules each. This limits total possible clients to 1000 at this time. Eventually we will rework the code to allow for more clients by linking more hash tables.
 ## Requirements
 * Edge and Core routers with MTU 1500 on links between them
