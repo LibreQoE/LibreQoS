@@ -50,7 +50,8 @@ sudo python3 -m pip install ipaddress schedule prettytable
 https://www.cpubenchmark.net/high_end_cpus.html
 
 ## Installation and Usage Guide
-📄 <a href="https://github.com/rchac/LibreQoS/wiki/Installation-Usage-Guide---Proxmox-and-Ubuntu-20.04">LibreQoS Installation and Usage Guide - Proxmox and Ubuntu 20.04 LTS</a>
+📄 <a href="https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.80-Installation-&-Usage-Guide----Proxmox-and-Ubuntu-20.04">LibreQoS 0.80 Installation and Usage Guide - Proxmox and Ubuntu 20.04 LTS</a>
+📄 <a href="https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.78-Installation-&-Usage-Guide----Proxmox-and-Ubuntu-20.04">LibreQoS 0.78 Installation and Usage Guide - Proxmox and Ubuntu 20.04 LTS</a>
 
 ## Donate
 LibreQoS is based on fq_codel - an open source project led by Dave Taht, and contrinuted to by dozens of others. Without Dave's work, there would be no LibreQoS, Preseem, or Saisei. Please contribute to Dave's patreon here: https://www.patreon.com/dtaht
