@@ -47,7 +47,7 @@ sudo python3 -m pip install ipaddress schedule prettytable
 ### Server CPU Recommendations
 * Choose a CPU with solid single-thread performance within your budget
 * Generally speaking any new CPU above $200 can probably handle shaping over 2Gbps
-https://www.cpubenchmark.net/high_end_cpus.html
+https://www.cpubenchmark.net/singleThread.html
 
 ## Installation and Usage Guide
 📄 <a href="https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.80-Installation-&-Usage-Guide----Proxmox-and-Ubuntu-20.04">LibreQoS 0.80 Installation and Usage Guide - Proxmox and Ubuntu 20.04 LTS</a>
