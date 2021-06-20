@@ -78,7 +78,7 @@ def refreshShapers():
 		csv_reader = csv.reader(csv_file, delimiter=',')
 		next(csv_reader)
 		for row in csv_reader:
-			deviceID, AP, mac, hostname,ipv4, ipv6, download, upload = row
+			deviceID, AP, mac, hostname,ipv4, ipv6, downloadMin, uploadMin, downloadMax, uploadMax = row
 			ipv4 = ipv4.strip()
 			ipv6 = ipv6.strip()
 			if AP == "":
@@ -90,8 +90,10 @@ def refreshShapers():
 			  "hostname": hostname,
 			  "ipv4": ipv4,
 			  "ipv6": ipv6,
-			  "download": int(download),
-			  "upload": int(upload),
+			  "downloadMin": int(downloadMin),
+			  "uploadMin": int(uploadMin),
+			  "downloadMax": int(downloadMax),
+			  "uploadMax": int(uploadMax),
 			  "qdiscSrc": '',
 			  "qdiscDst": '',
 			}
@@ -115,7 +117,7 @@ def refreshShapers():
 	#Clear Prior Configs
 	clearPriorSettings(interfaceA, interfaceB)
 	shell('tc filter delete dev ' + interfaceA + ' parent 1: u32')
-	shell('tc filter delete dev ' + interfaceB + ' parent 1: u32')
+	shell('tc filter delete dev ' + interfaceB + ' parent 2: u32')
 	
 	ipv4FiltersSrc = []		
 	ipv4FiltersDst = []
@@ -126,14 +128,13 @@ def refreshShapers():
 	parentIDFirstPart = 1
 	srcOrDst = 'dst'
 	thisInterface = interfaceA
-	classIDPt1 = 2
-	classIDPt2 = 101
-	shell('tc qdisc replace dev ' + thisInterface + ' root handle 1: htb default 15 r2q 1514') 
+	classIDcounter = 3
+	shell('tc qdisc replace dev ' + thisInterface + ' root handle 1: htb default 2 r2q 1514') 
 	shell('tc class add dev ' + thisInterface + ' parent 1: classid 1:1 htb rate '+ str(upstreamBandwidthCapacityDownloadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityDownloadMbps) + 'mbit')
 	shell('tc qdisc add dev ' + thisInterface + ' parent 1:1 ' + fqOrCAKE)
 	#Default class - traffic gets passed through this limiter if not otherwise classified by the Shaper.csv
-	shell('tc class add dev ' + thisInterface + ' parent 1:1 classid 1:15 htb rate ' + str(defaultClassCapacityDownloadMbps) + 'mbit ceil ' + str(defaultClassCapacityDownloadMbps) + 'mbit prio 5')
-	shell('tc qdisc add dev ' + thisInterface + ' parent 1:15 ' + fqOrCAKE)
+	shell('tc class add dev ' + thisInterface + ' parent 1:1 classid 1:2 htb rate ' + str(defaultClassCapacityDownloadMbps) + 'mbit ceil ' + str(defaultClassCapacityDownloadMbps) + 'mbit prio 5')
+	shell('tc qdisc add dev ' + thisInterface + ' parent 1:2 ' + fqOrCAKE)
 	#Create HTBs by AP
 	for AP in devicesByAP:
 		currentAPname = AP[0]['AP']
@@ -141,40 +142,41 @@ def refreshShapers():
 		thisAPupload = accessPointUploadMbps[currentAPname]
 		thisHTBrate = thisAPdownload
 		#HTBs for each AP
-		shell('tc class add dev ' + thisInterface + ' parent 1:1 classid ' + str(classIDPt1) + ':1 htb rate '+ str(thisHTBrate) + 'mbit ceil '+ str(round(thisHTBrate*1.05)) + 'mbit prio 3') 
-		shell('tc qdisc add dev ' + thisInterface + ' parent ' + str(classIDPt1) + ':1 ' + fqOrCAKE)
+		thisHTBclassID = '1:' + str(classIDcounter)
+		# Guarentee AP gets at least 1/2 of its radio capacity, allow up to its max radio capacity when network not at peak load
+		shell('tc class add dev ' + thisInterface + ' parent 1:1 classid ' + str(classIDcounter) + ' htb rate '+ str(round(thisHTBrate/2)) + 'mbit ceil '+ str(round(thisHTBrate)) + 'mbit prio 3') 
+		shell('tc qdisc add dev ' + thisInterface + ' parent 1:' + str(classIDcounter) + ' ' + fqOrCAKE)
+		classIDcounter += 1
 		for device in AP:
 			#QDiscs for each AP
 			speedcap = 0
-			speedcap = device['download']
-			
-			shell('tc class add dev ' + thisInterface + ' parent ' + str(classIDPt1) + ':1 classid ' + str(classIDPt1) + ':' + str(classIDPt2) + ' htb rate '+ str(speedcap) + 'mbit ceil '+ str(round(speedcap*1.05)) + 'mbit prio 3') 
-			shell('tc qdisc add dev ' + thisInterface + ' parent ' + str(classIDPt1) + ':' + str(classIDPt2) + ' ' + fqOrCAKE)
+			downloadMin = device['downloadMin']
+			downloadMax = device['downloadMax']
+			shell('tc class add dev ' + thisInterface + ' parent ' + thisHTBclassID + ' classid ' + str(classIDcounter) + ' htb rate '+ str(downloadMin) + 'mbit ceil '+ str(downloadMax) + 'mbit prio 3') 
+			shell('tc qdisc add dev ' + thisInterface + ' parent 1:' + str(classIDcounter) + ' ' + fqOrCAKE)
 			if device['ipv4']:
-				parentString = str(classIDPt1) + ':'
-				flowIDstring = str(classIDPt1) + ':' + str(classIDPt2)
+				parentString = '1:'
+				flowIDstring = '1:' + str(classIDcounter)
 				ipv4FiltersDst.append((device['ipv4'], parentString, flowIDstring))
 			if device['ipv6']:
-				parentString = str(classIDPt1) + ':'
-				flowIDstring = str(classIDPt1) + ':' + str(classIDPt2)
+				parentString = '1:'
+				flowIDstring = '1:' + str(classIDcounter)
 				ipv6FiltersDst.append((device['ipv6'], parentString, flowIDstring))
-			deviceQDiscID = '1:' + str(classIDPt2)
-			device['qdiscDst'] = str(classIDPt1) + ':' + str(classIDPt2)
-			classIDPt2 += 1
-		classIDPt1 += 1
+			deviceQDiscID = '1:' + str(classIDcounter)
+			device['qdiscDst'] = '1:' + str(classIDcounter)
+			classIDcounter += 1
 	
 	#InterfaceB
 	parentIDFirstPart = 2
 	srcOrDst = 'src'
 	thisInterface = interfaceB
-	#classIDPt1 = 2
-	classIDPt2 = 101
-	shell('tc qdisc replace dev ' + thisInterface + ' root handle 1: htb default 15 r2q 1514') 
-	shell('tc class add dev ' + thisInterface + ' parent 1: classid 1:1 htb rate '+ str(upstreamBandwidthCapacityUploadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps) + 'mbit')
-	shell('tc qdisc add dev ' + thisInterface + ' parent 1:1 ' + fqOrCAKE)
+	classIDcounter = 3
+	shell('tc qdisc replace dev ' + thisInterface + ' root handle 2: htb default 2 r2q 1514') 
+	shell('tc class add dev ' + thisInterface + ' parent 2: classid 2:1 htb rate '+ str(upstreamBandwidthCapacityUploadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps) + 'mbit')
+	shell('tc qdisc add dev ' + thisInterface + ' parent 2:1 ' + fqOrCAKE)
 	#Default class - traffic gets passed through this limiter if not otherwise classified by the Shaper.csv
-	shell('tc class add dev ' + thisInterface + ' parent 1:1 classid 1:15 htb rate ' + str(defaultClassCapacityUploadMbps) + 'mbit ceil ' + str(defaultClassCapacityUploadMbps) + 'mbit prio 5')
-	shell('tc qdisc add dev ' + thisInterface + ' parent 1:15 ' + fqOrCAKE)
+	shell('tc class add dev ' + thisInterface + ' parent 2:1 classid 2:2 htb rate ' + str(defaultClassCapacityUploadMbps) + 'mbit ceil ' + str(defaultClassCapacityUploadMbps) + 'mbit prio 5')
+	shell('tc qdisc add dev ' + thisInterface + ' parent 2:2 ' + fqOrCAKE)
 	#Create HTBs by AP
 	for AP in devicesByAP:
 		currentAPname = AP[0]['AP']
@@ -182,29 +184,32 @@ def refreshShapers():
 		thisAPupload = accessPointUploadMbps[currentAPname]
 		thisHTBrate = thisAPupload
 		#HTBs for each AP
-		shell('tc class add dev ' + thisInterface + ' parent 1:1 classid ' + str(classIDPt1) + ':1 htb rate '+ str(thisHTBrate) + 'mbit ceil '+ str(round(thisHTBrate*1.05)) + 'mbit prio 3') 
-		shell('tc qdisc add dev ' + thisInterface + ' parent ' + str(classIDPt1) + ':1 ' + fqOrCAKE)
+		thisHTBclassID = '2:' + str(classIDcounter)
+		# Guarentee AP gets at least 1/2 of its radio capacity, allow up to its max radio capacity when network not at peak load
+		shell('tc class add dev ' + thisInterface + ' parent 2:1 classid ' + str(classIDcounter) + ' htb rate '+ str(round(thisHTBrate/2)) + 'mbit ceil '+ str(round(thisHTBrate)) + 'mbit prio 3') 
+		shell('tc qdisc add dev ' + thisInterface + ' parent 2:' + str(classIDcounter) + ' ' + fqOrCAKE)
+		classIDcounter += 1
 		for device in AP:
 			#QDiscs for each AP
 			speedcap = 0
-			speedcap = device['upload']
-			shell('tc class add dev ' + thisInterface + ' parent ' + str(classIDPt1) + ':1 classid ' + str(classIDPt1) + ':' + str(classIDPt2) + ' htb rate '+ str(speedcap) + 'mbit ceil '+ str(round(speedcap*1.05)) + 'mbit prio 3') 
-			shell('tc qdisc add dev ' + thisInterface + ' parent ' + str(classIDPt1) + ':' + str(classIDPt2) + ' ' + fqOrCAKE)
+			uploadMin = device['uploadMin']
+			uploadMax = device['uploadMax']
+			shell('tc class add dev ' + thisInterface + ' parent ' + thisHTBclassID + ' classid ' + str(classIDcounter) + ' htb rate '+ str(uploadMin) + 'mbit ceil '+ str(uploadMax) + 'mbit prio 3') 
+			shell('tc qdisc add dev ' + thisInterface + ' parent 2:' + str(classIDcounter) + ' ' + fqOrCAKE)
 			if device['ipv4']:
-				parentString = str(classIDPt1) + ':'
-				flowIDstring = str(classIDPt1) + ':' + str(classIDPt2)
+				parentString = '2:'
+				flowIDstring = '2:' + str(classIDcounter)
 				ipv4FiltersSrc.append((device['ipv4'], parentString, flowIDstring))
 			if device['ipv6']:
-				parentString = str(classIDPt1) + ':'
-				flowIDstring = str(classIDPt1) + ':' + str(classIDPt2)
+				parentString = '2:'
+				flowIDstring = '2:' + str(classIDcounter)
 				ipv6FiltersSrc.append((device['ipv6'], parentString, flowIDstring))
-			device['qdiscSrc'] = str(classIDPt1) + ':' + str(classIDPt2)
-			classIDPt2 += 1
-		classIDPt1 += 1
+			device['qdiscSrc'] = '2:' + str(classIDcounter)
+			classIDcounter += 1
 	
 	#IPv4 Hash Filters
 	shell('tc filter add dev ' + interfaceA + ' parent 1: protocol all u32')
-	shell('tc filter add dev ' + interfaceB + ' parent 1: protocol all u32')
+	shell('tc filter add dev ' + interfaceB + ' parent 2: protocol all u32')
 	
 	#Dst
 	interface = interfaceA
@@ -224,7 +229,7 @@ def refreshShapers():
 	
 	#Src
 	interface = interfaceB
-	shell('tc filter add dev ' + interface + ' parent 1: protocol ip handle 4: u32 divisor 256')
+	shell('tc filter add dev ' + interface + ' parent 2: protocol ip handle 4: u32 divisor 256')
 
 	for i in range (256):
 		hexID = str(hex(i)).replace('0x','')
@@ -234,9 +239,9 @@ def refreshShapers():
 				ipv4 = ipv4.split('/')[0]
 			if (ipv4.split('.', 3)[3]) == str(i):
 				filterHandle = hex(filterHandleCounter)
-				shell('tc filter add dev ' + interface + ' handle ' + filterHandle + ' protocol ip parent 1: u32 ht 4:' + hexID + ': match ip src ' + ipv4 + ' flowid ' + classid)
+				shell('tc filter add dev ' + interface + ' handle ' + filterHandle + ' protocol ip parent 2: u32 ht 4:' + hexID + ': match ip src ' + ipv4 + ' flowid ' + classid)
 				filterHandleCounter += 1
-	shell('tc filter add dev ' + interface + ' protocol ip parent 1: u32 ht 800: match ip src 0.0.0.0/0 hashkey mask 0x000000ff at 12 link 4:')
+	shell('tc filter add dev ' + interface + ' protocol ip parent 2: u32 ht 800: match ip src 0.0.0.0/0 hashkey mask 0x000000ff at 12 link 4:')
 
 	#IPv6 Hash Filters
 	#Dst
@@ -258,7 +263,7 @@ def refreshShapers():
 	
 	#Src
 	interface = interfaceB
-	shell('tc filter add dev ' + interface + ' parent 1: handle 6: protocol ipv6 u32 divisor 256')
+	shell('tc filter add dev ' + interface + ' parent 2: handle 6: protocol ipv6 u32 divisor 256')
 
 	for ipv6Filter in ipv6FiltersSrc:
 		ipv6, parent, classid = ipv6Filter
@@ -267,10 +272,10 @@ def refreshShapers():
 		usefulPart = third[:2]
 		hexID = usefulPart
 		filterHandle = hex(filterHandleCounter)
-		shell('tc filter add dev ' + interface + ' handle ' + filterHandle + ' protocol ipv6 parent 1: u32 ht 6:' + hexID + ': match ip6 src ' + ipv6 + ' flowid ' + classid)
+		shell('tc filter add dev ' + interface + ' handle ' + filterHandle + ' protocol ipv6 parent 2: u32 ht 6:' + hexID + ': match ip6 src ' + ipv6 + ' flowid ' + classid)
 		filterHandleCounter += 1
 	filterHandle = hex(filterHandleCounter)
-	shell('tc filter add dev ' + interface + ' protocol ipv6 parent 1: u32 ht 800:: match ip6 src ::/0 hashkey mask 0x0000ff00 at 12 link 6:')
+	shell('tc filter add dev ' + interface + ' protocol ipv6 parent 2: u32 ht 800:: match ip6 src ::/0 hashkey mask 0x0000ff00 at 12 link 6:')
 	filterHandleCounter += 1
 	
 	#Save devices to file to allow for statistics runs
