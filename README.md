@@ -14,7 +14,7 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
 ## Features
 * Dual stack: client can be shaped by same qdisc for both IPv4 and IPv6
 * Up to 1000 clients (IPv4/IPv6)
-* Up to 7Gbps throughput with NVIDIA MCX4121A-XCAT, 4Gbps with Intel X710-DA4
+* Up to 4Gbps throughput
 * HTB + fq_codel
 * Shape Clients by Access Point / Node capacity
 * Experimental support for CAKE (Common Applications Kept Enhanced)
@@ -22,7 +22,7 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
 * Simple client management via csv file
 * Simple statistics - table shows top 20 subscribers by packet loss, with APs listed
 ## Limitations
-* Tested up to 7Gbps/500Mbps asymmetrical throughput with NVIDIA MCX4121A-XCAT. Qdisc locking problem will require integrating <a href="https://github.com/netoptimizer/xdp-cpumap-tc">xdp-cpumap-tc</a> or <a href="https://lwn.net/Articles/840244/">HTB offload</a> feature in future verions to increase bandwidth capacity.
+* Tested up to 4Gbps/500Mbps asymmetrical throughput with NVIDIA MCX4121A-XCAT. Tested using <a href="https://github.com/microsoft/ethr">Microsoft Ethr</a> with n=500 streams. Throughput is noticably superior with NVIDIA/Mellanox cards vs Intel X710 for some reason. Qdisc locking problem will require integrating <a href="https://github.com/netoptimizer/xdp-cpumap-tc">xdp-cpumap-tc</a> or <a href="https://lwn.net/Articles/840244/">HTB offload</a> feature in future verions to increase bandwidth capacity.
 * Linux tc hash tables can only handle ~4000 rules each. This limits total possible clients to 1000 at this time. Eventually we will rework the code to allow for more clients by linking more hash tables.
 ## Requirements
 * Edge and Core routers with MTU 1500 on links between them
