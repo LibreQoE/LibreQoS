@@ -57,9 +57,10 @@ https://www.cpubenchmark.net/singleThread.html
 ## Donate
 LibreQoS is based on fq_codel - an open source project led by Dave Taht, and contrinuted to by dozens of others. Without Dave's work, there would be no LibreQoS, Preseem, or Saisei. Please contribute to Dave's patreon here: https://www.patreon.com/dtaht
 
-To support 1000 subscribers using proprietary wrappers for fq_codel would cost the average small ISP $6000 per year. If this application helps your network, please consider donating to Dave's patreon. Donating just $0.2/sub/month ($100/month for 500 subs) comes out to be 60% less than any proprietary solution, and you get direct access to our source code to tinker with LibreQoS and its HTB+fq_codel shaper to optimize your network's performance.
+To support 1000 subscribers using proprietary wrappers for fq_codel would cost the average small ISP $6000 per year. If this application helps your network, please consider donating to Dave's patreon. Donating just $0.2/sub/month ($100/month for 500 subs) comes out to be 60% less than any proprietary solution, and you get to ensure continued development of fq_codel's successor, CAKE.
+
 ## Special Thanks
-Thank you to the hundreds of contributors to the fq_codel and cake projects, especially Dave Taht and Toke Høiland-Jørgensen. Thank you to Leo Manuel Magpayo for his help improving documentation and for testing. Thank you to Jesper Dangaard Brouer, Phil Sutter, Bert Hubert, Gregory Maxwell, Remco van Mook, Martijn van Oosterhout, Paul B Schroeder, and Jasper Spaans for contributing to the guides and documentation listed below.
+Special thanks to the hundreds of contributors to the fq_codel and cake projects, especially Dave Taht and Toke Høiland-Jørgensen. Thanks to Jesper Dangaard Brouer, Maxim Mikityanskiy Yossi Kuperman, and Rony Efraim for their work on solutions to the QDisc locking problem. Thank you Phil Sutter, Bert Hubert, Gregory Maxwell, Remco van Mook, Martijn van Oosterhout, Paul B Schroeder, and Jasper Spaans for contributing to the guides and documentation listed below. Thanks to Leo Manuel Magpayo for his help improving documentation and for testing. Thanks to everyone on the <a href="https://lists.bufferbloat.net/listinfo/">Bufferbloat mailing list</a> for your help and contibutions.
 
 ## References
 * https://tldp.org/HOWTO/Adv-Routing-HOWTO/lartc.adv-filter.hashing.html
