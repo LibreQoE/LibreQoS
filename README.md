@@ -34,7 +34,7 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
 * VM or physical server
 * One management network interface, completely seperate from the traffic shaping interface NIC.
 * NIC supporting two virtual interfaces for traffic shaping (in/out), preferably SFP+ capable
-  * <a href="https://www.fs.com/products/75600.html">Intel X710</a> recommended for anything over 1Gbps.
+  * <a href="https://store.mellanox.com/categories/products/adapter-cards.html?_bc_fsnf=1&Technology=Ethernet&Ports=Dual">NVIDIA ConnectX models </a> recommended for load above 2Gbps.
 * Tested with Ubuntu Server 20.04.1+, which is recommended. Ubuntu Desktop not recommended as it uses NetworkManager instead of Netplan.
 * Python 3, PIP, and some modules
 ```
