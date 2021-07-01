@@ -95,8 +95,7 @@ def refreshShapers():
 			  "uploadMin": int(uploadMin),
 			  "downloadMax": int(downloadMax),
 			  "uploadMax": int(uploadMax),
-			  "qdiscSrc": '',
-			  "qdiscDst": '',
+			  "qdisc": '',
 			}
 			# If an AP is specified for a device in Shaper.csv, but AP is not listed in AccessPoints.csv, raise exception
 			if (AP != "none") and (AP not in accessPointDownloadMbps):
@@ -162,11 +161,9 @@ def refreshShapers():
 	ipv6Filters = []
 	
 	cpuMinorCounterDict = {}
-	#cpuMinorCounterDictInterfaceB = {}
 	
 	for cpu in range(cpusAvailable):
 		cpuMinorCounterDict[cpu] = 3
-		#cpuMinorCounterDictInterfaceB[cpu] = 3
 		
 	for AP in devicesByAP:
 		#Create HTBs by AP
@@ -174,18 +171,14 @@ def refreshShapers():
 		thisAPdownload = accessPointDownloadMbps[currentAPname]
 		thisAPupload = accessPointUploadMbps[currentAPname]
 		
-		#InterfaceA
 		major = currentCPUcounter
 		minor = cpuMinorCounterDict[currentCPUcounter]
-		srcOrDst = 'dst'
-		thisInterface = interfaceA
-		thisHTBrate = thisAPdownload
 		#HTBs for each AP
 		thisHTBclassID = str(currentCPUcounter) + ':' + str(minor)
 		# Guarentee AP gets at least 1/2 of its radio capacity, allow up to its max radio capacity when network not at peak load
-		shell('tc class add dev ' + interfaceA + ' parent ' + str(currentCPUcounter) + ':1 classid ' + str(minor) + ' htb rate '+ str(round(thisHTBrate/2)) + 'mbit ceil '+ str(round(thisHTBrate)) + 'mbit prio 3') 
+		shell('tc class add dev ' + interfaceA + ' parent ' + str(currentCPUcounter) + ':1 classid ' + str(minor) + ' htb rate '+ str(round(thisAPdownload/2)) + 'mbit ceil '+ str(round(thisAPdownload)) + 'mbit prio 3') 
 		shell('tc qdisc add dev ' + interfaceA + ' parent ' + str(currentCPUcounter) + ':' + str(minor) + ' ' + fqOrCAKE)
-		shell('tc class add dev ' + interfaceB + ' parent ' + str(major) + ':1 classid ' + str(minor) + ' htb rate '+ str(round(thisHTBrate/2)) + 'mbit ceil '+ str(round(thisHTBrate)) + 'mbit prio 3') 
+		shell('tc class add dev ' + interfaceB + ' parent ' + str(major) + ':1 classid ' + str(minor) + ' htb rate '+ str(round(thisAPupload/2)) + 'mbit ceil '+ str(round(thisAPupload)) + 'mbit prio 3') 
 		shell('tc qdisc add dev ' + interfaceB + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
 		minor += 1
 		for device in AP:
@@ -198,7 +191,6 @@ def refreshShapers():
 			shell('tc qdisc add dev ' + interfaceA + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
 			shell('tc class add dev ' + interfaceB + ' parent ' + thisHTBclassID + ' classid ' + str(minor) + ' htb rate '+ str(uploadMin) + 'mbit ceil '+ str(uploadMax) + 'mbit prio 3') 
 			shell('tc qdisc add dev ' + interfaceB + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
-			
 			if device['ipv4']:
 				parentString = str(major) + ':'
 				flowIDstring = str(major) + ':' + str(minor)
@@ -208,7 +200,7 @@ def refreshShapers():
 				flowIDstring = str(major) + ':' + str(minor)
 				ipv6Filters.append((device['ipv6'], parentString, flowIDstring, currentCPUcounter))
 			deviceQDiscID = str(major) + ':' + str(minor)
-			device['qdiscDst'] = str(major) + ':' + str(minor)
+			device['qdisc'] = str(major) + ':' + str(minor)
 			minor += 1
 		cpuMinorCounterDict[currentCPUcounter] = minor
 		
