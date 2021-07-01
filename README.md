@@ -12,6 +12,13 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
 >“FQ_Codel provides great isolation... if you've got low-rate videoconferencing and low rate web traffic they never get dropped. A lot of issues with IW10 go away, because all the other traffic sees is the front of the queue. You don't know how big its window is, but you don't care because you are not affected by it. FQ_Codel increases utilization across your entire networking fabric, especially for bidirectional traffic... If we're sticking code into boxes to deploy codel, don't do that. Deploy fq_codel. It's just an across the board win.”
 > - Van Jacobson | IETF 84 Talk
 
+# Setup
+* Edge and Core routers with MTU 1500 on links between them
+   * If you use MPLS, you would terminate MPLS traffic at the core router. LibreQoS cannot decapsulate MPLS on its own.
+* OSPF primary link (low cost) through the server running LibreQoS
+* OSPF backup link
+![Diagram](docs/diagram.png?raw=true "Diagram")
+
 # v0.9 (Alpha)
 ## Features
 * Up to a few thousand IPv4 clients now possible thanks to <a href="https://github.com/xdp-project/xdp-cpumap-tc">XDP-CPUMAP-TC</a>
@@ -48,14 +55,6 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
   * <a href="https://store.mellanox.com/categories/products/adapter-cards.html?_bc_fsnf=1&Technology=Ethernet&Ports=Dual">NVIDIA ConnectX</a>, Intel X520, or Intel X710 recommended for loads above 2Gbps.
 * Tested with Ubuntu Server 20.04.1+, which is recommended. Ubuntu Desktop not recommended as it uses NetworkManager instead of Netplan.
 * Python 3, PIP, and some modules (listed in respective guides)
-
-# General Requirements
-## Requirements
-* Edge and Core routers with MTU 1500 on links between them
-   * If you use MPLS, you would terminate MPLS traffic at the core router. LibreQoS cannot decapsulate MPLS on its own.
-* OSPF primary link (low cost) through the server running LibreQoS
-* OSPF backup link
-![Diagram](docs/diagram.png?raw=true "Diagram")
 
 ### Server CPU Recommendations
 * Choose a CPU with solid single-thread performance within your budget
