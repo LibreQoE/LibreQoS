@@ -24,10 +24,9 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
 * Dual stack: client can be shaped by same qdisc for both IPv4 and IPv6
 * Up to 1000 clients (IPv4/IPv6)
 * Up to 4Gbps throughput
-* HTB+fq_codel
+* HTB+fq_codel or HTB+cake
 * Shape Clients by Access Point / Node capacity
-* Experimental support for CAKE (Common Applications Kept Enhanced)
-* TC filters split into groups through hashing filters to significantly increase throughput
+* TC filters split into groups through hashing filters to increase throughput
 * Simple client management via csv file
 * Simple statistics - table shows top 20 subscribers by packet loss, with APs listed
 ## Limitations
