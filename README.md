@@ -31,7 +31,8 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
 * Working on stats feature
 ## Requirements
 * Requires XDP-CPUMAP-TC. <a href="https://github.com/rchac/LibreQoS/tree/main/v0.9-alpha">See here</a> for details.
-* Only works on dedicated linux machine at the moment, not on VMs. Will soon work on VMs once <a href="https://www.spinics.net/lists/bpf/msg42260.html">this patch</a> is part of the mainline linux kernel.
+* Requires kernel version 5.12 or above. <a href="https://ubuntuhandbook.org/index.php/2021/04/linux-kernel-5-12-released/">Tip</a> for installing kernel verion 5.12.
+* Only works on dedicated linux machines at the moment, not on VMs. Will soon work on VMs once <a href="https://www.spinics.net/lists/bpf/msg42260.html">this patch</a> is part of the mainline linux kernel.
 
 # v0.8
 ## Features
@@ -48,11 +49,14 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
 * Tested up to 4Gbps/500Mbps asymmetrical throughput with NVIDIA MCX4121A-XCAT. Tested using <a href="https://github.com/microsoft/ethr">Microsoft Ethr</a> with n=500 streams. Throughput is noticably superior with NVIDIA/Mellanox cards vs Intel X710 for some reason. Qdisc locking problem will require integrating <a href="https://github.com/netoptimizer/xdp-cpumap-tc">xdp-cpumap-tc</a> or <a href="https://lwn.net/Articles/840244/">HTB offload</a> feature in future verions to increase bandwidth capacity.
 * Linux tc hash tables can only handle ~4000 rules each. This limits total possible clients to 1000 at this time. Eventually we will rework the code to allow for more clients by linking more hash tables.
 
-### Server Requirements
-* VM or physical server
+## General Requirements
+* VM or physical server (versions up to v0.8)
+* Physical server only (v0.9 and above)
 * One management network interface, completely seperate from the traffic shaping interface NIC.
-* NIC supporting two virtual interfaces for traffic shaping (in/out), preferably SFP+ capable
-  * <a href="https://store.mellanox.com/categories/products/adapter-cards.html?_bc_fsnf=1&Technology=Ethernet&Ports=Dual">NVIDIA ConnectX</a>, Intel X520, or Intel X710 recommended for loads above 2Gbps.
+* NIC supporting two interfaces for traffic shaping
+  * <a href="https://store.mellanox.com/categories/products/adapter-cards.html?_bc_fsnf=1&Technology=Ethernet&Ports=Dual">NVIDIA ConnectX</a>,
+  * Intel X520
+  * Intel X710
 * Tested with Ubuntu Server 20.04.1+, which is recommended. Ubuntu Desktop not recommended as it uses NetworkManager instead of Netplan.
 * Python 3, PIP, and some modules (listed in respective guides)
 
