@@ -49,7 +49,7 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
 * Requires kernel version 5.12 or above. <a href="https://ubuntuhandbook.org/index.php/2021/04/linux-kernel-5-12-released/">Tip</a> for installing kernel verion 5.12.
 * Only works on dedicated linux machines at the moment, not on VMs. Will soon work on VMs once <a href="https://www.spinics.net/lists/bpf/msg42260.html">this patch</a> is part of the mainline linux kernel.
 
-## General Requirements
+# General Requirements
 * VM or physical server (versions up to v0.8)
 * Physical server only (v0.9 and above)
 * One management network interface, completely seperate from the traffic shaping interface NIC.
@@ -58,10 +58,7 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
   * <a href="https://www.fs.com/products/75600.html">Intel X710</a>
 * Tested with Ubuntu Server 20.04.1+, which is recommended. Ubuntu Desktop not recommended as it uses NetworkManager instead of Netplan.
 * Python 3, PIP, and some modules (listed in respective guides)
-
-### Server CPU Recommendations
-* Choose a CPU with solid single-thread performance within your budget
-* Generally speaking any new CPU above $200 can probably handle shaping over 2Gbps
+* Choose a CPU with solid single-thread performance within your budget. Generally speaking any new CPU above $200 can probably handle shaping over 2Gbps
 https://www.cpubenchmark.net/singleThread.html
 
 ## Installation and Usage Guide
