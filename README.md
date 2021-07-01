@@ -31,8 +31,8 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
 * Simple client management via csv file
 * Simple statistics - table shows top 20 subscribers by packet loss, with APs listed
 ## Limitations
-* Tested up to 4Gbps/500Mbps asymmetrical throughput with NVIDIA MCX4121A-XCAT. Tested using <a href="https://github.com/microsoft/ethr">Microsoft Ethr</a> with n=500 streams. Throughput is noticably superior with NVIDIA/Mellanox cards vs Intel X710 for some reason. Qdisc locking problem will require integrating <a href="https://github.com/netoptimizer/xdp-cpumap-tc">xdp-cpumap-tc</a> or <a href="https://lwn.net/Articles/840244/">HTB offload</a> feature in future verions to increase bandwidth capacity.
-* Linux tc hash tables can only handle ~4000 rules each. This limits total possible clients to 1000 at this time. Eventually we will rework the code to allow for more clients by linking more hash tables.
+* Qdisc locking problem limits throughput of HTB used in v0.8 (solved in v0.9). Tested up to 4Gbps/500Mbps asymmetrical throughput using <a href="https://github.com/microsoft/ethr">Microsoft Ethr</a> with n=500 streams. High quantities of small packets will reduce max throughput in practice.
+* Linux tc hash tables can only handle <a href="https://stackoverflow.com/questions/21454155/linux-tc-u32-filters-strange-error">~4000 rules each</a>. This limits total possible clients to 1000 in v0.8.
 
 # v0.9 (Alpha/testing)
 ## Features
@@ -79,7 +79,6 @@ Special thanks to Dave Taht, Jesper Dangaard Brouer, Toke Høiland-Jørgensen, M
 * http://linux-ip.net/gl/tc-filters/tc-filters.html
 * http://linux-tc-notes.sourceforge.net/tc/doc/cls_u32.txt
 * https://github.com/netoptimizer/xdp-cpumap-tc
-* https://stackoverflow.com/questions/21454155/linux-tc-u32-filters-strange-error
 * https://netdevconf.info/0x14/pub/papers/44/0x14-paper44-talk-paper.pdf
 
 ## License
