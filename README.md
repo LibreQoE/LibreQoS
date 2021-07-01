@@ -11,11 +11,24 @@ Fq_codel distinguishes interactive flows of traffic (web browsing, audio streami
 The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x latency reduction.
 >“FQ_Codel provides great isolation... if you've got low-rate videoconferencing and low rate web traffic they never get dropped. A lot of issues with IW10 go away, because all the other traffic sees is the front of the queue. You don't know how big its window is, but you don't care because you are not affected by it. FQ_Codel increases utilization across your entire networking fabric, especially for bidirectional traffic... If we're sticking code into boxes to deploy codel, don't do that. Deploy fq_codel. It's just an across the board win.”
 > - Van Jacobson | IETF 84 Talk
+
+# v0.9 (Alpha)
+## Features
+* Up to a few thousand IPv4 clients now possible thanks to <a href="https://github.com/xdp-project/xdp-cpumap-tc">XDP-CPUMAP-TC</a>
+* HTB+fq_codel or HTB+cake
+* Shape Clients by Access Point / Node capacity
+* APs equally distributed among CPUs / NIC queues to greatly increase throughput
+* Simple client management via csv file
+## Limitations
+* Not dual stack, clients can only be shaped by IPv4 address for now in v0.9. Once IPv6 support is added to <a href="https://github.com/xdp-project/xdp-cpumap-tc">XDP-CPUMAP-TC</a> we can then shape IPv6 as well.
+* Working on stats feature
+
+# v0.8
 ## Features
 * Dual stack: client can be shaped by same qdisc for both IPv4 and IPv6
 * Up to 1000 clients (IPv4/IPv6)
 * Up to 4Gbps throughput
-* HTB + fq_codel
+* HTB+fq_codel
 * Shape Clients by Access Point / Node capacity
 * Experimental support for CAKE (Common Applications Kept Enhanced)
 * TC filters split into groups through hashing filters to significantly increase throughput
@@ -24,25 +37,22 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
 ## Limitations
 * Tested up to 4Gbps/500Mbps asymmetrical throughput with NVIDIA MCX4121A-XCAT. Tested using <a href="https://github.com/microsoft/ethr">Microsoft Ethr</a> with n=500 streams. Throughput is noticably superior with NVIDIA/Mellanox cards vs Intel X710 for some reason. Qdisc locking problem will require integrating <a href="https://github.com/netoptimizer/xdp-cpumap-tc">xdp-cpumap-tc</a> or <a href="https://lwn.net/Articles/840244/">HTB offload</a> feature in future verions to increase bandwidth capacity.
 * Linux tc hash tables can only handle ~4000 rules each. This limits total possible clients to 1000 at this time. Eventually we will rework the code to allow for more clients by linking more hash tables.
+
+### Server Requirements
+* VM or physical server
+* One management network interface, completely seperate from the traffic shaping interface NIC.
+* NIC supporting two virtual interfaces for traffic shaping (in/out), preferably SFP+ capable
+  * <a href="https://store.mellanox.com/categories/products/adapter-cards.html?_bc_fsnf=1&Technology=Ethernet&Ports=Dual">NVIDIA ConnectX</a>, Intel X520, or Intel X710 recommended for loads above 2Gbps.
+* Tested with Ubuntu Server 20.04.1+, which is recommended. Ubuntu Desktop not recommended as it uses NetworkManager instead of Netplan.
+* Python 3, PIP, and some modules (listed in respective guides)
+
+# General Requirements
 ## Requirements
 * Edge and Core routers with MTU 1500 on links between them
    * If you use MPLS, you would terminate MPLS traffic at the core router. LibreQoS cannot decapsulate MPLS on its own.
 * OSPF primary link (low cost) through the server running LibreQoS
 * OSPF backup link
 ![Diagram](docs/diagram.png?raw=true "Diagram")
-### Server Requirements
-* VM or physical server
-* One management network interface, completely seperate from the traffic shaping interface NIC.
-* NIC supporting two virtual interfaces for traffic shaping (in/out), preferably SFP+ capable
-  * <a href="https://store.mellanox.com/categories/products/adapter-cards.html?_bc_fsnf=1&Technology=Ethernet&Ports=Dual">NVIDIA ConnectX models </a> recommended for load above 2Gbps.
-* Tested with Ubuntu Server 20.04.1+, which is recommended. Ubuntu Desktop not recommended as it uses NetworkManager instead of Netplan.
-* Python 3, PIP, and some modules
-```
-sudo apt update
-sudo apt install python3-pip
-python3 -m pip install ipaddress schedule prettytable
-sudo python3 -m pip install ipaddress schedule prettytable
-```
 
 ### Server CPU Recommendations
 * Choose a CPU with solid single-thread performance within your budget
