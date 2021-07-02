@@ -4,9 +4,8 @@ Will soon work on VMs once <a href="https://www.spinics.net/lists/bpf/msg42260.h
 
 ```
 cd LibreQoS
-git clone https://github.com/xdp-project/xdp-cpumap-tc.git
-cd /xdp-cpumap-tc/src/
 git submodule update --init
+cd /xdp-cpumap-tc/src/
 sudo apt install clang gcc llvm libelf-dev
 make
 ```
