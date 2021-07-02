@@ -1,0 +1,3 @@
+[submodule "v0.9-alpha/xdp-cpumap-tc"]
+	path = v0.9-alpha/xdp-cpumap-tc
+	url = https://github.com/xdp-project/xdp-cpumap-tc.git
