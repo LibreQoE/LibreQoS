@@ -162,7 +162,7 @@ def refreshShapers():
 	queueMinorCounterDict = {}
 	# :1 and :2 are used for root and default classes, so start each counter at :3
 	for queueNum in range(queuesAvailable):
-		queueMinorCounterDict[queueNum] = 3
+		queueMinorCounterDict[queueNum+1] = 3
 		
 	for AP in devicesByAP:
 		#Create HTBs by AP
