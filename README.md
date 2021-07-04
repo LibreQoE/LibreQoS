@@ -33,9 +33,9 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
 * Qdisc locking problem limits throughput of HTB used in v0.8 (solved in v0.9). Tested up to 4Gbps/500Mbps asymmetrical throughput using <a href="https://github.com/microsoft/ethr">Microsoft Ethr</a> with n=500 streams. High quantities of small packets will reduce max throughput in practice.
 * Linux tc hash tables can only handle <a href="https://stackoverflow.com/questions/21454155/linux-tc-u32-filters-strange-error">~4000 rules each</a>. This limits total possible clients to 1000 in v0.8.
 
-# v0.9 (Alpha/testing)
+# v0.9 (Beta/testing)
 ## Features
-* <a href="https://github.com/xdp-project/xdp-cpumap-tc">XDP-CPUMAP-TC</a> integration greatly improves throughput, allows many more IPv4 clients, and lowers CPU use
+* <a href="https://github.com/xdp-project/xdp-cpumap-tc">XDP-CPUMAP-TC</a> integration greatly improves throughput, allows many more IPv4 clients, and lowers CPU use. Latency reduced by half on networks previously limited by single-CPU / TC QDisc locking problem in v.0.8.
 * HTB+fq_codel or HTB+cake
 * Shape Clients by Access Point / Node capacity
 * APs equally distributed among CPUs / NIC queues to greatly increase throughput
