@@ -46,8 +46,7 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
 * Working on stats feature
 ## Requirements
 * Requires XDP-CPUMAP-TC. <a href="https://github.com/rchac/LibreQoS/tree/main/v0.9-alpha">See here</a> for details.
-* Requires kernel version 5.12 or above. <a href="https://ubuntuhandbook.org/index.php/2021/04/linux-kernel-5-12-released/">Tip</a> for installing kernel verion 5.12.
-* Only works on dedicated linux machines at the moment, not on VMs. Will soon work on VMs once <a href="https://www.spinics.net/lists/bpf/msg42260.html">this patch</a> is part of the mainline linux kernel.
+* Requires kernel version 5.12 or above for physical servers, and kernel version 5.14 or above for VM.
 
 # General Requirements
 * VM or physical server (versions up to v0.8)
