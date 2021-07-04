@@ -45,7 +45,6 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
 * Not dual stack, clients can only be shaped by IPv4 address for now in v0.9. Once IPv6 support is added to <a href="https://github.com/xdp-project/xdp-cpumap-tc">XDP-CPUMAP-TC</a> we can then shape IPv6 as well.
 * Working on stats feature
 ## Requirements
-* Requires XDP-CPUMAP-TC. <a href="https://github.com/rchac/LibreQoS/tree/main/v0.9-alpha">See here</a> for details.
 * Requires kernel version 5.12 or above for physical servers, and kernel version 5.14 or above for VM.
 
 # General Requirements
