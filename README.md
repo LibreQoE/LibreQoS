@@ -61,9 +61,9 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
 https://www.cpubenchmark.net/singleThread.html
 
 ## Installation and Usage Guide
-📄 <a href="https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.80-Installation-&-Usage-Guide----Proxmox-and-Ubuntu-20.04">LibreQoS 0.80 Installation and Usage Guide - Proxmox and Ubuntu 20.04 LTS</a>
+📄 <a href="https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.9-Installation-&-Usage-Guide----Proxmox-and-Ubuntu-20.04">LibreQoS 0.9 Installation and Usage Guide - Proxmox and Ubuntu 21.10</a>
 
-📄 <a href="https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.78-Installation-&-Usage-Guide----Proxmox-and-Ubuntu-20.04">LibreQoS 0.78 Installation and Usage Guide - Proxmox and Ubuntu 20.04 LTS</a>
+📄 <a href="https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.8-Installation-&-Usage-Guide----Proxmox-and-Ubuntu-20.04">LibreQoS 0.8 Installation and Usage Guide - Proxmox and Ubuntu 20.04 LTS</a>
 
 ## Donate
 LibreQoS is based on fq_codel - an open source project led by Dave Taht, and contrinuted to by dozens of others. Without Dave's work, there would be no LibreQoS, Preseem, or Saisei. Please contribute to Dave's patreon here: https://www.patreon.com/dtaht
