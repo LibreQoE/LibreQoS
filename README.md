@@ -17,7 +17,7 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
    * If you use MPLS, you would terminate MPLS traffic at the core router. LibreQoS cannot decapsulate MPLS on its own.
 * OSPF primary link (low cost) through the server running LibreQoS
 * OSPF backup link
-![Diagram](docs/designdiagram.png?raw=true "Diagram")
+![Diagram](docs/design.png?raw=true "Diagram")
 
 # v0.8 (Stable)
 ## Features
