@@ -61,7 +61,7 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
 https://www.cpubenchmark.net/singleThread.html
 
 ## Installation and Usage Guide
-📄 <a href="https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.9-Installation-&-Usage-Guide----Proxmox-and-Ubuntu-20.04">LibreQoS 0.9 Installation and Usage Guide - Proxmox and Ubuntu 21.10</a>
+📄 <a href="https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.9-Installation-&-Usage-Guide----Proxmox-and-Ubuntu-21.10">LibreQoS 0.9 Installation and Usage Guide - Proxmox and Ubuntu 21.10</a>
 
 📄 <a href="https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.8-Installation-&-Usage-Guide----Proxmox-and-Ubuntu-20.04">LibreQoS 0.8 Installation and Usage Guide - Proxmox and Ubuntu 20.04 LTS</a>
 
