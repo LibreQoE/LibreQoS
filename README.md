@@ -19,7 +19,7 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
 * OSPF backup link
 ![Diagram](docs/diagram.png?raw=true "Diagram")
 
-# v0.8
+# v0.8 (Stable)
 ## Features
 * Dual stack: client can be shaped by same qdisc for both IPv4 and IPv6
 * Up to 1000 clients (IPv4/IPv6)
