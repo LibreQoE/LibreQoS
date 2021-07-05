@@ -48,16 +48,15 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
 * Requires kernel version 5.12 or above for physical servers, and kernel version 5.14 or above for VM.
 
 # General Requirements
-* VM or physical server (versions up to v0.8)
-* Physical server only (v0.9 and above)
-* One management network interface, completely seperate from the traffic shaping interface NIC.
+* VM or physical server
+* One management network interface, completely seperate from the traffic shaping interfaces.
 * NIC supporting two interfaces for traffic shaping
   * <a href="https://store.mellanox.com/categories/products/adapter-cards.html?_bc_fsnf=1&Technology=Ethernet&Ports=Dual">NVIDIA ConnectX</a>
   * <a href="https://www.fs.com/products/75600.html">Intel X710</a>
-* Tested with Ubuntu Server 20.04.1+, which is recommended. Ubuntu Desktop not recommended as it uses NetworkManager instead of Netplan.
-* Python 3, PIP, and some modules (listed in respective guides)
-* Choose a CPU with solid single-thread performance within your budget. Generally speaking any new CPU above $200 can probably handle shaping over 2Gbps
-https://www.cpubenchmark.net/singleThread.html
+* We recommend Ubuntu Server. Ubuntu Desktop is not recommended as it uses NetworkManager instead of Netplan.
+* Python 3, PIP, and some modules (listed in respective guides).
+* Choose a CPU with solid <a href="https://www.cpubenchmark.net/singleThread.html">single-thread performance</a> within your budget. Generally speaking any new CPU above $200 can probably handle shaping up to 2Gbps.
+
 
 ## Installation and Usage Guide
 📄 <a href="https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.9-Installation-&-Usage-Guide----Proxmox-and-Ubuntu-21.10">LibreQoS 0.9 Installation and Usage Guide - Proxmox and Ubuntu 21.10</a>
@@ -67,7 +66,7 @@ https://www.cpubenchmark.net/singleThread.html
 ## Donate
 LibreQoS is based on fq_codel - an open source project led by Dave Taht, and contrinuted to by dozens of others. Without Dave's work, there would be no LibreQoS, Preseem, or Saisei. Please contribute to Dave's patreon here: https://www.patreon.com/dtaht
 
-To support 1000 subscribers using proprietary wrappers for fq_codel would cost the average small ISP $6000 per year. If this application helps your network, please consider donating to Dave's patreon. Donating just $0.2/sub/month ($100/month for 500 subs) comes out to be 60% less than any proprietary solution, and you get to ensure continued development of fq_codel's successor, CAKE.
+To support 1000 subscribers using proprietary wrappers for fq_codel would cost the average small ISP thousands per year. If this application helps your network, please consider donating to Dave's patreon. Donating just $0.2/sub/month ($100/month for 500 subs) comes out to be 60% less than any proprietary solution, and you get to ensure continued development of fq_codel's successor, CAKE.
 
 ## Special Thanks
 Special thanks to Dave Taht, Jesper Dangaard Brouer, Toke Høiland-Jørgensen, Maxim Mikityanskiy, Yossi Kuperman, and Rony Efraim and Kumar Kartikeya Dwivedi for their many contributions to the linux networking stack. Thank you Phil Sutter, Bert Hubert, Gregory Maxwell, Remco van Mook, Martijn van Oosterhout, Paul B Schroeder, and Jasper Spaans for contributing to the guides and documentation listed below. Thanks to Leo Manuel Magpayo for his help improving documentation and for testing. Thanks to everyone on the <a href="https://lists.bufferbloat.net/listinfo/">Bufferbloat mailing list</a> for your help and contibutions.
