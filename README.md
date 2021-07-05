@@ -75,7 +75,6 @@ Special thanks to Dave Taht, Jesper Dangaard Brouer, Toke Høiland-Jørgensen, K
 * https://tldp.org/HOWTO/Adv-Routing-HOWTO/lartc.adv-filter.hashing.html
 * http://linux-ip.net/gl/tc-filters/tc-filters.html
 * http://linux-tc-notes.sourceforge.net/tc/doc/cls_u32.txt
-* https://github.com/netoptimizer/xdp-cpumap-tc
 * https://netdevconf.info/0x14/pub/papers/44/0x14-paper44-talk-paper.pdf
 
 ## License
