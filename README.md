@@ -37,7 +37,7 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
 # v0.9 (Beta/testing)
 ## Features
 * <a href="https://github.com/xdp-project/xdp-cpumap-tc">XDP-CPUMAP-TC</a> integration greatly improves throughput, allows many more IPv4 clients, and lowers CPU use. Latency reduced by half on networks previously limited by single-CPU / TC QDisc locking problem in v.0.8.
-* HTB+fq_codel or HTB+cake
+* MQ+HTB+fq_codel or MQ+HTB+cake
 * Shape Clients by Access Point / Node capacity
 * APs equally distributed among CPUs / NIC queues to greatly increase throughput
 * Simple client management via csv file
