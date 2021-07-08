@@ -14,6 +14,7 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
 ## Typical Client Results
 Here are the <a href="http://www.dslreports.com/speedtest">DSLReports Speed Test</a> results for a Fixed Wireless client averaging 20ms to the test server.
 Bloat is below 5ms in each direction.
+
 <img src="docs/bloat.png" width="350">
 
 # Network Design
