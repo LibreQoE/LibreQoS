@@ -53,7 +53,7 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
 * NIC supporting two interfaces for traffic shaping
   * <a href="https://store.mellanox.com/categories/products/adapter-cards.html?_bc_fsnf=1&Technology=Ethernet&Ports=Dual">NVIDIA ConnectX</a>
   * <a href="https://www.fs.com/products/75600.html">Intel X710</a>
-* We recommend Ubuntu Server. Ubuntu Desktop is not recommended as it uses NetworkManager instead of Netplan.
+* Ubuntu Server recommended. Ubuntu Desktop is not recommended as it uses NetworkManager instead of Netplan.
 * Python 3, PIP, and some modules (listed in respective guides).
 * Choose a CPU with solid <a href="https://www.cpubenchmark.net/singleThread.html">single-thread performance</a> within your budget. Generally speaking any new CPU above $200 can probably handle shaping up to 2Gbps.
 
