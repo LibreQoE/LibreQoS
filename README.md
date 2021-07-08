@@ -12,7 +12,8 @@ The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x 
 >“FQ_Codel provides great isolation... if you've got low-rate videoconferencing and low rate web traffic they never get dropped. A lot of issues with IW10 go away, because all the other traffic sees is the front of the queue. You don't know how big its window is, but you don't care because you are not affected by it. FQ_Codel increases utilization across your entire networking fabric, especially for bidirectional traffic... If we're sticking code into boxes to deploy codel, don't do that. Deploy fq_codel. It's just an across the board win.”
 > - Van Jacobson | IETF 84 Talk
 ## Typical Results
-<img src="docs/bloat.png" width="500">
+<img src="docs/bloat.png" width="350">
+
 # Network Design
 * Edge and Core routers with MTU 1500 on links between them
    * If you use MPLS, you would terminate MPLS traffic at the core router. LibreQoS cannot decapsulate MPLS on its own.
