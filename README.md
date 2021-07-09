@@ -87,7 +87,7 @@ Bloat is below 5ms in each direction.
 ## Donate
 LibreQoS makes great use of fq_codel - an open source project led by Dave Taht, and contrinuted to by dozens of others. Without Dave's work, there would be no LibreQoS, Preseem, or Saisei. Please contribute to Dave's patreon here: https://www.patreon.com/dtaht
 
-To support 1000 subscribers using proprietary wrappers for fq_codel would cost the average small ISP thousands per year. If this application helps your network, please consider donating to Dave's patreon. Donating just $0.2/sub/month ($100/month for 500 subs) comes out to be 60% less than any proprietary solution, and you get to ensure continued development of fq_codel's successor, CAKE.
+If this application helps your network, please consider donating to Dave's patreon. Donating just $0.2/sub/month ($100/month for 500 subs) comes out to be 60% less than any proprietary solution, and you get to ensure continued development of fq_codel's successor, CAKE.
 
 ## Special Thanks
 Special thanks to Dave Taht, Jesper Dangaard Brouer, Toke Høiland-Jørgensen, Kumar Kartikeya Dwivedi, Maxim Mikityanskiy, Yossi Kuperman, and Rony Efraim for their many contributions to the linux networking stack. Thank you Phil Sutter, Bert Hubert, Gregory Maxwell, Remco van Mook, Martijn van Oosterhout, Paul B Schroeder, and Jasper Spaans for contributing to the guides and documentation listed below. Thanks to Leo Manuel Magpayo for his help improving documentation and for testing. Thanks to everyone on the <a href="https://lists.bufferbloat.net/listinfo/">Bufferbloat mailing list</a> for your help and contibutions.
