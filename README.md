@@ -50,6 +50,7 @@ Bloat is below 5ms in each direction.
 * Simple client management via csv file
 ## Limitations
 * Not dual stack, clients can only be shaped by IPv4 address for now in v0.9. Once IPv6 support is added to <a href="https://github.com/xdp-project/xdp-cpumap-tc">XDP-CPUMAP-TC</a> we can then shape IPv6 as well.
+* XDP's cpumap-redirect achieves higher throughput on a server actual hardware NIC (XDP offloading possible) vs as a VM (generic XDP).
 * Working on stats feature
 ## Requirements
 * Requires kernel version 5.12 or above for physical servers, and kernel version 5.14 or above for VM.
