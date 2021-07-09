@@ -4,15 +4,27 @@ LibreQoS is an application that allows ISPs to apply bandwidth rate limiting to 
 ## Who is LibreQoS for?
 This software is intended for Internet Service Providers, particularly Fixed Wireless Internet Service Providers. Large Internet Service Providers with thousands of subscribers may benefit more from using commercially supported alternatives with NMS/CRM integrations such as <a href="https://preseem.com/">Preseem</a> or <a href="https://www.saisei.com/">Saisei</a>.
 ```
-╔══════════╦══════╦═══════════╦══════════╦══════╦═════╦═════════╦══════════════════╦══════════════════╗
-║          ║ IPv4 ║ IPv6      ║ fq_codel ║ cake ║ DPI ║ Metrics ║ Shape By         ║ Throughput       ║
-╠══════════╬══════╬═══════════╬══════════╬══════╬═════╬═════════╬══════════════════╬══════════════════╣
-║ LibreQoS ║ ✔    ║ v0.8 only ║ ✔        ║ ✔    ║     ║         ║ AP, Client       ║ 10G+ (v0.9 only) ║
-╠══════════╬══════╬═══════════╬══════════╬══════╬═════╬═════════╬══════════════════╬══════════════════╣
-║ Preseem  ║ ✔    ║ ✔         ║ ✔        ║      ║     ║ ✔       ║ Site, AP, Client ║ 20G+             ║
-╠══════════╬══════╬═══════════╬══════════╬══════╬═════╬═════════╬══════════════════╬══════════════════╣
-║ Seisei   ║ ✔    ║ ✔         ║ ?        ║ ?    ║ ✔   ║ ✔       ║ ?                ║ 10G              ║
-╚══════════╩══════╩═══════════╩══════════╩══════╩═════╩═════════╩══════════════════╩══════════════════╝
+╔═════════════════╦═══════════════╦══════════════════╦══════════════════╗
+║                 ║ LibreQoS      ║ Preseem          ║ Saisei           ║
+╠═════════════════╬═══════════════╬══════════════════╬══════════════════╣
+║ IPv4            ║ ✔             ║ ✔                ║ ✔                ║
+╠═════════════════╬═══════════════╬══════════════════╬══════════════════╣
+║ IPv6            ║ ✔ (v0.8 only) ║ ✔                ║ ✔                ║
+╠═════════════════╬═══════════════╬══════════════════╬══════════════════╣
+║ fq_codel        ║ ✔             ║ ✔                ║ ?                ║
+╠═════════════════╬═══════════════╬══════════════════╬══════════════════╣
+║ cake            ║ ✔             ║                  ║ ?                ║
+╠═════════════════╬═══════════════╬══════════════════╬══════════════════╣
+║ CRM Integration ║               ║ ✔                ║ ✔                ║
+╠═════════════════╬═══════════════╬══════════════════╬══════════════════╣
+║ DPI             ║               ║                  ║ ✔                ║
+╠═════════════════╬═══════════════╬══════════════════╬══════════════════╣
+║ Metrics         ║               ║ ✔                ║ ✔                ║
+╠═════════════════╬═══════════════╬══════════════════╬══════════════════╣
+║ Shape By        ║ AP, Client    ║ Site, AP, Client ║ Site, AP, Client ║
+╠═════════════════╬═══════════════╬══════════════════╬══════════════════╣
+║ Throughput      ║ 10G+ (v0.9)   ║ 20G+             ║ 10G              ║
+╚═════════════════╩═══════════════╩══════════════════╩══════════════════╝
 ```
 Individuals wanting to reduce bufferbloat or latency on their home internet connections may want to try a home router supporting fq_codel, such as Ubiquiti's EdgeRouter-X (must enable advanced queue fq_codel).
 
