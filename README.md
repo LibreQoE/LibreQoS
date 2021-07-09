@@ -29,7 +29,7 @@ Bloat is below 5ms in each direction.
 ## Features
 * Dual stack: client can be shaped by same qdisc for both IPv4 and IPv6
 * Up to 1000 clients (IPv4/IPv6)
-* Up to 4Gbps throughput
+* Real world asymmetrical throughput: between 2Gbps and 4.5Gbps depending on CPU single thread performance. 
 * HTB+fq_codel or HTB+cake
 * Shape Clients by Access Point / Node capacity
 * TC filters split into groups through hashing filters to increase throughput
