@@ -19,7 +19,7 @@
 #           | |   | | '_ \| '__/ _ \ | | |/ _ \___ \ 
 #           | |___| | |_) | | |  __/ |_| | (_) |__) |
 #           |_____|_|_.__/|_|  \___|\__\_\\___/____/
-#                          v.0.90-beta
+#                          v.0.91-beta
 #
 import random
 import logging
@@ -61,6 +61,7 @@ def clearPriorSettings(interfaceA, interfaceB):
 		clearMemoryCache()
 
 def refreshShapers():
+	tcpOverheadFactor = 1.09
 	devices = []
 	accessPointDownloadMbps = {}
 	accessPointUploadMbps = {}
@@ -71,8 +72,8 @@ def refreshShapers():
 		next(csv_reader)
 		for row in csv_reader:
 			AP, download, upload = row
-			accessPointDownloadMbps[AP] = int(download)
-			accessPointUploadMbps[AP] = int(upload)
+			accessPointDownloadMbps[AP] = int(download)*tcpOverheadFactor
+			accessPointUploadMbps[AP] = int(upload)*tcpOverheadFactor
 	#Load Devices
 	with open('Shaper.csv') as csv_file:
 		csv_reader = csv.reader(csv_file, delimiter=',')
@@ -91,10 +92,10 @@ def refreshShapers():
 			  "hostname": hostname,
 			  "ipv4": ipv4,
 			  "ipv6": ipv6,
-			  "downloadMin": int(downloadMin),
-			  "uploadMin": int(uploadMin),
-			  "downloadMax": int(downloadMax),
-			  "uploadMax": int(uploadMax),
+			  "downloadMin": int(downloadMin)*tcpOverheadFactor,
+			  "uploadMin": int(uploadMin)*tcpOverheadFactor,
+			  "downloadMax": int(downloadMax)*tcpOverheadFactor,
+			  "uploadMax": int(uploadMax)*tcpOverheadFactor,
 			  "qdisc": '',
 			}
 			# If an AP is specified for a device in Shaper.csv, but AP is not listed in AccessPoints.csv, raise exception
