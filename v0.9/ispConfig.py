@@ -1,16 +1,14 @@
-#'fq_codel' or 'cake'
-# Cake requires many specific packages and kernel changes:
-# 	https://www.bufferbloat.net/projects/codel/wiki/Cake/
-# 	https://github.com/dtaht/tc-adv
+#'fq_codel' or 'cake diffserv4'
 fqOrCAKE = 'fq_codel'
+#fqOrCAKE = 'cake diffserv4'
 
 # How many Mbps are available to the edge of this network
 upstreamBandwidthCapacityDownloadMbps = 1000
 upstreamBandwidthCapacityUploadMbps = 1000
 
 # Traffic from devices not specified in Shaper.csv will be rate limited by an HTB of this many Mbps
-defaultClassCapacityDownloadMbps = 1000
-defaultClassCapacityUploadMbps = 1000
+defaultClassCapacityDownloadMbps = 500
+defaultClassCapacityUploadMbps = 500
 
 # Interface connected to core router
 interfaceA = 'eth1'
