@@ -1,35 +1,43 @@
 # LibreQoS
 ![Banner](docs/Banner.png "Banner")
-LibreQoS is an application that allows ISPs to apply bandwidth rate limiting to hundreds of clients through cake or fq_codel. <a href="https://www.bufferbloat.net/projects/codel/wiki/Cake/">Cake</a> and <a href="https://www.bufferbloat.net/projects/codel/wiki/">fq_codel</a> are Free and Open Source Active Queue Management algorithms that reduce <a href="https://www.bufferbloat.net/projects/bloat/wiki/Introduction/">bufferbloat</a>. When used in the context of an ISP network, these AQMs can be deployed to shape traffic on each customer's connection - reducing latency, enforcing advertised plan bandwidth, and improving network performance. LibreQoS directs each customer's traffic through an individual cake or fq_codel instance, which acts as part of a <a href="https://linux.die.net/man/8/tc-htb">hierarchy token bucket</a>. Traffic can be shaped by site or by Access Point, in addition to by subscriber. Please test to ensure compatability with your network architecture and design before deploying in production. 
+LibreQoS is an application that allows ISPs to apply bandwidth rate limiting to hundreds of clients using htb+cake or htb+fq_codel. <a href="https://www.bufferbloat.net/projects/codel/wiki/Cake/">Cake</a> and <a href="https://www.bufferbloat.net/projects/codel/wiki/">fq_codel</a> are Active Queue Management algorithms that reduce <a href="https://www.bufferbloat.net/projects/bloat/wiki/Introduction/">bufferbloat</a>. When used in the context of an ISP network, these AQMs can be used when setting bandwidth limits on customer traffic - reducing latency, enforcing advertised plan bandwidth, and improving overall network performance. LibreQoS directs each customer's traffic into a <a href="https://linux.die.net/man/8/tc-htb">hierarchy token bucket</a>, where traffic can be shaped both by Access Point capacity and by the subscriber's allocated plan bandwidth. Please test to ensure compatability with your network architecture and design before deploying in production. 
 ## Who is LibreQoS for?
 This software is intended for Internet Service Providers, particularly Fixed Wireless Internet Service Providers. Large Internet Service Providers with thousands of subscribers may benefit more from using commercially supported alternatives with NMS/CRM integrations such as <a href="https://preseem.com/">Preseem</a> or <a href="https://www.saisei.com/">Saisei</a>.
 ```
-╔═════════════════╦═══════════════╦══════════════════╦══════════════════╗
-║                 ║ LibreQoS      ║ Preseem          ║ Saisei           ║
-╠═════════════════╬═══════════════╬══════════════════╬══════════════════╣
-║ IPv4            ║ ✔             ║ ✔                ║ ✔                ║
-╠═════════════════╬═══════════════╬══════════════════╬══════════════════╣
-║ IPv6            ║ ✔ (v0.8 only) ║ ✔                ║ ✔                ║
-╠═════════════════╬═══════════════╬══════════════════╬══════════════════╣
-║ fq_codel        ║ ✔             ║ ✔                ║ ?                ║
-╠═════════════════╬═══════════════╬══════════════════╬══════════════════╣
-║ cake            ║ ✔             ║                  ║ ?                ║
-╠═════════════════╬═══════════════╬══════════════════╬══════════════════╣
-║ CRM Integration ║               ║ ✔                ║ ✔                ║
-╠═════════════════╬═══════════════╬══════════════════╬══════════════════╣
-║ DPI             ║               ║                  ║ ✔                ║
-╠═════════════════╬═══════════════╬══════════════════╬══════════════════╣
-║ Metrics         ║               ║ ✔                ║ ✔                ║
-╠═════════════════╬═══════════════╬══════════════════╬══════════════════╣
-║ Shape By        ║ AP, Client    ║ Site, AP, Client ║ Site, AP, Client ║
-╠═════════════════╬═══════════════╬══════════════════╬══════════════════╣
-║ Throughput      ║ 10G+ (v0.9)   ║ 20G+             ║ 10G              ║
-╚═════════════════╩═══════════════╩══════════════════╩══════════════════╝
+╔══════════════════════╦══════════════════════╦══════════════════╗
+║                      ║ LibreQoS             ║ Preseem          ║
+╠══════════════════════╬══════════════════════╬══════════════════╣
+║ IPv4                 ║ ✔                    ║ ✔                ║
+╠══════════════════════╬══════════════════════╬══════════════════╣
+║ IPv6                 ║ v0.8 only            ║ ✔                ║
+╠══════════════════════╬══════════════════════╬══════════════════╣
+║ fq_codel             ║ ✔                    ║ ✔                ║
+╠══════════════════════╬══════════════════════╬══════════════════╣
+║ cake                 ║ ✔                    ║                  ║
+╠══════════════════════╬══════════════════════╬══════════════════╣
+║ Fair Queuing         ║ ✔                    ║ ✔                ║
+╠══════════════════════╬══════════════════════╬══════════════════╣
+║ VoIP Prioritization  ║ ✔ cake diffserv4 [1] ║                  ║
+╠══════════════════════╬══════════════════════╬══════════════════╣
+║ Video Prioritization ║ ✔ cake diffserv4 [1] ║                  ║
+╠══════════════════════╬══════════════════════╬══════════════════╣
+║ CRM Integration      ║                      ║ ✔                ║
+╠══════════════════════╬══════════════════════╬══════════════════╣
+║ Metrics              ║                      ║ ✔                ║
+╠══════════════════════╬══════════════════════╬══════════════════╣
+║ Shape By             ║ AP, Client           ║ Site, AP, Client ║
+╠══════════════════════╬══════════════════════╬══════════════════╣
+║ Throughput           ║ 10G+ (v0.9)          ║ 20G+ [2]         ║
+╚══════════════════════╩══════════════════════╩══════════════════╝
 ```
+* 1) <a href="https://arxiv.org/pdf/1804.07617.pdf">Piece of CAKE: A Comprehensive Queue Management Solution for Home Gateways</a>
+* 2) <a href="https://www.cengn.ca/wp-content/uploads/2020/02/Aterlo-Networks-Success-Story.pdf">Aterlo Validates Qoe Measurement Appliance Preseem</a>
+
 Individuals wanting to reduce bufferbloat or latency on their home internet connections may want to try a home router supporting fq_codel, such as Ubiquiti's EdgeRouter-X (must enable advanced queue fq_codel).
 
 ## How does fq_codel work?
-Fq_codel distinguishes interactive flows of traffic (web browsing, audio streaming, VoIP, gaming) from bulk traffic (streaming video services, software updates). Interactive flows are prioritized to optimize their performance, while bulk traffic gets steady throughput and variable latency. The general reduction of connection latency offered by fq_codel is highly beneficial to end-users.
+* <a href="https://www.bufferbloat.net/projects/codel/wiki/">FQ-Codel | Bufferbloat.net</a>
+* <a href="https://www.bufferbloat.net/projects/codel/wiki/Cake/">Cake | Bufferbloat.net</a>
 
 <img src="docs/latency.png" width="650">
 
