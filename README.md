@@ -35,9 +35,9 @@ This software is intended for Internet Service Providers, particularly Fixed Wir
 
 Individuals wanting to reduce bufferbloat or latency on their home internet connections may want to try a home router supporting fq_codel, such as Ubiquiti's EdgeRouter-X (must enable advanced queue fq_codel).
 
-## How does fq_codel work?
-* <a href="https://www.bufferbloat.net/projects/codel/wiki/">FQ-Codel | Bufferbloat.net</a>
+## How do Cake and fq_codel work?
 * <a href="https://www.bufferbloat.net/projects/codel/wiki/Cake/">Cake | Bufferbloat.net</a>
+* * <a href="https://www.bufferbloat.net/projects/codel/wiki/">FQ-Codel | Bufferbloat.net</a>
 
 <img src="docs/latency.png" width="650">
 
