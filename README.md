@@ -37,7 +37,7 @@ Individuals wanting to reduce bufferbloat or latency on their home internet conn
 
 ## How do Cake and fq_codel work?
 * <a href="https://www.bufferbloat.net/projects/codel/wiki/Cake/">Cake | Bufferbloat.net</a>
-* * <a href="https://www.bufferbloat.net/projects/codel/wiki/">FQ-Codel | Bufferbloat.net</a>
+* <a href="https://www.bufferbloat.net/projects/codel/wiki/">FQ-Codel | Bufferbloat.net</a>
 
 <img src="docs/latency.png" width="650">
 
