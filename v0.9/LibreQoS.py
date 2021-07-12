@@ -65,8 +65,7 @@ def refreshShapers():
 	devices = []
 	accessPointDownloadMbps = {}
 	accessPointUploadMbps = {}
-	filterHandleCounter = 101
-	#Load Access Points
+	# Load Access Points
 	with open('AccessPoints.csv') as csv_file:
 		csv_reader = csv.reader(csv_file, delimiter=',')
 		next(csv_reader)
@@ -74,7 +73,7 @@ def refreshShapers():
 			AP, download, upload = row
 			accessPointDownloadMbps[AP] = int(download)*tcpOverheadFactor
 			accessPointUploadMbps[AP] = int(upload)*tcpOverheadFactor
-	#Load Devices
+	# Load Devices
 	with open('Shaper.csv') as csv_file:
 		csv_reader = csv.reader(csv_file, delimiter=',')
 		next(csv_reader)
@@ -105,13 +104,13 @@ def refreshShapers():
 	# If no AP is specified for a device in Shaper.csv, it is placed under this 'default' AP shaper, set to bandwidth max at edge
 	accessPointDownloadMbps['none'] = upstreamBandwidthCapacityDownloadMbps
 	accessPointUploadMbps['none'] = upstreamBandwidthCapacityUploadMbps
-	#Sort into bins by AP
+	# Sort into bins by AP
 	result = collections.defaultdict(list)
 	for d in devices:
 		result[d['AP']].append(d)
 	devicesByAP = list(result.values())
 	clearPriorSettings(interfaceA, interfaceB)
-	#XDP-CPUMAP-TC
+	# XDP-CPUMAP-TC
 	shell('./xdp-cpumap-tc/bin/xps_setup.sh -d ' + interfaceA + ' --default')
 	shell('./xdp-cpumap-tc/bin/xps_setup.sh -d ' + interfaceB + ' --default')
 	shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu --dev ' + interfaceA + ' --lan')
@@ -119,7 +118,7 @@ def refreshShapers():
 	shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --clear')
 	shell('./xdp-cpumap-tc/src/tc_classify --dev-egress ' + interfaceA)
 	shell('./xdp-cpumap-tc/src/tc_classify --dev-egress ' + interfaceB)
-	#Find queues available
+	# Find queues available
 	queuesAvailable = 0
 	path = '/sys/class/net/' + interfaceA + '/queues/'
 	directory_contents = os.listdir(path)
@@ -127,7 +126,7 @@ def refreshShapers():
 	for item in directory_contents:
 		if "tx-" in str(item):
 			queuesAvailable += 1
-	#For VMs, must reduce queues if more than 9, for some reason
+	# For VMs, must reduce queues if more than 9, for some reason
 	if queuesAvailable > 9:
 		command = 'grep -q ^flags.*\ hypervisor\  /proc/cpuinfo && echo "This machine is a VM"'
 		try:
@@ -138,16 +137,16 @@ def refreshShapers():
 			success = False
 		if "This machine is a VM" in output:
 			queuesAvailable = 9
-	#Create MQ
+	# Create MQ
 	thisInterface = interfaceA
 	shell('tc qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq')
 	for queue in range(queuesAvailable):
 		shell('tc qdisc add dev ' + thisInterface + ' parent 7FFF:' + str(queue+1) + ' handle ' + str(queue+1) + ': htb default 2')
 		shell('tc class add dev ' + thisInterface + ' parent ' + str(queue+1) + ': classid ' + str(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityDownloadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityDownloadMbps) + 'mbit')
 		shell('tc qdisc add dev ' + thisInterface + ' parent ' + str(queue+1) + ':1 ' + fqOrCAKE)
-		#Default class - traffic gets passed through this limiter with lower priority if not otherwise classified by the Shaper.csv
-		#Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
-		#Default class can use up to defaultClassCapacityDownloadMbps when that bandwidth isn't used by known hosts.
+		# Default class - traffic gets passed through this limiter with lower priority if not otherwise classified by the Shaper.csv
+		# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
+		# Default class can use up to defaultClassCapacityDownloadMbps when that bandwidth isn't used by known hosts.
 		shell('tc class add dev ' + thisInterface + ' parent ' + str(queue+1) + ':1 classid ' + str(queue+1) + ':2 htb rate ' + str(defaultClassCapacityDownloadMbps/4) + 'mbit ceil ' + str(defaultClassCapacityDownloadMbps) + 'mbit prio 5')
 		shell('tc qdisc add dev ' + thisInterface + ' parent ' + str(queue+1) + ':2 ' + fqOrCAKE)
 	
@@ -157,9 +156,9 @@ def refreshShapers():
 		shell('tc qdisc add dev ' + thisInterface + ' parent 7FFF:' + str(queue+1) + ' handle ' + str(queue+1) + ': htb default 2')
 		shell('tc class add dev ' + thisInterface + ' parent ' + str(queue+1) + ': classid ' + str(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityUploadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps) + 'mbit')
 		shell('tc qdisc add dev ' + thisInterface + ' parent ' + str(queue+1) + ':1 ' + fqOrCAKE)
-		#Default class - traffic gets passed through this limiter with lower priority if not otherwise classified by the Shaper.csv.
-		#Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
-		#Default class can use up to defaultClassCapacityUploadMbps when that bandwidth isn't used by known hosts.
+		# Default class - traffic gets passed through this limiter with lower priority if not otherwise classified by the Shaper.csv.
+		# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
+		# Default class can use up to defaultClassCapacityUploadMbps when that bandwidth isn't used by known hosts.
 		shell('tc class add dev ' + thisInterface + ' parent ' + str(queue+1) + ':1 classid ' + str(queue+1) + ':2 htb rate ' + str(defaultClassCapacityUploadMbps/4) + 'mbit ceil ' + str(defaultClassCapacityUploadMbps) + 'mbit prio 5')
 		shell('tc qdisc add dev ' + thisInterface + ' parent ' + str(queue+1) + ':2 ' + fqOrCAKE)
 	
@@ -170,14 +169,13 @@ def refreshShapers():
 		queueMinorCounterDict[queueNum+1] = 3
 		
 	for AP in devicesByAP:
-		#Create HTBs by AP
 		currentAPname = AP[0]['AP']
 		thisAPdownload = accessPointDownloadMbps[currentAPname]
 		thisAPupload = accessPointUploadMbps[currentAPname]
 		major = currentQueueCounter
 		minor = queueMinorCounterDict[currentQueueCounter]
-		#HTB + qdisc for each AP
 		thisHTBclassID = str(currentQueueCounter) + ':' + str(minor)
+		# HTB + qdisc for each AP
 		# Guarentee AP gets at least 1/4 of its radio capacity, allow up to its max radio capacity when network not at peak load
 		shell('tc class add dev ' + interfaceA + ' parent ' + str(currentQueueCounter) + ':1 classid ' + str(minor) + ' htb rate '+ str(round(thisAPdownload/4)) + 'mbit ceil '+ str(round(thisAPdownload)) + 'mbit prio 3') 
 		shell('tc qdisc add dev ' + interfaceA + ' parent ' + str(currentQueueCounter) + ':' + str(minor) + ' ' + fqOrCAKE)
@@ -207,11 +205,11 @@ def refreshShapers():
 		if currentQueueCounter > queuesAvailable:
 			currentQueueCounter = 1
 	
-	#Save devices to file to allow for statistics runs
+	# Save devices to file to allow for statistics runs
 	with open('devices.json', 'w') as outfile:
 		json.dump(devices, outfile)
 	
-	#Done
+	# Done
 	currentTimeString = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 	print("Successful run completed on " + currentTimeString)
 
