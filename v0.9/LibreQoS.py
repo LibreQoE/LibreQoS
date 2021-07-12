@@ -146,7 +146,9 @@ def refreshShapers():
 		shell('tc class add dev ' + thisInterface + ' parent ' + str(queue+1) + ': classid ' + str(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityDownloadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityDownloadMbps) + 'mbit')
 		shell('tc qdisc add dev ' + thisInterface + ' parent ' + str(queue+1) + ':1 ' + fqOrCAKE)
 		#Default class - traffic gets passed through this limiter with lower priority if not otherwise classified by the Shaper.csv
-		shell('tc class add dev ' + thisInterface + ' parent ' + str(queue+1) + ':1 classid ' + str(queue+1) + ':2 htb rate ' + str(defaultClassCapacityDownloadMbps) + 'mbit ceil ' + str(defaultClassCapacityDownloadMbps) + 'mbit prio 5')
+		#Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
+		#Default class can use up to defaultClassCapacityDownloadMbps when that bandwidth isn't used by known hosts.
+		shell('tc class add dev ' + thisInterface + ' parent ' + str(queue+1) + ':1 classid ' + str(queue+1) + ':2 htb rate ' + str(defaultClassCapacityDownloadMbps/4) + 'mbit ceil ' + str(defaultClassCapacityDownloadMbps) + 'mbit prio 5')
 		shell('tc qdisc add dev ' + thisInterface + ' parent ' + str(queue+1) + ':2 ' + fqOrCAKE)
 	
 	thisInterface = interfaceB
@@ -155,8 +157,10 @@ def refreshShapers():
 		shell('tc qdisc add dev ' + thisInterface + ' parent 7FFF:' + str(queue+1) + ' handle ' + str(queue+1) + ': htb default 2')
 		shell('tc class add dev ' + thisInterface + ' parent ' + str(queue+1) + ': classid ' + str(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityUploadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps) + 'mbit')
 		shell('tc qdisc add dev ' + thisInterface + ' parent ' + str(queue+1) + ':1 ' + fqOrCAKE)
-		#Default class - traffic gets passed through this limiter with lower priority if not otherwise classified by the Shaper.csv
-		shell('tc class add dev ' + thisInterface + ' parent ' + str(queue+1) + ':1 classid ' + str(queue+1) + ':2 htb rate ' + str(defaultClassCapacityUploadMbps) + 'mbit ceil ' + str(defaultClassCapacityUploadMbps) + 'mbit prio 5')
+		#Default class - traffic gets passed through this limiter with lower priority if not otherwise classified by the Shaper.csv.
+		#Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
+		#Default class can use up to defaultClassCapacityUploadMbps when that bandwidth isn't used by known hosts.
+		shell('tc class add dev ' + thisInterface + ' parent ' + str(queue+1) + ':1 classid ' + str(queue+1) + ':2 htb rate ' + str(defaultClassCapacityUploadMbps/4) + 'mbit ceil ' + str(defaultClassCapacityUploadMbps) + 'mbit prio 5')
 		shell('tc qdisc add dev ' + thisInterface + ' parent ' + str(queue+1) + ':2 ' + fqOrCAKE)
 	
 	currentQueueCounter = 1
@@ -172,7 +176,7 @@ def refreshShapers():
 		thisAPupload = accessPointUploadMbps[currentAPname]
 		major = currentQueueCounter
 		minor = queueMinorCounterDict[currentQueueCounter]
-		#HTBs for each AP
+		#HTB + qdisc for each AP
 		thisHTBclassID = str(currentQueueCounter) + ':' + str(minor)
 		# Guarentee AP gets at least 1/4 of its radio capacity, allow up to its max radio capacity when network not at peak load
 		shell('tc class add dev ' + interfaceA + ' parent ' + str(currentQueueCounter) + ':1 classid ' + str(minor) + ' htb rate '+ str(round(thisAPdownload/4)) + 'mbit ceil '+ str(round(thisAPdownload)) + 'mbit prio 3') 
@@ -181,7 +185,7 @@ def refreshShapers():
 		shell('tc qdisc add dev ' + interfaceB + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
 		minor += 1
 		for device in AP:
-			#QDiscs for each AP
+			#HTB + qdisc for each device
 			shell('tc class add dev ' + interfaceA + ' parent ' + thisHTBclassID + ' classid ' + str(minor) + ' htb rate '+ str(device['downloadMin']) + 'mbit ceil '+ str(device['downloadMax']) + 'mbit prio 3') 
 			shell('tc qdisc add dev ' + interfaceA + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
 			shell('tc class add dev ' + interfaceB + ' parent ' + thisHTBclassID + ' classid ' + str(minor) + ' htb rate '+ str(device['uploadMin']) + 'mbit ceil '+ str(device['uploadMax']) + 'mbit prio 3') 
