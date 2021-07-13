@@ -81,6 +81,8 @@ Bloat is below 5ms in each direction.
 * Shape Clients by Access Point / Node capacity
 * APs equally distributed among CPUs / NIC queues to greatly increase throughput
 * Simple client management via csv file
+## Considerations
+* Each Node / Access Point is tied to a queue and CPU core. Access Points are evenly distributed across CPUs. Since each CPU can usually only accomodate up to 4Gbps, ensure any single Node / Access Point will not require more than 4Gbps throughput.
 ## Limitations
 * Not dual stack, clients can only be shaped by IPv4 address for now in v0.9. Once IPv6 support is added to <a href="https://github.com/xdp-project/xdp-cpumap-tc">XDP-CPUMAP-TC</a> we can then shape IPv6 as well.
 * XDP's cpumap-redirect achieves higher throughput on a server with direct access to the NIC (XDP offloading possible) vs as a VM with bridges (generic XDP).
