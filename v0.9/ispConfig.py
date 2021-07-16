@@ -1,6 +1,8 @@
 #'fq_codel' or 'cake diffserv4'
-fqOrCAKE = 'fq_codel'
-#fqOrCAKE = 'cake diffserv4'
+#'cake diffserv4' is recommended
+
+#fqOrCAKE = 'fq_codel'
+fqOrCAKE = 'cake diffserv4'
 
 # How many Mbps are available to the edge of this network
 upstreamBandwidthCapacityDownloadMbps = 1000
