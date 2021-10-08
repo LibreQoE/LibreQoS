@@ -91,10 +91,10 @@ Bloat is below 5ms in each direction.
 * Requires kernel version 5.12 or above for physical servers, and kernel version 5.14 or above for VM.
 
 # General Requirements
-* VM or physical server
+* VM or physical server. Physical server will perform better and better utilize all CPU cores.
 * One management network interface, completely seperate from the traffic shaping interfaces.
-* NIC supporting two interfaces for traffic shaping
-  * <a href="https://store.mellanox.com/categories/products/adapter-cards.html?_bc_fsnf=1&Technology=Ethernet&Ports=Dual">NVIDIA ConnectX</a>
+* NIC supporting two interfaces for traffic shaping. Recommendations:
+  * <a href="https://store.mellanox.com/products/nvidia-mcx4121a-xcat-connectx-4-lx-en-adapter-card-10gbe-dual-port-sfp28-pcie3-0-x8-rohs-r6.html">NVIDIA ConnectX-4 MCX4121A-XCAT</a>
   * <a href="https://www.fs.com/products/75600.html">Intel X710</a>
 * Ubuntu Server recommended. Ubuntu Desktop is not recommended as it uses NetworkManager instead of Netplan.
 * Python 3, PIP, and some modules (listed in respective guides).
@@ -102,8 +102,14 @@ Bloat is below 5ms in each direction.
 
 
 ## Installation and Usage Guide
+
+Best Performance, IPv4 Only:
+📄 <a href="https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.9-Installation-&-Usage-Guide----Physical-Server-and-Ubuntu-21.04">LibreQoS v0.9 Installation & Usage Guide Physical Server and Ubuntu 21.04</a>
+
+Good Performance, IPv4 Only:
 📄 <a href="https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.9-Installation-&-Usage-Guide----Proxmox-and-Ubuntu-21.10">LibreQoS 0.9 Installation and Usage Guide - Proxmox and Ubuntu 21.10</a>
 
+OK Performance, IPv4 and IPv6:
 📄 <a href="https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.8-Installation-&-Usage-Guide----Proxmox-and-Ubuntu-20.04">LibreQoS 0.8 Installation and Usage Guide - Proxmox and Ubuntu 20.04 LTS</a>
 
 ## Donate
