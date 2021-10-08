@@ -101,7 +101,7 @@ Bloat is below 5ms in each direction.
 * Python 3, PIP, and some modules (listed in respective guides).
 * Choose a CPU with solid <a href="https://www.cpubenchmark.net/singleThread.html">single-thread performance</a> within your budget. Generally speaking any new CPU above $200 can probably handle shaping up to 2Gbps.
 
-## Installation and Usage Guide
+# Installation and Usage Guide
 
 Best Performance, IPv4 Only:
 
@@ -124,16 +124,16 @@ LibreQoS makes great use of fq_codel - an open source project led by Dave Taht, 
 
 If this application helps your network, please contribute to <a href="https://www.patreon.com/dtaht">Dave's patreon</a>. Donating just $0.2/sub/month ($100/month for 500 subs) comes out to be 60% less than any proprietary solution, and you get to ensure continued development of fq_codel's successor, CAKE.
 
-## Special Thanks
+# Special Thanks
 Special thanks to Dave Taht, Jesper Dangaard Brouer, Toke Høiland-Jørgensen, Kumar Kartikeya Dwivedi, Maxim Mikityanskiy, Yossi Kuperman, and Rony Efraim for their many contributions to the linux networking stack. Thank you Phil Sutter, Bert Hubert, Gregory Maxwell, Remco van Mook, Martijn van Oosterhout, Paul B Schroeder, and Jasper Spaans for contributing to the guides and documentation listed below. Thanks to Leo Manuel Magpayo for his help improving documentation and for testing. Thanks to everyone on the <a href="https://lists.bufferbloat.net/listinfo/">Bufferbloat mailing list</a> for your help and contibutions.
 
-## References
+# References
 * https://tldp.org/HOWTO/Adv-Routing-HOWTO/lartc.adv-filter.hashing.html
 * http://linux-ip.net/gl/tc-filters/tc-filters.html
 * http://linux-tc-notes.sourceforge.net/tc/doc/cls_u32.txt
 * https://netdevconf.info/0x14/pub/papers/44/0x14-paper44-talk-paper.pdf
 
-## License
+# License
 Copyright (C) 2020-2021 Robert Chacón
 
 LibreQoS is free software: you can redistribute it and/or modify
