@@ -113,14 +113,13 @@ OK Performance, IPv4 and IPv6:
 📄 <a href="https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.8-Installation-&-Usage-Guide----Proxmox-and-Ubuntu-20.04">LibreQoS 0.8 Installation and Usage Guide - Proxmox and Ubuntu 20.04 LTS</a>
 
 ## Donate
-LibreQoS makes great use of fq_codel - an open source project led by Dave Taht, and contrinuted to by dozens of others. Without Dave's work, there would be no LibreQoS, Preseem, or Saisei. Please contribute to Dave's patreon here: https://www.patreon.com/dtaht
-[
-  ![Support]
-  (https://github.com/rchac/LibreQoS/blob/main/docs/donate.png)
-]
-(https://www.patreon.com/dtaht)
+LibreQoS makes great use of fq_codel - an open source project led by Dave Taht, and contrinuted to by dozens of others. Without Dave's work, there would be no LibreQoS or Preseem.
 
-If this application helps your network, please consider donating to Dave's patreon. Donating just $0.2/sub/month ($100/month for 500 subs) comes out to be 60% less than any proprietary solution, and you get to ensure continued development of fq_codel's successor, CAKE.
+<a href="https://www.patreon.com/dtaht">
+  <img src="https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/donate.png" alt="Donate" />
+</a>
+
+If this application helps your network, please contribute to <a href="https://www.patreon.com/dtaht">Dave's patreon</a>. Donating just $0.2/sub/month ($100/month for 500 subs) comes out to be 60% less than any proprietary solution, and you get to ensure continued development of fq_codel's successor, CAKE.
 
 ## Special Thanks
 Special thanks to Dave Taht, Jesper Dangaard Brouer, Toke Høiland-Jørgensen, Kumar Kartikeya Dwivedi, Maxim Mikityanskiy, Yossi Kuperman, and Rony Efraim for their many contributions to the linux networking stack. Thank you Phil Sutter, Bert Hubert, Gregory Maxwell, Remco van Mook, Martijn van Oosterhout, Paul B Schroeder, and Jasper Spaans for contributing to the guides and documentation listed below. Thanks to Leo Manuel Magpayo for his help improving documentation and for testing. Thanks to everyone on the <a href="https://lists.bufferbloat.net/listinfo/">Bufferbloat mailing list</a> for your help and contibutions.
