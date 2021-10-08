@@ -58,7 +58,7 @@ Bloat is below 5ms in each direction.
 
 ![Diagram](docs/design.png?raw=true "Diagram")
 
-# v0.8 (Stable)
+# v0.8 (IPv4 & IPv6)
 ## Features
 * Dual stack: client can be shaped by same qdisc for both IPv4 and IPv6
 * Up to 1000 clients (IPv4/IPv6)
@@ -72,7 +72,7 @@ Bloat is below 5ms in each direction.
 * Qdisc locking problem limits throughput of HTB used in v0.8 (solved in v0.9). Tested up to 4Gbps/500Mbps asymmetrical throughput using <a href="https://github.com/microsoft/ethr">Microsoft Ethr</a> with n=500 streams. High quantities of small packets will reduce max throughput in practice.
 * Linux tc hash tables can only handle <a href="https://stackoverflow.com/questions/21454155/linux-tc-u32-filters-strange-error">~4000 rules each</a>. This limits total possible clients to 1000 in v0.8.
 
-# v0.9 (Beta/testing)
+# v0.9 (IPv4 Only)
 ## Features
 * <a href="https://github.com/xdp-project/xdp-cpumap-tc">XDP-CPUMAP-TC</a> integration greatly improves throughput, allows many more IPv4 clients, and lowers CPU use. Latency reduced by half on networks previously limited by single-CPU / TC QDisc locking problem in v.0.8.
 * Tested up to 10Gbps asymmetrical throughput on dedicated server (lab only had 10G router). v0.9 is estimated to be capable of an asymmetrical throughput of 20Gbps-40Gbps on a dedicated server with 12+ cores.
@@ -88,7 +88,8 @@ Bloat is below 5ms in each direction.
 * XDP's cpumap-redirect achieves higher throughput on a server with direct access to the NIC (XDP offloading possible) vs as a VM with bridges (generic XDP).
 * Working on stats feature
 ## Requirements
-* Requires kernel version 5.12 or above for physical servers, and kernel version 5.14 or above for VM.
+* v0.9: Requires kernel version 5.9 or above for physical servers, and kernel version 5.14 or above for VM.
+* v0.8: Requires kernel version 5.1 or above.
 
 # General Requirements
 * VM or physical server. Physical server will perform better and better utilize all CPU cores.
@@ -99,7 +100,6 @@ Bloat is below 5ms in each direction.
 * Ubuntu Server recommended. Ubuntu Desktop is not recommended as it uses NetworkManager instead of Netplan.
 * Python 3, PIP, and some modules (listed in respective guides).
 * Choose a CPU with solid <a href="https://www.cpubenchmark.net/singleThread.html">single-thread performance</a> within your budget. Generally speaking any new CPU above $200 can probably handle shaping up to 2Gbps.
-
 
 ## Installation and Usage Guide
 
