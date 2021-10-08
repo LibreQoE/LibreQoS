@@ -115,7 +115,7 @@ OK Performance, IPv4 and IPv6:
 
 📄 <a href="https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.8-Installation-&-Usage-Guide----Proxmox-and-Ubuntu-20.04">LibreQoS 0.8 Installation and Usage Guide - Proxmox and Ubuntu 20.04 LTS</a>
 
-## Donate
+# Donate
 LibreQoS makes great use of fq_codel - an open source project led by Dave Taht, and contrinuted to by dozens of others. Without Dave's work, there would be no LibreQoS or Preseem.
 
 <a href="https://www.patreon.com/dtaht">
