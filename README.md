@@ -1,6 +1,6 @@
 # LibreQoS
 ![Banner](docs/Banner.png "Banner")
-LibreQoS is an application that allows ISPs to apply bandwidth rate limiting to hundreds of clients using htb+cake or htb+fq_codel. <a href="https://www.bufferbloat.net/projects/codel/wiki/Cake/">Cake</a> and <a href="https://www.bufferbloat.net/projects/codel/wiki/">fq_codel</a> are Active Queue Management algorithms that reduce <a href="https://www.bufferbloat.net/projects/bloat/wiki/Introduction/">bufferbloat</a>. When used in the context of an ISP network, these AQMs can be used when setting bandwidth limits on customer traffic - reducing latency, enforcing advertised plan bandwidth, and improving overall network performance. LibreQoS directs each customer's traffic into a <a href="https://linux.die.net/man/8/tc-htb">hierarchy token bucket</a>, where traffic can be shaped both by Access Point capacity and by the subscriber's allocated plan bandwidth. Please test to ensure compatability with your network architecture and design before deploying in production. 
+LibreQoS is a <a href="https://www.bufferbloat.net/projects/cerowrt/wiki/Smart_Queue_Management/">smart queue management (SQM)</a> system that allows ISPs to intelligently apply bandwidth rate limiting to hundreds or thousands of clients using htb+cake or htb+fq_codel. <a href="https://www.bufferbloat.net/projects/codel/wiki/Cake/">Cake</a> and <a href="https://www.bufferbloat.net/projects/codel/wiki/">fq_codel</a> are Active Queue Management algorithms that reduce <a href="https://www.bufferbloat.net/projects/bloat/wiki/Introduction/">bufferbloat</a>. When used in the context of an ISP network, these AQMs can be used when setting bandwidth limits on customer traffic - reducing latency, enforcing advertised plan bandwidth, and improving overall network performance. LibreQoS directs each customer's traffic into a <a href="https://linux.die.net/man/8/tc-htb">hierarchy token bucket</a>, where traffic can be shaped both by Access Point capacity and by the subscriber's allocated plan bandwidth. Please test to ensure compatability with your network architecture and design before deploying in production. 
 ## Who is LibreQoS for?
 This software is intended for Internet Service Providers, particularly Fixed Wireless Internet Service Providers. Large Internet Service Providers with thousands of subscribers may benefit more from using commercially supported alternatives with NMS/CRM integrations such as <a href="https://preseem.com/">Preseem</a> or <a href="https://www.saisei.com/">Saisei</a>.
 ```
@@ -74,10 +74,11 @@ Bloat is below 5ms in each direction.
 
 # v0.9 (IPv4 Only)
 ## Features
-* <a href="https://github.com/xdp-project/xdp-cpumap-tc">XDP-CPUMAP-TC</a> integration greatly improves throughput, allows many more IPv4 clients, and lowers CPU use. Latency reduced by half on networks previously limited by single-CPU / TC QDisc locking problem in v.0.8.
+* <a href="https://github.com/xdp-project/xdp-cpumap-tc">XDP-CPUMAP-TC</a> integration greatly improves throughput, allows many more IPv4 clients (), and lowers CPU use. Latency reduced by half on networks previously limited by single-CPU / TC QDisc locking problem in v.0.8.
 * Tested up to 10Gbps asymmetrical throughput on dedicated server (lab only had 10G router). v0.9 is estimated to be capable of an asymmetrical throughput of 20Gbps-40Gbps on a dedicated server with 12+ cores.
 * ![Throughput](docs/10Gbps.png?raw=true "Throughput")
 * MQ+HTB+fq_codel or MQ+HTB+cake
+* Client limit raised from 1000 to 32,767
 * Shape Clients by Access Point / Node capacity
 * APs equally distributed among CPUs / NIC queues to greatly increase throughput
 * Simple client management via csv file
@@ -87,17 +88,15 @@ Bloat is below 5ms in each direction.
 * Not dual stack, clients can only be shaped by IPv4 address for now in v0.9. Once IPv6 support is added to <a href="https://github.com/xdp-project/xdp-cpumap-tc">XDP-CPUMAP-TC</a> we can then shape IPv6 as well.
 * XDP's cpumap-redirect achieves higher throughput on a server with direct access to the NIC (XDP offloading possible) vs as a VM with bridges (generic XDP).
 * Working on stats feature
-## Requirements
-* v0.9: Requires kernel version 5.9 or above for physical servers, and kernel version 5.14 or above for VM.
-* v0.8: Requires kernel version 5.1 or above.
-
-# General Requirements
+# Requirements
 * VM or physical server. Physical server will perform better and better utilize all CPU cores.
 * One management network interface, completely seperate from the traffic shaping interfaces.
 * NIC supporting two interfaces for traffic shaping. Recommendations:
   * <a href="https://store.mellanox.com/products/nvidia-mcx4121a-xcat-connectx-4-lx-en-adapter-card-10gbe-dual-port-sfp28-pcie3-0-x8-rohs-r6.html">NVIDIA ConnectX-4 MCX4121A-XCAT</a>
   * <a href="https://www.fs.com/products/75600.html">Intel X710</a>
 * Ubuntu Server recommended. Ubuntu Desktop is not recommended as it uses NetworkManager instead of Netplan.
+* v0.9: Requires kernel version 5.9 or above for physical servers, and kernel version 5.14 or above for VM.
+* v0.8: Requires kernel version 5.1 or above.
 * Python 3, PIP, and some modules (listed in respective guides).
 * Choose a CPU with solid <a href="https://www.cpubenchmark.net/singleThread.html">single-thread performance</a> within your budget. Generally speaking any new CPU above $200 can probably handle shaping up to 2Gbps.
 
