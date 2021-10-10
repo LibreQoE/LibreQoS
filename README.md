@@ -1,11 +1,56 @@
 # LibreQoS
 ![Banner](docs/Banner.png "Banner")
-LibreQoS is a <a href="https://www.bufferbloat.net/projects/cerowrt/wiki/Smart_Queue_Management/">smart queue management (SQM)</a> system that allows ISPs to intelligently apply bandwidth rate limiting to hundreds or thousands of clients using htb+cake or htb+fq_codel. <a href="https://www.bufferbloat.net/projects/codel/wiki/Cake/">Cake</a> and <a href="https://www.bufferbloat.net/projects/codel/wiki/">fq_codel</a> are Active Queue Management algorithms that reduce <a href="https://www.bufferbloat.net/projects/bloat/wiki/Introduction/">bufferbloat</a>. LibreQoS can be used on ISP networks to enforce customer plan bandwidth, improve responsiveness, reduce latency, reduce bufferbloat, and improve overall network performance. LibreQoS directs each customer's traffic into a <a href="https://linux.die.net/man/8/tc-htb">hierarchy token bucket</a>, where traffic can be shaped both by Access Point capacity and by the subscriber's allocated plan bandwidth. Please test to ensure compatability with your network architecture and design before deploying in production. 
-## Who is LibreQoS for?
-This software is intended for Internet Service Providers, particularly Fixed Wireless Internet Service Providers. Large Internet Service Providers with thousands of subscribers may benefit more from using commercially supported alternatives with NMS/CRM integrations such as <a href="https://preseem.com/">Preseem</a> or <a href="https://www.saisei.com/">Saisei</a>.
+LibreQoS is designed for Internet Service Providers (such as Fixed Wireless 
+Internet Service Providers) to manage customer traffic and thus improve the 
+experience, 
+prevent [bufferbloat,](https://www.bufferbloat.net/projects/bloat/wiki/Introduction/) 
+and keep the network responsive.
+
+Because the customers see better performance, ISPs receive fewer support 
+tickets/calls and reduce network traffic from fewer retransmissions.
+
+A sub-\$200 computer running LibreQoS should be able to shape traffic for
+hundreds or thousands of customers at 2 Gbps. *(true?)*
+
+# How does LibreQoS work?
+
+ISPs use LibreQoS to enforce customer plan bandwidth, improve responsiveness,
+reduce latency, reduce bufferbloat, and improve overall network performance. 
+
+LibreQoS runs on a computer that sits between your upstream provider and the
+core of your network (see graphic below).
+It manages all customer traffic with the
+[htb+cake](https://www.bufferbloat.net/projects/codel/wiki/Cake/)
+or [htb+fq\_codel](https://www.bufferbloat.net/projects/codel/wiki/)
+Active Queue Management (AQM) algorithms.
+
+LibreQoS directs each customer's traffic into a
+[hierarchy token bucket](https://linux.die.net/man/8/tc-htb),
+where traffic can be shaped both by Access Point capacity and by the
+subscriber's allocated plan bandwidth. 
+
+## Who should use LibreQoS?
+
+**The target for LibreQoS is ISPs** that have a modest number of subscribers.
+LibreQoS runs on an inexpensive computer and handles hundreds or thousands of subscribers.
+
+**Individuals** can reduce bufferbloat or latency on their home internet connections
+(whether or not their service provider offers an AQM solution)
+with a router that supports fq\_codel, such as
+[IQrouter](https://evenroute.com),
+[Ubiquiti's EdgeRouter-X](https://www.ui.com/edgemax/edgerouter-x/) (be sure to enable *advanced queue fq\_codel*),
+or installing [OpenWrt](https://openwrt.org) or [DD-WRT](https://dd-wrt.com) on their existing router.
+
+**Large Internet Service Providers** with significantly more subscribers may
+benefit from using commercially supported alternatives with NMS/CRM integrations
+such as [Preseem](https://preseem.com) or [Saisei](https://www.saisei.com/).
+See the table below.
+
+**A comparison of LibreQoS and Preseem**
+
 ```
 ╔══════════════════════╦══════════════════════╦══════════════════╗
-║                      ║ LibreQoS             ║ Preseem          ║
+║ Feature              ║ LibreQoS             ║ Preseem          ║
 ╠══════════════════════╬══════════════════════╬══════════════════╣
 ║ IPv4                 ║ ✔                    ║ ✔                ║
 ╠══════════════════════╬══════════════════════╬══════════════════╣
@@ -30,36 +75,53 @@ This software is intended for Internet Service Providers, particularly Fixed Wir
 ║ Throughput           ║ 10G+ (v0.9)          ║ 20G+ [2]         ║
 ╚══════════════════════╩══════════════════════╩══════════════════╝
 ```
-* 1) <a href="https://arxiv.org/pdf/1804.07617.pdf">Piece of CAKE: A Comprehensive Queue Management Solution for Home Gateways</a>
-* 2) <a href="https://www.cengn.ca/wp-content/uploads/2020/02/Aterlo-Networks-Success-Story.pdf">Aterlo Validates Qoe Measurement Appliance Preseem</a>
+* [1] [Piece of CAKE: A Comprehensive Queue Management Solution for Home Gateways](https://arxiv.org/pdf/1804.07617.pdf)
+* [2] [Aterlo Validates QoE Measurement Appliance Preseem](https://www.cengn.ca/wp-content/uploads/2020/02/Aterlo-Networks-Success-Story.pdf)
 
-Individuals wanting to reduce bufferbloat or latency on their home internet connections may want to try a home router supporting fq_codel, such as Ubiquiti's EdgeRouter-X (must enable advanced queue fq_codel).
+## How do Cake and fq\_codel work?
 
-## How do Cake and fq_codel work?
-* <a href="https://www.bufferbloat.net/projects/codel/wiki/Cake/">Cake | Bufferbloat.net</a>
-* <a href="https://www.bufferbloat.net/projects/codel/wiki/">FQ-Codel | Bufferbloat.net</a>
+These AQM techniques direct each customer's traffic into its own queue, where
+LibreQoS can shape it both by Access Point capacity and by the subscriber's
+allocated plan bandwidth.
+
+The difference is dramatic: the chart below shows the ping times during a
+[Realtime Response Under Load (RRUL) test](https://www.bufferbloat.net/projects/bloat/wiki/RRUL_Chart_Explanation/)
+before and after enabling LibreQoS AQM.
+The RRUL test sends full-rate traffic in both directions, then measures latency
+during the transfer.
+Note that the latency drops from ~20 msec (green, no LibreQoS) to well
+under 1 msec (brown, using LibreQoS).
 
 <img src="docs/latency.png" width="650">
 
-The impact of fq_codel on a 3000Mbps connection vs hard rate limiting — a 30x latency reduction.
->“FQ_Codel provides great isolation... if you've got low-rate videoconferencing and low rate web traffic they never get dropped. A lot of issues with IW10 go away, because all the other traffic sees is the front of the queue. You don't know how big its window is, but you don't care because you are not affected by it. FQ_Codel increases utilization across your entire networking fabric, especially for bidirectional traffic... If we're sticking code into boxes to deploy codel, don't do that. Deploy fq_codel. It's just an across the board win.”
+The impact of fq\_codel on a 3000Mbps connection vs hard rate limiting —
+a 30x latency reduction.
+>“FQ\_Codel provides great isolation... if you've got low-rate videoconferencing and low rate web traffic they never get dropped. A lot of issues with IW10 go away, because all the other traffic sees is the front of the queue. You don't know how big its window is, but you don't care because you are not affected by it. FQ\_Codel increases utilization across your entire networking fabric, especially for bidirectional traffic... If we're sticking code into boxes to deploy codel, don't do that. Deploy fq\_codel. It's just an across the board win.”
 > - Van Jacobson | IETF 84 Talk
+
+**References**
+
+* [Cake | Bufferbloat.net](https://www.bufferbloat.net/projects/codel/wiki/Cake/)
+* [FQ-Codel | Bufferbloat.net](https://www.bufferbloat.net/projects/codel/wiki/)
+
 ## Typical Client Results
-Here are the <a href="http://www.dslreports.com/speedtest">DSLReports Speed Test</a> results for a Fixed Wireless client averaging 20ms to the test server.
-Bloat is below 5ms in each direction.
+Here are the [DSLReports Speed Test](http://www.dslreports.com/speedtest)
+results for a Fixed Wireless client averaging 20ms to the test server.
+LibreQoS keeps added latency below 5ms in each direction.
 
 <img src="docs/bloat.png" width="350">
 
 # Network Design
 * Edge and Core routers with MTU 1500 on links between them
-   * If you use MPLS, you would terminate MPLS traffic at the core router. LibreQoS cannot decapsulate MPLS on its own.
+   * If you use MPLS, you would terminate MPLS traffic at the core router.
+LibreQoS cannot decapsulate MPLS on its own.
 * OSPF primary link (low cost) through the server running LibreQoS
 * OSPF backup link
 
 ![Diagram](docs/design.png?raw=true "Diagram")
 
-# v0.8 (IPv4 & IPv6)
-## Features
+### v0.8 (Stable - IPv4 & IPv6) 2 July 2021
+#### Features
 * Dual stack: client can be shaped by same qdisc for both IPv4 and IPv6
 * Up to 1000 clients (IPv4/IPv6)
 * Real world asymmetrical throughput: between 2Gbps and 4.5Gbps depending on CPU single thread performance. 
@@ -68,13 +130,14 @@ Bloat is below 5ms in each direction.
 * TC filters split into groups through hashing filters to increase throughput
 * Simple client management via csv file
 * Simple statistics - table shows top 20 subscribers by packet loss, with APs listed
-## Limitations
-* Qdisc locking problem limits throughput of HTB used in v0.8 (solved in v0.9). Tested up to 4Gbps/500Mbps asymmetrical throughput using <a href="https://github.com/microsoft/ethr">Microsoft Ethr</a> with n=500 streams. High quantities of small packets will reduce max throughput in practice.
-* Linux tc hash tables can only handle <a href="https://stackoverflow.com/questions/21454155/linux-tc-u32-filters-strange-error">~4000 rules each</a>. This limits total possible clients to 1000 in v0.8.
 
-# v0.9 (IPv4 Only)
-## Features
-* <a href="https://github.com/xdp-project/xdp-cpumap-tc">XDP-CPUMAP-TC</a> integration greatly improves throughput, allows many more IPv4 clients, and lowers CPU use. Latency reduced by half on networks previously limited by single-CPU / TC QDisc locking problem in v.0.8.
+#### Limitations
+* Qdisc locking problem limits throughput of HTB used in v0.8 (solved in v0.9). Tested up to 4Gbps/500Mbps asymmetrical throughput using [Microsoft Ethr](https://github.com/microsoft/ethr) with n=500 streams. High quantities of small packets will reduce max throughput in practice.
+* Linux tc hash tables can only handle [~4000 rules each.](https://stackoverflow.com/questions/21454155/linux-tc-u32-filters-strange-error) This limits total possible clients to 1000 in v0.8.
+
+### v0.9 (Beta/testing) 11 Jul 2021
+#### Features
+* [XDP-CPUMAP-TC](https://github.com/xdp-project/xdp-cpumap-tc) integration greatly improves throughput, allows many more IPv4 clients, and lowers CPU use. Latency reduced by half on networks previously limited by single-CPU / TC QDisc locking problem in v.0.8.
 * Tested up to 10Gbps asymmetrical throughput on dedicated server (lab only had 10G router). v0.9 is estimated to be capable of an asymmetrical throughput of 20Gbps-40Gbps on a dedicated server with 12+ cores.
 * ![Throughput](docs/10Gbps.png?raw=true "Throughput")
 * MQ+HTB+fq_codel or MQ+HTB+cake
@@ -83,51 +146,51 @@ Bloat is below 5ms in each direction.
 * Shape Clients by Access Point / Node capacity
 * APs equally distributed among CPUs / NIC queues to greatly increase throughput
 * Simple client management via csv file
-## Considerations
+#### Considerations
 * Each Node / Access Point is tied to a queue and CPU core. Access Points are evenly distributed across CPUs. Since each CPU can usually only accomodate up to 4Gbps, ensure any single Node / Access Point will not require more than 4Gbps throughput.
-## Limitations
-* Not dual stack, clients can only be shaped by IPv4 address for now in v0.9. Once IPv6 support is added to <a href="https://github.com/xdp-project/xdp-cpumap-tc">XDP-CPUMAP-TC</a> we can then shape IPv6 as well.
+#### Limitations
+* Not dual stack, clients can only be shaped by IPv4 address for now in v0.9. Once IPv6 support is added to [XDP-CPUMAP-TC](https://github.com/xdp-project/xdp-cpumap-tc) we can then shape IPv6 as well.
 * XDP's cpumap-redirect achieves higher throughput on a server with direct access to the NIC (XDP offloading possible) vs as a VM with bridges (generic XDP).
 * Working on stats feature
-# Requirements
+
+## General Requirements
 * VM or physical server. Physical server will perform better and better utilize all CPU cores.
 * One management network interface, completely seperate from the traffic shaping interfaces.
 * NIC supporting two interfaces for traffic shaping. Recommendations:
-  * <a href="https://store.mellanox.com/products/nvidia-mcx4121a-xcat-connectx-4-lx-en-adapter-card-10gbe-dual-port-sfp28-pcie3-0-x8-rohs-r6.html">NVIDIA ConnectX-4 MCX4121A-XCAT</a>
-  * <a href="https://www.fs.com/products/75600.html">Intel X710</a>
+  * [NVIDIA ConnectX-4 MCX4121A-XCAT](https://store.mellanox.com/products/nvidia-mcx4121a-xcat-connectx-4-lx-en-adapter-card-10gbe-dual-port-sfp28-pcie3-0-x8-rohs-r6.html)
+  * [Intel X710](https://www.fs.com/products/75600.html)
 * Ubuntu Server recommended. Ubuntu Desktop is not recommended as it uses NetworkManager instead of Netplan.
 * v0.9: Requires kernel version 5.9 or above for physical servers, and kernel version 5.14 or above for VM.
 * v0.8: Requires kernel version 5.1 or above.
 * Python 3, PIP, and some modules (listed in respective guides).
-* Choose a CPU with solid <a href="https://www.cpubenchmark.net/singleThread.html">single-thread performance</a> within your budget. Generally speaking any new CPU above $200 can probably handle shaping up to 2Gbps.
+* Choose a CPU with solid [single-thread performance](https://www.cpubenchmark.net/singleThread.html) within your budget. Generally speaking, any new CPU above $200 can probably handle shaping up to 2Gbps.
 
-# Installation and Usage Guide
+## Installation and Usage Guide
 
 Best Performance, IPv4 Only:
 
-📄 <a href="https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.9-Installation-&-Usage-Guide----Physical-Server-and-Ubuntu-21.04">LibreQoS v0.9 Installation & Usage Guide Physical Server and Ubuntu 21.04</a>
+📄 [LibreQoS v0.9 Installation & Usage Guide Physical Server and Ubuntu 21.04](https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.9-Installation-&-Usage-Guide----Physical-Server-and-Ubuntu-21.04)
 
 Good Performance, IPv4 Only:
 
-📄 <a href="https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.9-Installation-&-Usage-Guide----Proxmox-and-Ubuntu-21.10">LibreQoS 0.9 Installation and Usage Guide - Proxmox and Ubuntu 21.10</a>
+📄 [LibreQoS 0.9 Installation and Usage Guide - Proxmox and Ubuntu 21.10](https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.9-Installation-&-Usage-Guide----Proxmox-and-Ubuntu-21.10)
 
 OK Performance, IPv4 and IPv6:
 
-📄 <a href="https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.8-Installation-&-Usage-Guide----Proxmox-and-Ubuntu-20.04">LibreQoS 0.8 Installation and Usage Guide - Proxmox and Ubuntu 20.04 LTS</a>
+📄 [LibreQoS 0.8 Installation and Usage Guide - Proxmox and Ubuntu 20.04 LTS](https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.8-Installation-&-Usage-Guide----Proxmox-and-Ubuntu-20.04)
 
-# Donate
-LibreQoS makes great use of fq_codel and CAKE - two open source projects led by Dave Taht, and contrinuted to by dozens of others. Without Dave's work, there would be no LibreQoS or Preseem.
+## Donate
 
-<a href="https://www.patreon.com/dtaht">
-  <img src="https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/donate.png" alt="Donate" />
-</a>
+LibreQoS itself is Open-Source/GPL software: there is no cost to use it.
 
-If this application helps your network, please contribute to <a href="https://www.patreon.com/dtaht">Dave's patreon</a>. Donating just $0.2/sub/month ($100/month for 500 subs) comes out to be 60% less than any proprietary solution, and you get to ensure continued development of fq_codel's successor, CAKE.
+LibreQoS makes great use of fq\_codel - an open source project led by Dave Täht, and contributed to by dozens of others. Without Dave's work, there would be no LibreQoS, Preseem, or Saisei. 
 
-# Special Thanks
-Special thanks to Dave Taht, Jesper Dangaard Brouer, Toke Høiland-Jørgensen, Kumar Kartikeya Dwivedi, Maxim Mikityanskiy, Yossi Kuperman, and Rony Efraim for their many contributions to the linux networking stack. Thank you Phil Sutter, Bert Hubert, Gregory Maxwell, Remco van Mook, Martijn van Oosterhout, Paul B Schroeder, and Jasper Spaans for contributing to the guides and documentation listed below. Thanks to Leo Manuel Magpayo for his help improving documentation and for testing. Thanks to everyone on the <a href="https://lists.bufferbloat.net/listinfo/">Bufferbloat mailing list</a> for your help and contibutions.
+If LibreQoS helps your network, please consider [donating to Dave's Patreon account.](https://www.patreon.com/dtaht) Donating just $0.2/sub/month ($100/month for 500 subs) comes out to be 60% less than any proprietary solution, and you get to ensure continued development of fq\_codel and its successor, CAKE.
 
-# References
+## Special Thanks
+Special thanks to Dave Täht, Jesper Dangaard Brouer, Toke Høiland-Jørgensen, Kumar Kartikeya Dwivedi, Maxim Mikityanskiy, Yossi Kuperman, and Rony Efraim for their many contributions to the Linux networking stack. Thank you Phil Sutter, Bert Hubert, Gregory Maxwell, Remco van Mook, Martijn van Oosterhout, Paul B Schroeder, and Jasper Spaans for contributing to the guides and documentation listed below. Thanks to Leo Manuel Magpayo for his help improving documentation and for testing. Thanks to everyone on the [Bufferbloat mailing list](https://lists.bufferbloat.net/listinfo/) for your help and contibutions.
+
+# Other References
 * https://tldp.org/HOWTO/Adv-Routing-HOWTO/lartc.adv-filter.hashing.html
 * http://linux-ip.net/gl/tc-filters/tc-filters.html
 * http://linux-tc-notes.sourceforge.net/tc/doc/cls_u32.txt
