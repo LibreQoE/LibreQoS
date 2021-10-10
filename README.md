@@ -9,8 +9,8 @@ and keep the network responsive.
 Because the customers see better performance, ISPs receive fewer support 
 tickets/calls and reduce network traffic from fewer retransmissions.
 
-A sub-\$200 computer running LibreQoS should be able to shape traffic for
-hundreds or thousands of customers at 2 Gbps. *(true?)*
+A sub-$600 computer running LibreQoS should be able to shape traffic for
+hundreds or thousands of customers at 2 Gbps.
 
 # How does LibreQoS work?
 
@@ -135,14 +135,14 @@ LibreQoS cannot decapsulate MPLS on its own.
 * Qdisc locking problem limits throughput of HTB used in v0.8 (solved in v0.9). Tested up to 4Gbps/500Mbps asymmetrical throughput using [Microsoft Ethr](https://github.com/microsoft/ethr) with n=500 streams. High quantities of small packets will reduce max throughput in practice.
 * Linux tc hash tables can only handle [~4000 rules each.](https://stackoverflow.com/questions/21454155/linux-tc-u32-filters-strange-error) This limits total possible clients to 1000 in v0.8.
 
-### v0.9 (Beta/testing) 11 Jul 2021
+### v0.9 (Stable - IPv4) 11 Jul 2021
 #### Features
 * [XDP-CPUMAP-TC](https://github.com/xdp-project/xdp-cpumap-tc) integration greatly improves throughput, allows many more IPv4 clients, and lowers CPU use. Latency reduced by half on networks previously limited by single-CPU / TC QDisc locking problem in v.0.8.
 * Tested up to 10Gbps asymmetrical throughput on dedicated server (lab only had 10G router). v0.9 is estimated to be capable of an asymmetrical throughput of 20Gbps-40Gbps on a dedicated server with 12+ cores.
 * ![Throughput](docs/10Gbps.png?raw=true "Throughput")
 * MQ+HTB+fq_codel or MQ+HTB+cake
 * Now defaults to 'cake diffserv4' for optimal client performance
-* Client limit raised from 1000 to 32,767
+* Client limit raised from 1,000 to 32,767
 * Shape Clients by Access Point / Node capacity
 * APs equally distributed among CPUs / NIC queues to greatly increase throughput
 * Simple client management via csv file
