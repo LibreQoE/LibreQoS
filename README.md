@@ -78,6 +78,7 @@ Bloat is below 5ms in each direction.
 * Tested up to 10Gbps asymmetrical throughput on dedicated server (lab only had 10G router). v0.9 is estimated to be capable of an asymmetrical throughput of 20Gbps-40Gbps on a dedicated server with 12+ cores.
 * ![Throughput](docs/10Gbps.png?raw=true "Throughput")
 * MQ+HTB+fq_codel or MQ+HTB+cake
+* Now defaults to 'cake diffserv4' for optimal client performance
 * Client limit raised from 1000 to 32,767
 * Shape Clients by Access Point / Node capacity
 * APs equally distributed among CPUs / NIC queues to greatly increase throughput
