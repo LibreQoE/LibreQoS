@@ -187,6 +187,10 @@ LibreQoS makes great use of fq\_codel - an open source project led by Dave Täht
 
 If LibreQoS helps your network, please consider [donating to Dave's Patreon account.](https://www.patreon.com/dtaht) Donating just $0.2/sub/month ($100/month for 500 subs) comes out to be 60% less than any proprietary solution, and you get to ensure continued development of fq\_codel and its successor, CAKE.
 
+<a href="https://www.patreon.com/dtaht">
+  <img src="https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/donate.png" alt="Donate" width="289" />
+</a>
+
 ## Special Thanks
 Special thanks to Dave Täht, Jesper Dangaard Brouer, Toke Høiland-Jørgensen, Kumar Kartikeya Dwivedi, Maxim Mikityanskiy, Yossi Kuperman, and Rony Efraim for their many contributions to the Linux networking stack. Thank you Phil Sutter, Bert Hubert, Gregory Maxwell, Remco van Mook, Martijn van Oosterhout, Paul B Schroeder, and Jasper Spaans for contributing to the guides and documentation listed below. Thanks to Leo Manuel Magpayo for his help improving documentation and for testing. Thanks to everyone on the [Bufferbloat mailing list](https://lists.bufferbloat.net/listinfo/) for your help and contibutions.
 
