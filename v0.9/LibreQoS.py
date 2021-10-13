@@ -111,8 +111,8 @@ def refreshShapers():
 	devicesByAP = list(result.values())
 	clearPriorSettings(interfaceA, interfaceB)
 	# XDP-CPUMAP-TC
-	shell('./xdp-cpumap-tc/bin/xps_setup.sh -d ' + interfaceA + ' --default')
-	shell('./xdp-cpumap-tc/bin/xps_setup.sh -d ' + interfaceB + ' --default')
+	shell('./xdp-cpumap-tc/bin/xps_setup.sh -d ' + interfaceA + ' --default --disable')
+	shell('./xdp-cpumap-tc/bin/xps_setup.sh -d ' + interfaceB + ' --default --disable')
 	shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu --dev ' + interfaceA + ' --lan')
 	shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu --dev ' + interfaceB + ' --wan')
 	shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --clear')
