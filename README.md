@@ -169,7 +169,7 @@ LibreQoS cannot decapsulate MPLS on its own.
 
 Best Performance, IPv4 Only:
 
-📄 [LibreQoS v0.9 Installation & Usage Guide Physical Server and Ubuntu 21.04](https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.9-Installation-&-Usage-Guide----Physical-Server-and-Ubuntu-21.04)
+📄 [LibreQoS v0.9 Installation & Usage Guide Physical Server and Ubuntu 21.10](https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.9-Installation-&-Usage-Guide----Physical-Server-and-Ubuntu-21.10)
 
 Good Performance, IPv4 Only:
 
