@@ -1,6 +1,6 @@
 import requests
 import csv
-from ispConfig.py import UISPbaseURL, xAuthToken, shapeRouterOrStation
+from ispConfig.py import UISPbaseURL, uispAuthToken, shapeRouterOrStation
 
 
 stationModels = ['LBE-5AC-Gen2', 'LBE-5AC-Gen2', 'LBE-5AC-LR', 'AF-LTU5', 'AFLTULR', 'AFLTUPro', 'LTU-LITE']
@@ -10,7 +10,7 @@ def pullShapedDevices():
 	devices = []
 	uispSitesToImport = []
 	url = UISPbaseURL + "/nms/api/v2.1/sites?type=client&ucrm=true&ucrmDetails=true"
-	headers = {'accept':'application/json', 'x-auth-token': xAuthToken}
+	headers = {'accept':'application/json', 'x-auth-token': uispAuthToken}
 	r = requests.get(url, headers=headers)
 	jsonData = r.json()
 	uispDevicesToImport = []
@@ -70,7 +70,7 @@ def pullShapedDevices():
 
 def getUISPdevicesAtClientSite(siteID):
 	url = UISPbaseURL + "/nms/api/v2.1/devices?siteId=" + siteID
-	headers = {'accept':'application/json', 'x-auth-token': xAuthToken}
+	headers = {'accept':'application/json', 'x-auth-token': uispAuthToken}
 	r = requests.get(url, headers=headers)
 	return (r.json())
 
