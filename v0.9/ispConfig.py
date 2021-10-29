@@ -23,3 +23,11 @@ enableActualShellCommands = True
 
 # Add 'sudo' before execution of any shell commands. May be required depending on distribution and environment.
 runShellCommandsAsSudo = False
+
+# Optional UISP integration
+# Everything before /nms/ on your UISP instance
+UISPbaseURL = 'https://examplesite.com'
+# UISP Auth Token
+uispAuthToken = ''
+# Whether to shape router at customer premises, or instead shape the station radio. When station radio is in router mode, use 'station'. Otherwise, use 'router'.
+shapeRouterOrStation = 'router'
