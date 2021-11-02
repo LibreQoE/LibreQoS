@@ -188,7 +188,7 @@ def refreshShapers():
 		shell('tc qdisc add dev ' + thisInterface + ' parent ' + str(queue+1) + ':2 ' + fqOrCAKE)
 	print()
 
-	#If shapeBySite == False, Shape by Site, AP and Client
+	#If shapeBySite == True, Shape by Site, AP and Client
 	if shapeBySite:
 		currentQueueCounter = 1
 		queueMinorCounterDict = {}
