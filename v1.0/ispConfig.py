@@ -32,5 +32,5 @@ runShellCommandsAsSudo = False
 UISPbaseURL = 'https://examplesite.com'
 # UISP Auth Token
 uispAuthToken = ''
-# Whether to shape router at customer premises, or instead shape the station radio. When station radio is in router mode, use 'station'. Otherwise, use 'router'.
+# UISP | Whether to shape router at customer premises, or instead shape the station radio. When station radio is in router mode, use 'station'. Otherwise, use 'router'.
 shapeRouterOrStation = 'router'
