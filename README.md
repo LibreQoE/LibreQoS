@@ -192,9 +192,9 @@ OK Performance, IPv4 and IPv6:
 
 LibreQoS itself is Open-Source/GPL software: there is no cost to use it.
 
-LibreQoS makes great use of fq\_codel - an open source project led by Dave Täht, and contributed to by dozens of others. Without Dave's work, there would be no LibreQoS, Preseem, or Saisei. 
+LibreQoS makes great use of fq\_codel and CAKE - two open source AQMs whose development is led by Dave Täht, and contributed to by dozens of others from around the world. Without Dave's work and advocacy, there would be no LibreQoS, Preseem, or Paraqum. 
 
-If LibreQoS helps your network, please consider [donating to Dave's Patreon account.](https://www.patreon.com/dtaht) Donating just $0.2/sub/month ($100/month for 500 subs) comes out to be 60% less than any proprietary solution, and you get to ensure continued development of fq\_codel and its successor, CAKE.
+If LibreQoS helps your network, please [contribute to Dave's Patreon.](https://www.patreon.com/dtaht) Donating just $0.2/sub/month ($100/month for 500 subs) comes out to be 60% less than any proprietary solution, plus you get to ensure the continued development and improvement of CAKE. Dave's work has been essential to improving internet connectivity around the world. Let's all pitch in to help his mission.
 
 <a href="https://www.patreon.com/dtaht">
   <img src="https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/donate.png" alt="Donate" width="289" />
