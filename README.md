@@ -1,16 +1,16 @@
 # LibreQoS
 ![Banner](docs/Banner.png "Banner")
-LibreQoS is designed for Internet Service Providers (such as Fixed Wireless 
-Internet Service Providers) to manage customer traffic and thus improve the 
-experience, 
+LibreQoS is a Smart Queue Management system designed for Internet Service Providers (such as Fixed Wireless 
+Internet Service Providers) to optimize the flow of their customers' traffic and thus improve the 
+end-user experience, 
 prevent [bufferbloat,](https://www.bufferbloat.net/projects/bloat/wiki/Introduction/) 
 and keep the network responsive.
 
 Because the customers see better performance, ISPs receive fewer support 
 tickets/calls and reduce network traffic from fewer retransmissions.
 
-A sub-$600 computer running LibreQoS should be able to shape traffic for
-hundreds or thousands of customers at 2 Gbps.
+A sub-$1000 computer running LibreQoS should be able to shape traffic for
+hundreds or thousands of customers at up to 10 Gbps.
 
 # How does LibreQoS work?
 
