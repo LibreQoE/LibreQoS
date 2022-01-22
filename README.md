@@ -9,13 +9,13 @@ and keep the network responsive.
 Because the customers see better performance, ISPs receive fewer support 
 tickets/calls and reduce network traffic from fewer retransmissions.
 
-A sub-$1000 computer running LibreQoS should be able to shape traffic for
+A sub-$1000 computer running LibreQoS can shape traffic for
 hundreds or thousands of customers at up to 10 Gbps.
 
 # How does LibreQoS work?
 
 ISPs use LibreQoS to enforce customer plan bandwidth, improve responsiveness,
-reduce latency, reduce bufferbloat, and improve overall network performance. 
+reduce latency, reduce jitter, reduce bufferbloat, and improve overall network performance. 
 
 LibreQoS runs on a computer that sits between your upstream provider and the
 core of your network (see graphic below).
