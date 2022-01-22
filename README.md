@@ -31,8 +31,8 @@ subscriber's allocated plan bandwidth.
 
 ## Who should use LibreQoS?
 
-**The target for LibreQoS is ISPs** that have a modest number of subscribers.
-LibreQoS runs on an inexpensive computer and handles hundreds or thousands of subscribers.
+**The target for LibreQoS is ISPs** that have a modest number of subscribers (<2000).
+LibreQoS runs on an inexpensive computer and handles up to thousands of subscribers.
 
 **Individuals** can reduce bufferbloat or latency on their home internet connections
 (whether or not their service provider offers an AQM solution)
@@ -70,7 +70,7 @@ See the table below.
 ╠══════════════════════╬══════════════════════╬══════════════════╣
 ║ Metrics              ║                      ║ ✔                ║
 ╠══════════════════════╬══════════════════════╬══════════════════╣
-║ Shape By             ║ Site, AP, Client     ║ Site, AP, Client ║
+║ Shape By             ║ Site, AP, Client     ║ AP, Client       ║
 ╠══════════════════════╬══════════════════════╬══════════════════╣
 ║ Throughput           ║ 10G+ (v0.9+)         ║ 20G+ [2]         ║
 ╚══════════════════════╩══════════════════════╩══════════════════╝
@@ -78,11 +78,18 @@ See the table below.
 * [1] [Piece of CAKE: A Comprehensive Queue Management Solution for Home Gateways](https://arxiv.org/pdf/1804.07617.pdf)
 * [2] [Aterlo Validates QoE Measurement Appliance Preseem](https://www.cengn.ca/wp-content/uploads/2020/02/Aterlo-Networks-Success-Story.pdf)
 
+## Why not just use Mikrotik Queues in ROS v7?
+* Mikrotik's ROS v7 uses an older kernel, and out-of-date implementation of CAKE. XDP based hardware acceleration is not possible. It's also quite buggy.
+* A middle-box x86 device running LibreQoS can put through up to 4Gbps of traffic per CPU core, allowing you to shape by Site or by AP up to 4Gbps in capacity, with aggregate throughput of 10Gbps or more. On ARM-based MikroTik routers, the most traffic you can put through a single HTB and CPU core is probably closer to 2Gbps. HTBs suffer from queue locking, where CPU use will look as if all CPU cores are evenly balancing the load, but in reality, a single Qdisc lock on the first CPU core (which handles scheduling of the other cpu threads) will be the bottleneck of all HTB throughput. The way LibreQoS works around that qdisc locking problem is with XDP-CPUMAP-TC, which uses XDP and MQ to run a separate HTB instance on each CPU core. That is not available on MikroTik. Heirarchical queuing is bottle-necked on Mikrotik in this way.
+* Routing on the same device which applies CPU-intensive queues such as fq-codel and CAKE will greatly increase CPU use, limiting throughput and introducing more latency and jitter for end-users than would be seen using a middle-box such as LibreQoS.
+
+## Why not just use Preseem or Paraqum?
+* Preseem and Paraqum are great commercial products - certainly consider them if you want the features and support they provide.
+* That said, the monthly expense of those programs could instead be put toward the active development of CAKE and fq_codel, the AQMs which are the underlying algorithms that make Preseem and Paraqum possible. For example, Dave Täht is one of the figureheads of the bufferbloat project. He currently works to improve implementations of fq_codel and CAKE, educate others about bufferbloat, and advocate for the standardization of those AQMs on hardware around the world. Every dollar contributed to Dave's patreon will come back to ISPs 10-fold with improvements to fq_codel, CAKE, and the broader internet in general. If your ISP has benefited from LibreQoS, Preseem, or Paraqum, please [contribute to Dave's Patreon here.](https://www.patreon.com/dtaht) 
+
 ## How do Cake and fq\_codel work?
 
-These AQM techniques direct each customer's traffic into its own queue, where
-LibreQoS can shape it both by Access Point capacity and by the subscriber's
-allocated plan bandwidth.
+CAKE and fq_codel are hybrid packet scheduler and Active Queue Management (AQM) algorithms. LibreQoS uses a Hierarchical token bucket (HTB) to direct each customer's traffic into its own queue, where it is then shaped using either CAKE or fq_codel. Each customer's bandwidth ceiling is controlled by the HTB, according to the customer's allocated plan bandwidth, as well as the available capacity of the customer's respective Access Point and Site.
 
 The difference is dramatic: the chart below shows the ping times during a
 [Realtime Response Under Load (RRUL) test](https://www.bufferbloat.net/projects/bloat/wiki/RRUL_Chart_Explanation/)
