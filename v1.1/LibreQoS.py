@@ -72,6 +72,15 @@ def refreshShapers():
 	with open('network.json', 'r') as j:
 		network = json.loads(j.read())
 		
+	#Confirm that network.json is <= 7 levels deep
+	def traverse(data, depth):
+		if depth > 7:
+			raise ValueError('File network.json has more than 7 levels of heirarchy. Cannot parse.')
+		for elem in data:
+			if 'children' in data[elem]:
+				traverse(data[elem]['children'], depth+1)
+	traverse(network, 0)
+	
 	#Clear Prior Settings
 	clearPriorSettings(interfaceA, interfaceB)
 
@@ -137,7 +146,8 @@ def refreshShapers():
 	# :1 and :2 are used for root and default classes, so start each queue's counter at :3
 	for queueNum in range(queuesAvailable):
 		queueMinorCounterDict[queueNum+1] = 3
-
+	
+	devicesShaped = []
 	#Parse network.json. For each tier, create corresponding HTB and leaf classes
 	for tier1 in network:
 		tabs = ''
@@ -159,31 +169,33 @@ def refreshShapers():
 			if tier1 == device['AP']:
 				maxDownload = min(device['downloadMax'],tier1download)
 				maxUpload = min(device['uploadMax'],tier1upload)
-				minDownload = device['downloadMin']
-				minUpload = device['uploadMin']
-				print(tabs + '\t' + device['hostname'])
-				print(tabs + '\t' + "Download:  " + str(minDownload) + " to " + str(maxDownload) + " Mbps")
-				print(tabs + '\t' + "Upload:    " + str(minUpload) + " to " + str(maxUpload) + " Mbps")
-				print(tabs + '\t', end='')
+				minDownload = min(device['downloadMin'],maxDownload)
+				minUpload = min(device['uploadMin'],maxUpload)
+				print(tabs + '   ' + device['hostname'])
+				print(tabs + '   ' + "Download:  " + str(minDownload) + " to " + str(maxDownload) + " Mbps")
+				print(tabs + '   ' + "Upload:    " + str(minUpload) + " to " + str(maxUpload) + " Mbps")
+				print(tabs + '   ', end='')
 				shell('tc class add dev ' + interfaceA + ' parent ' + tier1classID + ' classid ' + str(minor) + ' htb rate '+ str(minDownload) + 'mbit ceil '+ str(maxDownload) + 'mbit prio 3')
-				print(tabs + '\t', end='')
+				print(tabs + '   ', end='')
 				shell('tc qdisc add dev ' + interfaceA + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
-				print(tabs + '\t', end='')
+				print(tabs + '   ', end='')
 				shell('tc class add dev ' + interfaceB + ' parent ' + tier1classID + ' classid ' + str(minor) + ' htb rate '+ str(minUpload) + 'mbit ceil '+ str(maxUpload) + 'mbit prio 3') 
-				print(tabs + '\t', end='')
+				print(tabs + '   ', end='')
 				shell('tc qdisc add dev ' + interfaceB + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
 				if device['ipv4']:
 					parentString = str(major) + ':'
 					flowIDstring = str(major) + ':' + str(minor)
-					print(tabs + '\t', end='')
+					print(tabs + '   ', end='')
 					shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + device['ipv4'] + ' --cpu ' + str(currentQueueCounter-1) + ' --classid ' + flowIDstring)
+					if device['hostname'] not in devicesShaped:
+						devicesShaped.append(device['hostname'])
 				print()
 				minor += 1
 		minor += 1
 		if 'children' in network[tier1]:
 			for tier2 in network[tier1]['children']:
 				tier2classID = str(currentQueueCounter) + ':' + str(minor)
-				tabs = '\t'
+				tabs = '   '
 				print(tabs + tier2)
 				tier2download = min(network[tier1]['children'][tier2]['downloadBandwidthMbps'],tier1download)
 				tier2upload = min(network[tier1]['children'][tier2]['uploadBandwidthMbps'],tier1upload)
@@ -203,31 +215,33 @@ def refreshShapers():
 					if tier2 == device['AP']:
 						maxDownload = min(device['downloadMax'],tier2download)
 						maxUpload = min(device['uploadMax'],tier2upload)
-						minDownload = device['downloadMin']
-						minUpload = device['uploadMin']
-						print(tabs + '\t' + device['hostname'])
-						print(tabs + '\t' + "Download:  " + str(minDownload) + " to " + str(maxDownload) + " Mbps")
-						print(tabs + '\t' + "Upload:    " + str(minUpload) + " to " + str(maxUpload) + " Mbps")
-						print(tabs + '\t', end='')
+						minDownload = min(device['downloadMin'],maxDownload)
+						minUpload = min(device['uploadMin'],maxUpload)
+						print(tabs + '   ' + device['hostname'])
+						print(tabs + '   ' + "Download:  " + str(minDownload) + " to " + str(maxDownload) + " Mbps")
+						print(tabs + '   ' + "Upload:    " + str(minUpload) + " to " + str(maxUpload) + " Mbps")
+						print(tabs + '   ', end='')
 						shell('tc class add dev ' + interfaceA + ' parent ' + tier2classID + ' classid ' + str(minor) + ' htb rate '+ str(minDownload) + 'mbit ceil '+ str(maxDownload) + 'mbit prio 3')
-						print(tabs + '\t', end='')
+						print(tabs + '   ', end='')
 						shell('tc qdisc add dev ' + interfaceA + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
-						print(tabs + '\t', end='')
+						print(tabs + '   ', end='')
 						shell('tc class add dev ' + interfaceB + ' parent ' + tier2classID + ' classid ' + str(minor) + ' htb rate '+ str(minUpload) + 'mbit ceil '+ str(maxUpload) + 'mbit prio 3') 
-						print(tabs + '\t', end='')
+						print(tabs + '   ', end='')
 						shell('tc qdisc add dev ' + interfaceB + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
 						if device['ipv4']:
 							parentString = str(major) + ':'
 							flowIDstring = str(major) + ':' + str(minor)
-							print(tabs + '\t', end='')
+							print(tabs + '   ', end='')
 							shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + device['ipv4'] + ' --cpu ' + str(currentQueueCounter-1) + ' --classid ' + flowIDstring)
+							if device['hostname'] not in devicesShaped:
+								devicesShaped.append(device['hostname'])
 						print()
 						minor += 1
 				minor += 1
 				if 'children' in network[tier1]['children'][tier2]:
 					for tier3 in network[tier1]['children'][tier2]['children']:
 						tier3classID = str(currentQueueCounter) + ':' + str(minor)
-						tabs = '\t\t'
+						tabs = '      '
 						print(tabs + tier3)
 						tier3download = min(network[tier1]['children'][tier2]['children'][tier3]['downloadBandwidthMbps'],tier2download)
 						tier3upload = min(network[tier1]['children'][tier2]['children'][tier3]['uploadBandwidthMbps'],tier2upload)
@@ -247,31 +261,33 @@ def refreshShapers():
 							if tier3 == device['AP']:
 								maxDownload = min(device['downloadMax'],tier3download)
 								maxUpload = min(device['uploadMax'],tier3upload)
-								minDownload = device['downloadMin']
-								minUpload = device['uploadMin']
-								print(tabs + '\t' + device['hostname'])
-								print(tabs + '\t' + "Download:  " + str(minDownload) + " to " + str(maxDownload) + " Mbps")
-								print(tabs + '\t' + "Upload:    " + str(minUpload) + " to " + str(maxUpload) + " Mbps")
-								print(tabs + '\t', end='')
+								minDownload = min(device['downloadMin'],maxDownload)
+								minUpload = min(device['uploadMin'],maxUpload)
+								print(tabs + '   ' + device['hostname'])
+								print(tabs + '   ' + "Download:  " + str(minDownload) + " to " + str(maxDownload) + " Mbps")
+								print(tabs + '   ' + "Upload:    " + str(minUpload) + " to " + str(maxUpload) + " Mbps")
+								print(tabs + '   ', end='')
 								shell('tc class add dev ' + interfaceA + ' parent ' + tier3classID + ' classid ' + str(minor) + ' htb rate '+ str(minDownload) + 'mbit ceil '+ str(maxDownload) + 'mbit prio 3')
-								print(tabs + '\t', end='')
+								print(tabs + '   ', end='')
 								shell('tc qdisc add dev ' + interfaceA + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
-								print(tabs + '\t', end='')
+								print(tabs + '   ', end='')
 								shell('tc class add dev ' + interfaceB + ' parent ' + tier3classID + ' classid ' + str(minor) + ' htb rate '+ str(minUpload) + 'mbit ceil '+ str(maxUpload) + 'mbit prio 3') 
-								print(tabs + '\t', end='')
+								print(tabs + '   ', end='')
 								shell('tc qdisc add dev ' + interfaceB + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
 								if device['ipv4']:
 									parentString = str(major) + ':'
 									flowIDstring = str(major) + ':' + str(minor)
-									print(tabs + '\t', end='')
+									print(tabs + '   ', end='')
 									shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + device['ipv4'] + ' --cpu ' + str(currentQueueCounter-1) + ' --classid ' + flowIDstring)
+									if device['hostname'] not in devicesShaped:
+										devicesShaped.append(device['hostname'])
 								print()
 								minor += 1
 						minor += 1
 						if 'children' in network[tier1]['children'][tier2]['children'][tier3]:
 							for tier4 in network[tier1]['children'][tier2]['children'][tier3]['children']:
 								tier4classID = str(currentQueueCounter) + ':' + str(minor)
-								tabs = '\t\t\t'
+								tabs = '         '
 								print(tabs + tier4)
 								tier4download = min(network[tier1]['children'][tier2]['children'][tier3]['children'][tier4]['downloadBandwidthMbps'],tier3download)
 								tier4upload = min(network[tier1]['children'][tier2]['children'][tier3]['children'][tier4]['uploadBandwidthMbps'],tier3upload)
@@ -291,31 +307,33 @@ def refreshShapers():
 									if tier4 == device['AP']:
 										maxDownload = min(device['downloadMax'],tier4download)
 										maxUpload = min(device['uploadMax'],tier4upload)
-										minDownload = device['downloadMin']
-										minUpload = device['uploadMin']
-										print(tabs + '\t' + device['hostname'])
-										print(tabs + '\t' + "Download:  " + str(minDownload) + " to " + str(maxDownload) + " Mbps")
-										print(tabs + '\t' + "Upload:    " + str(minUpload) + " to " + str(maxUpload) + " Mbps")
-										print(tabs + '\t', end='')
+										minDownload = min(device['downloadMin'],maxDownload)
+										minUpload = min(device['uploadMin'],maxUpload)
+										print(tabs + '   ' + device['hostname'])
+										print(tabs + '   ' + "Download:  " + str(minDownload) + " to " + str(maxDownload) + " Mbps")
+										print(tabs + '   ' + "Upload:    " + str(minUpload) + " to " + str(maxUpload) + " Mbps")
+										print(tabs + '   ', end='')
 										shell('tc class add dev ' + interfaceA + ' parent ' + tier4classID + ' classid ' + str(minor) + ' htb rate '+ str(minDownload) + 'mbit ceil '+ str(maxDownload) + 'mbit prio 3')
-										print(tabs + '\t', end='')
+										print(tabs + '   ', end='')
 										shell('tc qdisc add dev ' + interfaceA + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
-										print(tabs + '\t', end='')
+										print(tabs + '   ', end='')
 										shell('tc class add dev ' + interfaceB + ' parent ' + tier4classID + ' classid ' + str(minor) + ' htb rate '+ str(minUpload) + 'mbit ceil '+ str(maxUpload) + 'mbit prio 3') 
-										print(tabs + '\t', end='')
+										print(tabs + '   ', end='')
 										shell('tc qdisc add dev ' + interfaceB + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
 										if device['ipv4']:
 											parentString = str(major) + ':'
 											flowIDstring = str(major) + ':' + str(minor)
-											print(tabs + '\t', end='')
+											print(tabs + '   ', end='')
 											shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + device['ipv4'] + ' --cpu ' + str(currentQueueCounter-1) + ' --classid ' + flowIDstring)
+											if device['hostname'] not in devicesShaped:
+												devicesShaped.append(device['hostname'])
 										print()
 										minor += 1
 								minor += 1
 								if 'children' in network[tier1]['children'][tier2]['children'][tier3]['children'][tier4]:
 									for tier5 in network[tier1]['children'][tier2]['children'][tier3]['children'][tier4]['children']:
 										tier5classID = str(currentQueueCounter) + ':' + str(minor)
-										tabs = '\t\t\t\t'
+										tabs = '            '
 										print(tabs + tier5)
 										tier5download = min(network[tier1]['children'][tier2]['children'][tier3]['children'][tier4]['children'][tier5]['downloadBandwidthMbps'],tier4download)
 										tier5upload = min(network[tier1]['children'][tier2]['children'][tier3]['children'][tier4]['children'][tier5]['uploadBandwidthMbps'],tier4upload)
@@ -335,32 +353,34 @@ def refreshShapers():
 											if tier5 == device['AP']:
 												maxDownload = min(device['downloadMax'],tier5download)
 												maxUpload = min(device['uploadMax'],tier5upload)
-												minDownload = device['downloadMin']
-												minUpload = device['uploadMin']
+												minDownload = min(device['downloadMin'],maxDownload)
+												minUpload = min(device['uploadMin'],maxUpload)
 												minMaxString = "Min: " + str(minDownload) + '/' + str(minUpload) + " Mbps | Max: " + str(maxDownload) + '/' + str(maxUpload) + " Mbps"
-												print(tabs + '\t' + device['hostname'])
-												print(tabs + '\t' + "Download:  " + str(minDownload) + " to " + str(maxDownload) + " Mbps")
-												print(tabs + '\t' + "Upload:    " + str(minUpload) + " to " + str(maxUpload) + " Mbps")
-												print(tabs + '\t', end='')
+												print(tabs + '   ' + device['hostname'])
+												print(tabs + '   ' + "Download:  " + str(minDownload) + " to " + str(maxDownload) + " Mbps")
+												print(tabs + '   ' + "Upload:    " + str(minUpload) + " to " + str(maxUpload) + " Mbps")
+												print(tabs + '   ', end='')
 												shell('tc class add dev ' + interfaceA + ' parent ' + tier5classID + ' classid ' + str(minor) + ' htb rate '+ str(minDownload) + 'mbit ceil '+ str(maxDownload) + 'mbit prio 3')
-												print(tabs + '\t', end='')
+												print(tabs + '   ', end='')
 												shell('tc qdisc add dev ' + interfaceA + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
-												print(tabs + '\t', end='')
+												print(tabs + '   ', end='')
 												shell('tc class add dev ' + interfaceB + ' parent ' + tier5classID + ' classid ' + str(minor) + ' htb rate '+ str(minUpload) + 'mbit ceil '+ str(maxUpload) + 'mbit prio 3') 
-												print(tabs + '\t', end='')
+												print(tabs + '   ', end='')
 												shell('tc qdisc add dev ' + interfaceB + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
 												if device['ipv4']:
 													parentString = str(major) + ':'
 													flowIDstring = str(major) + ':' + str(minor)
-													print(tabs + '\t', end='')
+													print(tabs + '   ', end='')
 													shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + device['ipv4'] + ' --cpu ' + str(currentQueueCounter-1) + ' --classid ' + flowIDstring)
+													if device['hostname'] not in devicesShaped:
+														devicesShaped.append(device['hostname'])
 												print()
 												minor += 1
 										minor += 1
 										if 'children' in network[tier1]['children'][tier2]['children'][tier3]['children'][tier4]['children'][tier5]:
 											for tier6 in network[tier1]['children'][tier2]['children'][tier3]['children'][tier4]['children'][tier5]['children']:
 												tier6classID = str(currentQueueCounter) + ':' + str(minor)
-												tabs = '\t\t\t\t\t'
+												tabs = '               '
 												print(tabs + tier6)
 												tier6download = min(network[tier1]['children'][tier2]['children'][tier3]['children'][tier4]['children'][tier5]['children'][tier6]['downloadBandwidthMbps'],tier5download)
 												tier6upload = min(network[tier1]['children'][tier2]['children'][tier3]['children'][tier4]['children'][tier5]['children'][tier6]['uploadBandwidthMbps'],tier5upload)
@@ -380,31 +400,33 @@ def refreshShapers():
 													if tier6 == device['AP']:
 														maxDownload = min(device['downloadMax'],tier6download)
 														maxUpload = min(device['uploadMax'],tier6upload)
-														minDownload = device['downloadMin']
-														minUpload = device['uploadMin']
-														print(tabs + '\t' + device['hostname'])
-														print(tabs + '\t' + "Download:  " + str(minDownload) + " to " + str(maxDownload) + " Mbps")
-														print(tabs + '\t' + "Upload:    " + str(minUpload) + " to " + str(maxUpload) + " Mbps")
-														print(tabs + '\t', end='')
+														minDownload = min(device['downloadMin'],maxDownload)
+														minUpload = min(device['uploadMin'],maxUpload)
+														print(tabs + '   ' + device['hostname'])
+														print(tabs + '   ' + "Download:  " + str(minDownload) + " to " + str(maxDownload) + " Mbps")
+														print(tabs + '   ' + "Upload:    " + str(minUpload) + " to " + str(maxUpload) + " Mbps")
+														print(tabs + '   ', end='')
 														shell('tc class add dev ' + interfaceA + ' parent ' + tier6classID + ' classid ' + str(minor) + ' htb rate '+ str(minDownload) + 'mbit ceil '+ str(maxDownload) + 'mbit prio 3')
-														print(tabs + '\t', end='')
+														print(tabs + '   ', end='')
 														shell('tc qdisc add dev ' + interfaceA + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
-														print(tabs + '\t', end='')
+														print(tabs + '   ', end='')
 														shell('tc class add dev ' + interfaceB + ' parent ' + tier6classID + ' classid ' + str(minor) + ' htb rate '+ str(minUpload) + 'mbit ceil '+ str(maxUpload) + 'mbit prio 3') 
-														print(tabs + '\t', end='')
+														print(tabs + '   ', end='')
 														shell('tc qdisc add dev ' + interfaceB + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
 														if device['ipv4']:
 															parentString = str(major) + ':'
 															flowIDstring = str(major) + ':' + str(minor)
-															print(tabs + '\t', end='')
+															print(tabs + '   ', end='')
 															shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + device['ipv4'] + ' --cpu ' + str(currentQueueCounter-1) + ' --classid ' + flowIDstring)
+															if device['hostname'] not in devicesShaped:
+																devicesShaped.append(device['hostname'])
 														print()
 														minor += 1
 												minor += 1
 												if 'children' in tier6:
 													for tier7 in network[tier1]['children'][tier2]['children'][tier3]['children'][tier4]['children'][tier5]['children'][tier6]['children']:
 														tier7classID = str(currentQueueCounter) + ':' + str(minor)
-														tabs = '\t\t\t\t\t\t'
+														tabs = '                  '
 														print(tabs + tier7)
 														tier7download = min(network[tier1]['children'][tier2]['children'][tier3]['children'][tier4]['children'][tier5]['children'][tier6]['children'][tier7]['downloadBandwidthMbps'],tier6download)
 														tier7upload = min(network[tier1]['children'][tier2]['children'][tier3]['children'][tier4]['children'][tier5]['children'][tier6]['children'][tier7]['uploadBandwidthMbps'],tier6upload)
@@ -424,33 +446,38 @@ def refreshShapers():
 															if tier7 == device['AP']:
 																maxDownload = min(device['downloadMax'],tier7download)
 																maxUpload = min(device['uploadMax'],tier7upload)
-																minDownload = device['downloadMin']
-																minUpload = device['uploadMin']
-																print(tabs + '\t' + device['hostname'])
-																print(tabs + '\t' + "Download:  " + str(minDownload) + " to " + str(maxDownload) + " Mbps")
-																print(tabs + '\t' + "Upload:    " + str(minUpload) + " to " + str(maxUpload) + " Mbps")
-																print(tabs + '\t', end='')
+																minDownload = min(device['downloadMin'],maxDownload)
+																minUpload = min(device['uploadMin'],maxUpload)
+																print(tabs + '   ' + device['hostname'])
+																print(tabs + '   ' + "Download:  " + str(minDownload) + " to " + str(maxDownload) + " Mbps")
+																print(tabs + '   ' + "Upload:    " + str(minUpload) + " to " + str(maxUpload) + " Mbps")
+																print(tabs + '   ', end='')
 																shell('tc class add dev ' + interfaceA + ' parent ' + tier7classID + ' classid ' + str(minor) + ' htb rate '+ str(minDownload) + 'mbit ceil '+ str(maxDownload) + 'mbit prio 3')
-																print(tabs + '\t', end='')
+																print(tabs + '   ', end='')
 																shell('tc qdisc add dev ' + interfaceA + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
-																print(tabs + '\t', end='')
+																print(tabs + '   ', end='')
 																shell('tc class add dev ' + interfaceB + ' parent ' + tier7classID + ' classid ' + str(minor) + ' htb rate '+ str(minUpload) + 'mbit ceil '+ str(maxUpload) + 'mbit prio 3') 
-																print(tabs + '\t', end='')
+																print(tabs + '   ', end='')
 																shell('tc qdisc add dev ' + interfaceB + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
 																if device['ipv4']:
 																	parentString = str(major) + ':'
 																	flowIDstring = str(major) + ':' + str(minor)
-																	print(tabs + '\t', end='')
+																	print(tabs + '   ', end='')
 																	shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + device['ipv4'] + ' --cpu ' + str(currentQueueCounter-1) + ' --classid ' + flowIDstring)
+																	if device['hostname'] not in devicesShaped:
+																		devicesShaped.append(device['hostname'])
 																print()
 																minor += 1
 														minor += 1
-														if 'children' in tier7:
-															raise ValueError('File network.json has more than 7 levels of heirarchy. Cannot parse.')	
 		queueMinorCounterDict[currentQueueCounter] = minor
 		currentQueueCounter += 1
 		if currentQueueCounter > queuesAvailable:
 			currentQueueCounter = 1
+	
+	#Recap
+	for device in devices:
+		if device['hostname'] not in devicesShaped:
+			print('Device ' + device['hostname'] + ' was not shaped. Please check to ensure its parent Node is listed in network.json.')
 	
 	# Done
 	currentTimeString = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
