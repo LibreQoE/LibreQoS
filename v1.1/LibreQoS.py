@@ -71,7 +71,27 @@ def refreshShapers():
 	#Load network heirarchy
 	with open('network.json', 'r') as j:
 		network = json.loads(j.read())
+
+	def findBandwidthMins(data, depth):
+		tabs = '   ' * depth
+		minDownload = 0
+		minUpload = 0
+		for elem in data:
+			
+			for device in devices:
+				if elem == device['ParentNode']:
+					minDownload += device['downloadMin']
+					minUpload += device['uploadMin']
+			if 'children' in data[elem]:
+				minDL, minUL = findBandwidthMins(data[elem]['children'], depth+1)
+				minDownload += minDL
+				minUpload += minUL
+			data[elem]['downloadBandwidthMbpsMin'] = minDownload
+			data[elem]['uploadBandwidthMbpsMin'] = minUpload
+		return minDownload, minUpload
 	
+	minDownload, minUpload = findBandwidthMins(network, 0)
+
 	#Clear Prior Settings
 	clearPriorSettings(interfaceA, interfaceB)
 
@@ -145,24 +165,28 @@ def refreshShapers():
 		for elem in data:
 			print(tabs + elem)
 			elemClassID = str(major) + ':' + str(minor)
-			elemDownload = data[elem]['downloadBandwidthMbps']
-			elemUpload = data[elem]['uploadBandwidthMbps']
-			print(tabs + "Download:  " + str(elemDownload) + " Mbps")
-			print(tabs + "Upload:    " + str(elemUpload) + " Mbps")
+			elemDownloadMax = data[elem]['downloadBandwidthMbps']
+			elemUploadMax = data[elem]['uploadBandwidthMbps']
+			#Based on calculations done in findBandwidthMins(), determine optimal HTB rates (mins) and ceils (maxs)
+			elemDownloadMin = round(min(max(data[elem]['downloadBandwidthMbpsMin'],(elemDownloadMax/8)),(elemDownloadMax/2)))
+			elemUploadMin = round(min(max(data[elem]['uploadBandwidthMbpsMin'],(elemUploadMax/8)),(elemUploadMax/2)))
+			print(tabs + "Download:  " + str(elemDownloadMin) + " to " + str(elemDownloadMax) + " Mbps")
+			print(tabs + "Upload:    " + str(elemUploadMin) + " to " + str(elemUploadMax) + " Mbps")
 			print(tabs, end='')
-			shell('tc class add dev ' + interfaceA + ' parent ' + parentClassID + ' classid ' + str(minor) + ' htb rate '+ str(round(elemDownload/4)) + 'mbit ceil '+ str(round(elemDownload)) + 'mbit prio 3') 
+			shell('tc class add dev ' + interfaceA + ' parent ' + parentClassID + ' classid ' + str(minor) + ' htb rate '+ str(round(elemDownloadMin)) + 'mbit ceil '+ str(round(elemDownloadMax)) + 'mbit prio 3') 
 			print(tabs, end='')
 			shell('tc qdisc add dev ' + interfaceA + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
 			print(tabs, end='')
-			shell('tc class add dev ' + interfaceB + ' parent ' + parentClassID + ' classid ' + str(minor) + ' htb rate '+ str(round(elemUpload/4)) + 'mbit ceil '+ str(round(elemUpload)) + 'mbit prio 3') 
+			shell('tc class add dev ' + interfaceB + ' parent ' + parentClassID + ' classid ' + str(minor) + ' htb rate '+ str(round(elemUploadMin)) + 'mbit ceil '+ str(round(elemUploadMax)) + 'mbit prio 3') 
 			print(tabs, end='')
 			shell('tc qdisc add dev ' + interfaceB + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
 			print()
 			minor += 1
 			for device in devices:
+				#If a device from Shaper.csv lists this elem as its Parent Node, attach it as a leaf to this elem HTB
 				if elem == device['ParentNode']:
-					maxDownload = min(device['downloadMax'],elemDownload)
-					maxUpload = min(device['uploadMax'],elemUpload)
+					maxDownload = min(device['downloadMax'],elemDownloadMax)
+					maxUpload = min(device['uploadMax'],elemUploadMax)
 					minDownload = min(device['downloadMin'],maxDownload)
 					minUpload = min(device['uploadMin'],maxUpload)
 					print(tabs + '   ' + device['hostname'])
@@ -187,8 +211,9 @@ def refreshShapers():
 					print()
 					minor += 1
 			if 'children' in data[elem]:
+				#We need to keep tabs on the minor counter, because we can't have repeating class IDs. Here, we bring back the minor counter from the recursive function
 				minor = traverseNetwork(data[elem]['children'], depth+1, major, minor+1, queue, elemClassID)
-			#If top level node, increment to next queue
+			#If top level node, increment to next queue / cpu core
 			if depth == 0:
 				if queue >= queuesAvailable:
 					queue = 1
@@ -198,6 +223,7 @@ def refreshShapers():
 					major += 1
 		return minor
 	
+	#Here is the actual call to the recursive traverseNetwork() function. finalMinor is not used.
 	finalMinor = traverseNetwork(network, 0, major=1, minor=3, queue=1, parentClassID="1:1")
 	
 	#Recap
