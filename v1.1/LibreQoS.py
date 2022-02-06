@@ -71,7 +71,8 @@ def refreshShapers():
 	#Load network heirarchy
 	with open('network.json', 'r') as j:
 		network = json.loads(j.read())
-
+	
+	#Find the bandwidth minimums for each node by combining mimimums of devices lower in that node's heirarchy
 	def findBandwidthMins(data, depth):
 		tabs = '   ' * depth
 		minDownload = 0
@@ -99,11 +100,12 @@ def refreshShapers():
 	queuesAvailable = 0
 	path = '/sys/class/net/' + interfaceA + '/queues/'
 	directory_contents = os.listdir(path)
-	print(directory_contents)
+	#print(directory_contents)
 	for item in directory_contents:
 		if "tx-" in str(item):
 			queuesAvailable += 1
-			
+	print("This Network Interface Card has " + str(queuesAvailable) + " queues avaialble.")
+	
 	# For VMs, must reduce queues if more than 9, for some reason
 	if queuesAvailable > 9:
 		command = 'grep -q ^flags.*\ hypervisor\  /proc/cpuinfo && echo "This machine is a VM"'
@@ -125,7 +127,7 @@ def refreshShapers():
 	shell('./xdp-cpumap-tc/src/tc_classify --dev-egress ' + interfaceA)
 	shell('./xdp-cpumap-tc/src/tc_classify --dev-egress ' + interfaceB)
 
-	# Create MQ
+	# Create MQ qdisc for each interface
 	thisInterface = interfaceA
 	shell('tc qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq')
 	for queue in range(queuesAvailable):
@@ -151,15 +153,8 @@ def refreshShapers():
 		shell('tc qdisc add dev ' + thisInterface + ' parent ' + str(queue+1) + ':2 ' + fqOrCAKE)
 	print()
 
-	#Establish queue counter
-	currentQueueCounter = 1
-	queueMinorCounterDict = {}
-	# :1 and :2 are used for root and default classes, so start each queue's counter at :3
-	for queueNum in range(queuesAvailable):
-		queueMinorCounterDict[queueNum+1] = 3
-
-	devicesShaped = []
 	#Parse network.json. For each tier, create corresponding HTB and leaf classes
+	devicesShaped = []
 	def traverseNetwork(data, depth, major, minor, queue, parentClassID):
 		tabs = '   ' * depth
 		for elem in data:
@@ -168,6 +163,7 @@ def refreshShapers():
 			elemDownloadMax = data[elem]['downloadBandwidthMbps']
 			elemUploadMax = data[elem]['uploadBandwidthMbps']
 			#Based on calculations done in findBandwidthMins(), determine optimal HTB rates (mins) and ceils (maxs)
+			#The max calculation is to avoid 0 values, and the min calculation is to ensure rate is not higher than ceil
 			elemDownloadMin = round(min(max(data[elem]['downloadBandwidthMbpsMin'],(elemDownloadMax/8)),(elemDownloadMax/2)))
 			elemUploadMin = round(min(max(data[elem]['uploadBandwidthMbpsMin'],(elemUploadMax/8)),(elemUploadMax/2)))
 			print(tabs + "Download:  " + str(elemDownloadMin) + " to " + str(elemDownloadMax) + " Mbps")
@@ -210,6 +206,7 @@ def refreshShapers():
 							devicesShaped.append(device['hostname'])
 					print()
 					minor += 1
+			#Recursive call this function for children nodes attached to this node
 			if 'children' in data[elem]:
 				#We need to keep tabs on the minor counter, because we can't have repeating class IDs. Here, we bring back the minor counter from the recursive function
 				minor = traverseNetwork(data[elem]['children'], depth+1, major, minor+1, queue, elemClassID)
