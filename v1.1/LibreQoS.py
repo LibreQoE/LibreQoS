@@ -164,8 +164,8 @@ def refreshShapers():
 			elemUploadMax = data[elem]['uploadBandwidthMbps']
 			#Based on calculations done in findBandwidthMins(), determine optimal HTB rates (mins) and ceils (maxs)
 			#The max calculation is to avoid 0 values, and the min calculation is to ensure rate is not higher than ceil
-			elemDownloadMin = round(min(max(data[elem]['downloadBandwidthMbpsMin'],(elemDownloadMax/8)),(elemDownloadMax/2)))
-			elemUploadMin = round(min(max(data[elem]['uploadBandwidthMbpsMin'],(elemUploadMax/8)),(elemUploadMax/2)))
+			elemDownloadMin = round(min(max(data[elem]['downloadBandwidthMbpsMin'],(elemDownloadMax/8)),(elemDownloadMax*.95)))
+			elemUploadMin = round(min(max(data[elem]['uploadBandwidthMbpsMin'],(elemUploadMax/8)),(elemUploadMax*.95)))
 			print(tabs + "Download:  " + str(elemDownloadMin) + " to " + str(elemDownloadMax) + " Mbps")
 			print(tabs + "Upload:    " + str(elemUploadMin) + " to " + str(elemUploadMax) + " Mbps")
 			print(tabs, end='')
@@ -227,6 +227,10 @@ def refreshShapers():
 	for device in devices:
 		if device['hostname'] not in devicesShaped:
 			print('Device ' + device['hostname'] + ' was not shaped. Please check to ensure its parent Node is listed in network.json.')
+	
+	#Save for stats
+	with open('qdiscs.json', 'w') as infile:
+		json.dump(devices, infile)
 	
 	# Done
 	currentTimeString = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
