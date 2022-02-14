@@ -155,17 +155,19 @@ def refreshShapers():
 
 	#Parse network.json. For each tier, create corresponding HTB and leaf classes
 	devicesShaped = []
-	def traverseNetwork(data, depth, major, minor, queue, parentClassID):
+	parentNodes = []
+	def traverseNetwork(data, depth, major, minor, queue, parentClassID, parentMaxDL, parentMaxUL):
 		tabs = '   ' * depth
 		for elem in data:
 			print(tabs + elem)
 			elemClassID = str(major) + ':' + str(minor)
-			elemDownloadMax = data[elem]['downloadBandwidthMbps']
-			elemUploadMax = data[elem]['uploadBandwidthMbps']
+			#Cap based on this node's max bandwidth, or parent node's max bandwidth, whichever is lower
+			elemDownloadMax = min(data[elem]['downloadBandwidthMbps'],parentMaxDL)
+			elemUploadMax = min(data[elem]['uploadBandwidthMbps'],parentMaxUL)
 			#Based on calculations done in findBandwidthMins(), determine optimal HTB rates (mins) and ceils (maxs)
 			#The max calculation is to avoid 0 values, and the min calculation is to ensure rate is not higher than ceil
-			elemDownloadMin = round(min(max(data[elem]['downloadBandwidthMbpsMin'],(elemDownloadMax/8)),(elemDownloadMax*.95)))
-			elemUploadMin = round(min(max(data[elem]['uploadBandwidthMbpsMin'],(elemUploadMax/8)),(elemUploadMax*.95)))
+			elemDownloadMin = round(elemDownloadMax*.95)
+			elemUploadMin = round(elemUploadMax*.95)
 			print(tabs + "Download:  " + str(elemDownloadMin) + " to " + str(elemDownloadMax) + " Mbps")
 			print(tabs + "Upload:    " + str(elemUploadMin) + " to " + str(elemUploadMax) + " Mbps")
 			print(tabs, end='')
@@ -177,6 +179,13 @@ def refreshShapers():
 			print(tabs, end='')
 			shell('tc qdisc add dev ' + interfaceB + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
 			print()
+			thisParentNode =	{
+								"parentNodeName": elem,
+								"classID": elemClassID,
+								"downloadMax": elemDownloadMax,
+								"uploadMax": elemUploadMax,
+								}
+			parentNodes.append(thisParentNode)
 			minor += 1
 			for device in devices:
 				#If a device from Shaper.csv lists this elem as its Parent Node, attach it as a leaf to this elem HTB
@@ -209,7 +218,7 @@ def refreshShapers():
 			#Recursive call this function for children nodes attached to this node
 			if 'children' in data[elem]:
 				#We need to keep tabs on the minor counter, because we can't have repeating class IDs. Here, we bring back the minor counter from the recursive function
-				minor = traverseNetwork(data[elem]['children'], depth+1, major, minor+1, queue, elemClassID)
+				minor = traverseNetwork(data[elem]['children'], depth+1, major, minor+1, queue, elemClassID, elemDownloadMax, elemUploadMax)
 			#If top level node, increment to next queue / cpu core
 			if depth == 0:
 				if queue >= queuesAvailable:
@@ -221,7 +230,7 @@ def refreshShapers():
 		return minor
 	
 	#Here is the actual call to the recursive traverseNetwork() function. finalMinor is not used.
-	finalMinor = traverseNetwork(network, 0, major=1, minor=3, queue=1, parentClassID="1:1")
+	finalMinor = traverseNetwork(network, 0, major=1, minor=3, queue=1, parentClassID="1:1", parentMaxDL=upstreamBandwidthCapacityDownloadMbps, parentMaxUL=upstreamBandwidthCapacityUploadMbps)
 	
 	#Recap
 	for device in devices:
@@ -229,9 +238,11 @@ def refreshShapers():
 			print('Device ' + device['hostname'] + ' was not shaped. Please check to ensure its parent Node is listed in network.json.')
 	
 	#Save for stats
-	with open('qdiscs.json', 'w') as infile:
+	with open('statsByDevice.json', 'w') as infile:
 		json.dump(devices, infile)
-	
+	with open('statsByParentNode.json', 'w') as infile:
+		json.dump(parentNodes, infile)
+
 	# Done
 	currentTimeString = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 	print("Successful run completed on " + currentTimeString)
