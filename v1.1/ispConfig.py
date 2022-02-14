@@ -29,6 +29,7 @@ runShellCommandsAsSudo = False
 
 #Graphing
 graphingEnabled = False
+influxDBurl = "http://localhost:8086"
 influxDBBucket = "libreqos"
 influxDBOrg = "Your ISP Name Here"
 influxDBtoken = ""
