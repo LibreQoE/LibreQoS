@@ -27,6 +27,12 @@ enableActualShellCommands = True
 # Add 'sudo' before execution of any shell commands. May be required depending on distribution and environment.
 runShellCommandsAsSudo = False
 
+#Graphing
+graphingEnabled = False
+influxDBBucket = "libreqos"
+influxDBOrg = "Your ISP Name Here"
+influxDBtoken = ""
+
 # Optional UISP integration
 # Everything before /nms/ on your UISP instance
 UISPbaseURL = 'https://examplesite.com'
