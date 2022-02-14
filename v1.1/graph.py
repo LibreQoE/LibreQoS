@@ -6,7 +6,7 @@ import decimal
 import json
 from operator import itemgetter 
 from prettytable import PrettyTable
-from ispConfig import fqOrCAKE, interfaceA, interfaceB, influxDBBucket, influxDBOrg, influxDBtoken
+from ispConfig import fqOrCAKE, interfaceA, interfaceB, influxDBBucket, influxDBOrg, influxDBtoken, influxDBurl
 from datetime import date, datetime, timedelta
 import decimal
 from itertools import groupby
@@ -96,7 +96,7 @@ def refreshGraphs():
 	bucket = influxDBBucket
 	org = influxDBOrg
 	token = influxDBtoken
-	url="http://localhost:8086"
+	url = influxDBurl
 	client = InfluxDBClient(
 		url=url,
 		token=token,
