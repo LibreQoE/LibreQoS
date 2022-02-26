@@ -28,13 +28,15 @@ enableActualShellCommands = True
 runShellCommandsAsSudo = False
 
 #Graphing
-graphingEnabled = False
+graphingEnabled = True
+ppingLocation = "pping/pping"
 influxDBurl = "http://localhost:8086"
 influxDBBucket = "libreqos"
 influxDBOrg = "Your ISP Name Here"
 influxDBtoken = ""
 
 # Optional UISP integration
+automaticImportUISP = False
 # Everything before /nms/ on your UISP instance
 UISPbaseURL = 'https://examplesite.com'
 # UISP Auth Token
