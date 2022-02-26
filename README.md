@@ -169,6 +169,17 @@ LibreQoS cannot decapsulate MPLS on its own.
 * As with 0.9, not yet dual stack, clients can only be shaped by IPv4 address until IPv6 support is added to [XDP-CPUMAP-TC](https://github.com/xdp-project/xdp-cpumap-tc). Once that happens we can then shape IPv6 as well.
 * XDP's cpumap-redirect achieves higher throughput on a server with direct access to the NIC (XDP offloading possible) vs as a VM with bridges (generic XDP).
 
+### v1.1 (Alpha - IPv4) 2022
+#### Features
+* Network heirarchy can be mapped to the network.json file. This allows for both simple network heirarchies (Site>AP>Client) as well as much more complex ones (Site>Site>Micro-PoP>AP>Site>AP>Client).
+* Graphing of bandwidth to InfluxDB. Parses bandwidth data from "tc -s qdisc show" command, minimizing CPU use.
+* Graphing of TCP latency to InfluxDB - via [PPing](https://github.com/pollere/pping) integration.
+#### Considerations
+* Any top-level parent node is tied to a single CPU core. Top-level nodes are evenly distributed across CPUs. Since each CPU can usually only accomodate up to 4Gbps, ensure any single top-level parent node will not require more than 4Gbps throughput.
+#### Limitations
+* As with 0.9 and v1.0, not yet dual stack, clients can only be shaped by IPv4 address until IPv6 support is added to [XDP-CPUMAP-TC](https://github.com/xdp-project/xdp-cpumap-tc). Once that happens we can then shape IPv6 as well.
+* XDP's cpumap-redirect achieves higher throughput on a server with direct access to the NIC (XDP offloading possible) vs as a VM with bridges (generic XDP).
+
 ## General Requirements
 * VM or physical server. Physical server will perform better and better utilize all CPU cores.
 * One management network interface, completely seperate from the traffic shaping interfaces.
