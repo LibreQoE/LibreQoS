@@ -4,11 +4,17 @@ from datetime import date
 from LibreQoS import refreshShapers
 from graphBandwidth import refreshBandwidthGraphs
 from graphLatency import refreshLatencyGraphs
-from ispConfig import graphingEnabled
+from ispConfig import graphingEnabled, automaticImportUISP
+from integrationUISP import updateFromUISP
+
+def importAndShape():
+	if automaticImportUISP:
+		updateFromUISP()
+	refreshShapers()
 
 if __name__ == '__main__':
-	refreshShapers()
-	schedule.every().day.at("04:00").do(refreshShapers)
+	importAndShape()
+	schedule.every().day.at("04:00").do(importAndShape)
 	while True:
 		schedule.run_pending()
 		if graphingEnabled:

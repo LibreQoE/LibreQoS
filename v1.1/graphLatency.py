@@ -108,13 +108,9 @@ def refreshLatencyGraphs(secondsToRun):
 		if device['tcpLatency'] != None:
 			p = Point('Latency').tag("Device", device['hostname']).tag("ParentNode", device['ParentNode']).tag("Type", "Device").field("TCP Latency", device['tcpLatency'])
 			queriesToSend.append(p)
-			p = Point('Latency').tag("Device", device['hostname']).tag("ParentNode", device['ParentNode']).tag("Type", "Device").field("TCP Latency", device['tcpLatency'])
-			queriesToSend.append(p)
 
 	for parentNode in parentNodes:
 		if parentNode['tcpLatency'] != None:
-			p = Point('Latency').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("TCP Latency", parentNode['tcpLatency'])
-			queriesToSend.append(p)
 			p = Point('Latency').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("TCP Latency", parentNode['tcpLatency'])
 			queriesToSend.append(p)
 			

@@ -173,11 +173,7 @@ def refreshShapers():
 			print(tabs, end='')
 			shell('tc class add dev ' + interfaceA + ' parent ' + parentClassID + ' classid ' + str(minor) + ' htb rate '+ str(round(elemDownloadMin)) + 'mbit ceil '+ str(round(elemDownloadMax)) + 'mbit prio 3') 
 			print(tabs, end='')
-			#shell('tc qdisc add dev ' + interfaceA + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
-			print(tabs, end='')
 			shell('tc class add dev ' + interfaceB + ' parent ' + parentClassID + ' classid ' + str(minor) + ' htb rate '+ str(round(elemUploadMin)) + 'mbit ceil '+ str(round(elemUploadMax)) + 'mbit prio 3') 
-			print(tabs, end='')
-			#shell('tc qdisc add dev ' + interfaceB + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
 			print()
 			thisParentNode =	{
 								"parentNodeName": elem,

@@ -78,6 +78,25 @@ def getParentNodeStats(parentNodes, devices):
 		parentNode['bitsUploadSinceLastQuery'] = thisNodeBitsUpload
 	return parentNodes
 
+def getParentNodeDict(data, depth, parentNodeNameDict):
+	if parentNodeNameDict == None:
+		parentNodeNameDict = {}
+	
+	for elem in data:
+		if 'children' in data[elem]:
+			for child in data[elem]['children']:
+				parentNodeNameDict[child] = elem
+			tempDict = getParentNodeDict(data[elem]['children'], depth+1, parentNodeNameDict)
+			parentNodeNameDict = dict(parentNodeNameDict, **tempDict)
+	return parentNodeNameDict
+
+def parentNodeNameDictPull():
+	#Load network heirarchy
+	with open('network.json', 'r') as j:
+		network = json.loads(j.read())
+	parentNodeNameDict = getParentNodeDict(network, 0, None)
+	return parentNodeNameDict
+
 def refreshBandwidthGraphs():
 	startTime = datetime.now()
 	with open('statsByParentNode.json', 'r') as j:
@@ -85,6 +104,8 @@ def refreshBandwidthGraphs():
 	
 	with open('statsByDevice.json', 'r') as j:
 		devices = json.loads(j.read())
+	
+	parentNodeNameDict = parentNodeNameDictPull()
 	
 	print("Retrieving device statistics")
 	devices = getDeviceStats(devices)
@@ -133,6 +154,7 @@ def refreshBandwidthGraphs():
 			p = Point('Utilization').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("Download", percentUtilizationDownload)
 			queriesToSend.append(p)
 			p = Point('Utilization').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("Upload", percentUtilizationUpload)
+			queriesToSend.append(p)
 
 	write_api.write(bucket=bucket, record=queriesToSend)
 	print("Added " + str(len(queriesToSend)) + " points to InfluxDB.")
