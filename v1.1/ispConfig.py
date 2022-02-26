@@ -35,6 +35,10 @@ influxDBBucket = "libreqos"
 influxDBOrg = "Your ISP Name Here"
 influxDBtoken = ""
 
+# NMS/CRM Integration
+# If a device shows a WAN IP wihtin these subnets, assume they are behind NAT / un-shapable, and ignore them
+ignoreSubnets = ['192.168.0.0/16']
+
 # Optional UISP integration
 automaticImportUISP = False
 # Everything before /nms/ on your UISP instance
