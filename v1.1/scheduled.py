@@ -2,7 +2,8 @@ import time
 import schedule
 from datetime import date
 from LibreQoS import refreshShapers
-from graph import refreshGraphs
+from graphBandwidth import refreshBandwidthGraphs
+from graphLatency import refreshLatencyGraphs
 from ispConfig import graphingEnabled
 
 if __name__ == '__main__':
@@ -12,7 +13,9 @@ if __name__ == '__main__':
 		schedule.run_pending()
 		if graphingEnabled:
 			try:
-				refreshGraphs()
+				refreshBandwidthGraphs()
+				refreshLatencyGraphs(10)
 			except:
 				print("Failed to update graphs")
-		time.sleep(15) # wait one minute
+		else:
+			time.sleep(60) # wait x seconds
