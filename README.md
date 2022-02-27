@@ -170,6 +170,7 @@ LibreQoS cannot decapsulate MPLS on its own.
 * XDP's cpumap-redirect achieves higher throughput on a server with direct access to the NIC (XDP offloading possible) vs as a VM with bridges (generic XDP).
 
 ### v1.1 (Alpha - IPv4) 2022
+![Screenshot](docs/v1.1-alpha-preview.jpg?raw=true "Screenshot")
 #### Features
 * Network heirarchy can be mapped to the network.json file. This allows for both simple network heirarchies (Site>AP>Client) as well as much more complex ones (Site>Site>Micro-PoP>AP>Site>AP>Client).
 * Graphing of bandwidth to InfluxDB. Parses bandwidth data from "tc -s qdisc show" command, minimizing CPU use.
