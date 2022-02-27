@@ -221,7 +221,14 @@ If LibreQoS helps your network, please [contribute to Dave's Patreon.](https://w
 </a>
 
 ## Special Thanks
-Special thanks to Dave Täht, Jesper Dangaard Brouer, Toke Høiland-Jørgensen, Kumar Kartikeya Dwivedi, Maxim Mikityanskiy, Yossi Kuperman, and Rony Efraim for their many contributions to the Linux networking stack. Thank you Phil Sutter, Bert Hubert, Gregory Maxwell, Remco van Mook, Martijn van Oosterhout, Paul B Schroeder, and Jasper Spaans for contributing to the guides and documentation listed below. Thanks to Leo Manuel Magpayo for his help improving documentation and for testing. Thanks to everyone on the [Bufferbloat mailing list](https://lists.bufferbloat.net/listinfo/) for your help and contibutions.
+Special thanks to Dave Täht, Jesper Dangaard Brouer, Toke Høiland-Jørgensen, Kumar Kartikeya Dwivedi, Kathleen M. Nichols, Maxim Mikityanskiy, Yossi Kuperman, and Rony Efraim for their many contributions to the Linux networking stack. Thank you Phil Sutter, Bert Hubert, Gregory Maxwell, Remco van Mook, Martijn van Oosterhout, Paul B Schroeder, and Jasper Spaans for contributing to the guides and documentation listed below. Thanks to Leo Manuel Magpayo for his help improving documentation and for testing. Thanks to everyone on the [Bufferbloat mailing list](https://lists.bufferbloat.net/listinfo/) for your help and contibutions.
+
+# Made possible by
+* [fq_codel and CAKE](https://www.bufferbloat.net/projects/)
+* [xdp-cpumap-tc](https://github.com/xdp-project/xdp-cpumap-tc)
+* [PPing](https://github.com/pollere/pping)
+* [LibTins](http://libtins.github.io/)
+* [InfluxDB](https://github.com/influxdata/influxdb)
 
 # Other References
 * https://tldp.org/HOWTO/Adv-Routing-HOWTO/lartc.adv-filter.hashing.html
