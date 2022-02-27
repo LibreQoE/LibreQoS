@@ -29,7 +29,7 @@ runShellCommandsAsSudo = False
 
 #Graphing
 graphingEnabled = True
-ppingLocation = "pping/pping"
+ppingLocation = "pping"
 influxDBurl = "http://localhost:8086"
 influxDBBucket = "libreqos"
 influxDBOrg = "Your ISP Name Here"
