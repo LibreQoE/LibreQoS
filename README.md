@@ -181,6 +181,12 @@ LibreQoS cannot decapsulate MPLS on its own.
 * As with 0.9 and v1.0, not yet dual stack, clients can only be shaped by IPv4 address until IPv6 support is added to [XDP-CPUMAP-TC](https://github.com/xdp-project/xdp-cpumap-tc). Once that happens we can then shape IPv6 as well.
 * XDP's cpumap-redirect achieves higher throughput on a server with direct access to the NIC (XDP offloading possible) vs as a VM with bridges (generic XDP).
 
+## NMS/CRM Integrations
+### UISP Integration
+There is a rudimentary UISP integration included in v1.1-alpha.
+Instead, you may want to use the [RUST-based UISP integration](https://github.com/thebracket/libre_qos_rs/tree/main/uisp_integration) developed by [@thebracket](https://github.com/thebracket/) for v1.1 and above.
+[@thebracket](https://github.com/thebracket/) was kind enough to produce this great tool, which maps the actual network heirarchy to the network.json and Shaper.csv formats LibreQoS can use.
+
 ## General Requirements
 * VM or physical server. Physical server will perform better and better utilize all CPU cores.
 * One management network interface, completely seperate from the traffic shaping interfaces.
