@@ -197,11 +197,13 @@ Instead, you may want to use the [RUST-based UISP integration](https://github.co
   * [NVIDIA ConnectX-4 MCX4121A-XCAT](https://store.mellanox.com/products/nvidia-mcx4121a-xcat-connectx-4-lx-en-adapter-card-10gbe-dual-port-sfp28-pcie3-0-x8-rohs-r6.html) (Highly Recommended)
   * [Intel X710](https://www.fs.com/products/75600.html)
   * Intel X520
-* Ubuntu Server recommended. Ubuntu Desktop is not recommended as it uses NetworkManager instead of Netplan.
-* v0.9: Requires kernel version 5.9 or above for physical servers, and kernel version 5.14 or above for VM.
+* Ubuntu Server 21.10 or above recommended. All guides assume Ubuntu Server 21.10. Ubuntu Desktop is not recommended as it uses NetworkManager instead of Netplan.
+* v0.9+: Requires kernel version 5.9 or above for physical servers, and kernel version 5.14 or above for VM.
 * v0.8: Requires kernel version 5.1 or above.
 * Python 3, PIP, and some modules (listed in respective guides).
 * Choose a CPU with solid [single-thread performance](https://www.cpubenchmark.net/singleThread.html) within your budget. Generally speaking, any new CPU above $200 can probably handle shaping up to 2Gbps.
+  * Recommendations
+  * [AMD Ryzen 9 5900X](https://www.bestbuy.com/site/amd-ryzen-9-5900x-4th-gen-12-core-24-threads-unlocked-desktop-processor-without-cooler/6438942.p?skuId=6438942)
 
 ## Installation and Usage Guide
 
