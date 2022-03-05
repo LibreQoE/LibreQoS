@@ -202,9 +202,9 @@ Instead, you may want to use the [RUST-based UISP integration](https://github.co
 * v0.8: Requires kernel version 5.1 or above.
 * Python 3, PIP, and some modules (listed in respective guides).
 * Choose a CPU with solid [single-thread performance](https://www.cpubenchmark.net/singleThread.html) within your budget. Generally speaking, any new CPU above $200 can probably handle shaping up to 2Gbps.
-  * Recommendations
-  * [AMD Ryzen 9 5900X](https://www.bestbuy.com/site/amd-ryzen-9-5900x-4th-gen-12-core-24-threads-unlocked-desktop-processor-without-cooler/6438942.p?skuId=6438942)
-  * [Intel Core i7-12700KF](https://www.bestbuy.com/site/intel-core-i7-12700kf-desktop-processor-12-8p-4e-cores-up-to-5-0-ghz-unlocked-lga1700-600-series-chipset-125w/6483674.p?skuId=6483674)
+  * Recommendations for 10G throughput:
+    * [AMD Ryzen 9 5900X](https://www.bestbuy.com/site/amd-ryzen-9-5900x-4th-gen-12-core-24-threads-unlocked-desktop-processor-without-cooler/6438942.p?skuId=6438942)
+    * [Intel Core i7-12700KF](https://www.bestbuy.com/site/intel-core-i7-12700kf-desktop-processor-12-8p-4e-cores-up-to-5-0-ghz-unlocked-lga1700-600-series-chipset-125w/6483674.p?skuId=6483674)
 
 ## Installation and Usage Guide
 
