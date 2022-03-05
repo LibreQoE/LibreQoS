@@ -190,9 +190,13 @@ Instead, you may want to use the [RUST-based UISP integration](https://github.co
 ## General Requirements
 * VM or physical server. Physical server will perform better and better utilize all CPU cores.
 * One management network interface, completely seperate from the traffic shaping interfaces.
-* NIC supporting two interfaces for traffic shaping. Recommendations:
-  * [NVIDIA ConnectX-4 MCX4121A-XCAT](https://store.mellanox.com/products/nvidia-mcx4121a-xcat-connectx-4-lx-en-adapter-card-10gbe-dual-port-sfp28-pcie3-0-x8-rohs-r6.html)
+* Network Interface Card 
+  * NIC must have two or more interfaces for traffic shaping.
+  * NIC must have multiple TX/RX transmit queues. [Here's how to check from the command line](https://serverfault.com/questions/772380/how-to-tell-if-nic-has-multiqueue-enabled).
+  * Known supported cards:
+  * [NVIDIA ConnectX-4 MCX4121A-XCAT](https://store.mellanox.com/products/nvidia-mcx4121a-xcat-connectx-4-lx-en-adapter-card-10gbe-dual-port-sfp28-pcie3-0-x8-rohs-r6.html) (Highly Recommended)
   * [Intel X710](https://www.fs.com/products/75600.html)
+  * Intel X520
 * Ubuntu Server recommended. Ubuntu Desktop is not recommended as it uses NetworkManager instead of Netplan.
 * v0.9: Requires kernel version 5.9 or above for physical servers, and kernel version 5.14 or above for VM.
 * v0.8: Requires kernel version 5.1 or above.
