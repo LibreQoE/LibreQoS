@@ -189,8 +189,8 @@ Instead, you may want to use the [RUST-based UISP integration](https://github.co
 
 ## General Requirements
 * VM or physical server. Physical server will perform better and better utilize all CPU cores.
-* One management network interface, completely seperate from the traffic shaping interfaces.
-* Network Interface Card 
+* One management network interface, completely seperate from the traffic shaping interfaces. Usually this would be the Ethernet interface built in to the motherboard.
+* Dedicated Network Interface Card 
   * NIC must have two or more interfaces for traffic shaping.
   * NIC must have multiple TX/RX transmit queues. [Here's how to check from the command line](https://serverfault.com/questions/772380/how-to-tell-if-nic-has-multiqueue-enabled).
   * Known supported cards:
@@ -204,6 +204,7 @@ Instead, you may want to use the [RUST-based UISP integration](https://github.co
 * Choose a CPU with solid [single-thread performance](https://www.cpubenchmark.net/singleThread.html) within your budget. Generally speaking, any new CPU above $200 can probably handle shaping up to 2Gbps.
   * Recommendations
   * [AMD Ryzen 9 5900X](https://www.bestbuy.com/site/amd-ryzen-9-5900x-4th-gen-12-core-24-threads-unlocked-desktop-processor-without-cooler/6438942.p?skuId=6438942)
+  * [Intel Core i7-12700KF](https://www.bestbuy.com/site/intel-core-i7-12700kf-desktop-processor-12-8p-4e-cores-up-to-5-0-ghz-unlocked-lga1700-600-series-chipset-125w/6483674.p?skuId=6483674)
 
 ## Installation and Usage Guide
 
