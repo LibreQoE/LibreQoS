@@ -107,6 +107,12 @@ def refreshShapers():
 					devicesForThisAP.append(device)
 			accessPoints.append((APname, apDownload, apUpload, parentSite, devicesForThisAP))
 	
+	# Sort devices into bins by AP, for scenario shapeBySite = False
+	result = collections.defaultdict(list)
+	for d in devices:
+		result[d['AP']].append(d)
+	devicesByAP = list(result.values())
+	
 	# If an AP is specified for a device in Shaper.csv, but AP is not listed in AccessPoints.csv, raise exception
 	for device in devices:
 		if (device['AP'] not in accessPointNamesOnly):
