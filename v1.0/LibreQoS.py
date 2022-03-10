@@ -62,7 +62,9 @@ def clearPriorSettings(interfaceA, interfaceB):
 
 def refreshShapers():
 	tcpOverheadFactor = 1.09
-
+	accessPointDownloadMbps = {}
+	accessPointUploadMbps = {}
+	
 	# Load Devices
 	devices = []
 	with open('Shaper.csv') as csv_file:
@@ -98,6 +100,8 @@ def refreshShapers():
 		next(csv_reader)
 		for row in csv_reader:
 			APname, apDownload, apUpload, parentSite = row
+			accessPointDownloadMbps[AP] = int(apDownload)*tcpOverheadFactor
+			accessPointUploadMbps[AP] = int(apUpload)*tcpOverheadFactor
 			accessPointNamesOnly.append(APname)
 			apDownload = round(int(apDownload)*tcpOverheadFactor)
 			apUpload = round(int(apUpload)*tcpOverheadFactor)
@@ -112,6 +116,9 @@ def refreshShapers():
 	for d in devices:
 		result[d['AP']].append(d)
 	devicesByAP = list(result.values())
+	# If no AP is specified for a device in Shaper.csv, it is placed under this 'default' AP shaper, set to bandwidth max at edge
+	accessPointDownloadMbps['none'] = upstreamBandwidthCapacityDownloadMbps
+	accessPointUploadMbps['none'] = upstreamBandwidthCapacityUploadMbps
 	
 	# If an AP is specified for a device in Shaper.csv, but AP is not listed in AccessPoints.csv, raise exception
 	for device in devices:
