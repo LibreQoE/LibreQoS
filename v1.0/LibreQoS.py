@@ -245,7 +245,14 @@ def refreshShapers():
 					if device['ipv4']:
 						parentString = str(major) + ':'
 						flowIDstring = str(major) + ':' + str(minor)
-						shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + device['ipv4'] + ' --cpu ' + str(currentQueueCounter-1) + ' --classid ' + flowIDstring)
+						if '/' in device['ipv4']:
+							hosts = list(ipaddress.ip_network(device['ipv4']).hosts())
+							for host in hosts:
+								print(tabs + '   ', end='')
+								shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(host) + ' --cpu ' + str(currentQueueCounter-1) + ' --classid ' + flowIDstring)
+						else:
+							print(tabs + '   ', end='')
+							shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + device['ipv4'] + ' --cpu ' + str(currentQueueCounter-1) + ' --classid ' + flowIDstring)
 					#Once XDP-CPUMAP-TC handles IPv6, this can be added
 					#if device['ipv6']:
 					#	parentString = str(major) + ':'
@@ -290,7 +297,14 @@ def refreshShapers():
 				if device['ipv4']:
 					parentString = str(major) + ':'
 					flowIDstring = str(major) + ':' + str(minor)
-					shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + device['ipv4'] + ' --cpu ' + str(currentQueueCounter-1) + ' --classid ' + flowIDstring)
+					if '/' in device['ipv4']:
+						hosts = list(ipaddress.ip_network(device['ipv4']).hosts())
+						for host in hosts:
+							print(tabs + '   ', end='')
+							shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(host) + ' --cpu ' + str(currentQueueCounter-1) + ' --classid ' + flowIDstring)
+					else:
+						print(tabs + '   ', end='')
+						shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + device['ipv4'] + ' --cpu ' + str(currentQueueCounter-1) + ' --classid ' + flowIDstring)
 				#Once XDP-CPUMAP-TC handles IPv6, this can be added
 				#if device['ipv6']:
 				#	parentString = str(major) + ':'
