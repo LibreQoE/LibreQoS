@@ -51,3 +51,5 @@ shapeRouterOrStation = 'router'
 # API Auth
 apiUsername = "testUser"
 apiPassword = "changeme8343486806"
+apiHostIP = "127.0.0.1"
+apiHostPost = 5000
