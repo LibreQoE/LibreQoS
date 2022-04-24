@@ -47,3 +47,7 @@ UISPbaseURL = 'https://examplesite.com'
 uispAuthToken = ''
 # UISP | Whether to shape router at customer premises, or instead shape the station radio. When station radio is in router mode, use 'station'. Otherwise, use 'router'.
 shapeRouterOrStation = 'router'
+
+# API Auth
+apiUsername = "testUser"
+apiPassword = "changeme8343486806"
