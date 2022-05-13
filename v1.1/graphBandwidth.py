@@ -46,8 +46,12 @@ def getDeviceStats(devices):
 		device['timeQueried'] = datetime.now().isoformat()
 	for device in devices:
 		if 'priorQueryTime' in device:
-			bytesDLSinceLastQuery = device['bytesSentDownload'] - device['priorQueryBytesDownload']
-			bytesULSinceLastQuery = device['bytesSentUpload'] - device['priorQueryBytesUpload']
+			try:
+				bytesDLSinceLastQuery = device['bytesSentDownload'] - device['priorQueryBytesDownload']
+				bytesULSinceLastQuery = device['bytesSentUpload'] - device['priorQueryBytesUpload']
+			except:
+				bytesDLSinceLastQuery = 0
+				bytesULSinceLastQuery = 0
 			currentQueryTime = datetime.fromisoformat(device['timeQueried'])
 			priorQueryTime = datetime.fromisoformat(device['priorQueryTime'])
 			delta = currentQueryTime - priorQueryTime
