@@ -95,7 +95,7 @@ def refreshLatencyGraphs(secondsToRun):
 	bucket = influxDBBucket
 	org = influxDBOrg
 	token = influxDBtoken
-	url="http://localhost:8086"
+	url = influxDBurl
 	client = InfluxDBClient(
 		url=url,
 		token=token,
