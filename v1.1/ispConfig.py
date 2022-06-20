@@ -1,7 +1,7 @@
-#'fq_codel' or 'cake diffserv4'
-#'cake diffserv4' is recommended
+# 'fq_codel' or 'cake diffserv4'
+# 'cake diffserv4' is recommended
 
-#fqOrCAKE = 'fq_codel'
+# fqOrCAKE = 'fq_codel'
 fqOrCAKE = 'cake diffserv4'
 
 # How many Mbps are available to the edge of this network
@@ -21,13 +21,14 @@ interfaceB = 'eth2'
 # Shape by Site in addition to by AP and Client
 shapeBySite = True
 
-# Allow shell commands. False causes commands print to console only without being executed. MUST BE ENABLED FOR PROGRAM TO FUNCTION
+# Allow shell commands. False causes commands print to console only without being executed. MUST BE ENABLED FOR
+# PROGRAM TO FUNCTION
 enableActualShellCommands = True
 
 # Add 'sudo' before execution of any shell commands. May be required depending on distribution and environment.
 runShellCommandsAsSudo = False
 
-#Graphing
+# Graphing
 graphingEnabled = True
 ppingLocation = "pping"
 influxDBurl = "http://localhost:8086"
@@ -36,16 +37,17 @@ influxDBOrg = "Your ISP Name Here"
 influxDBtoken = ""
 
 # NMS/CRM Integration
-# If a device shows a WAN IP wihtin these subnets, assume they are behind NAT / un-shapable, and ignore them
+# If a device shows a WAN IP within these subnets, assume they are behind NAT / un-shapable, and ignore them
 ignoreSubnets = ['192.168.0.0/16']
 
 # Optional UISP integration
 automaticImportUISP = False
 # Everything before /nms/ on your UISP instance
-UISPbaseURL = 'https://examplesite.com'
+uispBaseURL = 'https://examplesite.com'
 # UISP Auth Token
 uispAuthToken = ''
-# UISP | Whether to shape router at customer premises, or instead shape the station radio. When station radio is in router mode, use 'station'. Otherwise, use 'router'.
+# UISP | Whether to shape router at customer premises, or instead shape the station radio. When station radio is in
+# router mode, use 'station'. Otherwise, use 'router'.
 shapeRouterOrStation = 'router'
 
 # API Auth
