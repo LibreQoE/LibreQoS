@@ -1,7 +1,7 @@
 import requests
 import csv
 import ipaddress
-from ispConfig import UISPbaseURL, uispAuthToken, shapeRouterOrStation, ignoreSubnets
+from ispConfig import uispBaseURL, uispAuthToken, shapeRouterOrStation, ignoreSubnets
 import shutil
 
 stationModels = ['LBE-5AC-Gen2', 'LBE-5AC-Gen2', 'LBE-5AC-LR', 'AF-LTU5', 'AFLTULR', 'AFLTUPro', 'LTU-LITE']
@@ -10,7 +10,7 @@ routerModels = ['ACB-AC', 'ACB-ISP']
 def pullShapedDevices():
 	devices = []
 	uispSitesToImport = []
-	url = UISPbaseURL + "/nms/api/v2.1/sites?type=client&ucrm=true&ucrmDetails=true"
+	url = uispBaseURL + "/nms/api/v2.1/sites?type=client&ucrm=true&ucrmDetails=true"
 	headers = {'accept':'application/json', 'x-auth-token': uispAuthToken}
 	r = requests.get(url, headers=headers)
 	jsonData = r.json()
@@ -70,8 +70,8 @@ def pullShapedDevices():
 	return devices
 
 def getUISPdevicesAtClientSite(siteID):
-	url = UISPbaseURL + "/nms/api/v2.1/devices?siteId=" + siteID
-	headers = {'accept':'application/json', 'x-auth-token': uispAuthToken}
+	url = uispBaseURL + "/nms/api/v2.1/devices?siteId=" + siteID
+	headers = {'accept':'application/json', 'x-auth-token': UISPuthToken}
 	r = requests.get(url, headers=headers)
 	return (r.json())
 
