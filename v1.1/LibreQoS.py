@@ -1,19 +1,17 @@
 # v1.1 alpha
 
-import random
-import logging
-import os
-import io
-import json
 import csv
-import subprocess
-from subprocess import PIPE
+import io
 import ipaddress
-from ipaddress import IPv4Address, IPv6Address
-import time
-from datetime import date, datetime
-from ispConfig import fqOrCAKE, upstreamBandwidthCapacityDownloadMbps, upstreamBandwidthCapacityUploadMbps, defaultClassCapacityDownloadMbps, defaultClassCapacityUploadMbps, interfaceA, interfaceB, shapeBySite, enableActualShellCommands, runShellCommandsAsSudo
-import collections
+import json
+import os
+import subprocess
+from datetime import datetime
+
+from ispConfig import fqOrCAKE, upstreamBandwidthCapacityDownloadMbps, upstreamBandwidthCapacityUploadMbps, \
+	defaultClassCapacityDownloadMbps, defaultClassCapacityUploadMbps, interfaceA, interfaceB, enableActualShellCommands, \
+	runShellCommandsAsSudo
+
 
 def shell(command):
 	if enableActualShellCommands:
@@ -171,9 +169,9 @@ def refreshShapers():
 			print(tabs + "Download:  " + str(elemDownloadMin) + " to " + str(elemDownloadMax) + " Mbps")
 			print(tabs + "Upload:    " + str(elemUploadMin) + " to " + str(elemUploadMax) + " Mbps")
 			print(tabs, end='')
-			shell('tc class add dev ' + interfaceA + ' parent ' + parentClassID + ' classid ' + str(minor) + ' htb rate '+ str(round(elemDownloadMin)) + 'mbit ceil '+ str(round(elemDownloadMax)) + 'mbit prio 3') 
+			shell('tc class add dev ' + interfaceA + ' parent ' + parentClassID + ' classid ' + str(minor) + ' htb rate '+ str(round(elemDownloadMin)) + 'mbit ceil '+ str(round(elemDownloadMax)) + 'mbit prio 3')
 			print(tabs, end='')
-			shell('tc class add dev ' + interfaceB + ' parent ' + parentClassID + ' classid ' + str(minor) + ' htb rate '+ str(round(elemUploadMin)) + 'mbit ceil '+ str(round(elemUploadMax)) + 'mbit prio 3') 
+			shell('tc class add dev ' + interfaceB + ' parent ' + parentClassID + ' classid ' + str(minor) + ' htb rate '+ str(round(elemUploadMin)) + 'mbit ceil '+ str(round(elemUploadMax)) + 'mbit prio 3')
 			print()
 			thisParentNode =	{
 								"parentNodeName": elem,
@@ -198,7 +196,7 @@ def refreshShapers():
 					print(tabs + '   ', end='')
 					shell('tc qdisc add dev ' + interfaceA + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
 					print(tabs + '   ', end='')
-					shell('tc class add dev ' + interfaceB + ' parent ' + elemClassID + ' classid ' + str(minor) + ' htb rate '+ str(minUpload) + 'mbit ceil '+ str(maxUpload) + 'mbit prio 3') 
+					shell('tc class add dev ' + interfaceB + ' parent ' + elemClassID + ' classid ' + str(minor) + ' htb rate '+ str(minUpload) + 'mbit ceil '+ str(maxUpload) + 'mbit prio 3')
 					print(tabs + '   ', end='')
 					shell('tc qdisc add dev ' + interfaceB + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
 					if device['ipv4']:

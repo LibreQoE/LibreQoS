@@ -19,7 +19,8 @@ interfaceA = 'eth1'
 interfaceB = 'eth2'
 
 # Shape by Site in addition to by AP and Client
-shapeBySite = True
+# Now deprecated, was only used prior to v1.1
+# shapeBySite = True
 
 # Allow shell commands. False causes commands print to console only without being executed. MUST BE ENABLED FOR
 # PROGRAM TO FUNCTION
