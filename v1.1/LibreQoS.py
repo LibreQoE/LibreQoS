@@ -94,15 +94,17 @@ def refreshShapers():
 	#Clear Prior Settings
 	clearPriorSettings(interfaceA, interfaceB)
 
-	# Find queues available
+	# Find queues and CPU cores available. Use min between those two as queuesAvailable
 	queuesAvailable = 0
 	path = '/sys/class/net/' + interfaceA + '/queues/'
 	directory_contents = os.listdir(path)
-	#print(directory_contents)
 	for item in directory_contents:
 		if "tx-" in str(item):
 			queuesAvailable += 1
 	print("This Network Interface Card has " + str(queuesAvailable) + " queues avaialble.")
+	
+	cpuCount = multiprocessing.cpu_count()
+	queuesAvailable = min(queuesAvailable,cpuCount)
 	
 	# For VMs, must reduce queues if more than 9, for some reason
 	if queuesAvailable > 9:
@@ -114,7 +116,7 @@ def refreshShapers():
 			output = e.output.decode()
 			success = False
 		if "This machine is a VM" in output:
-			queuesAvailable = 9
+			queuesAvailable = min(9, queuesAvailable)
 
 	# XDP-CPUMAP-TC
 	shell('./xdp-cpumap-tc/bin/xps_setup.sh -d ' + interfaceA + ' --default --disable')
