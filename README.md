@@ -26,8 +26,9 @@ Active Queue Management (AQM) algorithms.
 
 LibreQoS directs each customer's traffic into a
 [hierarchy token bucket](https://linux.die.net/man/8/tc-htb),
-where traffic can be shaped both by Access Point capacity and by the
-subscriber's allocated plan bandwidth. 
+where traffic can be shaped by the subscriber's allocated
+plan bandwidth, as well as by any upstream constraints within
+the ISP network (Access Point capacity, backhaul capacity, etc).
 
 ## Who should use LibreQoS?
 
@@ -79,9 +80,9 @@ See the table below.
 * [2] [Aterlo Validates QoE Measurement Appliance Preseem](https://www.cengn.ca/wp-content/uploads/2020/02/Aterlo-Networks-Success-Story.pdf)
 
 ## Why not just use Mikrotik Queues in ROS v7?
-* Mikrotik's ROS v7 uses an older kernel, and out-of-date implementation of CAKE. XDP based hardware acceleration is not possible. It's also quite buggy.
-* A middle-box x86 device running LibreQoS can put through up to 4Gbps of traffic per CPU core, allowing you to shape by Site or by AP up to 4Gbps in capacity, with aggregate throughput of 10Gbps or more. On ARM-based MikroTik routers, the most traffic you can put through a single HTB and CPU core is probably closer to 2Gbps. HTBs suffer from queue locking, where CPU use will look as if all CPU cores are evenly balancing the load, but in reality, a single Qdisc lock on the first CPU core (which handles scheduling of the other cpu threads) will be the bottleneck of all HTB throughput. The way LibreQoS works around that qdisc locking problem is with XDP-CPUMAP-TC, which uses XDP and MQ to run a separate HTB instance on each CPU core. That is not available on MikroTik. Heirarchical queuing is bottle-necked on Mikrotik in this way.
-* Routing on the same device which applies CPU-intensive queues such as fq-codel and CAKE will greatly increase CPU use, limiting throughput and introducing more latency and jitter for end-users than would be seen using a middle-box such as LibreQoS.
+* Mikrotik's ROS v7 cannot make use of XDP based hardware acceleration, so deeply nested HTBs with high throughput (shaping by backhaul, Site, AP, client) will not always be viable. Queuing with CAKE is still not fully working, though they're making good progress with fq_codel.
+* A middle-box x86 device running LibreQoS can put through up to 4Gbps of traffic per CPU core, allowing you to shape by a Site or AP up to 4Gbps in capacity, with aggregate throughput of 10Gbps or more with multiple cores. On ARM-based MikroTik routers, the most traffic you can put through a single HTB and CPU core is probably closer to 2Gbps. By defauly, linux HTBs suffer from queue locking, where CPU use will look as if all CPU cores are evenly balancing the load, but in reality, a single Qdisc lock on the first CPU core (which handles scheduling of the other cpu threads) will be the bottleneck of all HTB throughput. The way LibreQoS works around that qdisc locking problem is with XDP-CPUMAP-TC, which uses XDP and MQ to run a separate HTB instance on each CPU core. That is not available on MikroTik. Heirarchical queuing is bottle-necked on Mikrotik in this way.
+* Routing on the same device which applies CPU-intensive queues such as fq-codel and CAKE will greatly increase CPU use, limiting bandwidth throughput and introducing more potential latency and jitter for end-users than would be seen using a middle-box such as LibreQoS.
 
 ## Why not just use Preseem or Paraqum?
 * Preseem and Paraqum are great commercial products - certainly consider them if you want the features and support they provide.
