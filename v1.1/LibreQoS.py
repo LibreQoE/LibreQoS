@@ -105,18 +105,6 @@ def refreshShapers():
 	
 	cpuCount = multiprocessing.cpu_count()
 	queuesAvailable = min(queuesAvailable,cpuCount)
-	
-	# For VMs, must reduce queues if more than 9, for some reason
-	if queuesAvailable > 9:
-		command = 'grep -q ^flags.*\ hypervisor\  /proc/cpuinfo && echo "This machine is a VM"'
-		try:
-			output = subprocess.check_output(command, stderr=subprocess.STDOUT, shell=True).decode()
-			success = True 
-		except subprocess.CalledProcessError as e:
-			output = e.output.decode()
-			success = False
-		if "This machine is a VM" in output:
-			queuesAvailable = min(9, queuesAvailable)
 
 	# XDP-CPUMAP-TC
 	shell('./xdp-cpumap-tc/bin/xps_setup.sh -d ' + interfaceA + ' --default --disable')
@@ -131,26 +119,26 @@ def refreshShapers():
 	thisInterface = interfaceA
 	shell('tc qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq')
 	for queue in range(queuesAvailable):
-		shell('tc qdisc add dev ' + thisInterface + ' parent 7FFF:' + str(queue+1) + ' handle ' + str(queue+1) + ': htb default 2')
-		shell('tc class add dev ' + thisInterface + ' parent ' + str(queue+1) + ': classid ' + str(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityDownloadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityDownloadMbps) + 'mbit')
-		shell('tc qdisc add dev ' + thisInterface + ' parent ' + str(queue+1) + ':1 ' + fqOrCAKE)
+		shell('tc qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2')
+		shell('tc class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityDownloadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityDownloadMbps) + 'mbit')
+		shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + fqOrCAKE)
 		# Default class - traffic gets passed through this limiter with lower priority if not otherwise classified by the Shaper.csv
 		# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
 		# Default class can use up to defaultClassCapacityDownloadMbps when that bandwidth isn't used by known hosts.
-		shell('tc class add dev ' + thisInterface + ' parent ' + str(queue+1) + ':1 classid ' + str(queue+1) + ':2 htb rate ' + str(defaultClassCapacityDownloadMbps/4) + 'mbit ceil ' + str(defaultClassCapacityDownloadMbps) + 'mbit prio 5')
-		shell('tc qdisc add dev ' + thisInterface + ' parent ' + str(queue+1) + ':2 ' + fqOrCAKE)
+		shell('tc class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(defaultClassCapacityDownloadMbps/4) + 'mbit ceil ' + str(defaultClassCapacityDownloadMbps) + 'mbit prio 5')
+		shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + fqOrCAKE)
 	
 	thisInterface = interfaceB
 	shell('tc qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq')
 	for queue in range(queuesAvailable):
-		shell('tc qdisc add dev ' + thisInterface + ' parent 7FFF:' + str(queue+1) + ' handle ' + str(queue+1) + ': htb default 2')
-		shell('tc class add dev ' + thisInterface + ' parent ' + str(queue+1) + ': classid ' + str(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityUploadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps) + 'mbit')
-		shell('tc qdisc add dev ' + thisInterface + ' parent ' + str(queue+1) + ':1 ' + fqOrCAKE)
+		shell('tc qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2')
+		shell('tc class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityUploadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps) + 'mbit')
+		shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + fqOrCAKE)
 		# Default class - traffic gets passed through this limiter with lower priority if not otherwise classified by the Shaper.csv.
 		# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
 		# Default class can use up to defaultClassCapacityUploadMbps when that bandwidth isn't used by known hosts.
-		shell('tc class add dev ' + thisInterface + ' parent ' + str(queue+1) + ':1 classid ' + str(queue+1) + ':2 htb rate ' + str(defaultClassCapacityUploadMbps/4) + 'mbit ceil ' + str(defaultClassCapacityUploadMbps) + 'mbit prio 5')
-		shell('tc qdisc add dev ' + thisInterface + ' parent ' + str(queue+1) + ':2 ' + fqOrCAKE)
+		shell('tc class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(defaultClassCapacityUploadMbps/4) + 'mbit ceil ' + str(defaultClassCapacityUploadMbps) + 'mbit prio 5')
+		shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + fqOrCAKE)
 	print()
 
 	#Parse network.json. For each tier, create corresponding HTB and leaf classes
@@ -160,7 +148,7 @@ def refreshShapers():
 		tabs = '   ' * depth
 		for elem in data:
 			print(tabs + elem)
-			elemClassID = str(major) + ':' + str(minor)
+			elemClassID = hex(major) + ':' + hex(minor)
 			#Cap based on this node's max bandwidth, or parent node's max bandwidth, whichever is lower
 			elemDownloadMax = min(data[elem]['downloadBandwidthMbps'],parentMaxDL)
 			elemUploadMax = min(data[elem]['uploadBandwidthMbps'],parentMaxUL)
@@ -171,9 +159,9 @@ def refreshShapers():
 			print(tabs + "Download:  " + str(elemDownloadMin) + " to " + str(elemDownloadMax) + " Mbps")
 			print(tabs + "Upload:    " + str(elemUploadMin) + " to " + str(elemUploadMax) + " Mbps")
 			print(tabs, end='')
-			shell('tc class add dev ' + interfaceA + ' parent ' + parentClassID + ' classid ' + str(minor) + ' htb rate '+ str(round(elemDownloadMin)) + 'mbit ceil '+ str(round(elemDownloadMax)) + 'mbit prio 3')
+			shell('tc class add dev ' + interfaceA + ' parent ' + parentClassID + ' classid ' + hex(minor) + ' htb rate '+ str(round(elemDownloadMin)) + 'mbit ceil '+ str(round(elemDownloadMax)) + 'mbit prio 3') 
 			print(tabs, end='')
-			shell('tc class add dev ' + interfaceB + ' parent ' + parentClassID + ' classid ' + str(minor) + ' htb rate '+ str(round(elemUploadMin)) + 'mbit ceil '+ str(round(elemUploadMax)) + 'mbit prio 3')
+			shell('tc class add dev ' + interfaceB + ' parent ' + parentClassID + ' classid ' + hex(minor) + ' htb rate '+ str(round(elemUploadMin)) + 'mbit ceil '+ str(round(elemUploadMax)) + 'mbit prio 3') 
 			print()
 			thisParentNode =	{
 								"parentNodeName": elem,
@@ -194,24 +182,24 @@ def refreshShapers():
 					print(tabs + '   ' + "Download:  " + str(minDownload) + " to " + str(maxDownload) + " Mbps")
 					print(tabs + '   ' + "Upload:    " + str(minUpload) + " to " + str(maxUpload) + " Mbps")
 					print(tabs + '   ', end='')
-					shell('tc class add dev ' + interfaceA + ' parent ' + elemClassID + ' classid ' + str(minor) + ' htb rate '+ str(minDownload) + 'mbit ceil '+ str(maxDownload) + 'mbit prio 3')
+					shell('tc class add dev ' + interfaceA + ' parent ' + elemClassID + ' classid ' + hex(minor) + ' htb rate '+ str(minDownload) + 'mbit ceil '+ str(maxDownload) + 'mbit prio 3')
 					print(tabs + '   ', end='')
-					shell('tc qdisc add dev ' + interfaceA + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
+					shell('tc qdisc add dev ' + interfaceA + ' parent ' + hex(major) + ':' + hex(minor) + ' ' + fqOrCAKE)
 					print(tabs + '   ', end='')
-					shell('tc class add dev ' + interfaceB + ' parent ' + elemClassID + ' classid ' + str(minor) + ' htb rate '+ str(minUpload) + 'mbit ceil '+ str(maxUpload) + 'mbit prio 3')
+					shell('tc class add dev ' + interfaceB + ' parent ' + elemClassID + ' classid ' + hex(minor) + ' htb rate '+ str(minUpload) + 'mbit ceil '+ str(maxUpload) + 'mbit prio 3') 
 					print(tabs + '   ', end='')
-					shell('tc qdisc add dev ' + interfaceB + ' parent ' + str(major) + ':' + str(minor) + ' ' + fqOrCAKE)
+					shell('tc qdisc add dev ' + interfaceB + ' parent ' + hex(major) + ':' + hex(minor) + ' ' + fqOrCAKE)
 					if device['ipv4']:
-						parentString = str(major) + ':'
-						flowIDstring = str(major) + ':' + str(minor)
+						parentString = hex(major) + ':'
+						flowIDstring = hex(major) + ':' + hex(minor)
 						if '/' in device['ipv4']:
 							hosts = list(ipaddress.ip_network(device['ipv4']).hosts())
 							for host in hosts:
 								print(tabs + '   ', end='')
-								shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(host) + ' --cpu ' + str(queue-1) + ' --classid ' + flowIDstring)
+								shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(host) + ' --cpu ' + hex(queue-1) + ' --classid ' + flowIDstring)
 						else:
 							print(tabs + '   ', end='')
-							shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + device['ipv4'] + ' --cpu ' + str(queue-1) + ' --classid ' + flowIDstring)
+							shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + device['ipv4'] + ' --cpu ' + hex(queue-1) + ' --classid ' + flowIDstring)
 						device['qdisc'] = flowIDstring
 						if device['hostname'] not in devicesShaped:
 							devicesShaped.append(device['hostname'])
