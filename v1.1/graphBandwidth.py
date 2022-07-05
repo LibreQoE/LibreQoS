@@ -31,8 +31,8 @@ def getDeviceStats(devices):
 				jsonVersion = interfaceBjson
 			for element in jsonVersion:
 				if "parent" in element:
-					decimalQdisc = str(int((device['qdisc'].split(':')[0]), 16)) + ':' + str(int((device['qdisc'].split(':')[1]), 16))
-					if element['parent'] == decimalQdisc:
+					parentFixed = '0x' + element['parent'].split(':')[0] + ':' + '0x' + element['parent'].split(':')[1]
+					if parentFixed == device['qdisc']:
 						drops = int(element['drops'])
 						packets = int(element['packets'])
 						bytesSent = int(element['bytes'])
