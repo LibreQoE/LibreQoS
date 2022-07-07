@@ -102,11 +102,12 @@ def refreshShapers():
 	for item in directory_contents:
 		if "tx-" in str(item):
 			queuesAvailable += 1
-	print("This Network Interface Card has " + str(queuesAvailable) + " queues avaialble.")
 	
+	print("NIC queues:\t" + str(queuesAvailable))
 	cpuCount = multiprocessing.cpu_count()
+	print("CPU cores:\t" + str(cpuCount))
 	queuesAvailable = min(queuesAvailable,cpuCount)
-
+	
 	# XDP-CPUMAP-TC
 	shell('./xdp-cpumap-tc/bin/xps_setup.sh -d ' + interfaceA + ' --default --disable')
 	shell('./xdp-cpumap-tc/bin/xps_setup.sh -d ' + interfaceB + ' --default --disable')
