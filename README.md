@@ -73,7 +73,7 @@ See the table below.
 ╠══════════════════════╬══════════════════════╬══════════════════╣
 ║ Shape By             ║ Site, AP, Client     ║ AP, Client       ║
 ╠══════════════════════╬══════════════════════╬══════════════════╣
-║ Throughput           ║ 10G+ (v0.9+)         ║ 20G+ [2]         ║
+║ Throughput           ║ 11G+ (v0.9+)         ║ 20G+ [2]         ║
 ╚══════════════════════╩══════════════════════╩══════════════════╝
 ```
 * [1] [Piece of CAKE: A Comprehensive Queue Management Solution for Home Gateways](https://arxiv.org/pdf/1804.07617.pdf)
@@ -86,7 +86,7 @@ See the table below.
 
 ## Why not just use Preseem or Paraqum?
 * Preseem and Paraqum are great commercial products - certainly consider them if you want the features and support they provide.
-* That said, the monthly expense of those programs could instead be put toward the active development of CAKE and fq_codel, the AQMs which are the underlying algorithms that make Preseem and Paraqum possible. For example, Dave Täht is one of the leadign figures of the bufferbloat project. He currently works to improve implementations of fq_codel and CAKE, educate others about bufferbloat, and advocate for the standardization of those AQMs on hardware around the world. Every dollar contributed to Dave's patreon will come back to ISPs 10-fold with improvements to fq_codel, CAKE, and the broader internet in general. If your ISP has benefited from LibreQoS, Preseem, or Paraqum, please [contribute to Dave's Patreon here.](https://www.patreon.com/dtaht) Our goal is to get Dave's patreon to $5000 per month - so he can focus on CAKE and fq_codel full-time, especially on ISP-centric improvements. Just 50 ISPs contributing $100/month will make it happen.
+* That said, the monthly expense of those programs could instead be put toward the active development of CAKE and fq_codel, the AQMs which are the underlying algorithms that make Preseem and Paraqum possible. For example, Dave Täht is one of the leading figures of the bufferbloat project. He currently works to improve implementations of fq_codel and CAKE, educate others about bufferbloat, and advocate for the standardization of those AQMs on hardware around the world. Every dollar contributed to Dave's patreon will come back to ISPs 10-fold with improvements to fq_codel, CAKE, and the broader internet in general. If your ISP has benefited from LibreQoS, Preseem, or Paraqum, please [contribute to Dave's Patreon here.](https://www.patreon.com/dtaht) Our goal is to get Dave's patreon to $5000 per month - so he can focus on CAKE and fq_codel full-time, especially on ISP-centric improvements. Just 50 ISPs contributing $100/month will make it happen.
 
 ## How do Cake and fq\_codel work?
 
@@ -173,6 +173,7 @@ LibreQoS cannot decapsulate MPLS on its own.
 ### v1.1 (Alpha - IPv4) 2022
 ![Screenshot](docs/v1.1-alpha-preview.jpg?raw=true "Screenshot")
 #### Features
+* Tested up to 11Gbps asymmetrical throughput in real world deployment with 5000+ clients.
 * Network heirarchy can be mapped to the network.json file. This allows for both simple network heirarchies (Site>AP>Client) as well as much more complex ones (Site>Site>Micro-PoP>AP>Site>AP>Client).
 * Graphing of bandwidth to InfluxDB. Parses bandwidth data from "tc -s qdisc show" command, minimizing CPU use.
 * Graphing of TCP latency to InfluxDB - via [PPing](https://github.com/pollere/pping) integration.
