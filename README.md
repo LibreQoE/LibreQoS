@@ -211,6 +211,7 @@ Instead, you may want to use the [RUST-based UISP integration](https://github.co
 ## Installation and Usage Guide
 
 Best Performance, IPv4 Only:
+📄 (alpha) [LibreQoS v1.1 Installation & Usage Guide Physical Server and Ubuntu 21.10](https://github.com/rchac/LibreQoS/wiki/LibreQoS-v1.1-Installation-&-Usage-Guide-Physical-Server-and-Ubuntu-21.10)
 
 📄 [LibreQoS v1.0 Installation & Usage Guide Physical Server and Ubuntu 21.10](https://github.com/rchac/LibreQoS/wiki/LibreQoS-v1.0-Installation-&-Usage-Guide---Physical-Server-and-Ubuntu-21.10)
 
