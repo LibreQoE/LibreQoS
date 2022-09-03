@@ -1,6 +1,6 @@
 # LibreQoS
 ![Banner](docs/Banner.png "Banner")
-LibreQoS is a Smart Queue Management system designed for Internet Service Providers (such as Fixed Wireless 
+LibreQoS is a Quality of Experience and Smart Queue Management system designed for Internet Service Providers (such as Fixed Wireless 
 Internet Service Providers) to optimize the flow of their customers' traffic and thus improve the 
 end-user experience, 
 prevent [bufferbloat,](https://www.bufferbloat.net/projects/bloat/wiki/Introduction/) 
@@ -32,8 +32,8 @@ the ISP network (Access Point capacity, backhaul capacity, etc).
 
 ## Who should use LibreQoS?
 
-**The target for LibreQoS is ISPs** that have a modest number of subscribers (<2000).
-LibreQoS runs on an inexpensive computer and handles up to thousands of subscribers.
+**The target for LibreQoS is ISPs** that have less than 10,000 subscribers.
+LibreQoS runs on an inexpensive computer and can handle up to thousands of subscribers.
 
 **Individuals** can reduce bufferbloat or latency on their home internet connections
 (whether or not their service provider offers an AQM solution)
@@ -79,14 +79,20 @@ See the table below.
 * [1] [Piece of CAKE: A Comprehensive Queue Management Solution for Home Gateways](https://arxiv.org/pdf/1804.07617.pdf)
 * [2] [Aterlo Validates QoE Measurement Appliance Preseem](https://www.cengn.ca/wp-content/uploads/2020/02/Aterlo-Networks-Success-Story.pdf)
 
-## Why not just use Mikrotik Queues in ROS v7?
+## Advantages over other QoE solutions
+* Flexible Hierarchical Shaping / Back-haul Congestion Mitigation. Network hierarchy can be mapped to a json file in v1.1+. This allows for both simple network heirarchies (Site>AP>Client) as well as much more complex ones (Site>Site>Micro-PoP>AP>Site>AP>Client). This allows operators to ensure a given site's peak bandwidth will not exceed the capacity of its back-haul links (back-haul congestion control). This can allow operators to support more users on the same network equipment with LibreQoS than with competing QoE solutions which only shape by AP and Client. Shaping just by AP and client could allow for high aggregate peaks to occur on back-hauls links, which can trigger packet loss and disrupt network connectivity. LibreQoS' flexible shaping provides a solution to this.
+* CAKE - the gold standard of queuing. CAKE is a product of nearly a decade of development efforts to improve on fq_codel. With the diffserv_4 parameter enabled - CAKE groups traffic in to Bulk, Best Effort, Video, and Voice. This means that without having to fine-tune traffic priorities as you would with DPI products - CAKE automatically ensures your clients' OS update downloads will not disrupt their zoom calls. It allows for multiple video conferences to operate on the same connection which might otherwise "fight" for upload bandwidth causing call disruptions. It holds the connection together like glue. With work-from-home, remote learning, and tele-medicine becoming increasingly common - minimizing video call disruptions can save jobs, keep students engaged, and help ensure equitable access to medical care.
+* Developing nations. Network operators in developing nations where low-bandwidth plans are the only viable option have to conserve limited bandwidth. CAKE makes it possible for operators to deliver a subscriber a 5 Mbps link that can actually support an entire household. We have had operators in such regions switch from commercial solutions to LibreQoS owing to the noticeable performance gains of using CAKE in these contexts.
+* Many eyes. Open source projects have the advantage of "many eyes" able to catch and correct bugs that would otherwise be overlooked in closed-source development projects. Knowledgeable contributors to the Linux kernel networking stack have been kind enough to help optimize the performance of LibreQoS based on errors they found in our implementations. If a closed-source solution has such performance bugs, who will catch that? An open source project saves everyone time and effort in this regard.
+
+### Why not just use Mikrotik Queues in ROS v7?
 * Mikrotik's ROS v7 cannot make use of XDP based hardware acceleration, so deeply nested HTBs with high throughput (shaping by backhaul, Site, AP, client) will not always be viable. Queuing with CAKE is still not fully working, though they're making good progress with fq_codel.
 * A middle-box x86 device running LibreQoS can put through up to 4Gbps of traffic per CPU core, allowing you to shape by a Site or AP up to 4Gbps in capacity, with aggregate throughput of 10Gbps or more with multiple cores. On ARM-based MikroTik routers, the most traffic you can put through a single HTB and CPU core is probably closer to 2Gbps. By defauly, linux HTBs suffer from queue locking, where CPU use will look as if all CPU cores are evenly balancing the load, but in reality, a single Qdisc lock on the first CPU core (which handles scheduling of the other cpu threads) will be the bottleneck of all HTB throughput. The way LibreQoS works around that qdisc locking problem is with XDP-CPUMAP-TC, which uses XDP and MQ to run a separate HTB instance on each CPU core. That is not available on MikroTik. Heirarchical queuing is bottle-necked on Mikrotik in this way.
 * Routing on the same device which applies CPU-intensive queues such as fq-codel and CAKE will greatly increase CPU use, limiting bandwidth throughput and introducing more potential latency and jitter for end-users than would be seen using a middle-box such as LibreQoS.
 
-## Why not just use Preseem or Paraqum?
-* Preseem and Paraqum are great commercial products - certainly consider them if you want the features and support they provide.
-* That said, the monthly expense of those programs could instead be put toward the active development of CAKE and fq_codel, the AQMs which are the underlying algorithms that make Preseem and Paraqum possible. For example, Dave Täht is one of the leading figures of the bufferbloat project. He currently works to improve implementations of fq_codel and CAKE, educate others about bufferbloat, and advocate for the standardization of those AQMs on hardware around the world. Every dollar contributed to Dave's patreon will come back to ISPs 10-fold with improvements to fq_codel, CAKE, and the broader internet in general. If your ISP has benefited from LibreQoS, Preseem, or Paraqum, please [contribute to Dave's Patreon here.](https://www.patreon.com/dtaht) Our goal is to get Dave's patreon to $5000 per month - so he can focus on CAKE and fq_codel full-time, especially on ISP-centric improvements. Just 50 ISPs contributing $100/month will make it happen.
+### Why not just use Preseem or Paraqum?
+* Preseem and Paraqum are great commercial products - certainly consider them if you require the features and support they provide.
+* That said, the monthly expense of those systems could instead be spent toward the active development of CAKE and fq_codel, the AQMs which are the underlying algorithms that make Preseem and Paraqum possible. For example, Dave Täht is one of the leading figures of the bufferbloat project. He currently works to improve implementations of fq_codel and CAKE, educate others about bufferbloat, and advocate for the standardization of those AQMs on hardware around the world. Every dollar contributed to Dave's patreon will come back to ISPs 10-fold with improvements to fq_codel, CAKE, and the broader internet in general. If your ISP has benefited from LibreQoS, Preseem, or Paraqum, please [contribute to Dave's Patreon here.](https://www.patreon.com/dtaht) Our goal is to get Dave's patreon to $5000 per month - so he can focus on CAKE and fq_codel full-time, especially on ISP-centric improvements. Just 50 ISPs contributing $100/month will make it happen.
 
 ## How do Cake and fq\_codel work?
 
