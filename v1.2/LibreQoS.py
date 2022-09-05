@@ -285,9 +285,10 @@ def refreshShapers():
 	finalMinor = traverseNetwork(network, 0, major=1, minor=3, queue=1, parentClassID="1:1", parentMaxDL=upstreamBandwidthCapacityDownloadMbps, parentMaxUL=upstreamBandwidthCapacityUploadMbps)
 	
 	#Recap
-	for device in devices:
-		if device['deviceName'] not in devicesShaped:
-			warnings.warn('Device ' + device['deviceName'] + ' with device ID of ' + device['deviceID'] + ' was not shaped. Please check to ensure its Parent Node is listed in network.json.')
+	for circuit in subscriberCircuits:
+		for device in circuit['devices']:
+			if device['deviceName'] not in devicesShaped:
+				warnings.warn('Device ' + device['deviceName'] + ' with device ID of ' + device['deviceID'] + ' was not shaped. Please check to ensure its Parent Node is listed in network.json.')
 	
 	#Save for stats
 	with open('statsByCircuit.json', 'w') as infile:
