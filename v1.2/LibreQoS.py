@@ -8,6 +8,7 @@ import os
 import subprocess
 from datetime import datetime
 import multiprocessing
+import warnings
 
 from ispConfig import fqOrCAKE, upstreamBandwidthCapacityDownloadMbps, upstreamBandwidthCapacityUploadMbps, \
 	defaultClassCapacityDownloadMbps, defaultClassCapacityUploadMbps, interfaceA, interfaceB, enableActualShellCommands, \
@@ -55,6 +56,8 @@ def refreshShapers():
 							if circuit['ParentNode'] != ParentNode:
 								errorMessageString = "Device " + deviceName + " with deviceID " + deviceID + " had different Parent Node from other devices of circuit ID #" + circuitID
 								raise ValueError(errorMessageString)
+							if (downloadMin != circuit['downloadMin']) or (uploadMin != circuit['uploadMin']) or (downloadMax != circuit['downloadMax'])  or (uploadMax != circuit['uploadMax']):
+								warnings.warn("Device " + deviceName + " with ID " + deviceID + " had different bandwidth parameters than other devices on this circuit. Will instead use the bandwidth parameters defined by the first device added to its circuit.")
 							devicesListForCircuit = circuit['devices']
 							thisDevice = 	{
 											  "deviceID": deviceID,
@@ -282,7 +285,7 @@ def refreshShapers():
 	#Recap
 	for device in devices:
 		if device['deviceName'] not in devicesShaped:
-			print('Device ' + device['deviceName'] + ' with device ID of ' + device['deviceID'] + ' was not shaped. Please check to ensure its Parent Node is listed in network.json.')
+			warnings.warn('Device ' + device['deviceName'] + ' with device ID of ' + device['deviceID'] + ' was not shaped. Please check to ensure its Parent Node is listed in network.json.')
 	
 	#Save for stats
 	with open('statsByCircuit.json', 'w') as infile:
