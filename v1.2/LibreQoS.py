@@ -30,14 +30,14 @@ def shell(command):
 		
 def clearPriorSettings(interfaceA, interfaceB):
 	if enableActualShellCommands:
-		shell('tc filter delete dev ' + interfaceA + ' &>/dev/null')
-		shell('tc filter delete dev ' + interfaceA + ' root' + ' &>/dev/null')
-		shell('tc qdisc delete dev ' + interfaceA + ' root' + ' &>/dev/null')
-		shell('tc qdisc delete dev ' + interfaceA + ' &>/dev/null')
-		shell('tc filter delete dev ' + interfaceB + ' &>/dev/null')
-		shell('tc filter delete dev ' + interfaceB + ' root' + ' &>/dev/null')
-		shell('tc qdisc delete dev ' + interfaceB + ' root' + ' &>/dev/null')
-		shell('tc qdisc delete dev ' + interfaceB + ' &>/dev/null')
+		shell('tc filter delete dev ' + interfaceA)
+		shell('tc filter delete dev ' + interfaceA + ' root')
+		shell('tc qdisc delete dev ' + interfaceA + ' root')
+		shell('tc qdisc delete dev ' + interfaceA)
+		shell('tc filter delete dev ' + interfaceB)
+		shell('tc filter delete dev ' + interfaceB + ' root')
+		shell('tc qdisc delete dev ' + interfaceB + ' root')
+		shell('tc qdisc delete dev ' + interfaceB)
 
 def refreshShapers():
 	tcpOverheadFactor = 1.09
