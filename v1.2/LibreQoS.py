@@ -88,7 +88,7 @@ def refreshShapers():
 					  "circuitID": circuitID,
 					  "circuitName": circuitName,
 					  "ParentNode": ParentNode,
-					  "devices" = deviceListForCircuit
+					  "devices": deviceListForCircuit
 					  "downloadMin": round(int(downloadMin)*tcpOverheadFactor),
 					  "uploadMin": round(int(uploadMin)*tcpOverheadFactor),
 					  "downloadMax": round(int(downloadMax)*tcpOverheadFactor),
