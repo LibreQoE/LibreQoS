@@ -262,7 +262,7 @@ def refreshShapers():
 							else:
 								print(tabs + '   ', end='')
 								shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + device['ipv4'] + ' --cpu ' + hex(queue-1) + ' --classid ' + flowIDstring)
-							device['qdisc'] = flowIDstring
+							circuit['qdisc'] = flowIDstring
 							if device['deviceName'] not in devicesShaped:
 								devicesShaped.append(device['deviceName'])
 					print()
