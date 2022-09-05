@@ -14,7 +14,6 @@ from ispConfig import fqOrCAKE, upstreamBandwidthCapacityDownloadMbps, upstreamB
 	defaultClassCapacityDownloadMbps, defaultClassCapacityUploadMbps, interfaceA, interfaceB, enableActualShellCommands, \
 	runShellCommandsAsSudo
 
-
 def shell(command):
 	if enableActualShellCommands:
 		if runShellCommandsAsSudo:
@@ -88,7 +87,7 @@ def refreshShapers():
 					  "circuitID": circuitID,
 					  "circuitName": circuitName,
 					  "ParentNode": ParentNode,
-					  "devices": deviceListForCircuit
+					  "devices": deviceListForCircuit,
 					  "downloadMin": round(int(downloadMin)*tcpOverheadFactor),
 					  "uploadMin": round(int(uploadMin)*tcpOverheadFactor),
 					  "downloadMax": round(int(downloadMax)*tcpOverheadFactor),
@@ -115,7 +114,7 @@ def refreshShapers():
 				  "circuitID": circuitID,
 				  "circuitName": circuitName,
 				  "ParentNode": ParentNode,
-				  "devices" = deviceListForCircuit
+				  "devices": deviceListForCircuit,
 				  "downloadMin": round(int(downloadMin)*tcpOverheadFactor),
 				  "uploadMin": round(int(uploadMin)*tcpOverheadFactor),
 				  "downloadMax": round(int(downloadMax)*tcpOverheadFactor),
@@ -134,11 +133,10 @@ def refreshShapers():
 		minDownload = 0
 		minUpload = 0
 		for elem in data:
-			
-			for device in devices:
-				if elem == device['ParentNode']:
-					minDownload += device['downloadMin']
-					minUpload += device['uploadMin']
+			for circuit in subscriberCircuits:
+				if elem == circuit['ParentNode']:
+					minDownload += circuit['downloadMin']
+					minUpload += circuit['uploadMin']
 			if 'children' in data[elem]:
 				minDL, minUL = findBandwidthMins(data[elem]['children'], depth+1)
 				minDownload += minDL
