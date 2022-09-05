@@ -234,12 +234,12 @@ def refreshShapers():
 			minor += 1
 			for circuit in subscriberCircuits:
 				#If a device from Shaper.csv lists this elem as its Parent Node, attach it as a leaf to this elem HTB
-				if elem == device['ParentNode']:
-					maxDownload = min(device['downloadMax'],elemDownloadMax)
-					maxUpload = min(device['uploadMax'],elemUploadMax)
-					minDownload = min(device['downloadMin'],maxDownload)
-					minUpload = min(device['uploadMin'],maxUpload)
-					print(tabs + '   ' + device['hostname'])
+				if elem == circuit['ParentNode']:
+					maxDownload = min(circuit['downloadMax'],elemDownloadMax)
+					maxUpload = min(circuit['uploadMax'],elemUploadMax)
+					minDownload = min(circuit['downloadMin'],maxDownload)
+					minUpload = min(circuit['uploadMin'],maxUpload)
+					print(tabs + '   ' + circuit['circuitName'])
 					print(tabs + '   ' + "Download:  " + str(minDownload) + " to " + str(maxDownload) + " Mbps")
 					print(tabs + '   ' + "Upload:    " + str(minUpload) + " to " + str(maxUpload) + " Mbps")
 					print(tabs + '   ', end='')
