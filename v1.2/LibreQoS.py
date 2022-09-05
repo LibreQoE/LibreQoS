@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 # v1.2 alpha
 
 import csv
