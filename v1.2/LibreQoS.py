@@ -40,7 +40,7 @@ def clearPriorSettings(interfaceA, interfaceB):
 
 def refreshShapers():
 	tcpOverheadFactor = 1.09
-
+	
 	# Load Subscriber Circuits & Devices
 	subscriberCircuits = []
 	knownCircuitIDs = []
@@ -127,6 +127,15 @@ def refreshShapers():
 				}
 				subscriberCircuits.append(thisCircuit)
 	
+	#Verify Network.json is valid json
+	with open('network.json') as file:
+		try:
+			temporaryVariable = json.load(file) # put JSON-data to a variable
+		except json.decoder.JSONDecodeError:
+			print("network.json is an invalid JSON file") # in case json is invalid
+		else:
+			print("network.json appears to be a valid JSON file") # in case json is valid
+
 	#Load network heirarchy
 	with open('network.json', 'r') as j:
 		network = json.loads(j.read())
