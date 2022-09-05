@@ -14,6 +14,7 @@ from ispConfig import fqOrCAKE, upstreamBandwidthCapacityDownloadMbps, upstreamB
 	defaultClassCapacityDownloadMbps, defaultClassCapacityUploadMbps, interfaceA, interfaceB, enableActualShellCommands, \
 	runShellCommandsAsSudo
 
+
 def shell(command):
 	if enableActualShellCommands:
 		if runShellCommandsAsSudo:
@@ -55,7 +56,10 @@ def refreshShapers():
 							if circuit['ParentNode'] != ParentNode:
 								errorMessageString = "Device " + deviceName + " with deviceID " + deviceID + " had different Parent Node from other devices of circuit ID #" + circuitID
 								raise ValueError(errorMessageString)
-							if (downloadMin != circuit['downloadMin']) or (uploadMin != circuit['uploadMin']) or (downloadMax != circuit['downloadMax'])  or (uploadMax != circuit['uploadMax']):
+							if ((circuit['downloadMin'] != round(int(downloadMin)*tcpOverheadFactor))
+								or (circuit['uploadMin'] != round(int(uploadMin)*tcpOverheadFactor))
+								or (circuit['downloadMax'] != round(int(downloadMax)*tcpOverheadFactor))
+								or (circuit['uploadMax'] != round(int(uploadMax)*tcpOverheadFactor))):
 								warnings.warn("Device " + deviceName + " with ID " + deviceID + " had different bandwidth parameters than other devices on this circuit. Will instead use the bandwidth parameters defined by the first device added to its circuit.")
 							devicesListForCircuit = circuit['devices']
 							thisDevice = 	{
