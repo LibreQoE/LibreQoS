@@ -41,6 +41,43 @@ def clearPriorSettings(interfaceA, interfaceB):
 
 def refreshShapers():
 	tcpOverheadFactor = 1.09
+
+	#Verify ShapedDevices.csv is valid
+	rowNum = 2
+	with open('ShapedDevices.csv') as csv_file:
+		csv_reader = csv.reader(csv_file, delimiter=',')
+		next(csv_reader)
+		for row in csv_reader:
+			circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4, ipv6, downloadMin, uploadMin, downloadMax, uploadMax = row
+			if ipv4 != "":
+				try:
+					a = ipaddress.ip_address(ipv4)
+				except ValueError as e:
+					raise Exception("Provided IPv4 '" + ipv4 + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.") from e
+			if ipv6 != "":
+				try:
+					a = ipaddress.ip_address(ipv6)
+				except ValueError as e:
+					raise Exception("Provided IPv6 '" + ipv4 + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.") from e
+			try:
+				a = int(downloadMin)
+				if downloadMin == 'banana':
+					print('wat')
+			except ValueError as e:
+				raise Exception("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.") from e
+			try:
+				a = int(uploadMin)
+			except ValueError as e:
+				raise Exception("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.") from e
+			try:
+				a = int(downloadMax)
+			except ValueError as e:
+				raise Exception("Provided downloadMax '" + downloadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.") from e
+			try:
+				a = int(uploadMax)
+			except ValueError as e:
+				raise Exception("Provided uploadMax '" + uploadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.") from e
+			rowNum += 1
 	
 	# Load Subscriber Circuits & Devices
 	subscriberCircuits = []
