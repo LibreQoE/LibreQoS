@@ -58,11 +58,9 @@ def refreshShapers():
 				try:
 					a = ipaddress.ip_address(ipv6)
 				except ValueError as e:
-					raise Exception("Provided IPv6 '" + ipv4 + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.") from e
+					raise Exception("Provided IPv6 '" + ipv6 + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.") from e
 			try:
 				a = int(downloadMin)
-				if downloadMin == 'banana':
-					print('wat')
 			except ValueError as e:
 				raise Exception("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.") from e
 			try:
