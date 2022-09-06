@@ -48,17 +48,40 @@ def refreshShapers():
 		csv_reader = csv.reader(csv_file, delimiter=',')
 		next(csv_reader)
 		for row in csv_reader:
-			circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4, ipv6, downloadMin, uploadMin, downloadMax, uploadMax = row
-			if ipv4 != "":
+			circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4_input, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax = row
+			ipv4_hosts = []
+			if ipv4_input != "":
 				try:
-					a = ipaddress.ip_address(ipv4)
+					ipv4_input = ipv4_input.replace(' ','')
+					if "," in ipv4_input:
+						ipv4_list = ipv4_input.split(',')
+					else:
+						ipv4_list = [ipv4_input]
+					for ipEntry in ipv4_list:
+						if '/32' in ipEntry:
+							ipv4_hosts.append(ipaddress.ip_address(ipEntry))
+						elif '/' in ipEntry:
+							ipv4_hosts.extend(list(ipaddress.ip_network(ipEntry).hosts()))
+						else:
+							ipv4_hosts.append(ipaddress.ip_address(ipEntry))
 				except ValueError as e:
-					raise Exception("Provided IPv4 '" + ipv4 + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.") from e
-			if ipv6 != "":
+						raise Exception("Provided IPv4 '" + ipv4_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.") from e
+			if ipv6_input != "":
 				try:
-					a = ipaddress.ip_address(ipv6)
+					ipv6_input = ipv6_input.replace(' ','')
+					if "," in ipv6_input:
+						ipv6_list = ipv6_input.split(',')
+					else:
+						ipv6_list = [ipv6_input]
+					for ipEntry in ipv6_list:
+						if '/128' in ipEntry:
+							ipv6_hosts.append(ipaddress.ip_address(ipEntry))
+						elif '/' in ipEntry:
+							ipv6_hosts.extend(list(ipaddress.ip_network(ipEntry).hosts()))
+						else:
+							ipv6_hosts.append(ipaddress.ip_address(ipEntry))
 				except ValueError as e:
-					raise Exception("Provided IPv6 '" + ipv6 + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.") from e
+						raise Exception("Provided IPv6 '" + ipv6_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.") from e
 			try:
 				a = int(downloadMin)
 			except ValueError as e:
@@ -76,7 +99,7 @@ def refreshShapers():
 			except ValueError as e:
 				raise Exception("Provided uploadMax '" + uploadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.") from e
 			rowNum += 1
-	
+
 	# Load Subscriber Circuits & Devices
 	subscriberCircuits = []
 	knownCircuitIDs = []
@@ -84,7 +107,35 @@ def refreshShapers():
 		csv_reader = csv.reader(csv_file, delimiter=',')
 		next(csv_reader)
 		for row in csv_reader:
-			circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4, ipv6, downloadMin, uploadMin, downloadMax, uploadMax = row
+			circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4_input, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax = row
+			ipv4_hosts = []
+			if ipv4_input != "":
+				ipv4_input = ipv4_input.replace(' ','')
+				if "," in ipv4_input:
+					ipv4_list = ipv4_input.split(',')
+				else:
+					ipv4_list = [ipv4_input]
+				for ipEntry in ipv4_list:
+					if '/32' in ipEntry:
+						ipv4_hosts.append(ipaddress.ip_address(ipEntry))
+					elif '/' in ipEntry:
+						ipv4_hosts.extend(list(ipaddress.ip_network(ipEntry).hosts()))
+					else:
+						ipv4_hosts.append(ipaddress.ip_address(ipEntry))
+			ipv6_hosts = []
+			if ipv6_input != "":
+				ipv6_input = ipv6_input.replace(' ','')
+				if "," in ipv6_input:
+					ipv6_list = ipv6_input.split(',')
+				else:
+					ipv6_list = [ipv6_input]
+				for ipEntry in ipv6_list:
+					if '/128' in ipEntry:
+						ipv6_hosts.append(ipaddress.ip_address(ipEntry))
+					elif '/' in ipEntry:
+						ipv6_hosts.extend(list(ipaddress.ip_network(ipEntry).hosts()))
+					else:
+						ipv6_hosts.append(ipaddress.ip_address(ipEntry))
 			if circuitID != "":
 				if circuitID in knownCircuitIDs:
 					for circuit in subscriberCircuits:
@@ -102,15 +153,13 @@ def refreshShapers():
 											  "deviceID": deviceID,
 											  "deviceName": deviceName,
 											  "mac": mac,
-											  "ipv4": ipv4,
-											  "ipv6": ipv6,
+											  "ipv4s": ipv4_hosts,
+											  "ipv6s": ipv6_hosts,
 											}
 							devicesListForCircuit.append(thisDevice)
 							circuit['devices'] = devicesListForCircuit
 				else:
 					knownCircuitIDs.append(circuitID)
-					ipv4 = ipv4.strip()
-					ipv6 = ipv6.strip()
 					if ParentNode == "":
 						ParentNode = "none"
 					ParentNode = ParentNode.strip()
@@ -119,8 +168,8 @@ def refreshShapers():
 									  "deviceID": deviceID,
 									  "deviceName": deviceName,
 									  "mac": mac,
-									  "ipv4": ipv4,
-									  "ipv6": ipv6,
+									  "ipv4s": ipv4_hosts,
+									  "ipv6s": ipv6_hosts,
 									}
 					deviceListForCircuit.append(thisDevice)
 					thisCircuit = {
@@ -136,8 +185,8 @@ def refreshShapers():
 					}
 					subscriberCircuits.append(thisCircuit)
 			else:
-				ipv4 = ipv4.strip()
-				ipv6 = ipv6.strip()
+				if circuitName == "":
+					circuitName = deviceName
 				if ParentNode == "":
 					ParentNode = "none"
 				ParentNode = ParentNode.strip()
@@ -146,8 +195,8 @@ def refreshShapers():
 								  "deviceID": deviceID,
 								  "deviceName": deviceName,
 								  "mac": mac,
-								  "ipv4": ipv4,
-								  "ipv6": ipv6,
+								  "ipv4s": ipv4_hosts,
+								  "ipv6s": ipv6_hosts,
 								}
 				deviceListForCircuit.append(thisDevice)
 				thisCircuit = {
@@ -162,7 +211,7 @@ def refreshShapers():
 				  "qdisc": '',
 				}
 				subscriberCircuits.append(thisCircuit)
-	
+
 	#Verify Network.json is valid json
 	with open('network.json') as file:
 		try:
@@ -295,21 +344,18 @@ def refreshShapers():
 					shell('tc class add dev ' + interfaceB + ' parent ' + elemClassID + ' classid ' + hex(minor) + ' htb rate '+ str(minUpload) + 'mbit ceil '+ str(maxUpload) + 'mbit prio 3') 
 					print(tabs + '   ', end='')
 					shell('tc qdisc add dev ' + interfaceB + ' parent ' + hex(major) + ':' + hex(minor) + ' ' + fqOrCAKE)
+					parentString = hex(major) + ':'
+					flowIDstring = hex(major) + ':' + hex(minor)
+					circuit['qdisc'] = flowIDstring
 					for device in circuit['devices']:
-						if device['ipv4']:
-							parentString = hex(major) + ':'
-							flowIDstring = hex(major) + ':' + hex(minor)
-							if '/' in device['ipv4']:
-								hosts = list(ipaddress.ip_network(device['ipv4']).hosts())
-								for host in hosts:
-									print(tabs + '   ', end='')
-									shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(host) + ' --cpu ' + hex(queue-1) + ' --classid ' + flowIDstring)
-							else:
+						if device['ipv4s']:
+							for ipv4 in device['ipv4s']:
+								if '/32' in ipv4:
+									ipv4 = ipv4.replace('/32','')
 								print(tabs + '   ', end='')
-								shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + device['ipv4'] + ' --cpu ' + hex(queue-1) + ' --classid ' + flowIDstring)
-							circuit['qdisc'] = flowIDstring
-							if device['deviceName'] not in devicesShaped:
-								devicesShaped.append(device['deviceName'])
+								shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(ipv4) + ' --cpu ' + hex(queue-1) + ' --classid ' + flowIDstring)
+						if device['deviceName'] not in devicesShaped:
+							devicesShaped.append(device['deviceName'])
 					print()
 					minor += 1
 			#Recursive call this function for children nodes attached to this node
