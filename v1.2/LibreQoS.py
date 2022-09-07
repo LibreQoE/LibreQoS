@@ -46,9 +46,15 @@ def refreshShapers():
 	rowNum = 2
 	with open('ShapedDevices.csv') as csv_file:
 		csv_reader = csv.reader(csv_file, delimiter=',')
-		next(csv_reader)
+		#Remove comments if any
+		commentsRemoved = []
 		for row in csv_reader:
-			circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4_input, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax = row
+			if not row[0].startswith('#'):
+				commentsRemoved.append(row)
+		#Remove header
+		commentsRemoved.pop(0) 
+		for row in commentsRemoved:
+			circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4_input, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment = row
 			ipv4_hosts = []
 			if ipv4_input != "":
 				try:
@@ -107,9 +113,15 @@ def refreshShapers():
 	knownCircuitIDs = []
 	with open('ShapedDevices.csv') as csv_file:
 		csv_reader = csv.reader(csv_file, delimiter=',')
-		next(csv_reader)
+		#Remove comments if any
+		commentsRemoved = []
 		for row in csv_reader:
-			circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4_input, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax = row
+			if not row[0].startswith('#'):
+				commentsRemoved.append(row)
+		#Remove header
+		commentsRemoved.pop(0)
+		for row in commentsRemoved:
+			circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4_input, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment = row
 			ipv4_hosts = []
 			if ipv4_input != "":
 				ipv4_input = ipv4_input.replace(' ','')
