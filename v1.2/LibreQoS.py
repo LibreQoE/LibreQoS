@@ -267,9 +267,6 @@ def refreshShapers():
 	
 	minDownload, minUpload = findBandwidthMins(network, 0)
 
-	#Clear Prior Settings
-	clearPriorSettings(interfaceA, interfaceB)
-
 	# Find queues and CPU cores available. Use min between those two as queuesAvailable
 	queuesAvailable = 0
 	path = '/sys/class/net/' + interfaceA + '/queues/'
@@ -282,8 +279,90 @@ def refreshShapers():
 	cpuCount = multiprocessing.cpu_count()
 	print("CPU cores:\t" + str(cpuCount))
 	queuesAvailable = min(queuesAvailable,cpuCount)
+
+	#Parse network.json. For each tier, create corresponding HTB and leaf classes. Prepare for execution later
+	linuxTCcommands = []
+	xdpCPUmapCommands = []
+	devicesShaped = []
+	parentNodes = []
+	def traverseNetwork(data, depth, major, minor, queue, parentClassID, parentMaxDL, parentMaxUL):
+		tabs = '   ' * depth
+		for elem in data:
+			print(tabs + elem)
+			elemClassID = hex(major) + ':' + hex(minor)
+			#Cap based on this node's max bandwidth, or parent node's max bandwidth, whichever is lower
+			elemDownloadMax = min(data[elem]['downloadBandwidthMbps'],parentMaxDL)
+			elemUploadMax = min(data[elem]['uploadBandwidthMbps'],parentMaxUL)
+			#Based on calculations done in findBandwidthMins(), determine optimal HTB rates (mins) and ceils (maxs)
+			#The max calculation is to avoid 0 values, and the min calculation is to ensure rate is not higher than ceil
+			elemDownloadMin = round(elemDownloadMax*.95)
+			elemUploadMin = round(elemUploadMax*.95)
+			#print(tabs + "Download:  " + str(elemDownloadMin) + " to " + str(elemDownloadMax) + " Mbps")
+			#print(tabs + "Upload:    " + str(elemUploadMin) + " to " + str(elemUploadMax) + " Mbps")
+			#print(tabs, end='')
+			linuxTCcommands.append('tc class add dev ' + interfaceA + ' parent ' + parentClassID + ' classid ' + hex(minor) + ' htb rate '+ str(round(elemDownloadMin)) + 'mbit ceil '+ str(round(elemDownloadMax)) + 'mbit prio 3') 
+			#print(tabs, end='')
+			linuxTCcommands.append('tc class add dev ' + interfaceB + ' parent ' + parentClassID + ' classid ' + hex(minor) + ' htb rate '+ str(round(elemUploadMin)) + 'mbit ceil '+ str(round(elemUploadMax)) + 'mbit prio 3') 
+			#print()
+			thisParentNode =	{
+								"parentNodeName": elem,
+								"classID": elemClassID,
+								"downloadMax": elemDownloadMax,
+								"uploadMax": elemUploadMax,
+								}
+			parentNodes.append(thisParentNode)
+			minor += 1
+			for circuit in subscriberCircuits:
+				#If a device from Shaper.csv lists this elem as its Parent Node, attach it as a leaf to this elem HTB
+				if elem == circuit['ParentNode']:
+					maxDownload = min(circuit['downloadMax'],elemDownloadMax)
+					maxUpload = min(circuit['uploadMax'],elemUploadMax)
+					minDownload = min(circuit['downloadMin'],maxDownload)
+					minUpload = min(circuit['uploadMin'],maxUpload)
+					#print(tabs + '   ' + circuit['circuitName'])
+					#print(tabs + '   ' + "Download:  " + str(minDownload) + " to " + str(maxDownload) + " Mbps")
+					#print(tabs + '   ' + "Upload:    " + str(minUpload) + " to " + str(maxUpload) + " Mbps")
+					#print(tabs + '   ', end='')
+					linuxTCcommands.append('tc class add dev ' + interfaceA + ' parent ' + elemClassID + ' classid ' + hex(minor) + ' htb rate '+ str(minDownload) + 'mbit ceil '+ str(maxDownload) + 'mbit prio 3')
+					#print(tabs + '   ', end='')
+					linuxTCcommands.append('tc qdisc add dev ' + interfaceA + ' parent ' + hex(major) + ':' + hex(minor) + ' ' + fqOrCAKE)
+					#print(tabs + '   ', end='')
+					linuxTCcommands.append('tc class add dev ' + interfaceB + ' parent ' + elemClassID + ' classid ' + hex(minor) + ' htb rate '+ str(minUpload) + 'mbit ceil '+ str(maxUpload) + 'mbit prio 3') 
+					#print(tabs + '   ', end='')
+					linuxTCcommands.append('tc qdisc add dev ' + interfaceB + ' parent ' + hex(major) + ':' + hex(minor) + ' ' + fqOrCAKE)
+					parentString = hex(major) + ':'
+					flowIDstring = hex(major) + ':' + hex(minor)
+					circuit['qdisc'] = flowIDstring
+					for device in circuit['devices']:
+						if device['ipv4s']:
+							for ipv4 in device['ipv4s']:
+								print(tabs + '   ', end='')
+								xdpCPUmapCommands.append('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(ipv4) + ' --cpu ' + hex(queue-1) + ' --classid ' + flowIDstring)
+						if device['deviceName'] not in devicesShaped:
+							devicesShaped.append(device['deviceName'])
+					print()
+					minor += 1
+			#Recursive call this function for children nodes attached to this node
+			if 'children' in data[elem]:
+				#We need to keep tabs on the minor counter, because we can't have repeating class IDs. Here, we bring back the minor counter from the recursive function
+				minor = traverseNetwork(data[elem]['children'], depth+1, major, minor+1, queue, elemClassID, elemDownloadMax, elemUploadMax)
+			#If top level node, increment to next queue / cpu core
+			if depth == 0:
+				if queue >= queuesAvailable:
+					queue = 1
+					major = queue
+				else:
+					queue += 1
+					major += 1
+		return minor
 	
-	# XDP-CPUMAP-TC
+	#Here is the actual call to the recursive traverseNetwork() function. finalMinor is not used.
+	finalMinor = traverseNetwork(network, 0, major=1, minor=3, queue=1, parentClassID="1:1", parentMaxDL=upstreamBandwidthCapacityDownloadMbps, parentMaxUL=upstreamBandwidthCapacityUploadMbps)
+
+	#Clear Prior Settings
+	clearPriorSettings(interfaceA, interfaceB)
+
+	# Set up XDP-CPUMAP-TC
 	shell('./xdp-cpumap-tc/bin/xps_setup.sh -d ' + interfaceA + ' --default --disable')
 	shell('./xdp-cpumap-tc/bin/xps_setup.sh -d ' + interfaceB + ' --default --disable')
 	shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu --dev ' + interfaceA + ' --lan')
@@ -317,83 +396,15 @@ def refreshShapers():
 		shell('tc class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(defaultClassCapacityUploadMbps/4) + 'mbit ceil ' + str(defaultClassCapacityUploadMbps) + 'mbit prio 5')
 		shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + fqOrCAKE)
 	print()
-
-	#Parse network.json. For each tier, create corresponding HTB and leaf classes
-	devicesShaped = []
-	parentNodes = []
-	def traverseNetwork(data, depth, major, minor, queue, parentClassID, parentMaxDL, parentMaxUL):
-		tabs = '   ' * depth
-		for elem in data:
-			print(tabs + elem)
-			elemClassID = hex(major) + ':' + hex(minor)
-			#Cap based on this node's max bandwidth, or parent node's max bandwidth, whichever is lower
-			elemDownloadMax = min(data[elem]['downloadBandwidthMbps'],parentMaxDL)
-			elemUploadMax = min(data[elem]['uploadBandwidthMbps'],parentMaxUL)
-			#Based on calculations done in findBandwidthMins(), determine optimal HTB rates (mins) and ceils (maxs)
-			#The max calculation is to avoid 0 values, and the min calculation is to ensure rate is not higher than ceil
-			elemDownloadMin = round(elemDownloadMax*.95)
-			elemUploadMin = round(elemUploadMax*.95)
-			print(tabs + "Download:  " + str(elemDownloadMin) + " to " + str(elemDownloadMax) + " Mbps")
-			print(tabs + "Upload:    " + str(elemUploadMin) + " to " + str(elemUploadMax) + " Mbps")
-			print(tabs, end='')
-			shell('tc class add dev ' + interfaceA + ' parent ' + parentClassID + ' classid ' + hex(minor) + ' htb rate '+ str(round(elemDownloadMin)) + 'mbit ceil '+ str(round(elemDownloadMax)) + 'mbit prio 3') 
-			print(tabs, end='')
-			shell('tc class add dev ' + interfaceB + ' parent ' + parentClassID + ' classid ' + hex(minor) + ' htb rate '+ str(round(elemUploadMin)) + 'mbit ceil '+ str(round(elemUploadMax)) + 'mbit prio 3') 
-			print()
-			thisParentNode =	{
-								"parentNodeName": elem,
-								"classID": elemClassID,
-								"downloadMax": elemDownloadMax,
-								"uploadMax": elemUploadMax,
-								}
-			parentNodes.append(thisParentNode)
-			minor += 1
-			for circuit in subscriberCircuits:
-				#If a device from Shaper.csv lists this elem as its Parent Node, attach it as a leaf to this elem HTB
-				if elem == circuit['ParentNode']:
-					maxDownload = min(circuit['downloadMax'],elemDownloadMax)
-					maxUpload = min(circuit['uploadMax'],elemUploadMax)
-					minDownload = min(circuit['downloadMin'],maxDownload)
-					minUpload = min(circuit['uploadMin'],maxUpload)
-					print(tabs + '   ' + circuit['circuitName'])
-					print(tabs + '   ' + "Download:  " + str(minDownload) + " to " + str(maxDownload) + " Mbps")
-					print(tabs + '   ' + "Upload:    " + str(minUpload) + " to " + str(maxUpload) + " Mbps")
-					print(tabs + '   ', end='')
-					shell('tc class add dev ' + interfaceA + ' parent ' + elemClassID + ' classid ' + hex(minor) + ' htb rate '+ str(minDownload) + 'mbit ceil '+ str(maxDownload) + 'mbit prio 3')
-					print(tabs + '   ', end='')
-					shell('tc qdisc add dev ' + interfaceA + ' parent ' + hex(major) + ':' + hex(minor) + ' ' + fqOrCAKE)
-					print(tabs + '   ', end='')
-					shell('tc class add dev ' + interfaceB + ' parent ' + elemClassID + ' classid ' + hex(minor) + ' htb rate '+ str(minUpload) + 'mbit ceil '+ str(maxUpload) + 'mbit prio 3') 
-					print(tabs + '   ', end='')
-					shell('tc qdisc add dev ' + interfaceB + ' parent ' + hex(major) + ':' + hex(minor) + ' ' + fqOrCAKE)
-					parentString = hex(major) + ':'
-					flowIDstring = hex(major) + ':' + hex(minor)
-					circuit['qdisc'] = flowIDstring
-					for device in circuit['devices']:
-						if device['ipv4s']:
-							for ipv4 in device['ipv4s']:
-								print(tabs + '   ', end='')
-								shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(ipv4) + ' --cpu ' + hex(queue-1) + ' --classid ' + flowIDstring)
-						if device['deviceName'] not in devicesShaped:
-							devicesShaped.append(device['deviceName'])
-					print()
-					minor += 1
-			#Recursive call this function for children nodes attached to this node
-			if 'children' in data[elem]:
-				#We need to keep tabs on the minor counter, because we can't have repeating class IDs. Here, we bring back the minor counter from the recursive function
-				minor = traverseNetwork(data[elem]['children'], depth+1, major, minor+1, queue, elemClassID, elemDownloadMax, elemUploadMax)
-			#If top level node, increment to next queue / cpu core
-			if depth == 0:
-				if queue >= queuesAvailable:
-					queue = 1
-					major = queue
-				else:
-					queue += 1
-					major += 1
-		return minor
 	
-	#Here is the actual call to the recursive traverseNetwork() function. finalMinor is not used.
-	finalMinor = traverseNetwork(network, 0, major=1, minor=3, queue=1, parentClassID="1:1", parentMaxDL=upstreamBandwidthCapacityDownloadMbps, parentMaxUL=upstreamBandwidthCapacityUploadMbps)
+	#Execute actual Linux TC and XDP-CPUMAP-TC filter commands
+	with open('linux_tc.txt', 'w') as f:
+		for line in linuxTCcommands:
+			f.write(f"{line}\n")
+			
+	shell("/sbin/tc -f -b linux_tc.txt")
+	for command in xdpCPUmapCommands:
+		shell(command)
 	
 	#Recap
 	for circuit in subscriberCircuits:
