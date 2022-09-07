@@ -1,5 +1,5 @@
 Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min,Upload Min,Download Max,Upload Max
-,"968 Circle St., Gurnee, IL 60031",1,Device 1,AP_A,,100.64.0.1,,25,5,155,20
+,"968 Circle St., Gurnee, IL 60031",1,Device 1,AP_A,,"100.64.0.1, 100.64.0.14",,25,5,155,20
 ,"31 Marconi Street, Lake In The Hills, IL 60156",2,Device 2,AP_A,,100.64.0.2,,25,5,105,18
 ,"255 NW. Newport Ave., Jamestown, NY 14701",3,Device 3,AP_9,,100.64.0.3,,25,5,105,18
 ,"8493 Campfire Street, Peabody, MA 01960",4,Device 4,AP_9,,100.64.0.4,,25,5,105,18
