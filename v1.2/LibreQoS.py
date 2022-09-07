@@ -56,6 +56,7 @@ def refreshShapers():
 		for row in commentsRemoved:
 			circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4_input, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment = row
 			ipv4_hosts = []
+			ipv6_hosts = []
 			if ipv4_input != "":
 				try:
 					ipv4_input = ipv4_input.replace(' ','')
