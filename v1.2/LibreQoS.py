@@ -59,6 +59,7 @@ def refreshShapers():
 						ipv4_list = [ipv4_input]
 					for ipEntry in ipv4_list:
 						if '/32' in ipEntry:
+							ipEntry = ipEntry.replace('/32','')
 							ipv4_hosts.append(ipaddress.ip_address(ipEntry))
 						elif '/' in ipEntry:
 							ipv4_hosts.extend(list(ipaddress.ip_network(ipEntry).hosts()))
@@ -75,6 +76,7 @@ def refreshShapers():
 						ipv6_list = [ipv6_input]
 					for ipEntry in ipv6_list:
 						if '/128' in ipEntry:
+							ipEntry = ipEntry.replace('/128','')
 							ipv6_hosts.append(ipaddress.ip_address(ipEntry))
 						elif '/' in ipEntry:
 							ipv6_hosts.extend(list(ipaddress.ip_network(ipEntry).hosts()))
