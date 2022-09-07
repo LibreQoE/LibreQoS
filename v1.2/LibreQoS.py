@@ -121,7 +121,10 @@ def refreshShapers():
 					elif '/' in ipEntry:
 						theseHosts = ipaddress.ip_network(ipEntry).hosts()
 						for host in theseHosts:
-							ipv4_hosts.append(str(host))
+							host = str(host)
+							if '/32' in host:
+								host = host.replace('/32','')
+							ipv4_hosts.append(host)
 					else:
 						ipv4_hosts.append(ipEntry)
 			ipv6_hosts = []
@@ -354,8 +357,6 @@ def refreshShapers():
 					for device in circuit['devices']:
 						if device['ipv4s']:
 							for ipv4 in device['ipv4s']:
-								if '/32' in ipv4:
-									ipv4 = ipv4.replace('/32','')
 								print(tabs + '   ', end='')
 								shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(ipv4) + ' --cpu ' + hex(queue-1) + ' --classid ' + flowIDstring)
 						if device['deviceName'] not in devicesShaped:
