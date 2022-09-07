@@ -367,7 +367,7 @@ def refreshShapers():
 	shell('./xdp-cpumap-tc/bin/xps_setup.sh -d ' + interfaceB + ' --default --disable')
 	shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu --dev ' + interfaceA + ' --lan')
 	shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu --dev ' + interfaceB + ' --wan')
-	shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --clear')
+	result = os.system('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --clear')
 	shell('./xdp-cpumap-tc/src/tc_classify --dev-egress ' + interfaceA)
 	shell('./xdp-cpumap-tc/src/tc_classify --dev-egress ' + interfaceB)
 
