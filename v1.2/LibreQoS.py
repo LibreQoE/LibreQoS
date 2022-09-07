@@ -117,11 +117,13 @@ def refreshShapers():
 					ipv4_list = [ipv4_input]
 				for ipEntry in ipv4_list:
 					if '/32' in ipEntry:
-						ipv4_hosts.append(ipaddress.ip_address(ipEntry))
+						ipv4_hosts.append(ipEntry.replace('/32',''))
 					elif '/' in ipEntry:
-						ipv4_hosts.extend(list(ipaddress.ip_network(ipEntry).hosts()))
+						theseHosts = ipaddress.ip_network(ipEntry).hosts()
+						for host in theseHosts:
+							ipv4_hosts.append(str(host))
 					else:
-						ipv4_hosts.append(ipaddress.ip_address(ipEntry))
+						ipv4_hosts.append(ipEntry)
 			ipv6_hosts = []
 			if ipv6_input != "":
 				ipv6_input = ipv6_input.replace(' ','')
@@ -131,11 +133,13 @@ def refreshShapers():
 					ipv6_list = [ipv6_input]
 				for ipEntry in ipv6_list:
 					if '/128' in ipEntry:
-						ipv6_hosts.append(ipaddress.ip_address(ipEntry))
+						ipv6_hosts.append(ipEntry)
 					elif '/' in ipEntry:
-						ipv6_hosts.extend(list(ipaddress.ip_network(ipEntry).hosts()))
+						theseHosts = ipaddress.ip_network(ipEntry).hosts()
+						for host in theseHosts:
+							ipv6_hosts.append(str(host))
 					else:
-						ipv6_hosts.append(ipaddress.ip_address(ipEntry))
+						ipv6_hosts.append(ipEntry)
 			if circuitID != "":
 				if circuitID in knownCircuitIDs:
 					for circuit in subscriberCircuits:
