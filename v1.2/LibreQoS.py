@@ -21,12 +21,10 @@ def shell(command):
 		if runShellCommandsAsSudo:
 			command = 'sudo ' + command
 		commands = command.split(' ')
-		print(command)
+		#print(command)
 		proc = subprocess.Popen(commands, stdout=subprocess.PIPE)
 		for line in io.TextIOWrapper(proc.stdout, encoding="utf-8"):  # or another encoding
-			print(line)
-	else:
-		print(command)
+			result = line
 		
 def clearPriorSettings(interfaceA, interfaceB):
 	if enableActualShellCommands:
@@ -362,7 +360,7 @@ def refreshShapers():
 					for device in circuit['devices']:
 						if device['ipv4s']:
 							for ipv4 in device['ipv4s']:
-								print(tabs + '   ', end='')
+								#print(tabs + '   ', end='')
 								xdpCPUmapCommands.append('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(ipv4) + ' --cpu ' + hex(queue-1) + ' --classid ' + flowIDstring)
 						if device['deviceName'] not in devicesShaped:
 							devicesShaped.append(device['deviceName'])
@@ -384,7 +382,10 @@ def refreshShapers():
 	
 	#Here is the actual call to the recursive traverseNetwork() function. finalMinor is not used.
 	finalMinor = traverseNetwork(network, 0, major=1, minor=3, queue=1, parentClassID="1:1", parentMaxDL=upstreamBandwidthCapacityDownloadMbps, parentMaxUL=upstreamBandwidthCapacityUploadMbps)
-
+	
+	#Record start time of actual filter reload
+	reloadStartTime = datetime.now()
+	
 	#Clear Prior Settings
 	clearPriorSettings(interfaceA, interfaceB)
 
@@ -393,7 +394,8 @@ def refreshShapers():
 	shell('./xdp-cpumap-tc/bin/xps_setup.sh -d ' + interfaceB + ' --default --disable')
 	shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu --dev ' + interfaceA + ' --lan')
 	shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu --dev ' + interfaceB + ' --wan')
-	result = os.system('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --clear')
+	if enableActualShellCommands:
+		result = os.system('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --clear')
 	shell('./xdp-cpumap-tc/src/tc_classify --dev-egress ' + interfaceA)
 	shell('./xdp-cpumap-tc/src/tc_classify --dev-egress ' + interfaceB)
 
@@ -426,12 +428,14 @@ def refreshShapers():
 	#Execute actual Linux TC and XDP-CPUMAP-TC filter commands
 	with open('linux_tc.txt', 'w') as f:
 		for line in linuxTCcommands:
-			print(line)
 			f.write(f"{line}\n")
-			
+	print("Executing linux TC class/qdisc commands")
 	shell("/sbin/tc -f -b linux_tc.txt")
+	print("Executing XDP-CPUMAP-TC IP filter commands")
 	for command in xdpCPUmapCommands:
 		shell(command)
+	
+	reloadEndTime = datetime.now()
 	
 	#Recap
 	for circuit in subscriberCircuits:
@@ -444,7 +448,11 @@ def refreshShapers():
 		json.dump(subscriberCircuits, infile)
 	with open('statsByParentNode.json', 'w') as infile:
 		json.dump(parentNodes, infile)
-
+	
+	#Report reload time
+	reloadTimeSeconds = (reloadEndTime - reloadStartTime).seconds
+	print("Queue and IP filter reload completed in " + str(reloadTimeSeconds) + " seconds")
+	
 	# Done
 	currentTimeString = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 	print("Successful run completed on " + currentTimeString)
