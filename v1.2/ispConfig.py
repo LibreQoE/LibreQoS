@@ -8,6 +8,12 @@ fqOrCAKE = 'cake diffserv4'
 upstreamBandwidthCapacityDownloadMbps = 1000
 upstreamBandwidthCapacityUploadMbps = 1000
 
+# Devices in ShapedDevices.csv without a defined ParentNode will be placed under a generated
+# parent node, evenly spread out across CPU cores. Here, define the bandwidth limit for each
+# of those generated parent nodes.
+generatedPNDownloadMbps = 1000
+generatedPNUploadMbps = 1000
+
 # Traffic from devices not specified in Shaper.csv will be rate limited by an HTB of this many Mbps
 defaultClassCapacityDownloadMbps = 500
 defaultClassCapacityUploadMbps = 500
