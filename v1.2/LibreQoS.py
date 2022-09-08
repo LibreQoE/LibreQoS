@@ -403,8 +403,13 @@ def refreshShapers():
 			f.write(f"{line}\n")
 			
 	shell("/sbin/tc -f -b linux_tc.txt")
+	xdpCommandString = ""
 	for command in xdpCPUmapCommands:
-		shell(command)
+		xdpCommandString = xdpCommandString + command + "\n"
+	
+	if enableActualShellCommands:
+		process = subprocess.Popen('/bin/bash', stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+		out, err = process.communicate(xdpCommandString.encode('utf-8'))
 	
 	#Recap
 	for circuit in subscriberCircuits:
