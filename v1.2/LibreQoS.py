@@ -93,18 +93,26 @@ def refreshShapers():
 						raise Exception("Provided IPv6 '" + ipv6_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.") from e
 			try:
 				a = int(downloadMin)
+				if a <=2:
+					raise Exception("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is <=2.")
 			except ValueError as e:
 				raise Exception("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.") from e
 			try:
 				a = int(uploadMin)
+				if a <=2:
+					raise Exception("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is <=2.")
 			except ValueError as e:
 				raise Exception("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.") from e
 			try:
 				a = int(downloadMax)
+				if a <=2:
+					raise Exception("Provided downloadMax '" + downloadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is <=2.")
 			except ValueError as e:
 				raise Exception("Provided downloadMax '" + downloadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.") from e
 			try:
 				a = int(uploadMax)
+				if a <=2:
+					raise Exception("Provided uploadMax '" + uploadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is <=2.")
 			except ValueError as e:
 				raise Exception("Provided uploadMax '" + uploadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.") from e
 			rowNum += 1
@@ -403,13 +411,8 @@ def refreshShapers():
 			f.write(f"{line}\n")
 			
 	shell("/sbin/tc -f -b linux_tc.txt")
-	xdpCommandString = ""
 	for command in xdpCPUmapCommands:
-		xdpCommandString = xdpCommandString + command + "\n"
-	
-	if enableActualShellCommands:
-		process = subprocess.Popen('/bin/bash', stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-		out, err = process.communicate(xdpCommandString.encode('utf-8'))
+		shell(command)
 	
 	#Recap
 	for circuit in subscriberCircuits:
