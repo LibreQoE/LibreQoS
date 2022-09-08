@@ -13,7 +13,7 @@ import warnings
 
 from ispConfig import fqOrCAKE, upstreamBandwidthCapacityDownloadMbps, upstreamBandwidthCapacityUploadMbps, \
 	defaultClassCapacityDownloadMbps, defaultClassCapacityUploadMbps, interfaceA, interfaceB, enableActualShellCommands, \
-	runShellCommandsAsSudo
+	runShellCommandsAsSudo, generatedPNDownloadMbps, generatedPNUploadMbps
 
 
 def shell(command):
@@ -170,9 +170,10 @@ def refreshShapers():
 				if circuitID in knownCircuitIDs:
 					for circuit in subscriberCircuits:
 						if circuit['circuitID'] == circuitID:
-							if circuit['ParentNode'] != ParentNode:
-								errorMessageString = "Device " + deviceName + " with deviceID " + deviceID + " had different Parent Node from other devices of circuit ID #" + circuitID
-								raise ValueError(errorMessageString)
+							if circuit['ParentNode'] != "none":
+								if circuit['ParentNode'] != ParentNode:
+									errorMessageString = "Device " + deviceName + " with deviceID " + deviceID + " had different Parent Node from other devices of circuit ID #" + circuitID
+									raise ValueError(errorMessageString)
 							if ((circuit['downloadMin'] != round(int(downloadMin)*tcpOverheadFactor))
 								or (circuit['uploadMin'] != round(int(uploadMin)*tcpOverheadFactor))
 								or (circuit['downloadMax'] != round(int(downloadMax)*tcpOverheadFactor))
@@ -254,6 +255,36 @@ def refreshShapers():
 	#Load network heirarchy
 	with open('network.json', 'r') as j:
 		network = json.loads(j.read())
+
+	# Find queues and CPU cores available. Use min between those two as queuesAvailable
+	queuesAvailable = 0
+	path = '/sys/class/net/' + interfaceA + '/queues/'
+	directory_contents = os.listdir(path)
+	for item in directory_contents:
+		if "tx-" in str(item):
+			queuesAvailable += 1
+	
+	print("NIC queues:\t" + str(queuesAvailable))
+	cpuCount = multiprocessing.cpu_count()
+	print("CPU cores:\t" + str(cpuCount))
+	queuesAvailable = min(queuesAvailable,cpuCount)
+
+	#Generate Parent Nodes. Spread ShapedDevices.csv which lack defined ParentNode across these (balance across CPUs)
+	generatedPNs = []
+	for x in range(queuesAvailable):
+		genPNname = "Generated_PN_" + str(x+1)
+		network[genPNname] =	{
+									"downloadBandwidthMbps":generatedPNDownloadMbps,
+									"uploadBandwidthMbps":generatedPNUploadMbps
+								}
+		generatedPNs.append(genPNname)
+	genPNcounter = 0
+	for circuit in subscriberCircuits:
+		if circuit['ParentNode'] == 'none':
+			circuit['ParentNode'] = generatedPNs[genPNcounter]
+			genPNcounter += 1
+			if genPNcounter >= queuesAvailable:
+				genPNcounter = 0
 	
 	#Find the bandwidth minimums for each node by combining mimimums of devices lower in that node's heirarchy
 	def findBandwidthMins(data, depth):
@@ -275,20 +306,7 @@ def refreshShapers():
 	
 	minDownload, minUpload = findBandwidthMins(network, 0)
 
-	# Find queues and CPU cores available. Use min between those two as queuesAvailable
-	queuesAvailable = 0
-	path = '/sys/class/net/' + interfaceA + '/queues/'
-	directory_contents = os.listdir(path)
-	for item in directory_contents:
-		if "tx-" in str(item):
-			queuesAvailable += 1
-	
-	print("NIC queues:\t" + str(queuesAvailable))
-	cpuCount = multiprocessing.cpu_count()
-	print("CPU cores:\t" + str(cpuCount))
-	queuesAvailable = min(queuesAvailable,cpuCount)
-
-	#Parse network.json. For each tier, create corresponding HTB and leaf classes. Prepare for execution later
+	#Parse network structure. For each tier, create corresponding HTB and leaf classes. Prepare for execution later
 	linuxTCcommands = []
 	xdpCPUmapCommands = []
 	devicesShaped = []
@@ -296,7 +314,7 @@ def refreshShapers():
 	def traverseNetwork(data, depth, major, minor, queue, parentClassID, parentMaxDL, parentMaxUL):
 		tabs = '   ' * depth
 		for elem in data:
-			print(tabs + elem)
+			#print(tabs + elem)
 			elemClassID = hex(major) + ':' + hex(minor)
 			#Cap based on this node's max bandwidth, or parent node's max bandwidth, whichever is lower
 			elemDownloadMax = min(data[elem]['downloadBandwidthMbps'],parentMaxDL)
@@ -348,7 +366,7 @@ def refreshShapers():
 								xdpCPUmapCommands.append('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(ipv4) + ' --cpu ' + hex(queue-1) + ' --classid ' + flowIDstring)
 						if device['deviceName'] not in devicesShaped:
 							devicesShaped.append(device['deviceName'])
-					print()
+					#print()
 					minor += 1
 			#Recursive call this function for children nodes attached to this node
 			if 'children' in data[elem]:
@@ -403,11 +421,12 @@ def refreshShapers():
 		# Default class can use up to defaultClassCapacityUploadMbps when that bandwidth isn't used by known hosts.
 		shell('tc class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(defaultClassCapacityUploadMbps/4) + 'mbit ceil ' + str(defaultClassCapacityUploadMbps) + 'mbit prio 5')
 		shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + fqOrCAKE)
-	print()
+	#print()
 	
 	#Execute actual Linux TC and XDP-CPUMAP-TC filter commands
 	with open('linux_tc.txt', 'w') as f:
 		for line in linuxTCcommands:
+			print(line)
 			f.write(f"{line}\n")
 			
 	shell("/sbin/tc -f -b linux_tc.txt")
