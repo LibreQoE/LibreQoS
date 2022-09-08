@@ -64,10 +64,7 @@
 						"uploadBandwidthMbps":100
 						}
 					}
-				}
-			},
-		"children":
-			{
+				},
 				"AP_1":
 				{
 				"downloadBandwidthMbps":150,
