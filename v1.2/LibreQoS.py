@@ -536,12 +536,12 @@ def refreshShapers():
 		for device in circuit['devices']:
 			if device['deviceName'] not in devicesShaped:
 				devicesSkipped.append((device['deviceName'],device['deviceID']))
-	
-	warnings.warn('Some devices were not shaped. Please check to ensure they have a valid ParentNode listed in ShapedDevices.csv:', stacklevel=2)
-	print("Devices not shaped:")
-	for entry in devicesSkipped:
-		name, idNum = entry
-		print('DeviceID: ' + idNum + '\t DeviceName: ' + name)
+	if len(devicesSkipped) > 0:
+		warnings.warn('Some devices were not shaped. Please check to ensure they have a valid ParentNode listed in ShapedDevices.csv:', stacklevel=2)
+		print("Devices not shaped:")
+		for entry in devicesSkipped:
+			name, idNum = entry
+			print('DeviceID: ' + idNum + '\t DeviceName: ' + name)
 	
 	# Save for stats
 	with open('statsByCircuit.json', 'w') as infile:
