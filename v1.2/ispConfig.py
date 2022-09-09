@@ -24,9 +24,9 @@ interfaceA = 'eth1'
 # Interface connected to edge router
 interfaceB = 'eth2'
 
-# Shape by Site in addition to by AP and Client
-# Now deprecated, was only used prior to v1.1
-# shapeBySite = True
+# Use XDP? If yes, multiple CPU cores can be used. Limits to IPv4 only. Throughput of 11 Gbps+
+# If using IPv6, choose False. False will limit throughput to 3-6 Gbps
+usingXDP = False
 
 # Allow shell commands. False causes commands print to console only without being executed.
 # MUST BE ENABLED FOR PROGRAM TO FUNCTION
