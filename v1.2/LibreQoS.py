@@ -60,6 +60,15 @@ def clearPriorSettings(interfaceA, interfaceB):
 		shell('tc qdisc delete dev ' + interfaceB + ' root')
 		#shell('tc qdisc delete dev ' + interfaceA)
 		#shell('tc qdisc delete dev ' + interfaceB)
+		
+def tearDown(interfaceA, interfaceB):
+	# Full teardown of everything for exiting LibreQoS
+	if enableActualShellCommands:
+		# If using XDP, remove xdp program from interfaces
+		if usingXDP == True:
+			shell('ip link set dev ' + interfaceA + ' xdp off')
+			shell('ip link set dev ' + interfaceB + ' xdp off')
+		clearPriorSettings(interfaceA, interfaceB)
 
 def findQueuesAvailable():
 	# Find queues and CPU cores available. Use min between those two as queuesAvailable
@@ -700,11 +709,18 @@ if __name__ == '__main__':
 		help="Just validate network.json and ShapedDevices.csv",
 		action=argparse.BooleanOptionalAction,
 	)
+	parser.add_argument(
+		'--clearrules',
+		help="Clear ip filters, qdiscs, and xdp setup if any",
+		action=argparse.BooleanOptionalAction,
+	)
 	args = parser.parse_args()    
 	logging.basicConfig(level=args.loglevel)
 	
 	if args.validate:
 		status = validateNetworkAndDevices()
+	elif args.clearrules:
+		tearDown(interfaceA, interfaceB)
 	else:
 		# Refresh and/or set up queues
 		refreshShapers()
