@@ -28,8 +28,8 @@ interfaceB = 'eth2'
 # Now deprecated, was only used prior to v1.1
 # shapeBySite = True
 
-# Allow shell commands. False causes commands print to console only without being executed. MUST BE ENABLED FOR
-# PROGRAM TO FUNCTION
+# Allow shell commands. False causes commands print to console only without being executed.
+# MUST BE ENABLED FOR PROGRAM TO FUNCTION
 enableActualShellCommands = True
 
 # Add 'sudo' before execution of any shell commands. May be required depending on distribution and environment.
@@ -49,7 +49,7 @@ ppingLocation = "pping"
 # NMS/CRM Integration
 # If a device shows a WAN IP within these subnets, assume they are behind NAT / un-shapable, and ignore them
 ignoreSubnets = ['192.168.0.0/16']
-
+allowedSubnets = ['100.64.0.0/10']
 # Optional UISP integration
 automaticImportUISP = False
 # Everything before /nms/ on your UISP instance
@@ -59,6 +59,8 @@ uispAuthToken = ''
 # UISP | Whether to shape router at customer premises, or instead shape the station radio. When station radio is in
 # router mode, use 'station'. Otherwise, use 'router'.
 shapeRouterOrStation = 'router'
+# List any sites that should not be included, with each site name surrounded by '' and seperated by commas
+excludeSites = []
 
 # API Auth
 apiUsername = "testUser"
