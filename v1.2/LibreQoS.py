@@ -27,7 +27,7 @@ def shell(command):
 		commands = command.split(' ')
 		proc = subprocess.Popen(commands, stdout=subprocess.PIPE)
 		for line in io.TextIOWrapper(proc.stdout, encoding="utf-8"):  # or another encoding
-			logging.info(result)
+			logging.info(line)
 	else:
 		logging.info(command)
 
