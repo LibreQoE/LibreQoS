@@ -14,6 +14,7 @@ import warnings
 import psutil
 import argparse
 import logging
+import shutil
 
 from ispConfig import fqOrCAKE, upstreamBandwidthCapacityDownloadMbps, upstreamBandwidthCapacityUploadMbps, \
 	defaultClassCapacityDownloadMbps, defaultClassCapacityUploadMbps, interfaceA, interfaceB, enableActualShellCommands, \
@@ -80,19 +81,19 @@ def findQueuesAvailable():
 		queuesAvailable = 12
 	return queuesAvailable
 
-def refreshShapers():
-	# Warn user if enableActualShellCommands is False, because that would mean no actual commands are executing
-	if enableActualShellCommands == False:
-		warnings.warn("enableActualShellCommands is set to False. None of the commands below will actually be executed. Simulated run.", stacklevel=2)
-	
-	# Check if first run since boot
-	isThisFirstRunSinceBoot = checkIfFirstRunSinceBoot()
-	
-	# Automatically account for TCP overhead of plans. For example a 100Mbps plan needs to be set to 109Mbps for the user to ever see that result on a speed test
-	# Does not apply to nodes of any sort, just endpoint devices
-	tcpOverheadFactor = 1.09
-
+def validateNetworkAndDevices():
+	# Verify Network.json is valid json
+	networkValidatedOrNot = True
+	with open('network.json') as file:
+		try:
+			temporaryVariable = json.load(file) # put JSON-data to a variable
+		except json.decoder.JSONDecodeError:
+			warnings.warn("network.json is an invalid JSON file") # in case json is invalid
+			networkValidatedOrNot = False
+	if networkValidatedOrNot == True:
+		print("network.json passed validation") 
 	# Verify ShapedDevices.csv is valid
+	devicesValidatedOrNot = True # True by default, switches to false if ANY entry in ShapedDevices.csv fails validation
 	rowNum = 2
 	with open('ShapedDevices.csv') as csv_file:
 		csv_reader = csv.reader(csv_file, delimiter=',')
@@ -123,8 +124,9 @@ def refreshShapers():
 							ipv4_hosts.extend(list(ipaddress.ip_network(ipEntry).hosts()))
 						else:
 							ipv4_hosts.append(ipaddress.ip_address(ipEntry))
-				except ValueError as e:
-						raise Exception("Provided IPv4 '" + ipv4_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.") from e
+				except:
+						warnings.warn("Provided IPv4 '" + ipv4_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.")
+						devicesValidatedOrNot = False
 			if ipv6_input != "":
 				try:
 					ipv6_input = ipv6_input.replace(' ','')
@@ -140,39 +142,91 @@ def refreshShapers():
 							ipv6_hosts.extend(list(ipaddress.ip_network(ipEntry).hosts()))
 						else:
 							ipv6_hosts.append(ipaddress.ip_address(ipEntry))
-				except ValueError as e:
-						raise Exception("Provided IPv6 '" + ipv6_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.") from e
+				except:
+						warnings.warn("Provided IPv6 '" + ipv6_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.")
+						devicesValidatedOrNot = False
 			try:
 				a = int(downloadMin)
 				if a < 1:
-					raise Exception("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 1 Mbps.")
-			except ValueError as e:
-				raise Exception("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.") from e
+					warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 1 Mbps.")
+					devicesValidatedOrNot = False
+			except:
+				warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.")
+				devicesValidatedOrNot = False
 			try:
 				a = int(uploadMin)
 				if a < 1:
-					raise Exception("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 1 Mbps.")
-			except ValueError as e:
-				raise Exception("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.") from e
+					warnings.warn("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 1 Mbps.")
+					devicesValidatedOrNot = False
+			except:
+				warnings.warn("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.")
+				devicesValidatedOrNot = False
 			try:
 				a = int(downloadMax)
-				if a < 3:
-					raise Exception("Provided downloadMax '" + downloadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 3 Mbps.")
-			except ValueError as e:
-				raise Exception("Provided downloadMax '" + downloadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.") from e
+				if a < 2:
+					warnings.warn("Provided downloadMax '" + downloadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 2 Mbps.")
+					devicesValidatedOrNot = False
+			except:
+				warnings.warn("Provided downloadMax '" + downloadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.")
+				devicesValidatedOrNot = False
 			try:
 				a = int(uploadMax)
-				if a < 3:
-					raise Exception("Provided uploadMax '" + uploadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 3 Mbps.")
-			except ValueError as e:
-				raise Exception("Provided uploadMax '" + uploadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.") from e
+				if a < 2:
+					warnings.warn("Provided uploadMax '" + uploadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 2 Mbps.")
+					devicesValidatedOrNot = False
+			except:
+				warnings.warn("Provided uploadMax '" + uploadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.")
+				devicesValidatedOrNot = False
+			
+			try:
+				if int(downloadMin) > int(downloadMax):
+					warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is greater than downloadMax")
+				if int(uploadMin) > int(uploadMax):
+					warnings.warn("Provided uploadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is greater than uploadMax")
+			except:
+				devicesValidatedOrNot = False
+			
 			rowNum += 1
-	print("ShapedDevices.csv passed validation")
+	if devicesValidatedOrNot == True:
+		print("ShapedDevices.csv passed validation")
+	else:
+		print("ShapedDevices.csv failed validation")
+	
+	if (devicesValidatedOrNot == True) and (devicesValidatedOrNot == True):
+		return True
+	else:
+		return False
+
+def refreshShapers():
+	# Warn user if enableActualShellCommands is False, because that would mean no actual commands are executing
+	if enableActualShellCommands == False:
+		warnings.warn("enableActualShellCommands is set to False. None of the commands below will actually be executed. Simulated run.", stacklevel=2)
+	
+	# Check if first run since boot
+	isThisFirstRunSinceBoot = checkIfFirstRunSinceBoot()
+	
+	# Automatically account for TCP overhead of plans. For example a 100Mbps plan needs to be set to 109Mbps for the user to ever see that result on a speed test
+	# Does not apply to nodes of any sort, just endpoint devices
+	tcpOverheadFactor = 1.09
+	
+	# Files
+	shapedDevicesFile = 'ShapedDevices.csv'
+	networkJSONfile = 'network.json'
+	
+	# Check validation
+	if (validateNetworkAndDevices() == True):
+		shutil.copyfile('ShapedDevices.csv', 'lastGoodConfig.csv')
+		shutil.copyfile('network.json', 'lastGoodConfig.json')
+		print("Backed up good config as lastGoodConfig.csv and lastGoodConfig.json")
+	else:
+		warnings.warn("Validation failed - pulling from last good conifg")
+		shapedDevicesFile = 'lastGoodConfig.csv'
+		networkJSONfile = 'lastGoodConfig.json'
 	
 	# Load Subscriber Circuits & Devices
 	subscriberCircuits = []
 	knownCircuitIDs = []
-	with open('ShapedDevices.csv') as csv_file:
+	with open(shapedDevicesFile) as csv_file:
 		csv_reader = csv.reader(csv_file, delimiter=',')
 		# Remove comments if any
 		commentsRemoved = []
@@ -301,17 +355,8 @@ def refreshShapers():
 				}
 				subscriberCircuits.append(thisCircuit)
 
-	# Verify Network.json is valid json
-	with open('network.json') as file:
-		try:
-			temporaryVariable = json.load(file) # put JSON-data to a variable
-		except json.decoder.JSONDecodeError:
-			print("network.json is an invalid JSON file") # in case json is invalid
-		else:
-			print("network.json appears to be a valid JSON file") # in case json is valid
-
 	# Load network heirarchy
-	with open('network.json', 'r') as j:
+	with open(networkJSONfile, 'r') as j:
 		network = json.loads(j.read())
 	
 	# Pull rx/tx queues / CPU cores avaialble
@@ -486,10 +531,17 @@ def refreshShapers():
 	reloadEndTime = datetime.now()
 	
 	# Recap - warn operator if devices were skipped
+	devicesSkipped = []
 	for circuit in subscriberCircuits:
 		for device in circuit['devices']:
 			if device['deviceName'] not in devicesShaped:
-				warnings.warn('Device ' + device['deviceName'] + ' with device ID of ' + device['deviceID'] + ' was not shaped. Please check to ensure its Parent Node is listed in network.json.')
+				devicesSkipped.append((device['deviceName'],device['deviceID']))
+	
+	warnings.warn('Some devices were not shaped. Please check to ensure they have a valid ParentNode listed in ShapedDevices.csv:', stacklevel=2)
+	print("Devices not shaped:")
+	for entry in devicesSkipped:
+		name, idNum = entry
+		print('DeviceID: ' + idNum + '\t DeviceName: ' + name)
 	
 	# Save for stats
 	with open('statsByCircuit.json', 'w') as infile:
