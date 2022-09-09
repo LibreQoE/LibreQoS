@@ -111,7 +111,7 @@ def validateNetworkAndDevices():
 			circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4_input, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment = row
 			# Each entry in ShapedDevices.csv can have multiple IPv4s or IPv6s seperated by commas. Split them up and parse each to ensure valid
 			ipv4_hosts = []
-			ipv6_hosts = []
+			ipv6_subnets_and_hosts = []
 			if ipv4_input != "":
 				try:
 					ipv4_input = ipv4_input.replace(' ','')
@@ -138,13 +138,11 @@ def validateNetworkAndDevices():
 					else:
 						ipv6_list = [ipv6_input]
 					for ipEntry in ipv6_list:
-						if '/128' in ipEntry:
-							ipEntry = ipEntry.replace('/128','')
-							ipv6_hosts.append(ipaddress.ip_address(ipEntry))
-						elif '/' in ipEntry:
-							ipv6_hosts.extend(list(ipaddress.ip_network(ipEntry).hosts()))
+						if (type(ipaddress.ip_network(ipEntry)) is ipaddress.IPv6Network) or (type(ipaddress.ip_address(ipEntry)) is ipaddress.IPv6Address):
+							ipv6_subnets_and_hosts.extend(ipEntry)
 						else:
-							ipv6_hosts.append(ipaddress.ip_address(ipEntry))
+							warnings.warn("Provided IPv6 '" + ipv6_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.")
+							devicesValidatedOrNot = False
 				except:
 						warnings.warn("Provided IPv6 '" + ipv6_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.")
 						devicesValidatedOrNot = False
@@ -271,7 +269,7 @@ def refreshShapers():
 								ipv4_hosts.append(host)
 						else:
 							ipv4_hosts.append(ipEntry)
-				ipv6_hosts = []
+				ipv6_subnets_and_hosts = []
 				if ipv6_input != "":
 					ipv6_input = ipv6_input.replace(' ','')
 					if "," in ipv6_input:
@@ -279,14 +277,7 @@ def refreshShapers():
 					else:
 						ipv6_list = [ipv6_input]
 					for ipEntry in ipv6_list:
-						if '/128' in ipEntry:
-							ipv6_hosts.append(ipEntry)
-						elif '/' in ipEntry:
-							theseHosts = ipaddress.ip_network(ipEntry).hosts()
-							for host in theseHosts:
-								ipv6_hosts.append(str(host))
-						else:
-							ipv6_hosts.append(ipEntry)
+						ipv6_subnets_and_hosts.append(ipEntry)
 				# If there is something in the circuit ID field
 				if circuitID != "":
 					# Seen circuit before
@@ -308,7 +299,7 @@ def refreshShapers():
 												  "deviceName": deviceName,
 												  "mac": mac,
 												  "ipv4s": ipv4_hosts,
-												  "ipv6s": ipv6_hosts,
+												  "ipv6s": ipv6_subnets_and_hosts,
 												}
 								devicesListForCircuit.append(thisDevice)
 								circuit['devices'] = devicesListForCircuit
@@ -324,7 +315,7 @@ def refreshShapers():
 										  "deviceName": deviceName,
 										  "mac": mac,
 										  "ipv4s": ipv4_hosts,
-										  "ipv6s": ipv6_hosts,
+										  "ipv6s": ipv6_subnets_and_hosts,
 										}
 						deviceListForCircuit.append(thisDevice)
 						thisCircuit = {
@@ -353,7 +344,7 @@ def refreshShapers():
 									  "deviceName": deviceName,
 									  "mac": mac,
 									  "ipv4s": ipv4_hosts,
-									  "ipv6s": ipv6_hosts,
+									  "ipv6s": ipv6_subnets_and_hosts,
 									}
 					deviceListForCircuit.append(thisDevice)
 					thisCircuit = {
