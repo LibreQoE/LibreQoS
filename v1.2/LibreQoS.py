@@ -426,7 +426,8 @@ def refreshShapers():
 	reloadStartTime = datetime.now()
 	
 	# Clear Prior Settings
-	clearPriorSettings(interfaceA, interfaceB)
+	if isThisFirstRunSinceBoot:
+		clearPriorSettings(interfaceA, interfaceB)
 	
 	# If this is the first time LibreQoS.py has run since system boot, load the XDP program and disable XPS
 	# Otherwise, just clear the existing IP filter rules for xdp
