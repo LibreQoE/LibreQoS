@@ -48,14 +48,14 @@ def checkIfFirstRunSinceBoot():
 	
 def clearPriorSettings(interfaceA, interfaceB):
 	if enableActualShellCommands:
-		shell('tc filter delete dev ' + interfaceA)
-		shell('tc filter delete dev ' + interfaceA + ' root')
+		#shell('tc filter delete dev ' + interfaceA)
+		#shell('tc filter delete dev ' + interfaceA + ' root')
 		shell('tc qdisc delete dev ' + interfaceA + ' root')
-		shell('tc qdisc delete dev ' + interfaceA)
-		shell('tc filter delete dev ' + interfaceB)
-		shell('tc filter delete dev ' + interfaceB + ' root')
+		#shell('tc qdisc delete dev ' + interfaceA)
+		#shell('tc filter delete dev ' + interfaceB)
+		#shell('tc filter delete dev ' + interfaceB + ' root')
 		shell('tc qdisc delete dev ' + interfaceB + ' root')
-		shell('tc qdisc delete dev ' + interfaceB)
+		#shell('tc qdisc delete dev ' + interfaceB)
 
 def findQueuesAvailable():
 	# Find queues and CPU cores available. Use min between those two as queuesAvailable
