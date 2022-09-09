@@ -3,9 +3,12 @@ import schedule
 from LibreQoS import refreshShapers
 from graphBandwidth import refreshBandwidthGraphs
 from graphLatency import refreshLatencyGraphs
-from ispConfig import bandwidthGraphingEnabled, latencyGraphingEnabled
+from ispConfig import bandwidthGraphingEnabled, latencyGraphingEnabled, automaticImportUISP
+from integrationUISP import importFromUISP
 
 def importandshape():
+	if automaticImportUISP:
+		importFromUISP()
 	refreshShapers()
 
 if __name__ == '__main__':
