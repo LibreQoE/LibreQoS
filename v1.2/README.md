@@ -22,7 +22,7 @@ New minimums apply to upload and download parameters:
     
 ShapedDevices.csv now has a field for Circuit ID. If the listed Circuit ID is the same between two or more devices, those devices will all be placed into the same queue. If a Circuit ID is not provided for a device, it gets its own circuit. Circuit Name is optional, but recommended. The client's service loction address might be good to use as the Circuit Name.
 
-# IPv6 Support / XDP Toggle
+## IPv6 Support / XDP Toggle
 You can optionally disable XDP, which limits queuing to just one CPU core.
 
 The benefit here is IPv6 support becomes possible again - ableit with lower max throughput.
