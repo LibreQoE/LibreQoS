@@ -6,7 +6,7 @@
 
 - Support for multiple IPv4s or IPv6s per device
 
-- Reduced reload time by 80%
+- Reduced reload time by 80%. Actual packet loss is <25ms on reload of queues.
 
 - Command line arguments ```--debug```, ```--verbose```, and ```--validate```.
 
@@ -24,6 +24,7 @@ ShapedDevices.csv now has a field for Circuit ID. If the listed Circuit ID is th
 
 ## UISP Integration
 This integration fully maps out your entire UISP network.
+Add UISP info under "Optional UISP integration" in ispConfig.py
 
 To use:
 1. Delete network.json and, if you have it, integrationUISPbandwidths.csv
@@ -31,3 +32,10 @@ To use:
 
 It will create a network.json with approximated bandwidths for APs based on UISP's reported capacities, and fixed bandwidth of 1000/1000 for sites.
 You can modify integrationUISPbandwidths.csv to correct bandwidth rates. It will load integrationUISPbandwidths.csv on each run and use those listed bandwidths to create network.json. It will always overwrite ShapedDevices.csv on each run by pulling devices from UISP.
+
+### UISP Integration - IPv6 Support
+This will match IPv4 MAC addresses in the DHCP server leases of your mikrotik to DHCPv6 bindings, and include those IPv6 addresses with their respective devices.
+
+To enable:
+* Edit mikrotikDHCPRouterList.csv to list of your mikrotik DHCPv6 servers
+* Set findIPv6usingMikrotik in ispConfig.py to True

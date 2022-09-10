@@ -2,15 +2,19 @@ import requests
 import os
 import csv
 import ipaddress
-from ispConfig import UISPbaseURL, uispAuthToken, shapeRouterOrStation, allowedSubnets, ignoreSubnets, excludeSites
+from ispConfig import UISPbaseURL, uispAuthToken, shapeRouterOrStation, allowedSubnets, ignoreSubnets, excludeSites, findIPv6usingMikrotik, bandwidthOverheadFactor
 import shutil
 import json
+if findIPv6usingMikrotik == True:
+	from mikrotikFindIPv6 import pullMikrotikIPv6  
 
 knownRouterModels = ['ACB-AC', 'ACB-ISP']
-knownAPmodels = ['LTU-Rocket', 'RP-5AC-Gen2', 'LAP-GPS', 'Wave-AP']
+knownAPmodels = ['LTU-Rocket', 'RP-5AC', 'RP-5AC-Gen2', 'LAP-GPS', 'Wave-AP']
 
 def isInAllowedSubnets(inputIP):
 	isAllowed = False
+	if '/' in inputIP:
+		inputIP = inputIP.split('/')[0]
 	for subnet in allowedSubnets:
 		if (ipaddress.ip_address(inputIP) in ipaddress.ip_network(subnet)):
 			isAllowed = True
@@ -167,6 +171,9 @@ def createShaper():
 	headers = {'accept':'application/json', 'x-auth-token': uispAuthToken}
 	r = requests.get(url, headers=headers)
 	allDevices = r.json()
+	ipv4ToIPv6 = {}
+	if findIPv6usingMikrotik:
+		ipv4ToIPv6 = pullMikrotikIPv6()
 	for uispClientSite in clientSites:
 		#if (uispClientSite['identification']['status'] == 'active') and (uispClientSite['identification']['suspended'] == False):
 		if (uispClientSite['identification']['suspended'] == False):
@@ -204,25 +211,26 @@ def createShaper():
 							else:
 								deviceMAC = ''
 							if (deviceRole == 'router') or (deviceModel in knownRouterModels):
-								deviceIPstring = device['ipAddress']
-								if '/' in deviceIPstring:
-									deviceIPstring = deviceIPstring.split("/")[0]
-								if isInAllowedSubnets(deviceIPstring):
+								ipv4 = device['ipAddress']
+								if '/' in ipv4:
+									ipv4 = ipv4.split("/")[0]
+								ipv6 = ''
+								if ipv4 in ipv4ToIPv6.keys():
+									ipv6 = ipv4ToIPv6[ipv4]
+								if isInAllowedSubnets(ipv4):
 									deviceModel = device['identification']['model']
 									deviceModelName = device['identification']['modelName']
-									
-									minSpeedDown = min(3,downloadSpeedMbps)
-									minSpeedUp = min(3,uploadSpeedMbps)
-									maxSpeedDown = round(1.15*downloadSpeedMbps)
-									maxSpeedUp = round(1.15*uploadSpeedMbps)
-									
+									minSpeedDown = min(1,downloadSpeedMbps)
+									minSpeedUp = min(1,uploadSpeedMbps)
+									maxSpeedDown = round(bandwidthOverheadFactor*downloadSpeedMbps)
+									maxSpeedUp = round(bandwidthOverheadFactor*uploadSpeedMbps)
 									#Customers directly connected to Sites
 									if AP == 'none':
 										try:
 											AP = siteIDtoName[uispClientSite['identification']['parent']['id']]
 										except:
 											AP = 'none'
-									devicesToImport.append((uispClientSiteID, address, '', deviceName, AP, deviceMAC, deviceIPstring,'', str(minSpeedDown), str(minSpeedUp), str(maxSpeedDown),str(maxSpeedUp),''))
+									devicesToImport.append((uispClientSiteID, address, '', deviceName, AP, deviceMAC, ipv4, ipv6, str(minSpeedDown), str(minSpeedUp), str(maxSpeedDown),str(maxSpeedUp),''))
 									foundCPEforThisClientSite = True
 			else:
 				print("Failed to import devices from " + uispClientSite['description']['address'] + ". Missing QoS.")

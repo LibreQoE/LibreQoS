@@ -18,7 +18,7 @@ import shutil
 
 from ispConfig import fqOrCAKE, upstreamBandwidthCapacityDownloadMbps, upstreamBandwidthCapacityUploadMbps, \
 	defaultClassCapacityDownloadMbps, defaultClassCapacityUploadMbps, interfaceA, interfaceB, enableActualShellCommands, \
-	runShellCommandsAsSudo, generatedPNDownloadMbps, generatedPNUploadMbps
+	runShellCommandsAsSudo, generatedPNDownloadMbps, generatedPNUploadMbps, usingXDP
 
 def shell(command):
 	if enableActualShellCommands:
@@ -38,25 +38,37 @@ def checkIfFirstRunSinceBoot():
 			lastRun = datetime.strptime(file.read(), "%d-%b-%Y (%H:%M:%S.%f)")
 		systemRunningSince = datetime.fromtimestamp(psutil.boot_time())
 		if systemRunningSince > lastRun:
-			print("First time run since system boot. Will load xdp-cpumap-tc from scratch.")
+			print("First time run since system boot.")
 			return True
 		else:
-			print("Not first time run since system boot. Will clear xdp filter rules and reload.")
+			print("Not first time run since system boot.")
 			return False
 	else:
-		print("First time run since system boot. Will attach xdp.")
+		print("First time run since system boot.")
 		return True
 	
 def clearPriorSettings(interfaceA, interfaceB):
 	if enableActualShellCommands:
-		#shell('tc filter delete dev ' + interfaceA)
-		#shell('tc filter delete dev ' + interfaceA + ' root')
+		# If not using XDP, clear tc filter
+		if usingXDP == False:
+			#two of these are probably redundant. Will remove later once determined which those are.
+			shell('tc filter delete dev ' + interfaceA)
+			shell('tc filter delete dev ' + interfaceA + ' root')
+			shell('tc filter delete dev ' + interfaceB)
+			shell('tc filter delete dev ' + interfaceB + ' root')
 		shell('tc qdisc delete dev ' + interfaceA + ' root')
-		#shell('tc qdisc delete dev ' + interfaceA)
-		#shell('tc filter delete dev ' + interfaceB)
-		#shell('tc filter delete dev ' + interfaceB + ' root')
 		shell('tc qdisc delete dev ' + interfaceB + ' root')
+		#shell('tc qdisc delete dev ' + interfaceA)
 		#shell('tc qdisc delete dev ' + interfaceB)
+		
+def tearDown(interfaceA, interfaceB):
+	# Full teardown of everything for exiting LibreQoS
+	if enableActualShellCommands:
+		# If using XDP, remove xdp program from interfaces
+		if usingXDP == True:
+			shell('ip link set dev ' + interfaceA + ' xdp off')
+			shell('ip link set dev ' + interfaceB + ' xdp off')
+		clearPriorSettings(interfaceA, interfaceB)
 
 def findQueuesAvailable():
 	# Find queues and CPU cores available. Use min between those two as queuesAvailable
@@ -108,7 +120,7 @@ def validateNetworkAndDevices():
 			circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4_input, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment = row
 			# Each entry in ShapedDevices.csv can have multiple IPv4s or IPv6s seperated by commas. Split them up and parse each to ensure valid
 			ipv4_hosts = []
-			ipv6_hosts = []
+			ipv6_subnets_and_hosts = []
 			if ipv4_input != "":
 				try:
 					ipv4_input = ipv4_input.replace(' ','')
@@ -135,13 +147,11 @@ def validateNetworkAndDevices():
 					else:
 						ipv6_list = [ipv6_input]
 					for ipEntry in ipv6_list:
-						if '/128' in ipEntry:
-							ipEntry = ipEntry.replace('/128','')
-							ipv6_hosts.append(ipaddress.ip_address(ipEntry))
-						elif '/' in ipEntry:
-							ipv6_hosts.extend(list(ipaddress.ip_network(ipEntry).hosts()))
+						if (type(ipaddress.ip_network(ipEntry)) is ipaddress.IPv6Network) or (type(ipaddress.ip_address(ipEntry)) is ipaddress.IPv6Address):
+							ipv6_subnets_and_hosts.extend(ipEntry)
 						else:
-							ipv6_hosts.append(ipaddress.ip_address(ipEntry))
+							warnings.warn("Provided IPv6 '" + ipv6_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.")
+							devicesValidatedOrNot = False
 				except:
 						warnings.warn("Provided IPv6 '" + ipv6_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.")
 						devicesValidatedOrNot = False
@@ -198,6 +208,9 @@ def validateNetworkAndDevices():
 		return False
 
 def refreshShapers():
+	# Starting
+	print("refreshShapers starting at " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
+	
 	# Warn user if enableActualShellCommands is False, because that would mean no actual commands are executing
 	if enableActualShellCommands == False:
 		warnings.warn("enableActualShellCommands is set to False. None of the commands below will actually be executed. Simulated run.", stacklevel=2)
@@ -222,7 +235,7 @@ def refreshShapers():
 		safeToRunRefresh = True
 	else:
 		if (isThisFirstRunSinceBoot == False):
-			warnings.warn("Validation failed. Because this is not the first run since boot - will exit.")
+			warnings.warn("Validation failed. Because this is not the first run since boot (queues already set up) - will now exit.")
 			safeToRunRefresh = False
 		else:
 			warnings.warn("Validation failed. However - because this is the first run since boot - will load queues from last good config")
@@ -265,7 +278,7 @@ def refreshShapers():
 								ipv4_hosts.append(host)
 						else:
 							ipv4_hosts.append(ipEntry)
-				ipv6_hosts = []
+				ipv6_subnets_and_hosts = []
 				if ipv6_input != "":
 					ipv6_input = ipv6_input.replace(' ','')
 					if "," in ipv6_input:
@@ -273,14 +286,7 @@ def refreshShapers():
 					else:
 						ipv6_list = [ipv6_input]
 					for ipEntry in ipv6_list:
-						if '/128' in ipEntry:
-							ipv6_hosts.append(ipEntry)
-						elif '/' in ipEntry:
-							theseHosts = ipaddress.ip_network(ipEntry).hosts()
-							for host in theseHosts:
-								ipv6_hosts.append(str(host))
-						else:
-							ipv6_hosts.append(ipEntry)
+						ipv6_subnets_and_hosts.append(ipEntry)
 				# If there is something in the circuit ID field
 				if circuitID != "":
 					# Seen circuit before
@@ -302,7 +308,7 @@ def refreshShapers():
 												  "deviceName": deviceName,
 												  "mac": mac,
 												  "ipv4s": ipv4_hosts,
-												  "ipv6s": ipv6_hosts,
+												  "ipv6s": ipv6_subnets_and_hosts,
 												}
 								devicesListForCircuit.append(thisDevice)
 								circuit['devices'] = devicesListForCircuit
@@ -318,7 +324,7 @@ def refreshShapers():
 										  "deviceName": deviceName,
 										  "mac": mac,
 										  "ipv4s": ipv4_hosts,
-										  "ipv6s": ipv6_hosts,
+										  "ipv6s": ipv6_subnets_and_hosts,
 										}
 						deviceListForCircuit.append(thisDevice)
 						thisCircuit = {
@@ -347,7 +353,7 @@ def refreshShapers():
 									  "deviceName": deviceName,
 									  "mac": mac,
 									  "ipv4s": ipv4_hosts,
-									  "ipv6s": ipv6_hosts,
+									  "ipv6s": ipv6_subnets_and_hosts,
 									}
 					deviceListForCircuit.append(thisDevice)
 					thisCircuit = {
@@ -367,8 +373,11 @@ def refreshShapers():
 		with open(networkJSONfile, 'r') as j:
 			network = json.loads(j.read())
 		
-		# Pull rx/tx queues / CPU cores avaialble
-		queuesAvailable = findQueuesAvailable()
+		# Pull rx/tx queues / CPU cores available
+		if usingXDP:
+			queuesAvailable = findQueuesAvailable()
+		else:
+			queuesAvailable = 1
 
 		# Generate Parent Nodes. Spread ShapedDevices.csv which lack defined ParentNode across these (balance across CPUs)
 		generatedPNs = []
@@ -406,6 +415,12 @@ def refreshShapers():
 			return minDownload, minUpload
 		
 		minDownload, minUpload = findBandwidthMins(network, 0)
+		
+		# Define lists for hash filters
+		ipv4FiltersSrc = []		
+		ipv4FiltersDst = []
+		ipv6FiltersSrc = []
+		ipv6FiltersDst = []
 		
 		# Parse network structure. For each tier, create corresponding HTB and leaf classes. Prepare for execution later
 		linuxTCcommands = []
@@ -451,7 +466,16 @@ def refreshShapers():
 						for device in circuit['devices']:
 							if device['ipv4s']:
 								for ipv4 in device['ipv4s']:
-									xdpCPUmapCommands.append('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(ipv4) + ' --cpu ' + hex(queue-1) + ' --classid ' + flowIDstring)
+									if usingXDP:
+										xdpCPUmapCommands.append('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(ipv4) + ' --cpu ' + hex(queue-1) + ' --classid ' + flowIDstring)
+									else:
+										ipv4FiltersSrc.append((ipv4, parentString, flowIDstring))
+										ipv4FiltersDst.append((ipv4, parentString, flowIDstring))
+							if not usingXDP:
+								if device['ipv6s']:
+									for ipv6 in device['ipv6s']:
+										ipv6FiltersSrc.append((ipv6, parentString, flowIDstring))
+										ipv6FiltersDst.append((ipv6, parentString, flowIDstring))
 							if device['deviceName'] not in devicesShaped:
 								devicesShaped.append(device['deviceName'])
 						minor += 1
@@ -468,12 +492,77 @@ def refreshShapers():
 						queue += 1
 						major += 1
 			return minor
-
+		
 		# Print structure of network.json in debug or verbose mode
 		logging.info(json.dumps(network, indent=4))
 
 		# Here is the actual call to the recursive traverseNetwork() function. finalMinor is not used.
 		finalMinor = traverseNetwork(network, 0, major=1, minor=3, queue=1, parentClassID="1:1", parentMaxDL=upstreamBandwidthCapacityDownloadMbps, parentMaxUL=upstreamBandwidthCapacityUploadMbps)
+		
+		# If XDP off - prepare commands for Hash Tables		
+		
+		# IPv4 Hash Filters
+		# Dst
+		linuxTCcommands.append('filter add dev ' + interfaceA + ' parent 0x1: protocol all u32')
+		linuxTCcommands.append('filter add dev ' + interfaceA + ' parent 0x1: protocol ip handle 3: u32 divisor 256')
+		filterHandleCounter = 101
+		for i in range (256):
+			hexID = str(hex(i))#.replace('0x','')
+			for ipv4Filter in ipv4FiltersDst:
+				ipv4, parent, classid = ipv4Filter
+				if '/' in ipv4:
+					ipv4 = ipv4.split('/')[0]
+				if (ipv4.split('.', 3)[3]) == str(i):
+					filterHandle = hex(filterHandleCounter)
+					linuxTCcommands.append('filter add dev ' + interfaceA + ' handle ' + filterHandle + ' protocol ip parent 0x1: u32 ht 3:' + hexID + ': match ip dst ' + ipv4 + ' flowid ' + classid)
+					filterHandleCounter += 1 
+		linuxTCcommands.append('filter add dev ' + interfaceA + ' protocol ip parent 0x1: u32 ht 800: match ip dst 0.0.0.0/0 hashkey mask 0x000000ff at 16 link 3:')
+		# Src
+		linuxTCcommands.append('filter add dev ' + interfaceB + ' parent 0x1: protocol all u32')
+		linuxTCcommands.append('filter add dev ' + interfaceB + ' parent 0x1: protocol ip handle 4: u32 divisor 256')
+		filterHandleCounter = 101
+		for i in range (256):
+			hexID = str(hex(i))#.replace('0x','')
+			for ipv4Filter in ipv4FiltersSrc:
+				ipv4, parent, classid = ipv4Filter
+				if '/' in ipv4:
+					ipv4 = ipv4.split('/')[0]
+				if (ipv4.split('.', 3)[3]) == str(i):
+					filterHandle = hex(filterHandleCounter)
+					linuxTCcommands.append('filter add dev ' + interfaceB + ' handle ' + filterHandle + ' protocol ip parent 0x1: u32 ht 4:' + hexID + ': match ip src ' + ipv4 + ' flowid ' + classid)
+					filterHandleCounter += 1
+		linuxTCcommands.append('filter add dev ' + interfaceB + ' protocol ip parent 0x1: u32 ht 800: match ip src 0.0.0.0/0 hashkey mask 0x000000ff at 12 link 4:')
+		# IPv6 Hash Filters
+		# Dst
+		linuxTCcommands.append('tc filter add dev ' + interfaceA + ' parent 0x1: handle 5: protocol ipv6 u32 divisor 256')
+		filterHandleCounter = 101
+		for ipv6Filter in ipv6FiltersDst:
+			ipv6, parent, classid = ipv6Filter
+			withoutCIDR = ipv6.split('/')[0]
+			third = str(ipaddress.IPv6Address(withoutCIDR).exploded).split(':',5)[3]
+			usefulPart = third[:2]
+			hexID = usefulPart
+			filterHandle = hex(filterHandleCounter)
+			linuxTCcommands.append('filter add dev ' + interfaceA + ' handle ' + filterHandle + ' protocol ipv6 parent 0x1: u32 ht 5:' + hexID + ': match ip6 dst ' + ipv6 + ' flowid ' + classid)
+			filterHandleCounter += 1
+		filterHandle = hex(filterHandleCounter)
+		linuxTCcommands.append('filter add dev ' + interfaceA + ' protocol ipv6 parent 0x1: u32 ht 800:: match ip6 dst ::/0 hashkey mask 0x0000ff00 at 28 link 5:')
+		filterHandleCounter += 1
+		# Src
+		linuxTCcommands.append('tc filter add dev ' + interfaceB + ' parent 0x1: handle 6: protocol ipv6 u32 divisor 256')
+		filterHandleCounter = 101
+		for ipv6Filter in ipv6FiltersSrc:
+			ipv6, parent, classid = ipv6Filter
+			withoutCIDR = ipv6.split('/')[0]
+			third = str(ipaddress.IPv6Address(withoutCIDR).exploded).split(':',5)[3]
+			usefulPart = third[:2]
+			hexID = usefulPart
+			filterHandle = hex(filterHandleCounter)
+			linuxTCcommands.append('filter add dev ' + interfaceB + ' handle ' + filterHandle + ' protocol ipv6 parent 0x1: u32 ht 6:' + hexID + ': match ip6 src ' + ipv6 + ' flowid ' + classid)
+			filterHandleCounter += 1
+		filterHandle = hex(filterHandleCounter)
+		linuxTCcommands.append('filter add dev ' + interfaceB + ' protocol ipv6 parent 0x1: u32 ht 800:: match ip6 src ::/0 hashkey mask 0x0000ff00 at 12 link 6:')
+		filterHandleCounter += 1
 		
 		# Record start time of actual filter reload
 		reloadStartTime = datetime.now()
@@ -483,47 +572,75 @@ def refreshShapers():
 		
 		# If this is the first time LibreQoS.py has run since system boot, load the XDP program and disable XPS
 		# Otherwise, just clear the existing IP filter rules for xdp
-		if isThisFirstRunSinceBoot:
-			# Set up XDP-CPUMAP-TC
-			shell('./xdp-cpumap-tc/bin/xps_setup.sh -d ' + interfaceA + ' --default --disable')
-			shell('./xdp-cpumap-tc/bin/xps_setup.sh -d ' + interfaceB + ' --default --disable')
-			shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu --dev ' + interfaceA + ' --lan')
-			shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu --dev ' + interfaceB + ' --wan')
-			if enableActualShellCommands:
-				# Here we use os.system for the command, because otherwise it sometimes gltiches out with Popen in shell()
-				result = os.system('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --clear')
-			shell('./xdp-cpumap-tc/src/tc_classify --dev-egress ' + interfaceA)
-			shell('./xdp-cpumap-tc/src/tc_classify --dev-egress ' + interfaceB)
+		# If XDP is disabled, skips this entirely
+		if usingXDP:
+			if isThisFirstRunSinceBoot:
+				# Set up XDP-CPUMAP-TC
+				shell('./xdp-cpumap-tc/bin/xps_setup.sh -d ' + interfaceA + ' --default --disable')
+				shell('./xdp-cpumap-tc/bin/xps_setup.sh -d ' + interfaceB + ' --default --disable')
+				shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu --dev ' + interfaceA + ' --lan')
+				shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu --dev ' + interfaceB + ' --wan')
+				if enableActualShellCommands:
+					# Here we use os.system for the command, because otherwise it sometimes gltiches out with Popen in shell()
+					result = os.system('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --clear')
+				shell('./xdp-cpumap-tc/src/tc_classify --dev-egress ' + interfaceA)
+				shell('./xdp-cpumap-tc/src/tc_classify --dev-egress ' + interfaceB)
+			else:
+				if enableActualShellCommands:
+					result = os.system('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --clear')
+		
+		if usingXDP:
+			# Create MQ qdisc for each CPU core / rx-tx queue (XDP method - requires IPv4)
+			thisInterface = interfaceA
+			shell('tc qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq')
+			for queue in range(queuesAvailable):
+				shell('tc qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2')
+				shell('tc class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityDownloadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityDownloadMbps) + 'mbit')
+				shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + fqOrCAKE)
+				# Default class - traffic gets passed through this limiter with lower priority if not otherwise classified by the Shaper.csv
+				# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
+				# Default class can use up to defaultClassCapacityDownloadMbps when that bandwidth isn't used by known hosts.
+				shell('tc class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(defaultClassCapacityDownloadMbps/4) + 'mbit ceil ' + str(defaultClassCapacityDownloadMbps) + 'mbit prio 5')
+				shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + fqOrCAKE)
+			
+			thisInterface = interfaceB
+			shell('tc qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq')
+			for queue in range(queuesAvailable):
+				shell('tc qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2')
+				shell('tc class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityUploadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps) + 'mbit')
+				shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + fqOrCAKE)
+				# Default class - traffic gets passed through this limiter with lower priority if not otherwise classified by the Shaper.csv.
+				# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
+				# Default class can use up to defaultClassCapacityUploadMbps when that bandwidth isn't used by known hosts.
+				shell('tc class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(defaultClassCapacityUploadMbps/4) + 'mbit ceil ' + str(defaultClassCapacityUploadMbps) + 'mbit prio 5')
+				shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + fqOrCAKE)
 		else:
-			if enableActualShellCommands:
-				result = os.system('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --clear')
-
-		# Create MQ qdisc for each interface
-		thisInterface = interfaceA
-		shell('tc qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq')
-		for queue in range(queuesAvailable):
-			shell('tc qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2')
-			shell('tc class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityDownloadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityDownloadMbps) + 'mbit')
-			shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + fqOrCAKE)
-			# Default class - traffic gets passed through this limiter with lower priority if not otherwise classified by the Shaper.csv
-			# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
-			# Default class can use up to defaultClassCapacityDownloadMbps when that bandwidth isn't used by known hosts.
-			shell('tc class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(defaultClassCapacityDownloadMbps/4) + 'mbit ceil ' + str(defaultClassCapacityDownloadMbps) + 'mbit prio 5')
-			shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + fqOrCAKE)
+			# Create single HTB qdisc (non XDP method - allows IPv6)
+			thisInterface = interfaceA
+			shell('tc qdisc replace dev ' + thisInterface + ' root handle 0x1: htb default 2 r2q 1514')
+			for queue in range(queuesAvailable):
+				shell('tc qdisc add dev ' + thisInterface + ' parent 0x1:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2')
+				shell('tc class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityDownloadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityDownloadMbps) + 'mbit')
+				shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + fqOrCAKE)
+				# Default class - traffic gets passed through this limiter with lower priority if not otherwise classified by the Shaper.csv
+				# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
+				# Default class can use up to defaultClassCapacityDownloadMbps when that bandwidth isn't used by known hosts.
+				shell('tc class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(defaultClassCapacityDownloadMbps/4) + 'mbit ceil ' + str(defaultClassCapacityDownloadMbps) + 'mbit prio 5')
+				shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + fqOrCAKE)
+			
+			thisInterface = interfaceB
+			shell('tc qdisc replace dev ' + thisInterface + ' root handle 0x1: htb default 2 r2q 1514')
+			for queue in range(queuesAvailable):
+				shell('tc qdisc add dev ' + thisInterface + ' parent 0x1:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2')
+				shell('tc class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityUploadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps) + 'mbit')
+				shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + fqOrCAKE)
+				# Default class - traffic gets passed through this limiter with lower priority if not otherwise classified by the Shaper.csv.
+				# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
+				# Default class can use up to defaultClassCapacityUploadMbps when that bandwidth isn't used by known hosts.
+				shell('tc class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(defaultClassCapacityUploadMbps/4) + 'mbit ceil ' + str(defaultClassCapacityUploadMbps) + 'mbit prio 5')
+				shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + fqOrCAKE)
 		
-		thisInterface = interfaceB
-		shell('tc qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq')
-		for queue in range(queuesAvailable):
-			shell('tc qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2')
-			shell('tc class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityUploadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps) + 'mbit')
-			shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + fqOrCAKE)
-			# Default class - traffic gets passed through this limiter with lower priority if not otherwise classified by the Shaper.csv.
-			# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
-			# Default class can use up to defaultClassCapacityUploadMbps when that bandwidth isn't used by known hosts.
-			shell('tc class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(defaultClassCapacityUploadMbps/4) + 'mbit ceil ' + str(defaultClassCapacityUploadMbps) + 'mbit prio 5')
-			shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + fqOrCAKE)
-		
-		# Execute actual Linux TC and XDP-CPUMAP-TC filter commands
+		# Execute actual Linux TC commands
 		print("Executing linux TC class/qdisc commands")
 		with open('linux_tc.txt', 'w') as f:
 			for line in linuxTCcommands:
@@ -531,11 +648,16 @@ def refreshShapers():
 				logging.info(line)
 		shell("/sbin/tc -f -b linux_tc.txt")
 		print("Executed " + str(len(linuxTCcommands)) + " linux TC class/qdisc commands")
-		print("Executing XDP-CPUMAP-TC IP filter commands")
-		for command in xdpCPUmapCommands:
-			logging.info(command)
-			shell(command)
-		print("Executed " + str(len(xdpCPUmapCommands)) + " XDP-CPUMAP-TC IP filter commands")
+		
+		# Execute actual XDP-CPUMAP-TC filter commands
+		if usingXDP:
+			print("Executing XDP-CPUMAP-TC IP filter commands")
+			for command in xdpCPUmapCommands:
+				logging.info(command)
+				shell(command)
+			print("Executed " + str(len(xdpCPUmapCommands)) + " XDP-CPUMAP-TC IP filter commands")
+		
+		# Record end time
 		reloadEndTime = datetime.now()
 		
 		# Recap - warn operator if devices were skipped
@@ -565,6 +687,9 @@ def refreshShapers():
 		# Report reload time
 		reloadTimeSeconds = (reloadEndTime - reloadStartTime).seconds
 		print("Queue and IP filter reload completed in " + str(reloadTimeSeconds) + " seconds")
+		
+		# Done
+		print("refreshShapers completed on " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
@@ -584,15 +709,18 @@ if __name__ == '__main__':
 		help="Just validate network.json and ShapedDevices.csv",
 		action=argparse.BooleanOptionalAction,
 	)
+	parser.add_argument(
+		'--clearrules',
+		help="Clear ip filters, qdiscs, and xdp setup if any",
+		action=argparse.BooleanOptionalAction,
+	)
 	args = parser.parse_args()    
 	logging.basicConfig(level=args.loglevel)
 	
 	if args.validate:
 		status = validateNetworkAndDevices()
+	elif args.clearrules:
+		tearDown(interfaceA, interfaceB)
 	else:
-		# Starting
-		print("refreshShapers starting at " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
 		# Refresh and/or set up queues
 		refreshShapers()
-		# Done
-		print("refreshShapers completed on " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))

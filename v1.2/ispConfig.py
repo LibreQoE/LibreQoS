@@ -24,9 +24,9 @@ interfaceA = 'eth1'
 # Interface connected to edge router
 interfaceB = 'eth2'
 
-# Shape by Site in addition to by AP and Client
-# Now deprecated, was only used prior to v1.1
-# shapeBySite = True
+# Use XDP? If yes, multiple CPU cores can be used. Limits to IPv4 only. Throughput of 11 Gbps+
+# If using IPv6, choose False. False will limit throughput to 3-6 Gbps
+usingXDP = False
 
 # Allow shell commands. False causes commands print to console only without being executed.
 # MUST BE ENABLED FOR PROGRAM TO FUNCTION
@@ -61,6 +61,11 @@ uispAuthToken = ''
 shapeRouterOrStation = 'router'
 # List any sites that should not be included, with each site name surrounded by '' and seperated by commas
 excludeSites = []
+# If you use IPv6, this can be used to find associated IPv6 prefixes for your clients' IPv4 addresses, and match them to those devices
+findIPv6usingMikrotik = False
+# If you want to provide a safe cushion for speed test results to prevent customer complains, you can set this to 1.15 (15% above plan rate).
+# If not, you can leave as 1.0
+bandwidthOverheadFactor = 1.0
 
 # API Auth
 apiUsername = "testUser"
