@@ -75,6 +75,7 @@ def createTree(sites,accessPoints,bandwidthDL,bandwidthUL,siteParentDict,siteIDt
 	return currentNode
 
 def createNetworkJSON():
+	print("Creating network.json")
 	bandwidthDL = {}
 	bandwidthUL = {}
 	url = UISPbaseURL + "/nms/api/v2.1/sites?type=site"
@@ -85,6 +86,7 @@ def createNetworkJSON():
 	headers = {'accept':'application/json', 'x-auth-token': uispAuthToken}
 	r = requests.get(url, headers=headers)
 	apProfiles = r.json()
+	listOfTopLevelParentNodes = []	
 	if os.path.isfile("integrationUISPbandwidths.csv"):
 		with open('integrationUISPbandwidths.csv') as csv_file:
 			csv_reader = csv.reader(csv_file, delimiter=',')
@@ -93,38 +95,40 @@ def createNetworkJSON():
 				name, download, upload = row
 				download = int(download)
 				upload = int(upload)
+				listOfTopLevelParentNodes.append(name)
 				bandwidthDL[name] = download
 				bandwidthUL[name] = upload
-	else:
-		listOfTopLevelParentNodes = []
-		respectiveBandwidths = {}
-		for ap in apProfiles:
-			name = ap['device']['name']
-			model = ap['device']['model']
-			apID = ap['device']['id']
-			if model in knownAPmodels:
-				url = UISPbaseURL + "/nms/api/v2.1/devices/airmaxes/" + apID + '?withStations=false'
-				headers = {'accept':'application/json', 'x-auth-token': uispAuthToken}
-				r = requests.get(url, headers=headers)
-				thisAPairmax = r.json()	
+	for ap in apProfiles:
+		name = ap['device']['name']
+		model = ap['device']['model']
+		apID = ap['device']['id']
+		if model in knownAPmodels:
+			url = UISPbaseURL + "/nms/api/v2.1/devices/airmaxes/" + apID + '?withStations=false'
+			headers = {'accept':'application/json', 'x-auth-token': uispAuthToken}
+			r = requests.get(url, headers=headers)
+			thisAPairmax = r.json()	
+			downloadCap = int(round(thisAPairmax['overview']['downlinkCapacity']/1000000))
+			uploadCap = int(round(thisAPairmax['overview']['uplinkCapacity']/1000000))
+			# If operator already included bandwidth definitions for this ParentNode, do not overwrite what they set
+			if name not in listOfTopLevelParentNodes:
 				print("Found " + name)
-				downloadCap = int(round(thisAPairmax['overview']['downlinkCapacity']/1000000))
-				uploadCap = int(round(thisAPairmax['overview']['uplinkCapacity']/1000000))
 				listOfTopLevelParentNodes.append(name)
 				bandwidthDL[name] = downloadCap
 				bandwidthUL[name] = uploadCap
-		for site in sites:
-			name = site['identification']['name']
+	for site in sites:
+		name = site['identification']['name']
+		# If operator already included bandwidth definitions for this ParentNode, do not overwrite what they set
+		if name not in listOfTopLevelParentNodes:
 			print("Found " + name)
 			listOfTopLevelParentNodes.append(name)
 			bandwidthDL[name] = 1000
 			bandwidthUL[name] = 1000
-		with open('integrationUISPbandwidths.csv', 'w') as csvfile:
-			wr = csv.writer(csvfile, quoting=csv.QUOTE_ALL)
-			wr.writerow(['ParentNode', 'Download Mbps', 'Upload Mbps'])
-			for device in listOfTopLevelParentNodes:
-				entry = (device, bandwidthDL[device], bandwidthUL[device])
-				wr.writerow(entry)
+	with open('integrationUISPbandwidths.csv', 'w') as csvfile:
+		wr = csv.writer(csvfile, quoting=csv.QUOTE_ALL)
+		wr.writerow(['ParentNode', 'Download Mbps', 'Upload Mbps'])
+		for device in listOfTopLevelParentNodes:
+			entry = (device, bandwidthDL[device], bandwidthUL[device])
+			wr.writerow(entry)
 	url = UISPbaseURL + "/nms/api/v2.1/devices?role=ap"
 	headers = {'accept':'application/json', 'x-auth-token': uispAuthToken}
 	r = requests.get(url, headers=headers)
@@ -155,6 +159,7 @@ def createNetworkJSON():
 		json.dump(tree, f, indent=4)
 
 def createShaper():
+	print("Creating ShapedDevices.csv")
 	devicesToImport = []
 	url = UISPbaseURL + "/nms/api/v2.1/sites?type=site"
 	headers = {'accept':'application/json', 'x-auth-token': uispAuthToken}
@@ -244,8 +249,7 @@ def createShaper():
 			wr.writerow(device)
 
 def importFromUISP():
-	if not os.path.isfile("integrationUISPbandwidths.csv"):
-		createNetworkJSON()
+	createNetworkJSON()
 	createShaper()
 
 if __name__ == '__main__':
