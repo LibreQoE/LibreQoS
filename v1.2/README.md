@@ -1,4 +1,4 @@
-# v1.2 (IPv4) (Alpha)
+# v1.2 (IPv4 + IPv6) (Alpha)
 
 ## Features
 
