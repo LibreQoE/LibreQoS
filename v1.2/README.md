@@ -6,7 +6,7 @@
 
 - Support for multiple IPv4s or IPv6s per device
 
-- Reduced reload time by 80%
+- Reduced reload time by 80%. Actual packet loss is <25ms on reload of queues.
 
 - Command line arguments ```--debug```, ```--verbose```, and ```--validate```.
 
