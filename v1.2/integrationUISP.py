@@ -239,6 +239,9 @@ def createShaper():
 									if AP == 'none':
 										try:
 											AP = siteIDtoName[uispClientSite['identification']['parent']['id']]
+											# We have to ensure a solid "rate" to prevent low priority in cases where clients are directly connected to top level Parent Nodes
+											minSpeedDown = round(maxSpeedDown*.95)
+											minSpeedUp = round(maxSpeedDown*.95)
 										except:
 											AP = 'none'
 									devicesToImport.append((uispClientSiteID, address, '', deviceName, AP, deviceMAC, ipv4, ipv6, str(minSpeedDown), str(minSpeedUp), str(maxSpeedDown),str(maxSpeedUp),''))
