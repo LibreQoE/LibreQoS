@@ -2,6 +2,9 @@
 
 Released: 2022
 
+## Installation Guide
+- 📄 [LibreQoS v1.1 Installation & Usage Guide Physical Server and Ubuntu 21.10](https://github.com/rchac/LibreQoS/wiki/LibreQoS-v1.1-Installation-&-Usage-Guide-Physical-Server-and-Ubuntu-21.10)
+
 ## Features
 
 - Tested up to 11Gbps asymmetrical throughput in real world deployment with 5000+ clients.
