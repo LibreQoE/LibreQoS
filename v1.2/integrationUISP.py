@@ -229,19 +229,16 @@ def createShaper():
 								if isInAllowedSubnets(ipv4):
 									deviceModel = device['identification']['model']
 									deviceModelName = device['identification']['modelName']
-									minSpeedDown = min(1,downloadSpeedMbps)
-									minSpeedUp = min(1,uploadSpeedMbps)
 									maxSpeedDown = round(bandwidthOverheadFactor*downloadSpeedMbps)
 									maxSpeedUp = round(bandwidthOverheadFactor*uploadSpeedMbps)
+									minSpeedDown = min(round(maxSpeedDown*.98),maxSpeedDown)
+									minSpeedUp = min(round(maxSpeedUp*.98),maxSpeedUp)
 									#Customers directly connected to Sites
 									if deviceName in exceptionCPEs.keys():
 										AP = exceptionCPEs[deviceName]
 									if AP == 'none':
 										try:
 											AP = siteIDtoName[uispClientSite['identification']['parent']['id']]
-											# We have to ensure a solid "rate" to prevent low priority in cases where clients are directly connected to top level Parent Nodes
-											minSpeedDown = round(maxSpeedDown*.95)
-											minSpeedUp = round(maxSpeedDown*.95)
 										except:
 											AP = 'none'
 									devicesToImport.append((uispClientSiteID, address, '', deviceName, AP, deviceMAC, ipv4, ipv6, str(minSpeedDown), str(minSpeedUp), str(maxSpeedDown),str(maxSpeedUp),''))
