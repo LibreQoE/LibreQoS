@@ -10,6 +10,8 @@
 
 - Command line arguments ```--debug```, ```--verbose```, and ```--validate```.
 
+- Validation of ShapedDevices.csv and network.json during load. If either fails validation, LibreQoS pulls from the last known good configuration (lastGoodConfig.csv and lastGoodConfig.json).
+
 ## ShapedDevices.csv
 Shaper.csv is now ShapedDevices.csv
 
