@@ -2,7 +2,7 @@ import requests
 import os
 import csv
 import ipaddress
-from ispConfig import UISPbaseURL, uispAuthToken, shapeRouterOrStation, allowedSubnets, ignoreSubnets, excludeSites, findIPv6usingMikrotik, bandwidthOverheadFactor
+from ispConfig import UISPbaseURL, uispAuthToken, shapeRouterOrStation, allowedSubnets, ignoreSubnets, excludeSites, findIPv6usingMikrotik, bandwidthOverheadFactor, exceptionCPEs
 import shutil
 import json
 if findIPv6usingMikrotik == True:
@@ -117,12 +117,13 @@ def createNetworkJSON():
 				bandwidthUL[name] = uploadCap
 	for site in sites:
 		name = site['identification']['name']
-		# If operator already included bandwidth definitions for this ParentNode, do not overwrite what they set
-		if name not in listOfTopLevelParentNodes:
-			print("Found " + name)
-			listOfTopLevelParentNodes.append(name)
-			bandwidthDL[name] = 1000
-			bandwidthUL[name] = 1000
+		if name not in excludeSites:
+			# If operator already included bandwidth definitions for this ParentNode, do not overwrite what they set
+			if name not in listOfTopLevelParentNodes:
+				print("Found " + name)
+				listOfTopLevelParentNodes.append(name)
+				bandwidthDL[name] = 1000
+				bandwidthUL[name] = 1000
 	with open('integrationUISPbandwidths.csv', 'w') as csvfile:
 		wr = csv.writer(csvfile, quoting=csv.QUOTE_ALL)
 		wr.writerow(['ParentNode', 'Download Mbps', 'Upload Mbps'])
@@ -230,6 +231,8 @@ def createShaper():
 									maxSpeedDown = round(bandwidthOverheadFactor*downloadSpeedMbps)
 									maxSpeedUp = round(bandwidthOverheadFactor*uploadSpeedMbps)
 									#Customers directly connected to Sites
+									if deviceName in exceptionCPEs.keys():
+										AP = exceptionCPEs[deviceName]
 									if AP == 'none':
 										try:
 											AP = siteIDtoName[uispClientSite['identification']['parent']['id']]
