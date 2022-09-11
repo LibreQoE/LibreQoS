@@ -577,16 +577,14 @@ def refreshShapers():
 		# Clear Prior Settings
 		clearPriorSettings(interfaceA, interfaceB)
 		
-		# If this is the first time LibreQoS.py has run since system boot, disable XPS
-		# Otherwise, setup XDP regardless of whether it is first run or not (necessary to handle cases where systemctl stop was used)
+		# Setup XDP and disable XPS regardless of whether it is first run or not (necessary to handle cases where systemctl stop was used)
 		if usingXDP:
-			if isThisFirstRunSinceBoot:
-				# Set up XDP-CPUMAP-TC
-				shell('./xdp-cpumap-tc/bin/xps_setup.sh -d ' + interfaceA + ' --default --disable')
-				shell('./xdp-cpumap-tc/bin/xps_setup.sh -d ' + interfaceB + ' --default --disable')
 			if enableActualShellCommands:
 				# Here we use os.system for the command, because otherwise it sometimes gltiches out with Popen in shell()
 				result = os.system('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --clear')
+			# Set up XDP-CPUMAP-TC
+			shell('./xdp-cpumap-tc/bin/xps_setup.sh -d ' + interfaceA + ' --default --disable')
+			shell('./xdp-cpumap-tc/bin/xps_setup.sh -d ' + interfaceB + ' --default --disable')
 			shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu --dev ' + interfaceA + ' --lan')
 			shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu --dev ' + interfaceB + ' --wan')
 			shell('./xdp-cpumap-tc/src/tc_classify --dev-egress ' + interfaceA)
