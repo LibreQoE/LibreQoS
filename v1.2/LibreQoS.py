@@ -83,7 +83,7 @@ def findQueuesAvailable():
 		cpuCount = multiprocessing.cpu_count()
 		print("CPU cores:\t\t\t" + str(cpuCount))
 		queuesAvailable = min(queuesAvailable,cpuCount)
-		print("queuesAvailable set to:\t" + str(cpuCount))
+		print("queuesAvailable set to:\t" + str(queuesAvailable))
 	else:
 		print("As enableActualShellCommands is False, CPU core / queue count has been set to 12")
 		logging.info("NIC queues:\t\t\t" + str(12))
