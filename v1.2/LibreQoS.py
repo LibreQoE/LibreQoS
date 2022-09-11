@@ -64,8 +64,9 @@ def clearPriorSettings(interfaceA, interfaceB):
 def tearDown(interfaceA, interfaceB):
 	# Full teardown of everything for exiting LibreQoS
 	if enableActualShellCommands:
-		# If using XDP, remove xdp program from interfaces
+		# If using XDP, clear IP filters and remove xdp program from interfaces
 		if usingXDP == True:
+			result = os.system('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --clear')
 			shell('ip link set dev ' + interfaceA + ' xdp off')
 			shell('ip link set dev ' + interfaceB + ' xdp off')
 		clearPriorSettings(interfaceA, interfaceB)
@@ -376,6 +377,13 @@ def refreshShapers():
 		# Pull rx/tx queues / CPU cores available
 		if usingXDP:
 			queuesAvailable = findQueuesAvailable()
+			#Determine how many CPU cores will be used for XDP. If graphingEnabled and infludDBisLocal, pin InfluxDB to last core
+			#if (graphingEnabled) and (infludDBisLocal):
+				#lastCPUnum = queuesAvailable-1
+				#XDP mapping and queueing will be limited to queuesAvailable-1 (last core reserved for InfluxDB)
+				#queuesAvailable = queuesAvailable-1
+				#Pin influxdb to lastCPUnum
+				#shell('taskset -cp 15 1339')
 		else:
 			queuesAvailable = 1
 
@@ -492,15 +500,14 @@ def refreshShapers():
 						queue += 1
 						major += 1
 			return minor
-		
-		# Print structure of network.json in debug or verbose mode
-		logging.info(json.dumps(network, indent=4))
 
 		# Here is the actual call to the recursive traverseNetwork() function. finalMinor is not used.
 		finalMinor = traverseNetwork(network, 0, major=1, minor=3, queue=1, parentClassID="1:1", parentMaxDL=upstreamBandwidthCapacityDownloadMbps, parentMaxUL=upstreamBandwidthCapacityUploadMbps)
-		
-		# If XDP off - prepare commands for Hash Tables		
-		
+
+		# Print structure of network.json in debug or verbose mode
+		logging.info(json.dumps(network, indent=4))
+
+		# If XDP off - prepare commands for Hash Tables
 		# IPv4 Hash Filters
 		# Dst
 		linuxTCcommands.append('filter add dev ' + interfaceA + ' parent 0x1: protocol all u32')
@@ -534,7 +541,7 @@ def refreshShapers():
 		linuxTCcommands.append('filter add dev ' + interfaceB + ' protocol ip parent 0x1: u32 ht 800: match ip src 0.0.0.0/0 hashkey mask 0x000000ff at 12 link 4:')
 		# IPv6 Hash Filters
 		# Dst
-		linuxTCcommands.append('tc filter add dev ' + interfaceA + ' parent 0x1: handle 5: protocol ipv6 u32 divisor 256')
+		linuxTCcommands.append('filter add dev ' + interfaceA + ' parent 0x1: handle 5: protocol ipv6 u32 divisor 256')
 		filterHandleCounter = 101
 		for ipv6Filter in ipv6FiltersDst:
 			ipv6, parent, classid = ipv6Filter
@@ -549,7 +556,7 @@ def refreshShapers():
 		linuxTCcommands.append('filter add dev ' + interfaceA + ' protocol ipv6 parent 0x1: u32 ht 800:: match ip6 dst ::/0 hashkey mask 0x0000ff00 at 28 link 5:')
 		filterHandleCounter += 1
 		# Src
-		linuxTCcommands.append('tc filter add dev ' + interfaceB + ' parent 0x1: handle 6: protocol ipv6 u32 divisor 256')
+		linuxTCcommands.append('filter add dev ' + interfaceB + ' parent 0x1: handle 6: protocol ipv6 u32 divisor 256')
 		filterHandleCounter = 101
 		for ipv6Filter in ipv6FiltersSrc:
 			ipv6, parent, classid = ipv6Filter
@@ -570,24 +577,20 @@ def refreshShapers():
 		# Clear Prior Settings
 		clearPriorSettings(interfaceA, interfaceB)
 		
-		# If this is the first time LibreQoS.py has run since system boot, load the XDP program and disable XPS
-		# Otherwise, just clear the existing IP filter rules for xdp
-		# If XDP is disabled, skips this entirely
+		# If this is the first time LibreQoS.py has run since system boot, disable XPS
+		# Otherwise, setup XDP regardless of whether it is first run or not (necessary to handle cases where systemctl stop was used)
 		if usingXDP:
 			if isThisFirstRunSinceBoot:
 				# Set up XDP-CPUMAP-TC
 				shell('./xdp-cpumap-tc/bin/xps_setup.sh -d ' + interfaceA + ' --default --disable')
 				shell('./xdp-cpumap-tc/bin/xps_setup.sh -d ' + interfaceB + ' --default --disable')
-				shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu --dev ' + interfaceA + ' --lan')
-				shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu --dev ' + interfaceB + ' --wan')
-				if enableActualShellCommands:
-					# Here we use os.system for the command, because otherwise it sometimes gltiches out with Popen in shell()
-					result = os.system('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --clear')
-				shell('./xdp-cpumap-tc/src/tc_classify --dev-egress ' + interfaceA)
-				shell('./xdp-cpumap-tc/src/tc_classify --dev-egress ' + interfaceB)
-			else:
-				if enableActualShellCommands:
-					result = os.system('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --clear')
+			if enableActualShellCommands:
+				# Here we use os.system for the command, because otherwise it sometimes gltiches out with Popen in shell()
+				result = os.system('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --clear')
+			shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu --dev ' + interfaceA + ' --lan')
+			shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu --dev ' + interfaceB + ' --wan')
+			shell('./xdp-cpumap-tc/src/tc_classify --dev-egress ' + interfaceA)
+			shell('./xdp-cpumap-tc/src/tc_classify --dev-egress ' + interfaceB)	
 		
 		if usingXDP:
 			# Create MQ qdisc for each CPU core / rx-tx queue (XDP method - requires IPv4)
