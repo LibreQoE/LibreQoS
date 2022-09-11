@@ -66,6 +66,11 @@ findIPv6usingMikrotik = False
 # If you want to provide a safe cushion for speed test results to prevent customer complains, you can set this to 1.15 (15% above plan rate).
 # If not, you can leave as 1.0
 bandwidthOverheadFactor = 1.0
+# For edge cases, set the respective ParentNode for these CPEs
+exceptionCPEs = {}
+                #  'CPE-SomeLocation1': 'AP-SomeLocation1',
+                #  'CPE-SomeLocation2': 'AP-SomeLocation2',
+                #}
 
 # API Auth
 apiUsername = "testUser"
