@@ -1,9 +1,17 @@
 <a href="https://libreqos.io/"><img alt="LibreQoS" src="https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/banner2022.png"></a>
 
+LibreQoS is a Quality of Experience and Smart Queue Management system designed for Internet Service Providers (such as Fixed Wireless Internet Service Providers) to optimize the flow of their network traffic and thus reduce bufferbloat, keep the network responsive, and improve the end-user experience.
+
+Because customers see greater performance, ISPs receive fewer support tickets/calls and reduce network traffic from fewer retransmissions.
+
+A sub-$1000 server running LibreQoS can shape traffic for hundreds or thousands of customers at over 10 Gbps. 
+
 Learn more at [LibreQoS.io](https://libreqos.io/)
 
+<img alt="LibreQoS" src="https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/v1.1-alpha-preview.jpg"></a>
+
 ## System Requirements
-* VM or physical server. Physical server will perform better and better utilize all CPU cores.
+* VM or physical server. Physical server will have higher throughput (XDP vs generic XDP).
 * One management network interface, completely separate from the traffic shaping interfaces. Usually this would be the Ethernet interface built in to the motherboard.
 * Dedicated Network Interface Card
 * NIC must have two or more interfaces for traffic shaping.
@@ -20,16 +28,10 @@ Learn more at [LibreQoS.io](https://libreqos.io/)
     * [AMD Ryzen 9 5900X](https://www.bestbuy.com/site/amd-ryzen-9-5900x-4th-gen-12-core-24-threads-unlocked-desktop-processor-without-cooler/6438942.p?skuId=6438942)
     * [Intel Core i7-12700KF](https://www.bestbuy.com/site/intel-core-i7-12700kf-desktop-processor-12-8p-4e-cores-up-to-5-0-ghz-unlocked-lga1700-600-series-chipset-125w/6483674.p?skuId=6483674)
     
-## Installation and Usage Guide
+## Versions
+IPv4 + IPv6:
+- [v1.2-alpha](https://github.com/rchac/LibreQoS/tree/main/v1.2)
 
-Best Performance, Bare Metal, IPv4 Only:
-- 📄 [Alpha] [LibreQoS v1.2 Installation & Usage Guide Physical Server and Ubuntu 22.04](https://github.com/rchac/LibreQoS/wiki/LibreQoS-v1.2-Installation-&-Usage-Guide-Physical-Server-and-Ubuntu-22.04)
-- 📄 [Beta] [LibreQoS v1.1 Installation & Usage Guide Physical Server and Ubuntu 21.10](https://github.com/rchac/LibreQoS/wiki/LibreQoS-v1.1-Installation-&-Usage-Guide-Physical-Server-and-Ubuntu-21.10)
-- 📄 [LibreQoS v1.0 Installation & Usage Guide Physical Server and Ubuntu 21.10](https://github.com/rchac/LibreQoS/wiki/LibreQoS-v1.0-Installation-&-Usage-Guide---Physical-Server-and-Ubuntu-21.10)
-- 📄 [LibreQoS v0.9 Installation & Usage Guide Physical Server and Ubuntu 21.10](https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.9-Installation-&-Usage-Guide----Physical-Server-and-Ubuntu-21.10)
-
-Good Performance, VM,  IPv4 Only:
-- 📄 [LibreQoS v0.9 Installation & Usage Guide Proxmox and Ubuntu 21.10](https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.9-Installation-&-Usage-Guide----Proxmox-and-Ubuntu-21.10)
-
-OK Performance, IPv4 and IPv6:
-- 📄 [LibreQoS 0.8 Installation and Usage Guide - Proxmox and Ubuntu 20.04 LTS](https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.8-Installation-&-Usage-Guide----Proxmox-and-Ubuntu-20.04)
+IPv4 only:
+- [v1.1-beta](https://github.com/rchac/LibreQoS/tree/main/v1.1)
+- [v1.0-stable](https://github.com/rchac/LibreQoS/tree/main/v1.0)

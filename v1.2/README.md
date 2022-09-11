@@ -1,5 +1,10 @@
 # v1.2 (IPv4 + IPv6) (Alpha)
 
+<img alt="LibreQoS" src="https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/v1.1-alpha-preview.jpg"></a>
+
+## Installation Guide
+- 📄 [LibreQoS v1.2 Installation & Usage Guide Physical Server and Ubuntu 22.04](https://github.com/rchac/LibreQoS/wiki/LibreQoS-v1.2-Installation-&-Usage-Guide-Physical-Server-and-Ubuntu-22.04)
+
 ## Features
 
 - Support for multiple devices per subscriber circuit. This allows for multiple IPv4s to be filtered into the same queue, without necessarily being in the same subnet.

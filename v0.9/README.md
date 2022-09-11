@@ -2,6 +2,13 @@
 
 - Released: 11 Jul 2021
 
+## Installation Guide
+Best Performance, Bare Metal, IPv4 Only:
+- 📄 [LibreQoS v0.9 Installation & Usage Guide Physical Server and Ubuntu 21.10](https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.9-Installation-&-Usage-Guide----Physical-Server-and-Ubuntu-21.10)
+
+Good Performance, VM,  IPv4 Only:
+- 📄 [LibreQoS v0.9 Installation & Usage Guide Proxmox and Ubuntu 21.10](https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.9-Installation-&-Usage-Guide----Proxmox-and-Ubuntu-21.10)
+
 ## Features
 
 - XDP-CPUMAP-TC integration greatly improves throughput, allows many more IPv4 clients, and lowers CPU use. Latency reduced by half on networks previously limited by single-CPU / TC QDisc locking problem in v.0.8.

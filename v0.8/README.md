@@ -2,6 +2,9 @@
 
 - Released: 2 July 2021
 
+## Installation Guide
+- 📄 [LibreQoS 0.8 Installation and Usage Guide - Proxmox and Ubuntu 20.04 LTS](https://github.com/rchac/LibreQoS/wiki/LibreQoS-v0.8-Installation-&-Usage-Guide----Proxmox-and-Ubuntu-20.04)
+
 ## Features
 
 - Dual stack: client can be shaped by same qdisc for both IPv4 and IPv6

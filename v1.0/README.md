@@ -2,6 +2,9 @@
 
 Released: 11 Dec 2021
 
+## Installation Guide
+- 📄 [LibreQoS v1.0 Installation & Usage Guide Physical Server and Ubuntu 21.10](https://github.com/rchac/LibreQoS/wiki/LibreQoS-v1.0-Installation-&-Usage-Guide---Physical-Server-and-Ubuntu-21.10)
+
 ## Features
 
 Can now shape by Site, in addition to by AP and by Client
