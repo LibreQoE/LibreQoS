@@ -13,7 +13,7 @@
 
 - Reduced reload time by 80%. Actual packet loss is <25ms on reload of queues.
 
-- Command line arguments ```--debug```, ```--verbose```, and ```--validate```.
+- Command line arguments ```--debug```, ```--verbose```, ```--clearrules``` and ```--validate```.
 
 - Validation of ShapedDevices.csv and network.json during load. If either fails validation, LibreQoS pulls from the last known good configuration (lastGoodConfig.csv and lastGoodConfig.json).
 
