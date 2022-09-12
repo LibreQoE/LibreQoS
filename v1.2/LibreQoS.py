@@ -192,8 +192,10 @@ def validateNetworkAndDevices():
 			try:
 				if int(downloadMin) > int(downloadMax):
 					warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is greater than downloadMax")
+					devicesValidatedOrNot = False
 				if int(uploadMin) > int(uploadMax):
 					warnings.warn("Provided uploadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is greater than uploadMax")
+					devicesValidatedOrNot = False
 			except:
 				devicesValidatedOrNot = False
 			
