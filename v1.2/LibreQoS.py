@@ -672,7 +672,7 @@ def refreshShapers():
 			for command in linuxTCcommands:
 				logging.info(command)
 				f.write(f"{command}\n")
-		shell("/sbin/tc -b linux_tc.txt")
+		shell("/sbin/tc -f -b linux_tc.txt")
 		print("Executed " + str(len(linuxTCcommands)) + " linux TC class/qdisc commands")
 		
 		# Execute actual XDP-CPUMAP-TC filter commands
