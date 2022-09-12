@@ -4,11 +4,15 @@ from LibreQoS import refreshShapers
 from graphBandwidth import refreshBandwidthGraphs
 from graphLatency import refreshLatencyGraphs
 from ispConfig import bandwidthGraphingEnabled, latencyGraphingEnabled, automaticImportUISP
-from integrationUISP import importFromUISP
+if automaticImportUISP:
+	from integrationUISP import importFromUISP
 
 def importandshape():
 	if automaticImportUISP:
-		importFromUISP()
+		try:
+			importFromUISP()
+		except:
+			print("Failed to import from UISP")
 	refreshShapers()
 
 if __name__ == '__main__':
