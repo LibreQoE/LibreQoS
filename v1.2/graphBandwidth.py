@@ -145,13 +145,13 @@ def refreshBandwidthGraphs():
             percentUtilizationDownload =  round((bitsDownload / round(circuit['downloadMax']*1000000)),4)
             percentUtilizationUpload =  round((bitsUpload / round(circuit['uploadMax']*1000000)),4)
 
-            p = Point('Bandwidth').tag("Circuit", circuit['hostname']).tag("ParentNode", circuit['ParentNode']).tag("Type", "Circuit").field("Download", bitsDownload)
+            p = Point('Bandwidth').tag("Circuit", circuit['circuitName']).tag("ParentNode", circuit['ParentNode']).tag("Type", "Circuit").field("Download", bitsDownload)
             queriesToSend.append(p)
-            p = Point('Bandwidth').tag("Circuit", circuit['hostname']).tag("ParentNode", circuit['ParentNode']).tag("Type", "Circuit").field("Upload", bitsUpload)
+            p = Point('Bandwidth').tag("Circuit", circuit['circuitName']).tag("ParentNode", circuit['ParentNode']).tag("Type", "Circuit").field("Upload", bitsUpload)
             queriesToSend.append(p)
-            p = Point('Utilization').tag("Circuit", circuit['hostname']).tag("ParentNode", circuit['ParentNode']).tag("Type", "Circuit").field("Download", percentUtilizationDownload)
+            p = Point('Utilization').tag("Circuit", circuit['circuitName']).tag("ParentNode", circuit['ParentNode']).tag("Type", "Circuit").field("Download", percentUtilizationDownload)
             queriesToSend.append(p)
-            p = Point('Utilization').tag("Circuit", circuit['hostname']).tag("ParentNode", circuit['ParentNode']).tag("Type", "Circuit").field("Upload", percentUtilizationUpload)
+            p = Point('Utilization').tag("Circuit", circuit['circuitName']).tag("ParentNode", circuit['ParentNode']).tag("Type", "Circuit").field("Upload", percentUtilizationUpload)
             queriesToSend.append(p)
 
     for parentNode in parentNodes:
