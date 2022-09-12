@@ -143,9 +143,9 @@ def refreshBandwidthGraphs():
 			if (bitsDownload > 0) and (bitsUpload > 0):
 				percentUtilizationDownload = round((bitsDownload / round(device['downloadMax'] * 1000000)), 4)
 				percentUtilizationUpload = round((bitsUpload / round(device['uploadMax'] * 1000000)), 4)
-				p = Point('Bandwidth').tag("Device", device['hostname']).tag("ParentNode", device['ParentNode']).tag("Type", "Circuit").field("Download", bitsDownload).field("Upload", bitsUpload)
+				p = Point('Bandwidth').tag("Device", device['hostname']).tag("ParentNode", device['ParentNode']).tag("Type", "Device").field("Download", bitsDownload).field("Upload", bitsUpload)
 				queriesToSend.append(p)
-				p = Point('Utilization').tag("Device", device['hostname']).tag("ParentNode", device['ParentNode']).tag("Type", "Circuit").field("Download", percentUtilizationDownload).field("Upload", percentUtilizationUpload)
+				p = Point('Utilization').tag("Device", device['hostname']).tag("ParentNode", device['ParentNode']).tag("Type", "Device").field("Download", percentUtilizationDownload).field("Upload", percentUtilizationUpload)
 				queriesToSend.append(p)
 
 		write_api.write(bucket=influxDBBucket, record=queriesToSend)
