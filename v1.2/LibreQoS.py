@@ -449,8 +449,11 @@ def refreshShapers():
 				# Here we override the rate as 95% of ceil.
 				elemDownloadMin = round(elemDownloadMax*.95)
 				elemUploadMin = round(elemUploadMax*.95)
-				linuxTCcommands.append('class add dev ' + interfaceA + ' parent ' + parentClassID + ' classid ' + hex(minor) + ' htb rate '+ str(round(elemDownloadMin)) + 'mbit ceil '+ str(round(elemDownloadMax)) + 'mbit prio 3') 
-				linuxTCcommands.append('class add dev ' + interfaceB + ' parent ' + parentClassID + ' classid ' + hex(minor) + ' htb rate '+ str(round(elemUploadMin)) + 'mbit ceil '+ str(round(elemUploadMax)) + 'mbit prio 3') 
+				comment = "Node: " + elem
+				command = 'class add dev ' + interfaceA + ' parent ' + parentClassID + ' classid ' + hex(minor) + ' htb rate '+ str(round(elemDownloadMin)) + 'mbit ceil '+ str(round(elemDownloadMax)) + 'mbit prio 3'
+				linuxTCcommands.append((command, comment))
+				command = 'class add dev ' + interfaceB + ' parent ' + parentClassID + ' classid ' + hex(minor) + ' htb rate '+ str(round(elemUploadMin)) + 'mbit ceil '+ str(round(elemUploadMax)) + 'mbit prio 3'
+				linuxTCcommands.append((command, ''))
 				thisParentNode =	{
 									"parentNodeName": elem,
 									"classID": elemClassID,
@@ -466,10 +469,15 @@ def refreshShapers():
 						maxUpload = min(circuit['uploadMax'],elemUploadMax)
 						minDownload = min(circuit['downloadMin'],maxDownload)
 						minUpload = min(circuit['uploadMin'],maxUpload)
-						linuxTCcommands.append('class add dev ' + interfaceA + ' parent ' + elemClassID + ' classid ' + hex(minor) + ' htb rate '+ str(minDownload) + 'mbit ceil '+ str(maxDownload) + 'mbit prio 3')
-						linuxTCcommands.append('qdisc add dev ' + interfaceA + ' parent ' + hex(major) + ':' + hex(minor) + ' ' + fqOrCAKE)
-						linuxTCcommands.append('class add dev ' + interfaceB + ' parent ' + elemClassID + ' classid ' + hex(minor) + ' htb rate '+ str(minUpload) + 'mbit ceil '+ str(maxUpload) + 'mbit prio 3') 
-						linuxTCcommands.append('qdisc add dev ' + interfaceB + ' parent ' + hex(major) + ':' + hex(minor) + ' ' + fqOrCAKE)
+						comment = "CircuitID: " + circuit['circuitID'] + " CircuitName: " + circuit['circuitName']
+						command = 'class add dev ' + interfaceA + ' parent ' + elemClassID + ' classid ' + hex(minor) + ' htb rate '+ str(minDownload) + 'mbit ceil '+ str(maxDownload) + 'mbit prio 3'
+						linuxTCcommands.append((command, comment))
+						command = 'qdisc add dev ' + interfaceA + ' parent ' + hex(major) + ':' + hex(minor) + ' ' + fqOrCAKE
+						linuxTCcommands.append((command, ''))
+						command = 'class add dev ' + interfaceB + ' parent ' + elemClassID + ' classid ' + hex(minor) + ' htb rate '+ str(minUpload) + 'mbit ceil '+ str(maxUpload) + 'mbit prio 3'
+						linuxTCcommands.append((command, ''))
+						command = 'qdisc add dev ' + interfaceB + ' parent ' + hex(major) + ':' + hex(minor) + ' ' + fqOrCAKE
+						linuxTCcommands.append((command, ''))
 						parentString = hex(major) + ':'
 						flowIDstring = hex(major) + ':' + hex(minor)
 						circuit['qdisc'] = flowIDstring
@@ -510,10 +518,13 @@ def refreshShapers():
 		logging.info(json.dumps(network, indent=4))
 
 		# If XDP off - prepare commands for Hash Tables
+		comment = ''
 		# IPv4 Hash Filters
 		# Dst
-		linuxTCcommands.append('filter add dev ' + interfaceA + ' parent 0x1: protocol all u32')
-		linuxTCcommands.append('filter add dev ' + interfaceA + ' parent 0x1: protocol ip handle 3: u32 divisor 256')
+		command = 'filter add dev ' + interfaceA + ' parent 0x1: protocol all u32'
+		linuxTCcommands.append((command, comment))
+		command = 'filter add dev ' + interfaceA + ' parent 0x1: protocol ip handle 3: u32 divisor 256'
+		linuxTCcommands.append((command, comment))
 		filterHandleCounter = 101
 		for i in range (256):
 			hexID = str(hex(i))#.replace('0x','')
@@ -523,12 +534,16 @@ def refreshShapers():
 					ipv4 = ipv4.split('/')[0]
 				if (ipv4.split('.', 3)[3]) == str(i):
 					filterHandle = hex(filterHandleCounter)
-					linuxTCcommands.append('filter add dev ' + interfaceA + ' handle ' + filterHandle + ' protocol ip parent 0x1: u32 ht 3:' + hexID + ': match ip dst ' + ipv4 + ' flowid ' + classid)
+					command = 'filter add dev ' + interfaceA + ' handle ' + filterHandle + ' protocol ip parent 0x1: u32 ht 3:' + hexID + ': match ip dst ' + ipv4 + ' flowid ' + classid
+					linuxTCcommands.append((command, comment))
 					filterHandleCounter += 1 
-		linuxTCcommands.append('filter add dev ' + interfaceA + ' protocol ip parent 0x1: u32 ht 800: match ip dst 0.0.0.0/0 hashkey mask 0x000000ff at 16 link 3:')
+		command = 'filter add dev ' + interfaceA + ' protocol ip parent 0x1: u32 ht 800: match ip dst 0.0.0.0/0 hashkey mask 0x000000ff at 16 link 3:'
+		linuxTCcommands.append((command, comment))
 		# Src
-		linuxTCcommands.append('filter add dev ' + interfaceB + ' parent 0x1: protocol all u32')
-		linuxTCcommands.append('filter add dev ' + interfaceB + ' parent 0x1: protocol ip handle 4: u32 divisor 256')
+		command = 'filter add dev ' + interfaceB + ' parent 0x1: protocol all u32'
+		linuxTCcommands.append((command, comment))
+		command = 'filter add dev ' + interfaceB + ' parent 0x1: protocol ip handle 4: u32 divisor 256'
+		linuxTCcommands.append((command, comment))
 		filterHandleCounter = 101
 		for i in range (256):
 			hexID = str(hex(i))#.replace('0x','')
@@ -538,12 +553,15 @@ def refreshShapers():
 					ipv4 = ipv4.split('/')[0]
 				if (ipv4.split('.', 3)[3]) == str(i):
 					filterHandle = hex(filterHandleCounter)
-					linuxTCcommands.append('filter add dev ' + interfaceB + ' handle ' + filterHandle + ' protocol ip parent 0x1: u32 ht 4:' + hexID + ': match ip src ' + ipv4 + ' flowid ' + classid)
+					command = 'filter add dev ' + interfaceB + ' handle ' + filterHandle + ' protocol ip parent 0x1: u32 ht 4:' + hexID + ': match ip src ' + ipv4 + ' flowid ' + classid
+					linuxTCcommands.append((command, comment))
 					filterHandleCounter += 1
-		linuxTCcommands.append('filter add dev ' + interfaceB + ' protocol ip parent 0x1: u32 ht 800: match ip src 0.0.0.0/0 hashkey mask 0x000000ff at 12 link 4:')
+		command = 'filter add dev ' + interfaceB + ' protocol ip parent 0x1: u32 ht 800: match ip src 0.0.0.0/0 hashkey mask 0x000000ff at 12 link 4:'
+		linuxTCcommands.append((command, comment))
 		# IPv6 Hash Filters
 		# Dst
-		linuxTCcommands.append('filter add dev ' + interfaceA + ' parent 0x1: handle 5: protocol ipv6 u32 divisor 256')
+		command = 'filter add dev ' + interfaceA + ' parent 0x1: handle 5: protocol ipv6 u32 divisor 256'
+		linuxTCcommands.append((command, comment))
 		filterHandleCounter = 101
 		for ipv6Filter in ipv6FiltersDst:
 			ipv6, parent, classid = ipv6Filter
@@ -552,13 +570,16 @@ def refreshShapers():
 			usefulPart = third[:2]
 			hexID = usefulPart
 			filterHandle = hex(filterHandleCounter)
-			linuxTCcommands.append('filter add dev ' + interfaceA + ' handle ' + filterHandle + ' protocol ipv6 parent 0x1: u32 ht 5:' + hexID + ': match ip6 dst ' + ipv6 + ' flowid ' + classid)
+			command = 'filter add dev ' + interfaceA + ' handle ' + filterHandle + ' protocol ipv6 parent 0x1: u32 ht 5:' + hexID + ': match ip6 dst ' + ipv6 + ' flowid ' + classid
+			linuxTCcommands.append((command, comment))
 			filterHandleCounter += 1
 		filterHandle = hex(filterHandleCounter)
-		linuxTCcommands.append('filter add dev ' + interfaceA + ' protocol ipv6 parent 0x1: u32 ht 800:: match ip6 dst ::/0 hashkey mask 0x0000ff00 at 28 link 5:')
+		command = 'filter add dev ' + interfaceA + ' protocol ipv6 parent 0x1: u32 ht 800:: match ip6 dst ::/0 hashkey mask 0x0000ff00 at 28 link 5:'
+		linuxTCcommands.append((command, comment))
 		filterHandleCounter += 1
 		# Src
-		linuxTCcommands.append('filter add dev ' + interfaceB + ' parent 0x1: handle 6: protocol ipv6 u32 divisor 256')
+		command = 'filter add dev ' + interfaceB + ' parent 0x1: handle 6: protocol ipv6 u32 divisor 256'
+		linuxTCcommands.append((command, comment))
 		filterHandleCounter = 101
 		for ipv6Filter in ipv6FiltersSrc:
 			ipv6, parent, classid = ipv6Filter
@@ -567,10 +588,12 @@ def refreshShapers():
 			usefulPart = third[:2]
 			hexID = usefulPart
 			filterHandle = hex(filterHandleCounter)
-			linuxTCcommands.append('filter add dev ' + interfaceB + ' handle ' + filterHandle + ' protocol ipv6 parent 0x1: u32 ht 6:' + hexID + ': match ip6 src ' + ipv6 + ' flowid ' + classid)
+			command = 'filter add dev ' + interfaceB + ' handle ' + filterHandle + ' protocol ipv6 parent 0x1: u32 ht 6:' + hexID + ': match ip6 src ' + ipv6 + ' flowid ' + classid
+			linuxTCcommands.append((command, comment))
 			filterHandleCounter += 1
 		filterHandle = hex(filterHandleCounter)
-		linuxTCcommands.append('filter add dev ' + interfaceB + ' protocol ipv6 parent 0x1: u32 ht 800:: match ip6 src ::/0 hashkey mask 0x0000ff00 at 12 link 6:')
+		command = 'filter add dev ' + interfaceB + ' protocol ipv6 parent 0x1: u32 ht 800:: match ip6 src ::/0 hashkey mask 0x0000ff00 at 12 link 6:'
+		linuxTCcommands.append((command, comment))
 		filterHandleCounter += 1
 		
 		# Record start time of actual filter reload
@@ -585,6 +608,7 @@ def refreshShapers():
 				# Here we use os.system for the command, because otherwise it sometimes gltiches out with Popen in shell()
 				result = os.system('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --clear')
 			# Set up XDP-CPUMAP-TC
+			logging.info("# XDP Setup")
 			shell('./xdp-cpumap-tc/bin/xps_setup.sh -d ' + interfaceA + ' --default --disable')
 			shell('./xdp-cpumap-tc/bin/xps_setup.sh -d ' + interfaceB + ' --default --disable')
 			shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu --dev ' + interfaceA + ' --lan')
@@ -595,6 +619,7 @@ def refreshShapers():
 		if usingXDP:
 			# Create MQ qdisc for each CPU core / rx-tx queue (XDP method - requires IPv4)
 			thisInterface = interfaceA
+			logging.info("# MQ Setup for " + thisInterface)
 			shell('tc qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq')
 			for queue in range(queuesAvailable):
 				shell('tc qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2')
@@ -607,6 +632,7 @@ def refreshShapers():
 				shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + fqOrCAKE)
 			
 			thisInterface = interfaceB
+			logging.info("# MQ Setup for " + thisInterface)
 			shell('tc qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq')
 			for queue in range(queuesAvailable):
 				shell('tc qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2')
@@ -646,9 +672,15 @@ def refreshShapers():
 		# Execute actual Linux TC commands
 		print("Executing linux TC class/qdisc commands")
 		with open('linux_tc.txt', 'w') as f:
-			for line in linuxTCcommands:
-				f.write(f"{line}\n")
-				logging.info(line)
+			for entry in linuxTCcommands:
+				command, comment = entry
+				if comment != '':
+					logging.info("#" + comment)
+					f.write(f"{command}\n")
+					logging.info(command)
+				else:
+					logging.info(command)
+					f.write(f"{command}\n")
 		shell("/sbin/tc -f -b linux_tc.txt")
 		print("Executed " + str(len(linuxTCcommands)) + " linux TC class/qdisc commands")
 		
