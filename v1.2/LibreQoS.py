@@ -29,6 +29,8 @@ def shell(command):
 		proc = subprocess.Popen(commands, stdout=subprocess.PIPE)
 		for line in io.TextIOWrapper(proc.stdout, encoding="utf-8"):  # or another encoding
 			logging.info(line)
+			if ("RTNETLINK answers" in line) or ("We have an error talking to the kernel" in line):
+				warnings.warn("Command: '" + command + "' resulted in " + line)
 	else:
 		logging.info(command)
 
@@ -672,7 +674,11 @@ def refreshShapers():
 			for command in linuxTCcommands:
 				logging.info(command)
 				f.write(f"{command}\n")
-		shell("/sbin/tc -f -b linux_tc.txt")
+		if logging.DEBUG <= logging.root.level:
+			# Do not --force in debug mode, so we can see any errors 
+			shell("/sbin/tc -b linux_tc.txt")
+		else:
+			shell("/sbin/tc -f -b linux_tc.txt")
 		print("Executed " + str(len(linuxTCcommands)) + " linux TC class/qdisc commands")
 		
 		# Execute actual XDP-CPUMAP-TC filter commands
