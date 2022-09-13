@@ -30,7 +30,7 @@ def shell(command):
 		for line in io.TextIOWrapper(proc.stdout, encoding="utf-8"):  # or another encoding
 			logging.info(line)
 			if ("RTNETLINK answers" in line) or ("We have an error talking to the kernel" in line):
-				warnings.warn("Command: '" + command + "' resulted in " + line)
+				warnings.warn("Command: '" + command + "' resulted in " + line, stacklevel=2)
 	else:
 		logging.info(command)
 
@@ -129,7 +129,7 @@ def validateNetworkAndDevices():
 		try:
 			temporaryVariable = json.load(file) # put JSON-data to a variable
 		except json.decoder.JSONDecodeError:
-			warnings.warn("network.json is an invalid JSON file") # in case json is invalid
+			warnings.warn("network.json is an invalid JSON file", stacklevel=2) # in case json is invalid
 			networkValidatedOrNot = False
 	if networkValidatedOrNot == True:
 		print("network.json passed validation") 
@@ -166,7 +166,7 @@ def validateNetworkAndDevices():
 						else:
 							ipv4_hosts.append(ipaddress.ip_address(ipEntry))
 				except:
-						warnings.warn("Provided IPv4 '" + ipv4_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.")
+						warnings.warn("Provided IPv4 '" + ipv4_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.", stacklevel=2)
 						devicesValidatedOrNot = False
 			if ipv6_input != "":
 				try:
@@ -179,50 +179,50 @@ def validateNetworkAndDevices():
 						if (type(ipaddress.ip_network(ipEntry)) is ipaddress.IPv6Network) or (type(ipaddress.ip_address(ipEntry)) is ipaddress.IPv6Address):
 							ipv6_subnets_and_hosts.extend(ipEntry)
 						else:
-							warnings.warn("Provided IPv6 '" + ipv6_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.")
+							warnings.warn("Provided IPv6 '" + ipv6_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.", stacklevel=2)
 							devicesValidatedOrNot = False
 				except:
-						warnings.warn("Provided IPv6 '" + ipv6_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.")
+						warnings.warn("Provided IPv6 '" + ipv6_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.", stacklevel=2)
 						devicesValidatedOrNot = False
 			try:
 				a = int(downloadMin)
 				if a < 1:
-					warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 1 Mbps.")
+					warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 1 Mbps.", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
-				warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.")
+				warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.", stacklevel=2)
 				devicesValidatedOrNot = False
 			try:
 				a = int(uploadMin)
 				if a < 1:
-					warnings.warn("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 1 Mbps.")
+					warnings.warn("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 1 Mbps.", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
-				warnings.warn("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.")
+				warnings.warn("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.", stacklevel=2)
 				devicesValidatedOrNot = False
 			try:
 				a = int(downloadMax)
 				if a < 2:
-					warnings.warn("Provided downloadMax '" + downloadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 2 Mbps.")
+					warnings.warn("Provided downloadMax '" + downloadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 2 Mbps.", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
-				warnings.warn("Provided downloadMax '" + downloadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.")
+				warnings.warn("Provided downloadMax '" + downloadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.", stacklevel=2)
 				devicesValidatedOrNot = False
 			try:
 				a = int(uploadMax)
 				if a < 2:
-					warnings.warn("Provided uploadMax '" + uploadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 2 Mbps.")
+					warnings.warn("Provided uploadMax '" + uploadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 2 Mbps.", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
-				warnings.warn("Provided uploadMax '" + uploadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.")
+				warnings.warn("Provided uploadMax '" + uploadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.", stacklevel=2)
 				devicesValidatedOrNot = False
 			
 			try:
 				if int(downloadMin) > int(downloadMax):
-					warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is greater than downloadMax")
+					warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is greater than downloadMax", stacklevel=2)
 					devicesValidatedOrNot = False
 				if int(uploadMin) > int(uploadMax):
-					warnings.warn("Provided uploadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is greater than uploadMax")
+					warnings.warn("Provided uploadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is greater than uploadMax", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
 				devicesValidatedOrNot = False
@@ -266,10 +266,10 @@ def refreshShapers():
 		safeToRunRefresh = True
 	else:
 		if (isThisFirstRunSinceBoot == False):
-			warnings.warn("Validation failed. Because this is not the first run since boot (queues already set up) - will now exit.")
+			warnings.warn("Validation failed. Because this is not the first run since boot (queues already set up) - will now exit.", stacklevel=2)
 			safeToRunRefresh = False
 		else:
-			warnings.warn("Validation failed. However - because this is the first run since boot - will load queues from last good config")
+			warnings.warn("Validation failed. However - because this is the first run since boot - will load queues from last good config", stacklevel=2)
 			shapedDevicesFile = 'lastGoodConfig.csv'
 			networkJSONfile = 'lastGoodConfig.json'
 			safeToRunRefresh = True
@@ -332,7 +332,7 @@ def refreshShapers():
 									or (circuit['uploadMin'] != round(int(uploadMin)*tcpOverheadFactor))
 									or (circuit['downloadMax'] != round(int(downloadMax)*tcpOverheadFactor))
 									or (circuit['uploadMax'] != round(int(uploadMax)*tcpOverheadFactor))):
-									warnings.warn("Device " + deviceName + " with ID " + deviceID + " had different bandwidth parameters than other devices on this circuit. Will instead use the bandwidth parameters defined by the first device added to its circuit.")
+									warnings.warn("Device " + deviceName + " with ID " + deviceID + " had different bandwidth parameters than other devices on this circuit. Will instead use the bandwidth parameters defined by the first device added to its circuit.", stacklevel=2)
 								devicesListForCircuit = circuit['devices']
 								thisDevice = 	{
 												  "deviceID": deviceID,
@@ -496,6 +496,10 @@ def refreshShapers():
 				for circuit in subscriberCircuits:
 					#If a device from ShapedDevices.csv lists this elem as its Parent Node, attach it as a leaf to this elem HTB
 					if elem == circuit['ParentNode']:
+						if circuit['downloadMax'] > elemDownloadMax:
+							warnings.warn("downloadMax of Circuit ID [" + circuit['circuitID'] + "] exceeded that of its parent node. Reducing to that of its parent node now.", stacklevel=2)
+						if circuit['uploadMax'] > elemUploadMax:
+							warnings.warn("uploadMax of Circuit ID [" + circuit['circuitID'] + "] exceeded that of its parent node. Reducing to that of its parent node now.", stacklevel=2)
 						maxDownload = min(circuit['downloadMax'],elemDownloadMax)
 						maxUpload = min(circuit['uploadMax'],elemUploadMax)
 						minDownload = min(circuit['downloadMin'],maxDownload)
