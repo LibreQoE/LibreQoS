@@ -10,14 +10,17 @@ Learn more at [LibreQoS.io](https://libreqos.io/)
 
 <img alt="LibreQoS" src="https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/v1.1-alpha-preview.jpg"></a>
 
-## Major Features
+## Real World Impact
+By allowing ISPs to better optimize traffic flows and minimize packet loss - ISPs can ensure reliable connectivity for video calls and voice calls. With work-from-home, remote learning, and tele-medicine becoming increasingly common – minimizing disruptions to video calls and VoIP can save jobs, keep students engaged, and help ensure equitable access to medical care.
+
+## Features
 ### Flexible Hierarchical Shaping
 <img src="https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/nestedHTB2.png" width="350"></img>
 
 Network hierarchy can be mapped to a json file in v1.1+. This allows for both simple network heirarchies (Site>AP>Client) as well as much more complex ones (Site>Site>Micro-PoP>AP>Site>AP>Client). This allows operators to ensure a given site’s peak bandwidth will not exceed the capacity of its back-haul links (back-haul congestion control). This can allow operators to support more users on the same network equipment with LibreQoS than with competing QoE solutions which only shape by AP and Client. Shaping just by AP and client could allow for high aggregate peaks to occur on back-hauls links, which can trigger packet loss and disrupt network connectivity. LibreQoS’ flexible shaping provides a solution to this.
 
 ### CAKE
-CAKE is the product of nearly a decade of development efforts to improve on fq_codel. With the diffserv_4 parameter enabled – CAKE groups traffic in to Bulk, Best Effort, Video, and Voice. This means that without having to fine-tune traffic priorities as you would with DPI products – CAKE automatically ensures your clients’ OS update downloads will not disrupt their zoom calls. It allows for multiple video conferences to operate on the same connection which might otherwise “fight” for upload bandwidth causing call disruptions. It holds the connection together like glue. With work-from-home, remote learning, and tele-medicine becoming increasingly common – minimizing video call disruptions can save jobs, keep students engaged, and help ensure equitable access to medical care.
+CAKE is the product of nearly a decade of development efforts to improve on fq_codel. With the diffserv_4 parameter enabled – CAKE groups traffic in to Bulk, Best Effort, Video, and Voice. This means that without having to fine-tune traffic priorities as you would with DPI products – CAKE automatically ensures your clients’ OS update downloads will not disrupt their zoom calls. It allows for multiple video conferences to operate on the same connection which might otherwise “fight” for upload bandwidth causing call disruptions. It holds the connection together like glue.
 
 ### XDP
 Fast, multi-CPU queueing leveraging xdp-cpumap-tc. Tested up to 11 Gbps of real world traffic with just 30% CPU use on an Intel Xeon Gold 6254. Likely capable of 30Gbps or more.
