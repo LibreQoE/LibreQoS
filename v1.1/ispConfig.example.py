@@ -56,24 +56,3 @@ apiUsername = "testUser"
 apiPassword = "changeme8343486806"
 apiHostIP = "127.0.0.1"
 apiHostPost = 5000
-
-httpAPIConfig = {
-    'enabled': False,
-    'baseURL': 'https://my.api.domain.tld',
-    'networkURI': '/api/path/network-json-data',
-    'devicesURI': '/api/path/devices-json-path',
-    'devicesRemap': [],  # if your devices json data aint perfect, you can remap keys for csv cols
-    'requestsConfig': {
-        # 'verify': False,  # Good for Dev if your dev env doesnt have cert
-        # 'params': {  # params for query string ie uri?some-arg=some-value
-        #   'some-arg': 'some-value'
-        # },
-        'headers': {
-            'some-header': 'some-value',  # ie simple api keys etc
-        },
-    },
-    # If you want to store a timestamped copy/backup of both network.json and Shaper.csv each time they are updated,
-    # provide a path
-    # TODO Figure out how to expire old backups as not to exhaust disk space
-    'logChanges': False  # or '/var/log/libreqos' etc
-}
