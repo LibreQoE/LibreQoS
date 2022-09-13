@@ -73,6 +73,32 @@ def tearDown(interfaceA, interfaceB):
 			shell('ip link set dev ' + interfaceB + ' xdp off')
 		clearPriorSettings(interfaceA, interfaceB)
 
+def printStatsFromIP(ipAddress):
+	with open('statsByCircuit.json', 'r') as j:
+		subscriberCircuits = json.loads(j.read())
+	qDiscID = ''
+	foundQdisc = False
+	for circuit in subscriberCircuits:
+		for device in circuit['devices']:
+			for ipv4 in device['ipv4s']:
+				if ipv4 == ipAddress:
+					qDiscID = circuit['qdisc']
+					foundQdisc = True
+			for ipv6 in device['ipv6s']:
+				if ipv6 == ipAddress:
+					qDiscID = circuit['qdisc']
+					foundQdisc = True
+	if foundQdisc:
+		interfaces = [interfaceA, interfaceB]
+		for interface in interfaces:		
+			command = 'tc -s qdisc show dev ' + interface + ' parent ' + qDiscID
+			commands = command.split(' ')
+			proc = subprocess.Popen(commands, stdout=subprocess.PIPE)
+			for line in io.TextIOWrapper(proc.stdout, encoding="utf-8"):  # or another encoding
+				print(line)
+	else:
+		print("Invalid IP address provided")
+
 def findQueuesAvailable():
 	# Find queues and CPU cores available. Use min between those two as queuesAvailable
 	if enableActualShellCommands:
@@ -754,6 +780,10 @@ if __name__ == '__main__':
 		help="Clear ip filters, qdiscs, and xdp setup if any",
 		action=argparse.BooleanOptionalAction,
 	)
+	parser.add_argument(
+		'--tc-statistics-from-ip', type=str,
+		help="Provide tc qdisc stats by IP",
+	)
 	args = parser.parse_args()    
 	logging.basicConfig(level=args.loglevel)
 	
@@ -761,6 +791,8 @@ if __name__ == '__main__':
 		status = validateNetworkAndDevices()
 	elif args.clearrules:
 		tearDown(interfaceA, interfaceB)
+	elif args.tc_statistics_from_ip:
+		printStatsFromIP(args.tc_statistics_from_ip)
 	else:
 		# Refresh and/or set up queues
 		refreshShapers()
