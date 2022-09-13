@@ -95,7 +95,7 @@ def printStatsFromIP(ipAddress):
 			commands = command.split(' ')
 			proc = subprocess.Popen(commands, stdout=subprocess.PIPE)
 			for line in io.TextIOWrapper(proc.stdout, encoding="utf-8"):  # or another encoding
-				print(line)
+				print(line.replace('\n',''))
 	else:
 		print("Invalid IP address provided")
 
