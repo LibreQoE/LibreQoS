@@ -314,6 +314,7 @@ def refreshShapers():
 												  "mac": mac,
 												  "ipv4s": ipv4_hosts,
 												  "ipv6s": ipv6_subnets_and_hosts,
+												  "comment": comment
 												}
 								devicesListForCircuit.append(thisDevice)
 								circuit['devices'] = devicesListForCircuit
@@ -330,6 +331,7 @@ def refreshShapers():
 										  "mac": mac,
 										  "ipv4s": ipv4_hosts,
 										  "ipv6s": ipv6_subnets_and_hosts,
+										  "comment": comment
 										}
 						deviceListForCircuit.append(thisDevice)
 						thisCircuit = {
@@ -342,6 +344,7 @@ def refreshShapers():
 						  "downloadMax": round(int(downloadMax)*tcpOverheadFactor),
 						  "uploadMax": round(int(uploadMax)*tcpOverheadFactor),
 						  "qdisc": '',
+						  "comment": comment
 						}
 						subscriberCircuits.append(thisCircuit)
 				# If there is nothing in the circuit ID field
@@ -371,6 +374,7 @@ def refreshShapers():
 					  "downloadMax": round(int(downloadMax)*tcpOverheadFactor),
 					  "uploadMax": round(int(uploadMax)*tcpOverheadFactor),
 					  "qdisc": '',
+					  "comment": comment
 					}
 					subscriberCircuits.append(thisCircuit)
 
@@ -470,7 +474,11 @@ def refreshShapers():
 						maxUpload = min(circuit['uploadMax'],elemUploadMax)
 						minDownload = min(circuit['downloadMin'],maxDownload)
 						minUpload = min(circuit['uploadMin'],maxUpload)
-						command = 'class add dev ' + interfaceA + ' parent ' + elemClassID + ' classid ' + hex(minor) + ' htb rate '+ str(minDownload) + 'mbit ceil '+ str(maxDownload) + 'mbit prio 3' + " # CircuitID: " + circuit['circuitID']
+						comment = " # CircuitID: " + circuit['circuitID'] + " DeviceIDs: "
+						for device in circuit['devices']:
+							comment = comment + device['deviceID'] + ', '
+						comment = comment + '| Comment: ' + device['comment']
+						command = 'class add dev ' + interfaceA + ' parent ' + elemClassID + ' classid ' + hex(minor) + ' htb rate '+ str(minDownload) + 'mbit ceil '+ str(maxDownload) + 'mbit prio 3' + comment
 						linuxTCcommands.append(command)
 						command = 'qdisc add dev ' + interfaceA + ' parent ' + hex(major) + ':' + hex(minor) + ' ' + fqOrCAKE
 						linuxTCcommands.append(command)
