@@ -1,0 +1,15 @@
+
+v1.1/Shaper.csv
+v1.1/network.json
+v1.1/ispConfig.py
+v1.1/xdp-cpumap-tc/
+v1.1/pping
+v1.1/statsByDevice.json
+v1.1/statsByParentNode.json
+v1.1/*.bak
+
+
+
+# Ignore project folders for some IDEs
+.idea/
+__pycache__
