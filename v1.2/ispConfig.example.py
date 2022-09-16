@@ -14,10 +14,6 @@ upstreamBandwidthCapacityUploadMbps = 1000
 generatedPNDownloadMbps = 1000
 generatedPNUploadMbps = 1000
 
-# Traffic from devices not specified in Shaper.csv will be rate limited by an HTB of this many Mbps
-defaultClassCapacityDownloadMbps = 500
-defaultClassCapacityUploadMbps = 500
-
 # Interface connected to core router
 interfaceA = 'eth1'
 
