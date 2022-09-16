@@ -15,6 +15,7 @@ import psutil
 import argparse
 import logging
 import shutil
+import binpacking
 
 from ispConfig import fqOrCAKE, upstreamBandwidthCapacityDownloadMbps, upstreamBandwidthCapacityUploadMbps, \
 	defaultClassCapacityDownloadMbps, defaultClassCapacityUploadMbps, interfaceA, interfaceB, enableActualShellCommands, \
@@ -278,6 +279,8 @@ def refreshShapers():
 		# Load Subscriber Circuits & Devices
 		subscriberCircuits = []
 		knownCircuitIDs = []
+		counterForCircuitsWithoutParentNodes = 0
+		dictForCircuitsWithoutParentNodes = {}
 		with open(shapedDevicesFile) as csv_file:
 			csv_reader = csv.reader(csv_file, delimiter=',')
 			# Remove comments if any
@@ -372,6 +375,10 @@ def refreshShapers():
 						  "qdisc": '',
 						  "comment": comment
 						}
+						if thisCircuit['ParentNode'] == 'none':
+							thisCircuit['idForCircuitsWithoutParentNodes'] = counterForCircuitsWithoutParentNodes
+							dictForCircuitsWithoutParentNodes[counterForCircuitsWithoutParentNodes] = ((round(int(downloadMax)*tcpOverheadFactor))+(round(int(uploadMax)*tcpOverheadFactor))) 
+							counterForCircuitsWithoutParentNodes += 1
 						subscriberCircuits.append(thisCircuit)
 				# If there is nothing in the circuit ID field
 				else:
@@ -402,6 +409,10 @@ def refreshShapers():
 					  "qdisc": '',
 					  "comment": comment
 					}
+					if thisCircuit['ParentNode'] == 'none':
+						thisCircuit['idForCircuitsWithoutParentNodes'] = counterForCircuitsWithoutParentNodes
+						dictForCircuitsWithoutParentNodes[counterForCircuitsWithoutParentNodes] = ((round(int(downloadMax)*tcpOverheadFactor))+(round(int(uploadMax)*tcpOverheadFactor)))
+						counterForCircuitsWithoutParentNodes += 1
 					subscriberCircuits.append(thisCircuit)
 
 		# Load network heirarchy
@@ -430,13 +441,19 @@ def refreshShapers():
 										"uploadBandwidthMbps":generatedPNUploadMbps
 									}
 			generatedPNs.append(genPNname)
+		bins = binpacking.to_constant_bin_number(dictForCircuitsWithoutParentNodes, queuesAvailable)
 		genPNcounter = 0
-		for circuit in subscriberCircuits:
-			if circuit['ParentNode'] == 'none':
-				circuit['ParentNode'] = generatedPNs[genPNcounter]
-				genPNcounter += 1
-				if genPNcounter >= queuesAvailable:
-					genPNcounter = 0
+		for binItem in bins:
+			sumItem = 0
+			logging.info(generatedPNs[genPNcounter] + " will contain " + str(len(binItem)) + " circuits")
+			for key in binItem.keys():
+				for circuit in subscriberCircuits:
+					if circuit['ParentNode'] == 'none':
+						if circuit['idForCircuitsWithoutParentNodes'] == key:
+							circuit['ParentNode'] = generatedPNs[genPNcounter]
+			genPNcounter += 1
+			if genPNcounter >= queuesAvailable:
+				genPNcounter = 0
 		
 		# Find the bandwidth minimums for each node by combining mimimums of devices lower in that node's heirarchy
 		def findBandwidthMins(data, depth):
