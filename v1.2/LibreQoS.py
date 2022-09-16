@@ -146,6 +146,7 @@ def validateNetworkAndDevices():
 				commentsRemoved.append(row)
 		#Remove header
 		commentsRemoved.pop(0) 
+		seenTheseIPsAlready = []
 		for row in commentsRemoved:
 			circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4_input, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment = row
 			# Each entry in ShapedDevices.csv can have multiple IPv4s or IPv6s seperated by commas. Split them up and parse each to ensure valid
@@ -159,13 +160,19 @@ def validateNetworkAndDevices():
 					else:
 						ipv4_list = [ipv4_input]
 					for ipEntry in ipv4_list:
-						if '/32' in ipEntry:
-							ipEntry = ipEntry.replace('/32','')
-							ipv4_hosts.append(ipaddress.ip_address(ipEntry))
-						elif '/' in ipEntry:
-							ipv4_hosts.extend(list(ipaddress.ip_network(ipEntry).hosts()))
+						if ipEntry in seenTheseIPsAlready:
+							warnings.warn("Provided IPv4 '" + ipEntry + "' in ShapedDevices.csv at row " + str(rowNum) + " is duplicate.", stacklevel=2)
+							devicesValidatedOrNot = False
+							seenTheseIPsAlready.append(ipEntry)
 						else:
-							ipv4_hosts.append(ipaddress.ip_address(ipEntry))
+							if '/32' in ipEntry:
+								ipEntry = ipEntry.replace('/32','')
+								ipv4_hosts.append(ipaddress.ip_address(ipEntry))
+							elif '/' in ipEntry:
+								ipv4_hosts.extend(list(ipaddress.ip_network(ipEntry).hosts()))
+							else:
+								ipv4_hosts.append(ipaddress.ip_address(ipEntry))
+							seenTheseIPsAlready.append(ipEntry)
 				except:
 						warnings.warn("Provided IPv4 '" + ipv4_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.", stacklevel=2)
 						devicesValidatedOrNot = False
@@ -177,11 +184,17 @@ def validateNetworkAndDevices():
 					else:
 						ipv6_list = [ipv6_input]
 					for ipEntry in ipv6_list:
-						if (type(ipaddress.ip_network(ipEntry)) is ipaddress.IPv6Network) or (type(ipaddress.ip_address(ipEntry)) is ipaddress.IPv6Address):
-							ipv6_subnets_and_hosts.extend(ipEntry)
-						else:
-							warnings.warn("Provided IPv6 '" + ipv6_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.", stacklevel=2)
+						if ipEntry in seenTheseIPsAlready:
+							warnings.warn("Provided IPv6 '" + ipEntry + "' in ShapedDevices.csv at row " + str(rowNum) + " is duplicate.", stacklevel=2)
 							devicesValidatedOrNot = False
+							seenTheseIPsAlready.append(ipEntry)
+						else:
+							if (type(ipaddress.ip_network(ipEntry)) is ipaddress.IPv6Network) or (type(ipaddress.ip_address(ipEntry)) is ipaddress.IPv6Address):
+								ipv6_subnets_and_hosts.extend(ipEntry)
+							else:
+								warnings.warn("Provided IPv6 '" + ipv6_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.", stacklevel=2)
+								devicesValidatedOrNot = False
+							seenTheseIPsAlready.append(ipEntry)
 				except:
 						warnings.warn("Provided IPv6 '" + ipv6_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.", stacklevel=2)
 						devicesValidatedOrNot = False
