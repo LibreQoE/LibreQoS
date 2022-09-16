@@ -100,6 +100,51 @@ def printStatsFromIP(ipAddress):
 	else:
 		print("Invalid IP address provided")
 
+def printCircuitClassInfo(ipAddress):
+	with open('statsByCircuit.json', 'r') as j:
+		subscriberCircuits = json.loads(j.read())
+	qDiscID = ''
+	foundQdisc = False
+	for circuit in subscriberCircuits:
+		for device in circuit['devices']:
+			for ipv4 in device['ipv4s']:
+				if ipv4 == ipAddress:
+					qDiscID = circuit['qdisc']
+					foundQdisc = True
+			for ipv6 in device['ipv6s']:
+				if ipv6 == ipAddress:
+					qDiscID = circuit['qdisc']
+					foundQdisc = True
+	if foundQdisc:
+		print("qDisc ID for IP " + ipAddress + " is " + qDiscID)
+		print()
+		theClassID = ''
+		interfaces = [interfaceA, interfaceB]
+		downloadMin = ''
+		downloadMax = ''
+		uploadMin = ''
+		uploadMax = ''
+		for interface in interfaces:		
+			command = 'tc class show dev ' + interface + ' classid ' + qDiscID
+			commands = command.split(' ')
+			proc = subprocess.Popen(commands, stdout=subprocess.PIPE)
+			for line in io.TextIOWrapper(proc.stdout, encoding="utf-8"):  # or another encoding
+				print(line)
+				if "htb" in line:
+					listOfThings = line.split(" ")
+					if interface == interfaceA:
+						downloadMin = listOfThings[10]#.replace("Mbps","")
+						downloadMax = listOfThings[12]#.replace("Mbps","")
+					else:
+						uploadMin = listOfThings[10]#.replace("Mbps","")
+						uploadMax = listOfThings[12]#.replace("Mbps","")
+		print("Download rate/min: " + downloadMin)
+		print("Download ceil/max: " + downloadMax)
+		print("Upload rate/min: " + uploadMin)
+		print("Upload ceil/max: " + uploadMax)
+	else:
+		print("Invalid IP address provided")
+
 def findQueuesAvailable():
 	# Find queues and CPU cores available. Use min between those two as queuesAvailable
 	if enableActualShellCommands:
@@ -815,6 +860,10 @@ if __name__ == '__main__':
 		action=argparse.BooleanOptionalAction,
 	)
 	parser.add_argument(
+		'--show-active-plan-from-ip', type=str,
+		help="Provide tc class info by IP",
+	)
+	parser.add_argument(
 		'--tc-statistics-from-ip', type=str,
 		help="Provide tc qdisc stats by IP",
 	)
@@ -827,6 +876,8 @@ if __name__ == '__main__':
 		tearDown(interfaceA, interfaceB)
 	elif args.tc_statistics_from_ip:
 		printStatsFromIP(args.tc_statistics_from_ip)
+	elif args.show_active_plan_from_ip:
+		printCircuitClassInfo(args.show_active_plan_from_ip)
 	else:
 		# Refresh and/or set up queues
 		refreshShapers()
