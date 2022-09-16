@@ -116,7 +116,7 @@ def printCircuitClassInfo(ipAddress):
 					qDiscID = circuit['qdisc']
 					foundQdisc = True
 	if foundQdisc:
-		print("qDisc ID for IP " + ipAddress + " is " + qDiscID)
+		print("IP: " + ipAddress + " | Class ID: " + qDiscID)
 		print()
 		theClassID = ''
 		interfaces = [interfaceA, interfaceB]
@@ -124,24 +124,26 @@ def printCircuitClassInfo(ipAddress):
 		downloadMax = ''
 		uploadMin = ''
 		uploadMax = ''
+		cburst = ''
+		burst = ''
 		for interface in interfaces:		
 			command = 'tc class show dev ' + interface + ' classid ' + qDiscID
 			commands = command.split(' ')
 			proc = subprocess.Popen(commands, stdout=subprocess.PIPE)
 			for line in io.TextIOWrapper(proc.stdout, encoding="utf-8"):  # or another encoding
-				print(line)
 				if "htb" in line:
 					listOfThings = line.split(" ")
 					if interface == interfaceA:
-						downloadMin = listOfThings[10]#.replace("Mbps","")
-						downloadMax = listOfThings[12]#.replace("Mbps","")
+						downloadMin = line.split(' rate ')[1].split(' ')[0]
+						downloadMax = line.split(' ceil ')[1].split(' ')[0]
+						burst = line.split(' burst ')[1].split(' ')[0]
+						cburst = line.split(' cburst ')[1].replace('\n','')
 					else:
-						uploadMin = listOfThings[10]#.replace("Mbps","")
-						uploadMax = listOfThings[12]#.replace("Mbps","")
-		print("Download rate/min: " + downloadMin)
-		print("Download ceil/max: " + downloadMax)
-		print("Upload rate/min: " + uploadMin)
-		print("Upload ceil/max: " + uploadMax)
+						uploadMin = line.split(' rate ')[1].split(' ')[0]
+						uploadMax = line.split(' ceil ')[1].split(' ')[0]
+		print("Download rate/ceil: " + downloadMin + "/" + downloadMax)
+		print("Upload rate/ceil: " + uploadMin + "/" + uploadMax)
+		print("burst/cburst: " + burst + "/" + cburst)
 	else:
 		print("Invalid IP address provided")
 
