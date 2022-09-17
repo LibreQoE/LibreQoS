@@ -553,18 +553,22 @@ def refreshShapers():
 		devicesShaped = []
 		parentNodes = []
 		def traverseNetwork(data, depth, major, minor, queue, parentClassID, parentMaxDL, parentMaxUL):
-			tabs = '   ' * depth
 			for elem in data:
-				circuitsForThisNetworkNode = {}
+				circuitsForThisNetworkNode = []
 				elemClassID = hex(major) + ':' + hex(minor)
+				data[elem]['classid'] = elemClassID
 				# Cap based on this node's max bandwidth, or parent node's max bandwidth, whichever is lower
 				elemDownloadMax = min(data[elem]['downloadBandwidthMbps'],parentMaxDL)
 				elemUploadMax = min(data[elem]['uploadBandwidthMbps'],parentMaxUL)
+				data[elem]['downloadBandwidthMbps'] = elemDownloadMax
+				data[elem]['uploadBandwidthMbps'] = elemUploadMax
 				# Calculations are done in findBandwidthMins(), determine optimal HTB rates (mins) and ceils (maxs)
 				# For some reason that doesn't always yield the expected result, so it's better to play with ceil more than rate
 				# Here we override the rate as 95% of ceil.
 				elemDownloadMin = round(elemDownloadMax*.95)
 				elemUploadMin = round(elemUploadMax*.95)
+				data[elem]['downloadBandwidthMbpsMin'] = elemDownloadMin
+				data[elem]['uploadBandwidthMbpsMin'] = elemUploadMin
 				command = 'class add dev ' + interfaceA + ' parent ' + parentClassID + ' classid ' + hex(minor) + ' htb rate '+ str(round(elemDownloadMin)) + 'mbit ceil '+ str(round(elemDownloadMax)) + 'mbit prio 3' + " # Node: " + elem
 				linuxTCcommands.append(command)
 				command = 'class add dev ' + interfaceB + ' parent ' + parentClassID + ' classid ' + hex(minor) + ' htb rate '+ str(round(elemUploadMin)) + 'mbit ceil '+ str(round(elemUploadMax)) + 'mbit prio 3'
@@ -591,6 +595,7 @@ def refreshShapers():
 						parentString = hex(major) + ':'
 						flowIDstring = hex(major) + ':' + hex(minor)
 						circuit['qdisc'] = flowIDstring
+						# Create circuit dictionary to be added to network structure, eventually output as queuingStructure.json
 						thisNewCircuitItemForNetwork = {
 										'maxDownload' : maxDownload,
 										'maxUpload' : maxUpload,
@@ -600,13 +605,10 @@ def refreshShapers():
 										"circuitName": circuit['circuitName'],
 										"ParentNode": circuit['ParentNode'],
 										"devices": circuit['devices'],
-										"downloadMin": circuit['downloadMin'],
-										"uploadMin": circuit['uploadMin'],
-										"downloadMax": circuit['downloadMax'],
-										"uploadMax": circuit['uploadMax'],
 										"qdisc": flowIDstring,
 										"comment": circuit['comment']
 										}
+						# Generate TC commands to be executed later
 						comment = " # CircuitID: " + circuit['circuitID'] + " DeviceIDs: "
 						for device in circuit['devices']:
 							comment = comment + device['deviceID'] + ', '
@@ -619,7 +621,6 @@ def refreshShapers():
 						linuxTCcommands.append(command)
 						command = 'qdisc add dev ' + interfaceB + ' parent ' + hex(major) + ':' + hex(minor) + ' ' + fqOrCAKE
 						linuxTCcommands.append(command)
-
 						thisNewCircuitItemForNetwork['devices'] = circuit['devices']
 						for device in circuit['devices']:
 							if device['ipv4s']:
@@ -636,9 +637,10 @@ def refreshShapers():
 										ipv6FiltersDst.append((ipv6, parentString, flowIDstring))
 							if device['deviceName'] not in devicesShaped:
 								devicesShaped.append(device['deviceName'])
-						circuitsForThisNetworkNode = circuitsForThisNetworkNode | thisNewCircuitItemForNetwork
-						data[elem]['circuits'] = circuitsForThisNetworkNode
+						circuitsForThisNetworkNode.append(thisNewCircuitItemForNetwork)
 						minor += 1
+				if len(circuitsForThisNetworkNode) > 0:
+					data[elem]['circuits'] = circuitsForThisNetworkNode
 				# Recursive call this function for children nodes attached to this node
 				if 'children' in data[elem]:
 					# We need to keep tabs on the minor counter, because we can't have repeating class IDs. Here, we bring back the minor counter from the recursive function
