@@ -9,11 +9,11 @@ def pullMikrotikIPv6():
 			csv_reader = csv.reader(csv_file, delimiter=',')
 			next(csv_reader)
 			for row in csv_reader:
-				RouterName, IP, Username, Password = row
-				routerList.append((RouterName, IP, Username, Password))
+				RouterName, IP, Username, Password, apiPort = row
+				routerList.append((RouterName, IP, Username, Password, apiPort))
 	for router in routerList:
 		RouterName, IP, inputUsername, inputPassword = router
-		connection = routeros_api.RouterOsApiPool(IP, username=inputUsername, password=inputPassword, use_ssl=True, ssl_verify=False, ssl_verify_hostname=False, plaintext_login=True)
+		connection = routeros_api.RouterOsApiPool(IP, username=inputUsername, password=inputPassword, port=apiPort, use_ssl=False, ssl_verify=False, ssl_verify_hostname=False, plaintext_login=True)
 		api = connection.get_api()
 		macToIPv4 = {}
 		macToIPv6 = {}
