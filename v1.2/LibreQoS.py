@@ -74,73 +74,6 @@ def tearDown(interfaceA, interfaceB):
 			shell('ip link set dev ' + interfaceB + ' xdp off')
 		clearPriorSettings(interfaceA, interfaceB)
 
-def getQdiscForIPaddress(ipAddress):
-	qDiscID = ''
-	foundQdisc = False
-	with open('statsByCircuit.json', 'r') as j:
-		subscriberCircuits = json.loads(j.read())
-	for circuit in subscriberCircuits:
-		for device in circuit['devices']:
-			for ipv4 in device['ipv4s']:
-				if ipv4 == ipAddress:
-					qDiscID = circuit['qdisc']
-					foundQdisc = True
-			for ipv6 in device['ipv6s']:
-				if ipv6 == ipAddress:
-					qDiscID = circuit['qdisc']
-					foundQdisc = True
-	if foundQdisc:
-		return qDiscID
-	else:
-		return None
-
-def printStatsFromIP(ipAddress):
-	qDiscID = getQdiscForIPaddress(ipAddress)
-	if qDiscID != None:
-		interfaces = [interfaceA, interfaceB]
-		for interface in interfaces:		
-			command = 'tc -s qdisc show dev ' + interface + ' parent ' + qDiscID
-			commands = command.split(' ')
-			proc = subprocess.Popen(commands, stdout=subprocess.PIPE)
-			for line in io.TextIOWrapper(proc.stdout, encoding="utf-8"):  # or another encoding
-				print(line.replace('\n',''))
-	else:
-		print("Invalid IP address provided")
-
-def printCircuitClassInfo(ipAddress):
-	qDiscID = getQdiscForIPaddress(ipAddress)
-	if qDiscID != None:
-		print("IP: " + ipAddress + " | Class ID: " + qDiscID)
-		print()
-		theClassID = ''
-		interfaces = [interfaceA, interfaceB]
-		downloadMin = ''
-		downloadMax = ''
-		uploadMin = ''
-		uploadMax = ''
-		cburst = ''
-		burst = ''
-		for interface in interfaces:		
-			command = 'tc class show dev ' + interface + ' classid ' + qDiscID
-			commands = command.split(' ')
-			proc = subprocess.Popen(commands, stdout=subprocess.PIPE)
-			for line in io.TextIOWrapper(proc.stdout, encoding="utf-8"):  # or another encoding
-				if "htb" in line:
-					listOfThings = line.split(" ")
-					if interface == interfaceA:
-						downloadMin = line.split(' rate ')[1].split(' ')[0]
-						downloadMax = line.split(' ceil ')[1].split(' ')[0]
-						burst = line.split(' burst ')[1].split(' ')[0]
-						cburst = line.split(' cburst ')[1].replace('\n','')
-					else:
-						uploadMin = line.split(' rate ')[1].split(' ')[0]
-						uploadMax = line.split(' ceil ')[1].split(' ')[0]
-		print("Download rate/ceil: " + downloadMin + "/" + downloadMax)
-		print("Upload rate/ceil: " + uploadMin + "/" + uploadMax)
-		print("burst/cburst: " + burst + "/" + cburst)
-	else:
-		print("Invalid IP address provided")
-
 def findQueuesAvailable():
 	# Find queues and CPU cores available. Use min between those two as queuesAvailable
 	if enableActualShellCommands:
@@ -919,14 +852,6 @@ if __name__ == '__main__':
 		help="Clear ip filters, qdiscs, and xdp setup if any",
 		action=argparse.BooleanOptionalAction,
 	)
-	parser.add_argument(
-		'--show-active-plan-from-ip', type=str,
-		help="Provide tc class info by IP",
-	)
-	parser.add_argument(
-		'--tc-statistics-from-ip', type=str,
-		help="Provide tc qdisc stats by IP",
-	)
 	args = parser.parse_args()    
 	logging.basicConfig(level=args.loglevel)
 	
@@ -934,10 +859,6 @@ if __name__ == '__main__':
 		status = validateNetworkAndDevices()
 	elif args.clearrules:
 		tearDown(interfaceA, interfaceB)
-	elif args.tc_statistics_from_ip:
-		printStatsFromIP(args.tc_statistics_from_ip)
-	elif args.show_active_plan_from_ip:
-		printCircuitClassInfo(args.show_active_plan_from_ip)
 	else:
 		# Refresh and/or set up queues
 		refreshShapers()
