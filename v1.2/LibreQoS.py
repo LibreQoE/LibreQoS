@@ -543,7 +543,6 @@ def refreshShapers():
 		# Parse network structure and add devices from ShapedDevices.csv
 		linuxTCcommands = []
 		xdpCPUmapCommands = []
-		devicesShaped = []
 		parentNodes = []
 		def traverseNetwork(data, depth, major, minor, queue, parentClassID, parentMaxDL, parentMaxUL):
 			for node in data:
@@ -626,7 +625,6 @@ def refreshShapers():
 		linuxTCcommands = []
 		xdpCPUmapCommands = []
 		devicesShaped = []
-		parentNodes = []
 		# Define lists for hash filters
 		ipv4FiltersSrc = []		
 		ipv4FiltersDst = []
@@ -879,9 +877,9 @@ def refreshShapers():
 		
 		# Save for stats
 		with open('statsByCircuit.json', 'w') as infile:
-			json.dump(subscriberCircuits, infile)
+			json.dump(subscriberCircuits, infile, indent=4)
 		with open('statsByParentNode.json', 'w') as infile:
-			json.dump(parentNodes, infile)
+			json.dump(parentNodes, infile, indent=4)
 		
 		
 		# Record time this run completed at
