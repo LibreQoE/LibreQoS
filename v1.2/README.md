@@ -15,6 +15,8 @@
 
 - Command line arguments ```--debug```, ```--verbose```, ```--clearrules``` and ```--validate```.
 
+- lqTools.py - ```change-circuit-bandwidth```, ```change-circuit-bandwidth-using-ip```, ```show-active-plan-from-ip```, ```tc-statistics-from-ip```
+
 - Validation of ShapedDevices.csv and network.json during load. If either fails validation, LibreQoS pulls from the last known good configuration (lastGoodConfig.csv and lastGoodConfig.json).
 
 ## ShapedDevices.csv
