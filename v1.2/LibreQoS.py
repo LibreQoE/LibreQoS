@@ -575,7 +575,9 @@ def refreshShapers():
 						comment = " # CircuitID: " + circuit['circuitID'] + " DeviceIDs: "
 						for device in circuit['devices']:
 							comment = comment + device['deviceID'] + ', '
-						comment = comment + '| Comment: ' + device['comment']
+						if 'devices' in circuit:
+							if 'comment' in circuit['devices'][0]:
+								comment = comment + '| Comment: ' + circuit['devices'][0]['comment']
 						command = 'class add dev ' + interfaceA + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ str(circuit['minDownload']) + 'mbit ceil '+ str(circuit['maxDownload']) + 'mbit prio 3' + comment
 						linuxTCcommands.append(command)
 						command = 'qdisc add dev ' + interfaceA + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + fqOrCAKE
