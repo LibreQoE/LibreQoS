@@ -783,6 +783,7 @@ def refreshShapers():
 
 		
 		# If using XDP, Setup XDP and disable XPS regardless of whether it is first run or not (necessary to handle cases where systemctl stop was used)
+		xdpStartTime = datetime.now()
 		if usingXDP:
 			if enableActualShellCommands:
 				# Here we use os.system for the command, because otherwise it sometimes gltiches out with Popen in shell()
@@ -795,9 +796,11 @@ def refreshShapers():
 			shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu --dev ' + interfaceB + ' --wan')
 			shell('./xdp-cpumap-tc/src/tc_classify --dev-egress ' + interfaceA)
 			shell('./xdp-cpumap-tc/src/tc_classify --dev-egress ' + interfaceB)	
+		xdpEndTime = datetime.now()
 		
 		
 		# Execute actual Linux TC commands
+		tcStartTime = datetime.now()
 		print("Executing linux TC class/qdisc commands")
 		with open('linux_tc.txt', 'w') as f:
 			for command in linuxTCcommands:
@@ -808,10 +811,12 @@ def refreshShapers():
 			shell("/sbin/tc -b linux_tc.txt")
 		else:
 			shell("/sbin/tc -f -b linux_tc.txt")
+		tcEndTime = datetime.now()
 		print("Executed " + str(len(linuxTCcommands)) + " linux TC class/qdisc commands")
 		
 		
 		# Execute actual XDP-CPUMAP-TC filter commands
+		xdpFilterStartTime = datetime.now()
 		if usingXDP:
 			print("Executing XDP-CPUMAP-TC IP filter commands")
 			if enableActualShellCommands:
@@ -823,9 +828,10 @@ def refreshShapers():
 				for command in xdpCPUmapCommands:
 					logging.info(command)
 			print("Executed " + str(len(xdpCPUmapCommands)) + " XDP-CPUMAP-TC IP filter commands")
+		xdpFilterEndTime = datetime.now()
 		
 		
-		# Record end time
+		# Record end time of all reload commands
 		reloadEndTime = datetime.now()
 		
 		
@@ -858,7 +864,13 @@ def refreshShapers():
 		
 		# Report reload time
 		reloadTimeSeconds = ((reloadEndTime - reloadStartTime).microseconds) / 1000000
+		tcTimeSeconds = ((tcEndTime - tcStartTime).microseconds) / 1000000
+		xdpSetupTimeSeconds = ((xdpEndTime - xdpStartTime).microseconds) / 1000000
+		xdpFilterTimeSeconds = ((xdpFilterEndTime - xdpFilterStartTime).microseconds) / 1000000
 		print("Queue and IP filter reload completed in " + "{:.1f}".format(reloadTimeSeconds) + " seconds")
+		print("\tTC commands: \t" + "{:.1f}".format(tcTimeSeconds) + " seconds")
+		print("\tXDP setup: \t " + "{:.1f}".format(xdpSetupTimeSeconds) + " seconds")
+		print("\tXDP filters: \t " + "{:.1f}".format(xdpFilterTimeSeconds) + " seconds")
 		
 		
 		# Done
