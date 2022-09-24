@@ -554,10 +554,91 @@ def refreshShapers():
 		finalMinor = traverseNetwork(network, 0, major=1, minor=3, queue=1, parentClassID="1:1", parentMaxDL=upstreamBandwidthCapacityDownloadMbps, parentMaxUL=upstreamBandwidthCapacityUploadMbps)
 		
 		
-		# Parse network structure. For each tier, generate commands to create corresponding HTB and leaf classes. Prepare commands for execution later
 		linuxTCcommands = []
 		xdpCPUmapCommands = []
 		devicesShaped = []
+		# Root HTB Setup
+		# If using XDP, Setup MQ
+		if usingXDP:
+			# Create MQ qdisc for each CPU core / rx-tx queue (XDP method - requires IPv4)
+			thisInterface = interfaceA
+			logging.info("# MQ Setup for " + thisInterface)
+			command = 'qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq'
+			linuxTCcommands.append(command)
+			for queue in range(queuesAvailable):
+				command = 'qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2'
+				linuxTCcommands.append(command)
+				command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityDownloadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityDownloadMbps) + 'mbit'
+				linuxTCcommands.append(command)
+				command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + fqOrCAKE
+				linuxTCcommands.append(command)
+				# Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
+				# Technically, that should not even happen. So don't expect much if any traffic in this default class.
+				# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
+				command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(round((upstreamBandwidthCapacityDownloadMbps-1)/4)) + 'mbit ceil ' + str(upstreamBandwidthCapacityDownloadMbps-1) + 'mbit prio 5'
+				linuxTCcommands.append(command)
+				command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + fqOrCAKE
+				linuxTCcommands.append(command)
+			
+			thisInterface = interfaceB
+			logging.info("# MQ Setup for " + thisInterface)
+			command = 'qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq'
+			linuxTCcommands.append(command)
+			for queue in range(queuesAvailable):
+				command = 'qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2'
+				linuxTCcommands.append(command)
+				command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityUploadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps) + 'mbit'
+				linuxTCcommands.append(command)
+				command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + fqOrCAKE
+				linuxTCcommands.append(command)
+				# Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
+				# Technically, that should not even happen. So don't expect much if any traffic in this default class.
+				# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
+				command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(round((upstreamBandwidthCapacityUploadMbps-1)/4)) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps-1) + 'mbit prio 5'
+				linuxTCcommands.append(command)
+				command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + fqOrCAKE
+				linuxTCcommands.append(command)
+		# If not using XDP, Setup single HTB
+		else:
+			# Create single HTB qdisc (non XDP method - allows IPv6)
+			thisInterface = interfaceA
+			command = 'qdisc replace dev ' + thisInterface + ' root handle 0x1: htb default 2 r2q 1514'
+			linuxTCcommands.append(command)
+			for queue in range(queuesAvailable):
+				command = 'qdisc add dev ' + thisInterface + ' parent 0x1:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2'
+				linuxTCcommands.append(command)
+				command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityDownloadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityDownloadMbps) + 'mbit'
+				linuxTCcommands.append(command)
+				command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + fqOrCAKE
+				linuxTCcommands.append(command)
+				# Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
+				# Technically, that should not even happen. So don't expect much if any traffic in this default class.
+				# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
+				command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(round((upstreamBandwidthCapacityDownloadMbps-1)/4)) + 'mbit ceil ' + str(upstreamBandwidthCapacityDownloadMbps-1) + 'mbit prio 5'
+				linuxTCcommands.append(command)
+				command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + fqOrCAKE
+				linuxTCcommands.append(command)
+			
+			thisInterface = interfaceB
+			command = 'qdisc replace dev ' + thisInterface + ' root handle 0x1: htb default 2 r2q 1514'
+			linuxTCcommands.append(command)
+			for queue in range(queuesAvailable):
+				command = 'qdisc add dev ' + thisInterface + ' parent 0x1:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2'
+				linuxTCcommands.append(command)
+				command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityUploadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps) + 'mbit'
+				linuxTCcommands.append(command)
+				command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + fqOrCAKE
+				linuxTCcommands.append(command)
+				# Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
+				# Technically, that should not even happen. So don't expect much if any traffic in this default class.
+				# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
+				command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(round((upstreamBandwidthCapacityUploadMbps-1)/4)) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps-1) + 'mbit prio 5'
+				linuxTCcommands.append(command)
+				command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + fqOrCAKE
+				linuxTCcommands.append(command)
+		
+		
+		# Parse network structure. For each tier, generate commands to create corresponding HTB and leaf classes. Prepare commands for execution later
 		# Define lists for hash filters
 		ipv4FiltersSrc = []		
 		ipv4FiltersDst = []
@@ -695,11 +776,11 @@ def refreshShapers():
 		# Record start time of actual filter reload
 		reloadStartTime = datetime.now()
 		
+		
 		# Clear Prior Settings
 		clearPriorSettings(interfaceA, interfaceB)
+
 		
-		
-		# Root HTB Setup
 		# If using XDP, Setup XDP and disable XPS regardless of whether it is first run or not (necessary to handle cases where systemctl stop was used)
 		if usingXDP:
 			if enableActualShellCommands:
@@ -713,60 +794,6 @@ def refreshShapers():
 			shell('./xdp-cpumap-tc/src/xdp_iphash_to_cpu --dev ' + interfaceB + ' --wan')
 			shell('./xdp-cpumap-tc/src/tc_classify --dev-egress ' + interfaceA)
 			shell('./xdp-cpumap-tc/src/tc_classify --dev-egress ' + interfaceB)	
-		# If using XDP, Setup MQ
-		if usingXDP:
-			# Create MQ qdisc for each CPU core / rx-tx queue (XDP method - requires IPv4)
-			thisInterface = interfaceA
-			logging.info("# MQ Setup for " + thisInterface)
-			shell('tc qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq')
-			for queue in range(queuesAvailable):
-				shell('tc qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2')
-				shell('tc class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityDownloadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityDownloadMbps) + 'mbit')
-				shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + fqOrCAKE)
-				# Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
-				# Technically, that should not even happen. So don't expect much if any traffic in this default class.
-				# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
-				shell('tc class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(round((upstreamBandwidthCapacityDownloadMbps-1)/4)) + 'mbit ceil ' + str(upstreamBandwidthCapacityDownloadMbps-1) + 'mbit prio 5')
-				shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + fqOrCAKE)
-			
-			thisInterface = interfaceB
-			logging.info("# MQ Setup for " + thisInterface)
-			shell('tc qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq')
-			for queue in range(queuesAvailable):
-				shell('tc qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2')
-				shell('tc class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityUploadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps) + 'mbit')
-				shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + fqOrCAKE)
-				# Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
-				# Technically, that should not even happen. So don't expect much if any traffic in this default class.
-				# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
-				shell('tc class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(round((upstreamBandwidthCapacityUploadMbps-1)/4)) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps-1) + 'mbit prio 5')
-				shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + fqOrCAKE)
-		# If not using XDP, Setup single HTB
-		else:
-			# Create single HTB qdisc (non XDP method - allows IPv6)
-			thisInterface = interfaceA
-			shell('tc qdisc replace dev ' + thisInterface + ' root handle 0x1: htb default 2 r2q 1514')
-			for queue in range(queuesAvailable):
-				shell('tc qdisc add dev ' + thisInterface + ' parent 0x1:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2')
-				shell('tc class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityDownloadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityDownloadMbps) + 'mbit')
-				shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + fqOrCAKE)
-				# Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
-				# Technically, that should not even happen. So don't expect much if any traffic in this default class.
-				# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
-				shell('tc class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(round((upstreamBandwidthCapacityDownloadMbps-1)/4)) + 'mbit ceil ' + str(upstreamBandwidthCapacityDownloadMbps-1) + 'mbit prio 5')
-				shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + fqOrCAKE)
-			
-			thisInterface = interfaceB
-			shell('tc qdisc replace dev ' + thisInterface + ' root handle 0x1: htb default 2 r2q 1514')
-			for queue in range(queuesAvailable):
-				shell('tc qdisc add dev ' + thisInterface + ' parent 0x1:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2')
-				shell('tc class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityUploadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps) + 'mbit')
-				shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + fqOrCAKE)
-				# Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
-				# Technically, that should not even happen. So don't expect much if any traffic in this default class.
-				# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
-				shell('tc class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(round((upstreamBandwidthCapacityUploadMbps-1)/4)) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps-1) + 'mbit prio 5')
-				shell('tc qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + fqOrCAKE)
 		
 		
 		# Execute actual Linux TC commands
@@ -824,8 +851,8 @@ def refreshShapers():
 		
 		
 		# Report reload time
-		reloadTimeSeconds = (reloadEndTime - reloadStartTime).seconds
-		print("Queue and IP filter reload completed in " + str(reloadTimeSeconds) + " seconds")
+		reloadTimeSeconds = ((reloadEndTime - reloadStartTime).microseconds) / 1000000
+		print("Queue and IP filter reload completed in " + "{:.1f}".format(reloadTimeSeconds) + " seconds")
 		
 		
 		# Done
