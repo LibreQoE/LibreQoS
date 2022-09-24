@@ -8,6 +8,7 @@ import json
 import os
 import os.path
 import subprocess
+from subprocess import PIPE, STDOUT
 from datetime import datetime
 import multiprocessing
 import warnings
@@ -813,9 +814,14 @@ def refreshShapers():
 		# Execute actual XDP-CPUMAP-TC filter commands
 		if usingXDP:
 			print("Executing XDP-CPUMAP-TC IP filter commands")
-			for command in xdpCPUmapCommands:
-				logging.info(command)
-				shell(command)
+			if enableActualShellCommands:
+				for command in xdpCPUmapCommands:
+					logging.info(command)
+					commands = command.split(' ')
+					proc = subprocess.Popen(commands, stdout=subprocess.DEVNULL)
+			else:
+				for command in xdpCPUmapCommands:
+					logging.info(command)
 			print("Executed " + str(len(xdpCPUmapCommands)) + " XDP-CPUMAP-TC IP filter commands")
 		
 		
