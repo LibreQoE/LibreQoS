@@ -7,7 +7,7 @@ from pathlib import Path
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
 
-from ispConfig import interfaceA, interfaceB, influxDBBucket, influxDBOrg, influxDBtoken, influxDBurl
+from ispConfig import interfaceA, interfaceB, influxDBBucket, influxDBOrg, influxDBtoken, influxDBurl, fqOrCAKE
 
 
 def getInterfaceStats(interface):
@@ -25,11 +25,14 @@ def chunk_list(l, n):
 	for i in range(0, len(l), n):
 		yield l[i:i + n]
 
-
 def getsubscriberCircuitstats(subscriberCircuits):
 	interfaces = [interfaceA, interfaceB]
 	ifaceStats = list(map(getInterfaceStats, interfaces))
-
+	tinsBulkPacketsSentDownload = tinsBestEffortPacketsSentDownload = tinsVoicePacketsSentDownload =tinsVideoPacketsSentDownload = 0.0
+	tinsBulkPacketsSentUpload = tinsBestEffortPacketsSentUpload = tinsVoicePacketsSentUpload =tinsVideoPacketsSentUpload = 0.0
+	allPacketsDownload = 0.0
+	allPacketsUpload = 0.0
+	
 	for circuit in subscriberCircuits:
 		if 'timeQueried' in circuit:
 			circuit['priorQueryTime'] = circuit['timeQueried']
@@ -47,6 +50,28 @@ def getsubscriberCircuitstats(subscriberCircuits):
 				else:
 					overloadFactor = 0.0
 				
+				if 'cake diffserv4' in fqOrCAKE:
+					tinCounter = 1
+					packetsSentBulk = 0.0
+					packetsSentBestEffort = 0.0
+					packetsSentVideo = 0.0
+					packetsSentVoice = 0.0
+					for tin in element['tins']:
+						sent_packets = float(tin['sent_packets'])
+						ack_drops = float(tin['ack_drops'])
+						ecn_mark = float(tin['ecn_mark'])
+						tinDrops = float(tin['drops'])
+						trueDrops = tinDrops - ack_drops
+						if tinCounter == 1:
+							packetsSentBulk = sent_packets
+						elif tinCounter == 2:
+							packetsSentBestEffort = sent_packets
+						elif tinCounter == 3:
+							packetsSentVideo = sent_packets
+						elif tinCounter == 4:
+							packetsSentVoice = sent_packets
+						tinCounter += 1
+
 				if 'bytesSent' + dirSuffix in circuit:
 					circuit['priorQueryBytes' + dirSuffix] = circuit['bytesSent' + dirSuffix]
 				circuit['bytesSent' + dirSuffix] = bytesSent
@@ -62,28 +87,74 @@ def getsubscriberCircuitstats(subscriberCircuits):
 				if 'overloadFactor' + dirSuffix in circuit:
 					circuit['priorQueryOverloadFactor' + dirSuffix] = circuit['overloadFactor' + dirSuffix]
 				circuit['overloadFactor' + dirSuffix] = overloadFactor
+				
+				if 'cake diffserv4' in fqOrCAKE:
+					if 'packetsSentBulk' + dirSuffix in circuit:
+						circuit['priorQueryPacketsSentBulk' + dirSuffix] = circuit['packetsSentBulk' + dirSuffix]
+					circuit['packetsSentBulk' + dirSuffix] = packetsSentBulk
+					
+					if 'packetsSentBestEffort' + dirSuffix in circuit:
+						circuit['priorQueryPacketsSentBestEffort' + dirSuffix] = circuit['packetsSentBestEffort' + dirSuffix]
+					circuit['packetsSentBestEffort' + dirSuffix] = packetsSentBestEffort
+					
+					if 'packetsSentVideo' + dirSuffix in circuit:
+						circuit['priorQueryPacketsSentVideo' + dirSuffix] = circuit['packetsSentVideo' + dirSuffix]
+					circuit['packetsSentVideo' + dirSuffix] = packetsSentVideo
+					
+					if 'packetsSentVoice' + dirSuffix in circuit:
+						circuit['priorQueryPacketsSentVoice' + dirSuffix] = circuit['packetsSentVoice' + dirSuffix]
+					circuit['packetsSentVoice' + dirSuffix] = packetsSentVoice
 
 		circuit['timeQueried'] = datetime.now().isoformat()
 	for circuit in subscriberCircuits:
-		circuit['bitsDownloadSinceLastQuery'] = circuit['bitsUploadSinceLastQuery'] = 0
-		circuit['packetDropsDownloadSinceLastQuery'] = circuit['packetDropsUploadSinceLastQuery'] = 0
-		circuit['packetsSentDownloadSinceLastQuery'] = circuit['packetsSentUploadSinceLastQuery'] = 0
+		circuit['bitsDownloadSinceLastQuery'] = circuit['bitsUploadSinceLastQuery'] = 0.0
+		circuit['packetDropsDownloadSinceLastQuery'] = circuit['packetDropsUploadSinceLastQuery'] = 0.0
+		circuit['packetsSentDownloadSinceLastQuery'] = circuit['packetsSentUploadSinceLastQuery'] = 0.0
 		if 'priorQueryTime' in circuit:
 			try:
 				bytesDLSinceLastQuery = circuit['bytesSentDownload'] - circuit['priorQueryBytesDownload']
 				bytesULSinceLastQuery = circuit['bytesSentUpload'] - circuit['priorQueryBytesUpload']
 			except:
-				bytesDLSinceLastQuery = bytesULSinceLastQuery = 0
+				bytesDLSinceLastQuery = bytesULSinceLastQuery = 0.0
 			try:
 				packetDropsDLSinceLastQuery = circuit['dropsSentDownload'] - circuit['priorQueryDropsDownload']
 				packetDropsULSinceLastQuery = circuit['dropsSentUpload'] - circuit['priorQueryDropsUpload']
 			except:
-				packetDropsDLSinceLastQuery = packetDropsULSinceLastQuery = 0
+				packetDropsDLSinceLastQuery = packetDropsULSinceLastQuery = 0.0
 			try:
 				packetsSentDLSinceLastQuery = circuit['packetsSentDownload'] - circuit['priorQueryPacketsSentDownload']
 				packetsSentULSinceLastQuery = circuit['packetsSentUpload'] - circuit['priorQueryPacketsSentUpload']
 			except:
-				packetsSentDLSinceLastQuery = packetsSentULSinceLastQuery = 0
+				packetsSentDLSinceLastQuery = packetsSentULSinceLastQuery = 0.0
+			
+			if 'cake diffserv4' in fqOrCAKE:
+				try:
+					packetsSentDLSinceLastQueryBulk = circuit['packetsSentBulkDownload'] - circuit['priorQueryPacketsSentBulkDownload']
+					packetsSentULSinceLastQueryBulk = circuit['packetsSentBulkUpload'] - circuit['priorQueryPacketsSentBulkUpload']
+					packetsSentDLSinceLastQueryBestEffort = circuit['packetsSentBestEffortDownload'] - circuit['priorQueryPacketsSentBestEffortDownload']
+					packetsSentULSinceLastQueryBestEffort = circuit['packetsSentBestEffortUpload'] - circuit['priorQueryPacketsSentBestEffortUpload']
+					packetsSentDLSinceLastQueryVideo = circuit['packetsSentVideoDownload'] - circuit['priorQueryPacketsSentVideoDownload']
+					packetsSentULSinceLastQueryVideo = circuit['packetsSentVideoUpload'] - circuit['priorQueryPacketsSentVideoUpload']
+					packetsSentDLSinceLastQueryVoice = circuit['packetsSentVoiceDownload'] - circuit['priorQueryPacketsSentVoiceDownload']
+					packetsSentULSinceLastQueryVoice = circuit['packetsSentVoiceUpload'] - circuit['priorQueryPacketsSentVoiceUpload']
+				except:
+					packetsSentDLSinceLastQueryBulk = packetsSentULSinceLastQueryBulk = 0.0
+					packetsSentDLSinceLastQueryBestEffort = packetsSentULSinceLastQueryBestEffort = 0.0
+					packetsSentDLSinceLastQueryVideo = packetsSentULSinceLastQueryVideo = 0.0
+					packetsSentDLSinceLastQueryVoice = packetsSentULSinceLastQueryVoice = 0.0
+				
+				allPacketsDownload += packetsSentDLSinceLastQuery
+				allPacketsUpload += packetsSentULSinceLastQuery
+				
+				tinsBulkPacketsSentDownload += packetsSentDLSinceLastQueryBulk
+				tinsBestEffortPacketsSentDownload += packetsSentDLSinceLastQueryBestEffort
+				tinsVideoPacketsSentDownload += packetsSentDLSinceLastQueryVideo
+				tinsVoicePacketsSentDownload += packetsSentDLSinceLastQueryVoice
+				tinsBulkPacketsSentUpload += packetsSentULSinceLastQueryBulk
+				tinsBestEffortPacketsSentUpload += packetsSentULSinceLastQueryBestEffort
+				tinsVideoPacketsSentUpload += packetsSentULSinceLastQueryVideo
+				tinsVoicePacketsSentUpload += packetsSentULSinceLastQueryVoice
+						
 			currentQueryTime = datetime.fromisoformat(circuit['timeQueried'])
 			priorQueryTime = datetime.fromisoformat(circuit['priorQueryTime'])
 			deltaSeconds = (currentQueryTime - priorQueryTime).total_seconds()
@@ -96,8 +167,48 @@ def getsubscriberCircuitstats(subscriberCircuits):
 			circuit['packetDropsUploadSinceLastQuery'] = packetDropsULSinceLastQuery
 			circuit['packetsSentDownloadSinceLastQuery'] = packetsSentDLSinceLastQuery
 			circuit['packetsSentUploadSinceLastQuery'] = packetsSentULSinceLastQuery
+	
+	if 'cake diffserv4' in fqOrCAKE:
+		tinsStats = {	'Bulk': {}, 
+						'BestEffort': {},
+						'Voice': {},
+						'Video': {}}
+		
+		if (allPacketsDownload > 0):
+			tinsStats['Bulk']['Download'] = round((tinsBulkPacketsSentDownload / allPacketsDownload) * 100.0, 1)
+			tinsStats['BestEffort']['Download'] = round((tinsBestEffortPacketsSentDownload / allPacketsDownload) * 100.0, 1)
+			tinsStats['Voice']['Download'] =  round((tinsVoicePacketsSentDownload / allPacketsDownload) * 100.0, 1)
+			tinsStats['Video']['Download'] =  round((tinsVideoPacketsSentDownload / allPacketsDownload) * 100.0, 1)
+		else:
+			tinsStats['Bulk']['Download'] = 0.0
+			tinsStats['BestEffort']['Download'] = 0.0
+			tinsStats['Voice']['Download'] =  0.0
+			tinsStats['Video']['Download'] =  0.0
+		if (allPacketsUpload > 0):
+			tinsStats['Bulk']['Upload'] = round((tinsBulkPacketsSentUpload / allPacketsUpload) * 100.0, 1)
+			tinsStats['BestEffort']['Upload'] =  round((tinsBestEffortPacketsSentUpload / allPacketsUpload) * 100.0, 1)
+			tinsStats['Video']['Upload'] =  round((tinsVideoPacketsSentUpload / allPacketsUpload) * 100.0, 1)
+			tinsStats['Voice']['Upload'] =  round((tinsVoicePacketsSentUpload / allPacketsUpload) * 100.0, 1)
+		else:
+			tinsStats['Bulk']['Upload'] = 0.0
+			tinsStats['BestEffort']['Upload'] =  0.0
+			tinsStats['Video']['Upload'] =  0.0
+			tinsStats['Voice']['Upload'] =  0.0
+	else:
+		tinsStats = {	'Bulk': {}, 
+						'BestEffort': {},
+						'Voice': {},
+						'Video': {}}
+		tinsStats['Bulk']['Download'] = 0.0
+		tinsStats['BestEffort']['Download'] = 0.0
+		tinsStats['Voice']['Download'] =  0.0
+		tinsStats['Video']['Download'] =  0.0
+		tinsStats['Bulk']['Upload'] = 0.0
+		tinsStats['BestEffort']['Upload'] = 0.0
+		tinsStats['Voice']['Upload'] =  0.0
+		tinsStats['Video']['Upload'] =  0.0
 
-	return subscriberCircuits
+	return subscriberCircuits, tinsStats
 
 
 def getParentNodeStats(parentNodes, subscriberCircuits):
@@ -139,6 +250,7 @@ def getParentNodeStats(parentNodes, subscriberCircuits):
 		#parentNode['overloadFactorDownloadSinceLastQuery'] = overloadFactorDownloadSinceLastQuery
 		#parentNode['overloadFactorUploadSinceLastQuery'] = overloadFactorUploadSinceLastQuery
 		parentNode['overloadFactorTotalSinceLastQuery'] = overloadFactorTotalSinceLastQuery
+		
 	return parentNodes
 
 
@@ -183,7 +295,7 @@ def refreshBandwidthGraphs():
 	parentNodeNameDict = parentNodeNameDictPull()
 
 	print("Retrieving circuit statistics")
-	subscriberCircuits = getsubscriberCircuitstats(subscriberCircuits)
+	subscriberCircuits, tinsStats = getsubscriberCircuitstats(subscriberCircuits)
 	print("Computing parent node statistics")
 	parentNodes = getParentNodeStats(parentNodes, subscriberCircuits)
 	print("Writing data to InfluxDB")
@@ -234,19 +346,31 @@ def refreshBandwidthGraphs():
 	write_api.write(bucket=influxDBBucket, record=queriesToSend)
 	# print("Added " + str(len(queriesToSend)) + " points to InfluxDB.")
 	queriesToSendCount += len(queriesToSend)
+	
+	if 'cake diffserv4' in fqOrCAKE:
+		queriesToSend = []
+		for tin in tinsStats:
+			tinName = tin
+			p = Point('Tins').tag("Type", "Tin").tag("Tin", tinName).field("Download", tinsStats[tin]['Download']).field("Upload", tinsStats[tin]['Upload'])
+			queriesToSend.append(p)
+
+		write_api.write(bucket=influxDBBucket, record=queriesToSend)
+		# print("Added " + str(len(queriesToSend)) + " points to InfluxDB.")
+		queriesToSendCount += len(queriesToSend)
+	
 	print("Added " + str(queriesToSendCount) + " points to InfluxDB.")
 
 	client.close()
+	
+	with open('statsByParentNode.json', 'w') as f:
+		f.write(json.dumps(parentNodes, indent=4))
 
-	with open('statsByParentNode.json', 'w') as infile:
-		json.dump(parentNodes, infile)
-
-	with open('statsByCircuit.json', 'w') as infile:
-		json.dump(subscriberCircuits, infile)
+	with open('statsByCircuit.json', 'w') as f:
+		f.write(json.dumps(subscriberCircuits, indent=4))
 	
 	longTermStats['droppedPacketsTotal'] = droppedPacketsAllTime
-	with open('longTermStats.json', 'w') as infile:
-		json.dump(longTermStats, infile)
+	with open('longTermStats.json', 'w') as f:
+		f.write(json.dumps(longTermStats, indent=4))
 
 	endTime = datetime.now()
 	durationSeconds = round((endTime - startTime).total_seconds(), 2)
