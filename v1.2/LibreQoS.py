@@ -850,10 +850,10 @@ def refreshShapers():
 		
 		
 		# Save for stats
-		with open('statsByCircuit.json', 'w') as infile:
-			json.dump(subscriberCircuits, infile, indent=4)
-		with open('statsByParentNode.json', 'w') as infile:
-			json.dump(parentNodes, infile, indent=4)
+		with open('statsByCircuit.json', 'w') as f:
+			f.write(json.dumps(subscriberCircuits, indent=4))
+		with open('statsByParentNode.json', 'w') as f:
+			f.write(json.dumps(parentNodes, indent=4))
 		
 		
 		# Record time this run completed at
