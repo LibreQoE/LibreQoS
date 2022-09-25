@@ -2,6 +2,7 @@ import subprocess
 import json
 import subprocess
 from datetime import datetime
+from pathlib import Path
 
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
@@ -41,7 +42,11 @@ def getsubscriberCircuitstats(subscriberCircuits):
 				bytesSent = float(element['bytes'])
 				drops = float(element['drops'])
 				packets = float(element['packets'])
-
+				if (element['drops'] > 0) and (element['packets'] > 0):
+					overloadFactor = float(round(element['drops']/element['packets'],3))
+				else:
+					overloadFactor = 0.0
+				
 				if 'bytesSent' + dirSuffix in circuit:
 					circuit['priorQueryBytes' + dirSuffix] = circuit['bytesSent' + dirSuffix]
 				circuit['bytesSent' + dirSuffix] = bytesSent
@@ -51,13 +56,18 @@ def getsubscriberCircuitstats(subscriberCircuits):
 				circuit['dropsSent' + dirSuffix] = drops
 
 				if 'packetsSent' + dirSuffix in circuit:
-					circuit['priorPacketsSent' + dirSuffix] = circuit['packetsSent' + dirSuffix]
+					circuit['priorQueryPacketsSent' + dirSuffix] = circuit['packetsSent' + dirSuffix]
 				circuit['packetsSent' + dirSuffix] = packets
+				
+				if 'overloadFactor' + dirSuffix in circuit:
+					circuit['priorQueryOverloadFactor' + dirSuffix] = circuit['overloadFactor' + dirSuffix]
+				circuit['overloadFactor' + dirSuffix] = overloadFactor
 
 		circuit['timeQueried'] = datetime.now().isoformat()
 	for circuit in subscriberCircuits:
 		circuit['bitsDownloadSinceLastQuery'] = circuit['bitsUploadSinceLastQuery'] = 0
 		circuit['packetDropsDownloadSinceLastQuery'] = circuit['packetDropsUploadSinceLastQuery'] = 0
+		circuit['packetsSentDownloadSinceLastQuery'] = circuit['packetsSentUploadSinceLastQuery'] = 0
 		if 'priorQueryTime' in circuit:
 			try:
 				bytesDLSinceLastQuery = circuit['bytesSentDownload'] - circuit['priorQueryBytesDownload']
@@ -69,6 +79,11 @@ def getsubscriberCircuitstats(subscriberCircuits):
 				packetDropsULSinceLastQuery = circuit['dropsSentUpload'] - circuit['priorQueryDropsUpload']
 			except:
 				packetDropsDLSinceLastQuery = packetDropsULSinceLastQuery = 0
+			try:
+				packetsSentDLSinceLastQuery = circuit['packetsSentDownload'] - circuit['priorQueryPacketsSentDownload']
+				packetsSentULSinceLastQuery = circuit['packetsSentUpload'] - circuit['priorQueryPacketsSentUpload']
+			except:
+				packetsSentDLSinceLastQuery = packetsSentULSinceLastQuery = 0
 			currentQueryTime = datetime.fromisoformat(circuit['timeQueried'])
 			priorQueryTime = datetime.fromisoformat(circuit['priorQueryTime'])
 			deltaSeconds = (currentQueryTime - priorQueryTime).total_seconds()
@@ -79,6 +94,8 @@ def getsubscriberCircuitstats(subscriberCircuits):
 				((bytesULSinceLastQuery * 8) / deltaSeconds)) if deltaSeconds > 0 else 0
 			circuit['packetDropsDownloadSinceLastQuery'] = packetDropsDLSinceLastQuery
 			circuit['packetDropsUploadSinceLastQuery'] = packetDropsULSinceLastQuery
+			circuit['packetsSentDownloadSinceLastQuery'] = packetsSentDLSinceLastQuery
+			circuit['packetsSentUploadSinceLastQuery'] = packetsSentULSinceLastQuery
 
 	return subscriberCircuits
 
@@ -90,18 +107,38 @@ def getParentNodeStats(parentNodes, subscriberCircuits):
 		thisNodeDropsTotal = 0
 		thisNodeBitsDownload = 0
 		thisNodeBitsUpload = 0
+		packetsSentDownloadAggregate = 0.0
+		packetsSentUploadAggregate = 0.0
+		packetsSentTotalAggregate = 0.0
+		circuitsMatched = 0
 		for circuit in subscriberCircuits:
 			if circuit['ParentNode'] == parentNode['parentNodeName']:
 				thisNodeBitsDownload += circuit['bitsDownloadSinceLastQuery']
 				thisNodeBitsUpload += circuit['bitsUploadSinceLastQuery']
-				thisNodeDropsDownload += circuit['packetDropsDownloadSinceLastQuery']
-				thisNodeDropsUpload += circuit['packetDropsUploadSinceLastQuery']
+				#thisNodeDropsDownload += circuit['packetDropsDownloadSinceLastQuery']
+				#thisNodeDropsUpload += circuit['packetDropsUploadSinceLastQuery']
 				thisNodeDropsTotal += (circuit['packetDropsDownloadSinceLastQuery'] + circuit['packetDropsUploadSinceLastQuery'])
+				packetsSentDownloadAggregate += circuit['packetsSentDownloadSinceLastQuery']
+				packetsSentUploadAggregate += circuit['packetsSentUploadSinceLastQuery']
+				packetsSentTotalAggregate += (circuit['packetsSentDownloadSinceLastQuery'] + circuit['packetsSentUploadSinceLastQuery'])
+				circuitsMatched += 1
+		if (packetsSentDownloadAggregate > 0) and (packetsSentUploadAggregate > 0):
+			#overloadFactorDownloadSinceLastQuery = float(round((thisNodeDropsDownload/packetsSentDownloadAggregate)*100.0, 3))
+			#overloadFactorUploadSinceLastQuery = float(round((thisNodeDropsUpload/packetsSentUploadAggregate)*100.0, 3))
+			overloadFactorTotalSinceLastQuery = float(round((thisNodeDropsTotal/packetsSentTotalAggregate)*100.0, 1))
+		else:
+			#overloadFactorDownloadSinceLastQuery = 0.0
+			#overloadFactorUploadSinceLastQuery = 0.0
+			overloadFactorTotalSinceLastQuery = 0.0
+		
 		parentNode['bitsDownloadSinceLastQuery'] = thisNodeBitsDownload
 		parentNode['bitsUploadSinceLastQuery'] = thisNodeBitsUpload
-		parentNode['packetDropsDownloadSinceLastQuery'] = thisNodeDropsDownload
-		parentNode['packetDropsUploadSinceLastQuery'] = thisNodeDropsUpload
+		#parentNode['packetDropsDownloadSinceLastQuery'] = thisNodeDropsDownload
+		#parentNode['packetDropsUploadSinceLastQuery'] = thisNodeDropsUpload
 		parentNode['packetDropsTotalSinceLastQuery'] = thisNodeDropsTotal
+		#parentNode['overloadFactorDownloadSinceLastQuery'] = overloadFactorDownloadSinceLastQuery
+		#parentNode['overloadFactorUploadSinceLastQuery'] = overloadFactorUploadSinceLastQuery
+		parentNode['overloadFactorTotalSinceLastQuery'] = overloadFactorTotalSinceLastQuery
 	return parentNodes
 
 
@@ -132,6 +169,16 @@ def refreshBandwidthGraphs():
 
 	with open('statsByCircuit.json', 'r') as j:
 		subscriberCircuits = json.loads(j.read())
+	
+	fileLoc = Path("longTermStats.json")
+	if fileLoc.is_file():
+		with open(fileLoc, 'r') as j:
+			longTermStats = json.loads(j.read())
+		droppedPacketsAllTime = longTermStats['droppedPacketsTotal']
+	else:
+		longTermStats = {}
+		longTermStats['droppedPacketsTotal'] = 0.0
+		droppedPacketsAllTime = 0.0
 
 	parentNodeNameDict = parentNodeNameDictPull()
 
@@ -156,8 +203,8 @@ def refreshBandwidthGraphs():
 			bitsDownload = float(circuit['bitsDownloadSinceLastQuery'])
 			bitsUpload = float(circuit['bitsUploadSinceLastQuery'])
 			if (bitsDownload > 0) and (bitsUpload > 0):
-				percentUtilizationDownload = round((bitsDownload / round(circuit['downloadMax'] * 1000000)), 2)
-				percentUtilizationUpload = round((bitsUpload / round(circuit['uploadMax'] * 1000000)), 2)
+				percentUtilizationDownload = round((bitsDownload / round(circuit['downloadMax'] * 1000000))*100.0, 1)
+				percentUtilizationUpload = round((bitsUpload / round(circuit['uploadMax'] * 1000000))*100.0, 1)
 				p = Point('Bandwidth').tag("Circuit", circuit['circuitName']).tag("ParentNode", circuit['ParentNode']).tag("Type", "Circuit").field("Download", bitsDownload).field("Upload", bitsUpload)
 				queriesToSend.append(p)
 				p = Point('Utilization').tag("Circuit", circuit['circuitName']).tag("ParentNode", circuit['ParentNode']).tag("Type", "Circuit").field("Download", percentUtilizationDownload).field("Upload", percentUtilizationUpload)
@@ -172,14 +219,16 @@ def refreshBandwidthGraphs():
 		bitsDownload = float(parentNode['bitsDownloadSinceLastQuery'])
 		bitsUpload = float(parentNode['bitsUploadSinceLastQuery'])
 		dropsTotal = float(parentNode['packetDropsTotalSinceLastQuery'])
+		overloadFactor = float(parentNode['overloadFactorTotalSinceLastQuery'])
+		droppedPacketsAllTime += dropsTotal
 		if (bitsDownload > 0) and (bitsUpload > 0):
-			percentUtilizationDownload = round((bitsDownload / round(parentNode['downloadMax'] * 1000000)), 2)
-			percentUtilizationUpload = round((bitsUpload / round(parentNode['uploadMax'] * 1000000)), 2)
+			percentUtilizationDownload = round((bitsDownload / round(parentNode['downloadMax'] * 1000000))*100.0, 1)
+			percentUtilizationUpload = round((bitsUpload / round(parentNode['uploadMax'] * 1000000))*100.0, 1)
 			p = Point('Bandwidth').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("Download", bitsDownload).field("Upload", bitsUpload)
 			queriesToSend.append(p)
 			p = Point('Utilization').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("Download", percentUtilizationDownload).field("Upload", percentUtilizationUpload)
 			queriesToSend.append(p)
-			p = Point('Drops').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("Drops", dropsTotal)
+			p = Point('Overload').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("Overload", overloadFactor)
 			queriesToSend.append(p)
 
 	write_api.write(bucket=influxDBBucket, record=queriesToSend)
@@ -194,6 +243,10 @@ def refreshBandwidthGraphs():
 
 	with open('statsByCircuit.json', 'w') as infile:
 		json.dump(subscriberCircuits, infile)
+	
+	longTermStats['droppedPacketsTotal'] = droppedPacketsAllTime
+	with open('longTermStats.json', 'w') as infile:
+		json.dump(longTermStats, infile)
 
 	endTime = datetime.now()
 	durationSeconds = round((endTime - startTime).total_seconds(), 2)
