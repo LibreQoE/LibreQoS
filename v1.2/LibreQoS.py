@@ -9,7 +9,7 @@ import os
 import os.path
 import subprocess
 from subprocess import PIPE, STDOUT
-from datetime import datetime
+from datetime import datetime, timedelta
 import multiprocessing
 import warnings
 import psutil
@@ -863,14 +863,14 @@ def refreshShapers():
 		
 		
 		# Report reload time
-		reloadTimeSeconds = ((reloadEndTime - reloadStartTime).microseconds) / 1000000
-		tcTimeSeconds = ((tcEndTime - tcStartTime).microseconds) / 1000000
-		xdpSetupTimeSeconds = ((xdpEndTime - xdpStartTime).microseconds) / 1000000
-		xdpFilterTimeSeconds = ((xdpFilterEndTime - xdpFilterStartTime).microseconds) / 1000000
-		print("Queue and IP filter reload completed in " + "{:.1f}".format(reloadTimeSeconds) + " seconds")
-		print("\tTC commands: \t" + "{:.1f}".format(tcTimeSeconds) + " seconds")
-		print("\tXDP setup: \t " + "{:.1f}".format(xdpSetupTimeSeconds) + " seconds")
-		print("\tXDP filters: \t " + "{:.1f}".format(xdpFilterTimeSeconds) + " seconds")
+		reloadTimeSeconds = ((reloadEndTime - reloadStartTime).seconds) + (((reloadEndTime - reloadStartTime).microseconds) / 1000000)
+		tcTimeSeconds = ((tcEndTime - tcStartTime).seconds) + (((tcEndTime - tcStartTime).microseconds) / 1000000)
+		xdpSetupTimeSeconds = ((xdpEndTime - xdpStartTime).seconds) + (((xdpEndTime - xdpStartTime).microseconds) / 1000000)
+		xdpFilterTimeSeconds = ((xdpFilterEndTime - xdpFilterStartTime).seconds) + (((xdpFilterEndTime - xdpFilterStartTime).microseconds) / 1000000)
+		print("Queue and IP filter reload completed in " + "{:g}".format(round(reloadTimeSeconds,1)) + " seconds")
+		print("\tTC commands: \t" + "{:g}".format(round(tcTimeSeconds,1)) + " seconds")
+		print("\tXDP setup: \t " + "{:g}".format(round(xdpSetupTimeSeconds,1)) + " seconds")
+		print("\tXDP filters: \t " + "{:g}".format(round(xdpFilterTimeSeconds,1)) + " seconds")
 		
 		
 		# Done
