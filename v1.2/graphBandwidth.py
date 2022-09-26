@@ -25,23 +25,49 @@ def chunk_list(l, n):
 	for i in range(0, len(l), n):
 		yield l[i:i + n]
 
-def getsubscriberCircuitstats(subscriberCircuits):
+def getsubscriberCircuitstats(subscriberCircuits, tinsStats):
 	interfaces = [interfaceA, interfaceB]
 	ifaceStats = list(map(getInterfaceStats, interfaces))
-	tinsBulkPacketsSentDownload = tinsBestEffortPacketsSentDownload = tinsVoicePacketsSentDownload =tinsVideoPacketsSentDownload = 0.0
-	tinsBulkPacketsSentUpload = tinsBestEffortPacketsSentUpload = tinsVoicePacketsSentUpload =tinsVideoPacketsSentUpload = 0.0
-	allPacketsDownload = 0.0
-	allPacketsUpload = 0.0
 	
 	for circuit in subscriberCircuits:
-		if 'timeQueried' in circuit:
-			circuit['priorQueryTime'] = circuit['timeQueried']
+		if 'stats' not in circuit:
+			circuit['stats'] = {}
+		if 'currentQuery' in circuit['stats']:
+			circuit['stats']['priorQuery'] = circuit['stats']['currentQuery']
+			circuit['stats']['currentQuery'] = {}
+			circuit['stats']['sinceLastQuery'] = {}
+		else:
+			#circuit['stats']['priorQuery'] = {}
+			#circuit['stats']['priorQuery']['time'] = datetime.now().isoformat()
+			circuit['stats']['currentQuery'] = {}
+			circuit['stats']['sinceLastQuery'] = {}
+
+	#for entry in tinsStats:
+	if 'currentQuery' in tinsStats:
+		tinsStats['priorQuery'] = tinsStats['currentQuery']
+		tinsStats['currentQuery'] = {}
+		tinsStats['sinceLastQuery'] = {}
+	else:
+		tinsStats['currentQuery'] = {}
+		tinsStats['sinceLastQuery'] = {}
+	
+	tinsStats['currentQuery'] = {	'Bulk': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
+									'BestEffort': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
+									'Video': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
+									'Voice': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
+								}
+	tinsStats['sinceLastQuery'] = {	'Bulk': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
+									'BestEffort': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
+									'Video': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
+									'Voice': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
+								}
+	
+	for circuit in subscriberCircuits:
 		for (interface, stats, dirSuffix) in zip(interfaces, ifaceStats, ['Download', 'Upload']):
 
 			element = stats[circuit['qdisc']] if circuit['qdisc'] in stats else False
 
 			if element:
-
 				bytesSent = float(element['bytes'])
 				drops = float(element['drops'])
 				packets = float(element['packets'])
@@ -52,162 +78,164 @@ def getsubscriberCircuitstats(subscriberCircuits):
 				
 				if 'cake diffserv4' in fqOrCAKE:
 					tinCounter = 1
-					packetsSentBulk = 0.0
-					packetsSentBestEffort = 0.0
-					packetsSentVideo = 0.0
-					packetsSentVoice = 0.0
 					for tin in element['tins']:
 						sent_packets = float(tin['sent_packets'])
 						ack_drops = float(tin['ack_drops'])
 						ecn_mark = float(tin['ecn_mark'])
 						tinDrops = float(tin['drops'])
-						trueDrops = tinDrops - ack_drops
+						trueDrops = ecn_mark + tinDrops - ack_drops
 						if tinCounter == 1:
-							packetsSentBulk = sent_packets
+							tinsStats['currentQuery']['Bulk'][dirSuffix]['sent_packets'] += sent_packets
+							tinsStats['currentQuery']['Bulk'][dirSuffix]['drops'] += trueDrops
 						elif tinCounter == 2:
-							packetsSentBestEffort = sent_packets
+							tinsStats['currentQuery']['BestEffort'][dirSuffix]['sent_packets'] += sent_packets
+							tinsStats['currentQuery']['BestEffort'][dirSuffix]['drops'] += trueDrops
 						elif tinCounter == 3:
-							packetsSentVideo = sent_packets
+							tinsStats['currentQuery']['Video'][dirSuffix]['sent_packets'] += sent_packets
+							tinsStats['currentQuery']['Video'][dirSuffix]['drops'] += trueDrops
 						elif tinCounter == 4:
-							packetsSentVoice = sent_packets
+							tinsStats['currentQuery']['Voice'][dirSuffix]['sent_packets'] += sent_packets
+							tinsStats['currentQuery']['Voice'][dirSuffix]['drops'] += trueDrops
 						tinCounter += 1
 
-				if 'bytesSent' + dirSuffix in circuit:
-					circuit['priorQueryBytes' + dirSuffix] = circuit['bytesSent' + dirSuffix]
-				circuit['bytesSent' + dirSuffix] = bytesSent
-
-				if 'dropsSent' + dirSuffix in circuit:
-					circuit['priorQueryDrops' + dirSuffix] = circuit['dropsSent' + dirSuffix]
-				circuit['dropsSent' + dirSuffix] = drops
-
-				if 'packetsSent' + dirSuffix in circuit:
-					circuit['priorQueryPacketsSent' + dirSuffix] = circuit['packetsSent' + dirSuffix]
-				circuit['packetsSent' + dirSuffix] = packets
+				circuit['stats']['currentQuery']['bytesSent' + dirSuffix] = bytesSent
+				circuit['stats']['currentQuery']['packetDrops' + dirSuffix] = drops
+				circuit['stats']['currentQuery']['packetsSent' + dirSuffix] = packets
+				circuit['stats']['currentQuery']['overloadFactor' + dirSuffix] = overloadFactor
 				
-				if 'overloadFactor' + dirSuffix in circuit:
-					circuit['priorQueryOverloadFactor' + dirSuffix] = circuit['overloadFactor' + dirSuffix]
-				circuit['overloadFactor' + dirSuffix] = overloadFactor
-				
-				if 'cake diffserv4' in fqOrCAKE:
-					if 'packetsSentBulk' + dirSuffix in circuit:
-						circuit['priorQueryPacketsSentBulk' + dirSuffix] = circuit['packetsSentBulk' + dirSuffix]
-					circuit['packetsSentBulk' + dirSuffix] = packetsSentBulk
-					
-					if 'packetsSentBestEffort' + dirSuffix in circuit:
-						circuit['priorQueryPacketsSentBestEffort' + dirSuffix] = circuit['packetsSentBestEffort' + dirSuffix]
-					circuit['packetsSentBestEffort' + dirSuffix] = packetsSentBestEffort
-					
-					if 'packetsSentVideo' + dirSuffix in circuit:
-						circuit['priorQueryPacketsSentVideo' + dirSuffix] = circuit['packetsSentVideo' + dirSuffix]
-					circuit['packetsSentVideo' + dirSuffix] = packetsSentVideo
-					
-					if 'packetsSentVoice' + dirSuffix in circuit:
-						circuit['priorQueryPacketsSentVoice' + dirSuffix] = circuit['packetsSentVoice' + dirSuffix]
-					circuit['packetsSentVoice' + dirSuffix] = packetsSentVoice
+				#if 'cake diffserv4' in fqOrCAKE:
+				#	circuit['stats']['currentQuery']['tins'] = theseTins
 
-		circuit['timeQueried'] = datetime.now().isoformat()
-	for circuit in subscriberCircuits:
-		circuit['bitsDownloadSinceLastQuery'] = circuit['bitsUploadSinceLastQuery'] = 0.0
-		circuit['packetDropsDownloadSinceLastQuery'] = circuit['packetDropsUploadSinceLastQuery'] = 0.0
-		circuit['packetsSentDownloadSinceLastQuery'] = circuit['packetsSentUploadSinceLastQuery'] = 0.0
-		if 'priorQueryTime' in circuit:
-			try:
-				bytesDLSinceLastQuery = circuit['bytesSentDownload'] - circuit['priorQueryBytesDownload']
-				bytesULSinceLastQuery = circuit['bytesSentUpload'] - circuit['priorQueryBytesUpload']
-			except:
-				bytesDLSinceLastQuery = bytesULSinceLastQuery = 0.0
-			try:
-				packetDropsDLSinceLastQuery = circuit['dropsSentDownload'] - circuit['priorQueryDropsDownload']
-				packetDropsULSinceLastQuery = circuit['dropsSentUpload'] - circuit['priorQueryDropsUpload']
-			except:
-				packetDropsDLSinceLastQuery = packetDropsULSinceLastQuery = 0.0
-			try:
-				packetsSentDLSinceLastQuery = circuit['packetsSentDownload'] - circuit['priorQueryPacketsSentDownload']
-				packetsSentULSinceLastQuery = circuit['packetsSentUpload'] - circuit['priorQueryPacketsSentUpload']
-			except:
-				packetsSentDLSinceLastQuery = packetsSentULSinceLastQuery = 0.0
-			
-			if 'cake diffserv4' in fqOrCAKE:
-				try:
-					packetsSentDLSinceLastQueryBulk = circuit['packetsSentBulkDownload'] - circuit['priorQueryPacketsSentBulkDownload']
-					packetsSentULSinceLastQueryBulk = circuit['packetsSentBulkUpload'] - circuit['priorQueryPacketsSentBulkUpload']
-					packetsSentDLSinceLastQueryBestEffort = circuit['packetsSentBestEffortDownload'] - circuit['priorQueryPacketsSentBestEffortDownload']
-					packetsSentULSinceLastQueryBestEffort = circuit['packetsSentBestEffortUpload'] - circuit['priorQueryPacketsSentBestEffortUpload']
-					packetsSentDLSinceLastQueryVideo = circuit['packetsSentVideoDownload'] - circuit['priorQueryPacketsSentVideoDownload']
-					packetsSentULSinceLastQueryVideo = circuit['packetsSentVideoUpload'] - circuit['priorQueryPacketsSentVideoUpload']
-					packetsSentDLSinceLastQueryVoice = circuit['packetsSentVoiceDownload'] - circuit['priorQueryPacketsSentVoiceDownload']
-					packetsSentULSinceLastQueryVoice = circuit['packetsSentVoiceUpload'] - circuit['priorQueryPacketsSentVoiceUpload']
-				except:
-					packetsSentDLSinceLastQueryBulk = packetsSentULSinceLastQueryBulk = 0.0
-					packetsSentDLSinceLastQueryBestEffort = packetsSentULSinceLastQueryBestEffort = 0.0
-					packetsSentDLSinceLastQueryVideo = packetsSentULSinceLastQueryVideo = 0.0
-					packetsSentDLSinceLastQueryVoice = packetsSentULSinceLastQueryVoice = 0.0
-				
-				allPacketsDownload += packetsSentDLSinceLastQuery
-				allPacketsUpload += packetsSentULSinceLastQuery
-				
-				tinsBulkPacketsSentDownload += packetsSentDLSinceLastQueryBulk
-				tinsBestEffortPacketsSentDownload += packetsSentDLSinceLastQueryBestEffort
-				tinsVideoPacketsSentDownload += packetsSentDLSinceLastQueryVideo
-				tinsVoicePacketsSentDownload += packetsSentDLSinceLastQueryVoice
-				tinsBulkPacketsSentUpload += packetsSentULSinceLastQueryBulk
-				tinsBestEffortPacketsSentUpload += packetsSentULSinceLastQueryBestEffort
-				tinsVideoPacketsSentUpload += packetsSentULSinceLastQueryVideo
-				tinsVoicePacketsSentUpload += packetsSentULSinceLastQueryVoice
-						
-			currentQueryTime = datetime.fromisoformat(circuit['timeQueried'])
-			priorQueryTime = datetime.fromisoformat(circuit['priorQueryTime'])
-			deltaSeconds = (currentQueryTime - priorQueryTime).total_seconds()
-
-			circuit['bitsDownloadSinceLastQuery'] = round(
-				((bytesDLSinceLastQuery * 8) / deltaSeconds)) if deltaSeconds > 0 else 0
-			circuit['bitsUploadSinceLastQuery'] = round(
-				((bytesULSinceLastQuery * 8) / deltaSeconds)) if deltaSeconds > 0 else 0
-			circuit['packetDropsDownloadSinceLastQuery'] = packetDropsDLSinceLastQuery
-			circuit['packetDropsUploadSinceLastQuery'] = packetDropsULSinceLastQuery
-			circuit['packetsSentDownloadSinceLastQuery'] = packetsSentDLSinceLastQuery
-			circuit['packetsSentUploadSinceLastQuery'] = packetsSentULSinceLastQuery
-	
-	if 'cake diffserv4' in fqOrCAKE:
-		tinsStats = {	'Bulk': {}, 
-						'BestEffort': {},
-						'Voice': {},
-						'Video': {}}
+		circuit['stats']['currentQuery']['time'] = datetime.now().isoformat()
 		
-		if (allPacketsDownload > 0):
-			tinsStats['Bulk']['Download'] = round((tinsBulkPacketsSentDownload / allPacketsDownload) * 100.0, 1)
-			tinsStats['BestEffort']['Download'] = round((tinsBestEffortPacketsSentDownload / allPacketsDownload) * 100.0, 1)
-			tinsStats['Voice']['Download'] =  round((tinsVoicePacketsSentDownload / allPacketsDownload) * 100.0, 1)
-			tinsStats['Video']['Download'] =  round((tinsVideoPacketsSentDownload / allPacketsDownload) * 100.0, 1)
+	allPacketsDownload = 0.0
+	allPacketsUpload = 0.0
+	for circuit in subscriberCircuits:
+		circuit['stats']['sinceLastQuery']['bitsDownload'] = circuit['stats']['sinceLastQuery']['bitsUpload'] = 0.0
+		circuit['stats']['sinceLastQuery']['bytesSentDownload'] = circuit['stats']['sinceLastQuery']['bytesSentUpload'] = 0.0
+		circuit['stats']['sinceLastQuery']['packetDropsDownload'] = circuit['stats']['sinceLastQuery']['packetDropsUpload'] = 0.0
+		circuit['stats']['sinceLastQuery']['packetsSentDownload'] = circuit['stats']['sinceLastQuery']['packetsSentUpload'] = 0.0
+		
+		try:
+			circuit['stats']['sinceLastQuery']['bytesSentDownload'] = circuit['stats']['currentQuery']['bytesSentDownload'] - circuit['stats']['priorQuery']['bytesSentDownload']
+			circuit['stats']['sinceLastQuery']['bytesSentUpload'] = circuit['stats']['currentQuery']['bytesSentUpload'] - circuit['stats']['priorQuery']['bytesSentUpload']
+		except:
+			circuit['stats']['sinceLastQuery']['bytesSentDownload'] = 0.0
+			circuit['stats']['sinceLastQuery']['bytesSentUpload'] = 0.0
+		try:
+			circuit['stats']['sinceLastQuery']['packetDropsDownload'] = circuit['stats']['currentQuery']['packetDropsDownload'] - circuit['stats']['priorQuery']['packetDropsDownload']
+			circuit['stats']['sinceLastQuery']['packetDropsUpload'] = circuit['stats']['currentQuery']['packetDropsUpload'] - circuit['stats']['priorQuery']['packetDropsUpload']
+		except:
+			circuit['stats']['sinceLastQuery']['packetDropsDownload'] = 0.0
+			circuit['stats']['sinceLastQuery']['packetDropsUpload'] = 0.0
+		try:
+			circuit['stats']['sinceLastQuery']['packetsSentDownload'] = circuit['stats']['currentQuery']['packetsSentDownload'] - circuit['stats']['priorQuery']['packetsSentDownload']
+			circuit['stats']['sinceLastQuery']['packetsSentUpload'] = circuit['stats']['currentQuery']['packetsSentUpload'] - circuit['stats']['priorQuery']['packetsSentUpload']
+		except:
+			circuit['stats']['sinceLastQuery']['packetsSentDownload'] = 0.0
+			circuit['stats']['sinceLastQuery']['packetsSentUpload'] = 0.0
+		
+		allPacketsDownload += circuit['stats']['sinceLastQuery']['packetsSentDownload']
+		allPacketsUpload += circuit['stats']['sinceLastQuery']['packetsSentUpload']
+		
+		if 'priorQuery' in circuit['stats']:
+			if 'time' in circuit['stats']['priorQuery']:
+				currentQueryTime = datetime.fromisoformat(circuit['stats']['currentQuery']['time'])
+				priorQueryTime = datetime.fromisoformat(circuit['stats']['priorQuery']['time'])
+				deltaSeconds = (currentQueryTime - priorQueryTime).total_seconds()
+				circuit['stats']['sinceLastQuery']['bitsDownload'] = round(
+					((circuit['stats']['sinceLastQuery']['bytesSentDownload'] * 8) / deltaSeconds)) if deltaSeconds > 0 else 0
+				circuit['stats']['sinceLastQuery']['bitsUpload'] = round(
+					((circuit['stats']['sinceLastQuery']['bytesSentUpload'] * 8) / deltaSeconds)) if deltaSeconds > 0 else 0
 		else:
-			tinsStats['Bulk']['Download'] = 0.0
-			tinsStats['BestEffort']['Download'] = 0.0
-			tinsStats['Voice']['Download'] =  0.0
-			tinsStats['Video']['Download'] =  0.0
-		if (allPacketsUpload > 0):
-			tinsStats['Bulk']['Upload'] = round((tinsBulkPacketsSentUpload / allPacketsUpload) * 100.0, 1)
-			tinsStats['BestEffort']['Upload'] =  round((tinsBestEffortPacketsSentUpload / allPacketsUpload) * 100.0, 1)
-			tinsStats['Video']['Upload'] =  round((tinsVideoPacketsSentUpload / allPacketsUpload) * 100.0, 1)
-			tinsStats['Voice']['Upload'] =  round((tinsVoicePacketsSentUpload / allPacketsUpload) * 100.0, 1)
-		else:
-			tinsStats['Bulk']['Upload'] = 0.0
-			tinsStats['BestEffort']['Upload'] =  0.0
-			tinsStats['Video']['Upload'] =  0.0
-			tinsStats['Voice']['Upload'] =  0.0
-	else:
-		tinsStats = {	'Bulk': {}, 
-						'BestEffort': {},
-						'Voice': {},
-						'Video': {}}
-		tinsStats['Bulk']['Download'] = 0.0
-		tinsStats['BestEffort']['Download'] = 0.0
-		tinsStats['Voice']['Download'] =  0.0
-		tinsStats['Video']['Download'] =  0.0
-		tinsStats['Bulk']['Upload'] = 0.0
-		tinsStats['BestEffort']['Upload'] = 0.0
-		tinsStats['Voice']['Upload'] =  0.0
-		tinsStats['Video']['Upload'] =  0.0
+			circuit['stats']['sinceLastQuery']['bitsDownload'] = (circuit['stats']['sinceLastQuery']['bytesSentDownload'] * 8)
+			circuit['stats']['sinceLastQuery']['bitsUpload'] = (circuit['stats']['sinceLastQuery']['bytesSentUpload'] * 8)
+	
+	tinsStats['sinceLastQuery']['Bulk']['Download']['dropPercentage'] = tinsStats['sinceLastQuery']['Bulk']['Upload']['dropPercentage'] = 0.0
+	tinsStats['sinceLastQuery']['BestEffort']['Download']['dropPercentage'] = tinsStats['sinceLastQuery']['BestEffort']['Upload']['dropPercentage'] = 0.0
+	tinsStats['sinceLastQuery']['Video']['Download']['dropPercentage'] = tinsStats['sinceLastQuery']['Video']['Upload']['dropPercentage'] = 0.0
+	tinsStats['sinceLastQuery']['Voice']['Download']['dropPercentage'] = tinsStats['sinceLastQuery']['Voice']['Upload']['dropPercentage'] = 0.0
+	
+	tinsStats['sinceLastQuery']['Bulk']['Download']['percentage'] = tinsStats['sinceLastQuery']['Bulk']['Upload']['percentage'] = 0.0
+	tinsStats['sinceLastQuery']['BestEffort']['Download']['percentage'] = tinsStats['sinceLastQuery']['BestEffort']['Upload']['percentage'] = 0.0
+	tinsStats['sinceLastQuery']['Video']['Download']['percentage'] = tinsStats['sinceLastQuery']['Video']['Upload']['percentage'] = 0.0
+	tinsStats['sinceLastQuery']['Voice']['Download']['percentage'] = tinsStats['sinceLastQuery']['Voice']['Upload']['percentage'] = 0.0
+	
+	try:
+		tinsStats['sinceLastQuery']['Bulk']['Download']['sent_packets'] = tinsStats['currentQuery']['Bulk']['Download']['sent_packets'] - tinsStats['priorQuery']['Bulk']['Download']['sent_packets']
+		tinsStats['sinceLastQuery']['BestEffort']['Download']['sent_packets'] = tinsStats['currentQuery']['BestEffort']['Download']['sent_packets'] - tinsStats['priorQuery']['BestEffort']['Download']['sent_packets']
+		tinsStats['sinceLastQuery']['Video']['Download']['sent_packets'] = tinsStats['currentQuery']['Video']['Download']['sent_packets'] - tinsStats['priorQuery']['Video']['Download']['sent_packets']
+		tinsStats['sinceLastQuery']['Voice']['Download']['sent_packets'] = tinsStats['currentQuery']['Voice']['Download']['sent_packets'] - tinsStats['priorQuery']['Voice']['Download']['sent_packets']
+		tinsStats['sinceLastQuery']['Bulk']['Upload']['sent_packets'] = tinsStats['currentQuery']['Bulk']['Upload']['sent_packets'] - tinsStats['priorQuery']['Bulk']['Upload']['sent_packets']
+		tinsStats['sinceLastQuery']['BestEffort']['Upload']['sent_packets'] = tinsStats['currentQuery']['BestEffort']['Upload']['sent_packets'] - tinsStats['priorQuery']['BestEffort']['Upload']['sent_packets']
+		tinsStats['sinceLastQuery']['Video']['Upload']['sent_packets'] = tinsStats['currentQuery']['Video']['Upload']['sent_packets'] - tinsStats['priorQuery']['Video']['Upload']['sent_packets']
+		tinsStats['sinceLastQuery']['Voice']['Upload']['sent_packets'] = tinsStats['currentQuery']['Voice']['Upload']['sent_packets'] - tinsStats['priorQuery']['Voice']['Upload']['sent_packets']
+	except:
+		tinsStats['sinceLastQuery']['Bulk']['Download']['sent_packets'] = tinsStats['sinceLastQuery']['BestEffort']['Download']['sent_packets'] = 0.0
+		tinsStats['sinceLastQuery']['Video']['Download']['sent_packets'] = tinsStats['sinceLastQuery']['Voice']['Download']['sent_packets'] = 0.0
+		tinsStats['sinceLastQuery']['Bulk']['Upload']['sent_packets'] = tinsStats['sinceLastQuery']['BestEffort']['Upload']['sent_packets'] = 0.0
+		tinsStats['sinceLastQuery']['Video']['Upload']['sent_packets'] = tinsStats['sinceLastQuery']['Voice']['Upload']['sent_packets'] = 0.0
 
+	try:
+		tinsStats['sinceLastQuery']['Bulk']['Download']['drops'] = tinsStats['currentQuery']['Bulk']['Download']['drops'] - tinsStats['priorQuery']['Bulk']['Download']['drops']
+		tinsStats['sinceLastQuery']['BestEffort']['Download']['drops'] = tinsStats['currentQuery']['BestEffort']['Download']['drops'] - tinsStats['priorQuery']['BestEffort']['Download']['drops']
+		tinsStats['sinceLastQuery']['Video']['Download']['drops'] = tinsStats['currentQuery']['Video']['Download']['drops'] - tinsStats['priorQuery']['Video']['Download']['drops']
+		tinsStats['sinceLastQuery']['Voice']['Download']['drops'] = tinsStats['currentQuery']['Voice']['Download']['drops'] - tinsStats['priorQuery']['Voice']['Download']['drops']
+		tinsStats['sinceLastQuery']['Bulk']['Upload']['drops'] = tinsStats['currentQuery']['Bulk']['Upload']['drops'] - tinsStats['priorQuery']['Bulk']['Upload']['drops']
+		tinsStats['sinceLastQuery']['BestEffort']['Upload']['drops'] = tinsStats['currentQuery']['BestEffort']['Upload']['drops'] - tinsStats['priorQuery']['BestEffort']['Upload']['drops']
+		tinsStats['sinceLastQuery']['Video']['Upload']['drops'] = tinsStats['currentQuery']['Video']['Upload']['drops'] - tinsStats['priorQuery']['Video']['Upload']['drops']
+		tinsStats['sinceLastQuery']['Voice']['Upload']['drops'] = tinsStats['currentQuery']['Voice']['Upload']['drops'] - tinsStats['priorQuery']['Voice']['Upload']['drops']
+	except:
+		tinsStats['sinceLastQuery']['Bulk']['Download']['drops'] = tinsStats['sinceLastQuery']['BestEffort']['Download']['drops'] = 0.0
+		tinsStats['sinceLastQuery']['Video']['Download']['drops'] = tinsStats['sinceLastQuery']['Voice']['Download']['drops'] = 0.0
+		tinsStats['sinceLastQuery']['Bulk']['Upload']['drops'] = tinsStats['sinceLastQuery']['BestEffort']['Upload']['drops'] = 0.0
+		tinsStats['sinceLastQuery']['Video']['Upload']['drops'] = tinsStats['sinceLastQuery']['Voice']['Upload']['drops'] = 0.0
+
+	try:
+		dlPerc = tinsStats['sinceLastQuery']['Bulk']['Download']['drops'] / tinsStats['sinceLastQuery']['Bulk']['Download']['sent_packets']
+		ulPerc = tinsStats['sinceLastQuery']['Bulk']['Upload']['drops'] / tinsStats['sinceLastQuery']['Bulk']['Upload']['sent_packets']
+		tinsStats['sinceLastQuery']['Bulk']['Download']['dropPercentage'] = max(round(dlPerc * 100.0, 3),0.0)
+		tinsStats['sinceLastQuery']['Bulk']['Upload']['dropPercentage'] = max(round(ulPerc * 100.0, 3),0.0)
+		
+		dlPerc = tinsStats['sinceLastQuery']['BestEffort']['Download']['drops'] / tinsStats['sinceLastQuery']['BestEffort']['Download']['sent_packets']
+		ulPerc = tinsStats['sinceLastQuery']['BestEffort']['Upload']['drops'] / tinsStats['sinceLastQuery']['BestEffort']['Upload']['sent_packets']
+		tinsStats['sinceLastQuery']['BestEffort']['Download']['dropPercentage'] = max(round(dlPerc * 100.0, 3),0.0)
+		tinsStats['sinceLastQuery']['BestEffort']['Upload']['dropPercentage'] = max(round(ulPerc * 100.0, 3),0.0)
+		
+		dlPerc = tinsStats['sinceLastQuery']['Video']['Download']['drops'] / tinsStats['sinceLastQuery']['Video']['Download']['sent_packets']
+		ulPerc = tinsStats['sinceLastQuery']['Video']['Upload']['drops'] / tinsStats['sinceLastQuery']['Video']['Upload']['sent_packets']
+		tinsStats['sinceLastQuery']['Video']['Download']['dropPercentage'] = max(round(dlPerc * 100.0, 3),0.0)
+		tinsStats['sinceLastQuery']['Video']['Upload']['dropPercentage'] = max(round(ulPerc * 100.0, 3),0.0)
+		
+		dlPerc = tinsStats['sinceLastQuery']['Voice']['Download']['drops'] / tinsStats['sinceLastQuery']['Voice']['Download']['sent_packets']
+		ulPerc = tinsStats['sinceLastQuery']['Voice']['Upload']['drops'] / tinsStats['sinceLastQuery']['Voice']['Upload']['sent_packets']
+		tinsStats['sinceLastQuery']['Voice']['Download']['dropPercentage'] = max(round(dlPerc * 100.0, 3),0.0)
+		tinsStats['sinceLastQuery']['Voice']['Upload']['dropPercentage'] = max(round(ulPerc * 100.0, 3),0.0)
+	except:
+		tinsStats['sinceLastQuery']['Bulk']['Download']['dropPercentage'] = 0.0
+		tinsStats['sinceLastQuery']['Bulk']['Upload']['dropPercentage'] = 0.0
+		tinsStats['sinceLastQuery']['BestEffort']['Download']['dropPercentage'] = 0.0
+		tinsStats['sinceLastQuery']['BestEffort']['Upload']['dropPercentage'] = 0.0
+		tinsStats['sinceLastQuery']['Video']['Download']['dropPercentage'] = 0.0
+		tinsStats['sinceLastQuery']['Video']['Upload']['dropPercentage'] = 0.0
+		tinsStats['sinceLastQuery']['Voice']['Download']['dropPercentage'] = 0.0
+		tinsStats['sinceLastQuery']['Voice']['Upload']['dropPercentage'] = 0.0
+		
+	try:
+		tinsStats['sinceLastQuery']['Bulk']['Download']['percentage'] = round((tinsStats['sinceLastQuery']['Bulk']['Download']['sent_packets']/allPacketsUpload)*100.0, 1)
+		tinsStats['sinceLastQuery']['Bulk']['Upload']['percentage'] = round((tinsStats['sinceLastQuery']['Bulk']['Upload']['sent_packets']/allPacketsUpload)*100.0, 1)
+		tinsStats['sinceLastQuery']['BestEffort']['Download']['percentage'] = round((tinsStats['sinceLastQuery']['BestEffort']['Download']['sent_packets']/allPacketsDownload)*100.0, 1)
+		tinsStats['sinceLastQuery']['BestEffort']['Upload']['percentage'] = round((tinsStats['sinceLastQuery']['BestEffort']['Upload']['sent_packets']/allPacketsUpload)*100.0, 1)
+		tinsStats['sinceLastQuery']['Video']['Download']['percentage'] = round((tinsStats['sinceLastQuery']['Video']['Download']['sent_packets']/allPacketsDownload)*100.0, 1)
+		tinsStats['sinceLastQuery']['Video']['Upload']['percentage'] = round((tinsStats['sinceLastQuery']['Video']['Upload']['sent_packets']/allPacketsUpload)*100.0, 1)
+		tinsStats['sinceLastQuery']['Voice']['Download']['percentage'] = round((tinsStats['sinceLastQuery']['Voice']['Download']['sent_packets']/allPacketsDownload)*100.0, 1)
+		tinsStats['sinceLastQuery']['Voice']['Upload']['percentage'] = round((tinsStats['sinceLastQuery']['Voice']['Upload']['sent_packets']/allPacketsUpload)*100.0, 1)
+	except:
+		tinsStats['sinceLastQuery']['Bulk']['Download']['percentage'] = tinsStats['sinceLastQuery']['Bulk']['Upload']['percentage'] = 0.0
+		tinsStats['sinceLastQuery']['BestEffort']['Download']['percentage'] = tinsStats['sinceLastQuery']['BestEffort']['Upload']['percentage'] = 0.0
+		tinsStats['sinceLastQuery']['Video']['Download']['percentage'] = tinsStats['sinceLastQuery']['Video']['Upload']['percentage'] = 0.0
+		tinsStats['sinceLastQuery']['Voice']['Download']['percentage'] = tinsStats['sinceLastQuery']['Voice']['Upload']['percentage'] = 0.0
+	
 	return subscriberCircuits, tinsStats
 
 
@@ -222,16 +250,17 @@ def getParentNodeStats(parentNodes, subscriberCircuits):
 		packetsSentUploadAggregate = 0.0
 		packetsSentTotalAggregate = 0.0
 		circuitsMatched = 0
+		thisParentNodeStats = {'sinceLastQuery': {}}
 		for circuit in subscriberCircuits:
 			if circuit['ParentNode'] == parentNode['parentNodeName']:
-				thisNodeBitsDownload += circuit['bitsDownloadSinceLastQuery']
-				thisNodeBitsUpload += circuit['bitsUploadSinceLastQuery']
+				thisNodeBitsDownload += circuit['stats']['sinceLastQuery']['bitsDownload']
+				thisNodeBitsUpload += circuit['stats']['sinceLastQuery']['bitsUpload']
 				#thisNodeDropsDownload += circuit['packetDropsDownloadSinceLastQuery']
 				#thisNodeDropsUpload += circuit['packetDropsUploadSinceLastQuery']
-				thisNodeDropsTotal += (circuit['packetDropsDownloadSinceLastQuery'] + circuit['packetDropsUploadSinceLastQuery'])
-				packetsSentDownloadAggregate += circuit['packetsSentDownloadSinceLastQuery']
-				packetsSentUploadAggregate += circuit['packetsSentUploadSinceLastQuery']
-				packetsSentTotalAggregate += (circuit['packetsSentDownloadSinceLastQuery'] + circuit['packetsSentUploadSinceLastQuery'])
+				thisNodeDropsTotal += (circuit['stats']['sinceLastQuery']['packetDropsDownload'] + circuit['stats']['sinceLastQuery']['packetDropsUpload'])
+				packetsSentDownloadAggregate += circuit['stats']['sinceLastQuery']['packetsSentDownload']
+				packetsSentUploadAggregate += circuit['stats']['sinceLastQuery']['packetsSentUpload']
+				packetsSentTotalAggregate += (circuit['stats']['sinceLastQuery']['packetsSentDownload'] + circuit['stats']['sinceLastQuery']['packetsSentUpload'])
 				circuitsMatched += 1
 		if (packetsSentDownloadAggregate > 0) and (packetsSentUploadAggregate > 0):
 			#overloadFactorDownloadSinceLastQuery = float(round((thisNodeDropsDownload/packetsSentDownloadAggregate)*100.0, 3))
@@ -242,14 +271,11 @@ def getParentNodeStats(parentNodes, subscriberCircuits):
 			#overloadFactorUploadSinceLastQuery = 0.0
 			overloadFactorTotalSinceLastQuery = 0.0
 		
-		parentNode['bitsDownloadSinceLastQuery'] = thisNodeBitsDownload
-		parentNode['bitsUploadSinceLastQuery'] = thisNodeBitsUpload
-		#parentNode['packetDropsDownloadSinceLastQuery'] = thisNodeDropsDownload
-		#parentNode['packetDropsUploadSinceLastQuery'] = thisNodeDropsUpload
-		parentNode['packetDropsTotalSinceLastQuery'] = thisNodeDropsTotal
-		#parentNode['overloadFactorDownloadSinceLastQuery'] = overloadFactorDownloadSinceLastQuery
-		#parentNode['overloadFactorUploadSinceLastQuery'] = overloadFactorUploadSinceLastQuery
-		parentNode['overloadFactorTotalSinceLastQuery'] = overloadFactorTotalSinceLastQuery
+		thisParentNodeStats['sinceLastQuery']['bitsDownload'] = thisNodeBitsDownload
+		thisParentNodeStats['sinceLastQuery']['bitsUpload'] = thisNodeBitsUpload
+		thisParentNodeStats['sinceLastQuery']['packetDropsTotal'] = thisNodeDropsTotal
+		thisParentNodeStats['sinceLastQuery']['overloadFactorTotal'] = overloadFactorTotalSinceLastQuery
+		parentNode['stats'] = thisParentNodeStats
 		
 	return parentNodes
 
@@ -281,7 +307,14 @@ def refreshBandwidthGraphs():
 
 	with open('statsByCircuit.json', 'r') as j:
 		subscriberCircuits = json.loads(j.read())
-	
+							
+	fileLoc = Path("tinsStats.json")
+	if fileLoc.is_file():
+		with open(fileLoc, 'r') as j:
+			tinsStats = json.loads(j.read())
+	else:
+		tinsStats =	{}					
+							
 	fileLoc = Path("longTermStats.json")
 	if fileLoc.is_file():
 		with open(fileLoc, 'r') as j:
@@ -295,7 +328,7 @@ def refreshBandwidthGraphs():
 	parentNodeNameDict = parentNodeNameDictPull()
 
 	print("Retrieving circuit statistics")
-	subscriberCircuits, tinsStats = getsubscriberCircuitstats(subscriberCircuits)
+	subscriberCircuits, tinsStats = getsubscriberCircuitstats(subscriberCircuits, tinsStats)
 	print("Computing parent node statistics")
 	parentNodes = getParentNodeStats(parentNodes, subscriberCircuits)
 	print("Writing data to InfluxDB")
@@ -312,8 +345,8 @@ def refreshBandwidthGraphs():
 	for chunk in chunkedsubscriberCircuits:
 		queriesToSend = []
 		for circuit in chunk:
-			bitsDownload = float(circuit['bitsDownloadSinceLastQuery'])
-			bitsUpload = float(circuit['bitsUploadSinceLastQuery'])
+			bitsDownload = float(circuit['stats']['sinceLastQuery']['bitsDownload'])
+			bitsUpload = float(circuit['stats']['sinceLastQuery']['bitsUpload'])
 			if (bitsDownload > 0) and (bitsUpload > 0):
 				percentUtilizationDownload = round((bitsDownload / round(circuit['downloadMax'] * 1000000))*100.0, 1)
 				percentUtilizationUpload = round((bitsUpload / round(circuit['uploadMax'] * 1000000))*100.0, 1)
@@ -328,10 +361,10 @@ def refreshBandwidthGraphs():
 
 	queriesToSend = []
 	for parentNode in parentNodes:
-		bitsDownload = float(parentNode['bitsDownloadSinceLastQuery'])
-		bitsUpload = float(parentNode['bitsUploadSinceLastQuery'])
-		dropsTotal = float(parentNode['packetDropsTotalSinceLastQuery'])
-		overloadFactor = float(parentNode['overloadFactorTotalSinceLastQuery'])
+		bitsDownload = float(parentNode['stats']['sinceLastQuery']['bitsDownload'])
+		bitsUpload = float(parentNode['stats']['sinceLastQuery']['bitsUpload'])
+		dropsTotal = float(parentNode['stats']['sinceLastQuery']['packetDropsTotal'])
+		overloadFactor = float(parentNode['stats']['sinceLastQuery']['overloadFactorTotal'])
 		droppedPacketsAllTime += dropsTotal
 		if (bitsDownload > 0) and (bitsUpload > 0):
 			percentUtilizationDownload = round((bitsDownload / round(parentNode['downloadMax'] * 1000000))*100.0, 1)
@@ -349,9 +382,11 @@ def refreshBandwidthGraphs():
 	
 	if 'cake diffserv4' in fqOrCAKE:
 		queriesToSend = []
-		for tin in tinsStats:
-			tinName = tin
-			p = Point('Tins').tag("Type", "Tin").tag("Tin", tinName).field("Download", tinsStats[tin]['Download']).field("Upload", tinsStats[tin]['Upload'])
+		listOfTins = ['Bulk', 'BestEffort', 'Video', 'Voice']
+		for tin in listOfTins:
+			p = Point('Tin Drop Percentage').tag("Type", "Tin").tag("Tin", tin).field("Download", tinsStats['sinceLastQuery'][tin]['Download']['dropPercentage']).field("Upload", tinsStats['sinceLastQuery'][tin]['Upload']['dropPercentage'])
+			queriesToSend.append(p)
+			p = Point('Tins Assigned').tag("Type", "Tin").tag("Tin", tin).field("Download", tinsStats['sinceLastQuery'][tin]['Download']['percentage']).field("Upload", tinsStats['sinceLastQuery'][tin]['Upload']['percentage'])
 			queriesToSend.append(p)
 
 		write_api.write(bucket=influxDBBucket, record=queriesToSend)
@@ -371,6 +406,9 @@ def refreshBandwidthGraphs():
 	longTermStats['droppedPacketsTotal'] = droppedPacketsAllTime
 	with open('longTermStats.json', 'w') as f:
 		f.write(json.dumps(longTermStats, indent=4))
+		
+	with open('tinsStats.json', 'w') as f:
+		f.write(json.dumps(tinsStats, indent=4))
 
 	endTime = datetime.now()
 	durationSeconds = round((endTime - startTime).total_seconds(), 2)
