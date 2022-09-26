@@ -222,14 +222,14 @@ def getsubscriberCircuitstats(subscriberCircuits, tinsStats):
 		tinsStats['sinceLastQuery']['Voice']['Upload']['dropPercentage'] = 0.0
 		
 	try:
-		tinsStats['sinceLastQuery']['Bulk']['Download']['percentage'] = round((tinsStats['sinceLastQuery']['Bulk']['Download']['sent_packets']/allPacketsUpload)*100.0, 1)
-		tinsStats['sinceLastQuery']['Bulk']['Upload']['percentage'] = round((tinsStats['sinceLastQuery']['Bulk']['Upload']['sent_packets']/allPacketsUpload)*100.0, 1)
-		tinsStats['sinceLastQuery']['BestEffort']['Download']['percentage'] = round((tinsStats['sinceLastQuery']['BestEffort']['Download']['sent_packets']/allPacketsDownload)*100.0, 1)
-		tinsStats['sinceLastQuery']['BestEffort']['Upload']['percentage'] = round((tinsStats['sinceLastQuery']['BestEffort']['Upload']['sent_packets']/allPacketsUpload)*100.0, 1)
-		tinsStats['sinceLastQuery']['Video']['Download']['percentage'] = round((tinsStats['sinceLastQuery']['Video']['Download']['sent_packets']/allPacketsDownload)*100.0, 1)
-		tinsStats['sinceLastQuery']['Video']['Upload']['percentage'] = round((tinsStats['sinceLastQuery']['Video']['Upload']['sent_packets']/allPacketsUpload)*100.0, 1)
-		tinsStats['sinceLastQuery']['Voice']['Download']['percentage'] = round((tinsStats['sinceLastQuery']['Voice']['Download']['sent_packets']/allPacketsDownload)*100.0, 1)
-		tinsStats['sinceLastQuery']['Voice']['Upload']['percentage'] = round((tinsStats['sinceLastQuery']['Voice']['Upload']['sent_packets']/allPacketsUpload)*100.0, 1)
+		tinsStats['sinceLastQuery']['Bulk']['Download']['percentage'] = min(round((tinsStats['sinceLastQuery']['Bulk']['Download']['sent_packets']/allPacketsUpload)*100.0, 3),100.0)
+		tinsStats['sinceLastQuery']['Bulk']['Upload']['percentage'] = min(round((tinsStats['sinceLastQuery']['Bulk']['Upload']['sent_packets']/allPacketsUpload)*100.0, 3),100.0)
+		tinsStats['sinceLastQuery']['BestEffort']['Download']['percentage'] = min(round((tinsStats['sinceLastQuery']['BestEffort']['Download']['sent_packets']/allPacketsDownload)*100.0, 3),100.0)
+		tinsStats['sinceLastQuery']['BestEffort']['Upload']['percentage'] = min(round((tinsStats['sinceLastQuery']['BestEffort']['Upload']['sent_packets']/allPacketsUpload)*100.0, 3),100.0)
+		tinsStats['sinceLastQuery']['Video']['Download']['percentage'] = min(round((tinsStats['sinceLastQuery']['Video']['Download']['sent_packets']/allPacketsDownload)*100.0, 3),100.0)
+		tinsStats['sinceLastQuery']['Video']['Upload']['percentage'] = min(round((tinsStats['sinceLastQuery']['Video']['Upload']['sent_packets']/allPacketsUpload)*100.0, 3),100.0)
+		tinsStats['sinceLastQuery']['Voice']['Download']['percentage'] = min(round((tinsStats['sinceLastQuery']['Voice']['Download']['sent_packets']/allPacketsDownload)*100.0, 3),100.0)
+		tinsStats['sinceLastQuery']['Voice']['Upload']['percentage'] = min(round((tinsStats['sinceLastQuery']['Voice']['Upload']['sent_packets']/allPacketsUpload)*100.0, 3),100.0)
 	except:
 		tinsStats['sinceLastQuery']['Bulk']['Download']['percentage'] = tinsStats['sinceLastQuery']['Bulk']['Upload']['percentage'] = 0.0
 		tinsStats['sinceLastQuery']['BestEffort']['Download']['percentage'] = tinsStats['sinceLastQuery']['BestEffort']['Upload']['percentage'] = 0.0
