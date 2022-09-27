@@ -20,7 +20,7 @@ import binpacking
 
 from ispConfig import fqOrCAKE, upstreamBandwidthCapacityDownloadMbps, upstreamBandwidthCapacityUploadMbps, \
 	interfaceA, interfaceB, enableActualShellCommands, \
-	runShellCommandsAsSudo, generatedPNDownloadMbps, generatedPNUploadMbps, usingXDP, queuesAvailable
+	runShellCommandsAsSudo, generatedPNDownloadMbps, generatedPNUploadMbps, usingXDP, queuesAvailableOverride
 
 def shell(command):
 	if enableActualShellCommands:
@@ -78,16 +78,19 @@ def tearDown(interfaceA, interfaceB):
 def findQueuesAvailable():
 	# Find queues and CPU cores available. Use min between those two as queuesAvailable
 	if enableActualShellCommands:
-		#queuesAvailable = 0
-		#path = '/sys/class/net/' + interfaceA + '/queues/'
-		#directory_contents = os.listdir(path)
-		#for item in directory_contents:
-		#	if "tx-" in str(item):
-		#		queuesAvailable += 1
-		#print("NIC queues:\t\t\t" + str(queuesAvailable))
-		#cpuCount = multiprocessing.cpu_count()
-		#print("CPU cores:\t\t\t" + str(cpuCount))
-		#queuesAvailable = min(queuesAvailable,cpuCount)
+		if queuesAvailableOverride == 0:
+			queuesAvailable = 0
+			path = '/sys/class/net/' + interfaceA + '/queues/'
+			directory_contents = os.listdir(path)
+			for item in directory_contents:
+				if "tx-" in str(item):
+					queuesAvailable += 1
+			print("NIC queues:\t\t\t" + str(queuesAvailable))
+			cpuCount = multiprocessing.cpu_count()
+			print("CPU cores:\t\t\t" + str(cpuCount))
+			queuesAvailable = min(queuesAvailable,cpuCount)
+		else:
+			queuesAvailable = queuesAvailableOverride
 		print("queuesAvailable set to:\t" + str(queuesAvailable))
 	else:
 		print("As enableActualShellCommands is False, CPU core / queue count has been set to 16")
