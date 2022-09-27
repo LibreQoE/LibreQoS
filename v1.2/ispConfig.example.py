@@ -31,6 +31,9 @@ enableActualShellCommands = True
 # Add 'sudo' before execution of any shell commands. May be required depending on distribution and environment.
 runShellCommandsAsSudo = False
 
+# Allows overriding queues / CPU cores used. When set to 0, the max possible queues / CPU cores are utilized. Please leave as 0.
+queuesAvailableOverride = 0
+
 # Bandwidth Graphing
 bandwidthGraphingEnabled = True
 influxDBurl = "http://localhost:8086"
