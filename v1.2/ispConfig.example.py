@@ -4,8 +4,6 @@
 # fqOrCAKE = 'fq_codel'
 fqOrCAKE = 'cake diffserv4'
 
-queuesAvailableOverride = 0
-
 # How many Mbps are available to the edge of this network
 upstreamBandwidthCapacityDownloadMbps = 1000
 upstreamBandwidthCapacityUploadMbps = 1000
@@ -32,6 +30,9 @@ enableActualShellCommands = True
 
 # Add 'sudo' before execution of any shell commands. May be required depending on distribution and environment.
 runShellCommandsAsSudo = False
+
+# Allows overriding queues / CPU cores used. When set to 0, the max possible queues / CPU cores are utilized. Please leave as 0.
+queuesAvailableOverride = 0
 
 # Bandwidth Graphing
 bandwidthGraphingEnabled = True
