@@ -4,7 +4,7 @@
 # fqOrCAKE = 'fq_codel'
 fqOrCAKE = 'cake diffserv4'
 
-queuesAvailable = 16
+queuesAvailableOverride = 0
 
 # How many Mbps are available to the edge of this network
 upstreamBandwidthCapacityDownloadMbps = 1000
