@@ -18,6 +18,9 @@ v1.2/lastGoodConfig.json
 v1.2/lastGoodConfig.csv
 v1.2/mikrotikDHCPRouterList.csv
 v1.2/integrationUISPbandwidths.csv
+v1.2/longTermStats.json
+v1.2/queuingStructure.json
+v1.2/tinsStats.json
 v1.2/*.bak
 
 # Ignore project folders for some IDEs
