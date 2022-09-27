@@ -86,11 +86,12 @@ def findQueuesAvailable():
 				if "tx-" in str(item):
 					queuesAvailable += 1
 			print("NIC queues:\t\t\t" + str(queuesAvailable))
-			cpuCount = multiprocessing.cpu_count()
-			print("CPU cores:\t\t\t" + str(cpuCount))
-			queuesAvailable = min(queuesAvailable,cpuCount)
 		else:
 			queuesAvailable = queuesAvailableOverride
+			print("NIC queues (Override):\t\t\t" + str(queuesAvailable))
+		cpuCount = multiprocessing.cpu_count()
+		print("CPU cores:\t\t\t" + str(cpuCount))
+		queuesAvailable = min(queuesAvailable,cpuCount)
 		print("queuesAvailable set to:\t" + str(queuesAvailable))
 	else:
 		print("As enableActualShellCommands is False, CPU core / queue count has been set to 16")
