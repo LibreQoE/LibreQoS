@@ -31,8 +31,8 @@ New minimums apply to upload and download parameters:
     
 ShapedDevices.csv now has a field for Circuit ID. If the listed Circuit ID is the same between two or more devices, those devices will all be placed into the same queue. If a Circuit ID is not provided for a device, it gets its own circuit. Circuit Name is optional, but recommended. The client's service loction address might be good to use as the Circuit Name.
 
-## Full, XDP accelerated IPv6 Support
-Made possible by [@thebracket](https://github.com/thebracket)
+## IPv6 Support
+Full, XDP accelerated made possible by [@thebracket](https://github.com/thebracket)
 
 ## UISP Integration
 This integration fully maps out your entire UISP network.
