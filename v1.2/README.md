@@ -1,4 +1,4 @@
-# v1.2 (IPv4 + IPv6) (Alpha)
+# v1.2 (IPv4 + IPv6) (Stable)
 
 <img alt="LibreQoS" src="https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/v1.1-alpha-preview.jpg"></a>
 
@@ -31,16 +31,8 @@ New minimums apply to upload and download parameters:
     
 ShapedDevices.csv now has a field for Circuit ID. If the listed Circuit ID is the same between two or more devices, those devices will all be placed into the same queue. If a Circuit ID is not provided for a device, it gets its own circuit. Circuit Name is optional, but recommended. The client's service loction address might be good to use as the Circuit Name.
 
-## IPv6 Support / XDP Toggle
-You can optionally disable XDP, which limits queuing to just one CPU core.
-
-The benefit here is IPv6 support becomes possible again - ableit with lower max throughput.
-
-You can expect 3-6 Gbps of throughput without using XDP (IPv4 + IPv6), or 11+ Gbps with XDP (IPv4 only).
-
-To disable XDP, go to ispConfig.py and set:
-
-```usingXDP = False```
+## Full, XDP accelerated IPv6 Support
+Made possible by [@thebracket](https://github.com/thebracket)
 
 ## UISP Integration
 This integration fully maps out your entire UISP network.
