@@ -20,10 +20,6 @@ interfaceA = 'eth1'
 # Interface connected to edge router
 interfaceB = 'eth2'
 
-# Use XDP? If yes, multiple CPU cores can be used. Limits to IPv4 only. Throughput of 11 Gbps+
-# If using IPv6, choose False. False will limit throughput to 3-6 Gbps
-usingXDP = True
-
 # Allow shell commands. False causes commands print to console only without being executed.
 # MUST BE ENABLED FOR PROGRAM TO FUNCTION
 enableActualShellCommands = True
