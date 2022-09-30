@@ -48,8 +48,8 @@ Graph bandwidth by client and node (Site, AP, etc), with great visalizations mad
     
 ## Versions
 IPv4 + IPv6:
-- [v1.2-alpha](https://github.com/rchac/LibreQoS/tree/main/v1.2)
+- [v1.2](https://github.com/rchac/LibreQoS/tree/main/v1.2)
 
 IPv4 only:
-- [v1.1-beta](https://github.com/rchac/LibreQoS/tree/main/v1.1)
-- [v1.0-stable](https://github.com/rchac/LibreQoS/tree/main/v1.0)
+- [v1.1](https://github.com/rchac/LibreQoS/tree/main/v1.1)
+- [v1.0](https://github.com/rchac/LibreQoS/tree/main/v1.0)
