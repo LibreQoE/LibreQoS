@@ -80,10 +80,22 @@ def createShaper():
 		r = requests.get(url, headers=headers)
 		data = r.json()
 		for service in data:
+			ipv4 = ''
+			ipv6 = ''
 			routerID = service['router_id']
-			ipAddress = ipForRouter[routerID]
+			# If not "Taking IPv4" (Router will assign IP), then use router's set IP
+			if service['taking_ipv4'] == 0:
+				ipv4 = ipForRouter[routerID]
+			elif service['taking_ipv4'] == 1:
+				ipv4 = service['ipv4']
+			# If not "Taking IPv6" (Router will assign IP), then use router's set IP
+			if service['taking_ipv6'] == 0:
+				ipv6 = ''
+			elif service['taking_ipv6'] == 1:
+				ipv6 = service['ipv6']
 			serviceID = service['id']
 			tariff_id = service['tariff_id']
+			mac = service['mac']
 			dlMbps = downloadForTariffID[tariff_id]
 			ulMbps = uploadForTariffID[tariff_id]
 			address = addressForCustomerID[customerID]
@@ -93,9 +105,9 @@ def createShaper():
 						'deviceID': routerID,
 						'deviceName': '',
 						'parentNode': '',
-						"mac": '',
-						'ipv4': ipAddress,
-						'ipv6': '',
+						"mac": mac,
+						'ipv4': ipv4,
+						'ipv6': ipv6,
 						'minDownload': round(dlMbps*.98),
 						'minUpload': round(ulMbps*.98),
 						'maxDownload': dlMbps,
