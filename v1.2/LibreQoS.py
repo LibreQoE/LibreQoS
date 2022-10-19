@@ -602,18 +602,10 @@ def refreshShapers():
 						for device in circuit['devices']:
 							if device['ipv4s']:
 								for ipv4 in device['ipv4s']:
-									if '/' in ipv4:
-										ipv4AddressOnly, prefixOnly = ipv4.split('/')
-										xdpCPUmapCommands.append('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(ipv4AddressOnly) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['qdisc'] + ' --prefix ' + prefixOnly)
-									else:
-										xdpCPUmapCommands.append('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(ipv4) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['qdisc'])
+									xdpCPUmapCommands.append('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(ipv4) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['qdisc'])
 							if device['ipv6s']:
 								for ipv6 in device['ipv6s']:
-									if '/' in ipv6:
-										ipv6AddressOnly, prefixOnly = ipv6.split('/')
-										xdpCPUmapCommands.append('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(ipv6AddressOnly) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['qdisc'] + ' --prefix ' + prefixOnly)
-									else:
-										xdpCPUmapCommands.append('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(ipv6) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['qdisc'])
+									xdpCPUmapCommands.append('./xdp-cpumap-tc/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(ipv6) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['qdisc'])
 							if device['deviceName'] not in devicesShaped:
 								devicesShaped.append(device['deviceName'])
 				# Recursive call this function for children nodes attached to this node
