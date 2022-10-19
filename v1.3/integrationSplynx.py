@@ -107,7 +107,7 @@ def createShaper():
 		wr = csv.writer(csvfile, quoting=csv.QUOTE_ALL)
 		wr.writerow(['Circuit ID', 'Circuit Name', 'Device ID', 'Device Name', 'Parent Node', 'MAC', 'IPv4', 'IPv6', 'Download Min', 'Upload Min', 'Download Max', 'Upload Max', 'Comment'])
 		for circuit in circuits:
-			wr.writerow((circuit['circuitID'], circuit['circuitName'], circuit['deviceID'], circuit['deviceName'], circuit['parentNode'], circuit['mac'], circuit['ipv4'], circuit['ipv6'], circuit['minDownload'], circuit['minUpload'], circuit['maxDownload'], circuit['maxUpload']))
+			wr.writerow((circuit['circuitID'], circuit['circuitName'], circuit['deviceID'], circuit['deviceName'], circuit['parentNode'], circuit['mac'], circuit['ipv4'], circuit['ipv6'], circuit['minDownload'], circuit['minUpload'], circuit['maxDownload'], circuit['maxUpload'], ''))
 
 def importFromSplynx():
 	#createNetworkJSON()
