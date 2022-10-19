@@ -5,3 +5,5 @@
 ## Features
 
 - Partial reload. Without needing to completely refresh shapers, it's now possible to provide an updated ShapedDevices.csv file and have the changes reflected with a rapid reload affecting just the new / changed / removed clients.
+
+- Added Splynx integration
