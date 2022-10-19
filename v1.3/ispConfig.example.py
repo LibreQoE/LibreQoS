@@ -48,6 +48,7 @@ ignoreSubnets = ['192.168.0.0/16']
 allowedSubnets = ['100.64.0.0/10']
 
 # Splynx Integration
+automaticImportSplynx = False
 splynx_api_key = ''
 splynx_api_secret = ''
 # Everything before /api/2.0/ on your Splynx instance
@@ -55,10 +56,9 @@ splynx_api_url = 'https://YOUR_URL.splynx.app'
 
 # UISP integration
 automaticImportUISP = False
+uispAuthToken = ''
 # Everything before /nms/ on your UISP instance
 uispBaseURL = 'https://examplesite.com'
-# UISP Auth Token
-uispAuthToken = ''
 # UISP | Whether to shape router at customer premises, or instead shape the station radio. When station radio is in
 # router mode, use 'station'. Otherwise, use 'router'.
 shapeRouterOrStation = 'router'
