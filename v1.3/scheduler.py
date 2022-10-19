@@ -3,24 +3,30 @@ import schedule
 from LibreQoS import refreshShapers, refreshShapersUpdateOnly
 from graphBandwidth import refreshBandwidthGraphs
 from graphLatency import refreshLatencyGraphs
-from ispConfig import bandwidthGraphingEnabled, latencyGraphingEnabled, automaticImportUISP
+from ispConfig import bandwidthGraphingEnabled, latencyGraphingEnabled, automaticImportUISP, automaticImportSplynx
 if automaticImportUISP:
 	from integrationUISP import importFromUISP
+if automaticImportSplynx:
+	from integrationSplynx import importFromSplynx
 
-def importAndShapeFullReload():
+def importFromCRM():
 	if automaticImportUISP:
 		try:
 			importFromUISP()
 		except:
 			print("Failed to import from UISP")
+	elif automaticImportSplynx:
+		try:
+			importFromSplynx()
+		except:
+			print("Failed to import from Splynx")
+
+def importAndShapeFullReload():
+	importFromCRM()
 	refreshShapers()
 
 def importAndShapePartialReload():
-	if automaticImportUISP:
-		try:
-			importFromUISP()
-		except:
-			print("Failed to import from UISP")
+	importFromCRM()
 	refreshShapersUpdateOnly()
 
 if __name__ == '__main__':
