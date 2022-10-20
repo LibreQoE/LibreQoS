@@ -30,6 +30,12 @@ runShellCommandsAsSudo = False
 # Allows overriding queues / CPU cores used. When set to 0, the max possible queues / CPU cores are utilized. Please leave as 0.
 queuesAvailableOverride = 0
 
+# Some networks are flat - where there are no Parent Nodes defined in ShapedDevices.csv
+# For such flat networks, just define network.json as {} and enable this setting
+# By default, it balances the subscribers across CPU cores, factoring in their max bandwidth rates
+# Past 25,000 subsribers this algorithm becomes inefficient and is not advised
+useBinPackingToBalanceCPU = True
+
 # Bandwidth Graphing
 bandwidthGraphingEnabled = True
 influxDBurl = "http://localhost:8086"
