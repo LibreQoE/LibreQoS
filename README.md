@@ -61,7 +61,7 @@ Graph bandwidth by client and node (Site, AP, etc), with great visalizations mad
 | 10,000        | 32 GB         |
 
 ### Network Interfaces
-* One management network interface, completely separate from the traffic shaping interfaces. Usually this would be the Ethernet interface built in to the motherboard.
+* One management network interface completely separate from the traffic shaping interfaces. Usually this would be the Ethernet interface built in to the motherboard.
 * Dedicated Network Interface Card for Shaping Interfaces
   * NIC must have 2 or more interfaces for traffic shaping.
   * NIC must have multiple TX/RX transmit queues. [Here's how to check from the command line](https://serverfault.com/questions/772380/how-to-tell-if-nic-has-multiqueue-enabled).
@@ -72,7 +72,7 @@ Graph bandwidth by client and node (Site, AP, etc), with great visalizations mad
     
 ## Versions
 IPv4 + IPv6:
-- [v1.2](https://github.com/rchac/LibreQoS/tree/main/v1.2)
+- [v1.2.1-stable](https://github.com/rchac/LibreQoS/tree/main/v1.2)
 - [v1.3-alpha](https://github.com/rchac/LibreQoS/tree/main/v1.3)
 
 IPv4 only:
