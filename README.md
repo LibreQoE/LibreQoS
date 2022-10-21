@@ -4,14 +4,19 @@ LibreQoS is a Quality of Experience and Smart Queue Management system designed f
 
 Because customers see greater performance, ISPs receive fewer support tickets/calls and reduce network traffic from fewer retransmissions.
 
-A sub-$1000 server running LibreQoS can shape traffic for hundreds or thousands of customers at over 10 Gbps. 
+Servers running LibreQoS can shape traffic for many thousands of customers. 
 
 Learn more at [LibreQoS.io](https://libreqos.io/)
 
 <img alt="LibreQoS" src="https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/v1.1-alpha-preview.jpg"></a>
 
 ## Real World Impact
-By allowing ISPs to better optimize traffic flows and minimize packet loss - ISPs can ensure reliable connectivity for video calls and voice calls. With work-from-home, remote learning, and tele-medicine becoming increasingly common – minimizing disruptions to video calls and VoIP can save jobs, keep students engaged, and help ensure equitable access to medical care.
+By allowing ISPs to better optimize traffic flows – LibreQoS can improve the reliability of end-users’ voice and video calls transiting the network. With work-from-home, remote learning, and tele-medicine becoming increasingly common – it is important to minimize any disruptions to video calls and VoIP that might otherwise occur due to bufferbloat within the ISP network. LibreQoS mitigates such bufferbloat, which can have important real world benefits for end-users, such as:
+
+* Keeping remote workers productive and employed
+* Mitigating learning disruptions – keeping students engaged and on-track with their peers
+* Reduce educational and employment inequities for people with disabilities
+* Allowing for reliable access to tele-medicine
 
 ## Features
 ### Flexible Hierarchical Shaping
@@ -71,10 +76,10 @@ Graph bandwidth by client and node (Site, AP, etc), with great visalizations mad
     * Intel X520
     
 ## Versions
-IPv4 + IPv6:
+### IPv4 + IPv6
 - [v1.2.1-stable](https://github.com/rchac/LibreQoS/tree/main/v1.2)
 - [v1.3-alpha](https://github.com/rchac/LibreQoS/tree/main/v1.3)
 
-IPv4 only:
+### IPv4 only
 - [v1.1](https://github.com/rchac/LibreQoS/tree/main/v1.1)
 - [v1.0](https://github.com/rchac/LibreQoS/tree/main/v1.0)
