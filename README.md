@@ -33,22 +33,42 @@ Graph bandwidth by client and node (Site, AP, etc), with great visalizations mad
 * Splynx (v1.3+)
 
 ## System Requirements
-* VM or physical server. Physical server will have higher throughput (XDP vs generic XDP).
-* One management network interface, completely separate from the traffic shaping interfaces. Usually this would be the Ethernet interface built in to the motherboard.
-* Dedicated Network Interface Card
+* VM or physical server
+  * For VMs, NIC passthrough is required for optimal throughput and latency (XDP vs generic XDP). Using Virtio / bridging is much slower than NIC passthrough. Virtio / bridging should not be used for large amounts of traffic.
+
+### CPU
 * 2 or more CPU cores
-* NIC must have 2 or more interfaces for traffic shaping.
-* NIC must have multiple TX/RX transmit queues. [Here's how to check from the command line](https://serverfault.com/questions/772380/how-to-tell-if-nic-has-multiqueue-enabled).
+* A CPU with solid [single-thread performance](https://www.cpubenchmark.net/singleThread.html) within your budget.
+  * For 10G+ throughput on a budget, cosnider the [AMD Ryzen 9 5900X](https://www.bestbuy.com/site/amd-ryzen-9-5900x-4th-gen-12-core-24-threads-unlocked-desktop-processor-without-cooler/6438942.p?skuId=6438942) or [Intel Core i7-12700KF](https://www.bestbuy.com/site/intel-core-i7-12700kf-desktop-processor-12-8p-4e-cores-up-to-5-0-ghz-unlocked-lga1700-600-series-chipset-125w/6483674.p?skuId=6483674)
+* Recommended CPU cores assuming [single thread](https://www.cpubenchmark.net/singleThread.html) performance of 2700 or more:
+
+| Throughput    | CPU Cores     |
+| ------------- | ------------- |
+| 1 Gbps        | 4             |
+| 5 Gbps        | 8             |
+| 10 Gbps       | 12            |
+| 20 Gbps       | 16            |
+
+### Memory
+* Mimumum RAM = 2 + (0.002 x Subscriber Count) GB
+* Recommended RAM:
+
+| Subscribers   | RAM           |
+| ------------- | ------------- |
+| 100           | 4 GB          |
+| 1,000         | 8 GB          |
+| 5,000         | 16 GB         |
+| 10,000        | 32 GB         |
+
+### Network Interfaces
+* One management network interface, completely separate from the traffic shaping interfaces. Usually this would be the Ethernet interface built in to the motherboard.
+* Dedicated Network Interface Card for Shaping Interfaces
+  * NIC must have 2 or more interfaces for traffic shaping.
+  * NIC must have multiple TX/RX transmit queues. [Here's how to check from the command line](https://serverfault.com/questions/772380/how-to-tell-if-nic-has-multiqueue-enabled).
   * Known supported cards:
     * [NVIDIA Mellanox MCX512A-ACAT](https://www.fs.com/products/119649.html)
     * [Intel X710](https://www.fs.com/products/75600.html)
     * Intel X520
-* [Ubuntu Server 22.04](https://ubuntu.com/download/server) or above. All guides assume Ubuntu Server. Ubuntu Desktop is not recommended as it uses NetworkManager instead of Netplan. Kernel version 5.15 or above
-* Python 3, PIP, and some modules (listed in respective guides).
-* Choose a CPU with solid [single-thread performance](https://www.cpubenchmark.net/singleThread.html) within your budget.
-  * Recommendations for 10G+ throughput on a budget:
-    * [AMD Ryzen 9 5900X](https://www.bestbuy.com/site/amd-ryzen-9-5900x-4th-gen-12-core-24-threads-unlocked-desktop-processor-without-cooler/6438942.p?skuId=6438942)
-    * [Intel Core i7-12700KF](https://www.bestbuy.com/site/intel-core-i7-12700kf-desktop-processor-12-8p-4e-cores-up-to-5-0-ghz-unlocked-lga1700-600-series-chipset-125w/6483674.p?skuId=6483674)
     
 ## Versions
 IPv4 + IPv6:
