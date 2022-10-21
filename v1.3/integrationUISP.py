@@ -32,10 +32,13 @@ def createTree(sites,accessPoints,bandwidthDL,bandwidthUL,siteParentDict,siteIDt
 			thisOnesParent = None
 	aps = []
 	for ap in accessPoints:
-		thisOnesParent = ap['device']['site']['name']
-		if thisOnesParent == currentNodeName:
-			if ap['device']['model'] in knownAPmodels:
-				aps.append(ap['device']['name'])
+		if ap['device']['site'] is None:
+			print("Unable to read site information for: " + ap['device']['name'])
+		else:
+			thisOnesParent = ap['device']['site']['name']
+			if thisOnesParent == currentNodeName:
+				if ap['device']['model'] in knownAPmodels:
+					aps.append(ap['device']['name'])
 	apDict = {}
 	for ap in aps:
 		maxDL = min(bandwidthDL[ap],bandwidthDL[currentNodeName])
