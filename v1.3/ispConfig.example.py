@@ -64,7 +64,7 @@ splynx_api_url = 'https://YOUR_URL.splynx.app'
 automaticImportUISP = False
 uispAuthToken = ''
 # Everything before /nms/ on your UISP instance
-uispBaseURL = 'https://examplesite.com'
+UISPbaseURL = 'https://examplesite.com'
 # UISP | Whether to shape router at customer premises, or instead shape the station radio. When station radio is in
 # router mode, use 'station'. Otherwise, use 'router'.
 shapeRouterOrStation = 'router'
