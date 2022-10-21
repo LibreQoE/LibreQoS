@@ -1,23 +1,13 @@
 <a href="https://libreqos.io/"><img alt="LibreQoS" src="https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/banner2022-2.png"></a>
 
-LibreQoS is a Quality of Experience and Smart Queue Management system designed for Internet Service Providers (such as Fixed Wireless Internet Service Providers) to optimize the flow of their network traffic and thus reduce bufferbloat, keep the network responsive, and improve the end-user experience.
-
-Because customers see greater performance, ISPs receive fewer support tickets/calls and reduce network traffic from fewer retransmissions.
+LibreQoS is a Quality of Experience and Smart Queue Management system designed for Internet Service Providers to optimize the flow of their network traffic and thus reduce bufferbloat, keep the network responsive, and improve the end-user experience.
 
 Servers running LibreQoS can shape traffic for many thousands of customers. 
 
 Learn more at [LibreQoS.io](https://libreqos.io/)
 
-## Real World Impact
-By allowing ISPs to better optimize traffic flows – LibreQoS can improve the reliability of end-users’ voice and video calls transiting the network. With work-from-home, remote learning, and tele-medicine becoming increasingly common – it is important to minimize any disruptions to video calls and VoIP that might otherwise occur due to bufferbloat within the ISP network. LibreQoS mitigates such bufferbloat, which can have important real world benefits for end-users, such as:
-
-* Keeping remote workers productive and employed
-* Mitigating learning disruptions – keeping students engaged and on-track with their peers
-* Reduce educational and employment inequities for people with disabilities
-* Allowing for reliable access to tele-medicine
-
 ## Features
-### Flexible Hierarchical Shaping
+### Flexible Hierarchical Shaping / Back-haul Congestion Mitigation
 <img src="https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/nestedHTB2.png" width="350"></img>
 
 Network hierarchy can be mapped to a json file in v1.1+. This allows for both simple network heirarchies (Site>AP>Client) as well as much more complex ones (Site>Site>Micro-PoP>AP>Site>AP>Client). This allows operators to ensure a given site’s peak bandwidth will not exceed the capacity of its back-haul links (back-haul congestion control). This can allow operators to support more users on the same network equipment with LibreQoS than with competing QoE solutions which only shape by AP and Client. Shaping just by AP and client could allow for high aggregate peaks to occur on back-hauls links, which can trigger packet loss and disrupt network connectivity. LibreQoS’ flexible shaping provides a solution to this.
