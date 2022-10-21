@@ -2,7 +2,7 @@ import requests
 import os
 import csv
 import ipaddress
-from ispConfig import UISPbaseURL, uispAuthToken, shapeRouterOrStation, allowedSubnets, ignoreSubnets, excludeSites, findIPv6usingMikrotik, bandwidthOverheadFactor, exceptionCPEs
+from ispConfig import UISPbaseURL, uispAuthToken, allowedSubnets, ignoreSubnets, excludeSites, findIPv6usingMikrotik, bandwidthOverheadFactor, exceptionCPEs
 import shutil
 import json
 if findIPv6usingMikrotik == True:

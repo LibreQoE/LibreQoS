@@ -65,9 +65,6 @@ automaticImportUISP = False
 uispAuthToken = ''
 # Everything before /nms/ on your UISP instance
 UISPbaseURL = 'https://examplesite.com'
-# UISP | Whether to shape router at customer premises, or instead shape the station radio. When station radio is in
-# router mode, use 'station'. Otherwise, use 'router'.
-shapeRouterOrStation = 'router'
 # List any sites that should not be included, with each site name surrounded by '' and seperated by commas
 excludeSites = []
 # If you use IPv6, this can be used to find associated IPv6 prefixes for your clients' IPv4 addresses, and match them to those devices
