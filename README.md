@@ -8,8 +8,6 @@ Servers running LibreQoS can shape traffic for many thousands of customers.
 
 Learn more at [LibreQoS.io](https://libreqos.io/)
 
-<img alt="LibreQoS" src="https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/v1.1-alpha-preview.jpg"></a>
-
 ## Real World Impact
 By allowing ISPs to better optimize traffic flows – LibreQoS can improve the reliability of end-users’ voice and video calls transiting the network. With work-from-home, remote learning, and tele-medicine becoming increasingly common – it is important to minimize any disruptions to video calls and VoIP that might otherwise occur due to bufferbloat within the ISP network. LibreQoS mitigates such bufferbloat, which can have important real world benefits for end-users, such as:
 
@@ -31,7 +29,8 @@ CAKE is the product of nearly a decade of development efforts to improve on fq_c
 Fast, multi-CPU queueing leveraging xdp-cpumap-tc. Tested up to 11 Gbps of real world traffic with just 30% CPU use on an Intel Xeon Gold 6254. Likely capable of 30Gbps or more.
 
 ### Graphing
-Graph bandwidth by client and node (Site, AP, etc), with great visalizations made possible by InfluxDB
+Graph bandwidth by client and node (Site, AP, etc), with great visalizations made possible by InfluxDB.
+<img alt="LibreQoS" src="https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/v1.1-alpha-preview.jpg"></a>
 
 ### CRM Integrations
 * UISP (v1.2+)
