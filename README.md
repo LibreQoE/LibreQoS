@@ -33,15 +33,20 @@ Graph bandwidth by client and node (Site, AP, etc), with great visalizations mad
 ### CPU
 * 2 or more CPU cores
 * A CPU with solid [single-thread performance](https://www.cpubenchmark.net/singleThread.html) within your budget.
-  * For 10G+ throughput on a budget, cosnider the [AMD Ryzen 9 5900X](https://www.bestbuy.com/site/amd-ryzen-9-5900x-4th-gen-12-core-24-threads-unlocked-desktop-processor-without-cooler/6438942.p?skuId=6438942) or [Intel Core i7-12700KF](https://www.bestbuy.com/site/intel-core-i7-12700kf-desktop-processor-12-8p-4e-cores-up-to-5-0-ghz-unlocked-lga1700-600-series-chipset-125w/6483674.p?skuId=6483674)
-* Recommended CPU cores assuming [single thread](https://www.cpubenchmark.net/singleThread.html) performance of 2700 or more:
+  * For 10G+ throughput on a budget, consider the [AMD Ryzen 9 5900X](https://www.bestbuy.com/site/amd-ryzen-9-5900x-4th-gen-12-core-24-threads-unlocked-desktop-processor-without-cooler/6438942.p?skuId=6438942) or [Intel Core i7-12700KF](https://www.bestbuy.com/site/intel-core-i7-12700kf-desktop-processor-12-8p-4e-cores-up-to-5-0-ghz-unlocked-lga1700-600-series-chipset-125w/6483674.p?skuId=6483674)
+* CPU Core count required assuming [single thread](https://www.cpubenchmark.net/singleThread.html) performance of 2700 or more:
 
 | Throughput    | CPU Cores     |
 | ------------- | ------------- |
+| 500 Mbps      | 2             |
 | 1 Gbps        | 4             |
 | 5 Gbps        | 8             |
 | 10 Gbps       | 12            |
-| 20 Gbps       | 16            |
+| 20 Gbps*      | 16            |
+| 50 Gbps*      | 32            |
+| 100 Gbps*     | 64            |
+
+(* Estimated)
 
 ### Memory
 * Mimumum RAM = 2 + (0.002 x Subscriber Count) GB
@@ -52,7 +57,10 @@ Graph bandwidth by client and node (Site, AP, etc), with great visalizations mad
 | 100           | 4 GB          |
 | 1,000         | 8 GB          |
 | 5,000         | 16 GB         |
-| 10,000        | 32 GB         |
+| 10,000*       | 32 GB         |
+| 50,000*       | 128 GB        |
+
+(* Estimated)
 
 ### Network Interfaces
 * One management network interface completely separate from the traffic shaping interfaces. Usually this would be the Ethernet interface built in to the motherboard.
