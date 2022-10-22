@@ -26,7 +26,6 @@ v1.3/ShapedDevices.csv
 v1.3/ShapedDevices.lastLoaded.csv
 v1.3/network.json
 v1.3/ispConfig.py
-v1.3/cpumap-pping/
 v1.3/statsByCircuit.json
 v1.3/statsByParentNode.json
 v1.3/lastGoodConfig.json
