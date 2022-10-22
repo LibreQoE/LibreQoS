@@ -1,9 +1,8 @@
 import time
 import schedule
 from LibreQoS import refreshShapers, refreshShapersUpdateOnly
-from graphBandwidth import refreshBandwidthGraphs
-from graphLatency import refreshLatencyGraphs
-from ispConfig import bandwidthGraphingEnabled, latencyGraphingEnabled, automaticImportUISP, automaticImportSplynx
+from graphInfluxDB import refreshBandwidthGraphs, refreshLatencyGraphs
+from ispConfig import influxDBEnabled, automaticImportUISP, automaticImportSplynx
 if automaticImportUISP:
 	from integrationUISP import importFromUISP
 if automaticImportSplynx:
@@ -33,17 +32,17 @@ if __name__ == '__main__':
 	importAndShapeFullReload()
 	schedule.every().day.at("04:00").do(importAndShapeFullReload)
 	schedule.every(30).minutes.do(importAndShapePartialReload)
+	secondsBetweenGraphRefreshes = 10
 	while True:
 		schedule.run_pending()
-		if bandwidthGraphingEnabled:
+		if influxDBEnabled:
 			try:
-				refreshBandwidthGraphs()
+				for i in range(3):
+					refreshBandwidthGraphs()
+					time.sleep(secondsBetweenGraphRefreshes)
+				refreshLatencyGraphs()
+				time.sleep(secondsBetweenGraphRefreshes)
 			except:
-				print("Failed to update bandwidth graphs")
-		if latencyGraphingEnabled:
-			try:
-				refreshLatencyGraphs(10)
-			except:
-				print("Failed to update latency graphs")
+				print("Failed to update graphs")
 		else:
-			time.sleep(10)
+			time.sleep(60)

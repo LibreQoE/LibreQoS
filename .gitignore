@@ -22,6 +22,20 @@ v1.2/longTermStats.json
 v1.2/queuingStructure.json
 v1.2/tinsStats.json
 v1.2/*.bak
+v1.3/ShapedDevices.csv
+v1.3/ShapedDevices.lastLoaded.csv
+v1.3/network.json
+v1.3/ispConfig.py
+v1.3/cpumap-pping/
+v1.3/statsByCircuit.json
+v1.3/statsByParentNode.json
+v1.3/lastGoodConfig.json
+v1.3/lastGoodConfig.csv
+v1.3/mikrotikDHCPRouterList.csv
+v1.3/longTermStats.json
+v1.3/queuingStructure.json
+v1.3/tinsStats.json
+v1.3/*.bak
 
 # Ignore project folders for some IDEs
 .idea/

@@ -13,6 +13,6 @@
 [submodule "v1.2/xdp-cpumap-tc"]
 	path = v1.2/xdp-cpumap-tc
 	url = https://github.com/xdp-project/xdp-cpumap-tc.git
-[submodule "v1.3/xdp-cpumap-tc"]
-	path = v1.3/xdp-cpumap-tc
-	url = https://github.com/xdp-project/xdp-cpumap-tc.git
+[submodule "v1.3/cpumap-pping"]
+	path = v1.3/cpumap-pping
+	url = https://github.com/thebracket/cpumap-pping.git
