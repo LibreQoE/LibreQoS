@@ -2,7 +2,7 @@ import requests
 import os
 import csv
 import ipaddress
-from ispConfig import UISPbaseURL, uispAuthToken, excludeSites, findIPv6usingMikrotik, bandwidthOverheadFactor, exceptionCPEs
+from ispConfig import UISPbaseURL, uispAuthToken, excludeSites, findIPv6usingMikrotik, bandwidthOverheadFactor, exceptionCPEs, uispSite
 from integrationCommon import isIpv4Permitted
 import shutil
 import json
@@ -250,8 +250,75 @@ def createShaper():
 			wr.writerow(device)
 
 def importFromUISP():
-	createNetworkJSON()
-	createShaper()
+	from integrationCommon import NetworkGraph, NetworkNode, NodeType
+
+	# Load network sites
+	print("Loading Sites")
+	url = UISPbaseURL + "/nms/api/v2.1/sites"
+	headers = {'accept':'application/json', 'x-auth-token': uispAuthToken}
+	r = requests.get(url, headers=headers)
+	sites = r.json()
+
+	# Load devices
+	print("Loading Devices")
+	url = UISPbaseURL + "/nms/api/v2.1/devices?withInterfaces=true&authorized=true"
+	headers = {'accept':'application/json', 'x-auth-token': uispAuthToken}
+	r = requests.get(url, headers=headers)
+	devices = r.json()
+
+	# Load DataLinks
+	print("Loading Data-Links")
+	url = UISPbaseURL + "/nms/api/v2.1/data-links?siteLinksOnly=true"
+	headers = {'accept':'application/json', 'x-auth-token': uispAuthToken}
+	r = requests.get(url, headers=headers)
+	dataLinks = r.json()
+
+	print("Building Topology")
+	net = NetworkGraph()
+	# Add all sites and client sites
+	for site in sites:
+		id = site['identification']['id']
+		name = site['identification']['name']
+		type = site['identification']['type']
+		if site['identification']['parent'] is None:
+			parent = ""
+		else:
+			parent = site['identification']['parent']['id']
+		match type:
+			case "site": nodeType = NodeType.site
+			case default: nodeType = NodeType.client
+
+		node = NetworkNode(id=id, displayName=name, type=nodeType, parentId=parent)
+		net.addRawNode(node)
+
+		for device in devices:
+			if device['identification']['site'] is not None and device['identification']['site']['id'] == id:
+				# The device is at this site, so add it
+				net.addRawNode(NetworkNode(id=device['identification']['id'], displayName=device['identification']['name'], parentId=id, type=NodeType.device))
+
+	# Now iterate access points, and look for connections to sites
+	for node in net.nodes:
+		if node.type == NodeType.device:
+			for dl in dataLinks:
+				if dl['from']['device'] is not None and dl['from']['device']['identification']['id'] == node.id:
+					if dl['to']['site'] is not None and dl['from']['site']['identification']['id'] != dl['to']['site']['identification']['id']:
+						target = net.findNodeIndexById(dl['to']['site']['identification']['id'])
+						if target > -1:
+							# We found the site
+							if net.nodes[target].type == NodeType.client or net.nodes[target].type == NodeType.clientWithChildren:
+								net.nodes[target].parentId = node.id
+								node.type = NodeType.ap
+
+	rootIndex = net.findNodeIndexByName(uispSite)
+	if rootIndex > -1:
+		net.nodes[rootIndex].parentId = ""
+
+	net.reparentById()
+	net.promoteClientsWithChildren()
+	net.plotNetworkGraph(False)
+
+	#createNetworkJSON()
+	#createShaper()
 
 if __name__ == '__main__':
 	importFromUISP()
