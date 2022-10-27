@@ -105,8 +105,18 @@ def createNetworkJSON():
 				headers = {'accept':'application/json', 'x-auth-token': uispAuthToken}
 				r = requests.get(url, headers=headers)
 				thisAPairmax = r.json()	
-				downloadCap = int(round(thisAPairmax['overview']['downlinkCapacity']/1000000))
-				uploadCap = int(round(thisAPairmax['overview']['uplinkCapacity']/1000000))
+				# See if there is a reported capacity of the AP we can use. If not, use a default (1000 Mbit)
+				defaultCap = 1000
+				if ('downlinkCapacity' in thisAPairmax['overview']) and ('uplinkCapacity' in thisAPairmax['overview']):
+					if thisAPairmax['overview']['downlinkCapacity'] != None:
+						downloadCap = int(round(thisAPairmax['overview']['downlinkCapacity']/1000000))
+						uploadCap = int(round(thisAPairmax['overview']['uplinkCapacity']/1000000))
+					else:
+						downloadCap = defaultCap
+						uploadCap = defaultCap
+				else:
+					downloadCap = defaultCap
+					uploadCap = defaultCap
 				# If operator already included bandwidth definitions for this ParentNode, do not overwrite what they set
 				if name not in listOfTopLevelParentNodes:
 					print("Found " + name)
