@@ -2,7 +2,8 @@ import requests
 import os
 import csv
 import ipaddress
-from ispConfig import allowedSubnets, ignoreSubnets, excludeSites, findIPv6usingMikrotik, bandwidthOverheadFactor, exceptionCPEs, splynx_api_key, splynx_api_secret, splynx_api_url
+from ispConfig import excludeSites, findIPv6usingMikrotik, bandwidthOverheadFactor, exceptionCPEs, splynx_api_key, splynx_api_secret, splynx_api_url
+from integrationCommon import isIpv4Permitted
 import shutil
 import json
 import time
@@ -11,16 +12,6 @@ from requests.auth import HTTPBasicAuth
 if findIPv6usingMikrotik == True:
 	from mikrotikFindIPv6 import pullMikrotikIPv6  
 
-
-def isInAllowedSubnets(inputIP):
-	isAllowed = False
-	if '/' in inputIP:
-		inputIP = inputIP.split('/')[0]
-	for subnet in allowedSubnets:
-		if (ipaddress.ip_address(inputIP) in ipaddress.ip_network(subnet)):
-			isAllowed = True
-	return isAllowed
-	
 
 def createShaper():
 	print("Creating ShapedDevices.csv")
