@@ -149,6 +149,13 @@ class TestGraph(unittest.TestCase):
         See: https://www.graphviz.org/download/
         Test that it creates a graphic
         """
+        import imp
+        try:
+            imp.find_module('graphviz')
+        except ImportError:
+            print("Not testing graph render - graphviz not installed")
+            return # GraphViz isn't installed, so bail out
+
         from integrationCommon import NetworkGraph, NetworkNode, NodeType
         graph = NetworkGraph()
         graph.addRawNode(NetworkNode("Site 1"))

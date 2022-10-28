@@ -147,6 +147,12 @@ class NetworkGraph:
 		# visual verification that the graph makes sense.
 		# Could potentially be useful in a future
 		# web interface.
+		import imp
+		try:
+			imp.find_module('graphviz')
+		except ImportError:
+			return # GraphViz isn't installed, so bail out
+		
 		import graphviz
 		dot = graphviz.Digraph('network', comment = "Network Graph", engine="fdp")
 
