@@ -156,7 +156,7 @@ class NetworkGraph:
 			if node.type == NodeType.clientWithChildren:
 				siteNode = NetworkNode(
 					id=node.id + "_gen",
-					displayName="(Site) " + node.displayName,
+					displayName="(Generated Site) " + node.displayName,
 					type = NodeType.site
 				)
 				siteNode.parentIndex = node.parentIndex

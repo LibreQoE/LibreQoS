@@ -150,6 +150,27 @@ class TestGraph(unittest.TestCase):
         self.assertEqual(graph.nodes[5].type, NodeType.clientWithChildren)
         self.assertEqual(graph.nodes[6].type, NodeType.client) # Test that a client is still a client
 
+    def test_client_with_children_promotion(self):
+        """
+        Test locating a client site with children, and then promoting it to
+        create a generated site
+        """
+        from integrationCommon import NetworkGraph, NetworkNode, NodeType
+        graph = NetworkGraph()
+        graph.addRawNode(NetworkNode("Site 1"))
+        graph.addRawNode(NetworkNode("Site 2"))
+        graph.addRawNode(NetworkNode("Client 1", parentId="Site 1", type=NodeType.client))
+        graph.addRawNode(NetworkNode("Client 2", parentId="Site 1", type=NodeType.client))
+        graph.addRawNode(NetworkNode("Client 3", parentId="Site 2", type=NodeType.client))
+        graph.addRawNode(NetworkNode("Client 4", parentId="Client 3", type=NodeType.client))
+        graph.reparentById()
+        graph.promoteClientsWithChildren()
+        graph.clientsWithChildrenToSites()
+        self.assertEqual(graph.nodes[5].type, NodeType.client)
+        self.assertEqual(graph.nodes[6].type, NodeType.client) # Test that a client is still a client
+        self.assertEqual(graph.nodes[7].type, NodeType.site)
+        self.assertEqual(graph.nodes[7].id, "Client 3_gen")
+
     def test_find_unconnected(self):
         """
         Tests traversing a tree and finding nodes that
