@@ -227,6 +227,35 @@ class TestGraph(unittest.TestCase):
         self.assertEqual(graph.doesNetworkJsonExist(), True)
         os.remove("network.json")
 
+    def test_network_json_example(self):
+        """
+        Rebuilds the network in network.example.json
+        and makes sure that it matches.
+        Should serve as an example for how an integration
+        can build a functional tree.
+        """
+        from integrationCommon import NetworkGraph, NetworkNode, NodeType
+        import json
+        net = NetworkGraph()
+        net.addRawNode(NetworkNode("Site_1", "Site_1", "", NodeType.site, 1000, 1000))
+        net.addRawNode(NetworkNode("Site_2", "Site_2", "", NodeType.site, 500, 500))
+        net.addRawNode(NetworkNode("AP_A", "AP_A", "Site_1", NodeType.ap, 500, 500))
+        net.addRawNode(NetworkNode("Site_3", "Site_3", "Site_1", NodeType.site, 500, 500))
+        net.addRawNode(NetworkNode("PoP_5", "PoP_5", "Site_3", NodeType.site, 200, 200))        
+        net.addRawNode(NetworkNode("AP_9", "AP_9", "PoP_5", NodeType.ap, 120, 120))
+        net.addRawNode(NetworkNode("PoP_6", "PoP_6", "PoP_5", NodeType.site, 60, 60))
+        net.addRawNode(NetworkNode("AP_11", "AP_11", "PoP_6", NodeType.ap, 30, 30))
+        net.addRawNode(NetworkNode("PoP_1", "PoP_1", "Site_2", NodeType.site, 200, 200))
+        net.addRawNode(NetworkNode("AP_7", "AP_7", "PoP_1", NodeType.ap, 100, 100))
+        net.addRawNode(NetworkNode("AP_1", "AP_1", "Site_2", NodeType.ap, 150, 150))
+        net.prepareTree()
+        net.createNetworkJson()
+        with open('network.json') as file:
+            newFile = json.load(file)
+        with open('v1.3/network.example.json') as file:
+            exampleFile = json.load(file)
+        self.assertEqual(newFile, exampleFile)
+
     def test_graph_render_to_pdf(self):
         """
         Requires that graphviz be installed with
