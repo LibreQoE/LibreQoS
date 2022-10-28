@@ -181,6 +181,11 @@ class NetworkGraph:
 			if self.nodes[idx].type == NodeType.client:
 				self.nodes[idx].parentIndex = 0
 
+	def doesNetworkJsonExist(self):
+		# Returns true if "network.json" exists, false otherwise
+		import os
+		return os.path.isfile("network.json")
+
 	def plotNetworkGraph(self, showClients=False):
 		# Requires `pip install graphviz` to function.
 		# You also need to install graphviz on your PC.

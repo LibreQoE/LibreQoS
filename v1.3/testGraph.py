@@ -194,6 +194,18 @@ class TestGraph(unittest.TestCase):
         self.assertEqual(len(unconnected), 0)
         self.assertEqual(graph.nodes[6].parentIndex, 0)
 
+    def test_network_json_exists(self):
+        from integrationCommon import NetworkGraph
+        import os
+        if os.path.exists("network.json"):
+            os.remove("network.json")
+        graph = NetworkGraph()
+        self.assertEqual(graph.doesNetworkJsonExist(), False)
+        with open('network.json', 'w') as f:
+            f.write('Dummy')
+        self.assertEqual(graph.doesNetworkJsonExist(), True)
+        os.remove("network.json")
+
     def test_graph_render_to_pdf(self):
         """
         Requires that graphviz be installed with
