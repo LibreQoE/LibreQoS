@@ -105,7 +105,7 @@ class NetworkGraph:
 		node.parentIndex = parentIdx
 		self.nodes.append(node)
 
-	def reparentById(self) -> None:
+	def __reparentById(self) -> None:
 		# Scans the entire node tree, searching for parents
 		# by name. Entries are re-mapped to match the named
 		# parents. You can use this to build a tree from a
@@ -141,7 +141,7 @@ class NetworkGraph:
 				result.append(i)
 		return result
 
-	def promoteClientsWithChildren(self) -> None:
+	def __promoteClientsWithChildren(self) -> None:
 		# Searches for client sites that have children,
 		# and changes their node type to clientWithChildren
 		for (i, node) in enumerate(self.nodes):
@@ -150,7 +150,7 @@ class NetworkGraph:
 					if self.nodes[child].type != NodeType.device:
 						node.type = NodeType.clientWithChildren
 
-	def clientsWithChildrenToSites(self) -> None:
+	def __clientsWithChildrenToSites(self) -> None:
 		toAdd = []
 		for (i, node) in enumerate(self.nodes):
 			if node.type == NodeType.clientWithChildren:
@@ -171,9 +171,9 @@ class NetworkGraph:
 		for n in toAdd:
 			self.addRawNode(n)
 
-		self.reparentById()
+		self.__reparentById()
 
-	def findUnconnectedNodes(self) -> List:
+	def __findUnconnectedNodes(self) -> List:
 		# Performs a tree-traversal and finds any nodes that
 		# aren't connected to the root. This is a "sanity check",
 		# and also an easy way to handle "flat" topologies and
@@ -195,18 +195,28 @@ class NetworkGraph:
 				result.append(i)
 		return result
 
-	def reconnectUnconnected(self):
+	def __reconnectUnconnected(self):
 		# Finds any unconnected nodes and reconnects
 		# them to the root
-		for idx in self.findUnconnectedNodes():
+		for idx in self.__findUnconnectedNodes():
 			if self.nodes[idx].type == NodeType.site:
 				self.nodes[idx].parentIndex = 0
-		for idx in self.findUnconnectedNodes():
+		for idx in self.__findUnconnectedNodes():
 			if self.nodes[idx].type == NodeType.clientWithChildren:
 				self.nodes[idx].parentIndex = 0
-		for idx in self.findUnconnectedNodes():
+		for idx in self.__findUnconnectedNodes():
 			if self.nodes[idx].type == NodeType.client:
 				self.nodes[idx].parentIndex = 0
+
+	def prepareTree(self) -> None:
+		# Helper function that calls all the cleanup and mapping
+		# functions in the right order. Unless you are doing
+		# something special, you can use this instead of
+		# calling the functions individually
+		self.__reparentById()
+		self.__promoteClientsWithChildren()
+		self.__clientsWithChildrenToSites()
+		self.__reconnectUnconnected()
 
 	def doesNetworkJsonExist(self):
 		# Returns true if "network.json" exists, false otherwise

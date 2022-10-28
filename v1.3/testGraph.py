@@ -80,7 +80,7 @@ class TestGraph(unittest.TestCase):
         graph.addRawNode(NetworkNode("Client 2", parentId="Site 1", type=NodeType.client))
         graph.addRawNode(NetworkNode("Client 3", parentId="Site 2", type=NodeType.client))
         graph.addRawNode(NetworkNode("Client 4", parentId="Missing Site", type=NodeType.client))
-        graph.reparentById()
+        graph._NetworkGraph__reparentById()
         self.assertEqual(len(graph.nodes), 7) # Includes 1 for the fake root
         self.assertEqual(graph.nodes[1].parentIndex, 0) # Site 1 is off root
         self.assertEqual(graph.nodes[2].parentIndex, 0) # Site 2 is off root
@@ -124,7 +124,7 @@ class TestGraph(unittest.TestCase):
         graph.addRawNode(NetworkNode("Client 2", parentId="Site 1", type=NodeType.client))
         graph.addRawNode(NetworkNode("Client 3", parentId="Site 2", type=NodeType.client))
         graph.addRawNode(NetworkNode("Client 4", parentId="Missing Site", type=NodeType.client))
-        graph.reparentById()
+        graph._NetworkGraph__reparentById()
         self.assertEqual(graph.findChildIndices(1), [3, 4])
         self.assertEqual(graph.findChildIndices(2), [5])
         self.assertEqual(graph.findChildIndices(3), [])
@@ -145,8 +145,8 @@ class TestGraph(unittest.TestCase):
         graph.addRawNode(NetworkNode("Client 2", parentId="Site 1", type=NodeType.client))
         graph.addRawNode(NetworkNode("Client 3", parentId="Site 2", type=NodeType.client))
         graph.addRawNode(NetworkNode("Client 4", parentId="Client 3", type=NodeType.client))
-        graph.reparentById()
-        graph.promoteClientsWithChildren()
+        graph._NetworkGraph__reparentById()
+        graph._NetworkGraph__promoteClientsWithChildren()
         self.assertEqual(graph.nodes[5].type, NodeType.clientWithChildren)
         self.assertEqual(graph.nodes[6].type, NodeType.client) # Test that a client is still a client
 
@@ -163,9 +163,9 @@ class TestGraph(unittest.TestCase):
         graph.addRawNode(NetworkNode("Client 2", parentId="Site 1", type=NodeType.client))
         graph.addRawNode(NetworkNode("Client 3", parentId="Site 2", type=NodeType.client))
         graph.addRawNode(NetworkNode("Client 4", parentId="Client 3", type=NodeType.client))
-        graph.reparentById()
-        graph.promoteClientsWithChildren()
-        graph.clientsWithChildrenToSites()
+        graph._NetworkGraph__reparentById()
+        graph._NetworkGraph__promoteClientsWithChildren()
+        graph._NetworkGraph__clientsWithChildrenToSites()
         self.assertEqual(graph.nodes[5].type, NodeType.client)
         self.assertEqual(graph.nodes[6].type, NodeType.client) # Test that a client is still a client
         self.assertEqual(graph.nodes[7].type, NodeType.site)
@@ -184,10 +184,10 @@ class TestGraph(unittest.TestCase):
         graph.addRawNode(NetworkNode("Client 2", parentId="Site 1", type=NodeType.client))
         graph.addRawNode(NetworkNode("Client 3", parentId="Site 2", type=NodeType.client))
         graph.addRawNode(NetworkNode("Client 4", parentId="Client 3", type=NodeType.client))
-        graph.reparentById()
-        graph.promoteClientsWithChildren()
+        graph._NetworkGraph__reparentById()
+        graph._NetworkGraph__promoteClientsWithChildren()
         graph.nodes[6].parentIndex = 6 # Create a circle
-        unconnected = graph.findUnconnectedNodes()
+        unconnected = graph._NetworkGraph__findUnconnectedNodes()
         self.assertEqual(len(unconnected), 1)
         self.assertEqual(unconnected[0], 6)
         self.assertEqual(graph.nodes[unconnected[0]].id, "Client 4")
@@ -207,11 +207,11 @@ class TestGraph(unittest.TestCase):
         graph.addRawNode(NetworkNode("Client 2", parentId="Site 1", type=NodeType.client))
         graph.addRawNode(NetworkNode("Client 3", parentId="Site 2", type=NodeType.client))
         graph.addRawNode(NetworkNode("Client 4", parentId="Client 3", type=NodeType.client))
-        graph.reparentById()
-        graph.promoteClientsWithChildren()
+        graph._NetworkGraph__reparentById()
+        graph._NetworkGraph__promoteClientsWithChildren()
         graph.nodes[6].parentIndex = 6 # Create a circle
-        graph.reconnectUnconnected()
-        unconnected = graph.findUnconnectedNodes()
+        graph._NetworkGraph__reconnectUnconnected()
+        unconnected = graph._NetworkGraph__findUnconnectedNodes()
         self.assertEqual(len(unconnected), 0)
         self.assertEqual(graph.nodes[6].parentIndex, 0)
 
@@ -248,8 +248,8 @@ class TestGraph(unittest.TestCase):
         graph.addRawNode(NetworkNode("Client 2", parentId="Site 1", type=NodeType.client))
         graph.addRawNode(NetworkNode("Client 3", parentId="Site 2", type=NodeType.client))
         graph.addRawNode(NetworkNode("Client 4", parentId="Client 3", type=NodeType.client))
-        graph.reparentById()
-        graph.promoteClientsWithChildren()
+        graph._NetworkGraph__reparentById()
+        graph._NetworkGraph__promoteClientsWithChildren()
         graph.plotNetworkGraph(True)
         from os.path import exists
         self.assertEqual(exists("network.pdf.pdf"), True)

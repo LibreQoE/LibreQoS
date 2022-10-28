@@ -320,10 +320,7 @@ def importFromUISP():
 								net.nodes[target].parentId = node.id
 								node.type = NodeType.ap
 
-	net.reparentById()
-	net.promoteClientsWithChildren()
-	net.clientsWithChildrenToSites()
-	net.reconnectUnconnected()
+	net.prepareTree()
 	net.plotNetworkGraph(False)
 	net.createNetworkJson()
 
