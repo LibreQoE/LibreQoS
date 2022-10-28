@@ -83,6 +83,13 @@ class NetworkGraph:
 		# Adds a NetworkNode to the graph, unchanged.
 		self.nodes.append(node)
 
+	def replaceRootNote(self, node: NetworkNode) -> None:
+		# Replaces the automatically generated root node
+		# with a new node. Useful when you have a top-level
+		# node specified (e.g. "uispSite" in the UISP
+		# integration)
+		self.nodes[0] = node
+
 	def addNodeAsChild(self, parent: str, node: NetworkNode) -> None:
 		# Searches the existing graph for a named parent,
 		# adjusts the new node's parentIndex to match the new
@@ -139,6 +146,41 @@ class NetworkGraph:
 					if self.nodes[child].type != NodeType.device:
 						node.type = NodeType.clientWithChildren
 
+	def findUnconnectedNodes(self) -> List:
+		# Performs a tree-traversal and finds any nodes that
+		# aren't connected to the root. This is a "sanity check",
+		# and also an easy way to handle "flat" topologies and
+		# ensure that the unconnected nodes are re-connected to
+		# the root.
+		visited = []
+		next = [0]
+
+		while len(next) > 0:
+			nextTraversal = next.pop()
+			visited.append(nextTraversal)
+			for idx in self.findChildIndices(nextTraversal):
+				if idx not in visited:
+					next.append(idx)
+
+		result = []
+		for i, n in enumerate(self.nodes):
+			if i not in visited:
+				result.append(i)
+		return result
+
+	def reconnectUnconnected(self):
+		# Finds any unconnected nodes and reconnects
+		# them to the root
+		for idx in self.findUnconnectedNodes():
+			if self.nodes[idx].type == NodeType.site:
+				self.nodes[idx].parentIndex = 0
+		for idx in self.findUnconnectedNodes():
+			if self.nodes[idx].type == NodeType.clientWithChildren:
+				self.nodes[idx].parentIndex = 0
+		for idx in self.findUnconnectedNodes():
+			if self.nodes[idx].type == NodeType.client:
+				self.nodes[idx].parentIndex = 0
+
 	def plotNetworkGraph(self, showClients=False):
 		# Requires `pip install graphviz` to function.
 		# You also need to install graphviz on your PC.
@@ -147,11 +189,9 @@ class NetworkGraph:
 		# visual verification that the graph makes sense.
 		# Could potentially be useful in a future
 		# web interface.
-		import imp
-		try:
-			imp.find_module('graphviz')
-		except ImportError:
-			return # GraphViz isn't installed, so bail out
+		import importlib.util
+		if (spec := importlib.util.find_spec('graphviz')) is None:
+			return
 		
 		import graphviz
 		dot = graphviz.Digraph('network', comment = "Network Graph", engine="fdp")

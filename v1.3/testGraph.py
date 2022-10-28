@@ -46,6 +46,16 @@ class TestGraph(unittest.TestCase):
         self.assertEqual(graph.nodes[1].parentIndex, 0)
         self.assertEqual(graph.nodes[1].id, "Site")
 
+    def test_replace_root(self):
+        """
+        Test replacing the default root node with a specified node
+        """
+        from integrationCommon import NetworkGraph, NetworkNode, NodeType
+        graph = NetworkGraph()
+        node = NetworkNode("Test", type = NodeType.site)
+        graph.replaceRootNote(node)
+        self.assertEqual(graph.nodes[0].id, "Test")
+
     def add_child_by_named_parent(self):
         """
         Tests inserting a node with a named parent
@@ -140,6 +150,50 @@ class TestGraph(unittest.TestCase):
         self.assertEqual(graph.nodes[5].type, NodeType.clientWithChildren)
         self.assertEqual(graph.nodes[6].type, NodeType.client) # Test that a client is still a client
 
+    def test_find_unconnected(self):
+        """
+        Tests traversing a tree and finding nodes that
+        have no connection to the rest of the tree.
+        """
+        from integrationCommon import NetworkGraph, NetworkNode, NodeType
+        graph = NetworkGraph()
+        graph.addRawNode(NetworkNode("Site 1"))
+        graph.addRawNode(NetworkNode("Site 2"))
+        graph.addRawNode(NetworkNode("Client 1", parentId="Site 1", type=NodeType.client))
+        graph.addRawNode(NetworkNode("Client 2", parentId="Site 1", type=NodeType.client))
+        graph.addRawNode(NetworkNode("Client 3", parentId="Site 2", type=NodeType.client))
+        graph.addRawNode(NetworkNode("Client 4", parentId="Client 3", type=NodeType.client))
+        graph.reparentById()
+        graph.promoteClientsWithChildren()
+        graph.nodes[6].parentIndex = 6 # Create a circle
+        unconnected = graph.findUnconnectedNodes()
+        self.assertEqual(len(unconnected), 1)
+        self.assertEqual(unconnected[0], 6)
+        self.assertEqual(graph.nodes[unconnected[0]].id, "Client 4")
+
+    def test_reconnect_unconnected(self):
+        """
+        Tests traversing a tree and finding nodes that
+        have no connection to the rest of the tree.
+        Reconnects them and ensures that the orphan is now
+        parented.
+        """
+        from integrationCommon import NetworkGraph, NetworkNode, NodeType
+        graph = NetworkGraph()
+        graph.addRawNode(NetworkNode("Site 1"))
+        graph.addRawNode(NetworkNode("Site 2"))
+        graph.addRawNode(NetworkNode("Client 1", parentId="Site 1", type=NodeType.client))
+        graph.addRawNode(NetworkNode("Client 2", parentId="Site 1", type=NodeType.client))
+        graph.addRawNode(NetworkNode("Client 3", parentId="Site 2", type=NodeType.client))
+        graph.addRawNode(NetworkNode("Client 4", parentId="Client 3", type=NodeType.client))
+        graph.reparentById()
+        graph.promoteClientsWithChildren()
+        graph.nodes[6].parentIndex = 6 # Create a circle
+        graph.reconnectUnconnected()
+        unconnected = graph.findUnconnectedNodes()
+        self.assertEqual(len(unconnected), 0)
+        self.assertEqual(graph.nodes[6].parentIndex, 0)
+
     def test_graph_render_to_pdf(self):
         """
         Requires that graphviz be installed with
@@ -149,12 +203,9 @@ class TestGraph(unittest.TestCase):
         See: https://www.graphviz.org/download/
         Test that it creates a graphic
         """
-        import imp
-        try:
-            imp.find_module('graphviz')
-        except ImportError:
-            print("Not testing graph render - graphviz not installed")
-            return # GraphViz isn't installed, so bail out
+        import importlib.util
+        if (spec := importlib.util.find_spec('graphviz')) is None:
+            return
 
         from integrationCommon import NetworkGraph, NetworkNode, NodeType
         graph = NetworkGraph()

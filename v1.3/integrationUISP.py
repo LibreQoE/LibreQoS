@@ -249,29 +249,30 @@ def createShaper():
 		for device in devicesToImport:
 			wr.writerow(device)
 
+def uispRequest(target):
+	# Sends an HTTP request to UISP and returns the
+	# result in JSON. You only need to specify the
+	# tail end of the URL, e.g. "sites"
+	from ispConfig import UISPbaseURL, uispAuthToken
+	url = UISPbaseURL + "/nms/api/v2.1/" + target
+	headers = {'accept':'application/json', 'x-auth-token': uispAuthToken}
+	r = requests.get(url, headers=headers)
+	return r.json()
+
 def importFromUISP():
 	from integrationCommon import NetworkGraph, NetworkNode, NodeType
 
 	# Load network sites
 	print("Loading Sites")
-	url = UISPbaseURL + "/nms/api/v2.1/sites"
-	headers = {'accept':'application/json', 'x-auth-token': uispAuthToken}
-	r = requests.get(url, headers=headers)
-	sites = r.json()
+	sites = uispRequest("sites")
 
 	# Load devices
 	print("Loading Devices")
-	url = UISPbaseURL + "/nms/api/v2.1/devices?withInterfaces=true&authorized=true"
-	headers = {'accept':'application/json', 'x-auth-token': uispAuthToken}
-	r = requests.get(url, headers=headers)
-	devices = r.json()
+	devices = uispRequest("devices?withInterfaces=true&authorized=true")
 
 	# Load DataLinks
 	print("Loading Data-Links")
-	url = UISPbaseURL + "/nms/api/v2.1/data-links?siteLinksOnly=true"
-	headers = {'accept':'application/json', 'x-auth-token': uispAuthToken}
-	r = requests.get(url, headers=headers)
-	dataLinks = r.json()
+	dataLinks = uispRequest("data-links?siteLinksOnly=true")
 
 	print("Building Topology")
 	net = NetworkGraph()
@@ -289,7 +290,12 @@ def importFromUISP():
 			case default: nodeType = NodeType.client
 
 		node = NetworkNode(id=id, displayName=name, type=nodeType, parentId=parent)
-		net.addRawNode(node)
+		# If this is the uispSite node, it becomes the root. Otherwise, add it to the
+		# node soup.
+		if name == uispSite:
+			net.replaceRootNote(node)
+		else:
+			net.addRawNode(node)
 
 		for device in devices:
 			if device['identification']['site'] is not None and device['identification']['site']['id'] == id:
@@ -315,6 +321,7 @@ def importFromUISP():
 
 	net.reparentById()
 	net.promoteClientsWithChildren()
+	net.reconnectUnconnected()
 	net.plotNetworkGraph(False)
 
 	#createNetworkJSON()
