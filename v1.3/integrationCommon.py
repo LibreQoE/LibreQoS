@@ -150,6 +150,29 @@ class NetworkGraph:
 					if self.nodes[child].type != NodeType.device:
 						node.type = NodeType.clientWithChildren
 
+	def clientsWithChildrenToSites(self) -> None:
+		toAdd = []
+		for (i, node) in enumerate(self.nodes):
+			if node.type == NodeType.clientWithChildren:
+				siteNode = NetworkNode(
+					id=node.id + "_gen",
+					displayName="(Site) " + node.displayName,
+					type = NodeType.site
+				)
+				siteNode.parentIndex = node.parentIndex
+				node.parentId = siteNode.id
+				if node.type == NodeType.clientWithChildren:
+					node.type = NodeType.client
+				for child in self.findChildIndices(i):
+					if self.nodes[child].type == NodeType.client or self.nodes[child].type == NodeType.clientWithChildren or self.nodes[child].type == NodeType.site:
+						self.nodes[child].parentId = siteNode.id
+				toAdd.append(siteNode)
+
+		for n in toAdd:
+			self.addRawNode(n)
+
+		self.reparentById()
+
 	def findUnconnectedNodes(self) -> List:
 		# Performs a tree-traversal and finds any nodes that
 		# aren't connected to the root. This is a "sanity check",

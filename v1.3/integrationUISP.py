@@ -322,6 +322,7 @@ def importFromUISP():
 
 	net.reparentById()
 	net.promoteClientsWithChildren()
+	net.clientsWithChildrenToSites()
 	net.reconnectUnconnected()
 	net.plotNetworkGraph(False)
 	net.createNetworkJson()
