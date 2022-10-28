@@ -270,16 +270,20 @@ class TestGraph(unittest.TestCase):
             return
 
         from integrationCommon import NetworkGraph, NetworkNode, NodeType
-        graph = NetworkGraph()
-        graph.addRawNode(NetworkNode("Site 1"))
-        graph.addRawNode(NetworkNode("Site 2"))
-        graph.addRawNode(NetworkNode("Client 1", parentId="Site 1", type=NodeType.client))
-        graph.addRawNode(NetworkNode("Client 2", parentId="Site 1", type=NodeType.client))
-        graph.addRawNode(NetworkNode("Client 3", parentId="Site 2", type=NodeType.client))
-        graph.addRawNode(NetworkNode("Client 4", parentId="Client 3", type=NodeType.client))
-        graph._NetworkGraph__reparentById()
-        graph._NetworkGraph__promoteClientsWithChildren()
-        graph.plotNetworkGraph(True)
+        net = NetworkGraph()
+        net.addRawNode(NetworkNode("Site_1", "Site_1", "", NodeType.site, 1000, 1000))
+        net.addRawNode(NetworkNode("Site_2", "Site_2", "", NodeType.site, 500, 500))
+        net.addRawNode(NetworkNode("AP_A", "AP_A", "Site_1", NodeType.ap, 500, 500))
+        net.addRawNode(NetworkNode("Site_3", "Site_3", "Site_1", NodeType.site, 500, 500))
+        net.addRawNode(NetworkNode("PoP_5", "PoP_5", "Site_3", NodeType.site, 200, 200))        
+        net.addRawNode(NetworkNode("AP_9", "AP_9", "PoP_5", NodeType.ap, 120, 120))
+        net.addRawNode(NetworkNode("PoP_6", "PoP_6", "PoP_5", NodeType.site, 60, 60))
+        net.addRawNode(NetworkNode("AP_11", "AP_11", "PoP_6", NodeType.ap, 30, 30))
+        net.addRawNode(NetworkNode("PoP_1", "PoP_1", "Site_2", NodeType.site, 200, 200))
+        net.addRawNode(NetworkNode("AP_7", "AP_7", "PoP_1", NodeType.ap, 100, 100))
+        net.addRawNode(NetworkNode("AP_1", "AP_1", "Site_2", NodeType.ap, 150, 150))
+        net.prepareTree()
+        net.plotNetworkGraph(False)
         from os.path import exists
         self.assertEqual(exists("network.pdf.pdf"), True)
 
