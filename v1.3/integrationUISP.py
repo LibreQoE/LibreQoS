@@ -1,10 +1,8 @@
 import requests
 import os
 import csv
-import ipaddress
 from ispConfig import UISPbaseURL, uispAuthToken, excludeSites, findIPv6usingMikrotik, bandwidthOverheadFactor, exceptionCPEs, uispSite
 from integrationCommon import isIpv4Permitted
-import shutil
 import json
 if findIPv6usingMikrotik == True:
 	from mikrotikFindIPv6 import pullMikrotikIPv6  
@@ -261,6 +259,7 @@ def uispRequest(target):
 
 def importFromUISP():
 	from integrationCommon import NetworkGraph, NetworkNode, NodeType
+	from ispConfig import generatedPNUploadMbps, generatedPNDownloadMbps
 
 	# Load network sites
 	print("Loading Sites")
@@ -281,15 +280,21 @@ def importFromUISP():
 		id = site['identification']['id']
 		name = site['identification']['name']
 		type = site['identification']['type']
+		download = generatedPNDownloadMbps
+		upload = generatedPNUploadMbps
 		if site['identification']['parent'] is None:
 			parent = ""
 		else:
 			parent = site['identification']['parent']['id']
 		match type:
 			case "site": nodeType = NodeType.site
-			case default: nodeType = NodeType.client
+			case default: 
+				nodeType = NodeType.client
+				if (site['qos']['downloadSpeed']) and (site['qos']['uploadSpeed']):
+					download = int(round(site['qos']['downloadSpeed']/1000000))
+					upload = int(round(site['qos']['uploadSpeed']/1000000))
 
-		node = NetworkNode(id=id, displayName=name, type=nodeType, parentId=parent)
+		node = NetworkNode(id=id, displayName=name, type=nodeType, parentId=parent, download=download, upload=upload)
 		# If this is the uispSite node, it becomes the root. Otherwise, add it to the
 		# node soup.
 		if name == uispSite:
@@ -315,14 +320,11 @@ def importFromUISP():
 								net.nodes[target].parentId = node.id
 								node.type = NodeType.ap
 
-	rootIndex = net.findNodeIndexByName(uispSite)
-	if rootIndex > -1:
-		net.nodes[rootIndex].parentId = ""
-
 	net.reparentById()
 	net.promoteClientsWithChildren()
 	net.reconnectUnconnected()
 	net.plotNetworkGraph(False)
+	net.createNetworkJson()
 
 	#createNetworkJSON()
 	#createShaper()

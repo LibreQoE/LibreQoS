@@ -2,7 +2,7 @@
 # integrations.
 
 from typing import List
-from ispConfig import allowedSubnets, ignoreSubnets
+from ispConfig import allowedSubnets, ignoreSubnets, generatedPNUploadMbps, generatedPNDownloadMbps
 import ipaddress;
 import enum
 
@@ -54,8 +54,10 @@ class NetworkNode:
 	parentIndex: int
 	parentId: str
 	type: NodeType
+	downloadMbps: int
+	uploadMbps: int
 
-	def __init__(self, id: str, displayName: str = "", parentId: str = "", type: NodeType = NodeType.site) -> None:
+	def __init__(self, id: str, displayName: str = "", parentId: str = "", type: NodeType = NodeType.site, download:int = generatedPNDownloadMbps, upload:int = generatedPNUploadMbps) -> None:
 		self.id = id
 		self.parentIndex = 0
 		self.type = type
@@ -64,6 +66,8 @@ class NetworkNode:
 			self.displayName = id
 		else:
 			self.displayName = displayName
+		self.downloadMbps = download
+		self.uploadMbps = upload
 
 class NetworkGraph:
 	# Defines a network as a graph topology
@@ -185,6 +189,40 @@ class NetworkGraph:
 		# Returns true if "network.json" exists, false otherwise
 		import os
 		return os.path.isfile("network.json")
+
+	def __isSite(self, index) -> bool:
+		return self.nodes[index].type == NodeType.ap or self.nodes[index].type == NodeType.site or self.nodes[index].type == NodeType.clientWithChildren
+
+	def createNetworkJson(self):
+		import json
+		topLevelNode = {}
+		self.__visited = [] # Protection against loops - never visit twice
+
+		for child in self.findChildIndices(0):
+			if child >0 and self.__isSite(child):
+				topLevelNode[self.nodes[child].displayName] = self.__buildNetworkObject(child)
+
+		del self.__visited
+
+		with open('network.json', 'w') as f:
+			json.dump(topLevelNode, f, indent=4)
+
+	def __buildNetworkObject(self, idx):
+		# Private: used to recurse down the network tree while building
+		# network.json
+		self.__visited.append(idx)
+		node = {
+			"downloadBandwidthMbps" : self.nodes[idx].downloadMbps,
+			"uploadBandwidthMbps" : self.nodes[idx].uploadMbps,
+		}
+		children = {}
+		hasChildren = False
+		for child in self.findChildIndices(idx):
+			if child >0 and self.__isSite(child) and child not in self.__visited:
+				children[self.nodes[child].displayName] = self.__buildNetworkObject(child)
+				hasChildren = True
+		if hasChildren: node["children"] = children
+		return node
 
 	def plotNetworkGraph(self, showClients=False):
 		# Requires `pip install graphviz` to function.
