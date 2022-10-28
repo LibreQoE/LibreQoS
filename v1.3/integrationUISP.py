@@ -262,16 +262,31 @@ def importFromUISP():
 	from ispConfig import generatedPNUploadMbps, generatedPNDownloadMbps
 
 	# Load network sites
-	print("Loading Sites")
+	print("Loading Data from UISP")
 	sites = uispRequest("sites")
-
-	# Load devices
-	print("Loading Devices")
 	devices = uispRequest("devices?withInterfaces=true&authorized=true")
-
-	# Load DataLinks
-	print("Loading Data-Links")
 	dataLinks = uispRequest("data-links?siteLinksOnly=true")
+
+	# Do we already have a integrationUISPbandwidths.csv file?
+	siteBandwidth = {}
+	if os.path.isfile("integrationUISPbandwidths.csv"):
+		with open('integrationUISPbandwidths.csv') as csv_file:
+				csv_reader = csv.reader(csv_file, delimiter=',')
+				next(csv_reader)
+				for row in csv_reader:
+					name, download, upload = row
+					download = int(download)
+					upload = int(upload)
+					siteBandwidth[name] = {"download" : download, "upload" : upload }
+
+	# Find AP capacities from UISP
+	for device in devices:
+		if device['identification']['role'] == "ap":
+			name = device['identification']['name']
+			if not name in siteBandwidth and device['overview']['downlinkCapacity'] and device['overview']['uplinkCapacity']:
+				download = int(device['overview']['downlinkCapacity'] / 1000000)
+				upload = int(device['overview']['uplinkCapacity'] / 1000000)
+				siteBandwidth[device['identification']['name']] = { "download" : download, "upload" : upload }
 
 	print("Building Topology")
 	net = NetworkGraph()
@@ -287,7 +302,15 @@ def importFromUISP():
 		else:
 			parent = site['identification']['parent']['id']
 		match type:
-			case "site": nodeType = NodeType.site
+			case "site": 
+				nodeType = NodeType.site
+				if name in siteBandwidth:
+					# Use the CSV bandwidth values
+					download = siteBandwidth[name]["download"]
+					upload = siteBandwidth[name]["upload"]
+				else:
+					# Add them just in case
+					siteBandwidth[name] = { "download" : download, "upload": upload}
 			case default: 
 				nodeType = NodeType.client
 				if (site['qos']['downloadSpeed']) and (site['qos']['uploadSpeed']):
@@ -319,10 +342,29 @@ def importFromUISP():
 							if net.nodes[target].type == NodeType.client or net.nodes[target].type == NodeType.clientWithChildren:
 								net.nodes[target].parentId = node.id
 								node.type = NodeType.ap
+								if node.displayName in siteBandwidth:
+									# Use the bandwidth numbers from the CSV file
+									node.uploadMbps = siteBandwidth[node.displayName]["upload"]
+									node.downloadMbps = siteBandwidth[node.displayName]["download"]
+								else:
+									# Add some defaults in case they want to change them
+									siteBandwidth[node.displayName] = { "download": generatedPNDownloadMbps, "upload" : generatedPNUploadMbps }
 
 	net.prepareTree()
 	net.plotNetworkGraph(False)
-	net.createNetworkJson()
+	if net.doesNetworkJsonExist():
+		print("network.json already exists. Leaving in-place.")
+	else:
+		net.createNetworkJson()
+
+	# Save integrationUISPbandwidths.csv
+	# (the newLine fixes generating extra blank lines)
+	with open('integrationUISPbandwidths.csv', 'w', newline='') as csvfile:
+		wr = csv.writer(csvfile, quoting=csv.QUOTE_ALL)
+		wr.writerow(['ParentNode', 'Download Mbps', 'Upload Mbps'])
+		for device in siteBandwidth:
+			entry = (device, siteBandwidth[device]["download"], siteBandwidth[device]["upload"])
+			wr.writerow(entry)
 
 	#createNetworkJSON()
 	#createShaper()
