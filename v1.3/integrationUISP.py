@@ -1,7 +1,7 @@
 import requests
 import os
 import csv
-from ispConfig import excludeSites, findIPv6usingMikrotik, exceptionCPEs, uispSite
+from ispConfig import excludeSites, findIPv6usingMikrotik, exceptionCPEs, uispSite, uispStrategy
 from integrationCommon import isIpv4Permitted, fixSubnet
 if findIPv6usingMikrotik == True:
     from mikrotikFindIPv6 import pullMikrotikIPv6
@@ -18,8 +18,66 @@ def uispRequest(target):
     r = requests.get(url, headers=headers)
     return r.json()
 
+def buildFlatGraph():
+    # Builds a high-performance (but lacking in site or AP bandwidth control)
+    # network.
+    from integrationCommon import NetworkGraph, NetworkNode, NodeType
+    from ispConfig import generatedPNUploadMbps, generatedPNDownloadMbps
+
+    # Load network sites
+    print("Loading Data from UISP")
+    sites = uispRequest("sites")
+    devices = uispRequest("devices?withInterfaces=true&authorized=true")
+
+    # Build a basic network adding every client to the tree
+    print("Building Flat Topology")
+    net = NetworkGraph()
+
+    for site in sites:
+        type = site['identification']['type']
+        if type == "endpoint":
+            id = site['identification']['id']
+            address = site['description']['address']
+            name = site['identification']['name']
+            type = site['identification']['type']
+            download = generatedPNDownloadMbps
+            upload = generatedPNUploadMbps
+            if (site['qos']['downloadSpeed']) and (site['qos']['uploadSpeed']):
+                download = int(round(site['qos']['downloadSpeed']/1000000))
+                upload = int(round(site['qos']['uploadSpeed']/1000000))
+
+            node = NetworkNode(id=id, displayName=name, type=NodeType.client, download=download, upload=upload, address=address)
+            net.addRawNode(node)
+            for device in devices:
+                if device['identification']['site'] is not None and device['identification']['site']['id'] == id:
+                    # The device is at this site, so add it
+                    ipv4 = []
+                    ipv6 = []
+
+                    for interface in device["interfaces"]:
+                        for ip in interface["addresses"]:
+                            ip = ip["cidr"]
+                            if isIpv4Permitted(ip):
+                                ipv4.append(fixSubnet(ip))
+
+                    # TODO: Figure out Mikrotik IPv6?
+                    mac = device['identification']['mac']
+
+                    net.addRawNode(NetworkNode(id=device['identification']['id'], displayName=device['identification']
+                        ['name'], parentId=id, type=NodeType.device, ipv4=ipv4, ipv6=ipv6, mac=mac))
+
+    # Finish up
+    net.prepareTree()
+    net.plotNetworkGraph(False)
+    if net.doesNetworkJsonExist():
+        print("network.json already exists. Leaving in-place.")
+    else:
+        net.createNetworkJson()
+    net.createShapedDevices()
 
 def buildFullGraph():
+    # Attempts to build a full network graph, incorporating as much of the UISP
+    # hierarchy as possible.
     from integrationCommon import NetworkGraph, NetworkNode, NodeType
     from ispConfig import generatedPNUploadMbps, generatedPNDownloadMbps
 
@@ -153,8 +211,9 @@ def buildFullGraph():
 
 
 def importFromUISP():
-    # TODO: Support for "flat"
-    buildFullGraph()
+    match uispStrategy:
+        case "full": buildFullGraph()
+        case default: buildFlatGraph()
 
 
 if __name__ == '__main__':
