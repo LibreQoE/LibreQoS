@@ -1,7 +1,7 @@
 # Provides common functionality shared between
 # integrations.
 
-from typing import List
+from typing import List, Any
 from ispConfig import allowedSubnets, ignoreSubnets, generatedPNUploadMbps, generatedPNDownloadMbps
 import ipaddress
 import enum
@@ -52,7 +52,6 @@ def fixSubnet(inputIP):
             # Not a network address
             return rawIp + "/32"
     return inputIP
-
 
 class NodeType(enum.IntEnum):
     # Enumeration to define what type of node
@@ -108,12 +107,19 @@ class NetworkGraph:
     # via a common interface.
 
     nodes: List
+    ipv4ToIPv6: Any
 
     def __init__(self) -> None:
+        from ispConfig import findIPv6usingMikrotik
         self.nodes = [
             NetworkNode("FakeRoot", type=NodeType.root,
                         parentId="", displayName="Shaper Root")
         ]
+        if findIPv6usingMikrotik:
+            from mikrotikFindIPv6 import pullMikrotikIPv6  
+            self.ipv4ToIPv6 = pullMikrotikIPv6()
+        else:
+            self.ipv4ToIPv6 = {}
 
     def addRawNode(self, node: NetworkNode) -> None:
         # Adds a NetworkNode to the graph, unchanged.
@@ -292,6 +298,19 @@ class NetworkGraph:
             node["children"] = children
         return node
 
+    def __addIpv6FromMap(self, ipv4, ipv6) -> None:
+        # Scans each address in ipv4. If its present in the
+        # IPv4 to Ipv6 map (currently pulled from Mikrotik devices
+        # if findIPv6usingMikrotik is enabled), then matching
+        # IPv6 networks are appended to the ipv6 list.
+        # This is explicitly non-destructive of the existing IPv6
+        # list, in case you already have some.
+        for ipCidr in ipv4:
+            if '/' in ipCidr: ip = ipCidr.split('/')[0]
+            else: ip = ipCidr
+            if ip in self.ipv4ToIPv6.keys():
+                ipv6.append(self.ipv4ToIPv6[ip])
+
     def createShapedDevices(self):
             import csv
             from ispConfig import bandwidthOverheadFactor
@@ -312,12 +331,15 @@ class NetworkGraph:
                     }
                     for child in self.findChildIndices(i):
                         if self.nodes[child].type == NodeType.device and (len(self.nodes[child].ipv4)+len(self.nodes[child].ipv6)>0):
+                            ipv4 = self.nodes[child].ipv4
+                            ipv6 = self.nodes[child].ipv6
+                            self.__addIpv6FromMap(ipv4, ipv6)
                             device = {
                                 "id": self.nodes[child].id,
                                 "name": self.nodes[child].displayName,
                                 "mac": self.nodes[child].mac,
-                                "ipv4": self.nodes[child].ipv4,
-                                "ipv6": self.nodes[child].ipv6,
+                                "ipv4": ipv4,
+                                "ipv6": ipv6,
                             }
                             circuit["devices"].append(device)
                     if len(circuit["devices"]) > 0:

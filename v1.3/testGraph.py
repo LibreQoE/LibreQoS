@@ -256,6 +256,28 @@ class TestGraph(unittest.TestCase):
             exampleFile = json.load(file)
         self.assertEqual(newFile, exampleFile)
 
+    def test_ipv4_to_ipv6_map(self):
+        """
+        Tests the underlying functionality of finding an IPv6 address from an IPv4 mapping
+        """
+        from integrationCommon import NetworkGraph
+        net = NetworkGraph()
+        ipv4 = [ "100.64.1.1" ]
+        ipv6 = []
+        # Test that it doesn't cause issues without any mappings
+        net._NetworkGraph__addIpv6FromMap(ipv4, ipv6)
+        self.assertEqual(len(ipv4), 1)
+        self.assertEqual(len(ipv6), 0)
+
+        # Test a mapping
+        net.ipv4ToIPv6 = {
+            "100.64.1.1":"dead::beef/64"
+        }
+        net._NetworkGraph__addIpv6FromMap(ipv4, ipv6)
+        self.assertEqual(len(ipv4), 1)
+        self.assertEqual(len(ipv6), 1)
+        self.assertEqual(ipv6[0], "dead::beef/64")
+
     def test_graph_render_to_pdf(self):
         """
         Requires that graphviz be installed with

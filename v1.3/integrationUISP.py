@@ -1,12 +1,10 @@
 import requests
 import os
 import csv
-from ispConfig import excludeSites, findIPv6usingMikrotik, exceptionCPEs, uispSite, uispStrategy
+from ispConfig import excludeSites, exceptionCPEs, uispSite, uispStrategy
 from integrationCommon import isIpv4Permitted, fixSubnet
-if findIPv6usingMikrotik == True:
-    from mikrotikFindIPv6 import pullMikrotikIPv6
 
-# TODO: exceptionCPEs, Mikrotik V6
+# TODO: exceptionCPEs
 
 def uispRequest(target):
     # Sends an HTTP request to UISP and returns the
