@@ -300,10 +300,12 @@ class NetworkGraph:
             nextId = 0
             for (i, node) in enumerate(self.nodes):
                 if node.type == NodeType.client:
+                    parent = self.nodes[node.parentIndex].displayName
+                    if parent == "Shaper Root": parent = ""
                     circuit = {
                         "id": nextId,
                         "name": node.address,
-                        "parent": self.nodes[node.parentIndex].displayName,
+                        "parent": parent,
                         "download": node.downloadMbps,
                         "upload": node.uploadMbps,
                         "devices": []
