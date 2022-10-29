@@ -1,7 +1,7 @@
 import requests
 import os
 import csv
-from ispConfig import excludeSites, exceptionCPEs, uispSite, uispStrategy
+from ispConfig import exceptionCPEs, uispSite, uispStrategy
 from integrationCommon import isIpv4Permitted, fixSubnet
 
 # TODO: exceptionCPEs
@@ -114,8 +114,6 @@ def buildFullGraph():
     for site in sites:
         id = site['identification']['id']
         name = site['identification']['name']
-        # If a site is excluded, skip to the next site
-        if name in excludeSites: continue
         type = site['identification']['type']
         download = generatedPNDownloadMbps
         upload = generatedPNUploadMbps

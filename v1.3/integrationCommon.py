@@ -108,13 +108,15 @@ class NetworkGraph:
 
     nodes: List
     ipv4ToIPv6: Any
+    excludeSites: List # Copied to allow easy in-test patching
 
     def __init__(self) -> None:
-        from ispConfig import findIPv6usingMikrotik
+        from ispConfig import findIPv6usingMikrotik, excludeSites
         self.nodes = [
             NetworkNode("FakeRoot", type=NodeType.root,
                         parentId="", displayName="Shaper Root")
         ]
+        self.excludeSites = excludeSites
         if findIPv6usingMikrotik:
             from mikrotikFindIPv6 import pullMikrotikIPv6  
             self.ipv4ToIPv6 = pullMikrotikIPv6()
@@ -123,7 +125,10 @@ class NetworkGraph:
 
     def addRawNode(self, node: NetworkNode) -> None:
         # Adds a NetworkNode to the graph, unchanged.
-        self.nodes.append(node)
+        # If a site is excluded (via excludedSites in ispConfig)
+        # it won't be added
+        if not node.displayName in self.excludeSites:
+            self.nodes.append(node)
 
     def replaceRootNote(self, node: NetworkNode) -> None:
         # Replaces the automatically generated root node
@@ -136,6 +141,7 @@ class NetworkGraph:
         # Searches the existing graph for a named parent,
         # adjusts the new node's parentIndex to match the new
         # node. The parented node is then inserted.
+        if node.displayName in self.excludeSites: return
         parentIdx = 0
         for (i, node) in enumerate(self.nodes):
             if node.id == parent:

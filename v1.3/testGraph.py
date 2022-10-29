@@ -278,6 +278,14 @@ class TestGraph(unittest.TestCase):
         self.assertEqual(len(ipv6), 1)
         self.assertEqual(ipv6[0], "dead::beef/64")
 
+    def test_site_exclusion(self):
+        from integrationCommon import NetworkGraph, NetworkNode, NodeType
+        net = NetworkGraph()
+        net.excludeSites = ['Site_2']
+        net.addRawNode(NetworkNode("Site_1", "Site_1", "", NodeType.site, 1000, 1000))
+        net.addRawNode(NetworkNode("Site_2", "Site_2", "", NodeType.site, 500, 500))
+        self.assertEqual(len(net.nodes), 2)
+
     def test_graph_render_to_pdf(self):
         """
         Requires that graphviz be installed with
