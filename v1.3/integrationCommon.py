@@ -309,7 +309,7 @@ class NetworkGraph:
                         "devices": []
                     }
                     for child in self.findChildIndices(i):
-                        if self.nodes[child].type == NodeType.device:
+                        if self.nodes[child].type == NodeType.device and (len(self.nodes[child].ipv4)+len(self.nodes[child].ipv6)>0):
                             device = {
                                 "id": self.nodes[child].id,
                                 "name": self.nodes[child].displayName,
