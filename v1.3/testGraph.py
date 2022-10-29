@@ -286,6 +286,18 @@ class TestGraph(unittest.TestCase):
         net.addRawNode(NetworkNode("Site_2", "Site_2", "", NodeType.site, 500, 500))
         self.assertEqual(len(net.nodes), 2)
 
+    def test_site_exception(self):
+        from integrationCommon import NetworkGraph, NetworkNode, NodeType
+        net = NetworkGraph()
+        net.exceptionCPEs = {
+            "Site_2": "Site_1"
+        }
+        net.addRawNode(NetworkNode("Site_1", "Site_1", "", NodeType.site, 1000, 1000))
+        net.addRawNode(NetworkNode("Site_2", "Site_2", "", NodeType.site, 500, 500))
+        self.assertEqual(net.nodes[2].parentId, "Site_1")
+        net.prepareTree()
+        self.assertEqual(net.nodes[2].parentIndex, 1)
+
     def test_graph_render_to_pdf(self):
         """
         Requires that graphviz be installed with

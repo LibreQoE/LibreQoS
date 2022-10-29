@@ -1,10 +1,8 @@
 import requests
 import os
 import csv
-from ispConfig import exceptionCPEs, uispSite, uispStrategy
+from ispConfig import uispSite, uispStrategy
 from integrationCommon import isIpv4Permitted, fixSubnet
-
-# TODO: exceptionCPEs
 
 def uispRequest(target):
     # Sends an HTTP request to UISP and returns the
