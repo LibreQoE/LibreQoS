@@ -65,6 +65,12 @@ automaticImportUISP = False
 uispAuthToken = ''
 # Everything before /nms/ on your UISP instance
 UISPbaseURL = 'https://examplesite.com'
+# Strategy:
+# * "flat" - create all client sites directly off the top of the tree,
+#   provides maximum performance - at the expense of not offering AP,
+#   or site options.
+# * "full" - build a complete network map
+uispStrategy = "full"
 # List any sites that should not be included, with each site name surrounded by '' and seperated by commas
 excludeSites = []
 # If you use IPv6, this can be used to find associated IPv6 prefixes for your clients' IPv4 addresses, and match them to those devices
