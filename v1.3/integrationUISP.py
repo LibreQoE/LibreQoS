@@ -6,7 +6,7 @@ from integrationCommon import isIpv4Permitted, fixSubnet
 if findIPv6usingMikrotik == True:
     from mikrotikFindIPv6 import pullMikrotikIPv6
 
-# TODO: excludeSites, exceptionCPEs, Mikrotik V6
+# TODO: exceptionCPEs, Mikrotik V6
 
 def uispRequest(target):
     # Sends an HTTP request to UISP and returns the
@@ -116,6 +116,8 @@ def buildFullGraph():
     for site in sites:
         id = site['identification']['id']
         name = site['identification']['name']
+        # If a site is excluded, skip to the next site
+        if name in excludeSites: continue
         type = site['identification']['type']
         download = generatedPNDownloadMbps
         upload = generatedPNUploadMbps
