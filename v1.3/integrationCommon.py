@@ -366,6 +366,9 @@ class NetworkGraph:
                              'IPv4', 'IPv6', 'Download Min', 'Upload Min', 'Download Max', 'Upload Max', 'Comment'])
                 for circuit in circuits:
                     for device in circuit["devices"]:
+                        #Remove brackets and quotes of list so LibreQoS.py can parse it
+                        device["ipv4"] = str(device["ipv4"]).replace('[','').replace(']','').replace("'",'')
+                        device["ipv6"] = str(device["ipv6"]).replace('[','').replace(']','').replace("'",'')
                         row = [
                             circuit["id"],
                             circuit["name"],
@@ -417,3 +420,4 @@ class NetworkGraph:
                             dot.edge("N" + str(i), "N" + str(child))
 
         dot.render("network.pdf")
+
