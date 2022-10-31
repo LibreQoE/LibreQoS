@@ -20,63 +20,67 @@
           "data": [
             {
               "type": "cell",
-              "id": "0a2b01a9d569a000"
+              "id": "0a3625ffd5af0000"
             },
             {
               "type": "cell",
-              "id": "0a2b01a9d5e9a000"
+              "id": "0a3625ffd6ef0000"
             },
             {
               "type": "cell",
-              "id": "0a2b01a9d669a000"
+              "id": "0a3625ffd72f0000"
             },
             {
               "type": "cell",
-              "id": "0a2b01a9d6e9a000"
+              "id": "0a3625ffd76f0000"
             },
             {
               "type": "cell",
-              "id": "0a2b01a9d769a000"
+              "id": "0a3625ffd7af0000"
             },
             {
               "type": "cell",
-              "id": "0a2b01a9d829a000"
+              "id": "0a3625ffd7ef0000"
             },
             {
               "type": "cell",
-              "id": "0a2b01a9d8a9a000"
+              "id": "0a3625ffe0ef0000"
             },
             {
               "type": "cell",
-              "id": "0a2b01a9da69a000"
+              "id": "0a3625ffe22f0000"
             },
             {
               "type": "cell",
-              "id": "0a2b01a9dae9a000"
+              "id": "0a3625ffe3af0000"
             },
             {
               "type": "cell",
-              "id": "0a2b01a9db69a000"
+              "id": "0a3625ffe3ef0000"
             },
             {
               "type": "cell",
-              "id": "0a2b01a9dbe9a000"
+              "id": "0a3625ffe42f0000"
             },
             {
               "type": "cell",
-              "id": "0a2b025b4869a000"
+              "id": "0a3625ffe46f0000"
             },
             {
               "type": "cell",
-              "id": "0a2b02fa3c29a000"
+              "id": "0a3625ffec6f0000"
             },
             {
               "type": "cell",
-              "id": "0a2b03123529a000"
+              "id": "0a3625ffeeef0000"
             },
             {
               "type": "cell",
-              "id": "0a2b03542329a000"
+              "id": "0a3625fff02f0000"
+            },
+            {
+              "type": "cell",
+              "id": "0a3702644613a000"
             }
           ]
         },
@@ -87,7 +91,7 @@
     },
     "included": [
       {
-        "id": "0a2b01a9d569a000",
+        "id": "0a3625ffd5af0000",
         "type": "cell",
         "attributes": {
           "x": 0,
@@ -99,13 +103,13 @@
           "view": {
             "data": {
               "type": "view",
-              "id": "0a2b01a9d569a000"
+              "id": "0a3625ffd5af0000"
             }
           }
         }
       },
       {
-        "id": "0a2b01a9d5e9a000",
+        "id": "0a3625ffd6ef0000",
         "type": "cell",
         "attributes": {
           "x": 0,
@@ -117,13 +121,13 @@
           "view": {
             "data": {
               "type": "view",
-              "id": "0a2b01a9d5e9a000"
+              "id": "0a3625ffd6ef0000"
             }
           }
         }
       },
       {
-        "id": "0a2b01a9d669a000",
+        "id": "0a3625ffd72f0000",
         "type": "cell",
         "attributes": {
           "x": 0,
@@ -135,31 +139,13 @@
           "view": {
             "data": {
               "type": "view",
-              "id": "0a2b01a9d669a000"
+              "id": "0a3625ffd72f0000"
             }
           }
         }
       },
       {
-        "id": "0a2b01a9d6e9a000",
-        "type": "cell",
-        "attributes": {
-          "x": 10,
-          "y": 8,
-          "w": 2,
-          "h": 4
-        },
-        "relationships": {
-          "view": {
-            "data": {
-              "type": "view",
-              "id": "0a2b01a9d6e9a000"
-            }
-          }
-        }
-      },
-      {
-        "id": "0a2b01a9d769a000",
+        "id": "0a3625ffd76f0000",
         "type": "cell",
         "attributes": {
           "x": 5,
@@ -171,13 +157,13 @@
           "view": {
             "data": {
               "type": "view",
-              "id": "0a2b01a9d769a000"
+              "id": "0a3625ffd76f0000"
             }
           }
         }
       },
       {
-        "id": "0a2b01a9d829a000",
+        "id": "0a3625ffd7af0000",
         "type": "cell",
         "attributes": {
           "x": 10,
@@ -189,13 +175,31 @@
           "view": {
             "data": {
               "type": "view",
-              "id": "0a2b01a9d829a000"
+              "id": "0a3625ffd7af0000"
             }
           }
         }
       },
       {
-        "id": "0a2b01a9d8a9a000",
+        "id": "0a3625ffd7ef0000",
+        "type": "cell",
+        "attributes": {
+          "x": 10,
+          "y": 12,
+          "w": 2,
+          "h": 4
+        },
+        "relationships": {
+          "view": {
+            "data": {
+              "type": "view",
+              "id": "0a3625ffd7ef0000"
+            }
+          }
+        }
+      },
+      {
+        "id": "0a3625ffe0ef0000",
         "type": "cell",
         "attributes": {
           "x": 5,
@@ -207,49 +211,13 @@
           "view": {
             "data": {
               "type": "view",
-              "id": "0a2b01a9d8a9a000"
+              "id": "0a3625ffe0ef0000"
             }
           }
         }
       },
       {
-        "id": "0a2b01a9da69a000",
-        "type": "cell",
-        "attributes": {
-          "x": 0,
-          "y": 16,
-          "w": 5,
-          "h": 4
-        },
-        "relationships": {
-          "view": {
-            "data": {
-              "type": "view",
-              "id": "0a2b01a9da69a000"
-            }
-          }
-        }
-      },
-      {
-        "id": "0a2b01a9dae9a000",
-        "type": "cell",
-        "attributes": {
-          "x": 5,
-          "y": 16,
-          "w": 5,
-          "h": 4
-        },
-        "relationships": {
-          "view": {
-            "data": {
-              "type": "view",
-              "id": "0a2b01a9dae9a000"
-            }
-          }
-        }
-      },
-      {
-        "id": "0a2b01a9db69a000",
+        "id": "0a3625ffe22f0000",
         "type": "cell",
         "attributes": {
           "x": 0,
@@ -261,13 +229,49 @@
           "view": {
             "data": {
               "type": "view",
-              "id": "0a2b01a9db69a000"
+              "id": "0a3625ffe22f0000"
             }
           }
         }
       },
       {
-        "id": "0a2b01a9dbe9a000",
+        "id": "0a3625ffe3af0000",
+        "type": "cell",
+        "attributes": {
+          "x": 5,
+          "y": 16,
+          "w": 5,
+          "h": 4
+        },
+        "relationships": {
+          "view": {
+            "data": {
+              "type": "view",
+              "id": "0a3625ffe3af0000"
+            }
+          }
+        }
+      },
+      {
+        "id": "0a3625ffe3ef0000",
+        "type": "cell",
+        "attributes": {
+          "x": 0,
+          "y": 16,
+          "w": 5,
+          "h": 4
+        },
+        "relationships": {
+          "view": {
+            "data": {
+              "type": "view",
+              "id": "0a3625ffe3ef0000"
+            }
+          }
+        }
+      },
+      {
+        "id": "0a3625ffe42f0000",
         "type": "cell",
         "attributes": {
           "x": 5,
@@ -279,13 +283,13 @@
           "view": {
             "data": {
               "type": "view",
-              "id": "0a2b01a9dbe9a000"
+              "id": "0a3625ffe42f0000"
             }
           }
         }
       },
       {
-        "id": "0a2b025b4869a000",
+        "id": "0a3625ffe46f0000",
         "type": "cell",
         "attributes": {
           "x": 0,
@@ -297,13 +301,13 @@
           "view": {
             "data": {
               "type": "view",
-              "id": "0a2b025b4869a000"
+              "id": "0a3625ffe46f0000"
             }
           }
         }
       },
       {
-        "id": "0a2b02fa3c29a000",
+        "id": "0a3625ffec6f0000",
         "type": "cell",
         "attributes": {
           "x": 5,
@@ -315,13 +319,13 @@
           "view": {
             "data": {
               "type": "view",
-              "id": "0a2b02fa3c29a000"
+              "id": "0a3625ffec6f0000"
             }
           }
         }
       },
       {
-        "id": "0a2b03123529a000",
+        "id": "0a3625ffeeef0000",
         "type": "cell",
         "attributes": {
           "x": 5,
@@ -333,13 +337,13 @@
           "view": {
             "data": {
               "type": "view",
-              "id": "0a2b03123529a000"
+              "id": "0a3625ffeeef0000"
             }
           }
         }
       },
       {
-        "id": "0a2b03542329a000",
+        "id": "0a3625fff02f0000",
         "type": "cell",
         "attributes": {
           "x": 10,
@@ -351,14 +355,32 @@
           "view": {
             "data": {
               "type": "view",
-              "id": "0a2b03542329a000"
+              "id": "0a3625fff02f0000"
+            }
+          }
+        }
+      },
+      {
+        "id": "0a3702644613a000",
+        "type": "cell",
+        "attributes": {
+          "x": 10,
+          "y": 8,
+          "w": 2,
+          "h": 4
+        },
+        "relationships": {
+          "view": {
+            "data": {
+              "type": "view",
+              "id": "0a3702644613a000"
             }
           }
         }
       },
       {
         "type": "view",
-        "id": "0a2b01a9d569a000",
+        "id": "0a3625ffd5af0000",
         "attributes": {
           "name": "Download Bandwidth | Nodes",
           "properties": {
@@ -469,7 +491,7 @@
       },
       {
         "type": "view",
-        "id": "0a2b01a9d5e9a000",
+        "id": "0a3625ffd6ef0000",
         "attributes": {
           "name": "Utilization | Parent Nodes",
           "properties": {
@@ -580,7 +602,7 @@
       },
       {
         "type": "view",
-        "id": "0a2b01a9d669a000",
+        "id": "0a3625ffd72f0000",
         "attributes": {
           "name": "Download Bandwidth | Users",
           "properties": {
@@ -691,103 +713,7 @@
       },
       {
         "type": "view",
-        "id": "0a2b01a9d6e9a000",
-        "attributes": {
-          "name": "Overload | Parent Node",
-          "properties": {
-            "shape": "chronograf-v2",
-            "type": "table",
-            "queries": [
-              {
-                "text": "from(bucket: \"libreqos\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Overload\")\n  |> filter(fn: (r) => r[\"Type\"] == \"Parent Node\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> last()\n  |> group(columns: [\"Type\", \"_time\"])\n  |> map(fn: (r) => ({ r with  _value: r._value}))\n  \n  |> sort(columns: [\"_value\", \"Device\"], desc: true)\n  |> keep(columns: [\"_value\", \"Device\"])\n  |> top(n:9, columns: [\"_value\"])",
-                "editMode": "advanced",
-                "name": "",
-                "builderConfig": {
-                  "buckets": [],
-                  "tags": [
-                    {
-                      "key": "_measurement",
-                      "values": [],
-                      "aggregateFunctionType": "filter"
-                    }
-                  ],
-                  "functions": [
-                    {
-                      "name": "mean"
-                    }
-                  ],
-                  "aggregateWindow": {
-                    "period": "auto",
-                    "fillValues": false
-                  }
-                }
-              }
-            ],
-            "colors": [
-              {
-                "id": "base",
-                "type": "text",
-                "hex": "#4591ED",
-                "name": "ocean",
-                "value": 0
-              },
-              {
-                "id": "ebf165e1-871a-4b10-b558-e039f376be40",
-                "type": "text",
-                "hex": "#FFD255",
-                "name": "thunder",
-                "value": 25
-              },
-              {
-                "id": "8b4b10e5-5b16-41b0-8f5b-97f22f8eace2",
-                "type": "text",
-                "hex": "#F95F53",
-                "name": "curacao",
-                "value": 50
-              },
-              {
-                "id": "a36e8317-8138-46a4-bec4-a7588d9f348c",
-                "type": "text",
-                "hex": "#BF3D5E",
-                "name": "ruby",
-                "value": 75
-              }
-            ],
-            "tableOptions": {
-              "verticalTimeAxis": true,
-              "sortBy": {
-                "internalName": "_value",
-                "displayName": "_value",
-                "visible": true
-              },
-              "wrapping": "",
-              "fixFirstColumn": false
-            },
-            "fieldOptions": [
-              {
-                "internalName": "Device",
-                "displayName": "Device",
-                "visible": true
-              },
-              {
-                "internalName": "_value",
-                "displayName": "_value",
-                "visible": true
-              }
-            ],
-            "timeFormat": "YYYY-MM-DD HH:mm:ss",
-            "decimalPlaces": {
-              "isEnforced": false,
-              "digits": 0
-            },
-            "note": "",
-            "showNoteWhenEmpty": false
-          }
-        }
-      },
-      {
-        "type": "view",
-        "id": "0a2b01a9d769a000",
+        "id": "0a3625ffd76f0000",
         "attributes": {
           "name": "Upload Bandwidth | Nodes",
           "properties": {
@@ -898,7 +824,7 @@
       },
       {
         "type": "view",
-        "id": "0a2b01a9d829a000",
+        "id": "0a3625ffd7af0000",
         "attributes": {
           "name": "Utilization | Parent Node",
           "properties": {
@@ -1029,7 +955,103 @@
       },
       {
         "type": "view",
-        "id": "0a2b01a9d8a9a000",
+        "id": "0a3625ffd7ef0000",
+        "attributes": {
+          "name": "Overload | Parent Node",
+          "properties": {
+            "shape": "chronograf-v2",
+            "type": "table",
+            "queries": [
+              {
+                "text": "from(bucket: \"libreqos\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Overload\")\n  |> filter(fn: (r) => r[\"Type\"] == \"Parent Node\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> last()\n  |> group(columns: [\"Type\", \"_time\"])\n  |> map(fn: (r) => ({ r with  _value: r._value}))\n  \n  |> sort(columns: [\"_value\", \"Device\"], desc: true)\n  |> keep(columns: [\"_value\", \"Device\"])\n  |> top(n:9, columns: [\"_value\"])",
+                "editMode": "advanced",
+                "name": "",
+                "builderConfig": {
+                  "buckets": [],
+                  "tags": [
+                    {
+                      "key": "_measurement",
+                      "values": [],
+                      "aggregateFunctionType": "filter"
+                    }
+                  ],
+                  "functions": [
+                    {
+                      "name": "mean"
+                    }
+                  ],
+                  "aggregateWindow": {
+                    "period": "auto",
+                    "fillValues": false
+                  }
+                }
+              }
+            ],
+            "colors": [
+              {
+                "id": "base",
+                "type": "text",
+                "hex": "#4591ED",
+                "name": "ocean",
+                "value": 0
+              },
+              {
+                "id": "ebf165e1-871a-4b10-b558-e039f376be40",
+                "type": "text",
+                "hex": "#FFD255",
+                "name": "thunder",
+                "value": 25
+              },
+              {
+                "id": "8b4b10e5-5b16-41b0-8f5b-97f22f8eace2",
+                "type": "text",
+                "hex": "#F95F53",
+                "name": "curacao",
+                "value": 50
+              },
+              {
+                "id": "a36e8317-8138-46a4-bec4-a7588d9f348c",
+                "type": "text",
+                "hex": "#BF3D5E",
+                "name": "ruby",
+                "value": 75
+              }
+            ],
+            "tableOptions": {
+              "verticalTimeAxis": true,
+              "sortBy": {
+                "internalName": "_value",
+                "displayName": "_value",
+                "visible": true
+              },
+              "wrapping": "",
+              "fixFirstColumn": false
+            },
+            "fieldOptions": [
+              {
+                "internalName": "Device",
+                "displayName": "Device",
+                "visible": true
+              },
+              {
+                "internalName": "_value",
+                "displayName": "_value",
+                "visible": true
+              }
+            ],
+            "timeFormat": "YYYY-MM-DD HH:mm:ss",
+            "decimalPlaces": {
+              "isEnforced": false,
+              "digits": 0
+            },
+            "note": "",
+            "showNoteWhenEmpty": false
+          }
+        }
+      },
+      {
+        "type": "view",
+        "id": "0a3625ffe0ef0000",
         "attributes": {
           "name": "Overload Drops | Parent Nodes",
           "properties": {
@@ -1140,14 +1162,14 @@
       },
       {
         "type": "view",
-        "id": "0a2b01a9da69a000",
+        "id": "0a3625ffe22f0000",
         "attributes": {
-          "name": "Drops by Tin | Download",
+          "name": "Download by Tin",
           "properties": {
             "shape": "chronograf-v2",
             "queries": [
               {
-                "text": "from(bucket: \"libreqos\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Tin Drop Percentage\")\n  |> filter(fn: (r) => r[\"_field\"] == \"Download\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> yield(name: \"last\")",
+                "text": "from(bucket: \"libreqos\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Tins Assigned\")\n  |> filter(fn: (r) => r[\"_field\"] == \"Download\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> yield(name: \"last\")",
                 "editMode": "advanced",
                 "name": "",
                 "builderConfig": {
@@ -1188,7 +1210,7 @@
                   "",
                   ""
                 ],
-                "label": "Percent Drop",
+                "label": "Percent",
                 "prefix": "",
                 "suffix": "%",
                 "base": "2",
@@ -1251,7 +1273,7 @@
       },
       {
         "type": "view",
-        "id": "0a2b01a9dae9a000",
+        "id": "0a3625ffe3af0000",
         "attributes": {
           "name": "Drops by Tin | Upload",
           "properties": {
@@ -1362,14 +1384,14 @@
       },
       {
         "type": "view",
-        "id": "0a2b01a9db69a000",
+        "id": "0a3625ffe3ef0000",
         "attributes": {
-          "name": "Download by Tin",
+          "name": "Drops by Tin | Download",
           "properties": {
             "shape": "chronograf-v2",
             "queries": [
               {
-                "text": "from(bucket: \"libreqos\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Tins Assigned\")\n  |> filter(fn: (r) => r[\"_field\"] == \"Download\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> yield(name: \"last\")",
+                "text": "from(bucket: \"libreqos\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Tin Drop Percentage\")\n  |> filter(fn: (r) => r[\"_field\"] == \"Download\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> yield(name: \"last\")",
                 "editMode": "advanced",
                 "name": "",
                 "builderConfig": {
@@ -1410,7 +1432,7 @@
                   "",
                   ""
                 ],
-                "label": "Percent",
+                "label": "Percent Drop",
                 "prefix": "",
                 "suffix": "%",
                 "base": "2",
@@ -1461,7 +1483,7 @@
             "yTickStart": 0,
             "yTickStep": 0,
             "shadeBelow": false,
-            "position": "stacked",
+            "position": "overlaid",
             "timeFormat": "",
             "hoverDimension": "auto",
             "legendColorizeRows": true,
@@ -1473,7 +1495,7 @@
       },
       {
         "type": "view",
-        "id": "0a2b01a9dbe9a000",
+        "id": "0a3625ffe42f0000",
         "attributes": {
           "name": "Upload by Tin",
           "properties": {
@@ -1572,7 +1594,7 @@
             "yTickStart": 0,
             "yTickStep": 0,
             "shadeBelow": false,
-            "position": "stacked",
+            "position": "overlaid",
             "timeFormat": "",
             "hoverDimension": "auto",
             "legendColorizeRows": true,
@@ -1584,7 +1606,7 @@
       },
       {
         "type": "view",
-        "id": "0a2b025b4869a000",
+        "id": "0a3625ffe46f0000",
         "attributes": {
           "name": "TCP Latency | Users",
           "properties": {
@@ -1695,7 +1717,7 @@
       },
       {
         "type": "view",
-        "id": "0a2b02fa3c29a000",
+        "id": "0a3625ffec6f0000",
         "attributes": {
           "name": "Upload Bandwidth | Users",
           "properties": {
@@ -1806,7 +1828,7 @@
       },
       {
         "type": "view",
-        "id": "0a2b03123529a000",
+        "id": "0a3625ffeeef0000",
         "attributes": {
           "name": "TCP Latency | Nodes",
           "properties": {
@@ -1917,9 +1939,9 @@
       },
       {
         "type": "view",
-        "id": "0a2b03542329a000",
+        "id": "0a3625fff02f0000",
         "attributes": {
-          "name": "TCP Latency | Parent Node",
+          "name": "TCP Latency | Node (Standard View)",
           "properties": {
             "shape": "chronograf-v2",
             "type": "table",
@@ -1962,21 +1984,117 @@
                 "type": "text",
                 "hex": "#FFD255",
                 "name": "thunder",
-                "value": 25
-              },
-              {
-                "id": "8b4b10e5-5b16-41b0-8f5b-97f22f8eace2",
-                "type": "text",
-                "hex": "#F95F53",
-                "name": "curacao",
-                "value": 50
+                "value": 75
               },
               {
                 "id": "a36e8317-8138-46a4-bec4-a7588d9f348c",
                 "type": "text",
                 "hex": "#BF3D5E",
                 "name": "ruby",
-                "value": 75
+                "value": 100
+              }
+            ],
+            "tableOptions": {
+              "verticalTimeAxis": true,
+              "sortBy": {
+                "internalName": "_value",
+                "displayName": "_value",
+                "visible": true
+              },
+              "wrapping": "",
+              "fixFirstColumn": false
+            },
+            "fieldOptions": [
+              {
+                "internalName": "Device",
+                "displayName": "Device",
+                "visible": true
+              },
+              {
+                "internalName": "_value",
+                "displayName": "_value",
+                "visible": true
+              }
+            ],
+            "timeFormat": "YYYY-MM-DD HH:mm:ss",
+            "decimalPlaces": {
+              "isEnforced": false,
+              "digits": 0
+            },
+            "note": "",
+            "showNoteWhenEmpty": false
+          }
+        }
+      },
+      {
+        "type": "view",
+        "id": "0a3702644613a000",
+        "attributes": {
+          "name": "TCP Latency | Node (Metaverse-Ready View)",
+          "properties": {
+            "shape": "chronograf-v2",
+            "type": "table",
+            "queries": [
+              {
+                "text": "from(bucket: \"libreqos\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"TCP Latency\")\n  |> filter(fn: (r) => r[\"Type\"] == \"Parent Node\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> last()\n  |> group(columns: [\"Type\", \"_time\"])\n  |> map(fn: (r) => ({ r with  _value: r._value}))\n  \n  |> sort(columns: [\"_value\", \"Device\"], desc: true)\n  |> keep(columns: [\"_value\", \"Device\"])\n  |> top(n:9, columns: [\"_value\"])",
+                "editMode": "advanced",
+                "name": "",
+                "builderConfig": {
+                  "buckets": [],
+                  "tags": [
+                    {
+                      "key": "_measurement",
+                      "values": [],
+                      "aggregateFunctionType": "filter"
+                    }
+                  ],
+                  "functions": [
+                    {
+                      "name": "mean"
+                    }
+                  ],
+                  "aggregateWindow": {
+                    "period": "auto",
+                    "fillValues": false
+                  }
+                }
+              }
+            ],
+            "colors": [
+              {
+                "id": "base",
+                "type": "text",
+                "hex": "#4591ED",
+                "name": "ocean",
+                "value": 0
+              },
+              {
+                "id": "836815c4-8f0b-4296-9797-c4d2c66454da",
+                "type": "text",
+                "hex": "#32B08C",
+                "name": "viridian",
+                "value": 9
+              },
+              {
+                "id": "a36e8317-8138-46a4-bec4-a7588d9f348c",
+                "type": "text",
+                "hex": "#FFB94A",
+                "name": "pineapple",
+                "value": 20
+              },
+              {
+                "id": "dfec4920-0c00-4788-b3e2-d3cefcf9dbf6",
+                "type": "text",
+                "hex": "#F95F53",
+                "name": "curacao",
+                "value": 50
+              },
+              {
+                "id": "d322c223-c8d2-4ee2-9e26-fdd00b9911d9",
+                "type": "text",
+                "hex": "#BF3D5E",
+                "name": "ruby",
+                "value": 70
               }
             ],
             "tableOptions": {
