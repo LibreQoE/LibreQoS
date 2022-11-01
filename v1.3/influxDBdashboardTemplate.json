@@ -493,7 +493,7 @@
         "type": "view",
         "id": "0a3625ffd6ef0000",
         "attributes": {
-          "name": "Utilization | Parent Nodes",
+          "name": "Utilization | Nodes",
           "properties": {
             "shape": "chronograf-v2",
             "queries": [
@@ -957,7 +957,7 @@
         "type": "view",
         "id": "0a3625ffd7ef0000",
         "attributes": {
-          "name": "Overload | Parent Node",
+          "name": "Overload | Nodes",
           "properties": {
             "shape": "chronograf-v2",
             "type": "table",
@@ -1053,7 +1053,7 @@
         "type": "view",
         "id": "0a3625ffe0ef0000",
         "attributes": {
-          "name": "Overload Drops | Parent Nodes",
+          "name": "Overload Drops | Nodes",
           "properties": {
             "shape": "chronograf-v2",
             "queries": [
@@ -1975,8 +1975,8 @@
               {
                 "id": "base",
                 "type": "text",
-                "hex": "#4591ED",
-                "name": "ocean",
+                "hex": "#32B08C",
+                "name": "viridian",
                 "value": 0
               },
               {
@@ -1991,7 +1991,7 @@
                 "type": "text",
                 "hex": "#BF3D5E",
                 "name": "ruby",
-                "value": 100
+                "value": 125
               }
             ],
             "tableOptions": {
@@ -2095,6 +2095,13 @@
                 "hex": "#BF3D5E",
                 "name": "ruby",
                 "value": 70
+              },
+              {
+                "id": "bb134440-7624-4055-884e-5712af40bf55",
+                "type": "text",
+                "hex": "#DC4E58",
+                "name": "fire",
+                "value": 100
               }
             ],
             "tableOptions": {
