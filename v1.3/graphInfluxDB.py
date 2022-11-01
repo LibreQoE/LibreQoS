@@ -295,7 +295,7 @@ def getParentNodeLatencyStats(parentNodes, subscriberCircuits):
 				if circuit['stats']['sinceLastQuery']['tcpLatency'] != None:
 					circuitsMatchedLatencies.append(circuit['stats']['sinceLastQuery']['tcpLatency'])
 		if len(circuitsMatchedLatencies) > 0:
-			thisParentNodeStats['sinceLastQuery']['tcpLatency'] = statistics.median(items)
+			thisParentNodeStats['sinceLastQuery']['tcpLatency'] = statistics.median(circuitsMatchedLatencies)
 		else:
 			thisParentNodeStats['sinceLastQuery']['tcpLatency'] = None
 		parentNode['stats'] = thisParentNodeStats
