@@ -36,16 +36,12 @@ queuesAvailableOverride = 0
 # Past 25,000 subsribers this algorithm becomes inefficient and is not advised
 useBinPackingToBalanceCPU = True
 
-# Bandwidth Graphing
-bandwidthGraphingEnabled = True
+# Bandwidth & Latency Graphing
+influxDBEnabled = True
 influxDBurl = "http://localhost:8086"
 influxDBBucket = "libreqos"
 influxDBOrg = "Your ISP Name Here"
 influxDBtoken = ""
-
-# Latency Graphing
-latencyGraphingEnabled = False
-ppingLocation = "pping"
 
 # NMS/CRM Integration
 
@@ -65,6 +61,9 @@ automaticImportUISP = False
 uispAuthToken = ''
 # Everything before /nms/ on your UISP instance
 UISPbaseURL = 'https://examplesite.com'
+# UISP Site - enter the name of the root site in your network tree
+# to act as the starting point for the tree mapping
+uispSite = ''
 # Strategy:
 # * "flat" - create all client sites directly off the top of the tree,
 #   provides maximum performance - at the expense of not offering AP,
