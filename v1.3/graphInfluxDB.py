@@ -310,7 +310,9 @@ def getCircuitLatencyStats(subscriberCircuits):
 	for entry in listOfEntries:
 		if 'tc' in entry:
 			handle = hex(int(entry['tc'].split(':')[0])) + ':' + hex(int(entry['tc'].split(':')[1]))
-			tcpLatencyForClassID[handle] = entry['avg']
+			# To avoid outliers messing up avg for each circuit - cap at ceiling of 200ms
+			ceiling = 200.0
+			tcpLatencyForClassID[handle] = min(entry['avg'], ceiling)
 	
 	for circuit in subscriberCircuits:
 		if 'stats' not in circuit:
