@@ -3,6 +3,7 @@ import json
 import subprocess
 from datetime import datetime
 from pathlib import Path
+import statistics
 
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
@@ -287,16 +288,14 @@ def getParentNodeLatencyStats(parentNodes, subscriberCircuits):
 			parentNode['stats']['sinceLastQuery'] = {}
 	
 	for parentNode in parentNodes:
-		combinedSubLatencies = 0.0
 		thisParentNodeStats = {'sinceLastQuery': {}}
-		circuitsMatched = 0
+		circuitsMatchedLatencies = []
 		for circuit in subscriberCircuits:
 			if circuit['ParentNode'] == parentNode['parentNodeName']:
 				if circuit['stats']['sinceLastQuery']['tcpLatency'] != None:
-					combinedSubLatencies += circuit['stats']['sinceLastQuery']['tcpLatency']
-					circuitsMatched += 1
-		if circuitsMatched > 0:
-			thisParentNodeStats['sinceLastQuery']['tcpLatency'] = float(combinedSubLatencies / circuitsMatched)
+					circuitsMatchedLatencies.append(circuit['stats']['sinceLastQuery']['tcpLatency'])
+		if len(circuitsMatchedLatencies) > 0:
+			thisParentNodeStats['sinceLastQuery']['tcpLatency'] = statistics.median(items)
 		else:
 			thisParentNodeStats['sinceLastQuery']['tcpLatency'] = None
 		parentNode['stats'] = thisParentNodeStats
