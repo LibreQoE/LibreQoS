@@ -330,13 +330,12 @@ class NetworkGraph:
             from ispConfig import bandwidthOverheadFactor
         # Builds ShapedDevices.csv from the network tree.
             circuits = []
-            nextId = 0
             for (i, node) in enumerate(self.nodes):
                 if node.type == NodeType.client:
                     parent = self.nodes[node.parentIndex].displayName
                     if parent == "Shaper Root": parent = ""
                     circuit = {
-                        "id": nextId,
+                        "id": node.id,
                         "name": node.address,
                         "parent": parent,
                         "download": node.downloadMbps,
@@ -358,7 +357,6 @@ class NetworkGraph:
                             circuit["devices"].append(device)
                     if len(circuit["devices"]) > 0:
                         circuits.append(circuit)
-                        nextId += 1
 
             with open('ShapedDevices.csv', 'w', newline='') as csvfile:
                 wr = csv.writer(csvfile, quoting=csv.QUOTE_ALL)
