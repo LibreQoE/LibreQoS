@@ -232,10 +232,11 @@ def getCircuitBandwidthStats(subscriberCircuits, tinsStats):
 		tinsStats['sinceLastQuery']['Voice']['Download']['percentage'] = min(round((tinsStats['sinceLastQuery']['Voice']['Download']['sent_packets']/allPacketsDownload)*100.0, 3),100.0)
 		tinsStats['sinceLastQuery']['Voice']['Upload']['percentage'] = min(round((tinsStats['sinceLastQuery']['Voice']['Upload']['sent_packets']/allPacketsUpload)*100.0, 3),100.0)
 	except:
-		tinsStats['sinceLastQuery']['Bulk']['Download']['percentage'] = tinsStats['sinceLastQuery']['Bulk']['Upload']['percentage'] = 0.0
-		tinsStats['sinceLastQuery']['BestEffort']['Download']['percentage'] = tinsStats['sinceLastQuery']['BestEffort']['Upload']['percentage'] = 0.0
-		tinsStats['sinceLastQuery']['Video']['Download']['percentage'] = tinsStats['sinceLastQuery']['Video']['Upload']['percentage'] = 0.0
-		tinsStats['sinceLastQuery']['Voice']['Download']['percentage'] = tinsStats['sinceLastQuery']['Voice']['Upload']['percentage'] = 0.0
+		# To avoid graphing 0.0 for all categories, which would show unusual graph results upon each queue reload, we just set these to None if the above calculations fail.
+		tinsStats['sinceLastQuery']['Bulk']['Download']['percentage'] = tinsStats['sinceLastQuery']['Bulk']['Upload']['percentage'] = None
+		tinsStats['sinceLastQuery']['BestEffort']['Download']['percentage'] = tinsStats['sinceLastQuery']['BestEffort']['Upload']['percentage'] = None
+		tinsStats['sinceLastQuery']['Video']['Download']['percentage'] = tinsStats['sinceLastQuery']['Video']['Upload']['percentage'] = None
+		tinsStats['sinceLastQuery']['Voice']['Download']['percentage'] = tinsStats['sinceLastQuery']['Voice']['Upload']['percentage'] = None
 	
 	return subscriberCircuits, tinsStats
 
@@ -435,8 +436,10 @@ def refreshBandwidthGraphs():
 		for tin in listOfTins:
 			p = Point('Tin Drop Percentage').tag("Type", "Tin").tag("Tin", tin).field("Download", tinsStats['sinceLastQuery'][tin]['Download']['dropPercentage']).field("Upload", tinsStats['sinceLastQuery'][tin]['Upload']['dropPercentage'])
 			queriesToSend.append(p)
-			p = Point('Tins Assigned').tag("Type", "Tin").tag("Tin", tin).field("Download", tinsStats['sinceLastQuery'][tin]['Download']['percentage']).field("Upload", tinsStats['sinceLastQuery'][tin]['Upload']['percentage'])
-			queriesToSend.append(p)
+			# Check to ensure tin percentage has value (!= None) before graphing. During partial or full reload these will have a value of None.
+			if (tinsStats['sinceLastQuery'][tin]['Download']['percentage'] != None) and (tinsStats['sinceLastQuery'][tin]['Upload']['percentage'] != None):
+				p = Point('Tins Assigned').tag("Type", "Tin").tag("Tin", tin).field("Download", tinsStats['sinceLastQuery'][tin]['Download']['percentage']).field("Upload", tinsStats['sinceLastQuery'][tin]['Upload']['percentage'])
+				queriesToSend.append(p)
 
 		write_api.write(bucket=influxDBBucket, record=queriesToSend)
 		# print("Added " + str(len(queriesToSend)) + " points to InfluxDB.")
