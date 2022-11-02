@@ -1611,6 +1611,7 @@
           "name": "TCP Latency | Users",
           "properties": {
             "shape": "chronograf-v2",
+            "type": "histogram",
             "queries": [
               {
                 "text": "from(bucket: \"libreqos\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"TCP Latency\")\n  |> filter(fn: (r) => r[\"Type\"] == \"Circuit\")\n  |> filter(fn: (r) => r[\"_field\"] == \"TCP Latency\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> yield(name: \"last\")",
@@ -1637,77 +1638,38 @@
                 }
               }
             ],
-            "axes": {
-              "x": {
-                "bounds": [
-                  "",
-                  ""
-                ],
-                "label": "",
-                "prefix": "",
-                "suffix": "",
-                "base": "10",
-                "scale": "linear"
-              },
-              "y": {
-                "bounds": [
-                  "",
-                  ""
-                ],
-                "label": "milliseconds",
-                "prefix": "",
-                "suffix": "ms",
-                "base": "10",
-                "scale": "linear"
-              }
-            },
-            "type": "xy",
-            "staticLegend": {
-              "colorizeRows": true,
-              "opacity": 1,
-              "orientationThreshold": 100000000,
-              "widthRatio": 1
-            },
-            "geom": "line",
             "colors": [
               {
-                "id": "d3804aa0-9930-45e5-879e-8a79b306d2bc",
+                "id": "c8dc5571-b7bd-4056-8c6b-935a5e42651c",
                 "type": "scale",
                 "hex": "#31C0F6",
                 "name": "Nineteen Eighty Four",
                 "value": 0
               },
               {
-                "id": "ff778217-93b4-41c1-baf9-5eac71c6969a",
+                "id": "c992b064-9953-473e-9235-59367bc11919",
                 "type": "scale",
                 "hex": "#A500A5",
                 "name": "Nineteen Eighty Four",
                 "value": 0
               },
               {
-                "id": "770d44dd-3a18-4132-af57-86f3a5fb4738",
+                "id": "f0cf61e1-1902-44fd-84ab-693dbbbce55d",
                 "type": "scale",
                 "hex": "#FF7E27",
                 "name": "Nineteen Eighty Four",
                 "value": 0
               }
             ],
+            "xColumn": "_value",
+            "fillColumns": [
+              "Circuit"
+            ],
+            "xAxisLabel": "",
+            "position": "overlaid",
+            "binCount": 30,
             "note": "",
             "showNoteWhenEmpty": false,
-            "xColumn": "_time",
-            "generateXAxisTicks": [],
-            "xTotalTicks": 0,
-            "xTickStart": 0,
-            "xTickStep": 0,
-            "yColumn": "_value",
-            "generateYAxisTicks": [],
-            "yTotalTicks": 0,
-            "yTickStart": 0,
-            "yTickStep": 0,
-            "shadeBelow": false,
-            "position": "overlaid",
-            "timeFormat": "",
-            "hoverDimension": "auto",
             "legendColorizeRows": true,
             "legendHide": false,
             "legendOpacity": 1,
@@ -1876,9 +1838,9 @@
                   "",
                   ""
                 ],
-                "label": "milliseconds",
+                "label": "",
                 "prefix": "",
-                "suffix": "ms",
+                "suffix": "",
                 "base": "10",
                 "scale": "linear"
               }
@@ -1893,21 +1855,21 @@
             "geom": "line",
             "colors": [
               {
-                "id": "d3804aa0-9930-45e5-879e-8a79b306d2bc",
+                "id": "e77f293e-a632-4f5c-9c1c-966f63c7a8fe",
                 "type": "scale",
                 "hex": "#31C0F6",
                 "name": "Nineteen Eighty Four",
                 "value": 0
               },
               {
-                "id": "ff778217-93b4-41c1-baf9-5eac71c6969a",
+                "id": "8f65bc88-1ce4-479d-966b-20cfc01fcf22",
                 "type": "scale",
                 "hex": "#A500A5",
                 "name": "Nineteen Eighty Four",
                 "value": 0
               },
               {
-                "id": "770d44dd-3a18-4132-af57-86f3a5fb4738",
+                "id": "5119c94e-59a2-4432-9ef8-688ba8093158",
                 "type": "scale",
                 "hex": "#FF7E27",
                 "name": "Nineteen Eighty Four",
@@ -1947,7 +1909,7 @@
             "type": "table",
             "queries": [
               {
-                "text": "from(bucket: \"libreqos\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"TCP Latency\")\n  |> filter(fn: (r) => r[\"Type\"] == \"Parent Node\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> last()\n  |> group(columns: [\"Type\", \"_time\"])\n  |> map(fn: (r) => ({ r with  _value: r._value}))\n  \n  |> sort(columns: [\"_value\", \"Device\"], desc: true)\n  |> keep(columns: [\"_value\", \"Device\"])\n  |> top(n:9, columns: [\"_value\"])",
+                "text": "from(bucket: \"libreqos\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"TCP Latency\")\n  |> filter(fn: (r) => r[\"Type\"] == \"Parent Node\")\n  |> aggregateWindow(every: v.windowPeriod, fn: median, createEmpty: false)\n  |> last()\n  |> group(columns: [\"Type\", \"_time\"])\n  |> map(fn: (r) => ({ r with  _value: r._value}))\n  \n  |> sort(columns: [\"_value\", \"Device\"], desc: true)\n  |> keep(columns: [\"_value\", \"Device\"])\n  |> top(n:9, columns: [\"_value\"])",
                 "editMode": "advanced",
                 "name": "",
                 "builderConfig": {
@@ -2036,7 +1998,7 @@
             "type": "table",
             "queries": [
               {
-                "text": "from(bucket: \"libreqos\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"TCP Latency\")\n  |> filter(fn: (r) => r[\"Type\"] == \"Parent Node\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> last()\n  |> group(columns: [\"Type\", \"_time\"])\n  |> map(fn: (r) => ({ r with  _value: r._value}))\n  \n  |> sort(columns: [\"_value\", \"Device\"], desc: true)\n  |> keep(columns: [\"_value\", \"Device\"])\n  |> top(n:9, columns: [\"_value\"])",
+                "text": "from(bucket: \"libreqos\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"TCP Latency\")\n  |> filter(fn: (r) => r[\"Type\"] == \"Parent Node\")\n  |> aggregateWindow(every: v.windowPeriod, fn: median, createEmpty: false)\n  |> last()\n  |> group(columns: [\"Type\", \"_time\"])\n  |> map(fn: (r) => ({ r with  _value: r._value}))\n  \n  |> sort(columns: [\"_value\", \"Device\"], desc: true)\n  |> keep(columns: [\"_value\", \"Device\"])\n  |> top(n:9, columns: [\"_value\"])",
                 "editMode": "advanced",
                 "name": "",
                 "builderConfig": {
