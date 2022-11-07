@@ -507,10 +507,18 @@ def refreshLatencyGraphs():
 			tcpLatency = float(parentNode['stats']['sinceLastQuery']['tcpLatency'])
 			p = Point('TCP Latency').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("TCP Latency", tcpLatency)
 			queriesToSend.append(p)
-
+	
 	write_api.write(bucket=influxDBBucket, record=queriesToSend)
-	# print("Added " + str(len(queriesToSend)) + " points to InfluxDB.")
 	queriesToSendCount += len(queriesToSend)
+	
+	listOfAllLatencies = []
+	for circuit in subscriberCircuits:
+		if circuit['stats']['sinceLastQuery']['tcpLatency'] != None:
+			listOfAllLatencies.append(circuit['stats']['sinceLastQuery']['tcpLatency'])
+	currentNetworkLatency = statistics.median(listOfAllLatencies)
+	p = Point('TCP Latency').tag("Type", "Network").field("TCP Latency", currentNetworkLatency)
+	write_api.write(bucket=influxDBBucket, record=p)
+	queriesToSendCount += 1
 	
 	print("Added " + str(queriesToSendCount) + " points to InfluxDB.")
 
