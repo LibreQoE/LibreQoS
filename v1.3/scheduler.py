@@ -32,16 +32,14 @@ if __name__ == '__main__':
 	importAndShapeFullReload()
 	schedule.every().day.at("04:00").do(importAndShapeFullReload)
 	schedule.every(30).minutes.do(importAndShapePartialReload)
-	secondsBetweenGraphRefreshes = 10
 	while True:
 		schedule.run_pending()
 		if influxDBEnabled:
 			try:
 				for i in range(3):
 					refreshBandwidthGraphs()
-					time.sleep(secondsBetweenGraphRefreshes)
+					time.sleep(10)
 				refreshLatencyGraphs()
-				time.sleep(secondsBetweenGraphRefreshes)
 			except:
 				print("Failed to update graphs")
 		else:
