@@ -1,5 +1,4 @@
 #!/usr/bin/python3
-#!/usr/bin/python3
 # v1.3
 
 import csv
@@ -20,7 +19,7 @@ import shutil
 import binpacking
 
 from ispConfig import fqOrCAKE, upstreamBandwidthCapacityDownloadMbps, upstreamBandwidthCapacityUploadMbps, \
-	interfaceA, interfaceB, enableActualShellCommands, useBinPackingToBalanceCPU, \
+	interfaceA, interfaceB, enableActualShellCommands, useBinPackingToBalanceCPU, monitorOnlyMode, \
 	runShellCommandsAsSudo, generatedPNDownloadMbps, generatedPNUploadMbps, queuesAvailableOverride
 
 # Automatically account for TCP overhead of plans. For example a 100Mbps plan needs to be set to 109Mbps for the user to ever see that result on a speed test
@@ -265,6 +264,12 @@ def loadSubscriberCircuits(shapedDevicesFile):
 		commentsRemoved.pop(0)
 		for row in commentsRemoved:
 			circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4_input, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment = row
+			# If in monitorOnlyMode, override bandwidth rates to where no shaping will actually occur
+			if monitorOnlyMode == True:
+				downloadMin = 10000
+				uploadMin = 10000
+				downloadMax = 10000
+				uploadMax = 10000
 			ipv4_subnets_and_hosts = []
 			# Each entry in ShapedDevices.csv can have multiple IPv4s or IPv6s seperated by commas. Split them up and parse each
 			if ipv4_input != "":
@@ -294,11 +299,13 @@ def loadSubscriberCircuits(shapedDevicesFile):
 								if circuit['ParentNode'] != ParentNode:
 									errorMessageString = "Device " + deviceName + " with deviceID " + deviceID + " had different Parent Node from other devices of circuit ID #" + circuitID
 									raise ValueError(errorMessageString)
-							if ((circuit['minDownload'] != round(int(downloadMin)*tcpOverheadFactor))
-								or (circuit['minUpload'] != round(int(uploadMin)*tcpOverheadFactor))
-								or (circuit['maxDownload'] != round(int(downloadMax)*tcpOverheadFactor))
-								or (circuit['maxUpload'] != round(int(uploadMax)*tcpOverheadFactor))):
-								warnings.warn("Device " + deviceName + " with ID " + deviceID + " had different bandwidth parameters than other devices on this circuit. Will instead use the bandwidth parameters defined by the first device added to its circuit.", stacklevel=2)
+							# Check if bandwidth parameters match other cdevices of this same circuit ID, but only check if monitorOnlyMode is Off
+							if monitorOnlyMode == False:
+								if ((circuit['minDownload'] != round(int(downloadMin)*tcpOverheadFactor))
+									or (circuit['minUpload'] != round(int(uploadMin)*tcpOverheadFactor))
+									or (circuit['maxDownload'] != round(int(downloadMax)*tcpOverheadFactor))
+									or (circuit['maxUpload'] != round(int(uploadMax)*tcpOverheadFactor))):
+									warnings.warn("Device " + deviceName + " with ID " + deviceID + " had different bandwidth parameters than other devices on this circuit. Will instead use the bandwidth parameters defined by the first device added to its circuit.", stacklevel=2)
 							devicesListForCircuit = circuit['devices']
 							thisDevice = 	{
 											  "deviceID": deviceID,
@@ -388,6 +395,9 @@ def refreshShapers():
 	# Warn user if enableActualShellCommands is False, because that would mean no actual commands are executing
 	if enableActualShellCommands == False:
 		warnings.warn("enableActualShellCommands is set to False. None of the commands below will actually be executed. Simulated run.", stacklevel=2)
+	# Warn user if monitorOnlyMode is True, because that would mean no actual shaping is happening
+	if monitorOnlyMode == True:
+		warnings.warn("monitorOnlyMode is set to True. Shaping will not occur.", stacklevel=2)
 	
 	
 	# Check if first run since boot
@@ -430,7 +440,18 @@ def refreshShapers():
 		
 		# Pull rx/tx queues / CPU cores available
 		queuesAvailable = findQueuesAvailable()
-
+		
+		
+		# If in monitorOnlyMode, override network.json bandwidth rates to where no shaping will actually occur
+		if monitorOnlyMode == True:
+			def overrideNetworkBandwidths(data):
+				for elem in data:
+					if 'children' in data[elem]:
+						overrideNetworkBandwidths(data[elem]['children'])
+					data[elem]['downloadBandwidthMbpsMin'] = 10000
+					data[elem]['uploadBandwidthMbpsMin'] = 10000
+			overrideNetworkBandwidths(network)
+		
 		# Generate Parent Nodes. Spread ShapedDevices.csv which lack defined ParentNode across these (balance across CPUs)
 		print("Generating parent nodes")
 		existingPNs = 0
@@ -438,11 +459,18 @@ def refreshShapers():
 			existingPNs += 1
 		generatedPNs = []
 		numberOfGeneratedPNs = queuesAvailable-existingPNs
+		# If in monitorOnlyMode, override bandwidth rates to where no shaping will actually occur
+		if monitorOnlyMode == True:
+			chosenDownloadMbps = 10000
+			chosenUploadMbps = 10000
+		else:
+			chosenDownloadMbps = generatedPNDownloadMbps
+			chosenUploadMbps = generatedPNDownloadMbps
 		for x in range(numberOfGeneratedPNs):
 			genPNname = "Generated_PN_" + str(x+1)
 			network[genPNname] =	{
-										"downloadBandwidthMbps":generatedPNDownloadMbps,
-										"uploadBandwidthMbps":generatedPNUploadMbps
+										"downloadBandwidthMbps": chosenDownloadMbps,
+										"uploadBandwidthMbps": chosenUploadMbps
 									}
 			generatedPNs.append(genPNname)
 		if useBinPackingToBalanceCPU:
@@ -507,14 +535,21 @@ def refreshShapers():
 				if depth == 0:
 					parentClassID = hex(major) + ':'
 				data[node]['parentClassID'] = parentClassID
-				# Cap based on this node's max bandwidth, or parent node's max bandwidth, whichever is lower
-				data[node]['downloadBandwidthMbps'] = min(data[node]['downloadBandwidthMbps'],parentMaxDL)
-				data[node]['uploadBandwidthMbps'] = min(data[node]['uploadBandwidthMbps'],parentMaxUL)
+				# If in monitorOnlyMode, override bandwidth rates to where no shaping will actually occur
+				if monitorOnlyMode == True:
+					data[node]['downloadBandwidthMbps'] = 10000
+					data[node]['uploadBandwidthMbps'] = 10000
+				# If not in monitorOnlyMode
+				else:
+					# Cap based on this node's max bandwidth, or parent node's max bandwidth, whichever is lower
+					data[node]['downloadBandwidthMbps'] = min(data[node]['downloadBandwidthMbps'],parentMaxDL)
+					data[node]['uploadBandwidthMbps'] = min(data[node]['uploadBandwidthMbps'],parentMaxUL)
 				# Calculations are done in findBandwidthMins(), determine optimal HTB rates (mins) and ceils (maxs)
 				# For some reason that doesn't always yield the expected result, so it's better to play with ceil more than rate
 				# Here we override the rate as 95% of ceil.
 				data[node]['downloadBandwidthMbpsMin'] = round(data[node]['downloadBandwidthMbps']*.95)
 				data[node]['uploadBandwidthMbpsMin'] = round(data[node]['uploadBandwidthMbps']*.95)
+				
 				data[node]['classMajor'] = hex(major)
 				data[node]['classMinor'] = hex(minorByCPU[queue])
 				data[node]['cpuNum'] = hex(queue-1)
@@ -529,10 +564,11 @@ def refreshShapers():
 				for circuit in subscriberCircuits:
 					#If a device from ShapedDevices.csv lists this node as its Parent Node, attach it as a leaf to this node HTB
 					if node == circuit['ParentNode']:
-						if circuit['maxDownload'] > data[node]['downloadBandwidthMbps']:
-							warnings.warn("downloadMax of Circuit ID [" + circuit['circuitID'] + "] exceeded that of its parent node. Reducing to that of its parent node now.", stacklevel=2)
-						if circuit['maxUpload'] > data[node]['uploadBandwidthMbps']:
-							warnings.warn("uploadMax of Circuit ID [" + circuit['circuitID'] + "] exceeded that of its parent node. Reducing to that of its parent node now.", stacklevel=2)
+						if monitorOnlyMode == False:
+							if circuit['maxDownload'] > data[node]['downloadBandwidthMbps']:
+								warnings.warn("downloadMax of Circuit ID [" + circuit['circuitID'] + "] exceeded that of its parent node. Reducing to that of its parent node now.", stacklevel=2)
+							if circuit['maxUpload'] > data[node]['uploadBandwidthMbps']:
+								warnings.warn("uploadMax of Circuit ID [" + circuit['circuitID'] + "] exceeded that of its parent node. Reducing to that of its parent node now.", stacklevel=2)
 						parentString = hex(major) + ':'
 						flowIDstring = hex(major) + ':' + hex(minorByCPU[queue])
 						circuit['classid'] = flowIDstring
@@ -642,12 +678,16 @@ def refreshShapers():
 								comment = comment + '| Comment: ' + circuit['devices'][0]['comment']
 						command = 'class add dev ' + interfaceA + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ str(circuit['minDownload']) + 'mbit ceil '+ str(circuit['maxDownload']) + 'mbit prio 3'
 						linuxTCcommands.append(command)
-						command = 'qdisc add dev ' + interfaceA + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + fqOrCAKE
-						linuxTCcommands.append(command)
+						# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
+						if monitorOnlyMode == False:	
+							command = 'qdisc add dev ' + interfaceA + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + fqOrCAKE
+							linuxTCcommands.append(command)
 						command = 'class add dev ' + interfaceB + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ str(circuit['minUpload']) + 'mbit ceil '+ str(circuit['maxUpload']) + 'mbit prio 3'
 						linuxTCcommands.append(command)
-						command = 'qdisc add dev ' + interfaceB + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + fqOrCAKE
-						linuxTCcommands.append(command)
+						# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
+						if monitorOnlyMode == False:	
+							command = 'qdisc add dev ' + interfaceB + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + fqOrCAKE
+							linuxTCcommands.append(command)
 						for device in circuit['devices']:
 							if device['ipv4s']:
 								for ipv4 in device['ipv4s']:
@@ -959,9 +999,11 @@ def refreshShapersUpdateOnly():
 				command = 'tc class add dev ' + interface + ' parent ' + parentNodeClassID + ' classid ' + minor + ' htb rate ' + rate + 'Mbit ceil ' + ceil + 'Mbit'
 				print(command)
 				shell(command)
-				command = 'tc qdisc add dev ' + interface + ' parent ' + classID + ' ' + fqOrCAKE
-				print(command)
-				shell(command)
+				# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
+				if monitorOnlyMode == False:
+					command = 'tc qdisc add dev ' + interface + ' parent ' + classID + ' ' + fqOrCAKE
+					print(command)
+					shell(command)
 		
 		
 		def delHTBclass(classid):
