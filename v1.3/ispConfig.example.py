@@ -4,6 +4,10 @@
 # fqOrCAKE = 'fq_codel'
 fqOrCAKE = 'cake diffserv4'
 
+# Used to passively monitor the network for before / after comparisons. Leave as False to
+# ensure actual shaping. After changing this value, run "sudo systemctl restart LibreQoS.service"
+monitorOnlyMode = False
+
 # How many Mbps are available to the edge of this network
 upstreamBandwidthCapacityDownloadMbps = 1000
 upstreamBandwidthCapacityUploadMbps = 1000
