@@ -19,7 +19,7 @@ import shutil
 import binpacking
 
 from ispConfig import fqOrCAKE, upstreamBandwidthCapacityDownloadMbps, upstreamBandwidthCapacityUploadMbps, \
-	interfaceA, interfaceB, enableActualShellCommands, useBinPackingToBalanceCPU, monitorOnlyMode, \
+	interfaceA, interfaceB, enableActualShellCommands, useBinPackingToBalanceCPU, monitorOnlyMode, cpumapVersion, \
 	runShellCommandsAsSudo, generatedPNDownloadMbps, generatedPNUploadMbps, queuesAvailableOverride
 
 # Automatically account for TCP overhead of plans. For example a 100Mbps plan needs to be set to 109Mbps for the user to ever see that result on a speed test
@@ -80,7 +80,7 @@ def tearDown(interfaceA, interfaceB):
 	# Full teardown of everything for exiting LibreQoS
 	if enableActualShellCommands:
 		# Clear IP filters and remove xdp program from interfaces
-		result = os.system('./cpumap-pping/src/xdp_iphash_to_cpu_cmdline --clear')
+		result = os.system('./' + cpumapVersion + '/src/xdp_iphash_to_cpu_cmdline --clear')
 		shell('ip link set dev ' + interfaceA + ' xdp off')
 		shell('ip link set dev ' + interfaceB + ' xdp off')
 		clearPriorSettings(interfaceA, interfaceB)
@@ -691,10 +691,10 @@ def refreshShapers():
 						for device in circuit['devices']:
 							if device['ipv4s']:
 								for ipv4 in device['ipv4s']:
-									xdpCPUmapCommands.append('./cpumap-pping/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(ipv4) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['classid'])
+									xdpCPUmapCommands.append('./' + cpumapVersion + '/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(ipv4) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['classid'])
 							if device['ipv6s']:
 								for ipv6 in device['ipv6s']:
-									xdpCPUmapCommands.append('./cpumap-pping/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(ipv6) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['classid'])
+									xdpCPUmapCommands.append('./' + cpumapVersion + '/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(ipv6) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['classid'])
 							if device['deviceName'] not in devicesShaped:
 								devicesShaped.append(device['deviceName'])
 				# Recursive call this function for children nodes attached to this node
@@ -724,15 +724,15 @@ def refreshShapers():
 		xdpStartTime = datetime.now()
 		if enableActualShellCommands:
 			# Here we use os.system for the command, because otherwise it sometimes gltiches out with Popen in shell()
-			result = os.system('./cpumap-pping/src/xdp_iphash_to_cpu_cmdline --clear')
+			result = os.system('./' + cpumapVersion + '/src/xdp_iphash_to_cpu_cmdline --clear')
 		# Set up XDP-CPUMAP-TC
 		logging.info("# XDP Setup")
-		shell('./cpumap-pping/bin/xps_setup.sh -d ' + interfaceA + ' --default --disable')
-		shell('./cpumap-pping/bin/xps_setup.sh -d ' + interfaceB + ' --default --disable')
-		shell('./cpumap-pping/src/xdp_iphash_to_cpu --dev ' + interfaceA + ' --lan')
-		shell('./cpumap-pping/src/xdp_iphash_to_cpu --dev ' + interfaceB + ' --wan')
-		shell('./cpumap-pping/src/tc_classify --dev-egress ' + interfaceA)
-		shell('./cpumap-pping/src/tc_classify --dev-egress ' + interfaceB)	
+		shell('./' + cpumapVersion + '/bin/xps_setup.sh -d ' + interfaceA + ' --default --disable')
+		shell('./' + cpumapVersion + '/bin/xps_setup.sh -d ' + interfaceB + ' --default --disable')
+		shell('./' + cpumapVersion + '/src/xdp_iphash_to_cpu --dev ' + interfaceA + ' --lan')
+		shell('./' + cpumapVersion + '/src/xdp_iphash_to_cpu --dev ' + interfaceB + ' --wan')
+		shell('./' + cpumapVersion + '/src/tc_classify --dev-egress ' + interfaceA)
+		shell('./' + cpumapVersion + '/src/tc_classify --dev-egress ' + interfaceB)	
 		xdpEndTime = datetime.now()
 		
 		
@@ -883,17 +883,17 @@ def refreshShapersUpdateOnly():
 		def removeDeviceIPsFromFilter(circuit):
 			for device in circuit['devices']:
 				for ipv4 in device['ipv4s']:
-					shell('./cpumap-pping/src/xdp_iphash_to_cpu_cmdline --del --ip ' + str(ipv4))
+					shell('./' + cpumapVersion + '/src/xdp_iphash_to_cpu_cmdline --del --ip ' + str(ipv4))
 				for ipv6 in device['ipv6s']:
-					shell('./cpumap-pping/src/xdp_iphash_to_cpu_cmdline --del --ip ' + str(ipv6))
+					shell('./' + cpumapVersion + '/src/xdp_iphash_to_cpu_cmdline --del --ip ' + str(ipv6))
 		
 		
 		def addDeviceIPsToFilter(circuit, cpuNumHex):
 			for device in circuit['devices']:
 				for ipv4 in device['ipv4s']:
-					shell('./cpumap-pping/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(ipv4) + ' --cpu ' + cpuNumHex + ' --classid ' + circuit['classid'])
+					shell('./' + cpumapVersion + '/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(ipv4) + ' --cpu ' + cpuNumHex + ' --classid ' + circuit['classid'])
 				for ipv6 in device['ipv6s']:
-					shell('./cpumap-pping/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(ipv6) + ' --cpu ' + cpuNumHex + ' --classid ' + circuit['classid'])
+					shell('./' + cpumapVersion + '/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(ipv6) + ' --cpu ' + cpuNumHex + ' --classid ' + circuit['classid'])
 		
 		
 		def getAllParentNodes(data, allParentNodes):
