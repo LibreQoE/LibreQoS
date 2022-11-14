@@ -2,7 +2,7 @@ import time
 import schedule
 from LibreQoS import refreshShapers, refreshShapersUpdateOnly
 from graphInfluxDB import refreshBandwidthGraphs, refreshLatencyGraphs
-from ispConfig import influxDBEnabled, automaticImportUISP, automaticImportSplynx
+from ispConfig import influxDBEnabled, automaticImportUISP, automaticImportSplynx, cpumapVersion
 if automaticImportUISP:
 	from integrationUISP import importFromUISP
 if automaticImportSplynx:
@@ -34,7 +34,8 @@ if __name__ == '__main__':
 	schedule.every(30).minutes.do(importAndShapePartialReload)
 	if influxDBEnabled:
 		schedule.every(10).seconds.do(refreshBandwidthGraphs)
-		schedule.every(45).seconds.do(refreshLatencyGraphs)
+		if cpumapVersion == 'cpumap-pping':
+			schedule.every(45).seconds.do(refreshLatencyGraphs)
 	while True:
 		schedule.run_pending()
 		time.sleep(1)
