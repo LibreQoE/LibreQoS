@@ -40,6 +40,11 @@ queuesAvailableOverride = 0
 # Past 25,000 subsribers this algorithm becomes inefficient and is not advised
 useBinPackingToBalanceCPU = True
 
+# Use xdp-cpumap-tc or cpumap-pping. If you plan to graph
+# latency, choose cpumap-pping. Otherwise, choose xdp-cpumap-tc
+#cpumapVersion = "xdp-cpumap-tc"
+cpumapVersion = "cpumap-pping"
+
 # Bandwidth & Latency Graphing
 influxDBEnabled = True
 influxDBurl = "http://localhost:8086"
