@@ -75,8 +75,6 @@ Graph bandwidth by client and node (Site, AP, etc), with great visalizations mad
 ## Versions
 ### IPv4 + IPv6
 - [v1.2.1-stable](https://github.com/rchac/LibreQoS/tree/main/v1.2)
+   - [Setup Guide](https://github.com/LibreQoE/LibreQoS/wiki/LibreQoS-v1.2-Installation-&-Usage-Guide-Physical-Server-and-Ubuntu-22.04)
 - [v1.3-beta](https://github.com/rchac/LibreQoS/tree/main/v1.3)
-
-### IPv4 only
-- [v1.1](https://github.com/rchac/LibreQoS/tree/main/v1.1)
-- [v1.0](https://github.com/rchac/LibreQoS/tree/main/v1.0)
+   - [Setup Guide](https://github.com/LibreQoE/LibreQoS/wiki/LibreQoS-v1.3-Installation-&-Usage-Guide-Physical-Server-and-Ubuntu-22.04)
