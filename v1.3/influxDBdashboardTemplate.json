@@ -121,7 +121,7 @@
         "type": "cell",
         "attributes": {
           "x": 5,
-          "y": 12,
+          "y": 8,
           "w": 5,
           "h": 4
         },
@@ -139,7 +139,7 @@
         "type": "cell",
         "attributes": {
           "x": 0,
-          "y": 4,
+          "y": 12,
           "w": 5,
           "h": 4
         },
@@ -301,7 +301,7 @@
         "type": "cell",
         "attributes": {
           "x": 0,
-          "y": 8,
+          "y": 4,
           "w": 5,
           "h": 4
         },
@@ -319,7 +319,7 @@
         "type": "cell",
         "attributes": {
           "x": 5,
-          "y": 4,
+          "y": 12,
           "w": 5,
           "h": 4
         },
@@ -337,7 +337,7 @@
         "type": "cell",
         "attributes": {
           "x": 10,
-          "y": 8,
+          "y": 4,
           "w": 2,
           "h": 4
         },
@@ -355,7 +355,7 @@
         "type": "cell",
         "attributes": {
           "x": 10,
-          "y": 12,
+          "y": 8,
           "w": 2,
           "h": 4
         },
@@ -373,7 +373,7 @@
         "type": "cell",
         "attributes": {
           "x": 5,
-          "y": 8,
+          "y": 4,
           "w": 5,
           "h": 4
         },
@@ -391,7 +391,7 @@
         "type": "cell",
         "attributes": {
           "x": 10,
-          "y": 4,
+          "y": 12,
           "w": 2,
           "h": 4
         },
@@ -409,7 +409,7 @@
         "type": "cell",
         "attributes": {
           "x": 0,
-          "y": 12,
+          "y": 8,
           "w": 5,
           "h": 4
         },
@@ -469,7 +469,7 @@
               },
               "y": {
                 "bounds": [
-                  "",
+                  "0",
                   ""
                 ],
                 "label": "bits per second",
@@ -802,7 +802,7 @@
               },
               "y": {
                 "bounds": [
-                  "",
+                  "0",
                   ""
                 ],
                 "label": "bits per second",
@@ -1706,7 +1706,9 @@
               }
             ],
             "xColumn": "_value",
-            "fillColumns": [],
+            "fillColumns": [
+              "ParentNode"
+            ],
             "xAxisLabel": "RTT (ms)",
             "position": "stacked",
             "binCount": 140,
@@ -2038,7 +2040,7 @@
             "shape": "chronograf-v2",
             "queries": [
               {
-                "text": "from(bucket: \"libreqos\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"TCP Latency\")\n  |> filter(fn: (r) => r[\"Type\"] == \"Network\")\n  |> filter(fn: (r) => r[\"_field\"] == \"TCP Latency\")\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> yield(name: \"last\")",
+                "text": " from(bucket: \"libreqos\")\n |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n |> filter(fn: (r) => r[\"_measurement\"] == \"TCP Latency\")\n |> filter(fn: (r) => r[\"Type\"] == \"Network\")\n |> filter(fn: (r) => r[\"_field\"] == \"TCP Latency\")\n |> aggregateWindow(every: 60s, fn: mean, createEmpty: false)\n |> yield(name: \"mean\")\n\nfrom(bucket: \"libreqos\")\n |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n |> filter(fn: (r) => r[\"_measurement\"] == \"TCP Latency\")\n |> filter(fn: (r) => r[\"Type\"] == \"Network\")\n |> filter(fn: (r) => r[\"_field\"] == \"TCP Latency\")\n |> aggregateWindow(every: 60s, fn: max, createEmpty: false)\n |> yield(name: \"max\")\n\nfrom(bucket: \"libreqos\")\n |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n |> filter(fn: (r) => r[\"_measurement\"] == \"TCP Latency\")\n |> filter(fn: (r) => r[\"Type\"] == \"Network\")\n |> filter(fn: (r) => r[\"_field\"] == \"TCP Latency\")\n |> aggregateWindow(every: 60s, fn: min, createEmpty: false)\n |> yield(name: \"min\")\n",
                 "editMode": "advanced",
                 "name": "",
                 "builderConfig": {
@@ -2071,22 +2073,19 @@
                 "label": "",
                 "prefix": "",
                 "suffix": "",
-                "base": "10",
+                "base": "",
                 "scale": "linear"
               },
               "y": {
-                "bounds": [
-                  "0",
-                  "50"
-                ],
+                "bounds": null,
                 "label": "",
                 "prefix": "",
                 "suffix": "",
-                "base": "10",
+                "base": "",
                 "scale": "linear"
               }
             },
-            "type": "xy",
+            "type": "band",
             "staticLegend": {
               "colorizeRows": true,
               "opacity": 1,
@@ -2096,21 +2095,21 @@
             "geom": "step",
             "colors": [
               {
-                "id": "9a3213f8-38be-4075-a164-0af0b13fde1c",
+                "id": "07e5a63c-177b-4f4f-8343-5ff0a3ad460f",
                 "type": "scale",
                 "hex": "#31C0F6",
                 "name": "Nineteen Eighty Four",
                 "value": 0
               },
               {
-                "id": "a236706f-192f-4538-b08f-b1a5944a67e9",
+                "id": "c518431a-907b-4635-9e50-33e0ddd7c1cd",
                 "type": "scale",
                 "hex": "#A500A5",
                 "name": "Nineteen Eighty Four",
                 "value": 0
               },
               {
-                "id": "53c9ec3a-c023-4326-b624-ebd7d9890929",
+                "id": "59acc504-b3e3-45b7-98b3-2d4790e50e61",
                 "type": "scale",
                 "hex": "#FF7E27",
                 "name": "Nineteen Eighty Four",
@@ -2119,6 +2118,8 @@
             ],
             "note": "",
             "showNoteWhenEmpty": false,
+            "timeFormat": "",
+            "hoverDimension": "auto",
             "xColumn": "_time",
             "generateXAxisTicks": [],
             "xTotalTicks": 0,
@@ -2129,10 +2130,9 @@
             "yTotalTicks": 0,
             "yTickStart": 0,
             "yTickStep": 0,
-            "shadeBelow": false,
-            "position": "overlaid",
-            "timeFormat": "",
-            "hoverDimension": "auto",
+            "upperColumn": "min",
+            "mainColumn": "mean",
+            "lowerColumn": "max",
             "legendColorizeRows": true,
             "legendHide": false,
             "legendOpacity": 1,
