@@ -1,6 +1,6 @@
 <a href="https://libreqos.io/"><img alt="LibreQoS" src="https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/banner2022-2.png"></a>
 
-LibreQoS is a Quality of Experience and Smart Queue Management system designed for Internet Service Providers to optimize the flow of their network traffic and thus reduce bufferbloat, keep the network responsive, and improve the end-user experience.
+LibreQoS is a Quality of Experience (QoE) Smart Queue Management (SQM) system designed for Internet Service Providers to optimize the flow of their network traffic and thus reduce bufferbloat, keep the network responsive, and improve the end-user experience.
 
 Servers running LibreQoS can shape traffic for many thousands of customers. 
 
@@ -10,21 +10,21 @@ Learn more at [LibreQoS.io](https://libreqos.io/)
 ### Flexible Hierarchical Shaping / Back-haul Congestion Mitigation
 <img src="https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/nestedHTB2.png" width="350"></img>
 
-Network hierarchy can be mapped to a json file in v1.1+. This allows for both simple network heirarchies (Site>AP>Client) as well as much more complex ones (Site>Site>Micro-PoP>AP>Site>AP>Client). This allows operators to ensure a given site’s peak bandwidth will not exceed the capacity of its back-haul links (back-haul congestion control). This can allow operators to support more users on the same network equipment with LibreQoS than with competing QoE solutions which only shape by AP and Client. Shaping just by AP and client could allow for high aggregate peaks to occur on back-hauls links, which can trigger packet loss and disrupt network connectivity. LibreQoS’ flexible shaping provides a solution to this.
+Your network hierarchy is mapped to a json file. This allows for both simple network hierarchies (Site>AP>Client) as well as much more complex ones (Site>Site>Micro-PoP>AP>Site>AP>Client). This allows operators to ensure a given site’s peak bandwidth will not exceed the capacity of its back-haul links (back-haul congestion control). This can allow operators to support more users on the same network equipment with LibreQoS than with competing QoE solutions which only shape by AP and Client. Shaping just by AP and client could allow for high aggregate peaks to occur on back-hauls' links, which can trigger packet loss and disrupt network connectivity. LibreQoS’s flexible shaping provides a solution to this.
 
 ### CAKE
-CAKE is the product of nearly a decade of development efforts to improve on fq_codel. With the diffserv_4 parameter enabled – CAKE groups traffic in to Bulk, Best Effort, Video, and Voice. This means that without having to fine-tune traffic priorities as you would with DPI products – CAKE automatically ensures your clients’ OS update downloads will not disrupt their zoom calls. It allows for multiple video conferences to operate on the same connection which might otherwise “fight” for upload bandwidth causing call disruptions. It holds the connection together like glue.
+CAKE is the product of a decade of development efforts to improve on fq_codel. With the diffserv4 parameter enabled – CAKE groups traffic in to Bulk, Best Effort, Video, and Voice. This means that without having to fine-tune traffic priorities as you would with DPI products – CAKE automatically ensures your clients’ OS update downloads will not disrupt their zoom calls. It allows for multiple video conferences to operate on the same connection which might otherwise “fight” for upload bandwidth causing call disruptions. It holds the connection together like glue.
 
 ### XDP
-Fast, multi-CPU queueing leveraging xdp-cpumap-tc. Tested up to 11 Gbps of real world traffic with just 30% CPU use on an Intel Xeon Gold 6254. Likely capable of 30Gbps or more.
+Fast, multi-CPU queueing leveraging xdp-cpumap-tc. Tested up to 11 Gbps of real world traffic (so far) with just 30% CPU use on an Intel Xeon Gold 6254. It's likely capable of 30Gbps or more.
 
 ### Graphing
-Graph bandwidth by client and node (Site, AP, etc), with great visalizations made possible by InfluxDB.
+You can graph bandwidth by client and node (Site, AP, etc), with great visalizations made possible by InfluxDB.
 <img alt="LibreQoS" src="https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/v1.1-alpha-preview.jpg"></a>
 
 ### CRM Integrations
-* UISP (v1.2+)
-* Splynx (v1.3+)
+* UISP
+* Splynx
 
 ## System Requirements
 * VM or physical server
@@ -58,11 +58,11 @@ Graph bandwidth by client and node (Site, AP, etc), with great visalizations mad
 | 1,000         | 8 GB          |
 | 5,000         | 16 GB         |
 | 10,000*       | 32 GB         |
-| 50,000*       | 128 GB        |
+| 50,000*       | 48 GB        |
 
 (* Estimated)
 
-### Network Interfaces
+### Network Interface Requirements
 * One management network interface completely separate from the traffic shaping interfaces. Usually this would be the Ethernet interface built in to the motherboard.
 * Dedicated Network Interface Card for Shaping Interfaces
   * NIC must have 2 or more interfaces for traffic shaping.
