@@ -4,19 +4,19 @@ LibreQoS is a Quality of Experience (QoE) Smart Queue Management (SQM) system de
 
 Servers running LibreQoS can shape traffic for many thousands of customers. 
 
-Learn more at [LibreQoS.io](https://libreqos.io/)
+Learn more at [LibreQoS.io](https://libreqos.io/)!
 
 ## Features
-### Flexible Hierarchical Shaping / Back-haul Congestion Mitigation
+### Flexible Hierarchical Shaping / Back-Haul Congestion Mitigation
 <img src="https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/nestedHTB2.png" width="350"></img>
 
 Your network hierarchy is mapped to a json file. This allows for both simple network hierarchies (Site>AP>Client) as well as much more complex ones (Site>Site>Micro-PoP>AP>Site>AP>Client). This allows operators to ensure a given site’s peak bandwidth will not exceed the capacity of its back-haul links (back-haul congestion control). This can allow operators to support more users on the same network equipment with LibreQoS than with competing QoE solutions which only shape by AP and Client. Shaping just by AP and client could allow for high aggregate peaks to occur on back-hauls' links, which can trigger packet loss and disrupt network connectivity. LibreQoS’s flexible shaping provides a solution to this.
 
 ### CAKE
-CAKE is the product of a decade of development efforts to improve on fq_codel. With the diffserv4 parameter enabled – CAKE groups traffic in to Bulk, Best Effort, Video, and Voice. This means that without having to fine-tune traffic priorities as you would with DPI products – CAKE automatically ensures your clients’ OS update downloads will not disrupt their zoom calls. It allows for multiple video conferences to operate on the same connection which might otherwise “fight” for upload bandwidth causing call disruptions. It holds the connection together like glue.
+CAKE is the product of a decade of development efforts to improve on [fq_codel](https://www.rfc-editor.org/rfc/rfc8290.html). With the diffserv4 parameter enabled – CAKE groups traffic into Bulk, Best Effort, Video, and Voice "tins" that closely match the relevant IETF diffserv standards ([RFC4594](https://www.rfc-editor.org/rfc/rfc4594.html), [RFC7567](https://www.rfc-editor.org/rfc/rfc7657), and [RFC8622](https://datatracker.ietf.org/doc/html/rfc8622)). This means that without having to fine-tune traffic priorities as you would with DPI products – CAKE automatically ensures your clients’ OS update downloads will not disrupt their zoom calls. It allows for multiple video conferences to operate on the same connection which might otherwise “fight” for upload bandwidth causing call disruptions.
 
 ### XDP
-Fast, multi-CPU queueing leveraging xdp-cpumap-tc. Tested up to 11 Gbps of real world traffic (so far) with just 30% CPU use on an Intel Xeon Gold 6254. It's likely capable of 30Gbps or more.
+Fast, multi-CPU queueing leveraging xdp-cpumap-tc. Currently tested in the real world past 11 Gbps (so far) with just 30% CPU use on a 16 core Intel Xeon Gold 6254. It's likely capable of 30Gbps or more.
 
 ### Graphing
 You can graph bandwidth by client and node (Site, AP, etc), with great visalizations made possible by InfluxDB.
@@ -58,7 +58,7 @@ You can graph bandwidth by client and node (Site, AP, etc), with great visalizat
 | 1,000         | 8 GB          |
 | 5,000         | 16 GB         |
 | 10,000*       | 32 GB         |
-| 50,000*       | 48 GB        |
+| 50,000*       | 48 GB         |
 
 (* Estimated)
 
