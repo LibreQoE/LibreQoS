@@ -4,6 +4,8 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 import statistics
+import time
+import psutil
 
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
@@ -387,6 +389,9 @@ def refreshBandwidthGraphs():
 		token=influxDBtoken,
 		org=influxDBOrg
 	)
+	
+	# Record current timestamp, use for all points added
+	timestamp = time.time_ns()
 	write_api = client.write_api(write_options=SYNCHRONOUS)
 
 	chunkedsubscriberCircuits = list(chunk_list(subscriberCircuits, 200))
@@ -400,9 +405,9 @@ def refreshBandwidthGraphs():
 			if (bitsDownload > 0) and (bitsUpload > 0):
 				percentUtilizationDownload = round((bitsDownload / round(circuit['maxDownload'] * 1000000))*100.0, 1)
 				percentUtilizationUpload = round((bitsUpload / round(circuit['maxUpload'] * 1000000))*100.0, 1)
-				p = Point('Bandwidth').tag("Circuit", circuit['circuitName']).tag("ParentNode", circuit['ParentNode']).tag("Type", "Circuit").field("Download", bitsDownload).field("Upload", bitsUpload)
+				p = Point('Bandwidth').tag("Circuit", circuit['circuitName']).tag("ParentNode", circuit['ParentNode']).tag("Type", "Circuit").field("Download", bitsDownload).field("Upload", bitsUpload).time(timestamp)
 				queriesToSend.append(p)
-				p = Point('Utilization').tag("Circuit", circuit['circuitName']).tag("ParentNode", circuit['ParentNode']).tag("Type", "Circuit").field("Download", percentUtilizationDownload).field("Upload", percentUtilizationUpload)
+				p = Point('Utilization').tag("Circuit", circuit['circuitName']).tag("ParentNode", circuit['ParentNode']).tag("Type", "Circuit").field("Download", percentUtilizationDownload).field("Upload", percentUtilizationUpload).time(timestamp)
 				queriesToSend.append(p)
 
 		write_api.write(bucket=influxDBBucket, record=queriesToSend)
@@ -419,11 +424,11 @@ def refreshBandwidthGraphs():
 		if (bitsDownload > 0) and (bitsUpload > 0):
 			percentUtilizationDownload = round((bitsDownload / round(parentNode['maxDownload'] * 1000000))*100.0, 1)
 			percentUtilizationUpload = round((bitsUpload / round(parentNode['maxUpload'] * 1000000))*100.0, 1)
-			p = Point('Bandwidth').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("Download", bitsDownload).field("Upload", bitsUpload)
+			p = Point('Bandwidth').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("Download", bitsDownload).field("Upload", bitsUpload).time(timestamp)
 			queriesToSend.append(p)
-			p = Point('Utilization').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("Download", percentUtilizationDownload).field("Upload", percentUtilizationUpload)
+			p = Point('Utilization').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("Download", percentUtilizationDownload).field("Upload", percentUtilizationUpload).time(timestamp)
 			queriesToSend.append(p)
-			p = Point('Overload').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("Overload", overloadFactor)
+			p = Point('Overload').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("Overload", overloadFactor).time(timestamp)
 			queriesToSend.append(p)
 
 	write_api.write(bucket=influxDBBucket, record=queriesToSend)
@@ -434,16 +439,25 @@ def refreshBandwidthGraphs():
 		queriesToSend = []
 		listOfTins = ['Bulk', 'BestEffort', 'Video', 'Voice']
 		for tin in listOfTins:
-			p = Point('Tin Drop Percentage').tag("Type", "Tin").tag("Tin", tin).field("Download", tinsStats['sinceLastQuery'][tin]['Download']['dropPercentage']).field("Upload", tinsStats['sinceLastQuery'][tin]['Upload']['dropPercentage'])
+			p = Point('Tin Drop Percentage').tag("Type", "Tin").tag("Tin", tin).field("Download", tinsStats['sinceLastQuery'][tin]['Download']['dropPercentage']).field("Upload", tinsStats['sinceLastQuery'][tin]['Upload']['dropPercentage']).time(timestamp)
 			queriesToSend.append(p)
 			# Check to ensure tin percentage has value (!= None) before graphing. During partial or full reload these will have a value of None.
 			if (tinsStats['sinceLastQuery'][tin]['Download']['percentage'] != None) and (tinsStats['sinceLastQuery'][tin]['Upload']['percentage'] != None):
-				p = Point('Tins Assigned').tag("Type", "Tin").tag("Tin", tin).field("Download", tinsStats['sinceLastQuery'][tin]['Download']['percentage']).field("Upload", tinsStats['sinceLastQuery'][tin]['Upload']['percentage'])
+				p = Point('Tins Assigned').tag("Type", "Tin").tag("Tin", tin).field("Download", tinsStats['sinceLastQuery'][tin]['Download']['percentage']).field("Upload", tinsStats['sinceLastQuery'][tin]['Upload']['percentage']).time(timestamp)
 				queriesToSend.append(p)
 
 		write_api.write(bucket=influxDBBucket, record=queriesToSend)
 		# print("Added " + str(len(queriesToSend)) + " points to InfluxDB.")
 		queriesToSendCount += len(queriesToSend)
+	
+	# Graph CPU use
+	cpuVals = psutil.cpu_percent(percpu=True)
+	queriesToSend = []
+	for index, item in enumerate(cpuVals):
+		p = Point('CPU').field('CPU_' + str(index), item)
+		queriesToSend.append(p)
+	write_api.write(bucket=influxDBBucket, record=queriesToSend)
+	queriesToSendCount += len(queriesToSend)
 	
 	print("Added " + str(queriesToSendCount) + " points to InfluxDB.")
 
@@ -486,6 +500,10 @@ def refreshLatencyGraphs():
 		token=influxDBtoken,
 		org=influxDBOrg
 	)
+	
+	# Record current timestamp, use for all points added
+	timestamp = time.time_ns()
+	
 	write_api = client.write_api(write_options=SYNCHRONOUS)
 
 	chunkedsubscriberCircuits = list(chunk_list(subscriberCircuits, 200))
@@ -496,7 +514,7 @@ def refreshLatencyGraphs():
 		for circuit in chunk:
 			if circuit['stats']['sinceLastQuery']['tcpLatency'] != None:
 				tcpLatency = float(circuit['stats']['sinceLastQuery']['tcpLatency'])
-				p = Point('TCP Latency').tag("Circuit", circuit['circuitName']).tag("ParentNode", circuit['ParentNode']).tag("Type", "Circuit").field("TCP Latency", tcpLatency)
+				p = Point('TCP Latency').tag("Circuit", circuit['circuitName']).tag("ParentNode", circuit['ParentNode']).tag("Type", "Circuit").field("TCP Latency", tcpLatency).time(timestamp)
 				queriesToSend.append(p)
 		write_api.write(bucket=influxDBBucket, record=queriesToSend)
 		queriesToSendCount += len(queriesToSend)
@@ -505,7 +523,7 @@ def refreshLatencyGraphs():
 	for parentNode in parentNodes:
 		if parentNode['stats']['sinceLastQuery']['tcpLatency'] != None:
 			tcpLatency = float(parentNode['stats']['sinceLastQuery']['tcpLatency'])
-			p = Point('TCP Latency').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("TCP Latency", tcpLatency)
+			p = Point('TCP Latency').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("TCP Latency", tcpLatency).time(timestamp)
 			queriesToSend.append(p)
 	
 	write_api.write(bucket=influxDBBucket, record=queriesToSend)
@@ -516,7 +534,7 @@ def refreshLatencyGraphs():
 		if circuit['stats']['sinceLastQuery']['tcpLatency'] != None:
 			listOfAllLatencies.append(circuit['stats']['sinceLastQuery']['tcpLatency'])
 	currentNetworkLatency = statistics.median(listOfAllLatencies)
-	p = Point('TCP Latency').tag("Type", "Network").field("TCP Latency", currentNetworkLatency)
+	p = Point('TCP Latency').tag("Type", "Network").field("TCP Latency", currentNetworkLatency).time(timestamp)
 	write_api.write(bucket=influxDBBucket, record=p)
 	queriesToSendCount += 1
 	
