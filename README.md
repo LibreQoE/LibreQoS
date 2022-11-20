@@ -1,4 +1,4 @@
-<a href="https://libreqos.io/"><img alt="LibreQoS" src="https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/banner2022-2.png"></a>
+<a href="https://libreqos.io/"><img alt="LibreQoS" src="https://user-images.githubusercontent.com/22501920/202913614-4ff2e506-e645-4a94-9918-d512905ab290.png"></a>
 
 LibreQoS is a Quality of Experience (QoE) Smart Queue Management (SQM) system designed for Internet Service Providers to optimize the flow of their network traffic and thus reduce bufferbloat, keep the network responsive, and improve the end-user experience.
 
@@ -10,16 +10,16 @@ Learn more at [LibreQoS.io](https://libreqos.io/)!
 ### Flexible Hierarchical Shaping / Back-Haul Congestion Mitigation
 <img src="https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/nestedHTB2.png" width="350"></img>
 
-Your network hierarchy is mapped to a json file. This allows for both simple network hierarchies (Site>AP>Client) as well as much more complex ones (Site>Site>Micro-PoP>AP>Site>AP>Client). This allows operators to ensure a given site’s peak bandwidth will not exceed the capacity of its back-haul links (back-haul congestion control). This can allow operators to support more users on the same network equipment with LibreQoS than with competing QoE solutions which only shape by AP and Client. Shaping just by AP and client could allow for high aggregate peaks to occur on back-hauls' links, which can trigger packet loss and disrupt network connectivity. LibreQoS’s flexible shaping provides a solution to this.
+Starting in version v1.1+, operators can map their network hierarchy in LibreQoS. This enables both simple network hierarchies (Site>AP>Client) as well as much more complex ones (Site>Site>Micro-PoP>AP>Site>AP>Client). This can be used to ensure that a given site’s peak bandwidth will not exceed the capacity of its back-haul links (back-haul congestion control). Operators can support more users on the same network equipment with LibreQoS than with competing QoE solutions which only shape by AP and Client.
 
 ### CAKE
-CAKE is the product of a decade of development efforts to improve on [fq_codel](https://www.rfc-editor.org/rfc/rfc8290.html). With the diffserv4 parameter enabled – CAKE groups traffic into Bulk, Best Effort, Video, and Voice "tins" that closely match the relevant IETF diffserv standards ([RFC4594](https://www.rfc-editor.org/rfc/rfc4594.html), [RFC7567](https://www.rfc-editor.org/rfc/rfc7657), and [RFC8622](https://datatracker.ietf.org/doc/html/rfc8622)). This means that without having to fine-tune traffic priorities as you would with DPI products – CAKE automatically ensures your clients’ OS update downloads will not disrupt their zoom calls. It allows for multiple video conferences to operate on the same connection which might otherwise “fight” for upload bandwidth causing call disruptions.
+CAKE is the product of nearly a decade of development efforts to improve on fq_codel. With the diffserv_4 parameter enabled – CAKE groups traffic in to Bulk, Best Effort, Video, and Voice. This means that without having to fine-tune traffic priorities as you would with DPI products – CAKE automatically ensures your clients’ OS update downloads will not disrupt their zoom calls. It allows for multiple video conferences to operate on the same connection which might otherwise “fight” for upload bandwidth causing call disruptions. It holds the connection together like glue. With work-from-home, remote learning, and tele-medicine becoming increasingly common – minimizing video call disruptions can save jobs, keep students engaged, and help ensure equitable access to medical care.
 
 ### XDP
-Fast, multi-CPU queueing leveraging xdp-cpumap-tc. Currently tested in the real world past 11 Gbps (so far) with just 30% CPU use on a 16 core Intel Xeon Gold 6254. It's likely capable of 30Gbps or more.
+Fast, multi-CPU queueing leveraging xdp-cpumap-tc and cpumap-pping. Currently tested in the real world past 11 Gbps (so far) with just 30% CPU use on a 16 core Intel Xeon Gold 6254. It's likely capable of 30Gbps or more.
 
 ### Graphing
-You can graph bandwidth by client and node (Site, AP, etc), with great visalizations made possible by InfluxDB.
+You can graph bandwidth and TCP RTT by client and node (Site, AP, etc), with great visalizations made possible by InfluxDB.
 <img alt="LibreQoS" src="https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/v1.1-alpha-preview.jpg"></a>
 
 ### CRM Integrations
