@@ -1,6 +1,6 @@
 # v1.3 (IPv4 + IPv6) (Beta)
 
-![Screenshot from 2022-11-04 17-06-31](https://user-images.githubusercontent.com/22501920/200087282-dae1f329-08c1-4b63-90b2-de53cecf9429.png)
+![image](https://user-images.githubusercontent.com/22501920/202913336-256b591b-f372-44fe-995c-5e08ec08a925.png)
 
 ## Features
 
