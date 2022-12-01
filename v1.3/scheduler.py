@@ -1,5 +1,5 @@
 import time
-import schedule
+import datetime
 from LibreQoS import refreshShapers, refreshShapersUpdateOnly
 from graphInfluxDB import refreshBandwidthGraphs, refreshLatencyGraphs
 from ispConfig import influxDBEnabled, automaticImportUISP, automaticImportSplynx
@@ -28,13 +28,35 @@ def importAndShapePartialReload():
 	importFromCRM()
 	refreshShapersUpdateOnly()
 
+def graph():
+	time.sleep(10)
+	try:
+		refreshBandwidthGraphs()
+	except:
+		print("Failed to run refreshBandwidthGraphs()")
+	time.sleep(10)
+	try:
+		refreshBandwidthGraphs()
+	except:
+		print("Failed to run refreshBandwidthGraphs()")
+	time.sleep(10)
+	try:
+		refreshBandwidthGraphs()
+	except:
+		print("Failed to run refreshBandwidthGraphs()")
+	time.sleep(1)
+	try:
+		refreshLatencyGraphs()
+	except:
+		print("Failed to run refreshLatencyGraphs()")
+
 if __name__ == '__main__':
 	importAndShapeFullReload()
-	schedule.every().day.at("04:00").do(importAndShapeFullReload)
-	schedule.every(30).minutes.do(importAndShapePartialReload)
-	if influxDBEnabled:
-		schedule.every(10).seconds.do(refreshBandwidthGraphs)
-		schedule.every(30).seconds.do(refreshLatencyGraphs)
 	while True:
-		schedule.run_pending()
-		time.sleep(1)
+		finish_time = datetime.datetime.now() + datetime.timedelta(minutes=30)
+		while datetime.datetime.now() < finish_time:
+			if influxDBEnabled:
+				graph()
+			else:
+				time.sleep(1)
+		importAndShapePartialReload()
