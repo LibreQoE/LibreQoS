@@ -911,12 +911,13 @@ def refreshShapersUpdateOnly():
 		def getClassIDofParentNodes(data, classIDOfParentNodes):
 			for node in data:
 				if isinstance(node, str):
-					thisParentNode = node
-					classIDOfParentNodes[thisParentNode] = data[node]['classid']
-					if 'children' in data[node]:
-						for child in data[node]['children']:
-							result = getClassIDofParentNodes(data[node]['children'][child], classIDOfParentNodes)
-							classIDOfParentNodes.update(result)
+					if (isinstance(data[node], dict)) and (node != 'children'):
+						thisParentNode = node
+						classIDOfParentNodes[thisParentNode] = data[node]['classid']
+						if 'children' in data[node]:
+							for child in data[node]['children']:
+								result = getClassIDofParentNodes(data[node]['children'][child], classIDOfParentNodes)
+								classIDOfParentNodes.update(result)
 			return classIDOfParentNodes	
 		classIDOfParentNodes = getClassIDofParentNodes(network, {})
 		
@@ -924,17 +925,18 @@ def refreshShapersUpdateOnly():
 		def getAllCircuitIDs(data, allCircuitIDs):
 			for node in data:
 				if isinstance(node, str):
-					thisParentNode = node
-					if 'circuits' in data[node]:
-						for circuit in data[node]['circuits']:
-							if circuit['circuitID'] not in allCircuitIDs:
-								allCircuitIDs.append(circuit['circuitID'])
-					if 'children' in data[node]:
-						for child in data[node]['children']:
-							result = getAllCircuitIDs(data[node]['children'][child], allCircuitIDs)
-							for entry in result:
-								if entry not in allCircuitIDs:
-									allCircuitIDs.append(result)
+					if (isinstance(data[node], dict)) and (node != 'children'):
+						thisParentNode = node
+						if 'circuits' in data[node]:
+							for circuit in data[node]['circuits']:
+								if circuit['circuitID'] not in allCircuitIDs:
+									allCircuitIDs.append(circuit['circuitID'])
+						if 'children' in data[node]:
+							for child in data[node]['children']:
+								result = getAllCircuitIDs(data[node]['children'][child], allCircuitIDs)
+								for entry in result:
+									if entry not in allCircuitIDs:
+										allCircuitIDs.append(result)
 			return allCircuitIDs
 		allCircuitIDs = getAllCircuitIDs(network, [])
 
@@ -942,14 +944,15 @@ def refreshShapersUpdateOnly():
 		def getClassIDofExistingCircuitID(data, classIDofExistingCircuitID):
 			for node in data:
 				if isinstance(node, str):
-					thisParentNode = node
-					if 'circuits' in data[node]:
-						for circuit in data[node]['circuits']:
-							classIDofExistingCircuitID[circuit['circuitID']] = circuit['classid']
-					if 'children' in data[node]:
-						for child in data[node]['children']:
-							result = getClassIDofExistingCircuitID(data[node]['children'][child], allCircuitIDs)
-							classIDofExistingCircuitID.update(result)
+					if (isinstance(data[node], dict)) and (node != 'children'):
+						thisParentNode = node
+						if 'circuits' in data[node]:
+							for circuit in data[node]['circuits']:
+								classIDofExistingCircuitID[circuit['circuitID']] = circuit['classid']
+						if 'children' in data[node]:
+							for child in data[node]['children']:
+								result = getClassIDofExistingCircuitID(data[node]['children'][child], classIDofExistingCircuitID)
+								classIDofExistingCircuitID.update(result)
 			return classIDofExistingCircuitID	
 		classIDofExistingCircuitID = getClassIDofExistingCircuitID(network, {})
 		
@@ -957,14 +960,15 @@ def refreshShapersUpdateOnly():
 		def getParentNodeOfCircuitID(data, parentNodeOfCircuitID, allCircuitIDs):
 			for node in data:
 				if isinstance(node, str):
-					thisParentNode = node
-					if 'circuits' in data[node]:
-						for circuit in data[node]['circuits']:
-							parentNodeOfCircuitID[circuit['circuitID']] = thisParentNode
-					if 'children' in data[node]:
-						for child in data[node]['children']:
-							result = getParentNodeOfCircuitID(data[node]['children'][child], parentNodeOfCircuitID, allCircuitIDs)
-							parentNodeOfCircuitID.update(result)
+					if (isinstance(data[node], dict)) and (node != 'children'):
+						thisParentNode = node
+						if 'circuits' in data[node]:
+							for circuit in data[node]['circuits']:
+								parentNodeOfCircuitID[circuit['circuitID']] = thisParentNode
+						if 'children' in data[node]:
+							for child in data[node]['children']:
+								result = getParentNodeOfCircuitID(data[node]['children'][child], parentNodeOfCircuitID, allCircuitIDs)
+								parentNodeOfCircuitID.update(result)
 			return parentNodeOfCircuitID	
 		parentNodeOfCircuitID = getParentNodeOfCircuitID(network, {}, allCircuitIDs)
 		
@@ -972,13 +976,15 @@ def refreshShapersUpdateOnly():
 		def getCPUnumOfParentNodes(data, cpuNumOfParentNode):
 			for node in data:
 				if isinstance(node, str):
-					thisParentNode = node
-					cpuNumOfParentNode[thisParentNode] = data[node]['cpuNum']
-					if 'children' in data[node]:
-						for child in data[node]['children']:
-							result = getCPUnumOfParentNodes(data[node]['children'][child], cpuNumOfParentNode)
-							cpuNumOfParentNode.update(result)
+					if (isinstance(data[node], dict)) and (node != 'children'):
+						thisParentNode = node
+						cpuNumOfParentNode[thisParentNode] = data[node]['cpuNum']
+						if 'children' in data[node]:
+							for child in data[node]['children']:
+								result = getCPUnumOfParentNodes(data[node]['children'][child], cpuNumOfParentNode)
+								cpuNumOfParentNode.update(result)
 			return cpuNumOfParentNode	
+		
 		cpuNumOfParentNodeHex = getCPUnumOfParentNodes(network, {})
 		cpuNumOfParentNodeInt = {}
 		for key, value in cpuNumOfParentNodeHex.items():
@@ -1110,29 +1116,30 @@ def refreshShapersUpdateOnly():
 			circuitsIDsToRemove, circuitsToUpdateByID,	circuitsToAddByParentNode = itemsToChange
 			for node in data:
 				if isinstance(node, str):
-					thisParentNode = node
-					if 'circuits' in data[node]:
-						for circuit in data[node]['circuits']:
-							if circuit['circuitID'] in circuitsToUpdateByID:
-								circuit = circuitsToUpdateByID[circuit['circuitID']]
-								print('updated')
-							if circuit['circuitID'] in circuitsIDsToRemove:
-								data[node]['circuits'].remove(circuit)
-					if thisParentNode in circuitsToAddByParentNode:
+					if (isinstance(data[node], dict)) and (node != 'children'):
+						thisParentNode = node
 						if 'circuits' in data[node]:
-							temp = data[node]['circuits']
-							for circuit in circuitsToAddByParentNode[thisParentNode]:
-								temp.append(circuit)
-							data[node]['circuits'] = temp
-						else:
-							temp = []
-							for circuit in circuitsToAddByParentNode[thisParentNode]:
-								temp.append(circuit)
-							data[node]['circuits'] = temp
-					if 'children' in data[node]:
-						for child in data[node]['children']:
-							result = updateNetworkStructure(data[node]['children'][child], depth+1, itemsToChange)
-							data[node]['children'][child] = result
+							for circuit in data[node]['circuits']:
+								if circuit['circuitID'] in circuitsToUpdateByID:
+									circuit = circuitsToUpdateByID[circuit['circuitID']]
+									print('updated')
+								if circuit['circuitID'] in circuitsIDsToRemove:
+									data[node]['circuits'].remove(circuit)
+						if thisParentNode in circuitsToAddByParentNode:
+							if 'circuits' in data[node]:
+								temp = data[node]['circuits']
+								for circuit in circuitsToAddByParentNode[thisParentNode]:
+									temp.append(circuit)
+								data[node]['circuits'] = temp
+							else:
+								temp = []
+								for circuit in circuitsToAddByParentNode[thisParentNode]:
+									temp.append(circuit)
+								data[node]['circuits'] = temp
+						if 'children' in data[node]:
+							for child in data[node]['children']:
+								result = updateNetworkStructure(data[node]['children'][child], depth+1, itemsToChange)
+								data[node]['children'][child] = result
 			return data	
 		network = updateNetworkStructure(network, 0 , itemsToChange)
 		
