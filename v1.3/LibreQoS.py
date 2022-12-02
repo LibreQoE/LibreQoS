@@ -18,7 +18,7 @@ import logging
 import shutil
 import binpacking
 
-from ispConfig import fqOrCAKE, upstreamBandwidthCapacityDownloadMbps, upstreamBandwidthCapacityUploadMbps, \
+from ispConfig import sqm, upstreamBandwidthCapacityDownloadMbps, upstreamBandwidthCapacityUploadMbps, \
 	interfaceA, interfaceB, enableActualShellCommands, useBinPackingToBalanceCPU, monitorOnlyMode, \
 	runShellCommandsAsSudo, generatedPNDownloadMbps, generatedPNUploadMbps, queuesAvailableOverride
 
@@ -629,14 +629,14 @@ def refreshShapers():
 			linuxTCcommands.append(command)
 			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityDownloadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityDownloadMbps) + 'mbit'
 			linuxTCcommands.append(command)
-			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + fqOrCAKE
+			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + sqm
 			linuxTCcommands.append(command)
 			# Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
 			# Technically, that should not even happen. So don't expect much if any traffic in this default class.
 			# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
 			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(round((upstreamBandwidthCapacityDownloadMbps-1)/4)) + 'mbit ceil ' + str(upstreamBandwidthCapacityDownloadMbps-1) + 'mbit prio 5'
 			linuxTCcommands.append(command)
-			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + fqOrCAKE
+			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + sqm
 			linuxTCcommands.append(command)
 		
 		thisInterface = interfaceB
@@ -648,14 +648,14 @@ def refreshShapers():
 			linuxTCcommands.append(command)
 			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityUploadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps) + 'mbit'
 			linuxTCcommands.append(command)
-			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + fqOrCAKE
+			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + sqm
 			linuxTCcommands.append(command)
 			# Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
 			# Technically, that should not even happen. So don't expect much if any traffic in this default class.
 			# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
 			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(round((upstreamBandwidthCapacityUploadMbps-1)/4)) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps-1) + 'mbit prio 5'
 			linuxTCcommands.append(command)
-			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + fqOrCAKE
+			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + sqm
 			linuxTCcommands.append(command)
 		
 		
@@ -680,13 +680,13 @@ def refreshShapers():
 						linuxTCcommands.append(command)
 						# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
 						if monitorOnlyMode == False:	
-							command = 'qdisc add dev ' + interfaceA + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + fqOrCAKE
+							command = 'qdisc add dev ' + interfaceA + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + sqm
 							linuxTCcommands.append(command)
 						command = 'class add dev ' + interfaceB + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ str(circuit['minUpload']) + 'mbit ceil '+ str(circuit['maxUpload']) + 'mbit prio 3'
 						linuxTCcommands.append(command)
 						# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
 						if monitorOnlyMode == False:	
-							command = 'qdisc add dev ' + interfaceB + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + fqOrCAKE
+							command = 'qdisc add dev ' + interfaceB + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + sqm
 							linuxTCcommands.append(command)
 						for device in circuit['devices']:
 							if device['ipv4s']:
@@ -1005,7 +1005,7 @@ def refreshShapersUpdateOnly():
 				shell(command)
 				# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
 				if monitorOnlyMode == False:
-					command = 'tc qdisc add dev ' + interface + ' parent ' + classID + ' ' + fqOrCAKE
+					command = 'tc qdisc add dev ' + interface + ' parent ' + classID + ' ' + sqm
 					print(command)
 					shell(command)
 		
