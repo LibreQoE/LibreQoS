@@ -1,8 +1,7 @@
 # 'fq_codel' or 'cake diffserv4'
 # 'cake diffserv4' is recommended
-
-# fqOrCAKE = 'fq_codel'
-fqOrCAKE = 'cake diffserv4'
+# sqm = 'fq_codel'
+sqm = 'cake diffserv4'
 
 # Used to passively monitor the network for before / after comparisons. Leave as False to
 # ensure actual shaping. After changing this value, run "sudo systemctl restart LibreQoS.service"

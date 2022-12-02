@@ -10,7 +10,7 @@ import psutil
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
 
-from ispConfig import interfaceA, interfaceB, influxDBEnabled, influxDBBucket, influxDBOrg, influxDBtoken, influxDBurl, fqOrCAKE
+from ispConfig import interfaceA, interfaceB, influxDBEnabled, influxDBBucket, influxDBOrg, influxDBtoken, influxDBurl, sqm
 
 
 def getInterfaceStats(interface):
@@ -79,7 +79,7 @@ def getCircuitBandwidthStats(subscriberCircuits, tinsStats):
 				else:
 					overloadFactor = 0.0
 				
-				if 'cake diffserv4' in fqOrCAKE:
+				if 'cake diffserv4' in sqm:
 					tinCounter = 1
 					for tin in element['tins']:
 						sent_packets = float(tin['sent_packets'])
@@ -106,7 +106,7 @@ def getCircuitBandwidthStats(subscriberCircuits, tinsStats):
 				circuit['stats']['currentQuery']['packetsSent' + dirSuffix] = packets
 				circuit['stats']['currentQuery']['overloadFactor' + dirSuffix] = overloadFactor
 				
-				#if 'cake diffserv4' in fqOrCAKE:
+				#if 'cake diffserv4' in sqm:
 				#	circuit['stats']['currentQuery']['tins'] = theseTins
 
 		circuit['stats']['currentQuery']['time'] = datetime.now().isoformat()
@@ -435,7 +435,7 @@ def refreshBandwidthGraphs():
 	# print("Added " + str(len(queriesToSend)) + " points to InfluxDB.")
 	queriesToSendCount += len(queriesToSend)
 	
-	if 'cake diffserv4' in fqOrCAKE:
+	if 'cake diffserv4' in sqm:
 		queriesToSend = []
 		listOfTins = ['Bulk', 'BestEffort', 'Video', 'Voice']
 		for tin in listOfTins:
