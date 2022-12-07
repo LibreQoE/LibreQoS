@@ -36,3 +36,11 @@ Starting with LibreQoS v1.3 - minor handles are counted independently by CPU cor
 In order to improve queue reload time in v1.3, it was necessary to use a unique identifier for each circuit. We went with Circuit ID. It can be a number or string, it just needs to be unique between circuits, and the same for multiple devices in the same circuit. This allows us to avoid costly lookups when sorting through the queue structure.
 
 If you have your own script creating ShapedDevices.csv - you could use your CRM's unique identifier for customer services / circuits to serve as this Circuit ID. The UISP and Splynx integrations already do this automatically.
+
+## Compatability Notes
+
+The most major changes are the renaming of the fqorCake variable to "sqm",
+and the addition of the Circuit identifier field.
+
+Also after upgrading to LibreQos v1.3, a reboot is required to clear out the
+old ebpf code.
