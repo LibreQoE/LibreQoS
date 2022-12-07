@@ -1,4 +1,4 @@
-# v1.3 (IPv4 + IPv6) (Beta)
+# v1.3 (IPv4 + IPv6)
 
 ![image](https://user-images.githubusercontent.com/22501920/202913336-256b591b-f372-44fe-995c-5e08ec08a925.png)
 
