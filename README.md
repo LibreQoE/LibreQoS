@@ -8,7 +8,7 @@ Learn more at [LibreQoS.io](https://libreqos.io/)!
 
 ## Features
 ### Flexible Hierarchical Shaping / Back-Haul Congestion Mitigation
-<img src="https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/nestedHTB2.png" width="350"></img>
+<img src="https://raw.githubusercontent.com/LibreQoE/LibreQoS/main/docs/nestedHTB2.png" width="350"></img>
 
 Starting in version v1.1+, operators can map their network hierarchy in LibreQoS. This enables both simple network hierarchies (Site>AP>Client) as well as much more complex ones (Site>Site>Micro-PoP>AP>Site>AP>Client). This can be used to ensure that a given site’s peak bandwidth will not exceed the capacity of its back-haul links (back-haul congestion control). Operators can support more users on the same network equipment with LibreQoS than with competing QoE solutions which only shape by AP and Client.
 
@@ -20,7 +20,7 @@ Fast, multi-CPU queueing leveraging xdp-cpumap-tc and cpumap-pping. Currently te
 
 ### Graphing
 You can graph bandwidth and TCP RTT by client and node (Site, AP, etc), with great visalizations made possible by InfluxDB.
-<img alt="LibreQoS" src="https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/v1.1-alpha-preview.jpg"></a>
+<img alt="LibreQoS" src="https://raw.githubusercontent.com/LibreQoE/LibreQoS/main/docs/v1.1-alpha-preview.jpg"></a>
 
 ### CRM Integrations
 * UISP
@@ -74,7 +74,7 @@ You can graph bandwidth and TCP RTT by client and node (Site, AP, etc), with gre
     
 ## Versions
 ### IPv4 + IPv6
-- [v1.2.1-stable](https://github.com/rchac/LibreQoS/tree/main/v1.2)
+- [v1.2.1-stable](https://github.com/LibreQoE/LibreQoS/tree/main/v1.2)
    - [Setup Guide](https://github.com/LibreQoE/LibreQoS/wiki/LibreQoS-v1.2-Installation-&-Usage-Guide-Physical-Server-and-Ubuntu-22.04)
-- [v1.3-beta](https://github.com/rchac/LibreQoS/tree/main/v1.3)
+- [v1.3](https://github.com/LibreQoE/LibreQoS/tree/main/v1.3)
    - [Setup Guide](https://github.com/LibreQoE/LibreQoS/wiki/LibreQoS-v1.3-Installation-&-Usage-Guide-Physical-Server-and-Ubuntu-22.04)
