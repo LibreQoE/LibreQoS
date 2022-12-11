@@ -6,7 +6,6 @@ v1.1/xdp-cpumap-tc/
 v1.1/pping
 v1.1/statsByDevice.json
 v1.1/statsByParentNode.json
-v1.1/*.bak
 v1.2/ShapedDevices.csv
 v1.2/network.json
 v1.2/ispConfig.py
@@ -21,7 +20,6 @@ v1.2/integrationUISPbandwidths.csv
 v1.2/longTermStats.json
 v1.2/queuingStructure.json
 v1.2/tinsStats.json
-v1.2/*.bak
 v1.3/ShapedDevices.csv
 v1.3/ShapedDevices.lastLoaded.csv
 v1.3/network.json
@@ -34,8 +32,47 @@ v1.3/mikrotikDHCPRouterList.csv
 v1.3/longTermStats.json
 v1.3/queuingStructure.json
 v1.3/tinsStats.json
-v1.3/*.bak
+
+src/ShapedDevices.csv
+src/ShapedDevices.lastLoaded.csv
+src/network.json
+src/ispConfig.py
+src/statsByCircuit.json
+src/statsByParentNode.json
+src/lastGoodConfig.json
+src/lastGoodConfig.csv
+src/mikrotikDHCPRouterList.csv
+src/longTermStats.json
+src/queuingStructure.json
+src/tinsStats.json
 
 # Ignore project folders for some IDEs
 .idea/
 __pycache__
+
+# Ignore common temporary files
+*.bak
+# Auto-generated tag files
+tags
+TAGS
+# Vi Swap
+[._]*.s[a-v][a-z]
+[._]*.sw[a-p]
+[._]s[a-rt-v][a-z]
+[._]ss[a-gi-z]
+[._]sw[a-p]
+
+# Session
+Session.vim
+Sessionx.vim
+
+# Temporary
+.netrwhist
+
+# Persistent undo
+[._]*.un
+
+# Emacs
+*~
+tramp
+.\#*
