@@ -68,9 +68,12 @@ Worse, these are often dynamic in origin.
 
 * Test tools
 ** Flent
+** TRex
 ** goresponsiveness
 ** crusader
 ** speedtest.net
+** Web PLT
+Alexa top 10000
 ** samknows
 ** Netflix video quality
 ** VOIP MOS
