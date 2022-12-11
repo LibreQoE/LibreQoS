@@ -88,8 +88,30 @@ Similarly, many devices are themselves the bottleneck, still, so they
 accumulate a ton of RTT themselves, and monitoring the RTT and doing
 something about it would possibly help. 
 
+Validating the the RTT metrics reported by pping line up with the
+actual measurements from actual flows is important. Also, what are
+the effects of ack-filtering on pping?
+
 ** FQ
+
+The FQ methods we use are really good for most traffic types, and
+could be even better if more applications did single packet pacing and
+were more sensitive to delay and jitter.
 
 ** Encapsulations
 
+We have no insight into QUIC or VPN traffic. This is going to get
+worse over time. The only thing we have for quic is the: [[https://www.ietfjournal.org/enabling-internet-measurement-with-the-quic-spin-bit/][spin bit]] -
+which is probably [[https://http3-explained.haxx.se/en/quic/quic-spinbit][not widely implemented]]. The best insight we actually
+have is queue accomulation and packet drop/mark behaviors.
+
+
 ** HTB is bursty
+
+** DSCP
+
+What DSCPs are in common use today?
+
+** DROP_MONITOR
+
+We have 2600 (not kidding, 2600) places where packet 
