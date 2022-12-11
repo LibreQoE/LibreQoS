@@ -77,15 +77,17 @@ Worse, these are often dynamic in origin.
 ** Videoconferencing Quality
 
 * Congestion Controls
-|          |   |   |   |   |
-|----------+---+---+---+---|
-| cubic    |   |   |   |   |
-| reno     |   |   |   |   |
-| ledbat   |   |   |   |   |
-| ledbat++ |   |   |   |   |
-| curved   |   |   |   |   |
-| bbr      |   |   |   |   |
-| bbrv2    |   |   |   |   |
+
+| Control  | Why        | ecn |   |   |
+|----------+------------+-----+---+---|
+| cubic    | Linux      | S   |   |   |
+| reno     | BSD        | S   |   |   |
+| ledbat   | Torrent    | N   |   |   |
+| ledbat++ | Microsoft  | Y   |   |   |
+| curved   | Microsoft  | S   |   |   |
+| bbr      | Google     | N   |   |   |
+| bbrv2    | Google exp | L   |   |   |
+| prague   | IETF exp   | L   |   |   |
 
 * Diffserv Markings
   EF,LE,CS1, CS5,NQB,CS6
