@@ -84,6 +84,11 @@ the AQM component, doesn't work as well as it could.
 
 [[./img/middlebox_compared.png]]
 
+Putting cake on the CPE also results in a metric ton less jitter.
+
+[[./img/tonlessjitter.png]]
+
+
 Similarly, many devices are themselves the bottleneck, still, so they
 accumulate a ton of RTT themselves, and monitoring the RTT and doing
 something about it would possibly help. 
@@ -105,7 +110,6 @@ worse over time. The only thing we have for quic is the: [[https://www.ietfjourn
 which is probably [[https://http3-explained.haxx.se/en/quic/quic-spinbit][not widely implemented]]. The best insight we actually
 have is queue accomulation and packet drop/mark behaviors.
 
-
 ** HTB is bursty
 
 ** DSCP
@@ -114,4 +118,6 @@ What DSCPs are in common use today?
 
 ** DROP_MONITOR
 
-We have 2600 (not kidding, 2600) places where packet 
+We have 2600 (not kidding, 2600) places where packets can be dropped
+in the kernel, not to mention other parts of the network. A nice
+feature would be to be able to track retransmits relative to drops.
