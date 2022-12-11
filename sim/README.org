@@ -1,0 +1,80 @@
+* Overview
+
+Setting up 4 simulation environments is in order:
+
+| Plan Size | Characteristics |
+|-----------+-----------------|
+| Small     | 1024 users      |
+| Medium    | 10000 users     |
+| Large     | 40000 users     |
+| Humongous | 100k users      |
+
+** IP address ranges
+
+	2001:0002::/48 and 198.18.0.0/15 are the experimental address ranges.
+	For testing outside of the network, perhaps a BGP AS for this would help
+
+** DNS service
+	nsupdate for reverse dns? Hosts file?
+
+* Subscriber Plans
+| Plan Name | Down   |      Up |   |   |   |   |   |   |
+|-----------+--------+---------+---+---+---+---+---+---|
+|           | 4Mbit  | 384kbit |   |   |   |   |   |   |
+|           | 10Mbit |   1Mbit |   |   |   |   |   |   |
+|           | 20Mbit |     384 |   |   |   |   |   |   |
+|           | 25Mbit |     384 |   |   |   |   |   |   |
+|           | 50MBit |     384 |   |   |   |   |   |   |
+|           | 60Mbit |     384 |   |   |   |   |   |   |
+
+* Topologies 
+
+A variety of topologies need to be emulated.
+
+** Distance
+** Hops
+** Different technologies
+
+* Routing Protocols
+
+Both ISIS and OSPF are in use
+
+* Underlying framing
+
+PPPoe, MPLS are in use
+CGNATs might become an issue
+IPv6 deploying?
+
+* Transport Technologies
+| Plan                 | Down | Up  |   |   |   |   |   |   |
+|----------------------+------+-----+---+---+---+---+---+---|
+| WiFi                 |      |     |   |   |   |   |   |   |
+| Cable                | 2ms  | 6ms |   |   |   |   |   |   |
+| Docsis LL            | 1ms  |     |   |   |   |   |   |   |
+| Wireless half duplex |      |     |   |   |   |   |   |   |
+
+* Test tools
+** Flent
+** goresponsiveness
+** crusader
+** speedtest.net
+** samknows
+** Netflix video quality
+** VOIP MOS
+** Videoconferencing Quality
+
+* Congestion Controls
+|          |   |   |   |   |
+|----------+---+---+---+---|
+| cubic    |   |   |   |   |
+| reno     |   |   |   |   |
+| ledbat   |   |   |   |   |
+| ledbat++ |   |   |   |   |
+| curved   |   |   |   |   |
+| bbr      |   |   |   |   |
+| bbrv2    |   |   |   |   |
+
+* Diffserv Markings
+  EF,LE,CS1, CS5,NQB,CS6
+
+* Failure Modes
