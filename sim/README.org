@@ -78,3 +78,18 @@ IPv6 deploying?
   EF,LE,CS1, CS5,NQB,CS6
 
 * Failure Modes
+** AQM
+fq_codel was not designed to be a middlebox. The FQ component works well,
+the AQM component, doesn't work as well as it could.
+
+[[./img/middlebox_compared.png]]
+
+Similarly, many devices are themselves the bottleneck, still, so they
+accumulate a ton of RTT themselves, and monitoring the RTT and doing
+something about it would possibly help. 
+
+** FQ
+
+** Encapsulations
+
+** HTB is bursty
