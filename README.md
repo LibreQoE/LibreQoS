@@ -6,6 +6,10 @@ Servers running LibreQoS can shape traffic for many thousands of customers.
 
 Learn more at [LibreQoS.io](https://libreqos.io/)!
 
+## Support LibreQoS
+
+Please support the continued development of LibreQoS by visiting our [GitHub Sponsors page](https://github.com/sponsors/LibreQoE).
+
 ## Features
 ### Flexible Hierarchical Shaping / Back-Haul Congestion Mitigation
 <img src="https://raw.githubusercontent.com/LibreQoE/LibreQoS/main/docs/nestedHTB2.png" width="350"></img>
