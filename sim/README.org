@@ -18,14 +18,21 @@ Setting up 4 simulation environments is in order:
 	nsupdate for reverse dns? Hosts file?
 
 * Subscriber Plans
-| Plan Name | Down   |      Up |   |   |   |   |   |   |
-|-----------+--------+---------+---+---+---+---+---+---|
-|           | 4Mbit  | 384kbit |   |   |   |   |   |   |
-|           | 10Mbit |   1Mbit |   |   |   |   |   |   |
-|           | 20Mbit |     384 |   |   |   |   |   |   |
-|           | 25Mbit |     384 |   |   |   |   |   |   |
-|           | 50MBit |     384 |   |   |   |   |   |   |
-|           | 60Mbit |     384 |   |   |   |   |   |   |
+| Plan Type  | Down    | Up      | MinDown | MinUP   | Cap |   |   |   |
+|------------+---------+---------+---------+---------+-----+---+---+---|
+| OldDSL     | 4Mbit   | 384kbit | 1Mbit   |         |     |   |   |   |
+| OldDSL6    | 6Mbit   | 1Mbit   | 3Mbit   |         |     |   |   |   |
+| Cable20    | 20Mbit  | 4Mbit   | 12mbit  |         |     |   |   |   |
+| LifeLine   | 25Mbit  | 3Mbit   |         |         |     |   |   |   |
+| FCCmin     | 25Mbit  | 3Mbit   |         |         |     |   |   |   |
+| NTIAserved | 100MBit | 20Mbit  | 20Mbit  | 5Mbit   |     |   |   |   |
+| Biz50      | 50MBit  | 20Mbit  | 50Mbit  | 20Mbit  |     |   |   |   |
+| Biz100     | 100MBit | 100Mbit | 100Mbit | 100Mbit |     |   |   |   |
+| Biz200     | 200Mbit | 20Mbit  | 200Mbit | 20Mbit  |     |   |   |   |
+| Biz500     | 500Mbit | 50Mbit  |         |         |     |   |   |   |
+| Sym1000    | 1Gbit   | 1Gbit   |         |         |     |   |   |   |
+| Sym100     | 100Mbit | 100Mbit |         |         |     |   |   |   |
+| Sym10      | 10Mbit  | 10Mbit  |         |         |     |   |   |   |
 
 * Topologies 
 
@@ -44,6 +51,12 @@ Both ISIS and OSPF are in use
 PPPoe, MPLS are in use
 CGNATs might become an issue
 IPv6 deploying?
+
+* Tries
+Some customers (particularly [[https://seclists.org/nanog/2022/Nov/102][business ones]]) have multiple IP addresses.
+Everyone, using IPv6, has multiple IP addresses.
+
+Worse, these are often dynamic in origin. 
 
 * Transport Technologies
 | Plan                 | Down | Up  |   |   |   |   |   |   |
