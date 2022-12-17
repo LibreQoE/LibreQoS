@@ -916,7 +916,7 @@ def refreshShapersUpdateOnly():
 						classIDOfParentNodes[thisParentNode] = data[node]['classid']
 						if 'children' in data[node]:
 							for child in data[node]['children']:
-								result = getClassIDofParentNodes(data[node]['children'][child], classIDOfParentNodes)
+								result = getClassIDofParentNodes(data[node]['children'], classIDOfParentNodes)
 								classIDOfParentNodes.update(result)
 			return classIDOfParentNodes	
 		classIDOfParentNodes = getClassIDofParentNodes(network, {})
@@ -933,7 +933,7 @@ def refreshShapersUpdateOnly():
 									allCircuitIDs.append(circuit['circuitID'])
 						if 'children' in data[node]:
 							for child in data[node]['children']:
-								result = getAllCircuitIDs(data[node]['children'][child], allCircuitIDs)
+								result = getAllCircuitIDs(data[node]['children'], allCircuitIDs)
 								for entry in result:
 									if entry not in allCircuitIDs:
 										allCircuitIDs.append(result)
@@ -951,12 +951,12 @@ def refreshShapersUpdateOnly():
 								classIDofExistingCircuitID[circuit['circuitID']] = circuit['classid']
 						if 'children' in data[node]:
 							for child in data[node]['children']:
-								result = getClassIDofExistingCircuitID(data[node]['children'][child], classIDofExistingCircuitID)
+								result = getClassIDofExistingCircuitID(data[node]['children'], classIDofExistingCircuitID)
 								classIDofExistingCircuitID.update(result)
 			return classIDofExistingCircuitID	
 		classIDofExistingCircuitID = getClassIDofExistingCircuitID(network, {})
-		
-		
+
+
 		def getParentNodeOfCircuitID(data, parentNodeOfCircuitID, allCircuitIDs):
 			for node in data:
 				if isinstance(node, str):
@@ -967,7 +967,7 @@ def refreshShapersUpdateOnly():
 								parentNodeOfCircuitID[circuit['circuitID']] = thisParentNode
 						if 'children' in data[node]:
 							for child in data[node]['children']:
-								result = getParentNodeOfCircuitID(data[node]['children'][child], parentNodeOfCircuitID, allCircuitIDs)
+								result = getParentNodeOfCircuitID(data[node]['children'], parentNodeOfCircuitID, allCircuitIDs)
 								parentNodeOfCircuitID.update(result)
 			return parentNodeOfCircuitID	
 		parentNodeOfCircuitID = getParentNodeOfCircuitID(network, {}, allCircuitIDs)
@@ -981,7 +981,7 @@ def refreshShapersUpdateOnly():
 						cpuNumOfParentNode[thisParentNode] = data[node]['cpuNum']
 						if 'children' in data[node]:
 							for child in data[node]['children']:
-								result = getCPUnumOfParentNodes(data[node]['children'][child], cpuNumOfParentNode)
+								result = getCPUnumOfParentNodes(data[node]['children'], cpuNumOfParentNode)
 								cpuNumOfParentNode.update(result)
 			return cpuNumOfParentNode	
 		
@@ -1040,6 +1040,7 @@ def refreshShapersUpdateOnly():
 					if newlyUpdatedSubscriberCircuitsByID[circuitID]['ParentNode'] == lastLoadedSubscriberCircuitsByID[circuitID]['ParentNode']:
 						parentNodeActual = circuit['ParentNode']
 						if parentNodeActual == 'none':
+							# In flat network, there's still a Parent Node (GENERATED_PN_X) so we need to use that here
 							parentNodeActual = parentNodeOfCircuitID[circuitID]
 						parentNodeClassID = classIDOfParentNodes[parentNodeActual]
 						classid = classIDofExistingCircuitID[circuitID]
@@ -1062,13 +1063,14 @@ def refreshShapersUpdateOnly():
 						parentNodeClassID = classIDOfParentNodes[parentNodeOfCircuitID[circuitID]]
 						addCircuitHTBandQdisc(circuit, parentNodeClassID)
 						addDeviceIPsToFilter(newlyUpdatedSubscriberCircuitsByID[circuitID], cpuNum)
-				elif devicesChanged:
-					removeDeviceIPsFromFilter(lastLoadedSubscriberCircuitsByID[circuitID])
-					parentNodeActual = lastLoadedSubscriberCircuitsByID[circuitID]['ParentNode']
+				if devicesChanged:
+					parentNodeActual = circuit['ParentNode']
 					if parentNodeActual == 'none':
-						parentNodeActual = getParentNodeOfCircuitID(network, circuitID)
-					cpuNum, parentNodeClassID = getCPUnumAndClassIDOfParentNode(network, parentNodeActual)
-					addDeviceIPsToFilter(newlyUpdatedSubscriberCircuitsByID[circuitID], cpuNum)
+						# In flat network, there's still a Parent Node (GENERATED_PN_X) so we need to use that here
+						parentNodeActual = parentNodeOfCircuitID[circuitID]
+					cpuNumHex = cpuNumOfParentNodeHex[parentNodeActual]
+					parentNodeClassID = classIDOfParentNodes[parentNodeActual]
+					addDeviceIPsToFilter(newlyUpdatedSubscriberCircuitsByID[circuitID], cpuNumHex)
 				
 				newlyUpdatedSubscriberCircuitsByID[circuitID]['classid'] = lastLoadedSubscriberCircuitsByID[circuitID]['classid']
 				if (bandwidthChanged) or (devicesChanged):
