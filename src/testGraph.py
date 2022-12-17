@@ -252,7 +252,7 @@ class TestGraph(unittest.TestCase):
         net.createNetworkJson()
         with open('network.json') as file:
             newFile = json.load(file)
-        with open('v1.3/network.example.json') as file:
+        with open('src/network.example.json') as file:
             exampleFile = json.load(file)
         self.assertEqual(newFile, exampleFile)
 

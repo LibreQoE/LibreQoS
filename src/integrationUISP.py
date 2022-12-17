@@ -54,7 +54,9 @@ def buildFlatGraph():
                         for ip in interface["addresses"]:
                             ip = ip["cidr"]
                             if isIpv4Permitted(ip):
-                                ipv4.append(fixSubnet(ip))
+                                ip = fixSubnet(ip)
+                                if ip not in ipv4:
+                                    ipv4.append(ip)
 
                     # TODO: Figure out Mikrotik IPv6?
                     mac = device['identification']['mac']
@@ -157,7 +159,9 @@ def buildFullGraph():
                     for ip in interface["addresses"]:
                         ip = ip["cidr"]
                         if isIpv4Permitted(ip):
-                            ipv4.append(fixSubnet(ip))
+                            ip = fixSubnet(ip)
+                            if ip not in ipv4:
+                                ipv4.append(ip)
 
                 # TODO: Figure out Mikrotik IPv6?
                 mac = device['identification']['mac']
