@@ -908,9 +908,9 @@ def refreshShapersUpdateOnly():
 		def removeDeviceIPsFromFilter(circuit):
 			for device in circuit['devices']:
 				for ipv4 in device['ipv4s']:
-					shell('./xdp_iphash_to_cpu_cmdline del --ip ' + str(ipv4))
+					shell('./xdp_iphash_to_cpu_cmdline del ip ' + str(ipv4))
 				for ipv6 in device['ipv6s']:
-					shell('./xdp_iphash_to_cpu_cmdline del --ip ' + str(ipv6))
+					shell('./xdp_iphash_to_cpu_cmdline del ip ' + str(ipv6))
 		
 		
 		def addDeviceIPsToFilter(circuit, cpuNumHex):
