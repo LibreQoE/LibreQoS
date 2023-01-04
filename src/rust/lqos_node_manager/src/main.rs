@@ -7,6 +7,7 @@ mod unknown_devices;
 mod cache_control;
 use rocket_async_compression::Compression;
 mod queue_info;
+mod config_control;
 
 #[launch]
 fn rocket() -> _ {
@@ -23,6 +24,7 @@ fn rocket() -> _ {
             static_pages::shaped_devices_add_page,
             static_pages::unknown_devices_page,
             static_pages::circuit_queue,
+            config_control::config_page,
 
             // Our JS library
             static_pages::lqos_js,
