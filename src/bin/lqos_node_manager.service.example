@@ -1,0 +1,10 @@
+[Unit]
+After=network.service
+
+[Service]
+WorkingDirectory=/opt/libreqos/src/bin
+ExecStart=/opt/libreqos/src/bin/lqos_node_manager
+Restart=always
+
+[Install]
+WantedBy=default.target

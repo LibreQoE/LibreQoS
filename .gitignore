@@ -51,7 +51,14 @@ src/liblqos_python.so
 
 # Ignore Rust build artifacts
 src/rust/target
-src/bin
+src/bin/static
+src/bin/lqosd
+src/bin/lqtop
+src/bin/xdp_iphash_to_cpu_cmdline
+src/bin/xdp_pping
+src/bin/lqos_node_manager
+src/bin/Rocket.toml
+
 
 # Ignore project folders for some IDEs
 .idea/

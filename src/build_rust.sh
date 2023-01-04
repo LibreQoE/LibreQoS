@@ -37,3 +37,4 @@ popd
 cp rust/target/release/liblqos_python.so .
 
 echo "Don't forget to setup /etc/lqos!"
+echo "Template .service files can be found in bin/"
