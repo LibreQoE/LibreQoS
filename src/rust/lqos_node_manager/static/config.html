@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="/vendor/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/vendor/solid.min.css">
+    <title>LibreQoS - Local Node Manager</title>
+    <script src="/lqos.js"></script>
+    <script src="/vendor/plotly-2.16.1.min.js"></script>
+    <script src="/vendor/jquery.min.js"></script>
+</head>
+<body class="bg-secondary">
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/"><img src="/vendor/tinylogo.svg" alt="LibreQoS SVG Logo" width="25" height="25" />&nbsp;LibreQoS</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarSupportedContent">
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/"><i class="fa fa-home"></i> Dashboard</a>
+                    </li>
+                    
+                    <li class="nav-item">
+                        <a class="nav-link" href="#"><i class="fa fa-globe"></i> Network Layout</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" aria-current="page" href="/shaped"><i class="fa fa-users"></i> Shaped Devices <span id="shapedCount" style="background-color: green;" class="badge badge-pill badge-success">?</span></a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/unknown"><i class="fa fa-address-card"></i> Unknown IPs <span id="unshapedCount" style="background-color:darkgoldenrod" class="badge badge-warning">?</span></a>
+                    </li>
+                </ul>
+            </div>
+
+            <ul class="navbar-nav ms-auto">
+                <li class="nav-item ms-auto">
+                    <a class="nav-link" href="/config"><i class="fa fa-gear"></i> Configuration</a>
+                </li>
+                <li>
+                    <a class="nav-link btn btn-small" style="color: black" href="#" id="btnReload"><i class="fa fa-refresh"></i> Reload LibreQoS</a>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <div id="container" style="padding: 4px;">
+
+        <div class="row">
+            <div class="col-sm-2"></div>
+            <div class="col-sm-8">
+                <div class="card bg-light">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="fa fa-users"></i> Configuration</h5>
+<div class="d-flex align-items-start">
+    <div class="nav flex-column nav-pills me-3" id="v-pills-tab" role="tablist" aria-orientation="vertical">
+        <button class="nav-link active" id="v-pills-home-tab" data-bs-toggle="pill" data-bs-target="#v-pills-home" type="button" role="tab" aria-controls="v-pills-home" aria-selected="true"><i class="fa fa-wifi"></i> Network</button>
+        <button class="nav-link" id="v-pills-shaper-tab" data-bs-toggle="pill" data-bs-target="#v-pills-shaper" type="button" role="tab" aria-controls="v-pills-profile" aria-selected="false"><i class="fa fa-balance-scale"></i> Shaper</button>
+        <button class="nav-link" id="v-pills-server-tab" data-bs-toggle="pill" data-bs-target="#v-pills-server" type="button" role="tab" aria-controls="v-pills-server" aria-selected="false"><i class="fa fa-server"></i> Server</button>
+        <button class="nav-link" id="v-pills-tuning-tab" data-bs-toggle="pill" data-bs-target="#v-pills-tuning" type="button" role="tab" aria-controls="v-pills-settings" aria-selected="false"><i class="fa fa-warning"></i> Tuning</button>
+        <button class="nav-link" id="v-pills-spylnx-tab" data-bs-toggle="pill" data-bs-target="#v-pills-spylnx" type="button" role="tab" aria-controls="v-pills-settings" aria-selected="false"><i class="fa fa-eye"></i> Spylnx</button>
+        <button class="nav-link" id="v-pills-uisp-tab" data-bs-toggle="pill" data-bs-target="#v-pills-uisp" type="button" role="tab" aria-controls="v-pills-settings" aria-selected="false"><i class="fa fa-eye"></i> UISP</button>
+    </div>
+    <div class="tab-content" id="v-pills-tabContent">
+        <div class="tab-pane fade show active" id="v-pills-home" role="tabpanel" aria-labelledby="v-pills-home-tab">
+            <h2><i class="fa fa-wifi"></i> Network Settings</h2>
+
+            <p>
+                Setup the basic network interface configuration.
+            </p>
+
+            <h3>Network Interface (NIC) Designation</h3>
+            <div class="alert alert-info" role="alert">
+                <p>
+                    For normal operation, you need one NIC port facing the Internet, and a second facing your core router. 
+                    If you are operating in "on a stick" mode (with a single NIC, and VLANs for inbound and outbound),
+                    select the same NIC for both directions.
+                </p>
+            </div>
+            <table class="table">
+                <tr>
+                    <td>Interface facing your core router</td>
+                    <td>...</td>
+                </tr>
+                <tr>
+                    <td>Interface facing the Internet</td>
+                    <td>...</td>
+                </tr>
+            </table>
+
+            <h3>Shaper "On A Stick" Configuration</h3>
+            <div class="alert alert-info" role="alert">
+                <p>
+                    "On a stick" mode allows you to operate with a single NIC, with one VLAN
+                    containing inbound traffic and the other outbound. Please refer to the
+                    documentation.
+                </p>
+            </div>
+            <table class="table">
+                <tr>
+                    <td>Enable "on a stick" mode?</td>
+                    <td>...</td>
+                </tr>
+                <tr>
+                    <td>VLAN facing your core router</td>
+                    <td>...</td>
+                </tr>
+                <tr>
+                    <td>VLAN facing the Internet</td>
+                    <td>...</td>
+                </tr>
+            </table>
+
+            <h3>BiFrost XDP-Accelerated Bridge</h3>
+            <div class="alert alert-warning" role="alert">
+                <p>
+                    Bifrost is an experimental feature at this time. Bifrost XDP allows you to bypass the entire
+                    Linux bridge system, and use XDP to bridge directly between interfaces or VLANs. This can result
+                    in significant performance improvements on NICs that support XDP in "driver" mode.
+                </p>
+            </div>
+            <table class="table">
+                <tr>
+                    <td>Enable Bifrost?</td>
+                    <td>...</td>
+                </tr>
+                <tr>
+                    <td>Interface Mappings</td>
+                    <td>...</td>
+                </tr>
+                <tr>
+                    <td>VLAN Mappings</td>
+                    <td>...</td>
+                </tr>
+            </table>
+        </div>
+        <div class="tab-pane fade" id="v-pills-shaper" role="tabpanel" aria-labelledby="v-pills-shaper-tab">
+            <h2><i class="fa fa-balance-scale"></i>Shaper Settings</h2>
+            <p>Tune the LibreQoS traffic shaper to your needs.</p>
+            <h3>Traffic Shaping Control</h3>
+            <table class="table">
+                <tr class="alert-info">
+                    <td colspan="2">FQ_CODEL offers good latency management and low CPU overhead. CAKE requires more CPU, but offers excellent latency management.</td>
+                </tr>
+                <tr>
+                    <td>SQM Mode</td>
+                    <td>...</td>
+                </tr>
+                <tr class="alert-info">
+                    <td colspan="2">Monitor mode disables all traffic shaping, allowing you to watch your network undisturbed.</td>
+                </tr>
+                <tr>
+                    <td>Monitor Mode</td>
+                    <td>...</td>
+                </tr>
+            </table>
+
+            <h3>Bandwidth</h3>
+            <table class="table">
+                <tr>
+                    <td>Total Download Bandwidth (Mbps)</td>
+                    <td>...</td>
+                </tr>
+                <tr>
+                    <td>Total Upload Bandwidth (Mbps)</td>
+                    <td>...</td>
+                </tr>
+                <tr class="alert-info">
+                    <td colspan="2">
+                        Devices without a parent will be placed underneath evenly-balanced generated nodes. This defines the
+                        available bandwidth for those nodes. If in doubt, set to equal your total bandwidth.
+                    </td>
+                </tr>
+                <tr>
+                    <td>Generated Node Download Bandwidth (Mbps)</td>
+                    <td>...</td>
+                </tr>
+                <tr>
+                    <td>Generated Node Upload Bandwidth (Mbps)</td>
+                    <td>...</td>
+                </tr>
+                <tr class="alert-info">
+                    <td colspan="2">
+                        Bin packing is only useful for devices without parent nodes in the shaper tree. Enable this option
+                        to automatically assign devices to nodes based on the device's plans, evenly balancing load across
+                        CPUs.
+                    </td>
+                </tr>
+                <tr>
+                    <td>Use binpacking?</td>
+                    <td>...</td>
+                </tr>
+            </table>
+        </div>
+        <div class="tab-pane fade" id="v-pills-server" role="tabpanel" aria-labelledby="v-pills-server-tab">
+            <h2><i class="fa fa-server"></i> Server Settings</h2>
+            <table class="table">
+                <tr>
+                    <td colspan="2" class="alert-warning">
+                        Disabling actual shell commands stops LibreQoS from actually doing anything. Simulated
+                        output is logged to the console and text files, allowing for debugging.
+                    </td>
+                </tr>
+                <tr>
+                    <td>Enable Actual Shell Commands?</td>
+                    <td>...</td>
+                </tr>
+                <tr>
+                    <td colspan="2" class="alert-warning">
+                        Running shell commands with "sudo" isn't necessary on a default configuration.
+                    </td>
+                </tr>
+                <tr>
+                    <td>Run Shell Commands as Sudo?</td>
+                    <td>...</td>
+                </tr>
+                <tr>
+                    <td colspan="2" class="alert-danger">
+                        <i class="fa fa-warning"></i> Overriding the number of queues is only necessary if your NIC is giving
+                        very strange results. Use with extreme caution.
+                    </td>
+                </tr>
+                <tr>
+                    <td>Override count of available queues?</td>
+                    <td>...</td>
+                </tr>
+            </table>
+        </div>
+        <div class="tab-pane fade" id="v-pills-tuning" role="tabpanel" aria-labelledby="v-pills-tuning-tab">
+            <h2>Tuning Settings</h2>
+            <div class="alert alert-danger" role="alert">
+                <i class="fa fa-warning"></i> <strong>DANGER</strong>
+                <p>These settings can drastically affect performance of your server, including rendering it non-functional.</p>                
+            </div>
+            ...
+        </div>
+        <div class="tab-pane fade" id="v-pills-spylnx" role="tabpanel" aria-labelledby="v-pills-spylnx-tab">
+            Spylnx Settings
+            ...
+        </div>
+        <div class="tab-pane fade" id="v-pills-uisp" role="tabpanel" aria-labelledby="v-pills-uisp-tab">
+            UISP Settings
+            ...
+        </div>
+    </div>
+    </div>
+                          
+                    </div>
+                </div>                    
+            </div>
+            <div class="col-sm-2"></div>
+        </div>
+
+    </div>
+
+    <footer>Copyright (c) 2022, LibreQoE LLC</footer>
+
+    <script>
+        function start() {
+            colorReloadButton();
+            updateHostCounts();
+            
+        }
+
+        $(document).ready(start);
+    </script>
+
+    <!-- Leave to last -->
+    <script src="vendor/bootstrap.bundle.min.js"></script>
+</body>
+</html>
