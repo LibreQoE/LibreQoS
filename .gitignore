@@ -46,6 +46,9 @@ src/longTermStats.json
 src/queuingStructure.json
 src/tinsStats.json
 
+# Ignore Rust build artifacts
+src/rust/target
+
 # Ignore project folders for some IDEs
 .idea/
 __pycache__
