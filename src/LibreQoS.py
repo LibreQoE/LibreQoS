@@ -5,6 +5,7 @@ import csv
 import io
 import ipaddress
 import json
+import math
 import os
 import os.path
 import subprocess
@@ -20,7 +21,8 @@ import binpacking
 
 from ispConfig import sqm, upstreamBandwidthCapacityDownloadMbps, upstreamBandwidthCapacityUploadMbps, \
 	interfaceA, interfaceB, enableActualShellCommands, useBinPackingToBalanceCPU, monitorOnlyMode, \
-	runShellCommandsAsSudo, generatedPNDownloadMbps, generatedPNUploadMbps, queuesAvailableOverride
+	runShellCommandsAsSudo, generatedPNDownloadMbps, generatedPNUploadMbps, queuesAvailableOverride, \
+	OnAStick
 
 # Automatically account for TCP overhead of plans. For example a 100Mbps plan needs to be set to 109Mbps for the user to ever see that result on a speed test
 # Does not apply to nodes of any sort, just endpoint devices
@@ -80,9 +82,10 @@ def tearDown(interfaceA, interfaceB):
 	# Full teardown of everything for exiting LibreQoS
 	if enableActualShellCommands:
 		# Clear IP filters and remove xdp program from interfaces
-		result = os.system('./cpumap-pping/src/xdp_iphash_to_cpu_cmdline --clear')
-		shell('ip link set dev ' + interfaceA + ' xdp off')
-		shell('ip link set dev ' + interfaceB + ' xdp off')
+		result = os.system('./xdp_iphash_to_cpu_cmdline clear')
+		# The daemon is controling this now, let's not confuse things
+		#shell('ip link set dev ' + interfaceA + ' xdp off')
+		#shell('ip link set dev ' + interfaceB + ' xdp off')
 		clearPriorSettings(interfaceA, interfaceB)
 
 def findQueuesAvailable():
@@ -440,7 +443,12 @@ def refreshShapers():
 		
 		# Pull rx/tx queues / CPU cores available
 		queuesAvailable = findQueuesAvailable()
-		
+		stickOffset = 0
+		if OnAStick:
+			print("On-a-stick override dividing queues")
+			# The idea here is that download use queues 0 - n/2, upload uses the other half
+			queuesAvailable = math.floor(queuesAvailable / 2)
+			stickOffset = queuesAvailable		
 		
 		# If in monitorOnlyMode, override network.json bandwidth rates to where no shaping will actually occur
 		if monitorOnlyMode == True:
@@ -527,14 +535,18 @@ def refreshShapers():
 		# Track minor counter by CPU. This way we can have > 32000 hosts (htb has u16 limit to minor handle)
 		for x in range(queuesAvailable):
 			minorByCPUpreloaded[x+1] = 3
-		def traverseNetwork(data, depth, major, minorByCPU, queue, parentClassID, parentMaxDL, parentMaxUL):
+		def traverseNetwork(data, depth, major, minorByCPU, queue, parentClassID, upParentClassID, parentMaxDL, parentMaxUL):
 			for node in data:
 				circuitsForThisNetworkNode = []
 				nodeClassID = hex(major) + ':' + hex(minorByCPU[queue])
+				upNodeClassID = hex(major+stickOffset) + ':' + hex(minorByCPU[queue])
 				data[node]['classid'] = nodeClassID
+				data[node]['up_classid'] = upNodeClassID
 				if depth == 0:
 					parentClassID = hex(major) + ':'
+					upParentClassID = hex(major+stickOffset) + ':'
 				data[node]['parentClassID'] = parentClassID
+				data[node]['up_parentClassID'] = upParentClassID
 				# If in monitorOnlyMode, override bandwidth rates to where no shaping will actually occur
 				if monitorOnlyMode == True:
 					data[node]['downloadBandwidthMbps'] = 10000
@@ -551,8 +563,10 @@ def refreshShapers():
 				data[node]['uploadBandwidthMbpsMin'] = round(data[node]['uploadBandwidthMbps']*.95)
 				
 				data[node]['classMajor'] = hex(major)
+				data[node]['up_classMajor'] = hex(major + stickOffset)
 				data[node]['classMinor'] = hex(minorByCPU[queue])
 				data[node]['cpuNum'] = hex(queue-1)
+				data[node]['up_cpuNum'] = hex(queue-1+stickOffset)
 				thisParentNode =	{
 									"parentNodeName": node,
 									"classID": nodeClassID,
@@ -571,7 +585,10 @@ def refreshShapers():
 								warnings.warn("uploadMax of Circuit ID [" + circuit['circuitID'] + "] exceeded that of its parent node. Reducing to that of its parent node now.", stacklevel=2)
 						parentString = hex(major) + ':'
 						flowIDstring = hex(major) + ':' + hex(minorByCPU[queue])
+						upFlowIDstring = hex(major + stickOffset) + ':' + hex(minorByCPU[queue])
 						circuit['classid'] = flowIDstring
+						circuit['up_classid'] = upFlowIDstring
+						print("Added up_classid to circuit: " + circuit['up_classid'])
 						# Create circuit dictionary to be added to network structure, eventually output as queuingStructure.json
 						maxDownload = min(circuit['maxDownload'],data[node]['downloadBandwidthMbps'])
 						maxUpload = min(circuit['maxUpload'],data[node]['uploadBandwidthMbps'])
@@ -587,7 +604,9 @@ def refreshShapers():
 							"ParentNode": circuit['ParentNode'],
 							"devices": circuit['devices'],
 							"classid": flowIDstring,
+							"up_classid" : upFlowIDstring,
 							"classMajor": hex(major),
+							"up_classMajor" : hex(major + stickOffset),
 							"classMinor": hex(minorByCPU[queue]),
 							"comment": circuit['comment']
 						}
@@ -601,7 +620,7 @@ def refreshShapers():
 				if 'children' in data[node]:
 					# We need to keep tabs on the minor counter, because we can't have repeating class IDs. Here, we bring back the minor counter from the recursive function
 					minorByCPU[queue] = minorByCPU[queue] + 1
-					minorByCPU = traverseNetwork(data[node]['children'], depth+1, major, minorByCPU, queue, nodeClassID, data[node]['downloadBandwidthMbps'], data[node]['uploadBandwidthMbps'])
+					minorByCPU = traverseNetwork(data[node]['children'], depth+1, major, minorByCPU, queue, nodeClassID, upNodeClassID, data[node]['downloadBandwidthMbps'], data[node]['uploadBandwidthMbps'])
 				# If top level node, increment to next queue / cpu core
 				if depth == 0:
 					if queue >= queuesAvailable:
@@ -612,8 +631,7 @@ def refreshShapers():
 						major += 1
 			return minorByCPU
 		# Here is the actual call to the recursive traverseNetwork() function. finalMinor is not used.
-		minorByCPU = traverseNetwork(network, 0, major=1, minorByCPU=minorByCPUpreloaded, queue=1, parentClassID=None, parentMaxDL=upstreamBandwidthCapacityDownloadMbps, parentMaxUL=upstreamBandwidthCapacityUploadMbps)
-		
+		minorByCPU = traverseNetwork(network, 0, major=1, minorByCPU=minorByCPUpreloaded, queue=1, parentClassID=None, upParentClassID=None, parentMaxDL=upstreamBandwidthCapacityDownloadMbps, parentMaxUL=upstreamBandwidthCapacityUploadMbps)
 		
 		linuxTCcommands = []
 		xdpCPUmapCommands = []
@@ -639,23 +657,25 @@ def refreshShapers():
 			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + sqm
 			linuxTCcommands.append(command)
 		
+		# Note the use of stickOffset, and not replacing the root queue if we're on a stick
 		thisInterface = interfaceB
 		logging.info("# MQ Setup for " + thisInterface)
-		command = 'qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq'
-		linuxTCcommands.append(command)
+		if not OnAStick:
+			command = 'qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq'
+			linuxTCcommands.append(command)
 		for queue in range(queuesAvailable):
-			command = 'qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2'
+			command = 'qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+stickOffset+1) + ' handle ' + hex(queue+stickOffset+1) + ': htb default 2'
 			linuxTCcommands.append(command)
-			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityUploadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps) + 'mbit'
+			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ': classid ' + hex(queue+stickOffset+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityUploadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps) + 'mbit'
 			linuxTCcommands.append(command)
-			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + sqm
+			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 ' + sqm
 			linuxTCcommands.append(command)
 			# Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
 			# Technically, that should not even happen. So don't expect much if any traffic in this default class.
 			# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
-			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(round((upstreamBandwidthCapacityUploadMbps-1)/4)) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps-1) + 'mbit prio 5'
+			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 classid ' + hex(queue+stickOffset+1) + ':2 htb rate ' + str(round((upstreamBandwidthCapacityUploadMbps-1)/4)) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps-1) + 'mbit prio 5'
 			linuxTCcommands.append(command)
-			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + sqm
+			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':2 ' + sqm
 			linuxTCcommands.append(command)
 		
 		
@@ -665,7 +685,9 @@ def refreshShapers():
 			for node in data:
 				command = 'class add dev ' + interfaceA + ' parent ' + data[node]['parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ str(data[node]['downloadBandwidthMbpsMin']) + 'mbit ceil '+ str(data[node]['downloadBandwidthMbps']) + 'mbit prio 3'
 				linuxTCcommands.append(command)
-				command = 'class add dev ' + interfaceB + ' parent ' + data[node]['parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ str(data[node]['uploadBandwidthMbpsMin']) + 'mbit ceil '+ str(data[node]['uploadBandwidthMbps']) + 'mbit prio 3'
+				print("Up ParentClassID: " + data[node]['up_parentClassID'])
+				print("ClassMinor: " + data[node]['classMinor'])
+				command = 'class add dev ' + interfaceB + ' parent ' + data[node]['up_parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ str(data[node]['uploadBandwidthMbpsMin']) + 'mbit ceil '+ str(data[node]['uploadBandwidthMbps']) + 'mbit prio 3'
 				linuxTCcommands.append(command)
 				if 'circuits' in data[node]:
 					for circuit in data[node]['circuits']:
@@ -682,19 +704,24 @@ def refreshShapers():
 						if monitorOnlyMode == False:	
 							command = 'qdisc add dev ' + interfaceA + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + sqm
 							linuxTCcommands.append(command)
-						command = 'class add dev ' + interfaceB + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ str(circuit['minUpload']) + 'mbit ceil '+ str(circuit['maxUpload']) + 'mbit prio 3'
+						command = 'class add dev ' + interfaceB + ' parent ' + data[node]['up_classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ str(circuit['minUpload']) + 'mbit ceil '+ str(circuit['maxUpload']) + 'mbit prio 3'
 						linuxTCcommands.append(command)
 						# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
 						if monitorOnlyMode == False:	
-							command = 'qdisc add dev ' + interfaceB + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + sqm
+							command = 'qdisc add dev ' + interfaceB + ' parent ' + circuit['up_classMajor'] + ':' + circuit['classMinor'] + ' ' + sqm
 							linuxTCcommands.append(command)
+							pass
 						for device in circuit['devices']:
 							if device['ipv4s']:
 								for ipv4 in device['ipv4s']:
-									xdpCPUmapCommands.append('./cpumap-pping/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(ipv4) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['classid'])
+									xdpCPUmapCommands.append('./xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv4) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['classid'])
+									if OnAStick:
+										xdpCPUmapCommands.append('./xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv4) + ' --cpu ' + data[node]['up_cpuNum'] + ' --classid ' + circuit['up_classid'] + ' --upload 1')
 							if device['ipv6s']:
 								for ipv6 in device['ipv6s']:
-									xdpCPUmapCommands.append('./cpumap-pping/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(ipv6) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['classid'])
+									xdpCPUmapCommands.append('./xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv6) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['classid'])
+									if OnAStick:
+										xdpCPUmapCommands.append('./xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv6) + ' --cpu ' + data[node]['up_cpuNum'] + ' --classid ' + circuit['up_classid'] + ' --upload 1')
 							if device['deviceName'] not in devicesShaped:
 								devicesShaped.append(device['deviceName'])
 				# Recursive call this function for children nodes attached to this node
@@ -724,15 +751,16 @@ def refreshShapers():
 		xdpStartTime = datetime.now()
 		if enableActualShellCommands:
 			# Here we use os.system for the command, because otherwise it sometimes gltiches out with Popen in shell()
-			result = os.system('./cpumap-pping/src/xdp_iphash_to_cpu_cmdline --clear')
+			result = os.system('./xdp_iphash_to_cpu_cmdline clear')
 		# Set up XDP-CPUMAP-TC
 		logging.info("# XDP Setup")
-		shell('./cpumap-pping/bin/xps_setup.sh -d ' + interfaceA + ' --default --disable')
-		shell('./cpumap-pping/bin/xps_setup.sh -d ' + interfaceB + ' --default --disable')
-		shell('./cpumap-pping/src/xdp_iphash_to_cpu --dev ' + interfaceA + ' --lan')
-		shell('./cpumap-pping/src/xdp_iphash_to_cpu --dev ' + interfaceB + ' --wan')
-		shell('./cpumap-pping/src/tc_classify --dev-egress ' + interfaceA)
-		shell('./cpumap-pping/src/tc_classify --dev-egress ' + interfaceB)	
+		# Commented out - the daemon does this
+		#shell('./cpumap-pping/bin/xps_setup.sh -d ' + interfaceA + ' --default --disable')
+		#shell('./cpumap-pping/bin/xps_setup.sh -d ' + interfaceB + ' --default --disable')
+		#shell('./cpumap-pping/src/xdp_iphash_to_cpu --dev ' + interfaceA + ' --lan')
+		#shell('./cpumap-pping/src/xdp_iphash_to_cpu --dev ' + interfaceB + ' --wan')
+		#shell('./cpumap-pping/src/tc_classify --dev-egress ' + interfaceA)
+		#shell('./cpumap-pping/src/tc_classify --dev-egress ' + interfaceB)	
 		xdpEndTime = datetime.now()
 		
 		
@@ -768,6 +796,7 @@ def refreshShapers():
 			for command in xdpCPUmapCommands:
 				logging.info(command)
 		print("Executed " + str(len(xdpCPUmapCommands)) + " XDP-CPUMAP-TC IP filter commands")
+		#print(xdpCPUmapCommands)
 		xdpFilterEndTime = datetime.now()
 		
 		
@@ -879,17 +908,18 @@ def refreshShapersUpdateOnly():
 		def removeDeviceIPsFromFilter(circuit):
 			for device in circuit['devices']:
 				for ipv4 in device['ipv4s']:
-					shell('./cpumap-pping/src/xdp_iphash_to_cpu_cmdline --del --ip ' + str(ipv4))
+					shell('./xdp_iphash_to_cpu_cmdline del --ip ' + str(ipv4))
 				for ipv6 in device['ipv6s']:
-					shell('./cpumap-pping/src/xdp_iphash_to_cpu_cmdline --del --ip ' + str(ipv6))
+					shell('./xdp_iphash_to_cpu_cmdline del --ip ' + str(ipv6))
 		
 		
 		def addDeviceIPsToFilter(circuit, cpuNumHex):
+			# TODO: Possible issue, check that the lqosd system expects the CPU in hex
 			for device in circuit['devices']:
 				for ipv4 in device['ipv4s']:
-					shell('./cpumap-pping/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(ipv4) + ' --cpu ' + cpuNumHex + ' --classid ' + circuit['classid'])
+					shell('./xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv4) + ' --cpu ' + cpuNumHex + ' --classid ' + circuit['classid'])
 				for ipv6 in device['ipv6s']:
-					shell('./cpumap-pping/src/xdp_iphash_to_cpu_cmdline --add --ip ' + str(ipv6) + ' --cpu ' + cpuNumHex + ' --classid ' + circuit['classid'])
+					shell('./xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv6) + ' --cpu ' + cpuNumHex + ' --classid ' + circuit['classid'])
 		
 		
 		def getAllParentNodes(data, allParentNodes):
