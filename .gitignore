@@ -45,6 +45,8 @@ src/mikrotikDHCPRouterList.csv
 src/longTermStats.json
 src/queuingStructure.json
 src/tinsStats.json
+src/linux_tc.txt
+src/lastRun.txt
 
 # Ignore Rust build artifacts
 src/rust/target
