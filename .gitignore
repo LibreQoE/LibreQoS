@@ -47,6 +47,7 @@ src/queuingStructure.json
 src/tinsStats.json
 src/linux_tc.txt
 src/lastRun.txt
+src/liblqos_python.so
 
 # Ignore Rust build artifacts
 src/rust/target
