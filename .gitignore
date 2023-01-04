@@ -48,6 +48,7 @@ src/tinsStats.json
 
 # Ignore Rust build artifacts
 src/rust/target
+src/bin
 
 # Ignore project folders for some IDEs
 .idea/

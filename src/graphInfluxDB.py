@@ -306,7 +306,7 @@ def getParentNodeLatencyStats(parentNodes, subscriberCircuits):
 
 
 def getCircuitLatencyStats(subscriberCircuits):
-	command = './cpumap-pping/src/xdp_pping'
+	command = './src/bin/xdp_pping'
 	listOfEntries = json.loads(subprocess.run(command.split(' '), stdout=subprocess.PIPE).stdout.decode('utf-8'))
 	
 	tcpLatencyForClassID = {}
