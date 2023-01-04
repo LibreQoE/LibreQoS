@@ -82,7 +82,7 @@ def tearDown(interfaceA, interfaceB):
 	# Full teardown of everything for exiting LibreQoS
 	if enableActualShellCommands:
 		# Clear IP filters and remove xdp program from interfaces
-		result = os.system('./xdp_iphash_to_cpu_cmdline clear')
+		result = os.system('./bin/xdp_iphash_to_cpu_cmdline clear')
 		# The daemon is controling this now, let's not confuse things
 		#shell('ip link set dev ' + interfaceA + ' xdp off')
 		#shell('ip link set dev ' + interfaceB + ' xdp off')
@@ -714,14 +714,14 @@ def refreshShapers():
 						for device in circuit['devices']:
 							if device['ipv4s']:
 								for ipv4 in device['ipv4s']:
-									xdpCPUmapCommands.append('./xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv4) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['classid'])
+									xdpCPUmapCommands.append('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv4) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['classid'])
 									if OnAStick:
-										xdpCPUmapCommands.append('./xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv4) + ' --cpu ' + data[node]['up_cpuNum'] + ' --classid ' + circuit['up_classid'] + ' --upload 1')
+										xdpCPUmapCommands.append('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv4) + ' --cpu ' + data[node]['up_cpuNum'] + ' --classid ' + circuit['up_classid'] + ' --upload 1')
 							if device['ipv6s']:
 								for ipv6 in device['ipv6s']:
-									xdpCPUmapCommands.append('./xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv6) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['classid'])
+									xdpCPUmapCommands.append('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv6) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['classid'])
 									if OnAStick:
-										xdpCPUmapCommands.append('./xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv6) + ' --cpu ' + data[node]['up_cpuNum'] + ' --classid ' + circuit['up_classid'] + ' --upload 1')
+										xdpCPUmapCommands.append('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv6) + ' --cpu ' + data[node]['up_cpuNum'] + ' --classid ' + circuit['up_classid'] + ' --upload 1')
 							if device['deviceName'] not in devicesShaped:
 								devicesShaped.append(device['deviceName'])
 				# Recursive call this function for children nodes attached to this node
@@ -751,7 +751,7 @@ def refreshShapers():
 		xdpStartTime = datetime.now()
 		if enableActualShellCommands:
 			# Here we use os.system for the command, because otherwise it sometimes gltiches out with Popen in shell()
-			result = os.system('./xdp_iphash_to_cpu_cmdline clear')
+			result = os.system('./bin/xdp_iphash_to_cpu_cmdline clear')
 		# Set up XDP-CPUMAP-TC
 		logging.info("# XDP Setup")
 		# Commented out - the daemon does this
@@ -908,18 +908,18 @@ def refreshShapersUpdateOnly():
 		def removeDeviceIPsFromFilter(circuit):
 			for device in circuit['devices']:
 				for ipv4 in device['ipv4s']:
-					shell('./xdp_iphash_to_cpu_cmdline del ip ' + str(ipv4))
+					shell('./bin/xdp_iphash_to_cpu_cmdline del ip ' + str(ipv4))
 				for ipv6 in device['ipv6s']:
-					shell('./xdp_iphash_to_cpu_cmdline del ip ' + str(ipv6))
+					shell('./bin/xdp_iphash_to_cpu_cmdline del ip ' + str(ipv6))
 		
 		
 		def addDeviceIPsToFilter(circuit, cpuNumHex):
 			# TODO: Possible issue, check that the lqosd system expects the CPU in hex
 			for device in circuit['devices']:
 				for ipv4 in device['ipv4s']:
-					shell('./xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv4) + ' --cpu ' + cpuNumHex + ' --classid ' + circuit['classid'])
+					shell('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv4) + ' --cpu ' + cpuNumHex + ' --classid ' + circuit['classid'])
 				for ipv6 in device['ipv6s']:
-					shell('./xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv6) + ' --cpu ' + cpuNumHex + ' --classid ' + circuit['classid'])
+					shell('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv6) + ' --cpu ' + cpuNumHex + ' --classid ' + circuit['classid'])
 		
 		
 		def getAllParentNodes(data, allParentNodes):
