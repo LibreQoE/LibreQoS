@@ -24,6 +24,8 @@ from ispConfig import sqm, upstreamBandwidthCapacityDownloadMbps, upstreamBandwi
 	runShellCommandsAsSudo, generatedPNDownloadMbps, generatedPNUploadMbps, queuesAvailableOverride, \
 	OnAStick
 
+from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping
+
 # Automatically account for TCP overhead of plans. For example a 100Mbps plan needs to be set to 109Mbps for the user to ever see that result on a speed test
 # Does not apply to nodes of any sort, just endpoint devices
 tcpOverheadFactor = 1.09
@@ -82,10 +84,8 @@ def tearDown(interfaceA, interfaceB):
 	# Full teardown of everything for exiting LibreQoS
 	if enableActualShellCommands:
 		# Clear IP filters and remove xdp program from interfaces
-		result = os.system('./bin/xdp_iphash_to_cpu_cmdline clear')
-		# The daemon is controling this now, let's not confuse things
-		#shell('ip link set dev ' + interfaceA + ' xdp off')
-		#shell('ip link set dev ' + interfaceB + ' xdp off')
+		#result = os.system('./bin/xdp_iphash_to_cpu_cmdline clear')
+		clear_ip_mappings() # Use the bus
 		clearPriorSettings(interfaceA, interfaceB)
 
 def findQueuesAvailable():
@@ -751,7 +751,8 @@ def refreshShapers():
 		xdpStartTime = datetime.now()
 		if enableActualShellCommands:
 			# Here we use os.system for the command, because otherwise it sometimes gltiches out with Popen in shell()
-			result = os.system('./bin/xdp_iphash_to_cpu_cmdline clear')
+			#result = os.system('./bin/xdp_iphash_to_cpu_cmdline clear')
+			clear_ip_mappings() # Use the bus
 		# Set up XDP-CPUMAP-TC
 		logging.info("# XDP Setup")
 		# Commented out - the daemon does this
@@ -908,9 +909,11 @@ def refreshShapersUpdateOnly():
 		def removeDeviceIPsFromFilter(circuit):
 			for device in circuit['devices']:
 				for ipv4 in device['ipv4s']:
-					shell('./bin/xdp_iphash_to_cpu_cmdline del ip ' + str(ipv4))
+					#shell('./bin/xdp_iphash_to_cpu_cmdline del ip ' + str(ipv4))
+					delete_ip_mapping(str(ipv4))
 				for ipv6 in device['ipv6s']:
-					shell('./bin/xdp_iphash_to_cpu_cmdline del ip ' + str(ipv6))
+					#shell('./bin/xdp_iphash_to_cpu_cmdline del ip ' + str(ipv6))
+					delete_ip_mapping(str(ipv6))
 		
 		
 		def addDeviceIPsToFilter(circuit, cpuNumHex):
@@ -1215,6 +1218,12 @@ def refreshShapersUpdateOnly():
 		print("refreshShapersUpdateOnly completed on " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
 
 if __name__ == '__main__':
+	if is_lqosd_alive:
+		print("lqosd is running")
+	else:
+		print("ERROR: lqosd is not running. Aborting")
+		os.exit()
+
 	parser = argparse.ArgumentParser()
 	parser.add_argument(
 		'-d', '--debug',

@@ -19,4 +19,5 @@ members = [
     "xdp_iphash_to_cpu_cmdline", # Rust port of the C xdp_iphash_to_cpu_cmdline tool, for compatibility
     "xdp_pping", # Rust port of cpumap's `xdp_pping` tool, for compatibility
     "lqos_node_manager", # A lightweight web interface for management and local monitoring
+    "lqos_python", # Python bindings for using the Rust bus directly
 ]

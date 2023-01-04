@@ -23,6 +23,17 @@ do
     cp target/release/$prog ../bin
 done
 popd
+
+# Copy the node manager's static web content
 cp -R rust/lqos_node_manager/static/* bin/static
+
+# Copy Rocket.toml to tell the node manager where to listen
 cp rust/lqos_node_manager/Rocket.toml bin/
+
+# Copy the Python library for LibreQoS.py et al.
+pushd rust/lqos_python
+cargo build --release
+popd
+cp rust/target/release/liblqos_python.so .
+
 echo "Don't forget to setup /etc/lqos!"
