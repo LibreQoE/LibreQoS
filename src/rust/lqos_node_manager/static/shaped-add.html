@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="/vendor/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/vendor/solid.min.css">
+    <title>LibreQoS - Local Node Manager</title>
+    <script src="/lqos.js"></script>
+    <script src="/vendor/plotly-2.16.1.min.js"></script>
+    <script src="/vendor/jquery.min.js"></script>
+</head>
+<body class="bg-secondary">
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/"><img src="/vendor/tinylogo.svg" alt="LibreQoS SVG Logo" width="25" height="25" />&nbsp;LibreQoS</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarSupportedContent">
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/"><i class="fa fa-home"></i> Dashboard</a>
+                    </li>
+                    
+                    <li class="nav-item">
+                        <a class="nav-link" href="#"><i class="fa fa-globe"></i> Network Layout</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" aria-current="page" href="/shaped"><i class="fa fa-users"></i> Shaped Devices <span id="shapedCount" style="background-color: green;" class="badge badge-pill badge-success">?</span></a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/unknown"><i class="fa fa-address-card"></i> Unknown IPs <span id="unshapedCount" style="background-color:darkgoldenrod" class="badge badge-warning">?</span></a>
+                    </li>
+                </ul>
+            </div>
+
+            <ul class="navbar-nav ms-auto">
+                <li class="nav-item ms-auto">
+                    <a class="nav-link" href="#"><i class="fa fa-gear"></i> Configuration</a>
+                </li>
+                <li>
+                    <a class="nav-link btn btn-small" style="color: black" href="#" id="btnReload"><i class="fa fa-refresh"></i> Reload LibreQoS</a>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <div id="container" style="padding: 4px;">
+
+        <div class="row">
+            <div class="col-sm-12">
+                <div class="card bg-light">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="fa fa-users"></i> Add Shaped Circuit</h5>
+
+                        <div class="row">
+                            <div class="col">
+                                <label for="circuitId" class="form-label">Circuit ID</label>
+                                <input type="text" id="circuitId" class="form-control" />
+                            </div>
+                            <div class="col">
+                                <label for="circuitName" class="form-label">Circuit Name</label>
+                                <input type="text" id="circuitName" class="form-control" />
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col">
+                                <label for="deviceId" class="form-label">Device ID</label>
+                                <input type="text" id="deviceId" class="form-control" />
+                            </div>
+                            <div class="col">
+                                <label for="circuitName" class="form-label">Device Name</label>
+                                <input type="text" id="deviceName" class="form-control" />
+                            </div>
+                            <div class="col">
+                                <label for="parent" class="form-label">Parent</label>
+                                <input type="text" id="parent" class="form-control" />
+                            </div>
+                            <div class="col">
+                                <label for="mac" class="form-label">MAC Address</label>
+                                <input type="text" id="mac" class="form-control" />
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col">
+                                <label for="dlMin" class="form-label">Download Minimum (Mbps)</label>
+                                <input type="number" id="dlMin" class="form-control" />
+                            </div>
+                            <div class="col">
+                                <label for="ulMin" class="form-label">Upload Minimum (Mbps)</label>
+                                <input type="number" id="ulMin" class="form-control" />
+                            </div>
+                            <div class="col">
+                                <label for="dlMax" class="form-label">Download Maximum (Mbps)</label>
+                                <input type="number" id="dlMax" class="form-control" />
+                            </div>
+                            <div class="col">
+                                <label for="ulMax" class="form-label">Upload Maximum (Mbps)</label>
+                                <input type="number" id="ulMax" class="form-control" />
+                            </div>
+                        </div>
+                        <div class="row" style="margin-bottom: 8px;">
+                            <div class="col">
+                                <label for="comment" class="form-label">Comment</label>
+                                <input type="text" id="comment" class="form-control" />
+                            </div>
+                        </div>
+                        <div class="row" style="margin-bottom: 8px;">
+                            <div class="col">
+                                <strong>IPv4 Addresses</strong> (You can use 1.2.3.4/X to match a CIDR subnet)<br />
+                                <label for="ipv4_1" class="form-label">Address 1</label>
+                                <input type="text" id="ipv4_1" class="form-control" />
+                                <label for="ipv4_2" class="form-label">Address 2</label>
+                                <input type="text" id="ipv4_2" class="form-control" />
+                                <label for="ipv4_3" class="form-label">Address 3</label>
+                                <input type="text" id="ipv4_3" class="form-control" />
+                            </div>
+                            <div class="col">
+                                <strong>IPv6 Addresses</strong> (You can use /X to match a subnet)<br />
+                                <label for="ipv6_1" class="form-label">Address 1</label>
+                                <input type="text" id="ipv6_1" class="form-control" />
+                                <label for="ipv6_2" class="form-label">Address 2</label>
+                                <input type="text" id="ipv6_2" class="form-control" />
+                                <label for="ipv6_3" class="form-label">Address 3</label>
+                                <input type="text" id="ip64_3" class="form-control" />
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col" align="center">
+                                <a href="#" class="btn btn-success"><i class='fa fa-plus'></i> Add Record</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <footer>Copyright (c) 2022, LibreQoE LLC</footer>
+
+    <script>
+        function start() {
+            colorReloadButton();
+            updateHostCounts();
+
+            // Get the ? search params
+            const params = new Proxy(new URLSearchParams(window.location.search), {
+                get: (searchParams, prop) => searchParams.get(prop),
+            });
+            if (params.ip != null) {
+                if (params.ip.includes(":")) {
+                    $("#ipv6_1").val(params.ip + "/128");
+                } else {
+                    $("#ipv4_1").val(params.ip + "/32");
+                }
+            }
+        }
+
+        $(document).ready(start);
+    </script>
+
+    <!-- Leave to last -->
+    <script src="vendor/bootstrap.bundle.min.js"></script>
+</body>
+</html>
