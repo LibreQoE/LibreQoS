@@ -1,0 +1,9 @@
+[package]
+name = "xdp_pping"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.22", features = [ "rt", "macros", "net", "io-util" ] }
+anyhow = "1"
+lqos_bus = { path = "../lqos_bus" }

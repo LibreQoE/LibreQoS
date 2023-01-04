@@ -1,0 +1,22 @@
+[package]
+name = "lqos_rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[profile.release]
+strip = "debuginfo"
+lto = "thin"
+
+[workspace]
+members = [
+    "lqos_sys", # System support for handling the XDP component
+    "lqos_config", # Configuration support
+    "lqosd", # LibreQoS Daemon
+    "lqos_bus", # Bus data types
+    "lqtop", # A command line utility to show current activity
+    "xdp_iphash_to_cpu_cmdline", # Rust port of the C xdp_iphash_to_cpu_cmdline tool, for compatibility
+    "xdp_pping", # Rust port of cpumap's `xdp_pping` tool, for compatibility
+    "lqos_node_manager", # A lightweight web interface for management and local monitoring
+]

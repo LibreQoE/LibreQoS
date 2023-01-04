@@ -1,0 +1,15 @@
+[package]
+name = "lqos_sys"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nix = "0.25"
+libbpf-sys = "1"
+anyhow = "1"
+byteorder = "1.4"
+lqos_bus = { path = "../lqos_bus" }
+lqos_config = { path = "../lqos_config" }
+
+[build-dependencies]
+bindgen = "0.53.1"
