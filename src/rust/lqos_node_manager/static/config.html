@@ -55,6 +55,14 @@
                 <div class="card bg-light">
                     <div class="card-body">
                         <h5 class="card-title"><i class="fa fa-users"></i> Configuration</h5>
+
+<div class="col-sm-8 mx-auto" style="padding: 4px; margin-bottom: 4px;">
+    <a href="#" class="btn btn-primary"><i class="fa fa-save"></i> Save ispConfig.py</a>&nbsp;
+    <a href="#" class="btn btn-danger"><i class="fa fa-save"></i> Save /etc/lqos</a>&nbsp;
+    <a href="#" class="btn btn-primary"><i class="fa fa-refresh"></i> Reload LibreQoS</a>&nbsp;
+    <a href="#" class="btn btn-danger"><i class="fa fa-refresh"></i> (Re)Start lqosd</a>
+</div>
+
 <div class="d-flex align-items-start">
     <div class="nav flex-column nav-pills me-3" id="v-pills-tab" role="tablist" aria-orientation="vertical">
         <button class="nav-link active" id="v-pills-home-tab" data-bs-toggle="pill" data-bs-target="#v-pills-home" type="button" role="tab" aria-controls="v-pills-home" aria-selected="true"><i class="fa fa-wifi"></i> Network</button>
@@ -68,72 +76,78 @@
         <div class="tab-pane fade show active" id="v-pills-home" role="tabpanel" aria-labelledby="v-pills-home-tab">
             <h2><i class="fa fa-wifi"></i> Network Settings</h2>
 
-            <p>
-                Setup the basic network interface configuration.
-            </p>
-
-            <h3>Network Interface (NIC) Designation</h3>
-            <div class="alert alert-info" role="alert">
-                <p>
-                    For normal operation, you need one NIC port facing the Internet, and a second facing your core router. 
-                    If you are operating in "on a stick" mode (with a single NIC, and VLANs for inbound and outbound),
-                    select the same NIC for both directions.
-                </p>
-            </div>
             <table class="table">
                 <tr>
+                    <td colspan="2">Setup the basic network interface configuration.</td>
+                </tr>
+                <tr>
+                    <td colspan="2" class="alert alert-info" role="alert">
+                        <i class="fa fa-info"></i> For normal operation, you need one NIC port facing the Internet, and a second facing your core router. 
+                        If you are operating in "on a stick" mode (with a single NIC, and VLANs for inbound and outbound),
+                        select the same NIC for both directions.
+                    </td>
+                </tr>
+                <tr>
                     <td>Interface facing your core router</td>
-                    <td>...</td>
+                    <td><select id="nicCore"></option></td>
                 </tr>
                 <tr>
                     <td>Interface facing the Internet</td>
-                    <td>...</td>
+                    <td><select id="nicInternet"></option></td>
                 </tr>
-            </table>
-
-            <h3>Shaper "On A Stick" Configuration</h3>
-            <div class="alert alert-info" role="alert">
-                <p>
-                    "On a stick" mode allows you to operate with a single NIC, with one VLAN
-                    containing inbound traffic and the other outbound. Please refer to the
-                    documentation.
-                </p>
-            </div>
-            <table class="table">
                 <tr>
-                    <td>Enable "on a stick" mode?</td>
-                    <td>...</td>
+                    <td colspan="2"><h3>Single-Interface ("On A Stick") Configuration</td>
+                </tr>
+                <tr>
+                    <td colspan="2" class="alert alert-info" role="alert">
+                        <i class="fa fa-info"></i> "On a stick" mode allows you to operate with a single NIC, with one VLAN
+                        containing inbound traffic and the other outbound. Please refer to the
+                        documentation.
+                    </td>
+                </tr>
+                <tr colspan="2">
+                    <td>
+                        <input class="form-check-input" type="checkbox" value="" id="onAStick">
+                        <label class="form-check-label" for="onAStick">
+                            Enable Single-Interface ("on a stick") mode?
+                          </label>
+                    </td>
                 </tr>
                 <tr>
                     <td>VLAN facing your core router</td>
-                    <td>...</td>
+                    <td>
+                        <input class="form-input" type="number" min="0" max="4094" id="StickVLANCore" />
+                    </td>
                 </tr>
                 <tr>
                     <td>VLAN facing the Internet</td>
-                    <td>...</td>
-                </tr>
-            </table>
-
-            <h3>BiFrost XDP-Accelerated Bridge</h3>
-            <div class="alert alert-warning" role="alert">
-                <p>
-                    Bifrost is an experimental feature at this time. Bifrost XDP allows you to bypass the entire
-                    Linux bridge system, and use XDP to bridge directly between interfaces or VLANs. This can result
-                    in significant performance improvements on NICs that support XDP in "driver" mode.
-                </p>
-            </div>
-            <table class="table">
-                <tr>
-                    <td>Enable Bifrost?</td>
-                    <td>...</td>
+                    <td>
+                        <input class="form-input" type="number" min="0" max="4094" id="StickVLANInternet" />
+                    </td>
                 </tr>
                 <tr>
-                    <td>Interface Mappings</td>
-                    <td>...</td>
+                    <td colspan="2"><h3>Bifrost XDP-Accelerated Bridge</h3></td>
                 </tr>
                 <tr>
-                    <td>VLAN Mappings</td>
-                    <td>...</td>
+                    <td colspan="2" class="alert alert-warning" role="alert">
+                        <i class="fa fa-warning"></i> Bifrost is an experimental feature at this time. Bifrost XDP allows you to bypass the entire
+                        Linux bridge system, and use XDP to bridge directly between interfaces or VLANs. This can result
+                        in significant performance improvements on NICs that support XDP in "driver" mode.
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan="2">
+                        <input class="form-check-input" type="checkbox" value="" id="useKernelBridge">
+                        <label class="form-check-label" for="useKernelBridge">
+                            Enable Bifrost Acceleration
+                          </label>
+                    </td>
+                </tr>
+                <tr>
+                    <td id="bifrostInterfaces" colspan="2">Interface Mapping</td>
+                </tr>
+                <tr>
+                    <td id="bifrostVlans" colspan="2">VLAN Mapping</td>
                 </tr>
             </table>
         </div>
@@ -199,7 +213,7 @@
             <h2><i class="fa fa-server"></i> Server Settings</h2>
             <table class="table">
                 <tr>
-                    <td colspan="2" class="alert-warning">
+                    <td colspan="2" class="alert-danger">
                         Disabling actual shell commands stops LibreQoS from actually doing anything. Simulated
                         output is logged to the console and text files, allowing for debugging.
                     </td>
@@ -209,7 +223,7 @@
                     <td>...</td>
                 </tr>
                 <tr>
-                    <td colspan="2" class="alert-warning">
+                    <td colspan="2" class="alert-danger">
                         Running shell commands with "sudo" isn't necessary on a default configuration.
                     </td>
                 </tr>
@@ -230,7 +244,7 @@
             </table>
         </div>
         <div class="tab-pane fade" id="v-pills-tuning" role="tabpanel" aria-labelledby="v-pills-tuning-tab">
-            <h2>Tuning Settings</h2>
+            <h2><i class="fa fa-warning"></i>  Tuning Settings</h2>
             <div class="alert alert-danger" role="alert">
                 <i class="fa fa-warning"></i> <strong>DANGER</strong>
                 <p>These settings can drastically affect performance of your server, including rendering it non-functional.</p>                
@@ -259,10 +273,84 @@
     <footer>Copyright (c) 2022, LibreQoE LLC</footer>
 
     <script>
+        let python_config = null;
+        let nics = null;
+        let lqosd_config = null;
+
         function start() {
             colorReloadButton();
             updateHostCounts();
-            
+            $.get("/api/python_config", (data) => {
+                python_config = data;
+                $.get("/api/lqosd_config", (data) => {
+                    lqosd_config = data;
+                    $.get("/api/list_nics", (data) => {
+                        nics = data;
+                        console.log(nics);
+                        fillNicList("nicCore", python_config.isp_interface);
+                        fillNicList("nicInternet", python_config.internet_interface);
+
+                        $("#onAStick").prop('checked', python_config.on_a_stick_mode);
+                        $("#StickVLANCore").val(python_config.stick_vlans[0]);
+                        $("#StickVLANInternet").val(python_config.stick_vlans[1]);
+                        if (lqosd_config.bridge != null) {
+                            $("#useKernelBridge").prop('checked', lqosd_config.bridge.use_kernel_bridge);
+
+                            // Map Bifrost Interfaces
+                            let html = "<h4>Interface Mapping</h4>";
+                            html += "<table class='table'>";
+                            html += "<thead><th>Input Interface</th><th>Output Interface</th><th>Scan VLANs?</th></thead>";
+                            html += "<tbody>";
+                            for (let i=0; i<lqosd_config.bridge.interface_mapping.length; i++) {
+                                html += "<tr>";
+                                html += "<td>" + buildNICList('bfIn_' + i, lqosd_config.bridge.interface_mapping[i].name) + "</td>";
+                                html += "<td>" + buildNICList('bfOut_' + i, lqosd_config.bridge.interface_mapping[i].redirect_to) + "</td>";
+                                html += "<td><input type='checkbox' class='form-check-input' id='bfScanVLAN_" + i + "'";
+                                if (lqosd_config.bridge.interface_mapping[i].scan_vlans) {
+                                    html += ' checked';
+                                }
+                                html += "/></td>";
+                                html += "</tr>";
+                            }
+                            html += "</tbody></table>";
+                            $("#bifrostInterfaces").html(html);
+
+                            // Map Bifrost VLAN mappings
+                            html = "<h4>VLAN Mapping</h4>";
+                            // TODO
+                            $("#bifrostVlans").html(html);
+                        }
+                    });
+                });                
+            });
+        }
+
+        function fillNicList(id, selected) {
+            let select = $("#" + id);
+            let html = "";
+            for (i=0; i<nics.length; i++) {
+                html += "<option value=\"";
+                html += nics[i][0] + "\"";
+                if (nics[i][0] == selected) {
+                    html += " selected";
+                }
+                html += ">" + nics[i][0] + " - " + nics[i][1] + " - " + nics[i][2] + "</option>";
+            }
+            select.html(html);
+        }
+
+        function buildNICList(id, selected) {
+            let html = "<select id='" + id + "'>";
+            for (i=0; i<nics.length; i++) {
+                html += "<option value=\"";
+                html += nics[i][0] + "\"";
+                if (nics[i][0] == selected) {
+                    html += " selected";
+                }
+                html += ">" + nics[i][0] + " - " + nics[i][1] + " - " + nics[i][2] + "</option>";
+            }
+            html += "</select>";
+            return html;
         }
 
         $(document).ready(start);
