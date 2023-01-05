@@ -1,7 +1,9 @@
 use anyhow::{Error, Result};
+use serde::{Serialize, Deserialize};
 use std::{fs, path::{Path, PathBuf}};
 use crate::etc;
 
+#[derive(Serialize, Deserialize, Debug)]
 pub struct LibreQoSConfig {
     pub internet_interface: String,
     pub isp_interface: String,
