@@ -54,6 +54,30 @@
                 <div class="card bg-light">
                     <div class="card-body">
                         <div id="raw"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-2">
+                <div class="card bg-light">
+                    <div class="card-body">
+                        Queue Memory: <span id="memory"></span><br />
+                        Queue Length: <span id="qlen"></span>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-2">
+                <div class="card bg-light">
+                    <div class="card-body">
+                        Average Delay: <span id="avgDelay"></span><br />
+                        Peak Delay: <span id="peakDelay"></span>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-2">
+                <div class="card bg-light">
+                    <div class="card-body">
+                        Backlog: <span id="backlog"></span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -134,6 +158,27 @@
             if (params.id != null) {
                 $("#raw").html("<a class='btn btn-sm btn-info' href='/api/raw_queue_by_circuit/" + encodeURI(params.id) + "'><i class='fa fa-search'></i> Raw Data</a>");
                 $.get("/api/raw_queue_by_circuit/" + encodeURI(params.id), (data) => {
+                    // Fill Base Information
+                    let total_memory = data.current_download.Cake.memory_used + data.current_upload.Cake.memory_used;
+                    $("#memory").text(scaleNumber(total_memory));
+                    let queue_length = data.current_download.Cake.qlen + data.current_upload.Cake.qlen;
+                    $("#qlen").text(scaleNumber(queue_length));
+                    let avgDelay = "";
+                    let peakDelay = "";
+                    let backlog = "";
+                    for (let i=0; i<4; i++) {
+                        avgDelay += data.current_download.Cake.tins[i].avg_delay_us + " / ";
+                        peakDelay += data.current_download.Cake.tins[i].peak_delay_us + " / ";
+                        backlog += data.current_download.Cake.tins[i].backlog_bytes + " / ";
+                    }
+                    avgDelay = avgDelay.substring(0, avgDelay.length - 2) + " us";
+                    peakDelay = peakDelay.substring(0, peakDelay.length - 2) + " us";
+                    backlog = backlog.substring(0, backlog.length - 2);
+                    $("#avgDelay").text(avgDelay);
+                    $("#peakDelay").text(peakDelay);
+                    $("#backlog").text(backlog);
+
+                    // Fill Tin Graphs
                     for (let tin=0; tin<4; tin++) {
                         let entries = {
                             x: [[], [], [], [], [], []],
