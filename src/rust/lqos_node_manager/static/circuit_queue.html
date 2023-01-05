@@ -142,8 +142,8 @@
                 y[4].push(0);
                 y[5].push(0);
             } else {
-                y[0].push(data[0].Cake.tins[tin].sent_bytes); // Download
-                y[1].push(0.0 - data[1].Cake.tins[tin].sent_bytes); // Upload
+                y[0].push(data[0].Cake.tins[tin].sent_bytes * 8); // Download
+                y[1].push(0.0 - (data[1].Cake.tins[tin].sent_bytes * 8)); // Upload
                 y[2].push(data[0].Cake.tins[tin].drops); // Down Drops
                 y[3].push(data[0].Cake.tins[tin].marks); // Down Marks
                 y[4].push(0.0 - data[1].Cake.tins[tin].drops); // Up Drops
