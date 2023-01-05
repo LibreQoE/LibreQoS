@@ -140,7 +140,7 @@
                         <input class="form-check-input" type="checkbox" value="" id="useKernelBridge">
                         <label class="form-check-label" for="useKernelBridge">
                             Enable Bifrost Acceleration
-                          </label>
+                        </label>
                     </td>
                 </tr>
                 <tr>
@@ -153,48 +153,63 @@
         </div>
         <div class="tab-pane fade" id="v-pills-shaper" role="tabpanel" aria-labelledby="v-pills-shaper-tab">
             <h2><i class="fa fa-balance-scale"></i>Shaper Settings</h2>
-            <p>Tune the LibreQoS traffic shaper to your needs.</p>
-            <h3>Traffic Shaping Control</h3>
+            <p>Tune the LibreQoS traffic shaper to your needs.</p>            
             <table class="table">
-                <tr class="alert-info">
-                    <td colspan="2">FQ_CODEL offers good latency management and low CPU overhead. CAKE requires more CPU, but offers excellent latency management.</td>
+                <tr>
+                    <td colspan="2">
+                        <h3>Traffic Shaping Control</h3>
+                    </td>
+                </tr>
+                <tr class="alert-info alert" role="alert">
+                    <td colspan="2"><i class="fa fa-info"></i> FQ_CODEL offers good latency management and low CPU overhead. CAKE requires more CPU, but offers excellent latency management.</td>
                 </tr>
                 <tr>
                     <td>SQM Mode</td>
-                    <td>...</td>
+                    <td>
+                        <select id="sqmMode">
+                            <option value="fq_codel">FQ_Codel</option>
+                            <option value="cake diffserv4">Cake + Diffserv4</option>
+                            <option value="cake diffserv4 ackfilter">Cake + Diffserv4 + ACK Filter</option>
+                        </select>
+                    </td>
                 </tr>
                 <tr class="alert-info">
                     <td colspan="2">Monitor mode disables all traffic shaping, allowing you to watch your network undisturbed.</td>
                 </tr>
                 <tr>
-                    <td>Monitor Mode</td>
-                    <td>...</td>
+                    <td colspan="2">
+                        <input class="form-check-input" type="checkbox" value="" id="monitorMode">
+                        <label class="form-check-label" for="monitorMode">
+                            Enable Monitor Mode
+                        </label>
+                    </td>
                 </tr>
-            </table>
-
-            <h3>Bandwidth</h3>
-            <table class="table">
+                <tr>
+                    <td colspan="2">
+                        <h3>Bandwidth</h3>
+                    </td>
+                </tr>
                 <tr>
                     <td>Total Download Bandwidth (Mbps)</td>
-                    <td>...</td>
+                    <td><input type="number" min="1" max="1000000000" step="100" id="maxDownload"></td>
                 </tr>
                 <tr>
                     <td>Total Upload Bandwidth (Mbps)</td>
-                    <td>...</td>
+                    <td><input type="number" min="1" max="1000000000" step="100" id="maxUpload"></td>
                 </tr>
                 <tr class="alert-info">
                     <td colspan="2">
-                        Devices without a parent will be placed underneath evenly-balanced generated nodes. This defines the
+                        <i class="fa fa-info"></i> Devices without a parent will be placed underneath evenly-balanced generated nodes. This defines the
                         available bandwidth for those nodes. If in doubt, set to equal your total bandwidth.
                     </td>
                 </tr>
                 <tr>
                     <td>Generated Node Download Bandwidth (Mbps)</td>
-                    <td>...</td>
+                    <td><input type="number" min="1" max="1000000000" step="100" id="generatedDownload"></td>
                 </tr>
                 <tr>
                     <td>Generated Node Upload Bandwidth (Mbps)</td>
-                    <td>...</td>
+                    <td><input type="number" min="1" max="1000000000" step="100" id="generatedUpload"></td>
                 </tr>
                 <tr class="alert-info">
                     <td colspan="2">
@@ -203,10 +218,12 @@
                         CPUs.
                     </td>
                 </tr>
-                <tr>
-                    <td>Use binpacking?</td>
-                    <td>...</td>
-                </tr>
+                <td colspan="2">
+                    <input class="form-check-input" type="checkbox" value="" id="binpacking">
+                    <label class="form-check-label" for="binpacking">
+                        Use Binpacking
+                    </label>
+                </td>
             </table>
         </div>
         <div class="tab-pane fade" id="v-pills-server" role="tabpanel" aria-labelledby="v-pills-server-tab">
@@ -214,42 +231,105 @@
             <table class="table">
                 <tr>
                     <td colspan="2" class="alert-danger">
-                        Disabling actual shell commands stops LibreQoS from actually doing anything. Simulated
+                        <i class="fa fa-warning"></i> Disabling actual shell commands stops LibreQoS from actually doing anything. Simulated
                         output is logged to the console and text files, allowing for debugging.
                     </td>
                 </tr>
                 <tr>
-                    <td>Enable Actual Shell Commands?</td>
-                    <td>...</td>
-                </tr>
-                <tr>
-                    <td colspan="2" class="alert-danger">
-                        Running shell commands with "sudo" isn't necessary on a default configuration.
+                    <td colspan="2">
+                        <input class="form-check-input" type="checkbox" value="" id="actualShellCommands">
+                        <label class="form-check-label" for="actualShellCommands">
+                            Enable Actual Shell Commands
+                        </label>
                     </td>
                 </tr>
                 <tr>
-                    <td>Run Shell Commands as Sudo?</td>
-                    <td>...</td>
+                    <td colspan="2" class="alert-info">
+                        <i class="fa fa-info"></i> Running shell commands with "sudo" isn't necessary on a default configuration.
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan="2">
+                        <input class="form-check-input" type="checkbox" value="" id="useSudo">
+                        <label class="form-check-label" for="useSudo">
+                            Run Shell Commands as Sudo
+                        </label>
+                    </td>
                 </tr>
                 <tr>
                     <td colspan="2" class="alert-danger">
                         <i class="fa fa-warning"></i> Overriding the number of queues is only necessary if your NIC is giving
-                        very strange results. Use with extreme caution.
+                        very strange results. Use with extreme caution. Leave this at 0 unless you really know what you are doing.
                     </td>
                 </tr>
                 <tr>
                     <td>Override count of available queues?</td>
-                    <td>...</td>
+                    <td><input type="number" min="2" max="256" step="2" id="overrideQueues" /></td>
                 </tr>
             </table>
         </div>
         <div class="tab-pane fade" id="v-pills-tuning" role="tabpanel" aria-labelledby="v-pills-tuning-tab">
             <h2><i class="fa fa-warning"></i>  Tuning Settings</h2>
-            <div class="alert alert-danger" role="alert">
-                <i class="fa fa-warning"></i> <strong>DANGER</strong>
-                <p>These settings can drastically affect performance of your server, including rendering it non-functional.</p>                
-            </div>
-            ...
+            <table class="table">
+                <tr>
+                    <td colspan="2" class="alert alert-danger" role="alert">
+                        <i class="fa fa-warning"></i> <strong>DANGER</strong>
+                        <p>These settings can drastically affect performance of your server, including rendering it non-functional.</p> 
+                    </td>
+                </tr>
+                <tr><td colspan="2">IRQ Balancing should generally be disabled.</td></tr>
+                <tr>
+                    <td colspan="2">
+                        <input class="form-check-input" type="checkbox" value="" id="stopIrqBalance">
+                        <label class="form-check-label" for="stopIrqBalance">
+                            Stop IRQ Balancing
+                        </label>
+                    </td>
+                </tr>
+                <tr><td colspan="2">Network device budget (usec) controls how frequently the kernel passes batches of packets to the processing system. Low numbers tend to reduce latency, higher numbers can improve throughput.</td></tr>
+                <tr>
+                    <td>Netdev Budget (usecs)</td>
+                    <td><input type="number" min="0" max="1000000" id="netDevUsec" /></td>
+                </tr>
+                <tr><td colspan="2">Network device budget (packets) controls how frequently the kernel passes batches of packets to the processing system. Low numbers tend to reduce latency, higher numbers can improve throughput.</td></tr>
+                <tr>
+                    <td>Netdev Budget (packets)</td>
+                    <td><input type="number" min="0" max="1000000" id="netDevPackets" /></td>
+                </tr>
+                <tr><td colspan="2">How frequently should the kernel poll for receive packets?</td></tr>
+                <tr>
+                    <td>RX Usecs</td>
+                    <td><input type="number" min="0" max="1000000" id="rxUsecs" /></td>
+                </tr>
+                <tr><td colspan="2">How frequently should the kernel poll for transmit packets?</td></tr>
+                <tr>
+                    <td>TX Usecs</td>
+                    <td><input type="number" min="0" max="1000000" id="txUsecs" /></td>
+                </tr>
+                <tr><td colspan="2">If you are using VLANs, you generally need to enable this feature</td></tr>
+                <tr>
+                    <td colspan="2">
+                        <input class="form-check-input" type="checkbox" value="" id="disableRxVlan">
+                        <label class="form-check-label" for="disableRxVlan">
+                            Disable RX VLAN Offloading
+                        </label>
+                    </td>
+                </tr>
+                <tr><td colspan="2">If you are using VLANs, you generally need to enable this feature</td></tr>
+                <tr>
+                    <td colspan="2">
+                        <input class="form-check-input" type="checkbox" value="" id="disableTxVlan">
+                        <label class="form-check-label" for="disableTxVlan">
+                            Disable TX VLAN Offloading
+                        </label>
+                    </td>
+                </tr>
+                <tr><td colspan="2">Offloads to disable. We've tried to include the important ones.</td></tr>
+                <tr>
+                    <td>Disable Offloads (space separated)</td>
+                    <td><input type="text" id="disableOffloadList" /></td>
+                </tr>
+            </table>
         </div>
         <div class="tab-pane fade" id="v-pills-spylnx" role="tabpanel" aria-labelledby="v-pills-spylnx-tab">
             Spylnx Settings
@@ -317,9 +397,41 @@
 
                             // Map Bifrost VLAN mappings
                             html = "<h4>VLAN Mapping</h4>";
-                            // TODO
+                            html += "<table class='table'>";
+                            html += "<thead><th>Parent Interface</th><th>Input Tag</th><th>Remapped Tag</th></thead>";
+                            html += "<tbody>";
+                            for (let i=0; i<lqosd_config.bridge.vlan_mapping.length; i++) {
+                                html += "<tr>";
+                                html += "<td>" + buildNICList('bfvlanif_' + i, lqosd_config.bridge.vlan_mapping[i].parent) + "</td>";
+                                html += "<input id='bfvlantag_" + i + "' type='number' min='0' max='4094' value='" + lqosd_config.bridge.vlan_mapping[i].tag + "' /></td>";
+                                html += "<input id='bfvlanout_" + i + "' type='number' min='0' max='4094' value='" + lqosd_config.bridge.vlan_mapping[i].redirect_to + "' /></td>";
+                                html += "</tr>";
+                            }
+                            html += "</tbody></table>";
                             $("#bifrostVlans").html(html);
                         }
+                        $("#sqmMode option[value='" + python_config.sqm + "']").prop("selected", true);
+                        $("#maxDownload").val(python_config.total_download_mbps);
+                        $("#maxUpload").val(python_config.total_upload_mbps);
+                        $("#monitorMode").prop('checked', python_config.monitor_mode);
+                        $("#generatedDownload").val(python_config.generated_download_mbps);
+                        $("#generatedUpload").val(python_config.generated_upload_mbps);
+                        $("#binpacking").prop('checked', python_config.use_binpacking);
+                        $("#actualShellCommands").prop('checked', python_config.enable_shell_commands);
+                        $("#useSudo").prop('checked', python_config.run_as_sudo);
+                        $("#overrideQueues").val(python_config.override_queue_count);
+                        $("#stopIrqBalance").prop('checked', lqosd_config.tuning.stop_irq_balance);
+                        $("#netDevUsec").val(lqosd_config.tuning.netdev_budget_usecs);
+                        $("#netDevPackets").val(lqosd_config.tuning.netdev_budget_packets);
+                        $("#rxUsecs").val(lqosd_config.tuning.rx_usecs);
+                        $("#txUsecs").val(lqosd_config.tuning.tx_usecs);
+                        $("#disableRxVlan").prop('checked', lqosd_config.tuning.disable_rxvlan);
+                        $("#disableTxVlan").prop('checked', lqosd_config.tuning.disable_txvlan);
+                        let offloads = "";
+                        for (let i=0; i<lqosd_config.tuning.disable_offload.length; i++) {
+                            offloads += lqosd_config.tuning.disable_offload[i] + " ";
+                        }
+                        $("#disableOffloadList").val(offloads);
                     });
                 });                
             });
