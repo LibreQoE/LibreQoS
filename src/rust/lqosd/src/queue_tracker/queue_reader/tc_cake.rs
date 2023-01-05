@@ -137,12 +137,12 @@ pub(crate) struct TcCake {
     pub(crate) handle: TcHandle,
     pub(crate) parent: TcHandle,
     options: TcCakeOptions,
-    bytes: u64,
-    packets: u64,
+    pub(crate) bytes: u64,
+    pub(crate) packets: u64,
     overlimits: u64,
     requeues: u64,
-    backlog: u64,
-    qlen: u64,
+    pub(crate) backlog: u64,
+    pub(crate) qlen: u64,
     memory_used: u64,
     memory_limit: u64,
     capacity_estimate: u64,
@@ -151,8 +151,8 @@ pub(crate) struct TcCake {
     min_adj_size: u64,
     max_adj_size: u64,
     avg_hdr_offset: u64,
-    tins: Vec<TcCakeTin>,
-    drops: u64,
+    pub(crate) tins: Vec<TcCakeTin>,
+    pub(crate) drops: u64,
  }
 
  #[derive(Default, Clone, Debug, Serialize)]
@@ -172,10 +172,10 @@ pub(crate) struct TcCake {
  }
 
  #[derive(Default, Clone, Debug, Serialize)]
- struct TcCakeTin {
+ pub(crate) struct TcCakeTin {
     threshold_rate: u64,
-    sent_bytes: u64,
-    backlog_bytes: u64,
+    pub(crate) sent_bytes: u64,
+    pub(crate) backlog_bytes: u64,
     target_us: u64,
     interval_us: u64,
     peak_delay_us: u64,
@@ -185,8 +185,8 @@ pub(crate) struct TcCake {
     way_indirect_hits: u64,
     way_misses: u64,
     way_collisions: u64,
-    drops: u64,
-    ecn_marks: u64,
+    pub(crate) drops: u64,
+    pub(crate) ecn_marks: u64,
     ack_drops: u64,
     sparse_flows: u64,
     bulk_flows: u64,

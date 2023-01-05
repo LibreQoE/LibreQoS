@@ -6,6 +6,9 @@ use anyhow::{Result, Error};
 use serde::Serialize;
 use serde_json::Value;
 use std::process::Command;
+mod queue_diff;
+pub use queue_diff::QueueDiff;
+pub(crate) use queue_diff::make_queue_diff;
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) enum QueueType {
