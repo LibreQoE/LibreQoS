@@ -403,8 +403,8 @@
                             for (let i=0; i<lqosd_config.bridge.vlan_mapping.length; i++) {
                                 html += "<tr>";
                                 html += "<td>" + buildNICList('bfvlanif_' + i, lqosd_config.bridge.vlan_mapping[i].parent) + "</td>";
-                                html += "<input id='bfvlantag_" + i + "' type='number' min='0' max='4094' value='" + lqosd_config.bridge.vlan_mapping[i].tag + "' /></td>";
-                                html += "<input id='bfvlanout_" + i + "' type='number' min='0' max='4094' value='" + lqosd_config.bridge.vlan_mapping[i].redirect_to + "' /></td>";
+                                html += "<td><input id='bfvlantag_" + i + "' type='number' min='0' max='4094' value='" + lqosd_config.bridge.vlan_mapping[i].tag + "' /></td>";
+                                html += "<td><input id='bfvlanout_" + i + "' type='number' min='0' max='4094' value='" + lqosd_config.bridge.vlan_mapping[i].redirect_to + "' /></td>";
                                 html += "</tr>";
                             }
                             html += "</tbody></table>";
