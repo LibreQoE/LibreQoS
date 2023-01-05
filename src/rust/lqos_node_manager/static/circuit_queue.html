@@ -103,6 +103,30 @@
     <footer>Copyright (c) 2022, LibreQoE LLC</footer>
 
     <script>
+        function setX(x, counter) {
+            for (let i=0; i<6; i++) {
+                x[i].push(counter);
+            }
+        }
+
+        function setY(y, i, data, tin) {
+            if (data[0] == "None" || data[1] == "None") {
+                y[0].push(0);
+                y[1].push(0);
+                y[2].push(0);
+                y[3].push(0);
+                y[4].push(0);
+                y[5].push(0);
+            } else {
+                y[0].push(data[0].Cake.tins[tin].sent_bytes); // Download
+                y[1].push(0.0 - data[1].Cake.tins[tin].sent_bytes); // Upload
+                y[2].push(data[0].Cake.tins[tin].drops); // Down Drops
+                y[3].push(data[0].Cake.tins[tin].marks); // Down Marks
+                y[4].push(0.0 - data[1].Cake.tins[tin].drops); // Up Drops
+                y[5].push(0.0 - data[1].Cake.tins[tin].marks); // Up Marks
+            }
+        }
+
         function pollQueue() {
             const params = new Proxy(new URLSearchParams(window.location.search), {
                 get: (searchParams, prop) => searchParams.get(prop),
@@ -110,78 +134,37 @@
             if (params.id != null) {
                 $("#raw").html("<a class='btn btn-sm btn-info' href='/api/raw_queue_by_circuit/" + encodeURI(params.id) + "'><i class='fa fa-search'></i> Raw Data</a>");
                 $.get("/api/raw_queue_by_circuit/" + encodeURI(params.id), (data) => {
-                    for (var i=0; i<4; i++) {
-                        // Build Throughput per Tin
-                        {
-                            let x = [];
-                            let y = [];
-                            let x2 = [];
-                            let y2 = [];
-                            for (var j=0; j<600; j++) {
-                                x.push(j);
-                                x2.push(j);
+                    for (let tin=0; tin<4; tin++) {
+                        let entries = {
+                            x: [[], [], [], [], [], []],
+                            y: [[], [], [], [], [], []],
+                        }
+                        let counter = 0;
+                        for (let i=data.history_head; i<600; i++) {
+                            setX(entries.x, counter);
+                            setY(entries.y, i, data.history[i], tin);
+                            counter++;
+                        }
+                        for (let i=0; i<data.history_head; i++) {
+                            setX(entries.x, counter);
+                            setY(entries.y, i, data.history[i], tin);
+                            counter++;                            
+                        }
+                        let graph = document.getElementById("tinTp_" + tin);
+                        let graph_data = [
+                            {x: entries.x[0], y:entries.y[0], name: 'Download', type: 'scatter', fill: 'tozeroy'},
+                            {x: entries.x[1], y:entries.y[1], name: 'Upload', type: 'scatter', fill: 'tozeroy'},
+                        ];
+                        Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
 
-                                // Download
-                                if (data.history[j][0] != "None") {
-                                    let sb = data.history[j][0].Cake.tins[i].sent_bytes;
-                                    y.push(sb * 8);
-                                } else {
-                                    y.push(0);
-                                }
-
-                                // Upload
-                                if (data.history[j][1] != "None") {
-                                    let sb = data.history[j][1].Cake.tins[i].sent_bytes;
-                                    y2.push(0.0 - (sb * 8));
-                                } else {
-                                    y2.push(0);
-                                }
-                            }
-                            let graph_data = [
-                                {x: x, y:y, name: 'Download', type: 'scatter', fill: 'tozeroy'},
-                                {x: x2, y:y2, name: 'Upload', type: 'scatter', fill: 'tozeroy'},
-                            ];
-                            let graph = document.getElementById("tinTp_" + i);
-                            Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
-                        } // End scope
-                        {
-                            let x = [];
-                            let x2 = [];
-                            let y = [];
-                            let y2 = [];
-                            let x3 = [];
-                            let y3 = [];
-                            let x4 = [];
-                            let y4 = [];
-                            for (var j=0; j<600; j++) {
-                                x.push(j);
-                                x2.push(j);
-                                x3.push(j);
-                                x4.push(j);
-                                if (data.history[j][0] != "None") {
-                                    y.push(data.history[j][0].Cake.tins[i].drops);
-                                    y2.push(data.history[j][0].Cake.tins[i].marks);
-                                } else {
-                                    y.push(0);
-                                    y2.push(0);
-                                }
-                                if (data.history[j][1] != "None") {
-                                    y3.push(0.0 - data.history[j][1].Cake.tins[i].drops);
-                                    y4.push(0.0 - data.history[j][1].Cake.tins[i].marks);
-                                } else {
-                                    y3.push(0);
-                                    y4.push(0);
-                                }
-                            }
-                            let graph_data = [
-                                {x: x, y:y, name: 'Down Drops', type: 'scatter', fill: 'tozeroy'},
-                                {x: x2, y:y2, name: 'Down Marks', type: 'scatter', fill: 'tozeroy'},
-                                {x: x3, y:y3, name: 'Up Drops', type: 'scatter', fill: 'tozeroy'},
-                                {x: x4, y:y4, name: 'Up Marks', type: 'scatter', fill: 'tozeroy'},
-                            ];
-                            let graph = document.getElementById("tinMd_" + i);
-                            Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
-                        } // End scope
+                        graph = document.getElementById("tinMd_" + tin);
+                        graph_data = [
+                            {x: entries.x[2], y:entries.y[2], name: 'Down Drops', type: 'scatter', fill: 'tozeroy'},
+                            {x: entries.x[3], y:entries.y[3], name: 'Down Marks', type: 'scatter', fill: 'tozeroy'},
+                            {x: entries.x[4], y:entries.y[4], name: 'Up Drops', type: 'scatter', fill: 'tozeroy'},
+                            {x: entries.x[5], y:entries.y[5], name: 'Up Marks', type: 'scatter', fill: 'tozeroy'},
+                        ];
+                        Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
                     }
                 });
             }
