@@ -230,6 +230,20 @@
             <h2><i class="fa fa-server"></i> Server Settings</h2>
             <table class="table">
                 <tr>
+                    <td colspan="2" class="alert-info" role="alert">
+                        How frequently should the TC queues be polled? 30-50 is good for detailed analysis,
+                        1000 is good for normal running.
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        Queue Check Frequency (ms)
+                    </td>
+                    <td>
+                        <input type="number" min="10" max="1000" id="queuecheckms" />
+                    </td>
+                </tr>
+                <tr>
                     <td colspan="2" class="alert-danger">
                         <i class="fa fa-warning"></i> Disabling actual shell commands stops LibreQoS from actually doing anything. Simulated
                         output is logged to the console and text files, allowing for debugging.
@@ -417,6 +431,7 @@
                         $("#generatedDownload").val(python_config.generated_download_mbps);
                         $("#generatedUpload").val(python_config.generated_upload_mbps);
                         $("#binpacking").prop('checked', python_config.use_binpacking);
+                        $("#queuecheckms").val(lqosd_config.queue_check_period_ms);
                         $("#actualShellCommands").prop('checked', python_config.enable_shell_commands);
                         $("#useSudo").prop('checked', python_config.run_as_sudo);
                         $("#overrideQueues").val(python_config.override_queue_count);

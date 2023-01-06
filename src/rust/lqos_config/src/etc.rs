@@ -5,6 +5,7 @@ use anyhow::{Result, Error};
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct EtcLqos {
     pub lqos_directory: String,
+    pub queue_check_period_ms: u64,
     pub bridge: Option<BridgeConfig>,
     pub tuning: Option<Tunables>,
 }
