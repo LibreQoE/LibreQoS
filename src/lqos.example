@@ -7,10 +7,10 @@ queue_check_period_ms = 1000
 
 [tuning]
 stop_irq_balance = true
-netdev_budget_usecs = 20
-netdev_budget_packets = 1
-rx_usecs = 0
-tx_usecs = 0
+netdev_budget_usecs = 8000
+netdev_budget_packets = 300
+rx_usecs = 8
+tx_usecs = 8
 disable_rxvlan = true
 disable_txvlan = true
 disable_offload = [ "gso", "tso", "lro", "sg", "gro" ]
