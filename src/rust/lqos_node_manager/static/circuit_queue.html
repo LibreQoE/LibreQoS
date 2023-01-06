@@ -23,7 +23,6 @@
                     <li class="nav-item">
                         <a class="nav-link" href="/"><i class="fa fa-home"></i> Dashboard</a>
                     </li>
-                    
                     <li class="nav-item">
                         <a class="nav-link" href="#"><i class="fa fa-globe"></i> Network Layout</a>
                     </li>
@@ -49,98 +48,146 @@
 
     <div id="container" style="padding: 4px;">
 
-        <div class="row">
-            <div class="col-sm-2">
-                <div class="card bg-light">
-                    <div class="card-body">
-                        <div id="raw"></div>
+        <div class="row" style="margin-top: -4px; margin-bottom: 4px;">
+            <div class="col-sm-12 bg-light" style="text-align: center;">
+                <div class="row">
+                    <div class="col-sm-4">
+                        <span id="circuitName" style="font-weight: bold"></span>
                     </div>
-                </div>
-            </div>
-            <div class="col-sm-2">
-                <div class="card bg-light">
-                    <div class="card-body">
-                        Queue Memory: <span id="memory"></span><br />
-                        Queue Length: <span id="qlen"></span>
+                    <div class="col-sm-6">
+                        <ul class="nav nav-pills mb-3" id="pills-tab" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="pills-home-tab" data-bs-toggle="pill" data-bs-target="#pills-home" type="button" role="tab" aria-controls="pills-home" aria-selected="true">Overview</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="pills-tins-tab" data-bs-toggle="pill" data-bs-target="#pills-tins" type="button" role="tab" aria-controls="pills-profile" aria-selected="false">All Tins</button>
+                            </li>
+                        </ul>
                     </div>
-                </div>
-            </div>
-            <div class="col-sm-2">
-                <div class="card bg-light">
-                    <div class="card-body">
-                        Average Delay: <span id="avgDelay"></span><br />
-                        Peak Delay: <span id="peakDelay"></span>
-                    </div>
-                </div>
-            </div>
-            <div class="col-sm-2">
-                <div class="card bg-light">
-                    <div class="card-body">
-                        Backlog: <span id="backlog"></span>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="row" style="margin-top: 4px">
-            <div class="col-sm-6">
-                <div class="card bg-light">
-                    <div class="card-body">
-                        <h5 class="card-title"><i class="fa fa-bar-chart"></i> Tin 1 (Bulk)</h5>
-                        <div id="tinTp_0" style="height: 150px"></div>
-                        <div id="tinMd_0" style="height: 150px"></div>
-                    </div>                        
-                </div>
-            </div>
-            <div class="col-sm-6">
-                <div class="card bg-light">
-                    <div class="card-body">
-                        <h5 class="card-title"><i class="fa fa-bar-chart"></i> Tin 2 (Best Effort)</h5>
-                        <div id="tinTp_1" style="height: 150px"></div>
-                        <div id="tinMd_1" style="height: 150px"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="row" style="margin-top: 4px">
-            <div class="col-sm-6">
-                <div class="card bg-light">
-                    <div class="card-body">
-                        <h5 class="card-title"><i class="fa fa-bar-chart"></i> Tin 3 (Video)</h5>
-                        <div id="tinTp_2" style="height: 150px"></div>
-                        <div id="tinMd_2" style="height: 150px"></div>
-                    </div>                        
-                </div>
-            </div>
-            <div class="col-sm-6">
-                <div class="card bg-light">
-                    <div class="card-body">
-                        <h5 class="card-title"><i class="fa fa-bar-chart"></i> Tin 4 (Voice)</h5>
-                        <div id="tinTp_3" style="height: 150px"></div>
-                        <div id="tinMd_3" style="height: 150px"></div>
+                    <div class="col-sm-2">
+                    <div id="raw"></div>
                     </div>
                 </div>
             </div>
         </div>
 
+        <div class="tab-content" id="pills-tabContent">
+            <div class="tab-pane fade show active" id="pills-home" role="tabpanel" aria-labelledby="pills-home-tab" tabindex="0">
+
+                <!-- Total Throughput and Backlog -->
+                <div class="row">
+                    <div class="col-sm-6">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Throughput</h5>
+                                <div id="throughputGraph" style="height: 150px"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-sm-6">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Backlog</h5>
+                                <div id="backlogGraph" style="height: 150px"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Delay and Queue Length -->
+                <div class="row" style="margin-top: 4px;">
+                    <div class="col-sm-6">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Delays</h5>
+                                <div id="delayGraph" style="height: 150px"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-sm-6">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Queue Length</h5>
+                                <div id="qlenGraph" style="height: 150px"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row" style="margin-top: 4px;">
+                    <div class="col-sm-2">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                Queue Memory: <span id="memory"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+            <div class="tab-pane fade" id="pills-tins" role="tabpanel" aria-labelledby="pills-tins-tab" tabindex="0">
+                <div class="row" style="margin-top: 4px">
+                    <div class="col-sm-6">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Tin 1 (Bulk)</h5>
+                                <div id="tinTp_0" style="height: 150px"></div>
+                                <div id="tinMd_0" style="height: 150px"></div>
+                            </div>                        
+                        </div>
+                    </div>
+                    <div class="col-sm-6">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Tin 2 (Best Effort)</h5>
+                                <div id="tinTp_1" style="height: 150px"></div>
+                                <div id="tinMd_1" style="height: 150px"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row" style="margin-top: 4px">
+                    <div class="col-sm-6">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Tin 3 (Video)</h5>
+                                <div id="tinTp_2" style="height: 150px"></div>
+                                <div id="tinMd_2" style="height: 150px"></div>
+                            </div>                        
+                        </div>
+                    </div>
+                    <div class="col-sm-6">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Tin 4 (Voice)</h5>
+                                <div id="tinTp_3" style="height: 150px"></div>
+                                <div id="tinMd_3" style="height: 150px"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+          </div>          
     </div>
 
     <footer>Copyright (c) 2022, LibreQoE LLC</footer>
 
     <script>
+        let throughput = new Object();
+        let throughput_head = 0;
+
+
         function setX(x, counter) {
-            for (let i=0; i<6; i++) {
+            for (let i=0; i<x.length; i++) {
                 x[i].push(counter);
             }
         }
 
         function setY(y, i, data, tin) {
             if (data[0] == "None" || data[1] == "None") {
-                y[0].push(0);
-                y[1].push(0);
-                y[2].push(0);
-                y[3].push(0);
-                y[4].push(0);
-                y[5].push(0);
+                for (let j=0; i<y.length; y++) {
+                    y[j].push(0);
+                }
             } else {
                 y[0].push(data[0].Cake.tins[tin].sent_bytes * 8); // Download
                 y[1].push(0.0 - (data[1].Cake.tins[tin].sent_bytes * 8)); // Upload
@@ -148,6 +195,14 @@
                 y[3].push(data[0].Cake.tins[tin].marks); // Down Marks
                 y[4].push(0.0 - data[1].Cake.tins[tin].drops); // Up Drops
                 y[5].push(0.0 - data[1].Cake.tins[tin].marks); // Up Marks
+
+                // Backlog
+                y[6].push(data[0].Cake.tins[tin].backlog_bytes * 8);
+                y[7].push(0.0 - data[1].Cake.tins[tin].backlog_bytes * 8);
+
+                // Delays
+                y[8].push(data[0].Cake.tins[tin].avg_delay_us);
+                y[9].push(0.0 - data[1].Cake.tins[tin].avg_delay_us);
             }
         }
 
@@ -156,43 +211,60 @@
                 get: (searchParams, prop) => searchParams.get(prop),
             });
             if (params.id != null) {
+                // Name the circuit
+                $.get("/api/circuit_name/" + encodeURI(params.id), (data) => {
+                    $("#circuitName").text(data);
+                });
+
+                // Fill the raw button
                 $("#raw").html("<a class='btn btn-sm btn-info' href='/api/raw_queue_by_circuit/" + encodeURI(params.id) + "'><i class='fa fa-search'></i> Raw Data</a>");
+
+                // Graphs
                 $.get("/api/raw_queue_by_circuit/" + encodeURI(params.id), (data) => {
                     // Fill Base Information
                     let total_memory = data.current_download.Cake.memory_used + data.current_upload.Cake.memory_used;
                     $("#memory").text(scaleNumber(total_memory));
-                    let queue_length = data.current_download.Cake.qlen + data.current_upload.Cake.qlen;
-                    $("#qlen").text(scaleNumber(queue_length));
-                    let avgDelay = "";
-                    let peakDelay = "";
-                    let backlog = "";
-                    for (let i=0; i<4; i++) {
-                        avgDelay += data.current_download.Cake.tins[i].avg_delay_us + " / ";
-                        peakDelay += data.current_download.Cake.tins[i].peak_delay_us + " / ";
-                        backlog += data.current_download.Cake.tins[i].backlog_bytes + " / ";
-                    }
-                    avgDelay = avgDelay.substring(0, avgDelay.length - 2) + " us";
-                    peakDelay = peakDelay.substring(0, peakDelay.length - 2) + " us";
-                    backlog = backlog.substring(0, backlog.length - 2);
-                    $("#avgDelay").text(avgDelay);
-                    $("#peakDelay").text(peakDelay);
-                    $("#backlog").text(backlog);
 
                     // Fill Tin Graphs
+                    let backlogX1 = [];
+                    let backlogY1 = [];
+                    let backlogX2 = [];
+                    let backlogY2 = [];
+                    let delaysX1 = [];
+                    let delaysX2 = [];
+                    let delaysY1 = [];
+                    let delaysY2 = [];
+                    let qlenX1 = [];
+                    let qlenY1 = [];
+                    let qlenX2 = [];
+                    let qlenY2 = [];
+
                     for (let tin=0; tin<4; tin++) {
                         let entries = {
-                            x: [[], [], [], [], [], []],
-                            y: [[], [], [], [], [], []],
+                            x: [[], [], [], [], [], [], [], [], [], []],
+                            y: [[], [], [], [], [], [], [], [], [], []],
                         }
                         let counter = 0;
                         for (let i=data.history_head; i<600; i++) {
                             setX(entries.x, counter);
                             setY(entries.y, i, data.history[i], tin);
+                            if (tin == 0) {
+                                qlenX1.push(counter);
+                                qlenX2.push(counter);
+                                qlenY1.push(data.history[i][0].Cake.qlen);
+                                qlenY2.push(0.0 - data.history[i][1].Cake.qlen);
+                            }
                             counter++;
                         }
                         for (let i=0; i<data.history_head; i++) {
                             setX(entries.x, counter);
                             setY(entries.y, i, data.history[i], tin);
+                            if (tin == 0) {
+                                qlenX1.push(counter);
+                                qlenX2.push(counter);
+                                qlenY1.push(data.history[i][0].Cake.qlen);
+                                qlenY2.push(0.0 - data.history[i][1].Cake.qlen);
+                            }
                             counter++;                            
                         }
                         let graph = document.getElementById("tinTp_" + tin);
@@ -210,17 +282,122 @@
                             {x: entries.x[5], y:entries.y[5], name: 'Up Marks', type: 'scatter'},
                         ];
                         Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
+
+                        backlogX1.push(entries.x[6]);
+                        backlogX2.push(entries.x[7]);
+                        backlogY1.push(entries.y[6]);
+                        backlogY2.push(entries.y[7]);
+                        delaysX1.push(entries.x[8]);
+                        delaysX2.push(entries.x[9]);
+                        delaysY1.push(entries.y[8]);
+                        delaysY2.push(entries.y[9]);
                     }
+                    let graph = document.getElementById("backlogGraph");
+                    let graph_data = [
+                        {x: backlogX1[0], y:backlogY1[0], type: 'scatter', name: 'Tin 0 Down'},
+                        {x: backlogX2[0], y:backlogY2[0], type: 'scatter', name: 'Tin 0 Up'},
+                        {x: backlogX1[1], y:backlogY1[1], type: 'scatter', name: 'Tin 1 Down'},
+                        {x: backlogX2[1], y:backlogY2[1], type: 'scatter', name: 'Tin 1 Up'},
+                        {x: backlogX1[2], y:backlogY1[2], type: 'scatter', name: 'Tin 2 Down'},
+                        {x: backlogX2[2], y:backlogY2[2], type: 'scatter', name: 'Tin 2 Up'},
+                        {x: backlogX1[3], y:backlogY1[3], type: 'scatter', name: 'Tin 3 Down'},
+                        {x: backlogX2[3], y:backlogY2[3], type: 'scatter', name: 'Tin 3 Up'},
+                    ];
+                    Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
+
+                    graph = document.getElementById("delayGraph");
+                    graph_data = [
+                        {x: delaysX1[0], y:delaysY1[0], type: 'scatter', name: 'Tin 0 Down'},
+                        {x: delaysX2[0], y:delaysY2[0], type: 'scatter', name: 'Tin 0 Up'},
+                        {x: delaysX1[1], y:delaysY1[1], type: 'scatter', name: 'Tin 1 Down'},
+                        {x: delaysX2[1], y:delaysY2[1], type: 'scatter', name: 'Tin 1 Up'},
+                        {x: delaysX1[2], y:delaysY1[2], type: 'scatter', name: 'Tin 2 Down'},
+                        {x: delaysX2[2], y:delaysY2[2], type: 'scatter', name: 'Tin 2 Up'},
+                        {x: delaysX1[3], y:delaysY1[3], type: 'scatter', name: 'Tin 3 Down'},
+                        {x: delaysX2[3], y:delaysY2[3], type: 'scatter', name: 'Tin 3 Up'},
+                    ];
+                    Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
+
+                    graph = document.getElementById("qlenGraph");
+                    graph_data = [
+                        {x: qlenX1, y:qlenY1, type: 'scatter', name: 'Down'},
+                        {x: qlenX2, y:qlenY2, type: 'scatter', name: 'Up'},
+                    ];
+                    Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
                 });
             }
 
             setTimeout(pollQueue, 1000);
         }
 
+        function getThroughput() {
+            const params = new Proxy(new URLSearchParams(window.location.search), {
+                get: (searchParams, prop) => searchParams.get(prop),
+            });
+            if (params.id != null) {
+                $.get("/api/circuit_throughput/" + encodeURI(params.id), (data) => {
+                    for (let i=0; i<data.length; i++) {
+                        let ip = data[i][0];
+                        let down = data[i][1];
+                        let up = data[i][2];
+
+                        if (throughput[ip] == null) {
+                            throughput[ip] = {
+                                down: [],
+                                up: [],
+                            };
+                            for (let j=0; j<300; j++) {
+                                throughput[ip].down.push(0);
+                                throughput[ip].up.push(0);
+                            }
+                        }
+                        throughput[ip].down[throughput_head] = down * 8;
+                        throughput[ip].up[throughput_head] = up * 8;
+                    }
+
+                    // Build the graph
+                    let graph = document.getElementById("throughputGraph");
+                    let graph_data = [];
+                    for (const ip in throughput) {
+                        //console.log(ip);
+                        let xUp = [];
+                        let xDown = [];
+                        let yUp = [];
+                        let yDown = [];
+                        let counter = 0;
+                        for (let i=throughput_head; i<300; i++) {
+                            xUp.push(counter);
+                            xDown.push(counter);
+                            yUp.push(0.0 - throughput[ip].up[i]);
+                            yDown.push(throughput[ip].down[i]);
+                            counter++;
+                        }
+                        for (let i=0; i<throughput_head; i++) {
+                            xUp.push(counter);
+                            xDown.push(counter);
+                            yUp.push(0.0 - throughput[ip].up[i]);
+                            yDown.push(throughput[ip].down[i]);
+                            counter++;
+                        }
+                        graph_data.push({x: xDown, y: yDown, name: ip + " Down", type: 'scatter'});
+                        graph_data.push({x: xUp, y: yUp, name: ip + " Up", type: 'scatter'});
+                    }
+                    Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
+                    throughput_head += 1;
+                    if (throughput_head >= 300) {
+                        throughput_head = 0;
+                    }
+                });
+            }
+
+            setTimeout(getThroughput, 1000);
+        }
+
         function start() {
             colorReloadButton();
             updateHostCounts();
             pollQueue();
+            getThroughput();
         }
 
         $(document).ready(start);

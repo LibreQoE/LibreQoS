@@ -179,7 +179,7 @@ pub(crate) struct TcCake {
     target_us: u64,
     interval_us: u64,
     peak_delay_us: u64,
-    avg_delay_us: u64,
+    pub(crate) avg_delay_us: u64,
     base_delay_us: u64,
     sent_packets: u64,
     way_indirect_hits: u64,

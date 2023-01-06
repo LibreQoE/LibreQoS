@@ -28,6 +28,7 @@ pub(crate) fn make_queue_diff(previous: &QueueType, current: &QueueType) -> Resu
 pub struct CakeDiff {
     pub bytes: u64,
     pub packets: u64,
+    pub qlen: u64,
     pub tins: Vec<CakeDiffTin>,
 }
 
@@ -37,6 +38,7 @@ pub struct CakeDiffTin {
     pub backlog_bytes: u64,
     pub drops: u64,
     pub marks: u64,
+    pub avg_delay_us: u64,
 }
 
 fn cake_diff(previous: &QueueType, current: &QueueType) -> Result<QueueDiff> {
@@ -47,14 +49,16 @@ fn cake_diff(previous: &QueueType, current: &QueueType) -> Result<QueueDiff> {
                 //println!("{} - {} = {}", new.sent_bytes, prev.sent_bytes, new.sent_bytes -prev.sent_bytes);
                 CakeDiffTin {
                     sent_bytes: new.sent_bytes - prev.sent_bytes,
-                    backlog_bytes: new.backlog_bytes - prev.backlog_bytes,
+                    backlog_bytes: new.backlog_bytes,
                     drops: new.drops - prev.drops,
                     marks: new.ecn_marks - prev.ecn_marks,
+                    avg_delay_us: new.avg_delay_us,
                 }
             }).collect();
             return Ok(QueueDiff::Cake(CakeDiff{
                 bytes: new.bytes - prev.bytes,
                 packets: new.packets - prev.packets,
+                qlen: new.qlen,
                 tins,
             }));
         }

@@ -89,6 +89,7 @@ async fn main() -> Result<()> {
                             BusRequest::GetCurrentThroughput => {
                                 throughput_tracker::current_throughput()
                             }
+                            BusRequest::GetHostCounter => throughput_tracker::host_counters(),
                             BusRequest::GetTopNDownloaders(n) => throughput_tracker::top_n(*n),
                             BusRequest::GetWorstRtt(n) => throughput_tracker::worst_n(*n),
                             BusRequest::MapIpToFlow {

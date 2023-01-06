@@ -54,6 +54,18 @@ pub fn current_throughput() -> BusResponse {
     }
 }
 
+pub fn host_counters() -> BusResponse {
+    let mut result = Vec::new();
+    let tp = THROUGHPUT_TRACKER.read();
+    tp.raw_data.iter().for_each(|(k,v)| {
+        let ip = k.as_ip();
+        let (down, up) = v.bytes_per_second;
+        result.push((ip, down, up));
+    });
+    BusResponse::HostCounters(result)
+    
+}
+
 #[inline(always)]
 fn retire_check(cycle: u64, recent_cycle: u64) -> bool {
     cycle < recent_cycle + RETIRE_AFTER_SECONDS
