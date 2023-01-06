@@ -197,17 +197,17 @@
                         }
                         let graph = document.getElementById("tinTp_" + tin);
                         let graph_data = [
-                            {x: entries.x[0], y:entries.y[0], name: 'Download', type: 'scatter', fill: 'tozeroy'},
-                            {x: entries.x[1], y:entries.y[1], name: 'Upload', type: 'scatter', fill: 'tozeroy'},
+                            {x: entries.x[0], y:entries.y[0], name: 'Download', type: 'scatter'},
+                            {x: entries.x[1], y:entries.y[1], name: 'Upload', type: 'scatter'},
                         ];
                         Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
 
                         graph = document.getElementById("tinMd_" + tin);
                         graph_data = [
-                            {x: entries.x[2], y:entries.y[2], name: 'Down Drops', type: 'scatter', fill: 'tozeroy'},
-                            {x: entries.x[3], y:entries.y[3], name: 'Down Marks', type: 'scatter', fill: 'tozeroy'},
-                            {x: entries.x[4], y:entries.y[4], name: 'Up Drops', type: 'scatter', fill: 'tozeroy'},
-                            {x: entries.x[5], y:entries.y[5], name: 'Up Marks', type: 'scatter', fill: 'tozeroy'},
+                            {x: entries.x[2], y:entries.y[2], name: 'Down Drops', type: 'scatter'},
+                            {x: entries.x[3], y:entries.y[3], name: 'Down Marks', type: 'scatter'},
+                            {x: entries.x[4], y:entries.y[4], name: 'Up Drops', type: 'scatter'},
+                            {x: entries.x[5], y:entries.y[5], name: 'Up Marks', type: 'scatter'},
                         ];
                         Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
                     }

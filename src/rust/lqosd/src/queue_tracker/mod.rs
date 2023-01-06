@@ -2,7 +2,7 @@ use std::{time::{Duration, Instant}, collections::HashMap};
 use lqos_bus::BusResponse;
 use lqos_config::LibreQoSConfig;
 use serde::Serialize;
-use tokio::{task, time};
+use tokio::{task, time, join};
 use crate::libreqos_tracker::QUEUE_STRUCTURE;
 use self::queue_reader::{QueueType, QueueDiff, make_queue_diff};
 mod queue_reader;
@@ -54,16 +54,17 @@ lazy_static! {
     pub(crate) static ref CIRCUIT_TO_QUEUE : RwLock<HashMap<String, QueueStore>> = RwLock::new(HashMap::new());
 }
 
-fn track_queues() {
+async fn track_queues() {
     let config = LibreQoSConfig::load().unwrap();
     let queues = if config.on_a_stick_mode {
-        let queues = queue_reader::read_tc_queues(&config.internet_interface).unwrap();
+        let queues = queue_reader::read_tc_queues(&config.internet_interface).await.unwrap();
         vec![queues]
     } else {
-        vec![
-            queue_reader::read_tc_queues(&config.isp_interface).unwrap(),
-            queue_reader::read_tc_queues(&config.internet_interface).unwrap(),
-        ]
+        let (isp, internet) = join!{
+            queue_reader::read_tc_queues(&config.isp_interface),
+            queue_reader::read_tc_queues(&config.internet_interface),
+        };
+        vec![isp.unwrap(), internet.unwrap()]
     };
 
     // Time to associate queues with circuits
@@ -164,18 +165,15 @@ fn track_queues() {
 
 pub async fn spawn_queue_monitor() {
     let _ = task::spawn(async {
-        let mut interval = time::interval(Duration::from_secs(1));
-
+        let queue_check_period_ms = lqos_config::EtcLqos::load().unwrap().queue_check_period_ms;
+        let mut interval = time::interval(Duration::from_millis(queue_check_period_ms));
         loop {
             let now = Instant::now();
-            let _ = task::spawn_blocking(move || {
-                track_queues()
-            })
-            .await;
+            let _ = track_queues().await;
             let elapsed = now.elapsed();
-            println!("TC Reader tick with mapping consumed {:.4} seconds.", elapsed.as_secs_f32());
-            if elapsed.as_secs_f32() < 10.0 {
-                let duration = Duration::from_secs(1) - elapsed;
+            //println!("TC Reader tick with mapping consumed {} ms.", elapsed.as_millis());
+            if elapsed.as_millis() < queue_check_period_ms as u128 {
+                let duration = Duration::from_millis(queue_check_period_ms) - elapsed;
                 //println!("Sleeping for {:.2} seconds", duration.as_secs_f32());
                 tokio::time::sleep(duration).await;
             } else {
