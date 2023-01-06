@@ -1,4 +1,5 @@
 mod ip_stats;
+use std::net::IpAddr;
 use anyhow::Result;
 pub use ip_stats::{IpMapping, IpStats, XdpPpingResult};
 use serde::{Deserialize, Serialize};
@@ -19,6 +20,7 @@ pub enum BusRequest {
     GetCurrentThroughput,
     GetTopNDownloaders(u32),
     GetWorstRtt(u32),
+    GetHostCounter,
     MapIpToFlow {
         ip_address: String,
         tc_handle: TcHandle,
@@ -56,6 +58,7 @@ pub enum BusResponse {
         packets_per_second: (u64, u64),
         shaped_bits_per_second: (u64, u64),
     },
+    HostCounters(Vec<(IpAddr, u64, u64)>),
     TopDownloaders(Vec<IpStats>),
     WorstRtt(Vec<IpStats>),
     MappedIps(Vec<IpMapping>),

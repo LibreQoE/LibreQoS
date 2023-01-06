@@ -1,8 +1,68 @@
 use lqos_bus::{BusResponse, BUS_BIND_ADDRESS, BusSession, BusRequest, encode_request, decode_response};
 use rocket::response::content::RawJson;
+use rocket::serde::json::Json;
 use rocket::tokio::io::{AsyncWriteExt, AsyncReadExt};
 use rocket::tokio::net::TcpStream;
 use crate::cache_control::NoCache;
+use crate::tracker::SHAPED_DEVICES;
+use std::net::IpAddr;
+
+#[get("/api/circuit_name/<circuit_id>")]
+pub async fn circuit_name(circuit_id: String) -> NoCache<Json<String>> {
+    if let Some(device) = SHAPED_DEVICES.read().devices.iter().find(|d| d.circuit_id == circuit_id) {
+        NoCache::new(Json(device.circuit_name.clone()))
+    } else {
+        let result = "Nameless".to_string();
+        NoCache::new(Json(result))    
+    }
+}
+
+#[get("/api/circuit_throughput/<circuit_id>")]
+pub async fn current_circuit_throughput(circuit_id: String) -> NoCache<Json<Vec<(String, u64, u64)>>> {
+    let mut result = Vec::new();
+    // Get a list of host counts
+    // This is really inefficient, but I'm struggling to find a better way.
+    // TODO: Fix me up
+    let mut stream = TcpStream::connect(BUS_BIND_ADDRESS).await.unwrap();
+    let test = BusSession {
+        auth_cookie: 1234,
+        requests: vec![
+            BusRequest::GetHostCounter,
+        ],
+    };
+    let msg = encode_request(&test).unwrap();
+    stream.write(&msg).await.unwrap();
+
+    // Receive reply
+    let mut buf = Vec::new();
+    let _ = stream.read_to_end(&mut buf).await.unwrap();
+    let reply = decode_response(&buf).unwrap();
+    for msg in reply.responses.iter() {
+        match msg {
+            BusResponse::HostCounters(hosts) => {
+                let devices = SHAPED_DEVICES.read();
+                for (ip, down, up) in hosts.iter() {
+                    let lookup = match ip {
+                        IpAddr::V4(ip) => ip.to_ipv6_mapped(),
+                        IpAddr::V6(ip) => *ip,
+                    };
+                    if let Some(c) = devices.trie.longest_match(lookup) {
+                        if devices.devices[*c.1].circuit_id == circuit_id {
+                            result.push((
+                                ip.to_string(),
+                                *down,
+                                *up
+                            ));
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    NoCache::new(Json(result))
+}
 
 #[get("/api/raw_queue_by_circuit/<circuit_id>")]
 pub async fn raw_queue_by_circuit(circuit_id: String) -> NoCache<RawJson<String>> {
