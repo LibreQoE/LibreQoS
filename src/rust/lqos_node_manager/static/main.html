@@ -89,7 +89,7 @@
             <div class="card bg-light">
                 <div class="card-body">
                     <h5 class="card-title"><i class="fa fa-microchip"></i> CPU Status</h5>
-                    <div id="cpu" style="height: 97px"></div>
+                    <div id="cpu" style="max-height: 97px; min-height: 97px; width: 100%;"></div>
                 </div>
             </div>
         </div>
@@ -188,12 +188,19 @@
                 let graph = document.getElementById("cpu");
                 let x = [];
                 let y = [];
+                let colors = [];
                 for (i=0; i<cpu.length; i++) {
                     x.push(i);
                     y.push(cpu[i]);
+                    colors.push(cpu[i]);
                 }
-                let data = [ {x: x, y:y, type: 'bar' } ];
-                Plotly.newPlot(graph, data, { margin: { l:0,r:0,b:15,t:0 }, yaxis: { automargin: true, autorange: false, range: [0.0, 100.0 ] } });
+                colors.push(100); // 1 extra colors entry to force color scaling
+                let data = [ {x: x, y:y, type: 'bar', marker: { color:colors, colorscale: 'Jet' } } ];
+                Plotly.newPlot(graph, data, { 
+                    margin: { l:0,r:0,b:15,t:0 }, 
+                    yaxis: { automargin: true, autorange: false, range: [0.0, 100.0 ]},
+                }, 
+                { responsive: true });
                 setTimeout(updateCpu, 2000);
             });
         }
