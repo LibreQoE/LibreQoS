@@ -112,7 +112,7 @@
             <div class="card bg-light">
                 <div class="card-body">
                     <h5 class="card-title"><i class="fa fa-bar-chart"></i> TCP Round-Trip Time Histogram</h5>
-                    <div id="rttHistogram" style="height: 150px"></div>
+                    <div id="rttHistogram" style="min-height: 150px; width: 100%;"></div>
                 </div>
             </div>
         </div>
@@ -267,9 +267,9 @@
                     y.push(rtt[i]);
                 }
                 let data = [
-                    {x:x, y:y, type: 'bar'}
+                    {x:x, y:y, type: 'bar', marker: { color:x, colorscale: 'RdBu' } }
                 ]
-                Plotly.newPlot(graph, data, { margin: { l:0,r:0,b:15,t:0 }});
+                Plotly.newPlot(graph, data, { margin: { l:0,r:0,b:35,t:0 }, xaxis: { title: 'TCP Round-Trip Time (ms)' } }, { responsive: true });
                 setTimeout(updateHistogram, 5000);
             });
         }
