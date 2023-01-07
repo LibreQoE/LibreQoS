@@ -102,7 +102,7 @@
             <div class="card bg-light">
                 <div class="card-body">
                     <h5 class="card-title"><i class="fa fa-hourglass"></i> Last 5 Minutes</h5>
-                    <div id="tpGraph" style="height: 150px"></div>
+                    <div id="tpGraph" style="min-height: 150px; width: 100%"></div>
                 </div>
             </div>
         </div>
@@ -172,12 +172,12 @@
                     y4.push(0.0 - tp[i].shaped_bits_per_second[1]);
                 }
                 let data = [
-                    {x: x, y:y, name: 'Download', type: 'scatter', fill: 'tozeroy'},
-                    {x: x, y:y2, name: 'Upload', type: 'scatter', fill: 'tozeroy'},
+                    {x: x, y:y, name: 'Download', type: 'scatter'},
+                    {x: x, y:y2, name: 'Upload', type: 'scatter'},
                     {x: x, y:y3, name: 'Shaped Download', type: 'scatter', fill: 'tozeroy'},
                     {x: x, y:y4, name: 'Shaped Upload', type: 'scatter', fill: 'tozeroy'},
                 ];
-                Plotly.newPlot(graph, data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
+                Plotly.newPlot(graph, data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true, title: "Time since now (seconds)"} }, { responsive: true });
                 //console.log(tp);
                 setTimeout(updateThroughputGraph, 1000);
             });
