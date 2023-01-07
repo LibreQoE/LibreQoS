@@ -12,7 +12,7 @@
 
 - Added Splynx integration
 - UISP integration overhaul by [@thebracket](https://github.com/thebracket/)
-- [LMS integation](https://github.com/interduo/LMSLibreQoS) for Polish ISPs by [@interduo](https://github.com/interduo)
+- [LMS integration](https://github.com/interduo/LMSLibreQoS) for Polish ISPs by [@interduo](https://github.com/interduo)
 
 
 ### Partial Queue Reload
@@ -37,7 +37,7 @@ In order to improve queue reload time in v1.3, it was necessary to use a unique 
 
 If you have your own script creating ShapedDevices.csv - you could use your CRM's unique identifier for customer services / circuits to serve as this Circuit ID. The UISP and Splynx integrations already do this automatically.
 
-## Compatability Notes
+## Compatibility Notes
 
 The most major changes are the renaming of the fqorCake variable to "sqm",
 and the addition of the Circuit identifier field.
