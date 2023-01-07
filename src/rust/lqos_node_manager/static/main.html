@@ -79,7 +79,7 @@
             <div class="card bg-light">
                 <div class="card-body">
                     <h5 class="card-title"><i class="fa fa-database"></i> Memory Status</h5>
-                    <div id="ram" style="height: 97px"></div>
+                    <div id="ram" style="max-height: 97px; width: 100%;"></div>
                 </div>
             </div>
         </div>
@@ -206,7 +206,7 @@
                     labels: ['Used', 'Available'], 
                     type: 'pie' 
                 } ];
-                Plotly.newPlot(graph, data, { margin: { l:4,r:0,b:0,t:4 } });
+                Plotly.newPlot(graph, data, { margin: { l:0,r:0,b:0,t:12 }, showlegend: false }, { responsive: true });
                 setTimeout(updateRam, 30000);
             });
         }
