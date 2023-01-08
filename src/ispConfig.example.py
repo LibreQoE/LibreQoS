@@ -73,7 +73,7 @@ uispSite = ''
 #   or site options.
 # * "full" - build a complete network map
 uispStrategy = "full"
-# List any sites that should not be included, with each site name surrounded by '' and seperated by commas
+# List any sites that should not be included, with each site name surrounded by '' and separated by commas
 excludeSites = []
 # If you use IPv6, this can be used to find associated IPv6 prefixes for your clients' IPv4 addresses, and match them to those devices
 findIPv6usingMikrotik = False
