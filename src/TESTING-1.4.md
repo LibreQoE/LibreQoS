@@ -23,7 +23,7 @@ git checkout v1.4-pre-alpha-rust-integration
 You need to have a few packages from `apt` installed:
 
 ```
-apt get install -y python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen
+apt get install -y python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname r`
 ```
 
 Then you need to install some Python dependencies:
@@ -39,6 +39,8 @@ Go to [RustUp](https://rustup.rs) and follow the instructions. Basically, run th
 ```
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
+
+When Rust finishes installing, it will tell you to execute a command to place the Rust build tools into your path. You need to either execute this command or logout and back in again.
 
 Once that's done, change directory to `/wherever_you_put_libreqos/src/`, and run:
 
