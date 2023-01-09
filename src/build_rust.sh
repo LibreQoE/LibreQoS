@@ -7,7 +7,7 @@
 # automatically.
 #
 # Don't forget to setup `/etc/lqos`
-PROGS="lqosd lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqos_node_manager"
+PROGS="lqosd lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqos_node_manager webusers"
 mkdir -p bin/static
 pushd rust
 #cargo clean
