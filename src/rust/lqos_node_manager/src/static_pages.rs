@@ -1,38 +1,55 @@
 use rocket::fs::NamedFile;
-use crate::cache_control::{LongCache, NoCache};
+use crate::{cache_control::{LongCache, NoCache}, auth_guard::AuthGuard};
 
 // Note that NoCache can be replaced with a cache option
 // once the design work is complete.
 #[get("/")]
-pub async fn index<'a>() -> NoCache<Option<NamedFile>> {
-    NoCache::new(NamedFile::open("static/main.html").await.ok())
+pub async fn index<'a>(auth: AuthGuard) -> NoCache<Option<NamedFile>> {
+    match auth {
+        AuthGuard::FirstUse => NoCache::new(NamedFile::open("static/first_run.html").await.ok()),
+        _ => NoCache::new(NamedFile::open("static/main.html").await.ok())
+    }
+}
+
+// Note that NoCache can be replaced with a cache option
+// once the design work is complete.
+#[catch(401)]
+pub async fn login<'a>() -> NoCache<Option<NamedFile>> {
+    NoCache::new(NamedFile::open("static/login.html").await.ok())
+}
+
+// Note that NoCache can be replaced with a cache option
+// once the design work is complete.
+#[get("/login")]
+pub async fn login_page<'a>() -> NoCache<Option<NamedFile>> {
+    NoCache::new(NamedFile::open("static/login.html").await.ok())
 }
 
 // Note that NoCache can be replaced with a cache option
 // once the design work is complete.
 #[get("/shaped")]
-pub async fn shaped_devices_csv_page<'a>() -> NoCache<Option<NamedFile>> {
+pub async fn shaped_devices_csv_page<'a>(_auth: AuthGuard) -> NoCache<Option<NamedFile>> {
     NoCache::new(NamedFile::open("static/shaped.html").await.ok())
 }
 
 // Note that NoCache can be replaced with a cache option
 // once the design work is complete.
 #[get("/circuit_queue")]
-pub async fn circuit_queue<'a>() -> NoCache<Option<NamedFile>> {
+pub async fn circuit_queue<'a>(_auth: AuthGuard) -> NoCache<Option<NamedFile>> {
     NoCache::new(NamedFile::open("static/circuit_queue.html").await.ok())
 }
 
 // Note that NoCache can be replaced with a cache option
 // once the design work is complete.
 #[get("/unknown")]
-pub async fn unknown_devices_page<'a>() -> NoCache<Option<NamedFile>> {
+pub async fn unknown_devices_page<'a>(_auth: AuthGuard) -> NoCache<Option<NamedFile>> {
     NoCache::new(NamedFile::open("static/unknown-ip.html").await.ok())
 }
 
 // Note that NoCache can be replaced with a cache option
 // once the design work is complete.
 #[get("/shaped-add")]
-pub async fn shaped_devices_add_page<'a>() -> NoCache<Option<NamedFile>> {
+pub async fn shaped_devices_add_page<'a>(_auth: AuthGuard) -> NoCache<Option<NamedFile>> {
     NoCache::new(NamedFile::open("static/shaped-add.html").await.ok())
 }
 

@@ -20,4 +20,5 @@ members = [
     "xdp_pping", # Rust port of cpumap's `xdp_pping` tool, for compatibility
     "lqos_node_manager", # A lightweight web interface for management and local monitoring
     "lqos_python", # Python bindings for using the Rust bus directly
+    "webusers", # CLI control for managing the web user list
 ]

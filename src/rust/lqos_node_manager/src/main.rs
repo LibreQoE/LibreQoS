@@ -8,6 +8,7 @@ mod cache_control;
 use rocket_async_compression::Compression;
 mod queue_info;
 mod config_control;
+mod auth_guard;
 
 #[launch]
 fn rocket() -> _ {
@@ -18,6 +19,7 @@ fn rocket() -> _ {
                 rocket::tokio::spawn(tracker::update_tracking());
             })
         }))
+        .register("/", catchers![static_pages::login])
         .mount("/", routes![
             static_pages::index,
             static_pages::shaped_devices_csv_page,
@@ -54,6 +56,11 @@ fn rocket() -> _ {
             config_control::get_nic_list,
             config_control::get_current_python_config,
             config_control::get_current_lqosd_config,
+            auth_guard::create_first_user,
+            auth_guard::login,
+            auth_guard::admin_check,
+            static_pages::login_page,
+            auth_guard::username,
 
             // Supporting files
             static_pages::bootsrap_css,

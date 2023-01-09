@@ -23,7 +23,7 @@
                     <li class="nav-item">
                         <a class="nav-link" href="/"><i class="fa fa-home"></i> Dashboard</a>
                     </li>
-                    
+                    <li class="nav-item" id="currentLogin"></li>
                     <li class="nav-item">
                         <a class="nav-link" href="#"><i class="fa fa-globe"></i> Network Layout</a>
                     </li>
@@ -56,7 +56,7 @@
                     <div class="card-body">
                         <h5 class="card-title"><i class="fa fa-users"></i> Configuration</h5>
 
-<div class="col-sm-8 mx-auto" style="padding: 4px; margin-bottom: 4px;">
+<div class="col-sm-8 mx-auto" style="padding: 4px; margin-bottom: 4px;" id="controls">
     <a href="#" class="btn btn-primary"><i class="fa fa-save"></i> Save ispConfig.py</a>&nbsp;
     <a href="#" class="btn btn-danger"><i class="fa fa-save"></i> Save /etc/lqos</a>&nbsp;
     <a href="#" class="btn btn-primary"><i class="fa fa-refresh"></i> Reload LibreQoS</a>&nbsp;
@@ -71,6 +71,7 @@
         <button class="nav-link" id="v-pills-tuning-tab" data-bs-toggle="pill" data-bs-target="#v-pills-tuning" type="button" role="tab" aria-controls="v-pills-settings" aria-selected="false"><i class="fa fa-warning"></i> Tuning</button>
         <button class="nav-link" id="v-pills-spylnx-tab" data-bs-toggle="pill" data-bs-target="#v-pills-spylnx" type="button" role="tab" aria-controls="v-pills-settings" aria-selected="false"><i class="fa fa-eye"></i> Spylnx</button>
         <button class="nav-link" id="v-pills-uisp-tab" data-bs-toggle="pill" data-bs-target="#v-pills-uisp" type="button" role="tab" aria-controls="v-pills-settings" aria-selected="false"><i class="fa fa-eye"></i> UISP</button>
+        <button class="nav-link" id="v-pills-users-tab" data-bs-toggle="pill" data-bs-target="#v-pills-users" type="button" role="tab" aria-controls="v-pills-settings" aria-selected="false"><i class="fa fa-users"></i> LibreQoS Users</button>
     </div>
     <div class="tab-content" id="v-pills-tabContent">
         <div class="tab-pane fade show active" id="v-pills-home" role="tabpanel" aria-labelledby="v-pills-home-tab">
@@ -353,6 +354,10 @@
             UISP Settings
             ...
         </div>
+        <div class="tab-pane fade" id="v-pills-users" role="tabpanel" aria-labelledby="v-pills-users-tab">
+            <h2><i class="fa fa-users"></i> LibreQos Web Interface Users</h2>
+            <div id="userManager"></div>
+        </div>
     </div>
     </div>
                           
@@ -374,82 +379,98 @@
         function start() {
             colorReloadButton();
             updateHostCounts();
-            $.get("/api/python_config", (data) => {
-                python_config = data;
-                $.get("/api/lqosd_config", (data) => {
-                    lqosd_config = data;
-                    $.get("/api/list_nics", (data) => {
-                        nics = data;
-                        console.log(nics);
-                        fillNicList("nicCore", python_config.isp_interface);
-                        fillNicList("nicInternet", python_config.internet_interface);
+            $.get("/api/admin_check", (is_admin) => {
+                if (!is_admin) {
+                    $("#controls").html("<p class='alert alert-danger' role='alert'>You have to be an administrative user to change configuration.");
+                    $("#userManager").html("<p class='alert alert-danger' role='alert'>Only administrators can see/change user information.");
+                }
+                $.get("/api/python_config", (data) => {
+                    python_config = data;
+                    $.get("/api/lqosd_config", (data) => {
+                        lqosd_config = data;
+                        $.get("/api/list_nics", (data) => {
+                            nics = data;
+                            console.log(nics);
+                            fillNicList("nicCore", python_config.isp_interface);
+                            fillNicList("nicInternet", python_config.internet_interface);
 
-                        $("#onAStick").prop('checked', python_config.on_a_stick_mode);
-                        $("#StickVLANCore").val(python_config.stick_vlans[0]);
-                        $("#StickVLANInternet").val(python_config.stick_vlans[1]);
-                        if (lqosd_config.bridge != null) {
-                            $("#useKernelBridge").prop('checked', lqosd_config.bridge.use_kernel_bridge);
+                            $("#onAStick").prop('checked', python_config.on_a_stick_mode);
+                            $("#StickVLANCore").val(python_config.stick_vlans[0]);
+                            $("#StickVLANInternet").val(python_config.stick_vlans[1]);
+                            if (lqosd_config.bridge != null) {
+                                $("#useKernelBridge").prop('checked', lqosd_config.bridge.use_kernel_bridge);
 
-                            // Map Bifrost Interfaces
-                            let html = "<h4>Interface Mapping</h4>";
-                            html += "<table class='table'>";
-                            html += "<thead><th>Input Interface</th><th>Output Interface</th><th>Scan VLANs?</th></thead>";
-                            html += "<tbody>";
-                            for (let i=0; i<lqosd_config.bridge.interface_mapping.length; i++) {
-                                html += "<tr>";
-                                html += "<td>" + buildNICList('bfIn_' + i, lqosd_config.bridge.interface_mapping[i].name) + "</td>";
-                                html += "<td>" + buildNICList('bfOut_' + i, lqosd_config.bridge.interface_mapping[i].redirect_to) + "</td>";
-                                html += "<td><input type='checkbox' class='form-check-input' id='bfScanVLAN_" + i + "'";
-                                if (lqosd_config.bridge.interface_mapping[i].scan_vlans) {
-                                    html += ' checked';
+                                // Map Bifrost Interfaces
+                                let html = "<h4>Interface Mapping</h4>";
+                                html += "<table class='table'>";
+                                html += "<thead><th>Input Interface</th><th>Output Interface</th><th>Scan VLANs?</th></thead>";
+                                html += "<tbody>";
+                                for (let i=0; i<lqosd_config.bridge.interface_mapping.length; i++) {
+                                    html += "<tr>";
+                                    html += "<td>" + buildNICList('bfIn_' + i, lqosd_config.bridge.interface_mapping[i].name) + "</td>";
+                                    html += "<td>" + buildNICList('bfOut_' + i, lqosd_config.bridge.interface_mapping[i].redirect_to) + "</td>";
+                                    html += "<td><input type='checkbox' class='form-check-input' id='bfScanVLAN_" + i + "'";
+                                    if (lqosd_config.bridge.interface_mapping[i].scan_vlans) {
+                                        html += ' checked';
+                                    }
+                                    html += "/></td>";
+                                    html += "</tr>";
                                 }
-                                html += "/></td>";
-                                html += "</tr>";
-                            }
-                            html += "</tbody></table>";
-                            $("#bifrostInterfaces").html(html);
+                                html += "</tbody></table>";
+                                $("#bifrostInterfaces").html(html);
 
-                            // Map Bifrost VLAN mappings
-                            html = "<h4>VLAN Mapping</h4>";
-                            html += "<table class='table'>";
-                            html += "<thead><th>Parent Interface</th><th>Input Tag</th><th>Remapped Tag</th></thead>";
-                            html += "<tbody>";
-                            for (let i=0; i<lqosd_config.bridge.vlan_mapping.length; i++) {
-                                html += "<tr>";
-                                html += "<td>" + buildNICList('bfvlanif_' + i, lqosd_config.bridge.vlan_mapping[i].parent) + "</td>";
-                                html += "<td><input id='bfvlantag_" + i + "' type='number' min='0' max='4094' value='" + lqosd_config.bridge.vlan_mapping[i].tag + "' /></td>";
-                                html += "<td><input id='bfvlanout_" + i + "' type='number' min='0' max='4094' value='" + lqosd_config.bridge.vlan_mapping[i].redirect_to + "' /></td>";
-                                html += "</tr>";
+                                // Map Bifrost VLAN mappings
+                                html = "<h4>VLAN Mapping</h4>";
+                                html += "<table class='table'>";
+                                html += "<thead><th>Parent Interface</th><th>Input Tag</th><th>Remapped Tag</th></thead>";
+                                html += "<tbody>";
+                                for (let i=0; i<lqosd_config.bridge.vlan_mapping.length; i++) {
+                                    html += "<tr>";
+                                    html += "<td>" + buildNICList('bfvlanif_' + i, lqosd_config.bridge.vlan_mapping[i].parent) + "</td>";
+                                    html += "<td><input id='bfvlantag_" + i + "' type='number' min='0' max='4094' value='" + lqosd_config.bridge.vlan_mapping[i].tag + "' /></td>";
+                                    html += "<td><input id='bfvlanout_" + i + "' type='number' min='0' max='4094' value='" + lqosd_config.bridge.vlan_mapping[i].redirect_to + "' /></td>";
+                                    html += "</tr>";
+                                }
+                                html += "</tbody></table>";
+                                $("#bifrostVlans").html(html);
                             }
-                            html += "</tbody></table>";
-                            $("#bifrostVlans").html(html);
-                        }
-                        $("#sqmMode option[value='" + python_config.sqm + "']").prop("selected", true);
-                        $("#maxDownload").val(python_config.total_download_mbps);
-                        $("#maxUpload").val(python_config.total_upload_mbps);
-                        $("#monitorMode").prop('checked', python_config.monitor_mode);
-                        $("#generatedDownload").val(python_config.generated_download_mbps);
-                        $("#generatedUpload").val(python_config.generated_upload_mbps);
-                        $("#binpacking").prop('checked', python_config.use_binpacking);
-                        $("#queuecheckms").val(lqosd_config.queue_check_period_ms);
-                        $("#actualShellCommands").prop('checked', python_config.enable_shell_commands);
-                        $("#useSudo").prop('checked', python_config.run_as_sudo);
-                        $("#overrideQueues").val(python_config.override_queue_count);
-                        $("#stopIrqBalance").prop('checked', lqosd_config.tuning.stop_irq_balance);
-                        $("#netDevUsec").val(lqosd_config.tuning.netdev_budget_usecs);
-                        $("#netDevPackets").val(lqosd_config.tuning.netdev_budget_packets);
-                        $("#rxUsecs").val(lqosd_config.tuning.rx_usecs);
-                        $("#txUsecs").val(lqosd_config.tuning.tx_usecs);
-                        $("#disableRxVlan").prop('checked', lqosd_config.tuning.disable_rxvlan);
-                        $("#disableTxVlan").prop('checked', lqosd_config.tuning.disable_txvlan);
-                        let offloads = "";
-                        for (let i=0; i<lqosd_config.tuning.disable_offload.length; i++) {
-                            offloads += lqosd_config.tuning.disable_offload[i] + " ";
-                        }
-                        $("#disableOffloadList").val(offloads);
-                    });
-                });                
+                            $("#sqmMode option[value='" + python_config.sqm + "']").prop("selected", true);
+                            $("#maxDownload").val(python_config.total_download_mbps);
+                            $("#maxUpload").val(python_config.total_upload_mbps);
+                            $("#monitorMode").prop('checked', python_config.monitor_mode);
+                            $("#generatedDownload").val(python_config.generated_download_mbps);
+                            $("#generatedUpload").val(python_config.generated_upload_mbps);
+                            $("#binpacking").prop('checked', python_config.use_binpacking);
+                            $("#queuecheckms").val(lqosd_config.queue_check_period_ms);
+                            $("#actualShellCommands").prop('checked', python_config.enable_shell_commands);
+                            $("#useSudo").prop('checked', python_config.run_as_sudo);
+                            $("#overrideQueues").val(python_config.override_queue_count);
+                            $("#stopIrqBalance").prop('checked', lqosd_config.tuning.stop_irq_balance);
+                            $("#netDevUsec").val(lqosd_config.tuning.netdev_budget_usecs);
+                            $("#netDevPackets").val(lqosd_config.tuning.netdev_budget_packets);
+                            $("#rxUsecs").val(lqosd_config.tuning.rx_usecs);
+                            $("#txUsecs").val(lqosd_config.tuning.tx_usecs);
+                            $("#disableRxVlan").prop('checked', lqosd_config.tuning.disable_rxvlan);
+                            $("#disableTxVlan").prop('checked', lqosd_config.tuning.disable_txvlan);
+                            let offloads = "";
+                            for (let i=0; i<lqosd_config.tuning.disable_offload.length; i++) {
+                                offloads += lqosd_config.tuning.disable_offload[i] + " ";
+                            }
+                            $("#disableOffloadList").val(offloads);
+
+                            // User management
+                            if (is_admin) {
+                                userManager();
+                            }
+                        });
+                    });                
+                });
             });
+        }
+
+        function userManager() {
+            let html = "<p>For now, please use <em>bin/webusers</em> to manage users.</p>";
+            $("#userManager").html(html);
         }
 
         function fillNicList(id, selected) {

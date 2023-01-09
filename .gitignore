@@ -48,6 +48,7 @@ src/tinsStats.json
 src/linux_tc.txt
 src/lastRun.txt
 src/liblqos_python.so
+src/webusers.toml
 
 # Ignore Rust build artifacts
 src/rust/target
@@ -57,6 +58,7 @@ src/bin/lqtop
 src/bin/xdp_iphash_to_cpu_cmdline
 src/bin/xdp_pping
 src/bin/lqos_node_manager
+src/bin/webusers
 src/bin/Rocket.toml
 
 

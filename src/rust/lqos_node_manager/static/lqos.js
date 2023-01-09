@@ -44,12 +44,33 @@ function bindColorToggle() {
     });
 }
 
+function deleteAllCookies() {
+    const cookies = document.cookie.split(";");
+
+    for (let i = 0; i < cookies.length; i++) {
+        const cookie = cookies[i];
+        const eqPos = cookie.indexOf("=");
+        const name = eqPos > -1 ? cookie.substr(0, eqPos) : cookie;
+        document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT";
+    }
+    window.location.reload();
+}
+
 function updateHostCounts() {
     $.get("/api/host_counts", (hc) => {
         $("#shapedCount").text(hc[0]);
         $("#unshapedCount").text(hc[1]);
         setTimeout(updateHostCounts, 5000);
     });
+    $.get("/api/username", (un) => {
+        let html = "";
+        if (un == "Anonymous") {
+            html = "<a class='nav-link' href='/login'><i class='fa fa-user'></i> Login</a>";
+        } else {
+            html = "<a class='nav-link' onclick='deleteAllCookies();'><i class='fa fa-user'></i> Logout " + un + "</a>";
+        }
+        $("#currentLogin").html(html);
+    })
 }
 
 function colorReloadButton() {
