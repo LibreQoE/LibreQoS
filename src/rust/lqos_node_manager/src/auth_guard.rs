@@ -117,7 +117,7 @@ pub fn admin_check(auth: AuthGuard) -> Json<bool> {
 }
 
 #[get("/api/username")]
-pub fn username(auth: AuthGuard, cookies: &CookieJar) -> Json<String> {
+pub fn username(_auth: AuthGuard, cookies: &CookieJar) -> Json<String> {
     if let Some(token) = cookies.get("User-Token") {
         let lock = WEB_USERS.lock();
         if let Some(users) = &*lock {
