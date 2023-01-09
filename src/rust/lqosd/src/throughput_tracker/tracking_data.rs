@@ -30,10 +30,10 @@ impl ThroughputTracker {
         // Copy previous byte/packet numbers and reset RTT data
         self.raw_data.iter_mut().for_each(|(_k, v)| {
             if v.first_cycle < self.cycle {
-                v.bytes_per_second.0 = v.bytes.0 - v.prev_bytes.0;
-                v.bytes_per_second.1 = v.bytes.1 - v.prev_bytes.1;
-                v.packets_per_second.0 = v.packets.0 - v.prev_packets.0;
-                v.packets_per_second.1 = v.packets.1 - v.prev_packets.1;
+                v.bytes_per_second.0 = u64::checked_sub(v.bytes.0, v.prev_bytes.0).unwrap_or(0);
+                v.bytes_per_second.1 = u64::checked_sub(v.bytes.1, v.prev_bytes.1).unwrap_or(0);
+                v.packets_per_second.0 = u64::checked_sub(v.packets.0, v.prev_packets.0).unwrap_or(0);
+                v.packets_per_second.1 = u64::checked_sub(v.packets.1, v.prev_packets.1).unwrap_or(0);
                 v.prev_bytes = v.bytes;
                 v.prev_packets = v.packets;
             }
