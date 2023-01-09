@@ -101,3 +101,17 @@ You can setup `lqosd` and `lqos_node_manager` as daemons to keep running (there 
 You can now point a web browser at `http://a.b.c.d:9123` (replace `a.b.c.d` with the management IP address of your shaping server) and enjoy a real-time view of your network.
 
 In the web browser, click `Reload LibreQoS` to setup your shaping rules.
+
+# Updating 1.4 Once You Have It
+
+1. Resume screen with `screen -r`
+2. Go to console 0 (`Ctrl-A, 0`) and stop `lqosd` with `ctrl+c`.
+3. Go to console 1 (`Ctl-A, 1`) and stop `lqos_node_manager` with `ctrl+c`.
+4. Detach from `screen` with `Ctrl-A, D`.
+5. Change to your `LibreQoS` directory (e.g. `cd /opt/LibreQoS`)
+6. Update from Git: `git pull`
+7. Recompile: `./build-rust.sh`
+8. Resume screen with `screen -r`.
+9. Go to console 0 (`Ctrl-A, 0`) and run `sudo ./lqosd` to restart the bridge/manager.
+10. Go to console 1 (`Ctrl-A, 1`) and run `./lqos_node_manager` to restart the web server.
+11. If you didn't see errors, detach with `Ctrl-A, D` 
