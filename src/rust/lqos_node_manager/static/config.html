@@ -57,7 +57,7 @@
                         <h5 class="card-title"><i class="fa fa-users"></i> Configuration</h5>
 
 <div class="col-sm-8 mx-auto" style="padding: 4px; margin-bottom: 4px;" id="controls">
-    <a href="#" class="btn btn-primary"><i class="fa fa-save"></i> Save ispConfig.py</a>&nbsp;
+    <a href="#" class="btn btn-primary" id="btnSaveIspConfig"><i class="fa fa-save"></i> Save ispConfig.py</a>&nbsp;
     <a href="#" class="btn btn-danger"><i class="fa fa-save"></i> Save /etc/lqos</a>&nbsp;
     <a href="#" class="btn btn-primary"><i class="fa fa-refresh"></i> Reload LibreQoS</a>&nbsp;
     <a href="#" class="btn btn-danger"><i class="fa fa-refresh"></i> (Re)Start lqosd</a>
@@ -383,6 +383,39 @@
                 if (!is_admin) {
                     $("#controls").html("<p class='alert alert-danger' role='alert'>You have to be an administrative user to change configuration.");
                     $("#userManager").html("<p class='alert alert-danger' role='alert'>Only administrators can see/change user information.");
+                } else {
+                    // Handle Saving ispConfig.py
+                    $("#btnSaveIspConfig").on('click', (data) => {
+                        let new_config = python_config;
+                        new_config.isp_interface = $("#nicCore").val();
+                        new_config.internet_interface = $("#nicInternet").val();
+                        new_config.on_a_stick_mode = $("#onAStick").prop('checked');
+                        new_config.stick_vlans[0] = Number($("#StickVLANCore").val());
+                        new_config.stick_vlans[1] = Number($("#StickVLANInternet").val());
+                        new_config.sqm = $("#sqmMode").val();
+                        new_config.total_download_mbps = Number($("#maxDownload").val());
+                        new_config.total_upload_mbps = Number($("#maxUpload").val());
+                        new_config.monitor_mode = $("#monitorMode").prop('checked');
+                        new_config.generated_download_mbps = Number($("#generatedDownload").val());
+                        new_config.generated_upload_mbps = Number($("#generatedUpload").val());
+                        new_config.use_binpacking = $("#binpacking").prop('checked');
+                        new_config.enable_shell_commands = $("#actualShellCommands").prop('checked');
+                        new_config.run_as_sudo = $("#useSudo").prop('checked');
+                        new_config.override_queue_count = Number($("#overrideQueues").val());
+                        $.ajax({
+                            type: "POST",
+                            url: "/api/python_config",
+                            data: JSON.stringify(new_config),
+                            success: (data) => {
+                                if (data == "ERROR") {
+                                    alert("Unable to create a first user.")
+                                } else {
+                                    alert("Save Successful. Original backed up in ispConfig.py.backup. The window will now reload with the new configuration.");
+                                    window.location.reload()
+                                }
+                            }
+                        })
+                    });
                 }
                 $.get("/api/python_config", (data) => {
                     python_config = data;

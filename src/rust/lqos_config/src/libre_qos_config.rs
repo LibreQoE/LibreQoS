@@ -1,6 +1,6 @@
 use anyhow::{Error, Result};
 use serde::{Serialize, Deserialize};
-use std::{fs, path::{Path, PathBuf}};
+use std::{fs::{self, remove_file, OpenOptions, read_to_string}, path::{Path, PathBuf}, io::Write};
 use crate::etc;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -124,6 +124,51 @@ impl LibreQoSConfig {
                 self.override_queue_count = split_at_equals(line).parse().unwrap_or(0);
             }
         }
+        Ok(())
+    }
+
+    pub fn save(&self) -> Result<()> {
+        // Find the config
+        let cfg = etc::EtcLqos::load()?;
+        let base_path = Path::new(&cfg.lqos_directory);
+        let final_path = base_path.join("ispConfig.py");
+        let backup_path = base_path.join("ispConfig.py.backup");
+        std::fs::copy(&final_path, &backup_path)?;
+
+        // Load existing file
+        let original = read_to_string(final_path)?;
+
+        // Temporary
+        let final_path = base_path.join("ispConfig.py.test");
+
+        // Update config entries line by line
+        let mut config = String::new();
+        for line in original.split('\n') {
+            let mut line = line.to_string();
+            if line.starts_with("interfaceA") { line = format!("interfaceA = '{}'", self.isp_interface); }
+            if line.starts_with("interfaceB") { line = format!("interfaceB = '{}'", self.internet_interface); }
+            if line.starts_with("OnAStick") { line = format!("OnAStick = {}", if self.on_a_stick_mode { "True" } else { "False" } ); }
+            if line.starts_with("StickVlanA") { line = format!("StickVlanA = {}", self.stick_vlans.0); }
+            if line.starts_with("StickVlanB") { line = format!("StickVlanB = {}", self.stick_vlans.1); }
+            if line.starts_with("sqm") { line = format!("sqm = '{}'", self.sqm); }
+            if line.starts_with("upstreamBandwidthCapacityDownloadMbps") { line = format!("upstreamBandwidthCapacityDownloadMbps = {}", self.total_download_mbps); }
+            if line.starts_with("upstreamBandwidthCapacityUploadMbps") { line = format!("upstreamBandwidthCapacityUploadMbps = {}", self.total_upload_mbps); }
+            if line.starts_with("monitorOnlyMode") { line = format!("monitorOnlyMode = {}", if self.monitor_mode { "True" } else { "False" } ); }
+            if line.starts_with("generatedPNDownloadMbps") { line = format!("generatedPNDownloadMbps = {}", self.generated_download_mbps); }
+            if line.starts_with("generatedPNUploadMbps") { line = format!("generatedPNUploadMbps = {}", self.generated_upload_mbps); }
+            if line.starts_with("useBinPackingToBalanceCPU") { line = format!("useBinPackingToBalanceCPU = {}", if self.use_binpacking { "True" } else { "False" } ); }
+            if line.starts_with("enableActualShellCommands") { line = format!("enableActualShellCommands = {}", if self.enable_shell_commands { "True" } else { "False" } ); }
+            if line.starts_with("runShellCommandsAsSudo") { line = format!("runShellCommandsAsSudo = {}", if self.run_as_sudo { "True" } else { "False" } ); }
+            if line.starts_with("queuesAvailableOverride") { line = format!("queuesAvailableOverride = {}", self.override_queue_count); }
+            config += &format!("{line}\n");
+        }
+
+        // Actually save to disk
+        if final_path.exists() {
+            remove_file(&final_path)?;
+        }
+        let mut file = OpenOptions::new().write(true).create_new(true).open(&final_path)?;
+        file.write_all(&config.as_bytes())?;
         Ok(())
     }
 }

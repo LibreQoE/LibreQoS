@@ -41,3 +41,9 @@ pub async fn get_current_lqosd_config(_auth: AuthGuard) -> NoCache<Json<EtcLqos>
     println!("{:#?}", config);
     NoCache::new(Json(config))
 }
+
+#[post("/api/python_config", data="<config>")]
+pub async fn update_python_config(_auth: AuthGuard, config: Json<LibreQoSConfig>) -> Json<String> {
+    config.save().unwrap();
+    Json("OK".to_string())
+}

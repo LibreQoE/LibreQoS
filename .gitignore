@@ -37,6 +37,8 @@ src/ShapedDevices.csv
 src/ShapedDevices.lastLoaded.csv
 src/network.json
 src/ispConfig.py
+src/ispConfig.py.backup
+src/ispConfig.py.test
 src/statsByCircuit.json
 src/statsByParentNode.json
 src/lastGoodConfig.json
