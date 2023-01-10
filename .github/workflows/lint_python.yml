@@ -19,8 +19,6 @@ jobs:
                       --show-source --statistics
       - run: isort --check-only --profile black . || true
       - run: pip install -r requirements.txt || pip install --editable . || pip install . || true
-      - run: pip install binpacking flask flask_httpauth flask_restful graphviz
-                         influxdb-client ipaddress psutil requests schedule waitress
       - run: mkdir --parents --verbose .mypy_cache
       - run: mypy --ignore-missing-imports --install-types --non-interactive . || true
       - run: pytest . || true
