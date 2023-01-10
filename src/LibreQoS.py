@@ -1057,12 +1057,13 @@ def refreshShapersUpdateOnly():
 					else:
 						removeDeviceIPsFromFilter(lastLoadedSubscriberCircuitsByID[circuitID])
 						# Delete HTB class, qdisc. Then recreat it.
-						classid = classIDofExistingCircuitID[circuitID]
-						circuit['classid'] = classid
+						classID = classIDofExistingCircuitID[circuitID]
+						circuit['classid'] = classID
 						delHTBclass(classID)
 						parentNodeClassID = classIDOfParentNodes[parentNodeOfCircuitID[circuitID]]
 						addCircuitHTBandQdisc(circuit, parentNodeClassID)
-						addDeviceIPsToFilter(newlyUpdatedSubscriberCircuitsByID[circuitID], cpuNum)
+						cpuNumHex = cpuNumOfParentNodeHex[parentNodeActual]
+						addDeviceIPsToFilter(newlyUpdatedSubscriberCircuitsByID[circuitID], cpuNumHex)
 				if devicesChanged:
 					parentNodeActual = circuit['ParentNode']
 					if parentNodeActual == 'none':
