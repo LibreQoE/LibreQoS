@@ -1,0 +1,11 @@
+binpacking
+flask
+flask_httpauth
+flask_restful
+graphviz
+influxdb-client
+ipaddress
+psutil
+requests
+schedule
+waitress
