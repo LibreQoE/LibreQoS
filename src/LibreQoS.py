@@ -102,9 +102,9 @@ def findQueuesAvailable():
 		cpuCount = multiprocessing.cpu_count()
 		print("CPU cores:\t\t\t" + str(cpuCount))
 		if queuesAvailable < 2:
-			raise SystemError('Only 1 NIC rx/tx queue avaialable. You will need to use a NIC with 2 or more rx/tx queues available.')
+			raise SystemError('Only 1 NIC rx/tx queue available. You will need to use a NIC with 2 or more rx/tx queues available.')
 		if queuesAvailable < 2:
-			raise SystemError('Only 1 CPU core avaialable. You will need to use a CPU with 2 or more CPU cores.')
+			raise SystemError('Only 1 CPU core available. You will need to use a CPU with 2 or more CPU cores.')
 		queuesAvailable = min(queuesAvailable,cpuCount)
 		print("queuesAvailable set to:\t" + str(queuesAvailable))
 	else:
@@ -142,11 +142,11 @@ def validateNetworkAndDevices():
 		seenTheseIPsAlready = []
 		for row in commentsRemoved:
 			circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4_input, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment = row
-			# Must have circuitID, it's a unique identifier requried for stateful changes to queue structure
+			# Must have circuitID, it's a unique identifier required for stateful changes to queue structure
 			if circuitID == '':
 				warnings.warn("No Circuit ID provided in ShapedDevices.csv at row " + str(rowNum), stacklevel=2)
 				devicesValidatedOrNot = False
-			# Each entry in ShapedDevices.csv can have multiple IPv4s or IPv6s seperated by commas. Split them up and parse each to ensure valid
+			# Each entry in ShapedDevices.csv can have multiple IPv4s or IPv6s separated by commas. Split them up and parse each to ensure valid
 			ipv4_subnets_and_hosts = []
 			ipv6_subnets_and_hosts = []
 			if ipv4_input != "":
@@ -271,7 +271,7 @@ def loadSubscriberCircuits(shapedDevicesFile):
 				downloadMax = 10000
 				uploadMax = 10000
 			ipv4_subnets_and_hosts = []
-			# Each entry in ShapedDevices.csv can have multiple IPv4s or IPv6s seperated by commas. Split them up and parse each
+			# Each entry in ShapedDevices.csv can have multiple IPv4s or IPv6s separated by commas. Split them up and parse each
 			if ipv4_input != "":
 				ipv4_input = ipv4_input.replace(' ','')
 				if "," in ipv4_input:
@@ -433,7 +433,7 @@ def refreshShapers():
 		subscriberCircuits,	dictForCircuitsWithoutParentNodes = loadSubscriberCircuits(shapedDevicesFile)
 		
 
-		# Load network heirarchy
+		# Load network hierarchy
 		with open(networkJSONfile, 'r') as j:
 			network = json.loads(j.read())
 		
@@ -499,7 +499,7 @@ def refreshShapers():
 						genPNcounter = 0
 		print("Generated parent nodes created")
 		
-		# Find the bandwidth minimums for each node by combining mimimums of devices lower in that node's heirarchy
+		# Find the bandwidth minimums for each node by combining mimimums of devices lower in that node's hierarchy
 		def findBandwidthMins(data, depth):
 			tabs = '   ' * depth
 			minDownload = 0
@@ -633,7 +633,7 @@ def refreshShapers():
 			linuxTCcommands.append(command)
 			# Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
 			# Technically, that should not even happen. So don't expect much if any traffic in this default class.
-			# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
+			# Only 1/4 of defaultClassCapacity is guaranteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
 			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(round((upstreamBandwidthCapacityDownloadMbps-1)/4)) + 'mbit ceil ' + str(upstreamBandwidthCapacityDownloadMbps-1) + 'mbit prio 5'
 			linuxTCcommands.append(command)
 			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + sqm
@@ -652,7 +652,7 @@ def refreshShapers():
 			linuxTCcommands.append(command)
 			# Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
 			# Technically, that should not even happen. So don't expect much if any traffic in this default class.
-			# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
+			# Only 1/4 of defaultClassCapacity is guaranteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
 			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(round((upstreamBandwidthCapacityUploadMbps-1)/4)) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps-1) + 'mbit prio 5'
 			linuxTCcommands.append(command)
 			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + sqm

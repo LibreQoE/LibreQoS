@@ -346,7 +346,7 @@ def getParentNodeDict(data, depth, parentNodeNameDict):
 
 
 def parentNodeNameDictPull():
-	# Load network heirarchy
+	# Load network hierarchy
 	with open('network.json', 'r') as j:
 		network = json.loads(j.read())
 	parentNodeNameDict = getParentNodeDict(network, 0, None)
