@@ -5,11 +5,11 @@ use super::QueueType;
 #[derive(Debug, Clone, Serialize)]
 pub enum QueueDiff {
     None,
-    Mq,
-    Htb,
-    FqCodel,
+//    Mq,
+//    Htb,
+//    FqCodel,
     Cake(CakeDiff),
-    ClsAct,
+//    ClsAct,
 }
 
 pub(crate) fn make_queue_diff(previous: &QueueType, current: &QueueType) -> Result<QueueDiff> {
