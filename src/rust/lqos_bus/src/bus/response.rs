@@ -5,7 +5,7 @@ use crate::{IpStats, IpMapping, XdpPpingResult};
 /// A `BusResponse` object represents a single
 /// reply generated from a `BusRequest`, and batched
 /// inside a `BusReply`.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum BusResponse {
     /// Yes, we're alive
     Ack,

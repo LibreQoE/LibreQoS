@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::ffi::CString;
 
 /// Provides consistent handling of TC handle types.
-#[derive(Copy, Clone, Serialize, Deserialize, Debug, Default)]
+#[derive(Copy, Clone, Serialize, Deserialize, Debug, Default, PartialEq, Eq)]
 pub struct TcHandle(u32);
 
 #[allow(non_camel_case_types)]

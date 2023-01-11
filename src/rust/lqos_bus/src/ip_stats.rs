@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 /// Transmission representation of IP statistics associated
 /// with a host.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct IpStats {
     /// The host's IP address, as detected by the XDP program.
     pub ip_address: String,
@@ -24,7 +24,7 @@ pub struct IpStats {
 }
 
 /// Represents an IP Mapping in the XDP IP to TC/CPU mapping system.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct IpMapping {
     /// The mapped IP address. May be IPv4, or IPv6.
     pub ip_address: String,
@@ -42,7 +42,7 @@ pub struct IpMapping {
 
 /// Provided for backwards compatibility with `xdp_pping`, with the intent
 /// to retire it eventually.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct XdpPpingResult {
     /// The TC handle in text format. e.g. "1:12"
     pub tc: String,
