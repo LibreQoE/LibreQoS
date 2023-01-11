@@ -7,7 +7,10 @@ use self::cache::{
 use crate::{auth_guard::AuthGuard, tracker::cache::ThroughputPerSecond};
 pub use cache::{SHAPED_DEVICES, UNKNOWN_DEVICES};
 pub use cache_manager::update_tracking;
+use lazy_static::lazy_static;
 use lqos_bus::{IpStats, TcHandle};
+use lqos_config::LibreQoSConfig;
+use parking_lot::Mutex;
 use rocket::serde::{json::Json, Deserialize, Serialize};
 use std::net::IpAddr;
 
@@ -105,4 +108,28 @@ pub fn host_counts(_auth: AuthGuard) -> Json<(u32, u32)> {
     let host_counts = HOST_COUNTS.read();
     let unknown = host_counts.0 - host_counts.1;
     Json((n_devices as u32, unknown))
+}
+
+lazy_static! {
+    static ref CONFIG: Mutex<LibreQoSConfig> = Mutex::new(lqos_config::LibreQoSConfig::load().unwrap());
+}
+
+#[get("/api/busy_quantile")]
+pub fn busy_quantile(_auth: AuthGuard) -> Json<Vec<(u32, u32)>> {
+    let (down_capacity, up_capacity) = {
+        let lock = CONFIG.lock();
+        (lock.total_download_mbps as f64 * 1_000_000.0, lock.total_upload_mbps as f64 * 1_000_000.0)
+    };
+    let throughput = THROUGHPUT_BUFFER.read().get_result();
+    let mut result = vec![(0,0); 10];
+    throughput.iter().for_each(|tp| {
+        let (down, up) = tp.bits_per_second;
+        let (down, up) = (down * 8, up * 8);
+        //println!("{down_capacity}, {up_capacity}, {down}, {up}");
+        let (down, up) = (down as f64 / down_capacity, up as f64 / up_capacity);
+        let (down, up) = ((down * 10.0) as usize, (up * 10.0) as usize);
+        result[down].0 += 1;
+        result[up].1 += 1;
+    });
+    Json(result)
 }

@@ -41,6 +41,7 @@ fn rocket() -> _ {
                 tracker::worst_10_rtt,
                 tracker::rtt_histogram,
                 tracker::host_counts,
+                tracker::busy_quantile,
                 shaped_devices::all_shaped_devices,
                 shaped_devices::shaped_devices_count,
                 shaped_devices::shaped_devices_range,
