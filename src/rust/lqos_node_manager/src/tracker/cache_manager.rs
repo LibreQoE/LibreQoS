@@ -1,12 +1,18 @@
 //! The Cache mod stores data that is periodically updated
 //! on the server-side, to avoid re-requesting repeatedly
 //! when there are multiple clients.
-use std::{time::Duration, net::IpAddr};
-use anyhow::Result;
-use lqos_bus::{BUS_BIND_ADDRESS, BusSession, BusRequest, encode_request, BusResponse, decode_response, IpStats};
-use lqos_config::ConfigShapedDevices;
-use rocket::tokio::{task::spawn_blocking, net::TcpStream, io::{AsyncWriteExt, AsyncReadExt}};
 use super::cache::*;
+use anyhow::Result;
+use lqos_bus::{
+    decode_response, encode_request, BusRequest, BusResponse, BusSession, IpStats, BUS_BIND_ADDRESS,
+};
+use lqos_config::ConfigShapedDevices;
+use rocket::tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+    task::spawn_blocking,
+};
+use std::{net::IpAddr, time::Duration};
 
 /// Once per second, update CPU and RAM usage and ask
 /// `lqosd` for updated system statistics.
@@ -14,8 +20,8 @@ use super::cache::*;
 /// it runs as part of start-up - and keeps running.
 /// Designed to never return or fail on error.
 pub async fn update_tracking() {
-    use sysinfo::System;
     use sysinfo::CpuExt;
+    use sysinfo::System;
     use sysinfo::SystemExt;
     let mut sys = System::new_all();
 
@@ -43,11 +49,10 @@ pub async fn update_tracking() {
     }
 }
 
-
 /// Fires up a Linux file system watcher than notifies
 /// when `ShapedDevices.csv` changes, and triggers a reload.
 fn watch_for_shaped_devices_changing() -> Result<()> {
-    use notify::{Watcher, RecursiveMode, Config};
+    use notify::{Config, RecursiveMode, Watcher};
 
     let (tx, rx) = std::sync::mpsc::channel();
     let mut watcher = notify::RecommendedWatcher::new(tx, Config::default())?;
@@ -91,7 +96,7 @@ async fn get_data_from_server() -> Result<()> {
             BusResponse::CurrentThroughput {
                 bits_per_second,
                 packets_per_second,
-                shaped_bits_per_second
+                shaped_bits_per_second,
             } => {
                 {
                     let mut lock = CURRENT_THROUGHPUT.write();
@@ -119,17 +124,21 @@ async fn get_data_from_server() -> Result<()> {
             BusResponse::AllUnknownIps(unknowns) => {
                 *HOST_COUNTS.write() = (unknowns.len() as u32, 0);
                 let cfg = SHAPED_DEVICES.read();
-                let really_unknown: Vec<IpStats> = unknowns.iter().filter(|ip| {
-                    if let Ok(ip) = ip.ip_address.parse::<IpAddr>() {
-                        let lookup = match ip {
-                            IpAddr::V4(ip) => ip.to_ipv6_mapped(),
-                            IpAddr::V6(ip) => ip,
-                        };
-                        cfg.trie.longest_match(lookup).is_none()
-                    } else {
-                        false
-                    }
-                }).cloned().collect();
+                let really_unknown: Vec<IpStats> = unknowns
+                    .iter()
+                    .filter(|ip| {
+                        if let Ok(ip) = ip.ip_address.parse::<IpAddr>() {
+                            let lookup = match ip {
+                                IpAddr::V4(ip) => ip.to_ipv6_mapped(),
+                                IpAddr::V6(ip) => ip,
+                            };
+                            cfg.trie.longest_match(lookup).is_none()
+                        } else {
+                            false
+                        }
+                    })
+                    .cloned()
+                    .collect();
                 *HOST_COUNTS.write() = (really_unknown.len() as u32, 0);
                 *UNKNOWN_DEVICES.write() = really_unknown;
             }

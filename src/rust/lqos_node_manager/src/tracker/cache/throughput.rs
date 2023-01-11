@@ -24,8 +24,8 @@ pub struct ThroughputPerSecond {
 impl Default for ThroughputPerSecond {
     fn default() -> Self {
         Self {
-            bits_per_second: (0,0),
-            packets_per_second: (0,0),
+            bits_per_second: (0, 0),
+            packets_per_second: (0, 0),
             shaped_bits_per_second: (0, 0),
         }
     }
@@ -61,7 +61,7 @@ impl ThroughputRingbuffer {
     pub fn get_result(&self) -> Vec<ThroughputPerSecond> {
         let mut result = Vec::new();
 
-        for i in self.next .. RINGBUFFER_SAMPLES {
+        for i in self.next..RINGBUFFER_SAMPLES {
             result.push(self.readings[i]);
         }
         for i in 0..self.next {

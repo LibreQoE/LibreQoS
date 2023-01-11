@@ -145,7 +145,8 @@ fn draw_top_pane<'a>(
                 Cell::from(format!("🠕 {}", scale_packets(stats.packets_per_second.1))),
                 Cell::from(format!("{:.2} ms", stats.median_tcp_rtt)),
                 Cell::from(stats.tc_handle.to_string()),
-            ]).style(Style::default().fg(color))
+            ])
+            .style(Style::default().fg(color))
         })
         .collect();
 
@@ -156,7 +157,7 @@ fn draw_top_pane<'a>(
         "Pkts Dn",
         "Pkts Up",
         "TCP RTT ms",
-        "Shaper"
+        "Shaper",
     ])
     .style(Style::default().fg(Color::Yellow));
 

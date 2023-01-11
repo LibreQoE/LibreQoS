@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use lqos_bus::TcHandle;
-use lqos_sys::{XdpIpAddress, HostCounter, RttTrackingEntry};
-use anyhow::Result;
 use super::{throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
+use anyhow::Result;
+use lqos_bus::TcHandle;
+use lqos_sys::{HostCounter, RttTrackingEntry, XdpIpAddress};
+use std::collections::HashMap;
 
 pub struct ThroughputTracker {
     pub(crate) cycle: u64,
@@ -26,19 +26,27 @@ impl ThroughputTracker {
         }
     }
 
-    pub(crate) fn tick(&mut self, value_dump: &[(XdpIpAddress, Vec<HostCounter>)], rtt: Result<Vec<([u8; 16], RttTrackingEntry)>>) -> Result<()> {
+    pub(crate) fn tick(
+        &mut self,
+        value_dump: &[(XdpIpAddress, Vec<HostCounter>)],
+        rtt: Result<Vec<([u8; 16], RttTrackingEntry)>>,
+    ) -> Result<()> {
         // Copy previous byte/packet numbers and reset RTT data
         self.raw_data.iter_mut().for_each(|(_k, v)| {
             if v.first_cycle < self.cycle {
                 v.bytes_per_second.0 = u64::checked_sub(v.bytes.0, v.prev_bytes.0).unwrap_or(0);
                 v.bytes_per_second.1 = u64::checked_sub(v.bytes.1, v.prev_bytes.1).unwrap_or(0);
-                v.packets_per_second.0 = u64::checked_sub(v.packets.0, v.prev_packets.0).unwrap_or(0);
-                v.packets_per_second.1 = u64::checked_sub(v.packets.1, v.prev_packets.1).unwrap_or(0);
+                v.packets_per_second.0 =
+                    u64::checked_sub(v.packets.0, v.prev_packets.0).unwrap_or(0);
+                v.packets_per_second.1 =
+                    u64::checked_sub(v.packets.1, v.prev_packets.1).unwrap_or(0);
                 v.prev_bytes = v.bytes;
                 v.prev_packets = v.packets;
             }
             // Roll out stale RTT data
-            if self.cycle > RETIRE_AFTER_SECONDS && v.last_fresh_rtt_data_cycle < self.cycle - RETIRE_AFTER_SECONDS {
+            if self.cycle > RETIRE_AFTER_SECONDS
+                && v.last_fresh_rtt_data_cycle < self.cycle - RETIRE_AFTER_SECONDS
+            {
                 v.recent_rtt_data = [0; 60];
             }
         });
@@ -111,7 +119,7 @@ impl ThroughputTracker {
                     v.bytes.1 - v.prev_bytes.1,
                     v.packets.0 - v.prev_packets.0,
                     v.packets.1 - v.prev_packets.1,
-                    v.tc_handle.as_u32() > 0
+                    v.tc_handle.as_u32() > 0,
                 )
             })
             .for_each(|(bytes_down, bytes_up, packets_down, packets_up, shaped)| {
@@ -135,7 +143,10 @@ impl ThroughputTracker {
     }
 
     pub(crate) fn shaped_bits_per_second(&self) -> (u64, u64) {
-        (self.shaped_bytes_per_second.0 * 8, self.shaped_bytes_per_second.1 * 8)
+        (
+            self.shaped_bytes_per_second.0 * 8,
+            self.shaped_bytes_per_second.1 * 8,
+        )
     }
 
     pub(crate) fn packets_per_second(&self) -> (u64, u64) {

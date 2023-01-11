@@ -127,7 +127,7 @@
 
  */
 
-use anyhow::{Result, Error};
+use anyhow::{Error, Result};
 use lqos_bus::TcHandle;
 use serde::Serialize;
 use serde_json::Value;
@@ -153,10 +153,10 @@ pub(crate) struct TcCake {
     avg_hdr_offset: u64,
     pub(crate) tins: Vec<TcCakeTin>,
     pub(crate) drops: u64,
- }
+}
 
- #[derive(Default, Clone, Debug, Serialize)]
-  struct TcCakeOptions {
+#[derive(Default, Clone, Debug, Serialize)]
+struct TcCakeOptions {
     bandwidth: String,
     diffserv: String,
     flowmode: String,
@@ -169,10 +169,10 @@ pub(crate) struct TcCake {
     raw: bool,
     overhead: u64,
     fwmark: String,
- }
+}
 
- #[derive(Default, Clone, Debug, Serialize)]
- pub(crate) struct TcCakeTin {
+#[derive(Default, Clone, Debug, Serialize)]
+pub(crate) struct TcCakeTin {
     threshold_rate: u64,
     pub(crate) sent_bytes: u64,
     pub(crate) backlog_bytes: u64,
@@ -193,9 +193,9 @@ pub(crate) struct TcCake {
     unresponsive_flows: u64,
     max_pkt_len: u64,
     flow_quantum: u64,
- }
+}
 
- impl TcCake {
+impl TcCake {
     pub(crate) fn from_json(map: &serde_json::Map<std::string::String, Value>) -> Result<Self> {
         let mut result = Self::default();
         for (key, value) in map.iter() {
@@ -218,18 +218,16 @@ pub(crate) struct TcCake {
                 "avg_hdr_offset" => result.avg_hdr_offset = value.as_u64().unwrap(),
                 "drops" => result.drops = value.as_u64().unwrap(),
                 "options" => result.options = TcCakeOptions::from_json(value)?,
-                "tins" => {
-                    match value {
-                        Value::Array(array) => {
-                            for value in array.iter() {
-                                result.tins.push(TcCakeTin::from_json(value)?);
-                            }
+                "tins" => match value {
+                    Value::Array(array) => {
+                        for value in array.iter() {
+                            result.tins.push(TcCakeTin::from_json(value)?);
                         }
-                        _ => {}
                     }
-                }
-                "kind" => {},
-               _ => {
+                    _ => {}
+                },
+                "kind" => {}
+                _ => {
                     log::error!("Unknown entry in Tc-cake: {key}");
                 }
             }
@@ -265,7 +263,7 @@ impl TcCakeOptions {
                 Ok(result)
             }
             _ => Err(Error::msg("Unable to parse cake options")),
-        }        
+        }
     }
 }
 
@@ -304,6 +302,6 @@ impl TcCakeTin {
                 Ok(result)
             }
             _ => Err(Error::msg("Unable to parse cake tin options")),
-        }        
+        }
     }
 }

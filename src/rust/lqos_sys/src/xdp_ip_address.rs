@@ -10,15 +10,15 @@ pub struct XdpIpAddress(pub [u8; 16]);
 
 impl Default for XdpIpAddress {
     fn default() -> Self {
-        Self ([0xFF; 16])
+        Self([0xFF; 16])
     }
 }
 
 impl XdpIpAddress {
     /// Converts a Rust `IpAddr` type into an `XdpIpAddress`.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `ip` - the IP Address to convert.
     pub fn from_ip(ip: IpAddr) -> Self {
         let mut result = Self::default();
@@ -33,7 +33,7 @@ impl XdpIpAddress {
                 for i in 0..8 {
                     let base = i * 2;
                     result.0[base] = ip.octets()[base];
-                    result.0[base+1] = ip.octets()[base + 1];
+                    result.0[base + 1] = ip.octets()[base + 1];
                 }
             }
         }
@@ -58,10 +58,7 @@ impl XdpIpAddress {
         {
             // It's an IPv4 Address
             IpAddr::V4(Ipv4Addr::new(
-                self.0[12],
-                self.0[13],
-                self.0[14],
-                self.0[15],
+                self.0[12], self.0[13], self.0[14], self.0[15],
             ))
         } else {
             // It's an IPv6 address
@@ -115,9 +112,11 @@ mod test {
 
     #[test]
     fn test_to_ipv4() {
-        let raw_ip = XdpIpAddress([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 1, 2, 3, 4]);
+        let raw_ip = XdpIpAddress([
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 1, 2, 3, 4,
+        ]);
         let ip = raw_ip.as_ip();
-        let intended_ip : IpAddr = "1.2.3.4".parse().unwrap();
+        let intended_ip: IpAddr = "1.2.3.4".parse().unwrap();
         assert_eq!(ip, intended_ip);
     }
 

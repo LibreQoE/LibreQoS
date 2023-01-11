@@ -1,24 +1,25 @@
 mod ip_mapping;
-mod throughput_tracker;
-mod program_control;
-mod queue_tracker;
 mod libreqos_tracker;
 #[cfg(feature = "equinix_tests")]
 mod lqos_daht_test;
 mod offloads;
+mod program_control;
+mod queue_tracker;
+mod throughput_tracker;
 use crate::ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow};
 use anyhow::Result;
+use log::{info, warn};
 use lqos_bus::{
     cookie_value, decode_request, encode_response, BusReply, BusRequest, BUS_BIND_ADDRESS,
 };
-use lqos_config::{LibreQoSConfig, EtcLqos};
+use lqos_config::{EtcLqos, LibreQoSConfig};
 use lqos_sys::LibreQoSKernels;
 use signal_hook::{consts::SIGINT, iterator::Signals};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream}, join,
+    join,
+    net::{TcpListener, TcpStream},
 };
-use log::{info, warn};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -32,7 +33,7 @@ async fn main() -> Result<()> {
         offloads::bpf_sysctls().await;
         if tuning.stop_irq_balance {
             offloads::stop_irq_balance().await;
-        }        
+        }
         offloads::netdev_budget(tuning.netdev_budget_usecs, tuning.netdev_budget_packets).await;
         offloads::ethtool_tweaks(&config.internet_interface, tuning).await;
         offloads::ethtool_tweaks(&config.isp_interface, tuning).await;
@@ -40,7 +41,11 @@ async fn main() -> Result<()> {
 
     // Start the XDP/TC kernels
     let kernels = if config.on_a_stick_mode {
-        LibreQoSKernels::on_a_stick_mode(&config.internet_interface, config.stick_vlans.1, config.stick_vlans.0)?
+        LibreQoSKernels::on_a_stick_mode(
+            &config.internet_interface,
+            config.stick_vlans.1,
+            config.stick_vlans.0,
+        )?
     } else {
         LibreQoSKernels::new(&config.internet_interface, &config.isp_interface)?
     };
@@ -98,7 +103,9 @@ async fn main() -> Result<()> {
                                 cpu,
                                 upload,
                             } => map_ip_to_flow(ip_address, tc_handle, *cpu, *upload),
-                            BusRequest::DelIpFlow { ip_address, upload } => del_ip_flow(&ip_address, *upload),
+                            BusRequest::DelIpFlow { ip_address, upload } => {
+                                del_ip_flow(&ip_address, *upload)
+                            }
                             BusRequest::ClearIpFlow => clear_ip_flows(),
                             BusRequest::ListIpFlow => list_mapped_ips(),
                             BusRequest::XdpPping => throughput_tracker::xdp_pping_compat(),
@@ -106,9 +113,13 @@ async fn main() -> Result<()> {
                             BusRequest::HostCounts => throughput_tracker::host_counts(),
                             BusRequest::AllUnknownIps => throughput_tracker::all_unknown_ips(),
                             BusRequest::ReloadLibreQoS => program_control::reload_libre_qos(),
-                            BusRequest::GetRawQueueData(circuit_id) => queue_tracker::get_raw_circuit_data(&circuit_id),
+                            BusRequest::GetRawQueueData(circuit_id) => {
+                                queue_tracker::get_raw_circuit_data(&circuit_id)
+                            }
                             #[cfg(feature = "equinix_tests")]
-                            BusRequest::RequestLqosEquinixTest => lqos_daht_test::lqos_daht_test().await,
+                            BusRequest::RequestLqosEquinixTest => {
+                                lqos_daht_test::lqos_daht_test().await
+                            }
                         });
                     }
                     //println!("{:?}", response);

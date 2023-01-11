@@ -6,7 +6,8 @@
 use crate::cpu_map::CpuMapping;
 use anyhow::{Error, Result};
 use libbpf_sys::{
-    bpf_xdp_attach, libbpf_set_strict_mode, LIBBPF_STRICT_ALL, XDP_FLAGS_UPDATE_IF_NOEXIST, XDP_FLAGS_HW_MODE, XDP_FLAGS_DRV_MODE, XDP_FLAGS_SKB_MODE,
+    bpf_xdp_attach, libbpf_set_strict_mode, LIBBPF_STRICT_ALL, XDP_FLAGS_DRV_MODE,
+    XDP_FLAGS_HW_MODE, XDP_FLAGS_SKB_MODE, XDP_FLAGS_UPDATE_IF_NOEXIST,
 };
 use nix::libc::{geteuid, if_nametoindex};
 use std::{ffi::CString, process::Command};
@@ -19,9 +20,7 @@ pub(crate) mod bpf {
 /// Returns the value set in the C XDP system's MAX_TRACKED_IPS
 /// constant.
 pub fn max_tracked_ips() -> usize {
-    (unsafe {
-        bpf::max_tracker_ips()
-     }) as usize
+    (unsafe { bpf::max_tracker_ips() }) as usize
 }
 
 pub fn check_root() -> Result<()> {
@@ -141,7 +140,7 @@ pub fn attach_xdp_and_tc_to_interface(
         .args(["qdisc", "del", "dev", interface_name, "clsact"])
         .output()?;
     println!("{}", String::from_utf8(r.stderr).unwrap());
-    
+
     // Add the classifier
     let r = Command::new("tc")
         .args(["filter", "add", "dev", interface_name, "clsact"])
@@ -171,7 +170,8 @@ pub fn attach_xdp_and_tc_to_interface(
                 crate::bifrost_maps::map_vlans(&bridge.vlan_mapping)?;
 
                 // Actually attach the TC ingress program
-                let error = unsafe { bpf::tc_attach_ingress(interface_index as i32, true, skeleton) };
+                let error =
+                    unsafe { bpf::tc_attach_ingress(interface_index as i32, true, skeleton) };
                 if error != 0 {
                     return Err(Error::msg("Unable to attach TC Ingress to interface"));
                 }

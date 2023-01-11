@@ -1,7 +1,7 @@
-use std::process::exit;
-use clap::{Parser, Subcommand};
 use anyhow::Result;
-use lqos_config::{WebUsers, UserRole};
+use clap::{Parser, Subcommand};
+use lqos_config::{UserRole, WebUsers};
+use std::process::exit;
 
 #[derive(Parser)]
 #[command()]
@@ -39,7 +39,11 @@ fn main() -> Result<()> {
     let cli = Args::parse();
     let mut users = WebUsers::load_or_create()?;
     match cli.command {
-        Some(Commands::Add { username, role, password }) => {
+        Some(Commands::Add {
+            username,
+            role,
+            password,
+        }) => {
             users.add_or_update_user(&username, &password, role)?;
         }
         Some(Commands::Del { username }) => {

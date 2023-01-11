@@ -1,6 +1,6 @@
+use crate::{auth_guard::AuthGuard, cache_control::NoCache, tracker::UNKNOWN_DEVICES};
 use lqos_bus::IpStats;
 use rocket::serde::json::Json;
-use crate::{cache_control::NoCache, tracker::UNKNOWN_DEVICES, auth_guard::AuthGuard};
 
 #[get("/api/all_unknown_devices")]
 pub fn all_unknown_devices(_auth: AuthGuard) -> NoCache<Json<Vec<IpStats>>> {
@@ -13,7 +13,11 @@ pub fn unknown_devices_count(_auth: AuthGuard) -> NoCache<Json<usize>> {
 }
 
 #[get("/api/unknown_devices_range/<start>/<end>")]
-pub fn unknown_devices_range(start: usize, end: usize, _auth: AuthGuard) -> NoCache<Json<Vec<IpStats>>> {
+pub fn unknown_devices_range(
+    start: usize,
+    end: usize,
+    _auth: AuthGuard,
+) -> NoCache<Json<Vec<IpStats>>> {
     let reader = UNKNOWN_DEVICES.read();
     let result: Vec<IpStats> = reader.iter().skip(start).take(end).cloned().collect();
     NoCache::new(Json(result))

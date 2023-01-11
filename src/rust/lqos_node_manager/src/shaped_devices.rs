@@ -1,16 +1,18 @@
-use lqos_bus::{BusResponse, BUS_BIND_ADDRESS, BusSession, BusRequest, encode_request, decode_response};
-use lqos_config::ShapedDevice;
-use rocket::serde::json::Json;
-use rocket::tokio::io::{AsyncWriteExt, AsyncReadExt};
-use rocket::tokio::net::TcpStream;
 use crate::auth_guard::AuthGuard;
 use crate::cache_control::NoCache;
 use crate::tracker::SHAPED_DEVICES;
 use lazy_static::*;
+use lqos_bus::{
+    decode_response, encode_request, BusRequest, BusResponse, BusSession, BUS_BIND_ADDRESS,
+};
+use lqos_config::ShapedDevice;
 use parking_lot::RwLock;
+use rocket::serde::json::Json;
+use rocket::tokio::io::{AsyncReadExt, AsyncWriteExt};
+use rocket::tokio::net::TcpStream;
 
 lazy_static! {
-    static ref RELOAD_REQUIRED : RwLock<bool> = RwLock::new(false);
+    static ref RELOAD_REQUIRED: RwLock<bool> = RwLock::new(false);
 }
 
 #[get("/api/all_shaped_devices")]
@@ -24,9 +26,19 @@ pub fn shaped_devices_count(_auth: AuthGuard) -> NoCache<Json<usize>> {
 }
 
 #[get("/api/shaped_devices_range/<start>/<end>")]
-pub fn shaped_devices_range(start: usize, end: usize, _auth: AuthGuard) -> NoCache<Json<Vec<ShapedDevice>>> {
+pub fn shaped_devices_range(
+    start: usize,
+    end: usize,
+    _auth: AuthGuard,
+) -> NoCache<Json<Vec<ShapedDevice>>> {
     let reader = SHAPED_DEVICES.read();
-    let result: Vec<ShapedDevice> = reader.devices.iter().skip(start).take(end).cloned().collect();
+    let result: Vec<ShapedDevice> = reader
+        .devices
+        .iter()
+        .skip(start)
+        .take(end)
+        .cloned()
+        .collect();
     NoCache::new(Json(result))
 }
 
@@ -37,10 +49,10 @@ pub fn shaped_devices_search(term: String, _auth: AuthGuard) -> NoCache<Json<Vec
     let result: Vec<ShapedDevice> = reader
         .devices
         .iter()
-        .filter(|s| 
-            s.circuit_name.trim().to_lowercase().contains(&term) ||
-            s.device_name.trim().to_lowercase().contains(&term)
-        )
+        .filter(|s| {
+            s.circuit_name.trim().to_lowercase().contains(&term)
+                || s.device_name.trim().to_lowercase().contains(&term)
+        })
         .cloned()
         .collect();
     NoCache::new(Json(result))
@@ -60,9 +72,7 @@ pub async fn reload_libreqos(auth: AuthGuard) -> NoCache<Json<String>> {
     let mut stream = TcpStream::connect(BUS_BIND_ADDRESS).await.unwrap();
     let test = BusSession {
         auth_cookie: 1234,
-        requests: vec![
-            BusRequest::ReloadLibreQoS,
-        ],
+        requests: vec![BusRequest::ReloadLibreQoS],
     };
     let msg = encode_request(&test).unwrap();
     stream.write(&msg).await.unwrap();

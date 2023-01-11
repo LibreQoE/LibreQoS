@@ -1,7 +1,7 @@
+use crate::{auth_guard::AuthGuard, cache_control::NoCache};
 use default_net::get_interfaces;
-use lqos_config::{LibreQoSConfig, EtcLqos};
+use lqos_config::{EtcLqos, LibreQoSConfig};
 use rocket::{fs::NamedFile, serde::json::Json};
-use crate::{cache_control::NoCache, auth_guard::AuthGuard};
 
 // Note that NoCache can be replaced with a cache option
 // once the design work is complete.
@@ -19,11 +19,7 @@ pub async fn get_nic_list<'a>(_auth: AuthGuard) -> NoCache<Json<Vec<(String, Str
         } else {
             String::new()
         };
-        result.push((
-            eth.name.clone(),
-            format!("{:?}", eth.if_type),
-            mac,  
-        ));
+        result.push((eth.name.clone(), format!("{:?}", eth.if_type), mac));
     }
     NoCache::new(Json(result))
 }
@@ -42,7 +38,7 @@ pub async fn get_current_lqosd_config(_auth: AuthGuard) -> NoCache<Json<EtcLqos>
     NoCache::new(Json(config))
 }
 
-#[post("/api/python_config", data="<config>")]
+#[post("/api/python_config", data = "<config>")]
 pub async fn update_python_config(_auth: AuthGuard, config: Json<LibreQoSConfig>) -> Json<String> {
     config.save().unwrap();
     Json("OK".to_string())

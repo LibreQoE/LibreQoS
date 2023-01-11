@@ -1,7 +1,6 @@
-
-use std::net::{Ipv4Addr, Ipv6Addr};
-use serde::Serialize;
 use crate::ShapedDevice;
+use serde::Serialize;
+use std::net::{Ipv4Addr, Ipv6Addr};
 
 // Example: StringRecord(["1", "968 Circle St., Gurnee, IL 60031", "1", "Device 1", "", "", "192.168.101.2", "", "25", "5", "10000", "10000", ""])
 #[derive(Serialize)]
@@ -36,7 +35,7 @@ impl From<&ShapedDevice> for SerializableShapedDevice {
             upload_min_mbps: d.upload_min_mbps,
             download_max_mbps: d.download_max_mbps,
             upload_max_mbps: d.upload_max_mbps,
-            comment: d.comment.clone()
+            comment: d.comment.clone(),
         }
     }
 }
@@ -45,7 +44,7 @@ fn ipv4_to_string(ip: &(Ipv4Addr, u32)) -> String {
     if ip.1 == 32 {
         format!("{}", ip.0)
     } else {
-        format!{"{}/{}", ip.0, ip.1}
+        format! {"{}/{}", ip.0, ip.1}
     }
 }
 
@@ -57,10 +56,10 @@ fn ipv4_list_to_string(ips: &[(Ipv4Addr, u32)]) -> String {
         return ipv4_to_string(&ips[0]);
     }
     let mut buffer = String::new();
-    for i in 0..ips.len()-1 {
+    for i in 0..ips.len() - 1 {
         buffer += &format!("{}, ", ipv4_to_string(&ips[i]));
     }
-    buffer += &ipv4_to_string(&ips[ips.len()-1]);
+    buffer += &ipv4_to_string(&ips[ips.len() - 1]);
     String::new()
 }
 
@@ -68,7 +67,7 @@ fn ipv6_to_string(ip: &(Ipv6Addr, u32)) -> String {
     if ip.1 == 32 {
         format!("{}", ip.0)
     } else {
-        format!{"{}/{}", ip.0, ip.1}
+        format! {"{}/{}", ip.0, ip.1}
     }
 }
 
@@ -80,9 +79,9 @@ fn ipv6_list_to_string(ips: &[(Ipv6Addr, u32)]) -> String {
         return ipv6_to_string(&ips[0]);
     }
     let mut buffer = String::new();
-    for i in 0..ips.len()-1 {
+    for i in 0..ips.len() - 1 {
         buffer += &format!("{}, ", ipv6_to_string(&ips[i]));
     }
-    buffer += &ipv6_to_string(&ips[ips.len()-1]);
+    buffer += &ipv6_to_string(&ips[ips.len() - 1]);
     String::new()
 }

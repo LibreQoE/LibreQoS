@@ -1,12 +1,15 @@
-mod cache_manager;
 mod cache;
+mod cache_manager;
+use self::cache::{
+    CPU_USAGE, CURRENT_THROUGHPUT, HOST_COUNTS, MEMORY_USAGE, RTT_HISTOGRAM, THROUGHPUT_BUFFER,
+    TOP_10_DOWNLOADERS, WORST_10_RTT,
+};
+use crate::{auth_guard::AuthGuard, tracker::cache::ThroughputPerSecond};
 pub use cache::{SHAPED_DEVICES, UNKNOWN_DEVICES};
 pub use cache_manager::update_tracking;
-use std::net::IpAddr;
 use lqos_bus::{IpStats, TcHandle};
-use rocket::serde::{json::Json, Serialize, Deserialize};
-use crate::{tracker::cache::ThroughputPerSecond, auth_guard::AuthGuard};
-use self::cache::{CURRENT_THROUGHPUT, THROUGHPUT_BUFFER, CPU_USAGE, MEMORY_USAGE, TOP_10_DOWNLOADERS, WORST_10_RTT, RTT_HISTOGRAM, HOST_COUNTS};
+use rocket::serde::{json::Json, Deserialize, Serialize};
+use std::net::IpAddr;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(crate = "rocket::serde")]
@@ -38,7 +41,8 @@ impl From<&IpStats> for IpStatsWithPlan {
             };
             let cfg = SHAPED_DEVICES.read();
             if let Some((_, id)) = cfg.trie.longest_match(lookup) {
-                result.ip_address = format!("{} ({})", cfg.devices[*id].circuit_name, result.ip_address);
+                result.ip_address =
+                    format!("{} ({})", cfg.devices[*id].circuit_name, result.ip_address);
                 result.plan.0 = cfg.devices[*id].download_max_mbps;
                 result.plan.1 = cfg.devices[*id].upload_max_mbps;
                 result.circuit_id = cfg.devices[*id].circuit_id.clone();
@@ -75,16 +79,19 @@ pub fn ram_usage(_auth: AuthGuard) -> Json<Vec<u64>> {
 
 #[get("/api/top_10_downloaders")]
 pub fn top_10_downloaders(_auth: AuthGuard) -> Json<Vec<IpStatsWithPlan>> {
-    let tt : Vec<IpStatsWithPlan> = TOP_10_DOWNLOADERS.read().iter().map(|tt| tt.into()).collect();
+    let tt: Vec<IpStatsWithPlan> = TOP_10_DOWNLOADERS
+        .read()
+        .iter()
+        .map(|tt| tt.into())
+        .collect();
     Json(tt)
 }
 
 #[get("/api/worst_10_rtt")]
 pub fn worst_10_rtt(_auth: AuthGuard) -> Json<Vec<IpStatsWithPlan>> {
-    let tt : Vec<IpStatsWithPlan> = WORST_10_RTT.read().iter().map(|tt| tt.into()).collect();
+    let tt: Vec<IpStatsWithPlan> = WORST_10_RTT.read().iter().map(|tt| tt.into()).collect();
     Json(tt)
 }
-
 
 #[get("/api/rtt_histogram")]
 pub fn rtt_histogram(_auth: AuthGuard) -> Json<Vec<u32>> {

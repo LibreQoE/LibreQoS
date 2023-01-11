@@ -5,7 +5,7 @@
     "ecn_mark":0,"new_flows_len":0,"old_flows_len":0},
 */
 
-use anyhow::{Result, Error};
+use anyhow::{Error, Result};
 use lqos_bus::TcHandle;
 use serde::Serialize;
 use serde_json::Value;
@@ -63,7 +63,7 @@ impl TcFqCodel {
                 "new_flows_len" => result.new_flows_len = value.as_u64().unwrap(),
                 "old_flows_len" => result.old_flows_len = value.as_u64().unwrap(),
                 "options" => result.options = TcFqCodelOptions::from_json(value)?,
-                "kind" => {},
+                "kind" => {}
                 _ => {
                     log::error!("Unknown entry in Tc-codel: {key}");
                 }
@@ -96,6 +96,6 @@ impl TcFqCodelOptions {
                 Ok(result)
             }
             _ => Err(Error::msg("Unable to parse fq_codel options")),
-        }        
+        }
     }
 }

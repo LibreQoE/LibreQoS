@@ -1,11 +1,11 @@
-mod shaped_device;
 mod serializable;
-use csv::{WriterBuilder, QuoteStyle};
-pub use shaped_device::ShapedDevice;
-use std::{path::{Path, PathBuf}};
-use anyhow::Result;
+mod shaped_device;
 use crate::etc;
+use anyhow::Result;
+use csv::{QuoteStyle, WriterBuilder};
 use serializable::SerializableShapedDevice;
+pub use shaped_device::ShapedDevice;
+use std::path::{Path, PathBuf};
 
 pub struct ConfigShapedDevices {
     pub devices: Vec<ShapedDevice>,
@@ -22,7 +22,7 @@ impl ConfigShapedDevices {
     pub fn load() -> Result<Self> {
         let final_path = ConfigShapedDevices::path()?;
         let mut reader = csv::Reader::from_path(final_path)?;
-        
+
         // Example: StringRecord(["1", "968 Circle St., Gurnee, IL 60031", "1", "Device 1", "", "", "192.168.101.2", "", "25", "5", "10000", "10000", ""])
         let mut devices = Vec::new();
         for result in reader.records() {
@@ -33,7 +33,7 @@ impl ConfigShapedDevices {
             }
         }
         let trie = ConfigShapedDevices::make_trie(&devices);
-        Ok(Self{ devices, trie })
+        Ok(Self { devices, trie })
     }
 
     fn make_trie(devices: &[ShapedDevice]) -> ip_network_table::IpNetworkTable<usize> {
@@ -42,7 +42,7 @@ impl ConfigShapedDevices {
         devices
             .iter()
             .enumerate()
-            .map(|(i,d)| { (i, d.to_ipv6_list()) })
+            .map(|(i, d)| (i, d.to_ipv6_list()))
             .for_each(|(id, ips)| {
                 ips.iter().for_each(|(ip, cidr)| {
                     if let Ok(net) = IpNetwork::new(*ip, (*cidr) as u8) {
@@ -54,13 +54,16 @@ impl ConfigShapedDevices {
     }
 
     fn to_csv_string(&self) -> Result<String> {
-        let mut writer = WriterBuilder::new().quote_style(QuoteStyle::NonNumeric).from_writer(vec![]);
-        for d in self.devices
+        let mut writer = WriterBuilder::new()
+            .quote_style(QuoteStyle::NonNumeric)
+            .from_writer(vec![]);
+        for d in self
+            .devices
             .iter()
             .map(|d| SerializableShapedDevice::from(d))
-            {
-                writer.serialize(d)?;
-            };
+        {
+            writer.serialize(d)?;
+        }
 
         let data = String::from_utf8(writer.into_inner()?)?;
         Ok(data)
@@ -75,7 +78,6 @@ impl ConfigShapedDevices {
         Ok(())
     }
 }
-
 
 #[cfg(test)]
 mod test {
@@ -174,12 +176,12 @@ mod test {
     #[test]
     fn build_and_test_simple_trie() {
         let devices = vec![
-            ShapedDevice{
+            ShapedDevice {
                 circuit_id: "One".to_string(),
                 ipv4: ShapedDevice::parse_ipv4("192.168.1.0/24"),
                 ..Default::default()
             },
-            ShapedDevice{
+            ShapedDevice {
                 circuit_id: "One".to_string(),
                 ipv4: ShapedDevice::parse_ipv4("1.2.3.4"),
                 ..Default::default()
@@ -187,8 +189,10 @@ mod test {
         ];
         let trie = ConfigShapedDevices::make_trie(&devices);
         assert_eq!(trie.len(), (0, 2));
-        assert!(trie.longest_match(ShapedDevice::parse_cidr_v4("192.168.2.2").unwrap().0).is_none());
-        
+        assert!(trie
+            .longest_match(ShapedDevice::parse_cidr_v4("192.168.2.2").unwrap().0)
+            .is_none());
+
         let addr: Ipv4Addr = "192.168.1.2".parse().unwrap();
         let v6 = addr.to_ipv6_mapped();
         assert!(trie.longest_match(v6).is_some());

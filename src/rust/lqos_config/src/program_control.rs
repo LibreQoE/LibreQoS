@@ -1,6 +1,9 @@
-use std::{path::{PathBuf, Path}, process::Command};
-use anyhow::{Result, Error};
 use crate::etc;
+use anyhow::{Error, Result};
+use std::{
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 const PYTHON_PATH: &str = "/usr/bin/python3";
 

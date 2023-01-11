@@ -1,6 +1,6 @@
+use anyhow::{Error, Result};
+use serde::{Deserialize, Serialize};
 use std::ffi::CString;
-use anyhow::{Result, Error};
-use serde::{Serialize, Deserialize};
 
 /// Provides consistent handling of TC handle types.
 #[derive(Copy, Clone, Serialize, Deserialize, Debug, Default)]
@@ -25,19 +25,14 @@ impl TcHandle {
     pub fn get_major_minor(&self) -> (u16, u16) {
         // According to xdp_pping.c handles are minor:major u16s inside
         // a u32.
-        (
-            (self.0 >> 16) as u16,
-            (self.0 & 0xFFFF) as u16,
-        )
+        ((self.0 >> 16) as u16, (self.0 & 0xFFFF) as u16)
     }
 
-    pub fn from_string<S:ToString>(handle: S) -> Result<Self> {
-        let mut tc_handle : __u32 = 0;
+    pub fn from_string<S: ToString>(handle: S) -> Result<Self> {
+        let mut tc_handle: __u32 = 0;
         let str = CString::new(handle.to_string())?;
-        let handle_pointer : *mut __u32 = &mut tc_handle;
-        let result = unsafe {
-            get_tc_classid(handle_pointer, str.as_ptr())
-        };
+        let handle_pointer: *mut __u32 = &mut tc_handle;
+        let result = unsafe { get_tc_classid(handle_pointer, str.as_ptr()) };
         if result != 0 {
             Err(Error::msg("Unable to parse TC handle string"))
         } else {
@@ -119,13 +114,12 @@ mod test {
 
     #[test]
     fn roundtrip_extreme() {
-        for major in 0 .. 2000 {
+        for major in 0..2000 {
             for minor in 0..2000 {
                 let handle = format!("{major:x}:{minor:x}");
                 let tc = TcHandle::from_string(&handle).unwrap();
                 assert_eq!(tc.to_string(), handle);
             }
         }
-        
     }
 }

@@ -1,7 +1,7 @@
-use std::net::{Ipv4Addr, Ipv6Addr};
-use anyhow::{Result, Error};
+use anyhow::{Error, Result};
 use csv::StringRecord;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use std::net::{Ipv4Addr, Ipv6Addr};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ShapedDevice {
@@ -62,19 +62,13 @@ impl ShapedDevice {
 
     pub(crate) fn parse_cidr_v4(address: &str) -> Result<(Ipv4Addr, u32)> {
         if address.contains("/") {
-            let split : Vec<&str> = address.split("/").collect();
+            let split: Vec<&str> = address.split("/").collect();
             if split.len() != 2 {
                 return Err(Error::msg("Unable to parse IPv4"));
             }
-            return Ok((
-                split[0].parse()?,
-                split[1].parse()?
-            ))
+            return Ok((split[0].parse()?, split[1].parse()?));
         } else {
-            return Ok((
-                address.parse()?,
-                32
-            ));
+            return Ok((address.parse()?, 32));
         }
     }
 
@@ -99,19 +93,13 @@ impl ShapedDevice {
 
     pub(crate) fn parse_cidr_v6(address: &str) -> Result<(Ipv6Addr, u32)> {
         if address.contains("/") {
-            let split : Vec<&str> = address.split("/").collect();
+            let split: Vec<&str> = address.split("/").collect();
             if split.len() != 2 {
                 return Err(Error::msg("Unable to parse IPv6"));
             }
-            return Ok((
-                split[0].parse()?,
-                split[1].parse()?
-            ))
+            return Ok((split[0].parse()?, split[1].parse()?));
         } else {
-            return Ok((
-                address.parse()?,
-                128
-            ));
+            return Ok((address.parse()?, 128));
         }
     }
 
@@ -138,14 +126,10 @@ impl ShapedDevice {
         let mut result = Vec::new();
 
         for (ipv4, cidr) in &self.ipv4 {
-            result.push((
-                ipv4.to_ipv6_mapped(),
-                cidr + 96
-            ));
+            result.push((ipv4.to_ipv6_mapped(), cidr + 96));
         }
         result.extend_from_slice(&self.ipv6);
 
         result
     }
 }
-

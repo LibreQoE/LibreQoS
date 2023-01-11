@@ -1,10 +1,12 @@
 //! Tracks changes to the ShapedDevices.csv file in LibreQoS.
 
+use crate::libreqos_tracker::queueing_structure::{
+    read_queueing_structure, QueueNetwork, QueueNode,
+};
+use anyhow::Result;
 use lazy_static::*;
 use parking_lot::RwLock;
-use anyhow::Result;
 use tokio::task::spawn_blocking;
-use crate::libreqos_tracker::queueing_structure::{QueueNetwork, read_queueing_structure, QueueNode};
 
 lazy_static! {
     /// Global storage of the shaped devices csv data.
@@ -22,7 +24,7 @@ pub async fn spawn_queue_structure_monitor() {
 /// Fires up a Linux file system watcher than notifies
 /// when `ShapedDevices.csv` changes, and triggers a reload.
 fn watch_for_shaped_devices_changing() -> Result<()> {
-    use notify::{Watcher, RecursiveMode, Config};
+    use notify::{Config, RecursiveMode, Watcher};
 
     let (tx, rx) = std::sync::mpsc::channel();
     let mut watcher = notify::RecommendedWatcher::new(tx, Config::default())?;

@@ -1,10 +1,13 @@
-use std::{time::{Duration, Instant}, collections::HashMap};
+use self::queue_reader::{make_queue_diff, QueueDiff, QueueType};
+use crate::libreqos_tracker::QUEUE_STRUCTURE;
 use lqos_bus::BusResponse;
 use lqos_config::LibreQoSConfig;
 use serde::Serialize;
-use tokio::{task, time, join};
-use crate::libreqos_tracker::QUEUE_STRUCTURE;
-use self::queue_reader::{QueueType, QueueDiff, make_queue_diff};
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
+use tokio::{join, task, time};
 mod queue_reader;
 use lazy_static::*;
 use parking_lot::RwLock;
@@ -39,7 +42,8 @@ impl QueueStore {
         self.current_download = download.clone();
         self.current_upload = upload.clone();
         let new_diff_up = make_queue_diff(self.prev_upload.as_ref().unwrap(), &self.current_upload);
-        let new_diff_dn = make_queue_diff(self.prev_download.as_ref().unwrap(), &self.current_download);
+        let new_diff_dn =
+            make_queue_diff(self.prev_download.as_ref().unwrap(), &self.current_download);
         if new_diff_dn.is_ok() && new_diff_up.is_ok() {
             self.history[self.history_head] = (new_diff_dn.unwrap(), new_diff_up.unwrap());
             self.history_head += 1;
@@ -51,16 +55,19 @@ impl QueueStore {
 }
 
 lazy_static! {
-    pub(crate) static ref CIRCUIT_TO_QUEUE : RwLock<HashMap<String, QueueStore>> = RwLock::new(HashMap::new());
+    pub(crate) static ref CIRCUIT_TO_QUEUE: RwLock<HashMap<String, QueueStore>> =
+        RwLock::new(HashMap::new());
 }
 
 async fn track_queues() {
     let config = LibreQoSConfig::load().unwrap();
     let queues = if config.on_a_stick_mode {
-        let queues = queue_reader::read_tc_queues(&config.internet_interface).await.unwrap();
+        let queues = queue_reader::read_tc_queues(&config.internet_interface)
+            .await
+            .unwrap();
         vec![queues]
     } else {
-        let (isp, internet) = join!{
+        let (isp, internet) = join! {
             queue_reader::read_tc_queues(&config.isp_interface),
             queue_reader::read_tc_queues(&config.internet_interface),
         };
@@ -70,36 +77,28 @@ async fn track_queues() {
     // Time to associate queues with circuits
     let mut mapping = CIRCUIT_TO_QUEUE.write();
     let structure_lock = QUEUE_STRUCTURE.read();
-    
+
     // Do a quick check that we have a queue association
     if let Ok(structure) = &*structure_lock {
         for circuit in structure.iter().filter(|c| c.circuit_id.is_some()) {
             if config.on_a_stick_mode {
-                let download = queues[0].iter().find(|q| {
-                    match q {
-                        QueueType::Cake(cake) => {
-                            let (maj,min) = cake.parent.get_major_minor();
-                            let (cmaj,cmin) = circuit.class_id.get_major_minor();
-                            maj==cmaj && min == cmin
-                        }
-                        QueueType::FqCodel(fq) => {
-                            fq.parent.as_u32() == circuit.class_id.as_u32()
-                        }
-                        _ => false,
+                let download = queues[0].iter().find(|q| match q {
+                    QueueType::Cake(cake) => {
+                        let (maj, min) = cake.parent.get_major_minor();
+                        let (cmaj, cmin) = circuit.class_id.get_major_minor();
+                        maj == cmaj && min == cmin
                     }
+                    QueueType::FqCodel(fq) => fq.parent.as_u32() == circuit.class_id.as_u32(),
+                    _ => false,
                 });
-                let upload = queues[0].iter().find(|q| {
-                    match q {
-                        QueueType::Cake(cake) => {
-                            let (maj,min) = cake.parent.get_major_minor();
-                            let (cmaj,cmin) = circuit.up_class_id.get_major_minor();
-                            maj==cmaj && min == cmin
-                        }
-                        QueueType::FqCodel(fq) => {
-                            fq.parent.as_u32() == circuit.up_class_id.as_u32()
-                        }
-                        _ => false,
+                let upload = queues[0].iter().find(|q| match q {
+                    QueueType::Cake(cake) => {
+                        let (maj, min) = cake.parent.get_major_minor();
+                        let (cmaj, cmin) = circuit.up_class_id.get_major_minor();
+                        maj == cmaj && min == cmin
                     }
+                    QueueType::FqCodel(fq) => fq.parent.as_u32() == circuit.up_class_id.as_u32(),
+                    _ => false,
                 });
                 if let Some(download) = download {
                     if let Some(upload) = upload {
@@ -107,41 +106,33 @@ async fn track_queues() {
                             if let Some(circuit) = mapping.get_mut(circuit_id) {
                                 circuit.update(download, upload);
                             } else {
-                                // It's new: insert it                        
+                                // It's new: insert it
                                 mapping.insert(
                                     circuit_id.clone(),
-                                    QueueStore::new(download.clone(), upload.clone())
+                                    QueueStore::new(download.clone(), upload.clone()),
                                 );
                             }
                         }
                     }
                 }
             } else {
-                let download = queues[0].iter().find(|q| {
-                    match q {
-                        QueueType::Cake(cake) => {
-                            let (maj,min) = cake.parent.get_major_minor();
-                            let (cmaj,cmin) = circuit.class_id.get_major_minor();
-                            maj==cmaj && min == cmin
-                        }
-                        QueueType::FqCodel(fq) => {
-                            fq.parent.as_u32() == circuit.class_id.as_u32()
-                        }
-                        _ => false,
+                let download = queues[0].iter().find(|q| match q {
+                    QueueType::Cake(cake) => {
+                        let (maj, min) = cake.parent.get_major_minor();
+                        let (cmaj, cmin) = circuit.class_id.get_major_minor();
+                        maj == cmaj && min == cmin
                     }
+                    QueueType::FqCodel(fq) => fq.parent.as_u32() == circuit.class_id.as_u32(),
+                    _ => false,
                 });
-                let upload = queues[1].iter().find(|q| {
-                    match q {
-                        QueueType::Cake(cake) => {
-                            let (maj,min) = cake.parent.get_major_minor();
-                            let (cmaj,cmin) = circuit.class_id.get_major_minor();
-                            maj==cmaj && min == cmin
-                        }
-                        QueueType::FqCodel(fq) => {
-                            fq.parent.as_u32() == circuit.class_id.as_u32()
-                        }
-                        _ => false,
+                let upload = queues[1].iter().find(|q| match q {
+                    QueueType::Cake(cake) => {
+                        let (maj, min) = cake.parent.get_major_minor();
+                        let (cmaj, cmin) = circuit.class_id.get_major_minor();
+                        maj == cmaj && min == cmin
                     }
+                    QueueType::FqCodel(fq) => fq.parent.as_u32() == circuit.class_id.as_u32(),
+                    _ => false,
                 });
                 if let Some(download) = download {
                     if let Some(upload) = upload {
@@ -149,10 +140,10 @@ async fn track_queues() {
                             if let Some(circuit) = mapping.get_mut(circuit_id) {
                                 circuit.update(download, upload);
                             } else {
-                                // It's new: insert it                        
+                                // It's new: insert it
                                 mapping.insert(
                                     circuit_id.clone(),
-                                    QueueStore::new(download.clone(), upload.clone())
+                                    QueueStore::new(download.clone(), upload.clone()),
                                 );
                             }
                         }

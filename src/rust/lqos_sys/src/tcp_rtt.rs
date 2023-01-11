@@ -8,7 +8,7 @@ use crate::bpf_map::BpfMap;
 pub struct RttTrackingEntry {
     /// Array containing TCP round-trip times. Convert to an `f32` and divide by `100.0` for actual numbers.
     pub rtt: [u32; 60],
-    
+
     /// Used internally by the XDP program to store the current position in the storage array. Do not modify.
     next_entry: u32,
 
@@ -32,11 +32,11 @@ impl Default for RttTrackingEntry {
 
 /// Queries the active XDP/TC programs for TCP round-trip time tracking
 /// data (from the `rtt_tracker` pinned eBPF map).
-/// 
+///
 /// Only IP addresses facing the ISP Network side are tracked.
-/// 
+///
 /// ## Returns
-/// 
+///
 /// A vector containing:
 /// * `[u8; 16]` - a byte representation of the encoded IP address. See `XdpIpAddress` for details.
 /// * An `RttTrackingEntry` structure containing the current RTT results for the IP address.

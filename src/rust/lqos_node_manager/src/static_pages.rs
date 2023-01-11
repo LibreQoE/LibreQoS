@@ -1,5 +1,8 @@
+use crate::{
+    auth_guard::AuthGuard,
+    cache_control::{LongCache, NoCache},
+};
 use rocket::fs::NamedFile;
-use crate::{cache_control::{LongCache, NoCache}, auth_guard::AuthGuard};
 
 // Note that NoCache can be replaced with a cache option
 // once the design work is complete.
@@ -7,7 +10,7 @@ use crate::{cache_control::{LongCache, NoCache}, auth_guard::AuthGuard};
 pub async fn index<'a>(auth: AuthGuard) -> NoCache<Option<NamedFile>> {
     match auth {
         AuthGuard::FirstUse => NoCache::new(NamedFile::open("static/first_run.html").await.ok()),
-        _ => NoCache::new(NamedFile::open("static/main.html").await.ok())
+        _ => NoCache::new(NamedFile::open("static/main.html").await.ok()),
     }
 }
 
@@ -55,7 +58,11 @@ pub async fn shaped_devices_add_page<'a>(_auth: AuthGuard) -> NoCache<Option<Nam
 
 #[get("/vendor/bootstrap.min.css")]
 pub async fn bootsrap_css<'a>() -> LongCache<Option<NamedFile>> {
-    LongCache::new(NamedFile::open("static/vendor/bootstrap.min.css").await.ok())
+    LongCache::new(
+        NamedFile::open("static/vendor/bootstrap.min.css")
+            .await
+            .ok(),
+    )
 }
 
 // Note that NoCache can be replaced with a cache option
@@ -67,7 +74,11 @@ pub async fn lqos_js<'a>() -> NoCache<Option<NamedFile>> {
 
 #[get("/vendor/plotly-2.16.1.min.js")]
 pub async fn plotly_js<'a>() -> LongCache<Option<NamedFile>> {
-    LongCache::new(NamedFile::open("static/vendor/plotly-2.16.1.min.js").await.ok())
+    LongCache::new(
+        NamedFile::open("static/vendor/plotly-2.16.1.min.js")
+            .await
+            .ok(),
+    )
 }
 
 #[get("/vendor/jquery.min.js")]
@@ -77,7 +88,11 @@ pub async fn jquery_js<'a>() -> LongCache<Option<NamedFile>> {
 
 #[get("/vendor/bootstrap.bundle.min.js")]
 pub async fn bootsrap_js<'a>() -> LongCache<Option<NamedFile>> {
-    LongCache::new(NamedFile::open("static/vendor/bootstrap.bundle.min.js").await.ok())
+    LongCache::new(
+        NamedFile::open("static/vendor/bootstrap.bundle.min.js")
+            .await
+            .ok(),
+    )
 }
 
 #[get("/vendor/tinylogo.svg")]

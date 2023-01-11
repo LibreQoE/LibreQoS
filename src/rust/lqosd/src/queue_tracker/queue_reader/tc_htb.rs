@@ -3,7 +3,7 @@
 "bytes":1920791512305,"packets":1466145855,"drops":32136937,"overlimits":2627500070,"requeues":1224,"backlog":0,"qlen":0}
 */
 
-use anyhow::{Result, Error};
+use anyhow::{Error, Result};
 use lqos_bus::TcHandle;
 use serde::Serialize;
 use serde_json::Value;
@@ -45,7 +45,7 @@ impl TcHtb {
                 "backlog" => result.backlog = value.as_u64().unwrap(),
                 "qlen" => result.qlen = value.as_u64().unwrap(),
                 "options" => result.options = TcHtbOptions::from_json(value)?,
-                "kind" => {},
+                "kind" => {}
                 _ => {
                     log::error!("Unknown entry in Tc-HTB: {key}");
                 }
@@ -63,8 +63,12 @@ impl TcHtbOptions {
                 for (key, value) in map.iter() {
                     match key.as_str() {
                         "r2q" => result.r2q = value.as_u64().unwrap(),
-                        "default" => result.default = TcHandle::from_string(value.as_str().unwrap())?,
-                        "direct_packets_stat" => result.direct_packets_stat = value.as_u64().unwrap(),
+                        "default" => {
+                            result.default = TcHandle::from_string(value.as_str().unwrap())?
+                        }
+                        "direct_packets_stat" => {
+                            result.direct_packets_stat = value.as_u64().unwrap()
+                        }
                         "direct_qlen" => result.direct_qlen = value.as_u64().unwrap(),
                         _ => {
                             log::error!("Unknown entry in Tc-HTB: {key}");
@@ -74,6 +78,6 @@ impl TcHtbOptions {
                 Ok(result)
             }
             _ => Err(Error::msg("Unable to parse HTB options")),
-        }        
+        }
     }
 }

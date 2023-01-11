@@ -2,9 +2,10 @@ use anyhow::{Error, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    fs::{read_to_string, OpenOptions, remove_file},
+    fmt::Display,
+    fs::{read_to_string, remove_file, OpenOptions},
     io::Write,
-    path::{Path, PathBuf}, fmt::Display,
+    path::{Path, PathBuf},
 };
 use uuid::Uuid;
 
@@ -108,7 +109,7 @@ impl WebUsers {
         password: &str,
         role: UserRole,
     ) -> Result<String> {
-        let token ; // Assigned in a branch
+        let token; // Assigned in a branch
         if let Some(mut user) = self.users.iter_mut().find(|u| u.username == username) {
             user.password_hash = Self::hash_password(password);
             user.role = role;
@@ -156,11 +157,7 @@ impl WebUsers {
     }
 
     pub fn get_role_from_token(&self, token: &str) -> Result<UserRole> {
-        if let Some(user) = self
-            .users
-            .iter()
-            .find(|u| u.token == token) 
-        {
+        if let Some(user) = self.users.iter().find(|u| u.token == token) {
             Ok(user.role)
         } else {
             if self.allow_unauthenticated_to_view {
@@ -172,11 +169,7 @@ impl WebUsers {
     }
 
     pub fn get_username(&self, token: &str) -> String {
-        if let Some(user) = self
-            .users
-            .iter()
-            .find(|u| u.token == token) 
-        {
+        if let Some(user) = self.users.iter().find(|u| u.token == token) {
             user.username.clone()
         } else {
             "Anonymous".to_string()
@@ -184,12 +177,9 @@ impl WebUsers {
     }
 
     pub fn print_users(&self) -> Result<()> {
-        self
-            .users
-            .iter()
-            .for_each(|u| {
-                println!("{:<40} {:<10}", u.username, u.role.to_string());
-            });
+        self.users.iter().for_each(|u| {
+            println!("{:<40} {:<10}", u.username, u.role.to_string());
+        });
         Ok(())
     }
 

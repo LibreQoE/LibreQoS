@@ -1,6 +1,11 @@
 use anyhow::Result;
-use lqos_bus::{BUS_BIND_ADDRESS, BusSession, BusRequest, encode_request, decode_response, BusResponse};
-use tokio::{net::TcpStream, io::{AsyncReadExt, AsyncWriteExt}};
+use lqos_bus::{
+    decode_response, encode_request, BusRequest, BusResponse, BusSession, BUS_BIND_ADDRESS,
+};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+};
 
 #[tokio::main(flavor = "current_thread")]
 pub async fn main() -> Result<()> {

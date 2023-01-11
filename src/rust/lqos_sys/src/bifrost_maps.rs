@@ -60,7 +60,10 @@ pub(crate) fn map_vlans(mappings: &[BridgeVlan]) -> Result<()> {
             redirect_to: mapping.redirect_to,
         };
         vlan_map.insert(&mut key, &mut val)?;
-        println!("Mapped bifrost VLAN: {}:{} => {}", mapping.parent, mapping.tag, mapping.redirect_to);
+        println!(
+            "Mapped bifrost VLAN: {}:{} => {}",
+            mapping.parent, mapping.tag, mapping.redirect_to
+        );
         println!("{key}");
     }
     Ok(())

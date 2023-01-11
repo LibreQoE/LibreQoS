@@ -1,8 +1,8 @@
 mod ip_stats;
-use std::net::IpAddr;
 use anyhow::Result;
 pub use ip_stats::{IpMapping, IpStats, XdpPpingResult};
 use serde::{Deserialize, Serialize};
+use std::net::IpAddr;
 mod tc_handle;
 pub use tc_handle::TcHandle;
 

@@ -1,8 +1,8 @@
 use anyhow::{Error, Result};
 use clap::{Parser, Subcommand};
 use lqos_bus::{
-    decode_response, encode_request, BusRequest, BusResponse, BusSession, IpMapping,
-    BUS_BIND_ADDRESS, TcHandle,
+    decode_response, encode_request, BusRequest, BusResponse, BusSession, IpMapping, TcHandle,
+    BUS_BIND_ADDRESS,
 };
 use std::process::exit;
 use tokio::{
@@ -35,7 +35,7 @@ enum Commands {
 
         /// Add "--upload 1" if you are using on-a-stick and need to map upload separately
         #[arg(long)]
-        upload: Option<String>
+        upload: Option<String>,
     },
     /// Remove an IP address (v4 or v6) from the XDP/TC mapping system.
     Del {
@@ -44,7 +44,7 @@ enum Commands {
 
         /// Add "--upload 1" if you are using on-a-stick and need to map upload separately
         #[arg(long)]
-        upload: Option<String>
+        upload: Option<String>,
     },
     /// Clear all mapped IPs.
     Clear,
@@ -88,7 +88,9 @@ fn print_ips(ips: &[IpMapping]) {
         };
         println!(
             "{:<45} CPU: {:<4} TC: {}",
-            ip_formatted, ip.cpu, ip.tc_handle.to_string()
+            ip_formatted,
+            ip.cpu,
+            ip.tc_handle.to_string()
         );
     }
     println!("");
@@ -116,10 +118,15 @@ pub async fn main() -> Result<()> {
     let cli = Args::parse();
 
     match cli.command {
-        Some(Commands::Add { ip, classid, cpu, upload }) => {
+        Some(Commands::Add {
+            ip,
+            classid,
+            cpu,
+            upload,
+        }) => {
             talk_to_server(parse_add_ip(&ip, &classid, &cpu, &upload)?).await?;
         }
-        Some(Commands::Del { ip , upload }) => {
+        Some(Commands::Del { ip, upload }) => {
             talk_to_server(BusRequest::DelIpFlow {
                 ip_address: ip.to_string(),
                 upload: upload.is_some(),

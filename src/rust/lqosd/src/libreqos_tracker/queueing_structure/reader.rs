@@ -1,8 +1,8 @@
-use std::path::{PathBuf, Path};
-use anyhow::{Result, Error};
+use anyhow::{Error, Result};
 use lqos_bus::TcHandle;
-use serde_json::Value;
 use lqos_config::EtcLqos;
+use serde_json::Value;
+use std::path::{Path, PathBuf};
 
 pub struct QueueNetwork {
     cpu_node: Vec<QueueNode>,
@@ -56,7 +56,9 @@ impl QueueNetwork {
     pub(crate) fn from_json() -> Result<Self> {
         let path = QueueNetwork::path()?;
         if !QueueNetwork::exists() {
-            return Err(Error::msg("queueStructure.json does not exist yet. Try running LibreQoS?"));
+            return Err(Error::msg(
+                "queueStructure.json does not exist yet. Try running LibreQoS?",
+            ));
         }
         let raw_string = std::fs::read_to_string(path)?;
         let mut result = Self {
@@ -103,28 +105,58 @@ impl QueueNode {
         if let Value::Object(map) = value {
             for (key, value) in map.iter() {
                 match key.as_str() {
-                    "downloadBandwidthMbps" | "maxDownload" => result.download_bandwidth_mbps = value.as_u64().unwrap(),
-                    "uploadBandwidthMbps" | "maxUpload" => result.upload_bandwidth_mbps = value.as_u64().unwrap(),
-                    "downloadBandwidthMbpsMin"| "minDownload" => result.download_bandwidth_mbps_min = value.as_u64().unwrap(),
-                    "uploadBandwidthMbpsMin" | "minUpload" => result.upload_bandwidth_mbps_min = value.as_u64().unwrap(),
-                    "classid" => result.class_id = TcHandle::from_string(&value.as_str().unwrap().to_string())?,
-                    "up_classid" => result.up_class_id = TcHandle::from_string(value.as_str().unwrap().to_string())?,
+                    "downloadBandwidthMbps" | "maxDownload" => {
+                        result.download_bandwidth_mbps = value.as_u64().unwrap()
+                    }
+                    "uploadBandwidthMbps" | "maxUpload" => {
+                        result.upload_bandwidth_mbps = value.as_u64().unwrap()
+                    }
+                    "downloadBandwidthMbpsMin" | "minDownload" => {
+                        result.download_bandwidth_mbps_min = value.as_u64().unwrap()
+                    }
+                    "uploadBandwidthMbpsMin" | "minUpload" => {
+                        result.upload_bandwidth_mbps_min = value.as_u64().unwrap()
+                    }
+                    "classid" => {
+                        result.class_id =
+                            TcHandle::from_string(&value.as_str().unwrap().to_string())?
+                    }
+                    "up_classid" => {
+                        result.up_class_id =
+                            TcHandle::from_string(value.as_str().unwrap().to_string())?
+                    }
                     "classMajor" => result.class_major = read_hex_string(value.as_str().unwrap())?,
-                    "up_classMajor" => result.up_class_major = read_hex_string(value.as_str().unwrap())?,
+                    "up_classMajor" => {
+                        result.up_class_major = read_hex_string(value.as_str().unwrap())?
+                    }
                     "classMinor" => result.class_minor = read_hex_string(value.as_str().unwrap())?,
                     "cpuNum" => result.cpu_num = read_hex_string(value.as_str().unwrap())?,
                     "up_cpuNum" => result.up_cpu_num = read_hex_string(value.as_str().unwrap())?,
-                    "parentClassID" => result.parent_class_id = TcHandle::from_string(value.as_str().unwrap().to_string())?,
-                    "up_parentClassID" => result.up_parent_class_id = TcHandle::from_string(value.as_str().unwrap().to_string())?,
-                    "circuitId" | "circuitID" => result.circuit_id = Some(value.as_str().unwrap().to_string()),
-                    "circuitName" => result.circuit_name = Some(value.as_str().unwrap().to_string()),
-                    "parentNode" | "ParentNode" => result.parent_node = Some(value.as_str().unwrap().to_string()),
+                    "parentClassID" => {
+                        result.parent_class_id =
+                            TcHandle::from_string(value.as_str().unwrap().to_string())?
+                    }
+                    "up_parentClassID" => {
+                        result.up_parent_class_id =
+                            TcHandle::from_string(value.as_str().unwrap().to_string())?
+                    }
+                    "circuitId" | "circuitID" => {
+                        result.circuit_id = Some(value.as_str().unwrap().to_string())
+                    }
+                    "circuitName" => {
+                        result.circuit_name = Some(value.as_str().unwrap().to_string())
+                    }
+                    "parentNode" | "ParentNode" => {
+                        result.parent_node = Some(value.as_str().unwrap().to_string())
+                    }
                     "comment" => result.comment = value.as_str().unwrap().to_string(),
-                    "deviceId" | "deviceID" => result.device_id = Some(value.as_str().unwrap().to_string()),
+                    "deviceId" | "deviceID" => {
+                        result.device_id = Some(value.as_str().unwrap().to_string())
+                    }
                     "deviceName" => result.device_name = Some(value.as_str().unwrap().to_string()),
                     "mac" => result.mac = Some(value.as_str().unwrap().to_string()),
-                    "ipv4s" => {}, // Ignore
-                    "ipv6s" => {},
+                    "ipv4s" => {} // Ignore
+                    "ipv6s" => {}
                     "circuits" => {
                         if let Value::Array(array) = value {
                             for c in array.iter() {
@@ -143,7 +175,9 @@ impl QueueNode {
                 }
             }
         } else {
-            return Err(Error::msg(format!("Unable to parse node structure for [{key}]")));
+            return Err(Error::msg(format!(
+                "Unable to parse node structure for [{key}]"
+            )));
         }
         Ok(result)
     }

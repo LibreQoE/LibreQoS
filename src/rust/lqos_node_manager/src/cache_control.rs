@@ -3,9 +3,9 @@ use rocket::response::Responder;
 
 /// Use to wrap a responder when you want to tell the user's
 /// browser to try and cache a response.
-/// 
+///
 /// For example:
-/// 
+///
 /// ```
 /// pub async fn bootsrap_css<'a>() -> LongCache<Option<NamedFile>> {
 ///     LongCache::new(NamedFile::open("static/vendor/bootstrap.min.css").await.ok())
@@ -27,9 +27,9 @@ impl<'r, 'o: 'r, T: Responder<'r, 'o>> LongCache<T> {
 
 /// Use to wrap a responder when you want to tell the user's
 /// browser to keep data private and never cahce it.
-/// 
+///
 /// For example:
-/// 
+///
 /// ```
 /// pub async fn bootsrap_css<'a>() -> LongCache<Option<NamedFile>> {
 ///     LongCache::new(NamedFile::open("static/vendor/bootstrap.min.css").await.ok())

@@ -1,6 +1,6 @@
-use std::path::Path;
+use anyhow::{Error, Result};
 use serde::{Deserialize, Serialize};
-use anyhow::{Result, Error};
+use std::path::Path;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct EtcLqos {

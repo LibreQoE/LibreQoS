@@ -2,10 +2,10 @@
 {"kind":"mq","handle":"7fff:","root":true,"options":{},"bytes":0,"packets":0,"drops":0,"overlimits":0,"requeues":0,"backlog":0,"qlen":0}
 */
 
+use anyhow::Result;
 use lqos_bus::TcHandle;
 use serde::Serialize;
 use serde_json::Value;
-use anyhow::Result;
 
 #[derive(Default, Clone, Debug, Serialize)]
 pub(crate) struct TcMultiQueue {
@@ -34,8 +34,8 @@ impl TcMultiQueue {
                 "requeues" => result.requeues = value.as_u64().unwrap(),
                 "backlog" => result.backlog = value.as_u64().unwrap(),
                 "qlen" => result.qlen = value.as_u64().unwrap(),
-                "kind" => {},
-                "options" => {},
+                "kind" => {}
+                "options" => {}
                 _ => {
                     log::error!("Unknown entry in Tc-MQ: {key}");
                 }

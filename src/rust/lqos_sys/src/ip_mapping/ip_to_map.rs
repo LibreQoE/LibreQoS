@@ -1,6 +1,6 @@
-use std::net::{IpAddr, Ipv6Addr, Ipv4Addr};
-use anyhow::{Result, Error};
+use anyhow::{Error, Result};
 use lqos_bus::TcHandle;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 pub(crate) struct IpToMap {
     pub(crate) subnet: IpAddr,
@@ -58,7 +58,7 @@ mod test {
     #[test]
     fn parse_ipv4_single() {
         let map = IpToMap::new("1.2.3.4", TcHandle::from_string("1:2").unwrap(), 1).unwrap();
-        let rust_ip : IpAddr = "1.2.3.4".parse().unwrap();
+        let rust_ip: IpAddr = "1.2.3.4".parse().unwrap();
         assert_eq!(rust_ip, map.subnet);
         assert_eq!(map.prefix, 128);
         assert_eq!(map.tc_handle.to_string(), "1:2");
@@ -68,9 +68,9 @@ mod test {
     #[test]
     fn parse_ipv4_subnet() {
         let map = IpToMap::new("1.2.3.0/24", TcHandle::from_string("1:2").unwrap(), 1).unwrap();
-        let rust_ip : IpAddr = "1.2.3.0".parse().unwrap();
+        let rust_ip: IpAddr = "1.2.3.0".parse().unwrap();
         assert_eq!(rust_ip, map.subnet);
-        assert_eq!(map.prefix, 24+96);
+        assert_eq!(map.prefix, 24 + 96);
         assert_eq!(map.tc_handle.to_string(), "1:2");
         assert_eq!(map.cpu, 1);
     }
@@ -102,7 +102,7 @@ mod test {
     #[test]
     fn parse_ipv6_single() {
         let map = IpToMap::new("dead::beef", TcHandle::from_string("1:2").unwrap(), 1).unwrap();
-        let rust_ip : IpAddr = "dead::beef".parse().unwrap();
+        let rust_ip: IpAddr = "dead::beef".parse().unwrap();
         assert_eq!(rust_ip, map.subnet);
         assert_eq!(map.prefix, 128);
         assert_eq!(map.tc_handle.to_string(), "1:2");
@@ -112,7 +112,7 @@ mod test {
     #[test]
     fn parse_ipv6_subnet() {
         let map = IpToMap::new("dead:beef::/64", TcHandle::from_string("1:2").unwrap(), 1).unwrap();
-        let rust_ip : IpAddr = "dead:beef::".parse().unwrap();
+        let rust_ip: IpAddr = "dead:beef::".parse().unwrap();
         assert_eq!(rust_ip, map.subnet);
         assert_eq!(map.prefix, 64);
         assert_eq!(map.tc_handle.to_string(), "1:2");

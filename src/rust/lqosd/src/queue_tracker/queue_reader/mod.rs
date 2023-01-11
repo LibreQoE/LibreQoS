@@ -1,13 +1,13 @@
-mod tc_mq;
-mod tc_htb;
-mod tc_fq_codel;
 mod tc_cake;
-use anyhow::{Result, Error};
+mod tc_fq_codel;
+mod tc_htb;
+mod tc_mq;
+use anyhow::{Error, Result};
 use serde::Serialize;
 use serde_json::Value;
 mod queue_diff;
-pub use queue_diff::QueueDiff;
 pub(crate) use queue_diff::make_queue_diff;
+pub use queue_diff::QueueDiff;
 use tokio::process::Command;
 
 #[derive(Debug, Clone, Serialize)]
@@ -28,7 +28,7 @@ impl QueueType {
             "cake" => Ok(QueueType::Cake(tc_cake::TcCake::from_json(map)?)),
             "clsact" => Ok(QueueType::ClsAct),
             _ => Err(Error::msg(format!("Unknown queue kind: {kind}"))),
-        }   
+        }
     }
 }
 
@@ -36,7 +36,8 @@ pub(crate) async fn read_tc_queues(interface: &str) -> Result<Vec<QueueType>> {
     let mut result = Vec::new();
     let command_output = Command::new("/sbin/tc")
         .args(["-s", "-j", "qdisc", "show", "dev", interface])
-        .output().await?;
+        .output()
+        .await?;
     let json = String::from_utf8(command_output.stdout)?;
     let json: Value = serde_json::from_str(&json)?;
     if let Value::Array(array) = &json {

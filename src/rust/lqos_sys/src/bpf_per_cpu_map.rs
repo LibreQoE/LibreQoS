@@ -11,7 +11,7 @@ use std::{
 
 /// Represents an underlying BPF map, accessed via the filesystem.
 /// `BpfMap` *only* talks to PER-CPU variants of maps.
-/// 
+///
 /// `K` is the *key* type, indexing the map.
 /// `V` is the *value* type, and must exactly match the underlying C data type.
 pub(crate) struct BpfPerCpuMap<K, V> {

@@ -1,7 +1,7 @@
 mod reader;
 use anyhow::Result;
 
-pub use reader::{QueueNode, QueueNetwork};
+pub use reader::{QueueNetwork, QueueNode};
 
 pub fn read_queueing_structure() -> Result<Vec<reader::QueueNode>> {
     let network = reader::QueueNetwork::from_json()?;

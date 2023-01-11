@@ -25,7 +25,10 @@ fn command_warnings_errors_only(section: &str, command_result: &std::io::Result<
 
     let r = command_result.as_ref().unwrap().stderr.clone();
     if !r.is_empty() {
-        println!("cargo:warning=[{section}] {}", String::from_utf8(r).unwrap());
+        println!(
+            "cargo:warning=[{section}] {}",
+            String::from_utf8(r).unwrap()
+        );
     }
 }
 

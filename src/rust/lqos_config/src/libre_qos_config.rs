@@ -1,7 +1,11 @@
-use anyhow::{Error, Result};
-use serde::{Serialize, Deserialize};
-use std::{fs::{self, remove_file, OpenOptions, read_to_string}, path::{Path, PathBuf}, io::Write};
 use crate::etc;
+use anyhow::{Error, Result};
+use serde::{Deserialize, Serialize};
+use std::{
+    fs::{self, read_to_string, remove_file, OpenOptions},
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct LibreQoSConfig {
@@ -40,7 +44,7 @@ impl LibreQoSConfig {
             internet_interface: String::new(),
             isp_interface: String::new(),
             on_a_stick_mode: false,
-            stick_vlans: (0,0),
+            stick_vlans: (0, 0),
             sqm: String::new(),
             monitor_mode: false,
             total_download_mbps: 0,
@@ -73,12 +77,12 @@ impl LibreQoSConfig {
             }
             if line.starts_with("StickVlanA") {
                 let vlan_string = split_at_equals(line);
-                let vlan : u16 = vlan_string.parse()?;
+                let vlan: u16 = vlan_string.parse()?;
                 self.stick_vlans.0 = vlan;
             }
             if line.starts_with("StickVlanB") {
                 let vlan_string = split_at_equals(line);
-                let vlan : u16 = vlan_string.parse()?;
+                let vlan: u16 = vlan_string.parse()?;
                 self.stick_vlans.1 = vlan;
             }
             if line.starts_with("sqm") {
@@ -145,21 +149,80 @@ impl LibreQoSConfig {
         let mut config = String::new();
         for line in original.split('\n') {
             let mut line = line.to_string();
-            if line.starts_with("interfaceA") { line = format!("interfaceA = '{}'", self.isp_interface); }
-            if line.starts_with("interfaceB") { line = format!("interfaceB = '{}'", self.internet_interface); }
-            if line.starts_with("OnAStick") { line = format!("OnAStick = {}", if self.on_a_stick_mode { "True" } else { "False" } ); }
-            if line.starts_with("StickVlanA") { line = format!("StickVlanA = {}", self.stick_vlans.0); }
-            if line.starts_with("StickVlanB") { line = format!("StickVlanB = {}", self.stick_vlans.1); }
-            if line.starts_with("sqm") { line = format!("sqm = '{}'", self.sqm); }
-            if line.starts_with("upstreamBandwidthCapacityDownloadMbps") { line = format!("upstreamBandwidthCapacityDownloadMbps = {}", self.total_download_mbps); }
-            if line.starts_with("upstreamBandwidthCapacityUploadMbps") { line = format!("upstreamBandwidthCapacityUploadMbps = {}", self.total_upload_mbps); }
-            if line.starts_with("monitorOnlyMode") { line = format!("monitorOnlyMode = {}", if self.monitor_mode { "True" } else { "False" } ); }
-            if line.starts_with("generatedPNDownloadMbps") { line = format!("generatedPNDownloadMbps = {}", self.generated_download_mbps); }
-            if line.starts_with("generatedPNUploadMbps") { line = format!("generatedPNUploadMbps = {}", self.generated_upload_mbps); }
-            if line.starts_with("useBinPackingToBalanceCPU") { line = format!("useBinPackingToBalanceCPU = {}", if self.use_binpacking { "True" } else { "False" } ); }
-            if line.starts_with("enableActualShellCommands") { line = format!("enableActualShellCommands = {}", if self.enable_shell_commands { "True" } else { "False" } ); }
-            if line.starts_with("runShellCommandsAsSudo") { line = format!("runShellCommandsAsSudo = {}", if self.run_as_sudo { "True" } else { "False" } ); }
-            if line.starts_with("queuesAvailableOverride") { line = format!("queuesAvailableOverride = {}", self.override_queue_count); }
+            if line.starts_with("interfaceA") {
+                line = format!("interfaceA = '{}'", self.isp_interface);
+            }
+            if line.starts_with("interfaceB") {
+                line = format!("interfaceB = '{}'", self.internet_interface);
+            }
+            if line.starts_with("OnAStick") {
+                line = format!(
+                    "OnAStick = {}",
+                    if self.on_a_stick_mode {
+                        "True"
+                    } else {
+                        "False"
+                    }
+                );
+            }
+            if line.starts_with("StickVlanA") {
+                line = format!("StickVlanA = {}", self.stick_vlans.0);
+            }
+            if line.starts_with("StickVlanB") {
+                line = format!("StickVlanB = {}", self.stick_vlans.1);
+            }
+            if line.starts_with("sqm") {
+                line = format!("sqm = '{}'", self.sqm);
+            }
+            if line.starts_with("upstreamBandwidthCapacityDownloadMbps") {
+                line = format!(
+                    "upstreamBandwidthCapacityDownloadMbps = {}",
+                    self.total_download_mbps
+                );
+            }
+            if line.starts_with("upstreamBandwidthCapacityUploadMbps") {
+                line = format!(
+                    "upstreamBandwidthCapacityUploadMbps = {}",
+                    self.total_upload_mbps
+                );
+            }
+            if line.starts_with("monitorOnlyMode") {
+                line = format!(
+                    "monitorOnlyMode = {}",
+                    if self.monitor_mode { "True" } else { "False" }
+                );
+            }
+            if line.starts_with("generatedPNDownloadMbps") {
+                line = format!("generatedPNDownloadMbps = {}", self.generated_download_mbps);
+            }
+            if line.starts_with("generatedPNUploadMbps") {
+                line = format!("generatedPNUploadMbps = {}", self.generated_upload_mbps);
+            }
+            if line.starts_with("useBinPackingToBalanceCPU") {
+                line = format!(
+                    "useBinPackingToBalanceCPU = {}",
+                    if self.use_binpacking { "True" } else { "False" }
+                );
+            }
+            if line.starts_with("enableActualShellCommands") {
+                line = format!(
+                    "enableActualShellCommands = {}",
+                    if self.enable_shell_commands {
+                        "True"
+                    } else {
+                        "False"
+                    }
+                );
+            }
+            if line.starts_with("runShellCommandsAsSudo") {
+                line = format!(
+                    "runShellCommandsAsSudo = {}",
+                    if self.run_as_sudo { "True" } else { "False" }
+                );
+            }
+            if line.starts_with("queuesAvailableOverride") {
+                line = format!("queuesAvailableOverride = {}", self.override_queue_count);
+            }
             config += &format!("{line}\n");
         }
 
@@ -167,7 +230,10 @@ impl LibreQoSConfig {
         if final_path.exists() {
             remove_file(&final_path)?;
         }
-        let mut file = OpenOptions::new().write(true).create_new(true).open(&final_path)?;
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&final_path)?;
         file.write_all(&config.as_bytes())?;
         Ok(())
     }

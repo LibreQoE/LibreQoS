@@ -1,6 +1,6 @@
-use std::{ffi::CString, os::raw::c_void};
 use anyhow::{Error, Result};
 use libbpf_sys::{bpf_map_update_elem, bpf_obj_get, libbpf_num_possible_cpus};
+use std::{ffi::CString, os::raw::c_void};
 
 //* Provides an interface for querying the number of CPUs eBPF can
 //* see, and marking CPUs as available. Currently marks ALL eBPF
@@ -71,9 +71,7 @@ impl CpuMapping {
     pub(crate) fn setup_base_txq_config(&self) -> Result<()> {
         use crate::lqos_kernel::bpf::map_txq_config_base_setup;
         // Should we shell out to the C and do it the easy way?
-        let result = unsafe {
-            map_txq_config_base_setup(self.fd_txq_config)
-        };
+        let result = unsafe { map_txq_config_base_setup(self.fd_txq_config) };
         if !result {
             Err(Error::msg("Unable to setup TXQ map"))
         } else {
@@ -113,7 +111,10 @@ fn sorted_txq_xps_cpus(interface: &str) -> Result<Vec<String>> {
         if let Ok(path) = &path {
             if path.path().is_dir() {
                 if let Some(filename) = path.path().file_name() {
-                    let base_fn = format!("/sys/class/net/{interface}/queues/{}/xps_cpus", filename.to_str().unwrap());
+                    let base_fn = format!(
+                        "/sys/class/net/{interface}/queues/{}/xps_cpus",
+                        filename.to_str().unwrap()
+                    );
                     if std::path::Path::new(&base_fn).exists() {
                         result.push(base_fn);
                     }

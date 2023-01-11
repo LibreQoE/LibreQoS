@@ -1,12 +1,12 @@
-mod tracking_data;
 mod throughput_entry;
+mod tracking_data;
+use crate::throughput_tracker::tracking_data::ThroughputTracker;
 use lazy_static::*;
-use lqos_bus::{BusResponse, IpStats, XdpPpingResult, TcHandle};
-use lqos_sys::{XdpIpAddress, get_throughput_map};
+use lqos_bus::{BusResponse, IpStats, TcHandle, XdpPpingResult};
+use lqos_sys::{get_throughput_map, XdpIpAddress};
 use parking_lot::RwLock;
 use std::time::{Duration, Instant};
 use tokio::{task, time};
-use crate::throughput_tracker::tracking_data::ThroughputTracker;
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
@@ -45,7 +45,11 @@ pub async fn spawn_throughput_monitor() {
 pub fn current_throughput() -> BusResponse {
     let (bits_per_second, packets_per_second, shaped_bits_per_second) = {
         let tp = THROUGHPUT_TRACKER.read();
-        (tp.bits_per_second(), tp.packets_per_second(), tp.shaped_bits_per_second())
+        (
+            tp.bits_per_second(),
+            tp.packets_per_second(),
+            tp.shaped_bits_per_second(),
+        )
     };
     BusResponse::CurrentThroughput {
         bits_per_second,
@@ -57,13 +61,12 @@ pub fn current_throughput() -> BusResponse {
 pub fn host_counters() -> BusResponse {
     let mut result = Vec::new();
     let tp = THROUGHPUT_TRACKER.read();
-    tp.raw_data.iter().for_each(|(k,v)| {
+    tp.raw_data.iter().for_each(|(k, v)| {
         let ip = k.as_ip();
         let (down, up) = v.bytes_per_second;
         result.push((ip, down, up));
     });
     BusResponse::HostCounters(result)
-    
 }
 
 #[inline(always)]
@@ -143,15 +146,21 @@ pub fn worst_n(n: u32) -> BusResponse {
 
 pub fn xdp_pping_compat() -> BusResponse {
     let raw = THROUGHPUT_TRACKER.read();
-    let result = raw.raw_data
+    let result = raw
+        .raw_data
         .iter()
         .filter(|(_, d)| retire_check(raw.cycle, d.most_recent_cycle))
         .filter_map(|(_ip, data)| {
             if data.tc_handle.as_u32() > 0 {
-                let mut valid_samples : Vec<u32> = data.recent_rtt_data.iter().filter(|d| **d > 0).map(|d| *d).collect();
+                let mut valid_samples: Vec<u32> = data
+                    .recent_rtt_data
+                    .iter()
+                    .filter(|d| **d > 0)
+                    .map(|d| *d)
+                    .collect();
                 let samples = valid_samples.len() as u32;
                 if samples > 0 {
-                    valid_samples.sort_by(|a,b| (*a).cmp(&b));
+                    valid_samples.sort_by(|a, b| (*a).cmp(&b));
                     let median = valid_samples[valid_samples.len() / 2] as f32 / 100.0;
                     let max = *(valid_samples.iter().max().unwrap()) as f32 / 100.0;
                     let min = *(valid_samples.iter().min().unwrap()) as f32 / 100.0;
@@ -164,7 +173,7 @@ pub fn xdp_pping_compat() -> BusResponse {
                         avg,
                         max,
                         min,
-                        samples
+                        samples,
                     })
                 } else {
                     None
@@ -180,9 +189,17 @@ pub fn xdp_pping_compat() -> BusResponse {
 pub fn rtt_histogram() -> BusResponse {
     let mut result = vec![0; 20];
     let reader = THROUGHPUT_TRACKER.read();
-    for (_, data) in reader.raw_data.iter().filter(|(_, d)| retire_check(reader.cycle, d.most_recent_cycle))
+    for (_, data) in reader
+        .raw_data
+        .iter()
+        .filter(|(_, d)| retire_check(reader.cycle, d.most_recent_cycle))
     {
-        let valid_samples : Vec<u32> = data.recent_rtt_data.iter().filter(|d| **d > 0).map(|d| *d).collect();
+        let valid_samples: Vec<u32> = data
+            .recent_rtt_data
+            .iter()
+            .filter(|d| **d > 0)
+            .map(|d| *d)
+            .collect();
         let samples = valid_samples.len() as u32;
         if samples > 0 {
             let median = valid_samples[valid_samples.len() / 2] as f32 / 100.0;
@@ -199,13 +216,15 @@ pub fn host_counts() -> BusResponse {
     let mut total = 0;
     let mut shaped = 0;
     let tp = THROUGHPUT_TRACKER.read();
-    tp.raw_data.iter().filter(|(_, d)| retire_check(tp.cycle, d.most_recent_cycle))
-    .for_each(|(_,d)| {
-        total += 1;
-        if d.tc_handle.as_u32() != 0 {
-            shaped += 1;
-        }
-    });
+    tp.raw_data
+        .iter()
+        .filter(|(_, d)| retire_check(tp.cycle, d.most_recent_cycle))
+        .for_each(|(_, d)| {
+            total += 1;
+            if d.tc_handle.as_u32() != 0 {
+                shaped += 1;
+            }
+        });
     BusResponse::HostCounts((total, shaped))
 }
 
@@ -223,7 +242,7 @@ pub fn all_unknown_ips() -> BusResponse {
                     te.packets,
                     te.median_latency(),
                     te.tc_handle,
-                    te.most_recent_cycle
+                    te.most_recent_cycle,
                 )
             })
             .collect()
@@ -232,7 +251,14 @@ pub fn all_unknown_ips() -> BusResponse {
     let result = full_list
         .iter()
         .map(
-            |(ip, (bytes_dn, bytes_up), (packets_dn, packets_up), median_rtt, tc_handle, _last_seen)| IpStats {
+            |(
+                ip,
+                (bytes_dn, bytes_up),
+                (packets_dn, packets_up),
+                median_rtt,
+                tc_handle,
+                _last_seen,
+            )| IpStats {
                 ip_address: ip.as_ip().to_string(),
                 bits_per_second: (bytes_dn * 8, bytes_up * 8),
                 packets_per_second: (*packets_dn, *packets_up),

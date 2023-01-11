@@ -1,6 +1,11 @@
-use lqos_bus::{BusRequest, BusResponse, BUS_BIND_ADDRESS, BusSession, encode_request, decode_response};
 use anyhow::Result;
-use tokio::{net::TcpStream, io::{AsyncWriteExt, AsyncReadExt}};
+use lqos_bus::{
+    decode_response, encode_request, BusRequest, BusResponse, BusSession, BUS_BIND_ADDRESS,
+};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+};
 
 pub fn run_query(requests: Vec<BusRequest>) -> Result<Vec<BusResponse>> {
     let mut replies = Vec::new();

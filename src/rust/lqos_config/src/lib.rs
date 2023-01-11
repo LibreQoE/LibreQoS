@@ -1,11 +1,11 @@
+mod authentication;
 mod etc;
 mod libre_qos_config;
-mod shaped_devices;
 mod program_control;
-mod authentication;
+mod shaped_devices;
 
+pub use authentication::{UserRole, WebUsers};
+pub use etc::{BridgeConfig, BridgeInterface, BridgeVlan, EtcLqos, Tunables};
 pub use libre_qos_config::LibreQoSConfig;
-pub use shaped_devices::{ConfigShapedDevices, ShapedDevice};
 pub use program_control::load_libreqos;
-pub use etc::{EtcLqos, BridgeConfig, Tunables, BridgeInterface, BridgeVlan};
-pub use authentication::{WebUsers, UserRole};
+pub use shaped_devices::{ConfigShapedDevices, ShapedDevice};

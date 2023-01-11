@@ -12,7 +12,7 @@ use std::{
 
 /// Represents an underlying BPF map, accessed via the filesystem.
 /// `BpfMap` *only* talks to shared (not PER-CPU) variants of maps.
-/// 
+///
 /// `K` is the *key* type, indexing the map.
 /// `V` is the *value* type, and must exactly match the underlying C data type.
 pub(crate) struct BpfMap<K, V> {
@@ -71,12 +71,12 @@ where
     /// Use this sparingly, because it briefly pauses XDP access to the
     /// underlying map (through internal locking we can't reach from
     /// userland).
-    /// 
+    ///
     /// ## Arguments
-    /// 
+    ///
     /// * `key` - the key to insert.
     /// * `value` - the value to insert.
-    /// 
+    ///
     /// Returns Ok if insertion succeeded, a generic error (no details yet)
     /// if it fails.
     pub(crate) fn insert(&mut self, key: &mut K, value: &mut V) -> Result<()> {
@@ -100,11 +100,11 @@ where
     /// Deletes an entry from the underlying eBPF map.
     /// Use this sparingly, it locks the underlying map in the
     /// kernel. This can cause *long* delays under heavy load.
-    /// 
+    ///
     /// ## Arguments
-    /// 
+    ///
     /// * `key` - the key to delete.
-    /// 
+    ///
     /// Return `Ok` if deletion succeeded.
     pub(crate) fn delete(&mut self, key: &mut K) -> Result<()> {
         let key_ptr: *mut K = key;
@@ -127,7 +127,8 @@ where
             let mut prev_key: *mut K = null_mut();
             unsafe {
                 let key_ptr: *mut K = &mut key;
-                while bpf_map_get_next_key(self.fd, prev_key as *mut c_void, key_ptr as *mut c_void)== 0
+                while bpf_map_get_next_key(self.fd, prev_key as *mut c_void, key_ptr as *mut c_void)
+                    == 0
                 {
                     bpf_map_delete_elem(self.fd, key_ptr as *mut c_void);
                     prev_key = key_ptr;
@@ -138,7 +139,9 @@ where
             prev_key = null_mut();
             unsafe {
                 let key_ptr: *mut K = &mut key;
-                if bpf_map_get_next_key(self.fd, prev_key as *mut c_void, key_ptr as *mut c_void) != 0 {
+                if bpf_map_get_next_key(self.fd, prev_key as *mut c_void, key_ptr as *mut c_void)
+                    != 0
+                {
                     break;
                 }
             }
@@ -151,7 +154,8 @@ where
         let mut prev_key: *mut K = null_mut();
         unsafe {
             let key_ptr: *mut K = &mut key;
-            while bpf_map_get_next_key(self.fd, prev_key as *mut c_void, key_ptr as *mut c_void)== 0
+            while bpf_map_get_next_key(self.fd, prev_key as *mut c_void, key_ptr as *mut c_void)
+                == 0
             {
                 bpf_map_delete_elem(self.fd, key_ptr as *mut c_void);
                 prev_key = key_ptr;

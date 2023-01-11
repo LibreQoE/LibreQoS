@@ -2,12 +2,12 @@ use anyhow::Error;
 use lazy_static::*;
 use lqos_config::{UserRole, WebUsers};
 use parking_lot::Mutex;
+use rocket::serde::{json::Json, Deserialize, Serialize};
 use rocket::{
-    http::{Status, CookieJar, Cookie},
+    http::{Cookie, CookieJar, Status},
     request::{FromRequest, Outcome},
-    Request
+    Request,
 };
-use rocket::serde::{json::Json, Serialize, Deserialize};
 
 lazy_static! {
     static ref WEB_USERS: Mutex<Option<WebUsers>> = Mutex::new(None);
@@ -70,7 +70,7 @@ pub struct FirstUser {
     pub password: String,
 }
 
-#[post("/api/create_first_user", data="<info>")]
+#[post("/api/create_first_user", data = "<info>")]
 pub fn create_first_user(cookies: &CookieJar, info: Json<FirstUser>) -> Json<String> {
     if WebUsers::does_users_file_exist().unwrap() {
         return Json("ERROR".to_string());
@@ -78,7 +78,9 @@ pub fn create_first_user(cookies: &CookieJar, info: Json<FirstUser>) -> Json<Str
     let mut lock = WEB_USERS.lock();
     let mut users = WebUsers::load_or_create().unwrap();
     users.allow_anonymous(info.allow_anonymous).unwrap();
-    let token = users.add_or_update_user(&info.username, &info.password, UserRole::Admin).unwrap();
+    let token = users
+        .add_or_update_user(&info.username, &info.password, UserRole::Admin)
+        .unwrap();
     cookies.add(Cookie::new("User-Token", token));
     *lock = Some(users);
     Json("OK".to_string())
@@ -91,7 +93,7 @@ pub struct LoginAttempt {
     pub password: String,
 }
 
-#[post("/api/login", data="<info>")]
+#[post("/api/login", data = "<info>")]
 pub fn login(cookies: &CookieJar, info: Json<LoginAttempt>) -> Json<String> {
     let mut lock = WEB_USERS.lock();
     if lock.is_none() {
@@ -112,7 +114,7 @@ pub fn login(cookies: &CookieJar, info: Json<LoginAttempt>) -> Json<String> {
 pub fn admin_check(auth: AuthGuard) -> Json<bool> {
     match auth {
         AuthGuard::Admin => Json(true),
-        _ => Json(false)
+        _ => Json(false),
     }
 }
 
