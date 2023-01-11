@@ -53,7 +53,7 @@ fn rocket() -> _ {
                 unknown_devices::unknown_devices_range,
                 queue_info::raw_queue_by_circuit,
                 queue_info::run_btest,
-                queue_info::circuit_name,
+                queue_info::circuit_info,
                 queue_info::current_circuit_throughput,
                 config_control::get_nic_list,
                 config_control::get_current_python_config,

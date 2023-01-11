@@ -5,22 +5,37 @@ use lqos_bus::{
     decode_response, encode_request, BusRequest, BusResponse, BusSession, BUS_BIND_ADDRESS,
 };
 use rocket::response::content::RawJson;
+use rocket::serde::Serialize;
 use rocket::serde::json::Json;
 use rocket::tokio::io::{AsyncReadExt, AsyncWriteExt};
 use rocket::tokio::net::TcpStream;
 use std::net::IpAddr;
 
-#[get("/api/circuit_name/<circuit_id>")]
-pub async fn circuit_name(circuit_id: String, _auth: AuthGuard) -> NoCache<Json<String>> {
+#[derive(Serialize, Clone)]
+#[serde(crate = "rocket::serde")]
+pub struct CircuitInfo {
+    pub name: String,
+    pub capacity: (u64, u64)
+}
+
+#[get("/api/circuit_info/<circuit_id>")]
+pub async fn circuit_info(circuit_id: String, _auth: AuthGuard) -> NoCache<Json<CircuitInfo>> {
     if let Some(device) = SHAPED_DEVICES
         .read()
         .devices
         .iter()
         .find(|d| d.circuit_id == circuit_id)
     {
-        NoCache::new(Json(device.circuit_name.clone()))
+        let result = CircuitInfo {
+            name: device.circuit_name.clone(),
+            capacity: (device.download_max_mbps as u64 * 1_000_000, device.upload_max_mbps as u64 * 1_000_000)
+        };
+        NoCache::new(Json(result))
     } else {
-        let result = "Nameless".to_string();
+        let result = CircuitInfo {
+            name: "Nameless".to_string(),
+            capacity: (1_000_000, 1_000_000)
+        };
         NoCache::new(Json(result))
     }
 }
