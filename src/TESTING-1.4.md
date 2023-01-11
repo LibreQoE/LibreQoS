@@ -23,7 +23,7 @@ git checkout v1.4-pre-alpha-rust-integration
 You need to have a few packages from `apt` installed:
 
 ```
-apt get install -y python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname r`
+apt get install -y python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname r` libbpf-dev
 ```
 
 Then you need to install some Python dependencies:
