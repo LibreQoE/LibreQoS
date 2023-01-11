@@ -19,6 +19,8 @@ fn working_directory() -> Result<PathBuf> {
     Ok(base_path.to_path_buf())
 }
 
+/// Shells out and reloads the `LibreQos.py` program, storing all
+/// emitted text and returning it.
 pub fn load_libreqos() -> Result<String> {
     let path = path_to_libreqos()?;
     if !path.exists() {

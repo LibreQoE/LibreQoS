@@ -7,18 +7,29 @@ use serializable::SerializableShapedDevice;
 pub use shaped_device::ShapedDevice;
 use std::path::{Path, PathBuf};
 
+/// Provides handling of the `ShapedDevices.csv` file that maps
+/// circuits to traffic shaping.
 pub struct ConfigShapedDevices {
+    /// List of all devices subject to traffic shaping.
     pub devices: Vec<ShapedDevice>,
+
+    /// An LPM trie storing the IP mappings of all shaped devices,
+    /// allowing for quick IP-to-circuit mapping.
     pub trie: ip_network_table::IpNetworkTable<usize>,
 }
 
 impl ConfigShapedDevices {
+    /// The path to the current `ShapedDevices.csv` file, determined
+    /// by acquiring the prefix from the `/etc/lqos` configuration
+    /// file.
     pub fn path() -> Result<PathBuf> {
         let cfg = etc::EtcLqos::load()?;
         let base_path = Path::new(&cfg.lqos_directory);
         Ok(base_path.join("ShapedDevices.csv"))
     }
 
+    /// Loads `ShapedDevices.csv` and constructs a `ConfigShapedDevices`
+    /// object containing the resulting data.
     pub fn load() -> Result<Self> {
         let final_path = ConfigShapedDevices::path()?;
         let mut reader = csv::Reader::from_path(final_path)?;
@@ -69,6 +80,7 @@ impl ConfigShapedDevices {
         Ok(data)
     }
 
+    /// Saves the current shaped devices list to `ShapedDevices.csv`
     pub fn write_csv(&self, filename: &str) -> Result<()> {
         let cfg = etc::EtcLqos::load()?;
         let base_path = Path::new(&cfg.lqos_directory);

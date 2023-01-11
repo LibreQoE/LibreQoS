@@ -1,3 +1,6 @@
+//! `ispConfig.py` is part of the Python side of LibreQoS. This module
+//! reads, writes and maps values from the Python file.
+
 use crate::etc;
 use anyhow::{Error, Result};
 use serde::{Deserialize, Serialize};
@@ -7,25 +10,57 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// Represents the contents of an `ispConfig.py` file.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct LibreQoSConfig {
+    /// Interface facing the Internet
     pub internet_interface: String,
+
+    /// Interface facing the ISP Core Router
     pub isp_interface: String,
+
+    /// Are we in "on a stick" (single interface) mode?
     pub on_a_stick_mode: bool,
+
+    /// If we are, which VLAN represents which direction?
+    /// In (internet, ISP) order.
     pub stick_vlans: (u16, u16),
+
+    /// The value of the SQM field from `ispConfig.py`
     pub sqm: String,
+
+    /// Are we in monitor-only mode (not shaping)?
     pub monitor_mode: bool,
+
+    /// Total available download (in Mbps)
     pub total_download_mbps: u32,
+
+    /// Total available upload (in Mbps)
     pub total_upload_mbps: u32,
+
+    /// If a node is generated, how much download (Mbps) should it offer?
     pub generated_download_mbps: u32,
+
+    /// If a node is generated, how much upload (Mbps) should it offer?
     pub generated_upload_mbps: u32,
+
+    /// Should the Python queue builder use the bin packing strategy to
+    /// try to optimize CPU assignment?
     pub use_binpacking: bool,
+
+    /// Should the Python program use actual shell commands (and execute)
+    /// them?
     pub enable_shell_commands: bool,
+
+    /// Should every issued command be prefixed with `sudo`?
     pub run_as_sudo: bool,
+
+    /// WARNING: generally don't touch this.
     pub override_queue_count: u32,
 }
 
 impl LibreQoSConfig {
+    /// Loads `ispConfig.py` into a management object.
     pub fn load() -> Result<Self> {
         let cfg = etc::EtcLqos::load()?;
         let base_path = Path::new(&cfg.lqos_directory);
@@ -131,19 +166,22 @@ impl LibreQoSConfig {
         Ok(())
     }
 
+    /// Saves the current values to `ispConfig.py` and store the
+    /// previous settings in `ispConfig.py.backup`.
+    /// 
     pub fn save(&self) -> Result<()> {
         // Find the config
         let cfg = etc::EtcLqos::load()?;
         let base_path = Path::new(&cfg.lqos_directory);
-        let final_path = base_path.join("ispConfig.py");
+        let final_path = base_path.clone().join("ispConfig.py");
         let backup_path = base_path.join("ispConfig.py.backup");
         std::fs::copy(&final_path, &backup_path)?;
 
         // Load existing file
-        let original = read_to_string(final_path)?;
+        let original = read_to_string(&final_path)?;
 
         // Temporary
-        let final_path = base_path.join("ispConfig.py.test");
+        //let final_path = base_path.join("ispConfig.py.test");
 
         // Update config entries line by line
         let mut config = String::new();

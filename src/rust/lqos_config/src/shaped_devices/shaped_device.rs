@@ -3,21 +3,56 @@ use csv::StringRecord;
 use serde::{Deserialize, Serialize};
 use std::net::{Ipv4Addr, Ipv6Addr};
 
+/// Represents a row in the `ShapedDevices.csv` file.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ShapedDevice {
     // Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment
+
+    /// The ID of the circuit to which the device belongs. Circuits are 1:many,
+    /// multiple devices may be in a single circuit.
     pub circuit_id: String,
+
+    /// The name of the circuit. Since we're in a flat file, circuit names
+    /// must match.
     pub circuit_name: String,
+
+    /// The device identification, typically drawn from a management tool.
     pub device_id: String,
+
+    /// The display name of the device.
     pub device_name: String,
+
+    /// The parent node of the device, derived from `network.json`
     pub parent_node: String,
+
+    /// The device's MAC address. This isn't actually used, it exists for
+    /// convenient mapping/seraching.
     pub mac: String,
+
+    /// A list of all IPv4 addresses and CIDR subnets associated with the 
+    /// device. For example, ("192.168.1.0", 24) is equivalent to 
+    /// "192.168.1.0/24"
     pub ipv4: Vec<(Ipv4Addr, u32)>,
+
+    /// A list of all IPv4 addresses and CIDR subnets associated with the
+    /// device.
     pub ipv6: Vec<(Ipv6Addr, u32)>,
+
+    /// Minimum download: this is the bandwidth level the shaper will try
+    /// to ensure is always available.
     pub download_min_mbps: u32,
+
+    /// Minimum upload: this is the bandwidth level the shaper will try to
+    /// ensure is always available.
     pub upload_min_mbps: u32,
+
+    /// Maximum download speed, when possible.
     pub download_max_mbps: u32,
+
+    /// Maximum upload speed when possible.
     pub upload_max_mbps: u32,
+
+    /// Generic comments field, does nothing.
     pub comment: String,
 }
 
