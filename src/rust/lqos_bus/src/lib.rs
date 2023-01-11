@@ -1,91 +1,21 @@
+//! The `lqos_bus` crate provides the data-transfer back-end for communication
+//! between the various parts of LibreQoS. `lqosd` listens on `localhost`
+//! for requests. Any tool may use the daemon services locally for interaction
+//! with the LibreQoS system.
+//! 
+//! A normal session consists of connecting and sending a single `BusSession`
+//! object (serialized with `bincode`), that must contain one or more
+//! `BusRequest` objects. Replies are then batched inside a `BusReply`
+//! object, containing one or more `BusResponse` detail objects.
+//! The session then terminates.
+
+#![warn(missing_docs)]
+mod bus;
 mod ip_stats;
-use anyhow::Result;
 pub use ip_stats::{IpMapping, IpStats, XdpPpingResult};
-use serde::{Deserialize, Serialize};
-use std::net::IpAddr;
 mod tc_handle;
 pub use tc_handle::TcHandle;
+pub use bus::{BUS_BIND_ADDRESS, BusSession, BusRequest, BusReply, 
+    BusResponse, encode_request, decode_request, encode_response,
+    decode_response, cookie_value};
 
-pub const BUS_BIND_ADDRESS: &str = "127.0.0.1:9999";
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct BusSession {
-    pub auth_cookie: u32,
-    pub requests: Vec<BusRequest>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub enum BusRequest {
-    Ping, // A generic "is it alive" test
-    GetCurrentThroughput,
-    GetTopNDownloaders(u32),
-    GetWorstRtt(u32),
-    GetHostCounter,
-    MapIpToFlow {
-        ip_address: String,
-        tc_handle: TcHandle,
-        cpu: u32,
-        upload: bool,
-    },
-    DelIpFlow {
-        ip_address: String,
-        upload: bool,
-    },
-    ClearIpFlow,
-    ListIpFlow,
-    XdpPping,
-    RttHistogram,
-    HostCounts,
-    AllUnknownIps,
-    ReloadLibreQoS,
-    GetRawQueueData(String), // The string is the circuit ID
-    #[cfg(feature = "equinix_tests")]
-    RequestLqosEquinixTest, // TODO: Feature flag this so it doesn't go into production
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct BusReply {
-    pub auth_cookie: u32,
-    pub responses: Vec<BusResponse>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub enum BusResponse {
-    Ack,          // Yes, we're alive
-    Fail(String), // The operation failed
-    CurrentThroughput {
-        bits_per_second: (u64, u64),
-        packets_per_second: (u64, u64),
-        shaped_bits_per_second: (u64, u64),
-    },
-    HostCounters(Vec<(IpAddr, u64, u64)>),
-    TopDownloaders(Vec<IpStats>),
-    WorstRtt(Vec<IpStats>),
-    MappedIps(Vec<IpMapping>),
-    XdpPping(Vec<XdpPpingResult>),
-    RttHistogram(Vec<u32>),
-    HostCounts((u32, u32)),
-    AllUnknownIps(Vec<IpStats>),
-    ReloadLibreQoS(String),
-    RawQueueData(String),
-}
-
-pub fn encode_request(request: &BusSession) -> Result<Vec<u8>> {
-    Ok(bincode::serialize(request)?)
-}
-
-pub fn decode_request(bytes: &[u8]) -> Result<BusSession> {
-    Ok(bincode::deserialize(&bytes)?)
-}
-
-pub fn encode_response(request: &BusReply) -> Result<Vec<u8>> {
-    Ok(bincode::serialize(request)?)
-}
-
-pub fn decode_response(bytes: &[u8]) -> Result<BusReply> {
-    Ok(bincode::deserialize(&bytes)?)
-}
-
-pub fn cookie_value() -> u32 {
-    1234
-}

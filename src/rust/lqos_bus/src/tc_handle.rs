@@ -21,6 +21,8 @@ extern "C" {
 }
 
 impl TcHandle {
+    /// Returns the TC handle as two values, indicating major and minor
+    /// TC handle values.
     #[inline(always)]
     pub fn get_major_minor(&self) -> (u16, u16) {
         // According to xdp_pping.c handles are minor:major u16s inside
@@ -28,6 +30,9 @@ impl TcHandle {
         ((self.0 >> 16) as u16, (self.0 & 0xFFFF) as u16)
     }
 
+    /// Build a TC handle from a string. This is actually a complicated
+    /// operation, since it has to handle "root" and other strings as well
+    /// as simple "1:2" mappings. Shells out to C to handle this gracefully.
     pub fn from_string<S: ToString>(handle: S) -> Result<Self> {
         let mut tc_handle: __u32 = 0;
         let str = CString::new(handle.to_string())?;
@@ -40,14 +45,17 @@ impl TcHandle {
         }
     }
 
+    /// Construct a TC handle from a raw 32-bit unsigned integer.
     pub fn from_u32(tc: u32) -> Self {
         Self(tc)
     }
 
+    /// Retreives a TC handle as a raw 32-bit unsigned integer.
     pub fn as_u32(&self) -> u32 {
         self.0
     }
 
+    /// Construct a zeroed TC handle.
     pub fn zero() -> Self {
         Self(0)
     }
