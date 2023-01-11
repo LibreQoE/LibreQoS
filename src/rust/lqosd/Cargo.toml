@@ -21,3 +21,4 @@ serde = { version = "1.0", features = ["derive"] }
 notify = { version = "5.0.0", default-features = false, feature=["macos_kqueue"] } # Not using crossbeam because of Tokio
 env_logger = "0"
 log = "0"
+cow_struct = "0"

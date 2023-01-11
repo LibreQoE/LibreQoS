@@ -1,3 +1,4 @@
+use lqos_config::Tunables;
 use serde::{Serialize, Deserialize};
 use crate::TcHandle;
 
@@ -82,6 +83,9 @@ pub enum BusRequest {
 
     /// Retrieve raw queue data for a given circuit ID.
     GetRawQueueData(String), // The string is the circuit ID
+
+    /// Requests a real-time adjustment of the `lqosd` tuning settings
+    UpdateLqosDTuning(u64, Tunables),
 
     /// If running on Equinix (the `equinix_test` feature is enabled),
     /// display a "run bandwidht test" link.

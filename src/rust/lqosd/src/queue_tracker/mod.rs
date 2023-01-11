@@ -5,7 +5,7 @@ use lqos_config::LibreQoSConfig;
 use serde::Serialize;
 use std::{
     collections::HashMap,
-    time::{Duration, Instant},
+    time::{Duration, Instant}, sync::atomic::AtomicU64,
 };
 use tokio::{join, task, time};
 mod queue_reader;
@@ -154,11 +154,17 @@ async fn track_queues() {
     }
 }
 
+lazy_static! {
+    pub(crate) static ref QUEUE_MONITOR_INTERVAL: AtomicU64 = AtomicU64::new(1000);
+}
+
 pub async fn spawn_queue_monitor() {
     let _ = task::spawn(async {
-        let queue_check_period_ms = lqos_config::EtcLqos::load().unwrap().queue_check_period_ms;
-        let mut interval = time::interval(Duration::from_millis(queue_check_period_ms));
+        QUEUE_MONITOR_INTERVAL.store(lqos_config::EtcLqos::load().unwrap().queue_check_period_ms, std::sync::atomic::Ordering::Relaxed);
         loop {
+            let queue_check_period_ms = QUEUE_MONITOR_INTERVAL.load(std::sync::atomic::Ordering::Relaxed);
+            let mut interval = time::interval(Duration::from_millis(queue_check_period_ms));
+
             let now = Instant::now();
             let _ = track_queues().await;
             let elapsed = now.elapsed();

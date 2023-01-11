@@ -6,7 +6,7 @@ mod offloads;
 mod program_control;
 mod queue_tracker;
 mod throughput_tracker;
-use crate::ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow};
+use crate::{ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow}, queue_tracker::QUEUE_MONITOR_INTERVAL};
 use anyhow::Result;
 use log::{info, warn};
 use lqos_bus::{
@@ -115,6 +115,19 @@ async fn main() -> Result<()> {
                             BusRequest::ReloadLibreQoS => program_control::reload_libre_qos(),
                             BusRequest::GetRawQueueData(circuit_id) => {
                                 queue_tracker::get_raw_circuit_data(&circuit_id)
+                            }
+                            BusRequest::UpdateLqosDTuning(interval, tuning) => {
+                                // Real-time tuning changes. Probably dangerous.
+                                if let Ok(config) = LibreQoSConfig::load() {
+                                    if tuning.stop_irq_balance {
+                                        offloads::stop_irq_balance().await;
+                                    }
+                                    offloads::netdev_budget(tuning.netdev_budget_usecs, tuning.netdev_budget_packets).await;
+                                    offloads::ethtool_tweaks(&config.internet_interface, tuning).await;
+                                    offloads::ethtool_tweaks(&config.isp_interface, tuning).await;
+                                }
+                                QUEUE_MONITOR_INTERVAL.store(*interval, std::sync::atomic::Ordering::Relaxed);
+                                lqos_bus::BusResponse::Ack
                             }
                             #[cfg(feature = "equinix_tests")]
                             BusRequest::RequestLqosEquinixTest => {

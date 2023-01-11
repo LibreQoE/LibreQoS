@@ -25,7 +25,7 @@ pub struct EtcLqos {
 
 /// Represents a set of `sysctl` and `ethtool` tweaks that may be
 /// applied (in place of the previous version's offload service)
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Tunables {
     /// Should the `irq_balance` system service be stopped?
     pub stop_irq_balance: bool,

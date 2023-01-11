@@ -58,9 +58,7 @@
 
 <div class="col-sm-8 mx-auto" style="padding: 4px; margin-bottom: 4px;" id="controls">
     <a href="#" class="btn btn-primary" id="btnSaveIspConfig"><i class="fa fa-save"></i> Save ispConfig.py</a>&nbsp;
-    <a href="#" class="btn btn-danger"><i class="fa fa-save"></i> Save /etc/lqos</a>&nbsp;
     <a href="#" class="btn btn-primary"><i class="fa fa-refresh"></i> Reload LibreQoS</a>&nbsp;
-    <a href="#" class="btn btn-danger"><i class="fa fa-refresh"></i> (Re)Start lqosd</a>
 </div>
 
 <div class="d-flex align-items-start">
@@ -127,7 +125,12 @@
                     </td>
                 </tr>
                 <tr>
-                    <td colspan="2"><h3>Bifrost XDP-Accelerated Bridge</h3></td>
+                    <td colspan="2">
+                        <h3>Bifrost XDP-Accelerated Bridge</h3>
+                        <p class="alert alert-danger" role="alert">
+                            You must configure XDP bridging by editing the `/etc/lqos` file on the server.                            
+                        </p>
+                    </td>
                 </tr>
                 <tr>
                     <td colspan="2" class="alert alert-warning" role="alert">
@@ -138,7 +141,7 @@
                 </tr>
                 <tr>
                     <td colspan="2">
-                        <input class="form-check-input" type="checkbox" value="" id="useKernelBridge">
+                        <input class="form-check-input" type="checkbox" value="" id="useKernelBridge" disabled="true">
                         <label class="form-check-label" for="useKernelBridge">
                             Enable Bifrost Acceleration
                         </label>
@@ -231,20 +234,6 @@
             <h2><i class="fa fa-server"></i> Server Settings</h2>
             <table class="table">
                 <tr>
-                    <td colspan="2" class="alert-info" role="alert">
-                        How frequently should the TC queues be polled? 30-50 is good for detailed analysis,
-                        1000 is good for normal running.
-                    </td>
-                </tr>
-                <tr>
-                    <td>
-                        Queue Check Frequency (ms)
-                    </td>
-                    <td>
-                        <input type="number" min="10" max="1000" id="queuecheckms" />
-                    </td>
-                </tr>
-                <tr>
                     <td colspan="2" class="alert-danger">
                         <i class="fa fa-warning"></i> Disabling actual shell commands stops LibreQoS from actually doing anything. Simulated
                         output is logged to the console and text files, allowing for debugging.
@@ -290,6 +279,22 @@
                     <td colspan="2" class="alert alert-danger" role="alert">
                         <i class="fa fa-warning"></i> <strong>DANGER</strong>
                         <p>These settings can drastically affect performance of your server, including rendering it non-functional.</p> 
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan="2" class="alert-info" role="alert">
+                        How frequently should the TC queues be polled? 30-50 is good for detailed analysis,
+                        1000 is good for normal running. If you select a value slower than the time currently taken
+                        to access queue information, queue analysis will no longer display data on a consistent
+                        time-step. Values less than 20ms are not recommended.
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        Queue Check Frequency (ms)
+                    </td>
+                    <td>
+                        <input type="number" min="10" max="1000" id="queuecheckms" />
                     </td>
                 </tr>
                 <tr><td colspan="2">IRQ Balancing should generally be disabled.</td></tr>
@@ -345,6 +350,12 @@
                     <td><input type="text" id="disableOffloadList" /></td>
                 </tr>
             </table>
+
+            <p class="alert alert-info" role="alert">
+                At this time, you can only apply these settings to the current running instance. Edit <em>/etc/lqos</em> to
+                apply changes permanently. Applying tuning settings will not restart your XDP bridge.
+            </p>
+            <a class="btn btn-secondary" id="btnApplyTuning">Apply Tuning Settings</a>
         </div>
         <div class="tab-pane fade" id="v-pills-spylnx" role="tabpanel" aria-labelledby="v-pills-spylnx-tab">
             Spylnx Settings
@@ -440,13 +451,13 @@
                                 html += "<tbody>";
                                 for (let i=0; i<lqosd_config.bridge.interface_mapping.length; i++) {
                                     html += "<tr>";
-                                    html += "<td>" + buildNICList('bfIn_' + i, lqosd_config.bridge.interface_mapping[i].name) + "</td>";
-                                    html += "<td>" + buildNICList('bfOut_' + i, lqosd_config.bridge.interface_mapping[i].redirect_to) + "</td>";
+                                    html += "<td>" + buildNICList('bfIn_' + i, lqosd_config.bridge.interface_mapping[i].name, true) + "</td>";
+                                    html += "<td>" + buildNICList('bfOut_' + i, lqosd_config.bridge.interface_mapping[i].redirect_to, true) + "</td>";
                                     html += "<td><input type='checkbox' class='form-check-input' id='bfScanVLAN_" + i + "'";
                                     if (lqosd_config.bridge.interface_mapping[i].scan_vlans) {
                                         html += ' checked';
                                     }
-                                    html += "/></td>";
+                                    html += " disabled='true' /></td>";
                                     html += "</tr>";
                                 }
                                 html += "</tbody></table>";
@@ -459,9 +470,9 @@
                                 html += "<tbody>";
                                 for (let i=0; i<lqosd_config.bridge.vlan_mapping.length; i++) {
                                     html += "<tr>";
-                                    html += "<td>" + buildNICList('bfvlanif_' + i, lqosd_config.bridge.vlan_mapping[i].parent) + "</td>";
-                                    html += "<td><input id='bfvlantag_" + i + "' type='number' min='0' max='4094' value='" + lqosd_config.bridge.vlan_mapping[i].tag + "' /></td>";
-                                    html += "<td><input id='bfvlanout_" + i + "' type='number' min='0' max='4094' value='" + lqosd_config.bridge.vlan_mapping[i].redirect_to + "' /></td>";
+                                    html += "<td>" + buildNICList('bfvlanif_' + i, lqosd_config.bridge.vlan_mapping[i].parent, true) + "</td>";
+                                    html += "<td><input id='bfvlantag_" + i + "' type='number' min='0' max='4094' value='" + lqosd_config.bridge.vlan_mapping[i].tag + "' disabled='true' /></td>";
+                                    html += "<td><input id='bfvlanout_" + i + "' type='number' min='0' max='4094' value='" + lqosd_config.bridge.vlan_mapping[i].redirect_to + "' disabled='true' /></td>";
                                     html += "</tr>";
                                 }
                                 html += "</tbody></table>";
@@ -494,6 +505,7 @@
                             // User management
                             if (is_admin) {
                                 userManager();
+                                tuning();
                             }
                         });
                     });                
@@ -504,6 +516,34 @@
         function userManager() {
             let html = "<p>For now, please use <em>bin/webusers</em> to manage users.</p>";
             $("#userManager").html(html);
+        }
+
+        function tuning() {
+            $("#btnApplyTuning").on('click', () => {
+                let period = Number($("#queuecheckms").val());
+                let new_config = {
+                    stop_irq_balance: $("#stopIrqBalance").prop('checked'),
+                    netdev_budget_usecs: Number($("#netDevUsec").val()),
+                    netdev_budget_packets: Number($("#netDevPackets").val()),
+                    rx_usecs: Number($("#rxUsecs").val()),
+                    tx_usecs: Number($("#txUsecs").val()),
+                    disable_rxvlan: $("#disableRxVlan").prop('checked'),
+                    disable_txvlan: $("#disableTxVlan").prop('checked'),
+                    disable_offload: $("#disableOffloadList").val().split(' ')
+                };
+                $.ajax({
+                    type: "POST",
+                    url: "/api/lqos_tuning/" + period,
+                    data: JSON.stringify(new_config),
+                    success: (data) => {
+                        if (data == "ERROR") {
+                            alert("Unable to apply settings.")
+                        } else {
+                            alert("Settings Applied");
+                        }
+                    }
+                })
+            });
         }
 
         function fillNicList(id, selected) {
@@ -520,8 +560,10 @@
             select.html(html);
         }
 
-        function buildNICList(id, selected) {
-            let html = "<select id='" + id + "'>";
+        function buildNICList(id, selected, disabled=false) {
+            let html = "<select id='" + id + "'";
+            if (disabled) html += " disabled='true' ";
+            html += ">";
             for (i=0; i<nics.length; i++) {
                 html += "<option value=\"";
                 html += nics[i][0] + "\"";

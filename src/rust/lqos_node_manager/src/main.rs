@@ -58,6 +58,7 @@ fn rocket() -> _ {
                 config_control::get_current_python_config,
                 config_control::get_current_lqosd_config,
                 config_control::update_python_config,
+                config_control::update_lqos_tuning,
                 auth_guard::create_first_user,
                 auth_guard::login,
                 auth_guard::admin_check,
