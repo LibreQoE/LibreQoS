@@ -100,6 +100,14 @@ function colorReloadButton() {
     });
 
     // Redaction
+    if (isRedacted()) {
+        console.log("Redacting");
+        //css_getclass(".redact").style.filter = "blur(4px)";
+        css_getclass(".redact").style.fontFamily = "klingon";
+    }
+}
+
+function isRedacted() {
     let redact = localStorage.getItem("redact");
     if (redact == null) {
         localStorage.setItem("redact", false);
@@ -108,10 +116,41 @@ function colorReloadButton() {
     if (redact == "false") {
         refact = false;
     }
-    if (redact) {
-        console.log("Redacting");
-        css_getclass(".redact").style.filter = "blur(4px)";
+    return redact;
+}
+
+const phrases = [
+    "quSDaq ba’lu’’a’", // Is this seat taken?
+    "vjIjatlh", // speak
+    "pe’vIl mu’qaDmey", // curse well
+    "nuqDaq ‘oH puchpa’’e’", // where's the bathroom?
+    "nuqDaq ‘oH tach’e’", // Where's the bar?
+    "tera’ngan Soj lujab’a’", // Do they serve Earth food?
+    "qut na’ HInob", // Give me the salty crystals
+    "qagh Sopbe’", // He doesn't eat gagh
+    "HIja", // Yes
+    "ghobe’", // No
+    "Dochvetlh vIneH", // I want that thing
+    "Hab SoSlI’ Quch", // Your mother has a smooth forehead
+    "nuqjatlh", // What did you say?
+    "jagh yIbuStaH", // Concentrate on the enemy
+    "Heghlu’meH QaQ jajvam", // Today is a good day to die
+    "qaStaH nuq jay’", // WTF is happening?
+    "wo’ batlhvaD", // For the honor of the empire
+    "tlhIngan maH", // We are Klingon!
+    "Qapla’", // Success!
+]
+
+function redactText(text) {
+    if (!isRedacted) return text;
+    let redacted = "";
+    let sum = 0;
+    for(let i = 0; i < text.length; i++){
+        let code = text.charCodeAt(i);
+        sum += code;
     }
+    sum = sum % phrases.length;
+    return phrases[sum];
 }
 
 function scaleNumber(n) {

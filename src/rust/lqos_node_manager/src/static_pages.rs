@@ -79,6 +79,13 @@ pub async fn lqos_css<'a>() -> NoCache<Option<NamedFile>> {
     NoCache::new(NamedFile::open("static/lqos.css").await.ok())
 }
 
+// Note that NoCache can be replaced with a cache option
+// once the design work is complete.
+#[get("/vendor/klingon.ttf")]
+pub async fn klingon<'a>() -> LongCache<Option<NamedFile>> {
+    LongCache::new(NamedFile::open("static/vendor/klingon.ttf").await.ok())
+}
+
 #[get("/vendor/plotly-2.16.1.min.js")]
 pub async fn plotly_js<'a>() -> LongCache<Option<NamedFile>> {
     LongCache::new(

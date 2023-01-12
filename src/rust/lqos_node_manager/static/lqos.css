@@ -1,3 +1,7 @@
+@font-face {
+    font-family: Klingon;
+    src: url(/vendor/klingon.ttf);
+}
 .green-badge { background-color: green; }
 .orange-badge { background-color: darkgoldenrod; }
 .black-txt { color: black; }

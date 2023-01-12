@@ -260,7 +260,7 @@
                 let color = color_ramp(tt[i].median_tcp_rtt);
                 html += "<tr style='background-color: " + color + "'>";
                 if (tt[i].circuit_id != "") {
-                    html += "<td><a class='redact' href='/circuit_queue?id=" + encodeURI(tt[i].circuit_id)  + "'>" + tt[i].ip_address + "</td>";
+                    html += "<td><a class='redact' href='/circuit_queue?id=" + encodeURI(tt[i].circuit_id)  + "'>" + redactText(tt[i].ip_address) + "</td>";
                 } else {
                     html += "<td>" + tt[i].ip_address + "</td>";
                 }

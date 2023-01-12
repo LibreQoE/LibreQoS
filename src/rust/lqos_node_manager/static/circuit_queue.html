@@ -224,7 +224,7 @@
                 // Name the circuit
                 $.get("/api/circuit_info/" + encodeURI(params.id), (data) => {
                     circuit_info = data;
-                    $("#circuitName").text(circuit_info.name);
+                    $("#circuitName").text(redactText(circuit_info.name));
                 });
 
                 // Fill the raw button

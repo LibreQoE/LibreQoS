@@ -33,6 +33,7 @@ fn rocket() -> _ {
                 // Our JS library
                 static_pages::lqos_js,
                 static_pages::lqos_css,
+                static_pages::klingon,
                 // API calls
                 tracker::current_throughput,
                 tracker::throughput_ring,
