@@ -404,8 +404,8 @@
                                 let up = 0.0 - yUp[i];
                                 let down_slot = Math.floor((down / circuit_info.capacity[0]) * 10.0);
                                 let up_slot = Math.floor((up / circuit_info.capacity[1]) * 10.0);
-                                quantiles[0][down_slot] += 1;
-                                quantiles[1][up_slot] += 1;
+                                if (down_slot > 0) quantiles[0][down_slot] += 1;
+                                if (up_slot > 0) quantiles[1][up_slot] += 1;
                             }
                         }
 
