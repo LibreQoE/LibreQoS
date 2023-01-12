@@ -128,8 +128,8 @@ pub fn busy_quantile(_auth: AuthGuard) -> Json<Vec<(u32, u32)>> {
         //println!("{down_capacity}, {up_capacity}, {down}, {up}");
         let (down, up) = (down as f64 / down_capacity, up as f64 / up_capacity);
         let (down, up) = ((down * 10.0) as usize, (up * 10.0) as usize);
-        result[down].0 += 1;
-        result[up].1 += 1;
+        result[usize::min(result.len()-1, down)].0 += 1;
+        result[usize::min(result.len()-1, up)].1 += 1;
     });
     Json(result)
 }
