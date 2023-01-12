@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="/vendor/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="/vendor/solid.min.css">
+    <link rel="stylesheet" href="/lqos.css">
     <title>LibreQoS - Local Node Manager</title>
     <script src="/lqos.js"></script>
     <script src="/vendor/plotly-2.16.1.min.js"></script>
@@ -28,10 +29,10 @@
                         <a class="nav-link" href="#"><i class="fa fa-globe"></i> Network Layout</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link active" aria-current="page" href="/shaped"><i class="fa fa-users"></i> Shaped Devices <span id="shapedCount" style="background-color: green;" class="badge badge-pill badge-success">?</span></a>
+                        <a class="nav-link active" aria-current="page" href="/shaped"><i class="fa fa-users"></i> Shaped Devices <span id="shapedCount" class="badge badge-pill badge-success green-badge">?</span></a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/unknown"><i class="fa fa-address-card"></i> Unknown IPs <span id="unshapedCount" style="background-color:darkgoldenrod" class="badge badge-warning">?</span></a>
+                        <a class="nav-link" href="/unknown"><i class="fa fa-address-card"></i> Unknown IPs <span id="unshapedCount" class="badge badge-warning orange-badge">?</span></a>
                     </li>
                 </ul>
             </div>
@@ -41,19 +42,19 @@
                     <a class="nav-link" href="/config"><i class="fa fa-gear"></i> Configuration</a>
                 </li>
                 <li>
-                    <a class="nav-link btn btn-small" style="color: black" href="#" id="btnReload"><i class="fa fa-refresh"></i> Reload LibreQoS</a>
+                    <a class="nav-link btn btn-small black-txt" href="#" id="btnReload"><i class="fa fa-refresh"></i> Reload LibreQoS</a>
                 </li>
             </ul>
         </div>
     </nav>
 
-    <div id="container" style="padding: 4px;">
+    <div id="container" class="pad4">
 
-        <div class="row" style="margin-top: -4px; margin-bottom: 4px;">
-            <div class="col-sm-12 bg-light" style="text-align: center;">
+        <div class="row top-shunt">
+            <div class="col-sm-12 bg-light center-txt">
                 <div class="row">
                     <div class="col-sm-4">
-                        <span id="circuitName" style="font-weight: bold"></span>
+                        <span id="circuitName" class="bold"></span>
                     </div>
                     <div class="col-sm-6">
                         <ul class="nav nav-pills mb-3" id="pills-tab" role="tablist">
@@ -81,7 +82,7 @@
                         <div class="card bg-light">
                             <div class="card-body">
                                 <h5 class="card-title"><i class="fa fa-bar-chart"></i> Throughput</h5>
-                                <div id="throughputGraph" style="height: 150px"></div>
+                                <div id="throughputGraph" class="graph150"></div>
                             </div>
                         </div>
                     </div>
@@ -89,7 +90,7 @@
                         <div class="card bg-light">
                             <div class="card-body">
                                 <h5 class="card-title"><i class="fa fa-bar-chart"></i> Backlog</h5>
-                                <div id="backlogGraph" style="height: 150px"></div>
+                                <div id="backlogGraph" class="graph150"></div>
                             </div>
                         </div>
                     </div>
@@ -97,19 +98,19 @@
                         <div class="card bg-light">
                             <div class="card-body">
                                 <h5 class="card-title"><i class="fa fa-bar-chart"></i> Capacity Quantile</h5>
-                                <div id="capacityQuantile" style="height: 150px"></div>
+                                <div id="capacityQuantile" class="graph150"></div>
                             </div>
                         </div>
                     </div>
                 </div>
 
                 <!-- Delay and Queue Length -->
-                <div class="row" style="margin-top: 4px;">
+                <div class="row mtop4">
                     <div class="col-sm-6">
                         <div class="card bg-light">
                             <div class="card-body">
                                 <h5 class="card-title"><i class="fa fa-bar-chart"></i> Delays</h5>
-                                <div id="delayGraph" style="height: 150px"></div>
+                                <div id="delayGraph" class="graph150"></div>
                             </div>
                         </div>
                     </div>
@@ -117,13 +118,13 @@
                         <div class="card bg-light">
                             <div class="card-body">
                                 <h5 class="card-title"><i class="fa fa-bar-chart"></i> Queue Length</h5>
-                                <div id="qlenGraph" style="height: 150px"></div>
+                                <div id="qlenGraph" class="graph150"></div>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <div class="row" style="margin-top: 4px;">
+                <div class="row mtop4">
                     <div class="col-sm-2">
                         <div class="card bg-light">
                             <div class="card-body">
@@ -135,13 +136,13 @@
 
             </div>
             <div class="tab-pane fade" id="pills-tins" role="tabpanel" aria-labelledby="pills-tins-tab" tabindex="0">
-                <div class="row" style="margin-top: 4px">
+                <div class="row" class="mtop4">
                     <div class="col-sm-6">
                         <div class="card bg-light">
                             <div class="card-body">
                                 <h5 class="card-title"><i class="fa fa-bar-chart"></i> Tin 1 (Bulk)</h5>
-                                <div id="tinTp_0" style="height: 150px"></div>
-                                <div id="tinMd_0" style="height: 150px"></div>
+                                <div id="tinTp_0" class="graph150"></div>
+                                <div id="tinMd_0" class="graph150"></div>
                             </div>                        
                         </div>
                     </div>
@@ -149,19 +150,19 @@
                         <div class="card bg-light">
                             <div class="card-body">
                                 <h5 class="card-title"><i class="fa fa-bar-chart"></i> Tin 2 (Best Effort)</h5>
-                                <div id="tinTp_1" style="height: 150px"></div>
-                                <div id="tinMd_1" style="height: 150px"></div>
+                                <div id="tinTp_1" class="graph150"></div>
+                                <div id="tinMd_1" class="graph150"></div>
                             </div>
                         </div>
                     </div>
                 </div>
-                <div class="row" style="margin-top: 4px">
+                <div class="row mtop4">
                     <div class="col-sm-6">
                         <div class="card bg-light">
                             <div class="card-body">
                                 <h5 class="card-title"><i class="fa fa-bar-chart"></i> Tin 3 (Video)</h5>
-                                <div id="tinTp_2" style="height: 150px"></div>
-                                <div id="tinMd_2" style="height: 150px"></div>
+                                <div id="tinTp_2" class="graph150"></div>
+                                <div id="tinMd_2" class="graph150"></div>
                             </div>                        
                         </div>
                     </div>
@@ -169,8 +170,8 @@
                         <div class="card bg-light">
                             <div class="card-body">
                                 <h5 class="card-title"><i class="fa fa-bar-chart"></i> Tin 4 (Voice)</h5>
-                                <div id="tinTp_3" style="height: 150px"></div>
-                                <div id="tinMd_3" style="height: 150px"></div>
+                                <div id="tinTp_3" class="graph150"></div>
+                                <div id="tinMd_3" class="graph150"></div>
                             </div>
                         </div>
                     </div>

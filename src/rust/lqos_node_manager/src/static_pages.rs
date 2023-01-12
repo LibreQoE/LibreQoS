@@ -72,6 +72,13 @@ pub async fn lqos_js<'a>() -> NoCache<Option<NamedFile>> {
     NoCache::new(NamedFile::open("static/lqos.js").await.ok())
 }
 
+// Note that NoCache can be replaced with a cache option
+// once the design work is complete.
+#[get("/lqos.css")]
+pub async fn lqos_css<'a>() -> NoCache<Option<NamedFile>> {
+    NoCache::new(NamedFile::open("static/lqos.css").await.ok())
+}
+
 #[get("/vendor/plotly-2.16.1.min.js")]
 pub async fn plotly_js<'a>() -> LongCache<Option<NamedFile>> {
     LongCache::new(

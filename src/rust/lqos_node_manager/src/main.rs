@@ -32,6 +32,7 @@ fn rocket() -> _ {
                 config_control::config_page,
                 // Our JS library
                 static_pages::lqos_js,
+                static_pages::lqos_css,
                 // API calls
                 tracker::current_throughput,
                 tracker::throughput_ring,

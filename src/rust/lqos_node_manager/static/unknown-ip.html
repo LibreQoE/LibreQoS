@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="/vendor/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="/vendor/solid.min.css">
+    <link rel="stylesheet" href="/lqos.css">
     <title>LibreQoS - Local Node Manager</title>
     <script src="/lqos.js"></script>
     <script src="/vendor/plotly-2.16.1.min.js"></script>
@@ -28,10 +29,10 @@
                         <a class="nav-link" href="#"><i class="fa fa-globe"></i> Network Layout</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/shaped"><i class="fa fa-users"></i> Shaped Devices <span id="shapedCount" style="background-color: green;" class="badge badge-pill badge-success">?</span></a>
+                        <a class="nav-link" href="/shaped"><i class="fa fa-users"></i> Shaped Devices <span id="shapedCount" class="badge badge-pill badge-success green-badge">?</span></a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link active" aria-current="page" href="/unknown"><i class="fa fa-address-card"></i> Unknown IPs <span id="unshapedCount" style="background-color:darkgoldenrod" class="badge badge-warning">?</span></a>
+                        <a class="nav-link active" aria-current="page" href="/unknown"><i class="fa fa-address-card"></i> Unknown IPs <span id="unshapedCount" class="badge badge-warning orange-badge">?</span></a>
                     </li>
                 </ul>
             </div>
@@ -41,13 +42,13 @@
                     <a class="nav-link" href="/config"><i class="fa fa-gear"></i> Configuration</a>
                 </li>
                 <li>
-                    <a class="nav-link btn btn-small" style="color: black" href="#" id="btnReload"><i class="fa fa-refresh"></i> Reload LibreQoS</a>
+                    <a class="nav-link btn btn-small black-txt" href="#" id="btnReload"><i class="fa fa-refresh"></i> Reload LibreQoS</a>
                 </li>
             </ul>
         </div>
     </nav>
 
-    <div id="container" style="padding: 4px;">
+    <div id="container" class="pad4">
 
         <div class="row">
             <div class="col-sm-12">
