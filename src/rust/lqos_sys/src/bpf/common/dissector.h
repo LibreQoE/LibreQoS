@@ -62,6 +62,20 @@ struct pppoe_proto
 #define PPP_IP 0x21
 #define PPP_IPV6 0x57
 
+// Representation of an MPLS label
+struct mpls_label {
+	__be32 entry;
+};
+
+#define MPLS_LS_LABEL_MASK      0xFFFFF000
+#define MPLS_LS_LABEL_SHIFT     12
+#define MPLS_LS_TC_MASK         0x00000E00
+#define MPLS_LS_TC_SHIFT        9
+#define MPLS_LS_S_MASK          0x00000100
+#define MPLS_LS_S_SHIFT         8
+#define MPLS_LS_TTL_MASK        0x000000FF
+#define MPLS_LS_TTL_SHIFT       0
+
 // Constructor for a dissector
 // Connects XDP/TC SKB structure to a dissector structure.
 // Arguments:
@@ -195,6 +209,35 @@ static __always_inline bool dissector_find_l3_offset(
             offset += PPPOE_SES_HLEN;
         }
         break;
+
+        // WARNING/TODO: Here be dragons; this needs testing.
+        case ETH_P_MPLS_UC:
+        case ETH_P_MPLS_MC: {
+            if SKB_OVERFLOW_OFFSET(dissector->start, dissector-> end,
+                offset, mpls_label)
+            {
+                return false;
+            }
+            struct mpls_label * mpls = (struct mpls_label *)
+                (dissector->start + offset);
+            // Are we at the bottom of the stack?
+            offset += 4; // 32-bits
+            if (mpls->entry & MPLS_LS_S_MASK) {
+                // We've hit the bottom
+                if SKB_OVERFLOW_OFFSET(dissector->start, dissector->end,
+                    offset, iphdr) 
+                {
+                    return false;
+                }
+                struct iphdr * iph = (struct iphdr *)(dissector->start + offset);
+                switch (iph->version) {
+                    case 4: eth_type = ETH_P_IP; break;
+                    case 6: eth_type = ETH_P_IPV6; break;
+                    default: return false;
+                }
+            }
+        } break;
+
         // We found something we don't know how to handle - bail out
         default:
             return false;

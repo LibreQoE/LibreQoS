@@ -141,6 +141,35 @@ static __always_inline bool tc_dissector_find_l3_offset(
             offset += PPPOE_SES_HLEN;
         }
         break;
+
+        // WARNING/TODO: Here be dragons; this needs testing.
+        case ETH_P_MPLS_UC:
+        case ETH_P_MPLS_MC: {
+            if SKB_OVERFLOW_OFFSET(dissector->start, dissector-> end,
+                offset, mpls_label)
+            {
+                return false;
+            }
+            struct mpls_label * mpls = (struct mpls_label *)
+                (dissector->start + offset);
+            // Are we at the bottom of the stack?
+            offset += 4; // 32-bits
+            if (mpls->entry & MPLS_LS_S_MASK) {
+                // We've hit the bottom
+                if SKB_OVERFLOW_OFFSET(dissector->start, dissector->end,
+                    offset, iphdr) 
+                {
+                    return false;
+                }
+                struct iphdr * iph = (struct iphdr *)(dissector->start + offset);
+                switch (iph->version) {
+                    case 4: eth_type = ETH_P_IP; break;
+                    case 6: eth_type = ETH_P_IPV6; break;
+                    default: return false;
+                }
+            }
+        } break;
+
         // We found something we don't know how to handle - bail out
         default:
             return false;
