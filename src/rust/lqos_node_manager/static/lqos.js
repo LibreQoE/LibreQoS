@@ -144,7 +144,7 @@ const phrases = [
 ]
 
 function redactText(text) {
-    if (!isRedacted) return text;
+    if (!isRedacted()) return text;
     let redacted = "";
     let sum = 0;
     for(let i = 0; i < text.length; i++){
