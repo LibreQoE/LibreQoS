@@ -114,7 +114,9 @@ function isRedacted() {
         redact = false;
     }
     if (redact == "false") {
-        refact = false;
+        redact = false;
+    } else if (redact == "true") {
+        redact = true;
     }
     return redact;
 }
