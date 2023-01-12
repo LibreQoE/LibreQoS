@@ -63,7 +63,8 @@
 
 <div class="d-flex align-items-start">
     <div class="nav flex-column nav-pills me-3" id="v-pills-tab" role="tablist" aria-orientation="vertical">
-        <button class="nav-link active" id="v-pills-home-tab" data-bs-toggle="pill" data-bs-target="#v-pills-home" type="button" role="tab" aria-controls="v-pills-home" aria-selected="true"><i class="fa fa-wifi"></i> Network</button>
+        <button class="nav-link active" id="v-pills-display-tab" data-bs-toggle="pill" data-bs-target="#v-pills-display" type="button" role="tab" aria-controls="v-pills-home" aria-selected="true"><i class="fa fa-tv"></i> Display</button>
+        <button class="nav-link" id="v-pills-home-tab" data-bs-toggle="pill" data-bs-target="#v-pills-home" type="button" role="tab" aria-controls="v-pills-home" aria-selected="true"><i class="fa fa-wifi"></i> Network</button>
         <button class="nav-link" id="v-pills-shaper-tab" data-bs-toggle="pill" data-bs-target="#v-pills-shaper" type="button" role="tab" aria-controls="v-pills-profile" aria-selected="false"><i class="fa fa-balance-scale"></i> Shaper</button>
         <button class="nav-link" id="v-pills-server-tab" data-bs-toggle="pill" data-bs-target="#v-pills-server" type="button" role="tab" aria-controls="v-pills-server" aria-selected="false"><i class="fa fa-server"></i> Server</button>
         <button class="nav-link" id="v-pills-tuning-tab" data-bs-toggle="pill" data-bs-target="#v-pills-tuning" type="button" role="tab" aria-controls="v-pills-settings" aria-selected="false"><i class="fa fa-warning"></i> Tuning</button>
@@ -72,7 +73,41 @@
         <button class="nav-link" id="v-pills-users-tab" data-bs-toggle="pill" data-bs-target="#v-pills-users" type="button" role="tab" aria-controls="v-pills-settings" aria-selected="false"><i class="fa fa-users"></i> LibreQoS Users</button>
     </div>
     <div class="tab-content" id="v-pills-tabContent">
-        <div class="tab-pane fade show active" id="v-pills-home" role="tabpanel" aria-labelledby="v-pills-home-tab">
+        <div class="tab-pane fade show active" id="v-pills-display" role="tabpanel" aria-labelledby="v-pills-display-tab">
+            <h2><i class="fa fa-wifi"></i> Display Settings</h2>
+            <table class="table">
+                <tr>
+                    <td>
+                        <p class="alert alert-info" role="alert">
+                            <i class="fa fa-info"></i> The settings on this tab are per-computer and are stored locally in your browser's "local storage".
+                        </p>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <input class="form-check-input" type="checkbox" id="redact">
+                        <label class="form-check-label" for="redact">
+                            Redact Customer Information (screenshot mode)
+                        </label>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <select id="colorMode">
+                            <option id="0">Regular Colors</option>
+                            <option id="1">Metaverse Colors</option>
+                        </select>
+                        <label class="form-select-label" for="colorMode">
+                            RTT Color Mode
+                        </label>
+                    </td>
+                </tr>
+                <tr>
+                    <td><a class="btn btn-primary" id="applyDisplay">Apply Changes</a></td>
+                </tr>
+            </table>
+        </div>
+        <div class="tab-pane fade" id="v-pills-home" role="tabpanel" aria-labelledby="v-pills-home-tab">
             <h2><i class="fa fa-wifi"></i> Network Settings</h2>
 
             <table class="table">
@@ -388,6 +423,7 @@
         let lqosd_config = null;
 
         function start() {
+            display();
             colorReloadButton();
             updateHostCounts();
             $.get("/api/admin_check", (is_admin) => {
@@ -434,7 +470,6 @@
                         lqosd_config = data;
                         $.get("/api/list_nics", (data) => {
                             nics = data;
-                            console.log(nics);
                             fillNicList("nicCore", python_config.isp_interface);
                             fillNicList("nicInternet", python_config.internet_interface);
 
@@ -574,6 +609,28 @@
             }
             html += "</select>";
             return html;
+        }
+
+        function display() {
+            let colorPreference = window.localStorage.getItem("colorPreference");
+            if (colorPreference == null) {
+                window.localStorage.setItem("colorPreference", 0);
+                colorPreference = 0;
+            }
+            $("#colorMode option[id='" + colorPreference + "']").attr("selected", true);
+            let redact = window.localStorage.getItem("redact");
+            if (redact == null) {
+                window.localStorage.setItem("redact", false);
+                redact = false;
+            }
+            if (redact == "false") redact = false;
+            $("#redact").prop('checked', redact);
+            $("#applyDisplay").on('click', () => {
+                let colorPreference = $("#colorMode").find('option:selected').attr('id');
+                window.localStorage.setItem("colorPreference", colorPreference);
+                let redact = $("#redact").prop('checked');
+                window.localStorage.setItem("redact", redact);
+            });
         }
 
         $(document).ready(start);

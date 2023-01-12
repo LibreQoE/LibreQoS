@@ -1,5 +1,3 @@
-var colorPreference = 0;
-
 function metaverse_color_ramp(n) {
     if (n <= 9) {
         return "#32b08c";
@@ -25,23 +23,16 @@ function regular_color_ramp(n) {
 }
 
 function color_ramp(n) {
+    let colorPreference = window.localStorage.getItem("colorPreference");
+    if (colorPreference == null) {
+        window.localStorage.setItem("colorPreference", 0);
+        colorPreference = 0;
+    }
     if (colorPreference == 0) {
         return regular_color_ramp(n);
     } else {
         return metaverse_color_ramp(n);
     }
-}
-
-function bindColorToggle() {
-    $("#toggleColors").on('click', () => {
-        if (colorPreference == 0) {
-            colorPreference = 1;
-            $("#toggleColors").text("(metaverse colors)");
-        } else {
-            colorPreference = 0;
-            $("#toggleColors").text("(regular colors)");
-        }
-    });
 }
 
 function deleteAllCookies() {
@@ -54,6 +45,23 @@ function deleteAllCookies() {
         document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT";
     }
     window.location.reload();
+}
+
+function cssrules() {
+    var rules = {};
+    for (var i=0; i<document.styleSheets.length; ++i) {
+        var cssRules = document.styleSheets[i].cssRules;
+        for (var j=0; j<cssRules.length; ++j)
+            rules[cssRules[j].selectorText] = cssRules[j];
+    }
+    return rules;
+}
+
+function css_getclass(name) {
+    var rules = cssrules();
+    if (!rules.hasOwnProperty(name))
+        throw 'TODO: deal_with_notfound_case';
+    return rules[name];
 }
 
 function updateHostCounts() {
@@ -70,7 +78,7 @@ function updateHostCounts() {
             html = "<a class='nav-link' onclick='deleteAllCookies();'><i class='fa fa-user'></i> Logout " + un + "</a>";
         }
         $("#currentLogin").html(html);
-    })
+    });    
 }
 
 function colorReloadButton() {
@@ -89,7 +97,21 @@ function colorReloadButton() {
         } else {
             $("#btnReload").addClass('btn-secondary');
         }
-    })
+    });
+
+    // Redaction
+    let redact = localStorage.getItem("redact");
+    if (redact == null) {
+        localStorage.setItem("redact", false);
+        redact = false;
+    }
+    if (redact == "false") {
+        refact = false;
+    }
+    if (redact) {
+        console.log("Redacting");
+        css_getclass(".redact").style.filter = "blur(4px)";
+    }
 }
 
 function scaleNumber(n) {

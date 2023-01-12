@@ -136,7 +136,7 @@
         <div class="col-sm-6">
             <div class="card bg-light">
                 <div class="card-body">
-                    <h5 class="card-title"><i class='fa fa-arrow-down'></i> Top 10 Downloaders <a href="#" id="toggleColors" style="font-size: 8pt;">(Regular colors)</a></h5>
+                    <h5 class="card-title"><i class='fa fa-arrow-down'></i> Top 10 Downloaders</h5>
                     <div id="top10dl"></div>
                 </div>
             </div>
@@ -260,7 +260,7 @@
                 let color = color_ramp(tt[i].median_tcp_rtt);
                 html += "<tr style='background-color: " + color + "'>";
                 if (tt[i].circuit_id != "") {
-                    html += "<td><a href='/circuit_queue?id=" + encodeURI(tt[i].circuit_id)  + "'>" + tt[i].ip_address + "</td>";
+                    html += "<td><a class='redact' href='/circuit_queue?id=" + encodeURI(tt[i].circuit_id)  + "'>" + tt[i].ip_address + "</td>";
                 } else {
                     html += "<td>" + tt[i].ip_address + "</td>";
                 }
@@ -319,7 +319,6 @@
             updateWorst10();
             updateHistogram();
             updateHostCounts();
-            bindColorToggle();
             updateThroughputQuantile();
 
             $("#startTest").on('click', () => {
