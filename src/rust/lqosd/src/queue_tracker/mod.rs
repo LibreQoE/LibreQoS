@@ -11,6 +11,7 @@ use tokio::{join, task, time};
 mod queue_reader;
 use lazy_static::*;
 use parking_lot::RwLock;
+use anyhow::Result;
 
 const NUM_QUEUE_HISTORY: usize = 600;
 
@@ -59,19 +60,18 @@ lazy_static! {
         RwLock::new(HashMap::new());
 }
 
-async fn track_queues() {
-    let config = LibreQoSConfig::load().unwrap();
+async fn track_queues() -> Result<()> {
+    let config = LibreQoSConfig::load()?;
     let queues = if config.on_a_stick_mode {
         let queues = queue_reader::read_tc_queues(&config.internet_interface)
-            .await
-            .unwrap();
+            .await?;
         vec![queues]
     } else {
         let (isp, internet) = join! {
             queue_reader::read_tc_queues(&config.isp_interface),
             queue_reader::read_tc_queues(&config.internet_interface),
         };
-        vec![isp.unwrap(), internet.unwrap()]
+        vec![isp?, internet?]
     };
 
     // Time to associate queues with circuits
@@ -152,6 +152,8 @@ async fn track_queues() {
             }
         }
     }
+
+    Ok(())
 }
 
 lazy_static! {
