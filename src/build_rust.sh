@@ -36,5 +36,9 @@ cargo build --release
 popd
 cp rust/target/release/liblqos_python.so .
 
+echo "-----------------------------------------------------------------"
 echo "Don't forget to setup /etc/lqos!"
 echo "Template .service files can be found in bin/"
+echo ""
+echo "Run rust/remove_pinned_maps.sh before you restart lqosd"
+echo "This ensures that any data-format changes will apply correctly."
