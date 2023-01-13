@@ -56,6 +56,8 @@
                     <div class="card-body">
                         <h5 class="card-title"><i class="fa fa-address-card"></i> Unmapped IP Addresses (Most recently seen first)</h5>
 
+                        <a id="btnDownloadCsv" class="btn btn-info"><i class="fa fa-download"></i> Download Text File of Unknown IP addresses.</a>
+
                         <table class="table table-striped">
                             <thead>
                                 <th>IP</th>
@@ -114,6 +116,9 @@
             $.get("/api/unknown_devices_range/0/25", (devices) => {
                 console.log(devices);
                 fillDeviceTable(devices);
+            });
+            $("#btnDownloadCsv").on('click', () => {
+                window.location.href = "/api/unknown_devices_csv";
             });
         }
 

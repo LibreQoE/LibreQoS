@@ -53,6 +53,7 @@ fn rocket() -> _ {
                 unknown_devices::all_unknown_devices,
                 unknown_devices::unknown_devices_count,
                 unknown_devices::unknown_devices_range,
+                unknown_devices::unknown_devices_csv,
                 queue_info::raw_queue_by_circuit,
                 queue_info::run_btest,
                 queue_info::circuit_info,
