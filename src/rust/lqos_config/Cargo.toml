@@ -1,0 +1,14 @@
+[package]
+name = "lqos_config"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+toml = "0.5"
+serde = { version = "1.0", features = [ "derive" ] }
+csv = "1"
+ip_network_table = "0"
+ip_network = "0"
+sha2 = "0"
+uuid = { version = "1", features = ["v4", "fast-rng" ] }

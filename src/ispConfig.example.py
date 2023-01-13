@@ -23,6 +23,14 @@ interfaceA = 'eth1'
 # Interface connected to edge router
 interfaceB = 'eth2'
 
+## WORK IN PROGRESS. Note that interfaceA determines the "stick" interface
+## I could only get scanning to work if I issued ethtool -K enp1s0f1 rxvlan off
+OnAStick = False
+# VLAN facing the core router
+StickVlanA = 0
+# VLAN facing the edge router
+StickVlanB = 0
+
 # Allow shell commands. False causes commands print to console only without being executed.
 # MUST BE ENABLED FOR PROGRAM TO FUNCTION
 enableActualShellCommands = True

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="/vendor/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/vendor/solid.min.css">
+    <link rel="stylesheet" href="/lqos.css">
+    <title>LibreQoS - Local Node Manager</title>
+    <script src="/lqos.js"></script>
+    <script src="/vendor/plotly-2.16.1.min.js"></script>
+    <script src="/vendor/jquery.min.js"></script>
+</head>
+<body class="bg-secondary">
+
+    <div id="container" class="pad4">
+        <div class="row">
+            <div class="col-sm-4"></div>
+            <div class="col-sm-4">
+                <div class="card bg-light">
+                    <div class="card-body">
+                        <h5 class="card-title">Login</h5>
+                        <p>Please enter a username and password to access LibreQoS.</p>
+                        <p>You can control access locally with <em>bin/webusers</em> from the console.</p>
+                        <table class="table">
+                            <tr>
+                                <td>Username</td>
+                                <td><input type="text" id="username" /></td>
+                            </tr>
+                            <tr>
+                                <td>Password</td>
+                                <td><input type="password" id="password" /></td>
+                            </tr>
+                        </table>
+                        <a class="btn btn-primary" id="btnLogin">Login</a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-4"></div>
+        </div>
+    </div>
+
+    <footer>Copyright (c) 2022, LibreQoE LLC</footer>
+
+    <script>
+        function start() {
+            $("#btnLogin").on('click', (data) => {
+                let newUser = {
+                    username: $("#username").val(),
+                    password: $("#password").val(),
+                };
+                $.ajax({
+                    type: "POST",
+                    url: "/api/login",
+                    data: JSON.stringify(newUser),
+                    success: (data) => {
+                        if (data == "ERROR") {
+                            alert("Invalid login")
+                        } else {
+                            window.location.href = "/";
+                        }
+                    }
+                })
+            });
+        }
+
+        $(document).ready(start);
+    </script>
+
+    <!-- Leave to last -->
+    <script src="vendor/bootstrap.bundle.min.js"></script>
+</body>
+</html>

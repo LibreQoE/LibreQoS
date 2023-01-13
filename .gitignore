@@ -37,6 +37,8 @@ src/ShapedDevices.csv
 src/ShapedDevices.lastLoaded.csv
 src/network.json
 src/ispConfig.py
+src/ispConfig.py.backup
+src/ispConfig.py.test
 src/statsByCircuit.json
 src/statsByParentNode.json
 src/lastGoodConfig.json
@@ -45,6 +47,22 @@ src/mikrotikDHCPRouterList.csv
 src/longTermStats.json
 src/queuingStructure.json
 src/tinsStats.json
+src/linux_tc.txt
+src/lastRun.txt
+src/liblqos_python.so
+src/webusers.toml
+
+# Ignore Rust build artifacts
+src/rust/target
+src/bin/static
+src/bin/lqosd
+src/bin/lqtop
+src/bin/xdp_iphash_to_cpu_cmdline
+src/bin/xdp_pping
+src/bin/lqos_node_manager
+src/bin/webusers
+src/bin/Rocket.toml
+
 
 # Ignore project folders for some IDEs
 .idea/

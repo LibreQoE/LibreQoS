@@ -1,0 +1,642 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="/vendor/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/vendor/solid.min.css">
+    <link rel="stylesheet" href="/lqos.css">
+    <title>LibreQoS - Local Node Manager</title>
+    <script src="/lqos.js"></script>
+    <script src="/vendor/plotly-2.16.1.min.js"></script>
+    <script src="/vendor/jquery.min.js"></script>
+</head>
+<body class="bg-secondary">
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/"><img src="/vendor/tinylogo.svg" alt="LibreQoS SVG Logo" width="25" height="25" />&nbsp;LibreQoS</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarSupportedContent">
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/"><i class="fa fa-home"></i> Dashboard</a>
+                    </li>
+                    <li class="nav-item" id="currentLogin"></li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#"><i class="fa fa-globe"></i> Network Layout</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" aria-current="page" href="/shaped"><i class="fa fa-users"></i> Shaped Devices <span id="shapedCount" class="badge badge-pill badge-success green-badge">?</span></a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/unknown"><i class="fa fa-address-card"></i> Unknown IPs <span id="unshapedCount" class="badge badge-warning orange-badge">?</span></a>
+                    </li>
+                </ul>
+            </div>
+
+            <ul class="navbar-nav ms-auto">
+                <li class="nav-item ms-auto">
+                    <a class="nav-link active" href="/config"><i class="fa fa-gear"></i> Configuration</a>
+                </li>
+                <li>
+                    <a class="nav-link btn btn-small black-txt" href="#" id="btnReload"><i class="fa fa-refresh"></i> Reload LibreQoS</a>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <div id="container" class="pad4">
+
+        <div class="row">
+            <div class="col-sm-2"></div>
+            <div class="col-sm-8">
+                <div class="card bg-light">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="fa fa-users"></i> Configuration</h5>
+
+<div class="col-sm-8 mx-auto" class="pad4 mbot4" id="controls">
+    <a href="#" class="btn btn-primary" id="btnSaveIspConfig"><i class="fa fa-save"></i> Save ispConfig.py</a>
+</div>
+
+<div class="d-flex align-items-start">
+    <div class="nav flex-column nav-pills me-3" id="v-pills-tab" role="tablist" aria-orientation="vertical">
+        <button class="nav-link active" id="v-pills-display-tab" data-bs-toggle="pill" data-bs-target="#v-pills-display" type="button" role="tab" aria-controls="v-pills-home" aria-selected="true"><i class="fa fa-tv"></i> Display</button>
+        <button class="nav-link" id="v-pills-home-tab" data-bs-toggle="pill" data-bs-target="#v-pills-home" type="button" role="tab" aria-controls="v-pills-home" aria-selected="true"><i class="fa fa-wifi"></i> Network</button>
+        <button class="nav-link" id="v-pills-shaper-tab" data-bs-toggle="pill" data-bs-target="#v-pills-shaper" type="button" role="tab" aria-controls="v-pills-profile" aria-selected="false"><i class="fa fa-balance-scale"></i> Shaper</button>
+        <button class="nav-link" id="v-pills-server-tab" data-bs-toggle="pill" data-bs-target="#v-pills-server" type="button" role="tab" aria-controls="v-pills-server" aria-selected="false"><i class="fa fa-server"></i> Server</button>
+        <button class="nav-link" id="v-pills-tuning-tab" data-bs-toggle="pill" data-bs-target="#v-pills-tuning" type="button" role="tab" aria-controls="v-pills-settings" aria-selected="false"><i class="fa fa-warning"></i> Tuning</button>
+        <button class="nav-link" id="v-pills-spylnx-tab" data-bs-toggle="pill" data-bs-target="#v-pills-spylnx" type="button" role="tab" aria-controls="v-pills-settings" aria-selected="false"><i class="fa fa-eye"></i> Spylnx</button>
+        <button class="nav-link" id="v-pills-uisp-tab" data-bs-toggle="pill" data-bs-target="#v-pills-uisp" type="button" role="tab" aria-controls="v-pills-settings" aria-selected="false"><i class="fa fa-eye"></i> UISP</button>
+        <button class="nav-link" id="v-pills-users-tab" data-bs-toggle="pill" data-bs-target="#v-pills-users" type="button" role="tab" aria-controls="v-pills-settings" aria-selected="false"><i class="fa fa-users"></i> LibreQoS Users</button>
+    </div>
+    <div class="tab-content" id="v-pills-tabContent">
+        <div class="tab-pane fade show active" id="v-pills-display" role="tabpanel" aria-labelledby="v-pills-display-tab">
+            <h2><i class="fa fa-wifi"></i> Display Settings</h2>
+            <table class="table">
+                <tr>
+                    <td>
+                        <p class="alert alert-info" role="alert">
+                            <i class="fa fa-info"></i> The settings on this tab are per-computer and are stored locally in your browser's "local storage".
+                        </p>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <input class="form-check-input" type="checkbox" id="redact">
+                        <label class="form-check-label" for="redact">
+                            Redact Customer Information (screenshot mode)
+                        </label>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <select id="colorMode">
+                            <option id="0">Regular Colors</option>
+                            <option id="1">Metaverse Colors</option>
+                        </select>
+                        <label class="form-select-label" for="colorMode">
+                            RTT Color Mode
+                        </label>
+                    </td>
+                </tr>
+                <tr>
+                    <td><a class="btn btn-primary" id="applyDisplay">Apply Changes</a></td>
+                </tr>
+            </table>
+        </div>
+        <div class="tab-pane fade" id="v-pills-home" role="tabpanel" aria-labelledby="v-pills-home-tab">
+            <h2><i class="fa fa-wifi"></i> Network Settings</h2>
+
+            <table class="table">
+                <tr>
+                    <td colspan="2">Setup the basic network interface configuration.</td>
+                </tr>
+                <tr>
+                    <td colspan="2" class="alert alert-info" role="alert">
+                        <i class="fa fa-info"></i> For normal operation, you need one NIC port facing the Internet, and a second facing your core router. 
+                        If you are operating in "on a stick" mode (with a single NIC, and VLANs for inbound and outbound),
+                        select the same NIC for both directions.
+                    </td>
+                </tr>
+                <tr>
+                    <td>Interface facing your core router</td>
+                    <td><select id="nicCore"></option></td>
+                </tr>
+                <tr>
+                    <td>Interface facing the Internet</td>
+                    <td><select id="nicInternet"></option></td>
+                </tr>
+                <tr>
+                    <td colspan="2"><h3>Single-Interface ("On A Stick") Configuration</td>
+                </tr>
+                <tr>
+                    <td colspan="2" class="alert alert-info" role="alert">
+                        <i class="fa fa-info"></i> "On a stick" mode allows you to operate with a single NIC, with one VLAN
+                        containing inbound traffic and the other outbound. Please refer to the
+                        documentation.
+                    </td>
+                </tr>
+                <tr colspan="2">
+                    <td>
+                        <input class="form-check-input" type="checkbox" value="" id="onAStick">
+                        <label class="form-check-label" for="onAStick">
+                            Enable Single-Interface ("on a stick") mode?
+                          </label>
+                    </td>
+                </tr>
+                <tr>
+                    <td>VLAN facing your core router</td>
+                    <td>
+                        <input class="form-input" type="number" min="0" max="4094" id="StickVLANCore" />
+                    </td>
+                </tr>
+                <tr>
+                    <td>VLAN facing the Internet</td>
+                    <td>
+                        <input class="form-input" type="number" min="0" max="4094" id="StickVLANInternet" />
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan="2">
+                        <h3>Bifrost XDP-Accelerated Bridge</h3>
+                        <p class="alert alert-danger" role="alert">
+                            You must configure XDP bridging by editing the `/etc/lqos` file on the server.                            
+                        </p>
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan="2" class="alert alert-warning" role="alert">
+                        <i class="fa fa-warning"></i> Bifrost is an experimental feature at this time. Bifrost XDP allows you to bypass the entire
+                        Linux bridge system, and use XDP to bridge directly between interfaces or VLANs. This can result
+                        in significant performance improvements on NICs that support XDP in "driver" mode.
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan="2">
+                        <input class="form-check-input" type="checkbox" value="" id="useKernelBridge" disabled="true">
+                        <label class="form-check-label" for="useKernelBridge">
+                            Enable Bifrost Acceleration
+                        </label>
+                    </td>
+                </tr>
+                <tr>
+                    <td id="bifrostInterfaces" colspan="2">Interface Mapping</td>
+                </tr>
+                <tr>
+                    <td id="bifrostVlans" colspan="2">VLAN Mapping</td>
+                </tr>
+            </table>
+        </div>
+        <div class="tab-pane fade" id="v-pills-shaper" role="tabpanel" aria-labelledby="v-pills-shaper-tab">
+            <h2><i class="fa fa-balance-scale"></i>Shaper Settings</h2>
+            <p>Tune the LibreQoS traffic shaper to your needs.</p>            
+            <table class="table">
+                <tr>
+                    <td colspan="2">
+                        <h3>Traffic Shaping Control</h3>
+                    </td>
+                </tr>
+                <tr class="alert-info alert" role="alert">
+                    <td colspan="2"><i class="fa fa-info"></i> FQ_CODEL offers good latency management and low CPU overhead. CAKE requires more CPU, but offers excellent latency management.</td>
+                </tr>
+                <tr>
+                    <td>SQM Mode</td>
+                    <td>
+                        <select id="sqmMode">
+                            <option value="fq_codel">FQ_Codel</option>
+                            <option value="cake diffserv4">Cake + Diffserv4</option>
+                            <option value="cake diffserv4 ackfilter">Cake + Diffserv4 + ACK Filter</option>
+                        </select>
+                    </td>
+                </tr>
+                <tr class="alert-info">
+                    <td colspan="2">Monitor mode disables all traffic shaping, allowing you to watch your network undisturbed.</td>
+                </tr>
+                <tr>
+                    <td colspan="2">
+                        <input class="form-check-input" type="checkbox" value="" id="monitorMode">
+                        <label class="form-check-label" for="monitorMode">
+                            Enable Monitor Mode
+                        </label>
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan="2">
+                        <h3>Bandwidth</h3>
+                    </td>
+                </tr>
+                <tr>
+                    <td>Total Download Bandwidth (Mbps)</td>
+                    <td><input type="number" min="1" max="1000000000" step="100" id="maxDownload"></td>
+                </tr>
+                <tr>
+                    <td>Total Upload Bandwidth (Mbps)</td>
+                    <td><input type="number" min="1" max="1000000000" step="100" id="maxUpload"></td>
+                </tr>
+                <tr class="alert-info">
+                    <td colspan="2">
+                        <i class="fa fa-info"></i> Devices without a parent will be placed underneath evenly-balanced generated nodes. This defines the
+                        available bandwidth for those nodes. If in doubt, set to equal your total bandwidth.
+                    </td>
+                </tr>
+                <tr>
+                    <td>Generated Node Download Bandwidth (Mbps)</td>
+                    <td><input type="number" min="1" max="1000000000" step="100" id="generatedDownload"></td>
+                </tr>
+                <tr>
+                    <td>Generated Node Upload Bandwidth (Mbps)</td>
+                    <td><input type="number" min="1" max="1000000000" step="100" id="generatedUpload"></td>
+                </tr>
+                <tr class="alert-info">
+                    <td colspan="2">
+                        Bin packing is only useful for devices without parent nodes in the shaper tree. Enable this option
+                        to automatically assign devices to nodes based on the device's plans, evenly balancing load across
+                        CPUs.
+                    </td>
+                </tr>
+                <td colspan="2">
+                    <input class="form-check-input" type="checkbox" value="" id="binpacking">
+                    <label class="form-check-label" for="binpacking">
+                        Use Binpacking
+                    </label>
+                </td>
+            </table>
+        </div>
+        <div class="tab-pane fade" id="v-pills-server" role="tabpanel" aria-labelledby="v-pills-server-tab">
+            <h2><i class="fa fa-server"></i> Server Settings</h2>
+            <table class="table">
+                <tr>
+                    <td colspan="2" class="alert-danger">
+                        <i class="fa fa-warning"></i> Disabling actual shell commands stops LibreQoS from actually doing anything. Simulated
+                        output is logged to the console and text files, allowing for debugging.
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan="2">
+                        <input class="form-check-input" type="checkbox" value="" id="actualShellCommands">
+                        <label class="form-check-label" for="actualShellCommands">
+                            Enable Actual Shell Commands
+                        </label>
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan="2" class="alert-info">
+                        <i class="fa fa-info"></i> Running shell commands with "sudo" isn't necessary on a default configuration.
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan="2">
+                        <input class="form-check-input" type="checkbox" value="" id="useSudo">
+                        <label class="form-check-label" for="useSudo">
+                            Run Shell Commands as Sudo
+                        </label>
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan="2" class="alert-danger">
+                        <i class="fa fa-warning"></i> Overriding the number of queues is only necessary if your NIC is giving
+                        very strange results. Use with extreme caution. Leave this at 0 unless you really know what you are doing.
+                    </td>
+                </tr>
+                <tr>
+                    <td>Override count of available queues?</td>
+                    <td><input type="number" min="2" max="256" step="2" id="overrideQueues" /></td>
+                </tr>
+            </table>
+        </div>
+        <div class="tab-pane fade" id="v-pills-tuning" role="tabpanel" aria-labelledby="v-pills-tuning-tab">
+            <h2><i class="fa fa-warning"></i>  Tuning Settings</h2>
+            <table class="table">
+                <tr>
+                    <td colspan="2" class="alert alert-danger" role="alert">
+                        <i class="fa fa-warning"></i> <strong>DANGER</strong>
+                        <p>These settings can drastically affect performance of your server, including rendering it non-functional.</p> 
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan="2" class="alert-info" role="alert">
+                        How frequently should the TC queues be polled? 30-50 is good for detailed analysis,
+                        1000 is good for normal running. If you select a value slower than the time currently taken
+                        to access queue information, queue analysis will no longer display data on a consistent
+                        time-step. Values less than 20ms are not recommended.
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        Queue Check Frequency (ms)
+                    </td>
+                    <td>
+                        <input type="number" min="10" max="1000" id="queuecheckms" />
+                    </td>
+                </tr>
+                <tr><td colspan="2">IRQ Balancing should generally be disabled.</td></tr>
+                <tr>
+                    <td colspan="2">
+                        <input class="form-check-input" type="checkbox" value="" id="stopIrqBalance">
+                        <label class="form-check-label" for="stopIrqBalance">
+                            Stop IRQ Balancing
+                        </label>
+                    </td>
+                </tr>
+                <tr><td colspan="2">Network device budget (usec) controls how frequently the kernel passes batches of packets to the processing system. Low numbers tend to reduce latency, higher numbers can improve throughput.</td></tr>
+                <tr>
+                    <td>Netdev Budget (usecs)</td>
+                    <td><input type="number" min="0" max="1000000" id="netDevUsec" /></td>
+                </tr>
+                <tr><td colspan="2">Network device budget (packets) controls how frequently the kernel passes batches of packets to the processing system. Low numbers tend to reduce latency, higher numbers can improve throughput.</td></tr>
+                <tr>
+                    <td>Netdev Budget (packets)</td>
+                    <td><input type="number" min="0" max="1000000" id="netDevPackets" /></td>
+                </tr>
+                <tr><td colspan="2">How frequently should the kernel poll for receive packets?</td></tr>
+                <tr>
+                    <td>RX Usecs</td>
+                    <td><input type="number" min="0" max="1000000" id="rxUsecs" /></td>
+                </tr>
+                <tr><td colspan="2">How frequently should the kernel poll for transmit packets?</td></tr>
+                <tr>
+                    <td>TX Usecs</td>
+                    <td><input type="number" min="0" max="1000000" id="txUsecs" /></td>
+                </tr>
+                <tr><td colspan="2">If you are using VLANs, you generally need to enable this feature</td></tr>
+                <tr>
+                    <td colspan="2">
+                        <input class="form-check-input" type="checkbox" value="" id="disableRxVlan">
+                        <label class="form-check-label" for="disableRxVlan">
+                            Disable RX VLAN Offloading
+                        </label>
+                    </td>
+                </tr>
+                <tr><td colspan="2">If you are using VLANs, you generally need to enable this feature</td></tr>
+                <tr>
+                    <td colspan="2">
+                        <input class="form-check-input" type="checkbox" value="" id="disableTxVlan">
+                        <label class="form-check-label" for="disableTxVlan">
+                            Disable TX VLAN Offloading
+                        </label>
+                    </td>
+                </tr>
+                <tr><td colspan="2">Offloads to disable. We've tried to include the important ones.</td></tr>
+                <tr>
+                    <td>Disable Offloads (space separated)</td>
+                    <td><input type="text" id="disableOffloadList" /></td>
+                </tr>
+            </table>
+
+            <p class="alert alert-info" role="alert">
+                At this time, you can only apply these settings to the current running instance. Edit <em>/etc/lqos</em> to
+                apply changes permanently. Applying tuning settings will not restart your XDP bridge.
+            </p>
+            <a class="btn btn-secondary" id="btnApplyTuning">Apply Tuning Settings</a>
+        </div>
+        <div class="tab-pane fade" id="v-pills-spylnx" role="tabpanel" aria-labelledby="v-pills-spylnx-tab">
+            Spylnx Settings
+            ...
+        </div>
+        <div class="tab-pane fade" id="v-pills-uisp" role="tabpanel" aria-labelledby="v-pills-uisp-tab">
+            UISP Settings
+            ...
+        </div>
+        <div class="tab-pane fade" id="v-pills-users" role="tabpanel" aria-labelledby="v-pills-users-tab">
+            <h2><i class="fa fa-users"></i> LibreQos Web Interface Users</h2>
+            <div id="userManager"></div>
+        </div>
+    </div>
+    </div>
+                          
+                    </div>
+                </div>                    
+            </div>
+            <div class="col-sm-2"></div>
+        </div>
+
+    </div>
+
+    <footer>Copyright (c) 2022, LibreQoE LLC</footer>
+
+    <script>
+        let python_config = null;
+        let nics = null;
+        let lqosd_config = null;
+
+        function start() {
+            display();
+            colorReloadButton();
+            updateHostCounts();
+            $.get("/api/admin_check", (is_admin) => {
+                if (!is_admin) {
+                    $("#controls").html("<p class='alert alert-danger' role='alert'>You have to be an administrative user to change configuration.");
+                    $("#userManager").html("<p class='alert alert-danger' role='alert'>Only administrators can see/change user information.");
+                } else {
+                    // Handle Saving ispConfig.py
+                    $("#btnSaveIspConfig").on('click', (data) => {
+                        let new_config = python_config;
+                        new_config.isp_interface = $("#nicCore").val();
+                        new_config.internet_interface = $("#nicInternet").val();
+                        new_config.on_a_stick_mode = $("#onAStick").prop('checked');
+                        new_config.stick_vlans[0] = Number($("#StickVLANCore").val());
+                        new_config.stick_vlans[1] = Number($("#StickVLANInternet").val());
+                        new_config.sqm = $("#sqmMode").val();
+                        new_config.total_download_mbps = Number($("#maxDownload").val());
+                        new_config.total_upload_mbps = Number($("#maxUpload").val());
+                        new_config.monitor_mode = $("#monitorMode").prop('checked');
+                        new_config.generated_download_mbps = Number($("#generatedDownload").val());
+                        new_config.generated_upload_mbps = Number($("#generatedUpload").val());
+                        new_config.use_binpacking = $("#binpacking").prop('checked');
+                        new_config.enable_shell_commands = $("#actualShellCommands").prop('checked');
+                        new_config.run_as_sudo = $("#useSudo").prop('checked');
+                        new_config.override_queue_count = Number($("#overrideQueues").val());
+                        $.ajax({
+                            type: "POST",
+                            url: "/api/python_config",
+                            data: JSON.stringify(new_config),
+                            success: (data) => {
+                                if (data == "ERROR") {
+                                    alert("Unable to create a first user.")
+                                } else {
+                                    alert("Save Successful. Original backed up in ispConfig.py.backup. The window will now reload with the new configuration.");
+                                    window.location.reload()
+                                }
+                            }
+                        })
+                    });
+                }
+                $.get("/api/python_config", (data) => {
+                    python_config = data;
+                    $.get("/api/lqosd_config", (data) => {
+                        lqosd_config = data;
+                        $.get("/api/list_nics", (data) => {
+                            nics = data;
+                            fillNicList("nicCore", python_config.isp_interface);
+                            fillNicList("nicInternet", python_config.internet_interface);
+
+                            $("#onAStick").prop('checked', python_config.on_a_stick_mode);
+                            $("#StickVLANCore").val(python_config.stick_vlans[0]);
+                            $("#StickVLANInternet").val(python_config.stick_vlans[1]);
+                            if (lqosd_config.bridge != null) {
+                                $("#useKernelBridge").prop('checked', lqosd_config.bridge.use_kernel_bridge);
+
+                                // Map Bifrost Interfaces
+                                let html = "<h4>Interface Mapping</h4>";
+                                html += "<table class='table'>";
+                                html += "<thead><th>Input Interface</th><th>Output Interface</th><th>Scan VLANs?</th></thead>";
+                                html += "<tbody>";
+                                for (let i=0; i<lqosd_config.bridge.interface_mapping.length; i++) {
+                                    html += "<tr>";
+                                    html += "<td>" + buildNICList('bfIn_' + i, lqosd_config.bridge.interface_mapping[i].name, true) + "</td>";
+                                    html += "<td>" + buildNICList('bfOut_' + i, lqosd_config.bridge.interface_mapping[i].redirect_to, true) + "</td>";
+                                    html += "<td><input type='checkbox' class='form-check-input' id='bfScanVLAN_" + i + "'";
+                                    if (lqosd_config.bridge.interface_mapping[i].scan_vlans) {
+                                        html += ' checked';
+                                    }
+                                    html += " disabled='true' /></td>";
+                                    html += "</tr>";
+                                }
+                                html += "</tbody></table>";
+                                $("#bifrostInterfaces").html(html);
+
+                                // Map Bifrost VLAN mappings
+                                html = "<h4>VLAN Mapping</h4>";
+                                html += "<table class='table'>";
+                                html += "<thead><th>Parent Interface</th><th>Input Tag</th><th>Remapped Tag</th></thead>";
+                                html += "<tbody>";
+                                for (let i=0; i<lqosd_config.bridge.vlan_mapping.length; i++) {
+                                    html += "<tr>";
+                                    html += "<td>" + buildNICList('bfvlanif_' + i, lqosd_config.bridge.vlan_mapping[i].parent, true) + "</td>";
+                                    html += "<td><input id='bfvlantag_" + i + "' type='number' min='0' max='4094' value='" + lqosd_config.bridge.vlan_mapping[i].tag + "' disabled='true' /></td>";
+                                    html += "<td><input id='bfvlanout_" + i + "' type='number' min='0' max='4094' value='" + lqosd_config.bridge.vlan_mapping[i].redirect_to + "' disabled='true' /></td>";
+                                    html += "</tr>";
+                                }
+                                html += "</tbody></table>";
+                                $("#bifrostVlans").html(html);
+                            }
+                            $("#sqmMode option[value='" + python_config.sqm + "']").prop("selected", true);
+                            $("#maxDownload").val(python_config.total_download_mbps);
+                            $("#maxUpload").val(python_config.total_upload_mbps);
+                            $("#monitorMode").prop('checked', python_config.monitor_mode);
+                            $("#generatedDownload").val(python_config.generated_download_mbps);
+                            $("#generatedUpload").val(python_config.generated_upload_mbps);
+                            $("#binpacking").prop('checked', python_config.use_binpacking);
+                            $("#queuecheckms").val(lqosd_config.queue_check_period_ms);
+                            $("#actualShellCommands").prop('checked', python_config.enable_shell_commands);
+                            $("#useSudo").prop('checked', python_config.run_as_sudo);
+                            $("#overrideQueues").val(python_config.override_queue_count);
+                            $("#stopIrqBalance").prop('checked', lqosd_config.tuning.stop_irq_balance);
+                            $("#netDevUsec").val(lqosd_config.tuning.netdev_budget_usecs);
+                            $("#netDevPackets").val(lqosd_config.tuning.netdev_budget_packets);
+                            $("#rxUsecs").val(lqosd_config.tuning.rx_usecs);
+                            $("#txUsecs").val(lqosd_config.tuning.tx_usecs);
+                            $("#disableRxVlan").prop('checked', lqosd_config.tuning.disable_rxvlan);
+                            $("#disableTxVlan").prop('checked', lqosd_config.tuning.disable_txvlan);
+                            let offloads = "";
+                            for (let i=0; i<lqosd_config.tuning.disable_offload.length; i++) {
+                                offloads += lqosd_config.tuning.disable_offload[i] + " ";
+                            }
+                            $("#disableOffloadList").val(offloads);
+
+                            // User management
+                            if (is_admin) {
+                                userManager();
+                                tuning();
+                            }
+                        });
+                    });                
+                });
+            });
+        }
+
+        function userManager() {
+            let html = "<p>For now, please use <em>bin/webusers</em> to manage users.</p>";
+            $("#userManager").html(html);
+        }
+
+        function tuning() {
+            $("#btnApplyTuning").on('click', () => {
+                let period = Number($("#queuecheckms").val());
+                let new_config = {
+                    stop_irq_balance: $("#stopIrqBalance").prop('checked'),
+                    netdev_budget_usecs: Number($("#netDevUsec").val()),
+                    netdev_budget_packets: Number($("#netDevPackets").val()),
+                    rx_usecs: Number($("#rxUsecs").val()),
+                    tx_usecs: Number($("#txUsecs").val()),
+                    disable_rxvlan: $("#disableRxVlan").prop('checked'),
+                    disable_txvlan: $("#disableTxVlan").prop('checked'),
+                    disable_offload: $("#disableOffloadList").val().split(' ')
+                };
+                $.ajax({
+                    type: "POST",
+                    url: "/api/lqos_tuning/" + period,
+                    data: JSON.stringify(new_config),
+                    success: (data) => {
+                        if (data == "ERROR") {
+                            alert("Unable to apply settings.")
+                        } else {
+                            alert("Settings Applied");
+                        }
+                    }
+                })
+            });
+        }
+
+        function fillNicList(id, selected) {
+            let select = $("#" + id);
+            let html = "";
+            for (i=0; i<nics.length; i++) {
+                html += "<option value=\"";
+                html += nics[i][0] + "\"";
+                if (nics[i][0] == selected) {
+                    html += " selected";
+                }
+                html += ">" + nics[i][0] + " - " + nics[i][1] + " - " + nics[i][2] + "</option>";
+            }
+            select.html(html);
+        }
+
+        function buildNICList(id, selected, disabled=false) {
+            let html = "<select id='" + id + "'";
+            if (disabled) html += " disabled='true' ";
+            html += ">";
+            for (i=0; i<nics.length; i++) {
+                html += "<option value=\"";
+                html += nics[i][0] + "\"";
+                if (nics[i][0] == selected) {
+                    html += " selected";
+                }
+                html += ">" + nics[i][0] + " - " + nics[i][1] + " - " + nics[i][2] + "</option>";
+            }
+            html += "</select>";
+            return html;
+        }
+
+        function display() {
+            let colorPreference = window.localStorage.getItem("colorPreference");
+            if (colorPreference == null) {
+                window.localStorage.setItem("colorPreference", 0);
+                colorPreference = 0;
+            }
+            $("#colorMode option[id='" + colorPreference + "']").attr("selected", true);
+            let redact = window.localStorage.getItem("redact");
+            if (redact == null) {
+                window.localStorage.setItem("redact", false);
+                redact = false;
+            }
+            if (redact == "false") redact = false;
+            $("#redact").prop('checked', redact);
+            $("#applyDisplay").on('click', () => {
+                let colorPreference = $("#colorMode").find('option:selected').attr('id');
+                window.localStorage.setItem("colorPreference", colorPreference);
+                let redact = $("#redact").prop('checked');
+                window.localStorage.setItem("redact", redact);
+            });
+        }
+
+        $(document).ready(start);
+    </script>
+
+    <!-- Leave to last -->
+    <script src="vendor/bootstrap.bundle.min.js"></script>
+</body>
+</html>

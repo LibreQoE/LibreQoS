@@ -1,0 +1,34 @@
+# This file *must* be installed in `/etc/lqos`.
+# Change the values to match your setup.
+
+# Where is LibreQoS installed?
+lqos_directory = '/opt/libreqos/src'
+queue_check_period_ms = 1000
+
+[tuning]
+stop_irq_balance = true
+netdev_budget_usecs = 8000
+netdev_budget_packets = 300
+rx_usecs = 8
+tx_usecs = 8
+disable_rxvlan = true
+disable_txvlan = true
+disable_offload = [ "gso", "tso", "lro", "sg", "gro" ]
+
+# If you are running a traditional two-interface setup, use:
+# interface_mapping = [
+#        { name = "enp1s0f1", redirect_to = "enp1s0f2", scan_vlans = false },
+#        { name = "enp1s0f2", redirect_to = "enp1s0f1", scan_vlans = false }
+# ]
+# vlan_mapping = []
+
+# For "on a stick":
+[bridge]
+use_kernel_bridge = true
+interface_mapping = [
+        { name = "enp1s0f1", redirect_to = "enp1s0f1", scan_vlans = true }
+]
+vlan_mapping = [
+        { parent = "enp1s0f1", tag = 3, redirect_to = 4 },
+        { parent = "enp1s0f1", tag = 4, redirect_to = 3 }
+]

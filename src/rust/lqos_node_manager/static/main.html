@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="/vendor/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/vendor/solid.min.css">
+    <link rel="stylesheet" href="/lqos.css">
+    <title>LibreQoS - Local Node Manager</title>
+    <script src="/lqos.js"></script>
+    <script src="/vendor/plotly-2.16.1.min.js"></script>
+    <script src="/vendor/jquery.min.js"></script>
+</head>
+<body class="bg-secondary">
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/"><img src="/vendor/tinylogo.svg" alt="LibreQoS SVG Logo" width="25" height="25" />&nbsp;LibreQoS</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarSupportedContent">
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                    <li class="nav-item">
+                        <a class="nav-link active" aria-current="page" href="/"><i class="fa fa-home"></i> Dashboard</a>
+                    </li>
+                    <li class="nav-item" id="currentLogin"></li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#"><i class="fa fa-globe"></i> Network Layout</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/shaped"><i class="fa fa-users"></i> Shaped Devices <span id="shapedCount" class="badge badge-pill badge-success green-badge">?</span></a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/unknown"><i class="fa fa-address-card"></i> Unknown IPs <span id="unshapedCount" class="badge badge-warning orange-badge">?</span></a>
+                    </li>
+                </ul>
+            </div>
+
+            <ul class="navbar-nav ms-auto">
+                <li class="nav-item ms-auto">
+                    <a class="nav-link" href="/config"><i class="fa fa-gear"></i> Configuration</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#" id="startTest"><i class="fa fa-flag-checkered"></i> Run Bandwidth Test</a>
+                </li>
+                <li>
+                    <a class="nav-link btn btn-small" href="#" id="btnReload"><i class="fa fa-refresh"></i> Reload LibreQoS</a>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <div id="container" class="pad4">
+
+    <!-- Dashboard Row 1 -->
+    <div class="row mbot8">
+        <!-- THROUGHPUT -->
+        <div class="col-sm-4">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h5 class="card-title"><i class="fa fa-bolt"></i> Current Throughput</h5>
+                    <table class="table">
+                        <tr>
+                            <td class="bold">Packets/Second</td>
+                            <td id="ppsDown"></td>
+                            <td id="ppsUp"></td>
+                        </tr>
+                        <tr>
+                            <td class="bold">Bits/Second</td>
+                            <td id="bpsDown"></td>
+                            <td id="bpsUp"></td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- RAM INFO -->
+        <div class="col-sm-2">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h5 class="card-title"><i class="fa fa-database"></i> Memory Status</h5>
+                    <div id="ram" class="graph98"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- CPU INFO -->
+        <div class="col-sm-6">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h5 class="card-title"><i class="fa fa-microchip"></i> CPU Status</h5>
+                    <div id="cpu" class="graph98"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dashboard Row 2 -->
+    <div class="row mbot8 row220">
+        <!-- 5 minutes of throughput -->
+        <div class="col-sm-4">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h5 class="card-title"><i class="fa fa-hourglass"></i> Last 5 Minutes</h5>
+                    <div id="tpGraph" class="graph98 graph150"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RTT Histogram -->
+        <div class="col-sm-4">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h5 class="card-title"><i class="fa fa-bar-chart"></i> TCP Round-Trip Time Histogram</h5>
+                    <div id="rttHistogram" class="graph98 graph150"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Idle/Activity Quantiles -->
+        <div class="col-sm-4">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h5 class="card-title"><i class="fa fa-bar-chart"></i> Utilization Quantiles</h5>
+                    <div id="capacityHistogram" class="graph98 graph150"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dashboard Row 3 -->
+    <div class="row">
+        <!-- Top 10 downloaders -->
+        <div class="col-sm-6">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h5 class="card-title"><i class='fa fa-arrow-down'></i> Top 10 Downloaders</h5>
+                    <div id="top10dl"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Worst 10 RTT -->
+        <div class="col-sm-6">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h5 class="card-title"><i class='fa fa-exclamation'></i> Worst 10 RTT</h5>
+                    <div id="worstRtt"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    </div>
+
+    <footer>Copyright (c) 2022, LibreQoE LLC</footer>
+
+    <script>
+        function updateCurrentThroughput() {
+            $.get("/api/current_throughput", (tp) => {
+                $("#ppsDown").text(scaleNumber(tp.packets_per_second[0]));
+                $("#ppsUp").text(scaleNumber(tp.packets_per_second[1]));
+                $("#bpsDown").text(scaleNumber(tp.bits_per_second[0]));
+                $("#bpsUp").text(scaleNumber(tp.bits_per_second[1]));
+                setTimeout(updateCurrentThroughput, 1000);
+            });
+        }
+
+        function updateThroughputGraph() {
+            $.get("/api/throughput_ring", (tp) => {
+                let graph = document.getElementById("tpGraph");
+                let x = [];
+                let y = []; // Down
+                let y2 = []; // Up
+                let y3 = []; // Shaped Down
+                let y4 = []; // Shaped Up
+                for (i=0; i<300; i++) {
+                    x.push(i);
+                    y.push(tp[i].bits_per_second[0]);
+                    y2.push(0.0 - tp[i].bits_per_second[1]);
+                    y3.push(tp[i].shaped_bits_per_second[0]);
+                    y4.push(0.0 - tp[i].shaped_bits_per_second[1]);
+                }
+                let data = [
+                    {x: x, y:y, name: 'Download', type: 'scatter'},
+                    {x: x, y:y2, name: 'Upload', type: 'scatter'},
+                    {x: x, y:y3, name: 'Shaped Download', type: 'scatter', fill: 'tozeroy'},
+                    {x: x, y:y4, name: 'Shaped Upload', type: 'scatter', fill: 'tozeroy'},
+                ];
+                Plotly.newPlot(graph, data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true, title: "Time since now (seconds)"} }, { responsive: true });
+                //console.log(tp);
+                setTimeout(updateThroughputGraph, 1000);
+            });
+        }
+
+        function updateThroughputQuantile() {
+            $.get("/api/busy_quantile", (tp) => {
+                //console.log(tp);
+                let graph = document.getElementById("capacityHistogram");
+                let x1 = [];
+                let x2 = [];
+                let y1 = [];
+                let y2 = [];
+                for (let i=0; i<10; i++) {
+                    x1.push(i*10);
+                    x2.push(i*10);
+                    if (i > 0) {
+                        y1.push(tp[i][0]);
+                        y2.push(tp[i][1]);
+                    } else {
+                        y1.push(0);
+                        y2.push(0);
+                    }
+                }
+                let data = [
+                    {x: x1, y:y1, type: 'bar', name: 'Download'},
+                    {x: x1, y:y2, type: 'bar', name: 'Upload'},
+                ];
+                Plotly.newPlot(graph, data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true, title: '# Samples' }, xaxis: {automargin: true, title: "% utilization"} }, { responsive: true });
+                setTimeout(updateThroughputQuantile, 1000);
+            });
+        }
+
+        function updateCpu() {
+            $.get("/api/cpu", (cpu) => {
+                let graph = document.getElementById("cpu");
+                let x = [];
+                let y = [];
+                let colors = [];
+                for (i=0; i<cpu.length; i++) {
+                    x.push(i);
+                    y.push(cpu[i]);
+                    colors.push(cpu[i]);
+                }
+                colors.push(100); // 1 extra colors entry to force color scaling
+                let data = [ {x: x, y:y, type: 'bar', marker: { color:colors, colorscale: 'Jet' } } ];
+                Plotly.newPlot(graph, data, { 
+                    margin: { l:0,r:0,b:15,t:0 }, 
+                    yaxis: { automargin: true, autorange: false, range: [0.0, 100.0 ]},
+                }, 
+                { responsive: true });
+                setTimeout(updateCpu, 2000);
+            });
+        }
+
+        function updateRam() {
+            $.get("/api/ram", (ram) => {
+                let graph = document.getElementById("ram");
+                let data = [ {
+                    values: [ram[0], ram[1]-ram[0]],
+                    labels: ['Used', 'Available'], 
+                    type: 'pie' 
+                } ];
+                Plotly.newPlot(graph, data, { margin: { l:0,r:0,b:0,t:12 }, showlegend: false }, { responsive: true });
+                setTimeout(updateRam, 30000);
+            });
+        }
+
+        function updateNTable(target, tt) {
+            let html = "<table class='table'>";
+            html += "<thead><th>IP Address</th><th>DL ⬇️</th><th>UL ⬆️</th><th>RTT (ms)</th><th>Shaped</th></thead>";
+            for (let i=0; i<tt.length; i++) {
+                let color = color_ramp(tt[i].median_tcp_rtt);
+                html += "<tr style='background-color: " + color + "'>";
+                if (tt[i].circuit_id != "") {
+                    html += "<td><a class='redact' href='/circuit_queue?id=" + encodeURI(tt[i].circuit_id)  + "'>" + redactText(tt[i].ip_address) + "</td>";
+                } else {
+                    html += "<td>" + tt[i].ip_address + "</td>";
+                }
+                html += "<td>" + scaleNumber(tt[i].bits_per_second[0]) + "</td>";
+                html += "<td>" + scaleNumber(tt[i].bits_per_second[1]) + "</td>";
+                html += "<td>" + tt[i].median_tcp_rtt.toFixed(2) + "</td>";
+                if (tt[i].tc_handle !=0) {
+                    html += "<td><i class='fa fa-check-circle'></i> (" + tt[i].plan[0] + "/" + tt[i].plan[1] + ")</td>";
+                } else {
+                    html += "<td><a class='btn btn-small btn-success' href='/shaped-add?ip=" + tt[i].ip_address + "'>Add Shaper</a></td>";
+                }
+                html += "</tr>";
+            }
+            html += "</table>";
+            $(target).html(html);
+        }
+
+        function updateTop10() {
+            $.get("/api/top_10_downloaders", (tt) => {
+                updateNTable('#top10dl', tt);
+                setTimeout(updateTop10, 5000);
+            });
+        }
+
+        function updateWorst10() {
+            $.get("/api/worst_10_rtt", (tt) => {
+                updateNTable('#worstRtt', tt);
+                setTimeout(updateWorst10, 5000);
+            });
+        }
+
+        function updateHistogram() {
+            $.get("/api/rtt_histogram", (rtt) => {
+                let graph = document.getElementById("rttHistogram");
+                let x = [];
+                let y = [];
+                for (let i=0; i<rtt.length; i++) {
+                    x.push(i*10.0);
+                    y.push(rtt[i]);
+                }
+                let data = [
+                    {x:x, y:y, type: 'bar', marker: { color:x, colorscale: 'RdBu' } }
+                ]
+                Plotly.newPlot(graph, data, { margin: { l:0,r:0,b:35,t:0 }, xaxis: { title: 'TCP Round-Trip Time (ms)' } }, { responsive: true });
+                setTimeout(updateHistogram, 5000);
+            });
+        }
+
+        function start() {
+            colorReloadButton();
+            updateCurrentThroughput();
+            updateThroughputGraph();
+            updateCpu();
+            updateRam();
+            updateTop10();
+            updateWorst10();
+            updateHistogram();
+            updateHostCounts();
+            updateThroughputQuantile();
+
+            $("#startTest").on('click', () => {
+                $.get("/api/run_btest", () => {});
+            });
+        }
+
+        $(document).ready(start);
+    </script>
+
+    <!-- Leave to last -->
+    <script src="vendor/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="/vendor/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/vendor/solid.min.css">
+    <link rel="stylesheet" href="/lqos.css">
+    <title>LibreQoS - Local Node Manager</title>
+    <script src="/lqos.js"></script>
+    <script src="/vendor/plotly-2.16.1.min.js"></script>
+    <script src="/vendor/jquery.min.js"></script>
+</head>
+<body class="bg-secondary">
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/"><img src="/vendor/tinylogo.svg" alt="LibreQoS SVG Logo" width="25" height="25" />&nbsp;LibreQoS</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarSupportedContent">
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/"><i class="fa fa-home"></i> Dashboard</a>
+                    </li>
+                    <li class="nav-item" id="currentLogin"></li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#"><i class="fa fa-globe"></i> Network Layout</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" aria-current="page" href="/shaped"><i class="fa fa-users"></i> Shaped Devices <span id="shapedCount" class="badge badge-pill badge-success green-badge">?</span></a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/unknown"><i class="fa fa-address-card"></i> Unknown IPs <span id="unshapedCount" class="badge badge-warning orange-badge">?</span></a>
+                    </li>
+                </ul>
+            </div>
+
+            <ul class="navbar-nav ms-auto">
+                <li class="nav-item ms-auto">
+                    <a class="nav-link" href="/config"><i class="fa fa-gear"></i> Configuration</a>
+                </li>
+                <li>
+                    <a class="nav-link btn btn-small black-txt" href="#" id="btnReload"><i class="fa fa-refresh"></i> Reload LibreQoS</a>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <div id="container" class="pad4">
+
+        <div class="row top-shunt">
+            <div class="col-sm-12 bg-light center-txt">
+                <div class="row">
+                    <div class="col-sm-4">
+                        <span id="circuitName" class="bold redact"></span>
+                    </div>
+                    <div class="col-sm-6">
+                        <ul class="nav nav-pills mb-3" id="pills-tab" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="pills-home-tab" data-bs-toggle="pill" data-bs-target="#pills-home" type="button" role="tab" aria-controls="pills-home" aria-selected="true">Overview</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="pills-tins-tab" data-bs-toggle="pill" data-bs-target="#pills-tins" type="button" role="tab" aria-controls="pills-profile" aria-selected="false">All Tins</button>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="col-sm-2">
+                    <div id="raw"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="pills-tabContent">
+            <div class="tab-pane fade show active" id="pills-home" role="tabpanel" aria-labelledby="pills-home-tab" tabindex="0">
+
+                <!-- Total Throughput and Backlog -->
+                <div class="row">
+                    <div class="col-sm-4">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Throughput</h5>
+                                <div id="throughputGraph" class="graph150"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-sm-4">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Backlog</h5>
+                                <div id="backlogGraph" class="graph150"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-sm-4">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Capacity Quantile</h5>
+                                <div id="capacityQuantile" class="graph150"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Delay and Queue Length -->
+                <div class="row mtop4">
+                    <div class="col-sm-6">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Delays</h5>
+                                <div id="delayGraph" class="graph150"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-sm-6">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Queue Length</h5>
+                                <div id="qlenGraph" class="graph150"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mtop4">
+                    <div class="col-sm-2">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                Queue Memory: <span id="memory"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+            <div class="tab-pane fade" id="pills-tins" role="tabpanel" aria-labelledby="pills-tins-tab" tabindex="0">
+                <div class="row" class="mtop4">
+                    <div class="col-sm-6">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Tin 1 (Bulk)</h5>
+                                <div id="tinTp_0" class="graph150"></div>
+                                <div id="tinMd_0" class="graph150"></div>
+                            </div>                        
+                        </div>
+                    </div>
+                    <div class="col-sm-6">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Tin 2 (Best Effort)</h5>
+                                <div id="tinTp_1" class="graph150"></div>
+                                <div id="tinMd_1" class="graph150"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row mtop4">
+                    <div class="col-sm-6">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Tin 3 (Video)</h5>
+                                <div id="tinTp_2" class="graph150"></div>
+                                <div id="tinMd_2" class="graph150"></div>
+                            </div>                        
+                        </div>
+                    </div>
+                    <div class="col-sm-6">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Tin 4 (Voice)</h5>
+                                <div id="tinTp_3" class="graph150"></div>
+                                <div id="tinMd_3" class="graph150"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+          </div>          
+    </div>
+
+    <footer>Copyright (c) 2022, LibreQoE LLC</footer>
+
+    <script>
+        let throughput = new Object();
+        let throughput_head = 0;
+        let circuit_info = null;
+
+        function setX(x, counter) {
+            for (let i=0; i<x.length; i++) {
+                x[i].push(counter);
+            }
+        }
+
+        function setY(y, i, data, tin) {
+            if (data[0] == "None" || data[1] == "None") {
+                for (let j=0; i<y.length; y++) {
+                    y[j].push(0);
+                }
+            } else {
+                y[0].push(data[0].Cake.tins[tin].sent_bytes * 8); // Download
+                y[1].push(0.0 - (data[1].Cake.tins[tin].sent_bytes * 8)); // Upload
+                y[2].push(data[0].Cake.tins[tin].drops); // Down Drops
+                y[3].push(data[0].Cake.tins[tin].marks); // Down Marks
+                y[4].push(0.0 - data[1].Cake.tins[tin].drops); // Up Drops
+                y[5].push(0.0 - data[1].Cake.tins[tin].marks); // Up Marks
+
+                // Backlog
+                y[6].push(data[0].Cake.tins[tin].backlog_bytes * 8);
+                y[7].push(0.0 - data[1].Cake.tins[tin].backlog_bytes * 8);
+
+                // Delays
+                y[8].push(data[0].Cake.tins[tin].avg_delay_us);
+                y[9].push(0.0 - data[1].Cake.tins[tin].avg_delay_us);
+            }
+        }
+
+        function pollQueue() {
+            const params = new Proxy(new URLSearchParams(window.location.search), {
+                get: (searchParams, prop) => searchParams.get(prop),
+            });
+            if (params.id != null) {
+                // Name the circuit
+                $.get("/api/circuit_info/" + encodeURI(params.id), (data) => {
+                    circuit_info = data;
+                    $("#circuitName").text(redactText(circuit_info.name));
+                });
+
+                // Fill the raw button
+                $("#raw").html("<a class='btn btn-sm btn-info' href='/api/raw_queue_by_circuit/" + encodeURI(params.id) + "'><i class='fa fa-search'></i> Raw Data</a>");
+
+                // Graphs
+                $.get("/api/raw_queue_by_circuit/" + encodeURI(params.id), (data) => {
+                    // Fill Base Information
+                    let total_memory = data.current_download.Cake.memory_used + data.current_upload.Cake.memory_used;
+                    $("#memory").text(scaleNumber(total_memory));
+
+                    // Fill Tin Graphs
+                    let backlogX1 = [];
+                    let backlogY1 = [];
+                    let backlogX2 = [];
+                    let backlogY2 = [];
+                    let delaysX1 = [];
+                    let delaysX2 = [];
+                    let delaysY1 = [];
+                    let delaysY2 = [];
+                    let qlenX1 = [];
+                    let qlenY1 = [];
+                    let qlenX2 = [];
+                    let qlenY2 = [];
+
+                    for (let tin=0; tin<4; tin++) {
+                        let entries = {
+                            x: [[], [], [], [], [], [], [], [], [], []],
+                            y: [[], [], [], [], [], [], [], [], [], []],
+                        }
+                        let counter = 0;
+                        for (let i=data.history_head; i<600; i++) {
+                            setX(entries.x, counter);
+                            setY(entries.y, i, data.history[i], tin);
+                            if (tin == 0) {
+                                qlenX1.push(counter);
+                                qlenX2.push(counter);
+                                qlenY1.push(data.history[i][0].Cake.qlen);
+                                qlenY2.push(0.0 - data.history[i][1].Cake.qlen);
+                            }
+                            counter++;
+                        }
+                        for (let i=0; i<data.history_head; i++) {
+                            setX(entries.x, counter);
+                            setY(entries.y, i, data.history[i], tin);
+                            if (tin == 0) {
+                                qlenX1.push(counter);
+                                qlenX2.push(counter);
+                                qlenY1.push(data.history[i][0].Cake.qlen);
+                                qlenY2.push(0.0 - data.history[i][1].Cake.qlen);
+                            }
+                            counter++;                            
+                        }
+                        let graph = document.getElementById("tinTp_" + tin);
+                        let graph_data = [
+                            {x: entries.x[0], y:entries.y[0], name: 'Download', type: 'scatter'},
+                            {x: entries.x[1], y:entries.y[1], name: 'Upload', type: 'scatter'},
+                        ];
+                        Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
+
+                        graph = document.getElementById("tinMd_" + tin);
+                        graph_data = [
+                            {x: entries.x[2], y:entries.y[2], name: 'Down Drops', type: 'scatter'},
+                            {x: entries.x[3], y:entries.y[3], name: 'Down Marks', type: 'scatter'},
+                            {x: entries.x[4], y:entries.y[4], name: 'Up Drops', type: 'scatter'},
+                            {x: entries.x[5], y:entries.y[5], name: 'Up Marks', type: 'scatter'},
+                        ];
+                        Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
+
+                        backlogX1.push(entries.x[6]);
+                        backlogX2.push(entries.x[7]);
+                        backlogY1.push(entries.y[6]);
+                        backlogY2.push(entries.y[7]);
+                        delaysX1.push(entries.x[8]);
+                        delaysX2.push(entries.x[9]);
+                        delaysY1.push(entries.y[8]);
+                        delaysY2.push(entries.y[9]);
+                    }
+                    let graph = document.getElementById("backlogGraph");
+                    let graph_data = [
+                        {x: backlogX1[0], y:backlogY1[0], type: 'scatter', name: 'Tin 0 Down'},
+                        {x: backlogX2[0], y:backlogY2[0], type: 'scatter', name: 'Tin 0 Up'},
+                        {x: backlogX1[1], y:backlogY1[1], type: 'scatter', name: 'Tin 1 Down'},
+                        {x: backlogX2[1], y:backlogY2[1], type: 'scatter', name: 'Tin 1 Up'},
+                        {x: backlogX1[2], y:backlogY1[2], type: 'scatter', name: 'Tin 2 Down'},
+                        {x: backlogX2[2], y:backlogY2[2], type: 'scatter', name: 'Tin 2 Up'},
+                        {x: backlogX1[3], y:backlogY1[3], type: 'scatter', name: 'Tin 3 Down'},
+                        {x: backlogX2[3], y:backlogY2[3], type: 'scatter', name: 'Tin 3 Up'},
+                    ];
+                    Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
+
+                    graph = document.getElementById("delayGraph");
+                    graph_data = [
+                        {x: delaysX1[0], y:delaysY1[0], type: 'scatter', name: 'Tin 0 Down'},
+                        {x: delaysX2[0], y:delaysY2[0], type: 'scatter', name: 'Tin 0 Up'},
+                        {x: delaysX1[1], y:delaysY1[1], type: 'scatter', name: 'Tin 1 Down'},
+                        {x: delaysX2[1], y:delaysY2[1], type: 'scatter', name: 'Tin 1 Up'},
+                        {x: delaysX1[2], y:delaysY1[2], type: 'scatter', name: 'Tin 2 Down'},
+                        {x: delaysX2[2], y:delaysY2[2], type: 'scatter', name: 'Tin 2 Up'},
+                        {x: delaysX1[3], y:delaysY1[3], type: 'scatter', name: 'Tin 3 Down'},
+                        {x: delaysX2[3], y:delaysY2[3], type: 'scatter', name: 'Tin 3 Up'},
+                    ];
+                    Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
+
+                    graph = document.getElementById("qlenGraph");
+                    graph_data = [
+                        {x: qlenX1, y:qlenY1, type: 'scatter', name: 'Down'},
+                        {x: qlenX2, y:qlenY2, type: 'scatter', name: 'Up'},
+                    ];
+                    Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
+                });
+            }
+
+            setTimeout(pollQueue, 1000);
+        }
+
+        function getThroughput() {
+            const params = new Proxy(new URLSearchParams(window.location.search), {
+                get: (searchParams, prop) => searchParams.get(prop),
+            });
+            if (params.id != null) {
+                $.get("/api/circuit_throughput/" + encodeURI(params.id), (data) => {
+                    let quantiles = [
+                        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                        [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+                    ];                    
+
+                    for (let i=0; i<data.length; i++) {
+                        let ip = data[i][0];
+                        let down = data[i][1];
+                        let up = data[i][2];
+
+                        if (throughput[ip] == null) {
+                            throughput[ip] = {
+                                down: [],
+                                up: [],
+                            };
+                            for (let j=0; j<300; j++) {
+                                throughput[ip].down.push(0);
+                                throughput[ip].up.push(0);
+                            }
+                        }
+                        throughput[ip].down[throughput_head] = down * 8;
+                        throughput[ip].up[throughput_head] = up * 8;
+                    }
+
+                    // Build the graph
+                    let graph = document.getElementById("throughputGraph");
+                    let graph_data = [];
+                    for (const ip in throughput) {
+                        //console.log(ip);
+                        let xUp = [];
+                        let xDown = [];
+                        let yUp = [];
+                        let yDown = [];
+                        let counter = 0;
+                        for (let i=throughput_head; i<300; i++) {
+                            xUp.push(counter);
+                            xDown.push(counter);
+                            yUp.push(0.0 - throughput[ip].up[i]);
+                            yDown.push(throughput[ip].down[i]);
+                            counter++;
+                        }
+                        for (let i=0; i<throughput_head; i++) {
+                            xUp.push(counter);
+                            xDown.push(counter);
+                            yUp.push(0.0 - throughput[ip].up[i]);
+                            yDown.push(throughput[ip].down[i]);
+                            counter++;
+                        }
+
+                        // Build the quantiles graph
+                        if (circuit_info != null) {
+                            for (let i=0; i<yDown.length; i++) {
+                                let down = yDown[i];
+                                let up = 0.0 - yUp[i];
+                                let down_slot = Math.floor((down / circuit_info.capacity[0]) * 10.0);
+                                let up_slot = Math.floor((up / circuit_info.capacity[1]) * 10.0);
+                                if (down_slot > 0) quantiles[0][down_slot] += 1;
+                                if (up_slot > 0) quantiles[1][up_slot] += 1;
+                            }
+                        }
+
+                        graph_data.push({x: xDown, y: yDown, name: ip + " Down", type: 'scatter'});
+                        graph_data.push({x: xUp, y: yUp, name: ip + " Up", type: 'scatter'});
+                    }
+                    Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
+                    throughput_head += 1;
+                    if (throughput_head >= 300) {
+                        throughput_head = 0;
+                    }
+                    
+                    graph = document.getElementById("capacityQuantile");
+                    graph_data = [
+                        {x: quantiles[2], y: quantiles[0], name: 'Download', type: 'bar'},
+                        {x: quantiles[2], y: quantiles[1], name: 'Upload', type: 'bar'},
+                    ];
+                    Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true, title: '# Samples' }, xaxis: {automargin: true, title: '% Utilization'} });
+                });
+            }
+
+            setTimeout(getThroughput, 1000);
+        }
+
+        function start() {
+            colorReloadButton();
+            updateHostCounts();
+            pollQueue();
+            getThroughput();
+        }
+
+        $(document).ready(start);
+    </script>
+
+    <!-- Leave to last -->
+    <script src="vendor/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+[package]
+name = "lqosd"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["equinix_tests"]
+equinix_tests = []
+
+[dependencies]
+anyhow = "1"
+lqos_config = { path = "../lqos_config" }
+lqos_sys = { path = "../lqos_sys" }
+tokio = { version = "1.22", features = [ "full", "parking_lot" ] }
+lazy_static = "1.4"
+parking_lot = "0.12"
+lqos_bus = { path = "../lqos_bus" }
+signal-hook = "0.3"
+serde_json = "1"
+serde = { version = "1.0", features = ["derive"] }
+notify = { version = "5.0.0", default-features = false, feature=["macos_kqueue"] } # Not using crossbeam because of Tokio
+env_logger = "0"
+log = "0"
+cow_struct = "0"

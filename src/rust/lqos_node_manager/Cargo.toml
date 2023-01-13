@@ -1,0 +1,20 @@
+[package]
+name = "lqos_node_manager"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["equinix_tests"]
+equinix_tests = []
+
+[dependencies]
+rocket = { version = "0.5.0-rc.2", features = [ "json", "msgpack", "uuid" ] }
+rocket_async_compression = "0.2.0"
+lazy_static = "1.4"
+parking_lot = "0.12"
+lqos_bus = { path = "../lqos_bus" }
+lqos_config = { path = "../lqos_config" }
+anyhow = "1"
+sysinfo = "0"
+notify = { version = "5.0.0", default-features = false, feature=["macos_kqueue"] } # Not using crossbeam because of Tokio
+default-net = "0"
