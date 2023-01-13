@@ -63,6 +63,9 @@ impl ThroughputTracker {
                     if c.tc_handle != 0 {
                         entry.tc_handle = TcHandle::from_u32(c.tc_handle);
                     }
+                    if c.last_seen != 0 {
+                        entry.last_seen = c.last_seen;
+                    }
                 }
                 if entry.packets != entry.prev_packets {
                     entry.most_recent_cycle = self.cycle;
@@ -80,6 +83,7 @@ impl ThroughputTracker {
                     tc_handle: TcHandle::zero(),
                     recent_rtt_data: [0; 60],
                     last_fresh_rtt_data_cycle: 0,
+                    last_seen: 0,
                 };
                 for c in counts {
                     entry.bytes.0 += c.download_bytes;

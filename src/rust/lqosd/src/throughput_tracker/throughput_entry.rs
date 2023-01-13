@@ -13,6 +13,7 @@ pub(crate) struct ThroughputEntry {
     pub(crate) tc_handle: TcHandle,
     pub(crate) recent_rtt_data: [u32; 60],
     pub(crate) last_fresh_rtt_data_cycle: u64,
+    pub(crate) last_seen: u64, // Last seen in kernel time since boot
 }
 
 impl ThroughputEntry {

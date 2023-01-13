@@ -19,6 +19,9 @@ pub struct HostCounter {
 
     /// Mapped TC handle, 0 if there isn't one.
     pub tc_handle: u32,
+
+    /// Time last seen, in nanoseconds since kernel boot
+    pub last_seen: u64,
 }
 
 impl Default for HostCounter {
@@ -29,11 +32,14 @@ impl Default for HostCounter {
             upload_bytes: 0,
             upload_packets: 0,
             tc_handle: 0,
+            last_seen: 0,
         }
     }
 }
 
 /// Queries the underlying `map_traffic` eBPF pinned map, and returns every entry.
 pub fn get_throughput_map() -> Result<Vec<(XdpIpAddress, Vec<HostCounter>)>> {
-    Ok(BpfPerCpuMap::<XdpIpAddress, HostCounter>::from_path("/sys/fs/bpf/map_traffic")?.dump_vec())
+    let result = BpfPerCpuMap::<XdpIpAddress, HostCounter>::from_path("/sys/fs/bpf/map_traffic")?.dump_vec();
+    //println!("{:#?}", result);
+    Ok(result)
 }

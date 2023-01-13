@@ -229,12 +229,21 @@ pub fn host_counts() -> BusResponse {
 }
 
 pub fn all_unknown_ips() -> BusResponse {
+    let boot_time = nix::time::clock_gettime(nix::time::ClockId::CLOCK_BOOTTIME)
+        .expect("Unable to obtain kernel time.");
+    let time_since_boot = Duration::from(boot_time);
+    let five_minutes_ago = time_since_boot - Duration::from_secs(300);
+    let five_minutes_ago_nanoseconds = five_minutes_ago.as_nanos();
+
     let mut full_list: Vec<(XdpIpAddress, (u64, u64), (u64, u64), f32, TcHandle, u64)> = {
         let tp = THROUGHPUT_TRACKER.read();
         tp.raw_data
             .iter()
             .filter(|(ip, _)| !ip.as_ip().is_loopback())
             .filter(|(_, d)| d.tc_handle.as_u32() == 0)
+            .filter(|(_, d)| {
+                d.last_seen as u128 > five_minutes_ago_nanoseconds
+            })
             .map(|(ip, te)| {
                 (
                     *ip,

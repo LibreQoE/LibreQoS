@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-nix = "0.25"
+nix = "0"
 libbpf-sys = "1"
 anyhow = "1"
 byteorder = "1.4"

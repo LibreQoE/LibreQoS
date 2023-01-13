@@ -400,17 +400,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5827cebf4670468b8772dd191856768aedcb1b0278a04f989f7766351917b9dc"
 
 [[package]]
-name = "cow_struct"
-version = "0.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "780363852334e8717416de3477ac2ce707bdf91c086daae09b80f0b354b5a6b5"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "cpufeatures"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1281,13 +1270,13 @@ name = "lqosd"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "cow_struct",
  "env_logger",
  "lazy_static",
  "log",
  "lqos_bus",
  "lqos_config",
  "lqos_sys",
+ "nix",
  "notify",
  "parking_lot 0.12.1",
  "serde",
