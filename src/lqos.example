@@ -24,7 +24,7 @@ disable_offload = [ "gso", "tso", "lro", "sg", "gro" ]
 
 # For "on a stick":
 [bridge]
-use_kernel_bridge = true
+use_xdp_bridge = true
 interface_mapping = [
         { name = "enp1s0f1", redirect_to = "enp1s0f1", scan_vlans = true }
 ]

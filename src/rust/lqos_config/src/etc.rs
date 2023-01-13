@@ -57,7 +57,7 @@ pub struct Tunables {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BridgeConfig {
     /// Should the XDP bridge be enabled?
-    pub use_kernel_bridge: bool,
+    pub use_xdp_bridge: bool,
 
     /// A list of interface mappings.
     pub interface_mapping: Vec<BridgeInterface>,

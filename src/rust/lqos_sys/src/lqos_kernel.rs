@@ -156,7 +156,7 @@ pub fn attach_xdp_and_tc_to_interface(
     // Attach to the ingress IF it is configured
     if let Ok(etc) = lqos_config::EtcLqos::load() {
         if let Some(bridge) = &etc.bridge {
-            if bridge.use_kernel_bridge {
+            if bridge.use_xdp_bridge {
                 // Enable "promiscuous" mode on interfaces
                 for mapping in bridge.interface_mapping.iter() {
                     std::process::Command::new("/bin/ip")

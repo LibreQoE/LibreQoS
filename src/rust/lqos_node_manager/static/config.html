@@ -477,7 +477,7 @@
                             $("#StickVLANCore").val(python_config.stick_vlans[0]);
                             $("#StickVLANInternet").val(python_config.stick_vlans[1]);
                             if (lqosd_config.bridge != null) {
-                                $("#useKernelBridge").prop('checked', lqosd_config.bridge.use_kernel_bridge);
+                                $("#useKernelBridge").prop('checked', lqosd_config.bridge.use_xdp_bridge);
 
                                 // Map Bifrost Interfaces
                                 let html = "<h4>Interface Mapping</h4>";

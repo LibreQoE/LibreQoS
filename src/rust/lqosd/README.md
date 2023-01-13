@@ -41,7 +41,7 @@ To enable the kernel-side eBPF bridge, edit `/etc/lqos`:
 
 ```toml
 [bridge]
-use_kernel_bridge = true
+use_xdp_bridge = true
 interface_mapping = [
 	{ name = "eth1", redirect_to = "eth2", scan_vlans = false },
 	{ name = "eth2", redirect_to = "eth1", scan_vlans = false }
@@ -53,7 +53,7 @@ Each interface must be a *physical* interface, not a VLAN. If you set `scan_vlan
 
 ```toml
 [bridge]
-use_kernel_bridge = true
+use_xdp_bridge = true
 interface_mapping = [
 	{ name = "eth1", redirect_to = "eth1", scan_vlans = true },
 ]
