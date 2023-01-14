@@ -42,14 +42,11 @@ where
         }
     }
 
-    /// Iterates the entire contents of the underlying eBPF per-cpu map.
-    /// Each iteration returns one entry per CPU, even if there isn't a
-    /// CPU-local map entry. Each result is therefore returned as one
-    /// key and a vector of values.
-    pub(crate) fn dump_vec(&self) -> Vec<(K, Vec<V>)> {
-        let mut result = Vec::new();
+    /// Instead of clonining into a vector
+    /// and allocating, calls `callback` for each key/value slice
+    /// with references to the data returned from C.
+    pub(crate) fn for_each(&self, callback: &mut dyn FnMut(&K, &[V]) -> ()) {
         let num_cpus = unsafe { libbpf_num_possible_cpus() };
-
         let mut prev_key: *mut K = null_mut();
         let mut key: K = K::default();
         let key_ptr: *mut K = &mut key;
@@ -61,12 +58,10 @@ where
                 == 0
             {
                 bpf_map_lookup_elem(self.fd, key_ptr as *mut c_void, value_ptr as *mut c_void);
-                result.push((key.clone(), value.clone()));
+                callback(&key, &value);
                 prev_key = key_ptr;
             }
         }
-
-        result
     }
 }
 

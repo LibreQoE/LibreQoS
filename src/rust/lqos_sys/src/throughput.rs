@@ -1,5 +1,4 @@
 use crate::{bpf_per_cpu_map::BpfPerCpuMap, XdpIpAddress};
-use anyhow::Result;
 
 /// Representation of the XDP map from map_traffic
 #[repr(C)]
@@ -37,9 +36,10 @@ impl Default for HostCounter {
     }
 }
 
-/// Queries the underlying `map_traffic` eBPF pinned map, and returns every entry.
-pub fn get_throughput_map() -> Result<Vec<(XdpIpAddress, Vec<HostCounter>)>> {
-    let result = BpfPerCpuMap::<XdpIpAddress, HostCounter>::from_path("/sys/fs/bpf/map_traffic")?.dump_vec();
-    //println!("{:#?}", result);
-    Ok(result)
+/// Iterates through all throughput entries, and sends them in turn to `callback`.
+/// This elides the need to clone or copy data.
+pub fn throughput_for_each(callback: &mut dyn FnMut(&XdpIpAddress, &[HostCounter])) {
+    if let Ok(throughput) = BpfPerCpuMap::<XdpIpAddress, HostCounter>::from_path("/sys/fs/bpf/map_traffic") {
+        throughput.for_each(callback);
+    }
 }

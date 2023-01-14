@@ -1,5 +1,3 @@
-use anyhow::Result;
-
 use crate::bpf_map::BpfMap;
 
 /// Entry from the XDP rtt_tracker map.
@@ -35,13 +33,9 @@ impl Default for RttTrackingEntry {
 ///
 /// Only IP addresses facing the ISP Network side are tracked.
 ///
-/// ## Returns
-///
-/// A vector containing:
-/// * `[u8; 16]` - a byte representation of the encoded IP address. See `XdpIpAddress` for details.
-/// * An `RttTrackingEntry` structure containing the current RTT results for the IP address.
-pub fn get_tcp_round_trip_times() -> Result<Vec<([u8; 16], RttTrackingEntry)>> {
-    let rtt_tracker = BpfMap::<[u8; 16], RttTrackingEntry>::from_path("/sys/fs/bpf/rtt_tracker")?;
-    let rtt_data = rtt_tracker.dump_vec();
-    Ok(rtt_data)
+/// Executes `callback` for each entry.
+pub fn rtt_for_each(callback: &mut dyn FnMut(&[u8; 16], &RttTrackingEntry)) {
+    if let Ok(rtt_tracker) = BpfMap::<[u8; 16], RttTrackingEntry>::from_path("/sys/fs/bpf/rtt_tracker") {
+        rtt_tracker.for_each(callback);
+    }
 }

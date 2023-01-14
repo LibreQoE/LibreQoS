@@ -21,6 +21,6 @@ pub use ip_mapping::{add_ip_to_tc, clear_ips_from_tc, del_ip_from_tc, list_mappe
 pub use kernel_wrapper::LibreQoSKernels;
 pub use libbpf_sys::libbpf_num_possible_cpus;
 pub use lqos_kernel::max_tracked_ips;
-pub use tcp_rtt::{get_tcp_round_trip_times, RttTrackingEntry};
-pub use throughput::{get_throughput_map, HostCounter};
+pub use tcp_rtt::{RttTrackingEntry, rtt_for_each};
+pub use throughput::{HostCounter, throughput_for_each};
 pub use xdp_ip_address::XdpIpAddress;

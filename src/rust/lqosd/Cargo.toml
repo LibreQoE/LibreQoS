@@ -22,3 +22,4 @@ notify = { version = "5.0.0", default-features = false, feature=["macos_kqueue"]
 env_logger = "0"
 log = "0"
 nix = "0"
+rayon = "1"
