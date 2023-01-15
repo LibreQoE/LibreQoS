@@ -2,6 +2,10 @@
 
 Version 1.4 is still undergoing active development, but if you'd like to benefit from it right now (or help us test/develop it!), here's a guide.
 
+## Updating from v1.3
+### Remove cron tasks from v1.3
+Run ```sudo crontab -e``` and remove any entries pertaining to LibreQoS from v1.3.
+
 ## Clone the repo
 
 > My preferred install location is `/opt/libreqos` - but you can put it wherever you want.
