@@ -25,18 +25,18 @@ pub(crate) fn make_queue_diff(previous: &QueueType, current: &QueueType) -> Resu
 #[derive(Serialize, Clone, Debug)]
 pub struct CakeDiff {
     pub bytes: u64,
-    pub packets: u64,
-    pub qlen: u64,
+    pub packets: u32,
+    pub qlen: u32,
     pub tins: Vec<CakeDiffTin>,
 }
 
 #[derive(Serialize, Clone, Debug)]
 pub struct CakeDiffTin {
     pub sent_bytes: u64,
-    pub backlog_bytes: u64,
-    pub drops: u64,
-    pub marks: u64,
-    pub avg_delay_us: u64,
+    pub backlog_bytes: u32,
+    pub drops: u32,
+    pub marks: u32,
+    pub avg_delay_us: u32,
 }
 
 fn cake_diff(previous: &QueueType, current: &QueueType) -> Result<QueueDiff> {
