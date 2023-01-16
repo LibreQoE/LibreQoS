@@ -11,6 +11,7 @@ use libbpf_sys::{
 };
 use nix::libc::{geteuid, if_nametoindex};
 use std::{ffi::CString, process::Command};
+use log::{info, warn};
 
 pub(crate) mod bpf {
     #![allow(warnings, unused)]
@@ -44,7 +45,7 @@ pub fn interface_name_to_index(interface_name: &str) -> Result<u32> {
 }
 
 pub fn unload_xdp_from_interface(interface_name: &str) -> Result<()> {
-    println!("Unloading XDP/TC");
+    info!("Unloading XDP/TC");
     check_root()?;
     let interface_index = interface_name_to_index(interface_name)?.try_into()?;
     unsafe {
@@ -54,14 +55,15 @@ pub fn unload_xdp_from_interface(interface_name: &str) -> Result<()> {
         }
 
         let interface_c = CString::new(interface_name)?;
-        let _ = bpf::tc_detach_egress(interface_index as i32, true, true, interface_c.as_ptr());
-        let _ = bpf::tc_detach_ingress(interface_index as i32, true, true, interface_c.as_ptr());
+        let _ = bpf::tc_detach_egress(interface_index as i32, false, true, interface_c.as_ptr());
+        let _ = bpf::tc_detach_ingress(interface_index as i32, false, true, interface_c.as_ptr());
     }
     Ok(())
 }
 
 fn set_strict_mode() -> Result<()> {
     let err = unsafe { libbpf_set_strict_mode(LIBBPF_STRICT_ALL) };
+    unsafe { bpf::do_not_print(); }
     if err != 0 {
         Err(Error::msg("Unable to activate BPF Strict Mode"))
     } else {
@@ -133,22 +135,24 @@ pub fn attach_xdp_and_tc_to_interface(
     // extern int tc_detach_egress(int ifindex, bool verbose, bool flush_hook, char * ifname);
     let interface_c = CString::new(interface_name)?;
     let _ =
-        unsafe { bpf::tc_detach_egress(interface_index as i32, true, true, interface_c.as_ptr()) }; // Ignoring error, because it's ok to not have something to detach
+        unsafe { bpf::tc_detach_egress(interface_index as i32, false, true, interface_c.as_ptr()) }; // Ignoring error, because it's ok to not have something to detach
 
     // Remove any previous entry
-    let r = Command::new("tc")
+    let _r = Command::new("tc")
         .args(["qdisc", "del", "dev", interface_name, "clsact"])
         .output()?;
-    println!("{}", String::from_utf8(r.stderr).unwrap());
+    // This message was worrying people, commented out.
+    //println!("{}", String::from_utf8(r.stderr).unwrap());
 
     // Add the classifier
-    let r = Command::new("tc")
+    let _r= Command::new("tc")
         .args(["filter", "add", "dev", interface_name, "clsact"])
         .output()?;
-    println!("{}", String::from_utf8(r.stderr).unwrap());
+    // This message was worrying people, commented out.
+    //println!("{}", String::from_utf8(r.stderr).unwrap());
 
     // Attach to the egress
-    let error = unsafe { bpf::tc_attach_egress(interface_index as i32, true, skeleton) };
+    let error = unsafe { bpf::tc_attach_egress(interface_index as i32, false, skeleton) };
     if error != 0 {
         return Err(Error::msg("Unable to attach TC to interface"));
     }
@@ -159,6 +163,7 @@ pub fn attach_xdp_and_tc_to_interface(
             if bridge.use_xdp_bridge {
                 // Enable "promiscuous" mode on interfaces
                 for mapping in bridge.interface_mapping.iter() {
+                    info!("Enabling promiscuous mode on {}", &mapping.name);
                     std::process::Command::new("/bin/ip")
                         .args(["link", "set", &mapping.name, "promisc", "on"])
                         .output()?;
@@ -171,7 +176,7 @@ pub fn attach_xdp_and_tc_to_interface(
 
                 // Actually attach the TC ingress program
                 let error =
-                    unsafe { bpf::tc_attach_ingress(interface_index as i32, true, skeleton) };
+                    unsafe { bpf::tc_attach_ingress(interface_index as i32, false, skeleton) };
                 if error != 0 {
                     return Err(Error::msg("Unable to attach TC Ingress to interface"));
                 }
@@ -200,13 +205,13 @@ unsafe fn attach_xdp_best_available(interface_index: u32, prog_fd: i32) -> Resul
                     return Err(Error::msg("Unable to attach to interface"));
                 }
             } else {
-                println!("Attached in SKB compatibility mode. (Not so fast)");
+                warn!("Attached in SKB compatibility mode. (Not so fast)");
             }
         } else {
-            println!("Attached in driver mode. (Fast)");
+            info!("Attached in driver mode. (Fast)");
         }
     } else {
-        println!("Attached in hardware accelerated mode. (Fastest)");
+        info!("Attached in hardware accelerated mode. (Fastest)");
     }
     Ok(())
 }

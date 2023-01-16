@@ -10,6 +10,7 @@ anyhow = "1"
 byteorder = "1.4"
 lqos_bus = { path = "../lqos_bus" }
 lqos_config = { path = "../lqos_config" }
+log = "0"
 
 [build-dependencies]
 bindgen = "0.53.1"

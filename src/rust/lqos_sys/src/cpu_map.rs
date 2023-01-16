@@ -1,6 +1,7 @@
 use anyhow::{Error, Result};
 use libbpf_sys::{bpf_map_update_elem, bpf_obj_get, libbpf_num_possible_cpus};
 use std::{ffi::CString, os::raw::c_void};
+use log::info;
 
 //* Provides an interface for querying the number of CPUs eBPF can
 //* see, and marking CPUs as available. Currently marks ALL eBPF
@@ -37,7 +38,7 @@ impl CpuMapping {
         let queue_size = 2048u32;
         let val_ptr: *const u32 = &queue_size;
         for cpu in 0..cpu_count {
-            println!("Mapping core #{cpu}");
+            info!("Mapping core #{cpu}");
             // Insert into the cpu map
             let cpu_ptr: *const u32 = &cpu;
             let error = unsafe {
@@ -91,14 +92,14 @@ impl Drop for CpuMapping {
 /// Emulates xd_setup from cpumap
 pub(crate) fn xps_setup_default_disable(interface: &str) -> Result<()> {
     use std::io::Write;
-    println!("xps_setup");
+    info!("xps_setup");
     let queues = sorted_txq_xps_cpus(interface)?;
     for (cpu, xps_cpu) in queues.iter().enumerate() {
         let mask = cpu_to_mask_disabled(cpu);
         let mut f = std::fs::OpenOptions::new().write(true).open(xps_cpu)?;
         f.write_all(&mask.to_string().as_bytes())?;
         f.flush()?;
-        println!("Mapped TX queue for CPU {cpu}");
+        info!("Mapped TX queue for CPU {cpu}");
     }
 
     Ok(())

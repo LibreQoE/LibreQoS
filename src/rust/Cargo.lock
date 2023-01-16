@@ -1260,6 +1260,7 @@ dependencies = [
  "bindgen",
  "byteorder",
  "libbpf-sys",
+ "log",
  "lqos_bus",
  "lqos_config",
  "nix",

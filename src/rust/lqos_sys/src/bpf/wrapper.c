@@ -13,6 +13,15 @@ extern __u64 max_tracker_ips() {
 	return MAX_TRACKED_IPS;
 }
 
+static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)
+{
+ return 0;
+}
+
+void do_not_print() {
+	libbpf_set_print(libbpf_print_fn);
+}
+
 /////////////////////////////////////////////////////////////////////////////////////
 // The following is derived from
 // https://github.com/xdp-project/bpf-examples/blob/master/tc-policy/tc_txq_policy.c
@@ -37,7 +46,7 @@ int teardown_hook(int ifindex, const char * ifname, bool verbose)
 	 * programs are also detached.
 	 */
 	err = bpf_tc_hook_destroy(&hook);
-	if (err)
+	if (err && verbose)
 		fprintf(stderr, "Couldn't remove clsact qdisc on %s\n", ifname);
 
 	if (verbose)
@@ -58,7 +67,7 @@ int tc_detach_egress(int ifindex, bool verbose, bool flush_hook, const char * if
 
 	/* Check what program we are removing */
 	err = bpf_tc_query(&hook, &opts_info);
-	if (err) {
+	if (err && verbose) {
 		fprintf(stderr, "No egress program to detach "
 			"for ifindex %d (err:%d)\n", ifindex, err);
 		return err;
@@ -71,7 +80,7 @@ int tc_detach_egress(int ifindex, bool verbose, bool flush_hook, const char * if
 	opts_info.prog_id = 0;
 	opts_info.flags = 0;
 	err = bpf_tc_detach(&hook, &opts_info);
-	if (err) {
+	if (err && verbose) {
 		fprintf(stderr, "Cannot detach TC-BPF program id:%d "
 			"for ifindex %d (err:%d)\n", opts_info.prog_id,
 			ifindex, err);
@@ -143,7 +152,7 @@ int teardown_hook_ingress(int ifindex, const char * ifname, bool verbose)
 	 * programs are also detached.
 	 */
 	err = bpf_tc_hook_destroy(&hook);
-	if (err)
+	if (err && verbose)
 		fprintf(stderr, "Couldn't remove clsact qdisc on %s\n", ifname);
 
 	if (verbose)
@@ -164,7 +173,7 @@ int tc_detach_ingress(int ifindex, bool verbose, bool flush_hook, const char * i
 
 	/* Check what program we are removing */
 	err = bpf_tc_query(&hook, &opts_info);
-	if (err) {
+	if (err && verbose) {
 		fprintf(stderr, "No ingress program to detach "
 			"for ifindex %d (err:%d)\n", ifindex, err);
 		return err;
@@ -177,7 +186,7 @@ int tc_detach_ingress(int ifindex, bool verbose, bool flush_hook, const char * i
 	opts_info.prog_id = 0;
 	opts_info.flags = 0;
 	err = bpf_tc_detach(&hook, &opts_info);
-	if (err) {
+	if (err && verbose) {
 		fprintf(stderr, "Cannot detach TC-BPF program id:%d "
 			"for ifindex %d (err:%d)\n", opts_info.prog_id,
 			ifindex, err);

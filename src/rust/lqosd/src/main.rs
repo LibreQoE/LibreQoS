@@ -23,7 +23,11 @@ use tokio::{
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    env_logger::init(); // Configure log level with RUST_LOG environment variable
+    // Configure log level with RUST_LOG environment variable,
+    // defaulting to "info"
+    env_logger::init_from_env(
+        env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "warn")
+    );
     info!("LibreQoS Daemon Starting");
     let config = LibreQoSConfig::load()?;
     tuning::tune_lqosd_from_config_file(&config)?;
@@ -80,7 +84,7 @@ async fn main() -> Result<()> {
 
     // Main bus listen loop
     let listener = TcpListener::bind(BUS_BIND_ADDRESS).await?;
-    info!("Listening on: {}", BUS_BIND_ADDRESS);
+    warn!("Listening on: {}", BUS_BIND_ADDRESS);
     loop {
         let (mut socket, _) = listener.accept().await?;
         tokio::spawn(async move {
