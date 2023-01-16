@@ -57,7 +57,8 @@ if __name__ == '__main__':
         ads.add_job(refreshBandwidthGraphs, 'interval', seconds=10)
 
         # schedule.every(30).seconds.do(refreshLatencyGraphs)
-        ads.add_job(refreshLatencyGraphs, 'interval', seconds=30)
+        # Commented out until refreshLatencyGraphs works in v.14
+        # ads.add_job(refreshLatencyGraphs, 'interval', seconds=30)
 
     # while True:
     # schedule.run_pending()
