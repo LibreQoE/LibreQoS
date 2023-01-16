@@ -528,6 +528,38 @@ def refreshShapers():
 		minDownload, minUpload = findBandwidthMins(network, 0)
 		logging.info("Found the bandwidth minimums for each node")
 		
+		# Compress network.json. HTB only supports 8 levels of HTB depth. Compress to 8 layers if beyond 8.
+		def flattenB(data):
+			newDict = {}
+			for node in data:
+				if isinstance(node, str):
+					if (isinstance(data[node], dict)) and (node != 'children'):
+						newDict[node] = dict(data[node])
+						if 'children' in data[node]:
+							result = flattenB(data[node]['children'])
+							del newDict[node]['children']
+							newDict.update(result)
+			return newDict
+		def flattenA(data, depth):
+			newDict = {}
+			for node in data:
+				if isinstance(node, str):
+					if (isinstance(data[node], dict)) and (node != 'children'):
+						newDict[node] = dict(data[node])
+						if 'children' in data[node]:
+							result = flattenA(data[node]['children'], depth+2)
+							del newDict[node]['children']
+							if depth <= 8:
+								newDict[node]['children'] = result
+							else:
+								flattened = flattenB(data[node]['children'])
+								if 'children' in newDict[node]:
+									newDict[node]['children'].update(flattened)
+								else:
+									newDict[node]['children'] = flattened
+			return newDict
+		network = flattenA(network, 1)
+		
 		# Parse network structure and add devices from ShapedDevices.csv
 		parentNodes = []
 		minorByCPUpreloaded = {}
