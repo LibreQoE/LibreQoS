@@ -23,8 +23,8 @@ interfaceA = 'eth1'
 # Interface connected to edge router
 interfaceB = 'eth2'
 
-## WORK IN PROGRESS. Note that interfaceA determines the "stick" interface
-## I could only get scanning to work if I issued ethtool -K enp1s0f1 rxvlan off
+# WORK IN PROGRESS. Note that interfaceA determines the "stick" interface
+# I could only get scanning to work if I issued ethtool -K enp1s0f1 rxvlan off
 OnAStick = False
 # VLAN facing the core router
 StickVlanA = 0
@@ -38,7 +38,8 @@ enableActualShellCommands = True
 # Add 'sudo' before execution of any shell commands. May be required depending on distribution and environment.
 runShellCommandsAsSudo = False
 
-# Allows overriding queues / CPU cores used. When set to 0, the max possible queues / CPU cores are utilized. Please leave as 0.
+# Allows overriding queues / CPU cores used. When set to 0, the max possible queues / CPU cores are utilized. Please
+# leave as 0.
 queuesAvailableOverride = 0
 
 # Some networks are flat - where there are no Parent Nodes defined in ShapedDevices.csv
@@ -83,19 +84,41 @@ uispSite = ''
 uispStrategy = "full"
 # List any sites that should not be included, with each site name surrounded by '' and separated by commas
 excludeSites = []
-# If you use IPv6, this can be used to find associated IPv6 prefixes for your clients' IPv4 addresses, and match them to those devices
+# If you use IPv6, this can be used to find associated IPv6 prefixes for your clients' IPv4 addresses, and match them
+# to those devices
 findIPv6usingMikrotik = False
-# If you want to provide a safe cushion for speed test results to prevent customer complains, you can set this to 1.15 (15% above plan rate).
-# If not, you can leave as 1.0
+# If you want to provide a safe cushion for speed test results to prevent customer complains, you can set this to
+# 1.15 (15% above plan rate). If not, you can leave as 1.0
 bandwidthOverheadFactor = 1.0
 # For edge cases, set the respective ParentNode for these CPEs
 exceptionCPEs = {}
-                #  'CPE-SomeLocation1': 'AP-SomeLocation1',
-                #  'CPE-SomeLocation2': 'AP-SomeLocation2',
-                #}
+# exceptionCPEs = {
+#  'CPE-SomeLocation1': 'AP-SomeLocation1',
+#  'CPE-SomeLocation2': 'AP-SomeLocation2',
+# }
 
 # API Auth
 apiUsername = "testUser"
 apiPassword = "changeme8343486806"
 apiHostIP = "127.0.0.1"
 apiHostPost = 5000
+
+
+httpRestIntegrationConfig = {
+    'enabled': False,
+    'baseURL': 'https://domain',
+    'networkURI': '/some/path',
+    'shaperURI': '/some/path/etc',
+    'requestsConfig': {
+        'verify': True,  # Good for Dev if your dev env doesnt have cert
+         'params': {  # params for query string ie uri?some-arg=some-value
+           'search': 'hold-my-beer'
+         },
+        #'headers': {
+           # 'Origin': 'SomeHeaderValue',
+        #},
+    },
+    # If you want to store a timestamped copy/backup of both network.json and Shaper.csv each time they are updated,
+    # provide a path
+    # 'logChanges': '/var/log/libreqos'
+}

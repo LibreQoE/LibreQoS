@@ -2,6 +2,10 @@
 
 Version 1.4 is still undergoing active development, but if you'd like to benefit from it right now (or help us test/develop it!), here's a guide.
 
+## Updating from v1.3
+### Remove cron tasks from v1.3
+Run ```sudo crontab -e``` and remove any entries pertaining to LibreQoS from v1.3.
+
 ## Clone the repo
 
 > My preferred install location is `/opt/libreqos` - but you can put it wherever you want.
@@ -25,7 +29,7 @@ git checkout v1.4-pre-alpha-rust-integration
 You need to have a few packages from `apt` installed:
 
 ```
-apt-get install -y python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname r` libbpf-dev
+apt-get install -y python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname -r` libbpf-dev
 ```
 
 Then you need to install some Python dependencies:
