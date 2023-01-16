@@ -2,23 +2,23 @@ mod ip_mapping;
 mod libreqos_tracker;
 #[cfg(feature = "equinix_tests")]
 mod lqos_daht_test;
-mod offloads;
+mod tuning;
 mod program_control;
 mod queue_tracker;
 mod throughput_tracker;
-use crate::{ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow}, queue_tracker::QUEUE_MONITOR_INTERVAL};
+use crate::{ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow}};
 use anyhow::Result;
 use log::{info, warn};
 use lqos_bus::{
     cookie_value, decode_request, encode_response, BusReply, BusRequest, BUS_BIND_ADDRESS,
 };
-use lqos_config::{EtcLqos, LibreQoSConfig};
+use lqos_config::LibreQoSConfig;
 use lqos_sys::LibreQoSKernels;
-use signal_hook::{consts::SIGINT, iterator::Signals};
+use signal_hook::{consts::{SIGINT, SIGHUP, SIGTERM }, iterator::Signals};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     join,
-    net::{TcpListener, TcpStream},
+    net::{TcpListener, TcpStream}
 };
 
 #[tokio::main]
@@ -26,18 +26,7 @@ async fn main() -> Result<()> {
     env_logger::init(); // Configure log level with RUST_LOG environment variable
     info!("LibreQoS Daemon Starting");
     let config = LibreQoSConfig::load()?;
-    let etc_lqos = EtcLqos::load()?;
-
-    // Disable offloading
-    if let Some(tuning) = &etc_lqos.tuning {
-        offloads::bpf_sysctls().await;
-        if tuning.stop_irq_balance {
-            offloads::stop_irq_balance().await;
-        }
-        offloads::netdev_budget(tuning.netdev_budget_usecs, tuning.netdev_budget_packets).await;
-        offloads::ethtool_tweaks(&config.internet_interface, tuning).await;
-        offloads::ethtool_tweaks(&config.isp_interface, tuning).await;
-    }
+    tuning::tune_lqosd_from_config_file(&config)?;
 
     // Start the XDP/TC kernels
     let kernels = if config.on_a_stick_mode {
@@ -58,13 +47,34 @@ async fn main() -> Result<()> {
         libreqos_tracker::spawn_queue_structure_monitor(),
     );
 
-    let mut signals = Signals::new(&[SIGINT])?;
-
+    // Handle signals
+    let mut signals = Signals::new(&[SIGINT, SIGHUP, SIGTERM ])?;
     std::thread::spawn(move || {
         for sig in signals.forever() {
-            warn!("Received signal {:?}", sig);
-            std::mem::drop(kernels);
-            std::process::exit(0);
+            match sig {
+                SIGINT  | SIGTERM  => {
+                    match sig {
+                        SIGINT => warn!("Terminating on SIGINT"),
+                        SIGTERM => warn!("Terminating on SIGTERM"),
+                        _ => warn!("This should never happen - terminating on unknown signal"),
+                    }
+                    std::mem::drop(kernels);
+                    std::process::exit(0);        
+                }
+                SIGHUP => {
+                    warn!("Reloading configuration because of SIGHUP");
+                    if let Ok(config) = LibreQoSConfig::load() {
+                        let result = tuning::tune_lqosd_from_config_file(&config);
+                        match result {
+                            Err(err) => { warn!("Unable to HUP tunables: {:?}", err) },
+                            Ok(..) => {}
+                        }
+                    } else {
+                        warn!("Unable to reload configuration");
+                    }
+                }
+                _ => warn!("No handler for signal: {sig}"),
+            }
         }
     });
 
@@ -116,18 +126,8 @@ async fn main() -> Result<()> {
                             BusRequest::GetRawQueueData(circuit_id) => {
                                 queue_tracker::get_raw_circuit_data(&circuit_id)
                             }
-                            BusRequest::UpdateLqosDTuning(interval, tuning) => {
-                                // Real-time tuning changes. Probably dangerous.
-                                if let Ok(config) = LibreQoSConfig::load() {
-                                    if tuning.stop_irq_balance {
-                                        offloads::stop_irq_balance().await;
-                                    }
-                                    offloads::netdev_budget(tuning.netdev_budget_usecs, tuning.netdev_budget_packets).await;
-                                    offloads::ethtool_tweaks(&config.internet_interface, tuning).await;
-                                    offloads::ethtool_tweaks(&config.isp_interface, tuning).await;
-                                }
-                                QUEUE_MONITOR_INTERVAL.store(*interval, std::sync::atomic::Ordering::Relaxed);
-                                lqos_bus::BusResponse::Ack
+                            BusRequest::UpdateLqosDTuning(..) => {
+                                tuning::tune_lqosd_from_bus(&req).await
                             }
                             #[cfg(feature = "equinix_tests")]
                             BusRequest::RequestLqosEquinixTest => {
