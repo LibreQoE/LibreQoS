@@ -105,7 +105,7 @@ apiHostPost = 5000
 
 
 httpRestIntegrationConfig = {
-    'enabled': True,
+    'enabled': False,
     'baseURL': 'https://domain',
     'networkURI': '/some/path',
     'shaperURI': '/some/path/etc',
