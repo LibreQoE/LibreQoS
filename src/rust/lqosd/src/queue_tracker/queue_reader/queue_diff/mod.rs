@@ -48,12 +48,11 @@ fn cake_diff(previous: &QueueType, current: &QueueType) -> Result<QueueDiff> {
                 .iter()
                 .zip(prev.tins.iter())
                 .map(|(new, prev)| {
-                    //println!("{} - {} = {}", new.sent_bytes, prev.sent_bytes, new.sent_bytes -prev.sent_bytes);
                     CakeDiffTin {
-                        sent_bytes: new.sent_bytes - prev.sent_bytes,
+                        sent_bytes: new.sent_bytes.checked_sub(prev.sent_bytes).unwrap_or(0),
                         backlog_bytes: new.backlog_bytes,
                         drops: new.drops - prev.drops,
-                        marks: new.ecn_marks - prev.ecn_marks,
+                        marks: new.ecn_marks.checked_sub(prev.ecn_marks).unwrap_or(0),
                         avg_delay_us: new.avg_delay_us,
                     }
                 })
