@@ -4,7 +4,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use crate::string_table_enum;
 
-string_table_enum!(DiffServ, besteffort, diffserv3, diffserv4, diffserv8);
+string_table_enum!(DiffServ, besteffort, diffserv3, diffserv4, diffserv8, precedence);
+dashy_table_enum!(AckFilter, none, ack_filter, ack_filter_aggressive);
+dashy_table_enum!(FlowMode, flowblind, srchost, dsthost, hosts, dual_srchost, dual_dsthost, triple_isolate);
+string_table_enum!(BandWidth, unlimited ); // in the present implementation with htb, always unlimited
 
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct TcCake {
@@ -34,8 +37,8 @@ struct TcCakeOptions {
     rtt: u64,
     bandwidth: String,
     diffserv: DiffServ,
-    flowmode: String,
-    ack_filter: String,
+    flowmode: FlowMode,
+    ack_filter: AckFilter,
     nat: bool,
     wash: bool,
     ingress: bool,
@@ -117,13 +120,13 @@ impl TcCakeOptions {
                 let mut result = Self::default();
                 for (key, value) in map.iter() {
                     match key.as_str() {
-                        "bandwidth" => result.bandwidth = value.as_str().unwrap().to_string(),
+                        "bandwidth" => result.bandwidth = BandWidth::from_str(value.as_str().unwrap()),
                         "diffserv" => result.diffserv = DiffServ::from_str(value.as_str().unwrap()),
-                        "flowmode" => result.flowmode = value.as_str().unwrap().to_string(),
+                        "flowmode" => result.flowmode = FlowMode::from_str(value.as_str().unwrap()),
                         "nat" => result.nat = value.as_bool().unwrap(),
                         "wash" => result.wash = value.as_bool().unwrap(),
                         "ingress" => result.ingress = value.as_bool().unwrap(),
-                        "ack-filter" => result.ack_filter = value.as_str().unwrap().to_string(),
+                        "ack-filter" => result.ack_filter = AckFilter::from_str(value.as_str().unwrap()),
                         "split_gso" => result.split_gso = value.as_bool().unwrap(),
                         "rtt" => result.rtt = value.as_u64().unwrap(),
                         "raw" => result.raw = value.as_bool().unwrap(),
