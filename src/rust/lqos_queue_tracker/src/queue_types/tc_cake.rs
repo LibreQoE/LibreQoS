@@ -30,7 +30,7 @@ pub struct TcCake {
 struct TcCakeOptions {
     rtt: u64,
     bandwidth: String,
-    diffserv: String,
+    diffserv: DiffServ,
     flowmode: String,
     ack_filter: String,
     nat: bool,
@@ -64,6 +64,27 @@ pub struct TcCakeTin {
     unresponsive_flows: u16,
     max_pkt_len: u16,
     flow_quantum: u16,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+enum DiffServ { BestEffort, DiffServ3, DiffServ4, DiffServ8, Unknown }
+
+impl Default for DiffServ {
+    fn default() -> Self {
+        Self::Unknown
+    }
+}
+
+impl DiffServ {
+    fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "besteffort" => Self::BestEffort,
+            "diffserv3" => Self::DiffServ3,
+            "diffserv4" => Self::DiffServ4,
+            "diffserv8" => Self::DiffServ8,
+            _ => Self::Unknown,
+        }
+    }
 }
 
 impl TcCake {
@@ -115,7 +136,7 @@ impl TcCakeOptions {
                 for (key, value) in map.iter() {
                     match key.as_str() {
                         "bandwidth" => result.bandwidth = value.as_str().unwrap().to_string(),
-                        "diffserv" => result.diffserv = value.as_str().unwrap().to_string(),
+                        "diffserv" => result.diffserv = DiffServ::from_str(value.as_str().unwrap()),
                         "flowmode" => result.flowmode = value.as_str().unwrap().to_string(),
                         "nat" => result.nat = value.as_bool().unwrap(),
                         "wash" => result.wash = value.as_bool().unwrap(),
