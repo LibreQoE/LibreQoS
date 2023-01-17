@@ -1321,6 +1321,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "lqos_queue_tracker"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "criterion",
+ "lazy_static",
+ "log",
+ "lqos_bus",
+ "lqos_config",
+ "notify",
+ "parking_lot 0.11.2",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "lqos_rs"
 version = "0.1.0"
 
@@ -1343,12 +1360,12 @@ name = "lqosd"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "criterion",
  "env_logger",
  "lazy_static",
  "log",
  "lqos_bus",
  "lqos_config",
+ "lqos_queue_tracker",
  "lqos_sys",
  "nix",
  "notify",

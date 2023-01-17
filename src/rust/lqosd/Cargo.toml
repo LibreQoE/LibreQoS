@@ -11,6 +11,7 @@ equinix_tests = []
 anyhow = "1"
 lqos_config = { path = "../lqos_config" }
 lqos_sys = { path = "../lqos_sys" }
+lqos_queue_tracker = { path = "../lqos_queue_tracker" }
 tokio = { version = "1.22", features = [ "full", "parking_lot" ] }
 lazy_static = "1.4"
 parking_lot = "0.12"
@@ -23,10 +24,3 @@ env_logger = "0"
 log = "0"
 nix = "0"
 rayon = "1"
-
-[dev-dependencies]
-criterion = { version = "0.3", features = [ "html_reports"] }
-
-[[bench]]
-name = "json"
-harness = false

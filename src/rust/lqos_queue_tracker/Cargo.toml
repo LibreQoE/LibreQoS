@@ -1,0 +1,23 @@
+[package]
+name = "lqos_queue_tracker"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+serde = "1"
+serde_json = "1"
+lqos_bus = { path = "../lqos_bus" }
+lqos_config = { path = "../lqos_config" }
+log = "0"
+lazy_static = "1.4"
+parking_lot = "0"
+notify = { version = "5.0.0", default-features = false, feature=["macos_kqueue"] } # Not using crossbeam because of Tokio
+tokio = { version = "1.22", features = [ "full", "parking_lot" ] }
+
+[dev-dependencies]
+criterion = { version = "0.3", features = [ "html_reports"] }
+
+[[bench]]
+name = "json"
+harness = false

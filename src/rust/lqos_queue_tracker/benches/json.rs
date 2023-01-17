@@ -4,7 +4,7 @@
 //! TC queues - so don't select an interface that you need!
 
 use criterion::{criterion_group, criterion_main, Criterion, black_box};
-use lqosd::*;
+use lqos_queue_tracker::*;
 use std::process::Command;
 
 const EXAMPLE_JSON: &str = include_str!("./example_json.txt");

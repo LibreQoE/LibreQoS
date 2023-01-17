@@ -1,6 +1,6 @@
-use super::QueueType;
 use anyhow::Result;
 use serde::Serialize;
+use crate::queue_types::QueueType;
 
 #[derive(Debug, Clone, Serialize)]
 pub enum QueueDiff {

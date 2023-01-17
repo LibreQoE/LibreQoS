@@ -1,76 +1,20 @@
-use self::queue_reader::{make_queue_diff, QueueDiff, QueueType};
-use crate::libreqos_tracker::QUEUE_STRUCTURE;
-use lqos_bus::BusResponse;
+use std::time::{Duration, Instant};
+use tokio::time;
 use lqos_config::LibreQoSConfig;
-use serde::Serialize;
-use std::{
-    collections::HashMap,
-    time::{Duration, Instant}, sync::atomic::AtomicU64,
-};
-use tokio::{join, task, time};
-mod queue_reader;
-use lazy_static::*;
-use parking_lot::RwLock;
 use anyhow::Result;
-pub use queue_reader::deserialize_tc_tree;
-
-const NUM_QUEUE_HISTORY: usize = 600;
-
-#[derive(Debug, Serialize)]
-pub struct QueueStore {
-    history: Vec<(QueueDiff, QueueDiff)>,
-    history_head: usize,
-    prev_download: Option<QueueType>,
-    prev_upload: Option<QueueType>,
-    current_download: QueueType,
-    current_upload: QueueType,
-}
-
-impl QueueStore {
-    fn new(download: QueueType, upload: QueueType) -> Self {
-        Self {
-            history: vec![(QueueDiff::None, QueueDiff::None); NUM_QUEUE_HISTORY],
-            history_head: 0,
-            prev_upload: None,
-            prev_download: None,
-            current_download: download,
-            current_upload: upload,
-        }
-    }
-
-    fn update(&mut self, download: &QueueType, upload: &QueueType) {
-        self.prev_upload = Some(self.current_upload.clone());
-        self.prev_download = Some(self.current_download.clone());
-        self.current_download = download.clone();
-        self.current_upload = upload.clone();
-        let new_diff_up = make_queue_diff(self.prev_upload.as_ref().unwrap(), &self.current_upload);
-        let new_diff_dn =
-            make_queue_diff(self.prev_download.as_ref().unwrap(), &self.current_download);
-        if new_diff_dn.is_ok() && new_diff_up.is_ok() {
-            self.history[self.history_head] = (new_diff_dn.unwrap(), new_diff_up.unwrap());
-            self.history_head += 1;
-            if self.history_head >= NUM_QUEUE_HISTORY {
-                self.history_head = 0;
-            }
-        }
-    }
-}
-
-lazy_static! {
-    pub(crate) static ref CIRCUIT_TO_QUEUE: RwLock<HashMap<String, QueueStore>> =
-        RwLock::new(HashMap::new());
-}
+use tokio::{join, task};
+use crate::{queue_types::{read_tc_queues, QueueType}, circuit_to_queue::CIRCUIT_TO_QUEUE, queue_structure::QUEUE_STRUCTURE, queue_store::QueueStore, interval::QUEUE_MONITOR_INTERVAL};
 
 async fn track_queues() -> Result<()> {
     let config = LibreQoSConfig::load()?;
     let queues = if config.on_a_stick_mode {
-        let queues = queue_reader::read_tc_queues(&config.internet_interface)
+        let queues = read_tc_queues(&config.internet_interface)
             .await?;
         vec![queues]
     } else {
         let (isp, internet) = join! {
-            queue_reader::read_tc_queues(&config.isp_interface),
-            queue_reader::read_tc_queues(&config.internet_interface),
+            read_tc_queues(&config.isp_interface),
+            read_tc_queues(&config.internet_interface),
         };
         vec![isp?, internet?]
     };
@@ -157,10 +101,6 @@ async fn track_queues() -> Result<()> {
     Ok(())
 }
 
-lazy_static! {
-    pub(crate) static ref QUEUE_MONITOR_INTERVAL: AtomicU64 = AtomicU64::new(1000);
-}
-
 pub async fn spawn_queue_monitor() {
     let _ = task::spawn(async {
         QUEUE_MONITOR_INTERVAL.store(lqos_config::EtcLqos::load().unwrap().queue_check_period_ms, std::sync::atomic::Ordering::Relaxed);
@@ -181,17 +121,4 @@ pub async fn spawn_queue_monitor() {
             }
         }
     });
-}
-
-pub fn get_raw_circuit_data(circuit_id: &str) -> BusResponse {
-    let reader = CIRCUIT_TO_QUEUE.read();
-    if let Some(circuit) = reader.get(circuit_id) {
-        if let Ok(json) = serde_json::to_string(circuit) {
-            BusResponse::RawQueueData(json)
-        } else {
-            BusResponse::RawQueueData(String::new())
-        }
-    } else {
-        BusResponse::RawQueueData(String::new())
-    }
 }

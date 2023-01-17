@@ -5,10 +5,7 @@ mod tc_mq;
 use anyhow::{Error, Result};
 use serde::Serialize;
 use serde_json::Value;
-mod queue_diff;
-pub(crate) use queue_diff::make_queue_diff;
-pub use queue_diff::QueueDiff;
-use tokio::process::Command;
+use std::process::Command;
 
 #[derive(Debug, Clone, Serialize)]
 pub enum QueueType {
@@ -60,8 +57,7 @@ pub fn deserialize_tc_tree(json: &str) -> Result<Vec<QueueType>> {
 pub(crate) async fn read_tc_queues(interface: &str) -> Result<Vec<QueueType>> {
     let command_output = Command::new("/sbin/tc")
         .args(["-s", "-j", "qdisc", "show", "dev", interface])
-        .output()
-        .await?;
+        .output()?;
     let json = String::from_utf8(command_output.stdout)?;
     let result = deserialize_tc_tree(&json)?;
     Ok(result)

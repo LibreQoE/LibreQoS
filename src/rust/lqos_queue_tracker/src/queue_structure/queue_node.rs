@@ -1,12 +1,7 @@
-use anyhow::{Error, Result};
 use lqos_bus::TcHandle;
-use lqos_config::EtcLqos;
+use anyhow::{Result, Error};
 use serde_json::Value;
-use std::path::{Path, PathBuf};
-
-pub struct QueueNetwork {
-    cpu_node: Vec<QueueNode>,
-}
+use super::read_hex_string;
 
 #[derive(Default, Clone, Debug)]
 pub struct QueueNode {
@@ -34,73 +29,8 @@ pub struct QueueNode {
     pub mac: Option<String>,
 }
 
-fn read_hex_string(s: &str) -> Result<u32> {
-    Ok(u32::from_str_radix(&s.replace("0x", ""), 16)?)
-}
-
-impl QueueNetwork {
-    pub fn path() -> Result<PathBuf> {
-        let cfg = EtcLqos::load()?;
-        let base_path = Path::new(&cfg.lqos_directory);
-        Ok(base_path.join("queuingStructure.json"))
-    }
-
-    fn exists() -> bool {
-        if let Ok(path) = QueueNetwork::path() {
-            path.exists()
-        } else {
-            false
-        }
-    }
-
-    pub(crate) fn from_json() -> Result<Self> {
-        let path = QueueNetwork::path()?;
-        if !QueueNetwork::exists() {
-            return Err(Error::msg(
-                "queueStructure.json does not exist yet. Try running LibreQoS?",
-            ));
-        }
-        let raw_string = std::fs::read_to_string(path)?;
-        let mut result = Self {
-            cpu_node: Vec::new(),
-        };
-        let json: Value = serde_json::from_str(&raw_string)?;
-        if let Value::Object(map) = &json {
-            if let Some(network) = map.get("Network") {
-                if let Value::Object(map) = network {
-                    for (key, value) in map.iter() {
-                        result.cpu_node.push(QueueNode::from_json(&key, value)?);
-                    }
-                } else {
-                    return Err(Error::msg("Unable to parse network object structure"));
-                }
-            } else {
-                return Err(Error::msg("Network entry not found"));
-            }
-        } else {
-            return Err(Error::msg("Unable to parse queueStructure.json"));
-        }
-
-        Ok(result)
-    }
-
-    pub fn to_flat(&self) -> Vec<QueueNode> {
-        let mut result = Vec::new();
-        for cpu in self.cpu_node.iter() {
-            result.push(cpu.clone());
-            let children = cpu.to_flat();
-            result.extend_from_slice(&children);
-        }
-        for c in result.iter_mut() {
-            c.circuits.clear();
-            c.devices.clear();
-        }
-        result
-    }
-}
-
 impl QueueNode {
-    fn from_json(key: &str, value: &Value) -> Result<Self> {
+    pub(crate) fn from_json(key: &str, value: &Value) -> Result<Self> {
         let mut result = Self::default();
         if let Value::Object(map) = value {
             for (key, value) in map.iter() {
@@ -182,7 +112,7 @@ impl QueueNode {
         Ok(result)
     }
 
-    fn to_flat(&self) -> Vec<QueueNode> {
+    pub(crate) fn to_flat(&self) -> Vec<QueueNode> {
         let mut result = Vec::new();
         for c in self.circuits.iter() {
             result.push(c.clone());
