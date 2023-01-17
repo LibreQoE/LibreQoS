@@ -1,8 +1,8 @@
-use std::path::{PathBuf, Path};
 use super::queue_node::QueueNode;
-use anyhow::{Result, Error};
+use anyhow::{Error, Result};
 use lqos_config::EtcLqos;
 use serde_json::Value;
+use std::path::{Path, PathBuf};
 
 pub struct QueueNetwork {
     cpu_node: Vec<QueueNode>,

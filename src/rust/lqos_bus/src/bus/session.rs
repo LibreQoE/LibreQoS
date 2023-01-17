@@ -1,6 +1,5 @@
-use serde::{Serialize, Deserialize};
 use crate::BusRequest;
-
+use serde::{Deserialize, Serialize};
 
 /// `BusSession` represents a complete session with `lqosd`. It must
 /// contain a cookie value (defined in the `cookie_value()` function),

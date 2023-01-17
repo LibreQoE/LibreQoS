@@ -1,7 +1,7 @@
 use anyhow::{Error, Result};
 use libbpf_sys::{bpf_map_update_elem, bpf_obj_get, libbpf_num_possible_cpus};
-use std::{ffi::CString, os::raw::c_void};
 use log::info;
+use std::{ffi::CString, os::raw::c_void};
 
 //* Provides an interface for querying the number of CPUs eBPF can
 //* see, and marking CPUs as available. Currently marks ALL eBPF

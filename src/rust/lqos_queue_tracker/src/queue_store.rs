@@ -1,5 +1,9 @@
+use crate::{
+    queue_diff::{make_queue_diff, QueueDiff},
+    queue_types::QueueType,
+    NUM_QUEUE_HISTORY,
+};
 use serde::Serialize;
-use crate::{queue_diff::{QueueDiff, make_queue_diff}, queue_types::QueueType, NUM_QUEUE_HISTORY};
 
 #[derive(Debug, Serialize)]
 pub struct QueueStore {

@@ -1,16 +1,16 @@
-mod session;
-mod request;
 mod reply;
+mod request;
 mod response;
-pub use session::BusSession;
-pub use request::BusRequest;
-pub use reply::BusReply;
-pub use response::BusResponse;
+mod session;
 use anyhow::Result;
+pub use reply::BusReply;
+pub use request::BusRequest;
+pub use response::BusResponse;
+pub use session::BusSession;
 
 /// The address to which `lqosd` should bind itself when listening for
 /// local bust requests.
-/// 
+///
 /// This is typically `localhost` to minimize the exposed footprint.
 pub const BUS_BIND_ADDRESS: &str = "127.0.0.1:9999";
 
@@ -49,9 +49,7 @@ mod test {
     fn test_session_roundtrip() {
         let session = BusSession {
             auth_cookie: cookie_value(),
-            requests: vec![
-                BusRequest::Ping,
-            ]
+            requests: vec![BusRequest::Ping],
         };
 
         let bytes = encode_request(&session).unwrap();
@@ -65,7 +63,7 @@ mod test {
     fn test_reply_roundtrip() {
         let reply = BusReply {
             auth_cookie: cookie_value(),
-            responses: vec![BusResponse::Ack]
+            responses: vec![BusResponse::Ack],
         };
         let bytes = encode_response(&reply).unwrap();
         let new_reply = decode_response(&bytes).unwrap();

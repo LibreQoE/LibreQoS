@@ -1,6 +1,6 @@
+use crate::queue_types::QueueType;
 use anyhow::Result;
 use serde::Serialize;
-use crate::queue_types::QueueType;
 
 #[derive(Debug, Clone, Serialize)]
 pub enum QueueDiff {
@@ -47,14 +47,12 @@ fn cake_diff(previous: &QueueType, current: &QueueType) -> Result<QueueDiff> {
                 .tins
                 .iter()
                 .zip(prev.tins.iter())
-                .map(|(new, prev)| {
-                    CakeDiffTin {
-                        sent_bytes: new.sent_bytes.checked_sub(prev.sent_bytes).unwrap_or(0),
-                        backlog_bytes: new.backlog_bytes,
-                        drops: new.drops - prev.drops,
-                        marks: new.ecn_marks.checked_sub(prev.ecn_marks).unwrap_or(0),
-                        avg_delay_us: new.avg_delay_us,
-                    }
+                .map(|(new, prev)| CakeDiffTin {
+                    sent_bytes: new.sent_bytes.checked_sub(prev.sent_bytes).unwrap_or(0),
+                    backlog_bytes: new.backlog_bytes,
+                    drops: new.drops - prev.drops,
+                    marks: new.ecn_marks.checked_sub(prev.ecn_marks).unwrap_or(0),
+                    avg_delay_us: new.avg_delay_us,
                 })
                 .collect();
             return Ok(QueueDiff::Cake(CakeDiff {

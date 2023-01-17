@@ -79,18 +79,18 @@ pub struct BridgeInterface {
 
     /// The outbound interface - data that arrives in the interface
     /// defined by `name` will be redirected to this interface.
-    /// 
-    /// If you are using an "on a stick" configuration, this will 
+    ///
+    /// If you are using an "on a stick" configuration, this will
     /// be the same as `name`.
     pub redirect_to: String,
 }
 
 /// If `scan_vlans` is enabled for an interface, then VLANs
 /// are examined on the way through the XDP BiFrost bridge.
-/// 
+///
 /// If a VLAN is on the `parent` interface, and matches `tag` - it
 /// will be moved to VLAN `redirect_to`.
-/// 
+///
 /// You often need to make reciprocal pairs of these.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BridgeVlan {

@@ -242,9 +242,7 @@ pub fn all_unknown_ips() -> BusResponse {
             .iter()
             .filter(|(ip, _)| !ip.as_ip().is_loopback())
             .filter(|(_, d)| d.tc_handle.as_u32() == 0)
-            .filter(|(_, d)| {
-                d.last_seen as u128 > five_minutes_ago_nanoseconds
-            })
+            .filter(|(_, d)| d.last_seen as u128 > five_minutes_ago_nanoseconds)
             .map(|(ip, te)| {
                 (
                     *ip,

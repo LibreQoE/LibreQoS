@@ -1,23 +1,28 @@
 mod ip_mapping;
 #[cfg(feature = "equinix_tests")]
 mod lqos_daht_test;
+mod program_control;
 mod throughput_tracker;
 mod tuning;
-mod program_control;
-use crate::{ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow}};
+use crate::ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow};
 use anyhow::Result;
 use log::{info, warn};
 use lqos_bus::{
     cookie_value, decode_request, encode_response, BusReply, BusRequest, BUS_BIND_ADDRESS,
 };
 use lqos_config::LibreQoSConfig;
-use lqos_queue_tracker::{spawn_queue_monitor, spawn_queue_structure_monitor, get_raw_circuit_data, add_watched_queue};
+use lqos_queue_tracker::{
+    add_watched_queue, get_raw_circuit_data, spawn_queue_monitor, spawn_queue_structure_monitor,
+};
 use lqos_sys::LibreQoSKernels;
-use signal_hook::{consts::{SIGINT, SIGHUP, SIGTERM }, iterator::Signals};
+use signal_hook::{
+    consts::{SIGHUP, SIGINT, SIGTERM},
+    iterator::Signals,
+};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     join,
-    net::{TcpListener, TcpStream}
+    net::{TcpListener, TcpStream},
 };
 
 #[tokio::main]
@@ -25,7 +30,7 @@ async fn main() -> Result<()> {
     // Configure log level with RUST_LOG environment variable,
     // defaulting to "info"
     env_logger::init_from_env(
-        env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "warn")
+        env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "warn"),
     );
     info!("LibreQoS Daemon Starting");
     let config = LibreQoSConfig::load()?;
@@ -50,25 +55,27 @@ async fn main() -> Result<()> {
     );
 
     // Handle signals
-    let mut signals = Signals::new(&[SIGINT, SIGHUP, SIGTERM ])?;
+    let mut signals = Signals::new(&[SIGINT, SIGHUP, SIGTERM])?;
     std::thread::spawn(move || {
         for sig in signals.forever() {
             match sig {
-                SIGINT  | SIGTERM  => {
+                SIGINT | SIGTERM => {
                     match sig {
                         SIGINT => warn!("Terminating on SIGINT"),
                         SIGTERM => warn!("Terminating on SIGTERM"),
                         _ => warn!("This should never happen - terminating on unknown signal"),
                     }
                     std::mem::drop(kernels);
-                    std::process::exit(0);        
+                    std::process::exit(0);
                 }
                 SIGHUP => {
                     warn!("Reloading configuration because of SIGHUP");
                     if let Ok(config) = LibreQoSConfig::load() {
                         let result = tuning::tune_lqosd_from_config_file(&config);
                         match result {
-                            Err(err) => { warn!("Unable to HUP tunables: {:?}", err) },
+                            Err(err) => {
+                                warn!("Unable to HUP tunables: {:?}", err)
+                            }
                             Ok(..) => {}
                         }
                     } else {

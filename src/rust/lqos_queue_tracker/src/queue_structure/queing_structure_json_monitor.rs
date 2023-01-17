@@ -1,8 +1,10 @@
-use lazy_static::*;
+use crate::queue_structure::{
+    queue_network::QueueNetwork, queue_node::QueueNode, read_queueing_structure,
+};
 use anyhow::Result;
+use lazy_static::*;
 use parking_lot::RwLock;
 use tokio::task::spawn_blocking;
-use crate::queue_structure::{queue_node::QueueNode, read_queueing_structure, queue_network::QueueNetwork};
 
 lazy_static! {
     /// Global storage of the shaped devices csv data.
@@ -13,19 +15,17 @@ lazy_static! {
 
 #[derive(Clone)]
 pub(crate) struct QueueStructure {
-    pub(crate) maybe_queues : Option<Vec<QueueNode>>,
+    pub(crate) maybe_queues: Option<Vec<QueueNode>>,
 }
 
 impl QueueStructure {
     fn new() -> Self {
         if let Ok(queues) = read_queueing_structure() {
             Self {
-                maybe_queues: Some(queues)
+                maybe_queues: Some(queues),
             }
         } else {
-            Self {
-                maybe_queues: None
-            }
+            Self { maybe_queues: None }
         }
     }
 

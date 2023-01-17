@@ -1,6 +1,6 @@
+use crate::{IpMapping, IpStats, XdpPpingResult};
+use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
-use serde::{Serialize, Deserialize};
-use crate::{IpStats, IpMapping, XdpPpingResult};
 
 /// A `BusResponse` object represents a single
 /// reply generated from a `BusRequest`, and batched

@@ -1,6 +1,6 @@
 use anyhow::{Error, Result};
 use lqos_bus::TcHandle;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
@@ -154,7 +154,9 @@ impl TcCakeTin {
                         "avg_delay_us" => result.avg_delay_us = value.as_u64().unwrap() as u32,
                         "base_delay_us" => result.base_delay_us = value.as_u64().unwrap() as u32,
                         "sent_packets" => result.sent_packets = value.as_u64().unwrap() as u32,
-                        "way_indirect_hits" => result.way_indirect_hits = value.as_u64().unwrap() as u16,
+                        "way_indirect_hits" => {
+                            result.way_indirect_hits = value.as_u64().unwrap() as u16
+                        }
                         "way_misses" => result.way_misses = value.as_u64().unwrap() as u16,
                         "way_collisions" => result.way_collisions = value.as_u64().unwrap() as u16,
                         "drops" => result.drops = value.as_u64().unwrap() as u32,
@@ -162,7 +164,9 @@ impl TcCakeTin {
                         "ack_drops" => result.ack_drops = value.as_u64().unwrap() as u32,
                         "sparse_flows" => result.sparse_flows = value.as_u64().unwrap() as u16,
                         "bulk_flows" => result.bulk_flows = value.as_u64().unwrap() as u16,
-                        "unresponsive_flows" => result.unresponsive_flows = value.as_u64().unwrap() as u16,
+                        "unresponsive_flows" => {
+                            result.unresponsive_flows = value.as_u64().unwrap() as u16
+                        }
                         "max_pkt_len" => result.max_pkt_len = value.as_u64().unwrap() as u16,
                         "flow_quantum" => result.flow_quantum = value.as_u64().unwrap() as u16,
                         _ => {
@@ -176,7 +180,6 @@ impl TcCakeTin {
         }
     }
 }
-
 
 // Example data
 

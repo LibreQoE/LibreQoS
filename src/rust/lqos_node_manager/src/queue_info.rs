@@ -5,8 +5,8 @@ use lqos_bus::{
     decode_response, encode_request, BusRequest, BusResponse, BusSession, BUS_BIND_ADDRESS,
 };
 use rocket::response::content::RawJson;
-use rocket::serde::Serialize;
 use rocket::serde::json::Json;
+use rocket::serde::Serialize;
 use rocket::tokio::io::{AsyncReadExt, AsyncWriteExt};
 use rocket::tokio::net::TcpStream;
 use std::net::IpAddr;
@@ -15,7 +15,7 @@ use std::net::IpAddr;
 #[serde(crate = "rocket::serde")]
 pub struct CircuitInfo {
     pub name: String,
-    pub capacity: (u64, u64)
+    pub capacity: (u64, u64),
 }
 
 #[get("/api/watch_circuit/<circuit_id>")]
@@ -46,13 +46,16 @@ pub async fn circuit_info(circuit_id: String, _auth: AuthGuard) -> NoCache<Json<
     {
         let result = CircuitInfo {
             name: device.circuit_name.clone(),
-            capacity: (device.download_max_mbps as u64 * 1_000_000, device.upload_max_mbps as u64 * 1_000_000)
+            capacity: (
+                device.download_max_mbps as u64 * 1_000_000,
+                device.upload_max_mbps as u64 * 1_000_000,
+            ),
         };
         NoCache::new(Json(result))
     } else {
         let result = CircuitInfo {
             name: "Nameless".to_string(),
-            capacity: (1_000_000, 1_000_000)
+            capacity: (1_000_000, 1_000_000),
         };
         NoCache::new(Json(result))
     }
@@ -63,7 +66,7 @@ pub async fn current_circuit_throughput(
     circuit_id: String,
     _auth: AuthGuard,
 ) -> NoCache<Json<Vec<(String, u64, u64)>>> {
-    let mut result = Vec::new();    
+    let mut result = Vec::new();
     // Get a list of host counts
     // This is really inefficient, but I'm struggling to find a better way.
     // TODO: Fix me up

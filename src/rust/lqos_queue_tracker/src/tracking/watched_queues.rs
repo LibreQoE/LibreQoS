@@ -1,8 +1,8 @@
-use std::time::{UNIX_EPOCH, SystemTime};
+use crate::queue_structure::QUEUE_STRUCTURE;
 use lazy_static::*;
 use lqos_bus::TcHandle;
 use parking_lot::RwLock;
-use crate::queue_structure::QUEUE_STRUCTURE;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 lazy_static! {
     pub(crate) static ref WATCHED_QUEUES: RwLock<Vec<WatchedQueue>> = RwLock::new(Vec::new());
@@ -30,17 +30,26 @@ pub fn expiration_in_the_future() -> u64 {
 }
 
 fn unix_now() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
 }
 
 pub fn add_watched_queue(circuit_id: &str) {
-    if WATCHED_QUEUES.read().iter().find(|q| q.circuit_id == circuit_id).is_some() {
+    if WATCHED_QUEUES
+        .read()
+        .iter()
+        .find(|q| q.circuit_id == circuit_id)
+        .is_some()
+    {
         return; // No duplicates, please
     }
 
     if let Some(queues) = &QUEUE_STRUCTURE.read().maybe_queues {
-        if let Some(circuit) = queues.iter().find(|c| 
-            c.circuit_id.is_some() && c.circuit_id.as_ref().unwrap() == circuit_id) 
+        if let Some(circuit) = queues
+            .iter()
+            .find(|c| c.circuit_id.is_some() && c.circuit_id.as_ref().unwrap() == circuit_id)
         {
             let new_watch = WatchedQueue {
                 circuit_id: circuit.circuit_id.as_ref().unwrap().clone(),

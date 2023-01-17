@@ -3,7 +3,7 @@
 //! at the end). This benchmark will destructively clear and then create
 //! TC queues - so don't select an interface that you need!
 
-use criterion::{criterion_group, criterion_main, Criterion, black_box};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use lqos_queue_tracker::*;
 use std::process::Command;
 
@@ -20,24 +20,54 @@ fn clear_queues(interface: &str) {
 
 fn setup_mq(interface: &str) {
     Command::new(SUDO)
-        .args([TC, "qdisc", "replace", "dev", interface, "root", "handle", "7FFF:", "mq"])
+        .args([
+            TC, "qdisc", "replace", "dev", interface, "root", "handle", "7FFF:", "mq",
+        ])
         .output()
         .unwrap();
 }
 
 fn setup_parent_htb(interface: &str) {
     Command::new(SUDO)
-        .args([TC, "qdisc", "add", "dev", interface, "parent", "7FFF:0x1", "handle", "0x1:", "htb", "default", "2"])
-        .output()
-        .unwrap();
-    
-    Command::new(SUDO)
-        .args([TC, "class", "add", "dev", interface, "parent", "0x1:", "classid", "0x1:1", "htb", "rate", "10000mbit", "ceil", "10000mbit"])
+        .args([
+            TC, "qdisc", "add", "dev", interface, "parent", "7FFF:0x1", "handle", "0x1:", "htb",
+            "default", "2",
+        ])
         .output()
         .unwrap();
 
     Command::new(SUDO)
-        .args([TC, "qdisc", "add", "dev", interface, "parent", "0x1:1", "cake", "diffserv4"])
+        .args([
+            TC,
+            "class",
+            "add",
+            "dev",
+            interface,
+            "parent",
+            "0x1:",
+            "classid",
+            "0x1:1",
+            "htb",
+            "rate",
+            "10000mbit",
+            "ceil",
+            "10000mbit",
+        ])
+        .output()
+        .unwrap();
+
+    Command::new(SUDO)
+        .args([
+            TC,
+            "qdisc",
+            "add",
+            "dev",
+            interface,
+            "parent",
+            "0x1:1",
+            "cake",
+            "diffserv4",
+        ])
         .output()
         .unwrap();
 }
@@ -45,12 +75,25 @@ fn setup_parent_htb(interface: &str) {
 fn add_client_pair(interface: &str, queue_number: u32) {
     let class_id = format!("0x1:{:x}", queue_number);
     Command::new(SUDO)
-        .args([TC, "class", "add", "dev", interface, "parent", "0x1:1", "classid", &class_id, "htb", "rate", "2500mbit", "ceil", "9999mbit", "prio", "5"])
+        .args([
+            TC, "class", "add", "dev", interface, "parent", "0x1:1", "classid", &class_id, "htb",
+            "rate", "2500mbit", "ceil", "9999mbit", "prio", "5",
+        ])
         .output()
         .unwrap();
 
     Command::new(SUDO)
-        .args([TC, "qdisc", "add", "dev", interface, "parent", &class_id, "cake", "diffserv4"])
+        .args([
+            TC,
+            "qdisc",
+            "add",
+            "dev",
+            interface,
+            "parent",
+            &class_id,
+            "cake",
+            "diffserv4",
+        ])
         .output()
         .unwrap();
 }
@@ -71,8 +114,8 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         clear_queues(INTERFACE);
         setup_mq(INTERFACE);
         setup_parent_htb(INTERFACE);
-        for i in 0 .. *queue_count {
-            let queue_handle = (i+1) * 2;
+        for i in 0..*queue_count {
+            let queue_handle = (i + 1) * 2;
             add_client_pair(INTERFACE, queue_handle);
         }
 
@@ -80,7 +123,8 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             b.iter(|| {
                 let command_output = Command::new("/sbin/tc")
                     .args(["-s", "-j", "qdisc", "show", "dev", "eth1"])
-                    .output().unwrap();
+                    .output()
+                    .unwrap();
                 let json = String::from_utf8(command_output.stdout).unwrap();
                 black_box(json);
             });
@@ -89,8 +133,11 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         c.bench_function(&stdbuf, |b| {
             b.iter(|| {
                 let command_output = Command::new("/usr/bin/stdbuf")
-                    .args(["-i0", "-o1024M", "-e0", TC, "-s", "-j", "qdisc", "show", "dev", "eth1"])
-                    .output().unwrap();
+                    .args([
+                        "-i0", "-o1024M", "-e0", TC, "-s", "-j", "qdisc", "show", "dev", "eth1",
+                    ])
+                    .output()
+                    .unwrap();
                 let json = String::from_utf8(command_output.stdout).unwrap();
                 black_box(json);
             });

@@ -1,5 +1,5 @@
-use std::sync::atomic::AtomicU64;
 use lazy_static::*;
+use std::sync::atomic::AtomicU64;
 
 lazy_static! {
     pub(crate) static ref QUEUE_MONITOR_INTERVAL: AtomicU64 = AtomicU64::new(1000);

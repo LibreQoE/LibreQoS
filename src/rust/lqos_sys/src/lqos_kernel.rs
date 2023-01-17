@@ -9,9 +9,9 @@ use libbpf_sys::{
     bpf_xdp_attach, libbpf_set_strict_mode, LIBBPF_STRICT_ALL, XDP_FLAGS_DRV_MODE,
     XDP_FLAGS_HW_MODE, XDP_FLAGS_SKB_MODE, XDP_FLAGS_UPDATE_IF_NOEXIST,
 };
+use log::{info, warn};
 use nix::libc::{geteuid, if_nametoindex};
 use std::{ffi::CString, process::Command};
-use log::{info, warn};
 
 pub(crate) mod bpf {
     #![allow(warnings, unused)]
@@ -63,7 +63,9 @@ pub fn unload_xdp_from_interface(interface_name: &str) -> Result<()> {
 
 fn set_strict_mode() -> Result<()> {
     let err = unsafe { libbpf_set_strict_mode(LIBBPF_STRICT_ALL) };
-    unsafe { bpf::do_not_print(); }
+    unsafe {
+        bpf::do_not_print();
+    }
     if err != 0 {
         Err(Error::msg("Unable to activate BPF Strict Mode"))
     } else {
@@ -145,7 +147,7 @@ pub fn attach_xdp_and_tc_to_interface(
     //println!("{}", String::from_utf8(r.stderr).unwrap());
 
     // Add the classifier
-    let _r= Command::new("tc")
+    let _r = Command::new("tc")
         .args(["filter", "add", "dev", interface_name, "clsact"])
         .output()?;
     // This message was worrying people, commented out.

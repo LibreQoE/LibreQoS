@@ -1,7 +1,7 @@
-use lqos_bus::TcHandle;
-use anyhow::{Result, Error};
-use serde_json::Value;
 use super::read_hex_string;
+use anyhow::{Error, Result};
+use lqos_bus::TcHandle;
+use serde_json::Value;
 
 #[derive(Default, Clone, Debug)]
 pub struct QueueNode {

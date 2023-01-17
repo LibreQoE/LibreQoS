@@ -1,8 +1,15 @@
 use crate::{auth_guard::AuthGuard, cache_control::NoCache};
 use default_net::get_interfaces;
-use lqos_bus::{BUS_BIND_ADDRESS, BusSession, BusRequest, encode_request, decode_response};
+use lqos_bus::{decode_response, encode_request, BusRequest, BusSession, BUS_BIND_ADDRESS};
 use lqos_config::{EtcLqos, LibreQoSConfig, Tunables};
-use rocket::{fs::NamedFile, serde::json::Json, tokio::{net::TcpStream, io::{AsyncReadExt, AsyncWriteExt}}};
+use rocket::{
+    fs::NamedFile,
+    serde::json::Json,
+    tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpStream,
+    },
+};
 
 // Note that NoCache can be replaced with a cache option
 // once the design work is complete.
@@ -46,7 +53,11 @@ pub async fn update_python_config(_auth: AuthGuard, config: Json<LibreQoSConfig>
 }
 
 #[post("/api/lqos_tuning/<period>", data = "<tuning>")]
-pub async fn update_lqos_tuning(auth: AuthGuard, period: u64, tuning: Json<Tunables>) -> Json<String> {
+pub async fn update_lqos_tuning(
+    auth: AuthGuard,
+    period: u64,
+    tuning: Json<Tunables>,
+) -> Json<String> {
     if auth != AuthGuard::Admin {
         return Json("Error: Not authorized".to_string());
     }

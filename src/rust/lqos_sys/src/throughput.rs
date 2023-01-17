@@ -39,7 +39,9 @@ impl Default for HostCounter {
 /// Iterates through all throughput entries, and sends them in turn to `callback`.
 /// This elides the need to clone or copy data.
 pub fn throughput_for_each(callback: &mut dyn FnMut(&XdpIpAddress, &[HostCounter])) {
-    if let Ok(throughput) = BpfPerCpuMap::<XdpIpAddress, HostCounter>::from_path("/sys/fs/bpf/map_traffic") {
+    if let Ok(throughput) =
+        BpfPerCpuMap::<XdpIpAddress, HostCounter>::from_path("/sys/fs/bpf/map_traffic")
+    {
         throughput.for_each(callback);
     }
 }

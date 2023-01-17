@@ -7,7 +7,6 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ShapedDevice {
     // Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment
-
     /// The ID of the circuit to which the device belongs. Circuits are 1:many,
     /// multiple devices may be in a single circuit.
     pub circuit_id: String,
@@ -29,8 +28,8 @@ pub struct ShapedDevice {
     /// convenient mapping/seraching.
     pub mac: String,
 
-    /// A list of all IPv4 addresses and CIDR subnets associated with the 
-    /// device. For example, ("192.168.1.0", 24) is equivalent to 
+    /// A list of all IPv4 addresses and CIDR subnets associated with the
+    /// device. For example, ("192.168.1.0", 24) is equivalent to
     /// "192.168.1.0/24"
     pub ipv4: Vec<(Ipv4Addr, u32)>,
 

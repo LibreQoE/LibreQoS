@@ -37,6 +37,6 @@ pub async fn tune_lqosd_from_bus(request: &BusRequest) -> BusResponse {
             set_queue_refresh_interval(*interval);
             lqos_bus::BusResponse::Ack
         }
-        _ => BusResponse::Fail("That wasn't a tuning request".to_string())
+        _ => BusResponse::Fail("That wasn't a tuning request".to_string()),
     }
 }

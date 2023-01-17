@@ -35,7 +35,9 @@ impl Default for RttTrackingEntry {
 ///
 /// Executes `callback` for each entry.
 pub fn rtt_for_each(callback: &mut dyn FnMut(&[u8; 16], &RttTrackingEntry)) {
-    if let Ok(rtt_tracker) = BpfMap::<[u8; 16], RttTrackingEntry>::from_path("/sys/fs/bpf/rtt_tracker") {
+    if let Ok(rtt_tracker) =
+        BpfMap::<[u8; 16], RttTrackingEntry>::from_path("/sys/fs/bpf/rtt_tracker")
+    {
         rtt_tracker.for_each(callback);
     }
 }

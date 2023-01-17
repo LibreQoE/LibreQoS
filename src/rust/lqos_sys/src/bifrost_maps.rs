@@ -1,7 +1,7 @@
-use anyhow::Result;
-use lqos_config::{BridgeInterface, BridgeVlan};
-use log::info;
 use crate::{bpf_map::BpfMap, lqos_kernel::interface_name_to_index};
+use anyhow::Result;
+use log::info;
+use lqos_config::{BridgeInterface, BridgeVlan};
 
 #[repr(C)]
 #[derive(Default, Clone, Debug)]

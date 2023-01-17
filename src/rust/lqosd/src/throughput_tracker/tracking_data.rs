@@ -1,6 +1,6 @@
 use super::{throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
 use lqos_bus::TcHandle;
-use lqos_sys::{XdpIpAddress, throughput_for_each, rtt_for_each};
+use lqos_sys::{rtt_for_each, throughput_for_each, XdpIpAddress};
 use rayon::prelude::{IntoParallelRefMutIterator, ParallelIterator};
 use std::collections::HashMap;
 

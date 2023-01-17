@@ -168,7 +168,7 @@ impl LibreQoSConfig {
 
     /// Saves the current values to `ispConfig.py` and store the
     /// previous settings in `ispConfig.py.backup`.
-    /// 
+    ///
     pub fn save(&self) -> Result<()> {
         // Find the config
         let cfg = etc::EtcLqos::load()?;

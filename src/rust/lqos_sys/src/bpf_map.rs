@@ -45,7 +45,7 @@ where
 
     /// Iterates the undlering BPF map, and adds the results
     /// to a vector. Each entry contains a `key, value` tuple.
-    /// 
+    ///
     /// This has performance issues due to excessive cloning
     pub(crate) fn dump_vec(&self) -> Vec<(K, V)> {
         let mut result = Vec::new();

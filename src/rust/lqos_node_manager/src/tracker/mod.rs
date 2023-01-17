@@ -111,17 +111,21 @@ pub fn host_counts(_auth: AuthGuard) -> Json<(u32, u32)> {
 }
 
 lazy_static! {
-    static ref CONFIG: Mutex<LibreQoSConfig> = Mutex::new(lqos_config::LibreQoSConfig::load().unwrap());
+    static ref CONFIG: Mutex<LibreQoSConfig> =
+        Mutex::new(lqos_config::LibreQoSConfig::load().unwrap());
 }
 
 #[get("/api/busy_quantile")]
 pub fn busy_quantile(_auth: AuthGuard) -> Json<Vec<(u32, u32)>> {
     let (down_capacity, up_capacity) = {
         let lock = CONFIG.lock();
-        (lock.total_download_mbps as f64 * 1_000_000.0, lock.total_upload_mbps as f64 * 1_000_000.0)
+        (
+            lock.total_download_mbps as f64 * 1_000_000.0,
+            lock.total_upload_mbps as f64 * 1_000_000.0,
+        )
     };
     let throughput = THROUGHPUT_BUFFER.read().get_result();
-    let mut result = vec![(0,0); 10];
+    let mut result = vec![(0, 0); 10];
     throughput.iter().for_each(|tp| {
         let (down, up) = tp.bits_per_second;
         let (down, up) = (down * 8, up * 8);
