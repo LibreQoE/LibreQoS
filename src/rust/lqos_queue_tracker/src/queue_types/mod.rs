@@ -1,3 +1,4 @@
+mod string_table_enum;
 mod tc_cake;
 mod tc_fq_codel;
 mod tc_htb;

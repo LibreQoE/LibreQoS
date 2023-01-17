@@ -2,6 +2,9 @@ use anyhow::{Error, Result};
 use lqos_bus::TcHandle;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use crate::string_table_enum;
+
+string_table_enum!(DiffServ, besteffort, diffserv3, diffserv4, diffserv8);
 
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct TcCake {
@@ -64,27 +67,6 @@ pub struct TcCakeTin {
     unresponsive_flows: u16,
     max_pkt_len: u16,
     flow_quantum: u16,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-enum DiffServ { BestEffort, DiffServ3, DiffServ4, DiffServ8, Unknown }
-
-impl Default for DiffServ {
-    fn default() -> Self {
-        Self::Unknown
-    }
-}
-
-impl DiffServ {
-    fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "besteffort" => Self::BestEffort,
-            "diffserv3" => Self::DiffServ3,
-            "diffserv4" => Self::DiffServ4,
-            "diffserv8" => Self::DiffServ8,
-            _ => Self::Unknown,
-        }
-    }
 }
 
 impl TcCake {
