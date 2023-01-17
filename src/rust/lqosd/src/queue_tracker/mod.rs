@@ -12,6 +12,7 @@ mod queue_reader;
 use lazy_static::*;
 use parking_lot::RwLock;
 use anyhow::Result;
+pub use queue_reader::deserialize_tc_tree;
 
 const NUM_QUEUE_HISTORY: usize = 600;
 

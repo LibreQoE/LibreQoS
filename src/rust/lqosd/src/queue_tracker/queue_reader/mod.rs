@@ -11,7 +11,7 @@ pub use queue_diff::QueueDiff;
 use tokio::process::Command;
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) enum QueueType {
+pub enum QueueType {
     Mq(tc_mq::TcMultiQueue),
     Htb(tc_htb::TcHtb),
     FqCodel(tc_fq_codel::TcFqCodel),
@@ -32,14 +32,10 @@ impl QueueType {
     }
 }
 
-pub(crate) async fn read_tc_queues(interface: &str) -> Result<Vec<QueueType>> {
+/// Separated into a separate function for cleaner benchmark code
+pub fn deserialize_tc_tree(json: &str) -> Result<Vec<QueueType>> {
     let mut result = Vec::new();
-    let command_output = Command::new("/sbin/tc")
-        .args(["-s", "-j", "qdisc", "show", "dev", interface])
-        .output()
-        .await?;
-    let json = String::from_utf8(command_output.stdout)?;
-    let json: Value = serde_json::from_str(&json)?;
+    let json: Value = serde_json::from_str(json)?;
     if let Value::Array(array) = &json {
         for entry in array.iter() {
             match entry {
@@ -58,5 +54,15 @@ pub(crate) async fn read_tc_queues(interface: &str) -> Result<Vec<QueueType>> {
         return Err(Error::msg("Unable to parse TC data array"));
     }
 
+    Ok(result)
+}
+
+pub(crate) async fn read_tc_queues(interface: &str) -> Result<Vec<QueueType>> {
+    let command_output = Command::new("/sbin/tc")
+        .args(["-s", "-j", "qdisc", "show", "dev", interface])
+        .output()
+        .await?;
+    let json = String::from_utf8(command_output.stdout)?;
+    let result = deserialize_tc_tree(&json)?;
     Ok(result)
 }

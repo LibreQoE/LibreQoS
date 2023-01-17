@@ -11,7 +11,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 #[derive(Default, Clone, Debug, Serialize)]
-pub(crate) struct TcFqCodel {
+pub struct TcFqCodel {
     handle: TcHandle,
     pub(crate) parent: TcHandle,
     options: TcFqCodelOptions,

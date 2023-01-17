@@ -9,7 +9,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 #[derive(Default, Clone, Debug, Serialize)]
-pub(crate) struct TcHtb {
+pub struct TcHtb {
     handle: TcHandle,
     parent: TcHandle,
     options: TcHtbOptions,

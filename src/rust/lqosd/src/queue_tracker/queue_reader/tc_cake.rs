@@ -133,7 +133,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 #[derive(Default, Clone, Debug, Serialize)]
-pub(crate) struct TcCake {
+pub struct TcCake {
     pub(crate) handle: TcHandle,
     pub(crate) parent: TcHandle,
     options: TcCakeOptions,
@@ -172,7 +172,7 @@ struct TcCakeOptions {
 }
 
 #[derive(Default, Clone, Debug, Serialize)]
-pub(crate) struct TcCakeTin {
+pub struct TcCakeTin {
     threshold_rate: u64,
     pub(crate) sent_bytes: u64,
     pub(crate) backlog_bytes: u32,

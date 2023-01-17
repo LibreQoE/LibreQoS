@@ -23,3 +23,10 @@ env_logger = "0"
 log = "0"
 nix = "0"
 rayon = "1"
+
+[dev-dependencies]
+criterion = { version = "0.3", features = [ "html_reports"] }
+
+[[bench]]
+name = "json"
+harness = false

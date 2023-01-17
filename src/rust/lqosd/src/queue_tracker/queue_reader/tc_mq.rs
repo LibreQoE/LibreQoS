@@ -8,7 +8,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 #[derive(Default, Clone, Debug, Serialize)]
-pub(crate) struct TcMultiQueue {
+pub struct TcMultiQueue {
     handle: TcHandle,
     root: bool,
     bytes: u64,
