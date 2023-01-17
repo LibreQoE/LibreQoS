@@ -132,6 +132,7 @@ use lqos_bus::TcHandle;
 use serde::Serialize;
 use serde_json::Value;
 
+
 #[derive(Default, Clone, Debug, Serialize)]
 pub struct TcCake {
     pub(crate) handle: TcHandle,
@@ -154,6 +155,17 @@ pub struct TcCake {
     pub(crate) tins: Vec<TcCakeTin>,
     pub(crate) drops: u32,
 }
+
+/*
+FIXME: Eliminate strings!
+Bandwidth is a u64
+diffserv has four values 0 = besteffort, 1 = diffserv3, 2 = diffserv4, 3=diffserv8, 4=unknown
+ack-filter = 0 = off, 1 = ack-filter 2 = aggressive 3 = unknown
+flowmode has more optons than I can remember
+a fwmark is 32bits, expressed in hex
+In the protocol the above 4 are u32, but here they can safely be bytes
+someday an l4s or sce model might emerge for diffserv
+*/
 
 #[derive(Default, Clone, Debug, Serialize)]
 struct TcCakeOptions {
