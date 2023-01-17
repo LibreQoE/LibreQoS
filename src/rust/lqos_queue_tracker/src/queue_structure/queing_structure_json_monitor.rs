@@ -1,6 +1,6 @@
 use lazy_static::*;
-use parking_lot::RwLock;
 use anyhow::Result;
+use parking_lot::RwLock;
 use tokio::task::spawn_blocking;
 use crate::queue_structure::{queue_node::QueueNode, read_queueing_structure, queue_network::QueueNetwork};
 
@@ -8,7 +8,34 @@ lazy_static! {
     /// Global storage of the shaped devices csv data.
     /// Updated by the file system watcher whenever
     /// the underlying file changes.
-    pub(crate) static ref QUEUE_STRUCTURE : RwLock<Result<Vec<QueueNode>>> = RwLock::new(read_queueing_structure());
+    pub(crate) static ref QUEUE_STRUCTURE : RwLock<QueueStructure> = RwLock::new(QueueStructure::new());
+}
+
+#[derive(Clone)]
+pub(crate) struct QueueStructure {
+    pub(crate) maybe_queues : Option<Vec<QueueNode>>,
+}
+
+impl QueueStructure {
+    fn new() -> Self {
+        if let Ok(queues) = read_queueing_structure() {
+            Self {
+                maybe_queues: Some(queues)
+            }
+        } else {
+            Self {
+                maybe_queues: None
+            }
+        }
+    }
+
+    fn update(&mut self) {
+        if let Ok(queues) = read_queueing_structure() {
+            self.maybe_queues = Some(queues);
+        } else {
+            self.maybe_queues = None;
+        }
+    }
 }
 
 /// Global file watched for `queueStructure.json`.
@@ -30,8 +57,7 @@ fn watch_for_shaped_devices_changing() -> Result<()> {
     watcher.watch(&QueueNetwork::path()?, RecursiveMode::NonRecursive)?;
     loop {
         let _ = rx.recv();
-        let new_file = read_queueing_structure();
         log::info!("queuingStructure.csv changed");
-        *QUEUE_STRUCTURE.write() = new_file;
+        QUEUE_STRUCTURE.write().update();
     }
 }

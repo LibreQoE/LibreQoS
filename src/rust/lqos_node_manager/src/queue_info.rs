@@ -18,6 +18,24 @@ pub struct CircuitInfo {
     pub capacity: (u64, u64)
 }
 
+#[get("/api/watch_circuit/<circuit_id>")]
+pub async fn watch_circuit(circuit_id: String, _auth: AuthGuard) -> NoCache<Json<String>> {
+    let mut stream = TcpStream::connect(BUS_BIND_ADDRESS).await.unwrap();
+    let test = BusSession {
+        auth_cookie: 1234,
+        requests: vec![BusRequest::WatchQueue(circuit_id)],
+    };
+    let msg = encode_request(&test).unwrap();
+    stream.write(&msg).await.unwrap();
+
+    // Receive reply
+    let mut buf = Vec::new();
+    let _ = stream.read_to_end(&mut buf).await.unwrap();
+    let _reply = decode_response(&buf).unwrap();
+
+    NoCache::new(Json("OK".to_string()))
+}
+
 #[get("/api/circuit_info/<circuit_id>")]
 pub async fn circuit_info(circuit_id: String, _auth: AuthGuard) -> NoCache<Json<CircuitInfo>> {
     if let Some(device) = SHAPED_DEVICES
@@ -45,7 +63,7 @@ pub async fn current_circuit_throughput(
     circuit_id: String,
     _auth: AuthGuard,
 ) -> NoCache<Json<Vec<(String, u64, u64)>>> {
-    let mut result = Vec::new();
+    let mut result = Vec::new();    
     // Get a list of host counts
     // This is really inefficient, but I'm struggling to find a better way.
     // TODO: Fix me up

@@ -63,7 +63,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     });
 
     const INTERFACE: &str = include_str!("test_interface.txt");
-    const QUEUE_COUNTS: [u32; 4] = [10, 100, 1000, 2000];
+    const QUEUE_COUNTS: [u32; 3] = [10, 100, 1000];
     for queue_count in QUEUE_COUNTS.iter() {
         let no_stdbuf = format!("NO-STBUF, {queue_count} queues: tc qdisc show -s -j");
         let stdbuf = format!("STBUF -i1024, {queue_count} queues: tc qdisc show -s -j");

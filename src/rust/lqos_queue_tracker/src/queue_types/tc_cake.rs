@@ -1,138 +1,9 @@
-/*
-
-{
-    "kind": "cake",
-    "handle": "9cb1:",
-    "parent": "3:205",
-    "options": {
-        "bandwidth": "unlimited",
-        "diffserv": "diffserv4",
-        "flowmode": "triple-isolate",
-        "nat": false,
-        "wash": false,
-        "ingress": false,
-        "ack-filter": "disabled",
-        "split_gso": true,
-        "rtt": 100000,
-        "raw": true,
-        "overhead": 0,
-        "fwmark": "0"
-    },
-    "bytes": 49072087981,
-    "packets": 35792920,
-    "drops": 1162331,
-    "overlimits": 0,
-    "requeues": 0,
-    "backlog": 0,
-    "qlen": 0,
-    "memory_used": 2002176,
-    "memory_limit": 15503360,
-    "capacity_estimate": 0,
-    "min_network_size": 56,
-    "max_network_size": 1514,
-    "min_adj_size": 56,
-    "max_adj_size": 1514,
-    "avg_hdr_offset": 14,
-    "tins": [
-        {
-            "threshold_rate": 0,
-            "sent_bytes": 0,
-            "backlog_bytes": 0,
-            "target_us": 5000,
-            "interval_us": 100000,
-            "peak_delay_us": 0,
-            "avg_delay_us": 0,
-            "base_delay_us": 0,
-            "sent_packets": 0,
-            "way_indirect_hits": 0,
-            "way_misses": 0,
-            "way_collisions": 0,
-            "drops": 0,
-            "ecn_mark": 0,
-            "ack_drops": 0,
-            "sparse_flows": 0,
-            "bulk_flows": 0,
-            "unresponsive_flows": 0,
-            "max_pkt_len": 0,
-            "flow_quantum": 1514
-        },
-        {
-            "threshold_rate": 0,
-            "sent_bytes": 47096460394,
-            "backlog_bytes": 0,
-            "target_us": 5000,
-            "interval_us": 100000,
-            "peak_delay_us": 152,
-            "avg_delay_us": 7,
-            "base_delay_us": 1,
-            "sent_packets": 34376628,
-            "way_indirect_hits": 156580,
-            "way_misses": 89285,
-            "way_collisions": 0,
-            "drops": 984524,
-            "ecn_mark": 10986,
-            "ack_drops": 0,
-            "sparse_flows": 1,
-            "bulk_flows": 0,
-            "unresponsive_flows": 0,
-            "max_pkt_len": 1514,
-            "flow_quantum": 1514
-        },
-        {
-            "threshold_rate": 0,
-            "sent_bytes": 3481013747,
-            "backlog_bytes": 0,
-            "target_us": 5000,
-            "interval_us": 100000,
-            "peak_delay_us": 1080,
-            "avg_delay_us": 141,
-            "base_delay_us": 1,
-            "sent_packets": 2456582,
-            "way_indirect_hits": 282,
-            "way_misses": 3916,
-            "way_collisions": 0,
-            "drops": 177080,
-            "ecn_mark": 25,
-            "ack_drops": 0,
-            "sparse_flows": 0,
-            "bulk_flows": 0,
-            "unresponsive_flows": 0,
-            "max_pkt_len": 1514,
-            "flow_quantum": 1514
-        },
-        {
-            "threshold_rate": 0,
-            "sent_bytes": 145417781,
-            "backlog_bytes": 0,
-            "target_us": 5000,
-            "interval_us": 100000,
-            "peak_delay_us": 566715,
-            "avg_delay_us": 421103,
-            "base_delay_us": 3,
-            "sent_packets": 122041,
-            "way_indirect_hits": 11,
-            "way_misses": 148,
-            "way_collisions": 0,
-            "drops": 727,
-            "ecn_mark": 0,
-            "ack_drops": 0,
-            "sparse_flows": 2,
-            "bulk_flows": 0,
-            "unresponsive_flows": 0,
-            "max_pkt_len": 1242,
-            "flow_quantum": 1514
-        }
-    ]
-},
-
- */
-
 use anyhow::{Error, Result};
 use lqos_bus::TcHandle;
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use serde_json::Value;
 
-#[derive(Default, Clone, Debug, Serialize)]
+#[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct TcCake {
     pub(crate) handle: TcHandle,
     pub(crate) parent: TcHandle,
@@ -155,7 +26,7 @@ pub struct TcCake {
     pub(crate) drops: u32,
 }
 
-#[derive(Default, Clone, Debug, Serialize)]
+#[derive(Default, Clone, Debug, Serialize, Deserialize)]
 struct TcCakeOptions {
     rtt: u64,
     bandwidth: String,
@@ -171,7 +42,7 @@ struct TcCakeOptions {
     fwmark: String,
 }
 
-#[derive(Default, Clone, Debug, Serialize)]
+#[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct TcCakeTin {
     threshold_rate: u64,
     pub(crate) sent_bytes: u64,
@@ -305,3 +176,135 @@ impl TcCakeTin {
         }
     }
 }
+
+
+// Example data
+
+/*
+
+{
+    "kind": "cake",
+    "handle": "9cb1:",
+    "parent": "3:205",
+    "options": {
+        "bandwidth": "unlimited",
+        "diffserv": "diffserv4",
+        "flowmode": "triple-isolate",
+        "nat": false,
+        "wash": false,
+        "ingress": false,
+        "ack-filter": "disabled",
+        "split_gso": true,
+        "rtt": 100000,
+        "raw": true,
+        "overhead": 0,
+        "fwmark": "0"
+    },
+    "bytes": 49072087981,
+    "packets": 35792920,
+    "drops": 1162331,
+    "overlimits": 0,
+    "requeues": 0,
+    "backlog": 0,
+    "qlen": 0,
+    "memory_used": 2002176,
+    "memory_limit": 15503360,
+    "capacity_estimate": 0,
+    "min_network_size": 56,
+    "max_network_size": 1514,
+    "min_adj_size": 56,
+    "max_adj_size": 1514,
+    "avg_hdr_offset": 14,
+    "tins": [
+        {
+            "threshold_rate": 0,
+            "sent_bytes": 0,
+            "backlog_bytes": 0,
+            "target_us": 5000,
+            "interval_us": 100000,
+            "peak_delay_us": 0,
+            "avg_delay_us": 0,
+            "base_delay_us": 0,
+            "sent_packets": 0,
+            "way_indirect_hits": 0,
+            "way_misses": 0,
+            "way_collisions": 0,
+            "drops": 0,
+            "ecn_mark": 0,
+            "ack_drops": 0,
+            "sparse_flows": 0,
+            "bulk_flows": 0,
+            "unresponsive_flows": 0,
+            "max_pkt_len": 0,
+            "flow_quantum": 1514
+        },
+        {
+            "threshold_rate": 0,
+            "sent_bytes": 47096460394,
+            "backlog_bytes": 0,
+            "target_us": 5000,
+            "interval_us": 100000,
+            "peak_delay_us": 152,
+            "avg_delay_us": 7,
+            "base_delay_us": 1,
+            "sent_packets": 34376628,
+            "way_indirect_hits": 156580,
+            "way_misses": 89285,
+            "way_collisions": 0,
+            "drops": 984524,
+            "ecn_mark": 10986,
+            "ack_drops": 0,
+            "sparse_flows": 1,
+            "bulk_flows": 0,
+            "unresponsive_flows": 0,
+            "max_pkt_len": 1514,
+            "flow_quantum": 1514
+        },
+        {
+            "threshold_rate": 0,
+            "sent_bytes": 3481013747,
+            "backlog_bytes": 0,
+            "target_us": 5000,
+            "interval_us": 100000,
+            "peak_delay_us": 1080,
+            "avg_delay_us": 141,
+            "base_delay_us": 1,
+            "sent_packets": 2456582,
+            "way_indirect_hits": 282,
+            "way_misses": 3916,
+            "way_collisions": 0,
+            "drops": 177080,
+            "ecn_mark": 25,
+            "ack_drops": 0,
+            "sparse_flows": 0,
+            "bulk_flows": 0,
+            "unresponsive_flows": 0,
+            "max_pkt_len": 1514,
+            "flow_quantum": 1514
+        },
+        {
+            "threshold_rate": 0,
+            "sent_bytes": 145417781,
+            "backlog_bytes": 0,
+            "target_us": 5000,
+            "interval_us": 100000,
+            "peak_delay_us": 566715,
+            "avg_delay_us": 421103,
+            "base_delay_us": 3,
+            "sent_packets": 122041,
+            "way_indirect_hits": 11,
+            "way_misses": 148,
+            "way_collisions": 0,
+            "drops": 727,
+            "ecn_mark": 0,
+            "ack_drops": 0,
+            "sparse_flows": 2,
+            "bulk_flows": 0,
+            "unresponsive_flows": 0,
+            "max_pkt_len": 1242,
+            "flow_quantum": 1514
+        }
+    ]
+},
+
+ */

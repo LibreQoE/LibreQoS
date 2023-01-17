@@ -449,8 +449,13 @@
         function start() {
             colorReloadButton();
             updateHostCounts();
-            pollQueue();
-            getThroughput();
+            const params = new Proxy(new URLSearchParams(window.location.search), {
+                get: (searchParams, prop) => searchParams.get(prop),
+            });
+            $.get("/api/watch_circuit/" + params.id, () => {
+                pollQueue();
+                getThroughput();
+            });
         }
 
         $(document).ready(start);

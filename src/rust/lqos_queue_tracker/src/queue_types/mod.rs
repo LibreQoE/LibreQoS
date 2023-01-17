@@ -5,7 +5,6 @@ mod tc_mq;
 use anyhow::{Error, Result};
 use serde::Serialize;
 use serde_json::Value;
-use std::process::Command;
 
 #[derive(Debug, Clone, Serialize)]
 pub enum QueueType {
@@ -51,14 +50,5 @@ pub fn deserialize_tc_tree(json: &str) -> Result<Vec<QueueType>> {
         return Err(Error::msg("Unable to parse TC data array"));
     }
 
-    Ok(result)
-}
-
-pub(crate) async fn read_tc_queues(interface: &str) -> Result<Vec<QueueType>> {
-    let command_output = Command::new("/sbin/tc")
-        .args(["-s", "-j", "qdisc", "show", "dev", interface])
-        .output()?;
-    let json = String::from_utf8(command_output.stdout)?;
-    let result = deserialize_tc_tree(&json)?;
     Ok(result)
 }

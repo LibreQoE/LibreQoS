@@ -11,7 +11,7 @@ use lqos_bus::{
     cookie_value, decode_request, encode_response, BusReply, BusRequest, BUS_BIND_ADDRESS,
 };
 use lqos_config::LibreQoSConfig;
-use lqos_queue_tracker::{spawn_queue_monitor, spawn_queue_structure_monitor, get_raw_circuit_data};
+use lqos_queue_tracker::{spawn_queue_monitor, spawn_queue_structure_monitor, get_raw_circuit_data, add_watched_queue};
 use lqos_sys::LibreQoSKernels;
 use signal_hook::{consts::{SIGINT, SIGHUP, SIGTERM }, iterator::Signals};
 use tokio::{
@@ -127,6 +127,10 @@ async fn main() -> Result<()> {
                             BusRequest::ReloadLibreQoS => program_control::reload_libre_qos(),
                             BusRequest::GetRawQueueData(circuit_id) => {
                                 get_raw_circuit_data(&circuit_id)
+                            }
+                            BusRequest::WatchQueue(circuit_id) => {
+                                add_watched_queue(&circuit_id);
+                                lqos_bus::BusResponse::Ack
                             }
                             BusRequest::UpdateLqosDTuning(..) => {
                                 tuning::tune_lqosd_from_bus(&req).await

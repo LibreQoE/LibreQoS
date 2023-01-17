@@ -87,6 +87,9 @@ pub enum BusRequest {
     /// Requests a real-time adjustment of the `lqosd` tuning settings
     UpdateLqosDTuning(u64, Tunables),
 
+    /// Request that we start watching a circuit's queue
+    WatchQueue(String),
+
     /// If running on Equinix (the `equinix_test` feature is enabled),
     /// display a "run bandwidht test" link.
     #[cfg(feature = "equinix_tests")]

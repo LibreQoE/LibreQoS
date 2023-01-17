@@ -15,3 +15,4 @@ pub use tracking::spawn_queue_monitor;
 pub use bus::get_raw_circuit_data;
 pub use queue_types::deserialize_tc_tree; // Exported for the benchmarker
 pub use interval::set_queue_refresh_interval;
+pub use tracking::{add_watched_queue, still_watching};
