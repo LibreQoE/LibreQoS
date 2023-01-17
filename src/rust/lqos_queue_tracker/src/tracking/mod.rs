@@ -1,4 +1,5 @@
 use std::time::{Duration, Instant};
+use rayon::prelude::{IntoParallelRefMutIterator, ParallelIterator};
 use tokio::time;
 use lqos_config::LibreQoSConfig;
 use anyhow::Result;
@@ -18,32 +19,36 @@ async fn track_queues() -> Result<()> {
         return Ok(()) // There's nothing to do - bail out fast
     }
     let config = LibreQoSConfig::load()?;
-    for q in watching.iter_mut() {
+    watching.par_iter_mut().for_each(|q| {
             let (circuit_id, download_class, upload_class) = q.get();
 
             let (download, upload) = if config.on_a_stick_mode {
                 (
-                    read_named_queue_from_interface(&config.internet_interface, download_class)?,
-                    read_named_queue_from_interface(&config.internet_interface, upload_class)?
+                    read_named_queue_from_interface(&config.internet_interface, download_class),
+                    read_named_queue_from_interface(&config.internet_interface, upload_class)
                 )
             } else {
                 (
-                    read_named_queue_from_interface(&config.isp_interface, download_class)?,
-                    read_named_queue_from_interface(&config.internet_interface, download_class)?
+                    read_named_queue_from_interface(&config.isp_interface, download_class),
+                    read_named_queue_from_interface(&config.internet_interface, download_class)
                 )
             };
 
-            let mut mapping = CIRCUIT_TO_QUEUE.write();
-            if let Some(circuit) = mapping.get_mut(circuit_id) {
-                circuit.update(&download[0], &upload[0]);
-            } else {
-                // It's new: insert it
-                mapping.insert(
-                    circuit_id.to_string(),
-                    QueueStore::new(download[0].clone(), upload[0].clone()),
-                );
-            }
+            if let Ok(download) = download {
+                if let Ok(upload) = upload {
+                    let mut mapping = CIRCUIT_TO_QUEUE.write();
+                    if let Some(circuit) = mapping.get_mut(circuit_id) {
+                        circuit.update(&download[0], &upload[0]);
+                    } else {
+                        // It's new: insert it
+                        mapping.insert(
+                            circuit_id.to_string(),
+                            QueueStore::new(download[0].clone(), upload[0].clone()),
+                        );
+                    }
+                }
         }
+        });
 
     std::mem::drop(watching); // Release the lock
     expire_watched_queues();
