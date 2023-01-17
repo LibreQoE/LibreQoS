@@ -11,7 +11,7 @@ macro_rules! string_table_enum {
         impl $enum_name {
             #[allow(unused)]
             fn from_str(s: &str) -> Self {
-                match s {
+                match s.replace("-", "_").as_str() {
                     $(
                         stringify!($option) => Self::$option,
                     )*
@@ -41,6 +41,7 @@ mod test {
     use serde::{Serialize, Deserialize};
 
     string_table_enum!(MyEnum, option1, option2);
+    string_table_enum!(DashingEnum, option_1, option2);
 
     #[test]
     fn test_enum_creation() {
@@ -52,5 +53,11 @@ mod test {
     fn test_enum_unknown() {
         let n = MyEnum::from_str("i want sausages");
         assert_eq!(n, MyEnum::Unknown);
+    }
+
+    #[test]
+    fn test_enum_with_dash() {
+        let n = DashingEnum::from_str("option-1");
+        assert_eq!(n, DashingEnum::option_1);
     }
 }
