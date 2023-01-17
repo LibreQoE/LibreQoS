@@ -11,6 +11,44 @@ macro_rules! string_table_enum {
         impl $enum_name {
             #[allow(unused)]
             fn from_str(s: &str) -> Self {
+                match s {
+                    $(
+                        stringify!($option) => Self::$option,
+                    )*
+                    _ => Self::Unknown
+                }
+            }
+
+            #[allow(unused)]
+            fn to_str(&self) -> &str {
+                match self {
+                    $(
+                        Self::$option => stringify!($option),
+                    )*
+                    Self::Unknown => "unknown",
+                }
+            }
+        }
+
+        impl Default for $enum_name {
+            fn default() -> Self { Self::Unknown }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! dashy_table_enum {
+    ($enum_name: ident, $($option:ident),*) => {
+        #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+        #[allow(non_camel_case_types)]
+        enum $enum_name {
+            $($option, )*
+            Unknown
+        }
+
+        impl $enum_name {
+            #[allow(unused)]
+            fn from_str(s: &str) -> Self {
                 match s.replace("-", "_").as_str() {
                     $(
                         stringify!($option) => Self::$option,
@@ -41,7 +79,7 @@ mod test {
     use serde::{Serialize, Deserialize};
 
     string_table_enum!(MyEnum, option1, option2);
-    string_table_enum!(DashingEnum, option_1, option2);
+    dashy_table_enum!(DashingEnum, option_1, option2);
 
     #[test]
     fn test_enum_creation() {
