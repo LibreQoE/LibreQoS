@@ -3,7 +3,6 @@ use crate::{
     tracking::reader::read_named_queue_from_interface,
 };
 use anyhow::Result;
-use log::info;
 use lqos_config::LibreQoSConfig;
 use rayon::prelude::{IntoParallelRefMutIterator, ParallelIterator};
 use std::time::{Duration, Instant};
@@ -72,10 +71,10 @@ pub async fn spawn_queue_monitor() {
             let now = Instant::now();
             let _ = track_queues().await;
             let elapsed = now.elapsed();
-            info!(
-                "TC Reader tick with mapping consumed {} ms.",
-                elapsed.as_millis()
-            );
+            //info!(
+            //    "TC Reader tick with mapping consumed {} ms.",
+            //    elapsed.as_millis()
+            //);
             if elapsed.as_millis() < queue_check_period_ms as u128 {
                 let duration = Duration::from_millis(queue_check_period_ms) - elapsed;
                 tokio::time::sleep(duration).await;

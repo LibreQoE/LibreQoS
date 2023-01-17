@@ -37,13 +37,20 @@ fn unix_now() -> u64 {
 }
 
 pub fn add_watched_queue(circuit_id: &str) {
-    if WATCHED_QUEUES
-        .read()
-        .iter()
-        .find(|q| q.circuit_id == circuit_id)
-        .is_some()
+    let max = unsafe { lqos_sys::libbpf_num_possible_cpus() } * 2;
     {
-        return; // No duplicates, please
+        let read_lock = WATCHED_QUEUES.read();
+        if read_lock
+            .iter()
+            .find(|q| q.circuit_id == circuit_id)
+            .is_some()
+        {
+            return; // No duplicates, please
+        }
+
+        if read_lock.len() > max as usize {
+            return; // Too many watched pots
+        }
     }
 
     if let Some(queues) = &QUEUE_STRUCTURE.read().maybe_queues {

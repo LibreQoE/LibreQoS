@@ -1330,6 +1330,7 @@ dependencies = [
  "log",
  "lqos_bus",
  "lqos_config",
+ "lqos_sys",
  "notify",
  "parking_lot 0.12.1",
  "rayon",
