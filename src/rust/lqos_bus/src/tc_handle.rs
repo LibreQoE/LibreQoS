@@ -32,7 +32,7 @@ impl TcHandle {
 
     /// Build a TC handle from a string. This is actually a complicated
     /// operation, since it has to handle "root" and other strings as well
-    /// as simple "1:2" mappings. Shells out to C to handle this gracefully.
+    /// as simple "1:2" mappings. Calls a C function to handle this gracefully.
     pub fn from_string<S: ToString>(handle: S) -> Result<Self> {
         let mut tc_handle: __u32 = 0;
         let str = CString::new(handle.to_string())?;
