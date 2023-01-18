@@ -28,7 +28,7 @@ use tokio::{
 #[tokio::main]
 async fn main() -> Result<()> {
     // Configure log level with RUST_LOG environment variable,
-    // defaulting to "info"
+    // defaulting to "warn"
     env_logger::init_from_env(
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "warn"),
     );
