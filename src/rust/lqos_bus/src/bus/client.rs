@@ -12,6 +12,7 @@ use anyhow::Result;
 pub async fn bus_request(requests: Vec<BusRequest>) -> Result<Vec<BusResponse>> {
     let mut stream = UnixStream::connect(BUS_SOCKET_PATH).await.unwrap();
     let test = BusSession {
+        persist: false,
         requests,
     };
     let msg = encode_request(&test)?;

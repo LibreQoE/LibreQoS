@@ -1,7 +1,7 @@
 use anyhow::Result;
 use crossterm::{event::KeyCode, terminal::enable_raw_mode};
 use lqos_bus::{
-    BusRequest, BusResponse, IpStats, bus_request,
+    BusRequest, BusResponse, IpStats, bus_request, BusClient,
 };
 use std::{io, time::Duration};
 use tui::{
@@ -18,7 +18,7 @@ struct DataResult {
     top: Vec<IpStats>,
 }
 
-async fn get_data(n_rows: u16) -> Result<DataResult> {
+async fn get_data(client: &mut BusClient, n_rows: u16) -> Result<DataResult> {
     let mut result = DataResult {
         totals: (0, 0, 0, 0),
         top: Vec::new(),
@@ -27,7 +27,7 @@ async fn get_data(n_rows: u16) -> Result<DataResult> {
         BusRequest::GetCurrentThroughput,
         BusRequest::GetTopNDownloaders(n_rows as u32),
     ];
-    for r in bus_request(requests).await? {
+    for r in client.request(requests).await? {
         match r {
             BusResponse::CurrentThroughput {
                 bits_per_second,
@@ -167,6 +167,7 @@ fn draw_top_pane<'a>(
 
 #[tokio::main(flavor = "current_thread")]
 pub async fn main() -> Result<()> {
+    let mut bus_client = BusClient::new().await?;
     let mut packets = (0, 0);
     let mut bits = (0, 0);
     let mut top = Vec::new();
@@ -179,7 +180,7 @@ pub async fn main() -> Result<()> {
     let mut n_rows = 10;
 
     loop {
-        if let Ok(result) = get_data(n_rows).await {
+        if let Ok(result) = get_data(&mut bus_client, n_rows).await {
             let (bits_down, bits_up, packets_down, packets_up) = result.totals;
             packets = (packets_down, packets_up);
             bits = (bits_down, bits_up);

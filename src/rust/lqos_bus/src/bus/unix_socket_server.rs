@@ -38,21 +38,27 @@ impl UnixSocketServer {
         loop {
             let (mut socket, _) = listener.accept().await?;            
             tokio::spawn(async move {
-                let mut buf = vec![0; 1024];
+                loop {
+                    let mut buf = vec![0; 1024];
 
-                let _ = socket
-                    .read(&mut buf)
-                    .await
-                    .expect("failed to read data from socket");
+                    let _bytes_read = socket
+                        .read(&mut buf)
+                        .await
+                        .expect("failed to read data from socket");
 
-                if let Ok(request) = decode_request(&buf) {
-                    let mut response = BusReply {
-                        responses: Vec::new(),
-                    };
-                    handle_bus_requests(&request.requests, &mut response.responses);
-                    let _ = reply_unix(&encode_response(&response).unwrap(), &mut socket).await;
-                } else {
-                    warn!("Invalid data on local socket");
+                    if let Ok(request) = decode_request(&buf) {
+                        let mut response = BusReply {
+                            responses: Vec::new(),
+                        };
+                        handle_bus_requests(&request.requests, &mut response.responses);
+                        let _ = reply_unix(&encode_response(&response).unwrap(), &mut socket).await;
+                        if !request.persist {
+                            break;
+                        }
+                    } else {
+                        warn!("Invalid data on local socket");
+                        break;
+                    }
                 }
             });
         }

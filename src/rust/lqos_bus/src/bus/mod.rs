@@ -3,6 +3,7 @@ mod request;
 mod response;
 mod session;
 mod client;
+mod persistent_client;
 mod unix_socket_server;
 use anyhow::Result;
 pub use reply::BusReply;
@@ -11,6 +12,7 @@ pub use response::BusResponse;
 pub use session::BusSession;
 pub use client::bus_request;
 pub use unix_socket_server::UnixSocketServer;
+pub use persistent_client::BusClient;
 
 /// The local socket path to which `lqosd` will bind itself,
 /// listening for requets.
@@ -45,6 +47,7 @@ mod test {
     #[test]
     fn test_session_roundtrip() {
         let session = BusSession {
+            persist: false,
             requests: vec![BusRequest::Ping],
         };
 

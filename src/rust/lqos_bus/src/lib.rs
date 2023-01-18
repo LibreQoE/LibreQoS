@@ -17,6 +17,6 @@ mod tc_handle;
 pub use bus::{
     decode_request, decode_response, encode_request, encode_response, BusReply,
     BusRequest, BusResponse, BusSession, BUS_SOCKET_PATH, bus_request,
-    UnixSocketServer,
+    UnixSocketServer, BusClient,
 };
 pub use tc_handle::TcHandle;

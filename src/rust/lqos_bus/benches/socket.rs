@@ -9,6 +9,7 @@ use lqos_bus::*;
 pub fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("encode_request", |b| {
         let session_to_encode = BusSession {
+            persist: false,
             requests: vec![BusRequest::Ping],
         };
         b.iter(|| {
@@ -19,6 +20,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     c.bench_function("decode_request", |b| {
         let session_to_encode = BusSession {
+            persist: false,
             requests: vec![BusRequest::Ping],
         };
         let msg = encode_request(&session_to_encode).unwrap();
@@ -58,6 +60,14 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("bus_ping_round_trip", |b| {
         b.iter(|| {
             let result = tokio_rt.block_on(bus_request(vec![BusRequest::Ping])).unwrap();
+            black_box(result);
+        });
+    });
+
+    c.bench_function("bus_ping_with_persistence", |b| {
+        let mut client = tokio_rt.block_on(BusClient::new()).unwrap();
+        b.iter(|| {
+            let result = tokio_rt.block_on(client.request(vec![BusRequest::Ping])).unwrap();
             black_box(result);
         });
     });
