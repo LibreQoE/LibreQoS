@@ -4,12 +4,10 @@
 use super::cache::*;
 use anyhow::Result;
 use lqos_bus::{
-    decode_response, encode_request, BusRequest, BusResponse, BusSession, IpStats, BUS_BIND_ADDRESS,
+    BusRequest, BusResponse, IpStats, bus_request,
 };
 use lqos_config::ConfigShapedDevices;
 use rocket::tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpStream,
     task::spawn_blocking,
 };
 use std::{net::IpAddr, time::Duration};
@@ -71,27 +69,14 @@ fn watch_for_shaped_devices_changing() -> Result<()> {
 /// caches.
 async fn get_data_from_server() -> Result<()> {
     // Send request to lqosd
-    let mut stream = TcpStream::connect(BUS_BIND_ADDRESS).await?;
-    let test = BusSession {
-        auth_cookie: 1234,
-        requests: vec![
-            BusRequest::GetCurrentThroughput,
-            BusRequest::GetTopNDownloaders(10),
-            BusRequest::GetWorstRtt(10),
-            BusRequest::RttHistogram,
-            BusRequest::AllUnknownIps,
-        ],
-    };
-    let msg = encode_request(&test)?;
-    stream.write(&msg).await?;
-
-    // Receive reply
-    let mut buf = Vec::new();
-    let _ = stream.read_to_end(&mut buf).await.unwrap();
-    let reply = decode_response(&buf)?;
-
-    // Process the reply
-    for r in reply.responses.iter() {
+    let requests = vec![
+        BusRequest::GetCurrentThroughput,
+        BusRequest::GetTopNDownloaders(10),
+        BusRequest::GetWorstRtt(10),
+        BusRequest::RttHistogram,
+        BusRequest::AllUnknownIps,
+    ];
+    for r in bus_request(requests).await?.iter() {
         match r {
             BusResponse::CurrentThroughput {
                 bits_per_second,

@@ -2,13 +2,11 @@ use crate::auth_guard::AuthGuard;
 use crate::cache_control::NoCache;
 use crate::tracker::SHAPED_DEVICES;
 use lqos_bus::{
-    decode_response, encode_request, BusRequest, BusResponse, BusSession, BUS_BIND_ADDRESS,
+    BusRequest, BusResponse, bus_request,
 };
 use rocket::response::content::RawJson;
 use rocket::serde::json::Json;
 use rocket::serde::Serialize;
-use rocket::tokio::io::{AsyncReadExt, AsyncWriteExt};
-use rocket::tokio::net::TcpStream;
 use std::net::IpAddr;
 
 #[derive(Serialize, Clone)]
@@ -20,18 +18,7 @@ pub struct CircuitInfo {
 
 #[get("/api/watch_circuit/<circuit_id>")]
 pub async fn watch_circuit(circuit_id: String, _auth: AuthGuard) -> NoCache<Json<String>> {
-    let mut stream = TcpStream::connect(BUS_BIND_ADDRESS).await.unwrap();
-    let test = BusSession {
-        auth_cookie: 1234,
-        requests: vec![BusRequest::WatchQueue(circuit_id)],
-    };
-    let msg = encode_request(&test).unwrap();
-    stream.write(&msg).await.unwrap();
-
-    // Receive reply
-    let mut buf = Vec::new();
-    let _ = stream.read_to_end(&mut buf).await.unwrap();
-    let _reply = decode_response(&buf).unwrap();
+    bus_request(vec![BusRequest::WatchQueue(circuit_id)]).await.unwrap();
 
     NoCache::new(Json("OK".to_string()))
 }
@@ -70,19 +57,8 @@ pub async fn current_circuit_throughput(
     // Get a list of host counts
     // This is really inefficient, but I'm struggling to find a better way.
     // TODO: Fix me up
-    let mut stream = TcpStream::connect(BUS_BIND_ADDRESS).await.unwrap();
-    let test = BusSession {
-        auth_cookie: 1234,
-        requests: vec![BusRequest::GetHostCounter],
-    };
-    let msg = encode_request(&test).unwrap();
-    stream.write(&msg).await.unwrap();
 
-    // Receive reply
-    let mut buf = Vec::new();
-    let _ = stream.read_to_end(&mut buf).await.unwrap();
-    let reply = decode_response(&buf).unwrap();
-    for msg in reply.responses.iter() {
+    for msg in bus_request(vec![BusRequest::GetHostCounter]).await.unwrap().iter() {
         match msg {
             BusResponse::HostCounters(hosts) => {
                 let devices = SHAPED_DEVICES.read();
@@ -110,20 +86,8 @@ pub async fn raw_queue_by_circuit(
     circuit_id: String,
     _auth: AuthGuard,
 ) -> NoCache<RawJson<String>> {
-    let mut stream = TcpStream::connect(BUS_BIND_ADDRESS).await.unwrap();
-    let test = BusSession {
-        auth_cookie: 1234,
-        requests: vec![BusRequest::GetRawQueueData(circuit_id)],
-    };
-    let msg = encode_request(&test).unwrap();
-    stream.write(&msg).await.unwrap();
-
-    // Receive reply
-    let mut buf = Vec::new();
-    let _ = stream.read_to_end(&mut buf).await.unwrap();
-    let reply = decode_response(&buf).unwrap();
-
-    let result = match &reply.responses[0] {
+    let responses = bus_request(vec![BusRequest::GetRawQueueData(circuit_id)]).await.unwrap();
+    let result = match &responses[0] {
         BusResponse::RawQueueData(msg) => msg.clone(),
         _ => "Unable to request queue".to_string(),
     };
@@ -133,20 +97,8 @@ pub async fn raw_queue_by_circuit(
 #[cfg(feature = "equinix_tests")]
 #[get("/api/run_btest")]
 pub async fn run_btest() -> NoCache<RawJson<String>> {
-    let mut stream = TcpStream::connect(BUS_BIND_ADDRESS).await.unwrap();
-    let test = BusSession {
-        auth_cookie: 1234,
-        requests: vec![BusRequest::RequestLqosEquinixTest],
-    };
-    let msg = encode_request(&test).unwrap();
-    stream.write(&msg).await.unwrap();
-
-    // Receive reply
-    let mut buf = Vec::new();
-    let _ = stream.read_to_end(&mut buf).await.unwrap();
-    let reply = decode_response(&buf).unwrap();
-
-    let result = match &reply.responses[0] {
+    let responses = bus_request(vec![BusRequest::RequestLqosEquinixTest]).await.unwrap();
+    let result = match &responses[0] {
         BusResponse::Ack => String::new(),
         _ => "Unable to request test".to_string(),
     };

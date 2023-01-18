@@ -1,13 +1,9 @@
 use anyhow::Result;
 use crossterm::{event::KeyCode, terminal::enable_raw_mode};
 use lqos_bus::{
-    decode_response, encode_request, BusRequest, BusResponse, BusSession, IpStats, BUS_BIND_ADDRESS,
+    BusRequest, BusResponse, IpStats, bus_request,
 };
 use std::{io, time::Duration};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpStream,
-};
 use tui::{
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Direction, Layout},
@@ -26,22 +22,12 @@ async fn get_data(n_rows: u16) -> Result<DataResult> {
     let mut result = DataResult {
         totals: (0, 0, 0, 0),
         top: Vec::new(),
-    };
-    let mut stream = TcpStream::connect(BUS_BIND_ADDRESS).await?;
-    let test = BusSession {
-        auth_cookie: 1234,
-        requests: vec![
-            BusRequest::GetCurrentThroughput,
-            BusRequest::GetTopNDownloaders(n_rows as u32),
-        ],
-    };
-    let msg = encode_request(&test)?;
-    stream.write(&msg).await?;
-    let mut buf = Vec::new();
-    let _ = stream.read_to_end(&mut buf).await.unwrap();
-    let reply = decode_response(&buf)?;
-
-    for r in reply.responses.iter() {
+    };    
+    let requests = vec![
+        BusRequest::GetCurrentThroughput,
+        BusRequest::GetTopNDownloaders(n_rows as u32),
+    ];
+    for r in bus_request(requests).await? {
         match r {
             BusResponse::CurrentThroughput {
                 bits_per_second,

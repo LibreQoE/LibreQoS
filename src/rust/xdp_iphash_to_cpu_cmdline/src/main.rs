@@ -1,14 +1,9 @@
 use anyhow::{Error, Result};
 use clap::{Parser, Subcommand};
 use lqos_bus::{
-    decode_response, encode_request, BusRequest, BusResponse, BusSession, IpMapping, TcHandle,
-    BUS_BIND_ADDRESS,
+    BusRequest, BusResponse, IpMapping, TcHandle, bus_request,
 };
 use std::process::exit;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpStream,
-};
 
 #[derive(Parser)]
 #[command()]
@@ -53,17 +48,8 @@ enum Commands {
 }
 
 async fn talk_to_server(command: BusRequest) -> Result<()> {
-    let mut stream = TcpStream::connect(BUS_BIND_ADDRESS).await?;
-    let test = BusSession {
-        auth_cookie: 1234,
-        requests: vec![command],
-    };
-    let msg = encode_request(&test)?;
-    stream.write(&msg).await?;
-    let mut buf = Vec::new();
-    let _ = stream.read_to_end(&mut buf).await.unwrap();
-    let reply = decode_response(&buf)?;
-    match &reply.responses[0] {
+    let responses = bus_request(vec![command]).await?;
+    match &responses[0] {
         BusResponse::Ack => {
             println!("Success");
             Ok(())

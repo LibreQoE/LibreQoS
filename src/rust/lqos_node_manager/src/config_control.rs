@@ -1,14 +1,10 @@
 use crate::{auth_guard::AuthGuard, cache_control::NoCache};
 use default_net::get_interfaces;
-use lqos_bus::{decode_response, encode_request, BusRequest, BusSession, BUS_BIND_ADDRESS};
+use lqos_bus::{BusRequest, bus_request};
 use lqos_config::{EtcLqos, LibreQoSConfig, Tunables};
 use rocket::{
     fs::NamedFile,
     serde::json::Json,
-    tokio::{
-        io::{AsyncReadExt, AsyncWriteExt},
-        net::TcpStream,
-    },
 };
 
 // Note that NoCache can be replaced with a cache option
@@ -63,18 +59,8 @@ pub async fn update_lqos_tuning(
     }
 
     // Send the update to the server
-    let mut stream = TcpStream::connect(BUS_BIND_ADDRESS).await.unwrap();
-    let test = BusSession {
-        auth_cookie: 1234,
-        requests: vec![BusRequest::UpdateLqosDTuning(period, (*tuning).clone())],
-    };
-    let msg = encode_request(&test).unwrap();
-    stream.write(&msg).await.unwrap();
+    bus_request(vec![BusRequest::UpdateLqosDTuning(period, (*tuning).clone())]).await.unwrap();
 
-    // Receive reply
-    let mut buf = Vec::new();
-    let _ = stream.read_to_end(&mut buf).await.unwrap();
-    let _reply = decode_response(&buf).unwrap();
     // For now, ignore the reply.
 
     Json("OK".to_string())

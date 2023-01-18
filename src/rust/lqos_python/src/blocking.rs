@@ -1,10 +1,6 @@
 use anyhow::Result;
 use lqos_bus::{
-    decode_response, encode_request, BusRequest, BusResponse, BusSession, BUS_BIND_ADDRESS,
-};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpStream,
+    BusRequest, BusResponse, bus_request,
 };
 
 pub fn run_query(requests: Vec<BusRequest>) -> Result<Vec<BusResponse>> {
@@ -14,17 +10,7 @@ pub fn run_query(requests: Vec<BusRequest>) -> Result<Vec<BusResponse>> {
         .build()
         .unwrap()
         .block_on(async {
-            let mut stream = TcpStream::connect(BUS_BIND_ADDRESS).await?;
-            let test = BusSession {
-                auth_cookie: 1234,
-                requests: requests,
-            };
-            let msg = encode_request(&test)?;
-            stream.write(&msg).await?;
-            let mut buf = Vec::new();
-            let _ = stream.read_to_end(&mut buf).await?;
-            let reply = decode_response(&buf)?;
-            replies.extend_from_slice(&reply.responses);
+            replies.extend_from_slice(&bus_request(requests).await?);
             Ok(replies)
         })
 }

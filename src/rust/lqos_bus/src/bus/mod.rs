@@ -2,17 +2,17 @@ mod reply;
 mod request;
 mod response;
 mod session;
+mod client;
 use anyhow::Result;
 pub use reply::BusReply;
 pub use request::BusRequest;
 pub use response::BusResponse;
 pub use session::BusSession;
+pub use client::bus_request;
 
-/// The address to which `lqosd` should bind itself when listening for
-/// local bust requests.
-///
-/// This is typically `localhost` to minimize the exposed footprint.
-pub const BUS_BIND_ADDRESS: &str = "127.0.0.1:9999";
+/// The local socket path to which `lqosd` will bind itself,
+/// listening for requets.
+pub const BUS_SOCKET_PATH: &str = "/tmp/lqos_bus";
 
 /// Encodes a BusSession with `bincode`, providing a tight binary
 /// representation of the request object for TCP transmission.
