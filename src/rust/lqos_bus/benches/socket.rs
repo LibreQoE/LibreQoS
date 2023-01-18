@@ -1,7 +1,7 @@
-//! Benchmarks for JSON serialization and gathering data from TC.
-//! Please select an interface in `test_interface.txt` (no enter character
-//! at the end). This benchmark will destructively clear and then create
-//! TC queues - so don't select an interface that you need!
+//! Becnhmarks for the bus system, mostly focused on serialization
+//! but also including sockets.
+//! 
+//! You MUST have lqosd running when you perform these tests.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use lqos_bus::*;
@@ -49,6 +49,19 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         let msg = encode_response(&reply_to_encode).unwrap();
         b.iter(|| {
             let result = decode_response(&msg).unwrap();
+            black_box(result);
+        });
+    });
+
+    // Enable the Tokio runtime to test round-trip
+    let tokio_rt = tokio::runtime::Builder::new_current_thread()
+        .enable_io()
+        .build()
+        .unwrap();
+
+    c.bench_function("bus_ping_round_trip", |b| {
+        b.iter(|| {
+            let result = tokio_rt.block_on(bus_request(vec![BusRequest::Ping])).unwrap();
             black_box(result);
         });
     });
