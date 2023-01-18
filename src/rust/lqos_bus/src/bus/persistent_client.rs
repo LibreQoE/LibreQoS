@@ -25,7 +25,8 @@ impl BusClient {
         self.stream.write(&msg).await?;
         self.stream.read(&mut self.buffer).await.unwrap();
         let reply = decode_response(&self.buffer)?;
-    
+        self.buffer.iter_mut().for_each(|b| *b=0);
+
         Ok(reply.responses)
     }
 }
