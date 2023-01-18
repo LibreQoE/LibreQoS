@@ -4,7 +4,7 @@
 use super::cache::*;
 use anyhow::Result;
 use lqos_bus::{
-    BusRequest, BusResponse, IpStats, bus_request,
+    BusRequest, BusResponse, IpStats, BusClient,
 };
 use lqos_config::ConfigShapedDevices;
 use rocket::tokio::{
@@ -26,7 +26,7 @@ pub async fn update_tracking() {
     spawn_blocking(|| {
         let _ = watch_for_shaped_devices_changing();
     });
-
+    let mut bus_client = BusClient::new().await.unwrap();
     loop {
         //println!("Updating tracking data");
         sys.refresh_cpu();
@@ -42,7 +42,7 @@ pub async fn update_tracking() {
             mem_use[0] = sys.used_memory();
             mem_use[1] = sys.total_memory();
         }
-        let _ = get_data_from_server().await; // Ignoring errors to keep running
+        let _ = get_data_from_server(&mut bus_client).await; // Ignoring errors to keep running
         rocket::tokio::time::sleep(Duration::from_secs(1)).await;
     }
 }
@@ -67,7 +67,7 @@ fn watch_for_shaped_devices_changing() -> Result<()> {
 
 /// Requests data from `lqosd` and stores it in local
 /// caches.
-async fn get_data_from_server() -> Result<()> {
+async fn get_data_from_server(bus_client: &mut BusClient) -> Result<()> {
     // Send request to lqosd
     let requests = vec![
         BusRequest::GetCurrentThroughput,
@@ -76,7 +76,7 @@ async fn get_data_from_server() -> Result<()> {
         BusRequest::RttHistogram,
         BusRequest::AllUnknownIps,
     ];
-    for r in bus_request(requests).await?.iter() {
+    for r in bus_client.request(requests).await?.iter() {
         match r {
             BusResponse::CurrentThroughput {
                 bits_per_second,
