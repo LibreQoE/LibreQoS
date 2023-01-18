@@ -35,11 +35,6 @@ pub fn decode_response(bytes: &[u8]) -> Result<BusReply> {
     Ok(bincode::deserialize(&bytes)?)
 }
 
-/// The cookie value to use to determine that the session is valid.
-pub fn cookie_value() -> u32 {
-    1234
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -48,13 +43,11 @@ mod test {
     #[test]
     fn test_session_roundtrip() {
         let session = BusSession {
-            auth_cookie: cookie_value(),
             requests: vec![BusRequest::Ping],
         };
 
         let bytes = encode_request(&session).unwrap();
         let new_session = decode_request(&bytes).unwrap();
-        assert_eq!(new_session.auth_cookie, session.auth_cookie);
         assert_eq!(new_session.requests.len(), session.requests.len());
         assert_eq!(new_session.requests[0], session.requests[0]);
     }
@@ -62,12 +55,10 @@ mod test {
     #[test]
     fn test_reply_roundtrip() {
         let reply = BusReply {
-            auth_cookie: cookie_value(),
             responses: vec![BusResponse::Ack],
         };
         let bytes = encode_response(&reply).unwrap();
         let new_reply = decode_response(&bytes).unwrap();
-        assert_eq!(reply.auth_cookie, new_reply.auth_cookie);
         assert_eq!(reply.responses.len(), new_reply.responses.len());
         assert_eq!(reply.responses[0], new_reply.responses[0]);
     }

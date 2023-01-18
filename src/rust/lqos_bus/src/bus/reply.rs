@@ -10,10 +10,6 @@ use serde::{Deserialize, Serialize};
 /// respect to the order of the requests.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BusReply {
-    /// Auth cookie, which should match the output of the `auth_cookie`
-    /// function.
-    pub auth_cookie: u32,
-
     /// A list of `BusResponse` objects generated in response to the
     /// requests that started the session.
     pub responses: Vec<BusResponse>,

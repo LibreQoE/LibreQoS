@@ -9,7 +9,6 @@ use lqos_bus::*;
 pub fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("encode_request", |b| {
         let session_to_encode = BusSession {
-            auth_cookie: 1234,
             requests: vec![BusRequest::Ping],
         };
         b.iter(|| {
@@ -20,7 +19,6 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     c.bench_function("decode_request", |b| {
         let session_to_encode = BusSession {
-            auth_cookie: 1234,
             requests: vec![BusRequest::Ping],
         };
         let msg = encode_request(&session_to_encode).unwrap();
@@ -32,7 +30,6 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     c.bench_function("encode_reply", |b| {
         let reply_to_encode = BusReply {
-            auth_cookie: cookie_value(),
             responses: vec![ BusResponse::Ack ]
         };
         b.iter(|| {
@@ -43,7 +40,6 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     c.bench_function("decode_reply", |b| {
         let reply_to_encode = BusReply {
-            auth_cookie: cookie_value(),
             responses: vec![ BusResponse::Ack ]
         };
         let msg = encode_response(&reply_to_encode).unwrap();

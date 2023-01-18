@@ -1,6 +1,6 @@
 use tokio::{net::UnixStream, io::{AsyncWriteExt, AsyncReadExt}};
-use crate::{BUS_SOCKET_PATH, BusSession, BusRequest, encode_request, decode_response, cookie_value, BusResponse};
-use anyhow::{Result, Error};
+use crate::{BUS_SOCKET_PATH, BusSession, BusRequest, encode_request, decode_response, BusResponse};
+use anyhow::Result;
 
 /// Convenient wrapper for accessing the bus
 /// 
@@ -12,7 +12,6 @@ use anyhow::{Result, Error};
 pub async fn bus_request(requests: Vec<BusRequest>) -> Result<Vec<BusResponse>> {
     let mut stream = UnixStream::connect(BUS_SOCKET_PATH).await.unwrap();
     let test = BusSession {
-        auth_cookie: 1234,
         requests,
     };
     let msg = encode_request(&test)?;
@@ -20,9 +19,6 @@ pub async fn bus_request(requests: Vec<BusRequest>) -> Result<Vec<BusResponse>> 
     let mut buf = Vec::new();
     let _ = stream.read_to_end(&mut buf).await.unwrap();
     let reply = decode_response(&buf)?;
-    if reply.auth_cookie != cookie_value() {
-        return Err(Error::msg("Invalid reply cookie"));
-    }
 
     Ok(reply.responses)
 }

@@ -1,5 +1,5 @@
 use std::{fs::remove_file, ffi::CString};
-use lqos_bus::{BUS_SOCKET_PATH, decode_request, cookie_value, BusReply, encode_response};
+use lqos_bus::{BUS_SOCKET_PATH, decode_request, BusReply, encode_response};
 use anyhow::Result;
 use nix::libc::mode_t;
 use tokio::{net::{UnixListener, UnixStream}, io::{AsyncReadExt, AsyncWriteExt}};
@@ -46,14 +46,11 @@ impl UnixSocketServer {
                     .expect("failed to read data from socket");
 
                 if let Ok(request) = decode_request(&buf) {
-                    if request.auth_cookie == cookie_value() {
-                        let mut response = BusReply {
-                            auth_cookie: request.auth_cookie,
-                            responses: Vec::new(),
-                        };
-                        super::handle_bus_requests(&request.requests, &mut response.responses).await;
-                        let _ = reply_unix(&encode_response(&response).unwrap(), &mut socket).await;
-                    }
+                    let mut response = BusReply {
+                        responses: Vec::new(),
+                    };
+                    super::handle_bus_requests(&request.requests, &mut response.responses).await;
+                    let _ = reply_unix(&encode_response(&response).unwrap(), &mut socket).await;
                 } else {
                     warn!("Invalid data on local socket");
                 }
