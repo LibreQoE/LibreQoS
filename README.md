@@ -42,10 +42,11 @@ Single-thread CPU performance will determine the max throughput of a single HTB 
 
 | Customer Max Plan   | Passmark Single-Thread   |
 | --------------------| ------------------------ |
-| 100 Mbps            | 1500                     |
-| 250 Mbps            | 2000                     |
-| 500 Mbps            | 2500                     |
-| 1 Gbps              | 3000                     |
+| 100 Mbps            | 1000                     |
+| 250 Mbps            | 1500                     |
+| 500 Mbps            | 2000                     |
+| 1 Gbps              | 2500                     |
+| 2 Gbps              | 3000                     |
 
 Below is a table of approximate aggregate throughput capacity, assuming a a CPU with a [single thread](https://www.cpubenchmark.net/singleThread.html#server-thread) performance of 2700 or greater:
 
