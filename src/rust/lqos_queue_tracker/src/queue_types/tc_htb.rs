@@ -12,22 +12,22 @@ use serde_json::Value;
 pub struct TcHtb {
     handle: TcHandle,
     parent: TcHandle,
-    options: TcHtbOptions,
     bytes: u64,
     packets: u64,
     drops: u64,
     overlimits: u64,
     requeues: u64,
-    backlog: u64,
-    qlen: u64,
+    backlog: u32,
+    qlen: u32,
+    options: TcHtbOptions,
 }
 
 #[derive(Default, Clone, Debug, Serialize)]
 struct TcHtbOptions {
-    r2q: u64,
     default: TcHandle,
-    direct_packets_stat: u64,
-    direct_qlen: u64,
+    r2q: u32,
+    direct_qlen: u32,
+    direct_packets_stat: u32,
 }
 
 impl TcHtb {
@@ -42,8 +42,8 @@ impl TcHtb {
                 "drops" => result.drops = value.as_u64().unwrap(),
                 "overlimits" => result.overlimits = value.as_u64().unwrap(),
                 "requeues" => result.requeues = value.as_u64().unwrap(),
-                "backlog" => result.backlog = value.as_u64().unwrap(),
-                "qlen" => result.qlen = value.as_u64().unwrap(),
+                "backlog" => result.backlog = value.as_u64().unwrap() as u32,
+                "qlen" => result.qlen = value.as_u64().unwrap() as u32,
                 "options" => result.options = TcHtbOptions::from_json(value)?,
                 "kind" => {}
                 _ => {
@@ -62,14 +62,14 @@ impl TcHtbOptions {
                 let mut result = Self::default();
                 for (key, value) in map.iter() {
                     match key.as_str() {
-                        "r2q" => result.r2q = value.as_u64().unwrap(),
+                        "r2q" => result.r2q = value.as_u64().unwrap() as u32,
                         "default" => {
                             result.default = TcHandle::from_string(value.as_str().unwrap())?
                         }
                         "direct_packets_stat" => {
-                            result.direct_packets_stat = value.as_u64().unwrap()
+                            result.direct_packets_stat = value.as_u64().unwrap() as u32
                         }
-                        "direct_qlen" => result.direct_qlen = value.as_u64().unwrap(),
+                        "direct_qlen" => result.direct_qlen = value.as_u64().unwrap() as u32,
                         _ => {
                             log::error!("Unknown entry in Tc-HTB: {key}");
                         }
