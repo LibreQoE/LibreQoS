@@ -61,7 +61,7 @@ Below is a table of approximate aggregate throughput capacity, assuming a a CPU 
 
 (* Estimated)
 
-So for example, an ISP delivering 1Gbps service plans with 10Gbps aggregate throughput would choose a CPU with a 3000+ single-thread score and 8 cores, such as the Intel Xeon E-2388G @ 3.20GHz.
+So for example, an ISP delivering 1Gbps service plans with 10Gbps aggregate throughput would choose a CPU with a 2500+ single-thread score and 8 cores, such as the Intel Xeon E-2388G @ 3.20GHz.
 
 ### Memory
 * Mimumum RAM = 2 + (0.002 x Subscriber Count) GB
