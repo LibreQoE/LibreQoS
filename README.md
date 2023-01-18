@@ -36,21 +36,31 @@ You can graph bandwidth and TCP RTT by client and node (Site, AP, etc), with gre
 
 ### CPU
 * 2 or more CPU cores
-* A CPU with solid [single-thread performance](https://www.cpubenchmark.net/singleThread.html) within your budget.
-  * For 10G+ throughput on a budget, consider the [AMD Ryzen 9 5900X](https://www.bestbuy.com/site/amd-ryzen-9-5900x-4th-gen-12-core-24-threads-unlocked-desktop-processor-without-cooler/6438942.p?skuId=6438942) or [Intel Core i7-12700KF](https://www.bestbuy.com/site/intel-core-i7-12700kf-desktop-processor-12-8p-4e-cores-up-to-5-0-ghz-unlocked-lga1700-600-series-chipset-125w/6483674.p?skuId=6483674)
-* CPU Core count required assuming [single thread](https://www.cpubenchmark.net/singleThread.html) performance of 2700 or more:
+* A CPU with solid [single-thread performance](https://www.cpubenchmark.net/singleThread.html#server-thread) within your budget. Queuing is very CPU-intensive, and requires high single-thread performance.
 
-| Throughput    | CPU Cores     |
-| ------------- | ------------- |
-| 500 Mbps      | 2             |
-| 1 Gbps        | 4             |
-| 5 Gbps        | 8             |
-| 10 Gbps       | 12            |
-| 20 Gbps*      | 16            |
-| 50 Gbps*      | 32            |
-| 100 Gbps*     | 64            |
+Single-thread CPU performance will determine the max throughput of a single HTB (cpu core), and in turn, what max speed plan you can offer customers.
+
+| Customer Max Plan   | Passmark Single-Thread   |
+| --------------------| ------------------------ |
+| 100 Mbps            | 1500                     |
+| 250 Mbps            | 2000                     |
+| 500 Mbps            | 2500                     |
+| 1 Gbps              | 3000                     |
+
+Below is a table of approximate aggregate throughput capacity, assuming a a CPU with a [single thread](https://www.cpubenchmark.net/singleThread.html#server-thread) performance of 2700 or greater:
+
+| Aggregate Throughput    | CPU Cores     |
+| ------------------------| ------------- |
+| 500 Mbps                | 2             |
+| 1 Gbps                  | 4             |
+| 5 Gbps                  | 6             |
+| 10 Gbps                 | 8             |
+| 20 Gbps                 | 16            |
+| 50 Gbps*                | 32            |
 
 (* Estimated)
+
+So for example, an ISP delivering 1Gbps service plans with 10Gbps aggregate throughput would choose a CPU with a 3000+ single-thread score and 8 cores, such as the Intel Xeon E-2388G @ 3.20GHz.
 
 ### Memory
 * Mimumum RAM = 2 + (0.002 x Subscriber Count) GB
