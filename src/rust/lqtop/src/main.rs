@@ -22,12 +22,11 @@ struct DataResult {
     top: Vec<IpStats>,
 }
 
-async fn get_data(n_rows: u16) -> Result<DataResult> {
+async fn get_data(stream: &mut TcpStream,n_rows: u16) -> Result<DataResult> {
     let mut result = DataResult {
         totals: (0, 0, 0, 0),
         top: Vec::new(),
     };
-    let mut stream = TcpStream::connect(BUS_BIND_ADDRESS).await?;
     let test = BusSession {
         auth_cookie: 1234,
         requests: vec![
@@ -191,9 +190,10 @@ pub async fn main() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
     let mut n_rows = 10;
+    let mut stream = TcpStream::connect(BUS_BIND_ADDRESS).await?;
 
     loop {
-        if let Ok(result) = get_data(n_rows).await {
+        if let Ok(result) = get_data(&mut stream,n_rows).await {
             let (bits_down, bits_up, packets_down, packets_up) = result.totals;
             packets = (packets_down, packets_up);
             bits = (bits_down, bits_up);
