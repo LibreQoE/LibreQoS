@@ -4,11 +4,10 @@ mod lqos_daht_test;
 mod program_control;
 mod throughput_tracker;
 mod tuning;
-mod unix_socket_server;
-use crate::{ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow}, unix_socket_server::UnixSocketServer};
+use crate::{ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow}};
 use anyhow::Result;
 use log::{info, warn};
-use lqos_bus::{BusResponse, BusRequest};
+use lqos_bus::{BusResponse, BusRequest, UnixSocketServer};
 use lqos_config::LibreQoSConfig;
 use lqos_queue_tracker::{
     add_watched_queue, get_raw_circuit_data, spawn_queue_monitor, spawn_queue_structure_monitor,
@@ -84,11 +83,11 @@ async fn main() -> Result<()> {
 
     // Main bus listen loop
     let server = UnixSocketServer::new().expect("Unable to spawn server");
-    server.listen().await?;
+    server.listen(handle_bus_requests).await?;
     Ok(())
 }
 
-async fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>) {
+fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>) {
     for req in requests.iter() {
         //println!("Request: {:?}", req);
         responses.push(match req {
@@ -123,11 +122,19 @@ async fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusRes
                 lqos_bus::BusResponse::Ack
             }
             BusRequest::UpdateLqosDTuning(..) => {
-                tuning::tune_lqosd_from_bus(&req).await
+                let tokio_rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_io()
+                    .build()
+                    .unwrap();
+                tokio_rt.block_on(tuning::tune_lqosd_from_bus(&req))
             }
             #[cfg(feature = "equinix_tests")]
             BusRequest::RequestLqosEquinixTest => {
-                lqos_daht_test::lqos_daht_test().await
+                let tokio_rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_io()
+                    .build()
+                    .unwrap();
+                tokio_rt.block_on(lqos_daht_test::lqos_daht_test())
             }
         });
     }

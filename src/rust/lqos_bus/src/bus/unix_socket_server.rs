@@ -1,14 +1,14 @@
 use std::{fs::remove_file, ffi::CString};
-use lqos_bus::{BUS_SOCKET_PATH, decode_request, BusReply, encode_response};
+use crate::{BUS_SOCKET_PATH, decode_request, BusReply, encode_response, BusRequest, BusResponse};
 use anyhow::Result;
 use nix::libc::mode_t;
 use tokio::{net::{UnixListener, UnixStream}, io::{AsyncReadExt, AsyncWriteExt}};
 use log::warn;
 
-pub(crate) struct UnixSocketServer {}
+pub struct UnixSocketServer {}
 
 impl UnixSocketServer {
-    pub(crate) fn new() -> Result<Self> {
+    pub fn new() -> Result<Self> {
         Self::delete_local_socket()?;
         Ok(Self {})
     }
@@ -29,7 +29,7 @@ impl UnixSocketServer {
         Ok(())
     }
 
-    pub(crate) async fn listen(&self) -> Result<()> 
+    pub async fn listen(&self, handle_bus_requests: fn(&[BusRequest], &mut Vec<BusResponse>)) -> Result<()> 
     {
         // Setup the listener and grant permissions to it
         let listener = UnixListener::bind(BUS_SOCKET_PATH)?;
@@ -49,7 +49,7 @@ impl UnixSocketServer {
                     let mut response = BusReply {
                         responses: Vec::new(),
                     };
-                    super::handle_bus_requests(&request.requests, &mut response.responses).await;
+                    handle_bus_requests(&request.requests, &mut response.responses);
                     let _ = reply_unix(&encode_response(&response).unwrap(), &mut socket).await;
                 } else {
                     warn!("Invalid data on local socket");

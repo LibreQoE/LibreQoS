@@ -13,6 +13,8 @@ bincode = "1"
 anyhow = "1"
 lqos_config = { path = "../lqos_config" }
 tokio = { version = "1.22", features = [ "rt", "macros", "net", "io-util" ] }
+log = "0"
+nix = "0"
 
 [build-dependencies]
 cc = "1.0"

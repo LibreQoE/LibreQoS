@@ -3,12 +3,14 @@ mod request;
 mod response;
 mod session;
 mod client;
+mod unix_socket_server;
 use anyhow::Result;
 pub use reply::BusReply;
 pub use request::BusRequest;
 pub use response::BusResponse;
 pub use session::BusSession;
 pub use client::bus_request;
+pub use unix_socket_server::UnixSocketServer;
 
 /// The local socket path to which `lqosd` will bind itself,
 /// listening for requets.

@@ -1279,7 +1279,9 @@ dependencies = [
  "bincode",
  "cc",
  "criterion",
+ "log",
  "lqos_config",
+ "nix",
  "serde",
  "tokio",
 ]
