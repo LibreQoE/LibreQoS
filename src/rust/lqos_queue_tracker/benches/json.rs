@@ -1,15 +1,34 @@
 //! Benchmarks for JSON serialization and gathering data from TC.
-//! Please select an interface in `test_interface.txt` (no enter character
-//! at the end). This benchmark will destructively clear and then create
-//! TC queues - so don't select an interface that you need!
+//! This benchmark creates a unique dummy interface and then
+//! will destructively clear and then create TC queues.
+//! On abort, or completion, it does not presently remove that
+//! dummy interface. FIXME.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use lqos_queue_tracker::*;
-use std::process::Command;
+use std::process::{id, Command};
 
 const EXAMPLE_JSON: &str = include_str!("./example_json.txt");
 const TC: &str = "/sbin/tc";
 const SUDO: &str = "/bin/sudo";
+const IP: &str = "ip";
+
+// FIXME: The max interface name is limited to 15 characters
+// Using a ASCII64 encoding would help
+
+fn setup_dummy_interface(interface: &str) -> String {
+    let interface = format!("{}{}{}", "t_", interface, id());
+    if interface.len() > 15 {
+        panic!("Interface Queue Length must be less than 15 characters");
+    }
+    let status = Command::new(SUDO)
+        .args([IP, "link","add","name", interface.as_str(),"type","dummy"])
+        .status().expect("file not found");
+    if !status.success() {
+        panic!("Dummy device is not supported on this OS: {}", status);
+    }
+    return interface;
+}
 
 fn clear_queues(interface: &str) {
     Command::new(SUDO)
@@ -105,18 +124,20 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
-    const INTERFACE: &str = include_str!("test_interface.txt");
+    let binding = setup_dummy_interface("qt");
+    let interface = binding.as_str();
+
     const QUEUE_COUNTS: [u32; 3] = [10, 100, 1000];
     for queue_count in QUEUE_COUNTS.iter() {
         let no_stdbuf = format!("NO-STBUF, {queue_count} queues: tc qdisc show -s -j");
         let stdbuf = format!("STBUF -i1024, {queue_count} queues: tc qdisc show -s -j");
 
-        clear_queues(INTERFACE);
-        setup_mq(INTERFACE);
-        setup_parent_htb(INTERFACE);
+        clear_queues(interface);
+        setup_mq(interface);
+        setup_parent_htb(interface);
         for i in 0..*queue_count {
             let queue_handle = (i + 1) * 2;
-            add_client_pair(INTERFACE, queue_handle);
+            add_client_pair(interface, queue_handle);
         }
 
         c.bench_function(&no_stdbuf, |b| {
