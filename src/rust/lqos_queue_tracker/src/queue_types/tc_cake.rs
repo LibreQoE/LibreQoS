@@ -2,7 +2,7 @@ use anyhow::{Error, Result};
 use lqos_bus::TcHandle;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use crate::{string_table_enum, dashy_table_enum};
+use lqos_utils::{string_table_enum, dashy_table_enum};
 
 string_table_enum!(DiffServ, besteffort, diffserv3, diffserv4, diffserv8, precedence);
 dashy_table_enum!(AckFilter, none, ack_filter, ack_filter_aggressive);

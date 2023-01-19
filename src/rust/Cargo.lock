@@ -1337,6 +1337,7 @@ dependencies = [
  "lqos_bus",
  "lqos_config",
  "lqos_sys",
+ "lqos_utils",
  "notify",
  "parking_lot 0.12.1",
  "rayon",
@@ -1361,6 +1362,13 @@ dependencies = [
  "lqos_bus",
  "lqos_config",
  "nix",
+]
+
+[[package]]
+name = "lqos_utils"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
