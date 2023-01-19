@@ -35,12 +35,17 @@ impl ConfigShapedDevices {
         let mut reader = csv::Reader::from_path(final_path)?;
 
         // Example: StringRecord(["1", "968 Circle St., Gurnee, IL 60031", "1", "Device 1", "", "", "192.168.101.2", "", "25", "5", "10000", "10000", ""])
+        
         let mut devices = Vec::new();
         for result in reader.records() {
             if let Ok(result) = result {
                 if let Ok(device) = ShapedDevice::from_csv(&result) {
                     devices.push(device);
+                } else {
+                    log::error!("Error reading Device line: {:?}", &result);
                 }
+            } else {
+                log::error!("Error reading CSV record: {:?}", result);
             }
         }
         let trie = ConfigShapedDevices::make_trie(&devices);
