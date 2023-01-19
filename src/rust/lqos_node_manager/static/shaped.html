@@ -100,7 +100,7 @@
                 html += "<tr>";
                 html += "<td><a class='redact' href='/circuit_queue?id=" + encodeURI(devices[i].circuit_id) + "'>" + devices[i].circuit_id + ": " +redactText(devices[i].circuit_name) + "</a></td>";
                 html += "<td class='redact'>" + devices[i].device_id + ": " + redactText(devices[i].device_name) + "</td>";
-                html += "<td>" + devices[i].download_min_mbps + "/" + devices[i].upload_max_mbps + "</td>";
+                html += "<td>" + devices[i].download_max_mbps + "/" + devices[i].upload_max_mbps + "</td>";
                 html += "<td style='font-size: 8pt' class='redact'>";
                 for (let j=0; j<devices[i].ipv4.length; j++) {
                     html += devices[i].ipv4[j][0] + "/" + devices[i].ipv4[j][1] + "<br />";
