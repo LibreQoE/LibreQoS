@@ -2,7 +2,7 @@ mod serializable;
 mod shaped_device;
 use crate::etc;
 use anyhow::Result;
-use csv::{QuoteStyle, WriterBuilder};
+use csv::{QuoteStyle, WriterBuilder, ReaderBuilder};
 use serializable::SerializableShapedDevice;
 pub use shaped_device::ShapedDevice;
 use std::path::{Path, PathBuf};
@@ -32,7 +32,9 @@ impl ConfigShapedDevices {
     /// object containing the resulting data.
     pub fn load() -> Result<Self> {
         let final_path = ConfigShapedDevices::path()?;
-        let mut reader = csv::Reader::from_path(final_path)?;
+        let mut reader = ReaderBuilder::new()
+            .comment(Some(b'#'))
+            .from_path(final_path)?;
 
         // Example: StringRecord(["1", "968 Circle St., Gurnee, IL 60031", "1", "Device 1", "", "", "192.168.101.2", "", "25", "5", "10000", "10000", ""])
         
