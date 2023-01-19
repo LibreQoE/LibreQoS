@@ -16,15 +16,22 @@ pub async fn config_page<'a>(_auth: AuthGuard) -> NoCache<Option<NamedFile>> {
 
 #[get("/api/list_nics")]
 pub async fn get_nic_list<'a>(_auth: AuthGuard) -> NoCache<Json<Vec<(String, String, String)>>> {
-    let mut result = Vec::new();
-    for eth in get_interfaces().iter() {
-        let mac = if let Some(mac) = &eth.mac_addr {
-            mac.to_string()
-        } else {
-            String::new()
-        };
-        result.push((eth.name.clone(), format!("{:?}", eth.if_type), mac));
-    }
+    let result = get_interfaces()
+        .iter()
+        .map(|eth| {
+            let mac = if let Some(mac) = &eth.mac_addr {
+                mac.to_string()
+            } else {
+                String::new()
+            };
+            (
+                eth.name.clone(),
+                format!("{:?}", eth.if_type), 
+                mac
+            )
+        })
+        .collect();
+
     NoCache::new(Json(result))
 }
 
