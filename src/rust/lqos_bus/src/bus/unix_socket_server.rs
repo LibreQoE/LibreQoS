@@ -5,9 +5,13 @@ use nix::libc::mode_t;
 use tokio::{net::{UnixListener, UnixStream}, io::{AsyncReadExt, AsyncWriteExt}};
 use log::warn;
 
+/// Implements a Tokio-friendly server using Unix Sockets and the bus protocol.
+/// Requests are handled and then forwarded to the handler.
 pub struct UnixSocketServer {}
 
 impl UnixSocketServer {
+    /// Creates a new `UnixSocketServer`. Will delete any pre-existing
+    /// socket file.
     pub fn new() -> Result<Self> {
         Self::delete_local_socket()?;
         Ok(Self {})
@@ -29,6 +33,8 @@ impl UnixSocketServer {
         Ok(())
     }
 
+    /// Start listening for bus traffic, forward requests to the `handle_bus_requests`
+    /// function for procesing.
     pub async fn listen(&self, handle_bus_requests: fn(&[BusRequest], &mut Vec<BusResponse>)) -> Result<()> 
     {
         // Setup the listener and grant permissions to it

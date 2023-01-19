@@ -1,7 +1,7 @@
 use anyhow::Result;
 use crossterm::{event::KeyCode, terminal::enable_raw_mode};
 use lqos_bus::{
-    BusRequest, BusResponse, IpStats, bus_request, BusClient,
+    BusRequest, BusResponse, IpStats, BusClient,
 };
 use std::{io, time::Duration};
 use tui::{
