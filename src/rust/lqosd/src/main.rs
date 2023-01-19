@@ -122,19 +122,11 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 lqos_bus::BusResponse::Ack
             }
             BusRequest::UpdateLqosDTuning(..) => {
-                let tokio_rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_io()
-                    .build()
-                    .unwrap();
-                tokio_rt.block_on(tuning::tune_lqosd_from_bus(&req))
+                tuning::tune_lqosd_from_bus(&req)
             }
             #[cfg(feature = "equinix_tests")]
             BusRequest::RequestLqosEquinixTest => {
-                let tokio_rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_io()
-                    .build()
-                    .unwrap();
-                tokio_rt.block_on(lqos_daht_test::lqos_daht_test())
+                lqos_daht_test::lqos_daht_test()
             }
         });
     }

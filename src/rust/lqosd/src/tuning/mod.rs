@@ -22,7 +22,7 @@ pub fn tune_lqosd_from_config_file(config: &LibreQoSConfig) -> Result<()> {
     Ok(())
 }
 
-pub async fn tune_lqosd_from_bus(request: &BusRequest) -> BusResponse {
+pub fn tune_lqosd_from_bus(request: &BusRequest) -> BusResponse {
     match request {
         BusRequest::UpdateLqosDTuning(interval, tuning) => {
             // Real-time tuning changes. Probably dangerous.
