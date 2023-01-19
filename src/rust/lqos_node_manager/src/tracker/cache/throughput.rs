@@ -59,7 +59,7 @@ impl ThroughputRingbuffer {
     }
 
     pub fn get_result(&self) -> Vec<ThroughputPerSecond> {
-        let mut result = Vec::new();
+        let mut result = Vec::with_capacity(RINGBUFFER_SAMPLES);
 
         for i in self.next..RINGBUFFER_SAMPLES {
             result.push(self.readings[i]);
