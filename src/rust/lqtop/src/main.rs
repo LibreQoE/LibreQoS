@@ -319,6 +319,33 @@ pub async fn main() -> Result<()> {
           code: KeyCode::Char('S'),
           modifiers: KeyModifiers::NONE,
         }) => break, // FIXME Filter on Plan Speed
+        Event::Key(KeyEvent {
+          code: KeyCode::Char('z'),
+          modifiers: KeyModifiers::NONE,
+        }) => break, // FIXME Zoom in
+        Event::Key(KeyEvent {
+          code: KeyCode::Char('Z'),
+          modifiers: KeyModifiers::NONE,
+        }) => break, // FIXME Zoom out
+        // Now I am Dreaming
+        Event::Key(KeyEvent {
+          code: KeyCode::Char('C'),
+          modifiers: KeyModifiers::NONE,
+        }) => break, // FIXME Capture what I am filtering on
+        Event::Key(KeyEvent {
+          code: KeyCode::Char('F'),
+          modifiers: KeyModifiers::NONE,
+        }) => break, // FIXME Freeze what I am filtering on
+        Event::Key(KeyEvent {
+          code: KeyCode::Char('S'),
+          modifiers: KeyModifiers::CONTROL,
+        }) => break, // FIXME Step through what I captured on
+        Event::Key(KeyEvent {
+          code: KeyCode::Char('R'),
+          modifiers: KeyModifiers::CONTROL,
+        }) => break, // FIXME Step backwards what I captured on
+        // Left and right cursors also
+        // Dreaming Less now
         // Use TAB for autocompletion
         // If I have moved into a panel, the following are ideas
         Event::Key(KeyEvent {
