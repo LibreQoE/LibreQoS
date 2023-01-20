@@ -210,13 +210,14 @@ pub async fn main() -> Result<()> {
         .constraints(
           [
             Constraint::Min(3),
-            Constraint::Percentage(80),
-            Constraint::Percentage(10),
+            Constraint::Percentage(99),
           ]
           .as_ref(),
         )
         .split(f.size());
       f.render_widget(draw_menu(bus_client.is_connected()), chunks[0]);
+      // NOTE: this is where the height of the main panel is calculated.
+      // Resize events are consumed by `tui`, so we never receive them.
       n_rows = chunks[1].height;
       f.render_widget(draw_top_pane(&top, packets, bits), chunks[1]);
       //f.render_widget(bandwidth_chart(datasets.clone(), packets, bits, min, max), chunks[1]);
