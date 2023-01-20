@@ -11,6 +11,14 @@ mod auth_guard;
 mod config_control;
 mod queue_info;
 
+// Use JemAllocator only on supported platforms
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+use jemallocator::Jemalloc;
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
 #[launch]
 fn rocket() -> _ {
     //tracker::SHAPED_DEVICES.read().write_csv("ShapedDeviceWriteTest.csv").unwrap();

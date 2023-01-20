@@ -7,7 +7,7 @@ edition = "2021"
 
 [profile.release]
 strip = "debuginfo"
-lto = "thin"
+lto = "fat"
 
 [workspace]
 members = [

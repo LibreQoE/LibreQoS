@@ -25,3 +25,7 @@ log = "0"
 nix = "0"
 rayon = "1"
 sysinfo = "0"
+
+# Support JemAlloc on supported platforms
+[target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]
+jemallocator = "0.5"
