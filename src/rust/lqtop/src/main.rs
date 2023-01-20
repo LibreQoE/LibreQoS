@@ -322,6 +322,14 @@ pub async fn main() -> Result<()> {
         // Use TAB for autocompletion
         // If I have moved into a panel, the following are ideas
         Event::Key(KeyEvent {
+          code: KeyCode::Char('/'),
+          modifiers: KeyModifiers::NONE,
+        }) => break, // FIXME Search for ip
+        Event::Key(KeyEvent {
+          code: KeyCode::Char('R'),
+          modifiers: KeyModifiers::NONE,
+        }) => break, // FIXME Traceroute/MTR
+        Event::Key(KeyEvent {
           code: KeyCode::Char('A'),
           modifiers: KeyModifiers::NONE,
         }) => break, // FIXME Alert me on this selection
