@@ -75,7 +75,7 @@ fn retire_check(cycle: u64, recent_cycle: u64) -> bool {
     cycle < recent_cycle + RETIRE_AFTER_SECONDS
 }
 
-pub fn top_n(n: u32) -> BusResponse {
+pub fn top_n(start: u32, end: u32) -> BusResponse {
     let mut full_list: Vec<(XdpIpAddress, (u64, u64), (u64, u64), f32, TcHandle)> = {
         let tp = THROUGHPUT_TRACKER.read();
         tp.raw_data
@@ -96,7 +96,8 @@ pub fn top_n(n: u32) -> BusResponse {
     full_list.sort_by(|a, b| b.1 .0.cmp(&a.1 .0));
     let result = full_list
         .iter()
-        .take(n as usize)
+        .skip(start as usize)
+        .take((end as usize) - (start as usize))
         .map(
             |(ip, (bytes_dn, bytes_up), (packets_dn, packets_up), median_rtt, tc_handle)| IpStats {
                 ip_address: ip.as_ip().to_string(),
@@ -110,7 +111,7 @@ pub fn top_n(n: u32) -> BusResponse {
     BusResponse::TopDownloaders(result)
 }
 
-pub fn worst_n(n: u32) -> BusResponse {
+pub fn worst_n(start: u32, end: u32) -> BusResponse {
     let mut full_list: Vec<(XdpIpAddress, (u64, u64), (u64, u64), f32, TcHandle)> = {
         let tp = THROUGHPUT_TRACKER.read();
         tp.raw_data
@@ -131,7 +132,8 @@ pub fn worst_n(n: u32) -> BusResponse {
     full_list.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap());
     let result = full_list
         .iter()
-        .take(n as usize)
+        .skip(start as usize)
+        .take((end as usize) - (start as usize))
         .map(
             |(ip, (bytes_dn, bytes_up), (packets_dn, packets_up), median_rtt, tc_handle)| IpStats {
                 ip_address: ip.as_ip().to_string(),

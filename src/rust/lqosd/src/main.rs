@@ -118,8 +118,8 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 throughput_tracker::current_throughput()
             }
             BusRequest::GetHostCounter => throughput_tracker::host_counters(),
-            BusRequest::GetTopNDownloaders(n) => throughput_tracker::top_n(*n),
-            BusRequest::GetWorstRtt(n) => throughput_tracker::worst_n(*n),
+            BusRequest::GetTopNDownloaders{start, end} => throughput_tracker::top_n(*start, *end),
+            BusRequest::GetWorstRtt{start, end} => throughput_tracker::worst_n(*start, *end),
             BusRequest::MapIpToFlow {
                 ip_address,
                 tc_handle,

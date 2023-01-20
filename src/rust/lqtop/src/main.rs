@@ -23,7 +23,7 @@ async fn get_data(client: &mut BusClient, n_rows: u16) -> Result<DataResult> {
   let mut result = DataResult { totals: (0, 0, 0, 0), top: Vec::new() };
   let requests = vec![
     BusRequest::GetCurrentThroughput,
-    BusRequest::GetTopNDownloaders(n_rows as u32),
+    BusRequest::GetTopNDownloaders{start: 0, end: n_rows as u32},
   ];
   for r in client.request(requests).await? {
     match r {

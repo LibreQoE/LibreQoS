@@ -71,8 +71,8 @@ async fn get_data_from_server(bus_client: &mut BusClient) -> Result<()> {
     // Send request to lqosd
     let requests = vec![
         BusRequest::GetCurrentThroughput,
-        BusRequest::GetTopNDownloaders(10),
-        BusRequest::GetWorstRtt(10),
+        BusRequest::GetTopNDownloaders{start: 0, end: 10},
+        BusRequest::GetWorstRtt{start: 0, end: 10},
         BusRequest::RttHistogram,
         BusRequest::AllUnknownIps,
     ];

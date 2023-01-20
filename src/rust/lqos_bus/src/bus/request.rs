@@ -15,10 +15,20 @@ pub enum BusRequest {
     GetCurrentThroughput,
 
     /// Retrieve the top N downloads by bandwidth use.
-    GetTopNDownloaders(u32),
+    GetTopNDownloaders{
+        /// First row to retrieve (usually 0 unless you are paging)
+        start: u32, 
+        /// Last row to retrieve (10 for top-10 starting at 0)
+        end: u32
+    },
 
     /// Retrieves the TopN hosts with the worst RTT, sorted by RTT descending.
-    GetWorstRtt(u32),
+    GetWorstRtt{
+        /// First row to retrieve (usually 0 unless you are paging)
+        start: u32,
+        /// Last row to retrieve (10 for top-10 starting at 0)
+        end: u32
+    },
 
     /// Retrieves current byte counters for all hosts.
     GetHostCounter,
