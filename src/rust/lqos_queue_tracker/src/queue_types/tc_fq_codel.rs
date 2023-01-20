@@ -9,6 +9,7 @@ use anyhow::{Error, Result};
 use lqos_bus::TcHandle;
 use serde::Serialize;
 use serde_json::Value;
+use log_once::info_once;
 
 #[derive(Default, Clone, Debug, Serialize)]
 pub struct TcFqCodel {
@@ -65,7 +66,7 @@ impl TcFqCodel {
                 "options" => result.options = TcFqCodelOptions::from_json(value)?,
                 "kind" => {}
                 _ => {
-                    log::error!("Unknown entry in Tc-codel: {key}");
+                    info_once!("Unknown entry in tc-codel json decoder: {key}");
                 }
             }
         }
@@ -89,7 +90,7 @@ impl TcFqCodelOptions {
                         "ecn" => result.ecn = value.as_bool().unwrap(),
                         "drop_batch" => result.drop_batch = value.as_u64().unwrap() as u16,
                         _ => {
-                            log::error!("Unknown entry in Tc-codel-options: {key}");
+                            info_once!("Unknown entry in tc-codel-options json decoder: {key}");
                         }
                     }
                 }

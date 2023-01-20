@@ -3,6 +3,7 @@ use lqos_bus::TcHandle;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use lqos_utils::{string_table_enum, dashy_table_enum};
+use log_once::info_once;
 
 string_table_enum!(DiffServ, besteffort, diffserv3, diffserv4, diffserv8, precedence);
 dashy_table_enum!(AckFilter, none, ack_filter, ack_filter_aggressive);
@@ -133,7 +134,7 @@ impl TcCakeOptions {
                         "overhead" => result.overhead = value.as_u64().unwrap() as u16,
                         "fwmark" => result.fwmark = value.as_str().unwrap().to_string(),
                         _ => {
-                            log::error!("Unknown entry in Tc-cake-options: {key}");
+                            info_once!("Unknown entry in tc-cake-options json decoder: {key}");
                         }
                     }
                 }
@@ -176,7 +177,7 @@ impl TcCakeTin {
                         "max_pkt_len" => result.max_pkt_len = value.as_u64().unwrap() as u16,
                         "flow_quantum" => result.flow_quantum = value.as_u64().unwrap() as u16,
                         _ => {
-                            log::error!("Unknown entry in Tc-cake-tin: {key}");
+                            info_once!("Unknown entry in tc-cake-tin json decoder: {key}");
                         }
                     }
                 }
