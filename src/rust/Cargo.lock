@@ -1284,6 +1284,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "log-once"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ae8737764ac12e9cfc5ab42a9ec2bdb7e2b376ce9694a4dffc92b7adee09cb5"
+dependencies = [
+ "log",
+]
+
+[[package]]
 name = "loom"
 version = "0.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1364,6 +1373,7 @@ dependencies = [
  "criterion",
  "lazy_static",
  "log",
+ "log-once",
  "lqos_bus",
  "lqos_config",
  "lqos_sys",

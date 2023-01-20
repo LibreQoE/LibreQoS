@@ -6,18 +6,19 @@ use anyhow::Result;
 use lqos_bus::TcHandle;
 use serde::Serialize;
 use serde_json::Value;
+use log_once::info_once;
 
 #[derive(Default, Clone, Debug, Serialize)]
 pub struct TcMultiQueue {
     handle: TcHandle,
     root: bool,
     bytes: u64,
-    packets: u64,
-    drops: u64,
-    overlimits: u64,
-    requeues: u64,
-    backlog: u64,
-    qlen: u64,
+    packets: u32, // FIXME These can overflow in older linuxes
+    drops: u32,
+    overlimits: u32,
+    requeues: u32, // what does requeues really mean?
+    backlog: u32,
+    qlen: u32,
 }
 
 impl TcMultiQueue {
@@ -28,16 +29,16 @@ impl TcMultiQueue {
                 "handle" => result.handle = TcHandle::from_string(value.as_str().unwrap())?,
                 "root" => result.root = value.as_bool().unwrap(),
                 "bytes" => result.bytes = value.as_u64().unwrap(),
-                "packets" => result.packets = value.as_u64().unwrap(),
-                "drops" => result.drops = value.as_u64().unwrap(),
-                "overlimits" => result.overlimits = value.as_u64().unwrap(),
-                "requeues" => result.requeues = value.as_u64().unwrap(),
-                "backlog" => result.backlog = value.as_u64().unwrap(),
-                "qlen" => result.qlen = value.as_u64().unwrap(),
+                "packets" => result.packets = value.as_u64().unwrap() as u32,
+                "drops" => result.drops = value.as_u64().unwrap() as u32,
+                "overlimits" => result.overlimits = value.as_u64().unwrap() as u32,
+                "requeues" => result.requeues = value.as_u64().unwrap() as u32,
+                "backlog" => result.backlog = value.as_u64().unwrap() as u32,
+                "qlen" => result.qlen = value.as_u64().unwrap() as u32,
                 "kind" => {}
                 "options" => {}
                 _ => {
-                    log::error!("Unknown entry in Tc-MQ: {key}");
+                    info_once!("Unknown entry in tc-MQ json decoder: {key}");
                 }
             }
         }

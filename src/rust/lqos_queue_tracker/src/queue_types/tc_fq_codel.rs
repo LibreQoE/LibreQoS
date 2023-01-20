@@ -9,6 +9,7 @@ use anyhow::{Error, Result};
 use lqos_bus::TcHandle;
 use serde::Serialize;
 use serde_json::Value;
+use log_once::info_once;
 
 #[derive(Default, Clone, Debug, Serialize)]
 pub struct TcFqCodel {
@@ -16,30 +17,30 @@ pub struct TcFqCodel {
     pub(crate) parent: TcHandle,
     options: TcFqCodelOptions,
     bytes: u64,
-    packets: u64,
-    drops: u64,
-    overlimits: u64,
-    requeues: u64,
-    backlog: u64,
-    qlen: u64,
-    maxpacket: u64,
-    drop_overlimit: u64,
-    new_flow_count: u64,
-    ecn_mark: u64,
-    new_flows_len: u64,
-    old_flows_len: u64,
+    packets: u32, // FIXME - for long term data we have to worry about wrapping
+    drops: u32,
+    overlimits: u32,
+    requeues: u32,
+    backlog: u32,
+    qlen: u32,
+    maxpacket: u16,
+    drop_overlimit: u32,
+    new_flow_count: u32,
+    ecn_mark: u32,
+    new_flows_len: u16,
+    old_flows_len: u16,
 }
 
 #[derive(Default, Clone, Debug, Serialize)]
 struct TcFqCodelOptions {
-    limit: u64,
-    flows: u64,
-    quantum: u64,
-    target: u64,
-    interval: u64,
-    memory_limit: u64,
+    limit: u32,
+    flows: u16,
+    quantum: u16,
+    target: u64,   // FIXME target and interval within fq_codel are scaled to ns >> 1024
+    interval: u64, // tc scales them back up to us. Ideally ns would make sense throughout.
+    memory_limit: u32,
     ecn: bool,
-    drop_batch: u64,
+    drop_batch: u16, // FIXME CE_threshold is presently missing from the parser
 }
 
 impl TcFqCodel {
@@ -50,22 +51,22 @@ impl TcFqCodel {
                 "handle" => result.handle = TcHandle::from_string(value.as_str().unwrap())?,
                 "parent" => result.parent = TcHandle::from_string(value.as_str().unwrap())?,
                 "bytes" => result.bytes = value.as_u64().unwrap(),
-                "packets" => result.packets = value.as_u64().unwrap(),
-                "drops" => result.drops = value.as_u64().unwrap(),
-                "overlimits" => result.overlimits = value.as_u64().unwrap(),
-                "requeues" => result.requeues = value.as_u64().unwrap(),
-                "backlog" => result.backlog = value.as_u64().unwrap(),
-                "qlen" => result.qlen = value.as_u64().unwrap(),
-                "maxpacket" => result.maxpacket = value.as_u64().unwrap(),
-                "drop_overlimit" => result.drop_overlimit = value.as_u64().unwrap(),
-                "new_flow_count" => result.new_flow_count = value.as_u64().unwrap(),
-                "ecn_mark" => result.ecn_mark = value.as_u64().unwrap(),
-                "new_flows_len" => result.new_flows_len = value.as_u64().unwrap(),
-                "old_flows_len" => result.old_flows_len = value.as_u64().unwrap(),
+                "packets" => result.packets = value.as_u64().unwrap() as u32,
+                "drops" => result.drops = value.as_u64().unwrap() as u32,
+                "overlimits" => result.overlimits = value.as_u64().unwrap() as u32,
+                "requeues" => result.requeues = value.as_u64().unwrap() as u32,
+                "backlog" => result.backlog = value.as_u64().unwrap() as u32,
+                "qlen" => result.qlen = value.as_u64().unwrap() as u32,
+                "maxpacket" => result.maxpacket = value.as_u64().unwrap() as u16,
+                "drop_overlimit" => result.drop_overlimit = value.as_u64().unwrap() as u32,
+                "new_flow_count" => result.new_flow_count = value.as_u64().unwrap() as u32,
+                "ecn_mark" => result.ecn_mark = value.as_u64().unwrap() as u32,
+                "new_flows_len" => result.new_flows_len = value.as_u64().unwrap() as u16,
+                "old_flows_len" => result.old_flows_len = value.as_u64().unwrap() as u16,
                 "options" => result.options = TcFqCodelOptions::from_json(value)?,
                 "kind" => {}
                 _ => {
-                    log::error!("Unknown entry in Tc-codel: {key}");
+                    info_once!("Unknown entry in tc-codel json decoder: {key}");
                 }
             }
         }
@@ -80,16 +81,16 @@ impl TcFqCodelOptions {
                 let mut result = Self::default();
                 for (key, value) in map.iter() {
                     match key.as_str() {
-                        "limit" => result.limit = value.as_u64().unwrap(),
-                        "flows" => result.flows = value.as_u64().unwrap(),
-                        "quantum" => result.quantum = value.as_u64().unwrap(),
+                        "limit" => result.limit = value.as_u64().unwrap() as u32,
+                        "flows" => result.flows = value.as_u64().unwrap() as u16,
+                        "quantum" => result.quantum = value.as_u64().unwrap() as u16,
                         "target" => result.target = value.as_u64().unwrap(),
                         "interval" => result.interval = value.as_u64().unwrap(),
-                        "memory_limit" => result.memory_limit = value.as_u64().unwrap(),
+                        "memory_limit" => result.memory_limit = value.as_u64().unwrap() as u32,
                         "ecn" => result.ecn = value.as_bool().unwrap(),
-                        "drop_batch" => result.drop_batch = value.as_u64().unwrap(),
+                        "drop_batch" => result.drop_batch = value.as_u64().unwrap() as u16,
                         _ => {
-                            log::error!("Unknown entry in Tc-codel-options: {key}");
+                            info_once!("Unknown entry in tc-codel-options json decoder: {key}");
                         }
                     }
                 }
