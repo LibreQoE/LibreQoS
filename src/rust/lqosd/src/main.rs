@@ -60,6 +60,7 @@ async fn main() -> Result<()> {
                         _ => warn!("This should never happen - terminating on unknown signal"),
                     }
                     std::mem::drop(kernels);
+                    UnixSocketServer::signal_cleanup();
                     std::process::exit(0);
                 }
                 SIGHUP => {
@@ -81,8 +82,10 @@ async fn main() -> Result<()> {
         }
     });
 
-    // Main bus listen loop
+    // Create the socket server
     let server = UnixSocketServer::new().expect("Unable to spawn server");
+
+    // Main bus listen loop
     server.listen(handle_bus_requests).await?;
     Ok(())
 }

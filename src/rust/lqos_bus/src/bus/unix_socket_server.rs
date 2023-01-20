@@ -20,6 +20,13 @@ impl UnixSocketServer {
         Ok(Self {})
     }
 
+    /// We can't guaranty that Drop will be called on a process exit
+    /// (doing so is considered unsound), so provide a mechanism
+    /// to explicitly call the cleanup for signal handling.
+    pub fn signal_cleanup() {
+        let _ = UnixSocketServer::delete_local_socket(); // Ignore result
+    }
+
     fn check_directory() -> Result<()> {
         let dir_path = std::path::Path::new(BUS_SOCKET_DIRECTORY);
         if dir_path.exists() && dir_path.is_dir() {
