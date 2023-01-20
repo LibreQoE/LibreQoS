@@ -4,7 +4,8 @@ mod lqos_daht_test;
 mod program_control;
 mod throughput_tracker;
 mod tuning;
-use crate::{ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow}};
+mod file_lock;
+use crate::{ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow}, file_lock::FileLock};
 use anyhow::Result;
 use log::{info, warn};
 use lqos_bus::{BusResponse, BusRequest, UnixSocketServer};
@@ -26,6 +27,15 @@ async fn main() -> Result<()> {
     env_logger::init_from_env(
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "warn"),
     );
+    let file_lock = FileLock::new();
+    match file_lock {
+        Err(e) => {
+            log::error!("File lock error: {:?}", e);
+            std::process::exit(0);
+        }
+        _ => {}
+    }
+
     info!("LibreQoS Daemon Starting");
     let config = LibreQoSConfig::load()?;
     tuning::tune_lqosd_from_config_file(&config)?;
@@ -61,6 +71,7 @@ async fn main() -> Result<()> {
                     }
                     std::mem::drop(kernels);
                     UnixSocketServer::signal_cleanup();
+                    std::mem::drop(file_lock);
                     std::process::exit(0);
                 }
                 SIGHUP => {

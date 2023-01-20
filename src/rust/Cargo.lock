@@ -1391,6 +1391,7 @@ dependencies = [
  "serde",
  "serde_json",
  "signal-hook 0.3.14",
+ "sysinfo",
  "tokio",
 ]
 
