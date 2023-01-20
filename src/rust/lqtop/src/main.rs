@@ -300,6 +300,10 @@ pub async fn main() -> Result<()> {
           modifiers: KeyModifiers::NONE,
         }) => break, // FIXME (un)display wider stuff
         Event::Key(KeyEvent {
+          code: KeyCode::Char('8'),
+          modifiers: KeyModifiers::NONE,
+        }) => break, // FIXME Filter out fe80
+        Event::Key(KeyEvent {
           code: KeyCode::Char('6'),
           modifiers: KeyModifiers::NONE,
         }) => break, // FIXME Just look at ipv6
@@ -311,6 +315,10 @@ pub async fn main() -> Result<()> {
           code: KeyCode::Char('5'),
           modifiers: KeyModifiers::NONE,
         }) => break, // FIXME ipv4 + ipv6
+        Event::Key(KeyEvent {
+          code: KeyCode::Char('T'),
+          modifiers: KeyModifiers::NONE,
+        }) => break, // FIXME Filter Tin. This would require an argument BVIL<RET>
         Event::Key(KeyEvent {
           code: KeyCode::Char('F'),
           modifiers: KeyModifiers::NONE,
@@ -334,7 +342,7 @@ pub async fn main() -> Result<()> {
         }) => break, // FIXME Capture what I am filtering on
         Event::Key(KeyEvent {
           code: KeyCode::Char('F'),
-          modifiers: KeyModifiers::NONE,
+          modifiers: KeyModifiers::CONTROL,
         }) => break, // FIXME Freeze what I am filtering on
         Event::Key(KeyEvent {
           code: KeyCode::Char('S'),
