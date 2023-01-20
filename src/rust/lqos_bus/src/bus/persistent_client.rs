@@ -114,6 +114,9 @@ impl BusClient {
     Ok(())
   }
 
+  /// Returns `true` if the underlying socket is available
+  /// This isn't perfect - the socket may die inbetween calling
+  /// this function and trying to use it.
   pub fn is_connected(&self) -> bool {
     self.stream.is_some()
   }
