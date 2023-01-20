@@ -328,6 +328,10 @@ pub async fn main() -> Result<()> {
           modifiers: KeyModifiers::NONE,
         }) => break, // FIXME Filter Tin. This would require an argument BVIL<RET>
         Event::Key(KeyEvent {
+          code: KeyCode::Char('O'),
+          modifiers: KeyModifiers::NONE,
+        }) => break, // FIXME "Odd" events - multicast, AI-assistance, people down?
+        Event::Key(KeyEvent {
           code: KeyCode::Char('F'),
           modifiers: KeyModifiers::NONE,
         }) => break, // FIXME Filter on "something*
@@ -391,7 +395,7 @@ pub async fn main() -> Result<()> {
         Event::Key(KeyEvent {
           code: KeyCode::Char('L'),
           modifiers: KeyModifiers::NONE,
-        }) => break, // Launch Browser on this customer
+        }) => break, // Log notebook on this set of filters
         _ => println!("Not recognized"),
       }
     }
