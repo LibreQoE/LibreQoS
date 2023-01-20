@@ -5,6 +5,8 @@ use nix::libc::mode_t;
 use tokio::{net::{UnixListener, UnixStream}, io::{AsyncReadExt, AsyncWriteExt}};
 use log::warn;
 
+use super::BUS_SOCKET_DIRECTORY;
+
 /// Implements a Tokio-friendly server using Unix Sockets and the bus protocol.
 /// Requests are handled and then forwarded to the handler.
 pub struct UnixSocketServer {}
@@ -13,8 +15,23 @@ impl UnixSocketServer {
     /// Creates a new `UnixSocketServer`. Will delete any pre-existing
     /// socket file.
     pub fn new() -> Result<Self> {
+        Self::check_directory()?;
         Self::delete_local_socket()?;
         Ok(Self {})
+    }
+
+    fn check_directory() -> Result<()> {
+        let dir_path = std::path::Path::new(BUS_SOCKET_DIRECTORY);
+        if dir_path.exists() && dir_path.is_dir() {
+            Ok(())
+        } else {
+            std::fs::create_dir(dir_path)?;
+            let unix_path = CString::new(BUS_SOCKET_DIRECTORY)?;
+            unsafe {
+                nix::libc::chmod(unix_path.as_ptr(), mode_t::from_le(666));
+            }
+            Ok(())
+        }
     }
 
     fn delete_local_socket() -> Result<()> {

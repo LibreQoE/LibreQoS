@@ -16,7 +16,11 @@ pub use persistent_client::BusClient;
 
 /// The local socket path to which `lqosd` will bind itself,
 /// listening for requets.
-pub const BUS_SOCKET_PATH: &str = "/tmp/lqos_bus";
+pub const BUS_SOCKET_PATH: &str = "/run/lqos/bus";
+
+/// The directory containing the bus socket. Used for ensuring
+/// that the directory exists.
+pub(crate) const BUS_SOCKET_DIRECTORY: &str = "/run/lqos/.";
 
 /// Encodes a BusSession with `bincode`, providing a tight binary
 /// representation of the request object for TCP transmission.
