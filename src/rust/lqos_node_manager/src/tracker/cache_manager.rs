@@ -76,9 +76,8 @@ async fn get_data_from_server(bus_client: &mut BusClient) -> Result<()> {
         BusRequest::RttHistogram,
         BusRequest::AllUnknownIps,
     ];
-//    for r in lqos_bus::bus_request(requests).await?.iter() {
-  println!("Tick");
-  for r in bus_client.request(requests).await?.iter() {
+
+    for r in bus_client.request(requests).await?.iter() {
         match r {
             BusResponse::CurrentThroughput {
                 bits_per_second,
