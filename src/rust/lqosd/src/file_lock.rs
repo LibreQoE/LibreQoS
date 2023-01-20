@@ -4,7 +4,8 @@ use nix::libc::{mode_t, getpid};
 use sysinfo::{System, SystemExt, Pid, ProcessExt};
 
 const LOCK_PATH: &str = "/run/lqos/lqosd.lock";
-const LOCK_DIR: &str = "/run/lqos/.";
+const LOCK_DIR: &str = "/run/lqos";
+const LOCK_DIR_PERMS: &str = "/run/lqos/.";
 
 pub struct FileLock {}
 
@@ -56,7 +57,7 @@ impl FileLock {
             Ok(())
         } else {
             std::fs::create_dir(dir_path)?;
-            let unix_path = CString::new(LOCK_DIR)?;
+            let unix_path = CString::new(LOCK_DIR_PERMS)?;
             unsafe {
                 nix::libc::chmod(unix_path.as_ptr(), mode_t::from_le(666));
             }
