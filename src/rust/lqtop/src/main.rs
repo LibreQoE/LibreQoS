@@ -316,6 +316,14 @@ pub async fn main() -> Result<()> {
           modifiers: KeyModifiers::NONE,
         }) => break, // FIXME ipv4 + ipv6
         Event::Key(KeyEvent {
+          code: KeyCode::Char('U'),
+          modifiers: KeyModifiers::NONE,
+        }) => break, // FIXME filter on Unshaped
+        Event::Key(KeyEvent {
+          code: KeyCode::Char('M'),
+          modifiers: KeyModifiers::NONE,
+        }) => break, // FIXME filter on My Network
+        Event::Key(KeyEvent {
           code: KeyCode::Char('T'),
           modifiers: KeyModifiers::NONE,
         }) => break, // FIXME Filter Tin. This would require an argument BVIL<RET>
