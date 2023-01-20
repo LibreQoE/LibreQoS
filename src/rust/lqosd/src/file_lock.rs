@@ -5,7 +5,7 @@ use sysinfo::{System, SystemExt, Pid, ProcessExt};
 
 const LOCK_PATH: &str = "/run/lqos/lqosd.lock";
 const LOCK_DIR: &str = "/run/lqos";
-const LOCK_DIR_PERMS: &str = "/run/lqos/.";
+const LOCK_DIR_PERMS: &str = "/run/lqos";
 
 pub struct FileLock {}
 
@@ -46,8 +46,14 @@ impl FileLock {
     fn create_lock() -> Result<()> {
         let pid = unsafe { getpid() };
         let pid_format = format!("{pid}");
-        let mut f = File::create(LOCK_PATH)?;
-        f.write_all(pid_format.as_bytes())?;
+        {
+            let mut f = File::create(LOCK_PATH)?;
+            f.write_all(pid_format.as_bytes())?;
+        }
+        let unix_path = CString::new(LOCK_PATH)?;
+        unsafe {
+            nix::libc::chmod(unix_path.as_ptr(), mode_t::from_le(666));
+        }
         Ok(())
     }
 
@@ -59,7 +65,7 @@ impl FileLock {
             std::fs::create_dir(dir_path)?;
             let unix_path = CString::new(LOCK_DIR_PERMS)?;
             unsafe {
-                nix::libc::chmod(unix_path.as_ptr(), mode_t::from_le(666));
+                nix::libc::chmod(unix_path.as_ptr(), 777);
             }
             Ok(())
         }

@@ -1,6 +1,7 @@
 use tokio::{net::UnixStream, io::{AsyncWriteExt, AsyncReadExt}};
 use crate::{BUS_SOCKET_PATH, BusSession, BusRequest, encode_request, decode_response, BusResponse};
 use anyhow::Result;
+use super::PREALLOCATE_CLIENT_BUFFER_BYTES;
 
 /// Convenient wrapper for accessing the bus
 /// 
@@ -17,7 +18,7 @@ pub async fn bus_request(requests: Vec<BusRequest>) -> Result<Vec<BusResponse>> 
     };
     let msg = encode_request(&test)?;
     stream.write(&msg).await?;
-    let mut buf = Vec::new();
+    let mut buf = Vec::with_capacity(PREALLOCATE_CLIENT_BUFFER_BYTES);
     let _ = stream.read_to_end(&mut buf).await.unwrap();
     let reply = decode_response(&buf)?;
 

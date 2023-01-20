@@ -9,6 +9,7 @@ use tokio::{
   net::UnixStream,
   time::timeout,
 };
+use super::PREALLOCATE_CLIENT_BUFFER_BYTES;
 
 /// Provides a lqosd bus client that persists between connections. Useful for when you are
 /// going to be repeatedly polling the bus for data (e.g. `lqtop`) and want to avoid the
@@ -25,7 +26,7 @@ impl BusClient {
   pub async fn new() -> Result<Self> {
     Ok(Self {
       stream: Self::connect().await,
-      buffer: vec![0u8; 10240],
+      buffer: vec![0u8; PREALLOCATE_CLIENT_BUFFER_BYTES],
       timeout: Duration::from_millis(100),
     })
   }

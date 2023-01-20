@@ -4,7 +4,7 @@ use lqos_bus::{
 };
 
 pub fn run_query(requests: Vec<BusRequest>) -> Result<Vec<BusResponse>> {
-    let mut replies = Vec::new();
+    let mut replies = Vec::with_capacity(8);
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()

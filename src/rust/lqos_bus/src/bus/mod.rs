@@ -20,7 +20,9 @@ pub const BUS_SOCKET_PATH: &str = "/run/lqos/bus";
 
 /// The directory containing the bus socket. Used for ensuring
 /// that the directory exists.
-pub(crate) const BUS_SOCKET_DIRECTORY: &str = "/run/lqos/.";
+pub(crate) const BUS_SOCKET_DIRECTORY: &str = "/run/lqos";
+
+const PREALLOCATE_CLIENT_BUFFER_BYTES: usize = 10240;
 
 /// Encodes a BusSession with `bincode`, providing a tight binary
 /// representation of the request object for TCP transmission.

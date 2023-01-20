@@ -17,3 +17,6 @@ pub use etc::{BridgeConfig, BridgeInterface, BridgeVlan, EtcLqos, Tunables};
 pub use libre_qos_config::LibreQoSConfig;
 pub use program_control::load_libreqos;
 pub use shaped_devices::{ConfigShapedDevices, ShapedDevice};
+
+/// Used as a constant in determining buffer preallocation
+pub const SUPPORTED_CUSTOMERS: usize = 16_000_000;

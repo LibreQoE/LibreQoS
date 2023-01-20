@@ -1,7 +1,6 @@
 use std::{fs::remove_file, ffi::CString};
 use crate::{BUS_SOCKET_PATH, decode_request, BusReply, encode_response, BusRequest, BusResponse};
 use anyhow::Result;
-use nix::libc::mode_t;
 use tokio::{net::{UnixListener, UnixStream}, io::{AsyncReadExt, AsyncWriteExt}};
 use log::warn;
 
@@ -15,8 +14,9 @@ impl UnixSocketServer {
     /// Creates a new `UnixSocketServer`. Will delete any pre-existing
     /// socket file.
     pub fn new() -> Result<Self> {
-        Self::check_directory()?;
         Self::delete_local_socket()?;
+        Self::check_directory()?;
+        Self::path_permissions()?;
         Ok(Self {})
     }
 
@@ -32,13 +32,17 @@ impl UnixSocketServer {
         if dir_path.exists() && dir_path.is_dir() {
             Ok(())
         } else {
-            std::fs::create_dir(dir_path)?;
-            let unix_path = CString::new(BUS_SOCKET_DIRECTORY)?;
-            unsafe {
-                nix::libc::chmod(unix_path.as_ptr(), mode_t::from_le(666));
-            }
+            std::fs::create_dir(dir_path)?;            
             Ok(())
         }
+    }
+
+    fn path_permissions() -> Result<()> {
+        let unix_path = CString::new(BUS_SOCKET_DIRECTORY)?;
+        unsafe {
+            nix::libc::chmod(unix_path.as_ptr(), 777);
+        }
+        Ok(())
     }
 
     fn delete_local_socket() -> Result<()> {
@@ -50,10 +54,7 @@ impl UnixSocketServer {
     }
 
     fn make_socket_public() -> Result<()> {
-        let unix_path = CString::new(BUS_SOCKET_PATH)?;
-        unsafe {
-            nix::libc::chmod(unix_path.as_ptr(), mode_t::from_le(666));
-        }
+        lqos_utils::run_success!("/bin/chmod", "-R", "a+rwx", BUS_SOCKET_DIRECTORY);
         Ok(())
     }
 
@@ -78,7 +79,7 @@ impl UnixSocketServer {
 
                     if let Ok(request) = decode_request(&buf) {
                         let mut response = BusReply {
-                            responses: Vec::new(),
+                            responses: Vec::with_capacity(8),
                         };
                         handle_bus_requests(&request.requests, &mut response.responses);
                         let _ = reply_unix(&encode_response(&response).unwrap(), &mut socket).await;

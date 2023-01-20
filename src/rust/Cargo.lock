@@ -1308,6 +1308,7 @@ dependencies = [
  "criterion",
  "log",
  "lqos_config",
+ "lqos_utils",
  "nix",
  "serde",
  "tokio",
