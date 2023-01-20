@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tokio = { version = "1.22", features = [ "rt", "macros", "net", "io-util" ] }
+tokio = { version = "1.22", features = [ "rt", "macros", "net", "io-util", "time" ] }
 lqos_bus = { path = "../lqos_bus" }
 anyhow = "1"
 tui = "0.19"
