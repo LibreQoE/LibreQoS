@@ -80,14 +80,14 @@ impl TcFqCodelOptions {
                 let mut result = Self::default();
                 for (key, value) in map.iter() {
                     match key.as_str() {
-                        "limit" => result.limit = value.as_u64().unwrap(),
+                        "limit" => result.limit = value.as_u64().unwrap() as u32,
                         "flows" => result.flows = value.as_u64().unwrap() as u16,
                         "quantum" => result.quantum = value.as_u64().unwrap() as u16,
                         "target" => result.target = value.as_u64().unwrap(),
                         "interval" => result.interval = value.as_u64().unwrap(),
                         "memory_limit" => result.memory_limit = value.as_u64().unwrap() as u32,
                         "ecn" => result.ecn = value.as_bool().unwrap(),
-                        "drop_batch" => result.drop_batch = value.as_u64().unwrap() as u32,
+                        "drop_batch" => result.drop_batch = value.as_u64().unwrap() as u16,
                         _ => {
                             log::error!("Unknown entry in Tc-codel-options: {key}");
                         }
