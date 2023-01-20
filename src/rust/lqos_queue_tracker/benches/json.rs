@@ -105,8 +105,9 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
   let binding = setup_dummy_interface("qt");
   let interface = binding.as_str();
+  let interface = "eth1";
 
-  const QUEUE_COUNTS: [u32; 3] = [10, 100, 1000];
+  const QUEUE_COUNTS: [u32; 1] = [5000];
   for queue_count in QUEUE_COUNTS.iter() {
     let no_stdbuf =
       format!("NO-STBUF, {queue_count} queues: tc qdisc show -s -j");
