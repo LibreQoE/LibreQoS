@@ -1,5 +1,6 @@
 use anyhow::Result;
-use crossterm::{event::KeyCode, terminal::enable_raw_mode};
+use crossterm::{event::{read, Event, KeyEvent, KeyCode, KeyModifiers},
+                terminal::{enable_raw_mode,size}};
 use lqos_bus::{
     BusRequest, BusResponse, IpStats, BusClient,
 };
@@ -63,7 +64,6 @@ fn draw_menu<'a>() -> Paragraph<'a> {
         .alignment(Alignment::Center)
         .block(
             Block::default()
-                .borders(Borders::ALL)
                 .style(Style::default().fg(Color::White))
                 .border_type(BorderType::Plain)
                 .title("LibreQoS Monitor"),
@@ -151,7 +151,6 @@ fn draw_top_pane<'a>(
         .header(header)
         .block(
             Block::default()
-                .borders(Borders::ALL)
                 .title(draw_pps(packets_per_second, bits_per_second)),
         )
         .widths(&[
@@ -177,7 +176,8 @@ pub async fn main() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
-    let mut n_rows = 10;
+    let t = terminal.size().unwrap();
+    let mut n_rows = t.height - 3 ;
 
     loop {
         if let Ok(result) = get_data(&mut bus_client, n_rows).await {
@@ -208,11 +208,96 @@ pub async fn main() -> Result<()> {
         })?;
 
         if crossterm::event::poll(Duration::from_secs(1)).unwrap() {
-            if let crossterm::event::Event::Key(key) = crossterm::event::read().unwrap() {
-                if key.code == KeyCode::Char('q') {
-                    break;
+                match read().unwrap() {
+                    // FIXME - this needs to absorb multiple resize events. Presently,
+                    // When I resize a terminal window, it is not getting one, either.
+                    // How to then change n_rows from here is also on my mind
+                   Event::Resize(width, height) => println!("New size = {}x{}", width, height),
+                   Event::Key(KeyEvent {
+                        code: KeyCode::Char('c'),
+                        modifiers: KeyModifiers::CONTROL,}) => break,
+                   Event::Key(KeyEvent {
+                        code: KeyCode::Char('q'),
+                        modifiers: KeyModifiers::NONE,}) => break,
+                   Event::Key(KeyEvent {
+                        code: KeyCode::Char('n'),
+                        modifiers: KeyModifiers::NONE,}) => break, // FIXME make into next
+                                                                   // e.g. n_rows = screen size
+                                                                   // n_start = n_start + screen
+                                                                   // size
+                   Event::Key(KeyEvent {
+                        code: KeyCode::Char('h'),
+                        modifiers: KeyModifiers::NONE,}) => break, // FIXME make into help
+                   Event::Key(KeyEvent {
+                        code: KeyCode::Char('p'),
+                        modifiers: KeyModifiers::NONE,}) => break, // FIXME make into prev
+                   Event::Key(KeyEvent {
+                        code: KeyCode::Char('u'),
+                        modifiers: KeyModifiers::NONE,}) => break, // FIXME make into uploaders
+                   Event::Key(KeyEvent {
+                        code: KeyCode::Char('d'),
+                        modifiers: KeyModifiers::NONE,}) => break, // FIXME make into downloads
+                   Event::Key(KeyEvent {
+                        code: KeyCode::Char('c'),
+                        modifiers: KeyModifiers::NONE,}) => break, // FIXME make into cpu
+                   Event::Key(KeyEvent {
+                        code: KeyCode::Char('l'),
+                        modifiers: KeyModifiers::NONE,}) => break, // FIXME lag meter
+                   Event::Key(KeyEvent {
+                        code: KeyCode::Char('N'),
+                        modifiers: KeyModifiers::NONE,}) => break, // FIXME make into next panel
+                   Event::Key(KeyEvent {
+                        code: KeyCode::Char('P'),
+                        modifiers: KeyModifiers::NONE,}) => break, // FIXME make into prev panel
+                   Event::Key(KeyEvent {
+                        code: KeyCode::Char('b'),
+                        modifiers: KeyModifiers::NONE,}) => break, // FIXME Best
+                   Event::Key(KeyEvent {
+                        code: KeyCode::Char('w'),
+                        modifiers: KeyModifiers::NONE,}) => break, // FIXME Worst
+                   Event::Key(KeyEvent {
+                        code: KeyCode::Char('D'),
+                        modifiers: KeyModifiers::NONE,}) => break, // FIXME Drops
+                   Event::Key(KeyEvent {
+                        code: KeyCode::Char('Q'),
+                        modifiers: KeyModifiers::NONE,}) => break, // FIXME Queues
+                   Event::Key(KeyEvent {
+                        code: KeyCode::Char('W'),
+                        modifiers: KeyModifiers::NONE,}) => break, // FIXME (un)display wider stuff
+                   Event::Key(KeyEvent {
+                        code: KeyCode::Char('6'),
+                        modifiers: KeyModifiers::NONE,}) => break, // FIXME Just look at ipv6 
+                   Event::Key(KeyEvent {
+                        code: KeyCode::Char('4'),
+                        modifiers: KeyModifiers::NONE,}) => break, // FIXME Just look at ipv4 
+                   Event::Key(KeyEvent {
+                        code: KeyCode::Char('5'),
+                        modifiers: KeyModifiers::NONE,}) => break, // FIXME ipv4 + ipv6
+                   Event::Key(KeyEvent {
+                        code: KeyCode::Char('F'),
+                        modifiers: KeyModifiers::NONE,}) => break, // FIXME Filter on "something*
+                   Event::Key(KeyEvent {
+                        code: KeyCode::Char('S'),
+                        modifiers: KeyModifiers::NONE,}) => break, // FIXME Filter on Plan Speed
+                                                                   // Use TAB for autocompletion
+                   // If I have moved into a panel, the following are ideas
+                   Event::Key(KeyEvent {
+                        code: KeyCode::Char('A'),
+                        modifiers: KeyModifiers::NONE,}) => break, // FIXME Alert me on this selection
+                   Event::Key(KeyEvent {
+                        code: KeyCode::Char('K'),
+                        modifiers: KeyModifiers::NONE,}) => break, // FIXME Kill Alert on this
+                   Event::Key(KeyEvent {
+                        code: KeyCode::Char('V'),
+                        modifiers: KeyModifiers::NONE,}) => break, // FIXME View Selected Alerts
+                   Event::Key(KeyEvent {
+                        code: KeyCode::Char('B'),
+                        modifiers: KeyModifiers::NONE,}) => break, // Launch Browser on this customer
+                   Event::Key(KeyEvent {
+                        code: KeyCode::Char('L'),
+                        modifiers: KeyModifiers::NONE,}) => break, // Launch Browser on this customer
+                   _ => println!("Not recognized"), 
                 }
-            }
         }
     }
 
