@@ -50,13 +50,17 @@ async fn get_data(client: &mut BusClient, n_rows: u16) -> Result<DataResult> {
   Ok(result)
 }
 
-fn draw_menu<'a>() -> Paragraph<'a> {
-  let text = Spans::from(vec![
+fn draw_menu<'a>(is_connected: bool) -> Paragraph<'a> {
+  let mut text = Spans::from(vec![
     Span::styled("Q", Style::default().fg(Color::Green)),
     Span::from("uit"),
   ]);
 
-  Paragraph::new(text)
+  if !is_connected {
+    text.0.push(Span::styled(" NOT CONNECTED ", Style::default().fg(Color::Red)))
+  }
+
+  let para = Paragraph::new(text)
     .style(Style::default().fg(Color::White))
     .alignment(Alignment::Center)
     .block(
@@ -64,7 +68,9 @@ fn draw_menu<'a>() -> Paragraph<'a> {
         .style(Style::default().fg(Color::White))
         .border_type(BorderType::Plain)
         .title("LibreQoS Monitor"),
-    )
+    );
+
+    para
 }
 
 fn scale_packets(n: u64) -> String {
@@ -172,6 +178,10 @@ fn draw_top_pane<'a>(
 #[tokio::main(flavor = "current_thread")]
 pub async fn main() -> Result<()> {
   let mut bus_client = BusClient::new().await?;
+  if !bus_client.is_connected() {
+    println!("ERROR: lqosd bus is not available");
+    std::process::exit(0);
+  }
   let mut packets = (0, 0);
   let mut bits = (0, 0);
   let mut top = Vec::new();
@@ -206,7 +216,7 @@ pub async fn main() -> Result<()> {
           .as_ref(),
         )
         .split(f.size());
-      f.render_widget(draw_menu(), chunks[0]);
+      f.render_widget(draw_menu(bus_client.is_connected()), chunks[0]);
       n_rows = chunks[1].height;
       f.render_widget(draw_top_pane(&top, packets, bits), chunks[1]);
       //f.render_widget(bandwidth_chart(datasets.clone(), packets, bits, min, max), chunks[1]);
