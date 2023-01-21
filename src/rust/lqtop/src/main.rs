@@ -131,18 +131,18 @@ fn draw_top_pane<'a>(
       };
       Row::new(vec![
         Cell::from(stats.ip_address.clone()),
-        Cell::from(format!("🠗 {}", scale_bits(stats.bits_per_second.0))),
-        Cell::from(format!("🠕 {}", scale_bits(stats.bits_per_second.1))),
+        Cell::from(format!("🠗 {:>13}", scale_bits(stats.bits_per_second.0))),
+        Cell::from(format!("🠕 {:>13}", scale_bits(stats.bits_per_second.1))),
         Cell::from(format!(
-          "🠗 {}",
+          "🠗 {:>13}",
           scale_packets(stats.packets_per_second.0)
         )),
         Cell::from(format!(
-          "🠕 {}",
+          "🠕 {:>13}",
           scale_packets(stats.packets_per_second.1)
         )),
-        Cell::from(format!("{:.2} ms", stats.median_tcp_rtt)),
-        Cell::from(stats.tc_handle.to_string()),
+        Cell::from(format!("{:>7} ms", format!("{:.2}",stats.median_tcp_rtt))),
+        Cell::from(format!("{:>7}",stats.tc_handle.to_string())),
       ])
       .style(Style::default().fg(color))
     })
@@ -210,7 +210,7 @@ pub async fn main() -> Result<()> {
         .constraints(
           [
             Constraint::Min(3),
-            Constraint::Percentage(99),
+            Constraint::Percentage(100),
           ]
           .as_ref(),
         )
