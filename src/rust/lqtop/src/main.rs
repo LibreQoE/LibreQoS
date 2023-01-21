@@ -4,6 +4,7 @@ use crossterm::{
   terminal::{enable_raw_mode, size},
 };
 use lqos_bus::{BusClient, BusRequest, BusResponse, IpStats};
+use lqos_utils::packet_scale::{scale_bits,scale_packets};
 use std::{io, time::Duration};
 use tui::{
   backend::CrosstermBackend,
@@ -73,30 +74,6 @@ fn draw_menu<'a>(is_connected: bool) -> Paragraph<'a> {
     );
 
     para
-}
-
-fn scale_packets(n: u64) -> String {
-  if n > 1_000_000_000 {
-    format!("{:.2} gpps", n as f32 / 1_000_000_000.0)
-  } else if n > 1_000_000 {
-    format!("{:.2} mpps", n as f32 / 1_000_000.0)
-  } else if n > 1_000 {
-    format!("{:.2} kpps", n as f32 / 1_000.0)
-  } else {
-    format!("{n} pps")
-  }
-}
-
-fn scale_bits(n: u64) -> String {
-  if n > 1_000_000_000 {
-    format!("{:.2} gbit/s", n as f32 / 1_000_000_000.0)
-  } else if n > 1_000_000 {
-    format!("{:.2} mbit/s", n as f32 / 1_000_000.0)
-  } else if n > 1_000 {
-    format!("{:.2} kbit/s", n as f32 / 1_000.0)
-  } else {
-    format!("{n} bit/s")
-  }
 }
 
 fn draw_pps<'a>(
