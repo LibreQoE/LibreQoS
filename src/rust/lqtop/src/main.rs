@@ -192,7 +192,7 @@ pub async fn main() -> Result<()> {
   let mut terminal = Terminal::new(backend)?;
   terminal.clear()?;
   let t = terminal.size().unwrap();
-  let mut n_rows = t.height - 3;
+  let mut n_rows = 33;
 
   loop {
     if let Ok(result) = get_data(&mut bus_client, n_rows).await {
@@ -334,6 +334,10 @@ pub async fn main() -> Result<()> {
           code: KeyCode::Char('M'),
           modifiers: KeyModifiers::NONE,
         }) => break, // FIXME filter on My Network
+        Event::Key(KeyEvent {
+          code: KeyCode::Char('H'),
+          modifiers: KeyModifiers::NONE,
+        }) => break, // FIXME Generate histogram
         Event::Key(KeyEvent {
           code: KeyCode::Char('T'),
           modifiers: KeyModifiers::NONE,
