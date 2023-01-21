@@ -8,3 +8,4 @@ tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
 rtnetlink = "0"
 futures-util = "0.3"
 bytemuck = "1"
+derivative = "2"
