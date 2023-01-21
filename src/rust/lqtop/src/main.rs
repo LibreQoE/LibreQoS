@@ -52,12 +52,14 @@ async fn get_data(client: &mut BusClient, n_rows: u16) -> Result<DataResult> {
 
 fn draw_menu<'a>(is_connected: bool) -> Paragraph<'a> {
   let mut text = Spans::from(vec![
-    Span::styled("Q", Style::default().fg(Color::Green)),
+    Span::styled("Q", Style::default().fg(Color::White)),
     Span::from("uit"),
   ]);
 
   if !is_connected {
     text.0.push(Span::styled(" NOT CONNECTED ", Style::default().fg(Color::Red)))
+  } else {
+    text.0.push(Span::styled("     CONNECTED ", Style::default().fg(Color::Green)))
   }
 
   let para = Paragraph::new(text)
@@ -65,9 +67,9 @@ fn draw_menu<'a>(is_connected: bool) -> Paragraph<'a> {
     .alignment(Alignment::Center)
     .block(
       Block::default()
-        .style(Style::default().fg(Color::White))
+        .style(Style::default().fg(Color::Green))
         .border_type(BorderType::Plain)
-        .title("LibreQoS Monitor"),
+        .title("LibreQoS Monitor: "),
     );
 
     para
@@ -102,14 +104,15 @@ fn draw_pps<'a>(
   bits_per_second: (u64, u64),
 ) -> Spans<'a> {
   let text = Spans::from(vec![
+    Span::from(scale_bits(bits_per_second.0)),
+    Span::from(" "),
+    Span::from(scale_bits(bits_per_second.1)),
+    Span::from(" "),
     Span::styled("🠗 ", Style::default().fg(Color::Yellow)),
     Span::from(scale_packets(packets_per_second.0)),
     Span::from(" "),
-    Span::from(scale_bits(bits_per_second.0)),
     Span::styled(" 🠕 ", Style::default().fg(Color::Yellow)),
     Span::from(scale_packets(packets_per_second.1)),
-    Span::from(" "),
-    Span::from(scale_bits(bits_per_second.1)),
   ]);
   text
 }
@@ -206,10 +209,10 @@ pub async fn main() -> Result<()> {
     terminal.draw(|f| {
       let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .margin(1)
+        .margin(0)
         .constraints(
           [
-            Constraint::Min(3),
+            Constraint::Min(1),
             Constraint::Percentage(100),
           ]
           .as_ref(),
