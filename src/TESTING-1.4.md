@@ -61,7 +61,7 @@ This will take a while the first time, but it puts everything in the right place
 Copy the daemon configuration file to `/etc`:
 
 ```
-sudo cp lqos.example /etc/lqos
+sudo cp lqos.example /etc/lqos.conf
 ```
 
 Now edit the file to match your setup:

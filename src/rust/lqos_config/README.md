@@ -2,9 +2,9 @@
 
 `lqos_config` is designed to manage configuration of LibreQoS.
 
-Since all of the parts of the system need to know where to find LibreQoS, it first looks for a file named `/etc/lqos` and uses that to locate the LibreQoS installation.
+Since all of the parts of the system need to know where to find LibreQoS, it first looks for a file named `/etc/lqos.conf` and uses that to locate the LibreQoS installation.
 
-`/etc/lqos` looks like this:
+`/etc/lqos.conf` looks like this:
 
 ```toml
 lqos_directory = '/opt/libreqos'

@@ -1,10 +1,10 @@
-//! Manages the `/etc/lqos` file.
+//! Manages the `/etc/lqos.conf` file.
 
 use anyhow::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-/// Represents the top-level of the `/etc/lqos` file. Serialization
+/// Represents the top-level of the `/etc/lqos.conf` file. Serialization
 /// structure.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct EtcLqos {
@@ -105,12 +105,12 @@ pub struct BridgeVlan {
 }
 
 impl EtcLqos {
-    /// Loads `/etc/lqos`.
+    /// Loads `/etc/lqos.conf`.
     pub fn load() -> Result<Self> {
-        if !Path::new("/etc/lqos").exists() {
-            return Err(Error::msg("You must setup /etc/lqos"));
+        if !Path::new("/etc/lqos.conf").exists() {
+            return Err(Error::msg("You must setup /etc/lqos.conf"));
         }
-        let raw = std::fs::read_to_string("/etc/lqos")?;
+        let raw = std::fs::read_to_string("/etc/lqos.conf")?;
         let config: Self = toml::from_str(&raw)?;
         //println!("{:?}", config);
         Ok(config)

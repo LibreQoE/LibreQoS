@@ -20,7 +20,7 @@ pub struct ConfigShapedDevices {
 
 impl ConfigShapedDevices {
     /// The path to the current `ShapedDevices.csv` file, determined
-    /// by acquiring the prefix from the `/etc/lqos` configuration
+    /// by acquiring the prefix from the `/etc/lqos.conf` configuration
     /// file.
     pub fn path() -> Result<PathBuf> {
         let cfg = etc::EtcLqos::load()?;
