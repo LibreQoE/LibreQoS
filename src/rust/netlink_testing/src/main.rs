@@ -1,8 +1,8 @@
 use std::{time::Instant, str::from_utf8};
-
 use derivative::Derivative;
 use rtnetlink::{new_connection, packet::{TcMessage, tc::{Nla, Stats2}}};
 use futures_util::TryStreamExt;
+use zerocopy::{AsBytes, FromBytes, LayoutVerified};
 
 #[allow(non_camel_case_types)]
 #[derive(Debug)]
@@ -66,37 +66,48 @@ fn slice_to_u16(buff: &[u8]) -> u16 {
 
 #[tokio::main]
 async fn main() -> Result<(), ()> {
+  let now = Instant::now();
   let (connection, handle, _) = new_connection().unwrap();
   tokio::spawn(connection);
-
+  let elapsed = now.elapsed();
+  println!("Time setting up NetLink socket/handler: {} nanoseconds", elapsed.as_nanos());
   let now = Instant::now();
+
   let mut result = handle.qdisc().get().index(3).execute();
   let elapsed = now.elapsed();
   println!("Time spent in NetLink API: {} nanoseconds", elapsed.as_nanos());
-  let mut results = Vec::new();
+  let now = Instant::now();
+  //let mut results = Vec::new();
   while let Ok(Some(result)) = result.try_next().await {
-    results.push(result);
+    //results.push(result);
   }
-  println!("Retrieved {} messages", results.len());
-  println!("Time spent in NetLink API: {} nanoseconds", elapsed.as_nanos());
+  let elapsed = now.elapsed();
+  //println!("Retrieved {} messages", results.len());
+  println!("Time retreiving messages: {} nanoseconds", elapsed.as_nanos());
 
+  /*let mut blah = Vec::new();
   let mut i = 0;
   loop {
     let msg = format!("{:?}", results[i]);
     if msg.contains("cake") {
-      println!("{msg}");
+      //println!("{msg}");
       for nlas in results[i].nlas.iter() {
         match nlas {
           Nla::Stats2(o) => {
             for stats in o.iter() {
               match stats {
                 Stats2::StatsApp(o) => {
-                  println!("{:?}", o);
+                  //println!("{:?}", o);
 
                   let size = std::mem::size_of::<CakeStats2>();
                   println!("Size: {size} (vs buffer size {}", o.len());
-                  let data = bytemuck::cast_slice::<u8, CakeStats2>(&o[0 .. size])[0];
-                  println!("{:#?}", data);
+                  println!("Tin size: {}", std::mem::size_of::<CakeTin>());
+                  let now = Instant::now();
+                  //let data = bytemuck::cast_slice::<u8, CakeStats2>(&o[0 .. size])[0];
+                  let data = CakeStats2::read_from(&o[0..]);
+                  println!("Conversion time: {} nanoseconds)", now.elapsed().as_nanos());
+                  //println!("{:#?}", data);
+                  blah.push(data);
 
                   /*let mut count = 0;
                   while count < o.len() {
@@ -116,13 +127,13 @@ async fn main() -> Result<(), ()> {
     }
     i+=1;
     if i > results.len()-1 { break; }
-  }
+  }*/
 
   Ok(())
 }
 
 #[repr(C, packed)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, FromBytes)]
 #[derive(Derivative)]
 #[derivative(Debug)]
 struct CakeStats2 {
@@ -134,16 +145,16 @@ struct CakeStats2 {
   max_adjlen: Nla32,
   min_netlen: Nla32,
   min_adjlen: Nla32,
-  #[derivative(Debug="ignore")]
-  padding: [u8; 20],
+
+  unknown_length: u16,
+  unknown_type: u16,
+
+  padding: [u8; 16],
   tins: [CakeTin; 4],
 }
 
-unsafe impl bytemuck::Zeroable for CakeStats2 {}
-unsafe impl bytemuck::Pod for CakeStats2 {}
-
 #[repr(C, packed)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, FromBytes)]
 #[derive(Derivative)]
 #[derivative(Debug)]
 struct CakeTin {
@@ -169,11 +180,8 @@ struct CakeTin {
   flow_quantum: Nla32,  
 }
 
-unsafe impl bytemuck::Zeroable for CakeTin {}
-unsafe impl bytemuck::Pod for CakeTin {}
-
 #[repr(C, packed)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, FromBytes)]
 #[derive(Derivative)]
 #[derivative(Debug)]
 struct Nla64 {
@@ -184,11 +192,8 @@ struct Nla64 {
   value: u64,
 }
 
-unsafe impl bytemuck::Zeroable for Nla64 {}
-unsafe impl bytemuck::Pod for Nla64 {}
-
 #[repr(C, packed)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, FromBytes)]
 #[derive(Derivative)]
 #[derivative(Debug)]
 struct Nla32 {
@@ -198,7 +203,3 @@ struct Nla32 {
   nla_type: u16,
   value: u32,
 }
-
-unsafe impl bytemuck::Zeroable for Nla32 {}
-unsafe impl bytemuck::Pod for Nla32 {}
-

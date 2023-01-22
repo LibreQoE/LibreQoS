@@ -104,10 +104,10 @@ pub fn criterion_benchmark(c: &mut Criterion) {
   });
 
   let binding = setup_dummy_interface("qt");
-  let interface = binding.as_str();
+  //let interface = binding.as_str(); // The dummy interface was giving me problems on my VM
   let interface = "eth1";
 
-  const QUEUE_COUNTS: [u32; 1] = [5000];
+  const QUEUE_COUNTS: [u32; 3] = [10, 100, 1000];
   for queue_count in QUEUE_COUNTS.iter() {
     let no_stdbuf =
       format!("NO-STBUF, {queue_count} queues: tc qdisc show -s -j");
@@ -133,7 +133,20 @@ pub fn criterion_benchmark(c: &mut Criterion) {
       });
     });
 
-    c.bench_function(&stdbuf, |b| {
+    c.bench_function(&format!("Netlink fetch, {queue_count} queues"), |b| {
+      // Get a Tokio runtime to use
+      // Not counting Tokio initialization time
+      let tokio_rt = tokio::runtime::Builder::new_current_thread()
+        .enable_io()
+        .build()
+        .unwrap();
+      b.iter(|| {
+        let queues = tokio_rt.block_on(get_all_queue_stats_with_netlink(3)).unwrap();
+        black_box(queues);
+      });
+    });
+
+    /*c.bench_function(&stdbuf, |b| {
       b.iter(|| {
         let command_output = Command::new("/usr/bin/stdbuf")
           .args([
@@ -145,7 +158,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         let json = String::from_utf8(command_output.stdout).unwrap();
         black_box(json);
       });
-    });
+    });*/
   }
 }
 
