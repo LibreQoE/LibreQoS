@@ -110,7 +110,9 @@ In the web browser, click `Reload LibreQoS` to setup your shaping rules.
 
 # Updating 1.4 Once You Have It
 
-* Note: On January 22nd 2023 /etc/lqos was changed to /etc/lqos.conf. If upgrading, be sure to move /etc/lqos to /etc/lqos.conf
+* Note: On January 22nd 2023 /etc/lqos was changed to /etc/lqos.conf to remedy Issue #205. If upgrading, be sure to move /etc/lqos to /etc/lqos.conf
+
+<img src="https://raw.githubusercontent.com/LibreQoE/LibreQoS/main/docs/jk.jpg" width=200px></a>
 
 1. Resume screen with `screen -r`
 2. Go to console 0 (`Ctrl-A, 0`) and stop `lqosd` with `ctrl+c`.
