@@ -4,6 +4,7 @@ use crossterm::{
   terminal::{enable_raw_mode, size},
 };
 use lqos_bus::{BusClient, BusRequest, BusResponse, IpStats};
+use lqos_utils::packet_scale::{scale_bits,scale_packets};
 use std::{io, time::Duration};
 use tui::{
   backend::CrosstermBackend,
@@ -52,12 +53,14 @@ async fn get_data(client: &mut BusClient, n_rows: u16) -> Result<DataResult> {
 
 fn draw_menu<'a>(is_connected: bool) -> Paragraph<'a> {
   let mut text = Spans::from(vec![
-    Span::styled("Q", Style::default().fg(Color::Green)),
+    Span::styled("Q", Style::default().fg(Color::White)),
     Span::from("uit"),
   ]);
 
   if !is_connected {
     text.0.push(Span::styled(" NOT CONNECTED ", Style::default().fg(Color::Red)))
+  } else {
+    text.0.push(Span::styled("     CONNECTED ", Style::default().fg(Color::Green)))
   }
 
   let para = Paragraph::new(text)
@@ -65,36 +68,12 @@ fn draw_menu<'a>(is_connected: bool) -> Paragraph<'a> {
     .alignment(Alignment::Center)
     .block(
       Block::default()
-        .style(Style::default().fg(Color::White))
+        .style(Style::default().fg(Color::Green))
         .border_type(BorderType::Plain)
-        .title("LibreQoS Monitor"),
+        .title("LibreQoS Monitor: "),
     );
 
     para
-}
-
-fn scale_packets(n: u64) -> String {
-  if n > 1_000_000_000 {
-    format!("{:.2} gpps", n as f32 / 1_000_000_000.0)
-  } else if n > 1_000_000 {
-    format!("{:.2} mpps", n as f32 / 1_000_000.0)
-  } else if n > 1_000 {
-    format!("{:.2} kpps", n as f32 / 1_000.0)
-  } else {
-    format!("{n} pps")
-  }
-}
-
-fn scale_bits(n: u64) -> String {
-  if n > 1_000_000_000 {
-    format!("{:.2} gbit/s", n as f32 / 1_000_000_000.0)
-  } else if n > 1_000_000 {
-    format!("{:.2} mbit/s", n as f32 / 1_000_000.0)
-  } else if n > 1_000 {
-    format!("{:.2} kbit/s", n as f32 / 1_000.0)
-  } else {
-    format!("{n} bit/s")
-  }
 }
 
 fn draw_pps<'a>(
@@ -102,14 +81,15 @@ fn draw_pps<'a>(
   bits_per_second: (u64, u64),
 ) -> Spans<'a> {
   let text = Spans::from(vec![
+    Span::from(scale_bits(bits_per_second.0)),
+    Span::from(" "),
+    Span::from(scale_bits(bits_per_second.1)),
+    Span::from(" "),
     Span::styled("🠗 ", Style::default().fg(Color::Yellow)),
     Span::from(scale_packets(packets_per_second.0)),
     Span::from(" "),
-    Span::from(scale_bits(bits_per_second.0)),
     Span::styled(" 🠕 ", Style::default().fg(Color::Yellow)),
     Span::from(scale_packets(packets_per_second.1)),
-    Span::from(" "),
-    Span::from(scale_bits(bits_per_second.1)),
   ]);
   text
 }
@@ -131,18 +111,18 @@ fn draw_top_pane<'a>(
       };
       Row::new(vec![
         Cell::from(stats.ip_address.clone()),
-        Cell::from(format!("🠗 {}", scale_bits(stats.bits_per_second.0))),
-        Cell::from(format!("🠕 {}", scale_bits(stats.bits_per_second.1))),
+        Cell::from(format!("🠗 {:>13}", scale_bits(stats.bits_per_second.0))),
+        Cell::from(format!("🠕 {:>13}", scale_bits(stats.bits_per_second.1))),
         Cell::from(format!(
-          "🠗 {}",
+          "🠗 {:>13}",
           scale_packets(stats.packets_per_second.0)
         )),
         Cell::from(format!(
-          "🠕 {}",
+          "🠕 {:>13}",
           scale_packets(stats.packets_per_second.1)
         )),
-        Cell::from(format!("{:.2} ms", stats.median_tcp_rtt)),
-        Cell::from(stats.tc_handle.to_string()),
+        Cell::from(format!("{:>7} ms", format!("{:.2}",stats.median_tcp_rtt))),
+        Cell::from(format!("{:>7}",stats.tc_handle.to_string())),
       ])
       .style(Style::default().fg(color))
     })
@@ -192,7 +172,7 @@ pub async fn main() -> Result<()> {
   let mut terminal = Terminal::new(backend)?;
   terminal.clear()?;
   let t = terminal.size().unwrap();
-  let mut n_rows = t.height - 3;
+  let mut n_rows = 33;
 
   loop {
     if let Ok(result) = get_data(&mut bus_client, n_rows).await {
@@ -206,11 +186,11 @@ pub async fn main() -> Result<()> {
     terminal.draw(|f| {
       let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .margin(1)
+        .margin(0)
         .constraints(
           [
-            Constraint::Min(3),
-            Constraint::Percentage(99),
+            Constraint::Min(1),
+            Constraint::Percentage(100),
           ]
           .as_ref(),
         )
@@ -334,6 +314,10 @@ pub async fn main() -> Result<()> {
           code: KeyCode::Char('M'),
           modifiers: KeyModifiers::NONE,
         }) => break, // FIXME filter on My Network
+        Event::Key(KeyEvent {
+          code: KeyCode::Char('H'),
+          modifiers: KeyModifiers::NONE,
+        }) => break, // FIXME Generate histogram
         Event::Key(KeyEvent {
           code: KeyCode::Char('T'),
           modifiers: KeyModifiers::NONE,

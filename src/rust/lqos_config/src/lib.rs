@@ -1,7 +1,7 @@
 //! The `lqos_config` crate stores and handles LibreQoS configuration.
 //! Configuration is drawn from:
 //! * The `ispConfig.py` file.
-//! * The `/etc/lqos` file.
+//! * The `/etc/lqos.conf` file.
 //! * `ShapedDevices.csv` files.
 //! * `network.json` files.
 

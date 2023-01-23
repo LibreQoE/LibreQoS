@@ -1,2 +1,3 @@
-mod string_table_enum;
 mod commands;
+pub mod packet_scale;
+mod string_table_enum;

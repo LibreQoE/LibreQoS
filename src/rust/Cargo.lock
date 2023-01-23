@@ -1459,6 +1459,7 @@ dependencies = [
  "anyhow",
  "crossterm 0.19.0",
  "lqos_bus",
+ "lqos_utils",
  "tokio",
  "tui",
 ]

@@ -11,15 +11,15 @@
 
 ## Required Configuration
 
-You *must* have a file present called `/etc/lqos`. At a minimum, it must tell `lqosd` where to find the LibreQoS configuration. For example:
+You *must* have a file present called `/etc/lqos.conf`. At a minimum, it must tell `lqosd` where to find the LibreQoS configuration. For example:
 
 ```toml
-lqos_directory = '/opt/libreqos/v1.3'
+lqos_directory = '/opt/libreqos'
 ```
 
 ## Offload Tuning
 
-`lqosd` can set kernel tunables for you on start-up. These are specified in `/etc/lqos` also, in the `[tuning]` section:
+`lqosd` can set kernel tunables for you on start-up. These are specified in `/etc/lqos.conf` also, in the `[tuning]` section:
 
 ```toml
 [tuning]
@@ -37,7 +37,7 @@ disable_offload = [ "gso", "tso", "lro", "sg", "gro" ]
 
 ## Bifrost - eBPF Kernel Bridge
 
-To enable the kernel-side eBPF bridge, edit `/etc/lqos`:
+To enable the kernel-side eBPF bridge, edit `/etc/lqos.conf`:
 
 ```toml
 [bridge]
