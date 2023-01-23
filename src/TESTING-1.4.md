@@ -118,7 +118,7 @@ In the web browser, click `Reload LibreQoS` to setup your shaping rules.
 2. Go to console 0 (`Ctrl-A, 0`) and stop `lqosd` with `ctrl+c`.
 3. Go to console 1 (`Ctl-A, 1`) and stop `lqos_node_manager` with `ctrl+c`.
 4. Detach from `screen` with `Ctrl-A, D`.
-5. Change to your `LibreQoS` directory (e.g. `cd /opt/LibreQoS`)
+5. Change to your `LibreQoS` directory (e.g. `cd /opt/libreqos`)
 6. Update from Git: `git pull`
 7. Recompile: `./build-rust.sh`
 8. Resume screen with `screen -r`.
