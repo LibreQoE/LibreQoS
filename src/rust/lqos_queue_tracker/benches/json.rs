@@ -8,7 +8,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use lqos_queue_tracker::*;
 use std::process::{id, Command};
 
-const EXAMPLE_JSON: &str = include_str!("./example_json.txt");
+const EXAMPLE_JSON: &str = include_str!("./example.json");
 const TC: &str = "/sbin/tc";
 const SUDO: &str = "/bin/sudo";
 const IP: &str = "ip";
