@@ -93,16 +93,23 @@ Change `enp1s0f1` and `enp1s0f2` to match your network interfaces. It doesn't ma
 
 Follow the regular instructions to set your interfaces in `ispConfig.py` and your `network.json` and `ShapedDevices.csv` files.
 
-## Run the program
+## Configure autostart services (lqosd, lqos_node_manager)
+
+cp /opt/libreqos/src/bin/lqos_node_manager.service.example /etc/systemd/system/lqos_node_manager.service
+cp /opt/libreqos/src/bin/lqosd.service.example /etc/systemd/system/lqosd.service
+systemctl daemon-reload
+
+## Run the program (debug mode)
 
 You can setup `lqosd` and `lqos_node_manager` as daemons to keep running (there are example `systemd` files in the `src/bin` folder). Since v1.4 is under such heavy development, I recommend using `screen` to run detached instances - and make finding issues easier.
 
-1. `screen`
-2. `cd /wherever_you_put_libreqos/src/bin`
-3. `sudo ./lqosd`
-4. Create a new `screen` window with `Ctrl-A, C`.
-5. Run the webserver with `./lqos_node_manager`
-6. If you didn't see errors, detach with `Ctrl-A, D`
+1. Stop services: systemctl stop lqosd lqos_node_manager
+2. `screen`
+3. `cd /wherever_you_put_libreqos/src/bin`
+4. `sudo ./lqosd`
+5. Create a new `screen` window with `Ctrl-A, C`.
+6. Run the webserver with `./lqos_node_manager`
+7. If you didn't see errors, detach with `Ctrl-A, D`
 
 You can now point a web browser at `http://a.b.c.d:9123` (replace `a.b.c.d` with the management IP address of your shaping server) and enjoy a real-time view of your network.
 
