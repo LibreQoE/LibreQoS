@@ -95,9 +95,11 @@ Follow the regular instructions to set your interfaces in `ispConfig.py` and you
 
 ## Configure autostart services (lqosd, lqos_node_manager)
 
+```
 cp /opt/libreqos/src/bin/lqos_node_manager.service.example /etc/systemd/system/lqos_node_manager.service
 cp /opt/libreqos/src/bin/lqosd.service.example /etc/systemd/system/lqosd.service
 systemctl daemon-reload
+```
 
 ## Run the program (debug mode)
 
