@@ -1250,11 +1250,11 @@ def refreshShapersUpdateOnly():
 		print("refreshShapersUpdateOnly completed on " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
 
 if __name__ == '__main__':
-	if is_lqosd_alive:
+	if is_lqosd_alive():
 		print("lqosd is running")
 	else:
 		print("ERROR: lqosd is not running. Aborting")
-		os.exit()
+		os._exit(-1)
 
 	parser = argparse.ArgumentParser()
 	parser.add_argument(
