@@ -134,7 +134,7 @@ In the web browser, click `Reload LibreQoS` to setup your shaping rules.
 11. If you didn't see errors, detach with `Ctrl-A, D` 
 
 
-# Bugfix for slowly Ubuntu starting (~2 minutes penalty) in situation when networking interfaces are down when starting
+# Bugfix for slowly Ubuntu starting (~2 minutes penalty) in situation when one of the networking interface is down during startup
 
 #List all services whitch are requires network
 systemctl show -p WantedBy network-online.target
