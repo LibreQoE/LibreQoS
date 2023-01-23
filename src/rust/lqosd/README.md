@@ -14,7 +14,7 @@
 You *must* have a file present called `/etc/lqos.conf`. At a minimum, it must tell `lqosd` where to find the LibreQoS configuration. For example:
 
 ```toml
-lqos_directory = '/opt/libreqos/v1.3'
+lqos_directory = '/opt/libreqos'
 ```
 
 ## Offload Tuning
