@@ -136,3 +136,12 @@ In the web browser, click `Reload LibreQoS` to setup your shaping rules.
 9. Go to console 0 (`Ctrl-A, 0`) and run `sudo ./lqosd` to restart the bridge/manager.
 10. Go to console 1 (`Ctrl-A, 1`) and run `./lqos_node_manager` to restart the web server.
 11. If you didn't see errors, detach with `Ctrl-A, D` 
+
+
+# Bugfix for slowly Ubuntu starting (~2 minutes penalty) in situation when one of the networking interface is down during startup
+
+#List all services whitch are requires network
+systemctl show -p WantedBy network-online.target
+
+#For my instance the command helped
+systemctl disable cloud-config.service iscsid.service cloud-final.service
