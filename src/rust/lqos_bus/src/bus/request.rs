@@ -7,101 +7,109 @@ use serde::{Deserialize, Serialize};
 /// or data.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum BusRequest {
-    /// A generic "is it alive?" test. Returns an `Ack`.
-    Ping,
+  /// A generic "is it alive?" test. Returns an `Ack`.
+  Ping,
 
-    /// Request total current throughput. Returns a
-    /// `BusResponse::CurrentThroughput` value.
-    GetCurrentThroughput,
+  /// Request total current throughput. Returns a
+  /// `BusResponse::CurrentThroughput` value.
+  GetCurrentThroughput,
 
-    /// Retrieve the top N downloads by bandwidth use.
-    GetTopNDownloaders{
-        /// First row to retrieve (usually 0 unless you are paging)
-        start: u32, 
-        /// Last row to retrieve (10 for top-10 starting at 0)
-        end: u32
-    },
+  /// Retrieve the top N downloads by bandwidth use.
+  GetTopNDownloaders {
+    /// First row to retrieve (usually 0 unless you are paging)
+    start: u32,
+    /// Last row to retrieve (10 for top-10 starting at 0)
+    end: u32,
+  },
 
-    /// Retrieves the TopN hosts with the worst RTT, sorted by RTT descending.
-    GetWorstRtt{
-        /// First row to retrieve (usually 0 unless you are paging)
-        start: u32,
-        /// Last row to retrieve (10 for top-10 starting at 0)
-        end: u32
-    },
+  /// Retrieves the TopN hosts with the worst RTT, sorted by RTT descending.
+  GetWorstRtt {
+    /// First row to retrieve (usually 0 unless you are paging)
+    start: u32,
+    /// Last row to retrieve (10 for top-10 starting at 0)
+    end: u32,
+  },
 
-    /// Retrieves current byte counters for all hosts.
-    GetHostCounter,
+  /// Retrieves the TopN hosts with the best RTT, sorted by RTT descending.
+  GetBestRtt {
+    /// First row to retrieve (usually 0 unless you are paging)
+    start: u32,
+    /// Last row to retrieve (10 for top-10 starting at 0)
+    end: u32,
+  },
 
-    /// Requests that the XDP back-end associate an IP address with a
-    /// TC (traffic control) handle, and CPU. The "upload" flag indicates
-    /// that this is a second channel applied to the SAME network interface,
-    /// used for "on-a-stick" mode upload channels.
-    MapIpToFlow {
-        /// The IP address to map, as a string. It can be IPv4 or IPv6,
-        /// and supports CIDR notation for subnets. "192.168.1.1",
-        /// "192.168.1.0/24", are both valid.
-        ip_address: String,
+  /// Retrieves current byte counters for all hosts.
+  GetHostCounter,
 
-        /// The TC Handle to which the IP address should be mapped.
-        tc_handle: TcHandle,
+  /// Requests that the XDP back-end associate an IP address with a
+  /// TC (traffic control) handle, and CPU. The "upload" flag indicates
+  /// that this is a second channel applied to the SAME network interface,
+  /// used for "on-a-stick" mode upload channels.
+  MapIpToFlow {
+    /// The IP address to map, as a string. It can be IPv4 or IPv6,
+    /// and supports CIDR notation for subnets. "192.168.1.1",
+    /// "192.168.1.0/24", are both valid.
+    ip_address: String,
 
-        /// The CPU on which the TC handle should be shaped.
-        cpu: u32,
+    /// The TC Handle to which the IP address should be mapped.
+    tc_handle: TcHandle,
 
-        /// If true, this is a *second* flow for the same IP range on
-        /// the same NIC. Used for handling "on a stick" configurations.
-        upload: bool,
-    },
+    /// The CPU on which the TC handle should be shaped.
+    cpu: u32,
 
-    /// Requests that the XDP program unmap an IP address/subnet from
-    /// the traffic management system.
-    DelIpFlow {
-        /// The IP address to unmap. It can be an IPv4, IPv6 or CIDR
-        /// subnet.
-        ip_address: String,
+    /// If true, this is a *second* flow for the same IP range on
+    /// the same NIC. Used for handling "on a stick" configurations.
+    upload: bool,
+  },
 
-        /// Should we delete a secondary mapping (for upload)?
-        upload: bool,
-    },
+  /// Requests that the XDP program unmap an IP address/subnet from
+  /// the traffic management system.
+  DelIpFlow {
+    /// The IP address to unmap. It can be an IPv4, IPv6 or CIDR
+    /// subnet.
+    ip_address: String,
 
-    /// Clear all XDP IP/TC/CPU mappings.
-    ClearIpFlow,
+    /// Should we delete a secondary mapping (for upload)?
+    upload: bool,
+  },
 
-    /// Retreieve list of all current IP/TC/CPU mappings.
-    ListIpFlow,
+  /// Clear all XDP IP/TC/CPU mappings.
+  ClearIpFlow,
 
-    /// Simulate the previous version's `xdp_pping` command, returning
-    /// RTT data for all mapped flows by TC handle.
-    XdpPping,
+  /// Retreieve list of all current IP/TC/CPU mappings.
+  ListIpFlow,
 
-    /// Divide current RTT data into histograms and return the data for
-    /// rendering.
-    RttHistogram,
+  /// Simulate the previous version's `xdp_pping` command, returning
+  /// RTT data for all mapped flows by TC handle.
+  XdpPping,
 
-    /// Cound the number of mapped and unmapped hosts detected by the
-    /// system.
-    HostCounts,
+  /// Divide current RTT data into histograms and return the data for
+  /// rendering.
+  RttHistogram,
 
-    /// Retrieve a list of all unmapped IPs that have been detected
-    /// carrying traffic.
-    AllUnknownIps,
+  /// Cound the number of mapped and unmapped hosts detected by the
+  /// system.
+  HostCounts,
 
-    /// Reload the `LibreQoS.py` program and return details of the
-    /// reload run.
-    ReloadLibreQoS,
+  /// Retrieve a list of all unmapped IPs that have been detected
+  /// carrying traffic.
+  AllUnknownIps,
 
-    /// Retrieve raw queue data for a given circuit ID.
-    GetRawQueueData(String), // The string is the circuit ID
+  /// Reload the `LibreQoS.py` program and return details of the
+  /// reload run.
+  ReloadLibreQoS,
 
-    /// Requests a real-time adjustment of the `lqosd` tuning settings
-    UpdateLqosDTuning(u64, Tunables),
+  /// Retrieve raw queue data for a given circuit ID.
+  GetRawQueueData(String), // The string is the circuit ID
 
-    /// Request that we start watching a circuit's queue
-    WatchQueue(String),
+  /// Requests a real-time adjustment of the `lqosd` tuning settings
+  UpdateLqosDTuning(u64, Tunables),
 
-    /// If running on Equinix (the `equinix_test` feature is enabled),
-    /// display a "run bandwidht test" link.
-    #[cfg(feature = "equinix_tests")]
-    RequestLqosEquinixTest,
+  /// Request that we start watching a circuit's queue
+  WatchQueue(String),
+
+  /// If running on Equinix (the `equinix_test` feature is enabled),
+  /// display a "run bandwidht test" link.
+  #[cfg(feature = "equinix_tests")]
+  RequestLqosEquinixTest,
 }
