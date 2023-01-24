@@ -8,7 +8,7 @@
 #
 
 echo 'Stopping lqosd (overwriting running process is not working because of filelocking)'
-systemctl stop lqosd
+systemctl stop lqosd lqos_node_manager
 
 # Don't forget to setup `/etc/lqos.conf`
 PROGS="lqosd lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqos_node_manager webusers"
