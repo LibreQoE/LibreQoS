@@ -75,8 +75,11 @@ def checkIfFirstRunSinceBoot():
 def clearPriorSettings(interfaceA, interfaceB):
 	if enableActualShellCommands:
 		# Clear tc filter
-		shell('tc qdisc delete dev ' + interfaceA + ' root')
-		shell('tc qdisc delete dev ' + interfaceB + ' root')
+		if OnAStick == True:
+			shell('tc qdisc delete dev ' + interfaceA)
+		else:
+			shell('tc qdisc delete dev ' + interfaceA + ' root')
+			shell('tc qdisc delete dev ' + interfaceB + ' root')
 		#shell('tc qdisc delete dev ' + interfaceA)
 		#shell('tc qdisc delete dev ' + interfaceB)
 		
