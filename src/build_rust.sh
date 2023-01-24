@@ -6,6 +6,10 @@
 # You still need to setup services to run `lqosd` and `lqos_node_manager`
 # automatically.
 #
+
+echo 'Stopping lqosd (overwriting running process is not working because of filelocking)'
+systemctl stop lqosd
+
 # Don't forget to setup `/etc/lqos.conf`
 PROGS="lqosd lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqos_node_manager webusers"
 mkdir -p bin/static
