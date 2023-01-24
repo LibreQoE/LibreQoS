@@ -132,10 +132,11 @@ In the web browser, click `Reload LibreQoS` to setup your shaping rules.
 5. Change to your `LibreQoS` directory (e.g. `cd /opt/libreqos`)
 6. Update from Git: `git pull`
 7. Recompile: `./build-rust.sh`
-8. Resume screen with `screen -r`.
-9. Go to console 0 (`Ctrl-A, 0`) and run `sudo ./lqosd` to restart the bridge/manager.
-10. Go to console 1 (`Ctrl-A, 1`) and run `./lqos_node_manager` to restart the web server.
-11. If you didn't see errors, detach with `Ctrl-A, D` 
+8. Run: `rust/remove_pinned_maps.sh`
+9. Resume screen with `screen -r`.
+10. Go to console 0 (`Ctrl-A, 0`) and run `sudo ./lqosd` to restart the bridge/manager.
+11. Go to console 1 (`Ctrl-A, 1`) and run `./lqos_node_manager` to restart the web server.
+12. If you didn't see errors, detach with `Ctrl-A, D` 
 
 
 # Bugfix for slowly Ubuntu starting (~2 minutes penalty) in situation when one of the networking interface is down during startup
