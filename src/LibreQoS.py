@@ -126,7 +126,7 @@ def validateNetworkAndDevices():
 	else:
 		warnings.warn("Rust failed to validate ShapedDevices.csv", stacklevel=2)
 		warnings.warn(rustValid, stacklevel=2)
-		networkValidatedOrNot
+		networkValidatedOrNot = False
 	# Verify Network.json is valid json
 	networkValidatedOrNot = True
 	with open('network.json') as file:
