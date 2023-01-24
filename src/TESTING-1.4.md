@@ -55,6 +55,7 @@ Once that's done, change directory to `/wherever_you_put_libreqos/src/`, and run
 ```
 
 This will take a while the first time, but it puts everything in the right place.
+Remember to run this command everytime after `git pull`.
 
 ## Setup the LibreQoS Daemon
 
@@ -141,8 +142,12 @@ In the web browser, click `Reload LibreQoS` to setup your shaping rules.
 
 # Bugfix for slowly Ubuntu starting (~2 minutes penalty) in situation when one of the networking interface is down during startup
 
-#List all services whitch are requires network
+#List all services which requires network
+```
 systemctl show -p WantedBy network-online.target
+```
 
-#For my instance the command helped
-systemctl disable cloud-config.service iscsid.service cloud-final.service
+#For my Ubuntu 22.04 instance this command helped
+```
+systemctl disable cloud-config iscsid cloud-final
+```
