@@ -5,6 +5,7 @@ mod program_control;
 mod throughput_tracker;
 mod tuning;
 mod file_lock;
+mod validation;
 use crate::{ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow}, file_lock::FileLock};
 use anyhow::Result;
 use log::{info, warn};
@@ -150,6 +151,9 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             #[cfg(feature = "equinix_tests")]
             BusRequest::RequestLqosEquinixTest => {
                 lqos_daht_test::lqos_daht_test()
+            }
+            BusRequest::ValidateShapedDevicesCsv => {
+                validation::validate_shaped_devices_csv()
             }
         });
     }

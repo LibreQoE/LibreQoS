@@ -58,6 +58,9 @@ pub enum BusResponse {
   /// The results of reloading LibreQoS.
   ReloadLibreQoS(String),
 
+  /// Validation results for checking ShapedDevices.csv
+  ShapedDevicesValidation(String),
+
   /// A string containing a JSON dump of a queue stats. Analagos to
   /// the response from `tc show qdisc`.
   RawQueueData(String),

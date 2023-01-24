@@ -24,7 +24,7 @@ from ispConfig import sqm, upstreamBandwidthCapacityDownloadMbps, upstreamBandwi
 	runShellCommandsAsSudo, generatedPNDownloadMbps, generatedPNUploadMbps, queuesAvailableOverride, \
 	OnAStick
 
-from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping
+from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping, validate_shaped_devices
 
 # Automatically account for TCP overhead of plans. For example a 100Mbps plan needs to be set to 109Mbps for the user to ever see that result on a speed test
 # Does not apply to nodes of any sort, just endpoint devices
@@ -120,6 +120,14 @@ def findQueuesAvailable():
 	return queuesAvailable
 
 def validateNetworkAndDevices():
+	# Verify that the Rust side of things can read the CSV file
+	rustValid = validate_shaped_devices()
+	if rustValid == "OK":
+		print("Rust validated ShapedDevices.csv")
+	else:
+		warnings.warn("Rust failed to validate ShapedDevices.csv", stacklevel=2)
+		warnings.warn(rustValid, stacklevel=2)
+		networkValidatedOrNot
 	# Verify Network.json is valid json
 	networkValidatedOrNot = True
 	with open('network.json') as file:
@@ -127,7 +135,7 @@ def validateNetworkAndDevices():
 			temporaryVariable = json.load(file) # put JSON-data to a variable
 		except json.decoder.JSONDecodeError:
 			warnings.warn("network.json is an invalid JSON file", stacklevel=2) # in case json is invalid
-			networkValidatedOrNot = False
+			networkValidatedOrNot
 	if networkValidatedOrNot == True:
 		print("network.json passed validation") 
 	# Verify ShapedDevices.csv is valid

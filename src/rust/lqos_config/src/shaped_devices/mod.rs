@@ -39,15 +39,30 @@ impl ConfigShapedDevices {
         // Example: StringRecord(["1", "968 Circle St., Gurnee, IL 60031", "1", "Device 1", "", "", "192.168.101.2", "", "25", "5", "10000", "10000", ""])
         
         let mut devices = Vec::with_capacity(SUPPORTED_CUSTOMERS);
-        for result in reader.records() {
+        for result in reader.records() {            
             if let Ok(result) = result {
-                if let Ok(device) = ShapedDevice::from_csv(&result) {
+                let device = ShapedDevice::from_csv(&result);
+                if let Ok(device) = device {
                     devices.push(device);
                 } else {
-                    log::error!("Error reading Device line: {:?}", &result);
+                    log::error!("Error reading Device line: {:?}", &device);
+                    return Err(anyhow::Error::msg(format!("DEVICE DECODE: {:?}", device)));
                 }
             } else {
                 log::error!("Error reading CSV record: {:?}", result);
+                match result.as_ref().err().as_ref().unwrap().kind() {
+                    csv::ErrorKind::UnequalLengths{ pos, expected_len, len} => {
+                        if let Some(pos) = &pos {
+                            let msg = format!("At line {}, position {}. Expected {} fields, found {}", pos.line(), pos.byte(), expected_len, len);
+                            return Err(anyhow::Error::msg(msg));
+                        } else {
+                            let msg = format!("Unknown position. Expected {} fields, found {}", expected_len, len);
+                            return Err(anyhow::Error::msg(msg));
+                        }
+                    }
+                    _ => {}
+                }
+                return Err(anyhow::Error::msg(format!("CSV FILE: {:?}", result)));
             }
         }
         let trie = ConfigShapedDevices::make_trie(&devices);

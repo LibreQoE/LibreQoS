@@ -17,6 +17,7 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(clear_ip_mappings))?;
     m.add_wrapped(wrap_pyfunction!(delete_ip_mapping))?;
     m.add_wrapped(wrap_pyfunction!(add_ip_mapping))?;
+    m.add_wrapped(wrap_pyfunction!(validate_shaped_devices))?;
     Ok(())
 }
 
@@ -119,4 +120,18 @@ fn add_ip_mapping(ip: String, classid: String, cpu: String, upload: bool) -> PyR
     } else {
         Err(PyOSError::new_err(request.err().unwrap().to_string()))
     }
+}
+
+/// Requests Rust-side validation of `ShapedDevices.csv`
+#[pyfunction]
+fn validate_shaped_devices() -> PyResult<String> {
+    let result = run_query(vec![BusRequest::ValidateShapedDevicesCsv]).unwrap();
+    for response in result.iter() {
+        match response {
+            BusResponse::Ack => return Ok("OK".to_string()),
+            BusResponse::ShapedDevicesValidation(error) => return Ok(error.clone()),
+            _ => {}
+        }
+    }
+    Ok("".to_string())
 }
