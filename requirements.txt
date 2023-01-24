@@ -9,3 +9,4 @@ psutil
 requests
 schedule
 waitress
+setuptools >= 65.5.1
