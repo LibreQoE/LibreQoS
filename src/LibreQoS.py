@@ -1,5 +1,4 @@
 #!/usr/bin/python3
-# v1.3
 
 import csv
 import io
@@ -628,7 +627,7 @@ def refreshShapers():
 						upFlowIDstring = hex(major + stickOffset) + ':' + hex(minorByCPU[queue])
 						circuit['classid'] = flowIDstring
 						circuit['up_classid'] = upFlowIDstring
-						print("Added up_classid to circuit: " + circuit['up_classid'])
+						logging.info("Added up_classid to circuit: " + circuit['up_classid'])
 						# Create circuit dictionary to be added to network structure, eventually output as queuingStructure.json
 						maxDownload = min(circuit['maxDownload'],data[node]['downloadBandwidthMbps'])
 						maxUpload = min(circuit['maxUpload'],data[node]['uploadBandwidthMbps'])
@@ -725,8 +724,8 @@ def refreshShapers():
 			for node in data:
 				command = 'class add dev ' + interfaceA + ' parent ' + data[node]['parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ str(data[node]['downloadBandwidthMbpsMin']) + 'mbit ceil '+ str(data[node]['downloadBandwidthMbps']) + 'mbit prio 3'
 				linuxTCcommands.append(command)
-				print("Up ParentClassID: " + data[node]['up_parentClassID'])
-				print("ClassMinor: " + data[node]['classMinor'])
+				logging.info("Up ParentClassID: " + data[node]['up_parentClassID'])
+				logging.info("ClassMinor: " + data[node]['classMinor'])
 				command = 'class add dev ' + interfaceB + ' parent ' + data[node]['up_parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ str(data[node]['uploadBandwidthMbpsMin']) + 'mbit ceil '+ str(data[node]['uploadBandwidthMbps']) + 'mbit prio 3'
 				linuxTCcommands.append(command)
 				if 'circuits' in data[node]:
