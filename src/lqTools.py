@@ -9,6 +9,7 @@ import os.path
 import subprocess
 import warnings
 import argparse
+import logging
 from ispConfig import interfaceA, interfaceB, enableActualShellCommands
 
 def shell(command):
