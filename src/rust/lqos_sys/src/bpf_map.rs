@@ -133,7 +133,12 @@ where
         let key_ptr: *mut K = key;
         let err = unsafe { bpf_map_delete_elem(self.fd, key_ptr as *mut c_void) };
         if err != 0 {
-            Err(Error::msg("Unable to delete from map"))
+            if err == -2 {
+                // ENOEXIST : not actually an error, just nothing to do
+                Ok(())
+            } else {
+                Err(Error::msg("Unable to delete from map"))
+            }
         } else {
             Ok(())
         }

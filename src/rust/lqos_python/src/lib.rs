@@ -89,8 +89,11 @@ fn clear_ip_mappings(_py: Python) -> PyResult<()> {
 /// * `ip_address`: The IP address to unmap.
 /// * `upload`: `true` if this needs to be applied to the upload map (for a split/stick setup)
 #[pyfunction]
-fn delete_ip_mapping(_py: Python, ip_address: String, upload: bool) -> PyResult<()> {
-    run_query(vec![BusRequest::DelIpFlow { ip_address, upload }]).unwrap();
+fn delete_ip_mapping(_py: Python, ip_address: String) -> PyResult<()> {
+    run_query(vec![
+            BusRequest::DelIpFlow { ip_address: ip_address.clone(), upload: false },
+            BusRequest::DelIpFlow { ip_address, upload: true },
+        ]).unwrap();
     Ok(())
 }
 
