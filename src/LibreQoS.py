@@ -1,5 +1,4 @@
 #!/usr/bin/python3
-# v1.3
 
 import csv
 import io
@@ -76,7 +75,7 @@ def clearPriorSettings(interfaceA, interfaceB):
 	if enableActualShellCommands:
 		# Clear tc filter
 		if OnAStick == True:
-			shell('tc qdisc delete dev ' + interfaceA)
+			shell('tc qdisc delete dev ' + interfaceA + ' root')
 		else:
 			shell('tc qdisc delete dev ' + interfaceA + ' root')
 			shell('tc qdisc delete dev ' + interfaceB + ' root')
