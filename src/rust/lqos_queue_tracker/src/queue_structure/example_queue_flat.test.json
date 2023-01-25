@@ -1,0 +1,247 @@
+{
+    "Network": {
+        "Generated_PN_1": {
+            "downloadBandwidthMbps": 10000,
+            "uploadBandwidthMbps": 10000,
+            "downloadBandwidthMbpsMin": 9500,
+            "uploadBandwidthMbpsMin": 9500,
+            "classid": "0x1:0x3",
+            "up_classid": "0x1:0x3",
+            "parentClassID": "0x1:",
+            "up_parentClassID": "0x1:",
+            "classMajor": "0x1",
+            "up_classMajor": "0x1",
+            "classMinor": "0x3",
+            "cpuNum": "0x0",
+            "up_cpuNum": "0x0",
+            "circuits": [
+                {
+                    "maxDownload": 545,
+                    "maxUpload": 545,
+                    "minDownload": 27,
+                    "minUpload": 5,
+                    "circuitID": "9999",
+                    "circuitName": "968 Circle St., Gurnee, IL 60031",
+                    "ParentNode": "Generated_PN_1",
+                    "devices": [
+                        {
+                            "deviceID": "1",
+                            "deviceName": "Device 1",
+                            "mac": "",
+                            "ipv4s": [
+                                "100.64.1.2",
+                                "100.64.0.14"
+                            ],
+                            "ipv6s": [],
+                            "comment": ""
+                        }
+                    ],
+                    "classid": "0x1:0x4",
+                    "up_classid": "0x1:0x4",
+                    "classMajor": "0x1",
+                    "up_classMajor": "0x1",
+                    "classMinor": "0x4",
+                    "comment": ""
+                }
+            ]
+        },
+        "Generated_PN_2": {
+            "downloadBandwidthMbps": 10000,
+            "uploadBandwidthMbps": 10000,
+            "downloadBandwidthMbpsMin": 9500,
+            "uploadBandwidthMbpsMin": 9500,
+            "classid": "0x2:0x3",
+            "up_classid": "0x2:0x3",
+            "parentClassID": "0x2:",
+            "up_parentClassID": "0x2:",
+            "classMajor": "0x2",
+            "up_classMajor": "0x2",
+            "classMinor": "0x3",
+            "cpuNum": "0x1",
+            "up_cpuNum": "0x1",
+            "circuits": [
+                {
+                    "maxDownload": 669,
+                    "maxUpload": 222,
+                    "minDownload": 2,
+                    "minUpload": 2,
+                    "circuitID": "104",
+                    "circuitName": "7",
+                    "ParentNode": "Generated_PN_2",
+                    "devices": [
+                        {
+                            "deviceID": "KOMP_7",
+                            "deviceName": "104",
+                            "mac": "",
+                            "ipv4s": [
+                                "10.30.3.49"
+                            ],
+                            "ipv6s": [],
+                            "comment": "COMMENT"
+                        }
+                    ],
+                    "classid": "0x2:0x4",
+                    "up_classid": "0x2:0x4",
+                    "classMajor": "0x2",
+                    "up_classMajor": "0x2",
+                    "classMinor": "0x4",
+                    "comment": "COMMENT"
+                }
+            ]
+        },
+        "Generated_PN_3": {
+            "downloadBandwidthMbps": 10000,
+            "uploadBandwidthMbps": 10000,
+            "downloadBandwidthMbpsMin": 9500,
+            "uploadBandwidthMbpsMin": 9500,
+            "classid": "0x3:0x3",
+            "up_classid": "0x3:0x3",
+            "parentClassID": "0x3:",
+            "up_parentClassID": "0x3:",
+            "classMajor": "0x3",
+            "up_classMajor": "0x3",
+            "classMinor": "0x3",
+            "cpuNum": "0x2",
+            "up_cpuNum": "0x2",
+            "circuits": [
+                {
+                    "maxDownload": 11,
+                    "maxUpload": 2,
+                    "minDownload": 2,
+                    "minUpload": 2,
+                    "circuitID": "101",
+                    "circuitName": "3",
+                    "ParentNode": "Generated_PN_3",
+                    "devices": [
+                        {
+                            "deviceID": "KOMP_3",
+                            "deviceName": "101",
+                            "mac": "",
+                            "ipv4s": [
+                                "10.19.7.19"
+                            ],
+                            "ipv6s": [],
+                            "comment": "COMMENT"
+                        }
+                    ],
+                    "classid": "0x3:0x4",
+                    "up_classid": "0x3:0x4",
+                    "classMajor": "0x3",
+                    "up_classMajor": "0x3",
+                    "classMinor": "0x4",
+                    "comment": "COMMENT"
+                },
+                {
+                    "maxDownload": 111,
+                    "maxUpload": 111,
+                    "minDownload": 2,
+                    "minUpload": 2,
+                    "circuitID": "102",
+                    "circuitName": "4",
+                    "ParentNode": "Generated_PN_3",
+                    "devices": [
+                        {
+                            "deviceID": "KOMP_4",
+                            "deviceName": "102",
+                            "mac": "",
+                            "ipv4s": [
+                                "5.63.189.26"
+                            ],
+                            "ipv6s": [],
+                            "comment": "COMMENT"
+                        }
+                    ],
+                    "classid": "0x3:0x5",
+                    "up_classid": "0x3:0x5",
+                    "classMajor": "0x3",
+                    "up_classMajor": "0x3",
+                    "classMinor": "0x5",
+                    "comment": "COMMENT"
+                }
+            ]
+        },
+        "Generated_PN_4": {
+            "downloadBandwidthMbps": 10000,
+            "uploadBandwidthMbps": 10000,
+            "downloadBandwidthMbpsMin": 9500,
+            "uploadBandwidthMbpsMin": 9500,
+            "classid": "0x4:0x3",
+            "up_classid": "0x4:0x3",
+            "parentClassID": "0x4:",
+            "up_parentClassID": "0x4:",
+            "classMajor": "0x4",
+            "up_classMajor": "0x4",
+            "classMinor": "0x3",
+            "cpuNum": "0x3",
+            "up_cpuNum": "0x3",
+            "circuits": [
+                {
+                    "maxDownload": 109,
+                    "maxUpload": 55,
+                    "minDownload": 2,
+                    "minUpload": 2,
+                    "circuitID": "100",
+                    "circuitName": "1",
+                    "ParentNode": "Generated_PN_4",
+                    "devices": [
+                        {
+                            "deviceID": "KOMP_1",
+                            "deviceName": "100",
+                            "mac": "",
+                            "ipv4s": [
+                                "10.30.0.204"
+                            ],
+                            "ipv6s": [],
+                            "comment": "COMMENT"
+                        }
+                    ],
+                    "classid": "0x4:0x4",
+                    "up_classid": "0x4:0x4",
+                    "classMajor": "0x4",
+                    "up_classMajor": "0x4",
+                    "classMinor": "0x4",
+                    "comment": "COMMENT"
+                },
+                {
+                    "maxDownload": 109,
+                    "maxUpload": 55,
+                    "minDownload": 2,
+                    "minUpload": 2,
+                    "circuitID": "103",
+                    "circuitName": "5",
+                    "ParentNode": "Generated_PN_4",
+                    "devices": [
+                        {
+                            "deviceID": "KOMP_5",
+                            "deviceName": "103",
+                            "mac": "",
+                            "ipv4s": [
+                                "10.30.4.128"
+                            ],
+                            "ipv6s": [],
+                            "comment": "COMMENT"
+                        }
+                    ],
+                    "classid": "0x4:0x5",
+                    "up_classid": "0x4:0x5",
+                    "classMajor": "0x4",
+                    "up_classMajor": "0x4",
+                    "classMinor": "0x5",
+                    "comment": "COMMENT"
+                }
+            ]
+        }
+    },
+    "lastUsedClassIDCounterByCPU": {
+        "1": 5,
+        "2": 5,
+        "3": 6,
+        "4": 6
+    },
+    "generatedPNs": [
+        "Generated_PN_1",
+        "Generated_PN_2",
+        "Generated_PN_3",
+        "Generated_PN_4"
+    ]
+}

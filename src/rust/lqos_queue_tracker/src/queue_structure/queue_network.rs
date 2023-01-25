@@ -5,7 +5,7 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 
 pub struct QueueNetwork {
-    cpu_node: Vec<QueueNode>,
+    pub(crate) cpu_node: Vec<QueueNode>,
 }
 
 impl QueueNetwork {

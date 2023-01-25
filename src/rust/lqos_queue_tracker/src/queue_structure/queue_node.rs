@@ -101,6 +101,7 @@ impl QueueNode {
                             }
                         }
                     }
+                    "children" => {} // Ignore for now
                     _ => log::error!("I don't know how to parse key: [{key}]"),
                 }
             }
@@ -125,5 +126,45 @@ impl QueueNode {
             result.extend_from_slice(&children);
         }
         result
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    const EXAMPLE_QUEUE_STRUCTURE_WITH_CHILDREN: &str = include_str!("./example_queue_with_children.test.json");
+    const EXAMPLE_QUEUE_STRUCTURE_NO_CHILDREN: &str = include_str!("./example_queue_flat.test.json");
+
+    fn try_load_queue_structure(raw_string: &str) {
+        let mut result = super::super::QueueNetwork {
+            cpu_node: Vec::new(),
+        };
+        let json: Value = serde_json::from_str(&raw_string).unwrap();
+        if let Value::Object(map) = &json {
+            if let Some(network) = map.get("Network") {
+                if let Value::Object(map) = network {
+                    for (key, value) in map.iter() {
+                        result.cpu_node.push(QueueNode::from_json(&key, value).unwrap());
+                    }
+                } else {
+                    panic!("Unable to parse network object structure");
+                }
+            } else {
+                panic!("Network entry not found");
+            }
+        } else {
+            panic!("Unable to parse queueStructure.json");
+        }
+    }
+
+    #[test]
+    fn load_queue_structure_no_children() {
+        try_load_queue_structure(EXAMPLE_QUEUE_STRUCTURE_NO_CHILDREN);
+    }
+
+    #[test]
+    fn load_queue_structure_with_children() {
+        try_load_queue_structure(EXAMPLE_QUEUE_STRUCTURE_WITH_CHILDREN);
     }
 }
