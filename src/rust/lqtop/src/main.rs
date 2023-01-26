@@ -1,7 +1,7 @@
 use anyhow::Result;
 use crossterm::{
   event::{read, Event, KeyCode, KeyEvent, KeyModifiers},
-  terminal::{enable_raw_mode, size},
+  terminal::enable_raw_mode,
 };
 use lqos_bus::{BusClient, BusRequest, BusResponse, IpStats};
 use lqos_utils::packet_scale::{scale_bits,scale_packets};
@@ -11,7 +11,7 @@ use tui::{
   layout::{Alignment, Constraint, Direction, Layout},
   style::{Color, Style},
   text::{Span, Spans},
-  widgets::{Block, BorderType, Borders, Cell, Paragraph, Row, Table},
+  widgets::{Block, BorderType, Cell, Paragraph, Row, Table},
   Terminal,
 };
 
