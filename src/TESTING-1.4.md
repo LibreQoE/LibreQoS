@@ -57,6 +57,13 @@ Once that's done, change directory to `/wherever_you_put_libreqos/src/`, and run
 This will take a while the first time, but it puts everything in the right place.
 Remember to run this command everytime after `git pull`.
 
+Now, run:
+```
+cd /src/rust
+cargo build --all
+```
+Again, please run this command everytime after `git pull`.
+
 ## Setup the LibreQoS Daemon
 
 Copy the daemon configuration file to `/etc`:
