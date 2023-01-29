@@ -6,7 +6,7 @@ pub fn scale_packets(n: u64) -> String {
   } else if n > 1_000 {
     format!("{:.2} kpps", n as f32 / 1_000.0)
   } else {
-    format!("{n} pps")
+    format!("{n}  pps")
   }
 }
 
@@ -18,6 +18,6 @@ pub fn scale_bits(n: u64) -> String {
   } else if n > 1_000 {
     format!("{:.2} kbit/s", n as f32 / 1_000.0)
   } else {
-    format!("{n} bit/s")
+    format!("{n}  bit/s")
   }
 }
