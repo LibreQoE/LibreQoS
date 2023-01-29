@@ -81,8 +81,10 @@ fn draw_pps<'a>(
   bits_per_second: (u64, u64),
 ) -> Spans<'a> {
   let text = Spans::from(vec![
+    Span::styled("🠗 ", Style::default().fg(Color::Yellow)),
     Span::from(scale_bits(bits_per_second.0)),
     Span::from(" "),
+    Span::styled(" 🠕 ", Style::default().fg(Color::Yellow)),
     Span::from(scale_bits(bits_per_second.1)),
     Span::from(" "),
     Span::styled("🠗 ", Style::default().fg(Color::Yellow)),
