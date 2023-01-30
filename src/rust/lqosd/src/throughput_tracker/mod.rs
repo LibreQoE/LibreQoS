@@ -4,9 +4,10 @@ use crate::throughput_tracker::tracking_data::ThroughputTracker;
 use lazy_static::*;
 use lqos_bus::{BusResponse, IpStats, TcHandle, XdpPpingResult};
 use lqos_sys::XdpIpAddress;
+use nix::sys::{timerfd::{TimerFd, ClockId, TimerFlags, Expiration, TimerSetTimeFlags}, time::{TimeSpec, TimeValLike}};
 use parking_lot::RwLock;
-use std::time::{Duration, Instant};
-use tokio::{task, time};
+use std::{time::Duration, sync::atomic::AtomicBool};
+use log::{info, warn, error};
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
@@ -15,31 +16,40 @@ lazy_static! {
     RwLock::new(ThroughputTracker::new());
 }
 
-pub async fn spawn_throughput_monitor() {
-  let _ = task::spawn(async {
-    let mut interval = time::interval(Duration::from_secs(1));
+pub fn spawn_throughput_monitor() {
+  info!("Starting the bandwidth monitor thread.");
+  let interval_ms = 1000; // 1 second
+  info!("Bandwidth check period set to {interval_ms} ms.");
 
-    loop {
-      let now = Instant::now();
-      let _ = task::spawn_blocking(move || {
-        let mut throughput = THROUGHPUT_TRACKER.write();
-        throughput.copy_previous_and_reset_rtt();
-        throughput.apply_new_throughput_counters();
-        throughput.apply_rtt_data();
-        throughput.update_totals();
-        throughput.next_cycle();
-      })
-      .await;
-      let elapsed = now.elapsed();
-      //println!("Tick consumed {:.2} seconds.", elapsed.as_secs_f32());
-      if elapsed.as_secs_f32() < 1.0 {
-        let duration = Duration::from_secs(1) - elapsed;
-        //println!("Sleeping for {:.2} seconds", duration.as_secs_f32());
-        tokio::time::sleep(duration).await;
+  std::thread::spawn(move || {
+    let monitor_busy = AtomicBool::new(false);
+    if let Ok(timer) = TimerFd::new(ClockId::CLOCK_MONOTONIC, TimerFlags::empty()) {
+      if timer.set(Expiration::Interval(TimeSpec::milliseconds(interval_ms as i64)), TimerSetTimeFlags::TFD_TIMER_ABSTIME).is_ok() {
+          loop {
+              if timer.wait().is_ok() {
+                  if monitor_busy.load(std::sync::atomic::Ordering::Relaxed) {
+                      warn!("Queue tick fired while another queue read is ongoing. Skipping this cycle.");
+                  } else {
+                      monitor_busy.store(true, std::sync::atomic::Ordering::Relaxed);
+                      //info!("Bandwidth tracking timer fired.");
+                      let mut throughput = THROUGHPUT_TRACKER.write();
+                      throughput.copy_previous_and_reset_rtt();
+                      throughput.apply_new_throughput_counters();
+                      throughput.apply_rtt_data();
+                      throughput.update_totals();
+                      throughput.next_cycle();
+                      monitor_busy.store(false, std::sync::atomic::Ordering::Relaxed);
+                  }
+              } else {
+                  error!("Error in timer wait (Linux fdtimer). This should never happen.");
+              }
+          }
       } else {
-        interval.tick().await;
+          error!("Unable to set the Linux fdtimer timer interval. Bandwidth will not be monitored.");
       }
-    }
+  } else {
+      error!("Unable to acquire Linux fdtimer. Bandwidth will not be monitored.");
+  }
   });
 }
 
