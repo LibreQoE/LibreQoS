@@ -3,6 +3,7 @@ use lazy_static::*;
 use lqos_bus::TcHandle;
 use parking_lot::RwLock;
 use std::time::{SystemTime, UNIX_EPOCH};
+use log::{info, warn};
 
 lazy_static! {
     pub(crate) static ref WATCHED_QUEUES: RwLock<Vec<WatchedQueue>> = RwLock::new(Vec::new());
@@ -37,6 +38,7 @@ fn unix_now() -> u64 {
 }
 
 pub fn add_watched_queue(circuit_id: &str) {
+    //info!("Watching queue {circuit_id}");
     let max = unsafe { lqos_sys::libbpf_num_possible_cpus() } * 2;
     {
         let read_lock = WATCHED_QUEUES.read();
@@ -45,10 +47,12 @@ pub fn add_watched_queue(circuit_id: &str) {
             .find(|q| q.circuit_id == circuit_id)
             .is_some()
         {
+            warn!("Queue {circuit_id} is already being watched. Duplicate ignored.");
             return; // No duplicates, please
         }
 
         if read_lock.len() > max as usize {
+            warn!("Watching too many queues - didn't add {circuit_id} to watch list.");
             return; // Too many watched pots
         }
     }
@@ -66,9 +70,12 @@ pub fn add_watched_queue(circuit_id: &str) {
             };
 
             WATCHED_QUEUES.write().push(new_watch);
+            //info!("Added {circuit_id} to watched queues. Now watching {} queues.", WATCHED_QUEUES.read().len());
+        } else {
+            warn!("No circuit ID of {circuit_id}");
         }
     } else {
-        log::warn!("No circuit ID of {circuit_id}");
+        warn!("Unable to access watched queue list. Try again later.");
     }
 }
 
@@ -81,6 +88,11 @@ pub(crate) fn expire_watched_queues() {
 pub fn still_watching(circuit_id: &str) {
     let mut lock = WATCHED_QUEUES.write();
     if let Some(q) = lock.iter_mut().find(|q| q.circuit_id == circuit_id) {
+        //info!("Still watching circuit: {circuit_id}");
         q.refresh_timer();
+    } else {
+        info!("Still watching circuit, but it had expired: {circuit_id}");
+        std::mem::drop(lock);
+        add_watched_queue(circuit_id);
     }
 }

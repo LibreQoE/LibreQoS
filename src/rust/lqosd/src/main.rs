@@ -63,9 +63,9 @@ async fn main() -> Result<()> {
     // Spawn tracking sub-systems
     join!(
         throughput_tracker::spawn_throughput_monitor(),
-        spawn_queue_monitor(),
         spawn_queue_structure_monitor(),
     );
+    spawn_queue_monitor();
 
     // Handle signals
     let mut signals = Signals::new(&[SIGINT, SIGHUP, SIGTERM])?;

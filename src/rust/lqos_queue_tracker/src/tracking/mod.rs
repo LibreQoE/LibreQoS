@@ -1,26 +1,37 @@
+use std::sync::atomic::AtomicBool;
+
 use crate::{
     circuit_to_queue::CIRCUIT_TO_QUEUE, interval::QUEUE_MONITOR_INTERVAL, queue_store::QueueStore,
     tracking::reader::read_named_queue_from_interface,
 };
-use anyhow::Result;
+use log::{info, warn, error};
 use lqos_config::LibreQoSConfig;
+use nix::sys::time::TimeSpec;
+use nix::sys::time::TimeValLike;
+use nix::sys::timerfd::ClockId;
+use nix::sys::timerfd::Expiration;
+use nix::sys::timerfd::TimerFd;
+use nix::sys::timerfd::TimerFlags;
+use nix::sys::timerfd::TimerSetTimeFlags;
 use rayon::prelude::{IntoParallelRefMutIterator, ParallelIterator};
-use std::time::{Duration, Instant};
-use tokio::task;
-use tokio::time;
 mod reader;
 mod watched_queues;
 use watched_queues::WATCHED_QUEUES;
 pub use watched_queues::{add_watched_queue, still_watching};
-
 use self::watched_queues::expire_watched_queues;
 
-async fn track_queues() -> Result<()> {
+fn track_queues() {
     let mut watching = WATCHED_QUEUES.write();
     if watching.is_empty() {
-        return Ok(()); // There's nothing to do - bail out fast
+        info!("No queues marked for read.");
+        return; // There's nothing to do - bail out fast
     }
-    let config = LibreQoSConfig::load()?;
+    let config = LibreQoSConfig::load();
+    if config.is_err() {
+        warn!("Unable to read LibreQoS config. Skipping queue collection cycle.");
+        return;
+    }
+    let config = config.unwrap();
     watching.par_iter_mut().for_each(|q| {
         let (circuit_id, download_class, upload_class) = q.get();
 
@@ -54,33 +65,46 @@ async fn track_queues() -> Result<()> {
 
     std::mem::drop(watching); // Release the lock
     expire_watched_queues();
-    Ok(())
 }
 
-pub async fn spawn_queue_monitor() {
-    let _ = task::spawn(async {
+pub fn spawn_queue_monitor() {
+    std::thread::spawn(|| {
+        // Setup the queue monitor loop
+        info!("Starting Queue Monitor Thread.");
+        let interval_ms = if let Ok(config) = lqos_config::EtcLqos::load() {
+            config.queue_check_period_ms
+        } else {
+            1000
+        };
         QUEUE_MONITOR_INTERVAL.store(
-            lqos_config::EtcLqos::load().unwrap().queue_check_period_ms,
+            interval_ms,
             std::sync::atomic::Ordering::Relaxed,
         );
-        loop {
-            let queue_check_period_ms =
-                QUEUE_MONITOR_INTERVAL.load(std::sync::atomic::Ordering::Relaxed);
-            let mut interval = time::interval(Duration::from_millis(queue_check_period_ms));
+        info!("Queue check period set to {interval_ms} ms.");
 
-            let now = Instant::now();
-            let _ = track_queues().await;
-            let elapsed = now.elapsed();
-            //info!(
-            //    "TC Reader tick with mapping consumed {} ms.",
-            //    elapsed.as_millis()
-            //);
-            if elapsed.as_millis() < queue_check_period_ms as u128 {
-                let duration = Duration::from_millis(queue_check_period_ms) - elapsed;
-                tokio::time::sleep(duration).await;
+        // Setup the Linux timer fd system
+        let monitor_busy = AtomicBool::new(false);
+        if let Ok(timer) = TimerFd::new(ClockId::CLOCK_MONOTONIC, TimerFlags::empty()) {
+            if timer.set(Expiration::Interval(TimeSpec::milliseconds(interval_ms as i64)), TimerSetTimeFlags::TFD_TIMER_ABSTIME).is_ok() {
+                loop {
+                    if timer.wait().is_ok() {
+                        if monitor_busy.load(std::sync::atomic::Ordering::Relaxed) {
+                            warn!("Queue tick fired while another queue read is ongoing. Skipping this cycle.");
+                        } else {
+                            monitor_busy.store(true, std::sync::atomic::Ordering::Relaxed);
+                            //info!("Queue tracking timer fired.");
+                            track_queues();
+                            monitor_busy.store(false, std::sync::atomic::Ordering::Relaxed);
+                        }
+                    } else {
+                        error!("Error in timer wait (Linux fdtimer). This should never happen.");
+                    }
+                }
             } else {
-                interval.tick().await;
+                error!("Unable to set the Linux fdtimer timer interval. Queues will not be monitored.");
             }
+        } else {
+            error!("Unable to acquire Linux fdtimer. Queues will not be monitored.");
         }
     });
 }

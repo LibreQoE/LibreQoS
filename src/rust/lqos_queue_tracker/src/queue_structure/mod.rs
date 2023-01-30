@@ -13,5 +13,6 @@ fn read_hex_string(s: &str) -> Result<u32> {
 
 pub(crate) fn read_queueing_structure() -> Result<Vec<QueueNode>> {
     let network = QueueNetwork::from_json()?;
-    Ok(network.to_flat())
+    let flattened = network.to_flat();
+    Ok(flattened)
 }

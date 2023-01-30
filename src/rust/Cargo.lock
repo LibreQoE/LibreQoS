@@ -1378,6 +1378,7 @@ dependencies = [
  "lqos_config",
  "lqos_sys",
  "lqos_utils",
+ "nix",
  "notify",
  "parking_lot 0.12.1",
  "rayon",

@@ -27,6 +27,7 @@ pub struct QueueNode {
     pub device_id: Option<String>,
     pub device_name: Option<String>,
     pub mac: Option<String>,
+    pub children: Vec<QueueNode>,
 }
 
 impl QueueNode {
@@ -101,7 +102,16 @@ impl QueueNode {
                             }
                         }
                     }
-                    "children" => {} // Ignore for now
+                    "children" => {
+                        if let Value::Object(map) = value {
+                            for (key, c) in map.iter() {
+                                result.circuits.push(QueueNode::from_json(key, c)?);
+                            }
+                        } else {
+                            log::warn!("Children was not an object");
+                            log::warn!("{:?}", value);
+                        }
+                    }
                     _ => log::error!("I don't know how to parse key: [{key}]"),
                 }
             }
@@ -121,6 +131,11 @@ impl QueueNode {
             result.extend_from_slice(&children);
         }
         for c in self.devices.iter() {
+            result.push(c.clone());
+            let children = c.to_flat();
+            result.extend_from_slice(&children);
+        }
+        for c in self.children.iter() {
             result.push(c.clone());
             let children = c.to_flat();
             result.extend_from_slice(&children);
