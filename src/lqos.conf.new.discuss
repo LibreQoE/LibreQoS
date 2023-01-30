@@ -11,11 +11,27 @@ disable_rxvlan = true
 disable_txvlan = true
 disable_offload = [ "gso", "tso", "lro", "sg", "gro" ]
 
+# For a two interface setup, use the following - and replace
+# "enp1s0f1" and "enp1s0f2" with your network card names (obtained
+# from `ip link`):
+
+[bridge]
+use_xdp_bridge = true
 interface_mapping = [
        { name = "enp1s0f1", redirect_to = "enp1s0f2", scan_vlans = false },
        { name = "enp1s0f2", redirect_to = "enp1s0f1", scan_vlans = false }
 ]
 vlan_mapping = []
+# For "on a stick" (single interface mode):
+# [bridge]
+# use_xdp_bridge = true
+# interface_mapping = [
+#         { name = "enp1s0f1", redirect_to = "enp1s0f1", scan_vlans = true }
+# ]
+# vlan_mapping = [
+#         { parent = "enp1s0f1", tag = 3, redirect_to = 4 },
+#         { parent = "enp1s0f1", tag = 4, redirect_to = 3 }
+# ]
 
 # NMS/CRM Integration
 
