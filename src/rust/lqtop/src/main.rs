@@ -173,7 +173,6 @@ pub async fn main() -> Result<()> {
   let backend = CrosstermBackend::new(stdout);
   let mut terminal = Terminal::new(backend)?;
   terminal.clear()?;
-  let t = terminal.size().unwrap();
   let mut n_rows = 33;
 
   loop {
