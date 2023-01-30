@@ -7,10 +7,11 @@ use lqos_bus::{
     BusRequest, BusResponse, IpStats, bus_request,
 };
 use lqos_config::ConfigShapedDevices;
+use nix::sys::{timerfd::{TimerFd, ClockId, TimerFlags, Expiration, TimerSetTimeFlags}, time::{TimeSpec, TimeValLike}};
 use rocket::tokio::{
     task::spawn_blocking,
 };
-use std::{net::IpAddr, time::{Duration, Instant}};
+use std::{net::IpAddr, sync::atomic::AtomicBool};
 
 /// Once per second, update CPU and RAM usage and ask
 /// `lqosd` for updated system statistics.
@@ -24,38 +25,52 @@ pub async fn update_tracking() {
     let mut sys = System::new_all();
 
     spawn_blocking(|| {
+        info!("Watching for ShapedDevices.csv changes");
         let _ = watch_for_shaped_devices_changing();
     });
-    //let mut bus_client = BusClient::new().await.unwrap();
-    loop {
-        let now = Instant::now();
-        //println!("Updating tracking data");
-        sys.refresh_cpu();
-        sys.refresh_memory();
-        let cpu_usage = sys
-            .cpus()
-            .iter()
-            .map(|cpu| cpu.cpu_usage())
-            .collect::<Vec<f32>>();
-        *CPU_USAGE.write() = cpu_usage;
-        {
-            let mut mem_use = MEMORY_USAGE.write();
-            mem_use[0] = sys.used_memory();
-            mem_use[1] = sys.total_memory();
-        }
-        let error = get_data_from_server().await; // Ignoring errors to keep running
-        if let Err(error) = error {
-            error!("Error in usage update loop: {:?}", error);
-        }
+    let interval_ms = 1000;
+    info!("Updating throughput ring buffer at {interval_ms} ms cadence.");
 
-        let duration = now.elapsed();
-        if duration.as_secs_f32() < 1.0 {
-            let wait_time = Duration::from_secs(1) - duration;
-            rocket::tokio::time::sleep(wait_time).await;
+    let monitor_busy = AtomicBool::new(false);
+    if let Ok(timer) = TimerFd::new(ClockId::CLOCK_MONOTONIC, TimerFlags::empty()) {
+        if timer.set(Expiration::Interval(TimeSpec::milliseconds(interval_ms as i64)), TimerSetTimeFlags::TFD_TIMER_ABSTIME).is_ok() {
+            loop {
+                if timer.wait().is_ok() {
+                    if monitor_busy.load(std::sync::atomic::Ordering::Relaxed) {
+                        warn!("Ring buffer tick fired while another queue read is ongoing. Skipping this cycle.");
+                    } else {
+                        monitor_busy.store(true, std::sync::atomic::Ordering::Relaxed);
+                        //info!("Queue tracking timer fired.");
+
+                        sys.refresh_cpu();
+                        sys.refresh_memory();
+                        let cpu_usage = sys
+                            .cpus()
+                            .iter()
+                            .map(|cpu| cpu.cpu_usage())
+                            .collect::<Vec<f32>>();
+                        *CPU_USAGE.write() = cpu_usage;
+                        {
+                            let mut mem_use = MEMORY_USAGE.write();
+                            mem_use[0] = sys.used_memory();
+                            mem_use[1] = sys.total_memory();
+                        }
+                        let error = get_data_from_server().await; // Ignoring errors to keep running
+                        if let Err(error) = error {
+                            error!("Error in usage update loop: {:?}", error);
+                        }
+
+                        monitor_busy.store(false, std::sync::atomic::Ordering::Relaxed);
+                    }
+                } else {
+                    error!("Error in timer wait (Linux fdtimer). This should never happen.");
+                }
+            }
         } else {
-            warn!("Gathering usage data exceeded one second, waiting for 1 second.");
-            rocket::tokio::time::sleep(Duration::from_secs(1)).await;
+            error!("Unable to set the Linux fdtimer timer interval. Queues will not be monitored.");
         }
+    } else {
+        error!("Unable to acquire Linux fdtimer. Queues will not be monitored.");
     }
 }
 

@@ -1348,6 +1348,7 @@ dependencies = [
  "lazy_static",
  "lqos_bus",
  "lqos_config",
+ "nix",
  "notify",
  "parking_lot 0.12.1",
  "rocket",
