@@ -18,12 +18,6 @@ git clone https://github.com/LibreQoE/LibreQoS.git
 
 > Now that this is in `main`, you no longer need to switch git branch. If you were previously on the `v1.4-pre-alpha-rust-integration` branch, please switch to main with `git checkout main; git pull`.
 
-Switch to the development branch:
-
-```
-git checkout v1.4-pre-alpha-rust-integration
-```
-
 ## Install Dependencies from apt and pip
 
 You need to have a few packages from `apt` installed:
