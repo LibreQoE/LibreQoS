@@ -1,5 +1,17 @@
-lqos_directory = '/opt/libreqos/src'
-queue_check_period_ms = 1000
+[main]
+
+lqos_directory = '/etc/lqos/' # /etc/lqos seems saner
+lqos_bus = '/run/lqos'
+
+[perms]
+
+max_users = 0 # limiting connects is sane
+group = 'lqos'
+umask = 0770 # Restrict access to the bus to lqos group and root
+
+[stats]
+
+queue_check_period_us = 1000000 # 1/2 rx_usecs would be nice
 
 [tuning]
 stop_irq_balance = true
@@ -33,6 +45,12 @@ vlan_mapping = []
 #         { parent = "enp1s0f1", tag = 4, redirect_to = 3 }
 # ]
 
+# Does the linux bridge still work? How do you set it up? It seems
+# as hot as we are on all this new stuff the lowest barrier to entry
+# is a default of the linux bridge.
+
+# How does one setup a Proxmox VM? Everyone except the testbed is on a vm.
+
 # NMS/CRM Integration
 
 [NMS]
@@ -50,6 +68,8 @@ allowedSubnets = ['100.64.0.0/10']
 # sqm = 'fq_codel'
 
 sqm = 'cake diffserv4'
+sqm_in = 'why do we think in and out should be the same?'
+sqm_out = 'why do we think in and out should be the same?'
 
 # Used to passively monitor the network for before / after comparisons. Leave as False to
 # ensure actual shaping. After changing this value, run "sudo systemctl restart LibreQoS.service"
@@ -58,6 +78,8 @@ monitorOnlyMode = False
 
 # How many Mbps are available to the edge of this network
 
+# Does this mean we are ALSO applying this as a shaped rate in or out of the network?
+
 upstreamBandwidthCapacityDownloadMbps = 1000
 upstreamBandwidthCapacityUploadMbps = 1000
 
@@ -65,8 +87,14 @@ upstreamBandwidthCapacityUploadMbps = 1000
 # parent node, evenly spread out across CPU cores. Here, define the bandwidth limit for each
 # of those generated parent nodes.
 
+# and if that is the case, why does this make sense?
+
 generatedPNDownloadMbps = 1000
 generatedPNUploadMbps = 1000
+
+# These seem to be duplicate and incomplete from the other stuff above
+# How does one (assuming we keep this file) use on a stick here?
+# There should be one way only to configure on a stick mode
 
 # Interface connected to core router
 interfaceA = 'eth1'
@@ -91,10 +119,10 @@ StickVlanB = 0
 enableActualShellCommands = True
 
 # Add 'sudo' before execution of any shell commands. May be required depending on distribution and environment.
+# what happens when run from systemd, vs the command line?
 runShellCommandsAsSudo = False
 
-# Allows overriding queues / CPU cores used. When set to 0, the max possible queues / CPU cores are utilized. Please
-# leave as 0.
+# Allows overriding queues / CPU cores used. When set to 0, the max possible queues / CPU cores are utilized. Please leave as 0. Why?
 
 queuesAvailableOverride = 0
 
