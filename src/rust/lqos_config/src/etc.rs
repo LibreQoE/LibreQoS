@@ -1,7 +1,7 @@
 //! Manages the `/etc/lqos.conf` file.
-
-use anyhow::{Error, Result};
+use log::error;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use std::path::Path;
 
 /// Represents the top-level of the `/etc/lqos.conf` file. Serialization
@@ -106,13 +106,34 @@ pub struct BridgeVlan {
 
 impl EtcLqos {
     /// Loads `/etc/lqos.conf`.
-    pub fn load() -> Result<Self> {
+    pub fn load() -> Result<Self, EtcLqosError> {
         if !Path::new("/etc/lqos.conf").exists() {
-            return Err(Error::msg("You must setup /etc/lqos.conf"));
+            error!("/etc/lqos.conf does not exist!");
+            return Err(EtcLqosError::ConfigDoesNotExist);
         }
-        let raw = std::fs::read_to_string("/etc/lqos.conf")?;
-        let config: Self = toml::from_str(&raw)?;
-        //println!("{:?}", config);
-        Ok(config)
+        if let Ok(raw) = std::fs::read_to_string("/etc/lqos.conf") {
+            let config_result: Result<Self, toml::de::Error> = toml::from_str(&raw);
+            match config_result {
+                Ok(config) => return Ok(config),
+                Err(e) => {
+                    error!("Unable to parse TOML from /etc/lqos.conf");
+                    error!("Full error: {:?}", e);
+                    return Err(EtcLqosError::CannotParseToml);
+                }
+            }
+        } else {
+            error!("Unable to read contents of /etc/lqos.conf");
+            Err(EtcLqosError::CannotReadFile)
+        }
     }
+}
+
+#[derive(Error, Debug)]
+pub enum EtcLqosError {
+    #[error("/etc/lqos.conf not found. You must setup this file to use LibreQoS.")]
+    ConfigDoesNotExist,
+    #[error("Unable to read contents of /etc/lqos.conf.")]
+    CannotReadFile,
+    #[error("Unable to parse TOML in /etc/lqos.conf")]
+    CannotParseToml,
 }
