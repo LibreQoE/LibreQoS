@@ -1,9 +1,9 @@
 //! The `authentication` module provides authorization for use of the
 //! local web UI on LibreQoS boxes. It maps to `/<install dir>/webusers.toml`
 
-use anyhow::{Error, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use thiserror::Error;
 use std::{
     fmt::Display,
     fs::{read_to_string, remove_file, OpenOptions},
@@ -11,6 +11,7 @@ use std::{
     path::{Path, PathBuf},
 };
 use uuid::Uuid;
+use log::{error, warn};
 
 /// Access rights of a user
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -66,31 +67,45 @@ impl Default for WebUsers {
 }
 
 impl WebUsers {
-    fn path() -> Result<PathBuf> {
-        let base_path = crate::EtcLqos::load()?.lqos_directory;
+    fn path() -> Result<PathBuf, AuthenticationError> {
+        let base_path = crate::EtcLqos::load().map_err(|_| AuthenticationError::UnableToLoadEtcLqos)?.lqos_directory;
         let filename = Path::new(&base_path).join("webusers.toml");
         Ok(filename)
     }
 
-    fn save_to_disk(&self) -> Result<()> {
+    fn save_to_disk(&self) -> Result<(), AuthenticationError> {
         let path = Self::path()?;
-        let new_contents = toml::to_string(&self)?;
-        if path.exists() {
-            remove_file(&path)?;
+        let new_contents = toml::to_string(&self);
+        if new_contents.is_err() {
+            return Err(AuthenticationError::SerializationError(new_contents.unwrap_err()));
         }
-        let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
-        file.write_all(&new_contents.as_bytes())?;
+        let new_contents = new_contents.unwrap();
+        if path.exists() {
+            if remove_file(&path).is_err() {
+                error!("Unable to delete web users file");
+                return Err(AuthenticationError::UnableToDelete);
+            }
+        }
+        if let Ok(mut file) = OpenOptions::new().write(true).create_new(true).open(path) {
+            if file.write_all(&new_contents.as_bytes()).is_err() {
+                error!("Unable to write web users file to disk.");
+                return Err(AuthenticationError::UnableToWrite);
+            }
+        } else {
+            error!("Unable to open web users file for writing.");
+            return Err(AuthenticationError::UnableToWrite);
+        }
         Ok(())
     }
 
     /// Does the user's file exist? True if it does, false otherwise.
-    pub fn does_users_file_exist() -> Result<bool> {
+    pub fn does_users_file_exist() -> Result<bool, AuthenticationError> {
         Ok(Self::path()?.exists())
     }
 
     /// Try to load `webusers.toml`. If it is unavailable, create a new--empty--
     /// file.
-    pub fn load_or_create() -> Result<Self> {
+    pub fn load_or_create() -> Result<Self, AuthenticationError> {
         let path = Self::path()?;
         if !path.exists() {
             // Create a new users file, save it and return the
@@ -100,9 +115,19 @@ impl WebUsers {
             Ok(new_users)
         } else {
             // Load from disk
-            let raw = read_to_string(path)?;
-            let users = toml::from_str(&raw)?;
-            Ok(users)
+            if let Ok(raw) = read_to_string(path) {
+                let parse_result = toml::from_str(&raw);
+                if let Ok(users) = parse_result {
+                    Ok(users)
+                } else {
+                    error!("Unable to deserialize webusers.toml. Error in next message.");
+                    error!("{:?}", parse_result);
+                    return Err(AuthenticationError::UnableToParse);
+                }
+            } else {
+                error!("Unable to read webusers.toml");
+                return Err(AuthenticationError::UnableToRead);
+            }
         }
     }
 
@@ -121,7 +146,7 @@ impl WebUsers {
         username: &str,
         password: &str,
         role: UserRole,
-    ) -> Result<String> {
+    ) -> Result<String, AuthenticationError> {
         let token; // Assigned in a branch
         if let Some(mut user) = self.users.iter_mut().find(|u| u.username == username) {
             user.password_hash = Self::hash_password(password);
@@ -143,11 +168,12 @@ impl WebUsers {
     }
 
     /// Delete a user from `webusers.toml`
-    pub fn remove_user(&mut self, username: &str) -> Result<()> {
+    pub fn remove_user(&mut self, username: &str) -> Result<(), AuthenticationError> {
         let old_len = self.users.len();
         self.users.retain(|u| u.username != username);
         if old_len == self.users.len() {
-            return Err(Error::msg(format!("User {} was not found", username)));
+            error!("User {username} not found, hence not deleted.");
+            return Err(AuthenticationError::UserNotFound);
         }
         self.save_to_disk()?;
         Ok(())
@@ -157,7 +183,7 @@ impl WebUsers {
     /// the login succeeds, returns the publically shareable token that
     /// uniquely identifies the user a a string. If it fails, returns an
     /// `Err`.
-    pub fn login(&self, username: &str, password: &str) -> Result<String> {
+    pub fn login(&self, username: &str, password: &str) -> Result<String, AuthenticationError> {
         let hash = Self::hash_password(password);
         if let Some(user) = self
             .users
@@ -169,20 +195,21 @@ impl WebUsers {
             if self.allow_unauthenticated_to_view {
                 Ok("default".to_string())
             } else {
-                Err(Error::msg("Invalid Login"))
+                Err(AuthenticationError::InvalidLogin)
             }
         }
     }
 
     /// Given a token, lookup the matching user and return their role.
-    pub fn get_role_from_token(&self, token: &str) -> Result<UserRole> {
+    pub fn get_role_from_token(&self, token: &str) -> Result<UserRole, AuthenticationError> {
         if let Some(user) = self.users.iter().find(|u| u.token == token) {
             Ok(user.role)
         } else {
             if self.allow_unauthenticated_to_view {
                 Ok(UserRole::ReadOnly)
             } else {
-                Err(Error::msg("Unknown user token"))
+                warn!("Token {token} not found, invalid data access attempt.");
+                Err(AuthenticationError::InvalidToken)
             }
         }
     }
@@ -197,7 +224,7 @@ impl WebUsers {
     }
 
     /// Dump all users to the console.
-    pub fn print_users(&self) -> Result<()> {
+    pub fn print_users(&self) -> Result<(), AuthenticationError> {
         self.users.iter().for_each(|u| {
             println!("{:<40} {:<10}", u.username, u.role.to_string());
         });
@@ -207,7 +234,7 @@ impl WebUsers {
     /// Sets the "allow unauthenticated users" field. If true,
     /// unauthenticated users gain read-only access. This is useful
     /// for demonstration purposes.
-    pub fn allow_anonymous(&mut self, allow: bool) -> Result<()> {
+    pub fn allow_anonymous(&mut self, allow: bool) -> Result<(), AuthenticationError> {
         self.allow_unauthenticated_to_view = allow;
         self.save_to_disk()?;
         Ok(())
@@ -217,4 +244,26 @@ impl WebUsers {
     pub fn do_we_allow_anonymous(&self) -> bool {
         self.allow_unauthenticated_to_view
     }
+}
+
+#[derive(Error, Debug)]
+pub enum AuthenticationError {
+    #[error("Unable to load /etc/lqos.conf")]
+    UnableToLoadEtcLqos,
+    #[error("Unable to serialize to TOML")]
+    SerializationError(toml::ser::Error),
+    #[error("Unable to remove existing web users file")]
+    UnableToDelete,
+    #[error("Unable to open webusers.toml for writing. Check permissions?")]
+    UnableToWrite,
+    #[error("Unable to read webusers.toml")]
+    UnableToRead,
+    #[error("Unable to parse webusers.toml")]
+    UnableToParse,
+    #[error("User not found")]
+    UserNotFound,
+    #[error("Invalid Login")]
+    InvalidLogin,
+    #[error("Invalid User Token")]
+    InvalidToken,
 }
