@@ -1,11 +1,12 @@
 mod serializable;
 mod shaped_device;
 use crate::{etc, SUPPORTED_CUSTOMERS};
-use anyhow::Result;
 use csv::{QuoteStyle, WriterBuilder, ReaderBuilder};
 use serializable::SerializableShapedDevice;
 pub use shaped_device::ShapedDevice;
+use thiserror::Error;
 use std::path::{Path, PathBuf};
+use log::error;
 
 /// Provides handling of the `ShapedDevices.csv` file that maps
 /// circuits to traffic shaping.
@@ -22,19 +23,24 @@ impl ConfigShapedDevices {
     /// The path to the current `ShapedDevices.csv` file, determined
     /// by acquiring the prefix from the `/etc/lqos.conf` configuration
     /// file.
-    pub fn path() -> Result<PathBuf> {
-        let cfg = etc::EtcLqos::load()?;
+    pub fn path() -> Result<PathBuf, ShapedDevicesError> {
+        let cfg = etc::EtcLqos::load().map_err(|_| ShapedDevicesError::ConfigLoadError)?;
         let base_path = Path::new(&cfg.lqos_directory);
         Ok(base_path.join("ShapedDevices.csv"))
     }
 
     /// Loads `ShapedDevices.csv` and constructs a `ConfigShapedDevices`
     /// object containing the resulting data.
-    pub fn load() -> Result<Self> {
+    pub fn load() -> Result<Self, ShapedDevicesError> {
         let final_path = ConfigShapedDevices::path()?;
-        let mut reader = ReaderBuilder::new()
+        let reader = ReaderBuilder::new()
             .comment(Some(b'#'))
-            .from_path(final_path)?;
+            .from_path(final_path);
+        if reader.is_err() {
+            error!("Unable to read ShapedDevices.csv");
+            return Err(ShapedDevicesError::OpenFail);
+        }
+        let mut reader = reader.unwrap();
 
         // Example: StringRecord(["1", "968 Circle St., Gurnee, IL 60031", "1", "Device 1", "", "", "192.168.101.2", "", "25", "5", "10000", "10000", ""])
         
@@ -46,7 +52,7 @@ impl ConfigShapedDevices {
                     devices.push(device);
                 } else {
                     log::error!("Error reading Device line: {:?}", &device);
-                    return Err(anyhow::Error::msg(format!("DEVICE DECODE: {:?}", device)));
+                    return Err(ShapedDevicesError::DeviceDecode(format!("DEVICE DECODE: {:?}", device)));
                 }
             } else {
                 log::error!("Error reading CSV record: {:?}", result);
@@ -54,15 +60,17 @@ impl ConfigShapedDevices {
                     csv::ErrorKind::UnequalLengths{ pos, expected_len, len} => {
                         if let Some(pos) = &pos {
                             let msg = format!("At line {}, position {}. Expected {} fields, found {}", pos.line(), pos.byte(), expected_len, len);
-                            return Err(anyhow::Error::msg(msg));
+                            error!("CSV devode error: {msg}");
+                            return Err(ShapedDevicesError::UnequalLengths(msg));
                         } else {
                             let msg = format!("Unknown position. Expected {} fields, found {}", expected_len, len);
-                            return Err(anyhow::Error::msg(msg));
+                            error!("CSV devode error: {msg}");
+                            return Err(ShapedDevicesError::UnequalLengths(msg));
                         }
                     }
                     _ => {}
                 }
-                return Err(anyhow::Error::msg(format!("CSV FILE: {:?}", result)));
+                return Err(ShapedDevicesError::GenericCsvError(format!("CSV FILE: {:?}", result)));
             }
         }
         let trie = ConfigShapedDevices::make_trie(&devices);
@@ -86,7 +94,7 @@ impl ConfigShapedDevices {
         table
     }
 
-    fn to_csv_string(&self) -> Result<String> {
+    fn to_csv_string(&self) -> Result<String, ShapedDevicesError> {
         let mut writer = WriterBuilder::new()
             .quote_style(QuoteStyle::NonNumeric)
             .from_writer(vec![]);
@@ -95,22 +103,56 @@ impl ConfigShapedDevices {
             .iter()
             .map(|d| SerializableShapedDevice::from(d))
         {
-            writer.serialize(d)?;
+            if writer.serialize(&d).is_err() {
+                error!("Unable to serialize record, {:?}", d);
+                return Err(ShapedDevicesError::SerializeFail);
+            }
         }
 
-        let data = String::from_utf8(writer.into_inner()?)?;
+        let data = String::from_utf8(
+            writer.into_inner().map_err(|_| ShapedDevicesError::SerializeFail)?
+        ).map_err(|_| ShapedDevicesError::Utf8Error)?;
         Ok(data)
     }
 
     /// Saves the current shaped devices list to `ShapedDevices.csv`
-    pub fn write_csv(&self, filename: &str) -> Result<()> {
-        let cfg = etc::EtcLqos::load()?;
+    pub fn write_csv(&self, filename: &str) -> Result<(), ShapedDevicesError> {
+        let cfg = etc::EtcLqos::load().map_err(|_| ShapedDevicesError::ConfigLoadError)?;
         let base_path = Path::new(&cfg.lqos_directory);
         let path = base_path.join(filename);
         let csv = self.to_csv_string()?;
-        std::fs::write(path, csv)?;
+        if std::fs::write(path, csv).is_err() {
+            error!("Unable to write ShapedDevices.csv. Permissions?");
+            return Err(ShapedDevicesError::WriteFail);
+        }
         Ok(())
     }
+}
+
+#[derive(Error, Debug)]
+pub enum ShapedDevicesError {
+    #[error("Error converting string to number in CSV record")]
+    CsvEntryParseError(String),
+    #[error("Unable to parse IPv4 address")]
+    IPv4ParseError(String),
+    #[error("Unable to parse IPv6 address")]
+    IPv6ParseError(String),
+    #[error("Unable to load /etc/lqos.conf")]
+    ConfigLoadError,
+    #[error("Unable to open/read ShapedDevices.csv")]
+    OpenFail,
+    #[error("Unable to write ShapedDevices.csv")]
+    WriteFail,
+    #[error("Unable to serialize - see next error for details")]
+    SerializeFail,
+    #[error("String does not translate to UTF-8")]
+    Utf8Error,
+    #[error("Unable to decode device entry in ShapedDevices.csv")]
+    DeviceDecode(String),
+    #[error("CSV line contains an unepected number of entries")]
+    UnequalLengths(String),
+    #[error("Unexpected CSV file error")]
+    GenericCsvError(String),
 }
 
 #[cfg(test)]

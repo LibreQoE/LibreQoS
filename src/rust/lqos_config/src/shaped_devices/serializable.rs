@@ -3,7 +3,7 @@ use serde::Serialize;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 // Example: StringRecord(["1", "968 Circle St., Gurnee, IL 60031", "1", "Device 1", "", "", "192.168.101.2", "", "25", "5", "10000", "10000", ""])
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub(crate) struct SerializableShapedDevice {
     pub circuit_id: String,
     pub circuit_name: String,
