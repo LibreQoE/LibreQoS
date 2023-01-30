@@ -2,13 +2,14 @@
 //! reads, writes and maps values from the Python file.
 
 use crate::etc;
-use anyhow::{Error, Result};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use std::{
     fs::{self, read_to_string, remove_file, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
 };
+use log::error;
 
 /// Represents the contents of an `ispConfig.py` file.
 #[derive(Serialize, Deserialize, Debug)]
@@ -61,17 +62,22 @@ pub struct LibreQoSConfig {
 
 impl LibreQoSConfig {
     /// Loads `ispConfig.py` into a management object.
-    pub fn load() -> Result<Self> {
-        let cfg = etc::EtcLqos::load()?;
-        let base_path = Path::new(&cfg.lqos_directory);
-        let final_path = base_path.join("ispConfig.py");
-        Ok(Self::load_from_path(&final_path)?)
+    pub fn load() -> Result<Self, LibreQoSConfigError> {
+        if let Ok(cfg) = etc::EtcLqos::load() {
+            let base_path = Path::new(&cfg.lqos_directory);
+            let final_path = base_path.join("ispConfig.py");
+            Ok(Self::load_from_path(&final_path)?)
+        } else {
+            error!("Unable to read LibreQoS config from /etc/lqos.conf");
+            Err(LibreQoSConfigError::CannotOpenEtcLqos)
+        }
     }
 
-    fn load_from_path(path: &PathBuf) -> Result<Self> {
+    fn load_from_path(path: &PathBuf) -> Result<Self, LibreQoSConfigError> {
         let path = Path::new(path);
         if !path.exists() {
-            return Err(Error::msg("Unable to find ispConfig.py"));
+            error!("Unable to find ispConfig.py");
+            return Err(LibreQoSConfigError::FileNotFoud);
         }
 
         // Read the config
@@ -95,72 +101,115 @@ impl LibreQoSConfig {
         Ok(result)
     }
 
-    fn parse_isp_config(&mut self, path: &Path) -> Result<()> {
-        let content = fs::read_to_string(path)?;
-        for line in content.split("\n") {
-            if line.starts_with("interfaceA") {
-                self.isp_interface = split_at_equals(line);
+    fn parse_isp_config(&mut self, path: &Path) -> Result<(), LibreQoSConfigError> {
+        let read_result = fs::read_to_string(path);
+        match read_result {
+            Err(e) => {
+                error!("Unable to read contents of ispConfig.py. Check permissions.");
+                error!("{:?}", e);
+                return Err(LibreQoSConfigError::CannotReadFile);
             }
-            if line.starts_with("interfaceB") {
-                self.internet_interface = split_at_equals(line);
-            }
-            if line.starts_with("OnAStick") {
-                let mode = split_at_equals(line);
-                if mode == "True" {
-                    self.on_a_stick_mode = true;
+            Ok(content) => {
+                for line in content.split("\n") {
+                    if line.starts_with("interfaceA") {
+                        self.isp_interface = split_at_equals(line);
+                    }
+                    if line.starts_with("interfaceB") {
+                        self.internet_interface = split_at_equals(line);
+                    }
+                    if line.starts_with("OnAStick") {
+                        let mode = split_at_equals(line);
+                        if mode == "True" {
+                            self.on_a_stick_mode = true;
+                        }
+                    }
+                    if line.starts_with("StickVlanA") {
+                        let vlan_string = split_at_equals(line);                        
+                        if let Ok(vlan) = vlan_string.parse() {
+                            self.stick_vlans.0 = vlan;
+                        } else {
+                            error!("Unable to parse contents of StickVlanA from ispConfig.py");
+                            error!("{line}");
+                            return Err(LibreQoSConfigError::ParseError(line.to_string()));
+                        }
+                    }
+                    if line.starts_with("StickVlanB") {
+                        let vlan_string = split_at_equals(line);
+                        if let Ok(vlan) = vlan_string.parse() {
+                            self.stick_vlans.1 = vlan;
+                        } else {
+                            error!("Unable to parse contents of StickVlanB from ispConfig.py");
+                            error!("{line}");
+                            return Err(LibreQoSConfigError::ParseError(line.to_string()));
+                        }
+                    }
+                    if line.starts_with("sqm") {
+                        self.sqm = split_at_equals(line);
+                    }
+                    if line.starts_with("upstreamBandwidthCapacityDownloadMbps") {
+                        if let Ok(mbps) = split_at_equals(line).parse() {
+                            self.total_download_mbps = mbps;
+                        } else {
+                            error!("Unable to parse contents of upstreamBandwidthCapacityDownloadMbps from ispConfig.py");
+                            error!("{line}");
+                            return Err(LibreQoSConfigError::ParseError(line.to_string()));
+                        }
+                    }
+                    if line.starts_with("upstreamBandwidthCapacityUploadMbps") {
+                        if let Ok(mbps) = split_at_equals(line).parse() {
+                            self.total_upload_mbps = mbps;
+                        } else {
+                            error!("Unable to parse contents of upstreamBandwidthCapacityUploadMbps from ispConfig.py");
+                            error!("{line}");
+                            return Err(LibreQoSConfigError::ParseError(line.to_string()));
+                        }
+                    }
+                    if line.starts_with("monitorOnlyMode ") {
+                        let mode = split_at_equals(line);
+                        if mode == "True" {
+                            self.monitor_mode = true;
+                        }
+                    }
+                    if line.starts_with("generatedPNDownloadMbps") {
+                        if let Ok(mbps) = split_at_equals(line).parse() {
+                            self.generated_download_mbps = mbps;
+                        } else {
+                            error!("Unable to parse contents of generatedPNDownloadMbps from ispConfig.py");
+                            error!("{line}");
+                            return Err(LibreQoSConfigError::ParseError(line.to_string()));
+                        }
+                    }
+                    if line.starts_with("generatedPNUploadMbps") {
+                        if let Ok(mbps) = split_at_equals(line).parse() {
+                            self.generated_upload_mbps = mbps;
+                        } else {
+                            error!("Unable to parse contents of generatedPNUploadMbps from ispConfig.py");
+                            error!("{line}");
+                            return Err(LibreQoSConfigError::ParseError(line.to_string()));
+                        }
+                    }
+                    if line.starts_with("useBinPackingToBalanceCPU") {
+                        let mode = split_at_equals(line);
+                        if mode == "True" {
+                            self.use_binpacking = true;
+                        }
+                    }
+                    if line.starts_with("enableActualShellCommands") {
+                        let mode = split_at_equals(line);
+                        if mode == "True" {
+                            self.enable_shell_commands = true;
+                        }
+                    }
+                    if line.starts_with("runShellCommandsAsSudo") {
+                        let mode = split_at_equals(line);
+                        if mode == "True" {
+                            self.run_as_sudo = true;
+                        }
+                    }
+                    if line.starts_with("queuesAvailableOverride") {
+                        self.override_queue_count = split_at_equals(line).parse().unwrap_or(0);
+                    }
                 }
-            }
-            if line.starts_with("StickVlanA") {
-                let vlan_string = split_at_equals(line);
-                let vlan: u16 = vlan_string.parse()?;
-                self.stick_vlans.0 = vlan;
-            }
-            if line.starts_with("StickVlanB") {
-                let vlan_string = split_at_equals(line);
-                let vlan: u16 = vlan_string.parse()?;
-                self.stick_vlans.1 = vlan;
-            }
-            if line.starts_with("sqm") {
-                self.sqm = split_at_equals(line);
-            }
-            if line.starts_with("upstreamBandwidthCapacityDownloadMbps") {
-                self.total_download_mbps = split_at_equals(line).parse()?;
-            }
-            if line.starts_with("upstreamBandwidthCapacityUploadMbps") {
-                self.total_upload_mbps = split_at_equals(line).parse()?;
-            }
-            if line.starts_with("monitorOnlyMode ") {
-                let mode = split_at_equals(line);
-                if mode == "True" {
-                    self.monitor_mode = true;
-                }
-            }
-            if line.starts_with("generatedPNDownloadMbps") {
-                self.generated_download_mbps = split_at_equals(line).parse()?;
-            }
-            if line.starts_with("generatedPNUploadMbps") {
-                self.generated_upload_mbps = split_at_equals(line).parse()?;
-            }
-            if line.starts_with("useBinPackingToBalanceCPU") {
-                let mode = split_at_equals(line);
-                if mode == "True" {
-                    self.use_binpacking = true;
-                }
-            }
-            if line.starts_with("enableActualShellCommands") {
-                let mode = split_at_equals(line);
-                if mode == "True" {
-                    self.enable_shell_commands = true;
-                }
-            }
-            if line.starts_with("runShellCommandsAsSudo") {
-                let mode = split_at_equals(line);
-                if mode == "True" {
-                    self.run_as_sudo = true;
-                }
-            }
-            if line.starts_with("queuesAvailableOverride") {
-                self.override_queue_count = split_at_equals(line).parse().unwrap_or(0);
             }
         }
         Ok(())
@@ -169,16 +218,24 @@ impl LibreQoSConfig {
     /// Saves the current values to `ispConfig.py` and store the
     /// previous settings in `ispConfig.py.backup`.
     ///
-    pub fn save(&self) -> Result<()> {
+    pub fn save(&self) -> Result<(), LibreQoSConfigError> {
         // Find the config
-        let cfg = etc::EtcLqos::load()?;
+        let cfg = etc::EtcLqos::load().map_err(|_| crate::libre_qos_config::LibreQoSConfigError::CannotOpenEtcLqos)?;
         let base_path = Path::new(&cfg.lqos_directory);
         let final_path = base_path.clone().join("ispConfig.py");
         let backup_path = base_path.join("ispConfig.py.backup");
-        std::fs::copy(&final_path, &backup_path)?;
+        if std::fs::copy(&final_path, &backup_path).is_err() {
+            error!("Unable to copy {} to {}.", final_path.display(), backup_path.display());
+            return Err(LibreQoSConfigError::CannotCopy);
+        }
 
         // Load existing file
-        let original = read_to_string(&final_path)?;
+        let original = read_to_string(&final_path);
+        if original.is_err() {
+            error!("Unable to read ispConfig.py");
+            return Err(LibreQoSConfigError::CannotReadFile);
+        }
+        let original = original.unwrap();
 
         // Temporary
         //let final_path = base_path.join("ispConfig.py.test");
@@ -266,13 +323,21 @@ impl LibreQoSConfig {
 
         // Actually save to disk
         if final_path.exists() {
-            remove_file(&final_path)?;
+            remove_file(&final_path).map_err(|_| LibreQoSConfigError::CannotRemove)?;
         }
-        let mut file = OpenOptions::new()
+        if let Ok(mut file) = OpenOptions::new()
             .write(true)
             .create_new(true)
-            .open(&final_path)?;
-        file.write_all(&config.as_bytes())?;
+            .open(&final_path) 
+        {
+            if file.write_all(&config.as_bytes()).is_err() {
+                error!("Unable to write to ispConfig.py");
+                return Err(LibreQoSConfigError::CannotWrite);
+            }
+        } else {
+            error!("Unable to open ispConfig.py for writing.");
+            return Err(LibreQoSConfigError::CannotOpenForWrite);
+        }
         Ok(())
     }
 }
@@ -284,4 +349,24 @@ fn split_at_equals(line: &str) -> String {
         .trim()
         .replace("\"", "")
         .replace("'", "")
+}
+
+#[derive(Debug, Error)]
+pub enum LibreQoSConfigError {
+    #[error("Unable to read /etc/lqos.conf. See other errors for details.")]
+    CannotOpenEtcLqos,
+    #[error("Unable to locate (path to LibreQoS)/ispConfig.py. Check your path and that you have configured it.")]
+    FileNotFoud,
+    #[error("Unable to read the contents of ispConfig.py. Check file permissions.")]
+    CannotReadFile,
+    #[error("Unable to parse ispConfig.py")]
+    ParseError(String),
+    #[error("Could not backup configuration")]
+    CannotCopy,
+    #[error("Could not remove the previous configuration.")]
+    CannotRemove,
+    #[error("Could not open ispConfig.py for write")]
+    CannotOpenForWrite,
+    #[error("Unable to write to ispConfig.py")]
+    CannotWrite,
 }
