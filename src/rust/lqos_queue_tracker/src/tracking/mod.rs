@@ -1,18 +1,10 @@
-use std::sync::atomic::AtomicBool;
-
 use crate::{
     circuit_to_queue::CIRCUIT_TO_QUEUE, interval::QUEUE_MONITOR_INTERVAL, queue_store::QueueStore,
     tracking::reader::read_named_queue_from_interface,
 };
-use log::{info, warn, error};
+use log::{info, warn};
 use lqos_config::LibreQoSConfig;
-use nix::sys::time::TimeSpec;
-use nix::sys::time::TimeValLike;
-use nix::sys::timerfd::ClockId;
-use nix::sys::timerfd::Expiration;
-use nix::sys::timerfd::TimerFd;
-use nix::sys::timerfd::TimerFlags;
-use nix::sys::timerfd::TimerSetTimeFlags;
+use lqos_utils::fdtimer::periodic;
 use rayon::prelude::{IntoParallelRefMutIterator, ParallelIterator};
 mod reader;
 mod watched_queues;
@@ -83,28 +75,8 @@ pub fn spawn_queue_monitor() {
         info!("Queue check period set to {interval_ms} ms.");
 
         // Setup the Linux timer fd system
-        let monitor_busy = AtomicBool::new(false);
-        if let Ok(timer) = TimerFd::new(ClockId::CLOCK_MONOTONIC, TimerFlags::empty()) {
-            if timer.set(Expiration::Interval(TimeSpec::milliseconds(interval_ms as i64)), TimerSetTimeFlags::TFD_TIMER_ABSTIME).is_ok() {
-                loop {
-                    if timer.wait().is_ok() {
-                        if monitor_busy.load(std::sync::atomic::Ordering::Relaxed) {
-                            warn!("Queue tick fired while another queue read is ongoing. Skipping this cycle.");
-                        } else {
-                            monitor_busy.store(true, std::sync::atomic::Ordering::Relaxed);
-                            //info!("Queue tracking timer fired.");
-                            track_queues();
-                            monitor_busy.store(false, std::sync::atomic::Ordering::Relaxed);
-                        }
-                    } else {
-                        error!("Error in timer wait (Linux fdtimer). This should never happen.");
-                    }
-                }
-            } else {
-                error!("Unable to set the Linux fdtimer timer interval. Queues will not be monitored.");
-            }
-        } else {
-            error!("Unable to acquire Linux fdtimer. Queues will not be monitored.");
-        }
+        periodic(interval_ms, "Queue Reader", &mut || {
+            track_queues();
+        });        
     });
 }

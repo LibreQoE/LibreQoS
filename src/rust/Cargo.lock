@@ -1379,7 +1379,6 @@ dependencies = [
  "lqos_config",
  "lqos_sys",
  "lqos_utils",
- "nix",
  "notify",
  "parking_lot 0.12.1",
  "rayon",
@@ -1410,6 +1409,8 @@ dependencies = [
 name = "lqos_utils"
 version = "0.1.0"
 dependencies = [
+ "log",
+ "nix",
  "serde",
 ]
 
@@ -1426,6 +1427,7 @@ dependencies = [
  "lqos_config",
  "lqos_queue_tracker",
  "lqos_sys",
+ "lqos_utils",
  "nix",
  "notify",
  "parking_lot 0.12.1",

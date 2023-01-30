@@ -4,10 +4,10 @@ use crate::throughput_tracker::tracking_data::ThroughputTracker;
 use lazy_static::*;
 use lqos_bus::{BusResponse, IpStats, TcHandle, XdpPpingResult};
 use lqos_sys::XdpIpAddress;
-use nix::sys::{timerfd::{TimerFd, ClockId, TimerFlags, Expiration, TimerSetTimeFlags}, time::{TimeSpec, TimeValLike}};
+use lqos_utils::fdtimer::periodic;
 use parking_lot::RwLock;
-use std::{time::Duration, sync::atomic::AtomicBool};
-use log::{info, warn, error};
+use std::{time::Duration};
+use log::info;
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
@@ -22,34 +22,14 @@ pub fn spawn_throughput_monitor() {
   info!("Bandwidth check period set to {interval_ms} ms.");
 
   std::thread::spawn(move || {
-    let monitor_busy = AtomicBool::new(false);
-    if let Ok(timer) = TimerFd::new(ClockId::CLOCK_MONOTONIC, TimerFlags::empty()) {
-      if timer.set(Expiration::Interval(TimeSpec::milliseconds(interval_ms as i64)), TimerSetTimeFlags::TFD_TIMER_ABSTIME).is_ok() {
-          loop {
-              if timer.wait().is_ok() {
-                  if monitor_busy.load(std::sync::atomic::Ordering::Relaxed) {
-                      warn!("Queue tick fired while another queue read is ongoing. Skipping this cycle.");
-                  } else {
-                      monitor_busy.store(true, std::sync::atomic::Ordering::Relaxed);
-                      //info!("Bandwidth tracking timer fired.");
-                      let mut throughput = THROUGHPUT_TRACKER.write();
-                      throughput.copy_previous_and_reset_rtt();
-                      throughput.apply_new_throughput_counters();
-                      throughput.apply_rtt_data();
-                      throughput.update_totals();
-                      throughput.next_cycle();
-                      monitor_busy.store(false, std::sync::atomic::Ordering::Relaxed);
-                  }
-              } else {
-                  error!("Error in timer wait (Linux fdtimer). This should never happen.");
-              }
-          }
-      } else {
-          error!("Unable to set the Linux fdtimer timer interval. Bandwidth will not be monitored.");
-      }
-  } else {
-      error!("Unable to acquire Linux fdtimer. Bandwidth will not be monitored.");
-  }
+    periodic(interval_ms, "Throughput Monitor", &mut || {
+      let mut throughput = THROUGHPUT_TRACKER.write();
+      throughput.copy_previous_and_reset_rtt();
+      throughput.apply_new_throughput_counters();
+      throughput.apply_rtt_data();
+      throughput.update_totals();
+      throughput.next_cycle();
+    });
   });
 }
 
