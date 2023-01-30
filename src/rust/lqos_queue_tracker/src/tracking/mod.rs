@@ -23,7 +23,7 @@ use self::watched_queues::expire_watched_queues;
 fn track_queues() {
     let mut watching = WATCHED_QUEUES.write();
     if watching.is_empty() {
-        info!("No queues marked for read.");
+        //info!("No queues marked for read.");
         return; // There's nothing to do - bail out fast
     }
     let config = LibreQoSConfig::load();
