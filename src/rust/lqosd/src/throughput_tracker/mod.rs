@@ -2,12 +2,12 @@ mod throughput_entry;
 mod tracking_data;
 use crate::throughput_tracker::tracking_data::ThroughputTracker;
 use lazy_static::*;
+use log::info;
 use lqos_bus::{BusResponse, IpStats, TcHandle, XdpPpingResult};
 use lqos_sys::XdpIpAddress;
 use lqos_utils::fdtimer::periodic;
 use parking_lot::RwLock;
-use std::{time::Duration};
-use log::info;
+use std::time::Duration;
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
@@ -65,13 +65,7 @@ fn retire_check(cycle: u64, recent_cycle: u64) -> bool {
   cycle < recent_cycle + RETIRE_AFTER_SECONDS
 }
 
-type TopList = (
-  XdpIpAddress,
-  (u64, u64),
-  (u64, u64),
-  f32,
-  TcHandle,
-);
+type TopList = (XdpIpAddress, (u64, u64), (u64, u64), f32, TcHandle);
 
 pub fn top_n(start: u32, end: u32) -> BusResponse {
   let mut full_list: Vec<TopList> = {
@@ -207,11 +201,8 @@ pub fn xdp_pping_compat() -> BusResponse {
     .filter(|(_, d)| retire_check(raw.cycle, d.most_recent_cycle))
     .filter_map(|(_ip, data)| {
       if data.tc_handle.as_u32() > 0 {
-        let mut valid_samples: Vec<u32> = data
-          .recent_rtt_data
-          .iter()
-          .filter(|d| **d > 0).copied()
-          .collect();
+        let mut valid_samples: Vec<u32> =
+          data.recent_rtt_data.iter().filter(|d| **d > 0).copied().collect();
         let samples = valid_samples.len() as u32;
         if samples > 0 {
           valid_samples.sort_by(|a, b| (*a).cmp(b));
@@ -278,14 +269,7 @@ pub fn host_counts() -> BusResponse {
   BusResponse::HostCounts((total, shaped))
 }
 
-type FullList = (
-  XdpIpAddress,
-  (u64, u64),
-  (u64, u64),
-  f32,
-  TcHandle,
-  u64,
-);
+type FullList = (XdpIpAddress, (u64, u64), (u64, u64), f32, TcHandle, u64);
 
 pub fn all_unknown_ips() -> BusResponse {
   let boot_time =

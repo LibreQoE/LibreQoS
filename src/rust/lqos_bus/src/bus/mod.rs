@@ -1,19 +1,19 @@
+mod client;
+mod persistent_client;
 mod reply;
 mod request;
 mod response;
 mod session;
-mod client;
-mod persistent_client;
 mod unix_socket_server;
+pub use client::bus_request;
+use log::error;
+pub use persistent_client::BusClient;
 pub use reply::BusReply;
 pub use request::BusRequest;
 pub use response::BusResponse;
 pub use session::BusSession;
-pub use client::bus_request;
 use thiserror::Error;
 pub use unix_socket_server::UnixSocketServer;
-pub use persistent_client::BusClient;
-use log::error;
 
 /// The local socket path to which `lqosd` will bind itself,
 /// listening for requets.
@@ -27,59 +27,67 @@ const PREALLOCATE_CLIENT_BUFFER_BYTES: usize = 10240;
 
 /// Encodes a BusSession with `bincode`, providing a tight binary
 /// representation of the request object for TCP transmission.
-pub fn encode_request(request: &BusSession) -> Result<Vec<u8>, BusSerializationError> {
-    match bincode::serialize(request) {
-        Ok(data) => Ok(data),
-        Err(e) => {
-            error!("Unable to encode/serialize request.");
-            error!("{:?}", e);
-            Err(BusSerializationError::SerializationError)
-        }
+pub fn encode_request(
+  request: &BusSession,
+) -> Result<Vec<u8>, BusSerializationError> {
+  match bincode::serialize(request) {
+    Ok(data) => Ok(data),
+    Err(e) => {
+      error!("Unable to encode/serialize request.");
+      error!("{:?}", e);
+      Err(BusSerializationError::SerializationError)
     }
+  }
 }
 
 /// Decodes bytes into a `BusSession`.
-pub fn decode_request(bytes: &[u8]) -> Result<BusSession, BusSerializationError> {
-    match bincode::deserialize(bytes) {
-        Ok(data) => Ok(data),
-        Err(e) => {
-            error!("Unable to decode/deserialize request");
-            error!("{:?}", e);
-            Err(BusSerializationError::DeserializationError)
-        }
+pub fn decode_request(
+  bytes: &[u8],
+) -> Result<BusSession, BusSerializationError> {
+  match bincode::deserialize(bytes) {
+    Ok(data) => Ok(data),
+    Err(e) => {
+      error!("Unable to decode/deserialize request");
+      error!("{:?}", e);
+      Err(BusSerializationError::DeserializationError)
     }
+  }
 }
 
 /// Encodes a `BusReply` object with `bincode`.
-pub fn encode_response(request: &BusReply) -> Result<Vec<u8>, BusSerializationError> {
-    match bincode::serialize(request) {
-        Ok(data) => Ok(data),
-        Err(e) => {
-            error!("Unable to encode/serialize request.");
-            error!("{:?}", e);
-            Err(BusSerializationError::SerializationError)
-        }
+pub fn encode_response(
+  request: &BusReply,
+) -> Result<Vec<u8>, BusSerializationError> {
+  match bincode::serialize(request) {
+    Ok(data) => Ok(data),
+    Err(e) => {
+      error!("Unable to encode/serialize request.");
+      error!("{:?}", e);
+      Err(BusSerializationError::SerializationError)
     }
+  }
 }
 
 /// Decodes a `BusReply` object with `bincode`.
-pub fn decode_response(bytes: &[u8]) -> Result<BusReply, BusSerializationError> {
-    match bincode::deserialize(bytes) {
-        Ok(data) => Ok(data),
-        Err(e) => {
-            error!("Unable to decode/deserialize request");
-            error!("{:?}", e);
-            Err(BusSerializationError::DeserializationError)
-        }
+pub fn decode_response(
+  bytes: &[u8],
+) -> Result<BusReply, BusSerializationError> {
+  match bincode::deserialize(bytes) {
+    Ok(data) => Ok(data),
+    Err(e) => {
+      error!("Unable to decode/deserialize request");
+      error!("{:?}", e);
+      Err(BusSerializationError::DeserializationError)
     }
+  }
 }
 
 #[derive(Error, Debug)]
 pub enum BusSerializationError {
-    #[error("Unable to serialize requested data into bincode format")]
-    SerializationError,
-    #[error("Unable to deserialize provided data into bincode format")]
-    DeserializationError,
+  #[error("Unable to serialize requested data into bincode format")]
+  SerializationError,
+  #[error("Unable to deserialize provided data into bincode format")]
+  DeserializationError,
 }
 
 #[derive(Error, Debug)]
@@ -100,30 +108,26 @@ pub enum BusClientError {
 
 #[cfg(test)]
 mod test {
-    use super::*;
-    use crate::{BusRequest, BusResponse};
+  use super::*;
+  use crate::{BusRequest, BusResponse};
 
-    #[test]
-    fn test_session_roundtrip() {
-        let session = BusSession {
-            persist: false,
-            requests: vec![BusRequest::Ping],
-        };
+  #[test]
+  fn test_session_roundtrip() {
+    let session =
+      BusSession { persist: false, requests: vec![BusRequest::Ping] };
 
-        let bytes = encode_request(&session).unwrap();
-        let new_session = decode_request(&bytes).unwrap();
-        assert_eq!(new_session.requests.len(), session.requests.len());
-        assert_eq!(new_session.requests[0], session.requests[0]);
-    }
+    let bytes = encode_request(&session).unwrap();
+    let new_session = decode_request(&bytes).unwrap();
+    assert_eq!(new_session.requests.len(), session.requests.len());
+    assert_eq!(new_session.requests[0], session.requests[0]);
+  }
 
-    #[test]
-    fn test_reply_roundtrip() {
-        let reply = BusReply {
-            responses: vec![BusResponse::Ack],
-        };
-        let bytes = encode_response(&reply).unwrap();
-        let new_reply = decode_response(&bytes).unwrap();
-        assert_eq!(reply.responses.len(), new_reply.responses.len());
-        assert_eq!(reply.responses[0], new_reply.responses[0]);
-    }
+  #[test]
+  fn test_reply_roundtrip() {
+    let reply = BusReply { responses: vec![BusResponse::Ack] };
+    let bytes = encode_response(&reply).unwrap();
+    let new_reply = decode_response(&bytes).unwrap();
+    assert_eq!(reply.responses.len(), new_reply.responses.len());
+    assert_eq!(reply.responses[0], new_reply.responses[0]);
+  }
 }

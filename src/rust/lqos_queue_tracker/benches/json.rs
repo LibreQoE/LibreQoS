@@ -86,7 +86,7 @@ fn add_client_pair(interface: &str, queue_number: u32) {
     .output()
     .unwrap();
 
-    #[rustfmt::skip]
+  #[rustfmt::skip]
   Command::new(SUDO)
     .args([
       TC, "qdisc", "add", "dev", interface, "parent", &class_id, "cake",

@@ -16,9 +16,9 @@ lazy_static! {
 #[derive(Debug, Clone, Copy, Serialize, Default)]
 #[serde(crate = "rocket::serde")]
 pub struct ThroughputPerSecond {
-    pub bits_per_second: (u64, u64),
-    pub packets_per_second: (u64, u64),
-    pub shaped_bits_per_second: (u64, u64),
+  pub bits_per_second: (u64, u64),
+  pub packets_per_second: (u64, u64),
+  pub shaped_bits_per_second: (u64, u64),
 }
 
 /// How many entries (at one per second) should we keep in the
@@ -30,34 +30,34 @@ const RINGBUFFER_SAMPLES: usize = 300;
 /// allowing for non-allocating/non-growing storage of
 /// throughput for the dashboard summaries.
 pub struct ThroughputRingbuffer {
-    readings: Vec<ThroughputPerSecond>,
-    next: usize,
+  readings: Vec<ThroughputPerSecond>,
+  next: usize,
 }
 
 impl ThroughputRingbuffer {
-    fn new() -> Self {
-        Self {
-            readings: vec![ThroughputPerSecond::default(); RINGBUFFER_SAMPLES],
-            next: 0,
-        }
+  fn new() -> Self {
+    Self {
+      readings: vec![ThroughputPerSecond::default(); RINGBUFFER_SAMPLES],
+      next: 0,
+    }
+  }
+
+  pub fn store(&mut self, reading: ThroughputPerSecond) {
+    self.readings[self.next] = reading;
+    self.next += 1;
+    self.next %= RINGBUFFER_SAMPLES;
+  }
+
+  pub fn get_result(&self) -> Vec<ThroughputPerSecond> {
+    let mut result = Vec::with_capacity(RINGBUFFER_SAMPLES);
+
+    for i in self.next..RINGBUFFER_SAMPLES {
+      result.push(self.readings[i]);
+    }
+    for i in 0..self.next {
+      result.push(self.readings[i]);
     }
 
-    pub fn store(&mut self, reading: ThroughputPerSecond) {
-        self.readings[self.next] = reading;
-        self.next += 1;
-        self.next %= RINGBUFFER_SAMPLES;
-    }
-
-    pub fn get_result(&self) -> Vec<ThroughputPerSecond> {
-        let mut result = Vec::with_capacity(RINGBUFFER_SAMPLES);
-
-        for i in self.next..RINGBUFFER_SAMPLES {
-            result.push(self.readings[i]);
-        }
-        for i in 0..self.next {
-            result.push(self.readings[i]);
-        }
-
-        result
-    }
+    result
+  }
 }

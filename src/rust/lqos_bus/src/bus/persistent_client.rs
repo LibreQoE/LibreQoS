@@ -1,15 +1,15 @@
+use super::{BusClientError, PREALLOCATE_CLIENT_BUFFER_BYTES};
 use crate::{
   decode_response, encode_request, BusRequest, BusResponse, BusSession,
   BUS_SOCKET_PATH,
 };
+use log::{error, warn};
 use std::time::Duration;
-use log::{warn, error};
 use tokio::{
   io::{AsyncReadExt, AsyncWriteExt},
   net::UnixStream,
   time::timeout,
 };
-use super::{PREALLOCATE_CLIENT_BUFFER_BYTES, BusClientError};
 
 /// Provides a lqosd bus client that persists between connections. Useful for when you are
 /// going to be repeatedly polling the bus for data (e.g. `lqtop`) and want to avoid the
@@ -74,11 +74,8 @@ impl BusClient {
         self.timeout,
         Self::send(self.stream.as_mut().unwrap(), &msg),
       );
-      let failed = if let Ok(inner) = timer.await {
-        inner.is_err()
-      } else {
-        false
-      };
+      let failed =
+        if let Ok(inner) = timer.await { inner.is_err() } else { false };
       if failed {
         self.stream = None;
         warn!("Stream no longer connected");
@@ -92,11 +89,8 @@ impl BusClient {
         self.timeout,
         self.stream.as_mut().unwrap().read(&mut self.buffer),
       );
-      let failed = if let Ok(inner) = timer.await {
-        inner.is_err()
-      } else {
-        false
-      };
+      let failed =
+        if let Ok(inner) = timer.await { inner.is_err() } else { false };
       if failed {
         warn!("Stream no longer connected");
         return Err(BusClientError::StreamNotConnected);
@@ -114,7 +108,10 @@ impl BusClient {
     Ok(reply.responses)
   }
 
-  async fn send(stream: &mut UnixStream, msg: &[u8]) -> Result<(), BusClientError> {
+  async fn send(
+    stream: &mut UnixStream,
+    msg: &[u8],
+  ) -> Result<(), BusClientError> {
     let ret = stream.write(msg).await;
     if ret.is_err() {
       error!("Unable to write to {BUS_SOCKET_PATH} stream.");

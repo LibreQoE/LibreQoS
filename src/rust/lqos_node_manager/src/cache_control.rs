@@ -13,16 +13,16 @@ use rocket::response::Responder;
 /// ```
 #[derive(Responder)]
 pub struct LongCache<T> {
-    inner: T,
-    my_header: Header<'static>,
+  inner: T,
+  my_header: Header<'static>,
 }
 impl<'r, 'o: 'r, T: Responder<'r, 'o>> LongCache<T> {
-    pub fn new(inner: T) -> Self {
-        Self {
-            inner,
-            my_header: Header::new("cache-control", "max-age=604800, public"),
-        }
+  pub fn new(inner: T) -> Self {
+    Self {
+      inner,
+      my_header: Header::new("cache-control", "max-age=604800, public"),
     }
+  }
 }
 
 /// Use to wrap a responder when you want to tell the user's
@@ -37,14 +37,14 @@ impl<'r, 'o: 'r, T: Responder<'r, 'o>> LongCache<T> {
 /// ```
 #[derive(Responder)]
 pub struct NoCache<T> {
-    inner: T,
-    my_header: Header<'static>,
+  inner: T,
+  my_header: Header<'static>,
 }
 impl<'r, 'o: 'r, T: Responder<'r, 'o>> NoCache<T> {
-    pub fn new(inner: T) -> Self {
-        Self {
-            inner,
-            my_header: Header::new("cache-control", "no-cache, private"),
-        }
+  pub fn new(inner: T) -> Self {
+    Self {
+      inner,
+      my_header: Header::new("cache-control", "no-cache, private"),
     }
+  }
 }

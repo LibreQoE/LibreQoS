@@ -4,7 +4,7 @@ use crossterm::{
   terminal::enable_raw_mode,
 };
 use lqos_bus::{BusClient, BusRequest, BusResponse, IpStats};
-use lqos_utils::packet_scale::{scale_bits,scale_packets};
+use lqos_utils::packet_scale::{scale_bits, scale_packets};
 use std::{io, time::Duration};
 use tui::{
   backend::CrosstermBackend,
@@ -24,7 +24,7 @@ async fn get_data(client: &mut BusClient, n_rows: u16) -> Result<DataResult> {
   let mut result = DataResult { totals: (0, 0, 0, 0), top: Vec::new() };
   let requests = vec![
     BusRequest::GetCurrentThroughput,
-    BusRequest::GetTopNDownloaders{start: 0, end: n_rows as u32},
+    BusRequest::GetTopNDownloaders { start: 0, end: n_rows as u32 },
   ];
   for r in client.request(requests).await? {
     match r {
@@ -58,9 +58,14 @@ fn draw_menu<'a>(is_connected: bool) -> Paragraph<'a> {
   ]);
 
   if !is_connected {
-    text.0.push(Span::styled(" NOT CONNECTED ", Style::default().fg(Color::Red)))
+    text
+      .0
+      .push(Span::styled(" NOT CONNECTED ", Style::default().fg(Color::Red)))
   } else {
-    text.0.push(Span::styled("     CONNECTED ", Style::default().fg(Color::Green)))
+    text.0.push(Span::styled(
+      "     CONNECTED ",
+      Style::default().fg(Color::Green),
+    ))
   }
 
   let para = Paragraph::new(text)
@@ -73,14 +78,13 @@ fn draw_menu<'a>(is_connected: bool) -> Paragraph<'a> {
         .title("LibreQoS Monitor: "),
     );
 
-    para
+  para
 }
 
 fn draw_pps<'a>(
   packets_per_second: (u64, u64),
   bits_per_second: (u64, u64),
 ) -> Spans<'a> {
-  
   Spans::from(vec![
     Span::styled("🠗 ", Style::default().fg(Color::Yellow)),
     Span::from(scale_bits(bits_per_second.0)),
@@ -123,8 +127,11 @@ fn draw_top_pane<'a>(
           "🠕 {:>13}",
           scale_packets(stats.packets_per_second.1)
         )),
-        Cell::from(format!("{:>7} ms", format!("{:.2}",stats.median_tcp_rtt))),
-        Cell::from(format!("{:>7}",stats.tc_handle.to_string())),
+        Cell::from(format!(
+          "{:>7} ms",
+          format!("{:.2}", stats.median_tcp_rtt)
+        )),
+        Cell::from(format!("{:>7}", stats.tc_handle.to_string())),
       ])
       .style(Style::default().fg(color))
     })
@@ -189,11 +196,7 @@ pub async fn main() -> Result<()> {
         .direction(Direction::Vertical)
         .margin(0)
         .constraints(
-          [
-            Constraint::Min(1),
-            Constraint::Percentage(100),
-          ]
-          .as_ref(),
+          [Constraint::Min(1), Constraint::Percentage(100)].as_ref(),
         )
         .split(f.size());
       f.render_widget(draw_menu(bus_client.is_connected()), chunks[0]);

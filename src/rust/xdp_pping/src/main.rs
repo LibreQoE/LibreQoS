@@ -1,15 +1,13 @@
 use anyhow::Result;
-use lqos_bus::{
-    BusRequest, BusResponse, bus_request,
-};
+use lqos_bus::{bus_request, BusRequest, BusResponse};
 
 #[tokio::main(flavor = "current_thread")]
 pub async fn main() -> Result<()> {
-    for resp in bus_request(vec![BusRequest::XdpPping]).await? {
-        if let BusResponse::XdpPping(lines) = resp {
-            println!("[");
-            for line in lines.iter() {
-                println!("{{\"tc\":\"{}\", \"avg\": {}, \"min\": {}, \"max\": {}, \"median\": {}, \"samples\": {}}}",
+  for resp in bus_request(vec![BusRequest::XdpPping]).await? {
+    if let BusResponse::XdpPping(lines) = resp {
+      println!("[");
+      for line in lines.iter() {
+        println!("{{\"tc\":\"{}\", \"avg\": {}, \"min\": {}, \"max\": {}, \"median\": {}, \"samples\": {}}}",
                     line.tc,
                     line.avg,
                     line.min,
@@ -17,9 +15,9 @@ pub async fn main() -> Result<()> {
                     line.median,
                     line.samples,
                 );
-            }
-            println!("{{}}]");
-        }
+      }
+      println!("{{}}]");
     }
-    Ok(())
+  }
+  Ok(())
 }

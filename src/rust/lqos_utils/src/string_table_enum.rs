@@ -76,26 +76,26 @@ macro_rules! dashy_table_enum {
 
 #[cfg(test)]
 mod test {
-    use serde::{Serialize, Deserialize};
+  use serde::{Deserialize, Serialize};
 
-    string_table_enum!(MyEnum, option1, option2);
-    dashy_table_enum!(DashingEnum, option_1, option2);
+  string_table_enum!(MyEnum, option1, option2);
+  dashy_table_enum!(DashingEnum, option_1, option2);
 
-    #[test]
-    fn test_enum_creation() {
-        let n = MyEnum::from_str("option1");
-        assert_eq!(n, MyEnum::option1);
-    }
+  #[test]
+  fn test_enum_creation() {
+    let n = MyEnum::from_str("option1");
+    assert_eq!(n, MyEnum::option1);
+  }
 
-    #[test]
-    fn test_enum_unknown() {
-        let n = MyEnum::from_str("i want sausages");
-        assert_eq!(n, MyEnum::Unknown);
-    }
+  #[test]
+  fn test_enum_unknown() {
+    let n = MyEnum::from_str("i want sausages");
+    assert_eq!(n, MyEnum::Unknown);
+  }
 
-    #[test]
-    fn test_enum_with_dash() {
-        let n = DashingEnum::from_str("option-1");
-        assert_eq!(n, DashingEnum::option_1);
-    }
+  #[test]
+  fn test_enum_with_dash() {
+    let n = DashingEnum::from_str("option-1");
+    assert_eq!(n, DashingEnum::option_1);
+  }
 }

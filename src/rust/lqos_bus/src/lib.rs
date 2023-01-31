@@ -15,8 +15,8 @@ mod ip_stats;
 pub use ip_stats::{IpMapping, IpStats, XdpPpingResult};
 mod tc_handle;
 pub use bus::{
-    decode_request, decode_response, encode_request, encode_response, BusReply,
-    BusRequest, BusResponse, BusSession, BUS_SOCKET_PATH, bus_request,
-    UnixSocketServer, BusClient,
+  bus_request, decode_request, decode_response, encode_request,
+  encode_response, BusClient, BusReply, BusRequest, BusResponse, BusSession,
+  UnixSocketServer, BUS_SOCKET_PATH,
 };
 pub use tc_handle::TcHandle;

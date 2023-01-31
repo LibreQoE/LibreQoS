@@ -13,16 +13,16 @@ const SLEEP_DEBOUNCE_DURATION: u64 = 10;
 
 /// Provides a convenient mechanism for watching a file for changes.
 /// On Linux, it uses `inotify` - this varies for other operating systems.
-/// 
+///
 /// Do not create the structure directly: use new(), followed by
 /// setting the appropriate callbacks.
-/// 
+///
 /// ## Example
-/// 
+///
 /// ```rust
 /// use lqos_utils::file_watcher::FileWatcher;
 /// use std::path::Path;
-/// 
+///
 /// let path = Path::new("/opt/libreqos/src").join("ShapedDevices.csv");
 /// let mut watcher = FileWatcher::new("ShapedDevices.csv", path);
 /// watcher.set_file_changed_callback(|| println!("ShapedDevices.csv has changed"));
@@ -38,9 +38,9 @@ pub struct FileWatcher {
 
 impl FileWatcher {
   /// Creates a new `FileWatcher`.
-  /// 
+  ///
   /// ## Arguments
-  /// 
+  ///
   /// * `nice_name` - the print-friendly (short) name of the file to watch.
   /// * `path` - a generated `PathBuf` pointing to the file to watch.
   pub fn new<S: ToString>(nice_name: S, path: PathBuf) -> Self {
@@ -84,7 +84,9 @@ impl FileWatcher {
         std::thread::sleep(Duration::from_secs(SLEEP_UNTIL_EXISTS_SECONDS));
         if self.path.exists() {
           info!("{} has been created. Waiting a second.", self.nice_name);
-          std::thread::sleep(Duration::from_secs(SLEEP_AFTER_CREATION_SECONDS));
+          std::thread::sleep(Duration::from_secs(
+            SLEEP_AFTER_CREATION_SECONDS,
+          ));
           if let Some(callback) = &mut self.file_created_callback {
             callback();
           }
@@ -125,8 +127,8 @@ impl FileWatcher {
       let mut process = true;
       if let Some(last_event) = last_event {
         if last_event.elapsed().as_secs() < SLEEP_DEBOUNCE_DURATION {
-            process = false;
-            //info!("Ignoring duplicate event");
+          process = false;
+          //info!("Ignoring duplicate event");
         }
       }
 
