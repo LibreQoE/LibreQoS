@@ -1,6 +1,7 @@
-use anyhow::{Error, Result};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use std::ffi::CString;
+use log::error;
 
 /// Provides consistent handling of TC handle types.
 #[derive(Copy, Clone, Serialize, Deserialize, Debug, Default, PartialEq, Eq)]
@@ -33,13 +34,19 @@ impl TcHandle {
     /// Build a TC handle from a string. This is actually a complicated
     /// operation, since it has to handle "root" and other strings as well
     /// as simple "1:2" mappings. Calls a C function to handle this gracefully.
-    pub fn from_string<S: ToString>(handle: S) -> Result<Self> {
+    pub fn from_string<S: ToString>(handle: S) -> Result<Self, TcHandleParseError> {
         let mut tc_handle: __u32 = 0;
-        let str = CString::new(handle.to_string())?;
+        let str = CString::new(handle.to_string());
+        if str.is_err() {
+            error!("Unable to convert {} to a C-String.", handle.to_string());
+            return Err(TcHandleParseError::CString);
+        }
+        let str = str.unwrap();
         let handle_pointer: *mut __u32 = &mut tc_handle;
         let result = unsafe { get_tc_classid(handle_pointer, str.as_ptr()) };
         if result != 0 {
-            Err(Error::msg("Unable to parse TC handle string"))
+            error!("Unable to parse {} as a valid TC handle", handle.to_string());
+            Err(TcHandleParseError::InvalidInput)
         } else {
             Ok(Self(tc_handle))
         }
@@ -66,6 +73,14 @@ impl ToString for TcHandle {
         let (major, minor) = self.get_major_minor();
         format!("{major:x}:{minor:x}")
     }
+}
+
+#[derive(Error, Debug)]
+pub enum TcHandleParseError {
+    #[error("Unable to convert string to C-compatible string. Check your unicode!")]
+    CString,
+    #[error("Invalid input")]
+    InvalidInput,
 }
 
 #[cfg(test)]

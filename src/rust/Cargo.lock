@@ -1311,7 +1311,6 @@ dependencies = [
 name = "lqos_bus"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "bincode",
  "cc",
  "criterion",
@@ -1320,6 +1319,7 @@ dependencies = [
  "lqos_utils",
  "nix",
  "serde",
+ "thiserror",
  "tokio",
 ]
 

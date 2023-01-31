@@ -2,14 +2,14 @@ use crate::{
   decode_response, encode_request, BusRequest, BusResponse, BusSession,
   BUS_SOCKET_PATH,
 };
-use anyhow::{Error, Result};
 use std::time::Duration;
+use log::{warn, error};
 use tokio::{
   io::{AsyncReadExt, AsyncWriteExt},
   net::UnixStream,
   time::timeout,
 };
-use super::PREALLOCATE_CLIENT_BUFFER_BYTES;
+use super::{PREALLOCATE_CLIENT_BUFFER_BYTES, BusClientError};
 
 /// Provides a lqosd bus client that persists between connections. Useful for when you are
 /// going to be repeatedly polling the bus for data (e.g. `lqtop`) and want to avoid the
@@ -23,7 +23,7 @@ pub struct BusClient {
 impl BusClient {
   /// Instantiates a bus client, connecting to the bus stream and initializing
   /// a buffer.
-  pub async fn new() -> Result<Self> {
+  pub async fn new() -> Result<Self, BusClientError> {
     Ok(Self {
       stream: Self::connect().await,
       buffer: vec![0u8; PREALLOCATE_CLIENT_BUFFER_BYTES],
@@ -44,7 +44,7 @@ impl BusClient {
   pub async fn request(
     &mut self,
     requests: Vec<BusRequest>,
-  ) -> Result<Vec<BusResponse>> {
+  ) -> Result<Vec<BusResponse>, BusClientError> {
     if self.stream.is_none() {
       self.stream = Self::connect().await;
     }
@@ -55,12 +55,18 @@ impl BusClient {
     {
       // The stream has gone away
       self.stream = None;
-      return Err(Error::msg("Stream not connected"));
+      warn!("Local socket stream is no longer connected");
+      return Err(BusClientError::StreamNotConnected);
     }
 
     // Encode the message
     let message = BusSession { persist: true, requests };
-    let msg = encode_request(&message)?;
+    let msg = encode_request(&message);
+    if msg.is_err() {
+      error!("Unable to encode request {:?}", message);
+      return Err(BusClientError::EncodingError);
+    }
+    let msg = msg.unwrap();
 
     // Send with a timeout. If the timeout fails, then the stream went wrong
     if self.stream.is_some() {
@@ -79,7 +85,8 @@ impl BusClient {
       };
       if failed {
         self.stream = None;
-        return Err(Error::msg("Stream not connected"));
+        warn!("Stream no longer connected");
+        return Err(BusClientError::StreamNotConnected);
       }
     }
 
@@ -99,19 +106,29 @@ impl BusClient {
         false
       };
       if failed {
-        self.stream = None;
-        return Err(Error::msg("Stream not connected"));
+        warn!("Stream no longer connected");
+        return Err(BusClientError::StreamNotConnected);
       }
     }
 
-    let reply = decode_response(&self.buffer)?;
+    let reply = decode_response(&self.buffer);
+    if reply.is_err() {
+      error!("Unable to decode response from socket.");
+      return Err(BusClientError::DecodingError);
+    }
+    let reply = reply.unwrap();
     self.buffer.iter_mut().for_each(|b| *b = 0);
 
     Ok(reply.responses)
   }
 
-  async fn send(stream: &mut UnixStream, msg: &[u8]) -> Result<()> {
-    stream.write(&msg).await?;
+  async fn send(stream: &mut UnixStream, msg: &[u8]) -> Result<(), BusClientError> {
+    let ret = stream.write(&msg).await;
+    if ret.is_err() {
+      error!("Unable to write to {BUS_SOCKET_PATH} stream.");
+      error!("{:?}", ret);
+      return Err(BusClientError::StreamWriteError);
+    }
     Ok(())
   }
 

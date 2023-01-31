@@ -1,8 +1,8 @@
 use std::{fs::remove_file, ffi::CString};
 use crate::{BUS_SOCKET_PATH, decode_request, BusReply, encode_response, BusRequest, BusResponse};
-use anyhow::Result;
+use thiserror::Error;
 use tokio::{net::{UnixListener, UnixStream}, io::{AsyncReadExt, AsyncWriteExt}};
-use log::warn;
+use log::{warn, error};
 
 use super::BUS_SOCKET_DIRECTORY;
 
@@ -13,7 +13,7 @@ pub struct UnixSocketServer {}
 impl UnixSocketServer {
     /// Creates a new `UnixSocketServer`. Will delete any pre-existing
     /// socket file.
-    pub fn new() -> Result<Self> {
+    pub fn new() -> Result<Self, UnixSocketServerError> {
         Self::delete_local_socket()?;
         Self::check_directory()?;
         Self::path_permissions()?;
@@ -27,55 +27,86 @@ impl UnixSocketServer {
         let _ = UnixSocketServer::delete_local_socket(); // Ignore result
     }
 
-    fn check_directory() -> Result<()> {
+    fn check_directory() -> Result<(), UnixSocketServerError> {
         let dir_path = std::path::Path::new(BUS_SOCKET_DIRECTORY);
         if dir_path.exists() && dir_path.is_dir() {
             Ok(())
         } else {
-            std::fs::create_dir(dir_path)?;            
+            let ret = std::fs::create_dir(dir_path);
+            if ret.is_err() {
+                error!("Unable to create {}", dir_path.display());
+                error!("{:?}", ret);
+                return Err(UnixSocketServerError::MkDirFail);
+            }
             Ok(())
         }
     }
 
-    fn path_permissions() -> Result<()> {
-        let unix_path = CString::new(BUS_SOCKET_DIRECTORY)?;
+    fn path_permissions() -> Result<(), UnixSocketServerError> {
+        let unix_path = CString::new(BUS_SOCKET_DIRECTORY);
+        if unix_path.is_err() {
+            error!("Unable to create C-compatible path string. This should never happen.");
+            return Err(UnixSocketServerError::CString);
+        }
+        let unix_path = unix_path.unwrap();
         unsafe {
             nix::libc::chmod(unix_path.as_ptr(), 777);
         }
         Ok(())
     }
 
-    fn delete_local_socket() -> Result<()> {
+    fn delete_local_socket() -> Result<(), UnixSocketServerError> {
         let socket_path = std::path::Path::new(BUS_SOCKET_PATH);
         if socket_path.exists() {
-            remove_file(socket_path)?;
+            let ret = remove_file(socket_path);
+            if ret.is_err() {
+                error!("Unable to remove {BUS_SOCKET_PATH}");
+                return Err(UnixSocketServerError::RmDirFail);
+            }
         }
         Ok(())
     }
 
-    fn make_socket_public() -> Result<()> {
+    fn make_socket_public() -> Result<(), UnixSocketServerError> {
         lqos_utils::run_success!("/bin/chmod", "-R", "a+rwx", BUS_SOCKET_DIRECTORY);
         Ok(())
     }
 
     /// Start listening for bus traffic, forward requests to the `handle_bus_requests`
     /// function for procesing.
-    pub async fn listen(&self, handle_bus_requests: fn(&[BusRequest], &mut Vec<BusResponse>)) -> Result<()> 
+    pub async fn listen(&self, handle_bus_requests: fn(&[BusRequest], &mut Vec<BusResponse>)) -> Result<(), UnixSocketServerError> 
     {
         // Setup the listener and grant permissions to it
-        let listener = UnixListener::bind(BUS_SOCKET_PATH)?;
+        let listener = UnixListener::bind(BUS_SOCKET_PATH);
+        if listener.is_err() {
+            error!("Unable to bind to {BUS_SOCKET_PATH}");
+            error!("{:?}", listener);
+            return Err(UnixSocketServerError::BindFail);
+        }
+        let listener = listener.unwrap();
         Self::make_socket_public()?;
         warn!("Listening on: {}", BUS_SOCKET_PATH);
         loop {
-            let (mut socket, _) = listener.accept().await?;            
+            let ret = listener.accept().await;
+            if ret.is_err() {
+                error!("Unable to listen for requests on bound {BUS_SOCKET_PATH}");
+                error!("{:?}", ret);
+                return Err(UnixSocketServerError::ListenFail);
+            }
+            let (mut socket, _) = ret.unwrap();            
             tokio::spawn(async move {
                 loop {
-                    let mut buf = vec![0; 1024];
+                    let mut buf = vec![0; 4096];
 
-                    let _bytes_read = socket
+                    let bytes_read = socket
                         .read(&mut buf)
-                        .await
-                        .expect("failed to read data from socket");
+                        .await;
+                    if bytes_read.is_err() {
+                        warn!("Unable to read from client socket. Server remains alive.");
+                        warn!("This is probably harmless.");
+                        warn!("{:?}", bytes_read);
+                        bytes_read.unwrap(); // Unwrap to crash the thread
+                    }
 
                     if let Ok(request) = decode_request(&buf) {
                         let mut response = BusReply {
@@ -103,7 +134,28 @@ impl Drop for UnixSocketServer {
     }
 }
 
-async fn reply_unix(response: &[u8], socket: &mut UnixStream) -> Result<()> {
-    socket.write_all(&response).await?;
+async fn reply_unix(response: &[u8], socket: &mut UnixStream) -> Result<(), UnixSocketServerError> {
+    let ret = socket.write_all(&response).await;
+    if ret.is_err() {
+        warn!("Unable to write to UNIX socket. This is usually harmless, meaning the client went away.");
+        warn!("{:?}", ret);
+        return Err(UnixSocketServerError::WriteFail);
+    };
     Ok(())
+}
+
+#[derive(Error, Debug)]
+pub enum UnixSocketServerError {
+    #[error("Unable to create directory")]
+    MkDirFail,
+    #[error("Unable to create C-Compatible String")]
+    CString,
+    #[error("Unable to remove directory")]
+    RmDirFail,
+    #[error("Cannot bind unix socket")]
+    BindFail,
+    #[error("Cannot listen to socket")]
+    ListenFail,
+    #[error("Unable to write to socket")]
+    WriteFail,
 }
