@@ -40,7 +40,7 @@ pub fn encode_request(request: &BusSession) -> Result<Vec<u8>, BusSerializationE
 
 /// Decodes bytes into a `BusSession`.
 pub fn decode_request(bytes: &[u8]) -> Result<BusSession, BusSerializationError> {
-    match bincode::deserialize(&bytes) {
+    match bincode::deserialize(bytes) {
         Ok(data) => Ok(data),
         Err(e) => {
             error!("Unable to decode/deserialize request");
@@ -64,7 +64,7 @@ pub fn encode_response(request: &BusReply) -> Result<Vec<u8>, BusSerializationEr
 
 /// Decodes a `BusReply` object with `bincode`.
 pub fn decode_response(bytes: &[u8]) -> Result<BusReply, BusSerializationError> {
-    match bincode::deserialize(&bytes) {
+    match bincode::deserialize(bytes) {
         Ok(data) => Ok(data),
         Err(e) => {
             error!("Unable to decode/deserialize request");

@@ -110,7 +110,7 @@ impl LibreQoSConfig {
                 return Err(LibreQoSConfigError::CannotReadFile);
             }
             Ok(content) => {
-                for line in content.split("\n") {
+                for line in content.split('\n') {
                     if line.starts_with("interfaceA") {
                         self.isp_interface = split_at_equals(line);
                     }
@@ -222,7 +222,7 @@ impl LibreQoSConfig {
         // Find the config
         let cfg = etc::EtcLqos::load().map_err(|_| crate::libre_qos_config::LibreQoSConfigError::CannotOpenEtcLqos)?;
         let base_path = Path::new(&cfg.lqos_directory);
-        let final_path = base_path.clone().join("ispConfig.py");
+        let final_path = base_path.join("ispConfig.py");
         let backup_path = base_path.join("ispConfig.py.backup");
         if std::fs::copy(&final_path, &backup_path).is_err() {
             error!("Unable to copy {} to {}.", final_path.display(), backup_path.display());
@@ -330,7 +330,7 @@ impl LibreQoSConfig {
             .create_new(true)
             .open(&final_path) 
         {
-            if file.write_all(&config.as_bytes()).is_err() {
+            if file.write_all(config.as_bytes()).is_err() {
                 error!("Unable to write to ispConfig.py");
                 return Err(LibreQoSConfigError::CannotWrite);
             }
@@ -347,8 +347,7 @@ fn split_at_equals(line: &str) -> String {
         .nth(1)
         .unwrap_or("")
         .trim()
-        .replace("\"", "")
-        .replace("'", "")
+        .replace(['\"', '\''], "")
 }
 
 #[derive(Debug, Error)]

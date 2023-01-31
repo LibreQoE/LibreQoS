@@ -25,7 +25,7 @@ pub struct EtcLqos {
 
 /// Represents a set of `sysctl` and `ethtool` tweaks that may be
 /// applied (in place of the previous version's offload service)
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Tunables {
     /// Should the `irq_balance` system service be stopped?
     pub stop_irq_balance: bool,
@@ -114,11 +114,11 @@ impl EtcLqos {
         if let Ok(raw) = std::fs::read_to_string("/etc/lqos.conf") {
             let config_result: Result<Self, toml::de::Error> = toml::from_str(&raw);
             match config_result {
-                Ok(config) => return Ok(config),
+                Ok(config) => Ok(config),
                 Err(e) => {
                     error!("Unable to parse TOML from /etc/lqos.conf");
                     error!("Full error: {:?}", e);
-                    return Err(EtcLqosError::CannotParseToml);
+                    Err(EtcLqosError::CannotParseToml)
                 }
             }
         } else {

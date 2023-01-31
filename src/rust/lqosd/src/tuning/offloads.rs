@@ -3,7 +3,7 @@ use std::process::Command;
 
 pub fn bpf_sysctls() {
     let _ = Command::new("/sbin/sysctl")
-        .arg(format!("net.core.bpf_jit_enable=1"))
+        .arg("net.core.bpf_jit_enable=1")
         .output();
 }
 

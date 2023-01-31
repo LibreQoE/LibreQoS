@@ -28,7 +28,7 @@ fn setup_dummy_interface(interface: &str) -> String {
   if !status.success() {
     panic!("Dummy device is not supported on this OS: {}", status);
   }
-  return interface;
+  interface
 }
 
 fn clear_queues(interface: &str) {

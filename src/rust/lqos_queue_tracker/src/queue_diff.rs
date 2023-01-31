@@ -55,10 +55,10 @@ fn cake_diff(previous: &QueueType, current: &QueueType) -> Result<QueueDiff, Que
                 .iter()
                 .zip(prev.tins.iter())
                 .map(|(new, prev)| CakeDiffTin {
-                    sent_bytes: new.sent_bytes.checked_sub(prev.sent_bytes).unwrap_or(0),
+                    sent_bytes: new.sent_bytes.saturating_sub(prev.sent_bytes),
                     backlog_bytes: new.backlog_bytes,
                     drops: new.drops - prev.drops,
-                    marks: new.ecn_marks.checked_sub(prev.ecn_marks).unwrap_or(0),
+                    marks: new.ecn_marks.saturating_sub(prev.ecn_marks),
                     avg_delay_us: new.avg_delay_us,
                 })
                 .collect();

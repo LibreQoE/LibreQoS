@@ -6,7 +6,7 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 use super::ShapedDevicesError;
 
 /// Represents a row in the `ShapedDevices.csv` file.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct ShapedDevice {
   // Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment
   /// The ID of the circuit to which the device belongs. Circuits are 1:many,
@@ -57,26 +57,6 @@ pub struct ShapedDevice {
   pub comment: String,
 }
 
-impl Default for ShapedDevice {
-  fn default() -> Self {
-    Self {
-      circuit_id: String::new(),
-      circuit_name: String::new(),
-      device_id: String::new(),
-      device_name: String::new(),
-      parent_node: String::new(),
-      mac: String::new(),
-      ipv4: Vec::new(),
-      ipv6: Vec::new(),
-      download_min_mbps: 0,
-      download_max_mbps: 0,
-      upload_min_mbps: 0,
-      upload_max_mbps: 0,
-      comment: String::new(),
-    }
-  }
-}
-
 impl ShapedDevice {
   pub(crate) fn from_csv(
     record: &StringRecord,
@@ -109,34 +89,34 @@ impl ShapedDevice {
   pub(crate) fn parse_cidr_v4(
     address: &str,
   ) -> Result<(Ipv4Addr, u32), ShapedDevicesError> {
-    if address.contains("/") {
-      let split: Vec<&str> = address.split("/").collect();
+    if address.contains('/') {
+      let split: Vec<&str> = address.split('/').collect();
       if split.len() != 2 {
         error!("Unable to parse IPv4 {address}");
         return Err(ShapedDevicesError::IPv4ParseError(address.to_string()));
       }
-      return Ok((
+      Ok((
         split[0].parse().map_err(|_| {
           ShapedDevicesError::IPv4ParseError(address.to_string())
         })?,
         split[1].parse().map_err(|_| {
           ShapedDevicesError::IPv4ParseError(address.to_string())
         })?,
-      ));
+      ))
     } else {
-      return Ok((
+      Ok((
         address.parse().map_err(|_| {
           ShapedDevicesError::IPv4ParseError(address.to_string())
         })?,
         32,
-      ));
+      ))
     }
   }
 
   pub(crate) fn parse_ipv4(str: &str) -> Vec<(Ipv4Addr, u32)> {
     let mut result = Vec::new();
-    if str.contains(",") {
-      for ip in str.split(",") {
+    if str.contains(',') {
+      for ip in str.split(',') {
         let ip = ip.trim();
         if let Ok((ipv4, subnet)) = ShapedDevice::parse_cidr_v4(ip) {
           result.push((ipv4, subnet));
@@ -155,34 +135,34 @@ impl ShapedDevice {
   pub(crate) fn parse_cidr_v6(
     address: &str,
   ) -> Result<(Ipv6Addr, u32), ShapedDevicesError> {
-    if address.contains("/") {
-      let split: Vec<&str> = address.split("/").collect();
+    if address.contains('/') {
+      let split: Vec<&str> = address.split('/').collect();
       if split.len() != 2 {
         error!("Unable to parse IPv6: {address}");
         return Err(ShapedDevicesError::IPv6ParseError(address.to_string()));
       }
-      return Ok((
+      Ok((
         split[0].parse().map_err(|_| {
           ShapedDevicesError::IPv6ParseError(address.to_string())
         })?,
         split[1].parse().map_err(|_| {
           ShapedDevicesError::IPv6ParseError(address.to_string())
         })?,
-      ));
+      ))
     } else {
-      return Ok((
+      Ok((
         address.parse().map_err(|_| {
           ShapedDevicesError::IPv6ParseError(address.to_string())
         })?,
         128,
-      ));
+      ))
     }
   }
 
   pub(crate) fn parse_ipv6(str: &str) -> Vec<(Ipv6Addr, u32)> {
     let mut result = Vec::new();
-    if str.contains(",") {
-      for ip in str.split(",") {
+    if str.contains(',') {
+      for ip in str.split(',') {
         let ip = ip.trim();
         if let Ok((ipv6, subnet)) = ShapedDevice::parse_cidr_v6(ip) {
           result.push((ipv6, subnet));

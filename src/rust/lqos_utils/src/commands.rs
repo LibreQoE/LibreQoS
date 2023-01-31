@@ -68,7 +68,7 @@ mod test {
 
     #[test]
     fn test_true() {
-        assert_eq!(run_success!("/bin/true"), true);
+        assert!(run_success!("/bin/true"));
     }
 
     #[test]

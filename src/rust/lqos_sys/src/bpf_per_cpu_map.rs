@@ -45,7 +45,7 @@ where
     /// Instead of clonining into a vector
     /// and allocating, calls `callback` for each key/value slice
     /// with references to the data returned from C.
-    pub(crate) fn for_each(&self, callback: &mut dyn FnMut(&K, &[V]) -> ()) {
+    pub(crate) fn for_each(&self, callback: &mut dyn FnMut(&K, &[V])) {
         let num_cpus = unsafe { libbpf_num_possible_cpus() };
         let mut prev_key: *mut K = null_mut();
         let mut key: K = K::default();

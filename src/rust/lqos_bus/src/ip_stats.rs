@@ -24,7 +24,7 @@ pub struct IpStats {
 }
 
 /// Represents an IP Mapping in the XDP IP to TC/CPU mapping system.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct IpMapping {
     /// The mapped IP address. May be IPv4, or IPv6.
     pub ip_address: String,

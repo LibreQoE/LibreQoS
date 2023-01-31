@@ -80,7 +80,8 @@ fn draw_pps<'a>(
   packets_per_second: (u64, u64),
   bits_per_second: (u64, u64),
 ) -> Spans<'a> {
-  let text = Spans::from(vec![
+  
+  Spans::from(vec![
     Span::styled("🠗 ", Style::default().fg(Color::Yellow)),
     Span::from(scale_bits(bits_per_second.0)),
     Span::from(" "),
@@ -92,8 +93,7 @@ fn draw_pps<'a>(
     Span::from(" "),
     Span::styled(" 🠕 ", Style::default().fg(Color::Yellow)),
     Span::from(scale_packets(packets_per_second.1)),
-  ]);
-  text
+  ])
 }
 
 fn draw_top_pane<'a>(

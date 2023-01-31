@@ -43,19 +43,19 @@ impl QueueNetwork {
             if let Some(network) = map.get("Network") {
                 if let Value::Object(map) = network {
                     for (key, value) in map.iter() {
-                        result.cpu_node.push(QueueNode::from_json(&key, value)?);
+                        result.cpu_node.push(QueueNode::from_json(key, value)?);
                     }
                 } else {
                     error!("Unable to parse JSON for queueStructure");
-                    return Err(QueueStructureError::JSON);
+                    return Err(QueueStructureError::JsonError);
                 }
             } else {
                 error!("Unable to parse JSON for queueStructure");
-                return Err(QueueStructureError::JSON);
+                return Err(QueueStructureError::JsonError);
             }
         } else {
             error!("Unable to parse JSON for queueStructure");
-            return Err(QueueStructureError::JSON);
+            return Err(QueueStructureError::JsonError);
         }
 
         Ok(result)

@@ -1,13 +1,13 @@
 use super::PREALLOCATE_CLIENT_BUFFER_BYTES;
 use crate::{
-  decode_response, encode_request, BusRequest, BusResponse, BusSession,
-  BUS_SOCKET_PATH, bus::BusClientError,
+  bus::BusClientError, decode_response, encode_request, BusRequest,
+  BusResponse, BusSession, BUS_SOCKET_PATH,
 };
+use log::error;
 use tokio::{
   io::{AsyncReadExt, AsyncWriteExt},
   net::UnixStream,
 };
-use log::error;
 
 /// Convenient wrapper for accessing the bus
 ///
@@ -20,15 +20,11 @@ pub async fn bus_request(
   requests: Vec<BusRequest>,
 ) -> Result<Vec<BusResponse>, BusClientError> {
   let stream = UnixStream::connect(BUS_SOCKET_PATH).await;
-  match &stream {
-    Err(e) => match e.kind() {
-      std::io::ErrorKind::NotFound => {
-        error!("Unable to access {BUS_SOCKET_PATH}. Check that lqosd is running and you have appropriate permissions.");
-        return Err(BusClientError::SocketNotFound);
-      }
-      _ => {}
-    },
-    _ => {}
+  if let Err(e) = &stream {
+    if e.kind() == std::io::ErrorKind::NotFound {
+      error!("Unable to access {BUS_SOCKET_PATH}. Check that lqosd is running and you have appropriate permissions.");
+      return Err(BusClientError::SocketNotFound);
+    }
   }
   let mut stream = stream.unwrap(); // This unwrap is safe, we checked that it exists previously
   let test = BusSession { persist: false, requests };

@@ -102,13 +102,10 @@ impl TcCake {
                 "avg_hdr_offset" => result.avg_hdr_offset = value.as_u64().unwrap_or(0) as u16,
                 "drops" => result.drops = value.as_u64().unwrap_or(0) as u32,
                 "options" => result.options = TcCakeOptions::from_json(value)?,
-                "tins" => match value {
-                    Value::Array(array) => {
-                        for value in array.iter() {
-                            result.tins.push(TcCakeTin::from_json(value)?);
-                        }
+                "tins" => if let Value::Array(array) = value {
+                    for value in array.iter() {
+                        result.tins.push(TcCakeTin::from_json(value)?);
                     }
-                    _ => {}
                 },
                 "kind" => {}
                 _ => {

@@ -35,8 +35,9 @@ impl QueueStore {
         let new_diff_up = make_queue_diff(self.prev_upload.as_ref().unwrap(), &self.current_upload);
         let new_diff_dn =
             make_queue_diff(self.prev_download.as_ref().unwrap(), &self.current_download);
-        if new_diff_dn.is_ok() && new_diff_up.is_ok() {
-            self.history[self.history_head] = (new_diff_dn.unwrap(), new_diff_up.unwrap());
+
+        if let (Ok(new_diff_dn), Ok(new_diff_up)) = (new_diff_dn, new_diff_up) {
+            self.history[self.history_head] = (new_diff_dn, new_diff_up);
             self.history_head += 1;
             if self.history_head >= NUM_QUEUE_HISTORY {
                 self.history_head = 0;

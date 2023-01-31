@@ -65,14 +65,16 @@ fn retire_check(cycle: u64, recent_cycle: u64) -> bool {
   cycle < recent_cycle + RETIRE_AFTER_SECONDS
 }
 
+type TopList = (
+  XdpIpAddress,
+  (u64, u64),
+  (u64, u64),
+  f32,
+  TcHandle,
+);
+
 pub fn top_n(start: u32, end: u32) -> BusResponse {
-  let mut full_list: Vec<(
-    XdpIpAddress,
-    (u64, u64),
-    (u64, u64),
-    f32,
-    TcHandle,
-  )> = {
+  let mut full_list: Vec<TopList> = {
     let tp = THROUGHPUT_TRACKER.read();
     tp.raw_data
       .iter()
@@ -114,13 +116,7 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
 }
 
 pub fn worst_n(start: u32, end: u32) -> BusResponse {
-  let mut full_list: Vec<(
-    XdpIpAddress,
-    (u64, u64),
-    (u64, u64),
-    f32,
-    TcHandle,
-  )> = {
+  let mut full_list: Vec<TopList> = {
     let tp = THROUGHPUT_TRACKER.read();
     tp.raw_data
       .iter()
@@ -161,13 +157,7 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
   BusResponse::WorstRtt(result)
 }
 pub fn best_n(start: u32, end: u32) -> BusResponse {
-  let mut full_list: Vec<(
-    XdpIpAddress,
-    (u64, u64),
-    (u64, u64),
-    f32,
-    TcHandle,
-  )> = {
+  let mut full_list: Vec<TopList> = {
     let tp = THROUGHPUT_TRACKER.read();
     tp.raw_data
       .iter()
@@ -220,12 +210,11 @@ pub fn xdp_pping_compat() -> BusResponse {
         let mut valid_samples: Vec<u32> = data
           .recent_rtt_data
           .iter()
-          .filter(|d| **d > 0)
-          .map(|d| *d)
+          .filter(|d| **d > 0).copied()
           .collect();
         let samples = valid_samples.len() as u32;
         if samples > 0 {
-          valid_samples.sort_by(|a, b| (*a).cmp(&b));
+          valid_samples.sort_by(|a, b| (*a).cmp(b));
           let median = valid_samples[valid_samples.len() / 2] as f32 / 100.0;
           let max = *(valid_samples.iter().max().unwrap()) as f32 / 100.0;
           let min = *(valid_samples.iter().min().unwrap()) as f32 / 100.0;
@@ -233,7 +222,7 @@ pub fn xdp_pping_compat() -> BusResponse {
           let avg = sum / samples as f32;
 
           Some(XdpPpingResult {
-            tc: format!("{}", data.tc_handle.to_string()),
+            tc: data.tc_handle.to_string(),
             median,
             avg,
             max,
@@ -260,7 +249,7 @@ pub fn rtt_histogram() -> BusResponse {
     .filter(|(_, d)| retire_check(reader.cycle, d.most_recent_cycle))
   {
     let valid_samples: Vec<u32> =
-      data.recent_rtt_data.iter().filter(|d| **d > 0).map(|d| *d).collect();
+      data.recent_rtt_data.iter().filter(|d| **d > 0).copied().collect();
     let samples = valid_samples.len() as u32;
     if samples > 0 {
       let median = valid_samples[valid_samples.len() / 2] as f32 / 100.0;
@@ -289,6 +278,15 @@ pub fn host_counts() -> BusResponse {
   BusResponse::HostCounts((total, shaped))
 }
 
+type FullList = (
+  XdpIpAddress,
+  (u64, u64),
+  (u64, u64),
+  f32,
+  TcHandle,
+  u64,
+);
+
 pub fn all_unknown_ips() -> BusResponse {
   let boot_time =
     nix::time::clock_gettime(nix::time::ClockId::CLOCK_BOOTTIME)
@@ -297,14 +295,7 @@ pub fn all_unknown_ips() -> BusResponse {
   let five_minutes_ago = time_since_boot - Duration::from_secs(300);
   let five_minutes_ago_nanoseconds = five_minutes_ago.as_nanos();
 
-  let mut full_list: Vec<(
-    XdpIpAddress,
-    (u64, u64),
-    (u64, u64),
-    f32,
-    TcHandle,
-    u64,
-  )> = {
+  let mut full_list: Vec<FullList> = {
     let tp = THROUGHPUT_TRACKER.read();
     tp.raw_data
       .iter()

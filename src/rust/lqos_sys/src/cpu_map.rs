@@ -97,7 +97,7 @@ pub(crate) fn xps_setup_default_disable(interface: &str) -> Result<()> {
     for (cpu, xps_cpu) in queues.iter().enumerate() {
         let mask = cpu_to_mask_disabled(cpu);
         let mut f = std::fs::OpenOptions::new().write(true).open(xps_cpu)?;
-        f.write_all(&mask.to_string().as_bytes())?;
+        f.write_all(mask.to_string().as_bytes())?;
         f.flush()?;
         info!("Mapped TX queue for CPU {cpu}");
     }

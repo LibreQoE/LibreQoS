@@ -76,9 +76,9 @@ impl XdpIpAddress {
     }
 }
 
-impl Into<IpAddr> for XdpIpAddress {
-    fn into(self) -> IpAddr {
-        self.as_ip()
+impl From<XdpIpAddress> for IpAddr {
+    fn from(val: XdpIpAddress) -> Self {
+        val.as_ip()
     }
 }
 

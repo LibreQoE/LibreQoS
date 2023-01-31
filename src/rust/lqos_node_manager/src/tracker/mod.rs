@@ -57,7 +57,7 @@ impl From<&IpStats> for IpStatsWithPlan {
 
 #[get("/api/current_throughput")]
 pub fn current_throughput(_auth: AuthGuard) -> Json<ThroughputPerSecond> {
-    let result = CURRENT_THROUGHPUT.read().clone();
+    let result = *CURRENT_THROUGHPUT.read();
     Json(result)
 }
 

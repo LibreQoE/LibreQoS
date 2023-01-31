@@ -13,15 +13,15 @@ impl IpToMap {
     pub(crate) fn new(address: &str, tc_handle: TcHandle, cpu: u32) -> Result<Self> {
         let address_part; // Filled in later
         let mut subnet_part = 128;
-        if address.contains("/") {
+        if address.contains('/') {
             let parts: Vec<&str> = address.split('/').collect();
             address_part = parts[0].to_string();
-            subnet_part = parts[1].replace("/", "").parse()?;
+            subnet_part = parts[1].replace('/', "").parse()?;
         } else {
             address_part = address.to_string();
         }
 
-        let subnet = if address_part.contains(":") {
+        let subnet = if address_part.contains(':') {
             // It's an IPv6
             let ipv6 = address_part.parse::<Ipv6Addr>()?;
             IpAddr::V6(ipv6)

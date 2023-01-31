@@ -13,22 +13,12 @@ lazy_static! {
 }
 
 /// Stores total system throughput per second.
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Default)]
 #[serde(crate = "rocket::serde")]
 pub struct ThroughputPerSecond {
     pub bits_per_second: (u64, u64),
     pub packets_per_second: (u64, u64),
     pub shaped_bits_per_second: (u64, u64),
-}
-
-impl Default for ThroughputPerSecond {
-    fn default() -> Self {
-        Self {
-            bits_per_second: (0, 0),
-            packets_per_second: (0, 0),
-            shaped_bits_per_second: (0, 0),
-        }
-    }
 }
 
 /// How many entries (at one per second) should we keep in the

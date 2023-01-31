@@ -28,9 +28,8 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
 fn is_lqosd_alive(_py: Python) -> PyResult<bool> {
     if let Ok(reply) = run_query(vec![BusRequest::Ping]) {
         for resp in reply.iter() {
-            match resp {
-                BusResponse::Ack => return Ok(true),
-                _ => {}
+            if let BusResponse::Ack = resp {
+                return Ok(true)
             }
         }
     }
@@ -57,18 +56,15 @@ fn list_ip_mappings(_py: Python) -> PyResult<Vec<PyIpMapping>> {
     let mut result = Vec::new();
     if let Ok(reply) = run_query(vec![BusRequest::ListIpFlow]) {
         for resp in reply.iter() {
-            match resp {
-                BusResponse::MappedIps(map) => {
-                    for mapping in map.iter() {
-                        result.push(PyIpMapping {
-                            ip_address: mapping.ip_address.clone(),
-                            prefix_length: mapping.prefix_length,
-                            tc_handle: mapping.tc_handle.get_major_minor(),
-                            cpu: mapping.cpu,
-                        });
-                    }
+            if let BusResponse::MappedIps(map) = resp {
+                for mapping in map.iter() {
+                    result.push(PyIpMapping {
+                        ip_address: mapping.ip_address.clone(),
+                        prefix_length: mapping.prefix_length,
+                        tc_handle: mapping.tc_handle.get_major_minor(),
+                        cpu: mapping.cpu,
+                    });
                 }
-                _ => {}
             }
         }
     }
@@ -100,7 +96,7 @@ fn delete_ip_mapping(_py: Python, ip_address: String) -> PyResult<()> {
 /// Internal function
 /// Converts IP address arguments into an IP mapping request.
 fn parse_add_ip(ip: &str, classid: &str, cpu: &str, upload: bool) -> Result<BusRequest> {
-    if !classid.contains(":") {
+    if !classid.contains(':') {
         return Err(Error::msg(
             "Class id must be in the format (major):(minor), e.g. 1:12",
         ));

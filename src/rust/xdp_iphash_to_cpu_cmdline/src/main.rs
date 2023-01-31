@@ -56,7 +56,7 @@ async fn talk_to_server(command: BusRequest) -> Result<()> {
         }
         BusResponse::Fail(err) => Err(Error::msg(err.clone())),
         BusResponse::MappedIps(ips) => {
-            print_ips(&ips);
+            print_ips(ips);
             Ok(())
         }
         _ => Err(Error::msg("Command execution failed")),
@@ -67,7 +67,7 @@ fn print_ips(ips: &[IpMapping]) {
     println!("\nMapped IP Addresses:");
     println!("--------------------------------------------------------------------");
     for ip in ips.iter() {
-        let ip_formatted = if ip.ip_address.contains(":") {
+        let ip_formatted = if ip.ip_address.contains(':') {
             format!("{}/{}", ip.ip_address, ip.prefix_length)
         } else {
             format!("{}/{}", ip.ip_address, ip.prefix_length - 96)
@@ -79,14 +79,14 @@ fn print_ips(ips: &[IpMapping]) {
             ip.tc_handle.to_string()
         );
     }
-    println!("");
+    println!();
 }
 
 fn parse_add_ip(ip: &str, classid: &str, cpu: &str, upload: &Option<String>) -> Result<BusRequest> {
     //if ip.parse::<IpAddr>().is_err() {
     //    return Err(Error::msg(format!("Unable to parse IP address: {ip}")));
     //}
-    if !classid.contains(":") {
+    if !classid.contains(':') {
         return Err(Error::msg(
             "Class id must be in the format (major):(minor), e.g. 1:12",
         ));

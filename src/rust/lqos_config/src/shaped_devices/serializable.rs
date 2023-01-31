@@ -49,15 +49,15 @@ fn ipv4_to_string(ip: &(Ipv4Addr, u32)) -> String {
 }
 
 fn ipv4_list_to_string(ips: &[(Ipv4Addr, u32)]) -> String {
-    if ips.len() == 0 {
+    if ips.is_empty() {
         return String::new();
     }
     if ips.len() == 1 {
         return ipv4_to_string(&ips[0]);
     }
     let mut buffer = String::new();
-    for i in 0..ips.len() - 1 {
-        buffer += &format!("{}, ", ipv4_to_string(&ips[i]));
+    for i in ips.iter().take(ips.len() - 1) {
+        buffer += &format!("{}, ", ipv4_to_string(i));
     }
     buffer += &ipv4_to_string(&ips[ips.len() - 1]);
     String::new()
@@ -72,15 +72,15 @@ fn ipv6_to_string(ip: &(Ipv6Addr, u32)) -> String {
 }
 
 fn ipv6_list_to_string(ips: &[(Ipv6Addr, u32)]) -> String {
-    if ips.len() == 0 {
+    if ips.is_empty() {
         return String::new();
     }
     if ips.len() == 1 {
         return ipv6_to_string(&ips[0]);
     }
     let mut buffer = String::new();
-    for i in 0..ips.len() - 1 {
-        buffer += &format!("{}, ", ipv6_to_string(&ips[i]));
+    for i in ips.iter().take(ips.len() - 1) {
+        buffer += &format!("{}, ", ipv6_to_string(i));
     }
     buffer += &ipv6_to_string(&ips[ips.len() - 1]);
     String::new()

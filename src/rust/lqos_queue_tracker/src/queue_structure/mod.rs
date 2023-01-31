@@ -56,5 +56,5 @@ pub enum QueueStructureError {
     #[error("Unable to access queueingStructure.json")]
     FileNotFound,
     #[error("Unable to read JSON")]
-    JSON,
+    JsonError,
 }

@@ -51,19 +51,10 @@ struct WebUser {
 }
 
 /// Container holding the authorized web users.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Default)]
 pub struct WebUsers {
     allow_unauthenticated_to_view: bool,
     users: Vec<WebUser>,
-}
-
-impl Default for WebUsers {
-    fn default() -> Self {
-        Self {
-            users: Vec::new(),
-            allow_unauthenticated_to_view: false,
-        }
-    }
 }
 
 impl WebUsers {
@@ -76,18 +67,16 @@ impl WebUsers {
     fn save_to_disk(&self) -> Result<(), AuthenticationError> {
         let path = Self::path()?;
         let new_contents = toml::to_string(&self);
-        if new_contents.is_err() {
-            return Err(AuthenticationError::SerializationError(new_contents.unwrap_err()));
+        if let Err(e) = new_contents {
+            return Err(AuthenticationError::SerializationError(e));
         }
         let new_contents = new_contents.unwrap();
-        if path.exists() {
-            if remove_file(&path).is_err() {
-                error!("Unable to delete web users file");
-                return Err(AuthenticationError::UnableToDelete);
-            }
+        if path.exists() && remove_file(&path).is_err() {
+            error!("Unable to delete web users file");
+            return Err(AuthenticationError::UnableToDelete);
         }
         if let Ok(mut file) = OpenOptions::new().write(true).create_new(true).open(path) {
-            if file.write_all(&new_contents.as_bytes()).is_err() {
+            if file.write_all(new_contents.as_bytes()).is_err() {
                 error!("Unable to write web users file to disk.");
                 return Err(AuthenticationError::UnableToWrite);
             }
@@ -122,11 +111,11 @@ impl WebUsers {
                 } else {
                     error!("Unable to deserialize webusers.toml. Error in next message.");
                     error!("{:?}", parse_result);
-                    return Err(AuthenticationError::UnableToParse);
+                    Err(AuthenticationError::UnableToParse)
                 }
             } else {
                 error!("Unable to read webusers.toml");
-                return Err(AuthenticationError::UnableToRead);
+                Err(AuthenticationError::UnableToRead)
             }
         }
     }
@@ -191,12 +180,10 @@ impl WebUsers {
             .find(|u| u.username == username && u.password_hash == hash)
         {
             Ok(user.token.clone())
+        } else if self.allow_unauthenticated_to_view {
+            Ok("default".to_string())
         } else {
-            if self.allow_unauthenticated_to_view {
-                Ok("default".to_string())
-            } else {
-                Err(AuthenticationError::InvalidLogin)
-            }
+            Err(AuthenticationError::InvalidLogin)
         }
     }
 
@@ -204,13 +191,11 @@ impl WebUsers {
     pub fn get_role_from_token(&self, token: &str) -> Result<UserRole, AuthenticationError> {
         if let Some(user) = self.users.iter().find(|u| u.token == token) {
             Ok(user.role)
+        } else if self.allow_unauthenticated_to_view {
+            Ok(UserRole::ReadOnly)
         } else {
-            if self.allow_unauthenticated_to_view {
-                Ok(UserRole::ReadOnly)
-            } else {
-                warn!("Token {token} not found, invalid data access attempt.");
-                Err(AuthenticationError::InvalidToken)
-            }
+            warn!("Token {token} not found, invalid data access attempt.");
+            Err(AuthenticationError::InvalidToken)
         }
     }
 

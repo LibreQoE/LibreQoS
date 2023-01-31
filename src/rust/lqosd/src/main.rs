@@ -37,12 +37,9 @@ async fn main() -> Result<()> {
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "warn"),
     );
     let file_lock = FileLock::new();
-    match file_lock {
-        Err(e) => {
-            log::error!("File lock error: {:?}", e);
-            std::process::exit(0);
-        }
-        _ => {}
+    if let Err(e) = file_lock {
+        log::error!("File lock error: {:?}", e);
+        std::process::exit(0);
     }
 
     info!("LibreQoS Daemon Starting");
@@ -68,7 +65,7 @@ async fn main() -> Result<()> {
     spawn_queue_monitor();
 
     // Handle signals
-    let mut signals = Signals::new(&[SIGINT, SIGHUP, SIGTERM])?;
+    let mut signals = Signals::new([SIGINT, SIGHUP, SIGTERM])?;
     std::thread::spawn(move || {
         for sig in signals.forever() {
             match sig {
@@ -87,11 +84,8 @@ async fn main() -> Result<()> {
                     warn!("Reloading configuration because of SIGHUP");
                     if let Ok(config) = LibreQoSConfig::load() {
                         let result = tuning::tune_lqosd_from_config_file(&config);
-                        match result {
-                            Err(err) => {
-                                warn!("Unable to HUP tunables: {:?}", err)
-                            }
-                            Ok(..) => {}
+                        if let Err(err) = result {
+                            warn!("Unable to HUP tunables: {:?}", err)
                         }
                     } else {
                         warn!("Unable to reload configuration");
@@ -129,7 +123,7 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 upload,
             } => map_ip_to_flow(ip_address, tc_handle, *cpu, *upload),
             BusRequest::DelIpFlow { ip_address, upload } => {
-                del_ip_flow(&ip_address, *upload)
+                del_ip_flow(ip_address, *upload)
             }
             BusRequest::ClearIpFlow => clear_ip_flows(),
             BusRequest::ListIpFlow => list_mapped_ips(),
@@ -139,14 +133,14 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             BusRequest::AllUnknownIps => throughput_tracker::all_unknown_ips(),
             BusRequest::ReloadLibreQoS => program_control::reload_libre_qos(),
             BusRequest::GetRawQueueData(circuit_id) => {
-                get_raw_circuit_data(&circuit_id)
+                get_raw_circuit_data(circuit_id)
             }
             BusRequest::WatchQueue(circuit_id) => {
-                add_watched_queue(&circuit_id);
+                add_watched_queue(circuit_id);
                 lqos_bus::BusResponse::Ack
             }
             BusRequest::UpdateLqosDTuning(..) => {
-                tuning::tune_lqosd_from_bus(&req)
+                tuning::tune_lqosd_from_bus(req)
             }
             #[cfg(feature = "equinix_tests")]
             BusRequest::RequestLqosEquinixTest => {

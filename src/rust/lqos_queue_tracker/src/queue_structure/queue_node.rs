@@ -35,11 +35,12 @@ pub struct QueueNode {
 macro_rules! grab_u64 {
     ($target: expr, $key: expr, $value: expr) => {
         let tmp = $value.as_u64().ok_or(QueueStructureError::U64Parse(format!("{} => {:?}", $key, $value)));
-        if tmp.is_err() {
-            error!("Error decoding JSON. Key: {}, Value: {:?} is not readily convertible to a u64.", $key, $value);
-            return Err(tmp.unwrap_err());
-        } else {
-            $target = tmp.unwrap();
+        match tmp {
+            Err(e) => {
+                error!("Error decoding JSON. Key: {}, Value: {:?} is not readily convertible to a u64.", $key, $value);
+                return Err(e);
+            }
+            Ok(data) => $target = data,
         }
     };
 }
@@ -220,9 +221,7 @@ impl QueueNode {
             }
         } else {
             error!("Unable to parse node structure for [{key}]");
-            return Err(QueueStructureError::JsonKeyUnparseable(format!(
-                "{key}"
-            )));
+            return Err(QueueStructureError::JsonKeyUnparseable(key.to_string()));
         }
         Ok(result)
     }
@@ -259,12 +258,12 @@ mod test {
         let mut result = super::super::QueueNetwork {
             cpu_node: Vec::new(),
         };
-        let json: Value = serde_json::from_str(&raw_string).unwrap();
+        let json: Value = serde_json::from_str(raw_string).unwrap();
         if let Value::Object(map) = &json {
             if let Some(network) = map.get("Network") {
                 if let Value::Object(map) = network {
                     for (key, value) in map.iter() {
-                        result.cpu_node.push(QueueNode::from_json(&key, value).unwrap());
+                        result.cpu_node.push(QueueNode::from_json(key, value).unwrap());
                     }
                 } else {
                     panic!("Unable to parse network object structure");

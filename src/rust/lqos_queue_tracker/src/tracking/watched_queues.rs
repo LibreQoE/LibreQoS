@@ -44,8 +44,7 @@ pub fn add_watched_queue(circuit_id: &str) {
         let read_lock = WATCHED_QUEUES.read();
         if read_lock
             .iter()
-            .find(|q| q.circuit_id == circuit_id)
-            .is_some()
+            .any(|q| q.circuit_id == circuit_id)
         {
             warn!("Queue {circuit_id} is already being watched. Duplicate ignored.");
             return; // No duplicates, please

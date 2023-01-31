@@ -16,7 +16,7 @@ pub(crate) fn map_ip_to_flow(
     cpu: u32,
     upload: bool,
 ) -> BusResponse {
-    expect_ack(lqos_sys::add_ip_to_tc(&ip_address, *tc_handle, cpu, upload))
+    expect_ack(lqos_sys::add_ip_to_tc(ip_address, *tc_handle, cpu, upload))
 }
 
 pub(crate) fn del_ip_flow(ip_address: &str, upload: bool) -> BusResponse {

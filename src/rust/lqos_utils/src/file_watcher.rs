@@ -91,10 +91,8 @@ impl FileWatcher {
           break;
         }
       }
-    } else {
-      if let Some(callback) = &mut self.file_exists_callback {
-        callback();
-      }
+    } else if let Some(callback) = &mut self.file_exists_callback {
+      callback();
     }
 
     // Build the watcher

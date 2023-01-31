@@ -96,10 +96,8 @@ pub struct LoginAttempt {
 #[post("/api/login", data = "<info>")]
 pub fn login(cookies: &CookieJar, info: Json<LoginAttempt>) -> Json<String> {
     let mut lock = WEB_USERS.lock();
-    if lock.is_none() {
-        if WebUsers::does_users_file_exist().unwrap() {
-            *lock = Some(WebUsers::load_or_create().unwrap());
-        }
+    if lock.is_none() && WebUsers::does_users_file_exist().unwrap() {
+        *lock = Some(WebUsers::load_or_create().unwrap());
     }
     if let Some(users) = &*lock {
         if let Ok(token) = users.login(&info.username, &info.password) {

@@ -75,11 +75,7 @@ impl BusClient {
         Self::send(self.stream.as_mut().unwrap(), &msg),
       );
       let failed = if let Ok(inner) = timer.await {
-        if inner.is_err() {
-          true
-        } else {
-          false
-        }
+        inner.is_err()
       } else {
         false
       };
@@ -97,11 +93,7 @@ impl BusClient {
         self.stream.as_mut().unwrap().read(&mut self.buffer),
       );
       let failed = if let Ok(inner) = timer.await {
-        if inner.is_err() {
-          true
-        } else {
-          false
-        }
+        inner.is_err()
       } else {
         false
       };
@@ -123,7 +115,7 @@ impl BusClient {
   }
 
   async fn send(stream: &mut UnixStream, msg: &[u8]) -> Result<(), BusClientError> {
-    let ret = stream.write(&msg).await;
+    let ret = stream.write(msg).await;
     if ret.is_err() {
       error!("Unable to write to {BUS_SOCKET_PATH} stream.");
       error!("{:?}", ret);

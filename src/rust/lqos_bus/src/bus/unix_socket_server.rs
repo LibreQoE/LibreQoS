@@ -105,7 +105,7 @@ impl UnixSocketServer {
                         warn!("Unable to read from client socket. Server remains alive.");
                         warn!("This is probably harmless.");
                         warn!("{:?}", bytes_read);
-                        bytes_read.unwrap(); // Unwrap to crash the thread
+                        break; // Escape out of the thread
                     }
 
                     if let Ok(request) = decode_request(&buf) {
@@ -135,7 +135,7 @@ impl Drop for UnixSocketServer {
 }
 
 async fn reply_unix(response: &[u8], socket: &mut UnixStream) -> Result<(), UnixSocketServerError> {
-    let ret = socket.write_all(&response).await;
+    let ret = socket.write_all(response).await;
     if ret.is_err() {
         warn!("Unable to write to UNIX socket. This is usually harmless, meaning the client went away.");
         warn!("{:?}", ret);

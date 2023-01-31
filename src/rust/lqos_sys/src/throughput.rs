@@ -2,7 +2,7 @@ use crate::{bpf_per_cpu_map::BpfPerCpuMap, XdpIpAddress};
 
 /// Representation of the XDP map from map_traffic
 #[repr(C)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct HostCounter {
     /// Download bytes counter (keeps incrementing)
     pub download_bytes: u64,
@@ -21,19 +21,6 @@ pub struct HostCounter {
 
     /// Time last seen, in nanoseconds since kernel boot
     pub last_seen: u64,
-}
-
-impl Default for HostCounter {
-    fn default() -> Self {
-        Self {
-            download_bytes: 0,
-            download_packets: 0,
-            upload_bytes: 0,
-            upload_packets: 0,
-            tc_handle: 0,
-            last_seen: 0,
-        }
-    }
 }
 
 /// Iterates through all throughput entries, and sends them in turn to `callback`.

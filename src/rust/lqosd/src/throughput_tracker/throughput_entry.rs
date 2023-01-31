@@ -27,7 +27,7 @@ impl ThroughputEntry {
     if shifted.is_empty() {
       return 0.0;
     }
-    shifted.sort_by(|a, b| a.partial_cmp(&b).unwrap());
+    shifted.sort_by(|a, b| a.partial_cmp(b).unwrap());
     shifted[shifted.len() / 2]
   }
 }

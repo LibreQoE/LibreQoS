@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 /// One or more `BusRequest` objects must be included in a `BusSession`
 /// request. Each `BusRequest` represents a single request for action
 /// or data.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum BusRequest {
   /// A generic "is it alive?" test. Returns an `Ack`.
   Ping,
