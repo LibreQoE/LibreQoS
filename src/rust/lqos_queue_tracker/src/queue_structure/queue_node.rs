@@ -1,7 +1,7 @@
-use super::read_hex_string;
-use anyhow::{Error, Result};
+use super::{read_hex_string, QueueStructureError};
 use lqos_bus::TcHandle;
 use serde_json::Value;
+use log::error;
 
 #[derive(Default, Clone, Debug)]
 pub struct QueueNode {
@@ -30,82 +30,185 @@ pub struct QueueNode {
     pub children: Vec<QueueNode>,
 }
 
+/// Provides a convenient wrapper that attempts to decode a u64 from a JSON
+/// value, and returns an error if decoding fails.
+macro_rules! grab_u64 {
+    ($target: expr, $key: expr, $value: expr) => {
+        let tmp = $value.as_u64().ok_or(QueueStructureError::U64Parse(format!("{} => {:?}", $key, $value)));
+        if tmp.is_err() {
+            error!("Error decoding JSON. Key: {}, Value: {:?} is not readily convertible to a u64.", $key, $value);
+            return Err(tmp.unwrap_err());
+        } else {
+            $target = tmp.unwrap();
+        }
+    };
+}
+
+/// Provides a macro to safely unwrap TC Handles and issue an error if they didn't parse
+/// correctly.
+macro_rules! grab_tc_handle {
+    ($target: expr, $key: expr, $value: expr) => {
+        let s = $value.as_str();
+        if s.is_none() {
+            error!("Unable to parse {:?} as a string from JSON", s);
+            return Err(QueueStructureError::StringParse(format!("{:?}", $value)));
+        }
+        let s = s.unwrap();
+        let tmp = TcHandle::from_string(s);
+        if tmp.is_err() {
+            error!("Unable to parse {:?} as a TC Handle", s);
+            return Err(QueueStructureError::TcHandle(format!("{:?}", tmp)));
+        }
+        $target = tmp.unwrap();
+    };
+}
+
+/// Macro to convert hex strings (e.g. 0xff) to a u32
+macro_rules! grab_hex {
+    ($target: expr, $key: expr, $value: expr) => {
+        let s = $value.as_str();
+        if s.is_none() {
+            error!("Unable to parse {:?} as a string from JSON", $value);
+            return Err(QueueStructureError::StringParse(format!("{:?}", s)));
+        }
+        let s = s.unwrap();
+        let tmp = read_hex_string(s);
+        if tmp.is_err() {
+            error!("Unable to parse {:?} as a hex string", $value);
+            return Err(QueueStructureError::HexParse(format!("{:?}", tmp)));
+        }
+        $target = tmp.unwrap();
+    };
+}
+
+/// Macro to extract an option<string>
+macro_rules! grab_string_option {
+    ($target: expr, $key: expr, $value: expr) => {
+        let s = $value.as_str();
+        if s.is_none() {
+            error!("Unable to parse {:?} as a string from JSON", $value);
+            return Err(QueueStructureError::StringParse(format!("{:?}", s)));
+        }
+        $target = Some(s.unwrap().to_string());
+    };
+}
+
+/// Macro to extract a string
+macro_rules! grab_string {
+    ($target: expr, $key: expr, $value: expr) => {
+        let s = $value.as_str();
+        if s.is_none() {
+            error!("Unable to parse {:?} as a string from JSON", $value);
+            return Err(QueueStructureError::StringParse(format!("{:?}", s)));
+        }
+        $target = s.unwrap().to_string();
+    };
+}
+
 impl QueueNode {
-    pub(crate) fn from_json(key: &str, value: &Value) -> Result<Self> {
+    pub(crate) fn from_json(key: &str, value: &Value) -> Result<Self, QueueStructureError> {
         let mut result = Self::default();
         if let Value::Object(map) = value {
             for (key, value) in map.iter() {
                 match key.as_str() {
                     "downloadBandwidthMbps" | "maxDownload" => {
-                        result.download_bandwidth_mbps = value.as_u64().unwrap()
+                        grab_u64!(result.download_bandwidth_mbps, key.as_str(), value);
                     }
                     "uploadBandwidthMbps" | "maxUpload" => {
-                        result.upload_bandwidth_mbps = value.as_u64().unwrap()
+                        grab_u64!(result.upload_bandwidth_mbps, key.as_str(), value);
                     }
                     "downloadBandwidthMbpsMin" | "minDownload" => {
-                        result.download_bandwidth_mbps_min = value.as_u64().unwrap()
+                        grab_u64!(result.download_bandwidth_mbps_min, key.as_str(), value);
                     }
                     "uploadBandwidthMbpsMin" | "minUpload" => {
-                        result.upload_bandwidth_mbps_min = value.as_u64().unwrap()
+                        grab_u64!(result.upload_bandwidth_mbps_min, key.as_str(), value);
                     }
                     "classid" => {
-                        result.class_id =
-                            TcHandle::from_string(&value.as_str().unwrap().to_string())?
+                        grab_tc_handle!(result.class_id, key.as_str(), value);
                     }
                     "up_classid" => {
-                        result.up_class_id =
-                            TcHandle::from_string(value.as_str().unwrap().to_string())?
+                        grab_tc_handle!(result.up_class_id, key.as_str(), value);
                     }
-                    "classMajor" => result.class_major = read_hex_string(value.as_str().unwrap())?,
+                    "classMajor" => {
+                        grab_hex!(result.class_major, key.as_str(), value);
+                    }
                     "up_classMajor" => {
-                        result.up_class_major = read_hex_string(value.as_str().unwrap())?
+                        grab_hex!(result.up_class_major, key.as_str(), value);
                     }
-                    "classMinor" => result.class_minor = read_hex_string(value.as_str().unwrap())?,
-                    "cpuNum" => result.cpu_num = read_hex_string(value.as_str().unwrap())?,
-                    "up_cpuNum" => result.up_cpu_num = read_hex_string(value.as_str().unwrap())?,
+                    "classMinor" => {
+                        grab_hex!(result.class_minor, key.as_str(), value);
+                    }
+                    "cpuNum" => {
+                        grab_hex!(result.cpu_num, key.as_str(), value);
+                    }
+                    "up_cpuNum" => {
+                        grab_hex!(result.up_cpu_num, key.as_str(), value);
+                    }
                     "parentClassID" => {
-                        result.parent_class_id =
-                            TcHandle::from_string(value.as_str().unwrap().to_string())?
+                        grab_tc_handle!(result.parent_class_id, key.as_str(), value);
                     }
                     "up_parentClassID" => {
-                        result.up_parent_class_id =
-                            TcHandle::from_string(value.as_str().unwrap().to_string())?
+                        grab_tc_handle!(result.up_parent_class_id, key.as_str(), value);
                     }
                     "circuitId" | "circuitID" => {
-                        result.circuit_id = Some(value.as_str().unwrap().to_string())
+                        grab_string_option!(result.circuit_id, key.as_str(), value);
                     }
                     "circuitName" => {
-                        result.circuit_name = Some(value.as_str().unwrap().to_string())
+                        grab_string_option!(result.circuit_name, key.as_str(), value);
                     }
                     "parentNode" | "ParentNode" => {
-                        result.parent_node = Some(value.as_str().unwrap().to_string())
+                        grab_string_option!(result.parent_node, key.as_str(), value);
                     }
-                    "comment" => result.comment = value.as_str().unwrap().to_string(),
+                    "comment" => {
+                        grab_string!(result.comment, key.as_str(), value);
+                    }
                     "deviceId" | "deviceID" => {
-                        result.device_id = Some(value.as_str().unwrap().to_string())
+                        grab_string_option!(result.device_id, key.as_str(), value);
                     }
-                    "deviceName" => result.device_name = Some(value.as_str().unwrap().to_string()),
-                    "mac" => result.mac = Some(value.as_str().unwrap().to_string()),
+                    "deviceName" => {
+                        grab_string_option!(result.device_name, key.as_str(), value);
+                    }
+                    "mac" => {
+                        grab_string_option!(result.mac, key.as_str(), value);
+                    }
                     "ipv4s" => {} // Ignore
                     "ipv6s" => {}
                     "circuits" => {
                         if let Value::Array(array) = value {
                             for c in array.iter() {
-                                result.circuits.push(QueueNode::from_json(key, c)?);
+                                let n = QueueNode::from_json(key, c);
+                                if n.is_err() {
+                                    error!("Unable to read circuit children");
+                                    error!("{:?}", n);
+                                    return Err(QueueStructureError::Circuit);
+                                }
+                                result.circuits.push(n.unwrap());
                             }
                         }
                     }
                     "devices" => {
                         if let Value::Array(array) = value {
                             for c in array.iter() {
-                                result.devices.push(QueueNode::from_json(key, c)?);
+                                let n = QueueNode::from_json(key, c);
+                                if n.is_err() {
+                                    error!("Unable to read device children");
+                                    error!("{:?}", n);
+                                    return Err(QueueStructureError::Device);
+                                }
+                                result.devices.push(n.unwrap());
                             }
                         }
                     }
                     "children" => {
                         if let Value::Object(map) = value {
                             for (key, c) in map.iter() {
-                                result.circuits.push(QueueNode::from_json(key, c)?);
+                                let n = QueueNode::from_json(key, c);
+                                if n.is_err() {
+                                    error!("Unable to read children. Don't worry, we all feel that way sometimes.");
+                                    error!("{:?}", n);
+                                    return Err(QueueStructureError::Children);
+                                }
+                                result.circuits.push(n.unwrap());
                             }
                         } else {
                             log::warn!("Children was not an object");
@@ -116,8 +219,9 @@ impl QueueNode {
                 }
             }
         } else {
-            return Err(Error::msg(format!(
-                "Unable to parse node structure for [{key}]"
+            error!("Unable to parse node structure for [{key}]");
+            return Err(QueueStructureError::JsonKeyUnparseable(format!(
+                "{key}"
             )));
         }
         Ok(result)

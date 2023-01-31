@@ -1,6 +1,7 @@
 use crate::queue_types::QueueType;
-use anyhow::Result;
 use serde::Serialize;
+use thiserror::Error;
+use log::error;
 
 #[derive(Debug, Clone, Serialize)]
 pub enum QueueDiff {
@@ -12,13 +13,19 @@ pub enum QueueDiff {
     //    ClsAct,
 }
 
-pub(crate) fn make_queue_diff(previous: &QueueType, current: &QueueType) -> Result<QueueDiff> {
+pub(crate) fn make_queue_diff(previous: &QueueType, current: &QueueType) -> Result<QueueDiff, QueueDiffError> {
     match previous {
         QueueType::Cake(..) => match current {
             QueueType::Cake(..) => Ok(cake_diff(previous, current)?),
-            _ => Err(anyhow::Error::msg("Not implemented")),
+            _ => {
+                error!("Queue diffs are not implemented for Cake to {:?}", current);
+                Err(QueueDiffError::NotImplemented)
+            }
         },
-        _ => Err(anyhow::Error::msg("Not implemented")),
+        _ => {
+            error!("Queue diffs are not implemented for {:?}", current);
+            Err(QueueDiffError::NotImplemented)
+        }
     }
 }
 
@@ -39,7 +46,7 @@ pub struct CakeDiffTin {
     pub avg_delay_us: u32,
 }
 
-fn cake_diff(previous: &QueueType, current: &QueueType) -> Result<QueueDiff> {
+fn cake_diff(previous: &QueueType, current: &QueueType) -> Result<QueueDiff, QueueDiffError> {
     // TODO: Wrapping Handler
     if let QueueType::Cake(prev) = previous {
         if let QueueType::Cake(new) = current {
@@ -63,5 +70,11 @@ fn cake_diff(previous: &QueueType, current: &QueueType) -> Result<QueueDiff> {
             }));
         }
     }
-    Err(anyhow::Error::msg("Not implemented"))
+    Err(QueueDiffError::NotImplemented)
+}
+
+#[derive(Debug, Error)]
+pub enum QueueDiffError {
+    #[error("Not implemented")]
+    NotImplemented,
 }

@@ -3,11 +3,12 @@
 "bytes":1920791512305,"packets":1466145855,"drops":32136937,"overlimits":2627500070,"requeues":1224,"backlog":0,"qlen":0}
 */
 
-use anyhow::{Error, Result};
 use lqos_bus::TcHandle;
 use serde::Serialize;
 use serde_json::Value;
 use log_once::info_once;
+use crate::parse_tc_handle;
+use super::QDiscError;
 
 #[derive(Default, Clone, Debug, Serialize)]
 pub struct TcHtb {
@@ -32,19 +33,23 @@ struct TcHtbOptions {
 }
 
 impl TcHtb {
-    pub(crate) fn from_json(map: &serde_json::Map<std::string::String, Value>) -> Result<Self> {
+    pub(crate) fn from_json(map: &serde_json::Map<std::string::String, Value>) -> Result<Self, QDiscError> {
         let mut result = Self::default();
         for (key, value) in map.iter() {
             match key.as_str() {
-                "handle" => result.handle = TcHandle::from_string(value.as_str().unwrap())?,
-                "parent" => result.parent = TcHandle::from_string(value.as_str().unwrap())?,
-                "bytes" => result.bytes = value.as_u64().unwrap(),
-                "packets" => result.packets = value.as_u64().unwrap() as u32,
-                "drops" => result.drops = value.as_u64().unwrap() as u32,
-                "overlimits" => result.overlimits = value.as_u64().unwrap() as u32,
-                "requeues" => result.requeues = value.as_u64().unwrap() as u32,
-                "backlog" => result.backlog = value.as_u64().unwrap() as u32,
-                "qlen" => result.qlen = value.as_u64().unwrap() as u32,
+                "handle" => {
+                    parse_tc_handle!(result.handle, value);
+                }
+                "parent" => {
+                    parse_tc_handle!(result.parent, value);
+                }
+                "bytes" => result.bytes = value.as_u64().unwrap_or(0),
+                "packets" => result.packets = value.as_u64().unwrap_or(0) as u32,
+                "drops" => result.drops = value.as_u64().unwrap_or(0) as u32,
+                "overlimits" => result.overlimits = value.as_u64().unwrap_or(0) as u32,
+                "requeues" => result.requeues = value.as_u64().unwrap_or(0) as u32,
+                "backlog" => result.backlog = value.as_u64().unwrap_or(0) as u32,
+                "qlen" => result.qlen = value.as_u64().unwrap_or(0) as u32,
                 "options" => result.options = TcHtbOptions::from_json(value)?,
                 "kind" => {}
                 _ => {
@@ -57,20 +62,20 @@ impl TcHtb {
 }
 
 impl TcHtbOptions {
-    fn from_json(value: &Value) -> Result<Self> {
+    fn from_json(value: &Value) -> Result<Self, QDiscError> {
         match value {
             Value::Object(map) => {
                 let mut result = Self::default();
                 for (key, value) in map.iter() {
                     match key.as_str() {
-                        "r2q" => result.r2q = value.as_u64().unwrap() as u32,
+                        "r2q" => result.r2q = value.as_u64().unwrap_or(0) as u32,
                         "default" => {
-                            result.default = TcHandle::from_string(value.as_str().unwrap())?
+                            parse_tc_handle!(result.default, value);
                         }
                         "direct_packets_stat" => {
-                            result.direct_packets_stat = value.as_u64().unwrap() as u32
+                            result.direct_packets_stat = value.as_u64().unwrap_or(0) as u32
                         }
-                        "direct_qlen" => result.direct_qlen = value.as_u64().unwrap() as u32,
+                        "direct_qlen" => result.direct_qlen = value.as_u64().unwrap_or(0) as u32,
                         _ => {
                             info_once!("Unknown entry in tc-HTB json decoder: {key}");
                         }
@@ -78,7 +83,7 @@ impl TcHtbOptions {
                 }
                 Ok(result)
             }
-            _ => Err(Error::msg("Unable to parse HTB options")),
+            _ => Err(QDiscError::HtbOpts),
         }
     }
 }

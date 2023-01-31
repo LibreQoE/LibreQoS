@@ -1,16 +1,21 @@
-use super::queue_node::QueueNode;
-use anyhow::{Error, Result};
+use super::{queue_node::QueueNode, QueueStructureError};
 use lqos_config::EtcLqos;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
+use log::error;
 
 pub struct QueueNetwork {
     pub(crate) cpu_node: Vec<QueueNode>,
 }
 
 impl QueueNetwork {
-    pub fn path() -> Result<PathBuf> {
-        let cfg = EtcLqos::load()?;
+    pub fn path() -> Result<PathBuf, QueueStructureError> {
+        let cfg = EtcLqos::load();
+        if cfg.is_err() {
+            error!("unable to read /etc/lqos.conf");
+            return Err(QueueStructureError::LqosConf);
+        }
+        let cfg = cfg.unwrap();
         let base_path = Path::new(&cfg.lqos_directory);
         Ok(base_path.join("queuingStructure.json"))
     }
@@ -23,18 +28,17 @@ impl QueueNetwork {
         }
     }
 
-    pub(crate) fn from_json() -> Result<Self> {
+    pub(crate) fn from_json() -> Result<Self, QueueStructureError> {
         let path = QueueNetwork::path()?;
         if !QueueNetwork::exists() {
-            return Err(Error::msg(
-                "queueStructure.json does not exist yet. Try running LibreQoS?",
-            ));
+            error!("queueStructure.json does not exist yet. Try running LibreQoS?");
+            return Err(QueueStructureError::FileNotFound);
         }
-        let raw_string = std::fs::read_to_string(path)?;
+        let raw_string = std::fs::read_to_string(path).map_err(|_| QueueStructureError::FileNotFound)?;
         let mut result = Self {
             cpu_node: Vec::new(),
         };
-        let json: Value = serde_json::from_str(&raw_string)?;
+        let json: Value = serde_json::from_str(&raw_string).map_err(|_| QueueStructureError::FileNotFound)?;
         if let Value::Object(map) = &json {
             if let Some(network) = map.get("Network") {
                 if let Value::Object(map) = network {
@@ -42,13 +46,16 @@ impl QueueNetwork {
                         result.cpu_node.push(QueueNode::from_json(&key, value)?);
                     }
                 } else {
-                    return Err(Error::msg("Unable to parse network object structure"));
+                    error!("Unable to parse JSON for queueStructure");
+                    return Err(QueueStructureError::JSON);
                 }
             } else {
-                return Err(Error::msg("Network entry not found"));
+                error!("Unable to parse JSON for queueStructure");
+                return Err(QueueStructureError::JSON);
             }
         } else {
-            return Err(Error::msg("Unable to parse queueStructure.json"));
+            error!("Unable to parse JSON for queueStructure");
+            return Err(QueueStructureError::JSON);
         }
 
         Ok(result)

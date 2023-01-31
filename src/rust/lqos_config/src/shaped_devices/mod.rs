@@ -110,7 +110,7 @@ impl ConfigShapedDevices {
         for d in self
             .devices
             .iter()
-            .map(|d| SerializableShapedDevice::from(d))
+            .map(SerializableShapedDevice::from)
         {
             if writer.serialize(&d).is_err() {
                 error!("Unable to serialize record, {:?}", d);
