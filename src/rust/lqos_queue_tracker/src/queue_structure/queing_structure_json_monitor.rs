@@ -42,13 +42,13 @@ impl QueueStructure {
 /// Reloads the queue structure when it is available.
 pub async fn spawn_queue_structure_monitor() {
     spawn_blocking(|| {
-        let _ = watch_for_shaped_devices_changing();
+        let _ = watch_for_queueing_structure_changing();
     });
 }
 
 /// Fires up a Linux file system watcher than notifies
 /// when `ShapedDevices.csv` changes, and triggers a reload.
-fn watch_for_shaped_devices_changing() -> Result<()> {
+fn watch_for_queueing_structure_changing() -> Result<()> {
     use notify::{Config, RecursiveMode, Watcher};
 
     let (tx, rx) = std::sync::mpsc::channel();
