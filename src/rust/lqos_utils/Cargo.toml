@@ -7,5 +7,5 @@ edition = "2021"
 serde = { version = "1.0", features = ["derive"] }
 nix = "0"
 log = "0"
-notify = { version = "5.0.0", default-features = false, feature=["macos_kqueue"] } # Not using crossbeam because of Tokio
+notify = { version = "5.0.0", default-features = false } # Not using crossbeam because of Tokio
 thiserror = "1"
