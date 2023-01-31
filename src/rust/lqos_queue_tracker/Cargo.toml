@@ -16,7 +16,6 @@ log = "0"
 log-once = "0.4.0"
 lazy_static = "1.4"
 parking_lot = "0"
-notify = { version = "5.0.0", default-features = false, feature=["macos_kqueue"] } # Not using crossbeam because of Tokio
 tokio = { version = "1.22", features = [ "full", "parking_lot" ] }
 rayon = "1"
 

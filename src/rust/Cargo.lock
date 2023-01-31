@@ -1348,8 +1348,8 @@ dependencies = [
  "lazy_static",
  "lqos_bus",
  "lqos_config",
+ "lqos_utils",
  "nix",
- "notify",
  "parking_lot 0.12.1",
  "rocket",
  "rocket_async_compression",
@@ -1379,7 +1379,6 @@ dependencies = [
  "lqos_config",
  "lqos_sys",
  "lqos_utils",
- "notify",
  "parking_lot 0.12.1",
  "rayon",
  "serde",
@@ -1412,7 +1411,9 @@ version = "0.1.0"
 dependencies = [
  "log",
  "nix",
+ "notify",
  "serde",
+ "thiserror",
 ]
 
 [[package]]
@@ -1430,7 +1431,6 @@ dependencies = [
  "lqos_sys",
  "lqos_utils",
  "nix",
- "notify",
  "parking_lot 0.12.1",
  "rayon",
  "serde",

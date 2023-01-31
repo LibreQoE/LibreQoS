@@ -7,11 +7,12 @@ use lqos_bus::{
     BusRequest, BusResponse, IpStats, bus_request,
 };
 use lqos_config::ConfigShapedDevices;
+use lqos_utils::file_watcher::FileWatcher;
 use nix::sys::{timerfd::{TimerFd, ClockId, TimerFlags, Expiration, TimerSetTimeFlags}, time::{TimeSpec, TimeValLike}};
 use rocket::tokio::{
     task::spawn_blocking,
 };
-use std::{net::IpAddr, sync::atomic::AtomicBool, time::Duration};
+use std::{net::IpAddr, sync::atomic::AtomicBool};
 
 /// Once per second, update CPU and RAM usage and ask
 /// `lqosd` for updated system statistics.
@@ -74,12 +75,17 @@ pub async fn update_tracking() {
     }
 }
 
+fn load_shaped_devices() {
+    let shaped_devices = ConfigShapedDevices::load();
+        if let Ok(new_file) = shaped_devices {
+            info!("ShapedDevices.csv loaded");
+            *SHAPED_DEVICES.write() = new_file;
+        }
+}
+
 /// Fires up a Linux file system watcher than notifies
 /// when `ShapedDevices.csv` changes, and triggers a reload.
 fn watch_for_shaped_devices_changing() -> Result<()> {
-    info!("Starting to watch ShapedDevices.csv");
-    use notify::{Config, RecursiveMode, Watcher};
-
     let watch_path = ConfigShapedDevices::path();
     if watch_path.is_err() {
         error!("Unable to generate path for ShapedDevices.csv");
@@ -87,52 +93,12 @@ fn watch_for_shaped_devices_changing() -> Result<()> {
     }
     let watch_path = watch_path.unwrap();
 
-    // Chicken and egg. You can't watch a file that doesn't exist yet.
-    if !watch_path.exists() {
-        info!("ShapedDevices.csv does not exist yet. Waiting for it.");
-        loop {
-            std::thread::sleep(Duration::from_secs(30));
-            if watch_path.exists() {
-                info!("ShapedDevcices.csv was just created. Waiting a second and loading it.");
-                std::thread::sleep(Duration::from_secs(1));
-                if let Ok(new_file) = ConfigShapedDevices::load() {
-                    info!("ShapedDevices.csv loaded");
-                    *SHAPED_DEVICES.write() = new_file;
-                }
-                break;
-            }
-        }
-    } else {
-        // Since the file exists, load it.
-        if let Ok(new_file) = ConfigShapedDevices::load() {
-            info!("ShapedDevices.csv loaded");
-            *SHAPED_DEVICES.write() = new_file;
-        }
-    }
-
-    let (tx, rx) = std::sync::mpsc::channel();
-    let watcher = notify::RecommendedWatcher::new(tx, Config::default());
-    if watcher.is_err() {
-        error!("Unable to create watcher for ShapedDevices.csv");
-        error!("{:?}", watcher);
-        return Err(anyhow::Error::msg("Unable to create watcher for ShapedDevices.csv"));
-    }
-    let mut watcher = watcher.unwrap();
-
-    let retval = watcher.watch(&watch_path, RecursiveMode::NonRecursive);
-    if retval.is_err() {
-        error!("Unable to start watcher for ShapedDevices.csv");
-        error!("{:?}", retval);
-        return Err(anyhow::Error::msg("Unable to start watcher for ShapedDevices.csv"));
-    }
-    loop {
-        let _ = rx.recv();
-        info!("ShapedDevices.csv changed");
-        if let Ok(new_file) = ConfigShapedDevices::load() {            
-            *SHAPED_DEVICES.write() = new_file;
-            info!("ShapedDevices.csv loaded correctly.");
-        }
-    }
+    let mut watcher = FileWatcher::new("ShapedDevices.csv", watch_path);
+    watcher.set_file_exists_callback(load_shaped_devices);
+    watcher.set_file_created_callback(load_shaped_devices);
+    watcher.set_file_changed_callback(load_shaped_devices);
+    let _ = watcher.watch();
+    Ok(())
 }
 
 /// Requests data from `lqosd` and stores it in local
