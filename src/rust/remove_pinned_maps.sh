@@ -1,13 +1,13 @@
 #!/bin/bash
-sudo rm -v /sys/fs/bpf/map_traffic
-sudo rm -v /sys/fs/bpf/map_ip_to_cpu_and_tc
-sudo rm -v /sys/fs/bpf/cpu_map
-sudo rm -v /sys/fs/bpf/cpus_available
-sudo rm -v /sys/fs/bpf/packet_ts
-sudo rm -v /sys/fs/bpf/flow_state
-sudo rm -v /sys/fs/bpf/rtt_tracker
-sudo rm -v /sys/fs/bpf/map_ip_to_cpu_and_tc_recip
-sudo rm -v /sys/fs/bpf/tc/globals/map_txq_config
-sudo rm -v /sys/fs/bpf/bifrost_interface_map
-sudo rm -v /sys/fs/bpf/bifrost_vlan_map
+rm -v /sys/fs/bpf/map_traffic
+rm -v /sys/fs/bpf/map_ip_to_cpu_and_tc
+rm -v /sys/fs/bpf/cpu_map
+rm -v /sys/fs/bpf/cpus_available
+rm -v /sys/fs/bpf/packet_ts
+rm -v /sys/fs/bpf/flow_state
+rm -v /sys/fs/bpf/rtt_tracker
+rm -v /sys/fs/bpf/map_ip_to_cpu_and_tc_recip
+rm -v /sys/fs/bpf/map_txq_config
+rm -v /sys/fs/bpf/bifrost_interface_map
+rm -v /sys/fs/bpf/bifrost_vlan_map
 
