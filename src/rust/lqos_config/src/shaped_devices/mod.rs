@@ -19,6 +19,15 @@ pub struct ConfigShapedDevices {
     pub trie: ip_network_table::IpNetworkTable<usize>,
 }
 
+impl Default for ConfigShapedDevices {
+    fn default() -> Self {
+        Self {
+            devices: Vec::new(),
+            trie: ip_network_table::IpNetworkTable::<usize>::new(),
+        }
+    }
+}
+
 impl ConfigShapedDevices {
     /// The path to the current `ShapedDevices.csv` file, determined
     /// by acquiring the prefix from the `/etc/lqos.conf` configuration

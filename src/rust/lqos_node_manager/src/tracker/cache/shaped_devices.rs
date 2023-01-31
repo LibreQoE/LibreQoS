@@ -7,7 +7,7 @@ lazy_static! {
     /// Global storage of the shaped devices csv data.
     /// Updated by the file system watcher whenever
     /// the underlying file changes.
-    pub static ref SHAPED_DEVICES : RwLock<ConfigShapedDevices> = RwLock::new(ConfigShapedDevices::load().unwrap());
+    pub static ref SHAPED_DEVICES : RwLock<ConfigShapedDevices> = RwLock::new(ConfigShapedDevices::default());
 }
 
 lazy_static! {
