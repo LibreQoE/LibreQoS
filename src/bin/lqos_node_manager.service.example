@@ -6,6 +6,8 @@ Requires=lqosd.service
 WorkingDirectory=/opt/libreqos/src/bin
 ExecStart=/opt/libreqos/src/bin/lqos_node_manager
 Restart=always
+#Turn on debuging for service
+#Envirnoment=RUST_LOG=info
 
 [Install]
 WantedBy=default.target
