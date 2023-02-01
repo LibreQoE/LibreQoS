@@ -124,22 +124,22 @@ impl ThroughputTracker {
       .iter()
       .map(|(_k, v)| {
         (
-          v.bytes.0 - v.prev_bytes.0,
-          v.bytes.1 - v.prev_bytes.1,
-          v.packets.0 - v.prev_packets.0,
-          v.packets.1 - v.prev_packets.1,
+          v.bytes.0.saturating_sub(v.prev_bytes.0),
+          v.bytes.1.saturating_sub(v.prev_bytes.1),
+          v.packets.0.saturating_sub(v.prev_packets.0),
+          v.packets.1.saturating_sub(v.prev_packets.1),
           v.tc_handle.as_u32() > 0,
         )
       })
       .for_each(
         |(bytes_down, bytes_up, packets_down, packets_up, shaped)| {
-          self.bytes_per_second.0 += bytes_down;
-          self.bytes_per_second.1 += bytes_up;
-          self.packets_per_second.0 += packets_down;
-          self.packets_per_second.1 += packets_up;
+          self.bytes_per_second.0 = self.bytes_per_second.0.checked_add(bytes_down).unwrap_or(0);
+          self.bytes_per_second.1 = self.bytes_per_second.1.checked_add(bytes_up).unwrap_or(0);
+          self.packets_per_second.0 = self.packets_per_second.0.checked_add(packets_down).unwrap_or(0);
+          self.packets_per_second.1 = self.packets_per_second.1.checked_add(packets_up).unwrap_or(0);
           if shaped {
-            self.shaped_bytes_per_second.0 += bytes_down;
-            self.shaped_bytes_per_second.1 += bytes_up;
+            self.shaped_bytes_per_second.0 = self.shaped_bytes_per_second.0.checked_add(bytes_down).unwrap_or(0);
+            self.shaped_bytes_per_second.1 = self.shaped_bytes_per_second.1.checked_add(bytes_up).unwrap_or(0);
           }
         },
       );
