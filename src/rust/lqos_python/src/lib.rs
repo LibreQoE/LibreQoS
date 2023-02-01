@@ -1,4 +1,6 @@
+use std::{path::Path, fs::{File, remove_file}, io::Write};
 use lqos_bus::{BusRequest, BusResponse, TcHandle};
+use nix::libc::getpid;
 use pyo3::{
   exceptions::PyOSError, pyclass, pyfunction, pymodule, types::PyModule,
   wrap_pyfunction, PyResult, Python,
@@ -6,6 +8,9 @@ use pyo3::{
 mod blocking;
 use anyhow::{Error, Result};
 use blocking::run_query;
+use sysinfo::{Pid, ProcessExt, System, SystemExt};
+
+const LOCK_FILE: &str = "/run/lqos/libreqos.lock";
 
 /// Defines the Python module exports.
 /// All exported functions have to be listed here.
@@ -18,6 +23,9 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_wrapped(wrap_pyfunction!(delete_ip_mapping))?;
   m.add_wrapped(wrap_pyfunction!(add_ip_mapping))?;
   m.add_wrapped(wrap_pyfunction!(validate_shaped_devices))?;
+  m.add_wrapped(wrap_pyfunction!(is_libre_already_running))?;
+  m.add_wrapped(wrap_pyfunction!(create_lock_file))?;
+  m.add_wrapped(wrap_pyfunction!(free_lock_file))?;
   Ok(())
 }
 
@@ -146,4 +154,47 @@ fn validate_shaped_devices() -> PyResult<String> {
     }
   }
   Ok("".to_string())
+}
+
+#[pyfunction]
+fn is_libre_already_running() -> PyResult<bool> {
+  let lock_path = Path::new(LOCK_FILE);
+  if lock_path.exists() {
+    let contents = std::fs::read_to_string(lock_path);
+    if let Ok(contents) = contents {
+      if let Ok(pid) = contents.parse::<i32>() {
+        let sys = System::new_all();
+        if let Some(process) = sys.processes().get(&Pid::from(pid)) {
+          if process.name().contains("python") {
+            return Ok(true);
+          }
+        }
+      } else {
+        println!("{LOCK_FILE} did not contain a valid PID");
+        return Ok(false);
+      }
+    } else {
+      println!("Error reading contents of {LOCK_FILE}");
+      return Ok(false);
+    }
+  }
+  Ok(false)
+}
+
+#[pyfunction]
+fn create_lock_file() -> PyResult<()> {
+  let pid = unsafe { getpid() };
+    let pid_format = format!("{pid}");
+    {
+      if let Ok(mut f) = File::create(LOCK_FILE) {
+        f.write_all(pid_format.as_bytes())?;
+      }
+    }
+  Ok(())
+}
+
+#[pyfunction]
+fn free_lock_file() -> PyResult<()> {
+  let _ = remove_file(LOCK_FILE); // Ignore result
+  Ok(())
 }

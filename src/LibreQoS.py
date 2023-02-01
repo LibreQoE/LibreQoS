@@ -23,7 +23,8 @@ from ispConfig import sqm, upstreamBandwidthCapacityDownloadMbps, upstreamBandwi
 	runShellCommandsAsSudo, generatedPNDownloadMbps, generatedPNUploadMbps, queuesAvailableOverride, \
 	OnAStick
 
-from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping, validate_shaped_devices
+from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping, validate_shaped_devices, \
+	is_libre_already_running, create_lock_file, free_lock_file
 
 # Automatically account for TCP overhead of plans. For example a 100Mbps plan needs to be set to 109Mbps for the user to ever see that result on a speed test
 # Does not apply to nodes of any sort, just endpoint devices
@@ -1260,11 +1261,20 @@ def refreshShapersUpdateOnly():
 		print("refreshShapersUpdateOnly completed on " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
 
 if __name__ == '__main__':
+	# Check that the host lqosd is running
 	if is_lqosd_alive():
 		print("lqosd is running")
 	else:
 		print("ERROR: lqosd is not running. Aborting")
 		os._exit(-1)
+
+	# Check that we aren't running LibreQoS.py more than once at a time
+	if is_libre_already_running():
+		print("LibreQoS.py is already running in another process. Aborting.")
+		os._exit(-1)
+
+	# We've got this far, so create a lock file
+	create_lock_file()
 
 	parser = argparse.ArgumentParser()
 	parser.add_argument(
@@ -1305,3 +1315,6 @@ if __name__ == '__main__':
 	else:
 		# Refresh and/or set up queues
 		refreshShapers()
+	
+	# Free the lock file
+	free_lock_file()

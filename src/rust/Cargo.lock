@@ -1362,7 +1362,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "lqos_bus",
+ "nix",
  "pyo3",
+ "sysinfo",
  "tokio",
 ]
 

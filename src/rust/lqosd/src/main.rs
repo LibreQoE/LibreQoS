@@ -109,7 +109,7 @@ async fn main() -> Result<()> {
     let server = UnixSocketServer::new().expect("Unable to spawn server");
     server.listen(handle_bus_requests).await
   };
-  tokio::spawn(listener);
+  let handle = tokio::spawn(listener);
 
   if lqos_config::LibreQoSConfig::config_exists() && lqos_config::ConfigShapedDevices::exists() {
     warn!("Since all the files exist, Launching LibreQoS.py to avoid empty queues.");
@@ -117,6 +117,8 @@ async fn main() -> Result<()> {
   } else {
     warn!("ispConfig.py or ShapedDevices.csv hasn't been setup yet. Not automatically running LibreQoS.py");
   }
+
+  info!("{:?}", handle.await?);
 
   Ok(())
 }
