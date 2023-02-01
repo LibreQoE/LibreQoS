@@ -39,6 +39,15 @@ impl ConfigShapedDevices {
     Ok(base_path.join("ShapedDevices.csv"))
   }
 
+  /// Does ShapedDevices.csv exist?
+  pub fn exists() -> bool {
+    if let Ok(path) = Self::path() {
+      path.exists()
+    } else {
+      false
+    }
+  }
+
   /// Loads `ShapedDevices.csv` and constructs a `ConfigShapedDevices`
   /// object containing the resulting data.
   pub fn load() -> Result<Self, ShapedDevicesError> {

@@ -61,6 +61,17 @@ pub struct LibreQoSConfig {
 }
 
 impl LibreQoSConfig {
+  /// Does the ispConfig.py file exist?
+  pub fn config_exists() -> bool {
+    if let Ok(cfg) = etc::EtcLqos::load() {
+      let base_path = Path::new(&cfg.lqos_directory);
+      let final_path = base_path.join("ispConfig.py");
+      final_path.exists()
+    } else {
+      false
+    }
+  }
+
   /// Loads `ispConfig.py` into a management object.
   pub fn load() -> Result<Self, LibreQoSConfigError> {
     if let Ok(cfg) = etc::EtcLqos::load() {
