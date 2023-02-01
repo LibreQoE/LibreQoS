@@ -218,14 +218,17 @@ pub async fn main() -> Result<()> {
         Event::Key(KeyEvent {
           code: KeyCode::Char('c'),
           modifiers: KeyModifiers::CONTROL,
+          ..
         }) => break,
         Event::Key(KeyEvent {
           code: KeyCode::Char('q'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break,
         Event::Key(KeyEvent {
           code: KeyCode::Char('Z'),
           modifiers: KeyModifiers::CONTROL,
+          ..
         }) => break, // Disconnect from bus, suspend
         //                   Event::Key(KeyEvent { escape should do something I don't know what.
         //                        code: KeyCode::Char('ESC'),
@@ -234,10 +237,12 @@ pub async fn main() -> Result<()> {
         Event::Key(KeyEvent {
           code: KeyCode::Char('h'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME make into help
         Event::Key(KeyEvent {
           code: KeyCode::Char('n'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME make into next
         // e.g. n_rows = screen size
         // n_start = n_start + screen
@@ -245,123 +250,153 @@ pub async fn main() -> Result<()> {
         Event::Key(KeyEvent {
           code: KeyCode::Char('p'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME make into prev
         Event::Key(KeyEvent {
           code: KeyCode::Char('?'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME make into help
         Event::Key(KeyEvent {
           code: KeyCode::Char('u'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME make into uploaders
         Event::Key(KeyEvent {
           code: KeyCode::Char('d'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME make into downloads
         Event::Key(KeyEvent {
           code: KeyCode::Char('c'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME make into cpu
         Event::Key(KeyEvent {
           code: KeyCode::Char('l'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME lag meter
         Event::Key(KeyEvent {
           code: KeyCode::Char('N'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME make into next panel
         Event::Key(KeyEvent {
           code: KeyCode::Char('P'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME make into prev panel
         Event::Key(KeyEvent {
           code: KeyCode::Char('b'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME Best
         Event::Key(KeyEvent {
           code: KeyCode::Char('w'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME Worst
         Event::Key(KeyEvent {
           code: KeyCode::Char('D'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME Drops
         Event::Key(KeyEvent {
           code: KeyCode::Char('Q'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME Queues
         Event::Key(KeyEvent {
           code: KeyCode::Char('W'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME (un)display wider stuff
         Event::Key(KeyEvent {
           code: KeyCode::Char('8'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME Filter out fe80
         Event::Key(KeyEvent {
           code: KeyCode::Char('6'),
           modifiers: KeyModifiers::NONE,
-        }) => break, // FIXME Just look at ipv6
+          ..
+        }) => break, // FIXME Just look at ipv6        
         Event::Key(KeyEvent {
           code: KeyCode::Char('4'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME Just look at ipv4
         Event::Key(KeyEvent {
           code: KeyCode::Char('5'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME ipv4 + ipv6
         Event::Key(KeyEvent {
           code: KeyCode::Char('U'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME filter on Unshaped
         Event::Key(KeyEvent {
           code: KeyCode::Char('M'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME filter on My Network
         Event::Key(KeyEvent {
           code: KeyCode::Char('H'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME Generate histogram
         Event::Key(KeyEvent {
           code: KeyCode::Char('T'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME Filter Tin. This would require an argument BVIL<RET>
         Event::Key(KeyEvent {
           code: KeyCode::Char('O'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME "Odd" events - multicast, AI-assistance, people down?
         Event::Key(KeyEvent {
           code: KeyCode::Char('F'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME Filter on "something*
         Event::Key(KeyEvent {
           code: KeyCode::Char('S'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME Filter on Plan Speed
         Event::Key(KeyEvent {
           code: KeyCode::Char('z'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME Zoom in
         Event::Key(KeyEvent {
           code: KeyCode::Char('Z'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME Zoom out
         // Now I am Dreaming
         Event::Key(KeyEvent {
           code: KeyCode::Char('C'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME Capture what I am filtering on
         Event::Key(KeyEvent {
           code: KeyCode::Char('F'),
           modifiers: KeyModifiers::CONTROL,
+          ..
         }) => break, // FIXME Freeze what I am filtering on
         Event::Key(KeyEvent {
           code: KeyCode::Char('S'),
           modifiers: KeyModifiers::CONTROL,
+          ..
         }) => break, // FIXME Step through what I captured on
         Event::Key(KeyEvent {
           code: KeyCode::Char('R'),
           modifiers: KeyModifiers::CONTROL,
+          ..
         }) => break, // FIXME Step backwards what I captured on
         // Left and right cursors also
         // Dreaming Less now
@@ -370,30 +405,37 @@ pub async fn main() -> Result<()> {
         Event::Key(KeyEvent {
           code: KeyCode::Char('/'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME Search for ip
         Event::Key(KeyEvent {
           code: KeyCode::Char('R'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME Traceroute/MTR
         Event::Key(KeyEvent {
           code: KeyCode::Char('A'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME Alert me on this selection
         Event::Key(KeyEvent {
           code: KeyCode::Char('K'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME Kill Alert on this
         Event::Key(KeyEvent {
           code: KeyCode::Char('V'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // FIXME View Selected Alerts
         Event::Key(KeyEvent {
           code: KeyCode::Char('B'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // Launch Browser on this customer
         Event::Key(KeyEvent {
           code: KeyCode::Char('L'),
           modifiers: KeyModifiers::NONE,
+          ..
         }) => break, // Log notebook on this set of filters
         _ => println!("Not recognized"),
       }
