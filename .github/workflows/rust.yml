@@ -18,3 +18,15 @@ jobs:
       run: pushd src/rust; cargo build --verbose --all; popd
     - name: Run tests
       run: pushd src/rust; cargo test --verbose --all; popd
+  audit:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install tools
+      run: pushd src/rust; cargo install cargo-outdated; popd
+    - name: Check for outdated dependencies
+      script: pushd src/rust; cargo outdated -w --color=always --root-deps-only --exit-code 1 -v; popd
