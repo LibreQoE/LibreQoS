@@ -58,10 +58,15 @@ fn track_queues() {
           circuit.update(&download[0], &upload[0]);
         } else {
           // It's new: insert it
-          mapping.insert(
-            circuit_id.to_string(),
-            QueueStore::new(download[0].clone(), upload[0].clone()),
-          );
+          if !download.is_empty() && !upload.is_empty() {
+            mapping.insert(
+              circuit_id.to_string(),
+              QueueStore::new(download[0].clone(), upload[0].clone()),
+            );
+          } else {
+            info!("No queue data returned for {}, {}/{} found.", circuit_id.to_string(), download.len(), upload.len());
+            info!("You probably want to run LibreQoS.py");
+          }
         }
       }
     }

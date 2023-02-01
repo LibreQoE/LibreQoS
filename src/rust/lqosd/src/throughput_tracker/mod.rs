@@ -2,10 +2,10 @@ mod throughput_entry;
 mod tracking_data;
 use crate::throughput_tracker::tracking_data::ThroughputTracker;
 use lazy_static::*;
-use log::info;
+use log::{info, warn};
 use lqos_bus::{BusResponse, IpStats, TcHandle, XdpPpingResult};
 use lqos_sys::XdpIpAddress;
-use lqos_utils::fdtimer::periodic;
+use lqos_utils::{fdtimer::periodic, unix_time::time_since_boot};
 use parking_lot::RwLock;
 use std::time::Duration;
 
@@ -272,11 +272,16 @@ pub fn host_counts() -> BusResponse {
 type FullList = (XdpIpAddress, (u64, u64), (u64, u64), f32, TcHandle, u64);
 
 pub fn all_unknown_ips() -> BusResponse {
-  let boot_time =
-    nix::time::clock_gettime(nix::time::ClockId::CLOCK_BOOTTIME)
-      .expect("Unable to obtain kernel time.");
+
+  let boot_time = time_since_boot();
+  if boot_time.is_err() {
+    warn!("The Linux system clock isn't available to provide time since boot, yet.");
+    warn!("This only happens immediately after a reboot.");
+    return BusResponse::NotReadyYet;
+  }
+  let boot_time = boot_time.unwrap();
   let time_since_boot = Duration::from(boot_time);
-  let five_minutes_ago = time_since_boot - Duration::from_secs(300);
+  let five_minutes_ago = time_since_boot.saturating_sub(Duration::from_secs(300));
   let five_minutes_ago_nanoseconds = five_minutes_ago.as_nanos();
 
   let mut full_list: Vec<FullList> = {

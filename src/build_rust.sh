@@ -7,6 +7,29 @@
 # automatically.
 #
 # Don't forget to setup `/etc/lqos.conf`
+
+# To enable heavy debug mode (slow)
+#BUILD_FLAGS=""
+#TARGET=debug
+# Otherwise
+BUILD_FLAGS=--release
+TARGET=release
+
+# Enable this if you are building on the same computer you are running on
+RUSTFLAGS="-C target-cpu=native"
+
+# Check that services are not running
+SERVICES="lqosd lqos_node_manager"
+for service in $SERVICES
+do
+    if pgrep -x "$service" > /dev/null
+    then
+        echo "You must stop $service before building"
+        exit -1
+    fi
+done
+
+# Start building
 PROGS="lqosd lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqos_node_manager webusers"
 mkdir -p bin/static
 pushd rust
@@ -14,13 +37,14 @@ pushd rust
 for prog in $PROGS
 do
     pushd $prog
-    cargo build --release
+    cargo build $BUILD_FLAGS
     popd
 done
 
 for prog in $PROGS
 do
-    cp target/release/$prog ../bin
+    echo "Installing $prog in bin folder"
+    cp target/$TARGET/$prog ../bin
 done
 popd
 
@@ -32,9 +56,9 @@ cp rust/lqos_node_manager/Rocket.toml bin/
 
 # Copy the Python library for LibreQoS.py et al.
 pushd rust/lqos_python
-cargo build --release
+cargo build $BUILD_FLAGS
 popd
-cp rust/target/release/liblqos_python.so .
+cp rust/target/$TARGET/liblqos_python.so .
 
 echo "-----------------------------------------------------------------"
 echo "Don't forget to setup /etc/lqos.conf!"

@@ -2,8 +2,8 @@ use crate::queue_structure::QUEUE_STRUCTURE;
 use lazy_static::*;
 use log::{info, warn};
 use lqos_bus::TcHandle;
+use lqos_utils::unix_time::unix_now;
 use parking_lot::RwLock;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 lazy_static! {
   pub(crate) static ref WATCHED_QUEUES: RwLock<Vec<WatchedQueue>> =
@@ -28,11 +28,7 @@ impl WatchedQueue {
 }
 
 pub fn expiration_in_the_future() -> u64 {
-  unix_now() + 10
-}
-
-fn unix_now() -> u64 {
-  SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()
+  unix_now().unwrap_or(0) + 10
 }
 
 pub fn add_watched_queue(circuit_id: &str) {
@@ -78,7 +74,7 @@ pub fn add_watched_queue(circuit_id: &str) {
 
 pub(crate) fn expire_watched_queues() {
   let mut lock = WATCHED_QUEUES.write();
-  let now = unix_now();
+  let now = unix_now().unwrap_or(0);
   lock.retain(|w| w.expires_unix_time > now);
 }
 

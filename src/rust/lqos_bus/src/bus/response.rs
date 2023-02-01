@@ -13,6 +13,10 @@ pub enum BusResponse {
   /// An operation failed, with the enclosed error message.
   Fail(String),
 
+  /// We aren't ready to process your call, please stay on the line
+  /// and try later.
+  NotReadyYet,
+
   /// Current throughput for the overall system.
   CurrentThroughput {
     /// In bps

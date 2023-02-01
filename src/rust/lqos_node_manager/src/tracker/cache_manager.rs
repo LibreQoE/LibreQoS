@@ -175,6 +175,9 @@ async fn get_data_from_server() -> Result<()> {
         *HOST_COUNTS.write() = (really_unknown.len() as u32, 0);
         *UNKNOWN_DEVICES.write() = really_unknown;
       }
+      BusResponse::NotReadyYet => {
+        warn!("Host system isn't ready to answer all queries yet.");
+      }
       // Default
       _ => {}
     }
