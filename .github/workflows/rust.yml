@@ -28,7 +28,8 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Install tools
-      run: pushd src/rust; cargo install cargo-outdated; popd
+      run: pushd src/rust; cargo install cargo-outdated; cargo install cargo-audit; popd
     - name: Check for outdated dependencies
       run: cd src/rust; cargo outdated -w --color=always --root-deps-only --exit-code 1
-
+    - name: Audit for CVEs
+      run: cd src/rust; cargo audit -c always
