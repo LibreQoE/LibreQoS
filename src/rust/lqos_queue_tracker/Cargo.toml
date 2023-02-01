@@ -19,7 +19,7 @@ tokio = { version = "1", features = [ "full", "parking_lot" ] }
 rayon = "1"
 
 [dev-dependencies]
-criterion = { version = "0.3", features = [ "html_reports"] }
+criterion = { version = "0", features = [ "html_reports"] }
 
 [[bench]]
 name = "json"

@@ -8,7 +8,7 @@ name = "lqos_python"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = "0.17"
+pyo3 = "0"
 lqos_bus = { path = "../lqos_bus" }
 tokio = { version = "1", features = [ "rt", "macros", "net", "io-util", "time" ] }
 anyhow = "1"

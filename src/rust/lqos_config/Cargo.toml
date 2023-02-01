@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 thiserror = "1"
-toml = "0.5"
+toml = "0"
 serde = { version = "1.0", features = [ "derive" ] }
 csv = "1"
 ip_network_table = "0"
