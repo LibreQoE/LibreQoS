@@ -31,6 +31,7 @@ pub async fn update_tracking() {
   let interval_ms = 1000;
   info!("Updating throughput ring buffer at {interval_ms} ms cadence.");
 
+  std::thread::sleep(std::time::Duration::from_secs(10));
   let monitor_busy = AtomicBool::new(false);
   if let Ok(timer) =
     TimerFd::new(ClockId::CLOCK_MONOTONIC, TimerFlags::empty())
