@@ -8,7 +8,7 @@ use pyo3::{
 mod blocking;
 use anyhow::{Error, Result};
 use blocking::run_query;
-use sysinfo::{Pid, ProcessExt, System, SystemExt};
+use sysinfo::{ProcessExt, System, SystemExt};
 
 const LOCK_FILE: &str = "/run/lqos/libreqos.lock";
 
@@ -164,7 +164,8 @@ fn is_libre_already_running() -> PyResult<bool> {
     if let Ok(contents) = contents {
       if let Ok(pid) = contents.parse::<i32>() {
         let sys = System::new_all();
-        if let Some(process) = sys.processes().get(&Pid::from(pid)) {
+        let pid = sysinfo::Pid::from(pid as usize);
+        if let Some(process) = sys.processes().get(&pid) {
           if process.name().contains("python") {
             return Ok(true);
           }
