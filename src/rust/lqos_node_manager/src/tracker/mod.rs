@@ -130,7 +130,10 @@ pub fn busy_quantile(_auth: AuthGuard) -> Json<Vec<(u32, u32)>> {
     let (down, up) = tp.bits_per_second;
     let (down, up) = (down * 8, up * 8);
     //println!("{down_capacity}, {up_capacity}, {down}, {up}");
-    let (down, up) = (down as f64 / down_capacity, up as f64 / up_capacity);
+    let (down, up) = (
+      if down_capacity > 0.0 { down as f64 / down_capacity } else { 0.0 }, 
+      if up_capacity > 0.0 { up as f64 / up_capacity } else { 0.0},
+    );
     let (down, up) = ((down * 10.0) as usize, (up * 10.0) as usize);
     result[usize::min(9, down)].0 += 1;
     result[usize::min(0, up)].1 += 1;
