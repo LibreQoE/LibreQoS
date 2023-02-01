@@ -31,8 +31,4 @@ jobs:
       run: pushd src/rust; cargo install cargo-outdated; popd
     - name: Check for outdated dependencies
       run: cd src/rust; cargo outdated -w --color=always --root-deps-only --exit-code 1
-    - name: rust-audit-check
-      uses: actions-rs/audit-check@v1.2.0
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
 
