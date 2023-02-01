@@ -63,14 +63,14 @@ fn cake_diff(
         .map(|(new, prev)| CakeDiffTin {
           sent_bytes: new.sent_bytes.saturating_sub(prev.sent_bytes),
           backlog_bytes: new.backlog_bytes,
-          drops: new.drops - prev.drops,
+          drops: new.drops.saturating_sub(prev.drops),
           marks: new.ecn_marks.saturating_sub(prev.ecn_marks),
           avg_delay_us: new.avg_delay_us,
         })
         .collect();
       return Ok(QueueDiff::Cake(CakeDiff {
-        bytes: new.bytes - prev.bytes,
-        packets: new.packets - prev.packets,
+        bytes: new.bytes.saturating_sub(prev.bytes),
+        packets: new.packets.saturating_sub(prev.packets),
         qlen: new.qlen,
         tins,
       }));
