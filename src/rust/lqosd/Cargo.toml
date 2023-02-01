@@ -13,7 +13,7 @@ lqos_config = { path = "../lqos_config" }
 lqos_sys = { path = "../lqos_sys" }
 lqos_queue_tracker = { path = "../lqos_queue_tracker" }
 lqos_utils = { path = "../lqos_utils" }
-tokio = { version = "1.22", features = [ "full", "parking_lot" ] }
+tokio = { version = "1", features = [ "full", "parking_lot" ] }
 lazy_static = "1.4"
 parking_lot = "0.12"
 lqos_bus = { path = "../lqos_bus" }

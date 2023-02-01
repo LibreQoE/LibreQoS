@@ -10,7 +10,7 @@ crate-type = ["cdylib"]
 [dependencies]
 pyo3 = "0.17"
 lqos_bus = { path = "../lqos_bus" }
-tokio = { version = "1.22", features = [ "rt", "macros", "net", "io-util", "time" ] }
+tokio = { version = "1", features = [ "rt", "macros", "net", "io-util", "time" ] }
 anyhow = "1"
 sysinfo = "0"
 nix = "0"
