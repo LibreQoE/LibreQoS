@@ -18,35 +18,28 @@ TARGET=release
 # Enable this if you are building on the same computer you are running on
 RUSTFLAGS="-C target-cpu=native"
 
-# Check that services are not running
-SERVICES="lqosd lqos_node_manager"
-for service in $SERVICES
-do
-    if pgrep -x "$service" > /dev/null
-    then
-        echo "You must stop $service before building"
-        exit -1
-    fi
-done
-
 # Start building
+echo "Please wait while the system is compiled. Service will not be interrupted during this stage."
 PROGS="lqosd lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqos_node_manager webusers"
 mkdir -p bin/static
-pushd rust
+pushd rust > /dev/null
 #cargo clean
 for prog in $PROGS
 do
-    pushd $prog
+    pushd $prog > /dev/null
     cargo build $BUILD_FLAGS
-    popd
+    popd > /dev/null
 done
 
+echo "Installing new binaries into bin folder."
 for prog in $PROGS
 do
     echo "Installing $prog in bin folder"
-    cp target/$TARGET/$prog ../bin
+    cp target/$TARGET/$prog ../bin/$prog.new
+    # Use a move to avoid file locking
+    mv ../bin/$prog.new ../bin/$prog
 done
-popd
+popd > /dev/null
 
 # Copy the node manager's static web content
 cp -R rust/lqos_node_manager/static/* bin/static
@@ -55,10 +48,30 @@ cp -R rust/lqos_node_manager/static/* bin/static
 cp rust/lqos_node_manager/Rocket.toml bin/
 
 # Copy the Python library for LibreQoS.py et al.
-pushd rust/lqos_python
+pushd rust/lqos_python > /dev/null
 cargo build $BUILD_FLAGS
-popd
-cp rust/target/$TARGET/liblqos_python.so .
+popd > /dev/null
+cp rust/target/$TARGET/liblqos_python.so ./liblqos_python.so.new
+mv liblqos_python.so.new liblqos_python.so
+
+# If we're running systemd, we need to restart processes
+service_exists() {
+    local n=$1
+    if [[ $(systemctl list-units --all -t service --full --no-legend "$n.service" | sed 's/^\s*//g' | cut -f1 -d' ') == $n.service ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+if service_exists lqosd; then
+    echo "lqosd is running as a service. Restarting it. You may need to enter your sudo password."
+    sudo systemctl restart lqosd
+fi
+if service_exists lqos_node_manager; then
+    echo "lqos_node_manager is running as a service. Restarting it. You may need to enter your sudo password."
+    sudo systemctl restart lqos_node_manager
+fi
 
 echo "-----------------------------------------------------------------"
 echo "Don't forget to setup /etc/lqos.conf!"
