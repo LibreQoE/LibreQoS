@@ -30,4 +30,4 @@ jobs:
     - name: Install tools
       run: pushd src/rust; cargo install cargo-outdated; popd
     - name: Check for outdated dependencies
-      run: pushd src/rust; cargo outdated -w --color=always --root-deps-only --exit-code 1 -v
+      script: cd src/rust; cargo outdated -w --color=always --root-deps-only --exit-code 1

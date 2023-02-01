@@ -40,7 +40,7 @@ impl FileLock {
     let pid: i32 = contents.parse()?;
 
     let sys = System::new_all();
-    if let Some(process) = sys.processes().get(&Pid::from(pid)) {
+    if let Some(process) = sys.processes().get(pid) {
       if process.name().contains("lqosd") {
         return Ok(true);
       }
