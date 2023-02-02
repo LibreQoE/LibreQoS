@@ -53,7 +53,7 @@ impl ConfigShapedDevices {
   pub fn load() -> Result<Self, ShapedDevicesError> {
     let final_path = ConfigShapedDevices::path()?;
     let reader =
-      ReaderBuilder::new().comment(Some(b'#')).from_path(final_path);
+      ReaderBuilder::new().comment(Some(b'#')).trim(csv::Trim::All).from_path(final_path);
     if reader.is_err() {
       error!("Unable to read ShapedDevices.csv");
       return Err(ShapedDevicesError::OpenFail);
