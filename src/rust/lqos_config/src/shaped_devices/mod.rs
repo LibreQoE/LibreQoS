@@ -71,8 +71,7 @@ impl ConfigShapedDevices {
         } else {
           log::error!("Error reading Device line: {:?}", &device);
           return Err(ShapedDevicesError::DeviceDecode(format!(
-            "DEVICE DECODE: {:?}",
-            device
+            "DEVICE DECODE: {device:?}"
           )));
         }
       } else {
@@ -92,16 +91,14 @@ impl ConfigShapedDevices {
             return Err(ShapedDevicesError::UnequalLengths(msg));
           } else {
             let msg = format!(
-              "Unknown position. Expected {} fields, found {}",
-              expected_len, len
+              "Unknown position. Expected {expected_len} fields, found {len}"
             );
             error!("CSV devode error: {msg}");
             return Err(ShapedDevicesError::UnequalLengths(msg));
           }
         }
         return Err(ShapedDevicesError::GenericCsvError(format!(
-          "CSV FILE: {:?}",
-          result
+          "CSV FILE: {result:?}"
         )));
       }
     }

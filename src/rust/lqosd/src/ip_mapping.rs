@@ -6,7 +6,7 @@ fn expect_ack(result: Result<()>) -> BusResponse {
   if result.is_ok() {
     BusResponse::Ack
   } else {
-    BusResponse::Fail(format!("{:?}", result))
+    BusResponse::Fail(format!("{result:?}"))
   }
 }
 

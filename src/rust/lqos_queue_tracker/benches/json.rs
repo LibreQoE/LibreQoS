@@ -26,7 +26,7 @@ fn setup_dummy_interface(interface: &str) -> String {
     .status()
     .expect("file not found");
   if !status.success() {
-    panic!("Dummy device is not supported on this OS: {}", status);
+    panic!("Dummy device is not supported on this OS: {status}");
   }
   interface
 }
@@ -77,7 +77,7 @@ fn setup_parent_htb(interface: &str) {
 }
 
 fn add_client_pair(interface: &str, queue_number: u32) {
-  let class_id = format!("0x1:{:x}", queue_number);
+  let class_id = format!("0x1:{queue_number:x}");
   Command::new(SUDO)
     .args([
       TC, "class", "add", "dev", interface, "parent", "0x1:1", "classid",

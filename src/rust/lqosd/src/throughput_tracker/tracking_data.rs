@@ -120,9 +120,7 @@ impl ThroughputTracker {
     self.packets_per_second = (0, 0);
     self.shaped_bytes_per_second = (0, 0);
     self
-      .raw_data
-      .iter()
-      .map(|(_k, v)| {
+      .raw_data.values().map(|v| {
         (
           v.bytes.0.saturating_sub(v.prev_bytes.0),
           v.bytes.1.saturating_sub(v.prev_bytes.1),

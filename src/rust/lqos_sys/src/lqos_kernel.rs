@@ -58,13 +58,13 @@ pub fn unload_xdp_from_interface(interface_name: &str) -> Result<()> {
 
     let interface_c = CString::new(interface_name)?;
     let _ = bpf::tc_detach_egress(
-      interface_index as i32,
+      interface_index,
       false,
       true,
       interface_c.as_ptr(),
     );
     let _ = bpf::tc_detach_ingress(
-      interface_index as i32,
+      interface_index,
       false,
       true,
       interface_c.as_ptr(),

@@ -213,7 +213,7 @@ pub async fn main() -> Result<()> {
         // When I resize a terminal window, it is not getting one, either.
         // How to then change n_rows from here is also on my mind
         Event::Resize(width, height) => {
-          println!("New size = {}x{}", width, height)
+          println!("New size = {width}x{height}")
         }
         Event::Key(KeyEvent {
           code: KeyCode::Char('c'),

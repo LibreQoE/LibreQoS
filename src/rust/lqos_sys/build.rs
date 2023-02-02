@@ -4,7 +4,7 @@ use std::process::{Command, Output};
 
 fn command_warnings(section: &str, command_result: &std::io::Result<Output>) {
   if command_result.is_err() {
-    println!("cargo:warning=[{section}]{:?}", command_result);
+    println!("cargo:warning=[{section}]{command_result:?}");
   }
 
   let r = command_result.as_ref().unwrap().stdout.clone();
@@ -23,7 +23,7 @@ fn command_warnings_errors_only(
   command_result: &std::io::Result<Output>,
 ) {
   if command_result.is_err() {
-    println!("cargo:warning=[{section}]{:?}", command_result);
+    println!("cargo:warning=[{section}]{command_result:?}");
   }
 
   let r = command_result.as_ref().unwrap().stderr.clone();
@@ -79,7 +79,7 @@ fn main() {
     Command::new("bpftool").args(["gen", "skeleton", &link_target]).output();
   command_warnings_errors_only("bpf skel", &skel_result);
   let header_file = String::from_utf8(skel_result.unwrap().stdout).unwrap();
-  std::fs::write(&skel_target, header_file).unwrap();
+  std::fs::write(skel_target, header_file).unwrap();
 
   // 4: Copy the wrapper to our out dir
   let wrapper_target = format!("{}/wrapper.h", out_dir.to_str().unwrap());
@@ -88,7 +88,7 @@ fn main() {
     format!("{}/libshrinkwrap.o", out_dir.to_str().unwrap());
   let shrinkwrap_a = format!("{}/libshrinkwrap.a", out_dir.to_str().unwrap());
   std::fs::copy("src/bpf/wrapper.h", &wrapper_target).unwrap();
-  std::fs::copy("src/bpf/wrapper.c", &wrapper_target_c).unwrap();
+  std::fs::copy("src/bpf/wrapper.c", wrapper_target_c).unwrap();
 
   // 5: Build the intermediary library
   let build_result = Command::new("clang")
