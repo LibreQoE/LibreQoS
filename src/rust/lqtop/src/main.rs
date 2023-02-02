@@ -128,7 +128,7 @@ fn draw_top_pane<'a>(
           scale_packets(stats.packets_per_second.1)
         )),
         Cell::from(format!(
-          "{:>7} ms",
+          "{:>10} ms",
           format!("{:.2}", stats.median_tcp_rtt)
         )),
         Cell::from(format!("{:>7}", stats.tc_handle.to_string())),
@@ -154,12 +154,12 @@ fn draw_top_pane<'a>(
       Block::default().title(draw_pps(packets_per_second, bits_per_second)),
     )
     .widths(&[
-      Constraint::Min(40),
+      Constraint::Min(42),
       Constraint::Length(15),
       Constraint::Length(15),
       Constraint::Length(15),
       Constraint::Length(15),
-      Constraint::Length(11),
+      Constraint::Length(15),
       Constraint::Length(7),
     ])
 }
