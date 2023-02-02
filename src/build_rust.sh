@@ -18,6 +18,10 @@ TARGET=release
 # Enable this if you are building on the same computer you are running on
 RUSTFLAGS="-C target-cpu=native"
 
+# Check for Rust version
+echo "Checking that Rust is uptodate"
+rustup update
+
 # Start building
 echo "Please wait while the system is compiled. Service will not be interrupted during this stage."
 PROGS="lqosd lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqos_node_manager webusers"
