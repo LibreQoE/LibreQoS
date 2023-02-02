@@ -66,11 +66,12 @@ fn watch_for_queueing_structure_changing() -> Result<(), QueueWatcherError> {
   let mut watcher = FileWatcher::new("queueingStructure.json", watch_path);
   watcher.set_file_created_callback(update_queue_structure);
   watcher.set_file_changed_callback(update_queue_structure);
-  let retval = watcher.watch();
-  if retval.is_err() {
-    error!("Unable to create queueingStructure.json watcher");
+  loop {
+    let retval = watcher.watch();
+    if retval.is_err() {
+      info!("File watcher returned {retval:?}");
+    }
   }
-  Ok(())
 }
 
 #[derive(Error, Debug)]

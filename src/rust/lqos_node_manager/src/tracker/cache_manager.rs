@@ -86,10 +86,14 @@ pub async fn update_tracking() {
 }
 
 fn load_shaped_devices() {
+  info!("ShapedDevices.csv has changed. Attempting to load it.");
   let shaped_devices = ConfigShapedDevices::load();
   if let Ok(new_file) = shaped_devices {
     info!("ShapedDevices.csv loaded");
     *SHAPED_DEVICES.write() = new_file;
+  } else {
+    warn!("ShapedDevices.csv failed to load, see previous error messages. Reverting to empty set.");
+    *SHAPED_DEVICES.write() = ConfigShapedDevices::default();
   }
 }
 
@@ -109,8 +113,10 @@ fn watch_for_shaped_devices_changing() -> Result<()> {
   watcher.set_file_exists_callback(load_shaped_devices);
   watcher.set_file_created_callback(load_shaped_devices);
   watcher.set_file_changed_callback(load_shaped_devices);
-  let _ = watcher.watch();
-  Ok(())
+  loop {
+    let result = watcher.watch();
+    info!("ShapedDevices watcher returned: {result:?}");
+  }
 }
 
 /// Requests data from `lqosd` and stores it in local

@@ -9,7 +9,7 @@ use thiserror::Error;
 const SLEEP_UNTIL_EXISTS_SECONDS: u64 = 10;
 const SLEEP_AFTER_CREATION_SECONDS: u64 = 3;
 const SLEEP_AFTER_CHANGE_SECONDS: u64 = 3;
-const SLEEP_DEBOUNCE_DURATION: u64 = 10;
+const SLEEP_DEBOUNCE_DURATION: u64 = 1;
 
 /// Provides a convenient mechanism for watching a file for changes.
 /// On Linux, it uses `inotify` - this varies for other operating systems.
@@ -138,6 +138,7 @@ impl FileWatcher {
         info!("{} changed", self.nice_name);
         if let Some(callback) = &mut self.file_changed_callback {
           callback();
+          return Ok(()); // Bail out to restart
         }
       }
     }

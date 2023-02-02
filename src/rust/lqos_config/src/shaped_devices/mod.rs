@@ -87,13 +87,13 @@ impl ConfigShapedDevices {
               expected_len,
               len
             );
-            error!("CSV devode error: {msg}");
+            error!("CSV decode error: {msg}");
             return Err(ShapedDevicesError::UnequalLengths(msg));
           } else {
             let msg = format!(
               "Unknown position. Expected {expected_len} fields, found {len}"
             );
-            error!("CSV devode error: {msg}");
+            error!("CSV decode error: {msg}");
             return Err(ShapedDevicesError::UnequalLengths(msg));
           }
         }
