@@ -123,6 +123,11 @@ def findQueuesAvailable():
 	return queuesAvailable
 
 def validateNetworkAndDevices():
+	# Verify Network.json is valid json
+	networkValidatedOrNot = True
+	# Verify ShapedDevices.csv is valid
+	devicesValidatedOrNot = True # True by default, switches to false if ANY entry in ShapedDevices.csv fails validation
+
 	# Verify that the Rust side of things can read the CSV file
 	rustValid = validate_shaped_devices()
 	if rustValid == "OK":
@@ -130,9 +135,7 @@ def validateNetworkAndDevices():
 	else:
 		warnings.warn("Rust failed to validate ShapedDevices.csv", stacklevel=2)
 		warnings.warn(rustValid, stacklevel=2)
-		networkValidatedOrNot = False
-	# Verify Network.json is valid json
-	networkValidatedOrNot = True
+		devicesValidatedOrNot = False
 	with open('network.json') as file:
 		try:
 			temporaryVariable = json.load(file) # put JSON-data to a variable
@@ -141,8 +144,6 @@ def validateNetworkAndDevices():
 			networkValidatedOrNot
 	if networkValidatedOrNot == True:
 		print("network.json passed validation") 
-	# Verify ShapedDevices.csv is valid
-	devicesValidatedOrNot = True # True by default, switches to false if ANY entry in ShapedDevices.csv fails validation
 	rowNum = 2
 	with open('ShapedDevices.csv') as csv_file:
 		csv_reader = csv.reader(csv_file, delimiter=',')
