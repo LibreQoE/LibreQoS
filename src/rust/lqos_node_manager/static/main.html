@@ -326,10 +326,6 @@
             updateHistogram();
             updateHostCounts();
             updateThroughputQuantile();
-
-            $("#startTest").on('click', () => {
-                $.get("/api/run_btest", () => {});
-            });
         }
 
         $(document).ready(start);
