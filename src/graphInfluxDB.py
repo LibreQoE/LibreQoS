@@ -306,16 +306,18 @@ def getParentNodeLatencyStats(parentNodes, subscriberCircuits):
 
 
 def getCircuitLatencyStats(subscriberCircuits):
-	command = './src/bin/xdp_pping'
-	listOfEntries = json.loads(subprocess.run(command.split(' '), stdout=subprocess.PIPE).stdout.decode('utf-8'))
+	command = './bin/xdp_pping'
+	consoleOutput = subprocess.run(command.split(' '), stdout=subprocess.PIPE).stdout.decode('utf-8')
+	consoleOutput = consoleOutput.replace('\n','').replace('}{', '}, {')
+	listOfEntries = json.loads(consoleOutput)
 	
 	tcpLatencyForClassID = {}
 	for entry in listOfEntries:
 		if 'tc' in entry:
-			handle = hex(int(entry['tc'].split(':')[0])) + ':' + hex(int(entry['tc'].split(':')[1]))
+			handle = '0x' + entry['tc'].split(':')[0] + ':' + '0x' + entry['tc'].split(':')[1]
 			# To avoid outliers messing up avg for each circuit - cap at ceiling of 200ms
 			ceiling = 200.0
-			tcpLatencyForClassID[handle] = min(entry['avg'], ceiling)
+			tcpLatencyForClassID[handle] = min(entry['median'], ceiling)
 	
 	for circuit in subscriberCircuits:
 		if 'stats' not in circuit:
