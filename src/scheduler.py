@@ -44,11 +44,11 @@ def graph():
 		refreshBandwidthGraphs()
 	except:
 		print("Failed to run refreshBandwidthGraphs()")
-	#time.sleep(1)
-	#try:
-	#	refreshLatencyGraphs()
-	#except:
-	#	print("Failed to run refreshLatencyGraphs()")
+	time.sleep(1)
+	try:
+		refreshLatencyGraphs()
+	except:
+		print("Failed to run refreshLatencyGraphs()")
 
 if __name__ == '__main__':
 	importAndShapeFullReload()
