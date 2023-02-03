@@ -26,9 +26,9 @@
                         <a class="nav-link" href="/"><i class="fa fa-home"></i> Dashboard</a>
                     </li>
                     <li class="nav-item" id="currentLogin"></li>
-                    <li class="nav-item">
+                    <!--<li class="nav-item">
                         <a class="nav-link" href="#"><i class="fa fa-globe"></i> Network Layout</a>
-                    </li>
+                    </li>-->
                     <li class="nav-item">
                         <a class="nav-link" href="/shaped"><i class="fa fa-users"></i> Shaped Devices <span id="shapedCount" class="badge badge-pill badge-success green-badge">?</span></a>
                     </li>
@@ -90,7 +90,8 @@
                 html += "<td>" + devices[i].ip_address + "</td>";
                 html += "<td>" + scaleNumber(devices[i].bits_per_second[0]) + " / " + scaleNumber(devices[i].bits_per_second[1]) + "</td>";
                 html += "<td>" + scaleNumber(devices[i].packets_per_second[0]) + " / " + scaleNumber(devices[i].packets_per_second[1]) + "</td>";
-                html += "<td><a class='btn btn-small btn-success' href='/shaped-add?ip=" + devices[i].ip_address + "'><i class='fa fa-plus'></i></a></td>";
+                //html += "<td><a class='btn btn-small btn-success' href='/shaped-add?ip=" + devices[i].ip_address + "'><i class='fa fa-plus'></i></a></td>";
+                html += "<td></td>";
                 html += "</tr>";
             }
             $("#unknownList").html(html);
