@@ -64,16 +64,13 @@ function css_getclass(name) {
     return rules[name];
 }
 
-var firstRun = false;
-
 function updateHostCounts() {
     $.get("/api/host_counts", (hc) => {
         $("#shapedCount").text(hc[0]);
         $("#unshapedCount").text(hc[1]);
         setTimeout(updateHostCounts, 5000);
     });
-    if (!firstRun) {
-        $.get("/api/username", (un) => {
+    $.get("/api/username", (un) => {
         let html = "";
         if (un == "Anonymous") {
             html = "<a class='nav-link' href='/login'><i class='fa fa-user'></i> Login</a>";
@@ -82,11 +79,9 @@ function updateHostCounts() {
         }
         $("#currentLogin").html(html);
     });
-        $("#startTest").on('click', () => {
-            $.get("/api/run_btest", () => {});
-        });
-    }
-    firstRun = true;
+    $("#startTest").on('click', () => {
+        $.get("/api/run_btest", () => {});
+    });
 }
 
 function colorReloadButton() {
