@@ -2,6 +2,8 @@
 
 Version 1.4 is still undergoing active development, but if you'd like to benefit from it right now (or help us test/develop it!), here's a guide.
 
+<strong> Please see the [v1.4 Wiki](https://github.com/LibreQoE/LibreQoS/wiki/v1.4) which replaces this document. </strong>
+
 ## Updating from v1.3
 ### Remove cron tasks from v1.3
 Run ```sudo crontab -e``` and remove any entries pertaining to LibreQoS from v1.3.
