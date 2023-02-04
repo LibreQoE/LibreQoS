@@ -1,0 +1,10 @@
+[Unit]
+After=lqosd.service
+
+[Service]
+WorkingDirectory=/opt/libreqos/src
+ExecStart=/usr/bin/python3 /opt/libreqos/src/scheduler.py
+Restart=always
+
+[Install]
+WantedBy=default.target
