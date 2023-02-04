@@ -42,11 +42,14 @@ runShellCommandsAsSudo = False
 # leave as 0.
 queuesAvailableOverride = 0
 
-# Some networks are flat - where there are no Parent Nodes defined in ShapedDevices.csv
-# For such flat networks, just define network.json as {} and enable this setting
-# By default, it balances the subscribers across CPU cores, factoring in their max bandwidth rates
-# Past 25,000 subsribers this algorithm becomes inefficient and is not advised
-useBinPackingToBalanceCPU = True
+# Devices in in ShapedDevices.csv without defined Parent Nodes are placed in generated parent nodes.
+# When set True, this option balances the subscribers across generatedPNs / CPU cores based on the subscriber's bandwidth plan.
+# When set False, devices are placed in generatedPNs sequentially with a near equal number of subscribers per core.
+# Whether this impacts balance across CPUs will depend on your subscribers' usage patterns, but if you are observing
+# unequal CPU load, and have most subscribers without a defined Parent Node, it is recommended to try this option.
+# Most subscribers average about the same bandwidth load regardless of speed plan (typically 5Mbps or so).
+# Past 25,000 subscribers this option becomes inefficient and is not advised.
+useBinPackingToBalanceCPU = False
 
 # Bandwidth & Latency Graphing
 influxDBEnabled = True
