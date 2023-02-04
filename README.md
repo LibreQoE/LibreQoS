@@ -6,6 +6,10 @@ Servers running LibreQoS can shape traffic for many thousands of customers.
 
 Learn more at [LibreQoS.io](https://libreqos.io/)!
 
+## Sponsors
+Special thanks to Equinix for providing server resources to support the development of LibreQoS.
+Learn more about [Equnix Metal here](https://deploy.equinix.com/metal/).
+
 ## Support LibreQoS
 
 Please support the continued development of LibreQoS by visiting our [GitHub Sponsors page](https://github.com/sponsors/LibreQoE).
