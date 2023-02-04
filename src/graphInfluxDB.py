@@ -404,13 +404,12 @@ def refreshBandwidthGraphs():
 		for circuit in chunk:
 			bitsDownload = float(circuit['stats']['sinceLastQuery']['bitsDownload'])
 			bitsUpload = float(circuit['stats']['sinceLastQuery']['bitsUpload'])
-			if (bitsDownload > 0) and (bitsUpload > 0):
-				percentUtilizationDownload = round((bitsDownload / round(circuit['maxDownload'] * 1000000))*100.0, 1)
-				percentUtilizationUpload = round((bitsUpload / round(circuit['maxUpload'] * 1000000))*100.0, 1)
-				p = Point('Bandwidth').tag("Circuit", circuit['circuitName']).tag("ParentNode", circuit['ParentNode']).tag("Type", "Circuit").field("Download", bitsDownload).field("Upload", bitsUpload).time(timestamp)
-				queriesToSend.append(p)
-				p = Point('Utilization').tag("Circuit", circuit['circuitName']).tag("ParentNode", circuit['ParentNode']).tag("Type", "Circuit").field("Download", percentUtilizationDownload).field("Upload", percentUtilizationUpload).time(timestamp)
-				queriesToSend.append(p)
+			percentUtilizationDownload = round((bitsDownload / round(circuit['maxDownload'] * 1000000))*100.0, 1)
+			percentUtilizationUpload = round((bitsUpload / round(circuit['maxUpload'] * 1000000))*100.0, 1)
+			p = Point('Bandwidth').tag("Circuit", circuit['circuitName']).tag("ParentNode", circuit['ParentNode']).tag("Type", "Circuit").field("Download", bitsDownload).field("Upload", bitsUpload).time(timestamp)
+			queriesToSend.append(p)
+			p = Point('Utilization').tag("Circuit", circuit['circuitName']).tag("ParentNode", circuit['ParentNode']).tag("Type", "Circuit").field("Download", percentUtilizationDownload).field("Upload", percentUtilizationUpload).time(timestamp)
+			queriesToSend.append(p)
 
 		write_api.write(bucket=influxDBBucket, record=queriesToSend)
 		# print("Added " + str(len(queriesToSend)) + " points to InfluxDB.")
@@ -423,15 +422,14 @@ def refreshBandwidthGraphs():
 		dropsTotal = float(parentNode['stats']['sinceLastQuery']['packetDropsTotal'])
 		overloadFactor = float(parentNode['stats']['sinceLastQuery']['overloadFactorTotal'])
 		droppedPacketsAllTime += dropsTotal
-		if (bitsDownload > 0) and (bitsUpload > 0):
-			percentUtilizationDownload = round((bitsDownload / round(parentNode['maxDownload'] * 1000000))*100.0, 1)
-			percentUtilizationUpload = round((bitsUpload / round(parentNode['maxUpload'] * 1000000))*100.0, 1)
-			p = Point('Bandwidth').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("Download", bitsDownload).field("Upload", bitsUpload).time(timestamp)
-			queriesToSend.append(p)
-			p = Point('Utilization').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("Download", percentUtilizationDownload).field("Upload", percentUtilizationUpload).time(timestamp)
-			queriesToSend.append(p)
-			p = Point('Overload').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("Overload", overloadFactor).time(timestamp)
-			queriesToSend.append(p)
+		percentUtilizationDownload = round((bitsDownload / round(parentNode['maxDownload'] * 1000000))*100.0, 1)
+		percentUtilizationUpload = round((bitsUpload / round(parentNode['maxUpload'] * 1000000))*100.0, 1)
+		p = Point('Bandwidth').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("Download", bitsDownload).field("Upload", bitsUpload).time(timestamp)
+		queriesToSend.append(p)
+		p = Point('Utilization').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("Download", percentUtilizationDownload).field("Upload", percentUtilizationUpload).time(timestamp)
+		queriesToSend.append(p)
+		p = Point('Overload').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("Overload", overloadFactor).time(timestamp)
+		queriesToSend.append(p)
 
 	write_api.write(bucket=influxDBBucket, record=queriesToSend)
 	# print("Added " + str(len(queriesToSend)) + " points to InfluxDB.")
