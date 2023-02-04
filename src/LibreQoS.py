@@ -474,11 +474,8 @@ def refreshShapers():
 		
 		# Generate Parent Nodes. Spread ShapedDevices.csv which lack defined ParentNode across these (balance across CPUs)
 		print("Generating parent nodes")
-		existingPNs = 0
-		for node in network:
-			existingPNs += 1
 		generatedPNs = []
-		numberOfGeneratedPNs = queuesAvailable-existingPNs
+		numberOfGeneratedPNs = queuesAvailable
 		# If in monitorOnlyMode, override bandwidth rates to where no shaping will actually occur
 		if monitorOnlyMode == True:
 			chosenDownloadMbps = 10000
@@ -624,9 +621,9 @@ def refreshShapers():
 					if node == circuit['ParentNode']:
 						if monitorOnlyMode == False:
 							if circuit['maxDownload'] > data[node]['downloadBandwidthMbps']:
-								warnings.warn("downloadMax of Circuit ID [" + circuit['circuitID'] + "] exceeded that of its parent node. Reducing to that of its parent node now.", stacklevel=2)
+								logging.info("downloadMax of Circuit ID [" + circuit['circuitID'] + "] exceeded that of its parent node. Reducing to that of its parent node now.", stacklevel=2)
 							if circuit['maxUpload'] > data[node]['uploadBandwidthMbps']:
-								warnings.warn("uploadMax of Circuit ID [" + circuit['circuitID'] + "] exceeded that of its parent node. Reducing to that of its parent node now.", stacklevel=2)
+								logging.info("uploadMax of Circuit ID [" + circuit['circuitID'] + "] exceeded that of its parent node. Reducing to that of its parent node now.", stacklevel=2)
 						parentString = hex(major) + ':'
 						flowIDstring = hex(major) + ':' + hex(minorByCPU[queue])
 						upFlowIDstring = hex(major + stickOffset) + ':' + hex(minorByCPU[queue])
