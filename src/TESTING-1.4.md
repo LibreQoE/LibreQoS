@@ -16,7 +16,7 @@ Go to the install location, and clone the repo:
 ```
 cd /opt/
 git clone https://github.com/LibreQoE/LibreQoS.git libreqos
-sudo chown YOUR_USER /opt/libreqos
+sudo chown YOUR_USER /opt/libreqos -R
 ```
 By specifying `libreqos` at the end, git will ensure the folder name is lowercase.
 
