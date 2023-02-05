@@ -97,17 +97,20 @@ Change `enp1s0f1` and `enp1s0f2` to match your network interfaces. It doesn't ma
 
 Follow the regular instructions to set your interfaces in `ispConfig.py` and your `network.json` and `ShapedDevices.csv` files.
 
-## Configure autostart services (lqosd, lqos_node_manager)
+## Option A: Run as systemd services
 
 ```
-cp /opt/libreqos/src/bin/lqos_node_manager.service.example /etc/systemd/system/lqos_node_manager.service
-cp /opt/libreqos/src/bin/lqosd.service.example /etc/systemd/system/lqosd.service
+sudo cp /opt/libreqos/src/bin/lqos_node_manager.service.example /etc/systemd/system/lqos_node_manager.service
+sudo cp /opt/libreqos/src/bin/lqosd.service.example /etc/systemd/system/lqosd.service
+sudo cp /opt/libreqos/src/bin/lqos_scheduler.service.example /etc/systemd/system/lqos_scheduler.service
 systemctl daemon-reload
 systemctl enable lqosd
 systemctl enable lqos_node_manager
+sudo systemctl enable lqos_scheduler
 ```
+lqos_scheduler is optional, but helpful as it performs partial reload at regular intervals (reflecting any daytime changes to UISP/Splynx) and sends statistics to InfluxDB.
 
-## Run the program (debug mode)
+## Option B: Run in debug mode
 
 You can setup `lqosd` and `lqos_node_manager` as daemons to keep running (there are example `systemd` files in the `src/bin` folder). Since v1.4 is under such heavy development, I recommend using `screen` to run detached instances - and make finding issues easier.
 
@@ -123,11 +126,35 @@ You can now point a web browser at `http://a.b.c.d:9123` (replace `a.b.c.d` with
 
 In the web browser, click `Reload LibreQoS` to setup your shaping rules.
 
-# Updating 1.4 Once You Have It
+## Updating 1.4 Once You Have It
 
 * Note: On January 22nd 2023 /etc/lqos was changed to /etc/lqos.conf to remedy Issue #205. If upgrading, be sure to move /etc/lqos to /etc/lqos.conf
+* Note: If you use the XDP bridge, traffic will stop passing through the bridge during the update (XDP bridge is only operating while lqosd runs).
 
-<img src="https://raw.githubusercontent.com/LibreQoE/LibreQoS/main/docs/jk.jpg" width=200px></a>
+### If using systemd services
+
+1.
+```
+sudo systemctl stop lqos_scheduler
+sudo systemctl stop lqos_node_manager
+sudo systemctl stop lqosd
+```
+2. Change to your `LibreQoS` directory (e.g. `cd /opt/LibreQoS`)
+3. Update from Git: `git pull`
+4. Recompile: `./build-rust.sh`
+5. 
+```
+cd /src/rust
+cargo build --all
+```
+6.
+```
+sudo systemctl start lqosd
+sudo systemctl start lqos_node_manager
+sudo systemctl start lqos_scheduler
+```
+
+### If running debug mode
 
 1. Resume screen with `screen -r`
 2. Go to console 0 (`Ctrl-A, 0`) and stop `lqosd` with `ctrl+c`.
@@ -142,8 +169,7 @@ In the web browser, click `Reload LibreQoS` to setup your shaping rules.
 11. Go to console 1 (`Ctrl-A, 1`) and run `./lqos_node_manager` to restart the web server.
 12. If you didn't see errors, detach with `Ctrl-A, D` 
 
-
-# Bugfix for slowly Ubuntu starting (~2 minutes penalty) in situation when one of the networking interface is down during startup
+## Bugfix for slowly Ubuntu starting (~2 minutes penalty) in situation when one of the networking interface is down during startup
 
 #List all services which requires network
 ```
