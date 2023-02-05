@@ -89,6 +89,7 @@ So for example, an ISP delivering 1Gbps service plans with 10Gbps aggregate thro
   * NIC must have multiple TX/RX transmit queues. [Here's how to check from the command line](https://serverfault.com/questions/772380/how-to-tell-if-nic-has-multiqueue-enabled).
   * Known supported cards:
     * [NVIDIA Mellanox MCX512A-ACAT](https://www.fs.com/products/119649.html)
+    * NVIDIA Mellanox MCX416A-CCAT
     * [Intel X710](https://www.fs.com/products/75600.html)
     * Intel X520
     
