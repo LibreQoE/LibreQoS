@@ -14,6 +14,8 @@ Learn more about [Equnix Metal here](https://deploy.equinix.com/metal/).
 
 Please support the continued development of LibreQoS by visiting our [GitHub Sponsors page](https://github.com/sponsors/LibreQoE).
 
+<img alt="LibreQoS" src="https://user-images.githubusercontent.com/22501920/216796542-e3a2d4c3-a735-4cd1-adf8-5dae160fd7e9.png"></a>
+
 ## Features
 ### Flexible Hierarchical Shaping / Back-Haul Congestion Mitigation
 <img src="https://raw.githubusercontent.com/LibreQoE/LibreQoS/main/docs/nestedHTB2.png" width="350"></img>
@@ -27,8 +29,7 @@ CAKE is the product of nearly a decade of development efforts to improve on fq_c
 Fast, multi-CPU queueing leveraging xdp-cpumap-tc and cpumap-pping. Currently tested in the real world past 11 Gbps (so far) with just 30% CPU use on a 16 core Intel Xeon Gold 6254. It's likely capable of 30Gbps or more.
 
 ### Graphing
-You can graph bandwidth and TCP RTT by client and node (Site, AP, etc), with great visalizations made possible by InfluxDB.
-<img alt="LibreQoS" src="https://raw.githubusercontent.com/LibreQoE/LibreQoS/main/docs/v1.1-alpha-preview.jpg"></a>
+You can graph bandwidth and TCP RTT by client and node (Site, AP, etc), using InfluxDB.
 
 ### CRM Integrations
 * UISP
