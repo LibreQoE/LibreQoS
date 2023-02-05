@@ -92,6 +92,5 @@ So for example, an ISP delivering 1Gbps service plans with 10Gbps aggregate thro
     * Intel X520
     
 ## Versions
-### IPv4 + IPv6
-- [v1.3](https://github.com/LibreQoE/LibreQoS/tree/main/v1.3) [Setup Guide](https://github.com/LibreQoE/LibreQoS/wiki/LibreQoS-v1.3-Installation-&-Usage-Guide-Physical-Server-and-Ubuntu-22.04)
-- [v1.4-ALPHA](https://github.com/LibreQoE/LibreQoS/tree/main) [Setup Guide](https://github.com/LibreQoE/LibreQoS/blob/main/src/TESTING-1.4.md)
+- [v1.3](https://github.com/LibreQoE/LibreQoS/wiki/LibreQoS-v1.3-Installation-&-Usage-Guide-Physical-Server-and-Ubuntu-22.04)
+- [v1.4-alpha](https://github.com/LibreQoE/LibreQoS/wiki/v1.4)
