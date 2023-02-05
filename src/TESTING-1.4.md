@@ -10,13 +10,14 @@ Run ```sudo crontab -e``` and remove any entries pertaining to LibreQoS from v1.
 
 ## Clone the repo
 
-> My preferred install location is `/opt/libreqos` - but you can put it wherever you want.
-
-Go to your preferred install location, and clone the repo:
+The recommended install location is `/opt/libreqos`.
+Go to the install location, and clone the repo:
 
 ```
-git clone https://github.com/LibreQoE/LibreQoS.git
+cd /opt/
+git clone https://github.com/LibreQoE/LibreQoS.git libreqos
 ```
+By specifying ```libreqos``` at the end, git will ensure the folder name is lowercase.
 
 > Now that this is in `main`, you no longer need to switch git branch. If you were previously on the `v1.4-pre-alpha-rust-integration` branch, please switch to main with `git checkout main; git pull`.
 
