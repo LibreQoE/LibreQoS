@@ -8,7 +8,7 @@ Learn more at [LibreQoS.io](https://libreqos.io/)!
 
 ## Sponsors
 Special thanks to Equinix for providing server resources to support the development of LibreQoS.
-Learn more about [Equnix Metal here](https://deploy.equinix.com/metal/).
+Learn more about [Equinix Metal here](https://deploy.equinix.com/metal/).
 
 ## Support LibreQoS
 
@@ -23,7 +23,7 @@ Please support the continued development of LibreQoS by visiting our [GitHub Spo
 Starting in version v1.1+, operators can map their network hierarchy in LibreQoS. This enables both simple network hierarchies (Site>AP>Client) as well as much more complex ones (Site>Site>Micro-PoP>AP>Site>AP>Client). This can be used to ensure that a given site’s peak bandwidth will not exceed the capacity of its back-haul links (back-haul congestion control). Operators can support more users on the same network equipment with LibreQoS than with competing QoE solutions which only shape by AP and Client.
 
 ### CAKE
-CAKE is the product of nearly a decade of development efforts to improve on fq_codel. With the diffserv_4 parameter enabled – CAKE groups traffic in to Bulk, Best Effort, Video, and Voice. This means that without having to fine-tune traffic priorities as you would with DPI products – CAKE automatically ensures your clients’ OS update downloads will not disrupt their zoom calls. It allows for multiple video conferences to operate on the same connection which might otherwise “fight” for upload bandwidth causing call disruptions. It holds the connection together like glue. With work-from-home, remote learning, and tele-medicine becoming increasingly common – minimizing video call disruptions can save jobs, keep students engaged, and help ensure equitable access to medical care.
+CAKE is the product of nearly a decade of development efforts to improve on fq\_codel. With the diffserv\_4 parameter enabled – CAKE groups traffic in to Bulk, Best Effort, Video, and Voice. This means that without having to fine-tune traffic priorities as you would with DPI products – CAKE automatically ensures your clients’ OS update downloads will not disrupt their zoom calls. It allows for multiple video conferences to operate on the same connection which might otherwise “fight” for upload bandwidth causing call disruptions. With work-from-home, remote learning, and tele-medicine becoming increasingly common – minimizing video call disruptions can save jobs, keep students engaged, and help ensure equitable access to medical care.
 
 ### XDP
 Fast, multi-CPU queueing leveraging xdp-cpumap-tc and cpumap-pping. Currently tested in the real world past 11 Gbps (so far) with just 30% CPU use on a 16 core Intel Xeon Gold 6254. It's likely capable of 30Gbps or more.
@@ -69,7 +69,7 @@ Below is a table of approximate aggregate throughput capacity, assuming a a CPU 
 So for example, an ISP delivering 1Gbps service plans with 10Gbps aggregate throughput would choose a CPU with a 2500+ single-thread score and 8 cores, such as the Intel Xeon E-2388G @ 3.20GHz.
 
 ### Memory
-* Mimumum RAM = 2 + (0.002 x Subscriber Count) GB
+* Minimum RAM = 2 + (0.002 x Subscriber Count) GB
 * Recommended RAM:
 
 | Subscribers   | RAM           |
@@ -77,8 +77,8 @@ So for example, an ISP delivering 1Gbps service plans with 10Gbps aggregate thro
 | 100           | 4 GB          |
 | 1,000         | 8 GB          |
 | 5,000         | 16 GB         |
-| 10,000*       | 32 GB         |
-| 50,000*       | 48 GB         |
+| 10,000*       | 18 GB         |
+| 50,000*       | 24 GB         |
 
 (* Estimated)
 
