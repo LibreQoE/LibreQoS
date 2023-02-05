@@ -16,8 +16,9 @@ Go to the install location, and clone the repo:
 ```
 cd /opt/
 git clone https://github.com/LibreQoE/LibreQoS.git libreqos
+sudo chown YOUR_USER /opt/libreqos
 ```
-By specifying ```libreqos``` at the end, git will ensure the folder name is lowercase.
+By specifying `libreqos` at the end, git will ensure the folder name is lowercase.
 
 > Now that this is in `main`, you no longer need to switch git branch. If you were previously on the `v1.4-pre-alpha-rust-integration` branch, please switch to main with `git checkout main; git pull`.
 
