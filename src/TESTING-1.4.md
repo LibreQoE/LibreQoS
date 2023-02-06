@@ -105,10 +105,8 @@ Follow the regular instructions to set your interfaces in `ispConfig.py` and you
 sudo cp /opt/libreqos/src/bin/lqos_node_manager.service.example /etc/systemd/system/lqos_node_manager.service
 sudo cp /opt/libreqos/src/bin/lqosd.service.example /etc/systemd/system/lqosd.service
 sudo cp /opt/libreqos/src/bin/lqos_scheduler.service.example /etc/systemd/system/lqos_scheduler.service
-systemctl daemon-reload
-systemctl enable lqosd
-systemctl enable lqos_node_manager
-sudo systemctl enable lqos_scheduler
+sudo systemctl daemon-reload
+sudo systemctl enable lqosd lqos_node_manager lqos_scheduler
 ```
 lqos_scheduler is optional, but helpful as it performs partial reload at regular intervals (reflecting any daytime changes to UISP/Splynx) and sends statistics to InfluxDB.
 
@@ -137,9 +135,7 @@ In the web browser, click `Reload LibreQoS` to setup your shaping rules.
 
 1.
 ```
-sudo systemctl stop lqos_scheduler
-sudo systemctl stop lqos_node_manager
-sudo systemctl stop lqosd
+sudo systemctl stop lqos_scheduler lqos_node_manager lqosd
 ```
 2. Change to your `LibreQoS` directory (e.g. `cd /opt/LibreQoS`)
 3. Update from Git: `git pull`
@@ -151,9 +147,7 @@ cargo build --all
 ```
 6.
 ```
-sudo systemctl start lqosd
-sudo systemctl start lqos_node_manager
-sudo systemctl start lqos_scheduler
+sudo systemctl start lqosd lqos_node_manager lqos_scheduler
 ```
 
 ### If running debug mode
