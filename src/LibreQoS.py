@@ -751,13 +751,14 @@ def refreshShapers():
 				if 'circuits' in data[node]:
 					for circuit in data[node]['circuits']:
 						# Generate TC commands to be executed later
-						comment = " # CircuitID: " + circuit['circuitID'] + " DeviceIDs: "
+						tcComment = " # CircuitID: " + circuit['circuitID'] + " DeviceIDs: "
 						for device in circuit['devices']:
-							comment = comment + device['deviceID'] + ', '
+							tcComment = tcComment + device['deviceID'] + ', '
 						if 'devices' in circuit:
 							if 'comment' in circuit['devices'][0]:
-								comment = comment + '| Comment: ' + circuit['devices'][0]['comment']
-						command = 'class add dev ' + interfaceA + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ str(circuit['minDownload']) + 'mbit ceil '+ str(circuit['maxDownload']) + 'mbit prio 3'
+								tcComment = tcComment + '| Comment: ' + circuit['devices'][0]['comment']
+						tcComment = tcComment.replace("\n", "")
+						command = 'class add dev ' + interfaceA + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ str(circuit['minDownload']) + 'mbit ceil '+ str(circuit['maxDownload']) + 'mbit prio 3' + tcComment
 						linuxTCcommands.append(command)
 						# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
 						if monitorOnlyMode == False:	
