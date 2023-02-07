@@ -108,7 +108,10 @@ sudo cp /opt/libreqos/src/bin/lqos_scheduler.service.example /etc/systemd/system
 sudo systemctl daemon-reload
 sudo systemctl enable lqosd lqos_node_manager lqos_scheduler
 ```
-lqos_scheduler is optional, but helpful as it performs partial reload at regular intervals (reflecting any daytime changes to UISP/Splynx) and sends statistics to InfluxDB.
+lqos_scheduler handles statistics and performs continuous refreshes of LibreQoS' shapers, including pulling from any enabled CRM Integrations (UISP, Splynx).
+* On start: Run a full setup of queues
+* Every 10 seconds: Graph bandwidth and latency stats
+* Every 30 minutes: Update queues, pulling new configuration from CRM integration if enabled
 
 ## Option B: Run in debug mode
 
