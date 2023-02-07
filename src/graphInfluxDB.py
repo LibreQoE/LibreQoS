@@ -318,18 +318,23 @@ def getCircuitLatencyStats(subscriberCircuits):
 			# To avoid outliers messing up avg for each circuit - cap at ceiling of 200ms
 			ceiling = 200.0
 			tcpLatencyForClassID[handle] = min(entry['median'], ceiling)
-	
 	for circuit in subscriberCircuits:
 		if 'stats' not in circuit:
 			circuit['stats'] = {}
 			circuit['stats']['sinceLastQuery'] = {}
-		
+			
 	for circuit in subscriberCircuits:
 		classID = circuit['classid']
 		if classID in tcpLatencyForClassID:
 			circuit['stats']['sinceLastQuery']['tcpLatency'] = tcpLatencyForClassID[classID]
 		else:
+			# If we can't identify RTT this time around, use most recently recorded RTT
+			# None by default, change if found in priorQuery
 			circuit['stats']['sinceLastQuery']['tcpLatency'] = None
+			if circuit['stats']['priorQuery'] != None:
+				if 'priorQuery' in circuit['stats']:
+					if 'tcpLatency' in circuit['stats']['priorQuery']:
+						circuit['stats']['sinceLastQuery']['tcpLatency'] = circuit['stats']['priorQuery']['tcpLatency']
 
 	return subscriberCircuits
 
