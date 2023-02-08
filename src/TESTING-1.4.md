@@ -179,3 +179,8 @@ systemctl show -p WantedBy network-online.target
 ```
 systemctl disable cloud-config iscsid cloud-final
 ```
+
+## Performance tips
+
+#Set propper governor for CPU (baremetal/hypervisior host)
+```cpupower frequency-set --governor performance```
