@@ -41,28 +41,39 @@
         </div>
     </div>
 
-    <footer>Copyright (c) 2022, LibreQoE LLC</footer>
+    <footer>
+        <a href="https://libreqos.io/credits/">Copyright (c) 2022, LibreQoE LLC</a>
+    </footer>
 
     <script>
+
+        function try_login() {
+            let newUser = {
+              username: $("#username").val(),
+              password: $("#password").val(),
+            };
+            $.ajax({
+              type: "POST",
+              url: "/api/login",
+              data: JSON.stringify(newUser),
+              success: (data) => {
+                  if (data == "ERROR") {
+                      alert("Invalid login")
+                  } else {
+                      window.location.href = "/";
+                  }
+              }
+            })
+
+        }
+
         function start() {
-            $("#btnLogin").on('click', (data) => {
-                let newUser = {
-                    username: $("#username").val(),
-                    password: $("#password").val(),
-                };
-                $.ajax({
-                    type: "POST",
-                    url: "/api/login",
-                    data: JSON.stringify(newUser),
-                    success: (data) => {
-                        if (data == "ERROR") {
-                            alert("Invalid login")
-                        } else {
-                            window.location.href = "/";
-                        }
-                    }
-                })
-            });
+            $("#btnLogin").on('click', try_login)
+            $(document).on('keydown', (e) => {
+                if (e.keyCode === 13) {
+                    try_login()
+                }
+            })
         }
 
         $(document).ready(start);
