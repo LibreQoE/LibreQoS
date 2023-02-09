@@ -186,3 +186,10 @@ systemctl disable cloud-config iscsid cloud-final
 ```
 cpupower frequency-set --governor performance
 ```
+
+
+#Set bigger RX ring parameter for network device
+```
+ethtool --set-ring enp1s0f1 rx 8192
+ethtool --set-ring enp1s0f2 rx 8192
+```
