@@ -223,6 +223,9 @@ impl QueueNode {
               log::warn!("{:?}", value);
             }
           }
+          "idForCircuitsWithoutParentNodes" => {
+            // Ignore
+          }
           _ => log::error!("I don't know how to parse key: [{key}]"),
         }
       }
