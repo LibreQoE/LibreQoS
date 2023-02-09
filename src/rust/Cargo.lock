@@ -1463,6 +1463,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lqusers"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.1.4",
+ "lqos_config",
+]
+
+[[package]]
 name = "matchers"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2877,15 +2886,6 @@ checksum = "e33b99f4b23ba3eec1a53ac264e35a755f00e966e0065077d6027c0f575b0b97"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "webusers"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap 4.1.4",
- "lqos_config",
 ]
 
 [[package]]
