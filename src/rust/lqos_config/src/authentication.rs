@@ -1,5 +1,5 @@
 //! The `authentication` module provides authorization for use of the
-//! local web UI on LibreQoS boxes. It maps to `/<install dir>/webusers.toml`
+//! local web UI on LibreQoS boxes. It maps to `/<install dir>/lqusers.toml`
 
 use log::{error, warn};
 use serde::{Deserialize, Serialize};
@@ -62,7 +62,7 @@ impl WebUsers {
     let base_path = crate::EtcLqos::load()
       .map_err(|_| AuthenticationError::UnableToLoadEtcLqos)?
       .lqos_directory;
-    let filename = Path::new(&base_path).join("webusers.toml");
+    let filename = Path::new(&base_path).join("lqusers.toml");
     Ok(filename)
   }
 
@@ -96,7 +96,7 @@ impl WebUsers {
     Ok(Self::path()?.exists())
   }
 
-  /// Try to load `webusers.toml`. If it is unavailable, create a new--empty--
+  /// Try to load `lqusers.toml`. If it is unavailable, create a new--empty--
   /// file.
   pub fn load_or_create() -> Result<Self, AuthenticationError> {
     let path = Self::path()?;
@@ -114,13 +114,13 @@ impl WebUsers {
           Ok(users)
         } else {
           error!(
-            "Unable to deserialize webusers.toml. Error in next message."
+            "Unable to deserialize lqusers.toml. Error in next message."
           );
           error!("{:?}", parse_result);
           Err(AuthenticationError::UnableToParse)
         }
       } else {
-        error!("Unable to read webusers.toml");
+        error!("Unable to read lqusers.toml");
         Err(AuthenticationError::UnableToRead)
       }
     }
@@ -164,7 +164,7 @@ impl WebUsers {
     Ok(token)
   }
 
-  /// Delete a user from `webusers.toml`
+  /// Delete a user from `lqusers.toml`
   pub fn remove_user(
     &mut self,
     username: &str,
@@ -260,11 +260,11 @@ pub enum AuthenticationError {
   SerializationError(toml::ser::Error),
   #[error("Unable to remove existing web users file")]
   UnableToDelete,
-  #[error("Unable to open webusers.toml for writing. Check permissions?")]
+  #[error("Unable to open lqusers.toml for writing. Check permissions?")]
   UnableToWrite,
-  #[error("Unable to read webusers.toml")]
+  #[error("Unable to read lqusers.toml")]
   UnableToRead,
-  #[error("Unable to parse webusers.toml")]
+  #[error("Unable to parse lqusers.toml")]
   UnableToParse,
   #[error("User not found")]
   UserNotFound,
