@@ -10,7 +10,7 @@ import subprocess
 import warnings
 import argparse
 import logging
-from ispConfig import interfaceA, interfaceB, enableActualShellCommands, upstreamBandwidthCapacityDownloadMbps, upstreamBandwidthCapacityUploadMbps
+from ispConfig import interfaceA, interfaceB, enableActualShellCommands, upstreamBandwidthCapacityDownloadMbps, upstreamBandwidthCapacityUploadMbps, generatedPNDownloadMbps, generatedPNUploadMbps
 
 def shell(command):
 	if enableActualShellCommands:
@@ -103,7 +103,9 @@ def printCircuitClassInfo(ipAddress):
 		print("Upload rate/ceil: " + uploadMin + "/" + uploadMax)
 		print("burst/cburst: " + burst + "/" + cburst)
 	else:
-		bwString = str(upstreamBandwidthCapacityDownloadMbps) + '/' + str(upstreamBandwidthCapacityUploadMbps)
+		download = min(upstreamBandwidthCapacityDownloadMbps, generatedPNDownloadMbps)
+		upload = min(upstreamBandwidthCapacityUploadMbps, generatedPNUploadMbps)
+		bwString = str(download) + '/' + str(upload)
 		print("Invalid IP address provided (default queue limit is " + bwString + " Mbps)")
 
 def findClassIDForCircuitByIP(data, inputIP, classID):
