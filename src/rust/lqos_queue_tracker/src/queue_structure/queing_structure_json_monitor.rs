@@ -47,7 +47,7 @@ pub async fn spawn_queue_structure_monitor() {
 }
 
 fn update_queue_structure() {
-  info!("queueingStructure.csv reloaded");
+  info!("queueingStructure.json reloaded");
   QUEUE_STRUCTURE.write().update();
 }
 
