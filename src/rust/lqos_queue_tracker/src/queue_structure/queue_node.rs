@@ -227,8 +227,7 @@ impl QueueNode {
         }
       }
     } else {
-      error!("Unable to parse node structure for [{key}]");
-      return Err(QueueStructureError::JsonKeyUnparseable(key.to_string()));
+      log::warn!("Unable to parse node structure for [{key}]");
     }
     Ok(result)
   }

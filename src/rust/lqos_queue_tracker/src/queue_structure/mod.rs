@@ -36,8 +36,6 @@ pub enum HexParseError {
 
 #[derive(Error, Debug)]
 pub enum QueueStructureError {
-  #[error("Unable to parse node structure from JSON")]
-  JsonKeyUnparseable(String),
   #[error("unable to parse u64")]
   U64Parse(String),
   #[error("Unable to retrieve string from JSON")]
