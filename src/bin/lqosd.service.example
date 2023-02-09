@@ -6,7 +6,7 @@ WorkingDirectory=/opt/libreqos/src/bin
 ExecStart=/opt/libreqos/src/bin/lqosd
 Restart=always
 #Turn on debuging for service
-#Envirnoment=RUST_LOG=info
+#Environment=RUST_LOG=info
 
 [Install]
 WantedBy=default.target
