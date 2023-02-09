@@ -22,7 +22,7 @@ enum Commands {
     #[arg(long)]
     role: UserRole,
 
-    /// CPU id to connect
+    /// Password
     #[arg(long)]
     password: String,
   },
@@ -31,7 +31,7 @@ enum Commands {
     /// Username to remove
     username: String,
   },
-  /// List all mapped IPs.
+  /// List users
   List,
 }
 
