@@ -186,3 +186,7 @@ systemctl disable cloud-config iscsid cloud-final
 ```
 cpupower frequency-set --governor performance
 ```
+
+#Don't allow CPU to go deep sleep state
+
+Edit `/etc/default/grub` and add `intel_pstate=disable` to *GRUB_CMDLINE_LINUX_DEFAULT* and run command `update-grub2`.
