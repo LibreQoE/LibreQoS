@@ -3,14 +3,11 @@ use std::sync::atomic::AtomicBool;
 use crate::auth_guard::AuthGuard;
 use crate::cache_control::NoCache;
 use crate::tracker::SHAPED_DEVICES;
-use lazy_static::*;
 use lqos_bus::{bus_request, BusRequest, BusResponse};
 use lqos_config::ShapedDevice;
 use rocket::serde::json::Json;
 
-lazy_static! {
-  static ref RELOAD_REQUIRED: AtomicBool = AtomicBool::new(false);
-}
+static RELOAD_REQUIRED: AtomicBool = AtomicBool::new(false);
 
 #[get("/api/all_shaped_devices")]
 pub fn all_shaped_devices(
