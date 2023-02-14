@@ -61,6 +61,7 @@ src/bin/xdp_iphash_to_cpu_cmdline
 src/bin/xdp_pping
 src/bin/lqos_node_manager
 src/bin/webusers
+src/bin/lqusers
 src/bin/Rocket.toml
 
 
