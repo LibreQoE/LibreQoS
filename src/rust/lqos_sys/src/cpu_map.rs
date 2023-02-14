@@ -1,7 +1,5 @@
 use anyhow::{Error, Result};
-use libbpf_sys::{
-  bpf_map_update_elem, bpf_obj_get, libbpf_num_possible_cpus,
-};
+use libbpf_sys::{bpf_map_update_elem, bpf_obj_get, libbpf_num_possible_cpus};
 use log::info;
 use std::{ffi::CString, os::raw::c_void};
 

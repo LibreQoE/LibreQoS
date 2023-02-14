@@ -62,10 +62,9 @@ fn draw_menu<'a>(is_connected: bool) -> Paragraph<'a> {
       .0
       .push(Span::styled(" NOT CONNECTED ", Style::default().fg(Color::Red)))
   } else {
-    text.0.push(Span::styled(
-      "     CONNECTED ",
-      Style::default().fg(Color::Green),
-    ))
+    text
+      .0
+      .push(Span::styled("     CONNECTED ", Style::default().fg(Color::Green)))
   }
 
   let para = Paragraph::new(text)
@@ -321,7 +320,7 @@ pub async fn main() -> Result<()> {
           code: KeyCode::Char('6'),
           modifiers: KeyModifiers::NONE,
           ..
-        }) => break, // FIXME Just look at ipv6        
+        }) => break, // FIXME Just look at ipv6
         Event::Key(KeyEvent {
           code: KeyCode::Char('4'),
           modifiers: KeyModifiers::NONE,

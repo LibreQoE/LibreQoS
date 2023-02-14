@@ -14,11 +14,7 @@ pub fn lqos_daht_test() -> BusResponse {
     ) == Ok(true)
     {
       let result = Command::new("/bin/ssh")
-        .args([
-          "-t",
-          "lqtest@lqos.taht.net",
-          "\"/home/lqtest/bin/v6vsv4.sh\"",
-        ])
+        .args(["-t", "lqtest@lqos.taht.net", "\"/home/lqtest/bin/v6vsv4.sh\""])
         .output();
       if result.is_err() {
         log::warn!("Unable to call dtaht test: {:?}", result);

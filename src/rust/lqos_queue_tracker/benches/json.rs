@@ -66,7 +66,7 @@ fn setup_parent_htb(interface: &str) {
     .output()
     .unwrap();
 
-  #[rustfmt::skip]  
+  #[rustfmt::skip]
   Command::new(SUDO)
     .args([
       TC, "qdisc", "add", "dev", interface, "parent", "0x1:1", "cake",

@@ -48,9 +48,7 @@ impl TcHtb {
         "bytes" => result.bytes = value.as_u64().unwrap_or(0),
         "packets" => result.packets = value.as_u64().unwrap_or(0) as u32,
         "drops" => result.drops = value.as_u64().unwrap_or(0) as u32,
-        "overlimits" => {
-          result.overlimits = value.as_u64().unwrap_or(0) as u32
-        }
+        "overlimits" => result.overlimits = value.as_u64().unwrap_or(0) as u32,
         "requeues" => result.requeues = value.as_u64().unwrap_or(0) as u32,
         "backlog" => result.backlog = value.as_u64().unwrap_or(0) as u32,
         "qlen" => result.qlen = value.as_u64().unwrap_or(0) as u32,

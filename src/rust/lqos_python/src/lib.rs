@@ -1,9 +1,13 @@
-use std::{path::Path, fs::{File, remove_file}, io::Write};
 use lqos_bus::{BusRequest, BusResponse, TcHandle};
 use nix::libc::getpid;
 use pyo3::{
   exceptions::PyOSError, pyclass, pyfunction, pymodule, types::PyModule,
   wrap_pyfunction, PyResult, Python,
+};
+use std::{
+  fs::{remove_file, File},
+  io::Write,
+  path::Path,
 };
 mod blocking;
 use anyhow::{Error, Result};
@@ -147,9 +151,7 @@ fn validate_shaped_devices() -> PyResult<String> {
   for response in result.iter() {
     match response {
       BusResponse::Ack => return Ok("OK".to_string()),
-      BusResponse::ShapedDevicesValidation(error) => {
-        return Ok(error.clone())
-      }
+      BusResponse::ShapedDevicesValidation(error) => return Ok(error.clone()),
       _ => {}
     }
   }
@@ -185,12 +187,12 @@ fn is_libre_already_running() -> PyResult<bool> {
 #[pyfunction]
 fn create_lock_file() -> PyResult<()> {
   let pid = unsafe { getpid() };
-    let pid_format = format!("{pid}");
-    {
-      if let Ok(mut f) = File::create(LOCK_FILE) {
-        f.write_all(pid_format.as_bytes())?;
-      }
+  let pid_format = format!("{pid}");
+  {
+    if let Ok(mut f) = File::create(LOCK_FILE) {
+      f.write_all(pid_format.as_bytes())?;
     }
+  }
   Ok(())
 }
 

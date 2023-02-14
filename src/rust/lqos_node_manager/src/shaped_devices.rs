@@ -54,7 +54,9 @@ pub fn shaped_devices_search(
 
 #[get("/api/reload_required")]
 pub fn reload_required() -> NoCache<Json<bool>> {
-  NoCache::new(Json(RELOAD_REQUIRED.load(std::sync::atomic::Ordering::Relaxed)))
+  NoCache::new(Json(
+    RELOAD_REQUIRED.load(std::sync::atomic::Ordering::Relaxed),
+  ))
 }
 
 #[get("/api/reload_libreqos")]
@@ -63,8 +65,7 @@ pub async fn reload_libreqos(auth: AuthGuard) -> NoCache<Json<String>> {
     return NoCache::new(Json("Not authorized".to_string()));
   }
   // Send request to lqosd
-  let responses =
-    bus_request(vec![BusRequest::ReloadLibreQoS]).await.unwrap();
+  let responses = bus_request(vec![BusRequest::ReloadLibreQoS]).await.unwrap();
   let result = match &responses[0] {
     BusResponse::ReloadLibreQoS(msg) => msg.clone(),
     _ => "Unable to reload LibreQoS".to_string(),

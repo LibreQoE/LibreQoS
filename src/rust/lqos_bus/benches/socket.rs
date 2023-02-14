@@ -44,10 +44,8 @@ pub fn criterion_benchmark(c: &mut Criterion) {
   });
 
   // Enable the Tokio runtime to test round-trip
-  let tokio_rt = tokio::runtime::Builder::new_current_thread()
-    .enable_io()
-    .build()
-    .unwrap();
+  let tokio_rt =
+    tokio::runtime::Builder::new_current_thread().enable_io().build().unwrap();
 
   c.bench_function("bus_ping_round_trip", |b| {
     b.iter(|| {

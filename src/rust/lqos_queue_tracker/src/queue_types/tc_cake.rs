@@ -101,9 +101,7 @@ impl TcCake {
         }
         "bytes" => result.bytes = value.as_u64().unwrap_or(0),
         "packets" => result.packets = value.as_u64().unwrap_or(0) as u32,
-        "overlimits" => {
-          result.overlimits = value.as_u64().unwrap_or(0) as u32
-        }
+        "overlimits" => result.overlimits = value.as_u64().unwrap_or(0) as u32,
         "requeues" => result.requeues = value.as_u64().unwrap_or(0) as u32,
         "backlog" => result.backlog = value.as_u64().unwrap_or(0) as u32,
         "qlen" => result.qlen = value.as_u64().unwrap_or(0) as u32,
@@ -176,14 +174,10 @@ impl TcCakeOptions {
               result.ack_filter =
                 AckFilter::from_str(value.as_str().unwrap_or(""))
             }
-            "split_gso" => {
-              result.split_gso = value.as_bool().unwrap_or(false)
-            }
+            "split_gso" => result.split_gso = value.as_bool().unwrap_or(false),
             "rtt" => result.rtt = value.as_u64().unwrap_or(0),
             "raw" => result.raw = value.as_bool().unwrap_or(false),
-            "overhead" => {
-              result.overhead = value.as_u64().unwrap_or(0) as u16
-            }
+            "overhead" => result.overhead = value.as_u64().unwrap_or(0) as u16,
             "fwmark" => {
               result.fwmark = value.as_str().unwrap_or("").to_string()
             }

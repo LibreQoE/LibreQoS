@@ -7,8 +7,7 @@ pub fn bpf_sysctls() {
 }
 
 pub fn stop_irq_balance() {
-  let _ =
-    Command::new("/bin/systemctl").args(["stop", "irqbalance"]).output();
+  let _ = Command::new("/bin/systemctl").args(["stop", "irqbalance"]).output();
 }
 
 pub fn netdev_budget(usecs: u32, packets: u32) {

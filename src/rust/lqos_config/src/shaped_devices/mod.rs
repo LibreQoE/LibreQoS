@@ -33,8 +33,8 @@ impl ConfigShapedDevices {
   /// by acquiring the prefix from the `/etc/lqos.conf` configuration
   /// file.
   pub fn path() -> Result<PathBuf, ShapedDevicesError> {
-    let cfg = etc::EtcLqos::load()
-      .map_err(|_| ShapedDevicesError::ConfigLoadError)?;
+    let cfg =
+      etc::EtcLqos::load().map_err(|_| ShapedDevicesError::ConfigLoadError)?;
     let base_path = Path::new(&cfg.lqos_directory);
     Ok(base_path.join("ShapedDevices.csv"))
   }
@@ -52,8 +52,10 @@ impl ConfigShapedDevices {
   /// object containing the resulting data.
   pub fn load() -> Result<Self, ShapedDevicesError> {
     let final_path = ConfigShapedDevices::path()?;
-    let reader =
-      ReaderBuilder::new().comment(Some(b'#')).trim(csv::Trim::All).from_path(final_path);
+    let reader = ReaderBuilder::new()
+      .comment(Some(b'#'))
+      .trim(csv::Trim::All)
+      .from_path(final_path);
     if reader.is_err() {
       error!("Unable to read ShapedDevices.csv");
       return Err(ShapedDevicesError::OpenFail);
@@ -143,8 +145,8 @@ impl ConfigShapedDevices {
 
   /// Saves the current shaped devices list to `ShapedDevices.csv`
   pub fn write_csv(&self, filename: &str) -> Result<(), ShapedDevicesError> {
-    let cfg = etc::EtcLqos::load()
-      .map_err(|_| ShapedDevicesError::ConfigLoadError)?;
+    let cfg =
+      etc::EtcLqos::load().map_err(|_| ShapedDevicesError::ConfigLoadError)?;
     let base_path = Path::new(&cfg.lqos_directory);
     let path = base_path.join(filename);
     let csv = self.to_csv_string()?;

@@ -120,7 +120,9 @@ impl ThroughputTracker {
     self.packets_per_second = (0, 0);
     self.shaped_bytes_per_second = (0, 0);
     self
-      .raw_data.values().map(|v| {
+      .raw_data
+      .values()
+      .map(|v| {
         (
           v.bytes.0.saturating_sub(v.prev_bytes.0),
           v.bytes.1.saturating_sub(v.prev_bytes.1),
@@ -129,18 +131,25 @@ impl ThroughputTracker {
           v.tc_handle.as_u32() > 0,
         )
       })
-      .for_each(
-        |(bytes_down, bytes_up, packets_down, packets_up, shaped)| {
-          self.bytes_per_second.0 = self.bytes_per_second.0.checked_add(bytes_down).unwrap_or(0);
-          self.bytes_per_second.1 = self.bytes_per_second.1.checked_add(bytes_up).unwrap_or(0);
-          self.packets_per_second.0 = self.packets_per_second.0.checked_add(packets_down).unwrap_or(0);
-          self.packets_per_second.1 = self.packets_per_second.1.checked_add(packets_up).unwrap_or(0);
-          if shaped {
-            self.shaped_bytes_per_second.0 = self.shaped_bytes_per_second.0.checked_add(bytes_down).unwrap_or(0);
-            self.shaped_bytes_per_second.1 = self.shaped_bytes_per_second.1.checked_add(bytes_up).unwrap_or(0);
-          }
-        },
-      );
+      .for_each(|(bytes_down, bytes_up, packets_down, packets_up, shaped)| {
+        self.bytes_per_second.0 =
+          self.bytes_per_second.0.checked_add(bytes_down).unwrap_or(0);
+        self.bytes_per_second.1 =
+          self.bytes_per_second.1.checked_add(bytes_up).unwrap_or(0);
+        self.packets_per_second.0 =
+          self.packets_per_second.0.checked_add(packets_down).unwrap_or(0);
+        self.packets_per_second.1 =
+          self.packets_per_second.1.checked_add(packets_up).unwrap_or(0);
+        if shaped {
+          self.shaped_bytes_per_second.0 = self
+            .shaped_bytes_per_second
+            .0
+            .checked_add(bytes_down)
+            .unwrap_or(0);
+          self.shaped_bytes_per_second.1 =
+            self.shaped_bytes_per_second.1.checked_add(bytes_up).unwrap_or(0);
+        }
+      });
   }
 
   pub(crate) fn next_cycle(&mut self) {

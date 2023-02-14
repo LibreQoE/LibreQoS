@@ -120,12 +120,9 @@ mod test {
 
   #[test]
   fn parse_ipv6_subnet() {
-    let map = IpToMap::new(
-      "dead:beef::/64",
-      TcHandle::from_string("1:2").unwrap(),
-      1,
-    )
-    .unwrap();
+    let map =
+      IpToMap::new("dead:beef::/64", TcHandle::from_string("1:2").unwrap(), 1)
+        .unwrap();
     let rust_ip: IpAddr = "dead:beef::".parse().unwrap();
     assert_eq!(rust_ip, map.subnet);
     assert_eq!(map.prefix, 64);

@@ -68,9 +68,7 @@ pub async fn shaped_devices_add_page<'a>(
 
 #[get("/vendor/bootstrap.min.css")]
 pub async fn bootsrap_css<'a>() -> LongCache<Option<NamedFile>> {
-  LongCache::new(
-    NamedFile::open("static/vendor/bootstrap.min.css").await.ok(),
-  )
+  LongCache::new(NamedFile::open("static/vendor/bootstrap.min.css").await.ok())
 }
 
 // Note that NoCache can be replaced with a cache option

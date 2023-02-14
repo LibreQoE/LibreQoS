@@ -28,7 +28,10 @@ fn working_directory() -> Result<PathBuf, ProgramControlError> {
 pub fn load_libreqos() -> Result<String, ProgramControlError> {
   let path = path_to_libreqos()?;
   if !path.exists() {
-    error!("Unable to locate LibreQoS.py. ({}) Check your configuration directory.", path.display());
+    error!(
+      "Unable to locate LibreQoS.py. ({}) Check your configuration directory.",
+      path.display()
+    );
     return Err(ProgramControlError::LibreQosPyNotFound);
   }
   if !Path::new(PYTHON_PATH).exists() {

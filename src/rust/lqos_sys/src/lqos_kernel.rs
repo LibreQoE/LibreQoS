@@ -48,8 +48,7 @@ pub fn interface_name_to_index(interface_name: &str) -> Result<u32> {
 pub fn unload_xdp_from_interface(interface_name: &str) -> Result<()> {
   info!("Unloading XDP/TC");
   check_root()?;
-  let interface_index =
-    interface_name_to_index(interface_name)?.try_into()?;
+  let interface_index = interface_name_to_index(interface_name)?.try_into()?;
   unsafe {
     let err = bpf_xdp_attach(interface_index, -1, 1 << 0, std::ptr::null());
     if err != 0 {

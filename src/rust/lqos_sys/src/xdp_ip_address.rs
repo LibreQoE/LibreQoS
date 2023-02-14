@@ -57,9 +57,7 @@ impl XdpIpAddress {
       && self.0[11] == 0xFF
     {
       // It's an IPv4 Address
-      IpAddr::V4(Ipv4Addr::new(
-        self.0[12], self.0[13], self.0[14], self.0[15],
-      ))
+      IpAddr::V4(Ipv4Addr::new(self.0[12], self.0[13], self.0[14], self.0[15]))
     } else {
       // It's an IPv6 address
       IpAddr::V6(Ipv6Addr::new(

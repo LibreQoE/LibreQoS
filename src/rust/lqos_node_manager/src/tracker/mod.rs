@@ -1,8 +1,9 @@
 mod cache;
 mod cache_manager;
 use self::cache::{
-  CPU_USAGE, CURRENT_THROUGHPUT, HOST_COUNTS, RAM_USED, TOTAL_RAM, RTT_HISTOGRAM,
-  THROUGHPUT_BUFFER, TOP_10_DOWNLOADERS, WORST_10_RTT, NUM_CPUS,
+  CPU_USAGE, CURRENT_THROUGHPUT, HOST_COUNTS, NUM_CPUS, RAM_USED,
+  RTT_HISTOGRAM, THROUGHPUT_BUFFER, TOP_10_DOWNLOADERS, TOTAL_RAM,
+  WORST_10_RTT,
 };
 use crate::{auth_guard::AuthGuard, tracker::cache::ThroughputPerSecond};
 pub use cache::{SHAPED_DEVICES, UNKNOWN_DEVICES};
@@ -44,10 +45,8 @@ impl From<&IpStats> for IpStatsWithPlan {
       };
       let cfg = SHAPED_DEVICES.read();
       if let Some((_, id)) = cfg.trie.longest_match(lookup) {
-        result.ip_address = format!(
-          "{} ({})",
-          cfg.devices[*id].circuit_name, result.ip_address
-        );
+        result.ip_address =
+          format!("{} ({})", cfg.devices[*id].circuit_name, result.ip_address);
         result.plan.0 = cfg.devices[*id].download_max_mbps;
         result.plan.1 = cfg.devices[*id].upload_max_mbps;
         result.circuit_id = cfg.devices[*id].circuit_id.clone();
@@ -136,8 +135,8 @@ pub fn busy_quantile(_auth: AuthGuard) -> Json<Vec<(u32, u32)>> {
     let (down, up) = (down * 8, up * 8);
     //println!("{down_capacity}, {up_capacity}, {down}, {up}");
     let (down, up) = (
-      if down_capacity > 0.0 { down as f64 / down_capacity } else { 0.0 }, 
-      if up_capacity > 0.0 { up as f64 / up_capacity } else { 0.0},
+      if down_capacity > 0.0 { down as f64 / down_capacity } else { 0.0 },
+      if up_capacity > 0.0 { up as f64 / up_capacity } else { 0.0 },
     );
     let (down, up) = ((down * 10.0) as usize, (up * 10.0) as usize);
     result[usize::min(9, down)].0 += 1;

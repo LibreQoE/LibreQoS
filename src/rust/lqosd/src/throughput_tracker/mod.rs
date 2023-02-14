@@ -272,7 +272,6 @@ pub fn host_counts() -> BusResponse {
 type FullList = (XdpIpAddress, (u64, u64), (u64, u64), f32, TcHandle, u64);
 
 pub fn all_unknown_ips() -> BusResponse {
-
   let boot_time = time_since_boot();
   if boot_time.is_err() {
     warn!("The Linux system clock isn't available to provide time since boot, yet.");
@@ -281,7 +280,8 @@ pub fn all_unknown_ips() -> BusResponse {
   }
   let boot_time = boot_time.unwrap();
   let time_since_boot = Duration::from(boot_time);
-  let five_minutes_ago = time_since_boot.saturating_sub(Duration::from_secs(300));
+  let five_minutes_ago =
+    time_since_boot.saturating_sub(Duration::from_secs(300));
   let five_minutes_ago_nanoseconds = five_minutes_ago.as_nanos();
 
   let mut full_list: Vec<FullList> = {

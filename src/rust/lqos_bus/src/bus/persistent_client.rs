@@ -70,10 +70,8 @@ impl BusClient {
 
     // Send with a timeout. If the timeout fails, then the stream went wrong
     if self.stream.is_some() {
-      let timer = timeout(
-        self.timeout,
-        Self::send(self.stream.as_mut().unwrap(), &msg),
-      );
+      let timer =
+        timeout(self.timeout, Self::send(self.stream.as_mut().unwrap(), &msg));
       let failed =
         if let Ok(inner) = timer.await { inner.is_err() } else { false };
       if failed {

@@ -51,7 +51,9 @@ impl UnixSocketServer {
   fn path_permissions() -> Result<(), UnixSocketServerError> {
     let unix_path = CString::new(BUS_SOCKET_DIRECTORY);
     if unix_path.is_err() {
-      error!("Unable to create C-compatible path string. This should never happen.");
+      error!(
+        "Unable to create C-compatible path string. This should never happen."
+      );
       return Err(UnixSocketServerError::CString);
     }
     let unix_path = unix_path.unwrap();

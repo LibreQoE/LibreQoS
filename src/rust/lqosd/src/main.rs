@@ -8,9 +8,7 @@ mod tuning;
 mod validation;
 use crate::{
   file_lock::FileLock,
-  ip_mapping::{
-    clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow,
-  },
+  ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow},
 };
 use anyhow::Result;
 use log::{info, warn};
@@ -78,9 +76,9 @@ async fn main() -> Result<()> {
           match sig {
             SIGINT => warn!("Terminating on SIGINT"),
             SIGTERM => warn!("Terminating on SIGTERM"),
-            _ => warn!(
-              "This should never happen - terminating on unknown signal"
-            ),
+            _ => {
+              warn!("This should never happen - terminating on unknown signal")
+            }
           }
           std::mem::drop(kernels);
           UnixSocketServer::signal_cleanup();

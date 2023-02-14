@@ -59,11 +59,16 @@ pub async fn update_tracking() {
               .iter()
               .enumerate()
               .map(|(i, cpu)| (i, cpu.cpu_usage() as u32)) // Always rounds down
-              .for_each(|(i, cpu)| CPU_USAGE[i].store(cpu, std::sync::atomic::Ordering::Relaxed));
+              .for_each(|(i, cpu)| {
+                CPU_USAGE[i].store(cpu, std::sync::atomic::Ordering::Relaxed)
+              });
 
-            NUM_CPUS.store(sys.cpus().len(), std::sync::atomic::Ordering::Relaxed);
-            RAM_USED.store(sys.used_memory(), std::sync::atomic::Ordering::Relaxed);
-            TOTAL_RAM.store(sys.total_memory(), std::sync::atomic::Ordering::Relaxed);
+            NUM_CPUS
+              .store(sys.cpus().len(), std::sync::atomic::Ordering::Relaxed);
+            RAM_USED
+              .store(sys.used_memory(), std::sync::atomic::Ordering::Relaxed);
+            TOTAL_RAM
+              .store(sys.total_memory(), std::sync::atomic::Ordering::Relaxed);
             let error = get_data_from_server().await; // Ignoring errors to keep running
             if let Err(error) = error {
               error!("Error in usage update loop: {:?}", error);

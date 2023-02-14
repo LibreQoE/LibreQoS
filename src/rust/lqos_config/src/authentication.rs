@@ -113,9 +113,7 @@ impl WebUsers {
         if let Ok(users) = parse_result {
           Ok(users)
         } else {
-          error!(
-            "Unable to deserialize lqusers.toml. Error in next message."
-          );
+          error!("Unable to deserialize lqusers.toml. Error in next message.");
           error!("{:?}", parse_result);
           Err(AuthenticationError::UnableToParse)
         }

@@ -122,11 +122,7 @@ impl QueueNode {
             grab_u64!(result.upload_bandwidth_mbps, key.as_str(), value);
           }
           "downloadBandwidthMbpsMin" | "minDownload" => {
-            grab_u64!(
-              result.download_bandwidth_mbps_min,
-              key.as_str(),
-              value
-            );
+            grab_u64!(result.download_bandwidth_mbps_min, key.as_str(), value);
           }
           "uploadBandwidthMbpsMin" | "minUpload" => {
             grab_u64!(result.upload_bandwidth_mbps_min, key.as_str(), value);
