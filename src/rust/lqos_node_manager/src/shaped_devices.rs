@@ -1,14 +1,15 @@
+use std::sync::atomic::AtomicBool;
+
 use crate::auth_guard::AuthGuard;
 use crate::cache_control::NoCache;
 use crate::tracker::SHAPED_DEVICES;
 use lazy_static::*;
 use lqos_bus::{bus_request, BusRequest, BusResponse};
 use lqos_config::ShapedDevice;
-use parking_lot::RwLock;
 use rocket::serde::json::Json;
 
 lazy_static! {
-  static ref RELOAD_REQUIRED: RwLock<bool> = RwLock::new(false);
+  static ref RELOAD_REQUIRED: AtomicBool = AtomicBool::new(false);
 }
 
 #[get("/api/all_shaped_devices")]
@@ -56,7 +57,7 @@ pub fn shaped_devices_search(
 
 #[get("/api/reload_required")]
 pub fn reload_required() -> NoCache<Json<bool>> {
-  NoCache::new(Json(*RELOAD_REQUIRED.read()))
+  NoCache::new(Json(RELOAD_REQUIRED.load(std::sync::atomic::Ordering::Relaxed)))
 }
 
 #[get("/api/reload_libreqos")]
@@ -72,6 +73,6 @@ pub async fn reload_libreqos(auth: AuthGuard) -> NoCache<Json<String>> {
     _ => "Unable to reload LibreQoS".to_string(),
   };
 
-  *RELOAD_REQUIRED.write() = false;
+  RELOAD_REQUIRED.store(false, std::sync::atomic::Ordering::Relaxed);
   NoCache::new(Json(result))
 }
