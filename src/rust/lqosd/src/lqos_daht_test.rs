@@ -1,24 +1,30 @@
-use lazy_static::*;
 use lqos_bus::BusResponse;
-use parking_lot::Mutex;
-use std::process::Command;
+use std::{process::Command, sync::atomic::AtomicBool};
 use tokio::task::spawn_blocking;
 
-lazy_static! {
-  static ref TEST_BUSY: Mutex<bool> = Mutex::new(false);
-}
+static TEST_BUSY: AtomicBool = AtomicBool::new(false);
 
 pub fn lqos_daht_test() -> BusResponse {
   spawn_blocking(|| {
-    if let Some(_lock) = TEST_BUSY.try_lock() {
-      Command::new("/bin/ssh")
+    if TEST_BUSY.compare_exchange(
+      false,
+      true,
+      std::sync::atomic::Ordering::Relaxed,
+      std::sync::atomic::Ordering::Relaxed,
+    ) == Ok(true)
+    {
+      let result = Command::new("/bin/ssh")
         .args([
           "-t",
           "lqtest@lqos.taht.net",
           "\"/home/lqtest/bin/v6vsv4.sh\"",
         ])
-        .output()
-        .unwrap();
+        .output();
+      if result.is_err() {
+        log::warn!("Unable to call dtaht test: {:?}", result);
+      }
+
+      TEST_BUSY.store(false, std::sync::atomic::Ordering::Relaxed);
     }
   });
   BusResponse::Ack
