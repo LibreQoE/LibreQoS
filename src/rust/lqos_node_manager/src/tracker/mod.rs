@@ -1,7 +1,7 @@
 mod cache;
 mod cache_manager;
 use self::cache::{
-  CPU_USAGE, CURRENT_THROUGHPUT, HOST_COUNTS, MEMORY_USAGE, RTT_HISTOGRAM,
+  CPU_USAGE, CURRENT_THROUGHPUT, HOST_COUNTS, RAM_USED, TOTAL_RAM, RTT_HISTOGRAM,
   THROUGHPUT_BUFFER, TOP_10_DOWNLOADERS, WORST_10_RTT,
 };
 use crate::{auth_guard::AuthGuard, tracker::cache::ThroughputPerSecond};
@@ -78,8 +78,9 @@ pub fn cpu_usage(_auth: AuthGuard) -> Json<Vec<f32>> {
 
 #[get("/api/ram")]
 pub fn ram_usage(_auth: AuthGuard) -> Json<Vec<u64>> {
-  let ram_usage = MEMORY_USAGE.read().clone();
-  Json(ram_usage)
+  let ram_usage = RAM_USED.load(std::sync::atomic::Ordering::Relaxed);
+  let total_ram = TOTAL_RAM.load(std::sync::atomic::Ordering::Relaxed);
+  Json(vec![ram_usage, total_ram])
 }
 
 #[get("/api/top_10_downloaders")]

@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicU64;
+
 use lazy_static::*;
 use parking_lot::RwLock;
 
@@ -6,7 +8,5 @@ lazy_static! {
     pub static ref CPU_USAGE : RwLock<Vec<f32>> = RwLock::new(Vec::with_capacity(128));
 }
 
-lazy_static! {
-    /// Global storage of current RAM usage
-    pub static ref MEMORY_USAGE : RwLock<Vec<u64>> = RwLock::new(vec![0, 0]);
-}
+pub static RAM_USED: AtomicU64 = AtomicU64::new(0);
+pub static TOTAL_RAM: AtomicU64 = AtomicU64::new(0);

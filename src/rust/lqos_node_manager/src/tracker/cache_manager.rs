@@ -59,11 +59,8 @@ pub async fn update_tracking() {
               .map(|cpu| cpu.cpu_usage())
               .collect::<Vec<f32>>();
             *CPU_USAGE.write() = cpu_usage;
-            {
-              let mut mem_use = MEMORY_USAGE.write();
-              mem_use[0] = sys.used_memory();
-              mem_use[1] = sys.total_memory();
-            }
+            RAM_USED.store(sys.used_memory(), std::sync::atomic::Ordering::Relaxed);
+            TOTAL_RAM.store(sys.total_memory(), std::sync::atomic::Ordering::Relaxed);
             let error = get_data_from_server().await; // Ignoring errors to keep running
             if let Err(error) = error {
               error!("Error in usage update loop: {:?}", error);
