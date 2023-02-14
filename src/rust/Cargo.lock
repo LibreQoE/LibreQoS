@@ -1359,6 +1359,7 @@ dependencies = [
  "lqos_config",
  "lqos_utils",
  "nix",
+ "once_cell",
  "parking_lot",
  "rocket",
  "rocket_async_compression",
