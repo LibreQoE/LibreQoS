@@ -1332,6 +1332,10 @@ if __name__ == '__main__':
 	elif args.clearrules:
 		tearDown(interfaceA, interfaceB)
 	elif args.updateonly:
+		# Single-interface updates don't work at all right now.
+		if OnAStick:
+			print("--updateonly is not supported for single-interface configurations")
+			os.exit(-1)
 		refreshShapersUpdateOnly()
 	else:
 		# Refresh and/or set up queues
