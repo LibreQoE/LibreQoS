@@ -1,5 +1,6 @@
 #!/usr/bin/python3
-
+from pythonCheck import checkPythonVersion
+checkPythonVersion()
 import csv
 import io
 import ipaddress

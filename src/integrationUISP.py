@@ -1,3 +1,5 @@
+from pythonCheck import checkPythonVersion
+checkPythonVersion()
 import requests
 import os
 import csv

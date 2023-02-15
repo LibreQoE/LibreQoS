@@ -1,3 +1,5 @@
+from pythonCheck import checkPythonVersion
+checkPythonVersion()
 import requests
 from ispConfig import excludeSites, findIPv6usingMikrotik, bandwidthOverheadFactor, exceptionCPEs, splynx_api_key, splynx_api_secret, splynx_api_url
 from integrationCommon import isIpv4Permitted
