@@ -93,7 +93,7 @@ fn parse_add_ip(
   //}
   if !classid.contains(':') {
     return Err(Error::msg(
-      "Class id must be in the format (major):(minor), e.g. 1:12",
+      format!("Class id must be in the format (major):(minor), e.g. 1:12. Provided string: {classid}"),
     ));
   }
   Ok(BusRequest::MapIpToFlow {
