@@ -85,16 +85,14 @@ fn draw_pps<'a>(
   bits_per_second: (u64, u64),
 ) -> Spans<'a> {
   Spans::from(vec![
-    Span::styled("🠗 ", Style::default().fg(Color::Yellow)),
+    Span::from("DOWN: "),
     Span::from(scale_bits(bits_per_second.0)),
     Span::from(" "),
-    Span::styled(" 🠕 ", Style::default().fg(Color::Yellow)),
     Span::from(scale_bits(bits_per_second.1)),
     Span::from(" "),
-    Span::styled("🠗 ", Style::default().fg(Color::Yellow)),
+    Span::from("UP: "),
     Span::from(scale_packets(packets_per_second.0)),
     Span::from(" "),
-    Span::styled(" 🠕 ", Style::default().fg(Color::Yellow)),
     Span::from(scale_packets(packets_per_second.1)),
   ])
 }
@@ -116,18 +114,18 @@ fn draw_top_pane<'a>(
       };
       Row::new(vec![
         Cell::from(stats.ip_address.clone()),
-        Cell::from(format!("🠗 {:>13}", scale_bits(stats.bits_per_second.0))),
-        Cell::from(format!("🠕 {:>13}", scale_bits(stats.bits_per_second.1))),
+        Cell::from(format!("{:<13}", scale_bits(stats.bits_per_second.0))),
+        Cell::from(format!("{:<13}", scale_bits(stats.bits_per_second.1))),
         Cell::from(format!(
-          "🠗 {:>13}",
+          "{:<13}",
           scale_packets(stats.packets_per_second.0)
         )),
         Cell::from(format!(
-          "🠕 {:>13}",
+          "{:<13}",
           scale_packets(stats.packets_per_second.1)
         )),
         Cell::from(format!(
-          "{:>10} ms",
+          "{:<10} ms",
           format!("{:.2}", stats.median_tcp_rtt)
         )),
         Cell::from(format!("{:>7}", stats.tc_handle.to_string())),
