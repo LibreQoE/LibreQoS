@@ -132,7 +132,7 @@ fn parse_add_ip(
 fn add_ip_mapping(
   ip: String,
   classid: String,
-  cpu: String,
+  cpu: String, // In HEX
   upload: bool,
 ) -> PyResult<()> {
   let request = parse_add_ip(&ip, &classid, &cpu, upload);

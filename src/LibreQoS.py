@@ -25,7 +25,7 @@ from ispConfig import sqm, upstreamBandwidthCapacityDownloadMbps, upstreamBandwi
 	OnAStick
 
 from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping, validate_shaped_devices, \
-	is_libre_already_running, create_lock_file, free_lock_file
+	is_libre_already_running, create_lock_file, free_lock_file, add_ip_mapping
 
 # Automatically account for TCP overhead of plans. For example a 100Mbps plan needs to be set to 109Mbps for the user to ever see that result on a speed test
 # Does not apply to nodes of any sort, just endpoint devices
@@ -977,13 +977,16 @@ def refreshShapersUpdateOnly():
 					delete_ip_mapping(str(ipv6))
 		
 		
-		def addDeviceIPsToFilter(circuit, cpuNumHex):
-			# TODO: Possible issue, check that the lqosd system expects the CPU in hex
+		def addDeviceIPsToFilter(circuit, cpuNumHex, classId, upload = False):
+			# `lqosd` expects the CPU and ClassIDs to be in Hex.
+			# `ClassId` wasn't present in the circuit data, so it's now a required parameter.
 			for device in circuit['devices']:
 				for ipv4 in device['ipv4s']:
-					shell('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv4) + ' --cpu ' + cpuNumHex + ' --classid ' + circuit['classid'])
+					#shell('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv4) + ' --cpu ' + cpuNumHex + ' --classid ' + circuit['classid'])
+					add_ip_mapping(str(ipv4), classId, str(cpuNumHex), upload)
 				for ipv6 in device['ipv6s']:
-					shell('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv6) + ' --cpu ' + cpuNumHex + ' --classid ' + circuit['classid'])
+					#shell('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv6) + ' --cpu ' + cpuNumHex + ' --classid ' + circuit['classid'])
+					add_ip_mapping(str(ipv6), classId, str(cpuNumHex), upload)
 		
 		
 		def getAllParentNodes(data, allParentNodes):
@@ -1157,7 +1160,7 @@ def refreshShapersUpdateOnly():
 						parentNodeClassID = classIDOfParentNodes[parentNodeOfCircuitID[circuitID]]
 						addCircuitHTBandQdisc(circuit, parentNodeClassID)
 						cpuNumHex = cpuNumOfParentNodeHex[parentNodeActual]
-						addDeviceIPsToFilter(newlyUpdatedSubscriberCircuitsByID[circuitID], cpuNumHex)
+						addDeviceIPsToFilter(newlyUpdatedSubscriberCircuitsByID[circuitID], cpuNumHex, classId)
 				if devicesChanged:
 					parentNodeActual = circuit['ParentNode']
 					if parentNodeActual == 'none':
@@ -1165,7 +1168,7 @@ def refreshShapersUpdateOnly():
 						parentNodeActual = parentNodeOfCircuitID[circuitID]
 					cpuNumHex = cpuNumOfParentNodeHex[parentNodeActual]
 					parentNodeClassID = classIDOfParentNodes[parentNodeActual]
-					addDeviceIPsToFilter(newlyUpdatedSubscriberCircuitsByID[circuitID], cpuNumHex)
+					addDeviceIPsToFilter(newlyUpdatedSubscriberCircuitsByID[circuitID], cpuNumHex, parentNodeClassID)
 				
 				newlyUpdatedSubscriberCircuitsByID[circuitID]['classid'] = lastLoadedSubscriberCircuitsByID[circuitID]['classid']
 				if (bandwidthChanged) or (devicesChanged):
