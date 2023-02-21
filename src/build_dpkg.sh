@@ -4,9 +4,13 @@
 # Copyright (c) 2022, Herbert Wolverson and LibreQoE
 # This is all GPL2.
 
+BUILD_DATE=`date +%Y%m%d`
 PACKAGE=libreqos
-VERSION=1.4
-DPKG_DIR=dist/$PACKAGE_$VERSION-1_amd64
+VERSION=1.4.$BUILD_DATE
+PKGVERSION=$PACKAGE
+PKGVERSION+="_"
+PKGVERSION+=$VERSION
+DPKG_DIR=dist/$PKGVERSION-1_amd64
 APT_DEPENDENCIES="python3-pip, clang, gcc, gcc-multilib, llvm, libelf-dev, git, nano, graphviz, curl, screen, llvm, pkg-config, linux-tools-common, libbpf-dev"
 DEBIAN_DIR=$DPKG_DIR/DEBIAN
 LQOS_DIR=$DPKG_DIR/opt/libreqos/src
@@ -18,6 +22,9 @@ RUSTPROGS="lqosd lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqos_node_manager lqu
 ####################################################
 # Clean any previous dist build
 rm -rf dist
+
+####################################################
+# Bump the build number
 
 ####################################################
 # The Debian Packaging Bit
