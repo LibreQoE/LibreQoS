@@ -1,0 +1,8 @@
+[package]
+name = "lqos_setup"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+colored = "2"
+default-net = "0" # For obtaining an easy-to-use NIC list

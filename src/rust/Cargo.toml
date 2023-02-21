@@ -22,4 +22,5 @@ members = [
     "lqos_python", # Python bindings for using the Rust bus directly
     "lqusers", # CLI control for managing the web user list
     "lqos_utils", # A collection of macros and helpers we find useful
+    "lqos_setup", # A quick CLI setup for first-time users
 ]

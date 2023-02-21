@@ -52,6 +52,7 @@ src/lastRun.txt
 src/liblqos_python.so
 src/webusers.toml
 src/lqusers.toml
+src/dist
 
 # Ignore Rust build artifacts
 src/rust/target
