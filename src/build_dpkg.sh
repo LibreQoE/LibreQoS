@@ -115,6 +115,4 @@ cp -R rust/lqos_node_manager/static/* $LQOS_DIR/bin/static
 
 ####################################################
 # Assemble the package
-pushd dist / dev/null
 dpkg-deb --root-owner-group --build $DPKG_DIR
-popd > /dev/null
