@@ -152,9 +152,9 @@ pub fn write_isp_config_py(
       } else if line.contains("interfaceB") {
           new_config_file += &format!("interfaceB = \"{internet}\"\n");
       } else if line.contains("generatedPNDownloadMbps") {
-          new_config_file += &format!("generatedPNDownloadMbps = \"{download}\"\n");
+          new_config_file += &format!("generatedPNDownloadMbps = {download}\n");
       } else if line.contains("generatedPNUploadMbps") {
-        new_config_file += &format!("generatedPNUploadMbps = \"{upload}\"\n");
+        new_config_file += &format!("generatedPNUploadMbps = {upload}\n");
       } else {
           new_config_file += line;
           new_config_file += "\n";

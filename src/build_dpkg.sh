@@ -11,7 +11,7 @@ PKGVERSION=$PACKAGE
 PKGVERSION+="_"
 PKGVERSION+=$VERSION
 DPKG_DIR=dist/$PKGVERSION-1_amd64
-APT_DEPENDENCIES="python3-pip, clang, gcc, gcc-multilib, llvm, libelf-dev, git, nano, graphviz, curl, screen, llvm, pkg-config, linux-tools-common, libbpf-dev"
+APT_DEPENDENCIES="python3-pip, nano, graphviz, curl"
 DEBIAN_DIR=$DPKG_DIR/DEBIAN
 LQOS_DIR=$DPKG_DIR/opt/libreqos/src
 ETC_DIR=$DPKG_DIR/etc
@@ -73,6 +73,15 @@ echo "/bin/systemctl start lqos_node_manager" >> postinst
 echo "/bin/systemctl start lqos_scheduler" >> postinst
 echo "popd" >> postinst
 chmod a+x postinst
+
+# Uninstall Script
+touch postrm
+echo "#!/bin/bash" >> postrm
+echo "/bin/systemctl disable lqosd lqos_node_manager lqos_scheduler" >> postrm
+echo "/bin/systemctl stop lqosd" >> postrm
+echo "/bin/systemctl stop lqos_node_manager" >> postrm
+echo "/bin/systemctl stop lqos_scheduler" >> postrm
+chmod a+x postrm
 popd > /dev/null
 
 # Create the cleanup file
