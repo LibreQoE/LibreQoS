@@ -15,6 +15,7 @@ APT_DEPENDENCIES="python3-pip, nano, graphviz, curl"
 DEBIAN_DIR=$DPKG_DIR/DEBIAN
 LQOS_DIR=$DPKG_DIR/opt/libreqos/src
 ETC_DIR=$DPKG_DIR/etc
+MOTD_DIR=$DPKG_DIR/etc/update-motd.d
 LQOS_FILES="graphInfluxDB.py influxDBdashboardTemplate.json integrationCommon.py integrationRestHttp.py integrationSplynx.py integrationUISP.py ispConfig.example.py LibreQoS.py lqos.example lqTools.py mikrotikFindIPv6.py network.example.json pythonCheck.py README.md scheduler.py ShapedDevices.example.csv"
 LQOS_BIN_FILES="lqos_scheduler.service.example lqosd.service.example lqos_node_manager.service.example"
 RUSTPROGS="lqosd lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqos_node_manager lqusers lqos_setup"
@@ -36,6 +37,7 @@ mkdir -p $DEBIAN_DIR
 mkdir -p $LQOS_DIR
 mkdir -p $LQOS_DIR/bin/static
 mkdir -p $ETC_DIR
+mkdir -p $MOTD_DIR
 
 # Create the Debian control file
 pushd $DEBIAN_DIR > /dev/null
@@ -121,6 +123,18 @@ done
 # - The webserver skeleton files
 cp rust/lqos_node_manager/Rocket.toml $LQOS_DIR/bin
 cp -R rust/lqos_node_manager/static/* $LQOS_DIR/bin/static
+
+####################################################
+# Add Message of the Day
+pushd $MOTD_DIR > /dev/null
+echo "#!/bin/bash" > 99-libreqos
+echo "MY_IP=\'hostname -I | cut -d' ' -f1\'" >> 99-libreqos
+echo "echo \"\"" >> 99-libreqos
+echo "echo \"LibreQoS Traffic Shaper is installed on this machine.\"" >> 99-libreqos
+echo "echo \"Point a browser at http://\$MY_IP:9123/ to manage it.\"" >> 99-libreqos
+echo "echo \"\"" >> 99-libreqos
+chmod a+x 99-libreqos
+popd
 
 ####################################################
 # Assemble the package
