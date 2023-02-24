@@ -74,7 +74,6 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
       .iter()
       .filter(|(ip, _)| !ip.as_ip().is_loopback())
       .filter(|(_, d)| retire_check(tp.cycle, d.most_recent_cycle))
-      .filter(|(_, te)| te.median_latency() > 0.0)
       .map(|(ip, te)| {
         (
           *ip,
