@@ -24,7 +24,7 @@ impl ThroughputEntry {
       .filter(|n| **n != 0)
       .map(|n| *n as f32 / 100.0)
       .collect();
-    if shifted.is_empty() {
+    if shifted.len() < 5 {
       return 0.0;
     }
     shifted.sort_by(|a, b| a.partial_cmp(b).unwrap());
