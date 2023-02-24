@@ -1160,7 +1160,7 @@ def refreshShapersUpdateOnly():
 						parentNodeClassID = classIDOfParentNodes[parentNodeOfCircuitID[circuitID]]
 						addCircuitHTBandQdisc(circuit, parentNodeClassID)
 						cpuNumHex = cpuNumOfParentNodeHex[parentNodeActual]
-						addDeviceIPsToFilter(newlyUpdatedSubscriberCircuitsByID[circuitID], cpuNumHex, classId)
+						addDeviceIPsToFilter(newlyUpdatedSubscriberCircuitsByID[circuitID], cpuNumHex, classID)
 				if devicesChanged:
 					parentNodeActual = circuit['ParentNode']
 					if parentNodeActual == 'none':
