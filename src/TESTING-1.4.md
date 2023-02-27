@@ -142,7 +142,7 @@ sudo systemctl stop lqos_scheduler lqos_node_manager lqosd
 ```
 2. Change to your `LibreQoS` directory (e.g. `cd /opt/LibreQoS`)
 3. Update from Git: `git pull`
-4. Recompile: `./build-rust.sh`
+4. Recompile: `./build_rust.sh`
 5. 
 ```
 cd /src/rust
@@ -161,7 +161,7 @@ sudo systemctl start lqosd lqos_node_manager lqos_scheduler
 4. Detach from `screen` with `Ctrl-A, D`.
 5. Change to your `LibreQoS` directory (e.g. `cd /opt/libreqos`)
 6. Update from Git: `git pull`
-7. Recompile: `./build-rust.sh`
+7. Recompile: `./build_rust.sh`
 8. Run: `rust/remove_pinned_maps.sh`
 9. Resume screen with `screen -r`.
 10. Go to console 0 (`Ctrl-A, 0`) and run `sudo ./lqosd` to restart the bridge/manager.
