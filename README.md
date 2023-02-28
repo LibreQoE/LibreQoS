@@ -12,7 +12,7 @@ Learn more about [Equinix Metal here](https://deploy.equinix.com/metal/).
 
 ## Support LibreQoS
 
-Please support the continued development of LibreQoS by visiting our [GitHub Sponsors page](https://github.com/sponsors/LibreQoE).
+Please support the continued development of LibreQoS by sponsoring us via [GitHub Sponsors](https://github.com/sponsors/LibreQoE) or [Patreon](https://www.patreon.com/user?u=3374807).
 
 <img alt="LibreQoS" src="https://user-images.githubusercontent.com/22501920/216796542-e3a2d4c3-a735-4cd1-adf8-5dae160fd7e9.png"></a>
 
