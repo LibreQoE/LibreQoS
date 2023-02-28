@@ -14,6 +14,11 @@ Learn more about [Equinix Metal here](https://deploy.equinix.com/metal/).
 
 Please support the continued development of LibreQoS by sponsoring us via [GitHub Sponsors](https://github.com/sponsors/LibreQoE) or [Patreon](https://patreon.com/libreqos).
 
+## Matrix Chat
+
+Our Matrix chat channel is available at [https://matrix.to/#/#libreqos:matrix.org](https://matrix.to/#/#libreqos:matrix.org).
+
+
 <img alt="LibreQoS" src="https://user-images.githubusercontent.com/22501920/216796542-e3a2d4c3-a735-4cd1-adf8-5dae160fd7e9.png"></a>
 
 ## Features
