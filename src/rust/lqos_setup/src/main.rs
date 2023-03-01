@@ -1,11 +1,13 @@
-use std::{path::Path, fs, process::Command};
 use colored::Colorize;
 use default_net::{get_interfaces, interface::InterfaceType, Interface};
+use std::{fs, path::Path, process::Command};
 
 fn get_available_interfaces() -> Vec<Interface> {
   get_interfaces()
     .iter()
-    .filter(|eth| eth.if_type == InterfaceType::Ethernet && !eth.name.starts_with("br"))
+    .filter(|eth| {
+      eth.if_type == InterfaceType::Ethernet && !eth.name.starts_with("br")
+    })
     .cloned()
     .collect()
 }
@@ -34,19 +36,17 @@ fn is_valid_interface(interfaces: &[Interface], iface: &str) -> bool {
 
 pub fn read_line() -> String {
   let mut guess = String::new();
-  std::io::stdin()
-      .read_line(&mut guess)
-      .expect("failed to readline");
+  std::io::stdin().read_line(&mut guess).expect("failed to readline");
   guess.trim().to_string()
 }
 
 pub fn read_line_as_number() -> u32 {
   loop {
-      let str = read_line();
-      if let Ok(n) = str::parse::<u32>(&str) {
-          return n;
-      }
-      println!("Could not parse [{str}] as a number. Try again.");
+    let str = read_line();
+    if let Ok(n) = str::parse::<u32>(&str) {
+      return n;
+    }
+    println!("Could not parse [{str}] as a number. Try again.");
   }
 }
 
@@ -56,7 +56,10 @@ const NETWORK_JSON: &str = "/opt/libreqos/src/network.json";
 const SHAPED_DEVICES: &str = "/opt/libreqos/src/ShapedDevices.csv";
 const LQUSERS: &str = "/opt/libreqos/src/lqusers.toml";
 
-fn get_internet_interface(interfaces: &Vec<Interface>, if_internet: &mut Option<String>) {
+fn get_internet_interface(
+  interfaces: &Vec<Interface>,
+  if_internet: &mut Option<String>,
+) {
   if if_internet.is_none() {
     println!("{}", "Which Network Interface faces the INTERNET?".yellow());
     list_interfaces(interfaces);
@@ -72,7 +75,10 @@ fn get_internet_interface(interfaces: &Vec<Interface>, if_internet: &mut Option<
   }
 }
 
-fn get_isp_interface(interfaces: &Vec<Interface>, if_isp: &mut Option<String>) {
+fn get_isp_interface(
+  interfaces: &Vec<Interface>,
+  if_isp: &mut Option<String>,
+) {
   if if_isp.is_none() {
     println!("{}", "Which Network Interface faces the ISP CORE?".yellow());
     list_interfaces(interfaces);
@@ -91,8 +97,16 @@ fn get_isp_interface(interfaces: &Vec<Interface>, if_isp: &mut Option<String>) {
 fn get_bandwidth(up: bool) -> u32 {
   loop {
     match up {
-      true => println!("{}", "How much UPLOAD bandwidth do you have? (Mbps, e.g. 1000 = 1 gbit)".yellow()),
-      false => println!("{}", "How much DOWNLOAD bandwidth do you have? (Mbps, e.g. 1000 = 1 gbit)".yellow()),
+      true => println!(
+        "{}",
+        "How much UPLOAD bandwidth do you have? (Mbps, e.g. 1000 = 1 gbit)"
+          .yellow()
+      ),
+      false => println!(
+        "{}",
+        "How much DOWNLOAD bandwidth do you have? (Mbps, e.g. 1000 = 1 gbit)"
+          .yellow()
+      ),
     }
     let bandwidth = read_line_as_number();
     if bandwidth > 0 {
@@ -124,7 +138,8 @@ vlan_mapping = []
 ";
 
 fn write_etc_lqos_conf(internet: &str, isp: &str) {
-  let output = ETC_LQOS_CONF.replace("{INTERNET}", internet).replace("{ISP}", isp);
+  let output =
+    ETC_LQOS_CONF.replace("{INTERNET}", internet).replace("{ISP}", isp);
   fs::write(LQOS_CONF, output).expect("Unable to write file");
 }
 
@@ -143,22 +158,26 @@ pub fn write_isp_config_py(
   let config_file = std::fs::read_to_string(&dest).unwrap();
   let mut new_config_file = String::new();
   config_file.split('\n').for_each(|line| {
-      if line.contains("upstreamBandwidthCapacityDownloadMbps") {
-          new_config_file += &format!("upstreamBandwidthCapacityDownloadMbps = {download}\n");
-      } else if line.contains("upstreamBandwidthCapacityUploadMbps") {
-          new_config_file += &format!("upstreamBandwidthCapacityUploadMbps = {upload}\n");
-      } else if line.contains("interfaceA") {
-          new_config_file += &format!("interfaceA = \"{lan}\"\n");
-      } else if line.contains("interfaceB") {
-          new_config_file += &format!("interfaceB = \"{internet}\"\n");
-      } else if line.contains("generatedPNDownloadMbps") {
-          new_config_file += &format!("generatedPNDownloadMbps = {download}\n");
-      } else if line.contains("generatedPNUploadMbps") {
-        new_config_file += &format!("generatedPNUploadMbps = {upload}\n");
-      } else {
-          new_config_file += line;
-          new_config_file += "\n";
-      }
+    if line.starts_with("#") {
+      // Do nothing
+    } else if line.contains("upstreamBandwidthCapacityDownloadMbps") {
+      new_config_file +=
+        &format!("upstreamBandwidthCapacityDownloadMbps = {download}\n");
+    } else if line.contains("upstreamBandwidthCapacityUploadMbps") {
+      new_config_file +=
+        &format!("upstreamBandwidthCapacityUploadMbps = {upload}\n");
+    } else if line.contains("interfaceA") {
+      new_config_file += &format!("interfaceA = \"{lan}\"\n");
+    } else if line.contains("interfaceB") {
+      new_config_file += &format!("interfaceB = \"{internet}\"\n");
+    } else if line.contains("generatedPNDownloadMbps") {
+      new_config_file += &format!("generatedPNDownloadMbps = {download}\n");
+    } else if line.contains("generatedPNUploadMbps") {
+      new_config_file += &format!("generatedPNUploadMbps = {upload}\n");
+    } else {
+      new_config_file += line;
+      new_config_file += "\n";
+    }
   });
   std::fs::write(&dest, new_config_file).unwrap();
 }
@@ -174,7 +193,8 @@ Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download
 \"9999\",\"968 Circle St., Gurnee, IL 60031\",1,Device 1,AP_7,,\"100.64.1.2, 100.64.0.14\",,25,5,500,500,";
 
 fn write_shaped_devices() {
-  fs::write(SHAPED_DEVICES, EMPTY_SHAPED_DEVICES).expect("Unable to write file");
+  fs::write(SHAPED_DEVICES, EMPTY_SHAPED_DEVICES)
+    .expect("Unable to write file");
 }
 
 fn main() {
@@ -184,7 +204,11 @@ fn main() {
   let mut if_internet: Option<String> = None;
   let mut if_isp: Option<String> = None;
   if should_build(LQOS_CONF) {
-    println!("{}{}", LQOS_CONF.cyan(), "does not exist, building one.".white());
+    println!(
+      "{}{}",
+      LQOS_CONF.cyan(),
+      "does not exist, building one.".white()
+    );
     get_internet_interface(&interfaces, &mut if_internet);
     get_isp_interface(&interfaces, &mut if_isp);
     if let (Some(internet), Some(isp)) = (&if_internet, &if_isp) {
@@ -199,16 +223,30 @@ fn main() {
     let upload = get_bandwidth(true);
     let download = get_bandwidth(false);
     if let (Some(internet), Some(isp)) = (&if_internet, &if_isp) {
-      write_isp_config_py("/opt/libreqos/src/", download, upload, isp, internet)
+      write_isp_config_py(
+        "/opt/libreqos/src/",
+        download,
+        upload,
+        isp,
+        internet,
+      )
     }
   }
 
   if should_build(NETWORK_JSON) {
-    println!("{}{}", NETWORK_JSON.cyan(), "does not exist, making a simple flat network.".white());
+    println!(
+      "{}{}",
+      NETWORK_JSON.cyan(),
+      "does not exist, making a simple flat network.".white()
+    );
     write_network_json();
   }
   if should_build(SHAPED_DEVICES) {
-    println!("{}{}", SHAPED_DEVICES.cyan(), "does not exist, making an empty one.".white());
+    println!(
+      "{}{}",
+      SHAPED_DEVICES.cyan(),
+      "does not exist, making an empty one.".white()
+    );
     println!("{}", "Don't forget to add some users!".magenta());
     write_shaped_devices();
   }
@@ -218,7 +256,15 @@ fn main() {
     println!("Enter a password for the web manager:");
     let password = read_line();
     Command::new("/opt/libreqos/src/bin/lqusers")
-      .args(["add", "--username", &user, "--role", "admin", "--password", &password])
+      .args([
+        "add",
+        "--username",
+        &user,
+        "--role",
+        "admin",
+        "--password",
+        &password,
+      ])
       .output()
       .unwrap();
   }
