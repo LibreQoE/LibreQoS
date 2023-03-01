@@ -159,7 +159,8 @@ pub fn write_isp_config_py(
   let mut new_config_file = String::new();
   config_file.split('\n').for_each(|line| {
     if line.starts_with('#') {
-      // Do nothing
+      new_config_file += line;
+      new_config_file += "\n";
     } else if line.contains("upstreamBandwidthCapacityDownloadMbps") {
       new_config_file +=
         &format!("upstreamBandwidthCapacityDownloadMbps = {download}\n");
