@@ -158,7 +158,7 @@ pub fn write_isp_config_py(
   let config_file = std::fs::read_to_string(&dest).unwrap();
   let mut new_config_file = String::new();
   config_file.split('\n').for_each(|line| {
-    if line.starts_with("#") {
+    if line.starts_with('#') {
       // Do nothing
     } else if line.contains("upstreamBandwidthCapacityDownloadMbps") {
       new_config_file +=
