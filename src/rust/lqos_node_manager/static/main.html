@@ -268,7 +268,7 @@
                 if (tt[i].circuit_id != "") {
                     html += "<td><a class='redact' href='/circuit_queue?id=" + encodeURI(tt[i].circuit_id)  + "'>" + redactText(tt[i].ip_address) + "</td>";
                 } else {
-                    html += "<td>" + tt[i].ip_address + "</td>";
+                    html += "<td><span class='redact'>" + redactText(tt[i].ip_address) + "</span></td>";
                 }
                 html += "<td>" + scaleNumber(tt[i].bits_per_second[0]) + "</td>";
                 html += "<td>" + scaleNumber(tt[i].bits_per_second[1]) + "</td>";
@@ -317,6 +317,12 @@
         }
 
         function start() {
+            if (isRedacted()) {
+                console.log("Redacting");
+                //css_getclass(".redact").style.filter = "blur(4px)";
+                css_getclass(".redact").style.fontFamily = "klingon";
+            }
+
             colorReloadButton();
             updateCurrentThroughput();
             updateThroughputGraph();
