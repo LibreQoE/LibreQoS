@@ -75,42 +75,48 @@ def createShaper():
 		if customerJson['status'] == 'active':
 			services = spylnxRequest("admin/customers/customer/" + customerJson["id"] + "/internet-services", headers)
 			for serviceJson in services:
-				combinedId = "c_" + str(customerJson["id"]) + "_s_" + str(serviceJson["id"])
-				tariff_id = serviceJson['tariff_id']
-				customer = NetworkNode(
-					type=NodeType.client,
-					id=combinedId,
-					displayName=customerJson["name"],
-					address=combineAddress(customerJson),
-					download=downloadForTariffID[tariff_id],
-					upload=uploadForTariffID[tariff_id],
-				)
-				net.addRawNode(customer)
+				if (serviceJson['status'] == 'active'):
+					combinedId = "c_" + str(customerJson["id"]) + "_s_" + str(serviceJson["id"])
+					tariff_id = serviceJson['tariff_id']
+					customer = NetworkNode(
+						type=NodeType.client,
+						id=combinedId,
+						displayName=customerJson["name"],
+						address=combineAddress(customerJson),
+						download=downloadForTariffID[tariff_id],
+						upload=uploadForTariffID[tariff_id],
+					)
+					net.addRawNode(customer)
 
-				ipv4 = ''
-				ipv6 = ''
-				routerID = serviceJson['router_id']
-				# If not "Taking IPv4" (Router will assign IP), then use router's set IP
-				if serviceJson['taking_ipv4'] == 0:
-					ipv4 = ipForRouter[routerID]
-				elif serviceJson['taking_ipv4'] == 1:
-					ipv4 = serviceJson['ipv4']
-				# If not "Taking IPv6" (Router will assign IP), then use router's set IP
-				if serviceJson['taking_ipv6'] == 0:
+					ipv4 = ''
 					ipv6 = ''
-				elif serviceJson['taking_ipv6'] == 1:
-					ipv6 = serviceJson['ipv6']
+					routerID = serviceJson['router_id']
+					# Try to get ipv4 from . If not present, use other method
+					if 'ipv4' in serviceJson:
+						if serviceJson['ipv4'] != '':
+							ipv4 = serviceJson['ipv4']
+					else:
+						# If not "Taking IPv4" (Router will assign IP), then use router's set IP
+						if serviceJson['taking_ipv4'] == 0:
+							ipv4 = ipForRouter[routerID]
+						elif serviceJson['taking_ipv4'] == 1:
+							ipv4 = serviceJson['ipv4']
+					# If not "Taking IPv6" (Router will assign IP), then use router's set IP
+					if serviceJson['taking_ipv6'] == 0:
+						ipv6 = ''
+					elif serviceJson['taking_ipv6'] == 1:
+						ipv6 = serviceJson['ipv6']
 
-				device = NetworkNode(
-					id=combinedId+"_d" + str(serviceJson["id"]),
-					displayName=serviceJson["description"],
-					type=NodeType.device,
-					parentId=combinedId,
-					mac=serviceJson["mac"],
-					ipv4=[ipv4],
-					ipv6=[ipv6]
-				)
-				net.addRawNode(device)
+					device = NetworkNode(
+						id=combinedId+"_d" + str(serviceJson["id"]),
+						displayName=serviceJson["description"],
+						type=NodeType.device,
+						parentId=combinedId,
+						mac=serviceJson["mac"],
+						ipv4=[ipv4],
+						ipv6=[ipv6]
+					)
+					net.addRawNode(device)
 
 	net.prepareTree()
 	net.plotNetworkGraph(False)
