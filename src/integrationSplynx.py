@@ -91,16 +91,11 @@ def createShaper():
 					ipv4 = ''
 					ipv6 = ''
 					routerID = serviceJson['router_id']
-					# Try to get ipv4 from . If not present, use other method
-					if 'ipv4' in serviceJson:
-						if serviceJson['ipv4'] != '':
-							ipv4 = serviceJson['ipv4']
-					else:
-						# If not "Taking IPv4" (Router will assign IP), then use router's set IP
-						if serviceJson['taking_ipv4'] == 0:
-							ipv4 = ipForRouter[routerID]
-						elif serviceJson['taking_ipv4'] == 1:
-							ipv4 = serviceJson['ipv4']
+					# If not "Taking IPv4" (Router will assign IP), then use router's set IP
+					if serviceJson['taking_ipv4'] == 0:
+						ipv4 = ipForRouter[routerID]
+					elif serviceJson['taking_ipv4'] == 1:
+						ipv4 = serviceJson['ipv4']
 					# If not "Taking IPv6" (Router will assign IP), then use router's set IP
 					if serviceJson['taking_ipv6'] == 0:
 						ipv6 = ''
