@@ -12,6 +12,8 @@ use tokio::{
 
 use super::BUS_SOCKET_DIRECTORY;
 
+const READ_BUFFER_SIZE: usize = 20480;
+
 /// Implements a Tokio-friendly server using Unix Sockets and the bus protocol.
 /// Requests are handled and then forwarded to the handler.
 pub struct UnixSocketServer {}
@@ -111,7 +113,7 @@ impl UnixSocketServer {
       let (mut socket, _) = ret.unwrap();
       tokio::spawn(async move {
         loop {
-          let mut buf = vec![0; 4096];
+          let mut buf = vec![0; READ_BUFFER_SIZE];
 
           let bytes_read = socket.read(&mut buf).await;
           if bytes_read.is_err() {

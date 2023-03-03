@@ -3,7 +3,7 @@ use lqos_utils::hex_string::read_hex_string;
 use nix::libc::getpid;
 use pyo3::{
   exceptions::PyOSError, pyclass, pyfunction, pymodule, types::PyModule,
-  wrap_pyfunction, PyResult, Python,
+  wrap_pyfunction, PyResult, Python, pymethods,
 };
 use std::{
   fs::{remove_file, File},
@@ -22,6 +22,7 @@ const LOCK_FILE: &str = "/run/lqos/libreqos.lock";
 #[pymodule]
 fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_class::<PyIpMapping>()?;
+  m.add_class::<BatchedCommands>()?;
   m.add_wrapped(wrap_pyfunction!(is_lqosd_alive))?;
   m.add_wrapped(wrap_pyfunction!(list_ip_mappings))?;
   m.add_wrapped(wrap_pyfunction!(clear_ip_mappings))?;
@@ -142,6 +143,47 @@ fn add_ip_mapping(
     Ok(())
   } else {
     Err(PyOSError::new_err(request.err().unwrap().to_string()))
+  }
+}
+
+#[pyclass]
+pub struct BatchedCommands {
+  batch: Vec<BusRequest>,
+}
+
+#[pymethods]
+impl BatchedCommands {
+  #[new]
+  pub fn new() -> PyResult<Self> {
+    Ok(Self { batch: Vec::new() })
+  }
+
+  pub fn add_ip_mapping(&mut self, ip: String, classid: String, cpu: String, upload: bool) -> PyResult<()> {
+    let request = parse_add_ip(&ip, &classid, &cpu, upload);
+    if let Ok(request) = request {
+      self.batch.push(request);
+      Ok(())
+    } else {
+      Err(PyOSError::new_err(request.err().unwrap().to_string()))
+    }
+  }
+
+  pub fn length(&self) -> PyResult<usize> {
+    Ok(self.batch.len())
+  }
+
+  pub fn log(&self) -> PyResult<()> {
+    self.batch.iter().for_each(|c| println!("{c:?}"));
+    Ok(())
+  }
+
+  pub fn submit(&mut self) -> PyResult<usize> {
+    // We're draining the request list out, which is a move that
+    // *should* be elided by the optimizing compiler.
+    let len = self.batch.len();
+    let batch: Vec<BusRequest> = self.batch.drain(0..).collect();
+    run_query(batch).unwrap();
+    Ok(len)
   }
 }
 
