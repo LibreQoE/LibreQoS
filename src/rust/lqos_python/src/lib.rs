@@ -1,4 +1,5 @@
 use lqos_bus::{BusRequest, BusResponse, TcHandle};
+use lqos_utils::hex_string::read_hex_string;
 use nix::libc::getpid;
 use pyo3::{
   exceptions::PyOSError, pyclass, pyfunction, pymodule, types::PyModule,
@@ -122,7 +123,7 @@ fn parse_add_ip(
   Ok(BusRequest::MapIpToFlow {
     ip_address: ip.to_string(),
     tc_handle: TcHandle::from_string(classid)?,
-    cpu: u32::from_str_radix(&cpu.replace("0x", ""), 16)?, // Force HEX representation
+    cpu: read_hex_string(cpu)?, // Force HEX representation
     upload,
   })
 }

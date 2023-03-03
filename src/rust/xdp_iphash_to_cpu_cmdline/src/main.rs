@@ -1,6 +1,7 @@
 use anyhow::{Error, Result};
 use clap::{Parser, Subcommand};
 use lqos_bus::{bus_request, BusRequest, BusResponse, IpMapping, TcHandle};
+use lqos_utils::hex_string::read_hex_string;
 use std::process::exit;
 
 #[derive(Parser)]
@@ -99,7 +100,7 @@ fn parse_add_ip(
   Ok(BusRequest::MapIpToFlow {
     ip_address: ip.to_string(),
     tc_handle: TcHandle::from_string(classid)?,
-    cpu: u32::from_str_radix(&cpu.replace("0x", ""), 16)?, // Force HEX representation
+    cpu: read_hex_string(cpu)?, // Force HEX representation
     upload: upload.is_some(),
   })
 }

@@ -1,4 +1,5 @@
-use super::{read_hex_string, QueueStructureError};
+use lqos_utils::hex_string::read_hex_string;
+use super::QueueStructureError;
 use log::error;
 use lqos_bus::TcHandle;
 use serde_json::Value;

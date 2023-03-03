@@ -8,30 +8,12 @@ use queue_network::QueueNetwork;
 use queue_node::QueueNode;
 use thiserror::Error;
 
-fn read_hex_string(s: &str) -> Result<u32, HexParseError> {
-  let result = u32::from_str_radix(&s.replace("0x", ""), 16);
-  match result {
-    Ok(data) => Ok(data),
-    Err(e) => {
-      error!("Unable to convert {s} to a u32");
-      error!("{:?}", e);
-      Err(HexParseError::ParseError)
-    }
-  }
-}
-
 pub(crate) fn read_queueing_structure(
 ) -> Result<Vec<QueueNode>, QueueStructureError> {
   // Note: the ? is allowed because the sub-types return a QueueStructureError and handle logging.
   let network = QueueNetwork::from_json()?;
   let flattened = network.to_flat();
   Ok(flattened)
-}
-
-#[derive(Error, Debug)]
-pub enum HexParseError {
-  #[error("Unable to decode string into valid hex")]
-  ParseError,
 }
 
 #[derive(Error, Debug)]
