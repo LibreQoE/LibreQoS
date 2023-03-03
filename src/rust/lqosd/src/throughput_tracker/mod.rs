@@ -1,20 +1,17 @@
 mod throughput_entry;
 mod tracking_data;
 use crate::throughput_tracker::tracking_data::ThroughputTracker;
-use lazy_static::*;
 use log::{info, warn};
 use lqos_bus::{BusResponse, IpStats, TcHandle, XdpPpingResult};
 use lqos_sys::XdpIpAddress;
 use lqos_utils::{fdtimer::periodic, unix_time::time_since_boot};
+use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use std::time::Duration;
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
-lazy_static! {
-  static ref THROUGHPUT_TRACKER: RwLock<ThroughputTracker> =
-    RwLock::new(ThroughputTracker::new());
-}
+static THROUGHPUT_TRACKER: Lazy<RwLock<ThroughputTracker>> = Lazy::new(|| RwLock::new(ThroughputTracker::new()));
 
 pub fn spawn_throughput_monitor() {
   info!("Starting the bandwidth monitor thread.");
