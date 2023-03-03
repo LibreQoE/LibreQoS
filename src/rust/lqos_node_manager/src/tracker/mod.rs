@@ -13,7 +13,6 @@ use lqos_bus::{IpStats, TcHandle};
 use lqos_config::LibreQoSConfig;
 use parking_lot::Mutex;
 use rocket::serde::{json::Json, Deserialize, Serialize};
-use std::net::IpAddr;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(crate = "rocket::serde")]
@@ -35,23 +34,28 @@ impl From<&IpStats> for IpStatsWithPlan {
       packets_per_second: i.packets_per_second,
       median_tcp_rtt: i.median_tcp_rtt,
       tc_handle: i.tc_handle,
-      circuit_id: String::new(),
+      circuit_id: i.circuit_id.clone(),
       plan: (0, 0),
     };
-    if let Ok(ip) = result.ip_address.parse::<IpAddr>() {
-      let lookup = match ip {
-        IpAddr::V4(ip) => ip.to_ipv6_mapped(),
-        IpAddr::V6(ip) => ip,
-      };
-      let cfg = SHAPED_DEVICES.read();
-      if let Some((_, id)) = cfg.trie.longest_match(lookup) {
+
+    if !result.circuit_id.is_empty() {
+      if let Some(circuit) = SHAPED_DEVICES
+        .read()
+        .devices
+        .iter()
+        .find(|sd| sd.circuit_id == result.circuit_id)
+      {
+        let name = if circuit.circuit_name.len() > 20 {
+          &circuit.circuit_name[0..20]
+        } else {
+          &circuit.circuit_name
+        };
         result.ip_address =
-          format!("{} ({})", cfg.devices[*id].circuit_name, result.ip_address);
-        result.plan.0 = cfg.devices[*id].download_max_mbps;
-        result.plan.1 = cfg.devices[*id].upload_max_mbps;
-        result.circuit_id = cfg.devices[*id].circuit_id.clone();
+          format!("{} ({})", name, result.ip_address);
+        result.plan = (circuit.download_max_mbps, circuit.download_min_mbps);
       }
     }
+
     result
   }
 }

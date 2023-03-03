@@ -4,6 +4,7 @@ mod ip_mapping;
 mod lqos_daht_test;
 mod program_control;
 mod throughput_tracker;
+mod shaped_devices_tracker;
 mod tuning;
 mod validation;
 use crate::{
@@ -63,7 +64,7 @@ async fn main() -> Result<()> {
   };
 
   // Spawn tracking sub-systems
-  join!(spawn_queue_structure_monitor(),);
+  join!(spawn_queue_structure_monitor(), shaped_devices_tracker::shaped_devices_watcher());
   throughput_tracker::spawn_throughput_monitor();
   spawn_queue_monitor();
 

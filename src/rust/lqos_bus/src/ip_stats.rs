@@ -8,6 +8,9 @@ pub struct IpStats {
   /// The host's IP address, as detected by the XDP program.
   pub ip_address: String,
 
+  /// The host's mapped circuit ID
+  pub circuit_id: String,
+
   /// The current bits-per-second passing through this host. Tuple
   /// 0 is download, tuple 1 is upload.
   pub bits_per_second: (u64, u64),

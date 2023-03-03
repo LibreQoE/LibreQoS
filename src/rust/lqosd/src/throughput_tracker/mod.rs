@@ -11,7 +11,7 @@ use std::time::Duration;
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
-static THROUGHPUT_TRACKER: Lazy<RwLock<ThroughputTracker>> = Lazy::new(|| RwLock::new(ThroughputTracker::new()));
+pub static THROUGHPUT_TRACKER: Lazy<RwLock<ThroughputTracker>> = Lazy::new(|| RwLock::new(ThroughputTracker::new()));
 
 pub fn spawn_throughput_monitor() {
   info!("Starting the bandwidth monitor thread.");
@@ -62,7 +62,7 @@ fn retire_check(cycle: u64, recent_cycle: u64) -> bool {
   cycle < recent_cycle + RETIRE_AFTER_SECONDS
 }
 
-type TopList = (XdpIpAddress, (u64, u64), (u64, u64), f32, TcHandle);
+type TopList = (XdpIpAddress, (u64, u64), (u64, u64), f32, TcHandle, String);
 
 pub fn top_n(start: u32, end: u32) -> BusResponse {
   let mut full_list: Vec<TopList> = {
@@ -78,6 +78,7 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
           te.packets_per_second,
           te.median_latency(),
           te.tc_handle,
+          te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
         )
       })
       .collect()
@@ -94,8 +95,10 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
         (packets_dn, packets_up),
         median_rtt,
         tc_handle,
+        circuit_id,
       )| IpStats {
         ip_address: ip.as_ip().to_string(),
+        circuit_id: circuit_id.clone(),
         bits_per_second: (bytes_dn * 8, bytes_up * 8),
         packets_per_second: (*packets_dn, *packets_up),
         median_tcp_rtt: *median_rtt,
@@ -121,6 +124,7 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
           te.packets_per_second,
           te.median_latency(),
           te.tc_handle,
+          te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
         )
       })
       .collect()
@@ -137,8 +141,10 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
         (packets_dn, packets_up),
         median_rtt,
         tc_handle,
+        circuit_id,
       )| IpStats {
         ip_address: ip.as_ip().to_string(),
+        circuit_id: circuit_id.clone(),
         bits_per_second: (bytes_dn * 8, bytes_up * 8),
         packets_per_second: (*packets_dn, *packets_up),
         median_tcp_rtt: *median_rtt,
@@ -163,6 +169,7 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
           te.packets_per_second,
           te.median_latency(),
           te.tc_handle,
+          te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
         )
       })
       .collect()
@@ -180,8 +187,10 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
         (packets_dn, packets_up),
         median_rtt,
         tc_handle,
+        circuit_id,
       )| IpStats {
         ip_address: ip.as_ip().to_string(),
+        circuit_id: circuit_id.clone(),
         bits_per_second: (bytes_dn * 8, bytes_up * 8),
         packets_per_second: (*packets_dn, *packets_up),
         median_tcp_rtt: *median_rtt,
@@ -315,6 +324,7 @@ pub fn all_unknown_ips() -> BusResponse {
         _last_seen,
       )| IpStats {
         ip_address: ip.as_ip().to_string(),
+        circuit_id: String::new(),
         bits_per_second: (bytes_dn * 8, bytes_up * 8),
         packets_per_second: (*packets_dn, *packets_up),
         median_tcp_rtt: *median_rtt,

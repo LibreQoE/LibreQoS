@@ -1,3 +1,5 @@
+use crate::shaped_devices_tracker::SHAPED_DEVICES;
+
 use super::{throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
 use lqos_bus::TcHandle;
 use lqos_sys::{rtt_for_each, throughput_for_each, XdpIpAddress};
@@ -52,6 +54,23 @@ impl ThroughputTracker {
     });
   }
 
+  fn lookup_circuit_id(xdp_ip: &XdpIpAddress) -> Option<String> {
+    let mut circuit_id = None;
+    let lookup = xdp_ip.as_ipv6();
+    let cfg = SHAPED_DEVICES.read();
+    if let Some((_, id)) = cfg.trie.longest_match(lookup) {
+      circuit_id = Some(cfg.devices[*id].circuit_id.clone());
+    }
+    //println!("{lookup:?} Found circuit_id: {circuit_id:?}");
+    circuit_id
+  }
+
+  pub(crate) fn refresh_circuit_ids(&mut self) {
+    self.raw_data.par_iter_mut().for_each(|(ip, data)| {
+      data.circuit_id = Self::lookup_circuit_id(ip);
+    });
+  }
+
   pub(crate) fn apply_new_throughput_counters(&mut self) {
     let cycle = self.cycle;
     let raw_data = &mut self.raw_data;
@@ -76,6 +95,7 @@ impl ThroughputTracker {
         }
       } else {
         let mut entry = ThroughputEntry {
+          circuit_id: Self::lookup_circuit_id(xdp_ip),
           first_cycle: self.cycle,
           most_recent_cycle: 0,
           bytes: (0, 0),
