@@ -87,24 +87,29 @@ def createShaper():
 						upload=uploadForTariffID[tariff_id],
 					)
 					net.addRawNode(customer)
-
+					
 					ipv4 = ''
 					ipv6 = ''
 					routerID = serviceJson['router_id']
 					# If not "Taking IPv4" (Router will assign IP), then use router's set IP
-					if serviceJson['taking_ipv4'] == 0:
+					if isinstance(serviceJson['taking_ipv4'], str):
+						taking_ipv4 = int(serviceJson['taking_ipv4'])
+					else:
+						taking_ipv4 = serviceJson['taking_ipv4']
+					if taking_ipv4 == 0:
 						ipv4 = ipForRouter[routerID]
-					elif serviceJson['taking_ipv4'] == 1:
+					elif taking_ipv4 == 1:
 						ipv4 = serviceJson['ipv4']
+						
 					# If not "Taking IPv6" (Router will assign IP), then use router's set IP
-					if serviceJson['taking_ipv6'] == 0:
+					if isinstance(serviceJson['taking_ipv6'], str):
+						taking_ipv6 = int(serviceJson['taking_ipv6'])
+					else:
+						taking_ipv6 = serviceJson['taking_ipv6']
+					if taking_ipv6 == 0:
 						ipv6 = ''
-					elif serviceJson['taking_ipv6'] == 1:
+					elif taking_ipv6 == 1:
 						ipv6 = serviceJson['ipv6']
-					
-					# If we recieve blank ipv4, print entire data structure so we cna see what's happening
-					if ipv4 == '':
-						print(serviceJson)
 					
 					device = NetworkNode(
 						id=combinedId+"_d" + str(serviceJson["id"]),
