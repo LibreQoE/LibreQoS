@@ -118,7 +118,7 @@ def createShaper():
 					
 					device = NetworkNode(
 						id=combinedId+"_d" + str(serviceJson["id"]),
-						displayName=serviceJson["description"],
+						displayName=serviceJson["id"],
 						type=NodeType.device,
 						parentId=combinedId,
 						mac=serviceJson["mac"],
