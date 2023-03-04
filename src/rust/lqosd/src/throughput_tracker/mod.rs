@@ -1,6 +1,6 @@
 mod throughput_entry;
 mod tracking_data;
-use crate::throughput_tracker::tracking_data::ThroughputTracker;
+use crate::{throughput_tracker::tracking_data::ThroughputTracker, shaped_devices_tracker::NETWORK_JSON};
 use log::{info, warn};
 use lqos_bus::{BusResponse, IpStats, TcHandle, XdpPpingResult};
 use lqos_sys::XdpIpAddress;
@@ -21,10 +21,11 @@ pub fn spawn_throughput_monitor() {
   std::thread::spawn(move || {
     periodic(interval_ms, "Throughput Monitor", &mut || {
       let mut throughput = THROUGHPUT_TRACKER.write();
-      throughput.copy_previous_and_reset_rtt();
+      let mut net_json = NETWORK_JSON.write();
+      throughput.copy_previous_and_reset_rtt(&mut net_json);
       throughput.apply_new_throughput_counters();
       throughput.apply_rtt_data();
-      throughput.update_totals();
+      throughput.update_totals(&mut net_json);
       throughput.next_cycle();
     });
   });

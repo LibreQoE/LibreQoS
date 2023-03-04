@@ -1334,6 +1334,7 @@ dependencies = [
  "ip_network_table",
  "log",
  "serde",
+ "serde_json",
  "sha2",
  "thiserror",
  "toml 0.7.2",

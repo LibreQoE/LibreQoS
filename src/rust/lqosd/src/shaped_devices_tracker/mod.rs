@@ -1,10 +1,13 @@
 use anyhow::Result;
 use log::{error, info, warn};
+use lqos_bus::BusResponse;
 use lqos_config::ConfigShapedDevices;
 use lqos_utils::file_watcher::FileWatcher;
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use tokio::task::spawn_blocking;
+mod netjson;
+pub use netjson::*;
 
 pub static SHAPED_DEVICES: Lazy<RwLock<ConfigShapedDevices>> =
   Lazy::new(|| RwLock::new(ConfigShapedDevices::default()));
@@ -48,5 +51,16 @@ fn watch_for_shaped_devices_changing() -> Result<()> {
   loop {
     let result = watcher.watch();
     info!("ShapedDevices watcher returned: {result:?}");
+  }
+}
+
+pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
+  let net_json = NETWORK_JSON.read();
+  if let Some(parent) = net_json.get_cloned_entry_by_index(parent_idx) {
+    let mut nodes = vec![(parent_idx, parent)];
+    nodes.extend_from_slice(&net_json.get_cloned_children(parent_idx));
+    BusResponse::NetworkMap(nodes)
+  } else {
+    BusResponse::Fail("No such node".to_string())
   }
 }

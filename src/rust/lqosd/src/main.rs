@@ -3,8 +3,8 @@ mod ip_mapping;
 #[cfg(feature = "equinix_tests")]
 mod lqos_daht_test;
 mod program_control;
-mod throughput_tracker;
 mod shaped_devices_tracker;
+mod throughput_tracker;
 mod tuning;
 mod validation;
 use crate::{
@@ -64,7 +64,11 @@ async fn main() -> Result<()> {
   };
 
   // Spawn tracking sub-systems
-  join!(spawn_queue_structure_monitor(), shaped_devices_tracker::shaped_devices_watcher());
+  join!(
+    spawn_queue_structure_monitor(),
+    shaped_devices_tracker::shaped_devices_watcher(),
+    shaped_devices_tracker::network_json_watcher()
+  );
   throughput_tracker::spawn_throughput_monitor();
   spawn_queue_monitor();
 
@@ -156,7 +160,10 @@ fn handle_bus_requests(
       BusRequest::RequestLqosEquinixTest => lqos_daht_test::lqos_daht_test(),
       BusRequest::ValidateShapedDevicesCsv => {
         validation::validate_shaped_devices_csv()
-      }
+      },
+      BusRequest::GetNetworkMap { parent } => {
+        shaped_devices_tracker::get_one_network_map_layer(*parent)
+      },
     });
   }
 }

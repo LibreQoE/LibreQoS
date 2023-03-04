@@ -2,6 +2,7 @@ use crate::shaped_devices_tracker::SHAPED_DEVICES;
 
 use super::{throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
 use lqos_bus::TcHandle;
+use lqos_config::NetworkJson;
 use lqos_sys::{rtt_for_each, throughput_for_each, XdpIpAddress};
 use rayon::prelude::{IntoParallelRefMutIterator, ParallelIterator};
 use std::collections::HashMap;
@@ -28,7 +29,13 @@ impl ThroughputTracker {
     }
   }
 
-  pub(crate) fn copy_previous_and_reset_rtt(&mut self) {
+  pub(crate) fn copy_previous_and_reset_rtt(
+    &mut self,
+    netjson: &mut NetworkJson,
+  ) {
+    // Zero the previous funnel hierarchy current numbers
+    netjson.zero_throughput_and_rtt();
+
     // Copy previous byte/packet numbers and reset RTT data
     // We're using Rayon's "par_iter_mut" to spread the operation across
     // all CPU cores.
@@ -65,9 +72,37 @@ impl ThroughputTracker {
     circuit_id
   }
 
+  pub(crate) fn get_node_name_for_circuit_id(
+    circuit_id: Option<String>,
+  ) -> Option<String> {
+    if let Some(circuit_id) = circuit_id {
+      let shaped = SHAPED_DEVICES.read();
+      shaped
+        .devices
+        .iter()
+        .find(|d| d.circuit_id == circuit_id)
+        .map(|device| device.parent_node.clone())
+    } else {
+      None
+    }
+  }
+
+  pub(crate) fn lookup_network_parents(
+    circuit_id: Option<String>,
+  ) -> Option<Vec<usize>> {
+    if let Some(parent) = Self::get_node_name_for_circuit_id(circuit_id) {
+      let lock = crate::shaped_devices_tracker::NETWORK_JSON.read();
+      lock.get_parents_for_circuit_id(&parent)
+    } else {
+      None
+    }
+  }
+
   pub(crate) fn refresh_circuit_ids(&mut self) {
     self.raw_data.par_iter_mut().for_each(|(ip, data)| {
       data.circuit_id = Self::lookup_circuit_id(ip);
+      data.network_json_parents =
+        Self::lookup_network_parents(data.circuit_id.clone());
     });
   }
 
@@ -94,8 +129,10 @@ impl ThroughputTracker {
           entry.most_recent_cycle = cycle;
         }
       } else {
+        let circuit_id = Self::lookup_circuit_id(xdp_ip);
         let mut entry = ThroughputEntry {
-          circuit_id: Self::lookup_circuit_id(xdp_ip),
+          circuit_id: circuit_id.clone(),
+          network_json_parents: Self::lookup_network_parents(circuit_id),
           first_cycle: self.cycle,
           most_recent_cycle: 0,
           bytes: (0, 0),
@@ -135,7 +172,7 @@ impl ThroughputTracker {
     });
   }
 
-  pub(crate) fn update_totals(&mut self) {
+  pub(crate) fn update_totals(&mut self, net_json: &mut NetworkJson) {
     self.bytes_per_second = (0, 0);
     self.packets_per_second = (0, 0);
     self.shaped_bytes_per_second = (0, 0);
@@ -149,27 +186,43 @@ impl ThroughputTracker {
           v.packets.0.saturating_sub(v.prev_packets.0),
           v.packets.1.saturating_sub(v.prev_packets.1),
           v.tc_handle.as_u32() > 0,
+          &v.network_json_parents,
+          v.median_latency(),
         )
       })
-      .for_each(|(bytes_down, bytes_up, packets_down, packets_up, shaped)| {
-        self.bytes_per_second.0 =
-          self.bytes_per_second.0.checked_add(bytes_down).unwrap_or(0);
-        self.bytes_per_second.1 =
-          self.bytes_per_second.1.checked_add(bytes_up).unwrap_or(0);
-        self.packets_per_second.0 =
-          self.packets_per_second.0.checked_add(packets_down).unwrap_or(0);
-        self.packets_per_second.1 =
-          self.packets_per_second.1.checked_add(packets_up).unwrap_or(0);
-        if shaped {
-          self.shaped_bytes_per_second.0 = self
-            .shaped_bytes_per_second
-            .0
-            .checked_add(bytes_down)
-            .unwrap_or(0);
-          self.shaped_bytes_per_second.1 =
-            self.shaped_bytes_per_second.1.checked_add(bytes_up).unwrap_or(0);
-        }
-      });
+      .for_each(
+        |(bytes_down, bytes_up, packets_down, packets_up, shaped, parents, median_rtt)| {
+          self.bytes_per_second.0 =
+            self.bytes_per_second.0.checked_add(bytes_down).unwrap_or(0);
+          self.bytes_per_second.1 =
+            self.bytes_per_second.1.checked_add(bytes_up).unwrap_or(0);
+          self.packets_per_second.0 =
+            self.packets_per_second.0.checked_add(packets_down).unwrap_or(0);
+          self.packets_per_second.1 =
+            self.packets_per_second.1.checked_add(packets_up).unwrap_or(0);
+          if shaped {
+            self.shaped_bytes_per_second.0 = self
+              .shaped_bytes_per_second
+              .0
+              .checked_add(bytes_down)
+              .unwrap_or(0);
+            self.shaped_bytes_per_second.1 = self
+              .shaped_bytes_per_second
+              .1
+              .checked_add(bytes_up)
+              .unwrap_or(0);
+          }
+
+          // If we have parent node data, we apply it now
+          if let Some(parents) = parents {
+            net_json.add_throughput_cycle(
+              parents,
+              (self.bytes_per_second.0, self.bytes_per_second.1),
+              median_rtt,
+            )
+          }
+        },
+      );
   }
 
   pub(crate) fn next_cycle(&mut self) {

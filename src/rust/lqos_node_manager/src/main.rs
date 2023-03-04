@@ -10,6 +10,7 @@ use rocket_async_compression::Compression;
 mod auth_guard;
 mod config_control;
 mod queue_info;
+mod network_tree;
 
 // Use JemAllocator only on supported platforms
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -38,6 +39,7 @@ fn rocket() -> _ {
         static_pages::unknown_devices_page,
         static_pages::circuit_queue,
         config_control::config_page,
+        network_tree::tree_page,
         // Our JS library
         static_pages::lqos_js,
         static_pages::lqos_css,
@@ -77,6 +79,7 @@ fn rocket() -> _ {
         auth_guard::admin_check,
         static_pages::login_page,
         auth_guard::username,
+        network_tree::tree_entry,
         // Supporting files
         static_pages::bootsrap_css,
         static_pages::plotly_js,
