@@ -86,6 +86,7 @@ def createShaper():
 						id=combinedId,
 						displayName=customerJson["name"],
 						address=combineAddress(customerJson),
+						customerName=customerJson["name"],
 						download=downloadForTariffID[tariff_id],
 						upload=uploadForTariffID[tariff_id],
 					)
