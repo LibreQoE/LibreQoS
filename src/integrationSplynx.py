@@ -1,6 +1,7 @@
 from pythonCheck import checkPythonVersion
 checkPythonVersion()
 import requests
+import warnings
 from ispConfig import excludeSites, findIPv6usingMikrotik, bandwidthOverheadFactor, exceptionCPEs, splynx_api_key, splynx_api_secret, splynx_api_url
 from integrationCommon import isIpv4Permitted
 import base64
@@ -49,6 +50,8 @@ def getRouters(headers):
 	for router in data:
 		routerID = router['id']
 		ipForRouter[routerID] = router['ip']
+	
+	print("Router IPs found: " + str(len(ipForRouter)))
 	return ipForRouter
 
 def combineAddress(json):
@@ -83,6 +86,7 @@ def createShaper():
 						id=combinedId,
 						displayName=customerJson["name"],
 						address=combineAddress(customerJson),
+						customerName=customerJson["name"],
 						download=downloadForTariffID[tariff_id],
 						upload=uploadForTariffID[tariff_id],
 					)
@@ -92,12 +96,14 @@ def createShaper():
 					ipv6 = ''
 					routerID = serviceJson['router_id']
 					# If not "Taking IPv4" (Router will assign IP), then use router's set IP
-					if isinstance(serviceJson['taking_ipv4'], str):
-						taking_ipv4 = int(serviceJson['taking_ipv4'])
-					else:
-						taking_ipv4 = serviceJson['taking_ipv4']
+					# Debug
+					taking_ipv4 = int(serviceJson['taking_ipv4'])
 					if taking_ipv4 == 0:
-						ipv4 = ipForRouter[routerID]
+						try:
+							ipv4 = ipForRouter[routerID]
+						except:
+							warnings.warn("taking_ipv4 was 0 for client " + combinedId + " but router ID was not found in ipForRouter", stacklevel=2)
+							ipv4 = ''
 					elif taking_ipv4 == 1:
 						ipv4 = serviceJson['ipv4']
 						
@@ -113,7 +119,7 @@ def createShaper():
 					
 					device = NetworkNode(
 						id=combinedId+"_d" + str(serviceJson["id"]),
-						displayName=serviceJson["description"],
+						displayName=serviceJson["id"],
 						type=NodeType.device,
 						parentId=combinedId,
 						mac=serviceJson["mac"],

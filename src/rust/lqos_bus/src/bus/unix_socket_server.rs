@@ -12,7 +12,7 @@ use tokio::{
 
 use super::BUS_SOCKET_DIRECTORY;
 
-const READ_BUFFER_SIZE: usize = 20480;
+const READ_BUFFER_SIZE: usize = 2048000;
 
 /// Implements a Tokio-friendly server using Unix Sockets and the bus protocol.
 /// Requests are handled and then forwarded to the handler.
