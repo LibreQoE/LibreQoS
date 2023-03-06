@@ -115,7 +115,7 @@
 
         <script>
             let node = 0;
-            let buffers = {};
+            let buffers = new MultiRingBuffer(300);
             let rtt_histo = new RttHistogram();
 
             function bgColor(traffic, limit) {
@@ -147,15 +147,8 @@
                         tbl += "<td style='background-color: " + dnbg + "'>" + scaleNumber(data[i].traffic[0] * 8) + "</td>";
                         tbl += "<td style='background-color: " + upbg + "'>" + scaleNumber(data[i].traffic[1] * 8) + "</td>";
 
-                        let nodeName = data[i].name;
-                        if (!buffers.hasOwnProperty(nodeName)) {
-                            buffers[nodeName] = new RingBuffer(300);
-                        }
-                        buffers[nodeName].push(
-                            data[i].traffic[0] * 8,
-                            data[i].traffic[1] * 8
-                        );
-                        }
+                        buffers.push(nodeName, data[i].traffic[0] * 8, data[i].traffic[1] * 8);
+                    }
                     tbl += "</table>";
                     $("#clientList").html(tbl);
                 });
@@ -178,13 +171,7 @@
                     getClients(rootName);
 
                     // Throughput graph
-                    if (!buffers.hasOwnProperty(rootName)) {
-                        buffers[rootName] = new RingBuffer(300);
-                    }
-                    buffers[rootName].push(
-                        data[0][1].current_throughput[0] * 8,
-                        data[0][1].current_throughput[1] * 8
-                    );
+                    buffers.push(rootName, data[0][1].current_throughput[0] * 8, data[0][1].current_throughput[1] * 8);
 
                     // Build the table & update node buffers
                     let tbl = "<table class='table'>";
@@ -192,13 +179,7 @@
                     for (let i = 1; i < data.length; ++i) {
                         let nodeName = data[i][1].name;
 
-                        if (!buffers.hasOwnProperty(nodeName)) {
-                            buffers[nodeName] = new RingBuffer(300);
-                        }
-                        buffers[nodeName].push(
-                            data[i][1].current_throughput[0] * 8,
-                            data[i][1].current_throughput[1] * 8
-                        );
+                        buffers.push(nodeName, data[i][1].current_throughput[0] * 8,data[i][1].current_throughput[1] * 8);
 
                         tbl += "<tr>";
                         tbl += "<td style='width: 20%' class='redact'><a href='/tree?parent=" + encodeURI(data[i][0]) + "'>" + redactText(nodeName) + "</a></td>";
@@ -232,35 +213,7 @@
                     $("#treeList").html(tbl);
 
                     // Build the stacked chart
-                    let graphData = [];
-                    for (const [k, v] of Object.entries(buffers)) {
-                        if (k != rootName) {
-                            let total = v.download.reduce((a, b) => a + b) +
-                                v.upload.reduce((a, b) => a + b);
-                            if (total > 0) {
-                                let dn = { x: v.x_axis, y: v.download, name: k + "_DL", type: 'scatter', stackgroup: 'dn' };
-                                let up = { x: v.x_axis, y: v.upload, name: k + "_UL", type: 'scatter', stackgroup: 'up' };
-                                graphData.push(dn);
-                                graphData.push(up);
-                            }
-                        }
-                    }
-                    /*let v = buffers[rootName];
-                    let dn = { x: v.x_axis, y: v.download, name: "DL", type: 'scatter', fill: null };
-                    let up = { x: v.x_axis, y: v.upload, name: "UL", type: 'scatter', fill: null };
-                    graphData.push(dn);
-                    graphData.push(up);*/
-                    let graph = document.getElementById("tpGraph");
-                    Plotly.newPlot(
-                        graph,
-                        graphData,
-                        {
-                            margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 },
-                            yaxis: { automargin: true },
-                            xaxis: { automargin: true, title: "Time since now (seconds)" },
-                            showlegend: false,
-                        },
-                        { responsive: true, displayModeBar: false });
+                    buffers.plotStackedBars("tpGraph", rootName);
 
                     // Build the RTT histo
                     rtt_histo.plot("rttHistogram");

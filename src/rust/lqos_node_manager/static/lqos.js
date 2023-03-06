@@ -3,9 +3,9 @@ function metaverse_color_ramp(n) {
         return "#32b08c";
     } else if (n <= 20) {
         return "#ffb94a";
-    } else if (n <=50) {
+    } else if (n <= 50) {
         return "#f95f53";
-    } else if (n <=70) {
+    } else if (n <= 70) {
         return "#bf3d5e";
     } else {
         return "#dc4e58";
@@ -49,9 +49,9 @@ function deleteAllCookies() {
 
 function cssrules() {
     var rules = {};
-    for (var i=0; i<document.styleSheets.length; ++i) {
+    for (var i = 0; i < document.styleSheets.length; ++i) {
         var cssRules = document.styleSheets[i].cssRules;
-        for (var j=0; j<cssRules.length; ++j)
+        for (var j = 0; j < cssRules.length; ++j)
             rules[cssRules[j].selectorText] = cssRules[j];
     }
     return rules;
@@ -80,7 +80,7 @@ function updateHostCounts() {
         $("#currentLogin").html(html);
     });
     $("#startTest").on('click', () => {
-        $.get("/api/run_btest", () => {});
+        $.get("/api/run_btest", () => { });
     });
 }
 
@@ -88,9 +88,9 @@ function colorReloadButton() {
     $("body").append(reloadModal);
     $("#btnReload").on('click', () => {
         $.get("/api/reload_libreqos", (result) => {
-            const myModal = new bootstrap.Modal(document.getElementById('reloadModal'), {focus: true});
+            const myModal = new bootstrap.Modal(document.getElementById('reloadModal'), { focus: true });
             $("#reloadLibreResult").text(result);
-            myModal.show();    
+            myModal.show();
         });
     });
     $.get("/api/reload_required", (req) => {
@@ -150,7 +150,7 @@ function redactText(text) {
     if (!isRedacted()) return text;
     let redacted = "";
     let sum = 0;
-    for(let i = 0; i < text.length; i++){
+    for (let i = 0; i < text.length; i++) {
         let code = text.charCodeAt(i);
         sum += code;
     }
@@ -160,13 +160,13 @@ function redactText(text) {
 
 function scaleNumber(n) {
     if (n > 1000000000000) {
-        return (n/1000000000000).toFixed(2) + "T";
+        return (n / 1000000000000).toFixed(2) + "T";
     } else if (n > 1000000000) {
-        return (n/1000000000).toFixed(2) + "G";
+        return (n / 1000000000).toFixed(2) + "G";
     } else if (n > 1000000) {
-        return (n/1000000).toFixed(2) + "M";
+        return (n / 1000000).toFixed(2) + "M";
     } else if (n > 1000) {
-        return (n/1000).toFixed(2) + "K";
+        return (n / 1000).toFixed(2) + "K";
     }
     return n;
 }
@@ -190,17 +190,75 @@ const reloadModal = `
     </div>
   </div>`;
 
+function yValsRingSort(y, head, capacity) {
+    let result = [];
+    for (let i=0; i<head; ++i)
+        result.push(y[i]);
+    for (let i=head; i<capacity; ++i) {
+        result.push(y[i])
+    }
+    return result;
+}
+
+// MultiRingBuffer provides an interface for storing multiple ring-buffers
+// of performance data, with a view to them ending up on the same graph.
+class MultiRingBuffer {
+    constructor(capacity) {
+        this.capacity = capacity;
+        this.data = {};
+    }
+
+    push(id, download, upload) {
+        if (!this.data.hasOwnProperty(id)) {
+            this.data[id] = new RingBuffer(this.capacity);
+        }
+        this.data[id].push(download, upload);
+    }
+
+    plotStackedBars(target_div, rootName) {
+        let graphData = [];
+        for (const [k, v] of Object.entries(this.data)) {
+            if (k != rootName) {
+                let total = v.download.reduce((a, b) => a + b) +
+                    v.upload.reduce((a, b) => a + b);
+                if (total > 0) {
+                    let dn = { x: v.x_axis, y: yValsRingSort(v.download, v.head, v.capacity), name: k + "_DL", type: 'scatter', stackgroup: 'dn' };
+                    let up = { x: v.x_axis, y: yValsRingSort(v.upload, v.head, v.capacity), name: k + "_UL", type: 'scatter', stackgroup: 'up' };
+                    graphData.push(dn);
+                    graphData.push(up);
+                }
+            }
+        }
+        /*let v = buffers[rootName];
+        let dn = { x: v.x_axis, y: v.download, name: "DL", type: 'scatter', fill: null };
+        let up = { x: v.x_axis, y: v.upload, name: "UL", type: 'scatter', fill: null };
+        graphData.push(dn);
+        graphData.push(up);*/
+        let graph = document.getElementById(target_div);
+        Plotly.newPlot(
+            graph,
+            graphData,
+            {
+                margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 },
+                yaxis: { automargin: true },
+                xaxis: { automargin: true, title: "Time since now (seconds)" },
+                showlegend: false,
+            },
+            { responsive: true, displayModeBar: false });
+    }
+}
+
 class RingBuffer {
     constructor(capacity) {
         this.capacity = capacity;
-        this.head = capacity-1;
+        this.head = capacity - 1;
         this.download = [];
         this.upload = [];
         this.x_axis = [];
-        for (var i=0; i<capacity; ++i) {
+        for (var i = 0; i < capacity; ++i) {
             this.download.push(0.0);
             this.upload.push(0.0);
-            this.x_axis.push(i);
+            this.x_axis.push(0-i);
         }
     }
 
@@ -224,14 +282,14 @@ class RttHistogram {
     constructor() {
         this.entries = []
         this.x = [];
-        for (let i=0; i<20; ++i) {
+        for (let i = 0; i < 20; ++i) {
             this.entries.push(i);
             this.x.push(i * 10);
         }
     }
 
     clear() {
-        for (let i=0; i<20; ++i) {
+        for (let i = 0; i < 20; ++i) {
             this.entries[i] = 0;
         }
     }
