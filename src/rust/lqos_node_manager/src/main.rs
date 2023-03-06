@@ -80,6 +80,7 @@ fn rocket() -> _ {
         static_pages::login_page,
         auth_guard::username,
         network_tree::tree_entry,
+        network_tree::tree_clients,
         // Supporting files
         static_pages::bootsrap_css,
         static_pages::plotly_js,

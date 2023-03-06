@@ -1,8 +1,10 @@
+use std::net::IpAddr;
+
 use lqos_bus::{bus_request, BusRequest, BusResponse};
 use lqos_config::NetworkJsonNode;
-use rocket::{fs::NamedFile, serde::json::Json};
+use rocket::{fs::NamedFile, serde::{json::Json, Serialize}};
 
-use crate::cache_control::NoCache;
+use crate::{cache_control::NoCache, tracker::SHAPED_DEVICES};
 
 // Note that NoCache can be replaced with a cache option
 // once the design work is complete.
@@ -22,5 +24,48 @@ pub async fn tree_entry(
     _ => Vec::new(),
   };
 
+  NoCache::new(Json(result))
+}
+
+#[derive(Serialize, Clone)]
+#[serde(crate = "rocket::serde")]
+pub struct CircuitThroughput {
+  pub id: String,
+  pub name: String,
+  pub traffic: (u64, u64),
+  pub limit: (u64, u64),
+}
+
+#[get("/api/tree_clients/<parent>")]
+pub async fn tree_clients(
+  parent: String,
+) -> NoCache<Json<Vec<CircuitThroughput>>> {
+  let mut result = Vec::new();
+  for msg in
+    bus_request(vec![BusRequest::GetHostCounter]).await.unwrap().iter()
+  {
+    let devices = SHAPED_DEVICES.read();
+    if let BusResponse::HostCounters(hosts) = msg {
+      for (ip, down, up) in hosts.iter() {
+        let lookup = match ip {
+          IpAddr::V4(ip) => ip.to_ipv6_mapped(),
+          IpAddr::V6(ip) => *ip,
+        };
+        if let Some(c) = devices.trie.longest_match(lookup) {
+          if devices.devices[*c.1].parent_node == parent {
+            result.push(CircuitThroughput {
+              id: devices.devices[*c.1].circuit_id.clone(),
+              name: devices.devices[*c.1].circuit_name.clone(),
+              traffic: (*down, *up),
+              limit: (
+                devices.devices[*c.1].download_max_mbps as u64,
+                devices.devices[*c.1].upload_max_mbps as u64,
+              )
+            });
+          }
+        }
+      }
+    }
+  }
   NoCache::new(Json(result))
 }

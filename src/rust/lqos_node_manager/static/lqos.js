@@ -189,3 +189,33 @@ const reloadModal = `
       </div>
     </div>
   </div>`;
+
+class RingBuffer {
+    constructor(capacity) {
+        this.capacity = capacity;
+        this.head = capacity-1;
+        this.download = [];
+        this.upload = [];
+        this.x_axis = [];
+        for (var i=0; i<capacity; ++i) {
+            this.download.push(0.0);
+            this.upload.push(0.0);
+            this.x_axis.push(i);
+        }
+    }
+
+    push(download, upload) {
+        this.download[this.head] = download;
+        this.upload[this.head] = 0.0 - upload;
+        this.head += 1;
+        this.head %= this.capacity;
+    }
+
+    toScatterGraphData() {
+        let GraphData = [
+            { x: this.x_axis, y: this.download, name: 'Download', type: 'scatter' },
+            { x: this.x_axis, y: this.upload, name: 'Upload', type: 'scatter' },
+        ];
+        return GraphData;
+    }
+}

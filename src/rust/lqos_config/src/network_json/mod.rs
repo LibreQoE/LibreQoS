@@ -193,7 +193,11 @@ fn recurse_node(
   immediate_parent: usize,
 ) {
   info!("Mapping {name} from network.json");
-  let mut my_id = nodes.len();
+  let my_id = if name != "children" {
+    nodes.len()
+  } else {
+    nodes.len()-1
+  };
   let mut parents = parents.to_vec();
   parents.push(my_id);
   let node = NetworkJsonNode {
@@ -210,8 +214,6 @@ fn recurse_node(
 
   if node.name != "children" {
     nodes.push(node);
-  } else {
-    my_id -= 1;
   }
 
   // Recurse children

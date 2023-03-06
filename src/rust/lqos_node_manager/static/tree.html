@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -12,41 +13,49 @@
     <script src="/vendor/jquery.min.js"></script>
     <script defer src="/vendor/bootstrap.bundle.min.js"></script>
 </head>
+
 <body class="bg-secondary">
     <!-- Navigation -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container-fluid">
-            <a class="navbar-brand" href="/"><img src="/vendor/tinylogo.svg" alt="LibreQoS SVG Logo" width="25" height="25" />&nbsp;LibreQoS</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+            <a class="navbar-brand" href="/"><img src="/vendor/tinylogo.svg" alt="LibreQoS SVG Logo" width="25"
+                    height="25" />&nbsp;LibreQoS</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+                data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false"
+                aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarSupportedContent">
                 <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                     <li class="nav-item">
-                        <a class="nav-link active" aria-current="page" href="/"><i class="fa fa-home"></i> Dashboard</a>
+                        <a class="nav-link" aria-current="page" href="/"><i class="fa fa-home"></i> Dashboard</a>
                     </li>
                     <li class="nav-item" id="currentLogin"></li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/tree?parent=0"><i class="fa fa-globe"></i> Network Layout</a>
+                        <a class="nav-link active" href="/tree?parent=0"><i class="fa fa-globe"></i> Network Layout</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/shaped"><i class="fa fa-users"></i> Shaped Devices <span id="shapedCount" class="badge badge-pill badge-success green-badge">?</span></a>
+                        <a class="nav-link" href="/shaped"><i class="fa fa-users"></i> Shaped Devices <span
+                                id="shapedCount" class="badge badge-pill badge-success green-badge">?</span></a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/unknown"><i class="fa fa-address-card"></i> Unknown IPs <span id="unshapedCount" class="badge badge-warning orange-badge">?</span></a>
+                        <a class="nav-link" href="/unknown"><i class="fa fa-address-card"></i> Unknown IPs <span
+                                id="unshapedCount" class="badge badge-warning orange-badge">?</span></a>
                     </li>
                 </ul>
             </div>
 
             <ul class="navbar-nav ms-auto">
                 <li class="nav-item">
-                    <a class="nav-link" href="#" id="startTest"><i class="fa fa-flag-checkered"></i> Run Bandwidth Test</a>
+                    <a class="nav-link" href="#" id="startTest"><i class="fa fa-flag-checkered"></i> Run Bandwidth
+                        Test</a>
                 </li>
                 <li class="nav-item ms-auto">
                     <a class="nav-link" href="/config"><i class="fa fa-gear"></i> Configuration</a>
                 </li>
                 <li>
-                    <a class="nav-link btn btn-small" href="#" id="btnReload"><i class="fa fa-refresh"></i> Reload LibreQoS</a>
+                    <a class="nav-link btn btn-small" href="#" id="btnReload"><i class="fa fa-refresh"></i> Reload
+                        LibreQoS</a>
                 </li>
             </ul>
         </div>
@@ -54,76 +63,231 @@
 
     <div id="container" class="pad4">
 
-        <div class="row top-shunt">
+        <div class="row mbot8 row220">
+            <!-- 5 minutes of throughput -->
+            <div class="col-sm-4">
+                <div class="card bg-light">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="fa fa-hourglass"></i> Last 5 Minutes</h5>
+                        <div id="tpGraph" class="graph98 graph150"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RTT Histogram -->
+            <div class="col-sm-4">
+                <div class="card bg-light">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="fa fa-bar-chart"></i> TCP Round-Trip Time Histogram</h5>
+                        <div id="rttHistogram" class="graph98 graph150"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Info -->
+            <div class="col-sm-3">
+                <div class="card bg-light">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="fa fa-globe"></i> <span id="nodeName"
+                                style="font-weight: bold;" class='redact'></span></h5>
+                        <strong>DL Limit</strong>: <span id="nodeDL"></span><br />
+                        <strong>UL Limit</strong>: <span id="nodeUL"></span><br />
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="row" style="margin-top: 4px;">
             <div class="col-sm-12 bg-light center-txt">
-                THIS NODE
+                <div id="clientList"></div>
             </div>
         </div>
 
-        <div class="row">
+        <div class="row" style="margin-top: 4px;">
             <div class="col-sm-12 bg-light center-txt">
                 <div id="treeList"></div>
             </div>
         </div>
 
-    </div>
 
-    <footer>&copy; 2022-2023, LibreQoE LLC</footer>
+        <footer>&copy; 2022-2023, LibreQoE LLC</footer>
 
-    <script>
-        let node = 0;
+        <script>
+            let node = 0;
+            let buffers = {};
+            let rtt_histo = [];
 
-        function getTree() {
-            $.get("/api/network_tree/" + node, (data) => {
-                //console.log(data);
+            function getClients(rootName) {
+                $.get("/api/tree_clients/" + encodeURI(rootName), (data) => {
+                    let tbl = "<table class='table'>";
+                    tbl += "<thead><th>Circuit</th><th>Limit</th><th>Download</th><th>Upload</th></thead>";
+                    
+                    for (let i=0; i<data.length; ++i) {
+                        let nodeDL = scaleNumber(data[i].limit[0] * 1000000);
+                        let nodeUL = scaleNumber(data[i].limit[1] * 1000000);
+                        if (nodeDL == "0") nodeDL = "Unlimited";
+                        if (nodeUL == "0") nodeUL = "Unlimited";
+                        tbl += "<tr>";
+                        tbl += "<td class='redact'><a href='/circuit_queue?id=" + encodeURI(data[i].id) + "'>" + redactText(data[i].name) + "</a></td>";
+                        tbl += "<td>" + nodeDL + " / " + nodeUL + "</td>";
+                        tbl += "<td>" + scaleNumber(data[i].traffic[0] * 8) + "</td>";
+                        tbl += "<td>" + scaleNumber(data[i].traffic[1] * 8) + "</td>";
 
-                let tbl = "<table class='table'>";
-                tbl += "<thead><th>Circuit</th><th>Limit</th><th>Download</th><th>Upload</th><th>RTT Latency</th></thead>";
-                for (let i=1; i<data.length; ++i) {
-                    tbl += "<tr>";
-                    tbl += "<td style='width: 20%'><a href='/tree?parent=" + encodeURI(data[i][0]) + "'>" + data[i][1].name + "</a></td>";
-                    if (data[i][1].max_throughput[0]==0 && data[i][1].max_throughput[1] == 0) {
-                        tbl += "<td>No Limit</td>";
-                    } else {
-                        let down = scaleNumber(data[i][1].max_throughput[0] * 1000000);
-                        let up = scaleNumber(data[i][1].max_throughput[1] * 1000000);
-                        tbl += "<td>" + down + " / " + up + "</td>";
-                    }
-                    let down = scaleNumber(data[i][1].current_throughput[0] * 8);
-                    let up = scaleNumber(data[i][1].current_throughput[1] * 8);
-                    tbl += "<td>" + down + "</td>";
-                    tbl += "<td>" + up + "</td>";
-                    let rtt = "-";
-                    if (data[i][1].rtts.length > 0) {
-                        let sum = 0;
-                        for (let j=0; j<data[i][1].rtts.length; ++j) {
-                            sum += data[i][1].rtts[j];
+                        let nodeName = data[i].name;
+                        if (!buffers.hasOwnProperty(nodeName)) {
+                            buffers[nodeName] = new RingBuffer(300);
                         }
-                        sum /= data[i][1].rtts.length;
-                        rtt = sum.toFixed(2) + " ms";
+                        buffers[nodeName].push(
+                            data[i].traffic[0] * 8,
+                            data[i].traffic[1] * 8
+                        );
+                        }
+                    tbl += "</table>";
+                    $("#clientList").html(tbl);
+                });
+            }
+
+            function getTree() {
+                $.get("/api/network_tree/" + node, (data) => {
+                    //console.log(data);
+                    // Setup "this node"
+                    let rootName = data[0][1].name;
+                    $("#nodeName").text(redactText(rootName));
+                    let nodeDL = scaleNumber(data[0][1].max_throughput[0] * 1000000);
+                    let nodeUL = scaleNumber(data[0][1].max_throughput[1] * 1000000);
+                    if (nodeDL == "0") nodeDL = "Unlimited";
+                    if (nodeUL == "0") nodeUL = "Unlimited";
+                    $("#nodeDL").text(nodeDL);
+                    $("#nodeUL").text(nodeUL);
+
+                    getClients(rootName);
+
+                    // Throughput graph
+                    if (!buffers.hasOwnProperty(rootName)) {
+                        buffers[rootName] = new RingBuffer(300);
                     }
-                    tbl += "<td>" + rtt + "</td>";
-                    tbl += "</tr>";
+                    buffers[rootName].push(
+                        data[0][1].current_throughput[0] * 8,
+                        data[0][1].current_throughput[1] * 8
+                    );
+
+                    for (let i = 0; i < 20; i++) rtt_histo[i] = 0;
+
+                    // Build the table & update node buffers
+                    let tbl = "<table class='table'>";
+                    tbl += "<thead><th>Site</th><th>Limit</th><th>Download</th><th>Upload</th><th>RTT Latency</th></thead>";
+                    for (let i = 1; i < data.length; ++i) {
+                        let nodeName = data[i][1].name;
+
+                        if (!buffers.hasOwnProperty(nodeName)) {
+                            buffers[nodeName] = new RingBuffer(300);
+                        }
+                        buffers[nodeName].push(
+                            data[i][1].current_throughput[0] * 8,
+                            data[i][1].current_throughput[1] * 8
+                        );
+
+                        tbl += "<tr>";
+                        tbl += "<td style='width: 20%' class='redact'><a href='/tree?parent=" + encodeURI(data[i][0]) + "'>" + redactText(nodeName) + "</a></td>";
+                        if (data[i][1].max_throughput[0] == 0 && data[i][1].max_throughput[1] == 0) {
+                            tbl += "<td>No Limit</td>";
+                        } else {
+                            let down = scaleNumber(data[i][1].max_throughput[0] * 1000000);
+                            let up = scaleNumber(data[i][1].max_throughput[1] * 1000000);
+                            tbl += "<td>" + down + " / " + up + "</td>";
+                        }
+                        let down = scaleNumber(data[i][1].current_throughput[0] * 8);
+                        let up = scaleNumber(data[i][1].current_throughput[1] * 8);
+                        tbl += "<td>" + down + "</td>";
+                        tbl += "<td>" + up + "</td>";
+                        let rtt = "-";
+                        if (data[i][1].rtts.length > 0) {
+                            let sum = 0;
+                            for (let j = 0; j < data[i][1].rtts.length; ++j) {
+                                sum += data[i][1].rtts[j];
+                            }
+                            sum /= data[i][1].rtts.length;
+                            rtt = sum.toFixed(2) + " ms";
+                            histo_col = Math.floor(sum / 10.0);
+                            if (histo_col > 19) histo_col = 19;
+                            rtt_histo[histo_col] += 1;
+                        }
+                        tbl += "<td>" + rtt + "</td>";
+                        tbl += "</tr>";
+                    }
+                    tbl += "</table>";
+                    $("#treeList").html(tbl);
+
+                    // Build the stacked chart
+                    let graphData = [];
+                    for (const [k, v] of Object.entries(buffers)) {
+                        if (k != rootName) {
+                            let total = v.download.reduce((a, b) => a + b) +
+                                v.upload.reduce((a, b) => a + b);
+                            if (total > 0) {
+                                let dn = { x: v.x_axis, y: v.download, name: k + "_DL", type: 'scatter', stackgroup: 'dn' };
+                                let up = { x: v.x_axis, y: v.upload, name: k + "_UL", type: 'scatter', stackgroup: 'up' };
+                                graphData.push(dn);
+                                graphData.push(up);
+                            }
+                        }
+                    }
+                    /*let v = buffers[rootName];
+                    let dn = { x: v.x_axis, y: v.download, name: "DL", type: 'scatter', fill: null };
+                    let up = { x: v.x_axis, y: v.upload, name: "UL", type: 'scatter', fill: null };
+                    graphData.push(dn);
+                    graphData.push(up);*/
+                    let graph = document.getElementById("tpGraph");
+                    Plotly.newPlot(
+                        graph,
+                        graphData,
+                        {
+                            margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 },
+                            yaxis: { automargin: true },
+                            xaxis: { automargin: true, title: "Time since now (seconds)" },
+                            showlegend: false,
+                        },
+                        { responsive: true, displayModeBar: false });
+
+                    // Build the RTT histo
+                    let x = [];
+                    let y = [];
+                    for (let i = 0; i < 20; ++i) {
+                        x.push(i * 10.0);
+                        y.push(rtt_histo[i]);
+                    }
+                    let gData = [
+                        { x: x, y: y, type: 'bar', marker: { color: x, colorscale: 'RdBu' } }
+                    ]
+                    graph = document.getElementById("rttHistogram");
+                    Plotly.newPlot(graph, gData, { margin: { l: 0, r: 0, b: 35, t: 0 }, xaxis: { title: 'TCP Round-Trip Time (ms)' } }, { responsive: true });
+                });
+
+                if (isRedacted()) {
+                    console.log("Redacting");
+                    //css_getclass(".redact").style.filter = "blur(4px)";
+                    css_getclass(".redact").style.fontFamily = "klingon";
                 }
-                tbl += "</table>";
-                $("#treeList").html(tbl);
+
+                setTimeout(getTree, 1000);
+            }
+
+            function start() {
+                for (let i = 0; i < 20; ++i) rtt_histo.push(0);
+                colorReloadButton();
+                updateHostCounts();
+                getTree();
+            }
+
+            const params = new Proxy(new URLSearchParams(window.location.search), {
+                get: (searchParams, prop) => searchParams.get(prop),
             });
-            setTimeout(getTree, 1000);
-        }
+            node = params.parent;
 
-        function start() {
-            colorReloadButton();
-            updateHostCounts();
-            getTree();
-        }
-
-        const params = new Proxy(new URLSearchParams(window.location.search), {
-            get: (searchParams, prop) => searchParams.get(prop),
-        });
-        node = params.parent;
-
-        $(document).ready(start);
-    </script>
+            $(document).ready(start);
+        </script>
 
 </body>
+
 </html>
