@@ -178,11 +178,15 @@ impl BatchedCommands {
   }
 
   pub fn submit(&mut self) -> PyResult<usize> {
+    const MAX_BATH_SIZE: usize = 512;
     // We're draining the request list out, which is a move that
     // *should* be elided by the optimizing compiler.
     let len = self.batch.len();
-    let batch: Vec<BusRequest> = self.batch.drain(0..).collect();
-    run_query(batch).unwrap();
+    while !self.batch.is_empty() {
+      let batch_size = usize::min(MAX_BATH_SIZE, self.batch.len());
+      let batch: Vec<BusRequest> = self.batch.drain(0..batch_size).collect();
+      run_query(batch).unwrap();
+    }
     Ok(len)
   }
 }
