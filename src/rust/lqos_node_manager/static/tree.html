@@ -118,6 +118,17 @@
             let buffers = {};
             let rtt_histo = [];
 
+            function bgColor(traffic, limit) {
+                if (limit == 0) {
+                    return "#ddffdd";
+                }
+                let usage = (traffic*8) / (limit * 1000000);
+                if (usage < 0.25) { return "#ddffdd" }
+                else if (usage < 0.5) { return "#aaffaa" }
+                else if (usage < 0.75) { return "#ffa500" }
+                else { return "#ffdddd" }
+            }
+
             function getClients(rootName) {
                 $.get("/api/tree_clients/" + encodeURI(rootName), (data) => {
                     let tbl = "<table class='table'>";
@@ -131,8 +142,10 @@
                         tbl += "<tr>";
                         tbl += "<td class='redact'><a href='/circuit_queue?id=" + encodeURI(data[i].id) + "'>" + redactText(data[i].name) + "</a></td>";
                         tbl += "<td>" + nodeDL + " / " + nodeUL + "</td>";
-                        tbl += "<td>" + scaleNumber(data[i].traffic[0] * 8) + "</td>";
-                        tbl += "<td>" + scaleNumber(data[i].traffic[1] * 8) + "</td>";
+                        let upbg = bgColor(data[i].traffic[1], data[i].limit[1]);
+                        let dnbg = bgColor(data[i].traffic[0], data[0].limit[1]);
+                        tbl += "<td style='background-color: " + dnbg + "'>" + scaleNumber(data[i].traffic[0] * 8) + "</td>";
+                        tbl += "<td style='background-color: " + upbg + "'>" + scaleNumber(data[i].traffic[1] * 8) + "</td>";
 
                         let nodeName = data[i].name;
                         if (!buffers.hasOwnProperty(nodeName)) {
@@ -199,8 +212,10 @@
                         }
                         let down = scaleNumber(data[i][1].current_throughput[0] * 8);
                         let up = scaleNumber(data[i][1].current_throughput[1] * 8);
-                        tbl += "<td>" + down + "</td>";
-                        tbl += "<td>" + up + "</td>";
+                        let dbg = bgColor(data[i][1].current_throughput[0], data[i][1].max_throughput[0]);
+                        let ubg = bgColor(data[i][1].current_throughput[0], data[i][1].max_throughput[0]);
+                        tbl += "<td style='background-color: " + dbg + "'>" + down + "</td>";
+                        tbl += "<td style='background-color: " + ubg + "'>" + up + "</td>";
                         let rtt = "-";
                         if (data[i][1].rtts.length > 0) {
                             let sum = 0;
@@ -265,7 +280,7 @@
                 });
 
                 if (isRedacted()) {
-                    console.log("Redacting");
+                    //console.log("Redacting");
                     //css_getclass(".redact").style.filter = "blur(4px)";
                     css_getclass(".redact").style.fontFamily = "klingon";
                 }
