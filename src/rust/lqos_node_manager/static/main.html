@@ -299,19 +299,15 @@
             });
         }
 
+        let rttGraph = new RttHistogram();
+
         function updateHistogram() {
             $.get("/api/rtt_histogram", (rtt) => {
-                let graph = document.getElementById("rttHistogram");
-                let x = [];
-                let y = [];
+                rttGraph.clear();
                 for (let i=0; i<rtt.length; i++) {
-                    x.push(i*10.0);
-                    y.push(rtt[i]);
+                    rttGraph.push(rtt[i]);
                 }
-                let data = [
-                    {x:x, y:y, type: 'bar', marker: { color:x, colorscale: 'RdBu' } }
-                ]
-                Plotly.newPlot(graph, data, { margin: { l:0,r:0,b:35,t:0 }, xaxis: { title: 'TCP Round-Trip Time (ms)' } }, { responsive: true });
+                rttGraph.plot("rttHistogram");
                 setTimeout(updateHistogram, 5000);
             });
         }

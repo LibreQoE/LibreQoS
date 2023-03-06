@@ -219,3 +219,36 @@ class RingBuffer {
         return GraphData;
     }
 }
+
+class RttHistogram {
+    constructor() {
+        this.entries = []
+        this.x = [];
+        for (let i=0; i<20; ++i) {
+            this.entries.push(i);
+            this.x.push(i * 10);
+        }
+    }
+
+    clear() {
+        for (let i=0; i<20; ++i) {
+            this.entries[i] = 0;
+        }
+    }
+
+    push(rtt) {
+        let band = Math.floor(rtt / 10.0);
+        if (band > 19) {
+            band = 19;
+        }
+        this.entries[band] += 1;
+    }
+
+    plot(target_div) {
+        let gData = [
+            { x: this.x, y: this.entries, type: 'bar', marker: { color: this.x, colorscale: 'RdBu' } }
+        ]
+        let graph = document.getElementById(target_div);
+        Plotly.newPlot(graph, gData, { margin: { l: 0, r: 0, b: 35, t: 0 }, xaxis: { title: 'TCP Round-Trip Time (ms)' } }, { responsive: true });
+    }
+}

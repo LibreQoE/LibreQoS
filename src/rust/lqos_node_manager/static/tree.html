@@ -116,7 +116,7 @@
         <script>
             let node = 0;
             let buffers = {};
-            let rtt_histo = [];
+            let rtt_histo = new RttHistogram();
 
             function bgColor(traffic, limit) {
                 if (limit == 0) {
@@ -163,6 +163,7 @@
 
             function getTree() {
                 $.get("/api/network_tree/" + node, (data) => {
+                    rtt_histo.clear();
                     //console.log(data);
                     // Setup "this node"
                     let rootName = data[0][1].name;
@@ -184,8 +185,6 @@
                         data[0][1].current_throughput[0] * 8,
                         data[0][1].current_throughput[1] * 8
                     );
-
-                    for (let i = 0; i < 20; i++) rtt_histo[i] = 0;
 
                     // Build the table & update node buffers
                     let tbl = "<table class='table'>";
@@ -224,9 +223,7 @@
                             }
                             sum /= data[i][1].rtts.length;
                             rtt = sum.toFixed(2) + " ms";
-                            histo_col = Math.floor(sum / 10.0);
-                            if (histo_col > 19) histo_col = 19;
-                            rtt_histo[histo_col] += 1;
+                            rtt_histo.push(sum);
                         }
                         tbl += "<td>" + rtt + "</td>";
                         tbl += "</tr>";
@@ -266,17 +263,7 @@
                         { responsive: true, displayModeBar: false });
 
                     // Build the RTT histo
-                    let x = [];
-                    let y = [];
-                    for (let i = 0; i < 20; ++i) {
-                        x.push(i * 10.0);
-                        y.push(rtt_histo[i]);
-                    }
-                    let gData = [
-                        { x: x, y: y, type: 'bar', marker: { color: x, colorscale: 'RdBu' } }
-                    ]
-                    graph = document.getElementById("rttHistogram");
-                    Plotly.newPlot(graph, gData, { margin: { l: 0, r: 0, b: 35, t: 0 }, xaxis: { title: 'TCP Round-Trip Time (ms)' } }, { responsive: true });
+                    rtt_histo.plot("rttHistogram");
                 });
 
                 if (isRedacted()) {
