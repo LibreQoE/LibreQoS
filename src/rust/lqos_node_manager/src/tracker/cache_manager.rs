@@ -129,7 +129,6 @@ fn watch_for_shaped_devices_changing() -> Result<()> {
 async fn get_data_from_server() -> Result<()> {
   // Send request to lqosd
   let requests = vec![
-    BusRequest::GetCurrentThroughput,
     BusRequest::GetTopNDownloaders { start: 0, end: 10 },
     BusRequest::GetWorstRtt { start: 0, end: 10 },
     BusRequest::RttHistogram,
@@ -137,26 +136,7 @@ async fn get_data_from_server() -> Result<()> {
   ];
 
   for r in bus_request(requests).await?.iter() {
-    match r {
-      BusResponse::CurrentThroughput {
-        bits_per_second,
-        packets_per_second,
-        shaped_bits_per_second,
-      } => {
-        {
-          let mut lock = CURRENT_THROUGHPUT.write();
-          lock.bits_per_second = *bits_per_second;
-          lock.packets_per_second = *packets_per_second;
-        } // Lock scope
-        {
-          let mut lock = THROUGHPUT_BUFFER.write();
-          lock.store(ThroughputPerSecond {
-            packets_per_second: *packets_per_second,
-            bits_per_second: *bits_per_second,
-            shaped_bits_per_second: *shaped_bits_per_second,
-          });
-        }
-      }
+    match r {      
       BusResponse::TopDownloaders(stats) => {
         *TOP_10_DOWNLOADERS.write() = stats.clone();
       }

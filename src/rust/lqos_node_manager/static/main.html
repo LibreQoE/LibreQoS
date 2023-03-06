@@ -159,40 +159,21 @@
     <footer>&copy; 2022-2023, LibreQoE LLC</footer>
 
     <script>
+        let throughput = new MultiRingBuffer(300);
+
         function updateCurrentThroughput() {
             $.get("/api/current_throughput", (tp) => {
                 $("#ppsDown").text(scaleNumber(tp.packets_per_second[0]));
                 $("#ppsUp").text(scaleNumber(tp.packets_per_second[1]));
                 $("#bpsDown").text(scaleNumber(tp.bits_per_second[0]));
                 $("#bpsUp").text(scaleNumber(tp.bits_per_second[1]));
-                setTimeout(updateCurrentThroughput, 1000);
-            });
-        }
 
-        function updateThroughputGraph() {
-            $.get("/api/throughput_ring", (tp) => {
-                let graph = document.getElementById("tpGraph");
-                let x = [];
-                let y = []; // Down
-                let y2 = []; // Up
-                let y3 = []; // Shaped Down
-                let y4 = []; // Shaped Up
-                for (i=0; i<300; i++) {
-                    x.push(i);
-                    y.push(tp[i].bits_per_second[0]);
-                    y2.push(0.0 - tp[i].bits_per_second[1]);
-                    y3.push(tp[i].shaped_bits_per_second[0]);
-                    y4.push(0.0 - tp[i].shaped_bits_per_second[1]);
-                }
-                let data = [
-                    {x: x, y:y, name: 'Download', type: 'scatter'},
-                    {x: x, y:y2, name: 'Upload', type: 'scatter'},
-                    {x: x, y:y3, name: 'Shaped Download', type: 'scatter', fill: 'tozeroy'},
-                    {x: x, y:y4, name: 'Shaped Upload', type: 'scatter', fill: 'tozeroy'},
-                ];
-                Plotly.newPlot(graph, data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true, title: "Time since now (seconds)"} }, { responsive: true });
-                //console.log(tp);
-                setTimeout(updateThroughputGraph, 1000);
+                throughput.push("pps", tp.packets_per_second[0], tp.packets_per_second[1]);
+                throughput.push("total", tp.bits_per_second[0], tp.bits_per_second[1]);
+                throughput.push("shaped", tp.shaped_bits_per_second[0], tp.shaped_bits_per_second[1]);
+                throughput.plotTotalThroughput("tpGraph");
+
+                setTimeout(updateCurrentThroughput, 1000);
             });
         }
 
@@ -321,14 +302,13 @@
 
             colorReloadButton();
             updateCurrentThroughput();
-            updateThroughputGraph();
             updateCpu();
             updateRam();
             updateTop10();
             updateWorst10();
             updateHistogram();
             updateHostCounts();
-            updateThroughputQuantile();
+            //updateThroughputQuantile();
         }
 
         $(document).ready(start);

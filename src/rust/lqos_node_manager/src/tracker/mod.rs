@@ -1,15 +1,15 @@
 mod cache;
 mod cache_manager;
 use self::cache::{
-  CPU_USAGE, CURRENT_THROUGHPUT, HOST_COUNTS, NUM_CPUS, RAM_USED,
-  RTT_HISTOGRAM, THROUGHPUT_BUFFER, TOP_10_DOWNLOADERS, TOTAL_RAM,
+  CPU_USAGE, HOST_COUNTS, NUM_CPUS, RAM_USED,
+  RTT_HISTOGRAM, TOP_10_DOWNLOADERS, TOTAL_RAM,
   WORST_10_RTT,
 };
-use crate::{auth_guard::AuthGuard, tracker::cache::ThroughputPerSecond};
+use crate::auth_guard::AuthGuard;
 pub use cache::{SHAPED_DEVICES, UNKNOWN_DEVICES};
 pub use cache_manager::update_tracking;
 use lazy_static::lazy_static;
-use lqos_bus::{IpStats, TcHandle};
+use lqos_bus::{IpStats, TcHandle, bus_request, BusRequest, BusResponse};
 use lqos_config::LibreQoSConfig;
 use parking_lot::Mutex;
 use rocket::serde::{json::Json, Deserialize, Serialize};
@@ -60,15 +60,31 @@ impl From<&IpStats> for IpStatsWithPlan {
   }
 }
 
-#[get("/api/current_throughput")]
-pub fn current_throughput(_auth: AuthGuard) -> Json<ThroughputPerSecond> {
-  let result = *CURRENT_THROUGHPUT.read();
-  Json(result)
+/// Stores total system throughput per second.
+#[derive(Debug, Clone, Copy, Serialize, Default)]
+#[serde(crate = "rocket::serde")]
+pub struct ThroughputPerSecond {
+  pub bits_per_second: (u64, u64),
+  pub packets_per_second: (u64, u64),
+  pub shaped_bits_per_second: (u64, u64),
 }
 
-#[get("/api/throughput_ring")]
-pub fn throughput_ring(_auth: AuthGuard) -> Json<Vec<ThroughputPerSecond>> {
-  let result = THROUGHPUT_BUFFER.read().get_result();
+#[get("/api/current_throughput")]
+pub async fn current_throughput(_auth: AuthGuard) -> Json<ThroughputPerSecond> {
+  let mut result = ThroughputPerSecond::default();
+  if let Ok(messages) = bus_request(vec![BusRequest::GetCurrentThroughput]).await {
+    for msg in messages {
+      if let BusResponse::CurrentThroughput {
+        bits_per_second,
+        packets_per_second,
+        shaped_bits_per_second,
+      } = msg {
+        result.bits_per_second = bits_per_second;
+        result.packets_per_second = packets_per_second;
+        result.shaped_bits_per_second = shaped_bits_per_second;
+      }
+    }
+  }
   Json(result)
 }
 
@@ -123,28 +139,3 @@ lazy_static! {
     Mutex::new(lqos_config::LibreQoSConfig::load().unwrap());
 }
 
-#[get("/api/busy_quantile")]
-pub fn busy_quantile(_auth: AuthGuard) -> Json<Vec<(u32, u32)>> {
-  let (down_capacity, up_capacity) = {
-    let lock = CONFIG.lock();
-    (
-      lock.total_download_mbps as f64 * 1_000_000.0,
-      lock.total_upload_mbps as f64 * 1_000_000.0,
-    )
-  };
-  let throughput = THROUGHPUT_BUFFER.read().get_result();
-  let mut result = vec![(0, 0); 10];
-  throughput.iter().for_each(|tp| {
-    let (down, up) = tp.bits_per_second;
-    let (down, up) = (down * 8, up * 8);
-    //println!("{down_capacity}, {up_capacity}, {down}, {up}");
-    let (down, up) = (
-      if down_capacity > 0.0 { down as f64 / down_capacity } else { 0.0 },
-      if up_capacity > 0.0 { up as f64 / up_capacity } else { 0.0 },
-    );
-    let (down, up) = ((down * 10.0) as usize, (up * 10.0) as usize);
-    result[usize::min(9, down)].0 += 1;
-    result[usize::min(0, up)].1 += 1;
-  });
-  Json(result)
-}

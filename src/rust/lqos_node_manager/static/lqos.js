@@ -229,11 +229,7 @@ class MultiRingBuffer {
                 }
             }
         }
-        /*let v = buffers[rootName];
-        let dn = { x: v.x_axis, y: v.download, name: "DL", type: 'scatter', fill: null };
-        let up = { x: v.x_axis, y: v.upload, name: "UL", type: 'scatter', fill: null };
-        graphData.push(dn);
-        graphData.push(up);*/
+
         let graph = document.getElementById(target_div);
         Plotly.newPlot(
             graph,
@@ -245,6 +241,24 @@ class MultiRingBuffer {
                 showlegend: false,
             },
             { responsive: true, displayModeBar: false });
+    }
+
+    plotTotalThroughput(target_div) {
+        let graph = document.getElementById(target_div);
+
+        let totalDown = yValsRingSort(this.data['total'].download, this.data['total'].head, this.data['total'].capacity);
+        let totalUp = yValsRingSort(this.data['total'].upload, this.data['total'].head, this.data['total'].capacity);
+        let shapedDown = yValsRingSort(this.data['shaped'].download, this.data['shaped'].head, this.data['shaped'].capacity);
+        let shapedUp = yValsRingSort(this.data['shaped'].upload, this.data['shaped'].head, this.data['shaped'].capacity);
+        let x = this.data['total'].x_axis;
+
+        let data = [
+            {x: x, y:totalDown, name: 'Download', type: 'scatter', marker: {color: 'rgb(255,160,122)'}},
+            {x: x, y:totalUp, name: 'Upload', type: 'scatter', marker: {color: 'rgb(255,160,122)'}},
+            {x: x, y:shapedDown, name: 'Shaped Download', type: 'scatter', fill: 'tozeroy', marker: {color: 'rgb(124,252,0)'}},
+            {x: x, y:shapedUp, name: 'Shaped Upload', type: 'scatter', fill: 'tozeroy', marker: {color: 'rgb(124,252,0)'}},
+        ];
+        Plotly.newPlot(graph, data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true, title: "Time since now (seconds)"} }, { responsive: true });
     }
 }
 
