@@ -79,6 +79,8 @@ fn rocket() -> _ {
         auth_guard::username,
         network_tree::tree_entry,
         network_tree::tree_clients,
+        network_tree::network_tree_summary,
+        network_tree::node_names,
         // Supporting files
         static_pages::bootsrap_css,
         static_pages::plotly_js,

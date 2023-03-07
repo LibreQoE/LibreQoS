@@ -32,7 +32,7 @@
                     </li>
                     <li class="nav-item" id="currentLogin"></li>
                     <li class="nav-item">
-                        <a class="nav-link active" href="/tree?parent=0"><i class="fa fa-globe"></i> Network Layout</a>
+                        <a class="nav-link active" href="/tree?parent=0"><i class="fa fa-globe"></i> Tree</a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="/shaped"><i class="fa fa-users"></i> Shaped Devices <span
@@ -85,13 +85,14 @@
             </div>
 
             <!-- Info -->
-            <div class="col-sm-3">
+            <div class="col-sm-4">
                 <div class="card bg-light">
                     <div class="card-body">
                         <h5 class="card-title"><i class="fa fa-globe"></i> <span id="nodeName"
                                 style="font-weight: bold;" class='redact'></span></h5>
                         <strong>DL Limit</strong>: <span id="nodeDL"></span><br />
-                        <strong>UL Limit</strong>: <span id="nodeUL"></span><br />
+                        <strong>UL Limit</strong>: <span id="nodeUL"></span><br />    
+                        <div id="breadcrumbs"></div>
                     </div>
                 </div>
             </div>
@@ -99,14 +100,24 @@
         </div>
 
         <div class="row" style="margin-top: 4px;">
-            <div class="col-sm-12 bg-light center-txt">
-                <div id="clientList"></div>
+            <!-- List of network circuits -->
+            <div class="col-sm-6">
+                <div class="card bg-light">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="fa fa-globe"></i> Child Nodes</h5>
+                        <div id="treeList"></div>
+                    </div>
+                </div>
             </div>
-        </div>
 
-        <div class="row" style="margin-top: 4px;">
-            <div class="col-sm-12 bg-light center-txt">
-                <div id="treeList"></div>
+            <!-- List of client circuits -->
+            <div class="col-sm-6">
+                <div class="card bg-light">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="fa fa-users"></i> Attached Clients</h5>
+                        <div id="clientList"></div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -122,7 +133,7 @@
                 if (limit == 0) {
                     return "#ddffdd";
                 }
-                let usage = (traffic*8) / (limit * 1000000);
+                let usage = (traffic * 8) / (limit * 1000000);
                 if (usage < 0.25) { return "#ddffdd" }
                 else if (usage < 0.5) { return "#aaffaa" }
                 else if (usage < 0.75) { return "#ffa500" }
@@ -131,16 +142,18 @@
 
             function getClients(rootName) {
                 $.get("/api/tree_clients/" + encodeURI(rootName), (data) => {
-                    let tbl = "<table class='table'>";
-                    tbl += "<thead><th>Circuit</th><th>Limit</th><th>Download</th><th>Upload</th></thead>";
-                    
-                    for (let i=0; i<data.length; ++i) {
+                    let tbl = "<table class='table table-striped'>";
+                    tbl += "<thead><th>Circuit</th><th>Limit</th><th>⬇️ DL</th><th>⬆️ UL</th></thead>";
+
+                    for (let i = 0; i < data.length; ++i) {
                         let nodeDL = scaleNumber(data[i].limit[0] * 1000000);
                         let nodeUL = scaleNumber(data[i].limit[1] * 1000000);
                         if (nodeDL == "0") nodeDL = "Unlimited";
                         if (nodeUL == "0") nodeUL = "Unlimited";
                         tbl += "<tr>";
-                        tbl += "<td class='redact'><a href='/circuit_queue?id=" + encodeURI(data[i].id) + "'>" + redactText(data[i].name) + "</a></td>";
+                        let displayName = data[i].name;
+                        if (displayName.length > 30) displayName = displayName.substring(0, 30) + "...";
+                        tbl += "<td class='redact'><a href='/circuit_queue?id=" + encodeURI(data[i].id) + "'>" + redactText(displayName) + "</a></td>";
                         tbl += "<td>" + nodeDL + " / " + nodeUL + "</td>";
                         let upbg = bgColor(data[i].traffic[1], data[i].limit[1]);
                         let dnbg = bgColor(data[i].traffic[0], data[0].limit[1]);
@@ -154,19 +167,51 @@
                 });
             }
 
+            let filled_root = false;
+
             function getTree() {
                 $.get("/api/network_tree/" + node, (data) => {
                     rtt_histo.clear();
                     //console.log(data);
                     // Setup "this node"
                     let rootName = data[0][1].name;
-                    $("#nodeName").text(redactText(rootName));
-                    let nodeDL = scaleNumber(data[0][1].max_throughput[0] * 1000000);
-                    let nodeUL = scaleNumber(data[0][1].max_throughput[1] * 1000000);
-                    if (nodeDL == "0") nodeDL = "Unlimited";
-                    if (nodeUL == "0") nodeUL = "Unlimited";
-                    $("#nodeDL").text(nodeDL);
-                    $("#nodeUL").text(nodeUL);
+                    if (!filled_root) {
+                        $("#nodeName").text(redactText(rootName));
+                        let nodeDL = scaleNumber(data[0][1].max_throughput[0] * 1000000);
+                        let nodeUL = scaleNumber(data[0][1].max_throughput[1] * 1000000);
+                        if (nodeDL == "0") nodeDL = "Unlimited";
+                        if (nodeUL == "0") nodeUL = "Unlimited";
+                        $("#nodeDL").text(nodeDL);
+                        $("#nodeUL").text(nodeUL);
+
+                        $.ajax({
+                            type: "POST",
+                            url: "/api/node_names",
+                            data: JSON.stringify(data[0][1].parents),
+                            success: (nodeNames) => {
+                                console.log(nodeNames);
+                                let breadcrumbs = "<nav aria-label='breadcrumb'>";
+                                breadcrumbs += "<ol class='breadcrumb'>";
+                                for (let i=0; i<data[0][1].parents.length; ++i) {
+                                    let bcid = data[0][1].parents[i];
+                                    if (bcid != node) {
+                                        let n = nodeNames.find(e => e[0] == data[0][1].parents[i])[1];
+                                        breadcrumbs += "<li class='breadcrumb-item redact'>";
+                                        breadcrumbs += "<a href='/tree?parent=" + data[0][1].parents[i] + "'>";
+                                        breadcrumbs += redactText(n);
+                                        breadcrumbs += "</a></li>";
+                                    }
+                                }
+                                breadcrumbs += "<li class='breadcrumb-item active redact' aria-current='page'>";
+                                breadcrumbs += redactText(rootName);
+                                breadcrumbs += "</li>";
+                                breadcrumbs += "</ol>";
+                                breadcrumbs += "</nav>";
+                                $("#breadcrumbs").html(breadcrumbs);
+                            }
+                        });                        
+                        filled_root = true;
+                    }
 
                     getClients(rootName);
 
@@ -174,15 +219,15 @@
                     buffers.push(rootName, data[0][1].current_throughput[0] * 8, data[0][1].current_throughput[1] * 8);
 
                     // Build the table & update node buffers
-                    let tbl = "<table class='table'>";
-                    tbl += "<thead><th>Site</th><th>Limit</th><th>Download</th><th>Upload</th><th>RTT Latency</th></thead>";
+                    let tbl = "<table class='table table-striped'>";
+                    tbl += "<thead><th>Site</th><th>Limit</th><th>⬇️ DL</th><th>⬆️ UL</th><th>RTT Latency</th></thead>";
                     for (let i = 1; i < data.length; ++i) {
                         let nodeName = data[i][1].name;
 
-                        buffers.push(nodeName, data[i][1].current_throughput[0] * 8,data[i][1].current_throughput[1] * 8);
+                        buffers.push(nodeName, data[i][1].current_throughput[0] * 8, data[i][1].current_throughput[1] * 8);
 
                         tbl += "<tr>";
-                        tbl += "<td style='width: 20%' class='redact'><a href='/tree?parent=" + encodeURI(data[i][0]) + "'>" + redactText(nodeName) + "</a></td>";
+                        tbl += "<td class='redact'><a href='/tree?parent=" + encodeURI(data[i][0]) + "'>" + redactText(nodeName) + "</a></td>";
                         if (data[i][1].max_throughput[0] == 0 && data[i][1].max_throughput[1] == 0) {
                             tbl += "<td>No Limit</td>";
                         } else {

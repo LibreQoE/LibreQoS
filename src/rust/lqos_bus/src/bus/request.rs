@@ -117,6 +117,13 @@ pub enum BusRequest {
     parent: usize
   },
 
+  /// Retrieves the top N queues from the root level, and summarizes
+  /// the others as "other"
+  TopMapQueues(usize),
+
+  /// Retrieve node names from network.json
+  GetNodeNamesFromIds(Vec<usize>),
+
   /// If running on Equinix (the `equinix_test` feature is enabled),
   /// display a "run bandwidht test" link.
   #[cfg(feature = "equinix_tests")]

@@ -38,7 +38,9 @@ pub struct NetworkJsonNode {
 /// for easy use in funnel calculations.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NetworkJson {
-  nodes: Vec<NetworkJsonNode>,
+  /// Nodes that make up the tree, flattened and referenced by index number.
+  /// TODO: We should add a primary key to nodes in network.json.
+  pub nodes: Vec<NetworkJsonNode>,
 }
 
 impl Default for NetworkJson {
@@ -193,11 +195,12 @@ fn recurse_node(
   immediate_parent: usize,
 ) {
   info!("Mapping {name} from network.json");
-  let my_id = if name != "children" {
+  /*let my_id = if name != "children" {
     nodes.len()
   } else {
     nodes.len()-1
-  };
+  };*/
+  let my_id = nodes.len();
   let mut parents = parents.to_vec();
   parents.push(my_id);
   let node = NetworkJsonNode {
@@ -212,9 +215,9 @@ fn recurse_node(
     rtts: Vec::new(),
   };
 
-  if node.name != "children" {
+  //if node.name != "children" {
     nodes.push(node);
-  }
+  //}
 
   // Recurse children
   for (key, value) in json.iter() {

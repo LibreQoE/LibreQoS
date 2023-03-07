@@ -71,4 +71,7 @@ pub enum BusResponse {
 
   /// Results from network map queries
   NetworkMap(Vec<(usize, lqos_config::NetworkJsonNode)>),
+
+  /// Named nodes from network.json
+  NodeNames(Vec<(usize, String)>),
 }

@@ -160,10 +160,16 @@ fn handle_bus_requests(
       BusRequest::RequestLqosEquinixTest => lqos_daht_test::lqos_daht_test(),
       BusRequest::ValidateShapedDevicesCsv => {
         validation::validate_shaped_devices_csv()
-      },
+      }
       BusRequest::GetNetworkMap { parent } => {
         shaped_devices_tracker::get_one_network_map_layer(*parent)
-      },
+      }
+      BusRequest::TopMapQueues( n_queues ) => {
+        shaped_devices_tracker::get_top_n_root_queues(*n_queues)
+      }
+      BusRequest::GetNodeNamesFromIds(nodes) => {
+        shaped_devices_tracker::map_node_names(nodes)
+      }
     });
   }
 }

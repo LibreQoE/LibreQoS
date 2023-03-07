@@ -27,6 +27,17 @@ pub async fn tree_entry(
   NoCache::new(Json(result))
 }
 
+#[get("/api/network_tree_summary")]
+pub async fn network_tree_summary() -> NoCache<Json<Vec<(usize, NetworkJsonNode)>>> {
+  let responses =
+    bus_request(vec![BusRequest::TopMapQueues(4)]).await.unwrap();
+  let result = match &responses[0] {
+    BusResponse::NetworkMap(nodes) => nodes.to_owned(),
+    _ => Vec::new(),
+  };
+  NoCache::new(Json(result))
+}
+
 #[derive(Serialize, Clone)]
 #[serde(crate = "rocket::serde")]
 pub struct CircuitThroughput {
@@ -67,5 +78,19 @@ pub async fn tree_clients(
       }
     }
   }
+  NoCache::new(Json(result))
+}
+
+#[post("/api/node_names", data= "<nodes>")]
+pub async fn node_names(nodes: Json<Vec<usize>>) -> NoCache<Json<Vec<(usize, String)>>> {
+  let mut result = Vec::new();
+  for msg in
+    bus_request(vec![BusRequest::GetNodeNamesFromIds(nodes.0)]).await.unwrap().iter()
+  {
+    if let BusResponse::NodeNames(map) = msg {
+      result.extend_from_slice(map);
+    }
+  }
+
   NoCache::new(Json(result))
 }
