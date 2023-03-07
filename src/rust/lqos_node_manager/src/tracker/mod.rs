@@ -134,6 +134,3 @@ pub fn host_counts(_auth: AuthGuard) -> Json<(u32, u32)> {
   let unknown = host_counts.0 - host_counts.1;
   Json((n_devices as u32, unknown))
 }
-
-//static CONFIG: Lazy<Mutex<LibreQoSConfig>> =
-//  Lazy::new(|| Mutex::new(lqos_config::LibreQoSConfig::load().unwrap()));
