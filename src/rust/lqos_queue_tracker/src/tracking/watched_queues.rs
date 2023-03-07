@@ -1,14 +1,12 @@
 use crate::queue_structure::QUEUE_STRUCTURE;
-use lazy_static::*;
 use log::{info, warn};
 use lqos_bus::TcHandle;
 use lqos_utils::unix_time::unix_now;
-use parking_lot::RwLock;
+use once_cell::sync::Lazy;
+use std::sync::RwLock;
 
-lazy_static! {
-  pub(crate) static ref WATCHED_QUEUES: RwLock<Vec<WatchedQueue>> =
-    RwLock::new(Vec::new());
-}
+pub(crate) static WATCHED_QUEUES: Lazy<RwLock<Vec<WatchedQueue>>> =
+  Lazy::new(|| RwLock::new(Vec::new()));
 
 pub(crate) struct WatchedQueue {
   circuit_id: String,
@@ -35,7 +33,7 @@ pub fn add_watched_queue(circuit_id: &str) {
   //info!("Watching queue {circuit_id}");
   let max = unsafe { lqos_sys::libbpf_num_possible_cpus() } * 2;
   {
-    let read_lock = WATCHED_QUEUES.read();
+    let read_lock = WATCHED_QUEUES.read().unwrap();
     if read_lock.iter().any(|q| q.circuit_id == circuit_id) {
       warn!("Queue {circuit_id} is already being watched. Duplicate ignored.");
       return; // No duplicates, please
@@ -49,7 +47,7 @@ pub fn add_watched_queue(circuit_id: &str) {
     }
   }
 
-  if let Some(queues) = &QUEUE_STRUCTURE.read().maybe_queues {
+  if let Some(queues) = &QUEUE_STRUCTURE.read().unwrap().maybe_queues {
     if let Some(circuit) = queues.iter().find(|c| {
       c.circuit_id.is_some() && c.circuit_id.as_ref().unwrap() == circuit_id
     }) {
@@ -60,7 +58,7 @@ pub fn add_watched_queue(circuit_id: &str) {
         upload_class: circuit.up_class_id,
       };
 
-      WATCHED_QUEUES.write().push(new_watch);
+      WATCHED_QUEUES.write().unwrap().push(new_watch);
       //info!("Added {circuit_id} to watched queues. Now watching {} queues.", WATCHED_QUEUES.read().len());
     } else {
       warn!("No circuit ID of {circuit_id}");
@@ -71,13 +69,13 @@ pub fn add_watched_queue(circuit_id: &str) {
 }
 
 pub(crate) fn expire_watched_queues() {
-  let mut lock = WATCHED_QUEUES.write();
+  let mut lock = WATCHED_QUEUES.write().unwrap();
   let now = unix_now().unwrap_or(0);
   lock.retain(|w| w.expires_unix_time > now);
 }
 
 pub fn still_watching(circuit_id: &str) {
-  let mut lock = WATCHED_QUEUES.write();
+  let mut lock = WATCHED_QUEUES.write().unwrap();
   if let Some(q) = lock.iter_mut().find(|q| q.circuit_id == circuit_id) {
     //info!("Still watching circuit: {circuit_id}");
     q.refresh_timer();

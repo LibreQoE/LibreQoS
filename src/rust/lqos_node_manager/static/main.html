@@ -168,7 +168,7 @@
     <footer>&copy; 2022-2023, LibreQoE LLC</footer>
 
     <script>
-        let throughput = new MultiRingBuffer(300);
+        var throughput = new MultiRingBuffer(300);
 
         function updateCurrentThroughput() {
             $.get("/api/current_throughput", (tp) => {
@@ -181,21 +181,28 @@
                 throughput.push("total", tp.bits_per_second[0], tp.bits_per_second[1]);
                 throughput.push("shaped", tp.shaped_bits_per_second[0], tp.shaped_bits_per_second[1]);
                 throughput.plotTotalThroughput("tpGraph");
-
-                setTimeout(updateCurrentThroughput, 1000);
             });
         }
 
-        let funnelData = new MultiRingBuffer(300);
+        var funnelData = new MultiRingBuffer(300);
 
         function updateSiteFunnel() {
             $.get("/api/network_tree_summary/", (data) => {
+                let table = "<table class='table' style='font-size: 8pt;'>";
                 for (let i = 0; i < data.length; ++i) {
-                    funnelData.push(data[i][1].name, data[i][1].current_throughput[0] * 8, data[i][1].current_throughput[1] * 8);
+                    let name = data[i][1].name;
+                    if (name.length > 20) {
+                        name = name.substring(0, 20) + "...";
+                    }
+                    table += "<tr>";
+                    table += "<td class='redact'>" + redactText(name) + "</td>";
+                    table += "<td>" + scaleNumber(data[i][1].current_throughput[0] * 8) + "</td>";
+                    table += "<td>" + scaleNumber(data[i][1].current_throughput[1] * 8) + "</td>";
+                    table += "</tr>";
                 }
-                funnelData.plotStackedBars("siteFunnel", "");
+                table += "</table>";
+                $("#siteFunnel").html(table);
             });
-            setTimeout(updateSiteFunnel, 1000);
         }
 
         function updateCpu() {
@@ -216,7 +223,6 @@
                     yaxis: { automargin: true, autorange: false, range: [0.0, 100.0] },
                 },
                     { responsive: true });
-                setTimeout(updateCpu, 2000);
             });
         }
 
@@ -229,7 +235,6 @@
                     type: 'pie'
                 }];
                 Plotly.newPlot(graph, data, { margin: { l: 0, r: 0, b: 0, t: 12 }, showlegend: false }, { responsive: true });
-                setTimeout(updateRam, 30000);
             });
         }
 
@@ -262,28 +267,46 @@
         function updateTop10() {
             $.get("/api/top_10_downloaders", (tt) => {
                 updateNTable('#top10dl', tt);
-                setTimeout(updateTop10, 5000);
             });
         }
 
         function updateWorst10() {
             $.get("/api/worst_10_rtt", (tt) => {
                 updateNTable('#worstRtt', tt);
-                setTimeout(updateWorst10, 5000);
             });
         }
 
-        let rttGraph = new RttHistogram();
+        var rttGraph = new RttHistogram();
 
         function updateHistogram() {
             $.get("/api/rtt_histogram", (rtt) => {
                 rttGraph.clear();
                 for (let i = 0; i < rtt.length; i++) {
-                    rttGraph.push(rtt[i]);
+                    rttGraph.pushBand(i, rtt[i]);
                 }
                 rttGraph.plot("rttHistogram");
-                setTimeout(updateHistogram, 5000);
             });
+        }
+
+        var tickCount = 0;
+
+        function OneSecondCadence() {
+            updateCurrentThroughput();
+            updateSiteFunnel();
+
+            if (tickCount % 5 == 0) {
+                updateHistogram();
+                updateWorst10();
+                updateTop10();
+            }
+
+            if (tickCount % 10 == 0) {
+                updateCpu();
+                updateRam();
+            }
+
+            tickCount++;
+            setTimeout(OneSecondCadence, 1000);
         }
 
         function start() {
@@ -302,6 +325,7 @@
             updateHistogram();
             updateHostCounts();
             updateSiteFunnel();
+            OneSecondCadence();
         }
 
         $(document).ready(start);

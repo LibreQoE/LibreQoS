@@ -59,9 +59,9 @@ impl XdpIpAddress {
   /// Convers an `XdpIpAddress` type to a Rust `IpAddr` type, using
   /// the in-build mapped function for squishing IPv4 into IPv6
   pub fn as_ipv6(&self) -> Ipv6Addr {
-    if self.is_v4()
-    {
-      Ipv4Addr::new(self.0[12], self.0[13], self.0[14], self.0[15]).to_ipv6_mapped()
+    if self.is_v4() {
+      Ipv4Addr::new(self.0[12], self.0[13], self.0[14], self.0[15])
+        .to_ipv6_mapped()
     } else {
       Ipv6Addr::new(
         BigEndian::read_u16(&self.0[0..2]),
@@ -78,8 +78,7 @@ impl XdpIpAddress {
 
   /// Converts an `XdpIpAddress` type to a Rust `IpAddr` type
   pub fn as_ip(&self) -> IpAddr {
-    if self.is_v4()
-    {
+    if self.is_v4() {
       // It's an IPv4 Address
       IpAddr::V4(Ipv4Addr::new(self.0[12], self.0[13], self.0[14], self.0[15]))
     } else {

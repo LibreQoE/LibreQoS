@@ -9,8 +9,8 @@ mod unknown_devices;
 use rocket_async_compression::Compression;
 mod auth_guard;
 mod config_control;
-mod queue_info;
 mod network_tree;
+mod queue_info;
 
 // Use JemAllocator only on supported platforms
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -81,6 +81,7 @@ fn rocket() -> _ {
         network_tree::tree_clients,
         network_tree::network_tree_summary,
         network_tree::node_names,
+        network_tree::funnel_for_queue,
         // Supporting files
         static_pages::bootsrap_css,
         static_pages::plotly_js,

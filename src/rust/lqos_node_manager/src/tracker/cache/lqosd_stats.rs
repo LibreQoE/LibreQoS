@@ -1,22 +1,15 @@
-use lazy_static::*;
 use lqos_bus::IpStats;
-use parking_lot::RwLock;
+use once_cell::sync::Lazy;
+use std::sync::RwLock;
 
-lazy_static! {
-  pub static ref TOP_10_DOWNLOADERS: RwLock<Vec<IpStats>> =
-    RwLock::new(Vec::with_capacity(10));
-}
+pub static TOP_10_DOWNLOADERS: Lazy<RwLock<Vec<IpStats>>> =
+  Lazy::new(|| RwLock::new(Vec::with_capacity(10)));
 
-lazy_static! {
-  pub static ref WORST_10_RTT: RwLock<Vec<IpStats>> =
-    RwLock::new(Vec::with_capacity(10));
-}
+pub static WORST_10_RTT: Lazy<RwLock<Vec<IpStats>>> =
+  Lazy::new(|| RwLock::new(Vec::with_capacity(10)));
 
-lazy_static! {
-  pub static ref RTT_HISTOGRAM: RwLock<Vec<u32>> =
-    RwLock::new(Vec::with_capacity(100));
-}
+pub static RTT_HISTOGRAM: Lazy<RwLock<Vec<u32>>> =
+  Lazy::new(|| RwLock::new(Vec::with_capacity(100)));
 
-lazy_static! {
-  pub static ref HOST_COUNTS: RwLock<(u32, u32)> = RwLock::new((0, 0));
-}
+pub static HOST_COUNTS: Lazy<RwLock<(u32, u32)>> =
+  Lazy::new(|| RwLock::new((0, 0)));

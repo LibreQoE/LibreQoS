@@ -2,8 +2,8 @@ use lqos_bus::{BusRequest, BusResponse, TcHandle};
 use lqos_utils::hex_string::read_hex_string;
 use nix::libc::getpid;
 use pyo3::{
-  exceptions::PyOSError, pyclass, pyfunction, pymodule, types::PyModule,
-  wrap_pyfunction, PyResult, Python, pymethods,
+  exceptions::PyOSError, pyclass, pyfunction, pymethods, pymodule,
+  types::PyModule, wrap_pyfunction, PyResult, Python,
 };
 use std::{
   fs::{remove_file, File},
@@ -158,7 +158,13 @@ impl BatchedCommands {
     Ok(Self { batch: Vec::new() })
   }
 
-  pub fn add_ip_mapping(&mut self, ip: String, classid: String, cpu: String, upload: bool) -> PyResult<()> {
+  pub fn add_ip_mapping(
+    &mut self,
+    ip: String,
+    classid: String,
+    cpu: String,
+    upload: bool,
+  ) -> PyResult<()> {
     let request = parse_add_ip(&ip, &classid, &cpu, upload);
     if let Ok(request) = request {
       self.batch.push(request);

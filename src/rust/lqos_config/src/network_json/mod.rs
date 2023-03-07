@@ -122,12 +122,15 @@ impl NetworkJson {
 
   /// Retrieve a cloned copy of all children with a parent containing a specific
   /// node index.
-  pub fn get_cloned_children(&self, index: usize) -> Vec<(usize, NetworkJsonNode)> {
+  pub fn get_cloned_children(
+    &self,
+    index: usize,
+  ) -> Vec<(usize, NetworkJsonNode)> {
     self
       .nodes
       .iter()
       .enumerate()
-      .filter(|(_i,n)| n.immediate_parent == Some(index))
+      .filter(|(_i, n)| n.immediate_parent == Some(index))
       .map(|(i, n)| (i, n.clone()))
       .collect()
   }
@@ -158,16 +161,24 @@ impl NetworkJson {
     &mut self,
     targets: &[usize],
     bytes: (u64, u64),
-    median_rtt: f32,
   ) {
     for idx in targets {
       // Safety first: use "get" to ensure that the node exists
       if let Some(node) = self.nodes.get_mut(*idx) {
         node.current_throughput.0 += bytes.0;
         node.current_throughput.1 += bytes.1;
-        if median_rtt > 0.0 {
-          node.rtts.push(median_rtt);
-        }
+      } else {
+        warn!("No network tree entry for index {idx}");
+      }
+    }
+  }
+
+  /// Record RTT time in the tree
+  pub fn add_rtt_cycle(&mut self, targets: &[usize], rtt: f32) {
+    for idx in targets {
+      // Safety first: use "get" to ensure that the node exists
+      if let Some(node) = self.nodes.get_mut(*idx) {
+        node.rtts.push(rtt);
       } else {
         warn!("No network tree entry for index {idx}");
       }
@@ -195,14 +206,13 @@ fn recurse_node(
   immediate_parent: usize,
 ) {
   info!("Mapping {name} from network.json");
-  /*let my_id = if name != "children" {
+  let mut parents = parents.to_vec();
+  let my_id = if name != "children" {
+    parents.push(nodes.len());
     nodes.len()
   } else {
-    nodes.len()-1
-  };*/
-  let my_id = nodes.len();
-  let mut parents = parents.to_vec();
-  parents.push(my_id);
+    nodes.len() - 1
+  };
   let node = NetworkJsonNode {
     parents: parents.to_vec(),
     max_throughput: (
@@ -215,9 +225,9 @@ fn recurse_node(
     rtts: Vec::new(),
   };
 
-  //if node.name != "children" {
+  if node.name != "children" {
     nodes.push(node);
-  //}
+  }
 
   // Recurse children
   for (key, value) in json.iter() {

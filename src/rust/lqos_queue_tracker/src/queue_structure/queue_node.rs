@@ -1,7 +1,7 @@
-use lqos_utils::hex_string::read_hex_string;
 use super::QueueStructureError;
 use log::error;
 use lqos_bus::TcHandle;
+use lqos_utils::hex_string::read_hex_string;
 use serde_json::Value;
 
 #[derive(Default, Clone, Debug)]

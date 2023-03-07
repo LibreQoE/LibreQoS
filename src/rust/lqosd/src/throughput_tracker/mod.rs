@@ -1,17 +1,21 @@
 mod throughput_entry;
 mod tracking_data;
-use crate::{throughput_tracker::tracking_data::ThroughputTracker, shaped_devices_tracker::NETWORK_JSON};
+use crate::{
+  shaped_devices_tracker::NETWORK_JSON,
+  throughput_tracker::tracking_data::ThroughputTracker,
+};
 use log::{info, warn};
 use lqos_bus::{BusResponse, IpStats, TcHandle, XdpPpingResult};
 use lqos_sys::XdpIpAddress;
 use lqos_utils::{fdtimer::periodic, unix_time::time_since_boot};
 use once_cell::sync::Lazy;
-use parking_lot::RwLock;
+use std::sync::RwLock;
 use std::time::Duration;
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
-pub static THROUGHPUT_TRACKER: Lazy<RwLock<ThroughputTracker>> = Lazy::new(|| RwLock::new(ThroughputTracker::new()));
+pub static THROUGHPUT_TRACKER: Lazy<RwLock<ThroughputTracker>> =
+  Lazy::new(|| RwLock::new(ThroughputTracker::new()));
 
 pub fn spawn_throughput_monitor() {
   info!("Starting the bandwidth monitor thread.");
@@ -20,12 +24,13 @@ pub fn spawn_throughput_monitor() {
 
   std::thread::spawn(move || {
     periodic(interval_ms, "Throughput Monitor", &mut || {
-      let mut throughput = THROUGHPUT_TRACKER.write();
-      let mut net_json = NETWORK_JSON.write();
-      throughput.copy_previous_and_reset_rtt(&mut net_json);
-      throughput.apply_new_throughput_counters();
-      throughput.apply_rtt_data();
-      throughput.update_totals(&mut net_json);
+      let mut throughput = THROUGHPUT_TRACKER.write().unwrap();
+      let mut net_json = NETWORK_JSON.write().unwrap();
+      net_json.zero_throughput_and_rtt();
+      throughput.copy_previous_and_reset_rtt();
+      throughput.apply_new_throughput_counters(&mut net_json);
+      throughput.apply_rtt_data(&mut net_json);
+      throughput.update_totals();
       throughput.next_cycle();
     });
   });
@@ -33,7 +38,7 @@ pub fn spawn_throughput_monitor() {
 
 pub fn current_throughput() -> BusResponse {
   let (bits_per_second, packets_per_second, shaped_bits_per_second) = {
-    let tp = THROUGHPUT_TRACKER.read();
+    let tp = THROUGHPUT_TRACKER.read().unwrap();
     (
       tp.bits_per_second(),
       tp.packets_per_second(),
@@ -49,7 +54,7 @@ pub fn current_throughput() -> BusResponse {
 
 pub fn host_counters() -> BusResponse {
   let mut result = Vec::new();
-  let tp = THROUGHPUT_TRACKER.read();
+  let tp = THROUGHPUT_TRACKER.read().unwrap();
   tp.raw_data.iter().for_each(|(k, v)| {
     let ip = k.as_ip();
     let (down, up) = v.bytes_per_second;
@@ -67,7 +72,7 @@ type TopList = (XdpIpAddress, (u64, u64), (u64, u64), f32, TcHandle, String);
 
 pub fn top_n(start: u32, end: u32) -> BusResponse {
   let mut full_list: Vec<TopList> = {
-    let tp = THROUGHPUT_TRACKER.read();
+    let tp = THROUGHPUT_TRACKER.read().unwrap();
     tp.raw_data
       .iter()
       .filter(|(ip, _)| !ip.as_ip().is_loopback())
@@ -112,7 +117,7 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
 
 pub fn worst_n(start: u32, end: u32) -> BusResponse {
   let mut full_list: Vec<TopList> = {
-    let tp = THROUGHPUT_TRACKER.read();
+    let tp = THROUGHPUT_TRACKER.read().unwrap();
     tp.raw_data
       .iter()
       .filter(|(ip, _)| !ip.as_ip().is_loopback())
@@ -157,7 +162,7 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
 }
 pub fn best_n(start: u32, end: u32) -> BusResponse {
   let mut full_list: Vec<TopList> = {
-    let tp = THROUGHPUT_TRACKER.read();
+    let tp = THROUGHPUT_TRACKER.read().unwrap();
     tp.raw_data
       .iter()
       .filter(|(ip, _)| !ip.as_ip().is_loopback())
@@ -203,7 +208,7 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
 }
 
 pub fn xdp_pping_compat() -> BusResponse {
-  let raw = THROUGHPUT_TRACKER.read();
+  let raw = THROUGHPUT_TRACKER.read().unwrap();
   let result = raw
     .raw_data
     .iter()
@@ -242,7 +247,7 @@ pub fn xdp_pping_compat() -> BusResponse {
 
 pub fn rtt_histogram() -> BusResponse {
   let mut result = vec![0; 20];
-  let reader = THROUGHPUT_TRACKER.read();
+  let reader = THROUGHPUT_TRACKER.read().unwrap();
   for (_, data) in reader
     .raw_data
     .iter()
@@ -265,7 +270,7 @@ pub fn rtt_histogram() -> BusResponse {
 pub fn host_counts() -> BusResponse {
   let mut total = 0;
   let mut shaped = 0;
-  let tp = THROUGHPUT_TRACKER.read();
+  let tp = THROUGHPUT_TRACKER.read().unwrap();
   tp.raw_data
     .iter()
     .filter(|(_, d)| retire_check(tp.cycle, d.most_recent_cycle))
@@ -294,7 +299,7 @@ pub fn all_unknown_ips() -> BusResponse {
   let five_minutes_ago_nanoseconds = five_minutes_ago.as_nanos();
 
   let mut full_list: Vec<FullList> = {
-    let tp = THROUGHPUT_TRACKER.read();
+    let tp = THROUGHPUT_TRACKER.read().unwrap();
     tp.raw_data
       .iter()
       .filter(|(ip, _)| !ip.as_ip().is_loopback())

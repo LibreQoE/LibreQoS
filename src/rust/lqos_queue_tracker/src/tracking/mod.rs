@@ -5,7 +5,6 @@ use crate::{
 use log::{info, warn};
 use lqos_config::LibreQoSConfig;
 use lqos_utils::fdtimer::periodic;
-use rayon::prelude::{IntoParallelRefMutIterator, ParallelIterator};
 mod reader;
 mod watched_queues;
 use self::watched_queues::expire_watched_queues;
@@ -13,7 +12,7 @@ use watched_queues::WATCHED_QUEUES;
 pub use watched_queues::{add_watched_queue, still_watching};
 
 fn track_queues() {
-  let mut watching = WATCHED_QUEUES.write();
+  let mut watching = WATCHED_QUEUES.write().unwrap();
   if watching.is_empty() {
     //info!("No queues marked for read.");
     return; // There's nothing to do - bail out fast
@@ -24,7 +23,7 @@ fn track_queues() {
     return;
   }
   let config = config.unwrap();
-  watching.par_iter_mut().for_each(|q| {
+  watching.iter_mut().for_each(|q| {
     let (circuit_id, download_class, upload_class) = q.get();
 
     let (download, upload) = if config.on_a_stick_mode {
@@ -50,7 +49,7 @@ fn track_queues() {
 
     if let Ok(download) = download {
       if let Ok(upload) = upload {
-        let mut mapping = CIRCUIT_TO_QUEUE.write();
+        let mut mapping = CIRCUIT_TO_QUEUE.write().unwrap();
         if let Some(circuit) = mapping.get_mut(circuit_id) {
           circuit.update(&download[0], &upload[0]);
         } else {

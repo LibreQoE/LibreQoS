@@ -95,10 +95,10 @@ fn load_shaped_devices() {
   let shaped_devices = ConfigShapedDevices::load();
   if let Ok(new_file) = shaped_devices {
     info!("ShapedDevices.csv loaded");
-    *SHAPED_DEVICES.write() = new_file;
+    *SHAPED_DEVICES.write().unwrap() = new_file;
   } else {
     warn!("ShapedDevices.csv failed to load, see previous error messages. Reverting to empty set.");
-    *SHAPED_DEVICES.write() = ConfigShapedDevices::default();
+    *SHAPED_DEVICES.write().unwrap() = ConfigShapedDevices::default();
   }
 }
 
@@ -136,19 +136,19 @@ async fn get_data_from_server() -> Result<()> {
   ];
 
   for r in bus_request(requests).await?.iter() {
-    match r {      
+    match r {
       BusResponse::TopDownloaders(stats) => {
-        *TOP_10_DOWNLOADERS.write() = stats.clone();
+        *TOP_10_DOWNLOADERS.write().unwrap() = stats.clone();
       }
       BusResponse::WorstRtt(stats) => {
-        *WORST_10_RTT.write() = stats.clone();
+        *WORST_10_RTT.write().unwrap() = stats.clone();
       }
       BusResponse::RttHistogram(stats) => {
-        *RTT_HISTOGRAM.write() = stats.clone();
+        *RTT_HISTOGRAM.write().unwrap() = stats.clone();
       }
       BusResponse::AllUnknownIps(unknowns) => {
-        *HOST_COUNTS.write() = (unknowns.len() as u32, 0);
-        let cfg = SHAPED_DEVICES.read();
+        *HOST_COUNTS.write().unwrap() = (unknowns.len() as u32, 0);
+        let cfg = SHAPED_DEVICES.read().unwrap();
         let really_unknown: Vec<IpStats> = unknowns
           .iter()
           .filter(|ip| {
@@ -164,8 +164,8 @@ async fn get_data_from_server() -> Result<()> {
           })
           .cloned()
           .collect();
-        *HOST_COUNTS.write() = (really_unknown.len() as u32, 0);
-        *UNKNOWN_DEVICES.write() = really_unknown;
+        *HOST_COUNTS.write().unwrap() = (really_unknown.len() as u32, 0);
+        *UNKNOWN_DEVICES.write().unwrap() = really_unknown;
       }
       BusResponse::NotReadyYet => {
         warn!("Host system isn't ready to answer all queries yet.");

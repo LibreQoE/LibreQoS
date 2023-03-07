@@ -13,10 +13,8 @@ lqos_sys = { path = "../lqos_sys" }
 lqos_utils = { path = "../lqos_utils" }
 log = "0"
 log-once = "0.4.0"
-lazy_static = "1.4"
-parking_lot = "0"
 tokio = { version = "1", features = [ "full", "parking_lot" ] }
-rayon = "1"
+once_cell = "1"
 
 [dev-dependencies]
 criterion = { version = "0", features = [ "html_reports"] }
