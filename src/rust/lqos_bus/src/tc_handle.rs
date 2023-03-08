@@ -5,7 +5,7 @@ use thiserror::Error;
 
 /// Provides consistent handling of TC handle types.
 #[derive(
-  Copy, Clone, Serialize, Deserialize, Debug, Default, PartialEq, Eq,
+  Copy, Clone, Serialize, Deserialize, Debug, Default, PartialEq, Eq, Hash
 )]
 pub struct TcHandle(u32);
 

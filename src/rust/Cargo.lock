@@ -1390,6 +1390,7 @@ name = "lqos_queue_tracker"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "dashmap",
  "log",
  "log-once",
  "lqos_bus",

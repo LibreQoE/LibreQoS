@@ -1,13 +1,14 @@
 use crate::queue_structure::QUEUE_STRUCTURE;
+use dashmap::DashMap;
 use log::{info, warn};
 use lqos_bus::TcHandle;
 use lqos_utils::unix_time::unix_now;
 use once_cell::sync::Lazy;
-use std::sync::RwLock;
 
-pub(crate) static WATCHED_QUEUES: Lazy<RwLock<Vec<WatchedQueue>>> =
-  Lazy::new(|| RwLock::new(Vec::new()));
+pub(crate) static WATCHED_QUEUES: Lazy<DashMap<String, WatchedQueue>> =
+  Lazy::new(DashMap::new);
 
+#[derive(PartialEq, Eq, Hash)]
 pub(crate) struct WatchedQueue {
   circuit_id: String,
   expires_unix_time: u64,
@@ -33,13 +34,12 @@ pub fn add_watched_queue(circuit_id: &str) {
   //info!("Watching queue {circuit_id}");
   let max = unsafe { lqos_sys::libbpf_num_possible_cpus() } * 2;
   {
-    let read_lock = WATCHED_QUEUES.read().unwrap();
-    if read_lock.iter().any(|q| q.circuit_id == circuit_id) {
+    if WATCHED_QUEUES.contains_key(circuit_id) {
       warn!("Queue {circuit_id} is already being watched. Duplicate ignored.");
       return; // No duplicates, please
     }
 
-    if read_lock.len() > max as usize {
+    if WATCHED_QUEUES.len() > max as usize {
       warn!(
         "Watching too many queues - didn't add {circuit_id} to watch list."
       );
@@ -58,7 +58,7 @@ pub fn add_watched_queue(circuit_id: &str) {
         upload_class: circuit.up_class_id,
       };
 
-      WATCHED_QUEUES.write().unwrap().push(new_watch);
+      WATCHED_QUEUES.insert(circuit.circuit_id.as_ref().unwrap().clone(), new_watch);
       //info!("Added {circuit_id} to watched queues. Now watching {} queues.", WATCHED_QUEUES.read().len());
     } else {
       warn!("No circuit ID of {circuit_id}");
@@ -69,19 +69,16 @@ pub fn add_watched_queue(circuit_id: &str) {
 }
 
 pub(crate) fn expire_watched_queues() {
-  let mut lock = WATCHED_QUEUES.write().unwrap();
   let now = unix_now().unwrap_or(0);
-  lock.retain(|w| w.expires_unix_time > now);
+  WATCHED_QUEUES.retain(|_,w| w.expires_unix_time > now);
 }
 
 pub fn still_watching(circuit_id: &str) {
-  let mut lock = WATCHED_QUEUES.write().unwrap();
-  if let Some(q) = lock.iter_mut().find(|q| q.circuit_id == circuit_id) {
+  if let Some(mut q) = WATCHED_QUEUES.get_mut(circuit_id) {
     //info!("Still watching circuit: {circuit_id}");
     q.refresh_timer();
   } else {
     info!("Still watching circuit, but it had expired: {circuit_id}");
-    std::mem::drop(lock);
     add_watched_queue(circuit_id);
   }
 }
