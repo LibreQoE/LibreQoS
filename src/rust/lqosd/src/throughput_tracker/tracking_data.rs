@@ -1,8 +1,7 @@
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
+use crate::shaped_devices_tracker::{SHAPED_DEVICES, NETWORK_JSON};
 
 use super::{throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
 use lqos_bus::TcHandle;
-use lqos_config::NetworkJson;
 use lqos_sys::{rtt_for_each, throughput_for_each, XdpIpAddress};
 use std::collections::HashMap;
 
@@ -103,7 +102,6 @@ impl ThroughputTracker {
 
   pub(crate) fn apply_new_throughput_counters(
     &mut self,
-    net_json: &mut NetworkJson,
   ) {
     let cycle = self.cycle;
     let raw_data = &mut self.raw_data;
@@ -127,6 +125,7 @@ impl ThroughputTracker {
           entry.most_recent_cycle = cycle;
 
           if let Some(parents) = &entry.network_json_parents {
+            let mut net_json = NETWORK_JSON.write().unwrap();
             net_json.add_throughput_cycle(
               parents,
               (
@@ -168,7 +167,7 @@ impl ThroughputTracker {
     });
   }
 
-  pub(crate) fn apply_rtt_data(&mut self, net_json: &mut NetworkJson) {
+  pub(crate) fn apply_rtt_data(&mut self) {
     rtt_for_each(&mut |raw_ip, rtt| {
       if rtt.has_fresh_data != 0 {
         let ip = XdpIpAddress(*raw_ip);
@@ -176,6 +175,7 @@ impl ThroughputTracker {
           tracker.recent_rtt_data = rtt.rtt;
           tracker.last_fresh_rtt_data_cycle = self.cycle;
           if let Some(parents) = &tracker.network_json_parents {
+            let mut net_json = NETWORK_JSON.write().unwrap();
             net_json.add_rtt_cycle(parents, tracker.median_latency());
           }
         }

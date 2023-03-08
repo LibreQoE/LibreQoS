@@ -39,7 +39,8 @@ fn watch_for_network_json_changing() -> Result<()> {
 fn load_network_json() {
   let njs = NetworkJson::load();
   if let Ok(njs) = njs {
-    *NETWORK_JSON.write().unwrap() = njs;
+    let mut write_lock = NETWORK_JSON.write().unwrap();
+    *write_lock = njs;
   } else {
     warn!("Unable to load network.json");
   }

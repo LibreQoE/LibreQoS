@@ -25,11 +25,13 @@ pub fn spawn_throughput_monitor() {
   std::thread::spawn(move || {
     periodic(interval_ms, "Throughput Monitor", &mut || {
       let mut throughput = THROUGHPUT_TRACKER.write().unwrap();
-      let mut net_json = NETWORK_JSON.write().unwrap();
-      net_json.zero_throughput_and_rtt();
+      {
+        let mut net_json = NETWORK_JSON.write().unwrap();
+        net_json.zero_throughput_and_rtt();
+      } // Scope to end the lock
       throughput.copy_previous_and_reset_rtt();
-      throughput.apply_new_throughput_counters(&mut net_json);
-      throughput.apply_rtt_data(&mut net_json);
+      throughput.apply_new_throughput_counters();
+      throughput.apply_rtt_data();
       throughput.update_totals();
       throughput.next_cycle();
     });
