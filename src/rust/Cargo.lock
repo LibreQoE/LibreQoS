@@ -1343,6 +1343,7 @@ name = "lqos_config"
 version = "0.1.0"
 dependencies = [
  "csv",
+ "dashmap",
  "ip_network",
  "ip_network_table",
  "log",

@@ -1,10 +1,11 @@
 use crate::etc;
+use dashmap::DashSet;
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::{
   fs,
-  path::{Path, PathBuf}, sync::{atomic::AtomicU64, RwLock},
+  path::{Path, PathBuf}, sync::atomic::AtomicU64,
 };
 use thiserror::Error;
 
@@ -23,7 +24,7 @@ pub struct NetworkJsonNode {
   /// Approximate RTTs reported for this level of the tree.
   /// It's never going to be as statistically accurate as the actual
   /// numbers, being based on medians.
-  pub rtts: RwLock<Vec<f32>>,
+  pub rtts: DashSet<u16>,
 
   /// A list of indices in the `NetworkJson` vector of nodes
   /// linking to parent nodes
@@ -44,7 +45,7 @@ impl NetworkJsonNode {
         self.current_throughput.0.load(std::sync::atomic::Ordering::Relaxed),
         self.current_throughput.1.load(std::sync::atomic::Ordering::Relaxed),
       ),
-      rtts: self.rtts.read().unwrap().clone(),
+      rtts: self.rtts.iter().map(|n| *n as f32 / 100.0).collect(),
       parents: self.parents.clone(),
       immediate_parent: self.immediate_parent,
     }
@@ -119,7 +120,7 @@ impl NetworkJson {
       current_throughput: (AtomicU64::new(0), AtomicU64::new(0)),
       parents: Vec::new(),
       immediate_parent: None,
-      rtts: RwLock::new(Vec::new()),
+      rtts: DashSet::new(),
     }];
     if !Self::exists() {
       return Err(NetworkJsonError::FileNotFound);
@@ -192,11 +193,7 @@ impl NetworkJson {
     self.nodes.iter().for_each(|n| {
       n.current_throughput.0.store(0, std::sync::atomic::Ordering::Relaxed);
       n.current_throughput.1.store(0, std::sync::atomic::Ordering::Relaxed);
-      let mut size = n.rtts.read().unwrap().len();
-      while size > 5 {
-        n.rtts.write().unwrap().remove(0);
-        size = n.rtts.read().unwrap().len();
-      }
+      n.rtts.clear();
     });
   }
 
@@ -225,7 +222,7 @@ impl NetworkJson {
     for idx in targets {
       // Safety first: use "get" to ensure that the node exists
       if let Some(node) = self.nodes.get(*idx) {
-        node.rtts.write().unwrap().push(rtt);
+        node.rtts.insert((rtt * 100.0) as u16);
       } else {
         warn!("No network tree entry for index {idx}");
       }
@@ -269,7 +266,7 @@ fn recurse_node(
     current_throughput: (AtomicU64::new(0), AtomicU64::new(0)),
     name: name.to_string(),
     immediate_parent: Some(immediate_parent),
-    rtts: RwLock::new(Vec::new()),
+    rtts: DashSet::new(),
   };
 
   if node.name != "children" {
