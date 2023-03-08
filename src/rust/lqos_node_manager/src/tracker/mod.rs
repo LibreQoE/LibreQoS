@@ -2,9 +2,9 @@ mod cache;
 mod cache_manager;
 use self::cache::{
   CPU_USAGE, HOST_COUNTS, NUM_CPUS, RAM_USED, RTT_HISTOGRAM,
-  TOP_10_DOWNLOADERS, TOTAL_RAM, WORST_10_RTT,
+  TOTAL_RAM, WORST_10_RTT,
 };
-use crate::auth_guard::AuthGuard;
+use crate::{auth_guard::AuthGuard, cache_control::NoCache};
 pub use cache::{SHAPED_DEVICES, UNKNOWN_DEVICES};
 pub use cache_manager::update_tracking;
 use lqos_bus::{bus_request, BusRequest, BusResponse, IpStats, TcHandle};
@@ -108,10 +108,18 @@ pub fn ram_usage(_auth: AuthGuard) -> Json<Vec<u64>> {
 }
 
 #[get("/api/top_10_downloaders")]
-pub fn top_10_downloaders(_auth: AuthGuard) -> Json<Vec<IpStatsWithPlan>> {
-  let tt: Vec<IpStatsWithPlan> =
-    TOP_10_DOWNLOADERS.read().unwrap().iter().map(|tt| tt.into()).collect();
-  Json(tt)
+pub async fn top_10_downloaders(_auth: AuthGuard) -> NoCache<Json<Vec<IpStatsWithPlan>>> {
+  if let Ok(messages) = bus_request(vec![BusRequest::GetTopNDownloaders { start: 0, end: 10 }]).await
+  {
+    for msg in messages {
+      if let BusResponse::TopDownloaders(stats) = msg {
+        let result = stats.iter().map(|tt| tt.into()).collect();
+        return NoCache::new(Json(result));
+      }
+    }
+  }
+
+  NoCache::new(Json(Vec::new()))
 }
 
 #[get("/api/worst_10_rtt")]

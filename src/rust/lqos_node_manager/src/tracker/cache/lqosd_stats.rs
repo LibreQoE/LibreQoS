@@ -2,8 +2,8 @@ use lqos_bus::IpStats;
 use once_cell::sync::Lazy;
 use std::sync::RwLock;
 
-pub static TOP_10_DOWNLOADERS: Lazy<RwLock<Vec<IpStats>>> =
-  Lazy::new(|| RwLock::new(Vec::with_capacity(10)));
+//pub static TOP_10_DOWNLOADERS: Lazy<RwLock<Vec<IpStats>>> =
+//  Lazy::new(|| RwLock::new(Vec::with_capacity(10)));
 
 pub static WORST_10_RTT: Lazy<RwLock<Vec<IpStats>>> =
   Lazy::new(|| RwLock::new(Vec::with_capacity(10)));

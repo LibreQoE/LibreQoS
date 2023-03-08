@@ -129,7 +129,6 @@ fn watch_for_shaped_devices_changing() -> Result<()> {
 async fn get_data_from_server() -> Result<()> {
   // Send request to lqosd
   let requests = vec![
-    BusRequest::GetTopNDownloaders { start: 0, end: 10 },
     BusRequest::GetWorstRtt { start: 0, end: 10 },
     BusRequest::RttHistogram,
     BusRequest::AllUnknownIps,
@@ -137,9 +136,6 @@ async fn get_data_from_server() -> Result<()> {
 
   for r in bus_request(requests).await?.iter() {
     match r {
-      BusResponse::TopDownloaders(stats) => {
-        *TOP_10_DOWNLOADERS.write().unwrap() = stats.clone();
-      }
       BusResponse::WorstRtt(stats) => {
         *WORST_10_RTT.write().unwrap() = stats.clone();
       }
