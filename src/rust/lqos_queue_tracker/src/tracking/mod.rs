@@ -48,13 +48,12 @@ fn track_queues() {
 
     if let Ok(download) = download {
       if let Ok(upload) = upload {
-        let mut mapping = CIRCUIT_TO_QUEUE.write().unwrap();
-        if let Some(circuit) = mapping.get_mut(circuit_id) {
+        if let Some(mut circuit) = CIRCUIT_TO_QUEUE.get_mut(circuit_id) {
           circuit.update(&download[0], &upload[0]);
         } else {
           // It's new: insert it
           if !download.is_empty() && !upload.is_empty() {
-            mapping.insert(
+            CIRCUIT_TO_QUEUE.insert(
               circuit_id.to_string(),
               QueueStore::new(download[0].clone(), upload[0].clone()),
             );

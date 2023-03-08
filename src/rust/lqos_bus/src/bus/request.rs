@@ -130,6 +130,9 @@ pub enum BusRequest {
     target: String,
   },
 
+  /// Obtain the lqosd statistics
+  GetLqosStats,
+
   /// If running on Equinix (the `equinix_test` feature is enabled),
   /// display a "run bandwidht test" link.
   #[cfg(feature = "equinix_tests")]

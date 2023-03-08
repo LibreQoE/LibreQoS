@@ -82,6 +82,7 @@ fn rocket() -> _ {
         network_tree::network_tree_summary,
         network_tree::node_names,
         network_tree::funnel_for_queue,
+        config_control::stats,
         // Supporting files
         static_pages::bootsrap_css,
         static_pages::plotly_js,

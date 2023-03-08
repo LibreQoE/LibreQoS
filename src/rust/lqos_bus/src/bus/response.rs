@@ -74,4 +74,12 @@ pub enum BusResponse {
 
   /// Named nodes from network.json
   NodeNames(Vec<(usize, String)>),
+
+  /// Statistics from lqosd
+  LqosdStats{
+    /// Number of bus requests handled
+    bus_requests: u64,
+    /// Us to poll hosts
+    time_to_poll_hosts: u64,
+  }
 }

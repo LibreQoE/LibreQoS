@@ -24,7 +24,9 @@ use signal_hook::{
   consts::{SIGHUP, SIGINT, SIGTERM},
   iterator::Signals,
 };
+use stats::{BUS_REQUESTS, TIME_TO_POLL_HOSTS};
 use tokio::join;
+mod stats;
 
 // Use JemAllocator only on supported platforms
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -120,6 +122,7 @@ fn handle_bus_requests(
 ) {
   for req in requests.iter() {
     //println!("Request: {:?}", req);
+    BUS_REQUESTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     responses.push(match req {
       BusRequest::Ping => lqos_bus::BusResponse::Ack,
       BusRequest::GetCurrentThroughput => {
@@ -172,6 +175,12 @@ fn handle_bus_requests(
       }
       BusRequest::GetFunnel { target: parent } => {
         shaped_devices_tracker::get_funnel(parent)
+      }
+      BusRequest::GetLqosStats => {
+        BusResponse::LqosdStats { 
+          bus_requests: BUS_REQUESTS.load(std::sync::atomic::Ordering::Relaxed),
+          time_to_poll_hosts: TIME_TO_POLL_HOSTS.load(std::sync::atomic::Ordering::Relaxed),
+        }
       }
     });
   }

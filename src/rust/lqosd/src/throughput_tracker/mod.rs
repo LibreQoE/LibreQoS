@@ -2,7 +2,7 @@ mod throughput_entry;
 mod tracking_data;
 use crate::{
   shaped_devices_tracker::NETWORK_JSON,
-  throughput_tracker::tracking_data::ThroughputTracker,
+  throughput_tracker::tracking_data::ThroughputTracker, stats::TIME_TO_POLL_HOSTS,
 };
 use log::{info, warn};
 use lqos_bus::{BusResponse, IpStats, TcHandle, XdpPpingResult};
@@ -23,6 +23,7 @@ pub fn spawn_throughput_monitor() {
 
   std::thread::spawn(move || {
     periodic(interval_ms, "Throughput Monitor", &mut || {
+      let start = std::time::Instant::now();
       {
         let net_json = NETWORK_JSON.read().unwrap();
         net_json.zero_throughput_and_rtt();
@@ -32,6 +33,8 @@ pub fn spawn_throughput_monitor() {
       THROUGHPUT_TRACKER.apply_rtt_data();
       THROUGHPUT_TRACKER.update_totals();
       THROUGHPUT_TRACKER.next_cycle();
+      let duration_ms = start.elapsed().as_micros();
+      TIME_TO_POLL_HOSTS.store(duration_ms as u64, std::sync::atomic::Ordering::Relaxed);
     });
   });
 }
