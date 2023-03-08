@@ -1,11 +1,12 @@
 mod cache;
 mod cache_manager;
+use std::net::IpAddr;
+
 use self::cache::{
-  CPU_USAGE, HOST_COUNTS, NUM_CPUS, RAM_USED,
-  TOTAL_RAM,
+  CPU_USAGE, NUM_CPUS, RAM_USED, TOTAL_RAM,
 };
 use crate::{auth_guard::AuthGuard, cache_control::NoCache};
-pub use cache::{SHAPED_DEVICES, UNKNOWN_DEVICES};
+pub use cache::SHAPED_DEVICES;
 pub use cache_manager::update_tracking;
 use lqos_bus::{bus_request, BusRequest, BusResponse, IpStats, TcHandle};
 use rocket::serde::{json::Json, Deserialize, Serialize};
@@ -153,10 +154,33 @@ pub async fn rtt_histogram(_auth: AuthGuard) -> NoCache<Json<Vec<u32>>> {
 }
 
 #[get("/api/host_counts")]
-pub fn host_counts(_auth: AuthGuard) -> Json<(u32, u32)> {
-  let shaped_reader = SHAPED_DEVICES.read().unwrap();
-  let n_devices = shaped_reader.devices.len();
-  let host_counts = HOST_COUNTS.read().unwrap();
+pub async fn host_counts(_auth: AuthGuard) -> NoCache<Json<(u32, u32)>> {
+  let mut host_counts = (0, 0);
+  if let Ok(messages) = bus_request(vec![BusRequest::AllUnknownIps]).await {
+    for msg in messages {
+      if let BusResponse::AllUnknownIps(unknowns) = msg {
+        let really_unknown: Vec<IpStats> = unknowns
+          .iter()
+          .filter(|ip| {
+            if let Ok(ip) = ip.ip_address.parse::<IpAddr>() {
+              let lookup = match ip {
+                IpAddr::V4(ip) => ip.to_ipv6_mapped(),
+                IpAddr::V6(ip) => ip,
+              };
+              SHAPED_DEVICES.read().unwrap().trie.longest_match(lookup).is_none()
+            } else {
+              false
+            }
+          })
+          .cloned()
+          .collect();
+
+          host_counts = (really_unknown.len() as u32, 0);
+      }
+    }
+  }
+
+  let n_devices = SHAPED_DEVICES.read().unwrap().devices.len();
   let unknown = host_counts.0 - host_counts.1;
-  Json((n_devices as u32, unknown))
+  NoCache::new(Json((n_devices as u32, unknown)))
 }

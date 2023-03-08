@@ -3,9 +3,7 @@
 //! of the system.
 
 mod cpu_ram;
-mod lqosd_stats;
 mod shaped_devices;
 
 pub use cpu_ram::*;
-pub use lqosd_stats::*;
 pub use shaped_devices::*;
