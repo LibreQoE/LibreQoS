@@ -75,10 +75,11 @@ type TopList = (XdpIpAddress, (u64, u64), (u64, u64), f32, TcHandle, String);
 pub fn top_n(start: u32, end: u32) -> BusResponse {
   let mut full_list: Vec<TopList> = {
     let tp = THROUGHPUT_TRACKER.read().unwrap();
+    let tp_cycle = tp.cycle.load(std::sync::atomic::Ordering::Relaxed);
     tp.raw_data
       .iter()
       .filter(|v| !v.key().as_ip().is_loopback())
-      .filter(|d| retire_check(tp.cycle, d.most_recent_cycle))
+      .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
       .map(|te| {
         (
           *te.key(),
@@ -120,10 +121,11 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
 pub fn worst_n(start: u32, end: u32) -> BusResponse {
   let mut full_list: Vec<TopList> = {
     let tp = THROUGHPUT_TRACKER.read().unwrap();
+    let tp_cycle = tp.cycle.load(std::sync::atomic::Ordering::Relaxed);
     tp.raw_data
       .iter()
       .filter(|v| !v.key().as_ip().is_loopback())
-      .filter(|d| retire_check(tp.cycle, d.most_recent_cycle))
+      .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
       .filter(|te| te.median_latency() > 0.0)
       .map(|te| {
         (
@@ -165,10 +167,11 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
 pub fn best_n(start: u32, end: u32) -> BusResponse {
   let mut full_list: Vec<TopList> = {
     let tp = THROUGHPUT_TRACKER.read().unwrap();
+    let tp_cycle = tp.cycle.load(std::sync::atomic::Ordering::Relaxed);
     tp.raw_data
       .iter()
       .filter(|v| !v.key().as_ip().is_loopback())
-      .filter(|d| retire_check(tp.cycle, d.most_recent_cycle))
+      .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
       .filter(|te| te.median_latency() > 0.0)
       .map(|te| {
         (
@@ -211,10 +214,11 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
 
 pub fn xdp_pping_compat() -> BusResponse {
   let raw = THROUGHPUT_TRACKER.read().unwrap();
+  let raw_cycle = raw.cycle.load(std::sync::atomic::Ordering::Relaxed);
   let result = raw
     .raw_data
     .iter()
-    .filter(|d| retire_check(raw.cycle, d.most_recent_cycle))
+    .filter(|d| retire_check(raw_cycle, d.most_recent_cycle))
     .filter_map(|data| {
       if data.tc_handle.as_u32() > 0 {
         let mut valid_samples: Vec<u32> =
@@ -250,10 +254,11 @@ pub fn xdp_pping_compat() -> BusResponse {
 pub fn rtt_histogram() -> BusResponse {
   let mut result = vec![0; 20];
   let reader = THROUGHPUT_TRACKER.read().unwrap();
+  let reader_cycle = reader.cycle.load(std::sync::atomic::Ordering::Relaxed);
   for data in reader
     .raw_data
     .iter()
-    .filter(|d| retire_check(reader.cycle, d.most_recent_cycle))
+    .filter(|d| retire_check(reader_cycle, d.most_recent_cycle))
   {
     let valid_samples: Vec<u32> =
       data.recent_rtt_data.iter().filter(|d| **d > 0).copied().collect();
@@ -273,9 +278,10 @@ pub fn host_counts() -> BusResponse {
   let mut total = 0;
   let mut shaped = 0;
   let tp = THROUGHPUT_TRACKER.read().unwrap();
+  let tp_cycle = tp.cycle.load(std::sync::atomic::Ordering::Relaxed);
   tp.raw_data
     .iter()
-    .filter(|d| retire_check(tp.cycle, d.most_recent_cycle))
+    .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
     .for_each(|d| {
       total += 1;
       if d.tc_handle.as_u32() != 0 {
