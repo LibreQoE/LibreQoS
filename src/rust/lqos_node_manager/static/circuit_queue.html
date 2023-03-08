@@ -472,14 +472,14 @@
 
                     row += "<div class='col-sm-6'>";
                     row += "<div class='card bg-light'>";
-                    row += "<h5 class='card-title'><i class='fa fa-hourglass'></i> <a href='/tree?parent=" + data[i][0] + "'>" + data[i][1].name + " Throughput</a></h5>";
+                    row += "<h5 class='card-title'><i class='fa fa-hourglass'></i> <a class='redact' href='/tree?parent=" + data[i][0] + "'>" + redactText(data[i][1].name) + " Throughput</a></h5>";
                     row += "<div id='tp" + data[i][0] + "' class='graph98 graph150'></div>";
                     row += "</div>";
                     row += "</div>";
 
                     row += "<div class='col-sm-6'>";
                     row += "<div class='card bg-light'>";
-                    row += "<h5 class='card-title'><i class='fa fa-bar-chart'></i> " + data[i][1].name + " TCP RTT</h5>";
+                    row += "<h5 class='card-title redact'><i class='fa fa-bar-chart'></i> " + redactText(data[i][1].name) + " TCP RTT</h5>";
                     row += "<div id='rtt" + data[i][0] + "' class='graph98 graph150'></div>";
                     row += "</div>";
                     row += "</div>";
