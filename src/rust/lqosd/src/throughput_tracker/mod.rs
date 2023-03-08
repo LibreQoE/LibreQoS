@@ -26,7 +26,7 @@ pub fn spawn_throughput_monitor() {
     periodic(interval_ms, "Throughput Monitor", &mut || {
       let mut throughput = THROUGHPUT_TRACKER.write().unwrap();
       {
-        let mut net_json = NETWORK_JSON.write().unwrap();
+        let net_json = NETWORK_JSON.read().unwrap();
         net_json.zero_throughput_and_rtt();
       } // Scope to end the lock
       throughput.copy_previous_and_reset_rtt();
