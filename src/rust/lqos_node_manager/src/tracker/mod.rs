@@ -2,7 +2,7 @@ mod cache;
 mod cache_manager;
 use self::cache::{
   CPU_USAGE, HOST_COUNTS, NUM_CPUS, RAM_USED, RTT_HISTOGRAM,
-  TOTAL_RAM, WORST_10_RTT,
+  TOTAL_RAM,
 };
 use crate::{auth_guard::AuthGuard, cache_control::NoCache};
 pub use cache::{SHAPED_DEVICES, UNKNOWN_DEVICES};
@@ -123,10 +123,18 @@ pub async fn top_10_downloaders(_auth: AuthGuard) -> NoCache<Json<Vec<IpStatsWit
 }
 
 #[get("/api/worst_10_rtt")]
-pub fn worst_10_rtt(_auth: AuthGuard) -> Json<Vec<IpStatsWithPlan>> {
-  let tt: Vec<IpStatsWithPlan> =
-    WORST_10_RTT.read().unwrap().iter().map(|tt| tt.into()).collect();
-  Json(tt)
+pub async fn worst_10_rtt(_auth: AuthGuard) -> NoCache<Json<Vec<IpStatsWithPlan>>> {
+  if let Ok(messages) = bus_request(vec![BusRequest::GetWorstRtt { start: 0, end: 10 }]).await
+  {
+    for msg in messages {
+      if let BusResponse::WorstRtt(stats) = msg {
+        let result = stats.iter().map(|tt| tt.into()).collect();
+        return NoCache::new(Json(result));
+      }
+    }
+  }
+
+  NoCache::new(Json(Vec::new()))
 }
 
 #[get("/api/rtt_histogram")]
