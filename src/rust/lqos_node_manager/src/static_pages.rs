@@ -104,6 +104,11 @@ pub async fn jquery_js<'a>() -> LongCache<Option<NamedFile>> {
   LongCache::new(NamedFile::open("static/vendor/jquery.min.js").await.ok())
 }
 
+#[get("/vendor/msgpack.min.js")]
+pub async fn msgpack_js<'a>() -> LongCache<Option<NamedFile>> {
+  LongCache::new(NamedFile::open("static/vendor/msgpack.min.js").await.ok())
+}
+
 #[get("/vendor/bootstrap.bundle.min.js")]
 pub async fn bootsrap_js<'a>() -> LongCache<Option<NamedFile>> {
   LongCache::new(

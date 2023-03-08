@@ -10,7 +10,7 @@
     <title>LibreQoS - Local Node Manager</title>
     <script src="/lqos.js"></script>
     <script src="/vendor/plotly-2.16.1.min.js"></script>
-    <script src="/vendor/jquery.min.js"></script>
+    <script src="/vendor/jquery.min.js"></script><script src="/vendor/msgpack.min.js"></script>
     <script defer src="/vendor/bootstrap.bundle.min.js"></script>
 </head>
 
@@ -171,15 +171,18 @@
         var throughput = new MultiRingBuffer(300);
 
         function updateCurrentThroughput() {
-            $.get("/api/current_throughput", (tp) => {
-                $("#ppsDown").text(scaleNumber(tp.packets_per_second[0]));
-                $("#ppsUp").text(scaleNumber(tp.packets_per_second[1]));
-                $("#bpsDown").text(scaleNumber(tp.bits_per_second[0]));
-                $("#bpsUp").text(scaleNumber(tp.bits_per_second[1]));
+            msgPackGet("/api/current_throughput", (tp) => {
+                const bits = 0;
+                const packets = 1;
+                const shaped = 2;
+                $("#ppsDown").text(scaleNumber(tp[packets][0]));
+                $("#ppsUp").text(scaleNumber(tp[packets][1]));
+                $("#bpsDown").text(scaleNumber(tp[bits][0]));
+                $("#bpsUp").text(scaleNumber(tp[bits][1]));
 
-                throughput.push("pps", tp.packets_per_second[0], tp.packets_per_second[1]);
-                throughput.push("total", tp.bits_per_second[0], tp.bits_per_second[1]);
-                throughput.push("shaped", tp.shaped_bits_per_second[0], tp.shaped_bits_per_second[1]);
+                throughput.push("pps", tp[1][0], tp[packets][1]);
+                throughput.push("total", tp[bits][0], tp[bits][1]);
+                throughput.push("shaped", tp[shaped][0], tp[shaped][1]);
                 throughput.plotTotalThroughput("tpGraph");
             });
         }
@@ -187,17 +190,17 @@
         var funnelData = new MultiRingBuffer(300);
 
         function updateSiteFunnel() {
-            $.get("/api/network_tree_summary/", (data) => {
+            msgPackGet("/api/network_tree_summary/", (data) => {
                 let table = "<table class='table' style='font-size: 8pt;'>";
                 for (let i = 0; i < data.length; ++i) {
-                    let name = data[i][1].name;
+                    let name = data[i][1][NetTrans.name];
                     if (name.length > 20) {
                         name = name.substring(0, 20) + "...";
                     }
                     table += "<tr>";
                     table += "<td class='redact'>" + redactText(name) + "</td>";
-                    table += "<td>" + scaleNumber(data[i][1].current_throughput[0] * 8) + "</td>";
-                    table += "<td>" + scaleNumber(data[i][1].current_throughput[1] * 8) + "</td>";
+                    table += "<td>" + scaleNumber(data[i][1][NetTrans.current_throughput][0] * 8) + "</td>";
+                    table += "<td>" + scaleNumber(data[i][1][NetTrans.current_throughput][1] * 8) + "</td>";
                     table += "</tr>";
                 }
                 table += "</table>";
@@ -206,7 +209,7 @@
         }
 
         function updateCpu() {
-            $.get("/api/cpu", (cpu) => {
+            msgPackGet("/api/cpu", (cpu) => {
                 let graph = document.getElementById("cpu");
                 let x = [];
                 let y = [];
@@ -227,7 +230,7 @@
         }
 
         function updateRam() {
-            $.get("/api/ram", (ram) => {
+            msgPackGet("/api/ram", (ram) => {
                 let graph = document.getElementById("ram");
                 let data = [{
                     values: [ram[0], ram[1] - ram[0]],
@@ -242,18 +245,18 @@
             let html = "<table class='table'>";
             html += "<thead><th>IP Address</th><th>DL ⬇️</th><th>UL ⬆️</th><th>RTT (ms)</th><th>Shaped</th></thead>";
             for (let i = 0; i < tt.length; i++) {
-                let color = color_ramp(tt[i].median_tcp_rtt);
+                let color = color_ramp(tt[i][IpStats.median_tcp_rtt]);
                 html += "<tr style='background-color: " + color + "'>";
-                if (tt[i].circuit_id != "") {
-                    html += "<td><a class='redact' href='/circuit_queue?id=" + encodeURI(tt[i].circuit_id) + "'>" + redactText(tt[i].ip_address) + "</td>";
+                if (tt[i][IpStats.circuit_id] != "") {
+                    html += "<td><a class='redact' href='/circuit_queue?id=" + encodeURI(tt[i][IpStats.circuit_id]) + "'>" + redactText(tt[i][IpStats.ip_address]) + "</td>";
                 } else {
-                    html += "<td><span class='redact'>" + redactText(tt[i].ip_address) + "</span></td>";
+                    html += "<td><span class='redact'>" + redactText(tt[i][IpStats.ip_address]) + "</span></td>";
                 }
-                html += "<td>" + scaleNumber(tt[i].bits_per_second[0]) + "</td>";
-                html += "<td>" + scaleNumber(tt[i].bits_per_second[1]) + "</td>";
-                html += "<td>" + tt[i].median_tcp_rtt.toFixed(2) + "</td>";
+                html += "<td>" + scaleNumber(tt[i][IpStats.bits_per_second][0]) + "</td>";
+                html += "<td>" + scaleNumber(tt[i][IpStats.bits_per_second][1]) + "</td>";
+                html += "<td>" + tt[i][IpStats.median_tcp_rtt].toFixed(2) + "</td>";
                 if (tt[i].tc_handle != 0) {
-                    html += "<td><i class='fa fa-check-circle'></i> (" + tt[i].plan[0] + "/" + tt[i].plan[1] + ")</td>";
+                    html += "<td><i class='fa fa-check-circle'></i> (" + tt[i][IpStats.plan][0] + "/" + tt[i][IpStats.plan][1] + ")</td>";
                 } else {
                     //html += "<td><a class='btn btn-small btn-success' href='/shaped-add?ip=" + tt[i].ip_address + "'>Add Shaper</a></td>";
                     html += "<td>Not Shaped</td>"
@@ -265,13 +268,13 @@
         }
 
         function updateTop10() {
-            $.get("/api/top_10_downloaders", (tt) => {
+            msgPackGet("/api/top_10_downloaders", (tt) => {
                 updateNTable('#top10dl', tt);
             });
         }
 
         function updateWorst10() {
-            $.get("/api/worst_10_rtt", (tt) => {
+            msgPackGet("/api/worst_10_rtt", (tt) => {
                 updateNTable('#worstRtt', tt);
             });
         }
@@ -279,7 +282,7 @@
         var rttGraph = new RttHistogram();
 
         function updateHistogram() {
-            $.get("/api/rtt_histogram", (rtt) => {
+            msgPackGet("/api/rtt_histogram", (rtt) => {
                 rttGraph.clear();
                 for (let i = 0; i < rtt.length; i++) {
                     rttGraph.pushBand(i, rtt[i]);

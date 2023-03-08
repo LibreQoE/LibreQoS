@@ -4,7 +4,7 @@ use lqos_bus::{bus_request, BusRequest, BusResponse};
 use lqos_config::NetworkJsonTransport;
 use rocket::{
   fs::NamedFile,
-  serde::{json::Json, Serialize},
+  serde::{json::Json, Serialize, msgpack::MsgPack},
 };
 
 use crate::{cache_control::NoCache, tracker::SHAPED_DEVICES};
@@ -19,7 +19,7 @@ pub async fn tree_page<'a>() -> NoCache<Option<NamedFile>> {
 #[get("/api/network_tree/<parent>")]
 pub async fn tree_entry(
   parent: usize,
-) -> NoCache<Json<Vec<(usize, NetworkJsonTransport)>>> {
+) -> NoCache<MsgPack<Vec<(usize, NetworkJsonTransport)>>> {
   let responses =
     bus_request(vec![BusRequest::GetNetworkMap { parent }]).await.unwrap();
   let result = match &responses[0] {
@@ -27,19 +27,19 @@ pub async fn tree_entry(
     _ => Vec::new(),
   };
 
-  NoCache::new(Json(result))
+  NoCache::new(MsgPack(result))
 }
 
 #[get("/api/network_tree_summary")]
 pub async fn network_tree_summary(
-) -> NoCache<Json<Vec<(usize, NetworkJsonTransport)>>> {
+) -> NoCache<MsgPack<Vec<(usize, NetworkJsonTransport)>>> {
   let responses =
     bus_request(vec![BusRequest::TopMapQueues(4)]).await.unwrap();
   let result = match &responses[0] {
     BusResponse::NetworkMap(nodes) => nodes.to_owned(),
     _ => Vec::new(),
   };
-  NoCache::new(Json(result))
+  NoCache::new(MsgPack(result))
 }
 
 #[derive(Serialize, Clone)]
@@ -54,7 +54,7 @@ pub struct CircuitThroughput {
 #[get("/api/tree_clients/<parent>")]
 pub async fn tree_clients(
   parent: String,
-) -> NoCache<Json<Vec<CircuitThroughput>>> {
+) -> NoCache<MsgPack<Vec<CircuitThroughput>>> {
   let mut result = Vec::new();
   for msg in
     bus_request(vec![BusRequest::GetHostCounter]).await.unwrap().iter()
@@ -82,7 +82,7 @@ pub async fn tree_clients(
       }
     }
   }
-  NoCache::new(Json(result))
+  NoCache::new(MsgPack(result))
 }
 
 #[post("/api/node_names", data = "<nodes>")]

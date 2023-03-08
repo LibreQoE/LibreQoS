@@ -1,3 +1,41 @@
+function msgPackGet(url, success) {
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", url, true);
+    xhr.responseType = "arraybuffer";
+    xhr.onload = () => {
+        var data = xhr.response;
+        let decoded = msgpack.decode(new Uint8Array(data));
+        success(decoded);
+    };
+    xhr.send(null);
+}
+
+const NetTrans = {
+    "name": 0,
+    "max_throughput": 1,
+    "current_throughput": 2,
+    "rtts": 3,
+    "parents": 4,
+    "immediate_parent": 5
+}
+
+const Circuit = {
+    "id" : 0,
+    "name" : 1,
+    "traffic": 2,
+    "limit": 3,
+}
+
+const IpStats = {
+    "ip_address": 0,
+    "bits_per_second": 1,
+    "packets_per_second": 2,
+    "median_tcp_rtt": 3,
+    "tc_handle": 4,
+    "circuit_id": 5,
+    "plan": 6,
+}
+
 function metaverse_color_ramp(n) {
     if (n <= 9) {
         return "#32b08c";
@@ -65,7 +103,7 @@ function css_getclass(name) {
 }
 
 function updateHostCounts() {
-    $.get("/api/host_counts", (hc) => {
+    msgPackGet("/api/host_counts", (hc) => {
         $("#shapedCount").text(hc[0]);
         $("#unshapedCount").text(hc[1]);
         setTimeout(updateHostCounts, 5000);

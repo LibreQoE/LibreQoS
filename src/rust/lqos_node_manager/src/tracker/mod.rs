@@ -9,7 +9,7 @@ use crate::{auth_guard::AuthGuard, cache_control::NoCache};
 pub use cache::SHAPED_DEVICES;
 pub use cache_manager::update_tracking;
 use lqos_bus::{bus_request, BusRequest, BusResponse, IpStats, TcHandle};
-use rocket::serde::{json::Json, Deserialize, Serialize};
+use rocket::serde::{Deserialize, Serialize, msgpack::MsgPack};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(crate = "rocket::serde")]
@@ -69,7 +69,7 @@ pub struct ThroughputPerSecond {
 #[get("/api/current_throughput")]
 pub async fn current_throughput(
   _auth: AuthGuard,
-) -> Json<ThroughputPerSecond> {
+) -> NoCache<MsgPack<ThroughputPerSecond>> {
   let mut result = ThroughputPerSecond::default();
   if let Ok(messages) =
     bus_request(vec![BusRequest::GetCurrentThroughput]).await
@@ -87,74 +87,74 @@ pub async fn current_throughput(
       }
     }
   }
-  Json(result)
+  NoCache::new(MsgPack(result))
 }
 
 #[get("/api/cpu")]
-pub fn cpu_usage(_auth: AuthGuard) -> Json<Vec<u32>> {
+pub fn cpu_usage(_auth: AuthGuard) -> NoCache<MsgPack<Vec<u32>>> {
   let usage: Vec<u32> = CPU_USAGE
     .iter()
     .take(NUM_CPUS.load(std::sync::atomic::Ordering::Relaxed))
     .map(|cpu| cpu.load(std::sync::atomic::Ordering::Relaxed))
     .collect();
 
-  Json(usage)
+  NoCache::new(MsgPack(usage))
 }
 
 #[get("/api/ram")]
-pub fn ram_usage(_auth: AuthGuard) -> Json<Vec<u64>> {
+pub fn ram_usage(_auth: AuthGuard) -> NoCache<MsgPack<Vec<u64>>> {
   let ram_usage = RAM_USED.load(std::sync::atomic::Ordering::Relaxed);
   let total_ram = TOTAL_RAM.load(std::sync::atomic::Ordering::Relaxed);
-  Json(vec![ram_usage, total_ram])
+  NoCache::new(MsgPack(vec![ram_usage, total_ram]))
 }
 
 #[get("/api/top_10_downloaders")]
-pub async fn top_10_downloaders(_auth: AuthGuard) -> NoCache<Json<Vec<IpStatsWithPlan>>> {
+pub async fn top_10_downloaders(_auth: AuthGuard) -> NoCache<MsgPack<Vec<IpStatsWithPlan>>> {
   if let Ok(messages) = bus_request(vec![BusRequest::GetTopNDownloaders { start: 0, end: 10 }]).await
   {
     for msg in messages {
       if let BusResponse::TopDownloaders(stats) = msg {
         let result = stats.iter().map(|tt| tt.into()).collect();
-        return NoCache::new(Json(result));
+        return NoCache::new(MsgPack(result));
       }
     }
   }
 
-  NoCache::new(Json(Vec::new()))
+  NoCache::new(MsgPack(Vec::new()))
 }
 
 #[get("/api/worst_10_rtt")]
-pub async fn worst_10_rtt(_auth: AuthGuard) -> NoCache<Json<Vec<IpStatsWithPlan>>> {
+pub async fn worst_10_rtt(_auth: AuthGuard) -> NoCache<MsgPack<Vec<IpStatsWithPlan>>> {
   if let Ok(messages) = bus_request(vec![BusRequest::GetWorstRtt { start: 0, end: 10 }]).await
   {
     for msg in messages {
       if let BusResponse::WorstRtt(stats) = msg {
         let result = stats.iter().map(|tt| tt.into()).collect();
-        return NoCache::new(Json(result));
+        return NoCache::new(MsgPack(result));
       }
     }
   }
 
-  NoCache::new(Json(Vec::new()))
+  NoCache::new(MsgPack(Vec::new()))
 }
 
 #[get("/api/rtt_histogram")]
-pub async fn rtt_histogram(_auth: AuthGuard) -> NoCache<Json<Vec<u32>>> {
+pub async fn rtt_histogram(_auth: AuthGuard) -> NoCache<MsgPack<Vec<u32>>> {
   if let Ok(messages) = bus_request(vec![BusRequest::RttHistogram]).await
   {
     for msg in messages {
       if let BusResponse::RttHistogram(stats) = msg {
         let result = stats;
-        return NoCache::new(Json(result));
+        return NoCache::new(MsgPack(result));
       }
     }
   }
 
-  NoCache::new(Json(Vec::new()))
+  NoCache::new(MsgPack(Vec::new()))
 }
 
 #[get("/api/host_counts")]
-pub async fn host_counts(_auth: AuthGuard) -> NoCache<Json<(u32, u32)>> {
+pub async fn host_counts(_auth: AuthGuard) -> NoCache<MsgPack<(u32, u32)>> {
   let mut host_counts = (0, 0);
   if let Ok(messages) = bus_request(vec![BusRequest::AllUnknownIps]).await {
     for msg in messages {
@@ -182,5 +182,5 @@ pub async fn host_counts(_auth: AuthGuard) -> NoCache<Json<(u32, u32)>> {
 
   let n_devices = SHAPED_DEVICES.read().unwrap().devices.len();
   let unknown = host_counts.0 - host_counts.1;
-  NoCache::new(Json((n_devices as u32, unknown)))
+  NoCache::new(MsgPack((n_devices as u32, unknown)))
 }
