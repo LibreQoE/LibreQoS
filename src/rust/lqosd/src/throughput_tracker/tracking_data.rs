@@ -1,13 +1,12 @@
 use crate::shaped_devices_tracker::{SHAPED_DEVICES, NETWORK_JSON};
-
 use super::{throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
+use dashmap::DashMap;
 use lqos_bus::TcHandle;
 use lqos_sys::{rtt_for_each, throughput_for_each, XdpIpAddress};
-use std::collections::HashMap;
 
 pub struct ThroughputTracker {
   pub(crate) cycle: u64,
-  pub(crate) raw_data: HashMap<XdpIpAddress, ThroughputEntry>,
+  pub(crate) raw_data: DashMap<XdpIpAddress, ThroughputEntry>,
   pub(crate) bytes_per_second: (u64, u64),
   pub(crate) packets_per_second: (u64, u64),
   pub(crate) shaped_bytes_per_second: (u64, u64),
@@ -20,7 +19,7 @@ impl ThroughputTracker {
     // from there via the C API.
     Self {
       cycle: RETIRE_AFTER_SECONDS,
-      raw_data: HashMap::with_capacity(lqos_sys::max_tracked_ips()),
+      raw_data: DashMap::with_capacity(lqos_sys::max_tracked_ips()),
       bytes_per_second: (0, 0),
       packets_per_second: (0, 0),
       shaped_bytes_per_second: (0, 0),
@@ -31,7 +30,7 @@ impl ThroughputTracker {
     // Copy previous byte/packet numbers and reset RTT data
     // We're using Rayon's "par_iter_mut" to spread the operation across
     // all CPU cores.
-    self.raw_data.iter_mut().for_each(|(_k, v)| {
+    self.raw_data.iter_mut().for_each(|mut v| {
       if v.first_cycle < self.cycle {
         v.bytes_per_second.0 =
           u64::checked_sub(v.bytes.0, v.prev_bytes.0).unwrap_or(0);
@@ -93,8 +92,8 @@ impl ThroughputTracker {
   }
 
   pub(crate) fn refresh_circuit_ids(&mut self) {
-    self.raw_data.iter_mut().for_each(|(ip, data)| {
-      data.circuit_id = Self::lookup_circuit_id(ip);
+    self.raw_data.iter_mut().for_each(|mut data| {
+      data.circuit_id = Self::lookup_circuit_id(data.key());
       data.network_json_parents =
         Self::lookup_network_parents(data.circuit_id.clone());
     });
@@ -106,7 +105,7 @@ impl ThroughputTracker {
     let cycle = self.cycle;
     let raw_data = &mut self.raw_data;
     throughput_for_each(&mut |xdp_ip, counts| {
-      if let Some(entry) = raw_data.get_mut(xdp_ip) {
+      if let Some(mut entry) = raw_data.get_mut(xdp_ip) {
         entry.bytes = (0, 0);
         entry.packets = (0, 0);
         for c in counts {
@@ -171,7 +170,7 @@ impl ThroughputTracker {
     rtt_for_each(&mut |raw_ip, rtt| {
       if rtt.has_fresh_data != 0 {
         let ip = XdpIpAddress(*raw_ip);
-        if let Some(tracker) = self.raw_data.get_mut(&ip) {
+        if let Some(mut tracker) = self.raw_data.get_mut(&ip) {
           tracker.recent_rtt_data = rtt.rtt;
           tracker.last_fresh_rtt_data_cycle = self.cycle;
           if let Some(parents) = &tracker.network_json_parents {
@@ -189,7 +188,7 @@ impl ThroughputTracker {
     self.shaped_bytes_per_second = (0, 0);
     self
       .raw_data
-      .values()
+      .iter()
       .map(|v| {
         (
           v.bytes.0.saturating_sub(v.prev_bytes.0),
@@ -238,8 +237,8 @@ impl ThroughputTracker {
 
   #[allow(dead_code)]
   pub(crate) fn dump(&self) {
-    for (k, v) in self.raw_data.iter() {
-      let ip = k.as_ip();
+    for v in self.raw_data.iter() {
+      let ip = v.key().as_ip();
       log::info!("{:<34}{:?}", ip, v.tc_handle);
     }
   }

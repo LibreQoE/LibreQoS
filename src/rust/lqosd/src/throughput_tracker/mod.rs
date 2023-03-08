@@ -57,8 +57,8 @@ pub fn current_throughput() -> BusResponse {
 pub fn host_counters() -> BusResponse {
   let mut result = Vec::new();
   let tp = THROUGHPUT_TRACKER.read().unwrap();
-  tp.raw_data.iter().for_each(|(k, v)| {
-    let ip = k.as_ip();
+  tp.raw_data.iter().for_each(|v| {
+    let ip = v.key().as_ip();
     let (down, up) = v.bytes_per_second;
     result.push((ip, down, up));
   });
@@ -77,11 +77,11 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
     let tp = THROUGHPUT_TRACKER.read().unwrap();
     tp.raw_data
       .iter()
-      .filter(|(ip, _)| !ip.as_ip().is_loopback())
-      .filter(|(_, d)| retire_check(tp.cycle, d.most_recent_cycle))
-      .map(|(ip, te)| {
+      .filter(|v| !v.key().as_ip().is_loopback())
+      .filter(|d| retire_check(tp.cycle, d.most_recent_cycle))
+      .map(|te| {
         (
-          *ip,
+          *te.key(),
           te.bytes_per_second,
           te.packets_per_second,
           te.median_latency(),
@@ -122,12 +122,12 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
     let tp = THROUGHPUT_TRACKER.read().unwrap();
     tp.raw_data
       .iter()
-      .filter(|(ip, _)| !ip.as_ip().is_loopback())
-      .filter(|(_, d)| retire_check(tp.cycle, d.most_recent_cycle))
-      .filter(|(_, te)| te.median_latency() > 0.0)
-      .map(|(ip, te)| {
+      .filter(|v| !v.key().as_ip().is_loopback())
+      .filter(|d| retire_check(tp.cycle, d.most_recent_cycle))
+      .filter(|te| te.median_latency() > 0.0)
+      .map(|te| {
         (
-          *ip,
+          *te.key(),
           te.bytes_per_second,
           te.packets_per_second,
           te.median_latency(),
@@ -167,12 +167,12 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
     let tp = THROUGHPUT_TRACKER.read().unwrap();
     tp.raw_data
       .iter()
-      .filter(|(ip, _)| !ip.as_ip().is_loopback())
-      .filter(|(_, d)| retire_check(tp.cycle, d.most_recent_cycle))
-      .filter(|(_, te)| te.median_latency() > 0.0)
-      .map(|(ip, te)| {
+      .filter(|v| !v.key().as_ip().is_loopback())
+      .filter(|d| retire_check(tp.cycle, d.most_recent_cycle))
+      .filter(|te| te.median_latency() > 0.0)
+      .map(|te| {
         (
-          *ip,
+          *te.key(),
           te.bytes_per_second,
           te.packets_per_second,
           te.median_latency(),
@@ -214,8 +214,8 @@ pub fn xdp_pping_compat() -> BusResponse {
   let result = raw
     .raw_data
     .iter()
-    .filter(|(_, d)| retire_check(raw.cycle, d.most_recent_cycle))
-    .filter_map(|(_ip, data)| {
+    .filter(|d| retire_check(raw.cycle, d.most_recent_cycle))
+    .filter_map(|data| {
       if data.tc_handle.as_u32() > 0 {
         let mut valid_samples: Vec<u32> =
           data.recent_rtt_data.iter().filter(|d| **d > 0).copied().collect();
@@ -250,10 +250,10 @@ pub fn xdp_pping_compat() -> BusResponse {
 pub fn rtt_histogram() -> BusResponse {
   let mut result = vec![0; 20];
   let reader = THROUGHPUT_TRACKER.read().unwrap();
-  for (_, data) in reader
+  for data in reader
     .raw_data
     .iter()
-    .filter(|(_, d)| retire_check(reader.cycle, d.most_recent_cycle))
+    .filter(|d| retire_check(reader.cycle, d.most_recent_cycle))
   {
     let valid_samples: Vec<u32> =
       data.recent_rtt_data.iter().filter(|d| **d > 0).copied().collect();
@@ -275,8 +275,8 @@ pub fn host_counts() -> BusResponse {
   let tp = THROUGHPUT_TRACKER.read().unwrap();
   tp.raw_data
     .iter()
-    .filter(|(_, d)| retire_check(tp.cycle, d.most_recent_cycle))
-    .for_each(|(_, d)| {
+    .filter(|d| retire_check(tp.cycle, d.most_recent_cycle))
+    .for_each(|d| {
       total += 1;
       if d.tc_handle.as_u32() != 0 {
         shaped += 1;
@@ -304,12 +304,12 @@ pub fn all_unknown_ips() -> BusResponse {
     let tp = THROUGHPUT_TRACKER.read().unwrap();
     tp.raw_data
       .iter()
-      .filter(|(ip, _)| !ip.as_ip().is_loopback())
-      .filter(|(_, d)| d.tc_handle.as_u32() == 0)
-      .filter(|(_, d)| d.last_seen as u128 > five_minutes_ago_nanoseconds)
-      .map(|(ip, te)| {
+      .filter(|v| !v.key().as_ip().is_loopback())
+      .filter(|d| d.tc_handle.as_u32() == 0)
+      .filter(|d| d.last_seen as u128 > five_minutes_ago_nanoseconds)
+      .map(|te| {
         (
-          *ip,
+          *te.key(),
           te.bytes,
           te.packets,
           te.median_latency(),
