@@ -1,7 +1,7 @@
 use std::net::IpAddr;
 
 use lqos_bus::{bus_request, BusRequest, BusResponse};
-use lqos_config::NetworkJsonNode;
+use lqos_config::NetworkJsonTransport;
 use rocket::{
   fs::NamedFile,
   serde::{json::Json, Serialize},
@@ -19,7 +19,7 @@ pub async fn tree_page<'a>() -> NoCache<Option<NamedFile>> {
 #[get("/api/network_tree/<parent>")]
 pub async fn tree_entry(
   parent: usize,
-) -> NoCache<Json<Vec<(usize, NetworkJsonNode)>>> {
+) -> NoCache<Json<Vec<(usize, NetworkJsonTransport)>>> {
   let responses =
     bus_request(vec![BusRequest::GetNetworkMap { parent }]).await.unwrap();
   let result = match &responses[0] {
@@ -32,7 +32,7 @@ pub async fn tree_entry(
 
 #[get("/api/network_tree_summary")]
 pub async fn network_tree_summary(
-) -> NoCache<Json<Vec<(usize, NetworkJsonNode)>>> {
+) -> NoCache<Json<Vec<(usize, NetworkJsonTransport)>>> {
   let responses =
     bus_request(vec![BusRequest::TopMapQueues(4)]).await.unwrap();
   let result = match &responses[0] {
@@ -106,7 +106,7 @@ pub async fn node_names(
 #[get("/api/funnel_for_queue/<circuit_id>")]
 pub async fn funnel_for_queue(
   circuit_id: String,
-) -> NoCache<Json<Vec<(usize, NetworkJsonNode)>>> {
+) -> NoCache<Json<Vec<(usize, NetworkJsonTransport)>>> {
   let mut result = Vec::new();
 
   let target = SHAPED_DEVICES

@@ -70,7 +70,7 @@ pub enum BusResponse {
   RawQueueData(String),
 
   /// Results from network map queries
-  NetworkMap(Vec<(usize, lqos_config::NetworkJsonNode)>),
+  NetworkMap(Vec<(usize, lqos_config::NetworkJsonTransport)>),
 
   /// Named nodes from network.json
   NodeNames(Vec<(usize, String)>),

@@ -125,7 +125,7 @@ impl ThroughputTracker {
           entry.most_recent_cycle = cycle;
 
           if let Some(parents) = &entry.network_json_parents {
-            let mut net_json = NETWORK_JSON.write().unwrap();
+            let net_json = NETWORK_JSON.read().unwrap();
             net_json.add_throughput_cycle(
               parents,
               (

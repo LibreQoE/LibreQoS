@@ -1,7 +1,7 @@
 use anyhow::Result;
 use log::{error, info, warn};
 use lqos_bus::BusResponse;
-use lqos_config::{ConfigShapedDevices, NetworkJsonNode};
+use lqos_config::{ConfigShapedDevices, NetworkJsonTransport};
 use lqos_utils::file_watcher::FileWatcher;
 use once_cell::sync::Lazy;
 use std::sync::RwLock;
@@ -91,7 +91,7 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
 
       nodes.push((
         0,
-        NetworkJsonNode {
+        NetworkJsonTransport {
           name: "Others".into(),
           max_throughput: (0, 0),
           current_throughput: other_bw,
@@ -124,7 +124,7 @@ pub fn get_funnel(circuit_id: &str) -> BusResponse {
     // Reverse the scanning order and skip the last entry (the parent)
     let mut result = Vec::new();
     for idx in reader.nodes[index].parents.iter().rev().skip(1) {
-      result.push((*idx, reader.nodes[*idx].clone()));
+      result.push((*idx, reader.nodes[*idx].clone_to_transit()));
     }
     return BusResponse::NetworkMap(result);
   }
