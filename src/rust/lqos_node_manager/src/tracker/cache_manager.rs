@@ -129,15 +129,11 @@ fn watch_for_shaped_devices_changing() -> Result<()> {
 async fn get_data_from_server() -> Result<()> {
   // Send request to lqosd
   let requests = vec![
-    BusRequest::RttHistogram,
     BusRequest::AllUnknownIps,
   ];
 
   for r in bus_request(requests).await?.iter() {
     match r {
-      BusResponse::RttHistogram(stats) => {
-        *RTT_HISTOGRAM.write().unwrap() = stats.clone();
-      }
       BusResponse::AllUnknownIps(unknowns) => {
         *HOST_COUNTS.write().unwrap() = (unknowns.len() as u32, 0);
         let cfg = SHAPED_DEVICES.read().unwrap();

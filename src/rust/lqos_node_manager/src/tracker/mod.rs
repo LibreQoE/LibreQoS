@@ -1,7 +1,7 @@
 mod cache;
 mod cache_manager;
 use self::cache::{
-  CPU_USAGE, HOST_COUNTS, NUM_CPUS, RAM_USED, RTT_HISTOGRAM,
+  CPU_USAGE, HOST_COUNTS, NUM_CPUS, RAM_USED,
   TOTAL_RAM,
 };
 use crate::{auth_guard::AuthGuard, cache_control::NoCache};
@@ -138,8 +138,18 @@ pub async fn worst_10_rtt(_auth: AuthGuard) -> NoCache<Json<Vec<IpStatsWithPlan>
 }
 
 #[get("/api/rtt_histogram")]
-pub fn rtt_histogram(_auth: AuthGuard) -> Json<Vec<u32>> {
-  Json(RTT_HISTOGRAM.read().unwrap().clone())
+pub async fn rtt_histogram(_auth: AuthGuard) -> NoCache<Json<Vec<u32>>> {
+  if let Ok(messages) = bus_request(vec![BusRequest::RttHistogram]).await
+  {
+    for msg in messages {
+      if let BusResponse::RttHistogram(stats) = msg {
+        let result = stats;
+        return NoCache::new(Json(result));
+      }
+    }
+  }
+
+  NoCache::new(Json(Vec::new()))
 }
 
 #[get("/api/host_counts")]
