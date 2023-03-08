@@ -8,9 +8,9 @@ use lqos_sys::{rtt_for_each, throughput_for_each, XdpIpAddress};
 pub struct ThroughputTracker {
   pub(crate) cycle: AtomicU64,
   pub(crate) raw_data: DashMap<XdpIpAddress, ThroughputEntry>,
-  pub(crate) bytes_per_second: (u64, u64),
-  pub(crate) packets_per_second: (u64, u64),
-  pub(crate) shaped_bytes_per_second: (u64, u64),
+  pub(crate) bytes_per_second: (AtomicU64, AtomicU64),
+  pub(crate) packets_per_second: (AtomicU64, AtomicU64),
+  pub(crate) shaped_bytes_per_second: (AtomicU64, AtomicU64),
 }
 
 impl ThroughputTracker {
@@ -21,13 +21,13 @@ impl ThroughputTracker {
     Self {
       cycle: AtomicU64::new(RETIRE_AFTER_SECONDS),
       raw_data: DashMap::with_capacity(lqos_sys::max_tracked_ips()),
-      bytes_per_second: (0, 0),
-      packets_per_second: (0, 0),
-      shaped_bytes_per_second: (0, 0),
+      bytes_per_second: (AtomicU64::new(0), AtomicU64::new(0)),
+      packets_per_second: (AtomicU64::new(0), AtomicU64::new(0)),
+      shaped_bytes_per_second: (AtomicU64::new(0), AtomicU64::new(0)),
     }
   }
 
-  pub(crate) fn copy_previous_and_reset_rtt(&mut self) {
+  pub(crate) fn copy_previous_and_reset_rtt(&self) {
     // Copy previous byte/packet numbers and reset RTT data
     // We're using Rayon's "par_iter_mut" to spread the operation across
     // all CPU cores.
@@ -93,7 +93,7 @@ impl ThroughputTracker {
     }
   }
 
-  pub(crate) fn refresh_circuit_ids(&mut self) {
+  pub(crate) fn refresh_circuit_ids(&self) {
     self.raw_data.iter_mut().for_each(|mut data| {
       data.circuit_id = Self::lookup_circuit_id(data.key());
       data.network_json_parents =
@@ -102,9 +102,9 @@ impl ThroughputTracker {
   }
 
   pub(crate) fn apply_new_throughput_counters(
-    &mut self,
+    &self,
   ) {
-    let raw_data = &mut self.raw_data;
+    let raw_data = &self.raw_data;
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
     throughput_for_each(&mut |xdp_ip, counts| {
       if let Some(mut entry) = raw_data.get_mut(xdp_ip) {
@@ -168,7 +168,7 @@ impl ThroughputTracker {
     });
   }
 
-  pub(crate) fn apply_rtt_data(&mut self) {
+  pub(crate) fn apply_rtt_data(&self) {
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
     rtt_for_each(&mut |raw_ip, rtt| {
       if rtt.has_fresh_data != 0 {
@@ -185,10 +185,22 @@ impl ThroughputTracker {
     });
   }
 
-  pub(crate) fn update_totals(&mut self) {
-    self.bytes_per_second = (0, 0);
-    self.packets_per_second = (0, 0);
-    self.shaped_bytes_per_second = (0, 0);
+  #[inline(always)]
+  fn set_atomic_tuple_to_zero(tuple: &(AtomicU64, AtomicU64)) {
+    tuple.0.store(0, std::sync::atomic::Ordering::Relaxed);
+    tuple.1.store(0, std::sync::atomic::Ordering::Relaxed);
+  }
+
+  #[inline(always)]
+  fn add_atomic_tuple(tuple: &(AtomicU64, AtomicU64), n: (u64, u64)) {
+    tuple.0.fetch_add(n.0, std::sync::atomic::Ordering::Relaxed);
+    tuple.1.fetch_add(n.1, std::sync::atomic::Ordering::Relaxed);
+  }
+
+  pub(crate) fn update_totals(&self) {
+    Self::set_atomic_tuple_to_zero(&self.bytes_per_second);
+    Self::set_atomic_tuple_to_zero(&self.packets_per_second);
+    Self::set_atomic_tuple_to_zero(&self.shaped_bytes_per_second);
     self
       .raw_data
       .iter()
@@ -202,22 +214,10 @@ impl ThroughputTracker {
         )
       })
       .for_each(|(bytes_down, bytes_up, packets_down, packets_up, shaped)| {
-        self.bytes_per_second.0 =
-          self.bytes_per_second.0.checked_add(bytes_down).unwrap_or(0);
-        self.bytes_per_second.1 =
-          self.bytes_per_second.1.checked_add(bytes_up).unwrap_or(0);
-        self.packets_per_second.0 =
-          self.packets_per_second.0.checked_add(packets_down).unwrap_or(0);
-        self.packets_per_second.1 =
-          self.packets_per_second.1.checked_add(packets_up).unwrap_or(0);
+        Self::add_atomic_tuple(&self.bytes_per_second, (bytes_down, bytes_up));
+        Self::add_atomic_tuple(&self.packets_per_second, (packets_down, packets_up));
         if shaped {
-          self.shaped_bytes_per_second.0 = self
-            .shaped_bytes_per_second
-            .0
-            .checked_add(bytes_down)
-            .unwrap_or(0);
-          self.shaped_bytes_per_second.1 =
-            self.shaped_bytes_per_second.1.checked_add(bytes_up).unwrap_or(0);
+          Self::add_atomic_tuple(&self.shaped_bytes_per_second, (bytes_down, bytes_up));
         }
       });
   }
@@ -227,15 +227,18 @@ impl ThroughputTracker {
   }
 
   pub(crate) fn bits_per_second(&self) -> (u64, u64) {
-    (self.bytes_per_second.0 * 8, self.bytes_per_second.1 * 8)
+    (self.bytes_per_second.0.load(std::sync::atomic::Ordering::Relaxed) * 8, self.bytes_per_second.1.load(std::sync::atomic::Ordering::Relaxed) * 8)
   }
 
   pub(crate) fn shaped_bits_per_second(&self) -> (u64, u64) {
-    (self.shaped_bytes_per_second.0 * 8, self.shaped_bytes_per_second.1 * 8)
+    (self.shaped_bytes_per_second.0.load(std::sync::atomic::Ordering::Relaxed) * 8, self.shaped_bytes_per_second.1.load(std::sync::atomic::Ordering::Relaxed) * 8)
   }
 
   pub(crate) fn packets_per_second(&self) -> (u64, u64) {
-    self.packets_per_second
+    (
+      self.packets_per_second.0.load(std::sync::atomic::Ordering::Relaxed),
+      self.packets_per_second.1.load(std::sync::atomic::Ordering::Relaxed),
+    )
   }
 
   #[allow(dead_code)]

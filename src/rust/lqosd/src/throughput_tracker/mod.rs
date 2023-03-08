@@ -9,13 +9,12 @@ use lqos_bus::{BusResponse, IpStats, TcHandle, XdpPpingResult};
 use lqos_sys::XdpIpAddress;
 use lqos_utils::{fdtimer::periodic, unix_time::time_since_boot};
 use once_cell::sync::Lazy;
-use std::sync::RwLock;
 use std::time::Duration;
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
-pub static THROUGHPUT_TRACKER: Lazy<RwLock<ThroughputTracker>> =
-  Lazy::new(|| RwLock::new(ThroughputTracker::new()));
+pub static THROUGHPUT_TRACKER: Lazy<ThroughputTracker> =
+  Lazy::new(ThroughputTracker::new);
 
 pub fn spawn_throughput_monitor() {
   info!("Starting the bandwidth monitor thread.");
@@ -24,27 +23,25 @@ pub fn spawn_throughput_monitor() {
 
   std::thread::spawn(move || {
     periodic(interval_ms, "Throughput Monitor", &mut || {
-      let mut throughput = THROUGHPUT_TRACKER.write().unwrap();
       {
         let net_json = NETWORK_JSON.read().unwrap();
         net_json.zero_throughput_and_rtt();
       } // Scope to end the lock
-      throughput.copy_previous_and_reset_rtt();
-      throughput.apply_new_throughput_counters();
-      throughput.apply_rtt_data();
-      throughput.update_totals();
-      throughput.next_cycle();
+      THROUGHPUT_TRACKER.copy_previous_and_reset_rtt();
+      THROUGHPUT_TRACKER.apply_new_throughput_counters();
+      THROUGHPUT_TRACKER.apply_rtt_data();
+      THROUGHPUT_TRACKER.update_totals();
+      THROUGHPUT_TRACKER.next_cycle();
     });
   });
 }
 
 pub fn current_throughput() -> BusResponse {
   let (bits_per_second, packets_per_second, shaped_bits_per_second) = {
-    let tp = THROUGHPUT_TRACKER.read().unwrap();
     (
-      tp.bits_per_second(),
-      tp.packets_per_second(),
-      tp.shaped_bits_per_second(),
+      THROUGHPUT_TRACKER.bits_per_second(),
+      THROUGHPUT_TRACKER.packets_per_second(),
+      THROUGHPUT_TRACKER.shaped_bits_per_second(),
     )
   };
   BusResponse::CurrentThroughput {
@@ -56,8 +53,7 @@ pub fn current_throughput() -> BusResponse {
 
 pub fn host_counters() -> BusResponse {
   let mut result = Vec::new();
-  let tp = THROUGHPUT_TRACKER.read().unwrap();
-  tp.raw_data.iter().for_each(|v| {
+  THROUGHPUT_TRACKER.raw_data.iter().for_each(|v| {
     let ip = v.key().as_ip();
     let (down, up) = v.bytes_per_second;
     result.push((ip, down, up));
@@ -74,9 +70,8 @@ type TopList = (XdpIpAddress, (u64, u64), (u64, u64), f32, TcHandle, String);
 
 pub fn top_n(start: u32, end: u32) -> BusResponse {
   let mut full_list: Vec<TopList> = {
-    let tp = THROUGHPUT_TRACKER.read().unwrap();
-    let tp_cycle = tp.cycle.load(std::sync::atomic::Ordering::Relaxed);
-    tp.raw_data
+    let tp_cycle = THROUGHPUT_TRACKER.cycle.load(std::sync::atomic::Ordering::Relaxed);
+    THROUGHPUT_TRACKER.raw_data
       .iter()
       .filter(|v| !v.key().as_ip().is_loopback())
       .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
@@ -120,9 +115,8 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
 
 pub fn worst_n(start: u32, end: u32) -> BusResponse {
   let mut full_list: Vec<TopList> = {
-    let tp = THROUGHPUT_TRACKER.read().unwrap();
-    let tp_cycle = tp.cycle.load(std::sync::atomic::Ordering::Relaxed);
-    tp.raw_data
+    let tp_cycle = THROUGHPUT_TRACKER.cycle.load(std::sync::atomic::Ordering::Relaxed);
+    THROUGHPUT_TRACKER.raw_data
       .iter()
       .filter(|v| !v.key().as_ip().is_loopback())
       .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
@@ -166,9 +160,8 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
 }
 pub fn best_n(start: u32, end: u32) -> BusResponse {
   let mut full_list: Vec<TopList> = {
-    let tp = THROUGHPUT_TRACKER.read().unwrap();
-    let tp_cycle = tp.cycle.load(std::sync::atomic::Ordering::Relaxed);
-    tp.raw_data
+    let tp_cycle = THROUGHPUT_TRACKER.cycle.load(std::sync::atomic::Ordering::Relaxed);
+    THROUGHPUT_TRACKER.raw_data
       .iter()
       .filter(|v| !v.key().as_ip().is_loopback())
       .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
@@ -213,9 +206,8 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
 }
 
 pub fn xdp_pping_compat() -> BusResponse {
-  let raw = THROUGHPUT_TRACKER.read().unwrap();
-  let raw_cycle = raw.cycle.load(std::sync::atomic::Ordering::Relaxed);
-  let result = raw
+  let raw_cycle = THROUGHPUT_TRACKER.cycle.load(std::sync::atomic::Ordering::Relaxed);
+  let result = THROUGHPUT_TRACKER
     .raw_data
     .iter()
     .filter(|d| retire_check(raw_cycle, d.most_recent_cycle))
@@ -253,9 +245,8 @@ pub fn xdp_pping_compat() -> BusResponse {
 
 pub fn rtt_histogram() -> BusResponse {
   let mut result = vec![0; 20];
-  let reader = THROUGHPUT_TRACKER.read().unwrap();
-  let reader_cycle = reader.cycle.load(std::sync::atomic::Ordering::Relaxed);
-  for data in reader
+  let reader_cycle = THROUGHPUT_TRACKER.cycle.load(std::sync::atomic::Ordering::Relaxed);
+  for data in THROUGHPUT_TRACKER
     .raw_data
     .iter()
     .filter(|d| retire_check(reader_cycle, d.most_recent_cycle))
@@ -277,9 +268,8 @@ pub fn rtt_histogram() -> BusResponse {
 pub fn host_counts() -> BusResponse {
   let mut total = 0;
   let mut shaped = 0;
-  let tp = THROUGHPUT_TRACKER.read().unwrap();
-  let tp_cycle = tp.cycle.load(std::sync::atomic::Ordering::Relaxed);
-  tp.raw_data
+  let tp_cycle = THROUGHPUT_TRACKER.cycle.load(std::sync::atomic::Ordering::Relaxed);
+  THROUGHPUT_TRACKER.raw_data
     .iter()
     .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
     .for_each(|d| {
@@ -307,8 +297,7 @@ pub fn all_unknown_ips() -> BusResponse {
   let five_minutes_ago_nanoseconds = five_minutes_ago.as_nanos();
 
   let mut full_list: Vec<FullList> = {
-    let tp = THROUGHPUT_TRACKER.read().unwrap();
-    tp.raw_data
+    THROUGHPUT_TRACKER.raw_data
       .iter()
       .filter(|v| !v.key().as_ip().is_loopback())
       .filter(|d| d.tc_handle.as_u32() == 0)

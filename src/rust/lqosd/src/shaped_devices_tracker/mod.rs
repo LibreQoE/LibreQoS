@@ -19,8 +19,6 @@ fn load_shaped_devices() {
     info!("ShapedDevices.csv loaded");
     *SHAPED_DEVICES.write().unwrap() = new_file;
     crate::throughput_tracker::THROUGHPUT_TRACKER
-      .write()
-      .unwrap()
       .refresh_circuit_ids();
   } else {
     warn!("ShapedDevices.csv failed to load, see previous error messages. Reverting to empty set.");
