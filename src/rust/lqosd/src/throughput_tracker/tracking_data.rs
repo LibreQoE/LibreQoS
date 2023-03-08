@@ -175,7 +175,7 @@ impl ThroughputTracker {
           tracker.recent_rtt_data = rtt.rtt;
           tracker.last_fresh_rtt_data_cycle = self.cycle;
           if let Some(parents) = &tracker.network_json_parents {
-            let mut net_json = NETWORK_JSON.write().unwrap();
+            let net_json = NETWORK_JSON.write().unwrap();
             net_json.add_rtt_cycle(parents, tracker.median_latency());
           }
         }
