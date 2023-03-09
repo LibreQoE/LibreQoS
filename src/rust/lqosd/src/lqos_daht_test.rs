@@ -11,7 +11,7 @@ pub fn lqos_daht_test() -> BusResponse {
       true,
       std::sync::atomic::Ordering::Relaxed,
       std::sync::atomic::Ordering::Relaxed,
-    ) == Ok(true)
+    ) == Ok(false)
     {
       let result = Command::new("/bin/ssh")
         .args(["-t", "lqtest@lqos.taht.net", "\"/home/lqtest/bin/v6vsv4.sh\""])
