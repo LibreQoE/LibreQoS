@@ -103,6 +103,7 @@ generatedPNUploadMbps = 1000
 # How does one (assuming we keep this file) use on a stick here?
 # There should be one way only to configure on a stick mode
 
+# We should retire these and just attach to the bridge per the rust
 # Interface connected to core router
 interfaceA = 'eth1'
 
