@@ -14,3 +14,4 @@ ip_network = "0"
 sha2 = "0"
 uuid = { version = "1", features = ["v4", "fast-rng" ] }
 log = "0"
+dashmap = "5"

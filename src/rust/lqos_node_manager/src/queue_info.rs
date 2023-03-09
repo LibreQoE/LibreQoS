@@ -29,8 +29,12 @@ pub async fn circuit_info(
   circuit_id: String,
   _auth: AuthGuard,
 ) -> NoCache<Json<CircuitInfo>> {
-  if let Some(device) =
-    SHAPED_DEVICES.read().devices.iter().find(|d| d.circuit_id == circuit_id)
+  if let Some(device) = SHAPED_DEVICES
+    .read()
+    .unwrap()
+    .devices
+    .iter()
+    .find(|d| d.circuit_id == circuit_id)
   {
     let result = CircuitInfo {
       name: device.circuit_name.clone(),
@@ -63,7 +67,7 @@ pub async fn current_circuit_throughput(
     bus_request(vec![BusRequest::GetHostCounter]).await.unwrap().iter()
   {
     if let BusResponse::HostCounters(hosts) = msg {
-      let devices = SHAPED_DEVICES.read();
+      let devices = SHAPED_DEVICES.read().unwrap();
       for (ip, down, up) in hosts.iter() {
         let lookup = match ip {
           IpAddr::V4(ip) => ip.to_ipv6_mapped(),

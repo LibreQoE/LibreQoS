@@ -3,7 +3,6 @@
 //! when there are multiple clients.
 use super::cache::*;
 use anyhow::Result;
-use lqos_bus::{bus_request, BusRequest, BusResponse, IpStats};
 use lqos_config::ConfigShapedDevices;
 use lqos_utils::file_watcher::FileWatcher;
 use nix::sys::{
@@ -11,7 +10,7 @@ use nix::sys::{
   timerfd::{ClockId, Expiration, TimerFd, TimerFlags, TimerSetTimeFlags},
 };
 use rocket::tokio::task::spawn_blocking;
-use std::{net::IpAddr, sync::atomic::AtomicBool};
+use std::{sync::atomic::AtomicBool};
 
 /// Once per second, update CPU and RAM usage and ask
 /// `lqosd` for updated system statistics.
@@ -69,10 +68,6 @@ pub async fn update_tracking() {
               .store(sys.used_memory(), std::sync::atomic::Ordering::Relaxed);
             TOTAL_RAM
               .store(sys.total_memory(), std::sync::atomic::Ordering::Relaxed);
-            let error = get_data_from_server().await; // Ignoring errors to keep running
-            if let Err(error) = error {
-              error!("Error in usage update loop: {:?}", error);
-            }
 
             monitor_busy.store(false, std::sync::atomic::Ordering::Relaxed);
           }
@@ -95,10 +90,10 @@ fn load_shaped_devices() {
   let shaped_devices = ConfigShapedDevices::load();
   if let Ok(new_file) = shaped_devices {
     info!("ShapedDevices.csv loaded");
-    *SHAPED_DEVICES.write() = new_file;
+    *SHAPED_DEVICES.write().unwrap() = new_file;
   } else {
     warn!("ShapedDevices.csv failed to load, see previous error messages. Reverting to empty set.");
-    *SHAPED_DEVICES.write() = ConfigShapedDevices::default();
+    *SHAPED_DEVICES.write().unwrap() = ConfigShapedDevices::default();
   }
 }
 
@@ -122,78 +117,4 @@ fn watch_for_shaped_devices_changing() -> Result<()> {
     let result = watcher.watch();
     info!("ShapedDevices watcher returned: {result:?}");
   }
-}
-
-/// Requests data from `lqosd` and stores it in local
-/// caches.
-async fn get_data_from_server() -> Result<()> {
-  // Send request to lqosd
-  let requests = vec![
-    BusRequest::GetCurrentThroughput,
-    BusRequest::GetTopNDownloaders { start: 0, end: 10 },
-    BusRequest::GetWorstRtt { start: 0, end: 10 },
-    BusRequest::RttHistogram,
-    BusRequest::AllUnknownIps,
-  ];
-
-  for r in bus_request(requests).await?.iter() {
-    match r {
-      BusResponse::CurrentThroughput {
-        bits_per_second,
-        packets_per_second,
-        shaped_bits_per_second,
-      } => {
-        {
-          let mut lock = CURRENT_THROUGHPUT.write();
-          lock.bits_per_second = *bits_per_second;
-          lock.packets_per_second = *packets_per_second;
-        } // Lock scope
-        {
-          let mut lock = THROUGHPUT_BUFFER.write();
-          lock.store(ThroughputPerSecond {
-            packets_per_second: *packets_per_second,
-            bits_per_second: *bits_per_second,
-            shaped_bits_per_second: *shaped_bits_per_second,
-          });
-        }
-      }
-      BusResponse::TopDownloaders(stats) => {
-        *TOP_10_DOWNLOADERS.write() = stats.clone();
-      }
-      BusResponse::WorstRtt(stats) => {
-        *WORST_10_RTT.write() = stats.clone();
-      }
-      BusResponse::RttHistogram(stats) => {
-        *RTT_HISTOGRAM.write() = stats.clone();
-      }
-      BusResponse::AllUnknownIps(unknowns) => {
-        *HOST_COUNTS.write() = (unknowns.len() as u32, 0);
-        let cfg = SHAPED_DEVICES.read();
-        let really_unknown: Vec<IpStats> = unknowns
-          .iter()
-          .filter(|ip| {
-            if let Ok(ip) = ip.ip_address.parse::<IpAddr>() {
-              let lookup = match ip {
-                IpAddr::V4(ip) => ip.to_ipv6_mapped(),
-                IpAddr::V6(ip) => ip,
-              };
-              cfg.trie.longest_match(lookup).is_none()
-            } else {
-              false
-            }
-          })
-          .cloned()
-          .collect();
-        *HOST_COUNTS.write() = (really_unknown.len() as u32, 0);
-        *UNKNOWN_DEVICES.write() = really_unknown;
-      }
-      BusResponse::NotReadyYet => {
-        warn!("Host system isn't ready to answer all queries yet.");
-      }
-      // Default
-      _ => {}
-    }
-  }
-
-  Ok(())
 }

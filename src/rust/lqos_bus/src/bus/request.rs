@@ -112,10 +112,26 @@ pub enum BusRequest {
   ValidateShapedDevicesCsv,
 
   /// Request details of part of the network tree
-  GetNetworkMap{
+  GetNetworkMap {
     /// The parent of the map to retrieve
-    parent: usize
+    parent: usize,
   },
+
+  /// Retrieves the top N queues from the root level, and summarizes
+  /// the others as "other"
+  TopMapQueues(usize),
+
+  /// Retrieve node names from network.json
+  GetNodeNamesFromIds(Vec<usize>),
+
+  /// Retrieve stats for all queues above a named circuit id
+  GetFunnel {
+    /// Circuit being analyzed, as the named circuit id
+    target: String,
+  },
+
+  /// Obtain the lqosd statistics
+  GetLqosStats,
 
   /// If running on Equinix (the `equinix_test` feature is enabled),
   /// display a "run bandwidht test" link.

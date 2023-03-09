@@ -1,10 +1,10 @@
 use anyhow::Result;
 use log::{error, info, warn};
 use lqos_bus::BusResponse;
-use lqos_config::ConfigShapedDevices;
+use lqos_config::{ConfigShapedDevices, NetworkJsonTransport};
 use lqos_utils::file_watcher::FileWatcher;
 use once_cell::sync::Lazy;
-use parking_lot::RwLock;
+use std::sync::RwLock;
 use tokio::task::spawn_blocking;
 mod netjson;
 pub use netjson::*;
@@ -17,11 +17,12 @@ fn load_shaped_devices() {
   let shaped_devices = ConfigShapedDevices::load();
   if let Ok(new_file) = shaped_devices {
     info!("ShapedDevices.csv loaded");
-    *SHAPED_DEVICES.write() = new_file;
-    crate::throughput_tracker::THROUGHPUT_TRACKER.write().refresh_circuit_ids();
+    *SHAPED_DEVICES.write().unwrap() = new_file;
+    crate::throughput_tracker::THROUGHPUT_TRACKER
+      .refresh_circuit_ids();
   } else {
     warn!("ShapedDevices.csv failed to load, see previous error messages. Reverting to empty set.");
-    *SHAPED_DEVICES.write() = ConfigShapedDevices::default();
+    *SHAPED_DEVICES.write().unwrap() = ConfigShapedDevices::default();
   }
 }
 
@@ -55,7 +56,7 @@ fn watch_for_shaped_devices_changing() -> Result<()> {
 }
 
 pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
-  let net_json = NETWORK_JSON.read();
+  let net_json = NETWORK_JSON.read().unwrap();
   if let Some(parent) = net_json.get_cloned_entry_by_index(parent_idx) {
     let mut nodes = vec![(parent_idx, parent)];
     nodes.extend_from_slice(&net_json.get_cloned_children(parent_idx));
@@ -63,4 +64,68 @@ pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
   } else {
     BusResponse::Fail("No such node".to_string())
   }
+}
+
+pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
+  let net_json = NETWORK_JSON.read().unwrap();
+  if let Some(parent) = net_json.get_cloned_entry_by_index(0) {
+    let mut nodes = vec![(0, parent)];
+    nodes.extend_from_slice(&net_json.get_cloned_children(0));
+    // Remove the top-level entry for root
+    nodes.remove(0);
+    // Sort by total bandwidth (up + down) descending
+    nodes.sort_by(|a, b| {
+      let total_a = a.1.current_throughput.0 + a.1.current_throughput.1;
+      let total_b = b.1.current_throughput.0 + b.1.current_throughput.1;
+      total_b.cmp(&total_a)
+    });
+    // Summarize everything after n_queues
+    if nodes.len() > n_queues {
+      let mut other_bw = (0, 0);
+      nodes.drain(n_queues..).for_each(|n| {
+        other_bw.0 += n.1.current_throughput.0;
+        other_bw.1 += n.1.current_throughput.1;
+      });
+
+      nodes.push((
+        0,
+        NetworkJsonTransport {
+          name: "Others".into(),
+          max_throughput: (0, 0),
+          current_throughput: other_bw,
+          rtts: Vec::new(),
+          parents: Vec::new(),
+          immediate_parent: None,
+        },
+      ));
+    }
+    BusResponse::NetworkMap(nodes)
+  } else {
+    BusResponse::Fail("No such node".to_string())
+  }
+}
+
+pub fn map_node_names(nodes: &[usize]) -> BusResponse {
+  let mut result = Vec::new();
+  let reader = NETWORK_JSON.read().unwrap();
+  nodes.iter().for_each(|id| {
+    if let Some(node) = reader.nodes.get(*id) {
+      result.push((*id, node.name.clone()));
+    }
+  });
+  BusResponse::NodeNames(result)
+}
+
+pub fn get_funnel(circuit_id: &str) -> BusResponse {
+  let reader = NETWORK_JSON.read().unwrap();
+  if let Some(index) = reader.get_index_for_name(circuit_id) {
+    // Reverse the scanning order and skip the last entry (the parent)
+    let mut result = Vec::new();
+    for idx in reader.nodes[index].parents.iter().rev().skip(1) {
+      result.push((*idx, reader.nodes[*idx].clone_to_transit()));
+    }
+    return BusResponse::NetworkMap(result);
+  }
+
+  BusResponse::Fail("Unknown Node".into())
 }

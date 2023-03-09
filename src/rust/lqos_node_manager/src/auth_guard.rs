@@ -1,7 +1,8 @@
+use std::sync::Mutex;
+
 use anyhow::Error;
-use lazy_static::*;
 use lqos_config::{UserRole, WebUsers};
-use parking_lot::Mutex;
+use once_cell::sync::Lazy;
 use rocket::serde::{json::Json, Deserialize, Serialize};
 use rocket::{
   http::{Cookie, CookieJar, Status},
@@ -9,9 +10,8 @@ use rocket::{
   Request,
 };
 
-lazy_static! {
-  static ref WEB_USERS: Mutex<Option<WebUsers>> = Mutex::new(None);
-}
+static WEB_USERS: Lazy<Mutex<Option<WebUsers>>> =
+  Lazy::new(|| Mutex::new(None));
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthGuard {
@@ -27,7 +27,7 @@ impl<'r> FromRequest<'r> for AuthGuard {
   async fn from_request(
     request: &'r Request<'_>,
   ) -> Outcome<Self, Self::Error> {
-    let mut lock = WEB_USERS.lock();
+    let mut lock = WEB_USERS.lock().unwrap();
     if lock.is_none() {
       if WebUsers::does_users_file_exist().unwrap() {
         *lock = Some(WebUsers::load_or_create().unwrap());
@@ -82,7 +82,7 @@ pub fn create_first_user(
   if WebUsers::does_users_file_exist().unwrap() {
     return Json("ERROR".to_string());
   }
-  let mut lock = WEB_USERS.lock();
+  let mut lock = WEB_USERS.lock().unwrap();
   let mut users = WebUsers::load_or_create().unwrap();
   users.allow_anonymous(info.allow_anonymous).unwrap();
   let token = users
@@ -102,7 +102,7 @@ pub struct LoginAttempt {
 
 #[post("/api/login", data = "<info>")]
 pub fn login(cookies: &CookieJar, info: Json<LoginAttempt>) -> Json<String> {
-  let mut lock = WEB_USERS.lock();
+  let mut lock = WEB_USERS.lock().unwrap();
   if lock.is_none() && WebUsers::does_users_file_exist().unwrap() {
     *lock = Some(WebUsers::load_or_create().unwrap());
   }
@@ -126,7 +126,7 @@ pub fn admin_check(auth: AuthGuard) -> Json<bool> {
 #[get("/api/username")]
 pub fn username(_auth: AuthGuard, cookies: &CookieJar) -> Json<String> {
   if let Some(token) = cookies.get("User-Token") {
-    let lock = WEB_USERS.lock();
+    let lock = WEB_USERS.lock().unwrap();
     if let Some(users) = &*lock {
       return Json(users.get_username(token.value()));
     }

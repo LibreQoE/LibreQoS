@@ -13,12 +13,12 @@ static RELOAD_REQUIRED: AtomicBool = AtomicBool::new(false);
 pub fn all_shaped_devices(
   _auth: AuthGuard,
 ) -> NoCache<Json<Vec<ShapedDevice>>> {
-  NoCache::new(Json(SHAPED_DEVICES.read().devices.clone()))
+  NoCache::new(Json(SHAPED_DEVICES.read().unwrap().devices.clone()))
 }
 
 #[get("/api/shaped_devices_count")]
 pub fn shaped_devices_count(_auth: AuthGuard) -> NoCache<Json<usize>> {
-  NoCache::new(Json(SHAPED_DEVICES.read().devices.len()))
+  NoCache::new(Json(SHAPED_DEVICES.read().unwrap().devices.len()))
 }
 
 #[get("/api/shaped_devices_range/<start>/<end>")]
@@ -27,7 +27,7 @@ pub fn shaped_devices_range(
   end: usize,
   _auth: AuthGuard,
 ) -> NoCache<Json<Vec<ShapedDevice>>> {
-  let reader = SHAPED_DEVICES.read();
+  let reader = SHAPED_DEVICES.read().unwrap();
   let result: Vec<ShapedDevice> =
     reader.devices.iter().skip(start).take(end).cloned().collect();
   NoCache::new(Json(result))
@@ -39,7 +39,7 @@ pub fn shaped_devices_search(
   _auth: AuthGuard,
 ) -> NoCache<Json<Vec<ShapedDevice>>> {
   let term = term.trim().to_lowercase();
-  let reader = SHAPED_DEVICES.read();
+  let reader = SHAPED_DEVICES.read().unwrap();
   let result: Vec<ShapedDevice> = reader
     .devices
     .iter()

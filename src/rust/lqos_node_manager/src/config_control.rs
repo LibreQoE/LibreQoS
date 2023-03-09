@@ -1,8 +1,8 @@
 use crate::{auth_guard::AuthGuard, cache_control::NoCache};
 use default_net::get_interfaces;
-use lqos_bus::{bus_request, BusRequest};
+use lqos_bus::{bus_request, BusRequest, BusResponse};
 use lqos_config::{EtcLqos, LibreQoSConfig, Tunables};
-use rocket::{fs::NamedFile, serde::json::Json};
+use rocket::{fs::NamedFile, serde::{json::Json, Serialize}};
 
 // Note that NoCache can be replaced with a cache option
 // once the design work is complete.
@@ -75,4 +75,24 @@ pub async fn update_lqos_tuning(
   // For now, ignore the reply.
 
   Json("OK".to_string())
+}
+
+#[derive(Serialize, Clone, Default)]
+#[serde(crate = "rocket::serde")]
+pub struct LqosStats {
+  pub bus_requests_since_start: u64,
+  pub time_to_poll_hosts_us: u64,
+}
+
+#[get("/api/stats")]
+pub async fn stats() -> NoCache<Json<LqosStats>> {
+  for msg in bus_request(vec![BusRequest::GetLqosStats]).await.unwrap() {
+    if let BusResponse::LqosdStats { bus_requests, time_to_poll_hosts } = msg {
+      return NoCache::new(Json(LqosStats {
+        bus_requests_since_start: bus_requests,
+        time_to_poll_hosts_us: time_to_poll_hosts
+      }));
+    }
+  }
+  NoCache::new(Json(LqosStats::default()))
 }

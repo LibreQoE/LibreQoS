@@ -1,19 +1,16 @@
+use std::sync::RwLock;
+
 use crate::queue_structure::{
   queue_network::QueueNetwork, queue_node::QueueNode, read_queueing_structure,
 };
-use lazy_static::*;
 use log::{error, info};
 use lqos_utils::file_watcher::FileWatcher;
-use parking_lot::RwLock;
+use once_cell::sync::Lazy;
 use thiserror::Error;
 use tokio::task::spawn_blocking;
 
-lazy_static! {
-    /// Global storage of the shaped devices csv data.
-    /// Updated by the file system watcher whenever
-    /// the underlying file changes.
-    pub(crate) static ref QUEUE_STRUCTURE : RwLock<QueueStructure> = RwLock::new(QueueStructure::new());
-}
+pub(crate) static QUEUE_STRUCTURE: Lazy<RwLock<QueueStructure>> =
+  Lazy::new(|| RwLock::new(QueueStructure::new()));
 
 #[derive(Clone)]
 pub(crate) struct QueueStructure {
@@ -48,7 +45,7 @@ pub async fn spawn_queue_structure_monitor() {
 
 fn update_queue_structure() {
   info!("queueingStructure.json reloaded");
-  QUEUE_STRUCTURE.write().update();
+  QUEUE_STRUCTURE.write().unwrap().update();
 }
 
 /// Fires up a Linux file system watcher than notifies

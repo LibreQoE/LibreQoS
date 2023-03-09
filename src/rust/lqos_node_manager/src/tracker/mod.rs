@@ -1,18 +1,15 @@
 mod cache;
 mod cache_manager;
+use std::net::IpAddr;
+
 use self::cache::{
-  CPU_USAGE, CURRENT_THROUGHPUT, HOST_COUNTS, NUM_CPUS, RAM_USED,
-  RTT_HISTOGRAM, THROUGHPUT_BUFFER, TOP_10_DOWNLOADERS, TOTAL_RAM,
-  WORST_10_RTT,
+  CPU_USAGE, NUM_CPUS, RAM_USED, TOTAL_RAM,
 };
-use crate::{auth_guard::AuthGuard, tracker::cache::ThroughputPerSecond};
-pub use cache::{SHAPED_DEVICES, UNKNOWN_DEVICES};
+use crate::{auth_guard::AuthGuard, cache_control::NoCache};
+pub use cache::SHAPED_DEVICES;
 pub use cache_manager::update_tracking;
-use lazy_static::lazy_static;
-use lqos_bus::{IpStats, TcHandle};
-use lqos_config::LibreQoSConfig;
-use parking_lot::Mutex;
-use rocket::serde::{json::Json, Deserialize, Serialize};
+use lqos_bus::{bus_request, BusRequest, BusResponse, IpStats, TcHandle};
+use rocket::serde::{Deserialize, Serialize, msgpack::MsgPack};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(crate = "rocket::serde")]
@@ -41,6 +38,7 @@ impl From<&IpStats> for IpStatsWithPlan {
     if !result.circuit_id.is_empty() {
       if let Some(circuit) = SHAPED_DEVICES
         .read()
+        .unwrap()
         .devices
         .iter()
         .find(|sd| sd.circuit_id == result.circuit_id)
@@ -50,8 +48,7 @@ impl From<&IpStats> for IpStatsWithPlan {
         } else {
           &circuit.circuit_name
         };
-        result.ip_address =
-          format!("{} ({})", name, result.ip_address);
+        result.ip_address = format!("{} ({})", name, result.ip_address);
         result.plan = (circuit.download_max_mbps, circuit.download_min_mbps);
       }
     }
@@ -60,91 +57,130 @@ impl From<&IpStats> for IpStatsWithPlan {
   }
 }
 
-#[get("/api/current_throughput")]
-pub fn current_throughput(_auth: AuthGuard) -> Json<ThroughputPerSecond> {
-  let result = *CURRENT_THROUGHPUT.read();
-  Json(result)
+/// Stores total system throughput per second.
+#[derive(Debug, Clone, Copy, Serialize, Default)]
+#[serde(crate = "rocket::serde")]
+pub struct ThroughputPerSecond {
+  pub bits_per_second: (u64, u64),
+  pub packets_per_second: (u64, u64),
+  pub shaped_bits_per_second: (u64, u64),
 }
 
-#[get("/api/throughput_ring")]
-pub fn throughput_ring(_auth: AuthGuard) -> Json<Vec<ThroughputPerSecond>> {
-  let result = THROUGHPUT_BUFFER.read().get_result();
-  Json(result)
+#[get("/api/current_throughput")]
+pub async fn current_throughput(
+  _auth: AuthGuard,
+) -> NoCache<MsgPack<ThroughputPerSecond>> {
+  let mut result = ThroughputPerSecond::default();
+  if let Ok(messages) =
+    bus_request(vec![BusRequest::GetCurrentThroughput]).await
+  {
+    for msg in messages {
+      if let BusResponse::CurrentThroughput {
+        bits_per_second,
+        packets_per_second,
+        shaped_bits_per_second,
+      } = msg
+      {
+        result.bits_per_second = bits_per_second;
+        result.packets_per_second = packets_per_second;
+        result.shaped_bits_per_second = shaped_bits_per_second;
+      }
+    }
+  }
+  NoCache::new(MsgPack(result))
 }
 
 #[get("/api/cpu")]
-pub fn cpu_usage(_auth: AuthGuard) -> Json<Vec<u32>> {
+pub fn cpu_usage(_auth: AuthGuard) -> NoCache<MsgPack<Vec<u32>>> {
   let usage: Vec<u32> = CPU_USAGE
     .iter()
     .take(NUM_CPUS.load(std::sync::atomic::Ordering::Relaxed))
     .map(|cpu| cpu.load(std::sync::atomic::Ordering::Relaxed))
     .collect();
 
-  Json(usage)
+  NoCache::new(MsgPack(usage))
 }
 
 #[get("/api/ram")]
-pub fn ram_usage(_auth: AuthGuard) -> Json<Vec<u64>> {
+pub fn ram_usage(_auth: AuthGuard) -> NoCache<MsgPack<Vec<u64>>> {
   let ram_usage = RAM_USED.load(std::sync::atomic::Ordering::Relaxed);
   let total_ram = TOTAL_RAM.load(std::sync::atomic::Ordering::Relaxed);
-  Json(vec![ram_usage, total_ram])
+  NoCache::new(MsgPack(vec![ram_usage, total_ram]))
 }
 
 #[get("/api/top_10_downloaders")]
-pub fn top_10_downloaders(_auth: AuthGuard) -> Json<Vec<IpStatsWithPlan>> {
-  let tt: Vec<IpStatsWithPlan> =
-    TOP_10_DOWNLOADERS.read().iter().map(|tt| tt.into()).collect();
-  Json(tt)
+pub async fn top_10_downloaders(_auth: AuthGuard) -> NoCache<MsgPack<Vec<IpStatsWithPlan>>> {
+  if let Ok(messages) = bus_request(vec![BusRequest::GetTopNDownloaders { start: 0, end: 10 }]).await
+  {
+    for msg in messages {
+      if let BusResponse::TopDownloaders(stats) = msg {
+        let result = stats.iter().map(|tt| tt.into()).collect();
+        return NoCache::new(MsgPack(result));
+      }
+    }
+  }
+
+  NoCache::new(MsgPack(Vec::new()))
 }
 
 #[get("/api/worst_10_rtt")]
-pub fn worst_10_rtt(_auth: AuthGuard) -> Json<Vec<IpStatsWithPlan>> {
-  let tt: Vec<IpStatsWithPlan> =
-    WORST_10_RTT.read().iter().map(|tt| tt.into()).collect();
-  Json(tt)
+pub async fn worst_10_rtt(_auth: AuthGuard) -> NoCache<MsgPack<Vec<IpStatsWithPlan>>> {
+  if let Ok(messages) = bus_request(vec![BusRequest::GetWorstRtt { start: 0, end: 10 }]).await
+  {
+    for msg in messages {
+      if let BusResponse::WorstRtt(stats) = msg {
+        let result = stats.iter().map(|tt| tt.into()).collect();
+        return NoCache::new(MsgPack(result));
+      }
+    }
+  }
+
+  NoCache::new(MsgPack(Vec::new()))
 }
 
 #[get("/api/rtt_histogram")]
-pub fn rtt_histogram(_auth: AuthGuard) -> Json<Vec<u32>> {
-  Json(RTT_HISTOGRAM.read().clone())
+pub async fn rtt_histogram(_auth: AuthGuard) -> NoCache<MsgPack<Vec<u32>>> {
+  if let Ok(messages) = bus_request(vec![BusRequest::RttHistogram]).await
+  {
+    for msg in messages {
+      if let BusResponse::RttHistogram(stats) = msg {
+        let result = stats;
+        return NoCache::new(MsgPack(result));
+      }
+    }
+  }
+
+  NoCache::new(MsgPack(Vec::new()))
 }
 
 #[get("/api/host_counts")]
-pub fn host_counts(_auth: AuthGuard) -> Json<(u32, u32)> {
-  let shaped_reader = SHAPED_DEVICES.read();
-  let n_devices = shaped_reader.devices.len();
-  let host_counts = HOST_COUNTS.read();
+pub async fn host_counts(_auth: AuthGuard) -> NoCache<MsgPack<(u32, u32)>> {
+  let mut host_counts = (0, 0);
+  if let Ok(messages) = bus_request(vec![BusRequest::AllUnknownIps]).await {
+    for msg in messages {
+      if let BusResponse::AllUnknownIps(unknowns) = msg {
+        let really_unknown: Vec<IpStats> = unknowns
+          .iter()
+          .filter(|ip| {
+            if let Ok(ip) = ip.ip_address.parse::<IpAddr>() {
+              let lookup = match ip {
+                IpAddr::V4(ip) => ip.to_ipv6_mapped(),
+                IpAddr::V6(ip) => ip,
+              };
+              SHAPED_DEVICES.read().unwrap().trie.longest_match(lookup).is_none()
+            } else {
+              false
+            }
+          })
+          .cloned()
+          .collect();
+
+          host_counts = (really_unknown.len() as u32, 0);
+      }
+    }
+  }
+
+  let n_devices = SHAPED_DEVICES.read().unwrap().devices.len();
   let unknown = host_counts.0 - host_counts.1;
-  Json((n_devices as u32, unknown))
-}
-
-lazy_static! {
-  static ref CONFIG: Mutex<LibreQoSConfig> =
-    Mutex::new(lqos_config::LibreQoSConfig::load().unwrap());
-}
-
-#[get("/api/busy_quantile")]
-pub fn busy_quantile(_auth: AuthGuard) -> Json<Vec<(u32, u32)>> {
-  let (down_capacity, up_capacity) = {
-    let lock = CONFIG.lock();
-    (
-      lock.total_download_mbps as f64 * 1_000_000.0,
-      lock.total_upload_mbps as f64 * 1_000_000.0,
-    )
-  };
-  let throughput = THROUGHPUT_BUFFER.read().get_result();
-  let mut result = vec![(0, 0); 10];
-  throughput.iter().for_each(|tp| {
-    let (down, up) = tp.bits_per_second;
-    let (down, up) = (down * 8, up * 8);
-    //println!("{down_capacity}, {up_capacity}, {down}, {up}");
-    let (down, up) = (
-      if down_capacity > 0.0 { down as f64 / down_capacity } else { 0.0 },
-      if up_capacity > 0.0 { up as f64 / up_capacity } else { 0.0 },
-    );
-    let (down, up) = ((down * 10.0) as usize, (up * 10.0) as usize);
-    result[usize::min(9, down)].0 += 1;
-    result[usize::min(0, up)].1 += 1;
-  });
-  Json(result)
+  NoCache::new(MsgPack((n_devices as u32, unknown)))
 }

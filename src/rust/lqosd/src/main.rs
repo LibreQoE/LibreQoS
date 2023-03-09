@@ -24,7 +24,9 @@ use signal_hook::{
   consts::{SIGHUP, SIGINT, SIGTERM},
   iterator::Signals,
 };
+use stats::{BUS_REQUESTS, TIME_TO_POLL_HOSTS};
 use tokio::join;
+mod stats;
 
 // Use JemAllocator only on supported platforms
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -120,6 +122,7 @@ fn handle_bus_requests(
 ) {
   for req in requests.iter() {
     //println!("Request: {:?}", req);
+    BUS_REQUESTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     responses.push(match req {
       BusRequest::Ping => lqos_bus::BusResponse::Ack,
       BusRequest::GetCurrentThroughput => {
@@ -160,10 +163,25 @@ fn handle_bus_requests(
       BusRequest::RequestLqosEquinixTest => lqos_daht_test::lqos_daht_test(),
       BusRequest::ValidateShapedDevicesCsv => {
         validation::validate_shaped_devices_csv()
-      },
+      }
       BusRequest::GetNetworkMap { parent } => {
         shaped_devices_tracker::get_one_network_map_layer(*parent)
-      },
+      }
+      BusRequest::TopMapQueues(n_queues) => {
+        shaped_devices_tracker::get_top_n_root_queues(*n_queues)
+      }
+      BusRequest::GetNodeNamesFromIds(nodes) => {
+        shaped_devices_tracker::map_node_names(nodes)
+      }
+      BusRequest::GetFunnel { target: parent } => {
+        shaped_devices_tracker::get_funnel(parent)
+      }
+      BusRequest::GetLqosStats => {
+        BusResponse::LqosdStats { 
+          bus_requests: BUS_REQUESTS.load(std::sync::atomic::Ordering::Relaxed),
+          time_to_poll_hosts: TIME_TO_POLL_HOSTS.load(std::sync::atomic::Ordering::Relaxed),
+        }
+      }
     });
   }
 }

@@ -9,8 +9,8 @@ mod unknown_devices;
 use rocket_async_compression::Compression;
 mod auth_guard;
 mod config_control;
-mod queue_info;
 mod network_tree;
+mod queue_info;
 
 // Use JemAllocator only on supported platforms
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -46,14 +46,12 @@ fn rocket() -> _ {
         static_pages::klingon,
         // API calls
         tracker::current_throughput,
-        tracker::throughput_ring,
         tracker::cpu_usage,
         tracker::ram_usage,
         tracker::top_10_downloaders,
         tracker::worst_10_rtt,
         tracker::rtt_histogram,
         tracker::host_counts,
-        tracker::busy_quantile,
         shaped_devices::all_shaped_devices,
         shaped_devices::shaped_devices_count,
         shaped_devices::shaped_devices_range,
@@ -80,10 +78,16 @@ fn rocket() -> _ {
         static_pages::login_page,
         auth_guard::username,
         network_tree::tree_entry,
+        network_tree::tree_clients,
+        network_tree::network_tree_summary,
+        network_tree::node_names,
+        network_tree::funnel_for_queue,
+        config_control::stats,
         // Supporting files
         static_pages::bootsrap_css,
         static_pages::plotly_js,
         static_pages::jquery_js,
+        static_pages::msgpack_js,
         static_pages::bootsrap_js,
         static_pages::tinylogo,
         static_pages::favicon,

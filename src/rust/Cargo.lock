@@ -587,9 +587,9 @@ dependencies = [
 
 [[package]]
 name = "csv"
-version = "1.2.0"
+version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af91f40b7355f82b0a891f50e70399475945bb0b0da4f1700ce60761c9d3e359"
+checksum = "0b015497079b9a9d69c02ad25de6c0a6edef051ea6360a327d0bd05802ef64ad"
 dependencies = [
  "csv-core",
  "itoa",
@@ -613,6 +613,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0369ee1ad671834580515889b80f2ea915f23b8be8d0daa4bbaf2ac5c7590835"
 dependencies = [
  "cipher",
+]
+
+[[package]]
+name = "dashmap"
+version = "5.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "907076dfda823b0b36d2a1bb5f90c96660a5bbcd7729e10727f07858f22c4edc"
+dependencies = [
+ "cfg-if",
+ "hashbrown",
+ "lock_api",
+ "once_cell",
+ "parking_lot_core",
 ]
 
 [[package]]
@@ -1116,9 +1129,9 @@ dependencies = [
 
 [[package]]
 name = "io-lifetimes"
-version = "1.0.5"
+version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1abeb7a0dd0f8181267ff8adc397075586500b81b28a73e8a0208b00fc170fb3"
+checksum = "cfa919a82ea574332e2de6e74b4c36e74d41982b335080fa59d4ef31be20fdf3"
 dependencies = [
  "libc",
  "windows-sys 0.45.0",
@@ -1330,6 +1343,7 @@ name = "lqos_config"
 version = "0.1.0"
 dependencies = [
  "csv",
+ "dashmap",
  "ip_network",
  "ip_network_table",
  "log",
@@ -1348,13 +1362,11 @@ dependencies = [
  "anyhow",
  "default-net",
  "jemallocator",
- "lazy_static",
  "lqos_bus",
  "lqos_config",
  "lqos_utils",
  "nix",
  "once_cell",
- "parking_lot",
  "rocket",
  "rocket_async_compression",
  "sysinfo",
@@ -1378,15 +1390,14 @@ name = "lqos_queue_tracker"
 version = "0.1.0"
 dependencies = [
  "criterion",
- "lazy_static",
+ "dashmap",
  "log",
  "log-once",
  "lqos_bus",
  "lqos_config",
  "lqos_sys",
  "lqos_utils",
- "parking_lot",
- "rayon",
+ "once_cell",
  "serde",
  "serde_json",
  "thiserror",
@@ -1435,6 +1446,7 @@ name = "lqosd"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "dashmap",
  "env_logger",
  "jemallocator",
  "log",
@@ -1445,8 +1457,6 @@ dependencies = [
  "lqos_utils",
  "nix",
  "once_cell",
- "parking_lot",
- "rayon",
  "serde",
  "serde_json",
  "signal-hook",
@@ -2200,18 +2210,18 @@ checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
 
 [[package]]
 name = "serde"
-version = "1.0.152"
+version = "1.0.153"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb7d1f0d3021d347a83e556fc4683dea2ea09d87bccdf88ff5c12545d89d5efb"
+checksum = "3a382c72b4ba118526e187430bb4963cd6d55051ebf13d9b25574d379cc98d20"
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.152"
+version = "1.0.153"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af487d118eecd09402d70a5d72551860e788df87b464af30e5ea6a38c75c541e"
+checksum = "1ef476a5790f0f6decbc66726b6e5d63680ed518283e64c7df415989d880954f"
 dependencies = [
  "proc-macro2",
  "quote",
