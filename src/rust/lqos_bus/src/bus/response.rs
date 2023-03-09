@@ -68,4 +68,7 @@ pub enum BusResponse {
   /// A string containing a JSON dump of a queue stats. Analagos to
   /// the response from `tc show qdisc`.
   RawQueueData(String),
+
+  /// Results from network map queries
+  NetworkMap(Vec<(usize, lqos_config::NetworkJsonNode)>),
 }

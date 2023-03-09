@@ -2,6 +2,8 @@ use lqos_bus::TcHandle;
 
 #[derive(Debug)]
 pub(crate) struct ThroughputEntry {
+  pub(crate) circuit_id: Option<String>,
+  pub(crate) network_json_parents: Option<Vec<usize>>,
   pub(crate) first_cycle: u64,
   pub(crate) most_recent_cycle: u64,
   pub(crate) bytes: (u64, u64),

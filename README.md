@@ -19,7 +19,7 @@ Please support the continued development of LibreQoS by sponsoring us via [GitHu
 Our Matrix chat channel is available at [https://matrix.to/#/#libreqos:matrix.org](https://matrix.to/#/#libreqos:matrix.org).
 
 
-<img alt="LibreQoS" src="https://user-images.githubusercontent.com/22501920/216796542-e3a2d4c3-a735-4cd1-adf8-5dae160fd7e9.png"></a>
+<img alt="LibreQoS" src="https://user-images.githubusercontent.com/22501920/223866474-603e1112-e2e6-4c67-93e4-44c17b1b7c43.png"></a>
 
 ## Features
 ### Flexible Hierarchical Shaping / Back-Haul Congestion Mitigation

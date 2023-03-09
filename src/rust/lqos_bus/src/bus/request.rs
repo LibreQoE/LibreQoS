@@ -111,6 +111,12 @@ pub enum BusRequest {
   /// Request that the Rust side of things validate the CSV
   ValidateShapedDevicesCsv,
 
+  /// Request details of part of the network tree
+  GetNetworkMap{
+    /// The parent of the map to retrieve
+    parent: usize
+  },
+
   /// If running on Equinix (the `equinix_test` feature is enabled),
   /// display a "run bandwidht test" link.
   #[cfg(feature = "equinix_tests")]
