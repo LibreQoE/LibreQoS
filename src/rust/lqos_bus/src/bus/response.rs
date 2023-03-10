@@ -83,5 +83,7 @@ pub enum BusResponse {
     time_to_poll_hosts: u64,
     /// High traffic watermark
     high_watermark: (u64, u64),
+    /// Number of flows tracked
+    tracked_flows: u64,
   }
 }

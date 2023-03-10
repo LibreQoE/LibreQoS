@@ -1,5 +1,6 @@
 mod throughput_entry;
 mod tracking_data;
+mod palantir_data;
 use crate::{
   shaped_devices_tracker::NETWORK_JSON,
   throughput_tracker::tracking_data::ThroughputTracker, stats::TIME_TO_POLL_HOSTS,
@@ -29,6 +30,7 @@ pub fn spawn_throughput_monitor() {
         net_json.zero_throughput_and_rtt();
       } // Scope to end the lock
       THROUGHPUT_TRACKER.copy_previous_and_reset_rtt();
+      THROUGHPUT_TRACKER.pantir_tracking();
       THROUGHPUT_TRACKER.apply_new_throughput_counters();
       THROUGHPUT_TRACKER.apply_rtt_data();
       THROUGHPUT_TRACKER.update_totals();

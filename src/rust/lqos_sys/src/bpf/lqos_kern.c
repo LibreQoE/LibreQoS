@@ -17,6 +17,7 @@
 #include "common/cpu_map.h"
 #include "common/tcp_rtt.h"
 #include "common/bifrost.h"
+#include "common/palantir.h"
 
 /* Theory of operation:
 1. (Packet arrives at interface)
@@ -127,6 +128,7 @@ int xdp_prog(struct xdp_md *ctx)
         ctx->data_end - ctx->data, // end - data = length
         tc_handle
     );
+    update_palantir(&dissector, ctx->data_end - ctx->data);
 
     // Send on its way
     if (tc_handle != 0) {

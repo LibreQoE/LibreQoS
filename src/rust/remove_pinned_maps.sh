@@ -10,4 +10,5 @@ rm -v /sys/fs/bpf/map_ip_to_cpu_and_tc_recip
 rm -v /sys/fs/bpf/map_txq_config
 rm -v /sys/fs/bpf/bifrost_interface_map
 rm -v /sys/fs/bpf/bifrost_vlan_map
+rm -v /sys/fs/bpf/palantir
 

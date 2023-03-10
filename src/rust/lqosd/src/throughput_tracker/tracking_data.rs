@@ -1,9 +1,9 @@
 use std::sync::atomic::AtomicU64;
 use crate::{shaped_devices_tracker::{SHAPED_DEVICES, NETWORK_JSON}, stats::{HIGH_WATERMARK_DOWN, HIGH_WATERMARK_UP}};
-use super::{throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
+use super::{throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS, palantir_data::PALANTIR};
 use dashmap::DashMap;
 use lqos_bus::TcHandle;
-use lqos_sys::{rtt_for_each, throughput_for_each, XdpIpAddress};
+use lqos_sys::{rtt_for_each, throughput_for_each, XdpIpAddress, palantir_for_each};
 
 pub struct ThroughputTracker {
   pub(crate) cycle: AtomicU64,
@@ -99,6 +99,14 @@ impl ThroughputTracker {
       data.network_json_parents =
         Self::lookup_network_parents(data.circuit_id.clone());
     });
+  }
+
+  pub(crate) fn pantir_tracking(&self) {
+    PALANTIR.expire();
+    palantir_for_each(&mut |key, values| {
+      PALANTIR.ingest(key, values);
+    });
+    //println!("Tracking {} flows", PALANTIR.data.len());
   }
 
   pub(crate) fn apply_new_throughput_counters(
