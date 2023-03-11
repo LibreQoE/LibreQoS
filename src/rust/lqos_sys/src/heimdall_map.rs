@@ -2,7 +2,7 @@ use crate::{bpf_per_cpu_map::BpfPerCpuMap, XdpIpAddress};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 #[repr(C)]
-pub struct PalantirKey {
+pub struct HeimdallKey {
   pub src_ip: XdpIpAddress,
   pub dst_ip: XdpIpAddress,
   pub ip_protocol: u8,
@@ -12,7 +12,7 @@ pub struct PalantirKey {
 
 #[derive(Debug, Clone, Default)]
 #[repr(C)]
-pub struct PalantirData {
+pub struct HeimdallData {
   pub last_seen: u64,
   pub bytes: u64,
   pub packets: u64,
@@ -22,12 +22,12 @@ pub struct PalantirData {
 
 /// Iterates through all throughput entries, and sends them in turn to `callback`.
 /// This elides the need to clone or copy data.
-pub fn palantir_for_each(
-  callback: &mut dyn FnMut(&PalantirKey, &[PalantirData]),
+pub fn heimdall_for_each(
+  callback: &mut dyn FnMut(&HeimdallKey, &[HeimdallData]),
 ) {
-  if let Ok(palantir) = BpfPerCpuMap::<PalantirKey, PalantirData>::from_path(
-    "/sys/fs/bpf/palantir",
+  if let Ok(heimdall) = BpfPerCpuMap::<HeimdallKey, HeimdallData>::from_path(
+    "/sys/fs/bpf/heimdall",
   ) {
-    palantir.for_each(callback);
+    heimdall.for_each(callback);
   }
 }

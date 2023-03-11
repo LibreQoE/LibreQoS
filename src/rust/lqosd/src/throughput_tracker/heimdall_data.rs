@@ -2,17 +2,17 @@ use std::{time::Duration, net::IpAddr};
 
 use dashmap::DashMap;
 use lqos_bus::{BusResponse, FlowTransport};
-use lqos_sys::{PalantirData, PalantirKey, XdpIpAddress};
+use lqos_sys::{HeimdallData, HeimdallKey, XdpIpAddress};
 use lqos_utils::unix_time::time_since_boot;
 use once_cell::sync::Lazy;
 
 use crate::stats::FLOWS_TRACKED;
 
-pub(crate) static PALANTIR: Lazy<PalantirMonitor> =
+pub(crate) static HEIMDALL: Lazy<PalantirMonitor> =
   Lazy::new(PalantirMonitor::new);
 
 pub(crate) struct PalantirMonitor {
-  pub(crate) data: DashMap<PalantirKey, FlowData>,
+  pub(crate) data: DashMap<HeimdallKey, FlowData>,
 }
 
 #[derive(Default)]
@@ -28,7 +28,7 @@ impl PalantirMonitor {
     Self { data: DashMap::new() }
   }
 
-  fn combine_flows(values: &[PalantirData]) -> FlowData {
+  fn combine_flows(values: &[HeimdallData]) -> FlowData {
     let mut result = FlowData::default();
     let mut ls = 0;
     values.iter().for_each(|v| {
@@ -43,7 +43,7 @@ impl PalantirMonitor {
     result
   }
 
-  pub(crate) fn ingest(&self, key: &PalantirKey, values: &[PalantirData]) {
+  pub(crate) fn ingest(&self, key: &HeimdallKey, values: &[HeimdallData]) {
     //println!("{key:?}");
     //println!("{values:?}");
     if let Some(expire_ns) = Self::get_expire_time() {
@@ -92,7 +92,7 @@ pub fn get_flow_stats(ip: &str) -> BusResponse {
     let ip = XdpIpAddress::from_ip(ip);
     let mut result = Vec::new();
 
-    for value in PALANTIR.data.iter() {
+    for value in HEIMDALL.data.iter() {
       let key = value.key();
       if key.src_ip == ip || key.dst_ip == ip {
         result.push(FlowTransport{

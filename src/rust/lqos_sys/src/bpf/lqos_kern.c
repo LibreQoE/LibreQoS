@@ -17,7 +17,7 @@
 #include "common/cpu_map.h"
 #include "common/tcp_rtt.h"
 #include "common/bifrost.h"
-#include "common/palantir.h"
+#include "common/heimdall.h"
 
 //#define VERBOSE 1
 
@@ -134,11 +134,11 @@ int xdp_prog(struct xdp_md *ctx)
 
     // Send on its way
     if (tc_handle != 0) {
-        // Send data to Palantir
+        // Send data to Heimdall
 #ifdef VERBOSE
-        bpf_debug("(XDP) Storing Palantir Data");
+        bpf_debug("(XDP) Storing Heimdall Data");
 #endif
-        update_palantir(&dissector, ctx->data_end - ctx->data, effective_direction);
+        update_heimdall(&dissector, ctx->data_end - ctx->data, effective_direction);
 
         // Handle CPU redirection if there is one specified
         __u32 *cpu_lookup;

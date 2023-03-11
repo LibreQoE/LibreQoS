@@ -1,7 +1,7 @@
 mod throughput_entry;
 mod tracking_data;
-mod palantir_data;
-pub use palantir_data::get_flow_stats;
+mod heimdall_data;
+pub use heimdall_data::get_flow_stats;
 use crate::{
   shaped_devices_tracker::NETWORK_JSON,
   throughput_tracker::tracking_data::ThroughputTracker, stats::TIME_TO_POLL_HOSTS,
