@@ -1497,11 +1497,14 @@ dependencies = [
  "anyhow",
  "bindgen",
  "byteorder",
+ "dashmap",
  "libbpf-sys",
  "log",
  "lqos_bus",
  "lqos_config",
+ "lqos_utils",
  "nix",
+ "once_cell",
 ]
 
 [[package]]

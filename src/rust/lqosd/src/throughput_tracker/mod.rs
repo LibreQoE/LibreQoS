@@ -8,7 +8,7 @@ use crate::{
 };
 use log::{info, warn};
 use lqos_bus::{BusResponse, IpStats, TcHandle, XdpPpingResult};
-use lqos_sys::XdpIpAddress;
+use lqos_sys::{XdpIpAddress, heimdall_expire};
 use lqos_utils::{fdtimer::periodic, unix_time::time_since_boot};
 use once_cell::sync::Lazy;
 use std::time::Duration;
@@ -38,6 +38,7 @@ pub fn spawn_throughput_monitor() {
       THROUGHPUT_TRACKER.next_cycle();
       let duration_ms = start.elapsed().as_micros();
       TIME_TO_POLL_HOSTS.store(duration_ms as u64, std::sync::atomic::Ordering::Relaxed);
+      heimdall_expire();
     });
   });
 }

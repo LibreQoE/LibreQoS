@@ -2,7 +2,7 @@ use std::{time::Duration, net::IpAddr};
 
 use dashmap::DashMap;
 use lqos_bus::{BusResponse, FlowTransport};
-use lqos_sys::{HeimdallData, HeimdallKey, XdpIpAddress};
+use lqos_sys::{HeimdallData, HeimdallKey, XdpIpAddress, heimdall_watch_ip};
 use lqos_utils::unix_time::time_since_boot;
 use once_cell::sync::Lazy;
 
@@ -90,6 +90,7 @@ pub fn get_flow_stats(ip: &str) -> BusResponse {
   let ip = ip.parse::<IpAddr>();
   if let Ok(ip) = ip {
     let ip = XdpIpAddress::from_ip(ip);
+    heimdall_watch_ip(ip);
     let mut result = Vec::new();
 
     for value in HEIMDALL.data.iter() {

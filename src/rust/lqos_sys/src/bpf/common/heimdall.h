@@ -7,6 +7,28 @@
 #include "debug.h"
 #include "dissector.h"
 
+// Array containing one element, the Heimdall configuration
+struct heimdall_config_t {
+    __u32 monitor_mode; // 0 = Off, 1 = Targets only, 2 = Analysis Mode
+};
+
+struct {
+        __uint(type, BPF_MAP_TYPE_ARRAY);
+        __type(key, __u32);
+        __type(value, struct heimdall_config_t);
+        __uint(max_entries, 2);
+        __uint(pinning, LIBBPF_PIN_BY_NAME);
+} heimdall_config SEC(".maps");
+
+struct
+{
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__type(key, struct in6_addr);
+	__type(value, __u32);
+    __uint(max_entries, 64);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
+} heimdall_watching SEC(".maps");
+
 struct heimdall_key {
     struct in6_addr src;
     struct in6_addr dst;
@@ -31,6 +53,24 @@ struct
     __uint(max_entries, MAX_FLOWS);
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
 } heimdall SEC(".maps");
+
+static __always_inline __u8 get_heimdall_mode() {
+    __u32 index = 0;
+    struct heimdall_config_t * cfg = (struct heimdall_config_t *)bpf_map_lookup_elem(&heimdall_config, &index);
+    if (cfg) {
+        return cfg->monitor_mode;
+    } else {
+        return 0;
+    }
+}
+
+static __always_inline bool is_heimdall_watching(struct dissector_t *dissector) {
+    __u32 * watching = bpf_map_lookup_elem(&heimdall_watching, &dissector->src_ip);
+    if (watching) return true;
+    watching = bpf_map_lookup_elem(&heimdall_watching, &dissector->dst_ip);
+    if (watching) return true;
+    return false;
+}
 
 static __always_inline void update_heimdall(struct dissector_t * dissector, __u32 size, int dir) {
     if (dissector->src_port == 0 || dissector->dst_port == 0) return;

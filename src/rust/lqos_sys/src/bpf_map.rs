@@ -130,9 +130,7 @@ where
     }
   }
 
-  /// Inserts an entry into a BPF map, or updates an existing entry with
-  /// the same key.
-  /// 
+  /// Inserts an entry into a BPF map.
   /// Use this sparingly, because it briefly pauses XDP access to the
   /// underlying map (through internal locking we can't reach from
   /// userland).
@@ -152,7 +150,7 @@ where
         self.fd,
         key_ptr as *mut c_void,
         val_ptr as *mut c_void,
-        BPF_NOEXIST.into(),
+        0,
       )
     };
     if err != 0 {

@@ -20,7 +20,7 @@ use lqos_queue_tracker::{
   add_watched_queue, get_raw_circuit_data, spawn_queue_monitor,
   spawn_queue_structure_monitor,
 };
-use lqos_sys::LibreQoSKernels;
+use lqos_sys::{LibreQoSKernels, set_heimdall_mode};
 use signal_hook::{
   consts::{SIGHUP, SIGINT, SIGTERM},
   iterator::Signals,
@@ -66,6 +66,7 @@ async fn main() -> Result<()> {
   } else {
     LibreQoSKernels::new(&config.internet_interface, &config.isp_interface)?
   };
+  set_heimdall_mode(lqos_sys::HeimdallMode::WatchOnly)?; // TODO: Set by config
 
   // Spawn tracking sub-systems
   join!(
