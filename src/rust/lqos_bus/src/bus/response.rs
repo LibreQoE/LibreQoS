@@ -1,4 +1,4 @@
-use crate::{IpMapping, IpStats, XdpPpingResult};
+use crate::{IpMapping, IpStats, XdpPpingResult, FlowTransport};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
@@ -85,5 +85,8 @@ pub enum BusResponse {
     high_watermark: (u64, u64),
     /// Number of flows tracked
     tracked_flows: u64,
-  }
+  },
+
+  /// Flow Data
+  FlowData(Vec<FlowTransport>),
 }

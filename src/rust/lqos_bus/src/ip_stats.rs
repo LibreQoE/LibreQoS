@@ -66,3 +66,20 @@ pub struct XdpPpingResult {
   /// derived. If 0, the other values are invalid.
   pub samples: u32,
 }
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum FlowProto {
+  TCP, UDP, ICMP
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct FlowTransport {
+  pub src: String,
+  pub dst: String,
+  pub proto: FlowProto,
+  pub src_port: u16,
+  pub dst_port: u16,
+  pub bytes: u64,
+  pub packets: u64,
+  pub tos: u8,
+}

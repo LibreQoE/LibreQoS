@@ -19,6 +19,8 @@
 #include "common/bifrost.h"
 #include "common/palantir.h"
 
+//#define VERBOSE 1
+
 /* Theory of operation:
 1. (Packet arrives at interface)
 2. XDP (ingress) starts
@@ -73,7 +75,7 @@ int xdp_prog(struct xdp_md *ctx)
             &bifrost_interface_map, 
             &my_interface
         );
-        if (redirect_info) {
+        if (redirect_info && redirect_info->scan_vlans) {
             // If we have a redirect, mark it - the dissector will
             // apply it
             vlan_redirect = true;
@@ -128,10 +130,16 @@ int xdp_prog(struct xdp_md *ctx)
         ctx->data_end - ctx->data, // end - data = length
         tc_handle
     );
-    update_palantir(&dissector, ctx->data_end - ctx->data);
+
 
     // Send on its way
     if (tc_handle != 0) {
+        // Send data to Palantir
+#ifdef VERBOSE
+        bpf_debug("(XDP) Storing Palantir Data");
+#endif
+        update_palantir(&dissector, ctx->data_end - ctx->data, effective_direction);
+
         // Handle CPU redirection if there is one specified
         __u32 *cpu_lookup;
         cpu_lookup = bpf_map_lookup_elem(&cpus_available, &cpu);

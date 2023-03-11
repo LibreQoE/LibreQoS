@@ -276,7 +276,9 @@ static __always_inline struct tcphdr *get_tcp_header(struct dissector_t *dissect
     if (dissector->eth_type == ETH_P_IP)
     {
         return (struct tcphdr *)((char *)dissector->ip_header.iph + (dissector->ip_header.iph->ihl * 4));
-    } else if (dissector->eth_type == ETH_P_IPV6) {
+    }
+    else if (dissector->eth_type == ETH_P_IPV6)
+    {
         return (struct tcphdr *)(dissector->ip_header.ip6h + 1);
     }
     return NULL;
@@ -287,17 +289,22 @@ static __always_inline struct udphdr *get_udp_header(struct dissector_t *dissect
     if (dissector->eth_type == ETH_P_IP)
     {
         return (struct udphdr *)((char *)dissector->ip_header.iph + (dissector->ip_header.iph->ihl * 4));
-    } else if (dissector->eth_type == ETH_P_IPV6) {
+    }
+    else if (dissector->eth_type == ETH_P_IPV6)
+    {
         return (struct udphdr *)(dissector->ip_header.ip6h + 1);
     }
     return NULL;
 }
 
-static __always_inline struct icmphdr * get_icmp_header(struct dissector_t * dissector) {
+static __always_inline struct icmphdr *get_icmp_header(struct dissector_t *dissector)
+{
     if (dissector->eth_type == ETH_P_IP)
     {
         return (struct icmphdr *)((char *)dissector->ip_header.iph + (dissector->ip_header.iph->ihl * 4));
-    } else if (dissector->eth_type == ETH_P_IPV6) {
+    }
+    else if (dissector->eth_type == ETH_P_IPV6)
+    {
         return (struct icmphdr *)(dissector->ip_header.ip6h + 1);
     }
     return NULL;
@@ -312,7 +319,7 @@ static __always_inline void snoop(struct dissector_t *dissector)
         struct tcphdr *hdr = get_tcp_header(dissector);
         if (hdr != NULL)
         {
-            if (hdr + sizeof(struct tcphdr) > dissector->end)
+            if (hdr + 1 > dissector->end)
             {
                 return;
             }
@@ -326,7 +333,7 @@ static __always_inline void snoop(struct dissector_t *dissector)
         struct udphdr *hdr = get_udp_header(dissector);
         if (hdr != NULL)
         {
-            if (hdr + sizeof(struct udphdr) > dissector->end)
+            if (hdr + 1 > dissector->end)
             {
                 return;
             }
@@ -339,14 +346,15 @@ static __always_inline void snoop(struct dissector_t *dissector)
         struct icmphdr *hdr = get_icmp_header(dissector);
         if (hdr != NULL)
         {
-            if (hdr + sizeof(struct icmphdr) > dissector->end)
+            if (hdr + 1 > dissector->end)
             {
                 return;
             }
             dissector->src_port = hdr->type;
             dissector->dst_port = hdr->code;
         }
-    } break;
+    }
+    break;
     }
 }
 

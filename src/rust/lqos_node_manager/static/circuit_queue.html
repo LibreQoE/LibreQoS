@@ -68,6 +68,9 @@
                             <li class="nav-item" role="presentation">
                                 <button class="nav-link" id="pills-funnel-tab" data-bs-toggle="pill" data-bs-target="#pills-funnel" type="button" role="tab" aria-controls="pills-funnel" aria-selected="false">Queue Funnel</button>
                             </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="pills-flows-tab" data-bs-toggle="pill" data-bs-target="#pills-flows" type="button" role="tab" aria-controls="pills-flows" aria-selected="false">Flows</button>
+                            </li>
                         </ul>
                     </div>
                     <div class="col-sm-2">
@@ -183,6 +186,19 @@
             </div>
 
             <div class="tab-pane fade" id="pills-funnel" role="tabpanel" aria-labelledby="pills-funnel-tab" tabindex="2">
+            </div>
+
+            <div class="tab-pane fade" id="pills-flows" role="tabpanel" aria-labelledby="pills-flows-tab" tabindex="3">
+                <div class="row">
+                    <div class="col-sm12">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Flows (Last 30 Seconds)</h5>
+                                <div id="flowList"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
           </div>          
     </div>
@@ -364,6 +380,8 @@
             setTimeout(pollQueue, 1000);
         }
 
+        let ips = [];
+
         function getThroughput() {
             const params = new Proxy(new URLSearchParams(window.location.search), {
                 get: (searchParams, prop) => searchParams.get(prop),
@@ -376,8 +394,10 @@
                         [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
                     ];                    
 
+                    ips = [];
                     for (let i=0; i<data.length; i++) {
                         let ip = data[i][0];
+                        ips.push(ip);
                         let down = data[i][1];
                         let up = data[i][2];
 
@@ -510,6 +530,30 @@
             setTimeout(plotFunnels, 1000);
         }
 
+        function getFlows() {
+            let ip_list = "";
+            for (let i=0; i<ips.length; ++i) {
+                ip_list += ips[i] + ",";
+            }
+            ip_list = ip_list.substring(0, ip_list.length-1);
+            $.get("/api/flows/" + ip_list, (data) => {
+                let html = "<table class='table table-striped'>";
+                html += "<thead><th>Protocol</th><th>Flow</th><th>Packets</th><th>Bytes</th></thead><tbody>";
+                for (let i=0; i<data.length; i++) {
+                    html += "<tr>";
+                    html += "<td>" + data[i].proto + "</td>";                        
+                    html += "<td>" + data[i].src + ":" + data[i].src_port + "▶️" + data[i].dst + ":" + data[i].dst_port + "</td>";
+                    html += "<td>" + data[i].packets + "</td>";
+                    html += "<td>" + scaleNumber(data[i].bytes) + "</td>";
+                    html += "<td>" + data[i].tos + "</td>";
+                    html += "</tr>";
+                }
+                html += "</tbody></table>";
+                $("#flowList").html(html);
+            })
+            setTimeout(getFlows, 1000);
+        }
+
         function start() {
             colorReloadButton();
             updateHostCounts();
@@ -520,6 +564,7 @@
                 pollQueue();
                 getThroughput();
                 getFunnel(params.id);
+                getFlows();
             });
         }
 

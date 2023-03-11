@@ -12,7 +12,7 @@
 #![warn(missing_docs)]
 mod bus;
 mod ip_stats;
-pub use ip_stats::{IpMapping, IpStats, XdpPpingResult};
+pub use ip_stats::{IpMapping, IpStats, XdpPpingResult, FlowProto, FlowTransport};
 mod tc_handle;
 pub use bus::{
   bus_request, decode_request, decode_response, encode_request,

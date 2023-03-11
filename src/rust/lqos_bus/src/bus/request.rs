@@ -133,6 +133,9 @@ pub enum BusRequest {
   /// Obtain the lqosd statistics
   GetLqosStats,
 
+  /// Tell me flow stats for a given IP address
+  GetFlowStats(String),
+
   /// If running on Equinix (the `equinix_test` feature is enabled),
   /// display a "run bandwidht test" link.
   #[cfg(feature = "equinix_tests")]

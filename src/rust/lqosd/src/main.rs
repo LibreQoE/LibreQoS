@@ -26,6 +26,7 @@ use signal_hook::{
   iterator::Signals,
 };
 use stats::{BUS_REQUESTS, TIME_TO_POLL_HOSTS, HIGH_WATERMARK_DOWN, HIGH_WATERMARK_UP, FLOWS_TRACKED};
+use throughput_tracker::get_flow_stats;
 use tokio::join;
 mod stats;
 
@@ -188,6 +189,9 @@ fn handle_bus_requests(
           ),
           tracked_flows: FLOWS_TRACKED.load(std::sync::atomic::Ordering::Relaxed),
         }
+      }
+      BusRequest::GetFlowStats(ip) => {
+        get_flow_stats(ip)
       }
     });
   }

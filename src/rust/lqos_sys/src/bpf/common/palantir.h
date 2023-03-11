@@ -32,19 +32,22 @@ struct
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
 } palantir SEC(".maps");
 
-static __always_inline void update_palantir(struct dissector_t * dissector, __u32 size) {
+static __always_inline void update_palantir(struct dissector_t * dissector, __u32 size, int dir) {
+    if (dissector->src_port == 0 || dissector->dst_port == 0) return;
     struct palantir_key key = {0};
     key.src = dissector->src_ip;
     key.dst = dissector->dst_ip;
     key.ip_protocol = dissector->ip_protocol;
-    key.src_port = dissector->src_port;
-    key.dst_port = dissector->dst_port;
+    key.src_port = bpf_ntohs(dissector->src_port);
+    key.dst_port = bpf_ntohs(dissector->dst_port);
     struct palantir_data * counter = (struct palantir_data *)bpf_map_lookup_elem(&palantir, &key);
     if (counter) {
         counter->last_seen = bpf_ktime_get_boot_ns();
         counter->packets += 1;
         counter->bytes += size;
-        counter->tos = dissector->tos;
+        if (dissector->tos != 0) {
+            counter->tos = dissector->tos;
+        }
     } else {
         struct palantir_data counter = {0};
         counter.last_seen = bpf_ktime_get_boot_ns();

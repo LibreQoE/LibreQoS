@@ -1,7 +1,7 @@
 use crate::auth_guard::AuthGuard;
 use crate::cache_control::NoCache;
 use crate::tracker::SHAPED_DEVICES;
-use lqos_bus::{bus_request, BusRequest, BusResponse};
+use lqos_bus::{bus_request, BusRequest, BusResponse, FlowTransport};
 use rocket::response::content::RawJson;
 use rocket::serde::json::Json;
 use rocket::serde::Serialize;
@@ -97,6 +97,22 @@ pub async fn raw_queue_by_circuit(
     _ => "Unable to request queue".to_string(),
   };
   NoCache::new(RawJson(result))
+}
+
+#[get("/api/flows/<ip_list>")]
+pub async fn flow_stats(ip_list: String, _auth: AuthGuard) -> NoCache<Json<Vec<FlowTransport>>> {
+  let mut result = Vec::new();
+  let request: Vec<BusRequest> = ip_list.split(",").map(|ip| BusRequest::GetFlowStats(ip.to_string())).collect();
+  let responses = bus_request(request).await.unwrap();
+  for r in responses.iter() {
+    if let BusResponse::FlowData(flow) = r {
+      result.extend_from_slice(flow);
+    }
+  }
+
+
+
+  NoCache::new(Json(result))
 }
 
 #[cfg(feature = "equinix_tests")]
