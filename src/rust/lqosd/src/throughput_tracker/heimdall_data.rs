@@ -96,7 +96,7 @@ pub fn get_flow_stats(ip: &str) -> BusResponse {
     for value in HEIMDALL.data.iter() {
       let key = value.key();
       if key.src_ip == ip || key.dst_ip == ip {        
-        let (dscp, congestion) = tos_parser(value.tos);
+        let (dscp, ecn) = tos_parser(value.tos);
         all_flows.push(FlowTransport{
           src: key.src_ip.as_ip().to_string(),
           dst: key.dst_ip.as_ip().to_string(),
@@ -110,7 +110,7 @@ pub fn get_flow_stats(ip: &str) -> BusResponse {
           bytes: value.bytes,
           packets: value.packets,
           dscp, 
-          congestion
+          ecn
         });
       }
     }

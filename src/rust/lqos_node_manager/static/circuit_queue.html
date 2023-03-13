@@ -539,6 +539,16 @@
             setTimeout(plotFunnels, 1000);
         }
 
+        function ecn(n) {
+            switch (n) {
+                case 0: return "-";
+                case 1: return "L4S";
+                case 2: return "ECT0";
+                case 3: return "CE";
+                default: return "???";
+            }
+        }
+
         function getFlows() {
             let ip_list = "";
             for (let i=0; i<ips.length; ++i) {
@@ -550,12 +560,12 @@
                 let html = "<table class='table table-striped'>";
                 html += "<thead>";
                 html += "<th>Protocol</th>";
-                html += "<th>Source</th>";
-                html += "<th>Source Port</th>";
-                html += "<th>Dest</th>";
-                html += "<th>Dest Port</th>";
-                html += "<th>Packets In</th>";
-                html += "<th>Packets Out</th>";
+                html += "<th>Src</th>";
+                html += "<th>Src Port</th>";
+                html += "<th>Dst</th>";
+                html += "<th>Dst Port</th>";
+                html += "<th>Pkt In</th>";
+                html += "<th>Pkt Out</th>";
                 html += "<th>Bytes In</th>";
                 html += "<th>Bytes Out</th>";
                 html += "<th>DSCP In</th>";
@@ -567,12 +577,12 @@
                     let rpackets = "-";
                     let rbytes = "-";
                     let rdscp = "-";
-                    let rcongestion = false;
+                    let rcongestion = "-";
                     if (data[i][1] != null) {
                         rpackets = data[i][1].packets;
                         rbytes = scaleNumber(data[i][1].bytes);
                         rdscp = "0x" + data[i][1].dscp.toString(16);
-                        rcongestion = data[i][1].congestion;
+                        rcongestion = ecn(data[i][1].ecn);
                     }
                     html += "<tr>";
                     html += "<td>" + data[i][0].proto + "</td>";
@@ -586,16 +596,8 @@
                     html += "<td>" + rbytes + "</td>";
                     html += "<td>0x" + data[i][0].dscp.toString(16) + "</td>";
                     html += "<td>" + rdscp + "</td>";
-                    if (data[i][0].congestion) {
-                        html += "<td>❌</td>";
-                    } else {
-                        html += "<td>-</td>";
-                    }
-                    if (rcongestion) {
-                        html += "<td>❌</td>";
-                    } else {
-                        html += "<td>-</td>";
-                    }
+                    html += "<td>" + ecn(data[i][0].ecn) + "</td>";
+                    html += "<td>" + rcongestion + "</td>";
                     html += "</tr>";
                 }
                 html += "</tbody></table>";

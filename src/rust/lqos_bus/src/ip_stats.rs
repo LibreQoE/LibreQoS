@@ -82,15 +82,15 @@ pub struct FlowTransport {
   pub bytes: u64,
   pub packets: u64,
   pub dscp: u8,
-  pub congestion: bool,
+  pub ecn: u8,
 }
 
-pub fn tos_parser(tos: u8) -> (u8, bool) {
+pub fn tos_parser(tos: u8) -> (u8, u8) {
   // Format: 2 bits of ECN, 6 bits of DSCP
   const ECN: u8 = 0b00000011;
   const DSCP: u8 = 0b11111100;
 
   let ecn = tos & ECN;
   let dscp = (tos & DSCP) >> 2;
-  (dscp, ecn == 3)
+  (dscp, ecn)
 }
