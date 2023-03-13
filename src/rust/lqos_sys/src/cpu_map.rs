@@ -2,8 +2,7 @@ use anyhow::{Error, Result};
 use libbpf_sys::{bpf_map_update_elem, bpf_obj_get};
 use log::info;
 use std::{ffi::CString, os::raw::c_void};
-
-use crate::num_possible_cpus;
+use crate::{num_possible_cpus, linux::map_txq_config_base_setup};
 
 //* Provides an interface for querying the number of CPUs eBPF can
 //* see, and marking CPUs as available. Currently marks ALL eBPF
@@ -72,14 +71,7 @@ impl CpuMapping {
   }
 
   pub(crate) fn setup_base_txq_config(&self) -> Result<()> {
-    use crate::lqos_kernel::bpf::map_txq_config_base_setup;
-    // Should we shell out to the C and do it the easy way?
-    let result = unsafe { map_txq_config_base_setup(self.fd_txq_config) };
-    if !result {
-      Err(Error::msg("Unable to setup TXQ map"))
-    } else {
-      Ok(())
-    }
+    Ok(map_txq_config_base_setup(self.fd_txq_config)?)
   }
 }
 

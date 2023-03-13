@@ -8,5 +8,4 @@ extern int tc_detach_egress(int ifindex, bool verbose, bool flush_hook, const ch
 extern int tc_attach_ingress(int ifindex, bool verbose, struct lqos_kern *obj);
 extern int tc_detach_ingress(int ifindex, bool verbose, bool flush_hook, const char * ifname);
 extern __u64 max_tracker_ips();
-extern bool map_txq_config_base_setup(int map_fd);
 extern void do_not_print();
