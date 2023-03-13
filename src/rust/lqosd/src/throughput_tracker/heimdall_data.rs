@@ -131,6 +131,9 @@ pub fn get_flow_stats(ip: &str) -> BusResponse {
       }
     }
 
+    result.sort_by(|a,b| {
+      b.0.bytes.cmp(&a.0.bytes)
+    });
 
     return BusResponse::FlowData(result);
   }

@@ -346,12 +346,13 @@ static __always_inline void snoop(struct dissector_t *dissector)
         struct icmphdr *hdr = get_icmp_header(dissector);
         if (hdr != NULL)
         {
-            if (hdr + 1 > dissector->end)
+            if ((char *)hdr + sizeof(struct icmphdr) > dissector->end)
             {
                 return;
             }
-            dissector->src_port = hdr->type;
-            dissector->dst_port = hdr->code;
+            dissector->ip_protocol = 1;
+            dissector->src_port = bpf_ntohs(hdr->type);
+            dissector->dst_port = bpf_ntohs(hdr->type);
         }
     }
     break;

@@ -549,6 +549,24 @@
             }
         }
 
+        function icmpType(n) {
+            switch (n) {
+                case 0: return "ECHO REPLY";
+                case 3: return "DESTINATION UNREACHABLE";
+                case 4: return "SOURCE QUENCH";
+                case 8: return "ECHO REQUEST";
+                case 11: return "TIME EXCEEDED";
+                case 12: return "PARAMETER PROBLEM";
+                case 13: return "TIMESTAMP REQUEST";
+                case 14: return "TIMESTAMP REPLY";
+                case 15: return "INFO REQUEST";
+                case 16: return "INFO REPLY";
+                case 17: return "ADDRESS REQUEST";
+                case 18: return "ADDRESS REPLY";
+                default: return "?";
+            }
+        }
+
         function getFlows() {
             let ip_list = "";
             for (let i=0; i<ips.length; ++i) {
@@ -587,9 +605,21 @@
                     html += "<tr>";
                     html += "<td>" + data[i][0].proto + "</td>";
                     html += "<td>" + data[i][0].src + "</td>";
-                    html += "<td>" + data[i][0].src_port + "</td>";
+                    if (data[i][0].proto == "ICMP") {
+                        html += "<td>" + icmpType(data[i][0].src_port) + "</td>";
+                    } else {
+                        html += "<td>" + data[i][0].src_port + "</td>";
+                    }
                     html += "<td>" + data[i][0].dst + "</td>";
-                    html += "<td>" + data[i][0].dst_port + "</td>";
+                    if (data[i][0].proto == "ICMP") {
+                        if (data[i][1] != null) {
+                            html += "<td>" + icmpType(data[i][1].src_port) + "</td>";
+                        } else {
+                            html += "<td></td>";
+                        }
+                    } else {
+                        html += "<td>" + data[i][0].dst_port + "</td>";
+                    }
                     html += "<td>" + data[i][0].packets + "</td>";
                     html += "<td>" + rpackets + "</td>";
                     html += "<td>" + scaleNumber(data[i][0].bytes) + "</td>";

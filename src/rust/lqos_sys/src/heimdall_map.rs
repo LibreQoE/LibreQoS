@@ -5,23 +5,35 @@ use once_cell::sync::Lazy;
 
 use crate::{bpf_per_cpu_map::BpfPerCpuMap, XdpIpAddress, bpf_map::BpfMap};
 
+/// Representation of the eBPF `heimdall_key` type.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 #[repr(C)]
 pub struct HeimdallKey {
+  /// Mapped `XdpIpAddress` source for the flow.
   pub src_ip: XdpIpAddress,
+  /// Mapped `XdpIpAddress` destination for the flow
   pub dst_ip: XdpIpAddress,
+  /// IP protocol (see the Linux kernel!)
   pub ip_protocol: u8,
+  /// Source port number, or ICMP type.
   pub src_port: u16,
+  /// Destination port number.
   pub dst_port: u16,
 }
 
+/// Mapped representation of the eBPF `heimdall_data` type.
 #[derive(Debug, Clone, Default)]
 #[repr(C)]
 pub struct HeimdallData {
+  /// Last seen, in nanoseconds (since boot time).
   pub last_seen: u64,
+  /// Number of bytes since the flow started being tracked
   pub bytes: u64,
+  /// Number of packets since the flow started being tracked
   pub packets: u64,
+  /// IP header TOS value
   pub tos: u8,
+  /// Reserved to pad the structure
   pub reserved: [u8; 3],
 }
 
@@ -37,10 +49,15 @@ pub fn heimdall_for_each(
   }
 }
 
+/// Currently unused, represents the current operation mode of the Heimdall
+/// sub-system. Defaults to 1.
 #[repr(u8)]
 pub enum HeimdallMode {
+  /// Do not monitor
   Off = 0,
+  /// Only look at flows on hosts we are watching via the circuit monitor
   WatchOnly = 1,
+  /// Capture everything (this may set your CPU on fire)
   Analysis = 2,
 }
 
@@ -87,6 +104,8 @@ impl HeimdallWatching {
 
 static HEIMDALL_WATCH_LIST: Lazy<DashMap<XdpIpAddress, HeimdallWatching>> = Lazy::new(DashMap::new);
 
+/// Run this periodically (once per second) to expire any watched traffic
+/// flows that haven't received traffic in the last 30 seconds.
 pub fn heimdall_expire() {
   if let Ok(now) = time_since_boot() {
     let now = Duration::from(now).as_nanos();
@@ -99,6 +118,9 @@ pub fn heimdall_expire() {
   }
 }
 
+/// Instruct Heimdall to start watching an IP address.
+/// You want to call this when you refresh a flow; it will auto-expire
+/// in 30 seconds.
 pub fn heimdall_watch_ip(ip: XdpIpAddress) {
   if HEIMDALL_WATCH_LIST.contains_key(&ip) {
     return;
