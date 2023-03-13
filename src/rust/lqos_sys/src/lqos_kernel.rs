@@ -74,7 +74,6 @@ pub fn unload_xdp_from_interface(interface_name: &str) -> Result<()> {
 
 fn set_strict_mode() -> Result<()> {
   let err = unsafe { libbpf_set_strict_mode(LIBBPF_STRICT_ALL) };
-  #[cfg(release)]
   unsafe {
     bpf::do_not_print();
   }
