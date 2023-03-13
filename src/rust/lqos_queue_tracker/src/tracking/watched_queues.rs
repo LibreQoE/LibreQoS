@@ -2,6 +2,7 @@ use crate::queue_structure::QUEUE_STRUCTURE;
 use dashmap::DashMap;
 use log::{info, warn};
 use lqos_bus::TcHandle;
+use lqos_sys::num_possible_cpus;
 use lqos_utils::unix_time::unix_now;
 use once_cell::sync::Lazy;
 
@@ -32,7 +33,7 @@ pub fn expiration_in_the_future() -> u64 {
 
 pub fn add_watched_queue(circuit_id: &str) {
   //info!("Watching queue {circuit_id}");
-  let max = unsafe { lqos_sys::libbpf_num_possible_cpus() } * 2;
+  let max = num_possible_cpus().unwrap() * 2;
   {
     if WATCHED_QUEUES.contains_key(circuit_id) {
       warn!("Queue {circuit_id} is already being watched. Duplicate ignored.");

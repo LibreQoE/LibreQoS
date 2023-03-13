@@ -1,7 +1,9 @@
 use anyhow::{Error, Result};
-use libbpf_sys::{bpf_map_update_elem, bpf_obj_get, libbpf_num_possible_cpus};
+use libbpf_sys::{bpf_map_update_elem, bpf_obj_get};
 use log::info;
 use std::{ffi::CString, os::raw::c_void};
+
+use crate::num_possible_cpus;
 
 //* Provides an interface for querying the number of CPUs eBPF can
 //* see, and marking CPUs as available. Currently marks ALL eBPF
@@ -33,7 +35,7 @@ impl CpuMapping {
   }
 
   pub(crate) fn mark_cpus_available(&self) -> Result<()> {
-    let cpu_count = unsafe { libbpf_num_possible_cpus() } as u32;
+    let cpu_count = num_possible_cpus()?;
 
     let queue_size = 2048u32;
     let val_ptr: *const u32 = &queue_size;

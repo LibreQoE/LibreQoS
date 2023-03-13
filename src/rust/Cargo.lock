@@ -1505,6 +1505,7 @@ dependencies = [
  "lqos_utils",
  "nix",
  "once_cell",
+ "thiserror",
 ]
 
 [[package]]
