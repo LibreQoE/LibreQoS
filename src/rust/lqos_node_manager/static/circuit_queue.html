@@ -324,6 +324,15 @@
                         ];
                         Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
 
+                        // Try to hide zeroes
+                        for (let i=0; i<entries.y[2].length; i++) {
+                            if (entries.y[2][i] == 0) entries.y[2][i] = null;
+                            if (entries.y[3][i] == 0) entries.y[3][i] = null;
+                            if (entries.y[4][i] == 0) entries.y[4][i] = null;
+                            if (entries.y[5][i] == 0) entries.y[5][i] = null;
+                        }
+
+
                         graph = document.getElementById("tinMd_" + tin);
                         graph_data = [
                             {x: entries.x[2], y:entries.y[2].reverse(), name: 'Down Drops', mode: 'markers', marker: { size: 4 }},
