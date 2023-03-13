@@ -49,7 +49,9 @@ fn track_queues() {
     if let Ok(download) = download {
       if let Ok(upload) = upload {
         if let Some(mut circuit) = CIRCUIT_TO_QUEUE.get_mut(circuit_id) {
-          circuit.update(&download[0], &upload[0]);
+          if !download.is_empty() && upload.is_empty() {
+            circuit.update(&download[0], &upload[0]);
+          }
         } else {
           // It's new: insert it
           if !download.is_empty() && !upload.is_empty() {
