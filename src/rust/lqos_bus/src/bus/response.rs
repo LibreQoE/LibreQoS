@@ -88,5 +88,5 @@ pub enum BusResponse {
   },
 
   /// Flow Data
-  FlowData(Vec<FlowTransport>),
+  FlowData(Vec<(FlowTransport, Option<FlowTransport>)>),
 }

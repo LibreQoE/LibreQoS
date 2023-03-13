@@ -537,15 +537,56 @@
             }
             ip_list = ip_list.substring(0, ip_list.length-1);
             $.get("/api/flows/" + ip_list, (data) => {
+                //console.log(data);
                 let html = "<table class='table table-striped'>";
-                html += "<thead><th>Protocol</th><th>Flow</th><th>Packets</th><th>Bytes</th></thead><tbody>";
+                html += "<thead>";
+                html += "<th>Protocol</th>";
+                html += "<th>Source</th>";
+                html += "<th>Source Port</th>";
+                html += "<th>Dest</th>";
+                html += "<th>Dest Port</th>";
+                html += "<th>Packets In</th>";
+                html += "<th>Packets Out</th>";
+                html += "<th>Bytes In</th>";
+                html += "<th>Bytes Out</th>";
+                html += "<th>DSCP In</th>";
+                html += "<th>DSCP Out</th>";
+                html += "<th>ECN In</th>";
+                html += "<th>ECN Out</th>";
+                html += "</thead>";
                 for (let i=0; i<data.length; i++) {
+                    let rpackets = "-";
+                    let rbytes = "-";
+                    let rdscp = "-";
+                    let rcongestion = false;
+                    if (data[i][1] != null) {
+                        rpackets = data[i][1].packets;
+                        rbytes = scaleNumber(data[i][1].bytes);
+                        rdscp = "0x" + data[i][1].dscp.toString(16);
+                        rcongestion = data[i][1].congestion;
+                    }
                     html += "<tr>";
-                    html += "<td>" + data[i].proto + "</td>";                        
-                    html += "<td>" + data[i].src + ":" + data[i].src_port + "▶️" + data[i].dst + ":" + data[i].dst_port + "</td>";
-                    html += "<td>" + data[i].packets + "</td>";
-                    html += "<td>" + scaleNumber(data[i].bytes) + "</td>";
-                    html += "<td>" + data[i].tos + "</td>";
+                    html += "<td>" + data[i][0].proto + "</td>";
+                    html += "<td>" + data[i][0].src + "</td>";
+                    html += "<td>" + data[i][0].src_port + "</td>";
+                    html += "<td>" + data[i][0].dst + "</td>";
+                    html += "<td>" + data[i][0].dst_port + "</td>";
+                    html += "<td>" + data[i][0].packets + "</td>";
+                    html += "<td>" + rpackets + "</td>";
+                    html += "<td>" + scaleNumber(data[i][0].bytes) + "</td>";
+                    html += "<td>" + rbytes + "</td>";
+                    html += "<td>0x" + data[i][0].dscp.toString(16) + "</td>";
+                    html += "<td>" + rdscp + "</td>";
+                    if (data[i][0].congestion) {
+                        html += "<td>❌</td>";
+                    } else {
+                        html += "<td>-</td>";
+                    }
+                    if (rcongestion) {
+                        html += "<td>❌</td>";
+                    } else {
+                        html += "<td>-</td>";
+                    }
                     html += "</tr>";
                 }
                 html += "</tbody></table>";

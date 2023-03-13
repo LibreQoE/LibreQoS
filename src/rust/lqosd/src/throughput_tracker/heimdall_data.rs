@@ -1,7 +1,7 @@
-use std::{time::Duration, net::IpAddr};
+use std::{time::Duration, net::IpAddr, collections::HashSet};
 
 use dashmap::DashMap;
-use lqos_bus::{BusResponse, FlowTransport};
+use lqos_bus::{BusResponse, FlowTransport, tos_parser};
 use lqos_sys::{HeimdallData, HeimdallKey, XdpIpAddress, heimdall_watch_ip};
 use lqos_utils::unix_time::time_since_boot;
 use once_cell::sync::Lazy;
@@ -54,9 +54,7 @@ impl PalantirMonitor {
           flow.bytes = combined.bytes;
           flow.packets = combined.packets;
           flow.last_seen = combined.last_seen;
-          if combined.tos != 0 {
-            flow.tos = combined.tos;
-          }
+          flow.tos = combined.tos;
         } else {
           // Insert
           self.data.insert(key.clone(), combined);
@@ -93,10 +91,13 @@ pub fn get_flow_stats(ip: &str) -> BusResponse {
     heimdall_watch_ip(ip);
     let mut result = Vec::new();
 
+    // Obtain all the flows
+    let mut all_flows = Vec::new();
     for value in HEIMDALL.data.iter() {
       let key = value.key();
-      if key.src_ip == ip || key.dst_ip == ip {
-        result.push(FlowTransport{
+      if key.src_ip == ip || key.dst_ip == ip {        
+        let (dscp, congestion) = tos_parser(value.tos);
+        all_flows.push(FlowTransport{
           src: key.src_ip.as_ip().to_string(),
           dst: key.dst_ip.as_ip().to_string(),
           src_port: key.src_port,
@@ -108,10 +109,28 @@ pub fn get_flow_stats(ip: &str) -> BusResponse {
           },
           bytes: value.bytes,
           packets: value.packets,
-          tos: value.tos,
+          dscp, 
+          congestion
         });
       }
     }
+
+    // Turn them into reciprocal pairs
+    let mut done = HashSet::new();
+    for (i,flow) in all_flows.iter().enumerate() {
+      if !done.contains(&i) {
+        let flow_a = flow.clone();
+        let flow_b = if let Some(flow_b) = all_flows.iter().position(|f| f.src == flow_a.dst && f.src_port == flow_a.dst_port) {
+          done.insert(flow_b);
+          Some(all_flows[flow_b].clone())
+        } else {
+          None
+        };
+
+        result.push((flow_a, flow_b));
+      }
+    }
+
 
     return BusResponse::FlowData(result);
   }
