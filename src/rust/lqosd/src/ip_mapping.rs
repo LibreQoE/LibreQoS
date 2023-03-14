@@ -1,6 +1,6 @@
 use anyhow::Result;
 use lqos_bus::{BusResponse, IpMapping, TcHandle};
-use lqos_sys::XdpIpAddress;
+use lqos_utils::XdpIpAddress;
 
 fn expect_ack(result: Result<()>) -> BusResponse {
   if result.is_ok() {

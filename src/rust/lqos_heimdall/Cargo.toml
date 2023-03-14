@@ -1,0 +1,9 @@
+[package]
+name = "lqos_heimdall"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lqos_utils = { path = "../lqos_utils" }
+log = "0"
+zerocopy = {version = "0.6.1", features = [ "simd" ] }

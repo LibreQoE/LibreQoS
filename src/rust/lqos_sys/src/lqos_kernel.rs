@@ -11,8 +11,9 @@ use libbpf_sys::{
   XDP_FLAGS_UPDATE_IF_NOEXIST,
 };
 use log::{info, warn};
+use lqos_heimdall::perf_interface::heimdall_handle_events;
 use nix::libc::{geteuid, if_nametoindex};
-use std::{ffi::{CString, c_void}, process::Command, thread::Thread};
+use std::{ffi::{CString, c_void}, process::Command};
 
 pub(crate) mod bpf {
   #![allow(warnings, unused)]
@@ -165,15 +166,12 @@ pub fn attach_xdp_and_tc_to_interface(
     log::error!("Unable to load Heimdall Events FD");
     return Err(anyhow::Error::msg("Unable to load Heimdall Events FD"));
   }
-  let opts: *const bpf::perf_buffer_opts = std::ptr::null();
+  let opts: *const bpf::ring_buffer_opts = std::ptr::null();
   let heimdall_perf_buffer = unsafe {
-    bpf::perf_buffer__new(
+    bpf::ring_buffer__new(
       heimdall_events_fd, 
-      8, 
-      Some(crate::heimdall_map::handle_events), 
-      Some(crate::heimdall_map::missed_events), 
-      opts as *mut c_void, 
-      opts)
+      Some(heimdall_handle_events), 
+      opts as *mut c_void, opts)
   };
   if unsafe { bpf::libbpf_get_error(heimdall_perf_buffer as *mut c_void) != 0 } {
     log::error!("Failed to create Heimdall event buffer");
@@ -286,7 +284,7 @@ unsafe fn try_xdp_attach(
 
 // Handle type used to wrap *mut bpf::perf_buffer and indicate
 // that it can be moved. Really unsafe code in theory.
-struct PerfBufferHandle(*mut bpf::perf_buffer);
+struct PerfBufferHandle(*mut bpf::ring_buffer);
 unsafe impl Send for PerfBufferHandle {}
 unsafe impl Sync for PerfBufferHandle {}
 
@@ -294,7 +292,7 @@ unsafe impl Sync for PerfBufferHandle {}
 fn poll_perf_events(heimdall_perf_buffer: PerfBufferHandle) {
   let heimdall_perf_buffer = heimdall_perf_buffer.0;
   loop {
-    let err = unsafe { bpf::perf_buffer__poll(heimdall_perf_buffer, 100) };
+    let err = unsafe { bpf::ring_buffer__poll(heimdall_perf_buffer, 100) };
     if err < 0 {
       log::error!("Error polling perfbuffer");
     }

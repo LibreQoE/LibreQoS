@@ -8,8 +8,8 @@ use crate::{
 };
 use log::{info, warn};
 use lqos_bus::{BusResponse, IpStats, TcHandle, XdpPpingResult};
-use lqos_sys::{XdpIpAddress, heimdall_expire};
-use lqos_utils::{fdtimer::periodic, unix_time::time_since_boot};
+use lqos_sys::heimdall_expire;
+use lqos_utils::{fdtimer::periodic, unix_time::time_since_boot, XdpIpAddress};
 use once_cell::sync::Lazy;
 use std::time::Duration;
 
@@ -31,7 +31,6 @@ pub fn spawn_throughput_monitor() {
         net_json.zero_throughput_and_rtt();
       } // Scope to end the lock
       THROUGHPUT_TRACKER.copy_previous_and_reset_rtt();
-      THROUGHPUT_TRACKER.pantir_tracking();
       THROUGHPUT_TRACKER.apply_new_throughput_counters();
       THROUGHPUT_TRACKER.apply_rtt_data();
       THROUGHPUT_TRACKER.update_totals();

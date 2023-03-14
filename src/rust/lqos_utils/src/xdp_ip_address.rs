@@ -1,11 +1,12 @@
 use byteorder::{BigEndian, ByteOrder};
+use zerocopy::FromBytes;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 /// XdpIpAddress provides helpful conversion between the XDP program's
 /// native storage of IP addresses in `[u8; 16]` blocks of bytes and
 /// Rust `IpAddr` types.
 #[repr(C)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, FromBytes)]
 pub struct XdpIpAddress(pub [u8; 16]);
 
 impl Default for XdpIpAddress {

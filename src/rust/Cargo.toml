@@ -24,4 +24,5 @@ members = [
     "lqos_utils", # A collection of macros and helpers we find useful
     "lqos_setup", # A quick CLI setup for first-time users
     "lqos_anonymous_stats_server", # The server for gathering anonymous usage data.
+    "lqos_heimdall", # Library for managing Heimdall flow watching
 ]

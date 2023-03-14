@@ -1,71 +1,9 @@
-use std::{time::Duration, ffi::c_void};
+use std::time::Duration;
 use dashmap::DashMap;
-use lqos_utils::unix_time::time_since_boot;
+use lqos_heimdall::{HeimdallMode, HeimdalConfig};
+use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 use once_cell::sync::Lazy;
-
-use crate::{bpf_per_cpu_map::BpfPerCpuMap, XdpIpAddress, bpf_map::BpfMap};
-
-/// Representation of the eBPF `heimdall_key` type.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
-#[repr(C)]
-pub struct HeimdallKey {
-  /// Mapped `XdpIpAddress` source for the flow.
-  pub src_ip: XdpIpAddress,
-  /// Mapped `XdpIpAddress` destination for the flow
-  pub dst_ip: XdpIpAddress,
-  /// IP protocol (see the Linux kernel!)
-  pub ip_protocol: u8,
-  /// Source port number, or ICMP type.
-  pub src_port: u16,
-  /// Destination port number.
-  pub dst_port: u16,
-}
-
-/// Mapped representation of the eBPF `heimdall_data` type.
-#[derive(Debug, Clone, Default)]
-#[repr(C)]
-pub struct HeimdallData {
-  /// Last seen, in nanoseconds (since boot time).
-  pub last_seen: u64,
-  /// Number of bytes since the flow started being tracked
-  pub bytes: u64,
-  /// Number of packets since the flow started being tracked
-  pub packets: u64,
-  /// IP header TOS value
-  pub tos: u8,
-  /// Reserved to pad the structure
-  pub reserved: [u8; 3],
-}
-
-/// Iterates through all throughput entries, and sends them in turn to `callback`.
-/// This elides the need to clone or copy data.
-pub fn heimdall_for_each(
-  callback: &mut dyn FnMut(&HeimdallKey, &[HeimdallData]),
-) {
-  if let Ok(heimdall) = BpfPerCpuMap::<HeimdallKey, HeimdallData>::from_path(
-    "/sys/fs/bpf/heimdall",
-  ) {
-    heimdall.for_each(callback);
-  }
-}
-
-/// Currently unused, represents the current operation mode of the Heimdall
-/// sub-system. Defaults to 1.
-#[repr(u8)]
-pub enum HeimdallMode {
-  /// Do not monitor
-  Off = 0,
-  /// Only look at flows on hosts we are watching via the circuit monitor
-  WatchOnly = 1,
-  /// Capture everything (this may set your CPU on fire)
-  Analysis = 2,
-}
-
-#[derive(Default, Clone)]
-#[repr(C)]
-struct HeimdalConfig {
-  mode: u32,
-}
+use crate::{bpf_map::BpfMap};
 
 /// Change the eBPF Heimdall System mode.
 pub fn set_heimdall_mode(mode: HeimdallMode) -> anyhow::Result<()> {
@@ -129,14 +67,4 @@ pub fn heimdall_watch_ip(ip: XdpIpAddress) {
     //println!("Watching {:?}", ip);
     HEIMDALL_WATCH_LIST.insert(ip, h);
   }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn missed_events(ctx: *mut c_void, cpu: i32, lost_count: u64) {
-  log::warn!("Missed {lost_count} Heimdall events on {cpu}");
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn handle_events(ctx: *mut c_void, cpu: i32, data: *mut c_void, data_size: u32) {
-  //log::info!("Received a callback on {cpu}");
 }

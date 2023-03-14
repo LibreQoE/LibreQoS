@@ -13,6 +13,7 @@ struct heimdall_config_t
     __u32 monitor_mode; // 0 = Off, 1 = Targets only, 2 = Analysis Mode
 };
 
+// Pinned map containing the Heimdall config
 struct
 {
     __uint(type, BPF_MAP_TYPE_ARRAY);
@@ -22,6 +23,8 @@ struct
     __uint(pinning, LIBBPF_PIN_BY_NAME);
 } heimdall_config SEC(".maps");
 
+// Pinned map containing the IP addresses (in packed IPv6 format)
+// currently being watched by the Heimdall system.
 struct
 {
     __uint(type, BPF_MAP_TYPE_HASH);
@@ -31,38 +34,23 @@ struct
     __uint(pinning, LIBBPF_PIN_BY_NAME);
 } heimdall_watching SEC(".maps");
 
-struct heimdall_key
-{
+// Perf map for communicating with userspace
+struct {
+	__uint(type, BPF_MAP_TYPE_RINGBUF);
+	__uint(max_entries, 256 * 1024 /* 256 KB */);
+} heimdall_events SEC(".maps");
+
+// Basic event type to send to userspace
+struct heimdall_event {
+    __u64 timetamp;
     struct in6_addr src;
     struct in6_addr dst;
-    __u8 ip_protocol;
     __u16 src_port;
     __u16 dst_port;
-};
-
-struct heimdall_data
-{
-    __u64 last_seen;
-    __u64 bytes;
-    __u64 packets;
+    __u8 ip_protocol;
     __u8 tos;
-    __u8 reserved[3];
+    __u32 size;
 };
-
-struct
-{
-    __uint(type, BPF_MAP_TYPE_LRU_PERCPU_HASH);
-    __type(key, struct heimdall_key);
-    __type(value, struct heimdall_data);
-    __uint(max_entries, MAX_FLOWS);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);
-} heimdall SEC(".maps");
-
-struct {
-	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
-	__uint(key_size, sizeof(__u32));
-	__uint(value_size, sizeof(__u32));
-} heimdall_events SEC(".maps");
 
 static __always_inline __u8 get_heimdall_mode()
 {
@@ -91,46 +79,17 @@ static __always_inline bool is_heimdall_watching(struct dissector_t *dissector)
 
 static __always_inline void update_heimdall(struct dissector_t *dissector, __u32 size, int dir)
 {
-    __u32 e = 1;
-    if (bpf_perf_event_output(dissector->ctx, &heimdall_events, BPF_F_CURRENT_CPU, &e, sizeof(e)) != 0) {
-        bpf_debug("Failed to send perf event");
-    }
-
-    // Don't report any non-ICMP without ports
-    if (dissector->ip_protocol != 1 && (dissector->src_port == 0 || dissector->dst_port == 0))
-        return;
-    // Don't report ICMP with invalid numbers
-    if (dissector->ip_protocol == 1 && dissector->src_port > 18) return;
-    struct heimdall_key key = {0};
-    key.src = dissector->src_ip;
-    key.dst = dissector->dst_ip;
-    key.ip_protocol = dissector->ip_protocol;
-    key.src_port = bpf_ntohs(dissector->src_port);
-    key.dst_port = bpf_ntohs(dissector->dst_port);
-    struct heimdall_data *counter = (struct heimdall_data *)bpf_map_lookup_elem(&heimdall, &key);
-    if (counter)
-    {
-        counter->last_seen = bpf_ktime_get_boot_ns();
-        counter->packets += 1;
-        counter->bytes += size;
-        if (dissector->tos != 0)
-        {
-            counter->tos = dissector->tos;
-        }
-    }
-    else
-    {
-        struct heimdall_data counter = {0};
-        counter.last_seen = bpf_ktime_get_boot_ns();
-        counter.bytes = size;
-        counter.packets = 1;
-        counter.tos = dissector->tos;
-        counter.reserved[0] = 0;
-        counter.reserved[1] = 0;
-        counter.reserved[2] = 0;
-        if (bpf_map_update_elem(&heimdall, &key, &counter, BPF_NOEXIST) != 0)
-        {
-            bpf_debug("Failed to insert tracking");
-        }
+    struct heimdall_event event = {0};
+    event.timetamp = bpf_ktime_get_boot_ns();
+    event.src = dissector->src_ip;
+    event.dst = dissector->dst_ip;
+    event.src_port = dissector->src_port;
+    event.dst_port = dissector->dst_port;
+    event.ip_protocol = dissector->ip_protocol;
+    event.tos = dissector->tos;
+    event.size = size;
+    long err = bpf_ringbuf_output(&heimdall_events, &event, sizeof(event), 0);
+    if (err != 0) {
+        bpf_debug("Failed to send perf event %d", err);
     }
 }

@@ -3,7 +3,8 @@ use crate::{shaped_devices_tracker::{SHAPED_DEVICES, NETWORK_JSON}, stats::{HIGH
 use super::{throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS, heimdall_data::HEIMDALL};
 use dashmap::DashMap;
 use lqos_bus::TcHandle;
-use lqos_sys::{rtt_for_each, throughput_for_each, XdpIpAddress, heimdall_for_each};
+use lqos_sys::{rtt_for_each, throughput_for_each};
+use lqos_utils::XdpIpAddress;
 
 pub struct ThroughputTracker {
   pub(crate) cycle: AtomicU64,
@@ -99,14 +100,6 @@ impl ThroughputTracker {
       data.network_json_parents =
         Self::lookup_network_parents(data.circuit_id.clone());
     });
-  }
-
-  pub(crate) fn pantir_tracking(&self) {
-    HEIMDALL.expire();
-    heimdall_for_each(&mut |key, values| {
-      HEIMDALL.ingest(key, values);
-    });
-    //println!("Tracking {} flows", HEIMDALL.data.len());
   }
 
   pub(crate) fn apply_new_throughput_counters(
