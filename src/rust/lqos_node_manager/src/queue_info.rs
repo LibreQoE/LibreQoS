@@ -1,7 +1,7 @@
 use crate::auth_guard::AuthGuard;
 use crate::cache_control::NoCache;
 use crate::tracker::SHAPED_DEVICES;
-use lqos_bus::{bus_request, BusRequest, BusResponse, FlowTransport};
+use lqos_bus::{bus_request, BusRequest, BusResponse, FlowTransport, PacketHeader};
 use rocket::response::content::RawJson;
 use rocket::serde::json::Json;
 use rocket::serde::Serialize;
@@ -109,9 +109,17 @@ pub async fn flow_stats(ip_list: String, _auth: AuthGuard) -> NoCache<Json<Vec<(
       result.extend_from_slice(flow);
     }
   }
+  NoCache::new(Json(result))
+}
 
-
-
+#[get("/api/packet_dump/<ip>")]
+pub async fn packet_dump(ip: String, _auth: AuthGuard) -> NoCache<Json<Vec<PacketHeader>>> {
+  let mut result = Vec::new();
+  for r in bus_request(vec![BusRequest::GetPacketHeaderDump(ip)]).await.unwrap() {
+    if let BusResponse::PacketDump(packets) = r {
+      result.extend(packets);
+    }
+  }
   NoCache::new(Json(result))
 }
 

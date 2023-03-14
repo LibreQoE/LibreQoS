@@ -2,6 +2,7 @@ mod throughput_entry;
 mod tracking_data;
 mod heimdall_data;
 pub use heimdall_data::get_flow_stats;
+use lqos_heimdall::expire_heimdall_flows;
 use crate::{
   shaped_devices_tracker::NETWORK_JSON,
   throughput_tracker::tracking_data::ThroughputTracker, stats::TIME_TO_POLL_HOSTS,
@@ -30,6 +31,7 @@ pub fn spawn_throughput_monitor() {
         let net_json = NETWORK_JSON.read().unwrap();
         net_json.zero_throughput_and_rtt();
       } // Scope to end the lock
+      expire_heimdall_flows();
       THROUGHPUT_TRACKER.copy_previous_and_reset_rtt();
       THROUGHPUT_TRACKER.apply_new_throughput_counters();
       THROUGHPUT_TRACKER.apply_rtt_data();

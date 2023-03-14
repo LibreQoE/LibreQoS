@@ -136,6 +136,9 @@ pub enum BusRequest {
   /// Tell me flow stats for a given IP address
   GetFlowStats(String),
 
+  /// Give me a dump of the last 10 seconds of packet headers
+  GetPacketHeaderDump(String),
+
   /// If running on Equinix (the `equinix_test` feature is enabled),
   /// display a "run bandwidht test" link.
   #[cfg(feature = "equinix_tests")]

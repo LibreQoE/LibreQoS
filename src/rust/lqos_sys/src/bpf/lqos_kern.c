@@ -135,14 +135,13 @@ int xdp_prog(struct xdp_md *ctx)
 
 
     // Send on its way
-    update_heimdall(&dissector, ctx->data_end - ctx->data);
     if (tc_handle != 0) {
         // Send data to Heimdall
         if (heimdall_mode == 2 || (heimdall_mode==1 && is_heimdall_watching(&dissector))) {
 #ifdef VERBOSE
             bpf_debug("(XDP) Storing Heimdall Data");
 #endif            
-            //update_heimdall(&dissector, ctx->data_end - ctx->data);
+            update_heimdall(&dissector, ctx->data_end - ctx->data);
         }
 
         // Handle CPU redirection if there is one specified

@@ -68,6 +68,7 @@ fn rocket() -> _ {
         queue_info::current_circuit_throughput,
         queue_info::watch_circuit,
         queue_info::flow_stats,
+        queue_info::packet_dump,
         config_control::get_nic_list,
         config_control::get_current_python_config,
         config_control::get_current_lqosd_config,

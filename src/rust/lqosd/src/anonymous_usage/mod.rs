@@ -3,7 +3,7 @@ mod version;
 use std::{time::Duration, net::TcpStream, io::Write};
 use lqos_bus::anonymous::{AnonymousUsageV1, build_stats};
 use lqos_config::{EtcLqos, LibreQoSConfig};
-use lqos_sys::libbpf_num_possible_cpus;
+use lqos_sys::num_possible_cpus;
 use sysinfo::{System, SystemExt, CpuExt};
 use crate::{shaped_devices_tracker::{SHAPED_DEVICES, NETWORK_JSON}, stats::{HIGH_WATERMARK_DOWN, HIGH_WATERMARK_UP}};
 
@@ -36,7 +36,7 @@ fn anonymous_usage_dump() -> anyhow::Result<()> {
     if let Some(kernel) = sys.kernel_version() {
         data.kernel_version = kernel;
     }
-    data.usable_cores = unsafe { libbpf_num_possible_cpus() } as u32;
+    data.usable_cores = num_possible_cpus().unwrap_or(0);
     let cpu = sys.cpus().first();
     if let Some(cpu) = cpu {
         data.cpu_brand = cpu.brand().to_string();

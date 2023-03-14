@@ -69,11 +69,14 @@ static __always_inline __u8 get_heimdall_mode()
 static __always_inline bool is_heimdall_watching(struct dissector_t *dissector)
 {
     __u32 *watching = (__u32 *)bpf_map_lookup_elem(&heimdall_watching, &dissector->src_ip);
-    if (watching)
+    if (watching) {
         return true;
+    }
+    
     watching = (__u32 *)bpf_map_lookup_elem(&heimdall_watching, &dissector->dst_ip);
-    if (watching)
+    if (watching) {
         return true;
+    }
     return false;
 }
 

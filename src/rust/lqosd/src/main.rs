@@ -8,6 +8,8 @@ mod throughput_tracker;
 mod anonymous_usage;
 mod tuning;
 mod validation;
+use std::net::IpAddr;
+
 use crate::{
   file_lock::FileLock,
   ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow},
@@ -16,12 +18,13 @@ use anyhow::Result;
 use log::{info, warn};
 use lqos_bus::{BusRequest, BusResponse, UnixSocketServer};
 use lqos_config::LibreQoSConfig;
-use lqos_heimdall::HeimdallMode;
+use lqos_heimdall::{ten_second_packet_dump, HeimdallMode};
 use lqos_queue_tracker::{
   add_watched_queue, get_raw_circuit_data, spawn_queue_monitor,
   spawn_queue_structure_monitor,
 };
-use lqos_sys::{LibreQoSKernels, set_heimdall_mode};
+use lqos_sys::{set_heimdall_mode, LibreQoSKernels};
+use lqos_utils::XdpIpAddress;
 use signal_hook::{
   consts::{SIGHUP, SIGINT, SIGTERM},
   iterator::Signals,
@@ -192,8 +195,15 @@ fn handle_bus_requests(
           tracked_flows: FLOWS_TRACKED.load(std::sync::atomic::Ordering::Relaxed),
         }
       }
-      BusRequest::GetFlowStats(ip) => {
-        get_flow_stats(ip)
+      BusRequest::GetFlowStats(ip) => get_flow_stats(ip),
+      BusRequest::GetPacketHeaderDump(ip) => {
+        let ip = ip.parse::<IpAddr>();
+        if let Ok(ip) = ip {
+          let ip = XdpIpAddress::from_ip(ip);
+          BusResponse::PacketDump(ten_second_packet_dump(ip))
+        } else {
+          BusResponse::Fail("Invalid IP".to_string())
+        }
       }
     });
   }

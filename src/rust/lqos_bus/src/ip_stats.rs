@@ -113,3 +113,16 @@ pub fn tos_parser(tos: u8) -> (u8, u8) {
   let dscp = (tos & DSCP) >> 2;
   (dscp, ecn)
 }
+
+/// Packet header dump
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+pub struct PacketHeader {
+  pub timestamp: u64,
+  pub src: String,
+  pub dst: String,
+  pub src_port : u16,
+  pub dst_port: u16,
+  pub ip_protocol: u8,
+  pub tos: u8,
+  pub size: u32,
+}

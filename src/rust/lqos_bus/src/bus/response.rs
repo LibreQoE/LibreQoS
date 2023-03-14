@@ -1,4 +1,4 @@
-use crate::{IpMapping, IpStats, XdpPpingResult, FlowTransport};
+use crate::{IpMapping, IpStats, XdpPpingResult, FlowTransport, ip_stats::PacketHeader};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
@@ -89,4 +89,7 @@ pub enum BusResponse {
 
   /// Flow Data
   FlowData(Vec<(FlowTransport, Option<FlowTransport>)>),
+
+  /// Packet header dump
+  PacketDump(Vec<PacketHeader>),
 }
