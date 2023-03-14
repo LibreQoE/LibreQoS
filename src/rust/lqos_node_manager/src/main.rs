@@ -40,6 +40,7 @@ fn rocket() -> _ {
         static_pages::circuit_queue,
         config_control::config_page,
         network_tree::tree_page,
+        static_pages::ip_dump,
         // Our JS library
         static_pages::lqos_js,
         static_pages::lqos_css,

@@ -569,13 +569,16 @@
 
         function getFlows() {
             let ip_list = "";
+            let ip_btns = "";
             for (let i=0; i<ips.length; ++i) {
                 ip_list += ips[i] + ",";
+                ip_btns += "<a href='/ip_dump?ip=" + ips[i] + "' class='btn btn-info'>Packet Dump: " + ips[i] + "</a>"
             }
+            ip_btns += "<br />";
             ip_list = ip_list.substring(0, ip_list.length-1);
             $.get("/api/flows/" + ip_list, (data) => {
                 //console.log(data);
-                let html = "<table class='table table-striped'>";
+                let html = ip_btns + "<table class='table table-striped'>";
                 html += "<thead>";
                 html += "<th>Protocol</th>";
                 html += "<th>Src</th>";

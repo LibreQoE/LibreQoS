@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="/vendor/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/vendor/solid.min.css">
+    <link rel="stylesheet" href="/lqos.css">
+    <title>LibreQoS - Local Node Manager</title>
+    <script src="/lqos.js"></script>
+    <script src="/vendor/plotly-2.16.1.min.js"></script>
+    <script src="/vendor/jquery.min.js"></script><script src="/vendor/msgpack.min.js"></script>
+    <script defer src="/vendor/bootstrap.bundle.min.js"></script>
+</head>
+<body class="bg-secondary">
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/"><img src="/vendor/tinylogo.svg" alt="LibreQoS SVG Logo" width="25" height="25" />&nbsp;LibreQoS</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarSupportedContent">
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/"><i class="fa fa-home"></i> Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/tree?parent=0"><i class="fa fa-globe"></i> Tree</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" aria-current="page" href="/shaped"><i class="fa fa-users"></i> Shaped Devices <span id="shapedCount" class="badge badge-pill badge-success green-badge">?</span></a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/unknown"><i class="fa fa-address-card"></i> Unknown IPs <span id="unshapedCount" class="badge badge-warning orange-badge">?</span></a>
+                    </li>
+                </ul>
+            </div>
+
+            <ul class="navbar-nav ms-auto">
+                <li class="nav-item" id="currentLogin"></li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#" id="startTest"><i class="fa fa-flag-checkered"></i> Run Bandwidth Test</a>
+                </li>
+                <li class="nav-item ms-auto">
+                    <a class="nav-link" href="/config"><i class="fa fa-gear"></i> Configuration</a>
+                </li>
+                <li>
+                    <a class="nav-link btn btn-small black-txt" href="#" id="btnReload"><i class="fa fa-refresh"></i> Reload LibreQoS</a>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <div id="container" class="pad4">
+
+        <div class="row">
+            <div class="col-sm-12">
+                <div class="card bg-light">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="fa fa-users"></i> Packet Dump</h5>
+
+                        <div id="pages"></div>
+                        <div id="graph"></div>
+                        <div id="dump">Please Wait... this may take a second.</div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <footer>&copy; 2022-2023, LibreQoE LLC</footer>
+
+    <script>
+        var packets = [];
+        var pages = 0;
+        var PAGE_SIZE = 1000;
+        var target = "";
+        var current_page = 0;
+
+        function proto(n) {
+            switch (n) {
+                case 6: return "TCP"
+                case 17: return "UDP"
+                default: return "ICMP"
+            }
+        }
+
+        function zoomIn() {
+            PAGE_SIZE /= 2;
+            current_page /= 2;
+            pages = packets.length / PAGE_SIZE;
+            viewPage(current_page);
+        }
+
+        function zoomOut() {
+            PAGE_SIZE *= 2;
+            current_page *= 2;
+            pages = packets.length / PAGE_SIZE;
+            viewPage(current_page);
+        }
+
+        function paginator(active) {
+            let paginator = "<a href='#' class='btn btn-info' onClick='zoomIn();'>Zoom In</a> ";
+            paginator += "<a href='#' class='btn btn-info' onClick='zoomOut();'>Zoom Out</a> (ℹ️ Or drag an area of the graph) <br />";
+
+            paginator += "<strong>Jump to page</strong>: ";
+                for (let i=0; i<pages; i++) {
+                    if (i == active) {
+                        paginator += " " + i + " ";
+                    } else {
+                        paginator += "<a href='#' onclick='viewPage(" + i + ");'>" + i + "</a> ";
+                    }
+                }
+                $("#pages").html(paginator);
+        }
+
+        function viewPage(n) {
+            let start = n * PAGE_SIZE;
+            let end = Math.min(start + PAGE_SIZE, packets.length);
+            if (start > packets.length) {
+                console.log("OOps");
+            }
+            let html = "<table class='table table-striped'>";
+            html += "<thead><th>Time (nanos)</th><th>Proto</th><th>Flow</th><th>Bytes</th><th>TOS</th></thead>";
+            let x_axis = [];
+            let y1_axis = [];
+            let y2_axis = [];
+            for (let i=start; i<end; ++i) {                
+                html += "<tr>";
+                html += "<td>" + packets[i].timestamp + "</td>";
+                html += "<td>" + proto(packets[i].ip_protocol) + "</td>";
+                if (packets[i].ip_protocol != 1) {
+                    html += "<td>" + packets[i].src + ":" + packets[i].src_port + " -> " + packets[i].dst + ":" + packets[i].dst_port + "</td>";
+                } else {
+                    html += "<td>" + packets[i].src + " -> " + packets[i].dst + "</td>";
+                }
+                html += "<td>" + packets[i].size + "</td>";
+                html += "<td>" + packets[i].tos + "</td>";
+                html += "</tr>";
+                x_axis.push(packets[i].timestamp);
+                if (packets[i].src == target) {
+                    y1_axis.push(packets[i].size);
+                    y2_axis.push(0);
+                } else {
+                    y1_axis.push(0);
+                    y2_axis.push(0.0 - packets[i].size);
+                }
+            }
+            html += "</table>";
+            $("#dump").html(html);
+            paginator(n);
+
+            // Make the graph
+            let graph = document.getElementById("graph");
+            let data = [
+                {x: x_axis, y:y1_axis, name: 'Download', type: 'scatter', mode: 'markers'},
+                {x: x_axis, y:y2_axis, name: 'Upload', type: 'scatter', mode: 'markers'}
+            ];
+            Plotly.newPlot(graph, data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true, title: 'Bytes' }, xaxis: {automargin: true, title: "Nanoseconds"} }, { responsive: true });
+        }
+
+        function start() {
+            colorReloadButton();
+            updateHostCounts();
+            const params = new Proxy(new URLSearchParams(window.location.search), {
+                get: (searchParams, prop) => searchParams.get(prop),
+            });
+
+            target = params.ip;
+            $.get("/api/packet_dump/" + params.ip, (data) => {
+                data.sort((a,b) => a<b);
+                let min_ts = null;
+                for (let i=0; i<data.length; ++i) {
+                    if (min_ts == null || min_ts > data[i].timestamp) {
+                        min_ts = data[i].timestamp;
+                    }
+                }
+                for (let i=0; i<data.length; ++i) {
+                    data[i].timestamp -= min_ts;
+                }
+                packets = data;
+                pages = Math.ceil((packets.length / PAGE_SIZE));
+                paginator(0);                
+                viewPage(0);
+            });
+        }
+
+        $(document).ready(start);
+    </script>
+
+</body>
+</html>
