@@ -58,6 +58,12 @@ struct
     __uint(pinning, LIBBPF_PIN_BY_NAME);
 } heimdall SEC(".maps");
 
+struct {
+	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
+	__uint(key_size, sizeof(__u32));
+	__uint(value_size, sizeof(__u32));
+} heimdall_events SEC(".maps");
+
 static __always_inline __u8 get_heimdall_mode()
 {
     __u32 index = 0;
@@ -74,10 +80,10 @@ static __always_inline __u8 get_heimdall_mode()
 
 static __always_inline bool is_heimdall_watching(struct dissector_t *dissector)
 {
-    __u32 *watching = bpf_map_lookup_elem(&heimdall_watching, &dissector->src_ip);
+    __u32 *watching = (__u32 *)bpf_map_lookup_elem(&heimdall_watching, &dissector->src_ip);
     if (watching)
         return true;
-    watching = bpf_map_lookup_elem(&heimdall_watching, &dissector->dst_ip);
+    watching = (__u32 *)bpf_map_lookup_elem(&heimdall_watching, &dissector->dst_ip);
     if (watching)
         return true;
     return false;
@@ -85,6 +91,11 @@ static __always_inline bool is_heimdall_watching(struct dissector_t *dissector)
 
 static __always_inline void update_heimdall(struct dissector_t *dissector, __u32 size, int dir)
 {
+    __u32 e = 1;
+    if (bpf_perf_event_output(dissector->ctx, &heimdall_events, BPF_F_CURRENT_CPU, &e, sizeof(e)) != 0) {
+        bpf_debug("Failed to send perf event");
+    }
+
     // Don't report any non-ICMP without ports
     if (dissector->ip_protocol != 1 && (dissector->src_port == 0 || dissector->dst_port == 0))
         return;

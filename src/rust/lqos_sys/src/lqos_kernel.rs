@@ -12,7 +12,7 @@ use libbpf_sys::{
 };
 use log::{info, warn};
 use nix::libc::{geteuid, if_nametoindex};
-use std::{ffi::CString, process::Command};
+use std::{ffi::{CString, c_void}, process::Command, thread::Thread};
 
 pub(crate) mod bpf {
   #![allow(warnings, unused)]
@@ -74,6 +74,7 @@ pub fn unload_xdp_from_interface(interface_name: &str) -> Result<()> {
 
 fn set_strict_mode() -> Result<()> {
   let err = unsafe { libbpf_set_strict_mode(LIBBPF_STRICT_ALL) };
+  #[cfg(not(debug_assertions))]
   unsafe {
     bpf::do_not_print();
   }
@@ -155,6 +156,31 @@ pub fn attach_xdp_and_tc_to_interface(
       interface_c.as_ptr(),
     )
   }; // Ignoring error, because it's ok to not have something to detach
+
+  // Find the heimdall_events perf map by name
+  let heimdall_events_name = CString::new("heimdall_events").unwrap();
+  let heimdall_events_map = unsafe { bpf::bpf_object__find_map_by_name((*skeleton).obj, heimdall_events_name.as_ptr()) };
+  let heimdall_events_fd = unsafe { bpf::bpf_map__fd(heimdall_events_map) };
+  if heimdall_events_fd < 0 {
+    log::error!("Unable to load Heimdall Events FD");
+    return Err(anyhow::Error::msg("Unable to load Heimdall Events FD"));
+  }
+  let opts: *const bpf::perf_buffer_opts = std::ptr::null();
+  let heimdall_perf_buffer = unsafe {
+    bpf::perf_buffer__new(
+      heimdall_events_fd, 
+      8, 
+      Some(crate::heimdall_map::handle_events), 
+      Some(crate::heimdall_map::missed_events), 
+      opts as *mut c_void, 
+      opts)
+  };
+  if unsafe { bpf::libbpf_get_error(heimdall_perf_buffer as *mut c_void) != 0 } {
+    log::error!("Failed to create Heimdall event buffer");
+    return Err(anyhow::Error::msg("Failed to create Heimdall event buffer"));
+  }
+  let handle = PerfBufferHandle(heimdall_perf_buffer);
+  std::thread::spawn(|| poll_perf_events(handle));
 
   // Remove any previous entry
   let _r = Command::new("tc")
@@ -256,4 +282,21 @@ unsafe fn try_xdp_attach(
     return Err(Error::msg("Unable to attach to interface"));
   }
   Ok(())
+}
+
+// Handle type used to wrap *mut bpf::perf_buffer and indicate
+// that it can be moved. Really unsafe code in theory.
+struct PerfBufferHandle(*mut bpf::perf_buffer);
+unsafe impl Send for PerfBufferHandle {}
+unsafe impl Sync for PerfBufferHandle {}
+
+/// Run this in a thread, or doom will surely hit you
+fn poll_perf_events(heimdall_perf_buffer: PerfBufferHandle) {
+  let heimdall_perf_buffer = heimdall_perf_buffer.0;
+  loop {
+    let err = unsafe { bpf::perf_buffer__poll(heimdall_perf_buffer, 100) };
+    if err < 0 {
+      log::error!("Error polling perfbuffer");
+    }
+  }
 }

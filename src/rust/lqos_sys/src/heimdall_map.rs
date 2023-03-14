@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{time::Duration, ffi::c_void};
 use dashmap::DashMap;
 use lqos_utils::unix_time::time_since_boot;
 use once_cell::sync::Lazy;
@@ -129,4 +129,14 @@ pub fn heimdall_watch_ip(ip: XdpIpAddress) {
     //println!("Watching {:?}", ip);
     HEIMDALL_WATCH_LIST.insert(ip, h);
   }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn missed_events(ctx: *mut c_void, cpu: i32, lost_count: u64) {
+  log::warn!("Missed {lost_count} Heimdall events on {cpu}");
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn handle_events(ctx: *mut c_void, cpu: i32, data: *mut c_void, data_size: u32) {
+  //log::info!("Received a callback on {cpu}");
 }
