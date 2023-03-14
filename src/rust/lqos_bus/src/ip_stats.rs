@@ -117,12 +117,20 @@ pub fn tos_parser(tos: u8) -> (u8, u8) {
 /// Packet header dump
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct PacketHeader {
+  /// Timestamp (ns since boot)
   pub timestamp: u64,
+  /// Source IP
   pub src: String,
+  /// Destination IP
   pub dst: String,
+  /// Source Port
   pub src_port : u16,
+  /// Destination Port
   pub dst_port: u16,
+  /// Ip Protocol (see Linux kernel docs)
   pub ip_protocol: u8,
+  /// Tos to decode
   pub tos: u8,
+  /// Packet Size
   pub size: u32,
 }
