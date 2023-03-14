@@ -77,7 +77,7 @@ static __always_inline bool is_heimdall_watching(struct dissector_t *dissector)
     return false;
 }
 
-static __always_inline void update_heimdall(struct dissector_t *dissector, __u32 size, int dir)
+static __always_inline void update_heimdall(struct dissector_t *dissector, __u32 size)
 {
     struct heimdall_event event = {0};
     event.timetamp = bpf_ktime_get_boot_ns();

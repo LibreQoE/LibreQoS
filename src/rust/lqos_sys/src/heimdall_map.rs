@@ -8,7 +8,6 @@ use crate::{bpf_map::BpfMap};
 /// Change the eBPF Heimdall System mode.
 pub fn set_heimdall_mode(mode: HeimdallMode) -> anyhow::Result<()> {
   let mut map = BpfMap::<u32, HeimdalConfig>::from_path("/sys/fs/bpf/heimdall_config")?;
-  map.clear_no_repeat()?;
   map.insert_or_update(&mut 0, &mut HeimdalConfig { mode: mode as u32 })?;
   Ok(())
 }
