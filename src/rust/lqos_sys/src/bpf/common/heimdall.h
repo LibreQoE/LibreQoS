@@ -104,7 +104,7 @@ static __always_inline void update_heimdall(struct dissector_t *dissector, __u32
     event.tsecr = dissector->tsecr;
     if (size > PACKET_OCTET_SIZE) size = PACKET_OCTET_SIZE;
     if ((char *)dissector->start + size < dissector->end) {
-        bpf_probe_read_kernel(&event.dump, size, dissector->start);
+        bpf_probe_read_kernel(&event.dump, PACKET_OCTET_SIZE, dissector->start);
     }
     long err = bpf_ringbuf_output(&heimdall_events, &event, sizeof(event), 0);
     if (err != 0) {
