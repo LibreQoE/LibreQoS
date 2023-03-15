@@ -4,7 +4,7 @@ use zerocopy::FromBytes;
 
 use crate::{flows::record_flow, timeline::store_on_timeline};
 
-#[derive(FromBytes, Debug, Clone)]
+#[derive(FromBytes, Debug, Clone, PartialEq, Eq, Hash)]
 #[repr(C)]
 pub struct HeimdallEvent {
   pub timestamp: u64,
