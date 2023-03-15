@@ -19,6 +19,7 @@ pub struct HeimdallEvent {
   pub tcp_window: u16,
   pub tcp_tsval: u32,
   pub tcp_tsecr: u32,
+  pub packet_data: [u8; 64],
 }
 
 /*

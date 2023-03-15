@@ -3,7 +3,8 @@ use dashmap::DashSet;
 use lqos_bus::{PacketHeader, tos_parser};
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 use once_cell::sync::Lazy;
-use crate::perf_interface::HeimdallEvent;
+use zerocopy::AsBytes;
+use crate::{perf_interface::HeimdallEvent, pcap::{PcapFileHeader, PcapPacketHeader}};
 
 impl HeimdallEvent {
     fn as_header(&self) -> PacketHeader {
@@ -57,4 +58,18 @@ pub fn ten_second_packet_dump(ip: XdpIpAddress) -> Vec<PacketHeader> {
     .filter(|e| e.src == ip || e.dst == ip)
     .map(|e| e.as_header())
     .collect()
+}
+
+pub fn ten_second_pcap() -> Vec<u8> {
+  let mut bytes : Vec<u8> = Vec::new();
+  let file_header = PcapFileHeader::new();
+  bytes.extend(file_header.as_bytes());
+  let mut packets: Vec<HeimdallEvent> = TIMELINE.data.iter().map(|e| e.clone()).collect();
+  packets.sort_by(|a,b| a.timestamp.cmp(&b.timestamp));
+  packets.iter().for_each(|p| {
+    let packet_header = PcapPacketHeader::from_heimdall(p);
+    bytes.extend(packet_header.as_bytes());
+    bytes.extend(p.packet_data);
+  });
+  bytes
 }

@@ -205,6 +205,9 @@ fn handle_bus_requests(
           BusResponse::Fail("Invalid IP".to_string())
         }
       }
+      BusRequest::GetPcapDump => {
+        BusResponse::PcapDump(lqos_heimdall::ten_second_pcap())
+      }
     });
   }
 }

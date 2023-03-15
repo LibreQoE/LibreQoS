@@ -564,11 +564,12 @@
             for (let i=0; i<ips.length; ++i) {
                 ip_list += ips[i] + ",";
                 if (circuit_info != null) {
-                    ip_btns += "<a href='/ip_dump?ip=" + ips[i] + "&dn=" + circuit_info.capacity[0] + "&up=" + circuit_info.capacity[1] + "' class='btn btn-info'>Packet Dump: " + ips[i] + "</a>"
+                    ip_btns += "<a href='/ip_dump?ip=" + ips[i] + "&dn=" + circuit_info.capacity[0] + "&up=" + circuit_info.capacity[1] + "' class='btn btn-info'>Packet Dump: " + ips[i] + "</a> "
                 }
             }
-            ip_btns += "<br />";
             if (!madeButtons && ips.length > 0 && circuit_info != null) {
+                ip_btns += "<a href='/api/pcap' class='btn btn-warning'>Download PCAP Dump</a>";
+                ip_btns += "<br />";
                 madeButtons = true;
                 $("#packetButtons").html(ip_btns);
             }

@@ -9,4 +9,5 @@ pub use config::{HeimdallMode, HeimdalConfig};
 mod flows;
 pub use flows::{expire_heimdall_flows, get_flow_stats};
 mod timeline;
-pub use timeline::ten_second_packet_dump;
+pub use timeline::{ten_second_packet_dump, ten_second_pcap};
+mod pcap;

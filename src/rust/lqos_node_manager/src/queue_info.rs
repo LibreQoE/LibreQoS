@@ -2,9 +2,11 @@ use crate::auth_guard::AuthGuard;
 use crate::cache_control::NoCache;
 use crate::tracker::SHAPED_DEVICES;
 use lqos_bus::{bus_request, BusRequest, BusResponse, FlowTransport, PacketHeader};
+use rocket::http::Status;
 use rocket::response::content::RawJson;
 use rocket::serde::json::Json;
 use rocket::serde::Serialize;
+use rocket_download_response::DownloadResponse;
 use std::net::IpAddr;
 
 #[derive(Serialize, Clone)]
@@ -121,6 +123,17 @@ pub async fn packet_dump(ip: String, _auth: AuthGuard) -> NoCache<Json<Vec<Packe
     }
   }
   NoCache::new(Json(result))
+}
+
+#[get("/api/pcap")]
+pub async fn pcap() -> Result<DownloadResponse, Status> {
+  for r in bus_request(vec![BusRequest::GetPcapDump]).await.unwrap() {
+    if let BusResponse::PcapDump(bytes) = r {
+      return Ok(DownloadResponse::from_vec(bytes, Some("capture.pcap"), None));
+    }
+  }
+
+  Err(Status::NoContent)
 }
 
 #[cfg(feature = "equinix_tests")]

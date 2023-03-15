@@ -92,4 +92,7 @@ pub enum BusResponse {
 
   /// Packet header dump
   PacketDump(Vec<PacketHeader>),
+
+  /// Pcap format dump
+  PcapDump(Vec<u8>),
 }

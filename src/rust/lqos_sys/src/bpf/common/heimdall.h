@@ -54,6 +54,7 @@ struct heimdall_event {
     __u16 tcp_window;
     __u32 tsval;
     __u32 tsecr;
+    __u8 dump[64];
 };
 
 static __always_inline __u8 get_heimdall_mode()
@@ -99,6 +100,9 @@ static __always_inline void update_heimdall(struct dissector_t *dissector, __u32
     event.tcp_window = dissector->window;
     event.tsval = dissector->tsval;
     event.tsecr = dissector->tsecr;
+    if (size > 64 && ((char *)dissector->start + 64 < dissector->end)) {
+        __builtin_memcpy(&event.dump, dissector->start, 64);
+    }
     long err = bpf_ringbuf_output(&heimdall_events, &event, sizeof(event), 0);
     if (err != 0) {
         bpf_debug("Failed to send perf event %d", err);

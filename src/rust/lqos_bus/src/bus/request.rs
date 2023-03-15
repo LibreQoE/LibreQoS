@@ -139,6 +139,9 @@ pub enum BusRequest {
   /// Give me a dump of the last 10 seconds of packet headers
   GetPacketHeaderDump(String),
 
+  /// Give me a libpcap format packet dump (shortened) of the last 10 seconds
+  GetPcapDump,
+
   /// If running on Equinix (the `equinix_test` feature is enabled),
   /// display a "run bandwidht test" link.
   #[cfg(feature = "equinix_tests")]
