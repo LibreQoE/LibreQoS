@@ -60,7 +60,7 @@ pub fn add_watched_queue(circuit_id: &str) {
       };
 
       WATCHED_QUEUES.insert(circuit.circuit_id.as_ref().unwrap().clone(), new_watch);
-      //info!("Added {circuit_id} to watched queues. Now watching {} queues.", WATCHED_QUEUES.read().len());
+      //info!("Added {circuit_id} to watched queues. Now watching {} queues.", WATCHED_QUEUES.len());
     } else {
       warn!("No circuit ID of {circuit_id}");
     }

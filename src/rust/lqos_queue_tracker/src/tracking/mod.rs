@@ -18,7 +18,7 @@ fn track_queues() {
   }
   let config = LibreQoSConfig::load();
   if config.is_err() {
-    warn!("Unable to read LibreQoS config. Skipping queue collection cycle.");
+    //warn!("Unable to read LibreQoS config. Skipping queue collection cycle.");
     return;
   }
   let config = config.unwrap();
@@ -49,7 +49,7 @@ fn track_queues() {
     if let Ok(download) = download {
       if let Ok(upload) = upload {
         if let Some(mut circuit) = CIRCUIT_TO_QUEUE.get_mut(circuit_id) {
-          if !download.is_empty() && upload.is_empty() {
+          if !download.is_empty() && !upload.is_empty() {
             circuit.update(&download[0], &upload[0]);
           }
         } else {

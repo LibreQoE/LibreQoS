@@ -194,6 +194,7 @@
                         <div class="card bg-light">
                             <div class="card-body">
                                 <h5 class="card-title"><i class="fa fa-bar-chart"></i> Flows (Last 30 Seconds)</h5>
+                                <div id="packetButtons"></div>
                                 <div id="flowList"></div>
                             </div>
                         </div>
@@ -245,10 +246,13 @@
             });
             if (params.id != null) {
                 // Name the circuit
-                $.get("/api/circuit_info/" + encodeURI(params.id), (data) => {
-                    circuit_info = data;
-                    $("#circuitName").text(redactText(circuit_info.name));
-                });
+                if (circuit_info == null) {
+                    $.get("/api/circuit_info/" + encodeURI(params.id), (data) => {
+                        circuit_info = data;
+                        let capacity = scaleNumber(circuit_info.capacity[0]) + " / " + scaleNumber(circuit_info.capacity[1]);
+                        $("#circuitName").text(redactText(circuit_info.name) + " " + capacity);
+                    });
+                }
 
                 // Fill the raw button
                 $("#raw").html("<a class='btn btn-sm btn-info' href='/api/raw_queue_by_circuit/" + encodeURI(params.id) + "'><i class='fa fa-search'></i> Raw Data</a>");
@@ -385,8 +389,6 @@
                     Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
                 });
             }
-
-            setTimeout(pollQueue, 1000);
         }
 
         let ips = [];
@@ -478,8 +480,6 @@
                     Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true, title: '# Samples' }, xaxis: {automargin: true, title: '% Utilization'} });
                 });
             }
-
-            setTimeout(getThroughput, 1000);
         }
 
         let funnels = new MultiRingBuffer(300);
@@ -536,7 +536,6 @@
                     rtts[data[i][0]].plot("rtt" + data[i][0]);
                 }
             });
-            setTimeout(plotFunnels, 1000);
         }
 
         function ecn(n) {
@@ -567,6 +566,8 @@
             }
         }
 
+        var madeButtons = false;
+
         function getFlows() {
             let ip_list = "";
             let ip_btns = "";
@@ -575,10 +576,15 @@
                 ip_btns += "<a href='/ip_dump?ip=" + ips[i] + "' class='btn btn-info'>Packet Dump: " + ips[i] + "</a>"
             }
             ip_btns += "<br />";
+            if (!madeButtons) {
+                madeButtons = true;
+                $("#packetButtons").html(ip_btns);
+            }
             ip_list = ip_list.substring(0, ip_list.length-1);
+            if (ip_list == "") return;
             $.get("/api/flows/" + ip_list, (data) => {
                 //console.log(data);
-                let html = ip_btns + "<table class='table table-striped'>";
+                let html = "<table class='table table-striped'>";
                 html += "<thead>";
                 html += "<th>Protocol</th>";
                 html += "<th>Src</th>";
@@ -636,7 +642,16 @@
                 html += "</tbody></table>";
                 $("#flowList").html(html);
             })
-            setTimeout(getFlows, 1000);
+        }
+
+        let id = 0;
+
+        function oneSecondCadence() {
+            pollQueue();
+            getThroughput();
+            getFunnel(id);
+            getFlows();
+            setTimeout(oneSecondCadence, 1000);
         }
 
         function start() {
@@ -645,7 +660,9 @@
             const params = new Proxy(new URLSearchParams(window.location.search), {
                 get: (searchParams, prop) => searchParams.get(prop),
             });
+            id = params.id;
             $.get("/api/watch_circuit/" + params.id, () => {
+                oneSecondCadence();
                 pollQueue();
                 getThroughput();
                 getFunnel(params.id);
