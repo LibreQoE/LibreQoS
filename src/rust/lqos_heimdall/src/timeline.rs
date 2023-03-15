@@ -1,12 +1,13 @@
 use std::time::Duration;
 use dashmap::DashSet;
-use lqos_bus::PacketHeader;
+use lqos_bus::{PacketHeader, tos_parser};
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 use once_cell::sync::Lazy;
 use crate::perf_interface::HeimdallEvent;
 
 impl HeimdallEvent {
     fn as_header(&self) -> PacketHeader {
+      let (dscp, ecn) = tos_parser(self.tos);
       PacketHeader {
             timestamp: self.timestamp,
             src: self.src.as_ip().to_string(),
@@ -14,8 +15,12 @@ impl HeimdallEvent {
             src_port: self.src_port,
             dst_port: self.dst_port,
             ip_protocol: self.ip_protocol,
-            tos: self.tos,
+            ecn, dscp,
             size: self.size,
+            tcp_flags: self.tcp_flags,
+            tcp_window: self.tcp_window,
+            tcp_tsecr: self.tcp_tsecr,
+            tcp_tsval: self.tcp_tsval,
         }
     }
 }

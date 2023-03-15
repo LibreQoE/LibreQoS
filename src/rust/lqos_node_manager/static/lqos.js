@@ -369,3 +369,13 @@ class RttHistogram {
         Plotly.newPlot(graph, gData, { margin: { l: 0, r: 0, b: 35, t: 0 }, xaxis: { title: 'TCP Round-Trip Time (ms)' } }, { responsive: true });
     }
 }
+
+function ecn(n) {
+    switch (n) {
+        case 0: return "-";
+        case 1: return "L4S";
+        case 2: return "ECT0";
+        case 3: return "CE";
+        default: return "???";
+    }
+}

@@ -129,8 +129,18 @@ pub struct PacketHeader {
   pub dst_port: u16,
   /// Ip Protocol (see Linux kernel docs)
   pub ip_protocol: u8,
-  /// Tos to decode
-  pub tos: u8,
+  /// ECN Flag
+  pub ecn: u8,
+  /// DHSCP code
+  pub dscp: u8,
   /// Packet Size
   pub size: u32,
+  /// TCP Flag Bitset
+  pub tcp_flags: u8,
+  /// TCP Window Size
+  pub tcp_window: u16,
+  /// TCP TSVal
+  pub tcp_tsval: u32,
+  /// TCP ECR val
+  pub tcp_tsecr: u32,
 }

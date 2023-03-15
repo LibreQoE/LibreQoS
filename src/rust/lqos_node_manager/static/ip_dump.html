@@ -89,6 +89,32 @@
             }
         }
 
+        /*
+Snippet for tcp_flags decoding
+if (hdr->fin) flags |= 1;
+if (hdr->syn) flags |= 2;
+if (hdr->rst) flags |= 4;
+if (hdr->psh) flags |= 8;
+if (hdr->ack) flags |= 16;
+if (hdr->urg) flags |= 32;
+if (hdr->ece) flags |= 64;
+if (hdr->cwr) flags |= 128;
+ */
+
+        function tcp_flags(n) {
+            let result = "";
+            if (n & 1) result += "FIN-";
+            if (n & 2) result += "SYN-";
+            if (n & 4) result += "RST-";
+            if (n & 8) result += "PSH-";
+            if (n & 16) result += "ACK-";
+            if (n & 32) result += "URG-";
+            if (n & 64) result += "ECE-";
+            if (n & 128) result += "CWR-";
+
+            return result;
+        }
+
         function zoomIn() {
             PAGE_SIZE /= 2;
             current_page /= 2;
@@ -125,7 +151,7 @@
                 console.log("OOps");
             }
             let html = "<table class='table table-striped'>";
-            html += "<thead><th>Time (nanos)</th><th>Proto</th><th>Flow</th><th>Bytes</th><th>TOS</th></thead>";
+            html += "<thead><th>Time (nanos)</th><th>Proto</th><th>TCP Flags</th><th>Sequence</th><th>Window</th><th>Flow</th><th>Bytes</th><th>ECN</th><th>DHSCP</th></thead>";
             let x_axis = [];
             let y1_axis = [];
             let y2_axis = [];
@@ -133,13 +159,23 @@
                 html += "<tr>";
                 html += "<td>" + packets[i].timestamp + "</td>";
                 html += "<td>" + proto(packets[i].ip_protocol) + "</td>";
+
+                if (packets[i].ip_protocol == 6) {
+                    html += "<td>" + tcp_flags(packets[i].tcp_flags) + "</td>";
+                    html += "<td>" + packets[i].tcp_tsval + "/" + packets[i].tcp_tsecr + "</td>";
+                    html += "<td>" + packets[i].tcp_window + "</td>";
+                } else {
+                    html += "<td></td><td></td><td></td>";
+                }
+
                 if (packets[i].ip_protocol != 1) {
                     html += "<td>" + packets[i].src + ":" + packets[i].src_port + " -> " + packets[i].dst + ":" + packets[i].dst_port + "</td>";
                 } else {
                     html += "<td>" + packets[i].src + " -> " + packets[i].dst + "</td>";
                 }
                 html += "<td>" + packets[i].size + "</td>";
-                html += "<td>" + packets[i].tos + "</td>";
+                html += "<td>" + ecn(packets[i].ecn) + "</td>";
+                html += "<td>0x" + packets[i].dscp.toString(16) + "</td>";
                 html += "</tr>";
                 x_axis.push(packets[i].timestamp);
                 if (packets[i].src == target) {
@@ -177,7 +213,7 @@
 
             target = params.ip;
             $.get("/api/packet_dump/" + params.ip, (data) => {
-                data.sort((a,b) => a<b);
+                data.sort((a,b) => a.timestamp - b.timestamp);
                 let min_ts = null;
                 for (let i=0; i<data.length; ++i) {
                     if (min_ts == null || min_ts > data[i].timestamp) {

@@ -15,7 +15,23 @@ pub struct HeimdallEvent {
   pub ip_protocol: u8,
   pub tos: u8,
   pub size: u32,
+  pub tcp_flags: u8,
+  pub tcp_window: u16,
+  pub tcp_tsval: u32,
+  pub tcp_tsecr: u32,
 }
+
+/*
+Snippet for tcp_flags decoding
+if (hdr->fin) flags |= 1;
+if (hdr->syn) flags |= 2;
+if (hdr->rst) flags |= 4;
+if (hdr->psh) flags |= 8;
+if (hdr->ack) flags |= 16;
+if (hdr->urg) flags |= 32;
+if (hdr->ece) flags |= 64;
+if (hdr->cwr) flags |= 128;
+ */
 
 /// Callback for the Heimdall Perf map system. Called whenever Heimdall has
 /// events for the system to read.

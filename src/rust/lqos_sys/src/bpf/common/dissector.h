@@ -9,6 +9,7 @@
 #include "../common/debug.h"
 #include "../common/ip_hash.h"
 #include "../common/bifrost.h"
+#include "../common/tcp_opts.h"
 #include <linux/in.h>
 #include <linux/in6.h>
 #include <linux/tcp.h>
@@ -47,6 +48,10 @@ struct dissector_t
     __u16 src_port;
     __u16 dst_port;
     __u8 tos;
+    __u8 tcp_flags;
+    __u16 window;
+    __u32 tsval;
+    __u32 tsecr;
 };
 
 // Representation of the VLAN header type.
@@ -325,6 +330,20 @@ static __always_inline void snoop(struct dissector_t *dissector)
             }
             dissector->src_port = hdr->source;
             dissector->dst_port = hdr->dest;
+            __u8 flags = 0;
+            if (hdr->fin) flags |= 1;
+            if (hdr->syn) flags |= 2;
+            if (hdr->rst) flags |= 4;
+            if (hdr->psh) flags |= 8;
+            if (hdr->ack) flags |= 16;
+            if (hdr->urg) flags |= 32;
+            if (hdr->ece) flags |= 64;
+            if (hdr->cwr) flags |= 128;
+
+            dissector->tcp_flags = flags;
+            dissector->window = hdr->window;
+
+            parse_tcp_ts(hdr, dissector->end, &dissector->tsval, &dissector->tsecr);
         }
     }
     break;
