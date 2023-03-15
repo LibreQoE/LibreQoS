@@ -7,6 +7,8 @@
 #include "debug.h"
 #include "dissector.h"
 
+#define PACKET_OCTET_SIZE 128
+
 // Array containing one element, the Heimdall configuration
 struct heimdall_config_t
 {
@@ -54,7 +56,7 @@ struct heimdall_event {
     __u16 tcp_window;
     __u32 tsval;
     __u32 tsecr;
-    __u8 dump[64];
+    __u8 dump[PACKET_OCTET_SIZE];
 };
 
 static __always_inline __u8 get_heimdall_mode()
@@ -100,8 +102,9 @@ static __always_inline void update_heimdall(struct dissector_t *dissector, __u32
     event.tcp_window = dissector->window;
     event.tsval = dissector->tsval;
     event.tsecr = dissector->tsecr;
-    if (size > 64 && ((char *)dissector->start + 64 < dissector->end)) {
-        __builtin_memcpy(&event.dump, dissector->start, 64);
+    if (size > PACKET_OCTET_SIZE) size = PACKET_OCTET_SIZE;
+    if ((char *)dissector->start + size < dissector->end) {
+        bpf_probe_read_kernel(&event.dump, size, dissector->start);
     }
     long err = bpf_ringbuf_output(&heimdall_events, &event, sizeof(event), 0);
     if (err != 0) {

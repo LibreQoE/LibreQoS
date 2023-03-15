@@ -1,8 +1,10 @@
 use std::{ffi::c_void, slice};
 use lqos_utils::XdpIpAddress;
 use zerocopy::FromBytes;
-
 use crate::{flows::record_flow, timeline::store_on_timeline};
+
+/// This constant MUST exactly match PACKET_OCTET_STATE in heimdall.h
+pub(crate) const PACKET_OCTET_SIZE: usize = 128;
 
 #[derive(FromBytes, Debug, Clone, PartialEq, Eq, Hash)]
 #[repr(C)]
@@ -19,7 +21,7 @@ pub struct HeimdallEvent {
   pub tcp_window: u16,
   pub tcp_tsval: u32,
   pub tcp_tsecr: u32,
-  pub packet_data: [u8; 64],
+  pub packet_data: [u8; PACKET_OCTET_SIZE],
 }
 
 /*

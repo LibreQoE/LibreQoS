@@ -4,7 +4,7 @@ use lqos_bus::{PacketHeader, tos_parser};
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 use once_cell::sync::Lazy;
 use zerocopy::AsBytes;
-use crate::{perf_interface::HeimdallEvent, pcap::{PcapFileHeader, PcapPacketHeader}};
+use crate::{perf_interface::{HeimdallEvent, PACKET_OCTET_SIZE}, pcap::{PcapFileHeader, PcapPacketHeader}};
 
 impl HeimdallEvent {
     fn as_header(&self) -> PacketHeader {
@@ -69,7 +69,11 @@ pub fn ten_second_pcap() -> Vec<u8> {
   packets.iter().for_each(|p| {
     let packet_header = PcapPacketHeader::from_heimdall(p);
     bytes.extend(packet_header.as_bytes());
-    bytes.extend(p.packet_data);
+    if p.size < PACKET_OCTET_SIZE as u32 {
+      bytes.extend(&p.packet_data[0 .. p.size as usize]);
+    } else {
+      bytes.extend(p.packet_data);
+    }
   });
   bytes
 }

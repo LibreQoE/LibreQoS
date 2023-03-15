@@ -1,6 +1,6 @@
 use std::time::Duration;
 use zerocopy::AsBytes;
-use crate::perf_interface::HeimdallEvent;
+use crate::perf_interface::{HeimdallEvent, PACKET_OCTET_SIZE};
 
 #[derive(AsBytes)]
 #[repr(C)]
@@ -22,7 +22,7 @@ impl PcapFileHeader {
             version_minor: 4,
             thiszone: 0,
             sigfigs: 0,
-            snaplen: 64,
+            snaplen: PACKET_OCTET_SIZE as u32,
             link_type: 1,
         }
     }
@@ -43,7 +43,7 @@ impl PcapPacketHeader {
         Self {
             ts_sec: timestamp_nanos.as_secs() as u32,
             ts_usec: timestamp_nanos.subsec_micros(),
-            inc_len: u32::min(64, event.size),
+            inc_len: u32::min(PACKET_OCTET_SIZE as u32, event.size),
             orig_len: event.size
         }
     }
