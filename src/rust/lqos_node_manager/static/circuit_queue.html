@@ -576,7 +576,7 @@
                 ip_btns += "<a href='/ip_dump?ip=" + ips[i] + "' class='btn btn-info'>Packet Dump: " + ips[i] + "</a>"
             }
             ip_btns += "<br />";
-            if (!madeButtons) {
+            if (!madeButtons && ips.length > 0) {
                 madeButtons = true;
                 $("#packetButtons").html(ip_btns);
             }
