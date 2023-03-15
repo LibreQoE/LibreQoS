@@ -79,6 +79,7 @@
         var PAGE_SIZE = 1000;
         var target = "";
         var current_page = 0;
+        var capacity = [];
 
         function proto(n) {
             switch (n) {
@@ -156,11 +157,11 @@
             // Make the graph
             let graph = document.getElementById("graph");
             let data = [
-                {x: x_axis, y:y1_axis, name: 'Download', type: 'scatter', mode: 'markers'},
-                {x: x_axis, y:y2_axis, name: 'Upload', type: 'scatter', mode: 'markers'}
+                {x: x_axis, y:y1_axis, name: 'Download', type: 'scatter', mode: 'markers', error_x: { type: 'percent', value: capacity[0], symetric: false, valueminus: 0 }},
+                {x: x_axis, y:y2_axis, name: 'Upload', type: 'scatter', mode: 'markers', error_x: { type: 'percent', value: capacity[1], symetric: false, valueminus: 0 }},                
             ];
             Plotly.newPlot(graph, data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true, title: 'Bytes' }, xaxis: {automargin: true, title: "Nanoseconds"} }, { responsive: true });
-        }
+        }        
 
         function start() {
             colorReloadButton();
@@ -168,6 +169,11 @@
             const params = new Proxy(new URLSearchParams(window.location.search), {
                 get: (searchParams, prop) => searchParams.get(prop),
             });
+
+            capacity = [ params.dn, params.up ]; // Bits per second
+            capacity = [ capacity[0] / 8, capacity[1] / 8 ]; // Bytes per second
+            capacity = [ capacity[0] / 1e9, capacity[1] / 1e9 ]; // Bytes per nanosecond
+
 
             target = params.ip;
             $.get("/api/packet_dump/" + params.ip, (data) => {
