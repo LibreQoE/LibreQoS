@@ -73,16 +73,18 @@ static __always_inline __u8 get_heimdall_mode()
     }
 }
 
-static __always_inline bool is_heimdall_watching(struct dissector_t *dissector)
+static __always_inline bool is_heimdall_watching(struct dissector_t *dissector, int effective_direction)
 {
-    __u32 *watching = (__u32 *)bpf_map_lookup_elem(&heimdall_watching, &dissector->src_ip);
-    if (watching) {
-        return true;
-    }
-    
-    watching = (__u32 *)bpf_map_lookup_elem(&heimdall_watching, &dissector->dst_ip);
-    if (watching) {
-        return true;
+    if (effective_direction == 2) {
+        __u32 *watching = (__u32 *)bpf_map_lookup_elem(&heimdall_watching, &dissector->src_ip);
+        if (watching) {
+            return true;
+        }
+    } else {
+        __u32 *watching = (__u32 *)bpf_map_lookup_elem(&heimdall_watching, &dissector->dst_ip);
+        if (watching) {
+            return true;
+        }
     }
     return false;
 }
@@ -100,14 +102,16 @@ static __always_inline void update_heimdall(struct dissector_t *dissector, __u32
     event.size = size;
     event.tcp_flags = dissector->tcp_flags;
     event.tcp_window = dissector->window;
-    event.tsval = dissector->tsval;
-    event.tsecr = dissector->tsecr;
+    //event.tsval = dissector->tsval;
+    //event.tsecr = dissector->tsecr;
     if (size > PACKET_OCTET_SIZE) size = PACKET_OCTET_SIZE;
-    if ((char *)dissector->start + size < dissector->end) {
-        bpf_probe_read_kernel(&event.dump, PACKET_OCTET_SIZE, dissector->start);
-    }
-    long err = bpf_ringbuf_output(&heimdall_events, &event, sizeof(event), 0);
-    if (err != 0) {
-        bpf_debug("Failed to send perf event %d", err);
-    }
+    //if ((char *)dissector->start + size < dissector->end) {
+    bpf_probe_read_kernel(&event.dump, size, dissector->start);
+    //}
+    bpf_ringbuf_output(&heimdall_events, &event, sizeof(event), 0);
+    // Commented out because we don't really care - some will be missed
+    // during very heavy load.
+    //if (err != 0) {
+    //    bpf_debug("Failed to send perf event %d", err);
+    //}
 }

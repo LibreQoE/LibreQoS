@@ -66,8 +66,6 @@ int xdp_prog(struct xdp_md *ctx)
         return XDP_PASS;
     }
 
-    __u8 heimdall_mode = get_heimdall_mode();
-
     // Do we need to perform a VLAN redirect?
     bool vlan_redirect = false;
     { // Note: scope for removing temporaries from the stack
@@ -77,7 +75,7 @@ int xdp_prog(struct xdp_md *ctx)
             &bifrost_interface_map, 
             &my_interface
         );
-        if (redirect_info && redirect_info->scan_vlans) {
+        if (redirect_info) {
             // If we have a redirect, mark it - the dissector will
             // apply it
             vlan_redirect = true;
@@ -137,7 +135,8 @@ int xdp_prog(struct xdp_md *ctx)
     // Send on its way
     if (tc_handle != 0) {
         // Send data to Heimdall
-        if (heimdall_mode == 2 || (heimdall_mode==1 && is_heimdall_watching(&dissector))) {
+        __u8 heimdall_mode = get_heimdall_mode();
+        if (heimdall_mode == 2 || (heimdall_mode==1 && is_heimdall_watching(&dissector, effective_direction))) {
 #ifdef VERBOSE
             bpf_debug("(XDP) Storing Heimdall Data");
 #endif            
