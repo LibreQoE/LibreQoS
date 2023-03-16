@@ -136,11 +136,14 @@ pub enum BusRequest {
   /// Tell me flow stats for a given IP address
   GetFlowStats(String),
 
+  /// Tell Heimdall to hyper-focus on an IP address for a bit
+  GatherPacketData(String),
+
   /// Give me a dump of the last 10 seconds of packet headers
-  GetPacketHeaderDump(String),
+  GetPacketHeaderDump(usize),
 
   /// Give me a libpcap format packet dump (shortened) of the last 10 seconds
-  GetPcapDump,
+  GetPcapDump(usize),
 
   /// If running on Equinix (the `equinix_test` feature is enabled),
   /// display a "run bandwidht test" link.

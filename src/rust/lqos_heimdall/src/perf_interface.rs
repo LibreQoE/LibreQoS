@@ -1,7 +1,7 @@
 use std::{ffi::c_void, slice};
 use lqos_utils::XdpIpAddress;
 use zerocopy::FromBytes;
-use crate::{flows::record_flow, timeline::store_on_timeline};
+use crate::timeline::store_on_timeline;
 
 /// This constant MUST exactly match PACKET_OCTET_STATE in heimdall.h
 pub(crate) const PACKET_OCTET_SIZE: usize = 128;
@@ -60,7 +60,6 @@ pub unsafe extern "C" fn heimdall_handle_events(
   let data_slice : &[u8] = slice::from_raw_parts(data_u8, EVENT_SIZE);
 
   if let Some(incoming) = HeimdallEvent::read_from(data_slice) {
-    record_flow(&incoming);
     store_on_timeline(incoming);
   } else {
     println!("Failed to decode");

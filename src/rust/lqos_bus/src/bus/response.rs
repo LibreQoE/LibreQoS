@@ -90,9 +90,12 @@ pub enum BusResponse {
   /// Flow Data
   FlowData(Vec<(FlowTransport, Option<FlowTransport>)>),
 
+  /// The index of the new packet collection session
+  PacketCollectionSession(usize),
+
   /// Packet header dump
-  PacketDump(Vec<PacketHeader>),
+  PacketDump(Option<Vec<PacketHeader>>),
 
   /// Pcap format dump
-  PcapDump(Vec<u8>),
+  PcapDump(Option<String>),
 }

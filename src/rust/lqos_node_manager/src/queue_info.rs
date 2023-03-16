@@ -2,11 +2,11 @@ use crate::auth_guard::AuthGuard;
 use crate::cache_control::NoCache;
 use crate::tracker::SHAPED_DEVICES;
 use lqos_bus::{bus_request, BusRequest, BusResponse, FlowTransport, PacketHeader};
+use rocket::fs::NamedFile;
 use rocket::http::Status;
 use rocket::response::content::RawJson;
 use rocket::serde::json::Json;
 use rocket::serde::Serialize;
-use rocket_download_response::DownloadResponse;
 use std::net::IpAddr;
 
 #[derive(Serialize, Clone)]
@@ -114,26 +114,44 @@ pub async fn flow_stats(ip_list: String, _auth: AuthGuard) -> NoCache<Json<Vec<(
   NoCache::new(Json(result))
 }
 
-#[get("/api/packet_dump/<ip>")]
-pub async fn packet_dump(ip: String, _auth: AuthGuard) -> NoCache<Json<Vec<PacketHeader>>> {
+#[derive(Serialize, Clone)]
+#[serde(crate = "rocket::serde")]
+pub enum RequestAnalysisResult {
+  Fail,
+  Ok(usize)
+}
+
+#[get("/api/request_analysis/<ip>")]
+pub async fn request_analysis(ip: String) -> NoCache<Json<RequestAnalysisResult>> {
+  for r in bus_request(vec![BusRequest::GatherPacketData(ip)]).await.unwrap() {
+    if let BusResponse::PacketCollectionSession(id) = r {
+      return NoCache::new(Json(RequestAnalysisResult::Ok(id)));
+    }
+  }
+
+  NoCache::new(Json(RequestAnalysisResult::Fail))
+}
+
+#[get("/api/packet_dump/<id>")]
+pub async fn packet_dump(id: usize, _auth: AuthGuard) -> NoCache<Json<Vec<PacketHeader>>> {
   let mut result = Vec::new();
-  for r in bus_request(vec![BusRequest::GetPacketHeaderDump(ip)]).await.unwrap() {
-    if let BusResponse::PacketDump(packets) = r {
+  for r in bus_request(vec![BusRequest::GetPacketHeaderDump(id)]).await.unwrap() {
+    if let BusResponse::PacketDump(Some(packets)) = r {
       result.extend(packets);
     }
   }
   NoCache::new(Json(result))
 }
 
-#[get("/api/pcap")]
-pub async fn pcap() -> Result<DownloadResponse, Status> {
-  for r in bus_request(vec![BusRequest::GetPcapDump]).await.unwrap() {
-    if let BusResponse::PcapDump(bytes) = r {
-      return Ok(DownloadResponse::from_vec(bytes, Some("capture.pcap"), None));
+#[get("/api/pcap/<id>/capture.pcap")]
+pub async fn pcap(id: usize) -> Result<NoCache<NamedFile>, Status> {
+  for r in bus_request(vec![BusRequest::GetPcapDump(id)]).await.unwrap() {
+    if let BusResponse::PcapDump(Some(filename)) = r {
+      return Ok(NoCache::new(NamedFile::open(filename).await.unwrap()));
     }
   }
 
-  Err(Status::NoContent)
+  Err(Status::NotFound)
 }
 
 #[cfg(feature = "equinix_tests")]

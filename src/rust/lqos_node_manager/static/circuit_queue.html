@@ -194,6 +194,9 @@
                         <div class="card bg-light">
                             <div class="card-body">
                                 <h5 class="card-title"><i class="fa fa-bar-chart"></i> Flows (Last 30 Seconds)</h5>
+                                <p class="alert alert-warning" role="alert">
+                                    <i class="fa fa-warning"></i> Gathering packet data can cause high CPU load during the 10 second capture window.
+                                </p>
                                 <div id="packetButtons"></div>
                                 <div id="flowList"></div>
                             </div>
@@ -557,6 +560,37 @@
         }
 
         var madeButtons = false;
+        var analysisId = null;
+        var analysisTimer = null;
+        var analysisBtn = null;
+
+        function analyze(id) {
+            if (analysisId != null) {
+                alert("Heimdall says: 'STOP CLICKING ME'");
+                return;
+            }
+            let ip = ips[id];
+            $.get("/api/request_analysis/" + encodeURI(ip), (data) => {
+                if (data == "Fail") {
+                    alert("Heimdall is busy serving other customers. Your desire is important to him, please try again later.")
+                    return;
+                }
+                analysisId = data.Ok;
+                analysisBtn = "#dumpBtn_" + id;
+                analysisTimer = 10;
+                analyzeTick();
+            });
+        }
+
+        function analyzeTick() {
+            $(analysisBtn).text("Gathering Data for " + analysisTimer + " more seconds");
+            analysisTimer--;
+            if (analysisTimer > -1) {
+                setTimeout(analyzeTick, 1000);
+            } else {
+                window.location.href = "/ip_dump?id=" + analysisId;
+            }
+        }
 
         function getFlows() {
             let ip_list = "";
@@ -564,11 +598,10 @@
             for (let i=0; i<ips.length; ++i) {
                 ip_list += ips[i] + ",";
                 if (circuit_info != null) {
-                    ip_btns += "<a href='/ip_dump?ip=" + ips[i] + "&dn=" + circuit_info.capacity[0] + "&up=" + circuit_info.capacity[1] + "' class='btn btn-info'>Packet Dump: " + ips[i] + "</a> "
+                    ip_btns += "<a id='dumpBtn_" + i + "' href='#' onclick='analyze(\"" + i + "\")' class='btn btn-info'><i class='fa fa-search'></i> Analyze: " + ips[i] + "</a> "
                 }
             }
             if (!madeButtons && ips.length > 0 && circuit_info != null) {
-                ip_btns += "<a href='/api/pcap' class='btn btn-warning'>Download PCAP Dump</a>";
                 ip_btns += "<br />";
                 madeButtons = true;
                 $("#packetButtons").html(ip_btns);

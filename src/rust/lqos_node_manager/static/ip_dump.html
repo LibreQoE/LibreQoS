@@ -130,7 +130,8 @@ if (hdr->cwr) flags |= 128;
         }
 
         function paginator(active) {
-            let paginator = "<a href='#' class='btn btn-info' onClick='zoomIn();'>Zoom In</a> ";
+            let paginator = "<a href='/api/pcap/" + target + "/capture.pcap' class='btn btn-warning'>Download PCAP Dump</a> ";
+            paginator += "<a href='#' class='btn btn-info' onClick='zoomIn();'>Zoom In</a> ";
             paginator += "<a href='#' class='btn btn-info' onClick='zoomOut();'>Zoom Out</a> (ℹ️ Or drag an area of the graph) <br />";
 
             paginator += "<strong>Jump to page</strong>: ";
@@ -211,8 +212,8 @@ if (hdr->cwr) flags |= 128;
             capacity = [ capacity[0] / 1e9, capacity[1] / 1e9 ]; // Bytes per nanosecond
 
 
-            target = params.ip;
-            $.get("/api/packet_dump/" + params.ip, (data) => {
+            target = params.id;
+            $.get("/api/packet_dump/" + params.id, (data) => {
                 data.sort((a,b) => a.timestamp - b.timestamp);
                 let min_ts = null;
                 for (let i=0; i<data.length; ++i) {

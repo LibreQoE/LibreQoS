@@ -71,6 +71,7 @@ fn rocket() -> _ {
         queue_info::flow_stats,
         queue_info::packet_dump,
         queue_info::pcap,
+        queue_info::request_analysis,
         config_control::get_nic_list,
         config_control::get_current_python_config,
         config_control::get_current_lqosd_config,

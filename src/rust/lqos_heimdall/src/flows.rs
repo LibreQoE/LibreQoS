@@ -1,9 +1,42 @@
-use crate::{perf_interface::HeimdallEvent, timeline::expire_timeline, FLOW_EXPIRE_SECS};
+use crate::{timeline::expire_timeline, FLOW_EXPIRE_SECS};
 use dashmap::DashMap;
 use lqos_bus::{tos_parser, BusResponse, FlowTransport};
+use lqos_sys::bpf_per_cpu_map::BpfPerCpuMap;
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 use once_cell::sync::Lazy;
 use std::{collections::HashSet, time::Duration};
+
+/// Representation of the eBPF `heimdall_key` type.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+#[repr(C)]
+pub struct HeimdallKey {
+  /// Mapped `XdpIpAddress` source for the flow.
+  pub src_ip: XdpIpAddress,
+  /// Mapped `XdpIpAddress` destination for the flow
+  pub dst_ip: XdpIpAddress,
+  /// IP protocol (see the Linux kernel!)
+  pub ip_protocol: u8,
+  /// Source port number, or ICMP type.
+  pub src_port: u16,
+  /// Destination port number.
+  pub dst_port: u16,
+}
+
+/// Mapped representation of the eBPF `heimdall_data` type.
+#[derive(Debug, Clone, Default)]
+#[repr(C)]
+pub struct HeimdallData {
+  /// Last seen, in nanoseconds (since boot time).
+  pub last_seen: u64,
+  /// Number of bytes since the flow started being tracked
+  pub bytes: u64,
+  /// Number of packets since the flow started being tracked
+  pub packets: u64,
+  /// IP header TOS value
+  pub tos: u8,
+  /// Reserved to pad the structure
+  pub reserved: [u8; 3],
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct FlowKey {
@@ -14,7 +47,7 @@ struct FlowKey {
   dst_port: u16,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 struct FlowData {
   last_seen: u64,
   bytes: u64,
@@ -22,11 +55,11 @@ struct FlowData {
   tos: u8,
 }
 
-impl From<&HeimdallEvent> for FlowKey {
-  fn from(value: &HeimdallEvent) -> Self {
+impl From<&HeimdallKey> for FlowKey {
+  fn from(value: &HeimdallKey) -> Self {
     Self {
-      src: value.src,
-      dst: value.dst,
+      src: value.src_ip,
+      dst: value.dst_ip,
       proto: value.ip_protocol,
       src_port: value.src_port,
       dst_port: value.dst_port,
@@ -36,7 +69,7 @@ impl From<&HeimdallEvent> for FlowKey {
 
 static FLOW_DATA: Lazy<DashMap<FlowKey, FlowData>> = Lazy::new(DashMap::new);
 
-pub(crate) fn record_flow(event: &HeimdallEvent) {
+/*pub(crate) fn record_flow(event: &HeimdallEvent) {
   let key: FlowKey = event.into();
   if let Some(mut data) = FLOW_DATA.get_mut(&key) {
     data.last_seen = event.timestamp;
@@ -54,6 +87,50 @@ pub(crate) fn record_flow(event: &HeimdallEvent) {
       },
     );
   }
+}*/
+
+
+/// Iterates through all throughput entries, and sends them in turn to `callback`.
+/// This elides the need to clone or copy data.
+fn heimdall_for_each(
+  callback: &mut dyn FnMut(&HeimdallKey, &[HeimdallData]),
+) {
+  if let Ok(heimdall) = BpfPerCpuMap::<HeimdallKey, HeimdallData>::from_path(
+    "/sys/fs/bpf/heimdall",
+  ) {
+    heimdall.for_each(callback);
+  }
+}
+
+
+fn combine_flows(values: &[HeimdallData]) -> FlowData {
+  let mut result = FlowData::default();
+  let mut ls = 0;
+  values.iter().for_each(|v| {
+    result.bytes += v.bytes;
+    result.packets += v.packets;
+    result.tos += v.tos;
+    if v.last_seen > ls {
+      ls = v.last_seen;
+    }
+  });
+  result.last_seen = ls;
+  result
+}
+
+pub fn read_flows() {
+  heimdall_for_each(&mut |key, value| {
+    let flow_key = key.into();
+    let combined = combine_flows(value);
+    if let Some(mut flow) = FLOW_DATA.get_mut(&flow_key) {
+      flow.last_seen = combined.last_seen;
+      flow.bytes = combined.bytes;
+      flow.packets = combined.packets;
+      flow.tos = combined.tos;
+    } else {
+      FLOW_DATA.insert(flow_key, combined);
+    }
+  });
 }
 
 pub fn expire_heimdall_flows() {

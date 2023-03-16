@@ -11,7 +11,10 @@ mod bifrost_maps;
 /// built-in, compiled eBPF programs. This is very-low level and should
 /// be handled with caution.
 pub mod bpf_map;
-mod bpf_per_cpu_map;
+/// Provides direct access to LibBPF functionality, as exposed by the
+/// built-in, compiled eBPF programs. This is very-low level and should
+/// be handled with caution.
+pub mod bpf_per_cpu_map;
 mod cpu_map;
 mod ip_mapping;
 mod kernel_wrapper;

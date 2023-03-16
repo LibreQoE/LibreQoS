@@ -24,7 +24,6 @@ use lqos_queue_tracker::{
   spawn_queue_structure_monitor,
 };
 use lqos_sys::LibreQoSKernels;
-use lqos_utils::XdpIpAddress;
 use signal_hook::{
   consts::{SIGHUP, SIGINT, SIGTERM},
   iterator::Signals,
@@ -197,17 +196,23 @@ fn handle_bus_requests(
         }
       }
       BusRequest::GetFlowStats(ip) => get_flow_stats(ip),
-      BusRequest::GetPacketHeaderDump(ip) => {
+      BusRequest::GetPacketHeaderDump(id) => {
+        BusResponse::PacketDump(ten_second_packet_dump(*id))
+      }
+      BusRequest::GetPcapDump(id) => {
+        BusResponse::PcapDump(lqos_heimdall::ten_second_pcap(*id))
+      }
+      BusRequest::GatherPacketData(ip) => {
         let ip = ip.parse::<IpAddr>();
         if let Ok(ip) = ip {
-          let ip = XdpIpAddress::from_ip(ip);
-          BusResponse::PacketDump(ten_second_packet_dump(ip))
+          if let Some(id) = lqos_heimdall::hyperfocus_on_target(ip.into()) {
+            BusResponse::PacketCollectionSession(id)
+          } else {
+            BusResponse::Fail("Busy".to_string())
+          }
         } else {
           BusResponse::Fail("Invalid IP".to_string())
         }
-      }
-      BusRequest::GetPcapDump => {
-        BusResponse::PcapDump(lqos_heimdall::ten_second_pcap())
       }
     });
   }

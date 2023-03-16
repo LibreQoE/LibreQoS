@@ -42,12 +42,6 @@ impl HeimdallWatching {
   }
 }
 
-impl Drop for HeimdallWatching {
-  fn drop(&mut self) {
-      self.stop_watching();
-  }
-}
-
 static HEIMDALL_WATCH_LIST: Lazy<DashMap<XdpIpAddress, HeimdallWatching>> =
   Lazy::new(DashMap::new);
 
@@ -57,6 +51,9 @@ pub fn heimdall_expire() {
   if let Ok(now) = time_since_boot() {
     let now = Duration::from(now).as_nanos();
     HEIMDALL_WATCH_LIST.retain(|_k, v| {
+      if v.expiration < now {
+        v.stop_watching();
+      }
       v.expiration > now
     });
   }
