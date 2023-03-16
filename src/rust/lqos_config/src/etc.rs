@@ -21,6 +21,9 @@ pub struct EtcLqos {
   /// If present, defines the values for various `sysctl` and `ethtool`
   /// tweaks.
   pub tuning: Option<Tunables>,
+
+  /// If present, defined anonymous usage stat sending
+  pub usage_stats: Option<UsageStats>,
 }
 
 /// Represents a set of `sysctl` and `ethtool` tweaks that may be
@@ -102,6 +105,16 @@ pub struct BridgeVlan {
 
   /// The destination VLAN tag number if matched.
   pub redirect_to: u32,
+}
+
+/// Definitions for anonymous usage submission
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct UsageStats {
+  /// Are we allowed to send stats at all?
+  pub send_anonymous: bool,
+
+  /// Where do we send them?
+  pub anonymous_server: String,
 }
 
 impl EtcLqos {
