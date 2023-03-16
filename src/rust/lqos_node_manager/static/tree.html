@@ -146,7 +146,7 @@
 
                     for (let i = 0; i < data.length; ++i) {
                         let nodeDL = scaleNumber(data[i][Circuit.limit][0] * 1000000);
-                        let nodeUL = scaleNumber(data[i][Circuit.limit[1]] * 1000000);
+                        let nodeUL = scaleNumber(data[i][Circuit.limit][1] * 1000000);
                         if (nodeDL == "0") nodeDL = "Unlimited";
                         if (nodeUL == "0") nodeUL = "Unlimited";
                         tbl += "<tr>";
