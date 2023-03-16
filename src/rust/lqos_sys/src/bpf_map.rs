@@ -15,7 +15,7 @@ use std::{
 ///
 /// `K` is the *key* type, indexing the map.
 /// `V` is the *value* type, and must exactly match the underlying C data type.
-pub(crate) struct BpfMap<K, V> {
+pub struct BpfMap<K, V> {
   fd: i32,
   _key_phantom: PhantomData<K>,
   _val_phantom: PhantomData<V>,
@@ -29,7 +29,7 @@ where
   /// Connect to a BPF map via a filename. Connects the internal
   /// file descriptor, which is held until the structure is
   /// dropped.
-  pub(crate) fn from_path(filename: &str) -> Result<Self> {
+  pub fn from_path(filename: &str) -> Result<Self> {
     let filename_c = CString::new(filename)?;
     let fd = unsafe { bpf_obj_get(filename_c.as_ptr()) };
     if fd < 0 {
@@ -43,7 +43,7 @@ where
   /// to a vector. Each entry contains a `key, value` tuple.
   ///
   /// This has performance issues due to excessive cloning
-  pub(crate) fn dump_vec(&self) -> Vec<(K, V)> {
+ pub fn dump_vec(&self) -> Vec<(K, V)> {
     let mut result = Vec::new();
 
     let mut prev_key: *mut K = null_mut();
@@ -74,7 +74,7 @@ where
 
   /// Iterates the undlering BPF map, and sends references to the
   /// results directly to a callback
-  pub(crate) fn for_each(&self, callback: &mut dyn FnMut(&K, &V)) {
+ pub fn for_each(&self, callback: &mut dyn FnMut(&K, &V)) {
     let mut prev_key: *mut K = null_mut();
     let mut key: K = K::default();
     let key_ptr: *mut K = &mut key;
@@ -112,7 +112,7 @@ where
   ///
   /// Returns Ok if insertion succeeded, a generic error (no details yet)
   /// if it fails.
-  pub(crate) fn insert(&mut self, key: &mut K, value: &mut V) -> Result<()> {
+ pub fn insert(&mut self, key: &mut K, value: &mut V) -> Result<()> {
     let key_ptr: *mut K = key;
     let val_ptr: *mut V = value;
     let err = unsafe {
@@ -142,7 +142,7 @@ where
   ///
   /// Returns Ok if insertion succeeded, a generic error (no details yet)
   /// if it fails.
-  pub(crate) fn insert_or_update(&mut self, key: &mut K, value: &mut V) -> Result<()> {
+ pub fn insert_or_update(&mut self, key: &mut K, value: &mut V) -> Result<()> {
     let key_ptr: *mut K = key;
     let val_ptr: *mut V = value;
     let err = unsafe {
@@ -169,7 +169,7 @@ where
   /// * `key` - the key to delete.
   ///
   /// Return `Ok` if deletion succeeded.
-  pub(crate) fn delete(&mut self, key: &mut K) -> Result<()> {
+ pub fn delete(&mut self, key: &mut K) -> Result<()> {
     let key_ptr: *mut K = key;
     let err = unsafe { bpf_map_delete_elem(self.fd, key_ptr as *mut c_void) };
     if err != 0 {
@@ -189,7 +189,7 @@ where
   /// heavy load, it WILL eventually terminate - but it might
   /// take a very long time. Only use this for cleaning up
   /// sparsely allocated map data.
-  pub(crate) fn clear(&mut self) -> Result<()> {
+ pub fn clear(&mut self) -> Result<()> {
     loop {
       let mut key = K::default();
       let mut prev_key: *mut K = null_mut();
@@ -223,7 +223,15 @@ where
     Ok(())
   }
 
-  pub(crate) fn clear_no_repeat(&mut self) -> Result<()> {
+  /// Delete all entries in the underlying eBPF map.
+  /// Use this sparingly, it locks the underlying map. Under
+  /// heavy load, it WILL eventually terminate - but it might
+  /// take a very long time. Only use this for cleaning up
+  /// sparsely allocated map data.
+  /// 
+  /// This version skips the "did it really clear?" repeat
+  /// found in the main version.
+ pub fn clear_no_repeat(&mut self) -> Result<()> {
     let mut key = K::default();
     let mut prev_key: *mut K = null_mut();
     unsafe {

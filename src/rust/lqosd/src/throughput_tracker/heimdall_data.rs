@@ -1,6 +1,6 @@
 use std::net::IpAddr;
 use lqos_bus::BusResponse;
-use lqos_sys::heimdall_watch_ip;
+use lqos_heimdall::heimdall_watch_ip;
 use lqos_utils::XdpIpAddress;
 
 pub fn get_flow_stats(ip: &str) -> BusResponse {

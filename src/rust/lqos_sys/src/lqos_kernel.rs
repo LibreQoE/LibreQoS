@@ -11,7 +11,6 @@ use libbpf_sys::{
   XDP_FLAGS_UPDATE_IF_NOEXIST,
 };
 use log::{info, warn};
-use lqos_heimdall::perf_interface::heimdall_handle_events;
 use nix::libc::{geteuid, if_nametoindex};
 use std::{ffi::{CString, c_void}, process::Command};
 
@@ -114,6 +113,7 @@ pub enum InterfaceDirection {
 pub fn attach_xdp_and_tc_to_interface(
   interface_name: &str,
   direction: InterfaceDirection,
+  heimdall_event_handler: bpf::ring_buffer_sample_fn,
 ) -> Result<()> {
   check_root()?;
   // Check the interface is valid
@@ -170,7 +170,7 @@ pub fn attach_xdp_and_tc_to_interface(
   let heimdall_perf_buffer = unsafe {
     bpf::ring_buffer__new(
       heimdall_events_fd, 
-      Some(heimdall_handle_events), 
+      heimdall_event_handler, 
       opts as *mut c_void, opts)
   };
   if unsafe { bpf::libbpf_get_error(heimdall_perf_buffer as *mut c_void) != 0 } {

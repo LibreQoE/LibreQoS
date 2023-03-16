@@ -1458,9 +1458,11 @@ dependencies = [
 name = "lqos_heimdall"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "dashmap",
  "log",
  "lqos_bus",
+ "lqos_sys",
  "lqos_utils",
  "once_cell",
  "zerocopy",
@@ -1541,7 +1543,6 @@ dependencies = [
  "log",
  "lqos_bus",
  "lqos_config",
- "lqos_heimdall",
  "lqos_utils",
  "nix",
  "once_cell",

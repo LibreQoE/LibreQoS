@@ -3,7 +3,13 @@ use dashmap::DashMap;
 use lqos_heimdall::{HeimdallMode, HeimdalConfig};
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 use once_cell::sync::Lazy;
-use crate::{bpf_map::BpfMap};
+use crate::bpf_map::BpfMap;
+
+/// How long should Heimdall keep watching a flow after being requested
+/// to do so? Setting this to a long period increases CPU load after the
+/// client has stopped looking. Too short a delay will lead to missed
+/// collections if the client hasn't maintained the 1s request cadence.
+const EXPIRE_WATCHES_SECS: u64 = 5;
 
 /// Change the eBPF Heimdall System mode.
 pub fn set_heimdall_mode(mode: HeimdallMode) -> anyhow::Result<()> {
@@ -21,7 +27,7 @@ pub struct HeimdallWatching {
 impl HeimdallWatching {
   pub fn new(mut ip: XdpIpAddress) -> anyhow::Result<Self> {
     let now = time_since_boot()?;
-    let expire = Duration::from(now) + Duration::from_secs(30);
+    let expire = Duration::from(now) + Duration::from_secs(EXPIRE_WATCHES_SECS);
 
     let mut map = BpfMap::<XdpIpAddress, u32>::from_path("/sys/fs/bpf/heimdall_watching").unwrap();
     let _ = map.insert(&mut ip, &mut 1);

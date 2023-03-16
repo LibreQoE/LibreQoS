@@ -2,14 +2,12 @@ mod throughput_entry;
 mod tracking_data;
 mod heimdall_data;
 pub use heimdall_data::get_flow_stats;
-use lqos_heimdall::expire_heimdall_flows;
 use crate::{
   shaped_devices_tracker::NETWORK_JSON,
   throughput_tracker::tracking_data::ThroughputTracker, stats::TIME_TO_POLL_HOSTS,
 };
 use log::{info, warn};
 use lqos_bus::{BusResponse, IpStats, TcHandle, XdpPpingResult};
-use lqos_sys::heimdall_expire;
 use lqos_utils::{fdtimer::periodic, unix_time::time_since_boot, XdpIpAddress};
 use once_cell::sync::Lazy;
 use std::time::Duration;
@@ -31,7 +29,6 @@ pub fn spawn_throughput_monitor() {
         let net_json = NETWORK_JSON.read().unwrap();
         net_json.zero_throughput_and_rtt();
       } // Scope to end the lock
-      expire_heimdall_flows();
       THROUGHPUT_TRACKER.copy_previous_and_reset_rtt();
       THROUGHPUT_TRACKER.apply_new_throughput_counters();
       THROUGHPUT_TRACKER.apply_rtt_data();
@@ -39,7 +36,6 @@ pub fn spawn_throughput_monitor() {
       THROUGHPUT_TRACKER.next_cycle();
       let duration_ms = start.elapsed().as_micros();
       TIME_TO_POLL_HOSTS.store(duration_ms as u64, std::sync::atomic::Ordering::Relaxed);
-      heimdall_expire();
     });
   });
 }

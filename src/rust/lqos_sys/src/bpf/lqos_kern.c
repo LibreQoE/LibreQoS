@@ -136,11 +136,11 @@ int xdp_prog(struct xdp_md *ctx)
     if (tc_handle != 0) {
         // Send data to Heimdall
         __u8 heimdall_mode = get_heimdall_mode();
-        if (heimdall_mode == 2 || (heimdall_mode==1 && is_heimdall_watching(&dissector, effective_direction))) {
+        if (heimdall_mode > 0 && is_heimdall_watching(&dissector, effective_direction)) {
 #ifdef VERBOSE
             bpf_debug("(XDP) Storing Heimdall Data");
 #endif            
-            update_heimdall(&dissector, ctx->data_end - ctx->data);
+            update_heimdall(&dissector, ctx->data_end - ctx->data, heimdall_mode);
         }
 
         // Handle CPU redirection if there is one specified

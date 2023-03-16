@@ -7,10 +7,12 @@
 //! and statically embeds the result in this crate.
 
 mod bifrost_maps;
-mod bpf_map;
+/// Provides direct access to LibBPF functionality, as exposed by the
+/// built-in, compiled eBPF programs. This is very-low level and should
+/// be handled with caution.
+pub mod bpf_map;
 mod bpf_per_cpu_map;
 mod cpu_map;
-mod heimdall_map;
 mod ip_mapping;
 mod kernel_wrapper;
 mod lqos_kernel;
@@ -18,9 +20,6 @@ mod tcp_rtt;
 mod throughput;
 mod linux;
 
-pub use heimdall_map::{
-  heimdall_expire, heimdall_watch_ip, set_heimdall_mode
-};
 pub use ip_mapping::{
   add_ip_to_tc, clear_ips_from_tc, del_ip_from_tc, list_mapped_ips,
 };

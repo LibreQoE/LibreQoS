@@ -1,4 +1,4 @@
-use crate::{perf_interface::HeimdallEvent, timeline::expire_timeline};
+use crate::{perf_interface::HeimdallEvent, timeline::expire_timeline, FLOW_EXPIRE_SECS};
 use dashmap::DashMap;
 use lqos_bus::{tos_parser, BusResponse, FlowTransport};
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
@@ -59,8 +59,7 @@ pub(crate) fn record_flow(event: &HeimdallEvent) {
 pub fn expire_heimdall_flows() {
   if let Ok(now) = time_since_boot() {
     let since_boot = Duration::from(now);
-    let thirty_secs_ago = since_boot - Duration::from_secs(30);
-    let expire = thirty_secs_ago.as_nanos() as u64;
+    let expire = (since_boot - Duration::from_secs(FLOW_EXPIRE_SECS)).as_nanos() as u64;
     FLOW_DATA.retain(|_k, v| v.last_seen > expire);
     expire_timeline();
   }

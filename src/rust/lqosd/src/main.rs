@@ -18,12 +18,12 @@ use anyhow::Result;
 use log::{info, warn};
 use lqos_bus::{BusRequest, BusResponse, UnixSocketServer};
 use lqos_config::LibreQoSConfig;
-use lqos_heimdall::{ten_second_packet_dump, HeimdallMode};
+use lqos_heimdall::{ten_second_packet_dump, perf_interface::heimdall_handle_events, start_heimdall};
 use lqos_queue_tracker::{
   add_watched_queue, get_raw_circuit_data, spawn_queue_monitor,
   spawn_queue_structure_monitor,
 };
-use lqos_sys::{set_heimdall_mode, LibreQoSKernels};
+use lqos_sys::LibreQoSKernels;
 use lqos_utils::XdpIpAddress;
 use signal_hook::{
   consts::{SIGHUP, SIGINT, SIGTERM},
@@ -66,14 +66,15 @@ async fn main() -> Result<()> {
       &config.internet_interface,
       config.stick_vlans.1,
       config.stick_vlans.0,
+      Some(heimdall_handle_events),
     )?
   } else {
-    LibreQoSKernels::new(&config.internet_interface, &config.isp_interface)?
+    LibreQoSKernels::new(&config.internet_interface, &config.isp_interface, Some(heimdall_handle_events))?
   };
-  set_heimdall_mode(HeimdallMode::WatchOnly)?; // TODO: Set by config
 
   // Spawn tracking sub-systems
   join!(
+    start_heimdall(),
     spawn_queue_structure_monitor(),
     shaped_devices_tracker::shaped_devices_watcher(),
     shaped_devices_tracker::network_json_watcher(),

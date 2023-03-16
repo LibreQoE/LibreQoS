@@ -65,6 +65,9 @@ static __always_inline __u8 get_heimdall_mode()
     struct heimdall_config_t *cfg = (struct heimdall_config_t *)bpf_map_lookup_elem(&heimdall_config, &index);
     if (cfg)
     {
+        #ifdef VERBOSE
+        bpf_debug("Heimdall Mode: %d", cfg->monitor_mode);
+        #endif
         return cfg->monitor_mode;
     }
     else
@@ -76,12 +79,12 @@ static __always_inline __u8 get_heimdall_mode()
 static __always_inline bool is_heimdall_watching(struct dissector_t *dissector, int effective_direction)
 {
     if (effective_direction == 2) {
-        __u32 *watching = (__u32 *)bpf_map_lookup_elem(&heimdall_watching, &dissector->src_ip);
+        __u32 * watching = (__u32 *)bpf_map_lookup_elem(&heimdall_watching, &dissector->src_ip);
         if (watching) {
             return true;
         }
     } else {
-        __u32 *watching = (__u32 *)bpf_map_lookup_elem(&heimdall_watching, &dissector->dst_ip);
+        __u32 * watching = (__u32 *)bpf_map_lookup_elem(&heimdall_watching, &dissector->dst_ip);
         if (watching) {
             return true;
         }
@@ -89,7 +92,7 @@ static __always_inline bool is_heimdall_watching(struct dissector_t *dissector, 
     return false;
 }
 
-static __always_inline void update_heimdall(struct dissector_t *dissector, __u32 size)
+static __always_inline void update_heimdall(struct dissector_t *dissector, __u32 size, __u8 mode)
 {
     struct heimdall_event event = {0};
     event.timetamp = bpf_ktime_get_boot_ns();
@@ -102,13 +105,12 @@ static __always_inline void update_heimdall(struct dissector_t *dissector, __u32
     event.size = size;
     event.tcp_flags = dissector->tcp_flags;
     event.tcp_window = dissector->window;
-    //event.tsval = dissector->tsval;
-    //event.tsecr = dissector->tsecr;
+    event.tsval = dissector->tsval;
+    event.tsecr = dissector->tsecr;
     if (size > PACKET_OCTET_SIZE) size = PACKET_OCTET_SIZE;
-    //if ((char *)dissector->start + size < dissector->end) {
     bpf_probe_read_kernel(&event.dump, size, dissector->start);
-    //}
     bpf_ringbuf_output(&heimdall_events, &event, sizeof(event), 0);
+    
     // Commented out because we don't really care - some will be missed
     // during very heavy load.
     //if (err != 0) {

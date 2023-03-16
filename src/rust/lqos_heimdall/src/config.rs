@@ -6,7 +6,7 @@ pub enum HeimdallMode {
   Off = 0,
   /// Only look at flows on hosts we are watching via the circuit monitor
   WatchOnly = 1,
-  /// Capture everything (this may set your CPU on fire)
+  /// Capture detailed packet data from flows
   Analysis = 2,
 }
 

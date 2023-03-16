@@ -4,7 +4,7 @@ use lqos_bus::{PacketHeader, tos_parser};
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 use once_cell::sync::Lazy;
 use zerocopy::AsBytes;
-use crate::{perf_interface::{HeimdallEvent, PACKET_OCTET_SIZE}, pcap::{PcapFileHeader, PcapPacketHeader}};
+use crate::{perf_interface::{HeimdallEvent, PACKET_OCTET_SIZE}, pcap::{PcapFileHeader, PcapPacketHeader}, TIMELINE_EXPIRE_SECS};
 
 impl HeimdallEvent {
     fn as_header(&self) -> PacketHeader {
@@ -45,8 +45,7 @@ pub(crate) fn store_on_timeline(event: HeimdallEvent) {
 pub(crate) fn expire_timeline() {
   if let Ok(now) = time_since_boot() {
     let since_boot = Duration::from(now);
-    let ten_secs_ago = since_boot - Duration::from_secs(10);
-    let expire = ten_secs_ago.as_nanos() as u64;
+    let expire = (since_boot - Duration::from_secs(TIMELINE_EXPIRE_SECS)).as_nanos() as u64;
     TIMELINE.data.retain(|v| v.timestamp > expire);
   }
 }
