@@ -2,6 +2,8 @@ use lqos_bus::anonymous::AnonymousUsageV1;
 use std::net::SocketAddr;
 use tokio::{io::AsyncReadExt, net::TcpListener, spawn};
 
+use crate::db::insert_stats_dump;
+
 pub async fn gather_stats() -> anyhow::Result<()> {
   let listener = TcpListener::bind(":::9125").await?;
   log::info!("Listening on :::9125");
@@ -60,6 +62,6 @@ async fn store_stats_v1(
   payload: &AnonymousUsageV1,
   address: SocketAddr,
 ) -> anyhow::Result<()> {
-  println!("{payload:?} {address:?}");
+  insert_stats_dump(payload, &address.to_string())?;
   Ok(())
 }
