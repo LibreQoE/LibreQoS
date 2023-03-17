@@ -53,6 +53,7 @@ src/liblqos_python.so
 src/webusers.toml
 src/lqusers.toml
 src/dist
+src/rust/lqos_anonymous_stats_server/anonymous.sqlite
 
 # Ignore Rust build artifacts
 src/rust/target

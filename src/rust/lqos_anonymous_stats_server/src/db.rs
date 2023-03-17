@@ -1,13 +1,12 @@
 use std::{path::Path, sync::atomic::AtomicI64, time::SystemTime};
 use lqos_bus::anonymous::AnonymousUsageV1;
 use sqlite::Value;
-use chrono::prelude::{DateTime, Utc};
 const DBPATH: &str = "anonymous.sqlite";
 
 const SETUP_QUERY: &str = 
 "CREATE TABLE submissions (
     id INTEGER PRIMARY KEY,
-    date TEXT,
+    date INTEGER,
     node_id TEXT,
     ip_address TEXT,
     git_hash TEXT,
@@ -100,12 +99,6 @@ VALUES (
     :parent, :description, :product, :vendor, :clock, :capacity
 );";
 
-fn iso8601(st: std::time::SystemTime) -> String {
-    let dt: DateTime<Utc> = st.into();
-    format!("{}", dt.format("%+"))
-    // formats like "2001-07-08T00:34:60.026490+09:30"
-}
-
 fn bool_to_n(x: bool) -> i64 {
     if x {
         1
@@ -114,8 +107,15 @@ fn bool_to_n(x: bool) -> i64 {
     }
 }
 
+fn get_sys_time_in_secs() -> u64 {
+    match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
+        Ok(n) => n.as_secs(),
+        Err(_) => panic!("SystemTime before UNIX EPOCH!"),
+    }
+}
+
 pub fn insert_stats_dump(stats: &AnonymousUsageV1, ip: &str) -> anyhow::Result<()> {
-    let date = iso8601(SystemTime::now());
+    let date = get_sys_time_in_secs() as i64;
     let new_id = SUBMISSION_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let cn = sqlite::open(DBPATH)?;
     let mut statement = cn.prepare(INSERT_STATS)?;
@@ -172,6 +172,87 @@ pub fn dump_all_to_string() -> anyhow::Result<String> {
             result += &format!(";{name}={value:?}");
         }
         result += "\n";
+        true
+    }).unwrap();
+    Ok(result)
+}
+
+pub fn count_unique_node_ids() -> anyhow::Result<u64> {
+    let mut result = 0;
+    let cn = sqlite::open(DBPATH)?;
+    cn.iterate("SELECT COUNT(DISTINCT node_id) AS count FROM submissions;", |pairs| {
+        for &(_name, value) in pairs.iter() {
+            if let Some(val) = value {
+                if let Ok(val) = val.parse::<u64>() {
+                    result = val;
+                }
+            }
+        }
+        true
+    }).unwrap();
+    Ok(result)
+}
+
+pub fn count_unique_node_ids_this_week() -> anyhow::Result<u64> {
+    let mut result = 0;
+    let cn = sqlite::open(DBPATH)?;
+    let last_week = (get_sys_time_in_secs() - 604800).to_string();
+    cn.iterate(format!("SELECT COUNT(DISTINCT node_id) AS count FROM submissions WHERE date > {last_week};"), |pairs| {
+        for &(_name, value) in pairs.iter() {
+            if let Some(val) = value {
+                if let Ok(val) = val.parse::<u64>() {
+                    result = val;
+                }
+            }
+        }
+        true
+    }).unwrap();
+    Ok(result)
+}
+
+pub fn shaped_devices() -> anyhow::Result<u64> {
+    let mut result = 0;
+    let cn = sqlite::open(DBPATH)?;
+    cn.iterate("SELECT SUM(shaped_device_count) AS total FROM (SELECT DISTINCT node_id, shaped_device_count FROM submissions);", |pairs| {
+        for &(_name, value) in pairs.iter() {
+            if let Some(val) = value {
+                if let Ok(val) = val.parse::<u64>() {
+                    result = val;
+                }
+            }
+        }
+        true
+    }).unwrap();
+    Ok(result)
+}
+
+pub fn net_json_nodes() -> anyhow::Result<u64> {
+    let mut result = 0;
+    let cn = sqlite::open(DBPATH)?;
+    cn.iterate("SELECT SUM(net_json_len) AS total FROM (SELECT DISTINCT node_id, net_json_len FROM submissions);", |pairs| {
+        for &(_name, value) in pairs.iter() {
+            if let Some(val) = value {
+                if let Ok(val) = val.parse::<u64>() {
+                    result = val;
+                }
+            }
+        }
+        true
+    }).unwrap();
+    Ok(result)
+}
+
+pub fn bandwidth() -> anyhow::Result<u64> {
+    let mut result = 0;
+    let cn = sqlite::open(DBPATH)?;
+    cn.iterate("SELECT SUM(capacity_down) AS total FROM (SELECT DISTINCT node_id, capacity_down FROM submissions);", |pairs| {
+        for &(_name, value) in pairs.iter() {
+            if let Some(val) = value {
+                if let Ok(val) = val.parse::<u64>() {
+                    result = val;
+                }
+            }
+        }
         true
     }).unwrap();
     Ok(result)
