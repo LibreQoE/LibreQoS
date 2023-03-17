@@ -1,10 +1,10 @@
 mod lshw;
+mod version;
 use std::time::Duration;
 use lqos_bus::anonymous::AnonymousUsageV1;
 use lqos_config::{EtcLqos, LibreQoSConfig};
 use lqos_sys::num_possible_cpus;
 use sysinfo::{System, SystemExt, CpuExt};
-
 use crate::shaped_devices_tracker::{SHAPED_DEVICES, NETWORK_JSON};
 
 const SLOW_START_SECS: u64 = 1;
@@ -44,8 +44,13 @@ fn anonymous_usage_dump() -> anyhow::Result<()> {
         data.cpu_vendor = cpu.vendor_id().to_string();
         data.cpu_frequency = cpu.frequency();
     }
-    for nic in lshw::get_nic_info()? {
-        data.nics.push(nic.into());
+    if let Ok(nics) = lshw::get_nic_info() {
+        for nic in nics {
+            data.nics.push(nic.into());
+        }
+    }
+    if let Ok(pv) = version::get_proc_version() {
+        data.distro = pv.trim().to_string();
     }
 
     if let Ok(cfg) = LibreQoSConfig::load() {
@@ -59,8 +64,19 @@ fn anonymous_usage_dump() -> anyhow::Result<()> {
             cfg.generated_download_mbps,
             cfg.generated_upload_mbps,
         );
+        data.on_a_stick = cfg.on_a_stick_mode;
     }
 
+    if let Ok(cfg) = EtcLqos::load() {
+        if let Some(node_id) = cfg.node_id {
+            data.node_id = node_id;
+            if let Some(bridge) = cfg.bridge {
+                data.using_xdp_bridge = bridge.use_xdp_bridge;
+            }
+        }
+    }
+
+    data.git_hash = env!("GIT_HASH").to_string();
     data.shaped_device_count = SHAPED_DEVICES.read().unwrap().devices.len();
     data.net_json_len = NETWORK_JSON.read().unwrap().nodes.len();
 

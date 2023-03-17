@@ -3,6 +3,18 @@
 /// Defines data to be submitted if anonymous usage submission is
 /// enabled. This is protocol version 1.
 pub struct AnonymousUsageV1 {
+    /// Unique but anonymous node identifier
+    pub node_id: String,
+
+    /// The git hash from which this version was compiled
+    pub git_hash: String,
+
+    /// Are they using the Bifrost bridge?
+    pub using_xdp_bridge: bool,
+
+    /// Is it an "On a stick" config?
+    pub on_a_stick: bool,
+
     /// Total installed RAM (bytes)
     pub total_memory: u64,
 
@@ -11,6 +23,9 @@ pub struct AnonymousUsageV1 {
 
     /// Linux Kernel Version
     pub kernel_version: String,
+
+    /// Linux distro
+    pub distro: String,
 
     /// Number of "usable" CPU cores, as used by eBPF. This may not
     /// be exactly equal to the number of actual cores.
