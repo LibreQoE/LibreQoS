@@ -5,6 +5,7 @@ mod lqos_daht_test;
 mod program_control;
 mod shaped_devices_tracker;
 mod throughput_tracker;
+mod anonymous_usage;
 mod tuning;
 mod validation;
 use crate::{
@@ -69,7 +70,8 @@ async fn main() -> Result<()> {
   join!(
     spawn_queue_structure_monitor(),
     shaped_devices_tracker::shaped_devices_watcher(),
-    shaped_devices_tracker::network_json_watcher()
+    shaped_devices_tracker::network_json_watcher(),
+    anonymous_usage::start_anonymous_usage(),
   );
   throughput_tracker::spawn_throughput_monitor();
   spawn_queue_monitor();
