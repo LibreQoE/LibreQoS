@@ -1,7 +1,7 @@
 mod lshw;
 mod version;
-use std::time::Duration;
-use lqos_bus::anonymous::AnonymousUsageV1;
+use std::{time::Duration, net::TcpStream, io::Write};
+use lqos_bus::anonymous::{AnonymousUsageV1, build_stats};
 use lqos_config::{EtcLqos, LibreQoSConfig};
 use lqos_sys::num_possible_cpus;
 use sysinfo::{System, SystemExt, CpuExt};
@@ -29,6 +29,7 @@ pub async fn start_anonymous_usage() {
 fn anonymous_usage_dump() -> anyhow::Result<()> {
     let mut data = AnonymousUsageV1::default();
     let mut sys = System::new_all();
+    let mut server = String::new();
     sys.refresh_all();
     data.total_memory = sys.total_memory();
     data.available_memory = sys.available_memory();
@@ -74,12 +75,39 @@ fn anonymous_usage_dump() -> anyhow::Result<()> {
                 data.using_xdp_bridge = bridge.use_xdp_bridge;
             }
         }
+        if let Some(anon) = cfg.usage_stats {
+            server = anon.anonymous_server;
+        }
     }
 
     data.git_hash = env!("GIT_HASH").to_string();
     data.shaped_device_count = SHAPED_DEVICES.read().unwrap().devices.len();
     data.net_json_len = NETWORK_JSON.read().unwrap().nodes.len();
 
-    println!("{data:#?}");
+    send_stats(data, &server);
     Ok(())
+}
+
+fn send_stats(data: AnonymousUsageV1, server: &str) {
+    let buffer = build_stats(&data);
+    if let Err(e) = buffer {
+        log::warn!("Unable to serialize stats buffer");
+        log::warn!("{e:?}");
+        return;
+    }
+    let buffer = buffer.unwrap();
+
+    let stream = TcpStream::connect(server);
+    if let Err(e) = stream {
+        log::warn!("Unable to connect to {server}");
+        log::warn!("{e:?}");
+        return;
+    }
+    let mut stream = stream.unwrap();
+    let result = stream.write(&buffer);
+    if let Err(e) = result {
+        log::warn!("Unable to send bytes to {server}");
+        log::warn!("{e:?}");
+    }
+    log::info!("Anonymous usage stats submitted");
 }

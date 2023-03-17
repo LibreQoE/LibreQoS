@@ -1323,6 +1323,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "lqos_anonymous_stats_server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger",
+ "log",
+ "lqos_bus",
+ "serde",
+ "serde_cbor",
+ "tokio",
+]
+
+[[package]]
 name = "lqos_bus"
 version = "0.1.0"
 dependencies = [
@@ -1333,6 +1346,7 @@ dependencies = [
  "lqos_utils",
  "nix",
  "serde",
+ "serde_cbor",
  "thiserror",
  "tokio",
 ]
@@ -2215,6 +2229,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a382c72b4ba118526e187430bb4963cd6d55051ebf13d9b25574d379cc98d20"
 dependencies = [
  "serde_derive",
+]
+
+[[package]]
+name = "serde_cbor"
+version = "0.11.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2bef2ebfde456fb76bbcf9f59315333decc4fda0b2b44b420243c11e0f5ec1f5"
+dependencies = [
+ "half",
+ "serde",
 ]
 
 [[package]]
