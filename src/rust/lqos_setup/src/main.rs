@@ -1,5 +1,6 @@
 use colored::Colorize;
 use default_net::{get_interfaces, interface::InterfaceType, Interface};
+use uuid::Uuid;
 use std::{fs, path::Path, process::Command};
 
 fn get_available_interfaces() -> Vec<Interface> {
@@ -117,6 +118,7 @@ fn get_bandwidth(up: bool) -> u32 {
 
 const ETC_LQOS_CONF: &str = "lqos_directory = '/opt/libreqos/src'
 queue_check_period_ms = 1000
+node_id = {NODE_ID}
 
 [tuning]
 stop_irq_balance = true
@@ -138,8 +140,10 @@ vlan_mapping = []
 ";
 
 fn write_etc_lqos_conf(internet: &str, isp: &str) {
+  let new_id = Uuid::new_v4().to_string();
   let output =
-    ETC_LQOS_CONF.replace("{INTERNET}", internet).replace("{ISP}", isp);
+    ETC_LQOS_CONF.replace("{INTERNET}", internet).replace("{ISP}", isp)
+    .replace("{NODE_ID}", &new_id);
   fs::write(LQOS_CONF, output).expect("Unable to write file");
 }
 
