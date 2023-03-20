@@ -18,6 +18,8 @@ jobs:
       run: pushd src/rust; cargo build --verbose --all; popd
     - name: Run tests
       run: pushd src/rust; cargo test --verbose --all; popd
+    - name: Build .deb file
+      run: pushd src; ./build_dpkg.sh --nostamp; popd
     - name: Archive .deb file
       uses: actions/upload-artifact@v3
       with:
