@@ -19,6 +19,9 @@ use thiserror::Error;
 /// assert_eq!(read_hex_string("0x12AD").unwrap(), 4781);
 /// ```
 pub fn read_hex_string(s: &str) -> Result<u32, HexParseError> {
+  if s.is_empty() {
+    return Ok(0);
+  }
   let result = u32::from_str_radix(&s.replace("0x", ""), 16);
   match result {
     Ok(data) => Ok(data),

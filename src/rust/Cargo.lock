@@ -1327,7 +1327,6 @@ name = "lqos_bus"
 version = "0.1.0"
 dependencies = [
  "bincode",
- "cc",
  "criterion",
  "log",
  "lqos_config",
