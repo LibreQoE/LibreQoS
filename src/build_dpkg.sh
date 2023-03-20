@@ -5,6 +5,10 @@
 # This is all GPL2.
 
 BUILD_DATE=`date +%Y%m%d`
+if [ $1 = "--nostamp" ]
+then
+    BUILD_DATE=""
+fi
 PACKAGE=libreqos
 VERSION=1.4.$BUILD_DATE
 PKGVERSION=$PACKAGE
