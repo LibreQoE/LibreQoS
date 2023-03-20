@@ -44,9 +44,8 @@ jobs:
     - name: Install dependencies
       run: sudo apt-get update; sudo apt-get install --no-install-recommends python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname r` libbpf-dev
       if: matrix.os == 'ubuntu-latest'
-    - name: Build
+    - name: Build/Export
       run: pushd src/rust; ./build_dpkg.sh --nostamp; popd
-    - name: Export
       with:
         name: libreqos_1.4.-1_amd64.deb
         path: src/dist/libreqos_1.4.-1_amd64.deb
