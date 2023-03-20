@@ -917,6 +917,22 @@ def refreshShapers():
 		print("refreshShapers completed on " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
 
 def refreshShapersUpdateOnly():
+	
+	# Check that the host lqosd is running
+	if is_lqosd_alive():
+		print("lqosd is running")
+	else:
+		print("ERROR: lqosd is not running. Aborting")
+		os._exit(-1)
+
+	# Check that we aren't running LibreQoS.py more than once at a time
+	if is_libre_already_running():
+		print("LibreQoS.py is already running in another process. Aborting.")
+		os._exit(-1)
+
+	# We've got this far, so create a lock file
+	create_lock_file()
+	
 	# Starting
 	print("refreshShapers starting at " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
 	
@@ -1291,6 +1307,9 @@ def refreshShapersUpdateOnly():
 		
 		# Done
 		print("refreshShapersUpdateOnly completed on " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
+	
+	# Free the lock file
+	free_lock_file()
 
 if __name__ == '__main__':
 	# Check that the host lqosd is running
