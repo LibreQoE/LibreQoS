@@ -23,9 +23,6 @@
             <div class="collapse navbar-collapse" id="navbarSupportedContent">
                 <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                     <li class="nav-item">
-                        <a class="nav-link" href="/"><i class="fa fa-home"></i> Dashboard</a>
-                    </li>
-                    <li class="nav-item">
                         <a class="nav-link" href="/tree?parent=0"><i class="fa fa-globe"></i> Tree</a>
                     </li>
                     <li class="nav-item">
@@ -89,7 +86,7 @@
                         <div class="card bg-light">
                             <div class="card-body">
                                 <h5 class="card-title"><i class="fa fa-bar-chart"></i> Throughput</h5>
-                                <div id="throughputGraph" class="graph150"></div>
+                                <div id="throughputGraph" class="graph200"></div>
                             </div>
                         </div>
                     </div>
@@ -97,7 +94,7 @@
                         <div class="card bg-light">
                             <div class="card-body">
                                 <h5 class="card-title"><i class="fa fa-bar-chart"></i> Backlog</h5>
-                                <div id="backlogGraph" class="graph150"></div>
+                                <div id="backlogGraph" class="graph200"></div>
                             </div>
                         </div>
                     </div>
@@ -105,7 +102,7 @@
                         <div class="card bg-light">
                             <div class="card-body">
                                 <h5 class="card-title"><i class="fa fa-bar-chart"></i> Capacity Quantile</h5>
-                                <div id="capacityQuantile" class="graph150"></div>
+                                <div id="capacityQuantile" class="graph200"></div>
                             </div>
                         </div>
                     </div>
@@ -117,7 +114,7 @@
                         <div class="card bg-light">
                             <div class="card-body">
                                 <h5 class="card-title"><i class="fa fa-bar-chart"></i> Delays</h5>
-                                <div id="delayGraph" class="graph150"></div>
+                                <div id="delayGraph" class="graph200"></div>
                             </div>
                         </div>
                     </div>
@@ -125,7 +122,7 @@
                         <div class="card bg-light">
                             <div class="card-body">
                                 <h5 class="card-title"><i class="fa fa-bar-chart"></i> Queue Length</h5>
-                                <div id="qlenGraph" class="graph150"></div>
+                                <div id="qlenGraph" class="graph200"></div>
                             </div>
                         </div>
                     </div>
@@ -148,8 +145,8 @@
                         <div class="card bg-light">
                             <div class="card-body">
                                 <h5 class="card-title"><i class="fa fa-bar-chart"></i> Tin 1 (Bulk)</h5>
-                                <div id="tinTp_0" class="graph150"></div>
-                                <div id="tinMd_0" class="graph150"></div>
+                                <div id="tinTp_0" class="graph200"></div>
+                                <div id="tinMd_0" class="graph200"></div>
                             </div>                        
                         </div>
                     </div>
@@ -157,8 +154,8 @@
                         <div class="card bg-light">
                             <div class="card-body">
                                 <h5 class="card-title"><i class="fa fa-bar-chart"></i> Tin 2 (Best Effort)</h5>
-                                <div id="tinTp_1" class="graph150"></div>
-                                <div id="tinMd_1" class="graph150"></div>
+                                <div id="tinTp_1" class="graph200"></div>
+                                <div id="tinMd_1" class="graph200"></div>
                             </div>
                         </div>
                     </div>
@@ -168,8 +165,8 @@
                         <div class="card bg-light">
                             <div class="card-body">
                                 <h5 class="card-title"><i class="fa fa-bar-chart"></i> Tin 3 (Video)</h5>
-                                <div id="tinTp_2" class="graph150"></div>
-                                <div id="tinMd_2" class="graph150"></div>
+                                <div id="tinTp_2" class="graph200"></div>
+                                <div id="tinMd_2" class="graph200"></div>
                             </div>                        
                         </div>
                     </div>
@@ -177,8 +174,8 @@
                         <div class="card bg-light">
                             <div class="card-body">
                                 <h5 class="card-title"><i class="fa fa-bar-chart"></i> Tin 4 (Voice)</h5>
-                                <div id="tinTp_3" class="graph150"></div>
-                                <div id="tinMd_3" class="graph150"></div>
+                                <div id="tinTp_3" class="graph200"></div>
+                                <div id="tinMd_3" class="graph200"></div>
                             </div>
                         </div>
                     </div>
@@ -306,17 +303,17 @@
                         }
                         let graph = document.getElementById("tinTp_" + tin);
                         let graph_data = [
-                            {x: entries.x[0], y:entries.y[0], name: 'Download', type: 'scatter'},
-                            {x: entries.x[1], y:entries.y[1], name: 'Upload', type: 'scatter'},
+                            {x: entries.x[0], y:entries.y[0].reverse(), name: 'Download', type: 'scatter'},
+                            {x: entries.x[1], y:entries.y[1].reverse(), name: 'Upload', type: 'scatter'},
                         ];
                         Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
 
                         graph = document.getElementById("tinMd_" + tin);
                         graph_data = [
-                            {x: entries.x[2], y:entries.y[2], name: 'Down Drops', type: 'scatter'},
-                            {x: entries.x[3], y:entries.y[3], name: 'Down Marks', type: 'scatter'},
-                            {x: entries.x[4], y:entries.y[4], name: 'Up Drops', type: 'scatter'},
-                            {x: entries.x[5], y:entries.y[5], name: 'Up Marks', type: 'scatter'},
+                            {x: entries.x[2], y:entries.y[2].reverse(), name: 'Down Drops', mode: 'markers', marker: { size: 4 }},
+                            {x: entries.x[3], y:entries.y[3].reverse(), name: 'Down Marks', mode: 'markers', marker: { size: 4 }},
+                            {x: entries.x[4], y:entries.y[4].reverse(), name: 'Up Drops', mode: 'markers', marker: { size: 4 }},
+                            {x: entries.x[5], y:entries.y[5].reverse(), name: 'Up Marks', mode: 'markers', marker: { size: 4 }},
                         ];
                         Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
 
@@ -331,34 +328,34 @@
                     }
                     let graph = document.getElementById("backlogGraph");
                     let graph_data = [
-                        {x: backlogX1[0], y:backlogY1[0], type: 'scatter', name: 'Tin 0 Down'},
-                        {x: backlogX2[0], y:backlogY2[0], type: 'scatter', name: 'Tin 0 Up'},
-                        {x: backlogX1[1], y:backlogY1[1], type: 'scatter', name: 'Tin 1 Down'},
-                        {x: backlogX2[1], y:backlogY2[1], type: 'scatter', name: 'Tin 1 Up'},
-                        {x: backlogX1[2], y:backlogY1[2], type: 'scatter', name: 'Tin 2 Down'},
-                        {x: backlogX2[2], y:backlogY2[2], type: 'scatter', name: 'Tin 2 Up'},
-                        {x: backlogX1[3], y:backlogY1[3], type: 'scatter', name: 'Tin 3 Down'},
-                        {x: backlogX2[3], y:backlogY2[3], type: 'scatter', name: 'Tin 3 Up'},
+                        {x: backlogX1[0], y:backlogY1[0].reverse(), type: 'scatter', name: 'Tin 0 Down'},
+                        {x: backlogX2[0], y:backlogY2[0].reverse(), type: 'scatter', name: 'Tin 0 Up'},
+                        {x: backlogX1[1], y:backlogY1[1].reverse(), type: 'scatter', name: 'Tin 1 Down'},
+                        {x: backlogX2[1], y:backlogY2[1].reverse(), type: 'scatter', name: 'Tin 1 Up'},
+                        {x: backlogX1[2], y:backlogY1[2].reverse(), type: 'scatter', name: 'Tin 2 Down'},
+                        {x: backlogX2[2], y:backlogY2[2].reverse(), type: 'scatter', name: 'Tin 2 Up'},
+                        {x: backlogX1[3], y:backlogY1[3].reverse(), type: 'scatter', name: 'Tin 3 Down'},
+                        {x: backlogX2[3], y:backlogY2[3].reverse(), type: 'scatter', name: 'Tin 3 Up'},
                     ];
                     Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
 
                     graph = document.getElementById("delayGraph");
                     graph_data = [
-                        {x: delaysX1[0], y:delaysY1[0], type: 'scatter', name: 'Tin 0 Down'},
-                        {x: delaysX2[0], y:delaysY2[0], type: 'scatter', name: 'Tin 0 Up'},
-                        {x: delaysX1[1], y:delaysY1[1], type: 'scatter', name: 'Tin 1 Down'},
-                        {x: delaysX2[1], y:delaysY2[1], type: 'scatter', name: 'Tin 1 Up'},
-                        {x: delaysX1[2], y:delaysY1[2], type: 'scatter', name: 'Tin 2 Down'},
-                        {x: delaysX2[2], y:delaysY2[2], type: 'scatter', name: 'Tin 2 Up'},
-                        {x: delaysX1[3], y:delaysY1[3], type: 'scatter', name: 'Tin 3 Down'},
-                        {x: delaysX2[3], y:delaysY2[3], type: 'scatter', name: 'Tin 3 Up'},
+                        {x: delaysX1[0], y:delaysY1[0].reverse(), type: 'scatter', name: 'Tin 0 Down'},
+                        {x: delaysX2[0], y:delaysY2[0].reverse(), type: 'scatter', name: 'Tin 0 Up'},
+                        {x: delaysX1[1], y:delaysY1[1].reverse(), type: 'scatter', name: 'Tin 1 Down'},
+                        {x: delaysX2[1], y:delaysY2[1].reverse(), type: 'scatter', name: 'Tin 1 Up'},
+                        {x: delaysX1[2], y:delaysY1[2].reverse(), type: 'scatter', name: 'Tin 2 Down'},
+                        {x: delaysX2[2], y:delaysY2[2].reverse(), type: 'scatter', name: 'Tin 2 Up'},
+                        {x: delaysX1[3], y:delaysY1[3].reverse(), type: 'scatter', name: 'Tin 3 Down'},
+                        {x: delaysX2[3], y:delaysY2[3].reverse(), type: 'scatter', name: 'Tin 3 Up'},
                     ];
                     Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
 
                     graph = document.getElementById("qlenGraph");
                     graph_data = [
-                        {x: qlenX1, y:qlenY1, type: 'scatter', name: 'Down'},
-                        {x: qlenX2, y:qlenY2, type: 'scatter', name: 'Up'},
+                        {x: qlenX1, y:qlenY1.reverse(), type: 'scatter', name: 'Down'},
+                        {x: qlenX2, y:qlenY2.reverse(), type: 'scatter', name: 'Up'},
                     ];
                     Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
                 });
@@ -435,8 +432,8 @@
                             }
                         }
 
-                        graph_data.push({x: xDown, y: yDown, name: ip + " Down", type: 'scatter'});
-                        graph_data.push({x: xUp, y: yUp, name: ip + " Up", type: 'scatter'});
+                        graph_data.push({x: xDown, y: yDown.reverse(), name: ip + " Down", type: 'scatter'});
+                        graph_data.push({x: xUp, y: yUp.reverse(), name: ip + " Up", type: 'scatter'});
                     }
                     Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
                     throughput_head += 1;
@@ -473,14 +470,14 @@
                     row += "<div class='col-sm-6'>";
                     row += "<div class='card bg-light'>";
                     row += "<h5 class='card-title'><i class='fa fa-hourglass'></i> <a class='redact' href='/tree?parent=" + data[i][0] + "'>" + redactText(data[i][1].name) + " Throughput</a></h5>";
-                    row += "<div id='tp" + data[i][0] + "' class='graph98 graph150'></div>";
+                    row += "<div id='tp" + data[i][0] + "' class='graph98 graph200'></div>";
                     row += "</div>";
                     row += "</div>";
 
                     row += "<div class='col-sm-6'>";
                     row += "<div class='card bg-light'>";
                     row += "<h5 class='card-title redact'><i class='fa fa-bar-chart'></i> " + redactText(data[i][1].name) + " TCP RTT</h5>";
-                    row += "<div id='rtt" + data[i][0] + "' class='graph98 graph150'></div>";
+                    row += "<div id='rtt" + data[i][0] + "' class='graph98 graph200'></div>";
                     row += "</div>";
                     row += "</div>";
 

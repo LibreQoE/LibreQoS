@@ -296,7 +296,7 @@ class RingBuffer {
         for (var i = 0; i < capacity; ++i) {
             this.download.push(0.0);
             this.upload.push(0.0);
-            this.x_axis.push(i);
+            this.x_axis.push(capacity - i);
         }
     }
 
