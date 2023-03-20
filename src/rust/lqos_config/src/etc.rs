@@ -1,7 +1,7 @@
 //! Manages the `/etc/lqos.conf` file.
 use log::error;
 use serde::{Deserialize, Serialize};
-use std::{path::Path, fs, process::Command};
+use std::{fs, path::Path};
 use thiserror::Error;
 
 /// Represents the top-level of the `/etc/lqos.conf` file. Serialization
@@ -179,22 +179,16 @@ impl EtcLqos {
 }
 
 fn check_config(cfg: &mut EtcLqos) {
-  use sha2::Digest;
   use sha2::digest::Update;
+  use sha2::Digest;
 
   if cfg.node_id.is_none() {
-   if let Ok(out) = Command::new("/bin/ip").args(["link"]).output() {
-    if let Ok(raw_ip_link) = String::from_utf8(out.stdout) {
-      let hash = sha2::Sha256::new().chain(raw_ip_link).finalize();
+    if let Ok(machine_id) = std::fs::read_to_string("/etc/machine-id") {
+      let hash = sha2::Sha256::new().chain(machine_id).finalize();
       cfg.node_id = Some(format!("{:x}", hash));
-      log::info!("Generated node ID: {:?}", cfg.node_id);
-      log::warn!("Please consider adding a line to your /etc/lqos.conf configuration:");
-      log::warn!("node_id = (big random number)");
     }
-   }
   }
 }
-
 
 #[derive(Error, Debug)]
 pub enum EtcLqosError {

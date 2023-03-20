@@ -1,10 +1,15 @@
 use std::{path::Path, sync::atomic::AtomicI64, time::SystemTime};
 use lqos_bus::anonymous::AnonymousUsageV1;
-use sqlite::Value;
+use sqlite::{Value, State};
 const DBPATH: &str = "anonymous.sqlite";
 
 const SETUP_QUERY: &str = 
-"CREATE TABLE submissions (
+"CREATE TABLE nodes (
+    node_id TEXT PRIMARY KEY,
+    last_seen INTEGER NOT NULL
+);
+
+CREATE TABLE submissions (
     id INTEGER PRIMARY KEY,
     date INTEGER,
     node_id TEXT,
@@ -159,6 +164,33 @@ pub fn insert_stats_dump(stats: &AnonymousUsageV1, ip: &str) -> anyhow::Result<(
         statement.next()?;
     }
 
+    // Find out if its a new host
+    let mut found = false;
+    let mut statement = cn.prepare("SELECT * FROM nodes WHERE node_id=:id")?;
+    statement.bind_iter::<_, (_, Value)>([
+        (":id", stats.node_id.clone().into()),
+    ])?;
+    while let Ok(State::Row) = statement.next() {
+        found = true;
+    }
+    if found {
+        log::info!("Updating last seen date for {}", stats.node_id);
+        let mut statement = cn.prepare("UPDATE nodes SET last_seen=:date WHERE node_id=:id")?;
+        statement.bind_iter::<_, (_, Value)>([
+            (":id", stats.node_id.clone().into()),
+            (":date", date.into()),
+        ])?;
+        statement.next()?;
+    } else {
+        log::info!("New host: {}", stats.node_id);
+        let mut statement = cn.prepare("INSERT INTO nodes (node_id, last_seen) VALUES(:id, :date)")?;
+        statement.bind_iter::<_, (_, Value)>([
+            (":id", stats.node_id.clone().into()),
+            (":date", date.into()),
+        ])?;
+        statement.next()?;
+    }
+
     log::info!("Submitted");
     Ok(())
 }
@@ -181,7 +213,7 @@ pub fn dump_all_to_string() -> anyhow::Result<String> {
 pub fn count_unique_node_ids() -> anyhow::Result<u64> {
     let mut result = 0;
     let cn = sqlite::open(DBPATH)?;
-    cn.iterate("SELECT COUNT(DISTINCT node_id) AS count FROM submissions;", |pairs| {
+    cn.iterate("SELECT COUNT(DISTINCT node_id) AS count FROM nodes;", |pairs| {
         for &(_name, value) in pairs.iter() {
             if let Some(val) = value {
                 if let Ok(val) = val.parse::<u64>() {
@@ -198,7 +230,7 @@ pub fn count_unique_node_ids_this_week() -> anyhow::Result<u64> {
     let mut result = 0;
     let cn = sqlite::open(DBPATH)?;
     let last_week = (get_sys_time_in_secs() - 604800).to_string();
-    cn.iterate(format!("SELECT COUNT(DISTINCT node_id) AS count FROM submissions WHERE date > {last_week};"), |pairs| {
+    cn.iterate(format!("SELECT COUNT(DISTINCT node_id) AS count FROM nodes WHERE last_seen > {last_week};"), |pairs| {
         for &(_name, value) in pairs.iter() {
             if let Some(val) = value {
                 if let Ok(val) = val.parse::<u64>() {
