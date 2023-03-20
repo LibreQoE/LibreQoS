@@ -17,3 +17,4 @@
 .row220 { height: 220px; }
 .redact { font-display: unset; }
 footer > a { color: white; }
+footer { color: white; font-style: italic; }
