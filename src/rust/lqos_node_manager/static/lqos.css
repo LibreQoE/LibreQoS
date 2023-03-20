@@ -9,6 +9,7 @@
 .top-shunt { margin-top: -4px; margin-bottom: 4px; }
 .center-txt { text-align: center; }
 .bold { font-weight: bold; }
+.graph200 { height: 200px; }
 .graph150 { height: 150px; }
 .graph98 { min-height: 97px; width: 100%; }
 .mtop4 { margin-top: 4px; }
