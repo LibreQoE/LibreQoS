@@ -230,7 +230,7 @@
             msgPackGet("/api/ram", (ram) => {
                 let graph = document.getElementById("ram");
                 let data = [{
-                    values: [ram[0], ram[1] - ram[0]],
+                    values: [Math.round(ram[0]), Math.round(ram[1] - ram[0])],
                     labels: ['Used', 'Available'],
                     type: 'pie'
                 }];
