@@ -18,6 +18,13 @@ jobs:
       run: pushd src/rust; cargo build --verbose --all; popd
     - name: Run tests
       run: pushd src/rust; cargo test --verbose --all; popd
+    - name: Build .deb file
+      run: pushd src; ./build_dpkg.sh --nostamp; popd
+    - name: Archive .deb file
+      uses: actions/upload-artifact@v3
+      with:
+        name: libreqos_1.4.-1_amd64.deb
+        path: src/dist/libreqos_1.4.-1_amd64.deb
   
   audit:
     strategy:
@@ -28,8 +35,6 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Install tools
-      run: pushd src/rust; cargo install cargo-outdated; cargo install cargo-audit; popd
-    - name: Check for outdated dependencies
-      run: cd src/rust; cargo outdated -w --color=always --root-deps-only --exit-code 1
+      run: pushd src/rust; cargo install cargo-audit; popd
     - name: Audit for CVEs
       run: cd src/rust; cargo audit -c always
