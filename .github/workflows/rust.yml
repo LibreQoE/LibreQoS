@@ -18,6 +18,11 @@ jobs:
       run: pushd src/rust; cargo build --verbose --all; popd
     - name: Run tests
       run: pushd src/rust; cargo test --verbose --all; popd
+    - name: Archive .deb file
+      uses: actions/upload-artifact@v3
+      with:
+        name: libreqos_1.4.-1_amd64.deb
+        path: src/dist/libreqos_1.4.-1_amd64.deb
   
   audit:
     strategy:
@@ -29,23 +34,7 @@ jobs:
     - uses: actions/checkout@v2
     - name: Install tools
       run: pushd src/rust; cargo install cargo-outdated; cargo install cargo-audit; popd
+    - name: Check for outdated dependencies
+      run: cd src/rust; cargo outdated -w --color=always --root-deps-only --exit-code 1
     - name: Audit for CVEs
       run: cd src/rust; cargo audit -c always
-  
-  dpkg:
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-    runs-on: ${{ matrix.os }}
-
-    steps:
-    - uses: actions/checkout@v2
-    - uses: actions/upload-artifact@v3
-    - name: Install dependencies
-      run: sudo apt-get update; sudo apt-get install --no-install-recommends python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname r` libbpf-dev
-      if: matrix.os == 'ubuntu-latest'
-    - name: Build/Export
-      run: pushd src/rust; ./build_dpkg.sh --nostamp; popd
-      with:
-        name: libreqos_1.4.-1_amd64.deb
-        path: src/dist/libreqos_1.4.-1_amd64.deb
