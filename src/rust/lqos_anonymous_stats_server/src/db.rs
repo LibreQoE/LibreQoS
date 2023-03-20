@@ -164,6 +164,7 @@ pub fn insert_stats_dump(stats: &AnonymousUsageV1, ip: &str) -> anyhow::Result<(
 }
 
 // Not a great idea, this is for test data
+#[allow(dead_code)]
 pub fn dump_all_to_string() -> anyhow::Result<String> {
     let mut result = String::new();
     let cn = sqlite::open(DBPATH)?;

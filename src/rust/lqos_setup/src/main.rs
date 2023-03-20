@@ -140,7 +140,7 @@ vlan_mapping = []
 
 [usage_stats]
 send_anonymous = {ALLOW_ANONYMOUS}
-anonymous_server = \"127.0.0.1:9125\"
+anonymous_server = \"stats.libreqos.io:9125\"
 ";
 
 fn write_etc_lqos_conf(internet: &str, isp: &str, allow_anonymous: bool) {
