@@ -310,10 +310,10 @@
 
                         graph = document.getElementById("tinMd_" + tin);
                         graph_data = [
-                            {x: entries.x[2], y:entries.y[2].reverse(), name: 'Down Drops', type: 'scatter'},
-                            {x: entries.x[3], y:entries.y[3].reverse(), name: 'Down Marks', type: 'scatter'},
-                            {x: entries.x[4], y:entries.y[4].reverse(), name: 'Up Drops', type: 'scatter'},
-                            {x: entries.x[5], y:entries.y[5].reverse(), name: 'Up Marks', type: 'scatter'},
+                            {x: entries.x[2], y:entries.y[2].reverse(), name: 'Down Drops', mode: 'markers', marker: { size: 4 }},
+                            {x: entries.x[3], y:entries.y[3].reverse(), name: 'Down Marks', mode: 'markers', marker: { size: 4 }},
+                            {x: entries.x[4], y:entries.y[4].reverse(), name: 'Up Drops', mode: 'markers', marker: { size: 4 }},
+                            {x: entries.x[5], y:entries.y[5].reverse(), name: 'Up Marks', mode: 'markers', marker: { size: 4 }},
                         ];
                         Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
 
