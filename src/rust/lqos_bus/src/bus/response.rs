@@ -81,5 +81,7 @@ pub enum BusResponse {
     bus_requests: u64,
     /// Us to poll hosts
     time_to_poll_hosts: u64,
+    /// High traffic watermark
+    high_watermark: (u64, u64),
   }
 }

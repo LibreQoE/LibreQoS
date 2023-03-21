@@ -1,7 +1,7 @@
 //! Manages the `/etc/lqos.conf` file.
 use log::error;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::{fs, path::Path};
 use thiserror::Error;
 
 /// Represents the top-level of the `/etc/lqos.conf` file. Serialization
@@ -15,12 +15,21 @@ pub struct EtcLqos {
   /// In ms.
   pub queue_check_period_ms: u64,
 
+  /// If present, provides a unique ID for the node. Used for
+  /// anonymous stats (to identify nodes without providing an actual
+  /// identity), and will be used for long-term data retention to
+  /// disambiguate cluster or multi-head-end nodes.
+  pub node_id: Option<String>,
+
   /// If present, defines how the Bifrost XDP bridge operates.
   pub bridge: Option<BridgeConfig>,
 
   /// If present, defines the values for various `sysctl` and `ethtool`
   /// tweaks.
   pub tuning: Option<Tunables>,
+
+  /// If present, defined anonymous usage stat sending
+  pub usage_stats: Option<UsageStats>,
 }
 
 /// Represents a set of `sysctl` and `ethtool` tweaks that may be
@@ -104,6 +113,16 @@ pub struct BridgeVlan {
   pub redirect_to: u32,
 }
 
+/// Definitions for anonymous usage submission
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct UsageStats {
+  /// Are we allowed to send stats at all?
+  pub send_anonymous: bool,
+
+  /// Where do we send them?
+  pub anonymous_server: String,
+}
+
 impl EtcLqos {
   /// Loads `/etc/lqos.conf`.
   pub fn load() -> Result<Self, EtcLqosError> {
@@ -114,7 +133,10 @@ impl EtcLqos {
     if let Ok(raw) = std::fs::read_to_string("/etc/lqos.conf") {
       let config_result: Result<Self, toml::de::Error> = toml::from_str(&raw);
       match config_result {
-        Ok(config) => Ok(config),
+        Ok(mut config) => {
+          check_config(&mut config);
+          Ok(config)
+        }
         Err(e) => {
           error!("Unable to parse TOML from /etc/lqos.conf");
           error!("Full error: {:?}", e);
@@ -124,6 +146,46 @@ impl EtcLqos {
     } else {
       error!("Unable to read contents of /etc/lqos.conf");
       Err(EtcLqosError::CannotReadFile)
+    }
+  }
+
+  /// Saves changes made to /etc/lqos.conf
+  /// Copies current configuration into /etc/lqos.conf.backup first
+  pub fn save(&self) -> Result<(), EtcLqosError> {
+    let cfg_path = Path::new("/etc/lqos.conf");
+    let backup_path = Path::new("/etc/lqos.conf.backup");
+    if let Err(e) = std::fs::copy(cfg_path, backup_path) {
+      log::error!("Unable to backup /etc/lqos.conf");
+      log::error!("{e:?}");
+      return Err(EtcLqosError::BackupFail);
+    }
+    let new_cfg = toml::to_string_pretty(&self);
+    match new_cfg {
+      Err(e) => {
+        log::error!("Unable to serialize new /etc/lqos.conf");
+        log::error!("{e:?}");
+        return Err(EtcLqosError::SerializeFail);
+      }
+      Ok(new_cfg) => {
+        if let Err(e) = fs::write(cfg_path, new_cfg) {
+          log::error!("Unable to write to /etc/lqos.conf");
+          log::error!("{e:?}");
+          return Err(EtcLqosError::WriteFail);
+        }
+      }
+    }
+    Ok(())
+  }
+}
+
+fn check_config(cfg: &mut EtcLqos) {
+  use sha2::digest::Update;
+  use sha2::Digest;
+
+  if cfg.node_id.is_none() {
+    if let Ok(machine_id) = std::fs::read_to_string("/etc/machine-id") {
+      let hash = sha2::Sha256::new().chain(machine_id).finalize();
+      cfg.node_id = Some(format!("{:x}", hash));
     }
   }
 }
@@ -138,4 +200,10 @@ pub enum EtcLqosError {
   CannotReadFile,
   #[error("Unable to parse TOML in /etc/lqos.conf")]
   CannotParseToml,
+  #[error("Unable to backup /etc/lqos.conf to /etc/lqos.conf.backup")]
+  BackupFail,
+  #[error("Unable to serialize new configuration")]
+  SerializeFail,
+  #[error("Unable to write to /etc/lqos.conf")]
+  WriteFail,
 }

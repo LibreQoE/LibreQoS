@@ -5,6 +5,10 @@
 lqos_directory = '/opt/libreqos/src'
 queue_check_period_ms = 1000
 
+[usage_stats]
+send_anonymous = true
+anonymous_server = "127.0.0.1:9125"
+
 [tuning]
 # IRQ balance breaks XDP_Redirect, which we use. Recommended to leave as true.
 stop_irq_balance = true

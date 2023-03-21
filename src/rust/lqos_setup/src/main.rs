@@ -1,5 +1,6 @@
 use colored::Colorize;
 use default_net::{get_interfaces, interface::InterfaceType, Interface};
+use uuid::Uuid;
 use std::{fs, path::Path, process::Command};
 
 fn get_available_interfaces() -> Vec<Interface> {
@@ -117,6 +118,7 @@ fn get_bandwidth(up: bool) -> u32 {
 
 const ETC_LQOS_CONF: &str = "lqos_directory = '/opt/libreqos/src'
 queue_check_period_ms = 1000
+node_id = {NODE_ID}
 
 [tuning]
 stop_irq_balance = true
@@ -135,11 +137,18 @@ interface_mapping = [
        { name = \"{ISP}\", redirect_to = \"{INTERNET}\", scan_vlans = false }
 ]
 vlan_mapping = []
+
+[usage_stats]
+send_anonymous = {ALLOW_ANONYMOUS}
+anonymous_server = \"stats.libreqos.io:9125\"
 ";
 
-fn write_etc_lqos_conf(internet: &str, isp: &str) {
+fn write_etc_lqos_conf(internet: &str, isp: &str, allow_anonymous: bool) {
+  let new_id = Uuid::new_v4().to_string();
   let output =
-    ETC_LQOS_CONF.replace("{INTERNET}", internet).replace("{ISP}", isp);
+    ETC_LQOS_CONF.replace("{INTERNET}", internet).replace("{ISP}", isp)
+    .replace("{NODE_ID}", &new_id)
+    .replace("{ALLOW_ANONYMOUS}", &allow_anonymous.to_string());
   fs::write(LQOS_CONF, output).expect("Unable to write file");
 }
 
@@ -198,6 +207,22 @@ fn write_shaped_devices() {
     .expect("Unable to write file");
 }
 
+fn anonymous() -> bool {
+  println!("{}", "Help Improve LibreQoS with Anonymous Statistics?".yellow());
+  println!("{}", "We'd really appreciate it if you'd allow anonymous statistics".green());
+  println!("{}", "to be sent to our way. They help us focus our develpoment,".green());
+  println!("{}", "and let us know that you're out there!".green());
+  loop {
+    println!("{}", "Reply YES or NO".cyan());
+    let input = read_line().trim().to_uppercase();
+    if input == "YES" {
+      return true;
+    } else if input == "NO" {
+      return false;
+    }
+  }
+}
+
 fn main() {
   println!("{:^80}", "LibreQoS 1.4 Setup Assistant".yellow().on_blue());
   println!();
@@ -212,8 +237,9 @@ fn main() {
     );
     get_internet_interface(&interfaces, &mut if_internet);
     get_isp_interface(&interfaces, &mut if_isp);
+    let allow_anonymous = anonymous();
     if let (Some(internet), Some(isp)) = (&if_internet, &if_isp) {
-      write_etc_lqos_conf(internet, isp);
+      write_etc_lqos_conf(internet, isp, allow_anonymous);
     }
   }
 

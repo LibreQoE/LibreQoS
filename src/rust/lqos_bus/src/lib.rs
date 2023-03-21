@@ -20,3 +20,6 @@ pub use bus::{
   UnixSocketServer, BUS_SOCKET_PATH,
 };
 pub use tc_handle::TcHandle;
+
+/// Anonymous Usage Statistics Data Types
+pub mod anonymous;
