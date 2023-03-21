@@ -45,6 +45,8 @@ It is most cost-effective to buy a used server with specifications matching your
 For those who do not have the time to do that, here is a server config for up to 20 Gbps throughput:
 * 20 Gbps | [Dell R450 Config](https://www.dell.com/en-us/shop/servers-storage-and-networking/poweredge-r450-rack-server/spd/poweredge-r450/pe_r450_15127_vi_vp?configurationid=63956ce8-1714-47c0-89ec-c6729c1ca867)
 
+The [AsRock 1U4LW-B6502L2T](https://www.thinkmate.com/system/asrock-1u4lw-b6502l2t/635744) can be a great lower-cost option as well.
+
 ## System Requirements
 ### VM or physical server
 * For VMs, NIC passthrough is required for optimal throughput and latency (XDP vs generic XDP). Using Virtio / bridging is much slower than NIC passthrough. Virtio / bridging should not be used for large amounts of traffic.
