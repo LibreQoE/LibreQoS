@@ -8,6 +8,34 @@
 #
 # Don't forget to setup `/etc/lqos.conf`
 
+# Check Pre-Requisites
+if ! bpftool help &> /dev/null
+then
+    echo "bpftool is not installed."
+    echo "Let's try to install it"
+    sudo apt-get install linux-tools-common linux-tools-`uname -r`
+else
+    echo "bpftool found."
+fi
+
+if ! pkg-config --help &> /dev/null
+then
+    echo "pkg-config is not installed."
+    echo "Let's try to install it"
+    sudo apt-get install pkg-config
+else
+    echo "pkg-config found."
+fi
+
+if ! clang -v &> /dev/null
+then
+    echo "LLVM/clang is not installed."
+    echo "Let's try to install it"
+    sudo apt-get install llvm libelf-dev gcc gcc-multilib libbpf-dev
+else
+    echo "LLVM/clang found."
+fi
+
 # To enable heavy debug mode (slow)
 #BUILD_FLAGS=""
 #TARGET=debug
