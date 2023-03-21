@@ -4,7 +4,7 @@
 # Copyright (c) 2022, Herbert Wolverson and LibreQoE
 # This is all GPL2.
 
-BUILD_DATE=`date +%Y%m%d`
+BUILD_DATE=`date +%Y%m%d%H%M`
 if [ $1 = "--nostamp" ]
 then
     BUILD_DATE=""
