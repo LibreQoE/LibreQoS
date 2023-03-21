@@ -34,7 +34,7 @@ pub fn add_ip_to_tc(
   let mut key = IpHashKey { prefixlen: ip_to_add.prefix, address: address.0 };
   let mut value =
     IpHashData { cpu: ip_to_add.cpu, tc_handle: ip_to_add.handle() };
-  bpf_map.insert(&mut key, &mut value)?;
+  bpf_map.insert_or_update(&mut key, &mut value)?;
   Ok(())
 }
 

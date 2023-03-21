@@ -130,6 +130,38 @@ where
     }
   }
 
+  /// Inserts an entry into a BPF map, or updates an existing entry with
+  /// the same key.
+  /// 
+  /// Use this sparingly, because it briefly pauses XDP access to the
+  /// underlying map (through internal locking we can't reach from
+  /// userland).
+  ///
+  /// ## Arguments
+  ///
+  /// * `key` - the key to insert.
+  /// * `value` - the value to insert.
+  ///
+  /// Returns Ok if insertion succeeded, a generic error (no details yet)
+  /// if it fails.
+  pub(crate) fn insert_or_update(&mut self, key: &mut K, value: &mut V) -> Result<()> {
+    let key_ptr: *mut K = key;
+    let val_ptr: *mut V = value;
+    let err = unsafe {
+      bpf_map_update_elem(
+        self.fd,
+        key_ptr as *mut c_void,
+        val_ptr as *mut c_void,
+        BPF_NOEXIST.into(),
+      )
+    };
+    if err != 0 {
+      Err(Error::msg(format!("Unable to insert into map ({err})")))
+    } else {
+      Ok(())
+    }
+  }
+
   /// Deletes an entry from the underlying eBPF map.
   /// Use this sparingly, it locks the underlying map in the
   /// kernel. This can cause *long* delays under heavy load.
