@@ -40,6 +40,11 @@ You can graph bandwidth and TCP RTT by client and node (Site, AP, etc), using In
 * UISP
 * Splynx
 
+## Server Recommendations
+It is most cost-effective to buy a used server with specifications matching your unique requirements, as laid out in the System Requirements section below.
+For those who do not have the time to do that, here is a server config for up to 20 Gbps throughput:
+* 20 Gbps | [Dell R450 Config](https://www.dell.com/en-us/shop/servers-storage-and-networking/poweredge-r450-rack-server/spd/poweredge-r450/pe_r450_15127_vi_vp?configurationid=63956ce8-1714-47c0-89ec-c6729c1ca867)
+
 ## System Requirements
 ### VM or physical server
 * For VMs, NIC passthrough is required for optimal throughput and latency (XDP vs generic XDP). Using Virtio / bridging is much slower than NIC passthrough. Virtio / bridging should not be used for large amounts of traffic.
