@@ -82,15 +82,17 @@ pub async fn update_lqos_tuning(
 pub struct LqosStats {
   pub bus_requests_since_start: u64,
   pub time_to_poll_hosts_us: u64,
+  pub high_watermark: (u64, u64),
 }
 
 #[get("/api/stats")]
 pub async fn stats() -> NoCache<Json<LqosStats>> {
   for msg in bus_request(vec![BusRequest::GetLqosStats]).await.unwrap() {
-    if let BusResponse::LqosdStats { bus_requests, time_to_poll_hosts } = msg {
+    if let BusResponse::LqosdStats { bus_requests, time_to_poll_hosts, high_watermark } = msg {
       return NoCache::new(Json(LqosStats {
         bus_requests_since_start: bus_requests,
-        time_to_poll_hosts_us: time_to_poll_hosts
+        time_to_poll_hosts_us: time_to_poll_hosts,
+        high_watermark
       }));
     }
   }

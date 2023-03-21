@@ -61,6 +61,9 @@ pub struct AnonymousUsageV1 {
 
     /// Number of nodes read from network.json
     pub net_json_len: usize,
+
+    /// Peak number of bits/s passing through the shaper
+    pub high_watermark_bps: (u64, u64),
 }
 
 

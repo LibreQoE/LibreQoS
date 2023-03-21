@@ -32,7 +32,9 @@ CREATE TABLE submissions (
     generated_pdn_down INTEGER,
     generated_pdn_up INTEGER,
     shaped_device_count INTEGER,
-    net_json_len INTEGER
+    net_json_len INTEGER,
+    peak_down INTEGER,
+    peak_up INTEGER
 );
 
 CREATE TABLE nics (
@@ -94,7 +96,7 @@ const INSERT_STATS: &str =
     :total_memory, :available_memory, :kernel_version, :distro, :usable_cores,
     :cpu_brand, :cpu_vendor, :cpu_frequency, :sqm, :monitor_mode, :capcity_down,
     :capacity_up, :genereated_pdn_down, :generated_pdn_up, :shaped_device_count,
-    :net_json_len
+    :net_json_len, :peak_down, :peak_up
 );";
 
 const INSERT_NIC: &str =
@@ -148,6 +150,8 @@ pub fn insert_stats_dump(stats: &AnonymousUsageV1, ip: &str) -> anyhow::Result<(
         (":generated_pdn_up", (stats.generated_pdn_capacity.1 as i64).into()),
         (":shaped_device_count", (stats.shaped_device_count as i64).into()),
         (":net_json_len", (stats.net_json_len as i64).into()),
+        (":peak_down", (stats.high_watermark_bps.0 as i64).into()),
+        (":peak_up", (stats.high_watermark_bps.0 as i64).into()),
     ])?;
     statement.next()?;
 

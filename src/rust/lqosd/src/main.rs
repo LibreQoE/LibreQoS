@@ -25,7 +25,7 @@ use signal_hook::{
   consts::{SIGHUP, SIGINT, SIGTERM},
   iterator::Signals,
 };
-use stats::{BUS_REQUESTS, TIME_TO_POLL_HOSTS};
+use stats::{BUS_REQUESTS, TIME_TO_POLL_HOSTS, HIGH_WATERMARK_DOWN, HIGH_WATERMARK_UP};
 use tokio::join;
 mod stats;
 
@@ -182,6 +182,10 @@ fn handle_bus_requests(
         BusResponse::LqosdStats { 
           bus_requests: BUS_REQUESTS.load(std::sync::atomic::Ordering::Relaxed),
           time_to_poll_hosts: TIME_TO_POLL_HOSTS.load(std::sync::atomic::Ordering::Relaxed),
+          high_watermark: (
+            HIGH_WATERMARK_DOWN.load(std::sync::atomic::Ordering::Relaxed),
+            HIGH_WATERMARK_UP.load(std::sync::atomic::Ordering::Relaxed),
+          )
         }
       }
     });

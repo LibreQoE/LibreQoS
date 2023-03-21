@@ -1,5 +1,5 @@
 use std::sync::atomic::AtomicU64;
-use crate::shaped_devices_tracker::{SHAPED_DEVICES, NETWORK_JSON};
+use crate::{shaped_devices_tracker::{SHAPED_DEVICES, NETWORK_JSON}, stats::{HIGH_WATERMARK_DOWN, HIGH_WATERMARK_UP}};
 use super::{throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
 use dashmap::DashMap;
 use lqos_bus::TcHandle;
@@ -220,6 +220,20 @@ impl ThroughputTracker {
           Self::add_atomic_tuple(&self.shaped_bytes_per_second, (bytes_down, bytes_up));
         }
       });
+
+      let current = self.bits_per_second();
+      if current.0 < 100000000000  && current.1 < 100000000000 {
+        let prev_max = (
+          HIGH_WATERMARK_DOWN.load(std::sync::atomic::Ordering::Relaxed),
+          HIGH_WATERMARK_UP.load(std::sync::atomic::Ordering::Relaxed),
+        );
+        if current.0 > prev_max.0 {
+          HIGH_WATERMARK_DOWN.store(current.0, std::sync::atomic::Ordering::Relaxed);
+        }
+        if current.1 > prev_max.1 {
+          HIGH_WATERMARK_UP.store(current.1, std::sync::atomic::Ordering::Relaxed);
+        }
+      }
   }
 
   pub(crate) fn next_cycle(&self) {
