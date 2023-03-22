@@ -329,7 +329,7 @@
                             {x: entries.x[0], y:entries.y[0].reverse(), name: 'Download', type: 'scatter'},
                             {x: entries.x[1], y:entries.y[1].reverse(), name: 'Upload', type: 'scatter'},
                         ];
-                        Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
+                        Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true, title: "Time since now (seconds)"} });
 
                         // Try to hide zeroes
                         for (let i=0; i<entries.y[2].length; i++) {
@@ -347,7 +347,7 @@
                             {x: entries.x[4], y:entries.y[4].reverse(), name: 'Up Drops', mode: 'markers', marker: { size: 4 }},
                             {x: entries.x[5], y:entries.y[5].reverse(), name: 'Up Marks', mode: 'markers', marker: { size: 4 }},
                         ];
-                        Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
+                        Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true, title: "Time since now (seconds)"} });
 
                         backlogX1.push(entries.x[6]);
                         backlogX2.push(entries.x[7]);
@@ -369,7 +369,7 @@
                         {x: backlogX1[3], y:backlogY1[3].reverse(), type: 'scatter', name: 'Tin 3 Down'},
                         {x: backlogX2[3], y:backlogY2[3].reverse(), type: 'scatter', name: 'Tin 3 Up'},
                     ];
-                    Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
+                    Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true, title: "Time since now (seconds)"} });
 
                     graph = document.getElementById("delayGraph");
                     graph_data = [
@@ -382,14 +382,14 @@
                         {x: delaysX1[3], y:delaysY1[3].reverse(), type: 'scatter', name: 'Tin 3 Down'},
                         {x: delaysX2[3], y:delaysY2[3].reverse(), type: 'scatter', name: 'Tin 3 Up'},
                     ];
-                    Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
+                    Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true, title: "Time since now (seconds)"} });
 
                     graph = document.getElementById("qlenGraph");
                     graph_data = [
                         {x: qlenX1, y:qlenY1.reverse(), type: 'scatter', name: 'Down'},
                         {x: qlenX2, y:qlenY2.reverse(), type: 'scatter', name: 'Up'},
                     ];
-                    Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
+                    Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true, title: "Time since now (seconds)"} });
                 });
             }
         }
@@ -469,7 +469,7 @@
                         graph_data.push({x: xDown, y: yDown.reverse(), name: ip + " Down", type: 'scatter'});
                         graph_data.push({x: xUp, y: yUp.reverse(), name: ip + " Up", type: 'scatter'});
                     }
-                    Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
+                    Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true, title: "Traffic (bits)" }, xaxis: {automargin: true, title: "Time since now (seconds)"} });
                     throughput_head += 1;
                     if (throughput_head >= 300) {
                         throughput_head = 0;
