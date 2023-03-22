@@ -190,12 +190,13 @@
             msgPackGet("/api/network_tree_summary/", (data) => {
                 let table = "<table class='table' style='font-size: 8pt;'>";
                 for (let i = 0; i < data.length; ++i) {
+                    let id = data[i][0];
                     let name = data[i][1][NetTrans.name];
                     if (name.length > 20) {
                         name = name.substring(0, 20) + "...";
                     }
                     table += "<tr>";
-                    table += "<td class='redact'>" + redactText(name) + "</td>";
+                    table += "<td class='redact'><a href='/tree?parent=" + id + "'>" + redactText(name) + "</a></td>";
                     table += "<td>" + scaleNumber(data[i][1][NetTrans.current_throughput][0] * 8) + "</td>";
                     table += "<td>" + scaleNumber(data[i][1][NetTrans.current_throughput][1] * 8) + "</td>";
                     table += "</tr>";
