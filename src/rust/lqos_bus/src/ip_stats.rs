@@ -131,7 +131,7 @@ pub struct PacketHeader {
   pub ip_protocol: u8,
   /// ECN Flag
   pub ecn: u8,
-  /// DHSCP code
+  /// DSCP code
   pub dscp: u8,
   /// Packet Size
   pub size: u32,
