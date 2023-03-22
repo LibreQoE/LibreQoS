@@ -51,7 +51,7 @@ def createShaper():
 
     networkURL = restconf['baseURL'] + '/' + restconf['networkURI'].strip('/')
 
-    raw = get(networkURL, **requestConfig)
+    raw = get(networkURL, **requestConfig, timeout=10)
 
     if raw.status_code != 200:
         print('Failed to request ' + networkURL + ', got ' + str(raw.status_code))
