@@ -379,3 +379,12 @@ function ecn(n) {
         default: return "???";
     }
 }
+
+function zip(a, b) {
+    let zipped = [];
+    for (let i=0; i<a.length; ++i) {
+        zipped.push(a[i]);
+        zipped.push(b[i]);
+    }
+    return zipped;
+}
