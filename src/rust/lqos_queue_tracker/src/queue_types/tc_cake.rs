@@ -59,7 +59,7 @@ struct TcCakeOptions {
   split_gso: bool,
   raw: bool,
   overhead: u16,
-  fwmark: String,
+  fwmark: TcHandle,
 }
 
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
@@ -179,7 +179,7 @@ impl TcCakeOptions {
             "raw" => result.raw = value.as_bool().unwrap_or(false),
             "overhead" => result.overhead = value.as_u64().unwrap_or(0) as u16,
             "fwmark" => {
-              result.fwmark = value.as_str().unwrap_or("").to_string()
+              parse_tc_handle!(result.fwmark, value);
             }
             _ => {
               info_once!(

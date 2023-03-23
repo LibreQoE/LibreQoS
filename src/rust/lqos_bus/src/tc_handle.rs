@@ -34,8 +34,13 @@ impl TcHandle {
       "none" => Ok(Self(TC_H_UNSPEC)),
       _ => {
         if !handle.contains(':') {
-          error!("Unable to parse TC handle {handle}. Must contain a colon.");
-          return Err(TcHandleParseError::InvalidInput(handle.to_string()));
+          if let Ok(major) = read_hex_string(handle) {
+            let minor = 0;
+            return Ok(Self((major << 16) | minor));
+          } else {
+            error!("Unable to parse TC handle {handle}. Must contain a colon.");
+            return Err(TcHandleParseError::InvalidInput(handle.to_string()));
+          }
         }
         let parts: Vec<&str> = handle.split(':').collect();        
         let major = read_hex_string(parts[0]).map_err(|_| TcHandleParseError::InvalidInput(handle.to_string()))?;
