@@ -118,14 +118,14 @@ pub async fn flow_stats(ip_list: String, _auth: AuthGuard) -> NoCache<Json<Vec<(
 #[serde(crate = "rocket::serde")]
 pub enum RequestAnalysisResult {
   Fail,
-  Ok(usize)
+  Ok{ session_id: usize, countdown: usize }
 }
 
 #[get("/api/request_analysis/<ip>")]
 pub async fn request_analysis(ip: String) -> NoCache<Json<RequestAnalysisResult>> {
   for r in bus_request(vec![BusRequest::GatherPacketData(ip)]).await.unwrap() {
-    if let BusResponse::PacketCollectionSession(id) = r {
-      return NoCache::new(Json(RequestAnalysisResult::Ok(id)));
+    if let BusResponse::PacketCollectionSession{session_id, countdown} = r {
+      return NoCache::new(Json(RequestAnalysisResult::Ok{session_id, countdown}));
     }
   }
 

@@ -1436,6 +1436,7 @@ dependencies = [
  "dashmap",
  "log",
  "lqos_bus",
+ "lqos_config",
  "lqos_sys",
  "lqos_utils",
  "once_cell",
