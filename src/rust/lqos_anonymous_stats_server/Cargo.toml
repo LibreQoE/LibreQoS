@@ -2,6 +2,7 @@
 name = "lqos_anonymous_stats_server"
 version = "0.1.0"
 edition = "2021"
+license = "GPL-2.0-only"
 
 [dependencies]
 tokio = { version = "1.25.0", features = ["full"] }
