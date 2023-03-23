@@ -332,12 +332,17 @@
                         Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true, title: "Bits" }, xaxis: {automargin: true, title: "Time since now"} });
 
                         // Try to hide zeroes
+                        // Fix the units on delay, convert from usec to ms
                         for (let i=0; i<entries.y[2].length; i++) {
                             if (entries.y[2][i] == 0) entries.y[2][i] = null;
                             if (entries.y[3][i] == 0) entries.y[3][i] = null;
                             if (entries.y[4][i] == 0) entries.y[4][i] = null;
                             if (entries.y[5][i] == 0) entries.y[5][i] = null;
+                            entries.y[8][i] *= 0.001; // Scale the delay
+                            entries.y[9][i] *= 0.001;
                         }
+
+                        
 
                         let mdx = zip(entries.x[2], entries.x[4]);
                         let drop = zip(entries.y[2].reverse(), entries.y[4].reverse());
@@ -369,14 +374,17 @@
                         zip(backlogY1[2].reverse(), backlogY2[2].reverse()),
                         zip(backlogY1[3].reverse(), backlogY2[3].reverse()),
                     ]
+                    for (let n=0; n<bly.length; ++n) {
+                        zero_to_null(bly[n]);
+                    }
                     let graph_data = [
-                        {x: blx, y:bly[0], type: 'scatter', mode: 'markers', name: 'Bulk'},
+                        {x: blx, y:bly[0], type: 'scatter', mode: 'markers', name: 'Bulk', marker: { size: 4 }},
                         //{x: blx, y:backlogY2[0].reverse(), type: 'scatter', mode: 'markers', name: 'Tin 0 Up'},
-                        {x: blx, y:bly[1], type: 'scatter', mode: 'markers', name: 'Best Effort'},
+                        {x: blx, y:bly[1], type: 'scatter', mode: 'markers', name: 'Best Effort', marker: { size: 4 }},
                         //{x: blx, y:backlogY2[1].reverse(), type: 'scatter', mode: 'markers', name: 'Tin 1 Up'},
-                        {x: blx, y:bly[2], type: 'scatter', mode: 'markers', name: 'Video'},
+                        {x: blx, y:bly[2], type: 'scatter', mode: 'markers', name: 'Video', marker: { size: 4 }},
                         //{x: blx, y:backlogY2[2].reverse(), type: 'scatter', mode: 'markers', name: 'Tin 2 Up'},
-                        {x: blx, y:bly[3], type: 'scatter', mode: 'markers', name: 'Voice'},
+                        {x: blx, y:bly[3], type: 'scatter', mode: 'markers', name: 'Voice', marker: { size: 4 }},
                         //{x: blx, y:backlogY2[3].reverse(), type: 'scatter', mode: 'markers', name: 'Tin 3 Up'},
                     ];
                     Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true, title: "Bytes" }, xaxis: {automargin: true, title: "Time since now (seconds)"} });
@@ -388,15 +396,18 @@
                         zip(delaysY1[2].reverse(), delaysY2[2].reverse()),
                         zip(delaysY1[3].reverse(), delaysY2[3].reverse()),
                     ]
+                    for (let n=0; n<dly.length; ++n) {
+                        zero_to_null(dly[n]);
+                    }
                     graph = document.getElementById("delayGraph");
                     graph_data = [
-                        {x: dlx, y:dly[0], type: 'scatter', mode: 'markers', name: 'Tin 0'},
+                        {x: dlx, y:dly[0], type: 'scatter', mode: 'markers', name: 'Bulk', marker: { size: 4 }},
                         //{x: delaysX2[0], y:delaysY2[0].reverse(), type: 'scatter', name: 'Tin 0 Up'},
-                        {x: dlx, y:dly[1], type: 'scatter', mode: 'markers', name: 'Tin 1'},
+                        {x: dlx, y:dly[1], type: 'scatter', mode: 'markers', name: 'Best Effort', marker: { size: 4 }},
                         //{x: delaysX2[1], y:delaysY2[1].reverse(), type: 'scatter', name: 'Tin 1 Up'},
-                        {x: dlx, y:dly[2], type: 'scatter', mode: 'markers', name: 'Tin 2'},
+                        {x: dlx, y:dly[2], type: 'scatter', mode: 'markers', name: 'Video', marker: { size: 4 }},
                         //{x: delaysX2[2], y:delaysY2[2].reverse(), type: 'scatter', name: 'Tin 2 Up'},
-                        {x: dlx, y:dly[3], type: 'scatter', mode: 'markers', name: 'Tin 3'},
+                        {x: dlx, y:dly[3], type: 'scatter', mode: 'markers', name: 'Voice', marker: { size: 4 }},
                         //{x: delaysX2[3], y:delaysY2[3].reverse(), type: 'scatter', name: 'Tin 3 Up'},
                     ];
                     Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true, title: "Time (ms)" }, xaxis: {automargin: true, title: "Time since now (seconds)"} });
@@ -485,8 +496,9 @@
 
                         let xd = zip(xDown, xUp);
                         let yd = zip(yDown.reverse(), yUp.reverse());
+                        zero_to_null(yd);
 
-                        graph_data.push({x: xd, y: yd, name: ip + " Down", mode: 'markers', type: 'scatter', marker: { size: 4 }});
+                        graph_data.push({x: xd, y: yd, name: ip, mode: 'markers', type: 'scatter', marker: { size: 4 }});
                         //graph_data.push({x: xUp, y: yUp.reverse(), name: ip + " Up", mode: 'markers', type: 'scatter'});
                     }
                     Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true, title: "Traffic (bits)" }, xaxis: {automargin: true, title: "Time since now (seconds)"} });
