@@ -127,7 +127,7 @@ if (hdr->cwr) flags |= 128;
         }
 
         function paginator(active) {
-            let paginator = "<a href='/api/pcap/" + target + "/capture-" + circuit_id + ".pcap' class='btn btn-warning'>Download PCAP Dump</a> ";
+            let paginator = "<a href='/api/pcap/" + target + "/capture-" + circuit_id + "-" + starting_timestamp + ".pcap' class='btn btn-warning'>Download PCAP Dump</a> ";
             paginator += "<a href='#' class='btn btn-info' onClick='zoomIn();'>Zoom In</a> ";
             paginator += "<a href='#' class='btn btn-info' onClick='zoomOut();'>Zoom Out</a> (ℹ️ Or drag an area of the graph) <br />";
 
@@ -198,6 +198,7 @@ if (hdr->cwr) flags |= 128;
         }
 
         let circuit_id = null;
+        let starting_timestamp = null;
 
         function start() {
             colorReloadButton();
@@ -226,6 +227,7 @@ if (hdr->cwr) flags |= 128;
                 }
                 packets = data;
                 pages = Math.ceil((packets.length / PAGE_SIZE));
+                starting_timestamp = min_ts;
                 paginator(0);                
                 viewPage(0);
             });
