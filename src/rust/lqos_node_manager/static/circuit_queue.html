@@ -332,12 +332,17 @@
                         Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true, title: "Bits" }, xaxis: {automargin: true, title: "Time since now"} });
 
                         // Try to hide zeroes
+                        // Fix the units on delay, convert from usec to ms
                         for (let i=0; i<entries.y[2].length; i++) {
                             if (entries.y[2][i] == 0) entries.y[2][i] = null;
                             if (entries.y[3][i] == 0) entries.y[3][i] = null;
                             if (entries.y[4][i] == 0) entries.y[4][i] = null;
                             if (entries.y[5][i] == 0) entries.y[5][i] = null;
+                            entries.y[8][i] *= 0.001; // Scale the delay
+                            entries.y[9][i] *= 0.001;
                         }
+
+                        
 
                         let mdx = zip(entries.x[2], entries.x[4]);
                         let drop = zip(entries.y[2].reverse(), entries.y[4].reverse());
