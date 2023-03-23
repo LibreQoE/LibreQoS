@@ -19,7 +19,7 @@ def spylnxRequest(target, headers):
 	# Sends a REST GET request to Spylnx and returns the
 	# result in JSON
 	url = splynx_api_url + "/api/2.0/" + target
-	r = requests.get(url, headers=headers)
+	r = requests.get(url, headers=headers, timeout=10)
 	return r.json()
 
 def getTariffs(headers):

@@ -13,7 +13,7 @@ def uispRequest(target):
 	from ispConfig import UISPbaseURL, uispAuthToken
 	url = UISPbaseURL + "/nms/api/v2.1/" + target
 	headers = {'accept': 'application/json', 'x-auth-token': uispAuthToken}
-	r = requests.get(url, headers=headers)
+	r = requests.get(url, headers=headers, timeout=10)
 	return r.json()
 
 def buildFlatGraph():

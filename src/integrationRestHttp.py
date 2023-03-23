@@ -25,7 +25,7 @@ def createShaper():
 
     requestConfig = objects.defaults_deep({'params': {}}, restconf.get('requestsConfig'), requestsBaseConfig)
 
-    raw = get(devicesURL, **requestConfig)
+    raw = get(devicesURL, **requestConfig, timeout=10)
 
     if raw.status_code != 200:
         print('Failed to request ' + devicesURL + ', got ' + str(raw.status_code))
@@ -51,7 +51,7 @@ def createShaper():
 
     networkURL = restconf['baseURL'] + '/' + restconf['networkURI'].strip('/')
 
-    raw = get(networkURL, **requestConfig)
+    raw = get(networkURL, **requestConfig, timeout=10)
 
     if raw.status_code != 200:
         print('Failed to request ' + networkURL + ', got ' + str(raw.status_code))
