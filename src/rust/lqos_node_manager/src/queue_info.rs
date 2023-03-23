@@ -118,14 +118,14 @@ pub async fn flow_stats(ip_list: String, _auth: AuthGuard) -> NoCache<Json<Vec<(
 #[serde(crate = "rocket::serde")]
 pub enum RequestAnalysisResult {
   Fail,
-  Ok(usize)
+  Ok{ session_id: usize, countdown: usize }
 }
 
 #[get("/api/request_analysis/<ip>")]
 pub async fn request_analysis(ip: String) -> NoCache<Json<RequestAnalysisResult>> {
   for r in bus_request(vec![BusRequest::GatherPacketData(ip)]).await.unwrap() {
-    if let BusResponse::PacketCollectionSession(id) = r {
-      return NoCache::new(Json(RequestAnalysisResult::Ok(id)));
+    if let BusResponse::PacketCollectionSession{session_id, countdown} = r {
+      return NoCache::new(Json(RequestAnalysisResult::Ok{session_id, countdown}));
     }
   }
 
@@ -143,8 +143,11 @@ pub async fn packet_dump(id: usize, _auth: AuthGuard) -> NoCache<Json<Vec<Packet
   NoCache::new(Json(result))
 }
 
-#[get("/api/pcap/<id>/capture.pcap")]
-pub async fn pcap(id: usize) -> Result<NoCache<NamedFile>, Status> {
+#[allow(unused_variables)]
+#[get("/api/pcap/<id>/<filename>")]
+pub async fn pcap(id: usize, filename: String) -> Result<NoCache<NamedFile>, Status> {
+  // The unusued _filename parameter is there to allow the changing of the
+  // filename on the client side. See Github issue 291.
   for r in bus_request(vec![BusRequest::GetPcapDump(id)]).await.unwrap() {
     if let BusResponse::PcapDump(Some(filename)) = r {
       return Ok(NoCache::new(NamedFile::open(filename).await.unwrap()));

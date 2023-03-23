@@ -7,6 +7,7 @@ use crate::{
 };
 use dashmap::{DashMap, DashSet};
 use lqos_bus::{tos_parser, PacketHeader};
+use lqos_config::EtcLqos;
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 use once_cell::sync::Lazy;
 use std::{
@@ -99,7 +100,7 @@ static FOCUS_SESSIONS: Lazy<DashMap<usize, FocusSession>> =
 ///
 /// * Either `None` or...
 /// * The id number of the collection session for analysis.
-pub fn hyperfocus_on_target(ip: XdpIpAddress) -> Option<usize> {
+pub fn hyperfocus_on_target(ip: XdpIpAddress) -> Option<(usize, usize)> {
   if HYPERFOCUSED.compare_exchange(
     false,
     true,
@@ -107,10 +108,17 @@ pub fn hyperfocus_on_target(ip: XdpIpAddress) -> Option<usize> {
     std::sync::atomic::Ordering::Relaxed,
   ) == Ok(false)
   {
+    // If explicitly set, obtain the capture time. Otherwise, default to
+    // a reasonable 10 seconds.
+    let capture_time = if let Ok(cfg) = EtcLqos::load() {
+      cfg.packet_capture_time.unwrap_or(10)
+    } else {
+      10
+    };
     let new_id =
       FOCUS_SESSION_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     std::thread::spawn(move || {
-      for _ in 0..10 {
+      for _ in 0..capture_time {
         let _ = set_heimdall_mode(HeimdallMode::Analysis);
         heimdall_watch_ip(ip);
         std::thread::sleep(Duration::from_secs(1));
@@ -133,7 +141,7 @@ pub fn hyperfocus_on_target(ip: XdpIpAddress) -> Option<usize> {
 
       HYPERFOCUSED.store(false, std::sync::atomic::Ordering::Relaxed);
     });
-    Some(new_id)
+    Some((new_id, capture_time))
   } else {
     log::warn!(
       "Heimdall was busy and won't start another collection session."
@@ -142,7 +150,7 @@ pub fn hyperfocus_on_target(ip: XdpIpAddress) -> Option<usize> {
   }
 }
 
-pub fn ten_second_packet_dump(session_id: usize) -> Option<Vec<PacketHeader>> {
+pub fn n_second_packet_dump(session_id: usize) -> Option<Vec<PacketHeader>> {
   if let Some(session) = FOCUS_SESSIONS.get(&session_id) {
     Some(session.data.iter().map(|e| e.as_header()).collect())
   } else {
@@ -150,7 +158,7 @@ pub fn ten_second_packet_dump(session_id: usize) -> Option<Vec<PacketHeader>> {
   }
 }
 
-pub fn ten_second_pcap(session_id: usize) -> Option<String> {
+pub fn n_second_pcap(session_id: usize) -> Option<String> {
   if let Some(mut session) = FOCUS_SESSIONS.get_mut(&session_id) {
     let filename = format!("/tmp/cap_sess_{session_id}");
     session.dump_filename = Some(filename.clone());

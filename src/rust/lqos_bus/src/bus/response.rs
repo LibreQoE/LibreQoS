@@ -91,7 +91,12 @@ pub enum BusResponse {
   FlowData(Vec<(FlowTransport, Option<FlowTransport>)>),
 
   /// The index of the new packet collection session
-  PacketCollectionSession(usize),
+  PacketCollectionSession{ 
+    /// The identifier of the capture session
+    session_id: usize, 
+    /// Number of seconds for which data will be captured
+    countdown: usize 
+  },
 
   /// Packet header dump
   PacketDump(Option<Vec<PacketHeader>>),
