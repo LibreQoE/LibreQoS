@@ -143,8 +143,11 @@ pub async fn packet_dump(id: usize, _auth: AuthGuard) -> NoCache<Json<Vec<Packet
   NoCache::new(Json(result))
 }
 
-#[get("/api/pcap/<id>/capture.pcap")]
-pub async fn pcap(id: usize) -> Result<NoCache<NamedFile>, Status> {
+#[allow(unused_variables)]
+#[get("/api/pcap/<id>/<filename>")]
+pub async fn pcap(id: usize, filename: String) -> Result<NoCache<NamedFile>, Status> {
+  // The unusued _filename parameter is there to allow the changing of the
+  // filename on the client side. See Github issue 291.
   for r in bus_request(vec![BusRequest::GetPcapDump(id)]).await.unwrap() {
     if let BusResponse::PcapDump(Some(filename)) = r {
       return Ok(NoCache::new(NamedFile::open(filename).await.unwrap()));

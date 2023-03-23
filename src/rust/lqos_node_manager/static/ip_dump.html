@@ -127,7 +127,7 @@ if (hdr->cwr) flags |= 128;
         }
 
         function paginator(active) {
-            let paginator = "<a href='/api/pcap/" + target + "/capture.pcap' class='btn btn-warning'>Download PCAP Dump</a> ";
+            let paginator = "<a href='/api/pcap/" + target + "/capture-" + circuit_id + ".pcap' class='btn btn-warning'>Download PCAP Dump</a> ";
             paginator += "<a href='#' class='btn btn-info' onClick='zoomIn();'>Zoom In</a> ";
             paginator += "<a href='#' class='btn btn-info' onClick='zoomOut();'>Zoom Out</a> (ℹ️ Or drag an area of the graph) <br />";
 
@@ -195,7 +195,9 @@ if (hdr->cwr) flags |= 128;
                 {x: x_axis, y:y2_axis, name: 'Upload', type: 'scatter', mode: 'markers', error_x: { type: 'percent', value: capacity[1], symetric: false, valueminus: 0 }},                
             ];
             Plotly.newPlot(graph, data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true, title: 'Bytes' }, xaxis: {automargin: true, title: "Nanoseconds"} }, { responsive: true });
-        }        
+        }
+
+        let circuit_id = null;
 
         function start() {
             colorReloadButton();
@@ -203,6 +205,7 @@ if (hdr->cwr) flags |= 128;
             const params = new Proxy(new URLSearchParams(window.location.search), {
                 get: (searchParams, prop) => searchParams.get(prop),
             });
+            circuit_id = params.circuit_id;
 
             capacity = [ params.dn, params.up ]; // Bits per second
             capacity = [ capacity[0] / 8, capacity[1] / 8 ]; // Bytes per second

@@ -608,7 +608,7 @@
             if (analysisTimer > -1) {
                 setTimeout(analyzeTick, 1000);
             } else {
-                window.location.href = "/ip_dump?id=" + analysisId;
+                window.location.href = "/ip_dump?id=" + analysisId + "&circuit_id=" + encodeURI(id);
             }
         }
 
