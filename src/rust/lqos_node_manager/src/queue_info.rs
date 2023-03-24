@@ -92,7 +92,7 @@ pub async fn current_circuit_throughput(
 pub async fn raw_queue_by_circuit(
   circuit_id: String,
   _auth: AuthGuard,
-) -> NoCache<Json<QueueStoreTransit>> {
+) -> NoCache<MsgPack<QueueStoreTransit>> {
 
   let responses =
     bus_request(vec![BusRequest::GetRawQueueData(circuit_id)]).await.unwrap();
@@ -103,7 +103,7 @@ pub async fn raw_queue_by_circuit(
     }
     _ => QueueStoreTransit::default()
   };
-  NoCache::new(Json(result))
+  NoCache::new(MsgPack(result))
 }
 
 #[get("/api/flows/<ip_list>")]

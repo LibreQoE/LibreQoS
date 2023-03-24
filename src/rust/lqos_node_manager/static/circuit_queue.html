@@ -248,7 +248,7 @@
 
         function displayMemory(data) {
             // Fill Base Information
-            let total_memory = data.current_download.memory_used + data.current_upload.memory_used;
+            let total_memory = data[QD.current_download][CT.memory_used] + data[QD.current_upload][CT.memory_used];
             $("#memory").text(scaleNumber(total_memory));
         }
 
@@ -298,50 +298,50 @@
             }
 
             ingestBacklog(subData, currentX, tin) {
-                this.backlog.store(tin, currentX, 0, subData[0].tins[tin].backlog_bytes * 8);
-                this.backlog.store(tin, currentX, 1, 0.0 - subData[1].tins[tin].backlog_bytes * 8);
+                this.backlog.store(tin, currentX, 0, subData[0][CDT.tins][tin][CDTT.backlog_bytes] * 8);
+                this.backlog.store(tin, currentX, 1, 0.0 - subData[1][CDT.tins][tin][CDTT.backlog_bytes] * 8);
             }
 
             ingestDelays(subData, currentX, tin) {
-                this.delays.store(tin, currentX, 0, subData[0].tins[tin].avg_delay_us);
-                this.delays.store(tin, currentX, 1, 0.0 - subData[1].tins[tin].avg_delay_us);
+                this.delays.store(tin, currentX, 0, subData[0][CDT.tins][tin][CDTT.avg_delay_us]);
+                this.delays.store(tin, currentX, 1, 0.0 - subData[1][CDT.tins][tin][CDTT.avg_delay_us]);
             }
 
             ingestQueueLen(subData, currentX) {
-                this.queueLen.store(currentX, 0, subData[0].qlen);
-                this.queueLen.store(currentX, 1, 0.0 - subData[1].qlen);
+                this.queueLen.store(currentX, 0, subData[0][CDT.qlen]);
+                this.queueLen.store(currentX, 1, 0.0 - subData[1][CDT.qlen]);
             }
 
             ingestThroughput(subData, currentX, tin) {
-                this.throughput.store(tin, currentX, 0, subData[0].tins[tin].sent_bytes * 8);
-                this.throughput.store(tin, currentX, 1, 0.0 - (subData[1].tins[tin].sent_bytes * 8));
+                this.throughput.store(tin, currentX, 0, subData[0][CDT.tins][tin][CDTT.sent_bytes] * 8);
+                this.throughput.store(tin, currentX, 1, 0.0 - (subData[1][CDT.tins][tin][CDTT.sent_bytes] * 8));
             }
 
             ingestDrops(subData, currentX, tin) {
-                this.drops.store(tin, currentX, 0, subData[0].tins[tin].drops);
-                this.drops.store(tin, currentX, 1, 0.0 - subData[1].tins[tin].drops);
+                this.drops.store(tin, currentX, 0, subData[0][CDT.tins][tin][CDTT.drops]);
+                this.drops.store(tin, currentX, 1, 0.0 - subData[1][CDT.tins][tin][CDTT.drops]);
             }
 
             ingestMarks(subData, currentX, tin) {
-                this.marks.store(tin, currentX, 0, subData[0].tins[tin].marks);
-                this.marks.store(tin, currentX, 1, 0.0 - subData[1].tins[tin].marks);
+                this.marks.store(tin, currentX, 0, subData[0][CDT.tins][tin][CDTT.marks]);
+                this.marks.store(tin, currentX, 1, 0.0 - subData[1][CDT.tins][tin][CDTT.marks]);
             }
 
             ingest(data, currentX, hi) {
                 // We're inserting at currentX, from the history entry indexed
                 // by hi
                 if (activeTab == "pills-home-tab") {
-                    this.ingestQueueLen(data.history[hi], currentX);
+                    this.ingestQueueLen(data[QD.history][hi], currentX);
                 }
                 for (let tin = 0; tin < 4; ++tin) {
-                    if (data.history[hi][0] != "None" && data.history[hi][1] != "None") {
+                    if (data[QD.history][hi][0] != "None" && data[QD.history][hi][1] != "None") {
                         if (activeTab == "pills-home-tab") {
-                            this.ingestBacklog(data.history[hi], currentX, tin);
-                            this.ingestDelays(data.history[hi], currentX, tin);
-                            this.ingestThroughput(data.history[hi], currentX, tin);
+                            this.ingestBacklog(data[QD.history][hi], currentX, tin);
+                            this.ingestDelays(data[QD.history][hi], currentX, tin);
                         } else if (activeTab == "pills-tins-tab") {
-                            this.ingestDrops(data.history[hi], currentX, tin);
-                            this.ingestMarks(data.history[hi], currentX, tin);
+                            this.ingestThroughput(data[QD.history][hi], currentX, tin);
+                            this.ingestDrops(data[QD.history][hi], currentX, tin);
+                            this.ingestMarks(data[QD.history][hi], currentX, tin);
                         }
                     }
                 }
@@ -352,11 +352,11 @@
                 // Note that we're going backwards. reverse() turned out
                 // to be surprisingly expensive in JS.
                 let currentX = this.capacity;
-                for (let hi = data.history_head; hi < 600; ++hi) {
+                for (let hi = data[QD.history_head]; hi < 600; ++hi) {
                     this.ingest(data, currentX, hi);
                     currentX--;
                 }
-                for (let hi = 0; hi < data.history_head; ++hi) {
+                for (let hi = 0; hi < data[QD.history_head]; ++hi) {
                     this.ingest(data, currentX, hi);
                     currentX--;
                 }
@@ -416,7 +416,7 @@
                     this.plotDelays();
                     this.plotQueueLen();
                 } else if (activeTab == "pills-tins-tab") {
-                    for (let tin=0; tin<4; ++tin) {
+                    for (let tin = 0; tin < 4; ++tin) {
                         this.plotTinThroughput(tin);
                         this.plotMarksDrops(tin);
                     }
@@ -432,11 +432,11 @@
                 nameCircuit();
 
                 // Graphs
-                $.get("/api/raw_queue_by_circuit/" + encodeURI(id), (data) => {
+                msgPackGet("/api/raw_queue_by_circuit/" + encodeURI(id), (data) => {
                     if (qp == null) qp = new QueuePlotter(600);
                     qp.update(data);
                     qp.plot();
-                    displayMemory(data);                    
+                    displayMemory(data);
                 });
             }
         }

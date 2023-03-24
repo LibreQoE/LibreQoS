@@ -53,6 +53,32 @@ const CircuitInfo = {
     "capacity" : 1,
 }
 
+const QD = { // Queue data
+    "history": 0,
+    "history_head": 1,
+    "current_download": 2,
+    "current_upload": 3,
+}
+
+const CT = { // Cake transit
+    "memory_used": 0,
+}
+
+const CDT = { // Cake Diff Transit
+    "bytes": 0,
+    "packets": 1,
+    "qlen": 2,
+    "tins": 3,
+}
+
+const CDTT = { // Cake Diff Tin Transit
+    "sent_bytes": 0,
+    "backlog_bytes": 1,
+    "drops": 2,
+    "marks": 3,
+    "avg_delay_us": 4,
+}
+
 function metaverse_color_ramp(n) {
     if (n <= 9) {
         return "#32b08c";
