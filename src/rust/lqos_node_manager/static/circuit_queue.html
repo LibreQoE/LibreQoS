@@ -303,8 +303,8 @@
             }
 
             ingestDelays(subData, currentX, tin) {
-                this.delays.store(tin, currentX, 0, subData[0][CDT.tins][tin][CDTT.avg_delay_us]);
-                this.delays.store(tin, currentX, 1, 0.0 - subData[1][CDT.tins][tin][CDTT.avg_delay_us]);
+                this.delays.store(tin, currentX, 0, subData[0][CDT.tins][tin][CDTT.avg_delay_us] * 0.001);
+                this.delays.store(tin, currentX, 1, 0.0 - subData[1][CDT.tins][tin][CDTT.avg_delay_us] * 0.001);
             }
 
             ingestQueueLen(subData, currentX) {
@@ -381,7 +381,7 @@
                     { x: this.x_axis, y: this.delays.tins[2].y, type: 'scatter', mode: 'markers', name: 'Video', marker: { size: 4 } },
                     { x: this.x_axis, y: this.delays.tins[3].y, type: 'scatter', mode: 'markers', name: 'Voice', marker: { size: 4 } },
                 ];
-                Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "uS" }, xaxis: { automargin: true, title: "Time since now" } });
+                Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "ms" }, xaxis: { automargin: true, title: "Time since now" } });
 
             }
 
