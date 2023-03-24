@@ -226,20 +226,20 @@
                     y[j].push(0);
                 }
             } else {
-                y[0].push(data[0].Cake.tins[tin].sent_bytes * 8); // Download
-                y[1].push(0.0 - (data[1].Cake.tins[tin].sent_bytes * 8)); // Upload
-                y[2].push(data[0].Cake.tins[tin].drops); // Down Drops
-                y[3].push(data[0].Cake.tins[tin].marks); // Down Marks
-                y[4].push(0.0 - data[1].Cake.tins[tin].drops); // Up Drops
-                y[5].push(0.0 - data[1].Cake.tins[tin].marks); // Up Marks
+                y[0].push(data[0].tins[tin].sent_bytes * 8); // Download
+                y[1].push(0.0 - (data[1].tins[tin].sent_bytes * 8)); // Upload
+                y[2].push(data[0].tins[tin].drops); // Down Drops
+                y[3].push(data[0].tins[tin].marks); // Down Marks
+                y[4].push(0.0 - data[1].tins[tin].drops); // Up Drops
+                y[5].push(0.0 - data[1].tins[tin].marks); // Up Marks
 
                 // Backlog
-                y[6].push(data[0].Cake.tins[tin].backlog_bytes * 8);
-                y[7].push(0.0 - data[1].Cake.tins[tin].backlog_bytes * 8);
+                y[6].push(data[0].tins[tin].backlog_bytes * 8);
+                y[7].push(0.0 - data[1].tins[tin].backlog_bytes * 8);
 
                 // Delays
-                y[8].push(data[0].Cake.tins[tin].avg_delay_us);
-                y[9].push(0.0 - data[1].Cake.tins[tin].avg_delay_us);
+                y[8].push(data[0].tins[tin].avg_delay_us);
+                y[9].push(0.0 - data[1].tins[tin].avg_delay_us);
             }
         }
 
@@ -263,7 +263,7 @@
                 // Graphs
                 $.get("/api/raw_queue_by_circuit/" + encodeURI(params.id), (data) => {
                     // Fill Base Information
-                    let total_memory = data.current_download.Cake.memory_used + data.current_upload.Cake.memory_used;
+                    let total_memory = data.current_download.memory_used + data.current_upload.memory_used;
                     $("#memory").text(scaleNumber(total_memory));
 
                     // Fill Tin Graphs
@@ -293,12 +293,12 @@
                                 qlenX1.push(counter);
                                 qlenX2.push(counter);
                                 if (data.history[i][0].Cake) {
-                                    qlenY1.push(data.history[i][0].Cake.qlen);
+                                    qlenY1.push(data.history[i][0].qlen);
                                 } else {
                                     qlenY1.push(0);
                                 }
                                 if (data.history[i][1].Cake) {
-                                    qlenY2.push(0.0 - data.history[i][1].Cake.qlen);
+                                    qlenY2.push(0.0 - data.history[i][1].qlen);
                                 } else {
                                     qlenY2.push(0.0);
                                 }
@@ -312,12 +312,12 @@
                                 qlenX1.push(counter);
                                 qlenX2.push(counter);
                                 if (data.history[i][0].Cake) {
-                                    qlenY1.push(data.history[i][0].Cake.qlen);
+                                    qlenY1.push(data.history[i][0].qlen);
                                 } else {
                                     qlenY1.push(0.0);
                                 }
                                 if (data.history[i][1].Cake) {
-                                    qlenY2.push(0.0 - data.history[i][1].Cake.qlen);
+                                    qlenY2.push(0.0 - data.history[i][1].qlen);
                                 } else {
                                     qlenY2.push(0.0);
                                 }

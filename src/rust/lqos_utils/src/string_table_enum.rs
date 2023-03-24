@@ -3,7 +3,7 @@ macro_rules! string_table_enum {
     ($enum_name: ident, $($option:ident),*) => {
         #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
         #[allow(non_camel_case_types)]
-        enum $enum_name {
+        pub(crate) enum $enum_name {
             $($option, )*
             Unknown
         }
@@ -41,7 +41,7 @@ macro_rules! dashy_table_enum {
     ($enum_name: ident, $($option:ident),*) => {
         #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
         #[allow(non_camel_case_types)]
-        enum $enum_name {
+        pub(crate) enum $enum_name {
             $($option, )*
             Unknown
         }

@@ -1,7 +1,7 @@
 use crate::auth_guard::AuthGuard;
 use crate::cache_control::NoCache;
 use crate::tracker::SHAPED_DEVICES;
-use lqos_bus::{bus_request, BusRequest, BusResponse, FlowTransport, PacketHeader};
+use lqos_bus::{bus_request, BusRequest, BusResponse, FlowTransport, PacketHeader, QueueStoreTransit};
 use rocket::fs::NamedFile;
 use rocket::http::Status;
 use rocket::response::content::RawJson;
@@ -92,14 +92,18 @@ pub async fn current_circuit_throughput(
 pub async fn raw_queue_by_circuit(
   circuit_id: String,
   _auth: AuthGuard,
-) -> NoCache<RawJson<String>> {
+) -> NoCache<Json<QueueStoreTransit>> {
+
   let responses =
     bus_request(vec![BusRequest::GetRawQueueData(circuit_id)]).await.unwrap();
+
   let result = match &responses[0] {
-    BusResponse::RawQueueData(msg) => msg.clone(),
-    _ => "Unable to request queue".to_string(),
+    BusResponse::RawQueueData(Some(msg)) => {
+      *msg.clone()
+    }
+    _ => QueueStoreTransit::default()
   };
-  NoCache::new(RawJson(result))
+  NoCache::new(Json(result))
 }
 
 #[get("/api/flows/<ip_list>")]
