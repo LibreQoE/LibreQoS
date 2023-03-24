@@ -365,10 +365,10 @@
             plotBacklog() {
                 let graph = document.getElementById("backlogGraph");
                 let graphData = [
-                    { x: this.x_axis, y: this.backlog.tins[0].y, type: 'scatter', mode: 'markers', name: 'Bulk', marker: { size: 4 } },
-                    { x: this.x_axis, y: this.backlog.tins[1].y, type: 'scatter', mode: 'markers', name: 'Best Effort', marker: { size: 4 } },
-                    { x: this.x_axis, y: this.backlog.tins[2].y, type: 'scatter', mode: 'markers', name: 'Video', marker: { size: 4 } },
-                    { x: this.x_axis, y: this.backlog.tins[3].y, type: 'scatter', mode: 'markers', name: 'Voice', marker: { size: 4 } },
+                    { x: this.x_axis, y: this.backlog.tins[0].y, type: 'scattergl', mode: 'markers', name: 'Bulk', marker: { size: 4 } },
+                    { x: this.x_axis, y: this.backlog.tins[1].y, type: 'scattergl', mode: 'markers', name: 'Best Effort', marker: { size: 4 } },
+                    { x: this.x_axis, y: this.backlog.tins[2].y, type: 'scattergl', mode: 'markers', name: 'Video', marker: { size: 4 } },
+                    { x: this.x_axis, y: this.backlog.tins[3].y, type: 'scattergl', mode: 'markers', name: 'Voice', marker: { size: 4 } },
                 ];
                 
                 if (this.backlogPlotted == null) {
@@ -382,10 +382,10 @@
             plotDelays() {
                 let graph = document.getElementById("delayGraph");
                 let graphData = [
-                    { x: this.x_axis, y: this.delays.tins[0].y, type: 'scatter', mode: 'markers', name: 'Bulk', marker: { size: 4 } },
-                    { x: this.x_axis, y: this.delays.tins[1].y, type: 'scatter', mode: 'markers', name: 'Best Effort', marker: { size: 4 } },
-                    { x: this.x_axis, y: this.delays.tins[2].y, type: 'scatter', mode: 'markers', name: 'Video', marker: { size: 4 } },
-                    { x: this.x_axis, y: this.delays.tins[3].y, type: 'scatter', mode: 'markers', name: 'Voice', marker: { size: 4 } },
+                    { x: this.x_axis, y: this.delays.tins[0].y, type: 'scattergl', mode: 'markers', name: 'Bulk', marker: { size: 4 } },
+                    { x: this.x_axis, y: this.delays.tins[1].y, type: 'scattergl', mode: 'markers', name: 'Best Effort', marker: { size: 4 } },
+                    { x: this.x_axis, y: this.delays.tins[2].y, type: 'scattergl', mode: 'markers', name: 'Video', marker: { size: 4 } },
+                    { x: this.x_axis, y: this.delays.tins[3].y, type: 'scattergl', mode: 'markers', name: 'Voice', marker: { size: 4 } },
                 ];
 
                 if (this.delaysPlotted == null) {
@@ -400,7 +400,7 @@
             plotQueueLen() {
                 let graph = document.getElementById("qlenGraph");
                 let graphData = [
-                    { x: this.x_axis, y: this.queueLen.y, type: 'scatter', mode: 'markers', name: 'Queue Length' },
+                    { x: this.x_axis, y: this.queueLen.y, type: 'scattergl', mode: 'markers', name: 'Queue Length' },
                 ];
                 if (this.queueLenPlotted == null) {
                     Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Packets" }, xaxis: { automargin: true, title: "Time since now" } });
@@ -413,7 +413,7 @@
             plotTinThroughput(tin) {
                 let graph = document.getElementById("tinTp_" + tin);
                 let graphData = [
-                    { x: this.x_axis, y: this.throughput.tins[tin].y, type: 'scatter', mode: 'markers' }
+                    { x: this.x_axis, y: this.throughput.tins[tin].y, type: 'scattergl', mode: 'markers' }
                 ];
                 if (this.tinsPlotted == null) {   
                     Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Bits" }, xaxis: { automargin: true, title: "Time since now" } });
@@ -425,8 +425,8 @@
             plotMarksDrops(tin) {
                 let graph = document.getElementById("tinMd_" + tin);
                 let graphData = [
-                    { x: this.x_axis, y: this.drops.tins[tin].y, name: 'Drops', mode: 'markers', marker: { size: 4 } },
-                    { x: this.x_axis, y: this.marks.tins[tin].y, name: 'Marks', mode: 'markers', marker: { size: 4 } },
+                    { x: this.x_axis, y: this.drops.tins[tin].y, name: 'Drops', type: 'scattergl', mode: 'markers', marker: { size: 4 } },
+                    { x: this.x_axis, y: this.marks.tins[tin].y, name: 'Marks', type: 'scattergl', mode: 'markers', marker: { size: 4 } },
                 ];
                 if (this.tinsPlotted == null) {
                     Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Packets" }, xaxis: { automargin: true, title: "Time since now" } });
@@ -468,8 +468,6 @@
         }
 
         let ips = [];
-        let tpPlot = null;
-        let cqPlot = null;
 
         function getThroughput() {
             if (id != null) {
