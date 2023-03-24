@@ -841,10 +841,6 @@ def refreshShapers():
 			shell("/sbin/tc -f -b linux_tc.txt")
 		tcEndTime = datetime.now()
 		print("Executed " + str(len(linuxTCcommands)) + " linux TC class/qdisc commands")
-				
-		
-		tcEndTime = datetime.now()
-		print("Executed " + str(len(linuxTCcommands)) + " linux TC class/qdisc commands")
 		
 		
 		# Execute actual XDP-CPUMAP-TC filter commands
