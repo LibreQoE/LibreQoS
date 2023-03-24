@@ -334,7 +334,7 @@
                     this.ingestQueueLen(data[QD.history][hi], currentX);
                 }
                 for (let tin = 0; tin < 4; ++tin) {
-                    if (data[QD.history][hi][0] != "None" && data[QD.history][hi][1] != "None") {
+                    if (data[QD.history][hi][0][3].length == 4 && data[QD.history][hi][1][3].length == 4) {
                         if (activeTab == "pills-home-tab") {
                             this.ingestBacklog(data[QD.history][hi], currentX, tin);
                             this.ingestDelays(data[QD.history][hi], currentX, tin);
