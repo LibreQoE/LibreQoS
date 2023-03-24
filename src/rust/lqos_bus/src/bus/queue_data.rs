@@ -1,5 +1,4 @@
 use serde::{Serialize, Deserialize};
-use crate::TcHandle;
 
 
 /// Type used for *displaying* the queue store data. It deliberately
@@ -9,8 +8,8 @@ use crate::TcHandle;
 pub struct QueueStoreTransit {
   pub history: Vec<(CakeDiffTransit, CakeDiffTransit)>,
   pub history_head: usize,
-  pub prev_download: Option<CakeTransit>,
-  pub prev_upload: Option<CakeTransit>,
+  //pub prev_download: Option<CakeTransit>,
+  //pub prev_upload: Option<CakeTransit>,
   pub current_download: CakeTransit,
   pub current_upload: CakeTransit,
 }
@@ -37,14 +36,14 @@ pub struct CakeDiffTinTransit {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 #[allow(missing_docs)]
 pub struct CakeTransit {
-    pub handle: TcHandle,
-    pub parent: TcHandle,
-    pub bytes: u64,
+    //pub handle: TcHandle,
+    //pub parent: TcHandle,
+    //pub bytes: u64,
     //pub packets: u32,
     //pub overlimits: u32,
     //pub requeues: u32,
-    pub backlog: u32,
-    pub qlen: u32,
+    //pub backlog: u32,
+    //pub qlen: u32,
     pub memory_used: u32,
     //pub memory_limit: u32,
     //pub capacity_estimate: u32,
@@ -54,7 +53,7 @@ pub struct CakeTransit {
     //pub max_adj_size: u16,
     //pub avg_hdr_offset: u16,
     //pub tins: Vec<CakeTinTransit>,
-    pub drops: u32,
+    //pub drops: u32,
 }
 
 /*

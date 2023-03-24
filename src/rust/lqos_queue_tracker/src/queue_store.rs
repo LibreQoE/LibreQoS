@@ -69,8 +69,8 @@ impl Into<QueueStoreTransit> for QueueStore {
         .map(|(a, b)| (a.into(), b.into()))
         .collect(),
       history_head: self.history_head,
-      prev_download: self.prev_download.map(|d| d.into()),
-      prev_upload: self.prev_upload.map(|u| u.into()),
+      //prev_download: self.prev_download.map(|d| d.into()),
+      //prev_upload: self.prev_upload.map(|u| u.into()),
       current_download: self.current_download.into(),
       current_upload: self.current_upload.into(),
     }
@@ -111,15 +111,15 @@ impl Into<CakeTransit> for QueueType {
   fn into(self) -> CakeTransit {
     if let QueueType::Cake(c) = self {
       CakeTransit {
-        handle: c.handle,
-        parent: c.parent,
+        //handle: c.handle,
+        //parent: c.parent,
         //options: c.options.into(),
-        bytes: c.bytes,
+        //bytes: c.bytes,
         //packets: c.packets,
         //overlimits: c.overlimits,
         //requeues: c.requeues,
-        backlog: c.backlog,
-        qlen: c.qlen,
+        //backlog: c.backlog,
+        //qlen: c.qlen,
         memory_used: c.memory_used,
         //memory_limit: c.memory_limit,
         //capacity_estimate: c.capacity_estimate,
@@ -129,7 +129,7 @@ impl Into<CakeTransit> for QueueType {
         //max_adj_size: c.max_adj_size,
         //avg_hdr_offset: c.avg_hdr_offset,
         //tins: c.tins.iter().cloned().map(|t| t.into()).collect(),
-        drops: c.drops,
+        //drops: c.drops,
       }
     } else {
       CakeTransit::default()

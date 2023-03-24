@@ -226,7 +226,10 @@
                     y[j].push(0);
                 }
             } else {
-                //console.log(data[0].tins[tin]);
+                if (data[0].tins.length != 4) {
+                    console.log("Tins data isn't right");
+                    return;
+                }
                 y[0].push(data[0].tins[tin].sent_bytes * 8); // Download
                 y[1].push(0.0 - (data[1].tins[tin].sent_bytes * 8)); // Upload
                 y[2].push(data[0].tins[tin].drops); // Down Drops
