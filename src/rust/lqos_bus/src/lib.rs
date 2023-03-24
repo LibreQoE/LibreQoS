@@ -20,8 +20,8 @@ mod tc_handle;
 pub use bus::{
   bus_request, decode_request, decode_response, encode_request,
   encode_response, BusClient, BusReply, BusRequest, BusResponse, BusSession,
-  CakeDiffTinTransit, CakeDiffTransit, CakeOptionsTransit, CakeTinTransit,
-  CakeTransit, QueueStoreTransit, UnixSocketServer, BUS_SOCKET_PATH,
+  CakeDiffTinTransit, CakeDiffTransit, CakeTransit, QueueStoreTransit,
+  UnixSocketServer, BUS_SOCKET_PATH,
 };
 pub use tc_handle::TcHandle;
 

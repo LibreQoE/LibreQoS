@@ -1,14 +1,12 @@
 use crate::{
   queue_diff::{make_queue_diff, CakeDiffTin, QueueDiff},
   queue_types::{
-    tc_cake::{TcCakeOptions, TcCakeTin},
     QueueType,
   },
   NUM_QUEUE_HISTORY,
 };
 use lqos_bus::{
-  CakeDiffTinTransit, CakeDiffTransit, CakeOptionsTransit, CakeTinTransit,
-  CakeTransit, QueueStoreTransit,
+  CakeDiffTinTransit, CakeDiffTransit, CakeTransit, QueueStoreTransit,
 };
 use serde::Serialize;
 
@@ -115,22 +113,22 @@ impl Into<CakeTransit> for QueueType {
       CakeTransit {
         handle: c.handle,
         parent: c.parent,
-        options: c.options.into(),
+        //options: c.options.into(),
         bytes: c.bytes,
-        packets: c.packets,
-        overlimits: c.overlimits,
-        requeues: c.requeues,
+        //packets: c.packets,
+        //overlimits: c.overlimits,
+        //requeues: c.requeues,
         backlog: c.backlog,
         qlen: c.qlen,
         memory_used: c.memory_used,
-        memory_limit: c.memory_limit,
-        capacity_estimate: c.capacity_estimate,
-        min_network_size: c.min_network_size,
-        max_network_size: c.max_network_size,
-        min_adj_size: c.min_adj_size,
-        max_adj_size: c.max_adj_size,
-        avg_hdr_offset: c.avg_hdr_offset,
-        tins: c.tins.iter().cloned().map(|t| t.into()).collect(),
+        //memory_limit: c.memory_limit,
+        //capacity_estimate: c.capacity_estimate,
+        //min_network_size: c.min_network_size,
+        //max_network_size: c.max_network_size,
+        //min_adj_size: c.min_adj_size,
+        //max_adj_size: c.max_adj_size,
+        //avg_hdr_offset: c.avg_hdr_offset,
+        //tins: c.tins.iter().cloned().map(|t| t.into()).collect(),
         drops: c.drops,
       }
     } else {
@@ -139,6 +137,7 @@ impl Into<CakeTransit> for QueueType {
   }
 }
 
+/*
 #[allow(clippy::from_over_into)]
 impl Into<CakeOptionsTransit> for TcCakeOptions {
   fn into(self) -> CakeOptionsTransit {
@@ -163,26 +162,27 @@ impl Into<CakeOptionsTransit> for TcCakeOptions {
 impl Into<CakeTinTransit> for TcCakeTin {
   fn into(self) -> CakeTinTransit {
     CakeTinTransit {
-      threshold_rate: self.threshold_rate,
-      sent_bytes: self.sent_bytes,
-      backlog_bytes: self.backlog_bytes,
-      target_us: self.target_us,
-      interval_us: self.interval_us,
-      peak_delay_us: self.peak_delay_us,
-      avg_delay_us: self.avg_delay_us,
-      base_delay_us: self.base_delay_us,
-      sent_packets: self.sent_packets,
-      way_indirect_hits: self.way_indirect_hits,
-      way_misses: self.way_misses,
-      way_collisions: self.way_collisions,
-      drops: self.drops,
-      ecn_marks: self.ecn_marks,
-      ack_drops: self.ack_drops,
-      sparse_flows: self.sparse_flows,
-      bulk_flows: self.bulk_flows,
-      unresponsive_flows: self.unresponsive_flows,
-      max_pkt_len: self.max_pkt_len,
-      flow_quantum: self.flow_quantum,
+      //threshold_rate: self.threshold_rate,
+      //sent_bytes: self.sent_bytes,
+      //backlog_bytes: self.backlog_bytes,
+      //target_us: self.target_us,
+      //interval_us: self.interval_us,
+      //peak_delay_us: self.peak_delay_us,
+      //avg_delay_us: self.avg_delay_us,
+      //base_delay_us: self.base_delay_us,
+      //sent_packets: self.sent_packets,
+      //way_indirect_hits: self.way_indirect_hits,
+      //way_misses: self.way_misses,
+      //way_collisions: self.way_collisions,
+      //drops: self.drops,
+      //ecn_marks: self.ecn_marks,
+      //ack_drops: self.ack_drops,
+      //sparse_flows: self.sparse_flows,
+      //bulk_flows: self.bulk_flows,
+      //unresponsive_flows: self.unresponsive_flows,
+      //max_pkt_len: self.max_pkt_len,
+      //flow_quantum: self.flow_quantum,
     }
   }
 }
+*/
