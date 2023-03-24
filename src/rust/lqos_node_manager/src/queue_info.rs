@@ -60,7 +60,7 @@ pub async fn circuit_info(
 pub async fn current_circuit_throughput(
   circuit_id: String,
   _auth: AuthGuard,
-) -> NoCache<Json<Vec<(String, u64, u64)>>> {
+) -> NoCache<MsgPack<Vec<(String, u64, u64)>>> {
   let mut result = Vec::new();
   // Get a list of host counts
   // This is really inefficient, but I'm struggling to find a better way.
@@ -85,7 +85,7 @@ pub async fn current_circuit_throughput(
     }
   }
 
-  NoCache::new(Json(result))
+  NoCache::new(MsgPack(result))
 }
 
 #[get("/api/raw_queue_by_circuit/<circuit_id>")]

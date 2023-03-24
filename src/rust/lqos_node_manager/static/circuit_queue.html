@@ -425,11 +425,8 @@
         let ips = [];
 
         function getThroughput() {
-            const params = new Proxy(new URLSearchParams(window.location.search), {
-                get: (searchParams, prop) => searchParams.get(prop),
-            });
-            if (params.id != null) {
-                $.get("/api/circuit_throughput/" + encodeURI(params.id), (data) => {
+            if (id != null) {
+                msgPackGet("/api/circuit_throughput/" + encodeURI(id), (data) => {
                     let quantiles = [
                         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
