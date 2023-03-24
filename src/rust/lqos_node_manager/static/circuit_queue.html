@@ -370,7 +370,13 @@
                     { x: this.x_axis, y: this.backlog.tins[2].y, type: 'scatter', mode: 'markers', name: 'Video', marker: { size: 4 } },
                     { x: this.x_axis, y: this.backlog.tins[3].y, type: 'scatter', mode: 'markers', name: 'Voice', marker: { size: 4 } },
                 ];
-                Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Bytes" }, xaxis: { automargin: true, title: "Time since now" } });
+                
+                if (this.backlogPlotted == null) {
+                    this.backlogPlotted = true;
+                    Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Bytes" }, xaxis: { automargin: true, title: "Time since now" } });
+                } else {
+                    Plotly.redraw(graph, graphData);
+                }
             }
 
             plotDelays() {
@@ -381,7 +387,13 @@
                     { x: this.x_axis, y: this.delays.tins[2].y, type: 'scatter', mode: 'markers', name: 'Video', marker: { size: 4 } },
                     { x: this.x_axis, y: this.delays.tins[3].y, type: 'scatter', mode: 'markers', name: 'Voice', marker: { size: 4 } },
                 ];
-                Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "ms" }, xaxis: { automargin: true, title: "Time since now" } });
+
+                if (this.delaysPlotted == null) {
+                    Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "ms" }, xaxis: { automargin: true, title: "Time since now" } });
+                    this.delaysPlotted = true;
+                } else {
+                    Plotly.redraw(graph, graphData);
+                }
 
             }
 
@@ -390,7 +402,12 @@
                 let graphData = [
                     { x: this.x_axis, y: this.queueLen.y, type: 'scatter', mode: 'markers', name: 'Queue Length' },
                 ];
-                Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Packets" }, xaxis: { automargin: true, title: "Time since now" } });
+                if (this.queueLenPlotted == null) {
+                    Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Packets" }, xaxis: { automargin: true, title: "Time since now" } });
+                    this.queueLenPlotted = true;
+                } else {
+                    Plotly.redraw(graph, graphData);
+                }
             }
 
             plotTinThroughput(tin) {
@@ -398,7 +415,11 @@
                 let graphData = [
                     { x: this.x_axis, y: this.throughput.tins[tin].y, type: 'scatter', mode: 'markers' }
                 ];
-                Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Bits" }, xaxis: { automargin: true, title: "Time since now" } });
+                if (this.tinsPlotted == null) {   
+                    Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Bits" }, xaxis: { automargin: true, title: "Time since now" } });
+                } else {
+                    Plotly.redraw(graph, graphData);
+                }
             }
 
             plotMarksDrops(tin) {
@@ -407,7 +428,11 @@
                     { x: this.x_axis, y: this.drops.tins[tin].y, name: 'Drops', mode: 'markers', marker: { size: 4 } },
                     { x: this.x_axis, y: this.marks.tins[tin].y, name: 'Marks', mode: 'markers', marker: { size: 4 } },
                 ];
-                Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Packets" }, xaxis: { automargin: true, title: "Time since now" } });
+                if (this.tinsPlotted == null) {
+                    Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Packets" }, xaxis: { automargin: true, title: "Time since now" } });
+                } else {
+                    Plotly.redraw(graph, graphData);
+                }
             }
 
             plot() {
@@ -420,6 +445,7 @@
                         this.plotTinThroughput(tin);
                         this.plotMarksDrops(tin);
                     }
+                    this.tinsPlotted = true;
                 }
             }
         }
@@ -442,6 +468,8 @@
         }
 
         let ips = [];
+        let tpPlot = null;
+        let cqPlot = null;
 
         function getThroughput() {
             if (id != null) {
@@ -517,6 +545,7 @@
                         graph_data.push({ x: xd, y: yd, name: ip, mode: 'markers', type: 'scatter', marker: { size: 4 } });
                         //graph_data.push({x: xUp, y: yUp.reverse(), name: ip + " Up", mode: 'markers', type: 'scatter'});
                     }
+                    
                     Plotly.newPlot(graph, graph_data, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Traffic (bits)" }, xaxis: { automargin: true, title: "Time since now" } });
                     throughput_head += 1;
                     if (throughput_head >= 300) {
