@@ -46,17 +46,14 @@ def shell(command):
 	else:
 		logging.info(command)
 
-def shellTC(command):
+def shellReturn(command):
+	returnableString = ''
 	if enableActualShellCommands:
-		print(command)
 		commands = command.split(' ')
 		proc = subprocess.Popen(commands, stdout=subprocess.PIPE)
 		for line in io.TextIOWrapper(proc.stdout, encoding="utf-8"):  # or another encoding
-			if logging.DEBUG <= logging.root.level:
-				print(line)
-			if ("RTNETLINK answers" in line) or ("We have an error talking to the kernel" in line):
-				warnings.warn("Command: '" + command + "' resulted in " + line, stacklevel=2)
-				raise SystemError("Command: '" + command + "' resulted in " + line)
+			returnableString = returnableString + line + '\n'
+	return returnableString
 
 def checkIfFirstRunSinceBoot():
 	if os.path.isfile("lastRun.txt"):
@@ -75,14 +72,14 @@ def checkIfFirstRunSinceBoot():
 	
 def clearPriorSettings(interfaceA, interfaceB):
 	if enableActualShellCommands:
-		# Clear tc filter
-		if OnAStick == True:
-			shell('tc qdisc delete dev ' + interfaceA + ' root')
-		else:
-			shell('tc qdisc delete dev ' + interfaceA + ' root')
-			shell('tc qdisc delete dev ' + interfaceB + ' root')
-		#shell('tc qdisc delete dev ' + interfaceA)
-		#shell('tc qdisc delete dev ' + interfaceB)
+		if 'mq' in shellReturn('tc qdisc show dev ' + interfaceA + ' root'):
+			print('MQ detected. Will delete and recreate mq qdisc.')
+			# Clear tc filter
+			if OnAStick == True:
+				shell('tc qdisc delete dev ' + interfaceA + ' root')
+			else:
+				shell('tc qdisc delete dev ' + interfaceA + ' root')
+				shell('tc qdisc delete dev ' + interfaceB + ' root')
 		
 def tearDown(interfaceA, interfaceB):
 	# Full teardown of everything for exiting LibreQoS
