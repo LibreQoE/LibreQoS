@@ -7,6 +7,7 @@ use rocket::http::Status;
 use rocket::response::content::RawJson;
 use rocket::serde::json::Json;
 use rocket::serde::Serialize;
+use rocket::serde::msgpack::MsgPack;
 use std::net::IpAddr;
 
 #[derive(Serialize, Clone)]
@@ -102,7 +103,7 @@ pub async fn raw_queue_by_circuit(
 }
 
 #[get("/api/flows/<ip_list>")]
-pub async fn flow_stats(ip_list: String, _auth: AuthGuard) -> NoCache<Json<Vec<(FlowTransport, Option<FlowTransport>)>>> {
+pub async fn flow_stats(ip_list: String, _auth: AuthGuard) -> NoCache<MsgPack<Vec<(FlowTransport, Option<FlowTransport>)>>> {
   let mut result = Vec::new();
   let request: Vec<BusRequest> = ip_list.split(',').map(|ip| BusRequest::GetFlowStats(ip.to_string())).collect();
   let responses = bus_request(request).await.unwrap();
@@ -111,7 +112,7 @@ pub async fn flow_stats(ip_list: String, _auth: AuthGuard) -> NoCache<Json<Vec<(
       result.extend_from_slice(flow);
     }
   }
-  NoCache::new(Json(result))
+  NoCache::new(MsgPack(result))
 }
 
 #[derive(Serialize, Clone)]

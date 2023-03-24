@@ -646,7 +646,7 @@
             }
             ip_list = ip_list.substring(0, ip_list.length-1);
             if (ip_list == "") return;
-            $.get("/api/flows/" + ip_list, (data) => {
+            msgPackGet("/api/flows/" + ip_list, (data) => {
                 //console.log(data);
                 let html = "<table class='table table-striped'>";
                 html += "<thead>";
@@ -670,36 +670,36 @@
                     let rdscp = "-";
                     let rcongestion = "-";
                     if (data[i][1] != null) {
-                        rpackets = data[i][1].packets;
-                        rbytes = scaleNumber(data[i][1].bytes);
-                        rdscp = "0x" + data[i][1].dscp.toString(16);
-                        rcongestion = ecn(data[i][1].ecn);
+                        rpackets = data[i][1][FlowTrans.packets];
+                        rbytes = scaleNumber(data[i][1][FlowTrans.bytes]);
+                        rdscp = "0x" + data[i][1][FlowTrans.dscp].toString(16);
+                        rcongestion = ecn(data[i][1][FlowTrans.ecn]);
                     }
                     html += "<tr>";
-                    html += "<td>" + data[i][0].proto + "</td>";
-                    html += "<td>" + data[i][0].src + "</td>";
+                    html += "<td>" + data[i][0][FlowTrans.proto] + "</td>";
+                    html += "<td>" + data[i][0][FlowTrans.src] + "</td>";
                     if (data[i][0].proto == "ICMP") {
-                        html += "<td>" + icmpType(data[i][0].src_port) + "</td>";
+                        html += "<td>" + icmpType(data[i][0][FlowTrans.src_port]) + "</td>";
                     } else {
-                        html += "<td>" + data[i][0].src_port + "</td>";
+                        html += "<td>" + data[i][0][FlowTrans.src_port] + "</td>";
                     }
-                    html += "<td>" + data[i][0].dst + "</td>";
-                    if (data[i][0].proto == "ICMP") {
+                    html += "<td>" + data[i][0][FlowTrans.dst] + "</td>";
+                    if (data[i][0][FlowTrans.proto] == "ICMP") {
                         if (data[i][1] != null) {
-                            html += "<td>" + icmpType(data[i][1].src_port) + "</td>";
+                            html += "<td>" + icmpType(data[i][1][FlowTrans.src_port]) + "</td>";
                         } else {
                             html += "<td></td>";
                         }
                     } else {
-                        html += "<td>" + data[i][0].dst_port + "</td>";
+                        html += "<td>" + data[i][0][FlowTrans.dst_port] + "</td>";
                     }
-                    html += "<td>" + data[i][0].packets + "</td>";
+                    html += "<td>" + data[i][0][FlowTrans.packets] + "</td>";
                     html += "<td>" + rpackets + "</td>";
-                    html += "<td>" + scaleNumber(data[i][0].bytes) + "</td>";
+                    html += "<td>" + scaleNumber(data[i][0][FlowTrans.bytes]) + "</td>";
                     html += "<td>" + rbytes + "</td>";
-                    html += "<td>0x" + data[i][0].dscp.toString(16) + "</td>";
+                    html += "<td>0x" + data[i][0][FlowTrans.dscp].toString(16) + "</td>";
                     html += "<td>" + rdscp + "</td>";
-                    html += "<td>" + ecn(data[i][0].ecn) + "</td>";
+                    html += "<td>" + ecn(data[i][0][FlowTrans.ecn]) + "</td>";
                     html += "<td>" + rcongestion + "</td>";
                     html += "</tr>";
                 }
@@ -718,7 +718,7 @@
                 } break;
                 case "pills-flows-tab": {
                     getFlows();
-                }
+                } break;
                 default: {
                     pollQueue();
                     getThroughput();

@@ -36,6 +36,18 @@ const IpStats = {
     "plan": 6,
 }
 
+const FlowTrans = {
+    "src": 0,
+    "dst": 1,
+    "proto": 2,
+    "src_port": 3,
+    "dst_port": 4,
+    "bytes": 5,
+    "packets": 6,
+    "dscp": 7,
+    "ecn": 8
+}
+
 function metaverse_color_ramp(n) {
     if (n <= 9) {
         return "#32b08c";
