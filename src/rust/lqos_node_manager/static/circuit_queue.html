@@ -520,27 +520,32 @@
         let funnels = new MultiRingBuffer(300);
         let rtts = {};
         let circuitId = "";
+        let builtFunnelDivs = false;
 
         function getFunnel() {
+            if (builtFunnelDivs) {
+                plotFunnels();
+                return;
+            }
             circuitId = encodeURI(id);
-            $.get("/api/funnel_for_queue/" + circuitId, (data) => {
+            msgPackGet("/api/funnel_for_queue/" + circuitId, (data) => {
                 let html = "";
                 for (let i=0; i<data.length; ++i) {
-                    funnels.push(data[i][0], data[i][1].current_throughput[0]*8, data[i][1].current_throughput[1]*8);
+                    funnels.push(data[i][0], data[i][1][NetTrans.current_throughput][0]*8, data[i][1][NetTrans.current_throughput][1]*8);
                     rtts[data[i][0]] = new RttHistogram();
 
                     let row = "<div class='row row220'>";
 
                     row += "<div class='col-sm-6'>";
                     row += "<div class='card bg-light'>";
-                    row += "<h5 class='card-title'><i class='fa fa-hourglass'></i> <a class='redact' href='/tree?parent=" + data[i][0] + "'>" + redactText(data[i][1].name) + " Throughput</a></h5>";
+                    row += "<h5 class='card-title'><i class='fa fa-hourglass'></i> <a class='redact' href='/tree?parent=" + data[i][0] + "'>" + redactText(data[i][1][NetTrans.name]) + " Throughput</a></h5>";
                     row += "<div id='tp" + data[i][0] + "' class='graph98 graph150'></div>";
                     row += "</div>";
                     row += "</div>";
 
                     row += "<div class='col-sm-6'>";
                     row += "<div class='card bg-light'>";
-                    row += "<h5 class='card-title redact'><i class='fa fa-bar-chart'></i> " + redactText(data[i][1].name) + " TCP RTT</h5>";
+                    row += "<h5 class='card-title redact'><i class='fa fa-bar-chart'></i> " + redactText(data[i][1][NetTrans.name]) + " TCP RTT</h5>";
                     row += "<div id='rtt" + data[i][0] + "' class='graph98 graph150'></div>";
                     row += "</div>";
                     row += "</div>";
@@ -549,14 +554,15 @@
                     html += row;
                 }             
                 $("#pills-funnel").html(html);
-                setTimeout(plotFunnels, 1000);
+                builtFunnelDivs = true;
+                setTimeout(plotFunnels, 10);
             });
         }
 
         function plotFunnels() {
-            $.get("/api/funnel_for_queue/" + encodeURI(circuitId), (data) => {
+            msgPackGet("/api/funnel_for_queue/" + encodeURI(circuitId), (data) => {
                 for (let i=0; i<data.length; ++i) {
-                    funnels.push(data[i][0], data[i][1].current_throughput[0]*8, data[i][1].current_throughput[1]*8);
+                    funnels.push(data[i][0], data[i][1][NetTrans.current_throughput][0]*8, data[i][1][NetTrans.current_throughput][1]*8);
                     for (const [k, v] of Object.entries(funnels.data)) {
                         let target_div = "tp" + k;
                         let graphData = v.toScatterGraphData();
@@ -565,8 +571,8 @@
                     }
 
                     rtts[data[i][0]].clear();
-                    for (let j=0; j<data[i][1].rtts.length; j++) {
-                        rtts[data[i][0]].push(data[i][1].rtts[j]);
+                    for (let j=0; j<data[i][1][NetTrans.rtts].length; j++) {
+                        rtts[data[i][0]].push(data[i][1][NetTrans.rtts][j]);
                     }
                     rtts[data[i][0]].plot("rtt" + data[i][0]);
                 }
@@ -708,7 +714,7 @@
         function oneSecondCadence() {
             switch (activeTab) {
                 case "pills-funnel-tab": {
-                    getFunnel(id);
+                    getFunnel();
                 } break;
                 case "pills-flows-tab": {
                     getFlows();
