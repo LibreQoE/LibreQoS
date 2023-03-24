@@ -250,10 +250,10 @@
             if (params.id != null) {
                 // Name the circuit
                 if (circuit_info == null) {
-                    $.get("/api/circuit_info/" + encodeURI(params.id), (data) => {
+                    msgPackGet("/api/circuit_info/" + encodeURI(params.id), (data) => {
                         circuit_info = data;
-                        let capacity = scaleNumber(circuit_info.capacity[0]) + " / " + scaleNumber(circuit_info.capacity[1]);
-                        $("#circuitName").text(redactText(circuit_info.name) + " " + capacity);
+                        let capacity = scaleNumber(circuit_info[CircuitInfo.capacity][0]) + " / " + scaleNumber(circuit_info[CircuitInfo.capacity][1]);
+                        $("#circuitName").text(redactText(circuit_info[CircuitInfo.name]) + " " + capacity);
                     });
                 }
 
@@ -487,8 +487,8 @@
                             for (let i=0; i<yDown.length; i++) {
                                 let down = yDown[i];
                                 let up = 0.0 - yUp[i];
-                                let down_slot = Math.floor((down / circuit_info.capacity[0]) * 10.0);
-                                let up_slot = Math.floor((up / circuit_info.capacity[1]) * 10.0);
+                                let down_slot = Math.floor((down / circuit_info[CircuitInfo.capacity][0]) * 10.0);
+                                let up_slot = Math.floor((up / circuit_info[CircuitInfo.capacity][1]) * 10.0);
                                 if (down_slot > 0) quantiles[0][down_slot] += 1;
                                 if (up_slot > 0) quantiles[1][up_slot] += 1;
                             }

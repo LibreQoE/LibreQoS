@@ -31,7 +31,7 @@ pub async fn watch_circuit(
 pub async fn circuit_info(
   circuit_id: String,
   _auth: AuthGuard,
-) -> NoCache<Json<CircuitInfo>> {
+) -> NoCache<MsgPack<CircuitInfo>> {
   if let Some(device) = SHAPED_DEVICES
     .read()
     .unwrap()
@@ -46,13 +46,13 @@ pub async fn circuit_info(
         device.upload_max_mbps as u64 * 1_000_000,
       ),
     };
-    NoCache::new(Json(result))
+    NoCache::new(MsgPack(result))
   } else {
     let result = CircuitInfo {
       name: "Nameless".to_string(),
       capacity: (1_000_000, 1_000_000),
     };
-    NoCache::new(Json(result))
+    NoCache::new(MsgPack(result))
   }
 }
 

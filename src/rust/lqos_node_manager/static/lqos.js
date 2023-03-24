@@ -48,6 +48,11 @@ const FlowTrans = {
     "ecn": 8
 }
 
+const CircuitInfo = {
+    "name" : 0,
+    "capacity" : 1,
+}
+
 function metaverse_color_ramp(n) {
     if (n <= 9) {
         return "#32b08c";
