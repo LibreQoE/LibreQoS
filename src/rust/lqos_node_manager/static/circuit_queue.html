@@ -521,8 +521,8 @@
         let rtts = {};
         let circuitId = "";
 
-        function getFunnel(c) {
-            circuitId = encodeURI(c);
+        function getFunnel() {
+            circuitId = encodeURI(id);
             $.get("/api/funnel_for_queue/" + circuitId, (data) => {
                 let html = "";
                 for (let i=0; i<data.length; ++i) {
@@ -703,16 +703,33 @@
         }
 
         let id = 0;
+        let activeTab = "pills-home-tab";
 
         function oneSecondCadence() {
-            pollQueue();
-            getThroughput();
-            getFunnel(id);
-            getFlows();
+            switch (activeTab) {
+                case "pills-funnel-tab": {
+                    getFunnel(id);
+                } break;
+                case "pills-flows-tab": {
+                    getFlows();
+                }
+                default: {
+                    pollQueue();
+                    getThroughput();
+                }
+            }
             setTimeout(oneSecondCadence, 1000);
         }
 
+        function wireUpTabEvents() {
+            // Fire events when the active tab changes
+            $(document).on('shown.bs.tab', 'button[data-bs-toggle="pill"]', function (e) {
+                activeTab = e.target.id;
+            });
+        }
+
         function start() {
+            wireUpTabEvents();
             colorReloadButton();
             updateHostCounts();
             const params = new Proxy(new URLSearchParams(window.location.search), {
@@ -721,10 +738,10 @@
             id = params.id;
             $.get("/api/watch_circuit/" + params.id, () => {
                 oneSecondCadence();
-                pollQueue();
-                getThroughput();
-                getFunnel(params.id);
-                getFlows();
+                //pollQueue();
+                //getThroughput();
+                //getFunnel(params.id);
+                //getFlows();
             });
         }
 
