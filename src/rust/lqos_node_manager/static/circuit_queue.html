@@ -638,15 +638,21 @@
             });
         }
 
+        let plottedFunnels = {};
+
         function plotFunnels() {
             msgPackGet("/api/funnel_for_queue/" + encodeURI(circuitId), (data) => {
                 for (let i = 0; i < data.length; ++i) {
                     funnels.push(data[i][0], data[i][1][NetTrans.current_throughput][0] * 8, data[i][1][NetTrans.current_throughput][1] * 8);
                     for (const [k, v] of Object.entries(funnels.data)) {
-                        let target_div = "tp" + k;
+                        let target_div = "tp" + k;                        
                         let graphData = v.toScatterGraphData();
                         let graph = document.getElementById(target_div);
-                        Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true }, xaxis: { automargin: true, title: "Time since now" } }, { responsive: true });
+                        if (!plotFunnels.hasOwnProperty(target_div)) {
+                            Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true }, xaxis: { automargin: true, title: "Time since now" } }, { responsive: true });
+                        } else {
+                            Plotly.redraw(graph, graphData);
+                        }
                     }
 
                     rtts[data[i][0]].clear();

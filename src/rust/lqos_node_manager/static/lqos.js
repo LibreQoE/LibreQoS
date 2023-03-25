@@ -314,18 +314,23 @@ class MultiRingBuffer {
     plotTotalThroughput(target_div) {
         let graph = document.getElementById(target_div);
 
-        let total = this.data['total'].sortedY();
-        let shaped = this.data['shaped'].sortedY();
+        this.data['total'].prepare();
+        this.data['shaped'].prepare();
 
         let x = this.data['total'].x_axis;
 
-        let data = [
-            {x: x, y:total.down, name: 'Download', type: 'scatter', marker: {color: 'rgb(255,160,122)'}},
-            {x: x, y:total.up, name: 'Upload', type: 'scatter', marker: {color: 'rgb(255,160,122)'}},
-            {x: x, y:shaped.down, name: 'Shaped Download', type: 'scatter', fill: 'tozeroy', marker: {color: 'rgb(124,252,0)'}},
-            {x: x, y:shaped.up, name: 'Shaped Upload', type: 'scatter', fill: 'tozeroy', marker: {color: 'rgb(124,252,0)'}},
+        let graphData = [
+            {x: x, y:this.data['total'].sortedY[0], name: 'Download', type: 'scatter', marker: {color: 'rgb(255,160,122)'}},
+            {x: x, y:this.data['total'].sortedY[1], name: 'Upload', type: 'scatter', marker: {color: 'rgb(255,160,122)'}},
+            {x: x, y:this.data['shaped'].sortedY[0], name: 'Shaped Download', type: 'scatter', fill: 'tozeroy', marker: {color: 'rgb(124,252,0)'}},
+            {x: x, y:this.data['shaped'].sortedY[1], name: 'Shaped Upload', type: 'scatter', fill: 'tozeroy', marker: {color: 'rgb(124,252,0)'}},
         ];
-        Plotly.newPlot(graph, data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true, title: "Traffic (bits)" }, xaxis: {automargin: true, title: "Time since now (seconds)"} }, { responsive: true });
+        if (this.plotted == null) {
+            Plotly.newPlot(graph, graphData, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true, title: "Traffic (bits)" }, xaxis: {automargin: true, title: "Time since now (seconds)"} }, { responsive: true });
+            this.plotted = true;
+        } else {
+            Plotly.redraw(graph, graphData);
+        }
     }
 }
 
@@ -336,10 +341,13 @@ class RingBuffer {
         this.download = [];
         this.upload = [];
         this.x_axis = [];
+        this.sortedY = [ [], [] ];
         for (var i = 0; i < capacity; ++i) {
             this.download.push(0.0);
             this.upload.push(0.0);
             this.x_axis.push(capacity - i);
+            this.sortedY[0].push(0);
+            this.sortedY[1].push(0);
         }
     }
 
@@ -350,27 +358,25 @@ class RingBuffer {
         this.head %= this.capacity;
     }
 
-    sortedY() {
-        let result = {
-            down: [],
-            up: [],
-        };
+    prepare() {
+        let counter = 0;
         for (let i=this.head; i<this.capacity; i++) {
-            result.down.push(this.download[i]);
-            result.up.push(this.upload[i]);
+            this.sortedY[0][counter] = this.download[i];
+            this.sortedY[1][counter] = this.upload[i];
+            counter++;
         }
         for (let i=0; i < this.head; i++) {
-            result.down.push(this.download[i]);
-            result.up.push(this.upload[i]);
+            this.sortedY[0][counter] = this.download[i];
+            this.sortedY[1][counter] = this.upload[i];
+            counter++;
         }
-        return result;
     }
 
     toScatterGraphData() {
-        let y = this.sortedY();
+        this.prepare();
         let GraphData = [
-            { x: this.x_axis, y: y.down, name: 'Download', type: 'scatter' },
-            { x: this.x_axis, y: y.up, name: 'Upload', type: 'scatter' },
+            { x: this.x_axis, y: this.sortedY[0], name: 'Download', type: 'scatter' },
+            { x: this.x_axis, y: this.sortedY[1], name: 'Upload', type: 'scatter' },
         ];
         return GraphData;
     }
