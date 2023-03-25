@@ -413,7 +413,7 @@
             plotTinThroughput(tin) {
                 let graph = document.getElementById("tinTp_" + tin);
                 let graphData = [
-                    { x: this.x_axis, y: this.throughput.tins[tin].y, type: 'scattergl', mode: 'markers' }
+                    { x: this.x_axis, y: this.throughput.tins[tin].y, type: 'scatter', mode: 'markers' }
                 ];
                 if (this.tinsPlotted == null) {   
                     Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Bits" }, xaxis: { automargin: true, title: "Time since now" } });
@@ -425,8 +425,8 @@
             plotMarksDrops(tin) {
                 let graph = document.getElementById("tinMd_" + tin);
                 let graphData = [
-                    { x: this.x_axis, y: this.drops.tins[tin].y, name: 'Drops', type: 'scattergl', mode: 'markers', marker: { size: 4 } },
-                    { x: this.x_axis, y: this.marks.tins[tin].y, name: 'Marks', type: 'scattergl', mode: 'markers', marker: { size: 4 } },
+                    { x: this.x_axis, y: this.drops.tins[tin].y, name: 'Drops', type: 'scatter', mode: 'markers', marker: { size: 4 } },
+                    { x: this.x_axis, y: this.marks.tins[tin].y, name: 'Marks', type: 'scatter', mode: 'markers', marker: { size: 4 } },
                 ];
                 if (this.tinsPlotted == null) {
                     Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Packets" }, xaxis: { automargin: true, title: "Time since now" } });
