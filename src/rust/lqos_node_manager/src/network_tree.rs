@@ -106,7 +106,7 @@ pub async fn node_names(
 #[get("/api/funnel_for_queue/<circuit_id>")]
 pub async fn funnel_for_queue(
   circuit_id: String,
-) -> NoCache<Json<Vec<(usize, NetworkJsonTransport)>>> {
+) -> NoCache<MsgPack<Vec<(usize, NetworkJsonTransport)>>> {
   let mut result = Vec::new();
 
   let target = SHAPED_DEVICES
@@ -127,5 +127,5 @@ pub async fn funnel_for_queue(
       result.extend_from_slice(map);
     }
   }
-  NoCache::new(Json(result))
+  NoCache::new(MsgPack(result))
 }

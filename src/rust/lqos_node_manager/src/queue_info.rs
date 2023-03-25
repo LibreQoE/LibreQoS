@@ -1,12 +1,13 @@
 use crate::auth_guard::AuthGuard;
 use crate::cache_control::NoCache;
 use crate::tracker::SHAPED_DEVICES;
-use lqos_bus::{bus_request, BusRequest, BusResponse, FlowTransport, PacketHeader};
+use lqos_bus::{bus_request, BusRequest, BusResponse, FlowTransport, PacketHeader, QueueStoreTransit};
 use rocket::fs::NamedFile;
 use rocket::http::Status;
 use rocket::response::content::RawJson;
 use rocket::serde::json::Json;
 use rocket::serde::Serialize;
+use rocket::serde::msgpack::MsgPack;
 use std::net::IpAddr;
 
 #[derive(Serialize, Clone)]
@@ -30,7 +31,7 @@ pub async fn watch_circuit(
 pub async fn circuit_info(
   circuit_id: String,
   _auth: AuthGuard,
-) -> NoCache<Json<CircuitInfo>> {
+) -> NoCache<MsgPack<CircuitInfo>> {
   if let Some(device) = SHAPED_DEVICES
     .read()
     .unwrap()
@@ -45,13 +46,13 @@ pub async fn circuit_info(
         device.upload_max_mbps as u64 * 1_000_000,
       ),
     };
-    NoCache::new(Json(result))
+    NoCache::new(MsgPack(result))
   } else {
     let result = CircuitInfo {
       name: "Nameless".to_string(),
       capacity: (1_000_000, 1_000_000),
     };
-    NoCache::new(Json(result))
+    NoCache::new(MsgPack(result))
   }
 }
 
@@ -59,7 +60,7 @@ pub async fn circuit_info(
 pub async fn current_circuit_throughput(
   circuit_id: String,
   _auth: AuthGuard,
-) -> NoCache<Json<Vec<(String, u64, u64)>>> {
+) -> NoCache<MsgPack<Vec<(String, u64, u64)>>> {
   let mut result = Vec::new();
   // Get a list of host counts
   // This is really inefficient, but I'm struggling to find a better way.
@@ -84,25 +85,29 @@ pub async fn current_circuit_throughput(
     }
   }
 
-  NoCache::new(Json(result))
+  NoCache::new(MsgPack(result))
 }
 
 #[get("/api/raw_queue_by_circuit/<circuit_id>")]
 pub async fn raw_queue_by_circuit(
   circuit_id: String,
   _auth: AuthGuard,
-) -> NoCache<RawJson<String>> {
+) -> NoCache<MsgPack<QueueStoreTransit>> {
+
   let responses =
     bus_request(vec![BusRequest::GetRawQueueData(circuit_id)]).await.unwrap();
+
   let result = match &responses[0] {
-    BusResponse::RawQueueData(msg) => msg.clone(),
-    _ => "Unable to request queue".to_string(),
+    BusResponse::RawQueueData(Some(msg)) => {
+      *msg.clone()
+    }
+    _ => QueueStoreTransit::default()
   };
-  NoCache::new(RawJson(result))
+  NoCache::new(MsgPack(result))
 }
 
 #[get("/api/flows/<ip_list>")]
-pub async fn flow_stats(ip_list: String, _auth: AuthGuard) -> NoCache<Json<Vec<(FlowTransport, Option<FlowTransport>)>>> {
+pub async fn flow_stats(ip_list: String, _auth: AuthGuard) -> NoCache<MsgPack<Vec<(FlowTransport, Option<FlowTransport>)>>> {
   let mut result = Vec::new();
   let request: Vec<BusRequest> = ip_list.split(',').map(|ip| BusRequest::GetFlowStats(ip.to_string())).collect();
   let responses = bus_request(request).await.unwrap();
@@ -111,7 +116,7 @@ pub async fn flow_stats(ip_list: String, _auth: AuthGuard) -> NoCache<Json<Vec<(
       result.extend_from_slice(flow);
     }
   }
-  NoCache::new(Json(result))
+  NoCache::new(MsgPack(result))
 }
 
 #[derive(Serialize, Clone)]

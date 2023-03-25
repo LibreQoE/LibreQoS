@@ -1,4 +1,4 @@
-mod tc_cake;
+pub(crate) mod tc_cake;
 mod tc_fq_codel;
 mod tc_htb;
 mod tc_mq;

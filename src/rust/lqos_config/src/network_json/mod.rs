@@ -179,6 +179,7 @@ impl NetworkJson {
     &self,
     circuit_id: &str,
   ) -> Option<Vec<usize>> {
+    //println!("Looking for parents of {circuit_id}");
     self
       .nodes
       .iter()

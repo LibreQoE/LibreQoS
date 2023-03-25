@@ -41,6 +41,9 @@ fn load_network_json() {
   if let Ok(njs) = njs {
     let mut write_lock = NETWORK_JSON.write().unwrap();
     *write_lock = njs;
+    std::mem::drop(write_lock);
+    crate::throughput_tracker::THROUGHPUT_TRACKER
+      .refresh_circuit_ids();
   } else {
     warn!("Unable to load network.json");
   }
