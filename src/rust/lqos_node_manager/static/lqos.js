@@ -415,7 +415,12 @@ class RttHistogram {
             { x: this.x, y: this.entries, type: 'bar', marker: { color: this.x, colorscale: 'RdBu' } }
         ]
         let graph = document.getElementById(target_div);
-        Plotly.newPlot(graph, gData, { margin: { l: 40, r: 0, b: 35, t: 0 }, yaxis: { title: "# Hosts" }, xaxis: { title: 'TCP Round-Trip Time (ms)' } }, { responsive: true });
+        if (this.plotted == null) {
+            Plotly.newPlot(graph, gData, { margin: { l: 40, r: 0, b: 35, t: 0 }, yaxis: { title: "# Hosts" }, xaxis: { title: 'TCP Round-Trip Time (ms)' } }, { responsive: true });
+            this.plotted = true;
+        } else {
+            Plotly.redraw(graph, gData);
+        }
     }
 }
 
