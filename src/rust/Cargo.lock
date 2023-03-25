@@ -1429,6 +1429,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "lqos_heimdall"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dashmap",
+ "log",
+ "lqos_bus",
+ "lqos_config",
+ "lqos_sys",
+ "lqos_utils",
+ "once_cell",
+ "zerocopy",
+]
+
+[[package]]
 name = "lqos_node_manager"
 version = "0.1.0"
 dependencies = [
@@ -1497,22 +1512,28 @@ dependencies = [
  "anyhow",
  "bindgen",
  "byteorder",
+ "dashmap",
  "libbpf-sys",
  "log",
  "lqos_bus",
  "lqos_config",
+ "lqos_utils",
  "nix",
+ "once_cell",
+ "thiserror",
 ]
 
 [[package]]
 name = "lqos_utils"
 version = "0.1.0"
 dependencies = [
+ "byteorder",
  "log",
  "nix",
  "notify",
  "serde",
  "thiserror",
+ "zerocopy",
 ]
 
 [[package]]
@@ -1526,6 +1547,7 @@ dependencies = [
  "log",
  "lqos_bus",
  "lqos_config",
+ "lqos_heimdall",
  "lqos_queue_tracker",
  "lqos_sys",
  "lqos_utils",
@@ -3283,3 +3305,24 @@ name = "yansi"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09041cd90cf85f7f8b2df60c646f853b7f535ce68f85244eb6731cf89fa498ec"
+
+[[package]]
+name = "zerocopy"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "332f188cc1bcf1fe1064b8c58d150f497e697f49774aa846f2dc949d9a25f236"
+dependencies = [
+ "byteorder",
+ "zerocopy-derive",
+]
+
+[[package]]
+name = "zerocopy-derive"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6505e6815af7de1746a08f69c69606bb45695a17149517680f3b2149713b19a3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]

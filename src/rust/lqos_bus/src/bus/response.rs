@@ -1,6 +1,7 @@
-use crate::{IpMapping, IpStats, XdpPpingResult};
+use crate::{IpMapping, IpStats, XdpPpingResult, FlowTransport, ip_stats::PacketHeader};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
+use super::QueueStoreTransit;
 
 /// A `BusResponse` object represents a single
 /// reply generated from a `BusRequest`, and batched
@@ -67,7 +68,7 @@ pub enum BusResponse {
 
   /// A string containing a JSON dump of a queue stats. Analagos to
   /// the response from `tc show qdisc`.
-  RawQueueData(String),
+  RawQueueData(Option<Box<QueueStoreTransit>>),
 
   /// Results from network map queries
   NetworkMap(Vec<(usize, lqos_config::NetworkJsonTransport)>),
@@ -83,5 +84,24 @@ pub enum BusResponse {
     time_to_poll_hosts: u64,
     /// High traffic watermark
     high_watermark: (u64, u64),
-  }
+    /// Number of flows tracked
+    tracked_flows: u64,
+  },
+
+  /// Flow Data
+  FlowData(Vec<(FlowTransport, Option<FlowTransport>)>),
+
+  /// The index of the new packet collection session
+  PacketCollectionSession{ 
+    /// The identifier of the capture session
+    session_id: usize, 
+    /// Number of seconds for which data will be captured
+    countdown: usize 
+  },
+
+  /// Packet header dump
+  PacketDump(Option<Vec<PacketHeader>>),
+
+  /// Pcap format dump
+  PcapDump(Option<String>),
 }

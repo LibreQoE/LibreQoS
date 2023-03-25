@@ -3,7 +3,8 @@ use crate::{shaped_devices_tracker::{SHAPED_DEVICES, NETWORK_JSON}, stats::{HIGH
 use super::{throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
 use dashmap::DashMap;
 use lqos_bus::TcHandle;
-use lqos_sys::{rtt_for_each, throughput_for_each, XdpIpAddress};
+use lqos_sys::{rtt_for_each, throughput_for_each};
+use lqos_utils::XdpIpAddress;
 
 pub struct ThroughputTracker {
   pub(crate) cycle: AtomicU64,

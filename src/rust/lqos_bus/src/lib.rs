@@ -12,11 +12,15 @@
 #![warn(missing_docs)]
 mod bus;
 mod ip_stats;
-pub use ip_stats::{IpMapping, IpStats, XdpPpingResult};
+pub use ip_stats::{
+  tos_parser, FlowProto, FlowTransport, IpMapping, IpStats, PacketHeader,
+  XdpPpingResult,
+};
 mod tc_handle;
 pub use bus::{
   bus_request, decode_request, decode_response, encode_request,
   encode_response, BusClient, BusReply, BusRequest, BusResponse, BusSession,
+  CakeDiffTinTransit, CakeDiffTransit, CakeTransit, QueueStoreTransit,
   UnixSocketServer, BUS_SOCKET_PATH,
 };
 pub use tc_handle::TcHandle;

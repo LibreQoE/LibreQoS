@@ -8,6 +8,8 @@ mod throughput_tracker;
 mod anonymous_usage;
 mod tuning;
 mod validation;
+use std::net::IpAddr;
+
 use crate::{
   file_lock::FileLock,
   ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow},
@@ -16,6 +18,7 @@ use anyhow::Result;
 use log::{info, warn};
 use lqos_bus::{BusRequest, BusResponse, UnixSocketServer};
 use lqos_config::LibreQoSConfig;
+use lqos_heimdall::{n_second_packet_dump, perf_interface::heimdall_handle_events, start_heimdall};
 use lqos_queue_tracker::{
   add_watched_queue, get_raw_circuit_data, spawn_queue_monitor,
   spawn_queue_structure_monitor,
@@ -25,7 +28,8 @@ use signal_hook::{
   consts::{SIGHUP, SIGINT, SIGTERM},
   iterator::Signals,
 };
-use stats::{BUS_REQUESTS, TIME_TO_POLL_HOSTS, HIGH_WATERMARK_DOWN, HIGH_WATERMARK_UP};
+use stats::{BUS_REQUESTS, TIME_TO_POLL_HOSTS, HIGH_WATERMARK_DOWN, HIGH_WATERMARK_UP, FLOWS_TRACKED};
+use throughput_tracker::get_flow_stats;
 use tokio::join;
 mod stats;
 
@@ -61,13 +65,15 @@ async fn main() -> Result<()> {
       &config.internet_interface,
       config.stick_vlans.1,
       config.stick_vlans.0,
+      Some(heimdall_handle_events),
     )?
   } else {
-    LibreQoSKernels::new(&config.internet_interface, &config.isp_interface)?
+    LibreQoSKernels::new(&config.internet_interface, &config.isp_interface, Some(heimdall_handle_events))?
   };
 
   // Spawn tracking sub-systems
   join!(
+    start_heimdall(),
     spawn_queue_structure_monitor(),
     shaped_devices_tracker::shaped_devices_watcher(),
     shaped_devices_tracker::network_json_watcher(),
@@ -185,7 +191,27 @@ fn handle_bus_requests(
           high_watermark: (
             HIGH_WATERMARK_DOWN.load(std::sync::atomic::Ordering::Relaxed),
             HIGH_WATERMARK_UP.load(std::sync::atomic::Ordering::Relaxed),
-          )
+          ),
+          tracked_flows: FLOWS_TRACKED.load(std::sync::atomic::Ordering::Relaxed),
+        }
+      }
+      BusRequest::GetFlowStats(ip) => get_flow_stats(ip),
+      BusRequest::GetPacketHeaderDump(id) => {
+        BusResponse::PacketDump(n_second_packet_dump(*id))
+      }
+      BusRequest::GetPcapDump(id) => {
+        BusResponse::PcapDump(lqos_heimdall::n_second_pcap(*id))
+      }
+      BusRequest::GatherPacketData(ip) => {
+        let ip = ip.parse::<IpAddr>();
+        if let Ok(ip) = ip {
+          if let Some((session_id, countdown)) = lqos_heimdall::hyperfocus_on_target(ip.into()) {
+            BusResponse::PacketCollectionSession{session_id, countdown}
+          } else {
+            BusResponse::Fail("Busy".to_string())
+          }
+        } else {
+          BusResponse::Fail("Invalid IP".to_string())
         }
       }
     });

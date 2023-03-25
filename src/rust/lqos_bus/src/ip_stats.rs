@@ -66,3 +66,81 @@ pub struct XdpPpingResult {
   /// derived. If 0, the other values are invalid.
   pub samples: u32,
 }
+
+/// Defines an IP protocol for display in the flow
+/// tracking (Heimdall) system.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum FlowProto {
+  /// A TCP flow
+  TCP, 
+  /// A UDP flow
+  UDP, 
+  /// An ICMP flow
+  ICMP
+}
+
+/// Defines the display data for a flow in Heimdall.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct FlowTransport {
+  /// The Source IP address
+  pub src: String,
+  /// The Destination IP address
+  pub dst: String,
+  /// The flow protocol (see `FlowProto`)
+  pub proto: FlowProto,
+  /// The source port, which is overridden to ICMP code on ICMP flows.
+  pub src_port: u16,
+  /// The destination port, which isn't useful at all on ICMP flows.
+  pub dst_port: u16,
+  /// The number of bytes since we started tracking this flow.
+  pub bytes: u64,
+  /// The number of packets since we started tracking this flow.
+  pub packets: u64,
+  /// Detected DSCP code if any
+  pub dscp: u8,
+  /// Detected ECN bit status (0-3)
+  pub ecn: u8,
+}
+
+/// Extract the 6-bit DSCP and 2-bit ECN code from a TOS field
+/// in an IP header.
+pub fn tos_parser(tos: u8) -> (u8, u8) {
+  // Format: 2 bits of ECN, 6 bits of DSCP
+  const ECN: u8 = 0b00000011;
+  const DSCP: u8 = 0b11111100;
+
+  let ecn = tos & ECN;
+  let dscp = (tos & DSCP) >> 2;
+  (dscp, ecn)
+}
+
+/// Packet header dump
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+pub struct PacketHeader {
+  /// Timestamp (ns since boot)
+  pub timestamp: u64,
+  /// Source IP
+  pub src: String,
+  /// Destination IP
+  pub dst: String,
+  /// Source Port
+  pub src_port : u16,
+  /// Destination Port
+  pub dst_port: u16,
+  /// Ip Protocol (see Linux kernel docs)
+  pub ip_protocol: u8,
+  /// ECN Flag
+  pub ecn: u8,
+  /// DSCP code
+  pub dscp: u8,
+  /// Packet Size
+  pub size: u32,
+  /// TCP Flag Bitset
+  pub tcp_flags: u8,
+  /// TCP Window Size
+  pub tcp_window: u16,
+  /// TCP TSVal
+  pub tcp_tsval: u32,
+  /// TCP ECR val
+  pub tcp_tsecr: u32,
+}

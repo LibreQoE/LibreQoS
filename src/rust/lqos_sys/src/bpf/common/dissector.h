@@ -9,6 +9,12 @@
 #include "../common/debug.h"
 #include "../common/ip_hash.h"
 #include "../common/bifrost.h"
+#include "../common/tcp_opts.h"
+#include <linux/in.h>
+#include <linux/in6.h>
+#include <linux/tcp.h>
+#include <linux/udp.h>
+#include <linux/icmp.h>
 
 // Packet dissector for XDP. We don't have any help from Linux at this
 // point.
@@ -37,6 +43,15 @@ struct dissector_t
     // Current VLAN tag. If there are multiple tags, it will be
     // the INNER tag.
     __be16 current_vlan;
+    // IP protocol from __UAPI_DEF_IN_IPPROTO
+    __u8 ip_protocol;
+    __u16 src_port;
+    __u16 dst_port;
+    __u8 tos;
+    __u8 tcp_flags;
+    __u16 window;
+    __u32 tsval;
+    __u32 tsecr;
 };
 
 // Representation of the VLAN header type.
@@ -63,18 +78,19 @@ struct pppoe_proto
 #define PPP_IPV6 0x57
 
 // Representation of an MPLS label
-struct mpls_label {
-	__be32 entry;
+struct mpls_label
+{
+    __be32 entry;
 };
 
-#define MPLS_LS_LABEL_MASK      0xFFFFF000
-#define MPLS_LS_LABEL_SHIFT     12
-#define MPLS_LS_TC_MASK         0x00000E00
-#define MPLS_LS_TC_SHIFT        9
-#define MPLS_LS_S_MASK          0x00000100
-#define MPLS_LS_S_SHIFT         8
-#define MPLS_LS_TTL_MASK        0x000000FF
-#define MPLS_LS_TTL_SHIFT       0
+#define MPLS_LS_LABEL_MASK 0xFFFFF000
+#define MPLS_LS_LABEL_SHIFT 12
+#define MPLS_LS_TC_MASK 0x00000E00
+#define MPLS_LS_TC_SHIFT 9
+#define MPLS_LS_S_MASK 0x00000100
+#define MPLS_LS_S_SHIFT 8
+#define MPLS_LS_TTL_MASK 0x000000FF
+#define MPLS_LS_TTL_SHIFT 0
 
 // Constructor for a dissector
 // Connects XDP/TC SKB structure to a dissector structure.
@@ -84,9 +100,9 @@ struct mpls_label {
 //
 // Returns TRUE if all is good, FALSE if the process cannot be completed
 static __always_inline bool dissector_new(
-    struct xdp_md *ctx, 
-    struct dissector_t *dissector
-) {
+    struct xdp_md *ctx,
+    struct dissector_t *dissector)
+{
     dissector->ctx = ctx;
     dissector->start = (void *)(long)ctx->data;
     dissector->end = (void *)(long)ctx->data_end;
@@ -94,6 +110,10 @@ static __always_inline bool dissector_new(
     dissector->l3offset = 0;
     dissector->skb_len = dissector->end - dissector->start;
     dissector->current_vlan = 0;
+    dissector->ip_protocol = 0;
+    dissector->src_port = 0;
+    dissector->dst_port = 0;
+    dissector->tos = 0;
 
     // Check that there's room for an ethernet header
     if SKB_OVERFLOW (dissector->start, dissector->end, ethhdr)
@@ -114,9 +134,9 @@ static __always_inline bool is_ip(__u16 eth_type)
 // Locates the layer-3 offset, if present. Fast returns for various
 // common non-IP types. Will perform VLAN redirection if requested.
 static __always_inline bool dissector_find_l3_offset(
-    struct dissector_t *dissector, 
-    bool vlan_redirect
-) {
+    struct dissector_t *dissector,
+    bool vlan_redirect)
+{
     if (dissector->ethernet_header == NULL)
     {
         bpf_debug("Ethernet header is NULL, still called offset check.");
@@ -149,35 +169,34 @@ static __always_inline bool dissector_find_l3_offset(
         case ETH_P_8021AD:
         case ETH_P_8021Q:
         {
-            if SKB_OVERFLOW_OFFSET (dissector->start, dissector->end, 
-                offset, vlan_hdr)
+            if SKB_OVERFLOW_OFFSET (dissector->start, dissector->end,
+                                    offset, vlan_hdr)
             {
                 return false;
             }
-            struct vlan_hdr *vlan = (struct vlan_hdr *)
-                (dissector->start + offset);
+            struct vlan_hdr *vlan = (struct vlan_hdr *)(dissector->start + offset);
             dissector->current_vlan = vlan->h_vlan_TCI;
             eth_type = bpf_ntohs(vlan->h_vlan_encapsulated_proto);
             offset += sizeof(struct vlan_hdr);
             // VLAN Redirection is requested, so lookup a detination and
             // switch the VLAN tag if required
-            if (vlan_redirect) {
-                #ifdef VERBOSE
-                bpf_debug("Searching for redirect %u:%u", 
-                    dissector->ctx->ingress_ifindex, 
-                    bpf_ntohs(dissector->current_vlan)
-                );
-                #endif
-                __u32 key = (dissector->ctx->ingress_ifindex << 16) | 
-                    bpf_ntohs(dissector->current_vlan);
-                struct bifrost_vlan * vlan_info = NULL;
+            if (vlan_redirect)
+            {
+#ifdef VERBOSE
+                bpf_debug("Searching for redirect %u:%u",
+                          dissector->ctx->ingress_ifindex,
+                          bpf_ntohs(dissector->current_vlan));
+#endif
+                __u32 key = (dissector->ctx->ingress_ifindex << 16) |
+                            bpf_ntohs(dissector->current_vlan);
+                struct bifrost_vlan *vlan_info = NULL;
                 vlan_info = bpf_map_lookup_elem(&bifrost_vlan_map, &key);
-                if (vlan_info) {
-                    #ifdef VERBOSE
-                    bpf_debug("Redirect to VLAN %u", 
-                        bpf_htons(vlan_info->redirect_to)
-                    );
-                    #endif
+                if (vlan_info)
+                {
+#ifdef VERBOSE
+                    bpf_debug("Redirect to VLAN %u",
+                              bpf_htons(vlan_info->redirect_to));
+#endif
                     vlan->h_vlan_TCI = bpf_htons(vlan_info->redirect_to);
                 }
             }
@@ -187,13 +206,12 @@ static __always_inline bool dissector_find_l3_offset(
         // Handle PPPoE
         case ETH_P_PPP_SES:
         {
-            if SKB_OVERFLOW_OFFSET (dissector->start, dissector->end, 
-                offset, pppoe_proto)
+            if SKB_OVERFLOW_OFFSET (dissector->start, dissector->end,
+                                    offset, pppoe_proto)
             {
                 return false;
             }
-            struct pppoe_proto *pppoe = (struct pppoe_proto *)
-                (dissector->start + offset);
+            struct pppoe_proto *pppoe = (struct pppoe_proto *)(dissector->start + offset);
             __u16 proto = bpf_ntohs(pppoe->proto);
             switch (proto)
             {
@@ -212,31 +230,39 @@ static __always_inline bool dissector_find_l3_offset(
 
         // WARNING/TODO: Here be dragons; this needs testing.
         case ETH_P_MPLS_UC:
-        case ETH_P_MPLS_MC: {
-            if SKB_OVERFLOW_OFFSET(dissector->start, dissector-> end,
-                offset, mpls_label)
+        case ETH_P_MPLS_MC:
+        {
+            if SKB_OVERFLOW_OFFSET (dissector->start, dissector->end,
+                                    offset, mpls_label)
             {
                 return false;
             }
-            struct mpls_label * mpls = (struct mpls_label *)
-                (dissector->start + offset);
+            struct mpls_label *mpls = (struct mpls_label *)(dissector->start + offset);
             // Are we at the bottom of the stack?
             offset += 4; // 32-bits
-            if (mpls->entry & MPLS_LS_S_MASK) {
+            if (mpls->entry & MPLS_LS_S_MASK)
+            {
                 // We've hit the bottom
-                if SKB_OVERFLOW_OFFSET(dissector->start, dissector->end,
-                    offset, iphdr) 
+                if SKB_OVERFLOW_OFFSET (dissector->start, dissector->end,
+                                        offset, iphdr)
                 {
                     return false;
                 }
-                struct iphdr * iph = (struct iphdr *)(dissector->start + offset);
-                switch (iph->version) {
-                    case 4: eth_type = ETH_P_IP; break;
-                    case 6: eth_type = ETH_P_IPV6; break;
-                    default: return false;
+                struct iphdr *iph = (struct iphdr *)(dissector->start + offset);
+                switch (iph->version)
+                {
+                case 4:
+                    eth_type = ETH_P_IP;
+                    break;
+                case 6:
+                    eth_type = ETH_P_IPV6;
+                    break;
+                default:
+                    return false;
                 }
             }
-        } break;
+        }
+        break;
 
         // We found something we don't know how to handle - bail out
         default:
@@ -250,37 +276,148 @@ static __always_inline bool dissector_find_l3_offset(
     return true;
 }
 
+static __always_inline struct tcphdr *get_tcp_header(struct dissector_t *dissector)
+{
+    if (dissector->eth_type == ETH_P_IP)
+    {
+        return (struct tcphdr *)((char *)dissector->ip_header.iph + (dissector->ip_header.iph->ihl * 4));
+    }
+    else if (dissector->eth_type == ETH_P_IPV6)
+    {
+        return (struct tcphdr *)(dissector->ip_header.ip6h + 1);
+    }
+    return NULL;
+}
+
+static __always_inline struct udphdr *get_udp_header(struct dissector_t *dissector)
+{
+    if (dissector->eth_type == ETH_P_IP)
+    {
+        return (struct udphdr *)((char *)dissector->ip_header.iph + (dissector->ip_header.iph->ihl * 4));
+    }
+    else if (dissector->eth_type == ETH_P_IPV6)
+    {
+        return (struct udphdr *)(dissector->ip_header.ip6h + 1);
+    }
+    return NULL;
+}
+
+static __always_inline struct icmphdr *get_icmp_header(struct dissector_t *dissector)
+{
+    if (dissector->eth_type == ETH_P_IP)
+    {
+        return (struct icmphdr *)((char *)dissector->ip_header.iph + (dissector->ip_header.iph->ihl * 4));
+    }
+    else if (dissector->eth_type == ETH_P_IPV6)
+    {
+        return (struct icmphdr *)(dissector->ip_header.ip6h + 1);
+    }
+    return NULL;
+}
+
+static __always_inline void snoop(struct dissector_t *dissector)
+{
+    switch (dissector->ip_protocol)
+    {
+    case IPPROTO_TCP:
+    {
+        struct tcphdr *hdr = get_tcp_header(dissector);
+        if (hdr != NULL)
+        {
+            if (hdr + 1 > dissector->end)
+            {
+                return;
+            }
+            dissector->src_port = hdr->source;
+            dissector->dst_port = hdr->dest;
+            __u8 flags = 0;
+            if (hdr->fin) flags |= 1;
+            if (hdr->syn) flags |= 2;
+            if (hdr->rst) flags |= 4;
+            if (hdr->psh) flags |= 8;
+            if (hdr->ack) flags |= 16;
+            if (hdr->urg) flags |= 32;
+            if (hdr->ece) flags |= 64;
+            if (hdr->cwr) flags |= 128;
+
+            dissector->tcp_flags = flags;
+            dissector->window = hdr->window;
+
+            parse_tcp_ts(hdr, dissector->end, &dissector->tsval, &dissector->tsecr);
+        }
+    }
+    break;
+    case IPPROTO_UDP:
+    {
+        struct udphdr *hdr = get_udp_header(dissector);
+        if (hdr != NULL)
+        {
+            if (hdr + 1 > dissector->end)
+            {
+                return;
+            }
+            dissector->src_port = hdr->source;
+            dissector->dst_port = hdr->dest;
+        }
+    }
+    case IPPROTO_ICMP:
+    {
+        struct icmphdr *hdr = get_icmp_header(dissector);
+        if (hdr != NULL)
+        {
+            if ((char *)hdr + sizeof(struct icmphdr) > dissector->end)
+            {
+                return;
+            }
+            dissector->ip_protocol = 1;
+            dissector->src_port = bpf_ntohs(hdr->type);
+            dissector->dst_port = bpf_ntohs(hdr->type);
+        }
+    }
+    break;
+    }
+}
+
 // Searches for an IP header.
 static __always_inline bool dissector_find_ip_header(
-    struct dissector_t *dissector
-) {
+    struct dissector_t *dissector)
+{
     switch (dissector->eth_type)
     {
     case ETH_P_IP:
     {
-        if (dissector->start + dissector->l3offset + sizeof(struct iphdr) > 
-            dissector->end) {
-                return false;
+        if (dissector->start + dissector->l3offset + sizeof(struct iphdr) >
+            dissector->end)
+        {
+            return false;
         }
         dissector->ip_header.iph = dissector->start + dissector->l3offset;
         if (dissector->ip_header.iph + 1 > dissector->end)
             return false;
         encode_ipv4(dissector->ip_header.iph->saddr, &dissector->src_ip);
         encode_ipv4(dissector->ip_header.iph->daddr, &dissector->dst_ip);
+        dissector->ip_protocol = dissector->ip_header.iph->protocol;
+        dissector->tos = dissector->ip_header.iph->tos;
+        snoop(dissector);
         return true;
     }
     break;
     case ETH_P_IPV6:
     {
-        if (dissector->start + dissector->l3offset + 
-            sizeof(struct ipv6hdr) > dissector->end) {
-                return false;
+        if (dissector->start + dissector->l3offset +
+                sizeof(struct ipv6hdr) >
+            dissector->end)
+        {
+            return false;
         }
         dissector->ip_header.ip6h = dissector->start + dissector->l3offset;
         if (dissector->ip_header.iph + 1 > dissector->end)
             return false;
         encode_ipv6(&dissector->ip_header.ip6h->saddr, &dissector->src_ip);
         encode_ipv6(&dissector->ip_header.ip6h->daddr, &dissector->dst_ip);
+        dissector->ip_protocol = dissector->ip_header.ip6h->nexthdr;
+        dissector->ip_header.ip6h->flow_lbl[0]; // Is this right?
+        snoop(dissector);
         return true;
     }
     break;

@@ -2,7 +2,7 @@ use crate::{
   circuit_to_queue::CIRCUIT_TO_QUEUE, interval::QUEUE_MONITOR_INTERVAL,
   queue_store::QueueStore, tracking::reader::read_named_queue_from_interface,
 };
-use log::{info, warn};
+use log::info;
 use lqos_config::LibreQoSConfig;
 use lqos_utils::fdtimer::periodic;
 mod reader;
@@ -18,7 +18,7 @@ fn track_queues() {
   }
   let config = LibreQoSConfig::load();
   if config.is_err() {
-    warn!("Unable to read LibreQoS config. Skipping queue collection cycle.");
+    //warn!("Unable to read LibreQoS config. Skipping queue collection cycle.");
     return;
   }
   let config = config.unwrap();
@@ -49,7 +49,9 @@ fn track_queues() {
     if let Ok(download) = download {
       if let Ok(upload) = upload {
         if let Some(mut circuit) = CIRCUIT_TO_QUEUE.get_mut(circuit_id) {
-          circuit.update(&download[0], &upload[0]);
+          if !download.is_empty() && !upload.is_empty() {
+            circuit.update(&download[0], &upload[0]);
+          }
         } else {
           // It's new: insert it
           if !download.is_empty() && !upload.is_empty() {

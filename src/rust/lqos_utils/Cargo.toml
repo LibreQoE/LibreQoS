@@ -2,6 +2,7 @@
 name = "lqos_utils"
 version = "0.1.0"
 edition = "2021"
+license = "GPL-2.0-only"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -9,3 +10,5 @@ nix = "0"
 log = "0"
 notify = { version = "5.0.0", default-features = false } # Not using crossbeam because of Tokio
 thiserror = "1"
+byteorder = "1.4"
+zerocopy = { version = "0.6.1", features = ["simd"] }

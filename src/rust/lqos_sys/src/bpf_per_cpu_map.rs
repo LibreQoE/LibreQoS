@@ -1,7 +1,6 @@
 use anyhow::{Error, Result};
 use libbpf_sys::{
   bpf_map_get_next_key, bpf_map_lookup_elem, bpf_obj_get,
-  libbpf_num_possible_cpus,
 };
 use std::fmt::Debug;
 use std::{
@@ -10,12 +9,14 @@ use std::{
   ptr::null_mut,
 };
 
+use crate::num_possible_cpus;
+
 /// Represents an underlying BPF map, accessed via the filesystem.
 /// `BpfMap` *only* talks to PER-CPU variants of maps.
 ///
 /// `K` is the *key* type, indexing the map.
 /// `V` is the *value* type, and must exactly match the underlying C data type.
-pub(crate) struct BpfPerCpuMap<K, V> {
+pub struct BpfPerCpuMap<K, V> {
   fd: i32,
   _key_phantom: PhantomData<K>,
   _val_phantom: PhantomData<V>,
@@ -29,7 +30,7 @@ where
   /// Connect to a PER-CPU BPF map via a filename. Connects the internal
   /// file descriptor, which is held until the structure is
   /// dropped. The index of the CPU is *not* specified.
-  pub(crate) fn from_path(filename: &str) -> Result<Self> {
+  pub fn from_path(filename: &str) -> Result<Self> {
     let filename_c = CString::new(filename)?;
     let fd = unsafe { bpf_obj_get(filename_c.as_ptr()) };
     if fd < 0 {
@@ -42,8 +43,8 @@ where
   /// Instead of clonining into a vector
   /// and allocating, calls `callback` for each key/value slice
   /// with references to the data returned from C.
-  pub(crate) fn for_each(&self, callback: &mut dyn FnMut(&K, &[V])) {
-    let num_cpus = unsafe { libbpf_num_possible_cpus() };
+  pub fn for_each(&self, callback: &mut dyn FnMut(&K, &[V])) {
+    let num_cpus = num_possible_cpus().unwrap();
     let mut prev_key: *mut K = null_mut();
     let mut key: K = K::default();
     let key_ptr: *mut K = &mut key;

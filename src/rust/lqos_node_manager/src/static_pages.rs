@@ -50,6 +50,15 @@ pub async fn circuit_queue<'a>(
 
 // Note that NoCache can be replaced with a cache option
 // once the design work is complete.
+#[get("/ip_dump")]
+pub async fn ip_dump<'a>(
+  _auth: AuthGuard,
+) -> NoCache<Option<NamedFile>> {
+  NoCache::new(NamedFile::open("static/ip_dump.html").await.ok())
+}
+
+// Note that NoCache can be replaced with a cache option
+// once the design work is complete.
 #[get("/unknown")]
 pub async fn unknown_devices_page<'a>(
   _auth: AuthGuard,

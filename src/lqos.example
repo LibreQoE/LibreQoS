@@ -4,6 +4,7 @@
 # Where is LibreQoS installed?
 lqos_directory = '/opt/libreqos/src'
 queue_check_period_ms = 1000
+packet_capture_time = 10 # Number of seconds to capture packets in an analysis session
 
 [usage_stats]
 send_anonymous = true

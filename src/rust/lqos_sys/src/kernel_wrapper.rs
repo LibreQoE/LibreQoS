@@ -1,6 +1,6 @@
 use crate::lqos_kernel::{
   attach_xdp_and_tc_to_interface, unload_xdp_from_interface,
-  InterfaceDirection,
+  InterfaceDirection, bpf::ring_buffer_sample_fn,
 };
 
 /// A wrapper-type that stores the interfaces to which the XDP and TC programs should
@@ -23,7 +23,9 @@ impl LibreQoSKernels {
   ///
   /// * `to_internet` - the name of the Internet-facing interface (e.g. `eth1`).
   /// * `to_isp` - the name of the ISP-network facing interface (e.g. `eth2`).
-  pub fn new<S: ToString>(to_internet: S, to_isp: S) -> anyhow::Result<Self> {
+  /// * `heimdall_event_handler` - C function pointer to the ringbuffer
+  ///    event handler exported by Heimdall.
+  pub fn new<S: ToString>(to_internet: S, to_isp: S, heimdall_event_handler: ring_buffer_sample_fn) -> anyhow::Result<Self> {
     let kernel = Self {
       to_internet: to_internet.to_string(),
       to_isp: to_isp.to_string(),
@@ -32,10 +34,12 @@ impl LibreQoSKernels {
     attach_xdp_and_tc_to_interface(
       &kernel.to_internet,
       InterfaceDirection::Internet,
+      heimdall_event_handler,
     )?;
     attach_xdp_and_tc_to_interface(
       &kernel.to_isp,
       InterfaceDirection::IspNetwork,
+      heimdall_event_handler,
     )?;
     Ok(kernel)
   }
@@ -55,6 +59,7 @@ impl LibreQoSKernels {
     stick_interface: S,
     internet_vlan: u16,
     isp_vlan: u16,
+    heimdall_event_handler: ring_buffer_sample_fn,
   ) -> anyhow::Result<Self> {
     let kernel = Self {
       to_internet: stick_interface.to_string(),
@@ -64,6 +69,7 @@ impl LibreQoSKernels {
     attach_xdp_and_tc_to_interface(
       &kernel.to_internet,
       InterfaceDirection::OnAStick(internet_vlan, isp_vlan),
+      heimdall_event_handler,
     )?;
 
     Ok(kernel)

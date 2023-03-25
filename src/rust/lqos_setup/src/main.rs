@@ -118,7 +118,7 @@ fn get_bandwidth(up: bool) -> u32 {
 
 const ETC_LQOS_CONF: &str = "lqos_directory = '/opt/libreqos/src'
 queue_check_period_ms = 1000
-node_id = {NODE_ID}
+node_id = \"{NODE_ID}\"
 
 [tuning]
 stop_irq_balance = true

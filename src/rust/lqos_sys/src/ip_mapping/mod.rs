@@ -1,6 +1,7 @@
-use crate::{bpf_map::BpfMap, XdpIpAddress};
+use crate::bpf_map::BpfMap;
 use anyhow::Result;
 use lqos_bus::TcHandle;
+use lqos_utils::XdpIpAddress;
 use std::net::IpAddr;
 mod ip_hash_data;
 mod ip_hash_key;

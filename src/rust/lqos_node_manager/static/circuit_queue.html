@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,27 +10,35 @@
     <title>LibreQoS - Local Node Manager</title>
     <script src="/lqos.js"></script>
     <script src="/vendor/plotly-2.16.1.min.js"></script>
-    <script src="/vendor/jquery.min.js"></script><script src="/vendor/msgpack.min.js"></script>
+    <script src="/vendor/jquery.min.js"></script>
+    <script src="/vendor/msgpack.min.js"></script>
     <script defer src="/vendor/bootstrap.bundle.min.js"></script>
 </head>
+
 <body class="bg-secondary">
     <!-- Navigation -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container-fluid">
-            <a class="navbar-brand" href="/"><img src="/vendor/tinylogo.svg" alt="LibreQoS SVG Logo" width="25" height="25" />&nbsp;LibreQoS</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+            <a class="navbar-brand" href="/"><img src="/vendor/tinylogo.svg" alt="LibreQoS SVG Logo" width="25"
+                    height="25" />&nbsp;LibreQoS</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+                data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false"
+                aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarSupportedContent">
                 <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                     <li class="nav-item">
-                        <a class="nav-link" href="/tree?parent=0"><i class="fa fa-globe"></i> Tree</a>
+                        <a class="nav-link" href="/tree?parent=0"><i class="fa fa-tree"></i> Tree</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link active" aria-current="page" href="/shaped"><i class="fa fa-users"></i> Shaped Devices <span id="shapedCount" class="badge badge-pill badge-success green-badge">?</span></a>
+                        <a class="nav-link active" aria-current="page" href="/shaped"><i class="fa fa-users"></i> Shaped
+                            Devices <span id="shapedCount"
+                                class="badge badge-pill badge-success green-badge">?</span></a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/unknown"><i class="fa fa-address-card"></i> Unknown IPs <span id="unshapedCount" class="badge badge-warning orange-badge">?</span></a>
+                        <a class="nav-link" href="/unknown"><i class="fa fa-address-card"></i> Unknown IPs <span
+                                id="unshapedCount" class="badge badge-warning orange-badge">?</span></a>
                     </li>
                 </ul>
             </div>
@@ -37,13 +46,15 @@
             <ul class="navbar-nav ms-auto">
                 <li class="nav-item" id="currentLogin"></li>
                 <li class="nav-item">
-                    <a class="nav-link" href="#" id="startTest"><i class="fa fa-flag-checkered"></i> Run Bandwidth Test</a>
+                    <a class="nav-link" href="#" id="startTest"><i class="fa fa-flag-checkered"></i> Run Bandwidth
+                        Test</a>
                 </li>
                 <li class="nav-item ms-auto">
                     <a class="nav-link" href="/config"><i class="fa fa-gear"></i> Configuration</a>
                 </li>
                 <li>
-                    <a class="nav-link btn btn-small black-txt" href="#" id="btnReload"><i class="fa fa-refresh"></i> Reload LibreQoS</a>
+                    <a class="nav-link btn btn-small black-txt" href="#" id="btnReload"><i class="fa fa-refresh"></i>
+                        Reload LibreQoS</a>
                 </li>
             </ul>
         </div>
@@ -60,49 +71,61 @@
                     <div class="col-sm-6">
                         <ul class="nav nav-pills mb-3" id="pills-tab" role="tablist">
                             <li class="nav-item" role="presentation">
-                                <button class="nav-link active" id="pills-home-tab" data-bs-toggle="pill" data-bs-target="#pills-home" type="button" role="tab" aria-controls="pills-home" aria-selected="true">Overview</button>
+                                <button class="nav-link active" id="pills-home-tab" data-bs-toggle="pill"
+                                    data-bs-target="#pills-home" type="button" role="tab" aria-controls="pills-home"
+                                    aria-selected="true">Overview</button>
                             </li>
                             <li class="nav-item" role="presentation">
-                                <button class="nav-link" id="pills-tins-tab" data-bs-toggle="pill" data-bs-target="#pills-tins" type="button" role="tab" aria-controls="pills-profile" aria-selected="false">All Tins</button>
+                                <button class="nav-link" id="pills-tins-tab" data-bs-toggle="pill"
+                                    data-bs-target="#pills-tins" type="button" role="tab" aria-controls="pills-profile"
+                                    aria-selected="false">All Tins</button>
                             </li>
                             <li class="nav-item" role="presentation">
-                                <button class="nav-link" id="pills-funnel-tab" data-bs-toggle="pill" data-bs-target="#pills-funnel" type="button" role="tab" aria-controls="pills-funnel" aria-selected="false">Queue Funnel</button>
+                                <button class="nav-link" id="pills-funnel-tab" data-bs-toggle="pill"
+                                    data-bs-target="#pills-funnel" type="button" role="tab" aria-controls="pills-funnel"
+                                    aria-selected="false">Queue Tree</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="pills-flows-tab" data-bs-toggle="pill"
+                                    data-bs-target="#pills-flows" type="button" role="tab" aria-controls="pills-flows"
+                                    aria-selected="false">Flows</button>
                             </li>
                         </ul>
                     </div>
                     <div class="col-sm-2">
-                    <div id="raw"></div>
+                        <div id="raw"></div>
                     </div>
                 </div>
             </div>
         </div>
 
         <div class="tab-content" id="pills-tabContent">
-            <div class="tab-pane fade show active" id="pills-home" role="tabpanel" aria-labelledby="pills-home-tab" tabindex="0">
+            <div class="tab-pane fade show active" id="pills-home" role="tabpanel" aria-labelledby="pills-home-tab"
+                tabindex="0">
 
                 <!-- Total Throughput and Backlog -->
                 <div class="row">
                     <div class="col-sm-4">
                         <div class="card bg-light">
                             <div class="card-body">
-                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Throughput</h5>
-                                <div id="throughputGraph" class="graph200"></div>
+                                <h5 class="card-title"><i class="fa fa-dashboard"></i> Throughput</h5>
+                                <div id="throughputGraph" class="graph150"></div>
                             </div>
                         </div>
                     </div>
                     <div class="col-sm-4">
                         <div class="card bg-light">
                             <div class="card-body">
-                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Backlog</h5>
-                                <div id="backlogGraph" class="graph200"></div>
+                                <h5 class="card-title"><i class="fa fa-car"></i> Backlog</h5>
+                                <div id="backlogGraph" class="graph150"></div>
                             </div>
                         </div>
                     </div>
                     <div class="col-sm-4">
                         <div class="card bg-light">
                             <div class="card-body">
-                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Capacity Quantile</h5>
-                                <div id="capacityQuantile" class="graph200"></div>
+                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Capacity Quantile (Last 10s)</h5>
+                                <div id="capacityQuantile" class="graph150"></div>
                             </div>
                         </div>
                     </div>
@@ -113,16 +136,16 @@
                     <div class="col-sm-6">
                         <div class="card bg-light">
                             <div class="card-body">
-                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Delays</h5>
-                                <div id="delayGraph" class="graph200"></div>
+                                <h5 class="card-title"><i class="fa fa-hourglass"></i> Delays</h5>
+                                <div id="delayGraph" class="graph150"></div>
                             </div>
                         </div>
                     </div>
                     <div class="col-sm-6">
                         <div class="card bg-light">
                             <div class="card-body">
-                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Queue Length</h5>
-                                <div id="qlenGraph" class="graph200"></div>
+                                <h5 class="card-title"><i class="fa fa-fast-forward"></i> Queue Length</h5>
+                                <div id="qlenGraph" class="graph150"></div>
                             </div>
                         </div>
                     </div>
@@ -144,18 +167,18 @@
                     <div class="col-sm-6">
                         <div class="card bg-light">
                             <div class="card-body">
-                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Tin 1 (Bulk)</h5>
-                                <div id="tinTp_0" class="graph200"></div>
-                                <div id="tinMd_0" class="graph200"></div>
-                            </div>                        
+                                <h5 class="card-title"><i class="fa fa-truck"></i> Tin 1 (Bulk)</h5>
+                                <div id="tinTp_0" class="graph150"></div>
+                                <div id="tinMd_0" class="graph150"></div>
+                            </div>
                         </div>
                     </div>
                     <div class="col-sm-6">
                         <div class="card bg-light">
                             <div class="card-body">
-                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Tin 2 (Best Effort)</h5>
-                                <div id="tinTp_1" class="graph200"></div>
-                                <div id="tinMd_1" class="graph200"></div>
+                                <h5 class="card-title"><i class="fa fa-balance-scale"></i> Tin 2 (Best Effort)</h5>
+                                <div id="tinTp_1" class="graph150"></div>
+                                <div id="tinMd_1" class="graph150"></div>
                             </div>
                         </div>
                     </div>
@@ -164,27 +187,46 @@
                     <div class="col-sm-6">
                         <div class="card bg-light">
                             <div class="card-body">
-                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Tin 3 (Video)</h5>
-                                <div id="tinTp_2" class="graph200"></div>
-                                <div id="tinMd_2" class="graph200"></div>
-                            </div>                        
+                                <h5 class="card-title"><i class="fa fa-television"></i> Tin 3 (Video)</h5>
+                                <div id="tinTp_2" class="graph150"></div>
+                                <div id="tinMd_2" class="graph150"></div>
+                            </div>
                         </div>
                     </div>
                     <div class="col-sm-6">
                         <div class="card bg-light">
                             <div class="card-body">
-                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Tin 4 (Voice)</h5>
-                                <div id="tinTp_3" class="graph200"></div>
-                                <div id="tinMd_3" class="graph200"></div>
+                                <h5 class="card-title"><i class="fa fa-phone"></i> Tin 4 (Voice)</h5>
+                                <div id="tinTp_3" class="graph150"></div>
+                                <div id="tinMd_3" class="graph150"></div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div class="tab-pane fade" id="pills-funnel" role="tabpanel" aria-labelledby="pills-funnel-tab" tabindex="2">
+            <div class="tab-pane fade" id="pills-funnel" role="tabpanel" aria-labelledby="pills-funnel-tab"
+                tabindex="2">
             </div>
-          </div>          
+
+            <div class="tab-pane fade" id="pills-flows" role="tabpanel" aria-labelledby="pills-flows-tab" tabindex="3">
+                <div class="row">
+                    <div class="col-sm12">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Flows (Last 30 Seconds)</h5>
+                                <p class="alert alert-warning" role="alert">
+                                    <i class="fa fa-warning"></i> Gathering packet data can cause high CPU load during
+                                    the capture window.
+                                </p>
+                                <div id="packetButtons"></div>
+                                <div id="flowList"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <footer>&copy; 2022-2023, LibreQoE LLC</footer>
@@ -194,332 +236,601 @@
         let throughput_head = 0;
         let circuit_info = null;
 
-        function setX(x, counter) {
-            for (let i=0; i<x.length; i++) {
-                x[i].push(counter);
+        function nameCircuit() {
+            if (circuit_info == null) {
+                msgPackGet("/api/circuit_info/" + encodeURI(id), (data) => {
+                    circuit_info = data;
+                    let capacity = scaleNumber(circuit_info[CircuitInfo.capacity][0]) + " / " + scaleNumber(circuit_info[CircuitInfo.capacity][1]);
+                    $("#circuitName").text(redactText(circuit_info[CircuitInfo.name]) + " " + capacity);
+                });
             }
         }
 
-        function setY(y, i, data, tin) {
-            if (data[0] == "None" || data[1] == "None") {
-                for (let j=0; i<y.length; y++) {
-                    y[j].push(0);
+        function displayMemory(data) {
+            // Fill Base Information
+            let total_memory = data[QD.current_download][CT.memory_used] + data[QD.current_upload][CT.memory_used];
+            $("#memory").text(scaleNumber(total_memory));
+        }
+
+        class CombinedPlot {
+            constructor(capacity) {
+                this.y = []
+                for (let i = 0; i < capacity * 2; ++i) {
+                    this.y.push(0);
                 }
-            } else {
-                y[0].push(data[0].Cake.tins[tin].sent_bytes * 8); // Download
-                y[1].push(0.0 - (data[1].Cake.tins[tin].sent_bytes * 8)); // Upload
-                y[2].push(data[0].Cake.tins[tin].drops); // Down Drops
-                y[3].push(data[0].Cake.tins[tin].marks); // Down Marks
-                y[4].push(0.0 - data[1].Cake.tins[tin].drops); // Up Drops
-                y[5].push(0.0 - data[1].Cake.tins[tin].marks); // Up Marks
+            }
 
-                // Backlog
-                y[6].push(data[0].Cake.tins[tin].backlog_bytes * 8);
-                y[7].push(0.0 - data[1].Cake.tins[tin].backlog_bytes * 8);
-
-                // Delays
-                y[8].push(data[0].Cake.tins[tin].avg_delay_us);
-                y[9].push(0.0 - data[1].Cake.tins[tin].avg_delay_us);
+            store(x, y, value) {
+                if (value == 0) value = null;
+                this.y[(x * 2) + y] = value;
             }
         }
+
+        class TinsPlot {
+            constructor(capacity) {
+                this.tins = [
+                    new CombinedPlot(capacity),
+                    new CombinedPlot(capacity),
+                    new CombinedPlot(capacity),
+                    new CombinedPlot(capacity)
+                ];
+            }
+
+            store(tin, x, y, value) {
+                this.tins[tin].store(x, y, value);
+            }
+        }
+
+        class QueuePlotter {
+            constructor(capacity) {
+                this.capacity = capacity;
+                this.x_axis = [];
+                this.backlog = new TinsPlot(capacity);
+                this.delays = new TinsPlot(capacity);
+                this.queueLen = new CombinedPlot(capacity);
+                this.throughput = new TinsPlot(capacity);
+                this.drops = new TinsPlot(capacity);
+                this.marks = new TinsPlot(capacity);
+                for (let i = 0; i < capacity; ++i) {
+                    this.x_axis.push(i);
+                    this.x_axis.push(i);
+                }
+            }
+
+            ingestBacklog(subData, currentX, tin) {
+                this.backlog.store(tin, currentX, 0, subData[0][CDT.tins][tin][CDTT.backlog_bytes] * 8);
+                this.backlog.store(tin, currentX, 1, 0.0 - subData[1][CDT.tins][tin][CDTT.backlog_bytes] * 8);
+            }
+
+            ingestDelays(subData, currentX, tin) {
+                this.delays.store(tin, currentX, 0, subData[0][CDT.tins][tin][CDTT.avg_delay_us] * 0.001);
+                this.delays.store(tin, currentX, 1, 0.0 - subData[1][CDT.tins][tin][CDTT.avg_delay_us] * 0.001);
+            }
+
+            ingestQueueLen(subData, currentX) {
+                this.queueLen.store(currentX, 0, subData[0][CDT.qlen]);
+                this.queueLen.store(currentX, 1, 0.0 - subData[1][CDT.qlen]);
+            }
+
+            ingestThroughput(subData, currentX, tin) {
+                this.throughput.store(tin, currentX, 0, subData[0][CDT.tins][tin][CDTT.sent_bytes] * 8);
+                this.throughput.store(tin, currentX, 1, 0.0 - (subData[1][CDT.tins][tin][CDTT.sent_bytes] * 8));
+            }
+
+            ingestDrops(subData, currentX, tin) {
+                this.drops.store(tin, currentX, 0, subData[0][CDT.tins][tin][CDTT.drops]);
+                this.drops.store(tin, currentX, 1, 0.0 - subData[1][CDT.tins][tin][CDTT.drops]);
+            }
+
+            ingestMarks(subData, currentX, tin) {
+                this.marks.store(tin, currentX, 0, subData[0][CDT.tins][tin][CDTT.marks]);
+                this.marks.store(tin, currentX, 1, 0.0 - subData[1][CDT.tins][tin][CDTT.marks]);
+            }
+
+            ingest(data, currentX, hi) {
+                // We're inserting at currentX, from the history entry indexed
+                // by hi
+                if (activeTab == "pills-home-tab") {
+                    this.ingestQueueLen(data[QD.history][hi], currentX);
+                }
+                for (let tin = 0; tin < 4; ++tin) {
+                    if (data[QD.history][hi][0][3].length == 4 && data[QD.history][hi][1][3].length == 4) {
+                        if (activeTab == "pills-home-tab") {
+                            this.ingestBacklog(data[QD.history][hi], currentX, tin);
+                            this.ingestDelays(data[QD.history][hi], currentX, tin);
+                        } else if (activeTab == "pills-tins-tab") {
+                            this.ingestThroughput(data[QD.history][hi], currentX, tin);
+                            this.ingestDrops(data[QD.history][hi], currentX, tin);
+                            this.ingestMarks(data[QD.history][hi], currentX, tin);
+                        }
+                    }
+                }
+            }
+
+            update(data) {
+                // Iterate the whole history ringbuffer
+                // Note that we're going backwards. reverse() turned out
+                // to be surprisingly expensive in JS.
+                let currentX = this.capacity;
+                for (let hi = data[QD.history_head]; hi < 600; ++hi) {
+                    this.ingest(data, currentX, hi);
+                    currentX--;
+                }
+                for (let hi = 0; hi < data[QD.history_head]; ++hi) {
+                    this.ingest(data, currentX, hi);
+                    currentX--;
+                }
+            }
+
+            plotBacklog() {
+                let graph = document.getElementById("backlogGraph");
+                let graphData = [
+                    { x: this.x_axis, y: this.backlog.tins[0].y, type: 'scattergl', mode: 'markers', name: 'Bulk', marker: { size: 4 } },
+                    { x: this.x_axis, y: this.backlog.tins[1].y, type: 'scattergl', mode: 'markers', name: 'Best Effort', marker: { size: 4 } },
+                    { x: this.x_axis, y: this.backlog.tins[2].y, type: 'scattergl', mode: 'markers', name: 'Video', marker: { size: 4 } },
+                    { x: this.x_axis, y: this.backlog.tins[3].y, type: 'scattergl', mode: 'markers', name: 'Voice', marker: { size: 4 } },
+                ];
+                
+                if (this.backlogPlotted == null) {
+                    this.backlogPlotted = true;
+                    Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Bytes" }, xaxis: { automargin: true, title: "Time since now" } });
+                } else {
+                    Plotly.redraw(graph, graphData);
+                }
+            }
+
+            plotDelays() {
+                let graph = document.getElementById("delayGraph");
+                let graphData = [
+                    { x: this.x_axis, y: this.delays.tins[0].y, type: 'scattergl', mode: 'markers', name: 'Bulk', marker: { size: 4 } },
+                    { x: this.x_axis, y: this.delays.tins[1].y, type: 'scattergl', mode: 'markers', name: 'Best Effort', marker: { size: 4 } },
+                    { x: this.x_axis, y: this.delays.tins[2].y, type: 'scattergl', mode: 'markers', name: 'Video', marker: { size: 4 } },
+                    { x: this.x_axis, y: this.delays.tins[3].y, type: 'scattergl', mode: 'markers', name: 'Voice', marker: { size: 4 } },
+                ];
+
+                if (this.delaysPlotted == null) {
+                    Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "ms" }, xaxis: { automargin: true, title: "Time since now" } });
+                    this.delaysPlotted = true;
+                } else {
+                    Plotly.redraw(graph, graphData);
+                }
+
+            }
+
+            plotQueueLen() {
+                let graph = document.getElementById("qlenGraph");
+                let graphData = [
+                    { x: this.x_axis, y: this.queueLen.y, type: 'scattergl', mode: 'markers', name: 'Queue Length' },
+                ];
+                if (this.queueLenPlotted == null) {
+                    Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Packets" }, xaxis: { automargin: true, title: "Time since now" } });
+                    this.queueLenPlotted = true;
+                } else {
+                    Plotly.redraw(graph, graphData);
+                }
+            }
+
+            plotTinThroughput(tin) {
+                let graph = document.getElementById("tinTp_" + tin);
+                let graphData = [
+                    { x: this.x_axis, y: this.throughput.tins[tin].y, type: 'scatter', mode: 'markers' }
+                ];
+                if (this.tinsPlotted == null) {   
+                    Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Bits" }, xaxis: { automargin: true, title: "Time since now" } });
+                } else {
+                    Plotly.redraw(graph, graphData);
+                }
+            }
+
+            plotMarksDrops(tin) {
+                let graph = document.getElementById("tinMd_" + tin);
+                let graphData = [
+                    { x: this.x_axis, y: this.drops.tins[tin].y, name: 'Drops', type: 'scatter', mode: 'markers', marker: { size: 4 } },
+                    { x: this.x_axis, y: this.marks.tins[tin].y, name: 'Marks', type: 'scatter', mode: 'markers', marker: { size: 4 } },
+                ];
+                if (this.tinsPlotted == null) {
+                    Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Packets" }, xaxis: { automargin: true, title: "Time since now" } });
+                } else {
+                    Plotly.redraw(graph, graphData);
+                }
+            }
+
+            plot() {
+                if (activeTab == "pills-home-tab") {
+                    this.plotBacklog();
+                    this.plotDelays();
+                    this.plotQueueLen();
+                } else if (activeTab == "pills-tins-tab") {
+                    for (let tin = 0; tin < 4; ++tin) {
+                        this.plotTinThroughput(tin);
+                        this.plotMarksDrops(tin);
+                    }
+                    this.tinsPlotted = true;
+                }
+            }
+        }
+
+        let qp = null;
 
         function pollQueue() {
-            const params = new Proxy(new URLSearchParams(window.location.search), {
-                get: (searchParams, prop) => searchParams.get(prop),
-            });
-            if (params.id != null) {
+            if (id != null) {
                 // Name the circuit
-                $.get("/api/circuit_info/" + encodeURI(params.id), (data) => {
-                    circuit_info = data;
-                    $("#circuitName").text(redactText(circuit_info.name));
-                });
-
-                // Fill the raw button
-                $("#raw").html("<a class='btn btn-sm btn-info' href='/api/raw_queue_by_circuit/" + encodeURI(params.id) + "'><i class='fa fa-search'></i> Raw Data</a>");
+                nameCircuit();
 
                 // Graphs
-                $.get("/api/raw_queue_by_circuit/" + encodeURI(params.id), (data) => {
-                    // Fill Base Information
-                    let total_memory = data.current_download.Cake.memory_used + data.current_upload.Cake.memory_used;
-                    $("#memory").text(scaleNumber(total_memory));
-
-                    // Fill Tin Graphs
-                    let backlogX1 = [];
-                    let backlogY1 = [];
-                    let backlogX2 = [];
-                    let backlogY2 = [];
-                    let delaysX1 = [];
-                    let delaysX2 = [];
-                    let delaysY1 = [];
-                    let delaysY2 = [];
-                    let qlenX1 = [];
-                    let qlenY1 = [];
-                    let qlenX2 = [];
-                    let qlenY2 = [];
-
-                    for (let tin=0; tin<4; tin++) {
-                        let entries = {
-                            x: [[], [], [], [], [], [], [], [], [], []],
-                            y: [[], [], [], [], [], [], [], [], [], []],
-                        }
-                        let counter = 0;
-                        for (let i=data.history_head; i<600; i++) {
-                            setX(entries.x, counter);
-                            setY(entries.y, i, data.history[i], tin);
-                            if (tin == 0) {
-                                qlenX1.push(counter);
-                                qlenX2.push(counter);
-                                if (data.history[i][0].Cake) {
-                                    qlenY1.push(data.history[i][0].Cake.qlen);
-                                } else {
-                                    qlenY1.push(0);
-                                }
-                                if (data.history[i][1].Cake) {
-                                    qlenY2.push(0.0 - data.history[i][1].Cake.qlen);
-                                } else {
-                                    qlenY2.push(0.0);
-                                }
-                            }
-                            counter++;
-                        }
-                        for (let i=0; i<data.history_head; i++) {
-                            setX(entries.x, counter);
-                            setY(entries.y, i, data.history[i], tin);
-                            if (tin == 0) {
-                                qlenX1.push(counter);
-                                qlenX2.push(counter);
-                                if (data.history[i][0].Cake) {
-                                    qlenY1.push(data.history[i][0].Cake.qlen);
-                                } else {
-                                    qlenY1.push(0.0);
-                                }
-                                if (data.history[i][1].Cake) {
-                                    qlenY2.push(0.0 - data.history[i][1].Cake.qlen);
-                                } else {
-                                    qlenY2.push(0.0);
-                                }
-                            }
-                            counter++;                            
-                        }
-                        let graph = document.getElementById("tinTp_" + tin);
-                        let graph_data = [
-                            {x: entries.x[0], y:entries.y[0].reverse(), name: 'Download', type: 'scatter'},
-                            {x: entries.x[1], y:entries.y[1].reverse(), name: 'Upload', type: 'scatter'},
-                        ];
-                        Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
-
-                        graph = document.getElementById("tinMd_" + tin);
-                        graph_data = [
-                            {x: entries.x[2], y:entries.y[2].reverse(), name: 'Down Drops', mode: 'markers', marker: { size: 4 }},
-                            {x: entries.x[3], y:entries.y[3].reverse(), name: 'Down Marks', mode: 'markers', marker: { size: 4 }},
-                            {x: entries.x[4], y:entries.y[4].reverse(), name: 'Up Drops', mode: 'markers', marker: { size: 4 }},
-                            {x: entries.x[5], y:entries.y[5].reverse(), name: 'Up Marks', mode: 'markers', marker: { size: 4 }},
-                        ];
-                        Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
-
-                        backlogX1.push(entries.x[6]);
-                        backlogX2.push(entries.x[7]);
-                        backlogY1.push(entries.y[6]);
-                        backlogY2.push(entries.y[7]);
-                        delaysX1.push(entries.x[8]);
-                        delaysX2.push(entries.x[9]);
-                        delaysY1.push(entries.y[8]);
-                        delaysY2.push(entries.y[9]);
-                    }
-                    let graph = document.getElementById("backlogGraph");
-                    let graph_data = [
-                        {x: backlogX1[0], y:backlogY1[0].reverse(), type: 'scatter', name: 'Tin 0 Down'},
-                        {x: backlogX2[0], y:backlogY2[0].reverse(), type: 'scatter', name: 'Tin 0 Up'},
-                        {x: backlogX1[1], y:backlogY1[1].reverse(), type: 'scatter', name: 'Tin 1 Down'},
-                        {x: backlogX2[1], y:backlogY2[1].reverse(), type: 'scatter', name: 'Tin 1 Up'},
-                        {x: backlogX1[2], y:backlogY1[2].reverse(), type: 'scatter', name: 'Tin 2 Down'},
-                        {x: backlogX2[2], y:backlogY2[2].reverse(), type: 'scatter', name: 'Tin 2 Up'},
-                        {x: backlogX1[3], y:backlogY1[3].reverse(), type: 'scatter', name: 'Tin 3 Down'},
-                        {x: backlogX2[3], y:backlogY2[3].reverse(), type: 'scatter', name: 'Tin 3 Up'},
-                    ];
-                    Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
-
-                    graph = document.getElementById("delayGraph");
-                    graph_data = [
-                        {x: delaysX1[0], y:delaysY1[0].reverse(), type: 'scatter', name: 'Tin 0 Down'},
-                        {x: delaysX2[0], y:delaysY2[0].reverse(), type: 'scatter', name: 'Tin 0 Up'},
-                        {x: delaysX1[1], y:delaysY1[1].reverse(), type: 'scatter', name: 'Tin 1 Down'},
-                        {x: delaysX2[1], y:delaysY2[1].reverse(), type: 'scatter', name: 'Tin 1 Up'},
-                        {x: delaysX1[2], y:delaysY1[2].reverse(), type: 'scatter', name: 'Tin 2 Down'},
-                        {x: delaysX2[2], y:delaysY2[2].reverse(), type: 'scatter', name: 'Tin 2 Up'},
-                        {x: delaysX1[3], y:delaysY1[3].reverse(), type: 'scatter', name: 'Tin 3 Down'},
-                        {x: delaysX2[3], y:delaysY2[3].reverse(), type: 'scatter', name: 'Tin 3 Up'},
-                    ];
-                    Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
-
-                    graph = document.getElementById("qlenGraph");
-                    graph_data = [
-                        {x: qlenX1, y:qlenY1.reverse(), type: 'scatter', name: 'Down'},
-                        {x: qlenX2, y:qlenY2.reverse(), type: 'scatter', name: 'Up'},
-                    ];
-                    Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
+                msgPackGet("/api/raw_queue_by_circuit/" + encodeURI(id), (data) => {
+                    if (qp == null) qp = new QueuePlotter(600);
+                    qp.update(data);
+                    qp.plot();
+                    displayMemory(data);
                 });
             }
-
-            setTimeout(pollQueue, 1000);
         }
 
-        function getThroughput() {
-            const params = new Proxy(new URLSearchParams(window.location.search), {
-                get: (searchParams, prop) => searchParams.get(prop),
-            });
-            if (params.id != null) {
-                $.get("/api/circuit_throughput/" + encodeURI(params.id), (data) => {
-                    let quantiles = [
-                        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-                        [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
-                    ];                    
+        let ips = [];
 
-                    for (let i=0; i<data.length; i++) {
-                        let ip = data[i][0];
-                        let down = data[i][1];
-                        let up = data[i][2];
-
-                        if (throughput[ip] == null) {
-                            throughput[ip] = {
-                                down: [],
-                                up: [],
-                            };
-                            for (let j=0; j<300; j++) {
-                                throughput[ip].down.push(0);
-                                throughput[ip].up.push(0);
-                            }
-                        }
-                        throughput[ip].down[throughput_head] = down * 8;
-                        throughput[ip].up[throughput_head] = up * 8;
-                    }
-
-                    // Build the graph
-                    let graph = document.getElementById("throughputGraph");
-                    let graph_data = [];
-                    for (const ip in throughput) {
-                        //console.log(ip);
-                        let xUp = [];
-                        let xDown = [];
-                        let yUp = [];
-                        let yDown = [];
-                        let counter = 0;
-                        for (let i=throughput_head; i<300; i++) {
-                            xUp.push(counter);
-                            xDown.push(counter);
-                            yUp.push(0.0 - throughput[ip].up[i]);
-                            yDown.push(throughput[ip].down[i]);
-                            counter++;
-                        }
-                        for (let i=0; i<throughput_head; i++) {
-                            xUp.push(counter);
-                            xDown.push(counter);
-                            yUp.push(0.0 - throughput[ip].up[i]);
-                            yDown.push(throughput[ip].down[i]);
-                            counter++;
-                        }
-
-                        // Build the quantiles graph
-                        if (circuit_info != null) {
-                            for (let i=0; i<yDown.length; i++) {
-                                let down = yDown[i];
-                                let up = 0.0 - yUp[i];
-                                let down_slot = Math.floor((down / circuit_info.capacity[0]) * 10.0);
-                                let up_slot = Math.floor((up / circuit_info.capacity[1]) * 10.0);
-                                if (down_slot > 0) quantiles[0][down_slot] += 1;
-                                if (up_slot > 0) quantiles[1][up_slot] += 1;
-                            }
-                        }
-
-                        graph_data.push({x: xDown, y: yDown.reverse(), name: ip + " Down", type: 'scatter'});
-                        graph_data.push({x: xUp, y: yUp.reverse(), name: ip + " Up", type: 'scatter'});
-                    }
-                    Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true} });
-                    throughput_head += 1;
-                    if (throughput_head >= 300) {
-                        throughput_head = 0;
-                    }
-                    
-                    graph = document.getElementById("capacityQuantile");
-                    graph_data = [
-                        {x: quantiles[2], y: quantiles[0], name: 'Download', type: 'bar'},
-                        {x: quantiles[2], y: quantiles[1], name: 'Upload', type: 'bar'},
-                    ];
-                    Plotly.newPlot(graph, graph_data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true, title: '# Samples' }, xaxis: {automargin: true, title: '% Utilization'} });
-                });
+        class ThroughputMonitor {
+            constructor(capacity) {
+                this.capacity = capacity;
+                this.head = 0;
+                this.per_ip = {};
+                this.y = {};
+                this.x_axis = [];
+                for (let i=0; i<capacity; ++i) {
+                    this.x_axis.push(i);
+                    this.x_axis.push(i);
+                }
+                this.quantiles = [
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+                ];
             }
 
-            setTimeout(getThroughput, 1000);
+            clearQuantiles() {
+                for (let i=0; i<12; ++i) {
+                    this.quantiles[0][i] = 0;
+                    this.quantiles[1][i] = 0;
+                }
+            }
+
+            ingest(ip, down, up) {
+                down = down * 8;
+                up = up * 8;
+                if (!this.per_ip.hasOwnProperty(ip)) {
+                    this.per_ip[ip] = [];
+                    this.y[ip] = [];
+                    for (let i=0; i<this.capacity; ++i) {
+                        this.per_ip[ip].push(0);
+                        this.per_ip[ip].push(0);
+                        this.y[ip].push(0);
+                        this.y[ip].push(0);
+                    }
+                }
+                this.per_ip[ip][this.head] = down;
+                this.per_ip[ip][this.head + 1] = 0.0 - up;
+                this.head += 2;
+                if (this.head > this.capacity*2) {
+                    this.head = 0;
+                }
+            }
+
+            addQuantile(down, up) {
+                up = 0 - up;
+                let down_slot = Math.floor((down / circuit_info[CircuitInfo.capacity][0]) * 10.0);
+                let up_slot = Math.floor((up / circuit_info[CircuitInfo.capacity][1]) * 10.0);
+                /*if (down_slot < 0) down_slot = 0;
+                if (up_slot < 0) up_slot = 0;
+                if (down_slot > 11) down_slot = 11;
+                if (up_slot > 11) up_slot = 11;*/
+                this.quantiles[0][down_slot] += 1;
+                this.quantiles[1][up_slot] += 1;
+                //console.log(down_slot, up_slot);            
+            }
+
+            prepare() {
+                this.clearQuantiles();
+                for (const ip in this.per_ip) {
+                    let counter = this.capacity*2;
+                    for (let i = this.head; i < this.capacity*2; i++) {
+                        this.y[ip][counter] = this.per_ip[ip][i];              
+                        counter--;
+                    }
+                    for (let i = 0; i < this.head; i++) {
+                        this.y[ip][counter] = this.per_ip[ip][i];
+                        counter--;
+                    }
+                    for (let i=2; i<22; i+=2) {
+                        this.addQuantile(this.y[ip][i], this.y[ip][i+1]);
+                    }
+                }
+            }
+
+            plot() {
+                let graph = document.getElementById("throughputGraph");
+                let graphData = [];
+                for (const ip in this.per_ip) {
+                    graphData.push({ x: this.x_axis, y: this.y[ip], name: ip, mode: 'markers', type: 'scattergl', marker: { size: 3 } });
+                }
+                if (this.plotted == null) {
+                    Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Traffic (bits)" }, xaxis: { automargin: true, title: "Time since now" } });                    
+                    this.plotted = true;
+                } else {
+                    Plotly.redraw(graph, graphData);
+                }
+            }
+
+            plotQuantiles() {
+                let graph = document.getElementById("capacityQuantile");
+                let graphData = [
+                    { x: this.quantiles[2], y: this.quantiles[0], name: 'Download', type: 'bar' },
+                    { x: this.quantiles[2], y: this.quantiles[1], name: 'Upload', type: 'bar' },
+                ];
+                if (this.plottedQ == null) {
+                    Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: '# Samples' }, xaxis: { automargin: true, title: '% Utilization' } });
+                    this.plottedQ = true;
+                } else {
+                    Plotly.redraw(graph, graphData);
+                }
+            }
+        }
+
+        let tpData = null;
+
+        function getThroughput() {
+            if (id != null) {
+                msgPackGet("/api/circuit_throughput/" + encodeURI(id), (data) => {
+                    if (tpData == null) tpData = new ThroughputMonitor(300);
+                    ips = [];
+                    for (let i=0; i < data.length; i++) {
+                        let ip = data[i][0];
+                        ips.push(ip);
+                        let down = data[i][1];
+                        let up = data[i][2];
+                        tpData.ingest(ip, down, up);
+                    }
+                    tpData.prepare();
+                    tpData.plot();
+                    tpData.plotQuantiles();
+                });
+            }
         }
 
         let funnels = new MultiRingBuffer(300);
         let rtts = {};
         let circuitId = "";
+        let builtFunnelDivs = false;
 
-        function getFunnel(c) {
-            circuitId = encodeURI(c);
-            $.get("/api/funnel_for_queue/" + circuitId, (data) => {
+        function getFunnel() {
+            if (builtFunnelDivs) {
+                plotFunnels();
+                return;
+            }
+            circuitId = encodeURI(id);
+            msgPackGet("/api/funnel_for_queue/" + circuitId, (data) => {
                 let html = "";
-                for (let i=0; i<data.length; ++i) {
-                    funnels.push(data[i][0], data[i][1].current_throughput[0]*8, data[i][1].current_throughput[1]*8);
+                for (let i = 0; i < data.length; ++i) {
+                    funnels.push(data[i][0], data[i][1][NetTrans.current_throughput][0] * 8, data[i][1][NetTrans.current_throughput][1] * 8);
                     rtts[data[i][0]] = new RttHistogram();
 
                     let row = "<div class='row row220'>";
 
                     row += "<div class='col-sm-6'>";
                     row += "<div class='card bg-light'>";
-                    row += "<h5 class='card-title'><i class='fa fa-hourglass'></i> <a class='redact' href='/tree?parent=" + data[i][0] + "'>" + redactText(data[i][1].name) + " Throughput</a></h5>";
-                    row += "<div id='tp" + data[i][0] + "' class='graph98 graph200'></div>";
+                    row += "<h5 class='card-title'><i class='fa fa-hourglass'></i> <a class='redact' href='/tree?parent=" + data[i][0] + "'>" + redactText(data[i][1][NetTrans.name]) + " Throughput</a></h5>";
+                    row += "<div id='tp" + data[i][0] + "' class='graph98 graph150'></div>";
                     row += "</div>";
                     row += "</div>";
 
                     row += "<div class='col-sm-6'>";
                     row += "<div class='card bg-light'>";
-                    row += "<h5 class='card-title redact'><i class='fa fa-bar-chart'></i> " + redactText(data[i][1].name) + " TCP RTT</h5>";
-                    row += "<div id='rtt" + data[i][0] + "' class='graph98 graph200'></div>";
+                    row += "<h5 class='card-title redact'><i class='fa fa-bar-chart'></i> " + redactText(data[i][1][NetTrans.name]) + " TCP RTT</h5>";
+                    row += "<div id='rtt" + data[i][0] + "' class='graph98 graph150'></div>";
                     row += "</div>";
                     row += "</div>";
 
                     row += "</div>";
                     html += row;
-                }             
+                }
                 $("#pills-funnel").html(html);
-                setTimeout(plotFunnels, 1000);
+                builtFunnelDivs = true;
+                setTimeout(plotFunnels, 10);
             });
         }
 
+        let plottedFunnels = {};
+
         function plotFunnels() {
-            $.get("/api/funnel_for_queue/" + encodeURI(circuitId), (data) => {
-                for (let i=0; i<data.length; ++i) {
-                    funnels.push(data[i][0], data[i][1].current_throughput[0]*8, data[i][1].current_throughput[1]*8);
+            msgPackGet("/api/funnel_for_queue/" + encodeURI(circuitId), (data) => {
+                for (let i = 0; i < data.length; ++i) {
+                    funnels.push(data[i][0], data[i][1][NetTrans.current_throughput][0] * 8, data[i][1][NetTrans.current_throughput][1] * 8);
                     for (const [k, v] of Object.entries(funnels.data)) {
-                        let target_div = "tp" + k;
+                        let target_div = "tp" + k;                        
                         let graphData = v.toScatterGraphData();
                         let graph = document.getElementById(target_div);
-                        Plotly.newPlot(graph, graphData, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true }, xaxis: {automargin: true, title: "Time since now (seconds)"} }, { responsive: true });
+                        if (!plotFunnels.hasOwnProperty(target_div)) {
+                            Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true }, xaxis: { automargin: true, title: "Time since now" } }, { responsive: true });
+                        } else {
+                            Plotly.redraw(graph, graphData);
+                        }
                     }
 
                     rtts[data[i][0]].clear();
-                    for (let j=0; j<data[i][1].rtts.length; j++) {
-                        rtts[data[i][0]].push(data[i][1].rtts[j]);
+                    for (let j = 0; j < data[i][1][NetTrans.rtts].length; j++) {
+                        rtts[data[i][0]].push(data[i][1][NetTrans.rtts][j]);
                     }
                     rtts[data[i][0]].plot("rtt" + data[i][0]);
                 }
             });
-            setTimeout(plotFunnels, 1000);
+        }
+
+        function icmpType(n) {
+            switch (n) {
+                case 0: return "ECHO REPLY";
+                case 3: return "DESTINATION UNREACHABLE";
+                case 4: return "SOURCE QUENCH";
+                case 8: return "ECHO REQUEST";
+                case 11: return "TIME EXCEEDED";
+                case 12: return "PARAMETER PROBLEM";
+                case 13: return "TIMESTAMP REQUEST";
+                case 14: return "TIMESTAMP REPLY";
+                case 15: return "INFO REQUEST";
+                case 16: return "INFO REPLY";
+                case 17: return "ADDRESS REQUEST";
+                case 18: return "ADDRESS REPLY";
+                default: return "?";
+            }
+        }
+
+        var madeButtons = false;
+        var analysisId = null;
+        var analysisTimer = null;
+        var analysisBtn = null;
+
+        function analyze(id) {
+            if (analysisId != null) {
+                alert("Heimdall says: 'STOP CLICKING ME'");
+                return;
+            }
+            let ip = ips[id];
+            $.get("/api/request_analysis/" + encodeURI(ip), (data) => {
+                if (data == "Fail") {
+                    alert("Heimdall is busy serving other customers. Your desire is important to him, please try again later.")
+                    return;
+                }
+                analysisId = data.Ok.session_id;
+                analysisBtn = "#dumpBtn_" + id;
+                analysisTimer = data.Ok.countdown;
+                analyzeTick();
+            });
+        }
+
+        function analyzeTick() {
+            $(analysisBtn).text("Gathering Data for " + analysisTimer + " more seconds");
+            analysisTimer--;
+            if (analysisTimer > -1) {
+                setTimeout(analyzeTick, 1000);
+            } else {
+                window.location.href = "/ip_dump?id=" + analysisId + "&circuit_id=" + encodeURI(id);
+            }
+        }
+
+        function getFlows() {
+            let ip_list = "";
+            let ip_btns = "";
+            for (let i = 0; i < ips.length; ++i) {
+                ip_list += ips[i] + ",";
+                if (circuit_info != null) {
+                    ip_btns += "<a id='dumpBtn_" + i + "' href='#' onclick='analyze(\"" + i + "\")' class='btn btn-info'><i class='fa fa-search'></i> Analyze: " + ips[i] + "</a> "
+                }
+            }
+            if (!madeButtons && ips.length > 0 && circuit_info != null) {
+                ip_btns += "<br />";
+                madeButtons = true;
+                $("#packetButtons").html(ip_btns);
+            }
+            ip_list = ip_list.substring(0, ip_list.length - 1);
+            if (ip_list == "") return;
+            msgPackGet("/api/flows/" + ip_list, (data) => {
+                //console.log(data);
+                let html = "<table class='table table-striped'>";
+                html += "<thead>";
+                html += "<th>Protocol</th>";
+                html += "<th>Src</th>";
+                html += "<th>Src Port</th>";
+                html += "<th>Dst</th>";
+                html += "<th>Dst Port</th>";
+                html += "<th>Pkt In</th>";
+                html += "<th>Pkt Out</th>";
+                html += "<th>Bytes In</th>";
+                html += "<th>Bytes Out</th>";
+                html += "<th>DSCP In</th>";
+                html += "<th>DSCP Out</th>";
+                html += "<th>ECN In</th>";
+                html += "<th>ECN Out</th>";
+                html += "</thead>";
+                for (let i = 0; i < data.length; i++) {
+                    let rpackets = "-";
+                    let rbytes = "-";
+                    let rdscp = "-";
+                    let rcongestion = "-";
+                    if (data[i][1] != null) {
+                        rpackets = data[i][1][FlowTrans.packets];
+                        rbytes = scaleNumber(data[i][1][FlowTrans.bytes]);
+                        rdscp = "0x" + data[i][1][FlowTrans.dscp].toString(16);
+                        rcongestion = ecn(data[i][1][FlowTrans.ecn]);
+                    }
+                    html += "<tr>";
+                    html += "<td>" + data[i][0][FlowTrans.proto] + "</td>";
+                    html += "<td>" + data[i][0][FlowTrans.src] + "</td>";
+                    if (data[i][0].proto == "ICMP") {
+                        html += "<td>" + icmpType(data[i][0][FlowTrans.src_port]) + "</td>";
+                    } else {
+                        html += "<td>" + data[i][0][FlowTrans.src_port] + "</td>";
+                    }
+                    html += "<td>" + data[i][0][FlowTrans.dst] + "</td>";
+                    if (data[i][0][FlowTrans.proto] == "ICMP") {
+                        if (data[i][1] != null) {
+                            html += "<td>" + icmpType(data[i][1][FlowTrans.src_port]) + "</td>";
+                        } else {
+                            html += "<td></td>";
+                        }
+                    } else {
+                        html += "<td>" + data[i][0][FlowTrans.dst_port] + "</td>";
+                    }
+                    html += "<td>" + data[i][0][FlowTrans.packets] + "</td>";
+                    html += "<td>" + rpackets + "</td>";
+                    html += "<td>" + scaleNumber(data[i][0][FlowTrans.bytes]) + "</td>";
+                    html += "<td>" + rbytes + "</td>";
+                    html += "<td>0x" + data[i][0][FlowTrans.dscp].toString(16) + "</td>";
+                    html += "<td>" + rdscp + "</td>";
+                    html += "<td>" + ecn(data[i][0][FlowTrans.ecn]) + "</td>";
+                    html += "<td>" + rcongestion + "</td>";
+                    html += "</tr>";
+                }
+                html += "</tbody></table>";
+                $("#flowList").html(html);
+            })
+        }
+
+        let id = 0;
+        let activeTab = "pills-home-tab";
+
+        function oneSecondCadence() {
+            //console.log(activeTab);
+            switch (activeTab) {
+                case "pills-funnel-tab": {
+                    getFunnel();
+                } break;
+                case "pills-flows-tab": {
+                    getFlows();
+                } break;
+                default: {
+                    pollQueue();
+                    getThroughput();
+                }
+            }
+            setTimeout(oneSecondCadence, 1000);
+        }
+
+        function wireUpTabEvents() {
+            // Fire events when the active tab changes
+            $(document).on('shown.bs.tab', 'button[data-bs-toggle="pill"]', function (e) {
+                activeTab = e.target.id;
+                //console.log(activeTab);
+            });
         }
 
         function start() {
+            wireUpTabEvents();
             colorReloadButton();
             updateHostCounts();
             const params = new Proxy(new URLSearchParams(window.location.search), {
                 get: (searchParams, prop) => searchParams.get(prop),
             });
+            id = params.id;
             $.get("/api/watch_circuit/" + params.id, () => {
-                pollQueue();
-                getThroughput();
-                getFunnel(params.id);
+                oneSecondCadence();
             });
         }
 
@@ -527,4 +838,5 @@
     </script>
 
 </body>
+
 </html>

@@ -5,6 +5,7 @@ mod request;
 mod response;
 mod session;
 mod unix_socket_server;
+mod queue_data;
 pub use client::bus_request;
 use log::error;
 pub use persistent_client::BusClient;
@@ -14,6 +15,7 @@ pub use response::BusResponse;
 pub use session::BusSession;
 use thiserror::Error;
 pub use unix_socket_server::UnixSocketServer;
+pub use queue_data::*;
 
 /// The local socket path to which `lqosd` will bind itself,
 /// listening for requets.

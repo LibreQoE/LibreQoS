@@ -2,6 +2,7 @@
 name = "lqos_rs"
 version = "0.1.0"
 edition = "2021"
+license = "GPL-2.0-only"
 
 [dependencies]
 
@@ -24,4 +25,5 @@ members = [
     "lqos_utils", # A collection of macros and helpers we find useful
     "lqos_setup", # A quick CLI setup for first-time users
     "lqos_anonymous_stats_server", # The server for gathering anonymous usage data.
+    "lqos_heimdall", # Library for managing Heimdall flow watching
 ]

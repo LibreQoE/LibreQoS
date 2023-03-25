@@ -28,7 +28,7 @@
             <div class="collapse navbar-collapse" id="navbarSupportedContent">
                 <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                     <li class="nav-item">
-                        <a class="nav-link" href="/tree?parent=0"><i class="fa fa-globe"></i> Tree</a>
+                        <a class="nav-link" href="/tree?parent=0"><i class="fa fa-tree"></i> Tree</a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="/shaped"><i class="fa fa-users"></i> Shaped Devices <span
@@ -110,7 +110,7 @@
             <div class="col-sm-4">
                 <div class="card bg-light">
                     <div class="card-body">
-                        <h5 class="card-title"><i class="fa fa-hourglass"></i> Last 5 Minutes</h5>
+                        <h5 class="card-title"><i class="fa fa-dashboard"></i> Last 5 Minutes</h5>
                         <div id="tpGraph" class="graph98 graph150"></div>
                     </div>
                 </div>
@@ -130,7 +130,7 @@
             <div class="col-sm-4">
                 <div class="card bg-light">
                     <div class="card-body">
-                        <h5 class="card-title"><i class="fa fa-globe"></i> Site Funnel</h5>
+                        <h5 class="card-title"><i class="fa fa-tree"></i> Network Tree</h5>
                         <div id="siteFunnel" class="graph98 graph150"></div>
                     </div>
                 </div>
@@ -190,12 +190,13 @@
             msgPackGet("/api/network_tree_summary/", (data) => {
                 let table = "<table class='table' style='font-size: 8pt;'>";
                 for (let i = 0; i < data.length; ++i) {
+                    let id = data[i][0];
                     let name = data[i][1][NetTrans.name];
                     if (name.length > 20) {
                         name = name.substring(0, 20) + "...";
                     }
                     table += "<tr>";
-                    table += "<td class='redact'>" + redactText(name) + "</td>";
+                    table += "<td class='redact'><a href='/tree?parent=" + id + "'>" + redactText(name) + "</a></td>";
                     table += "<td>" + scaleNumber(data[i][1][NetTrans.current_throughput][0] * 8) + "</td>";
                     table += "<td>" + scaleNumber(data[i][1][NetTrans.current_throughput][1] * 8) + "</td>";
                     table += "</tr>";

@@ -17,6 +17,9 @@
 #include "common/cpu_map.h"
 #include "common/tcp_rtt.h"
 #include "common/bifrost.h"
+#include "common/heimdall.h"
+
+//#define VERBOSE 1
 
 /* Theory of operation:
 1. (Packet arrives at interface)
@@ -128,8 +131,18 @@ int xdp_prog(struct xdp_md *ctx)
         tc_handle
     );
 
+
     // Send on its way
     if (tc_handle != 0) {
+        // Send data to Heimdall
+        __u8 heimdall_mode = get_heimdall_mode();
+        if (heimdall_mode > 0 && is_heimdall_watching(&dissector, effective_direction)) {
+#ifdef VERBOSE
+            bpf_debug("(XDP) Storing Heimdall Data");
+#endif            
+            update_heimdall(&dissector, ctx->data_end - ctx->data, heimdall_mode);
+        }
+
         // Handle CPU redirection if there is one specified
         __u32 *cpu_lookup;
         cpu_lookup = bpf_map_lookup_elem(&cpus_available, &cpu);

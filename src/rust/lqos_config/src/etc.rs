@@ -30,6 +30,11 @@ pub struct EtcLqos {
 
   /// If present, defined anonymous usage stat sending
   pub usage_stats: Option<UsageStats>,
+
+  /// Defines for how many seconds a libpcap compatible capture should
+  /// run. Short times are good, there's a real performance penalty to
+  /// capturing high-throughput streams. Defaults to 10 seconds.
+  pub packet_capture_time: Option<usize>,
 }
 
 /// Represents a set of `sysctl` and `ethtool` tweaks that may be

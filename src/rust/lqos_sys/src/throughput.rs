@@ -1,4 +1,6 @@
-use crate::{bpf_per_cpu_map::BpfPerCpuMap, XdpIpAddress};
+use lqos_utils::XdpIpAddress;
+
+use crate::{bpf_per_cpu_map::BpfPerCpuMap};
 
 /// Representation of the XDP map from map_traffic
 #[repr(C)]

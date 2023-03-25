@@ -1,13 +1,14 @@
 mod throughput_entry;
 mod tracking_data;
+mod heimdall_data;
+pub use heimdall_data::get_flow_stats;
 use crate::{
   shaped_devices_tracker::NETWORK_JSON,
   throughput_tracker::tracking_data::ThroughputTracker, stats::TIME_TO_POLL_HOSTS,
 };
 use log::{info, warn};
 use lqos_bus::{BusResponse, IpStats, TcHandle, XdpPpingResult};
-use lqos_sys::XdpIpAddress;
-use lqos_utils::{fdtimer::periodic, unix_time::time_since_boot};
+use lqos_utils::{fdtimer::periodic, unix_time::time_since_boot, XdpIpAddress};
 use once_cell::sync::Lazy;
 use std::time::Duration;
 

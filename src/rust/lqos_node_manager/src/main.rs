@@ -40,6 +40,7 @@ fn rocket() -> _ {
         static_pages::circuit_queue,
         config_control::config_page,
         network_tree::tree_page,
+        static_pages::ip_dump,
         // Our JS library
         static_pages::lqos_js,
         static_pages::lqos_css,
@@ -67,6 +68,10 @@ fn rocket() -> _ {
         queue_info::circuit_info,
         queue_info::current_circuit_throughput,
         queue_info::watch_circuit,
+        queue_info::flow_stats,
+        queue_info::packet_dump,
+        queue_info::pcap,
+        queue_info::request_analysis,
         config_control::get_nic_list,
         config_control::get_current_python_config,
         config_control::get_current_lqosd_config,
