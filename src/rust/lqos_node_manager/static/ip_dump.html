@@ -23,9 +23,6 @@
             <div class="collapse navbar-collapse" id="navbarSupportedContent">
                 <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                     <li class="nav-item">
-                        <a class="nav-link" href="/"><i class="fa fa-home"></i> Dashboard</a>
-                    </li>
-                    <li class="nav-item">
                         <a class="nav-link" href="/tree?parent=0"><i class="fa fa-tree"></i> Tree</a>
                     </li>
                     <li class="nav-item">
@@ -130,7 +127,7 @@ if (hdr->cwr) flags |= 128;
         }
 
         function paginator(active) {
-            let paginator = "<a href='/api/pcap/" + target + "/capture.pcap' class='btn btn-warning'>Download PCAP Dump</a> ";
+            let paginator = "<a href='/api/pcap/" + target + "/capture-" + circuit_id + "-" + starting_timestamp + ".pcap' class='btn btn-warning'>Download PCAP Dump</a> ";
             paginator += "<a href='#' class='btn btn-info' onClick='zoomIn();'>Zoom In</a> ";
             paginator += "<a href='#' class='btn btn-info' onClick='zoomOut();'>Zoom Out</a> (ℹ️ Or drag an area of the graph) <br />";
 
@@ -198,7 +195,10 @@ if (hdr->cwr) flags |= 128;
                 {x: x_axis, y:y2_axis, name: 'Upload', type: 'scatter', mode: 'markers', error_x: { type: 'percent', value: capacity[1], symetric: false, valueminus: 0 }},                
             ];
             Plotly.newPlot(graph, data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true, title: 'Bytes' }, xaxis: {automargin: true, title: "Nanoseconds"} }, { responsive: true });
-        }        
+        }
+
+        let circuit_id = null;
+        let starting_timestamp = null;
 
         function start() {
             colorReloadButton();
@@ -206,6 +206,7 @@ if (hdr->cwr) flags |= 128;
             const params = new Proxy(new URLSearchParams(window.location.search), {
                 get: (searchParams, prop) => searchParams.get(prop),
             });
+            circuit_id = params.circuit_id;
 
             capacity = [ params.dn, params.up ]; // Bits per second
             capacity = [ capacity[0] / 8, capacity[1] / 8 ]; // Bytes per second
@@ -226,6 +227,7 @@ if (hdr->cwr) flags |= 128;
                 }
                 packets = data;
                 pages = Math.ceil((packets.length / PAGE_SIZE));
+                starting_timestamp = min_ts;
                 paginator(0);                
                 viewPage(0);
             });

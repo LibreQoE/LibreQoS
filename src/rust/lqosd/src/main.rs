@@ -18,7 +18,7 @@ use anyhow::Result;
 use log::{info, warn};
 use lqos_bus::{BusRequest, BusResponse, UnixSocketServer};
 use lqos_config::LibreQoSConfig;
-use lqos_heimdall::{ten_second_packet_dump, perf_interface::heimdall_handle_events, start_heimdall};
+use lqos_heimdall::{n_second_packet_dump, perf_interface::heimdall_handle_events, start_heimdall};
 use lqos_queue_tracker::{
   add_watched_queue, get_raw_circuit_data, spawn_queue_monitor,
   spawn_queue_structure_monitor,
@@ -197,16 +197,16 @@ fn handle_bus_requests(
       }
       BusRequest::GetFlowStats(ip) => get_flow_stats(ip),
       BusRequest::GetPacketHeaderDump(id) => {
-        BusResponse::PacketDump(ten_second_packet_dump(*id))
+        BusResponse::PacketDump(n_second_packet_dump(*id))
       }
       BusRequest::GetPcapDump(id) => {
-        BusResponse::PcapDump(lqos_heimdall::ten_second_pcap(*id))
+        BusResponse::PcapDump(lqos_heimdall::n_second_pcap(*id))
       }
       BusRequest::GatherPacketData(ip) => {
         let ip = ip.parse::<IpAddr>();
         if let Ok(ip) = ip {
-          if let Some(id) = lqos_heimdall::hyperfocus_on_target(ip.into()) {
-            BusResponse::PacketCollectionSession(id)
+          if let Some((session_id, countdown)) = lqos_heimdall::hyperfocus_on_target(ip.into()) {
+            BusResponse::PacketCollectionSession{session_id, countdown}
           } else {
             BusResponse::Fail("Busy".to_string())
           }

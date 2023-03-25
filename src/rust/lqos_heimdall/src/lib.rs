@@ -9,7 +9,7 @@ pub use config::{HeimdalConfig, HeimdallMode};
 mod flows;
 pub use flows::{expire_heimdall_flows, get_flow_stats};
 mod timeline;
-pub use timeline::{ten_second_packet_dump, ten_second_pcap, hyperfocus_on_target};
+pub use timeline::{n_second_packet_dump, n_second_pcap, hyperfocus_on_target};
 mod pcap;
 mod watchlist;
 use lqos_utils::fdtimer::periodic;

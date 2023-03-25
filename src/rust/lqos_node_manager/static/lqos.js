@@ -36,6 +36,49 @@ const IpStats = {
     "plan": 6,
 }
 
+const FlowTrans = {
+    "src": 0,
+    "dst": 1,
+    "proto": 2,
+    "src_port": 3,
+    "dst_port": 4,
+    "bytes": 5,
+    "packets": 6,
+    "dscp": 7,
+    "ecn": 8
+}
+
+const CircuitInfo = {
+    "name" : 0,
+    "capacity" : 1,
+}
+
+const QD = { // Queue data
+    "history": 0,
+    "history_head": 1,
+    "current_download": 2,
+    "current_upload": 3,
+}
+
+const CT = { // Cake transit
+    "memory_used": 0,
+}
+
+const CDT = { // Cake Diff Transit
+    "bytes": 0,
+    "packets": 1,
+    "qlen": 2,
+    "tins": 3,
+}
+
+const CDTT = { // Cake Diff Tin Transit
+    "sent_bytes": 0,
+    "backlog_bytes": 1,
+    "drops": 2,
+    "marks": 3,
+    "avg_delay_us": 4,
+}
+
 function metaverse_color_ramp(n) {
     if (n <= 9) {
         return "#32b08c";
@@ -271,18 +314,23 @@ class MultiRingBuffer {
     plotTotalThroughput(target_div) {
         let graph = document.getElementById(target_div);
 
-        let total = this.data['total'].sortedY();
-        let shaped = this.data['shaped'].sortedY();
+        this.data['total'].prepare();
+        this.data['shaped'].prepare();
 
         let x = this.data['total'].x_axis;
 
-        let data = [
-            {x: x, y:total.down, name: 'Download', type: 'scatter', marker: {color: 'rgb(255,160,122)'}},
-            {x: x, y:total.up, name: 'Upload', type: 'scatter', marker: {color: 'rgb(255,160,122)'}},
-            {x: x, y:shaped.down, name: 'Shaped Download', type: 'scatter', fill: 'tozeroy', marker: {color: 'rgb(124,252,0)'}},
-            {x: x, y:shaped.up, name: 'Shaped Upload', type: 'scatter', fill: 'tozeroy', marker: {color: 'rgb(124,252,0)'}},
+        let graphData = [
+            {x: x, y:this.data['total'].sortedY[0], name: 'Download', type: 'scatter', marker: {color: 'rgb(255,160,122)'}},
+            {x: x, y:this.data['total'].sortedY[1], name: 'Upload', type: 'scatter', marker: {color: 'rgb(255,160,122)'}},
+            {x: x, y:this.data['shaped'].sortedY[0], name: 'Shaped Download', type: 'scatter', fill: 'tozeroy', marker: {color: 'rgb(124,252,0)'}},
+            {x: x, y:this.data['shaped'].sortedY[1], name: 'Shaped Upload', type: 'scatter', fill: 'tozeroy', marker: {color: 'rgb(124,252,0)'}},
         ];
-        Plotly.newPlot(graph, data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true, title: "Traffic (bits)" }, xaxis: {automargin: true, title: "Time since now (seconds)"} }, { responsive: true });
+        if (this.plotted == null) {
+            Plotly.newPlot(graph, graphData, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true, title: "Traffic (bits)" }, xaxis: {automargin: true, title: "Time since now (seconds)"} }, { responsive: true });
+            this.plotted = true;
+        } else {
+            Plotly.redraw(graph, graphData);
+        }
     }
 }
 
@@ -293,10 +341,13 @@ class RingBuffer {
         this.download = [];
         this.upload = [];
         this.x_axis = [];
+        this.sortedY = [ [], [] ];
         for (var i = 0; i < capacity; ++i) {
             this.download.push(0.0);
             this.upload.push(0.0);
             this.x_axis.push(capacity - i);
+            this.sortedY[0].push(0);
+            this.sortedY[1].push(0);
         }
     }
 
@@ -307,27 +358,25 @@ class RingBuffer {
         this.head %= this.capacity;
     }
 
-    sortedY() {
-        let result = {
-            down: [],
-            up: [],
-        };
+    prepare() {
+        let counter = 0;
         for (let i=this.head; i<this.capacity; i++) {
-            result.down.push(this.download[i]);
-            result.up.push(this.upload[i]);
+            this.sortedY[0][counter] = this.download[i];
+            this.sortedY[1][counter] = this.upload[i];
+            counter++;
         }
         for (let i=0; i < this.head; i++) {
-            result.down.push(this.download[i]);
-            result.up.push(this.upload[i]);
+            this.sortedY[0][counter] = this.download[i];
+            this.sortedY[1][counter] = this.upload[i];
+            counter++;
         }
-        return result;
     }
 
     toScatterGraphData() {
-        let y = this.sortedY();
+        this.prepare();
         let GraphData = [
-            { x: this.x_axis, y: y.down, name: 'Download', type: 'scatter' },
-            { x: this.x_axis, y: y.up, name: 'Upload', type: 'scatter' },
+            { x: this.x_axis, y: this.sortedY[0], name: 'Download', type: 'scatter' },
+            { x: this.x_axis, y: this.sortedY[1], name: 'Upload', type: 'scatter' },
         ];
         return GraphData;
     }
@@ -366,7 +415,12 @@ class RttHistogram {
             { x: this.x, y: this.entries, type: 'bar', marker: { color: this.x, colorscale: 'RdBu' } }
         ]
         let graph = document.getElementById(target_div);
-        Plotly.newPlot(graph, gData, { margin: { l: 40, r: 0, b: 35, t: 0 }, yaxis: { title: "# Hosts" }, xaxis: { title: 'TCP Round-Trip Time (ms)' } }, { responsive: true });
+        if (this.plotted == null) {
+            Plotly.newPlot(graph, gData, { margin: { l: 40, r: 0, b: 35, t: 0 }, yaxis: { title: "# Hosts" }, xaxis: { title: 'TCP Round-Trip Time (ms)' } }, { responsive: true });
+            this.plotted = true;
+        } else {
+            Plotly.redraw(graph, gData);
+        }
     }
 }
 
@@ -387,4 +441,10 @@ function zip(a, b) {
         zipped.push(b[i]);
     }
     return zipped;
+}
+
+function zero_to_null(array) {
+    for (let i=0; i<array.length; ++i) {
+        if (array[i] == 0) array[i] = null;
+    }
 }
