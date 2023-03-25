@@ -124,7 +124,7 @@
                     <div class="col-sm-4">
                         <div class="card bg-light">
                             <div class="card-body">
-                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Capacity Quantile</h5>
+                                <h5 class="card-title"><i class="fa fa-bar-chart"></i> Capacity Quantile (Last 10s)</h5>
                                 <div id="capacityQuantile" class="graph150"></div>
                             </div>
                         </div>
@@ -469,9 +469,130 @@
 
         let ips = [];
 
+        class ThroughputMonitor {
+            constructor(capacity) {
+                this.capacity = capacity;
+                this.head = 0;
+                this.per_ip = {};
+                this.y = {};
+                this.x_axis = [];
+                for (let i=0; i<capacity; ++i) {
+                    this.x_axis.push(i);
+                    this.x_axis.push(i);
+                }
+                this.quantiles = [
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                    [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+                ];
+            }
+
+            clearQuantiles() {
+                for (let i=0; i<12; ++i) {
+                    this.quantiles[0][i] = 0;
+                    this.quantiles[1][i] = 0;
+                }
+            }
+
+            ingest(ip, down, up) {
+                down = down * 8;
+                up = up * 8;
+                if (!this.per_ip.hasOwnProperty(ip)) {
+                    this.per_ip[ip] = [];
+                    this.y[ip] = [];
+                    for (let i=0; i<this.capacity; ++i) {
+                        this.per_ip[ip].push(0);
+                        this.per_ip[ip].push(0);
+                        this.y[ip].push(0);
+                        this.y[ip].push(0);
+                    }
+                }
+                this.per_ip[ip][this.head] = down;
+                this.per_ip[ip][this.head + 1] = 0.0 - up;
+                this.head += 2;
+                if (this.head > this.capacity*2) {
+                    this.head = 0;
+                }
+            }
+
+            addQuantile(down, up) {
+                up = 0 - up;
+                let down_slot = Math.floor((down / circuit_info[CircuitInfo.capacity][0]) * 10.0);
+                let up_slot = Math.floor((up / circuit_info[CircuitInfo.capacity][1]) * 10.0);
+                /*if (down_slot < 0) down_slot = 0;
+                if (up_slot < 0) up_slot = 0;
+                if (down_slot > 11) down_slot = 11;
+                if (up_slot > 11) up_slot = 11;*/
+                this.quantiles[0][down_slot] += 1;
+                this.quantiles[1][up_slot] += 1;
+                //console.log(down_slot, up_slot);            
+            }
+
+            prepare() {
+                this.clearQuantiles();
+                for (const ip in this.per_ip) {
+                    let counter = this.capacity*2;
+                    for (let i = this.head; i < this.capacity*2; i++) {
+                        this.y[ip][counter] = this.per_ip[ip][i];              
+                        counter--;
+                    }
+                    for (let i = 0; i < this.head; i++) {
+                        this.y[ip][counter] = this.per_ip[ip][i];
+                        counter--;
+                    }
+                    for (let i=2; i<22; i+=2) {
+                        this.addQuantile(this.y[ip][i], this.y[ip][i+1]);
+                    }
+                }
+            }
+
+            plot() {
+                let graph = document.getElementById("throughputGraph");
+                let graphData = [];
+                for (const ip in this.per_ip) {
+                    graphData.push({ x: this.x_axis, y: this.y[ip], name: ip, mode: 'markers', type: 'scattergl', marker: { size: 3 } });
+                }
+                if (this.plotted == null) {
+                    Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Traffic (bits)" }, xaxis: { automargin: true, title: "Time since now" } });                    
+                    this.plotted = true;
+                } else {
+                    Plotly.redraw(graph, graphData);
+                }
+            }
+
+            plotQuantiles() {
+                let graph = document.getElementById("capacityQuantile");
+                let graphData = [
+                    { x: this.quantiles[2], y: this.quantiles[0], name: 'Download', type: 'bar' },
+                    { x: this.quantiles[2], y: this.quantiles[1], name: 'Upload', type: 'bar' },
+                ];
+                if (this.plottedQ == null) {
+                    Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: '# Samples' }, xaxis: { automargin: true, title: '% Utilization' } });
+                    this.plottedQ = true;
+                } else {
+                    Plotly.redraw(graph, graphData);
+                }
+            }
+        }
+
+        let tpData = null;
+
         function getThroughput() {
             if (id != null) {
                 msgPackGet("/api/circuit_throughput/" + encodeURI(id), (data) => {
+                    if (tpData == null) tpData = new ThroughputMonitor(300);
+                    ips = [];
+                    for (let i=0; i < data.length; i++) {
+                        let ip = data[i][0];
+                        ips.push(ip);
+                        let down = data[i][1];
+                        let up = data[i][2];
+                        tpData.ingest(ip, down, up);
+                    }
+                    tpData.prepare();
+                    tpData.plot();
+                    tpData.plotQuantiles();
+
                     let quantiles = [
                         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -544,7 +665,7 @@
                         //graph_data.push({x: xUp, y: yUp.reverse(), name: ip + " Up", mode: 'markers', type: 'scatter'});
                     }
                     
-                    Plotly.newPlot(graph, graph_data, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Traffic (bits)" }, xaxis: { automargin: true, title: "Time since now" } });
+                    //Plotly.newPlot(graph, graph_data, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Traffic (bits)" }, xaxis: { automargin: true, title: "Time since now" } });
                     throughput_head += 1;
                     if (throughput_head >= 300) {
                         throughput_head = 0;
@@ -555,7 +676,7 @@
                         { x: quantiles[2], y: quantiles[0], name: 'Download', type: 'bar' },
                         { x: quantiles[2], y: quantiles[1], name: 'Upload', type: 'bar' },
                     ];
-                    Plotly.newPlot(graph, graph_data, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: '# Samples' }, xaxis: { automargin: true, title: '% Utilization' } });
+                    //Plotly.newPlot(graph, graph_data, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: '# Samples' }, xaxis: { automargin: true, title: '% Utilization' } });
                 });
             }
         }
