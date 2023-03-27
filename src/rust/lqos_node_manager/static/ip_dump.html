@@ -80,6 +80,8 @@
         var capacity = [];
         var activeFilter = null;
         var activeSet = null;
+        var activeChart = 0;
+        var activePage = 0;
 
         function filter(newFilter) {
             activeFilter = newFilter;
@@ -91,6 +93,12 @@
             pages = Math.ceil((activeSet.length / PAGE_SIZE));            
             paginator(0);
             viewPage(0);
+        }
+
+        function setChart(n) {
+            activeChart = n;
+            paginator(activePage);
+            viewPage(activePage);
         }
 
         function proto(n) {
@@ -157,7 +165,7 @@ if (hdr->cwr) flags |= 128;
                     paginator += "<option onclick='viewPage(" + i + ");'>" + i + "</option> ";
                 }
             }
-            paginator += "</select><br />";
+            paginator += "</select> | ";
 
             // Offer flow filtering
             paginator += "<strong>Filter Flows</strong>: ";
@@ -174,7 +182,28 @@ if (hdr->cwr) flags |= 128;
                     paginator += "<option onclick='filter(\"" + key + "\");'>" + key + "</option>";
                 }
             });
+            paginator += "</select> | ";
+
+            // Offer graph choices
+            paginator += "<strong>Graph</strong>: ";
+            paginator += "<select>";
+            if (activeChart == 0) {
+                paginator += "<option selected>Packet-Size Chart</option>";
+            } else {
+                paginator += "<option onclick='setChart(0);'>Packet-Size Chart</option>";
+            }
+            if (activeChart == 1) {
+                paginator += "<option selected>Piano Roll Flow Chart</option>";
+            } else {
+                paginator += "<option onclick='setChart(1);'>Piano Roll Flow Chart</option>";
+            }
+            if (activeChart == 2) {
+                paginator += "<option selected>TCP Window Chart</option>";
+            } else {
+                paginator += "<option onclick='setChart(2);'>TCP Window Chart</option>";
+            }
             paginator += "</select>";
+            paginator += "</div>";
 
             $("#pages").html(paginator);
         }
@@ -314,6 +343,7 @@ if (hdr->cwr) flags |= 128;
                 data.forEach(packet => packet.timestamp -= min_ts);
 
                 // Divide the packets into flows and append the flow_id
+                let flowCounter = 0;
                 data.forEach(packet => {
                     let flow_id = proto(packet.ip_protocol) + " " + packet.src + ":" + packet.src_port + " <-> " + packet.dst + ":" + packet.dst_port;
                     let reverse_flow_id = proto(packet.ip_protocol) + " " + packet.dst + ":" + packet.dst_port + " <-> " + packet.src + ":" + packet.src_port;
@@ -322,11 +352,11 @@ if (hdr->cwr) flags |= 128;
                     } else if (flows.hasOwnProperty(reverse_flow_id)) {
                         packet.flow_id = reverse_flow_id;
                     } else {
-                        flows[flow_id] = {};
+                        flows[flow_id] = { flowCounter };
                         packet.flow_id = flow_id;
+                        flowCounter++;
                     }
                 });
-                console.log(flows);
 
                 packets = data;
                 activeSet = packets;
