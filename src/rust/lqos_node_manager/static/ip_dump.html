@@ -73,11 +73,26 @@
 
     <script>
         var packets = [];
+        var flows = {};
         var pages = 0;
         var PAGE_SIZE = 1000;
         var target = "";
         var current_page = 0;
         var capacity = [];
+        var activeFilter = null;
+        var activeSet = null;
+
+        function filter(newFilter) {
+            activeFilter = newFilter;
+            if (newFilter == null) {
+                activeSet = packets;
+            } else {
+                activeSet = packets.filter(packet => packet.flow_id == activeFilter);
+            }
+            pages = Math.ceil((activeSet.length / PAGE_SIZE));            
+            paginator(0);
+            viewPage(0);
+        }
 
         function proto(n) {
             switch (n) {
@@ -133,19 +148,39 @@ if (hdr->cwr) flags |= 128;
             paginator += "<a href='#' class='btn btn-info' onClick='zoomOut();'>Zoom Out</a> (ℹ️ Or drag an area of the graph) <br />";
 
             paginator += "<strong>Jump to page</strong>: ";
-                for (let i=0; i<pages; i++) {
-                    if (i == active) {
-                        paginator += " " + i + " ";
-                    } else {
-                        paginator += "<a href='#' onclick='viewPage(" + i + ");'>" + i + "</a> ";
-                    }
+            paginator += "<select>"
+            for (let i=0; i<pages; i++) {
+                if (i == active) {
+                    paginator += "<option selected>" + i + "</option>";
+                } else {
+                    paginator += "<option onclick='viewPage(" + i + ");'>" + i + "</option> ";
                 }
-                $("#pages").html(paginator);
+            }
+            paginator += "</select><br />";
+
+            // Offer flow filtering
+            paginator += "<strong>Filter Flows</strong>: ";
+            paginator += "<select>";
+            if (activeFilter == null) {
+                paginator += "<option selected onclick='filter(null);'>View All</option>";
+            } else {
+                paginator += "<option onclick='filter(null);'>View All</option>";
+            }
+            Object.keys(flows).forEach(key => {
+                if (activeFilter == key) {
+                    paginator += "<option selected onclick='filter(\"" + key + "\");'>" + key + "</option>";
+                } else {
+                    paginator += "<option onclick='filter(\"" + key + "\");'>" + key + "</option>";
+                }
+            });
+            paginator += "</select>";
+
+            $("#pages").html(paginator);
         }
 
         function viewPage(n) {
             let start = n * PAGE_SIZE;
-            let end = Math.min(start + PAGE_SIZE, packets.length);
+            let end = Math.min(start + PAGE_SIZE, activeSet.length);
             if (start > packets.length) {
                 console.log("OOps");
             }
@@ -156,33 +191,33 @@ if (hdr->cwr) flags |= 128;
             let y2_axis = [];
             for (let i=start; i<end; ++i) {                
                 html += "<tr>";
-                html += "<td>" + packets[i].timestamp + "</td>";
-                html += "<td>" + proto(packets[i].ip_protocol) + "</td>";
+                html += "<td>" + activeSet[i].timestamp + "</td>";
+                html += "<td>" + proto(activeSet[i].ip_protocol) + "</td>";
 
-                if (packets[i].ip_protocol == 6) {
-                    html += "<td>" + tcp_flags(packets[i].tcp_flags) + "</td>";
-                    html += "<td>" + packets[i].tcp_tsval + "/" + packets[i].tcp_tsecr + "</td>";
-                    html += "<td>" + packets[i].tcp_window + "</td>";
+                if (activeSet[i].ip_protocol == 6) {
+                    html += "<td>" + tcp_flags(activeSet[i].tcp_flags) + "</td>";
+                    html += "<td>" + activeSet[i].tcp_tsval + "/" + activeSet[i].tcp_tsecr + "</td>";
+                    html += "<td>" + activeSet[i].tcp_window + "</td>";
                 } else {
                     html += "<td></td><td></td><td></td>";
                 }
 
-                if (packets[i].ip_protocol != 1) {
-                    html += "<td>" + packets[i].src + ":" + packets[i].src_port + " -> " + packets[i].dst + ":" + packets[i].dst_port + "</td>";
+                if (activeSet[i].ip_protocol != 1) {
+                    html += "<td>" + activeSet[i].src + ":" + activeSet[i].src_port + " -> " + activeSet[i].dst + ":" + activeSet[i].dst_port + "</td>";
                 } else {
-                    html += "<td>" + packets[i].src + " -> " + packets[i].dst + "</td>";
+                    html += "<td>" + activeSet[i].src + " -> " + activeSet[i].dst + "</td>";
                 }
-                html += "<td>" + packets[i].size + "</td>";
-                html += "<td>" + ecn(packets[i].ecn) + "</td>";
-                html += "<td>0x" + packets[i].dscp.toString(16) + "</td>";
+                html += "<td>" + activeSet[i].size + "</td>";
+                html += "<td>" + ecn(activeSet[i].ecn) + "</td>";
+                html += "<td>0x" + activeSet[i].dscp.toString(16) + "</td>";
                 html += "</tr>";
-                x_axis.push(packets[i].timestamp);
-                if (packets[i].src == target) {
-                    y1_axis.push(packets[i].size);
+                x_axis.push(activeSet[i].timestamp);
+                if (activeSet[i].src == target) {
+                    y1_axis.push(activeSet[i].size);
                     y2_axis.push(0);
                 } else {
                     y1_axis.push(0);
-                    y2_axis.push(0.0 - packets[i].size);
+                    y2_axis.push(0.0 - activeSet[i].size);
                 }
             }
             html += "</table>";
@@ -217,17 +252,31 @@ if (hdr->cwr) flags |= 128;
             target = params.id;
             $.get("/api/packet_dump/" + params.id, (data) => {
                 data.sort((a,b) => a.timestamp - b.timestamp);
-                let min_ts = null;
-                for (let i=0; i<data.length; ++i) {
-                    if (min_ts == null || min_ts > data[i].timestamp) {
-                        min_ts = data[i].timestamp;
+
+                // Find the minimum timestamp
+                let min_ts = data.reduce((prev, curr) => prev.timestamp < curr.timestamp ? prev : curr).timestamp;
+
+                // Set the displayed timestamp to be (ts - min)
+                data.forEach(packet => packet.timestamp -= min_ts);
+
+                // Divide the packets into flows and append the flow_id
+                data.forEach(packet => {
+                    let flow_id = proto(packet.ip_protocol) + " " + packet.src + ":" + packet.src_port + " <-> " + packet.dst + ":" + packet.dst_port;
+                    let reverse_flow_id = proto(packet.ip_protocol) + " " + packet.dst + ":" + packet.dst_port + " <-> " + packet.src + ":" + packet.src_port;
+                    if (flows.hasOwnProperty(flow_id)) {
+                        packet.flow_id = flow_id;
+                    } else if (flows.hasOwnProperty(reverse_flow_id)) {
+                        packet.flow_id = reverse_flow_id;
+                    } else {
+                        flows[flow_id] = {};
+                        packet.flow_id = flow_id;
                     }
-                }
-                for (let i=0; i<data.length; ++i) {
-                    data[i].timestamp -= min_ts;
-                }
+                });
+                console.log(flows);
+
                 packets = data;
-                pages = Math.ceil((packets.length / PAGE_SIZE));
+                activeSet = packets;
+                pages = Math.ceil((activeSet.length / PAGE_SIZE));
                 starting_timestamp = min_ts;
                 paginator(0);                
                 viewPage(0);
