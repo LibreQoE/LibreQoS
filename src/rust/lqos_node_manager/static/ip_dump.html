@@ -81,6 +81,8 @@
         var capacity = [];
         var activeFilter = null;
         var activeSet = null;
+        var activeChart = 0;
+        var activePage = 0;
 
         function filter(newFilter) {
             activeFilter = newFilter;
@@ -92,6 +94,12 @@
             pages = Math.ceil((activeSet.length / PAGE_SIZE));            
             paginator(0);
             viewPage(0);
+        }
+
+        function setChart(n) {
+            activeChart = n;
+            paginator(activePage);
+            viewPage(activePage);
         }
 
         function proto(n) {
@@ -143,10 +151,12 @@ if (hdr->cwr) flags |= 128;
         }
 
         function paginator(active) {
+            activePage = active;
             let paginator = "<a href='/api/pcap/" + target + "/capture-" + circuit_id + "-" + starting_timestamp + ".pcap' class='btn btn-warning'>Download PCAP Dump</a> ";
             paginator += "<a href='#' class='btn btn-info' onClick='zoomIn();'>Zoom In</a> ";
             paginator += "<a href='#' class='btn btn-info' onClick='zoomOut();'>Zoom Out</a> (ℹ️ Or drag an area of the graph) <br />";
 
+            paginator += "<div style='margin: 4px; padding: 6px; background-color: #ddd; border: solid 1px black;'>";
             paginator += "<strong>Jump to page</strong>: ";
             paginator += "<select>"
             for (let i=0; i<pages; i++) {
@@ -156,7 +166,7 @@ if (hdr->cwr) flags |= 128;
                     paginator += "<option onclick='viewPage(" + i + ");'>" + i + "</option> ";
                 }
             }
-            paginator += "</select><br />";
+            paginator += "</select> | ";
 
             // Offer flow filtering
             paginator += "<strong>Filter Flows</strong>: ";
@@ -173,7 +183,28 @@ if (hdr->cwr) flags |= 128;
                     paginator += "<option onclick='filter(\"" + key + "\");'>" + key + "</option>";
                 }
             });
+            paginator += "</select> | ";
+
+            // Offer graph choices
+            paginator += "<strong>Graph</strong>: ";
+            paginator += "<select>";
+            if (activeChart == 0) {
+                paginator += "<option selected>Packet-Size Chart</option>";
+            } else {
+                paginator += "<option onclick='setChart(0);'>Packet-Size Chart</option>";
+            }
+            if (activeChart == 1) {
+                paginator += "<option selected>Piano Roll Flow Chart</option>";
+            } else {
+                paginator += "<option onclick='setChart(1);'>Piano Roll Flow Chart</option>";
+            }
+            if (activeChart == 2) {
+                paginator += "<option selected>TCP Window Chart</option>";
+            } else {
+                paginator += "<option onclick='setChart(2);'>TCP Window Chart</option>";
+            }
             paginator += "</select>";
+            paginator += "</div>";
 
             $("#pages").html(paginator);
         }
@@ -224,13 +255,66 @@ if (hdr->cwr) flags |= 128;
             $("#dump").html(html);
             paginator(n);
 
-            // Make the graph
+            // Make the graph            
             let graph = document.getElementById("graph");
-            let data = [
-                {x: x_axis, y:y1_axis, name: 'Download', type: 'scatter', mode: 'markers', error_x: { type: 'percent', value: capacity[0], symetric: false, valueminus: 0 }},
-                {x: x_axis, y:y2_axis, name: 'Upload', type: 'scatter', mode: 'markers', error_x: { type: 'percent', value: capacity[1], symetric: false, valueminus: 0 }},                
-            ];
-            Plotly.newPlot(graph, data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true, title: 'Bytes' }, xaxis: {automargin: true, title: "Nanoseconds"} }, { responsive: true });
+            if (activeChart == 0) {
+                // Render the timeline chart
+                let data = [
+                    {x: x_axis, y:y1_axis, name: 'Download', type: 'scatter', mode: 'markers', error_x: { type: 'percent', value: capacity[0], symetric: false, valueminus: 0 }},
+                    {x: x_axis, y:y2_axis, name: 'Upload', type: 'scatter', mode: 'markers', error_x: { type: 'percent', value: capacity[1], symetric: false, valueminus: 0 }},                
+                ];
+                Plotly.newPlot(graph, data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true, title: 'Bytes' }, xaxis: {automargin: true, title: "Nanoseconds"} }, { responsive: true });
+            } else if (activeChart == 1) {
+                // Render the piano roll chart
+                let flowGraphY = {};
+                for (var i=start; i<end; ++i) {
+                    let flow_id = activeSet[i].flow_id;
+                    if (flowGraphY.hasOwnProperty(flow_id)) {
+                        flowGraphY[flow_id].x.push(activeSet[i].timestamp);
+                        flowGraphY[flow_id].y.push(flows[flow_id].flowCounter);
+                    } else {
+                        flowGraphY[flow_id] = {
+                            "x": [ activeSet[i].timestamp ],
+                            "y": [ flows[flow_id].flowCounter ],
+                        }
+                    }
+                }
+
+                let data = [];
+                for (flow in flowGraphY) {
+                    //console.log(flowGraphY[flow]);
+                    data.push({
+                        x: flowGraphY[flow].x, y: flowGraphY[flow].y, name: flow, type: 'scatter', mode: 'markers',
+                    });
+                }
+                Plotly.newPlot(graph, data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true, title: 'Flow' }, xaxis: {automargin: true, title: "Nanoseconds"} }, { responsive: true });
+            } else if (activeChart == 2) {
+                // Render the window chart
+                let flowGraphY = {};
+                for (var i=start; i<end; ++i) {
+                    let flow_id = activeSet[i].flow_id;
+                    if (flow_id.includes("TCP")) {
+                        if (flowGraphY.hasOwnProperty(flow_id)) {
+                            flowGraphY[flow_id].x.push(activeSet[i].timestamp);
+                            flowGraphY[flow_id].y.push(activeSet[i].tcp_window);
+                        } else {
+                            flowGraphY[flow_id] = {
+                                "x": [ activeSet[i].timestamp ],
+                                "y": [ activeSet[i].tcp_window ],
+                            }
+                        }
+                    }
+                }
+
+                let data = [];
+                for (flow in flowGraphY) {
+                    //console.log(flowGraphY[flow]);
+                    data.push({
+                        x: flowGraphY[flow].x, y: flowGraphY[flow].y, name: flow, type: 'scatter', mode: 'markers',
+                    });
+                }
+                Plotly.newPlot(graph, data, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true, title: 'Window Size' }, xaxis: {automargin: true, title: "Nanoseconds"} }, { responsive: true });
+            }
         }
 
         let circuit_id = null;
@@ -260,6 +344,7 @@ if (hdr->cwr) flags |= 128;
                 data.forEach(packet => packet.timestamp -= min_ts);
 
                 // Divide the packets into flows and append the flow_id
+                let flowCounter = 0;
                 data.forEach(packet => {
                     let flow_id = proto(packet.ip_protocol) + " " + packet.src + ":" + packet.src_port + " <-> " + packet.dst + ":" + packet.dst_port;
                     let reverse_flow_id = proto(packet.ip_protocol) + " " + packet.dst + ":" + packet.dst_port + " <-> " + packet.src + ":" + packet.src_port;
@@ -268,11 +353,11 @@ if (hdr->cwr) flags |= 128;
                     } else if (flows.hasOwnProperty(reverse_flow_id)) {
                         packet.flow_id = reverse_flow_id;
                     } else {
-                        flows[flow_id] = {};
+                        flows[flow_id] = { flowCounter };
                         packet.flow_id = flow_id;
+                        flowCounter++;
                     }
                 });
-                console.log(flows);
 
                 packets = data;
                 activeSet = packets;
