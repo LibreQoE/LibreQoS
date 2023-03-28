@@ -94,7 +94,8 @@
                         </ul>
                     </div>
                     <div class="col-sm-2">
-                        <div id="raw"></div>
+                        <a href="#" class="btn btn-small btn-info" id="btnPause"><i class="fa fa-pause"></i> Pause</a> 
+                        <a href="#" class="btn btn-small btn-info" id="btnSlow"><i class="fa fa-hourglass"></i> Slow Mode</a>
                     </div>
                 </div>
             </div>
@@ -520,10 +521,10 @@
                 up = 0 - up;
                 let down_slot = Math.floor((down / circuit_info[CircuitInfo.capacity][0]) * 10.0);
                 let up_slot = Math.floor((up / circuit_info[CircuitInfo.capacity][1]) * 10.0);
-                /*if (down_slot < 0) down_slot = 0;
+                if (down_slot < 0) down_slot = 0;
                 if (up_slot < 0) up_slot = 0;
-                if (down_slot > 11) down_slot = 11;
-                if (up_slot > 11) up_slot = 11;*/
+                if (down_slot > 10) down_slot = 10;
+                if (up_slot > 10) up_slot = 10;
                 this.quantiles[0][down_slot] += 1;
                 this.quantiles[1][up_slot] += 1;
                 //console.log(down_slot, up_slot);            
@@ -796,22 +797,50 @@
 
         let id = 0;
         let activeTab = "pills-home-tab";
+        var lastCalledTime;
+        var fps;
+        var worstDelta = 0;
+        var paused = false;
+        var slowMode = false;
 
-        function oneSecondCadence() {
-            //console.log(activeTab);
-            switch (activeTab) {
-                case "pills-funnel-tab": {
-                    getFunnel();
-                } break;
-                case "pills-flows-tab": {
-                    getFlows();
-                } break;
-                default: {
-                    pollQueue();
-                    getThroughput();
+        function showFps() {
+            if(!lastCalledTime) {
+                lastCalledTime = Date.now();
+                fps = 0;
+                return;
+            }
+            delta = (Date.now() - lastCalledTime)/1000;
+            lastCalledTime = Date.now();
+            fps = 1/delta;
+            //$("#fps").text(fps.toFixed(0));
+            worstDelta = Math.max(delta, worstDelta);
+        }
+
+        function updateFrame() {
+            showFps();
+            if (!paused) {
+                switch (activeTab) {
+                    case "pills-funnel-tab": {
+                        getFunnel();
+                    } break;
+                    case "pills-flows-tab": {
+                        getFlows();
+                    } break;
+                    default: {
+                        pollQueue();
+                        getThroughput();
+                    }
                 }
             }
-            setTimeout(oneSecondCadence, 1000);
+            // Doing this to balance out the FPS
+            // It will tend towards the slowest
+            if (slowMode) {
+                setTimeout(updateFrame, 1000);
+            } else {
+                setTimeout(() => {
+                    requestAnimationFrame(updateFrame);
+                }, worstDelta * 200);
+            }
         }
 
         function wireUpTabEvents() {
@@ -822,8 +851,45 @@
             });
         }
 
+        function isSlowMode() {
+            let slow = localStorage.getItem("slowMode");
+            if (slow == null) {
+                localStorage.setItem("slowMode", false);
+                slow = false;
+            }
+            if (slow == "false") {
+                slow = false;
+            } else if (slow == "true") {
+                slow = true;
+            }
+            return slow;
+        }
+
         function start() {
             wireUpTabEvents();
+            $("#btnPause").on('click', () => {
+                paused = !paused;
+                if (paused) {
+                    $("#btnPause").html("<i class='fa fa-play'></i> Resume");
+                } else {
+                    $("#btnPause").html("<i class='fa fa-pause'></i> Pause");
+                }
+            });
+            slowMode = isSlowMode();
+            if (slowMode) {
+                $("#btnSlow").html("<i class='fa fa-fast-forward'></i> Fast Mode");
+            } else {
+                $("#btnSlow").html("<i class='fa fa-hourglass'></i> Slow Mode");
+            }
+            $("#btnSlow").on('click', () => {
+                slowMode = !slowMode;
+                localStorage.setItem("slowMode", slowMode);
+                if (slowMode) {
+                    $("#btnSlow").html("<i class='fa fa-fast-forward'></i> Fast Mode");
+                } else {
+                    $("#btnSlow").html("<i class='fa fa-hourglass'></i> Slow Mode");
+                }
+            });
             colorReloadButton();
             updateHostCounts();
             const params = new Proxy(new URLSearchParams(window.location.search), {
@@ -831,7 +897,8 @@
             });
             id = params.id;
             $.get("/api/watch_circuit/" + params.id, () => {
-                oneSecondCadence();
+                //updateFrame();
+                requestAnimationFrame(updateFrame);
             });
         }
 
