@@ -374,7 +374,7 @@
                 
                 if (this.backlogPlotted == null) {
                     this.backlogPlotted = true;
-                    Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Bytes" }, xaxis: { automargin: true, title: "Time since now" } });
+                    Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Packets" }, xaxis: { automargin: true, title: "Time since now" } });
                 } else {
                     Plotly.redraw(graph, graphData);
                 }
