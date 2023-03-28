@@ -101,7 +101,7 @@ impl Into<CakeDiffTinTransit> for CakeDiffTin {
       backlog_bytes: self.backlog_bytes,
       drops: self.drops,
       marks: self.marks,
-      avg_delay_us: self.avg_delay_us,
+      base_delay_us: self.base_delay_us,
     }
   }
 }

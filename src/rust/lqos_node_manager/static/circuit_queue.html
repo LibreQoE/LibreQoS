@@ -305,8 +305,21 @@
             }
 
             ingestDelays(subData, currentX, tin) {
-                this.delays.store(tin, currentX, 0, subData[0][CDT.tins][tin][CDTT.avg_delay_us] * 0.001);
-                this.delays.store(tin, currentX, 1, 0.0 - subData[1][CDT.tins][tin][CDTT.avg_delay_us] * 0.001);
+                let down = subData[0][CDT.tins][tin][CDTT.avg_delay_us] * 0.001;
+                let up = subData[1][CDT.tins][tin][CDTT.avg_delay_us] * 0.001;
+                if (down == 0.0) {
+                    down = null;
+                } else {
+                    down = Math.log10(down);
+                }
+                if (up == 0.0) {
+                    up = null;
+                } else {
+                    //console.log(up);
+                    up = 0.0 - Math.log10(up);
+                }
+                this.delays.store(tin, currentX, 0, down);
+                this.delays.store(tin, currentX, 1, up);
             }
 
             ingestQueueLen(subData, currentX) {
@@ -375,7 +388,13 @@
                 
                 if (this.backlogPlotted == null) {
                     this.backlogPlotted = true;
-                    Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Packets" }, xaxis: { automargin: true, title: "Time since now" } });
+                    Plotly.newPlot(
+                        graph, 
+                        graphData, 
+                        { 
+                            margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, 
+                            yaxis: { automargin: true, title: "Packets" }, 
+                            xaxis: { automargin: true, title: "Time since now" } });
                 } else {
                     Plotly.redraw(graph, graphData);
                 }
@@ -391,7 +410,12 @@
                 ];
 
                 if (this.delaysPlotted == null) {
-                    Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "ms" }, xaxis: { automargin: true, title: "Time since now" } });
+                    Plotly.newPlot(
+                        graph, 
+                        graphData, 
+                        { margin: { l: 8, r: 0, b: 0, t: 0, pad: 4 }, 
+                        yaxis: { automargin: true, title: "log10(ms)", range: [-1.0, 1.0] }, 
+                        xaxis: { automargin: true, title: "Time since now" } });
                     this.delaysPlotted = true;
                 } else {
                     Plotly.redraw(graph, graphData);
