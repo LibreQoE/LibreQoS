@@ -76,7 +76,6 @@
         var pages = 0;
         var PAGE_SIZE = 1000;
         var target = "";
-        var current_page = 0;
         var capacity = [];
         var activeFilter = null;
         var activeSet = null;
@@ -137,16 +136,16 @@ if (hdr->cwr) flags |= 128;
 
         function zoomIn() {
             PAGE_SIZE /= 2;
-            current_page /= 2;
+            activePage /= 2;
             pages = packets.length / PAGE_SIZE;
-            viewPage(current_page);
+            viewPage(activePage);
         }
 
         function zoomOut() {
             PAGE_SIZE *= 2;
-            current_page *= 2;
+            activePage *= 2;
             pages = packets.length / PAGE_SIZE;
-            viewPage(current_page);
+            viewPage(activePage);
         }
 
         function paginator(active) {
