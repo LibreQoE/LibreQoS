@@ -130,9 +130,9 @@ pub async fn tinylogo<'a>() -> LongCache<Option<NamedFile>> {
   LongCache::new(NamedFile::open("static/tinylogo.svg").await.ok())
 }
 
-#[get("/favicon.ico")]
+#[get("/favicon.png")]
 pub async fn favicon<'a>() -> LongCache<Option<NamedFile>> {
-  LongCache::new(NamedFile::open("static/favicon.ico").await.ok())
+  LongCache::new(NamedFile::open("static/favicon.png").await.ok())
 }
 
 /// FontAwesome icons
