@@ -30,7 +30,7 @@ pub struct CakeDiffTinTransit {
   pub backlog_bytes: u32,
   pub drops: u32,
   pub marks: u32,
-  pub avg_delay_us: u32,
+  pub base_delay_us: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
