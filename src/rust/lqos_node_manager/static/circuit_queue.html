@@ -388,7 +388,13 @@
 
                 if (this.backlogPlotted == null) {
                     this.backlogPlotted = true;
-                    Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Packets" }, xaxis: { automargin: true, title: "Time since now" } });
+                    Plotly.newPlot(
+                        graph, 
+                        graphData, 
+                        { 
+                            margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, 
+                            yaxis: { automargin: true, title: "Packets" }, 
+                            xaxis: { automargin: true, title: "Time since now" } });
                 } else {
                     Plotly.redraw(graph, graphData);
                 }
@@ -405,13 +411,11 @@
 
                 if (this.delaysPlotted == null) {
                     Plotly.newPlot(
-                        graph,
-                        graphData,
-                        {
-                            margin: { l: 8, r: 0, b: 0, t: 0, pad: 4 },
-                            yaxis: { automargin: true, title: "log10(ms)", range: [-1.0, 1.0] },
-                            xaxis: { automargin: true, title: "Time since now" }
-                        });
+                        graph, 
+                        graphData, 
+                        { margin: { l: 8, r: 0, b: 0, t: 0, pad: 4 }, 
+                        yaxis: { automargin: true, title: "log10(ms)", range: [-1.0, 1.0] }, 
+                        xaxis: { automargin: true, title: "Time since now" } });
                     this.delaysPlotted = true;
                 } else {
                     Plotly.redraw(graph, graphData);
