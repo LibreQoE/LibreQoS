@@ -94,9 +94,8 @@
                         </ul>
                     </div>
                     <div class="col-sm-2">
-                        <a href="#" class="btn btn-small btn-info" id="btnPause"><i class="fa fa-pause"></i> Pause</a>
-                        <a href="#" class="btn btn-small btn-info" id="btnSlow"><i class="fa fa-hourglass"></i> Slow
-                            Mode</a>
+                        <a href="#" class="btn btn-small btn-info" id="btnPause"><i class="fa fa-pause"></i> Pause</a> 
+                        <a href="#" class="btn btn-small btn-info" id="btnSlow"><i class="fa fa-hourglass"></i> Slow Mode</a>
                     </div>
                 </div>
             </div>
@@ -846,14 +845,14 @@
         var slowMode = false;
 
         function showFps() {
-            if (!lastCalledTime) {
+            if(!lastCalledTime) {
                 lastCalledTime = Date.now();
                 fps = 0;
                 return;
             }
-            delta = (Date.now() - lastCalledTime) / 1000;
+            delta = (Date.now() - lastCalledTime)/1000;
             lastCalledTime = Date.now();
-            fps = 1 / delta;
+            fps = 1/delta;
             //$("#fps").text(fps.toFixed(0));
             worstDelta = Math.max(delta, worstDelta);
         }
@@ -864,7 +863,6 @@
                 switch (activeTab) {
                     case "pills-funnel-tab": {
                         getFunnel();
-                        getThroughput();
                     } break;
                     case "pills-flows-tab": {
                         getFlows();
