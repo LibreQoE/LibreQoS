@@ -8,15 +8,15 @@ mod throughput_tracker;
 mod anonymous_usage;
 mod tuning;
 mod validation;
+mod long_term_stats;
 use std::net::IpAddr;
-
 use crate::{
   file_lock::FileLock,
   ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow},
 };
 use anyhow::Result;
 use log::{info, warn};
-use lqos_bus::{BusRequest, BusResponse, UnixSocketServer};
+use lqos_bus::{BusRequest, BusResponse, UnixSocketServer, StatsRequest};
 use lqos_config::LibreQoSConfig;
 use lqos_heimdall::{n_second_packet_dump, perf_interface::heimdall_handle_events, start_heimdall};
 use lqos_queue_tracker::{
@@ -72,6 +72,7 @@ async fn main() -> Result<()> {
   };
 
   // Spawn tracking sub-systems
+  let long_term_stats_tx = long_term_stats::start_long_term_stats();
   join!(
     start_heimdall(),
     spawn_queue_structure_monitor(),
@@ -79,7 +80,7 @@ async fn main() -> Result<()> {
     shaped_devices_tracker::network_json_watcher(),
     anonymous_usage::start_anonymous_usage(),
   );
-  throughput_tracker::spawn_throughput_monitor();
+  throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone());
   spawn_queue_monitor();
 
   // Handle signals
@@ -94,6 +95,11 @@ async fn main() -> Result<()> {
             _ => {
               warn!("This should never happen - terminating on unknown signal")
             }
+          }
+          if let Some(tx) = long_term_stats_tx {
+            // Deliberately ignoring the error because we're trying to
+            // exit ASAP and don't really care!
+            let _ = tx.send(long_term_stats::StatsMessage::Quit);
           }
           std::mem::drop(kernels);
           UnixSocketServer::signal_cleanup();
@@ -213,6 +219,12 @@ fn handle_bus_requests(
         } else {
           BusResponse::Fail("Invalid IP".to_string())
         }
+      }
+      BusRequest::GetLongTermStats(StatsRequest::CurrentTotals) => {
+        long_term_stats::get_stats_totals()
+      }
+      BusRequest::GetLongTermStats(StatsRequest::AllHosts) => {
+        long_term_stats::get_stats_host()
       }
     });
   }

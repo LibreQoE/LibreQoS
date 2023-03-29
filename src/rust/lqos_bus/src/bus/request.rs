@@ -145,8 +145,18 @@ pub enum BusRequest {
   /// Give me a libpcap format packet dump (shortened) of the last 10 seconds
   GetPcapDump(usize),
 
+  /// Request data from the long-term stats system
+  GetLongTermStats(StatsRequest),
+
   /// If running on Equinix (the `equinix_test` feature is enabled),
   /// display a "run bandwidht test" link.
   #[cfg(feature = "equinix_tests")]
   RequestLqosEquinixTest,
+}
+
+/// Specific requests from the long-term stats system
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub enum StatsRequest {
+  CurrentTotals,
+  AllHosts,
 }

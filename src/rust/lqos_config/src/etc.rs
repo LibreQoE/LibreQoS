@@ -35,6 +35,9 @@ pub struct EtcLqos {
   /// run. Short times are good, there's a real performance penalty to
   /// capturing high-throughput streams. Defaults to 10 seconds.
   pub packet_capture_time: Option<usize>,
+
+  /// Long-term statistics retention settings.
+  pub long_term_stats: Option<LongTermStats>,
 }
 
 /// Represents a set of `sysctl` and `ethtool` tweaks that may be
@@ -126,6 +129,17 @@ pub struct UsageStats {
 
   /// Where do we send them?
   pub anonymous_server: String,
+}
+
+/// Long Term Data Retention
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct LongTermStats {
+  /// Should we store long-term stats at all?
+  pub gather_stats: bool,
+
+  /// How frequently should stats be accumulated into a long-term
+  /// min/max/avg format per tick?
+  pub collation_period_seconds: u32,
 }
 
 impl EtcLqos {
