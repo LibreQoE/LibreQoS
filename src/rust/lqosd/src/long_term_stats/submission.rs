@@ -28,3 +28,14 @@ pub fn get_stats_host() -> BusResponse {
         BusResponse::Fail("No Data".to_string())
     }
 }
+
+pub fn get_stats_tree() -> BusResponse {
+    let current = CURRENT_STATS.read().unwrap();
+    if let Some(c) = &*current {
+        BusResponse::LongTermTree(
+            c.tree.iter().map(|n| n.into()).collect()
+        )
+    } else {
+        BusResponse::Fail("No Data".to_string())
+    }
+}

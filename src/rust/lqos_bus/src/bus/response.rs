@@ -1,6 +1,6 @@
 use super::QueueStoreTransit;
 use crate::{
-  ip_stats::PacketHeader, long_term_stats::{StatsTotals, StatsHost}, FlowTransport,
+  ip_stats::PacketHeader, long_term_stats::{StatsTotals, StatsHost, StatsTreeNode}, FlowTransport,
   IpMapping, IpStats, XdpPpingResult,
 };
 use serde::{Deserialize, Serialize};
@@ -113,4 +113,7 @@ pub enum BusResponse {
 
   /// Long-term stats host totals
   LongTermHosts(Vec<StatsHost>),
+
+  /// Long-term stats tree
+  LongTermTree(Vec<StatsTreeNode>),
 }
