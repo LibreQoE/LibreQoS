@@ -1566,11 +1566,21 @@ dependencies = [
  "lqos_sys",
  "lqos_utils",
  "nix",
+ "num-traits",
  "once_cell",
  "serde",
  "serde_json",
  "signal-hook",
  "sysinfo",
+ "tokio",
+]
+
+[[package]]
+name = "lqstats"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "lqos_bus",
  "tokio",
 ]
 

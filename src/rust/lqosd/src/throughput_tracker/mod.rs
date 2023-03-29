@@ -1,23 +1,35 @@
+mod heimdall_data;
 mod throughput_entry;
 mod tracking_data;
-mod heimdall_data;
-pub use heimdall_data::get_flow_stats;
 use crate::{
-  shaped_devices_tracker::NETWORK_JSON,
-  throughput_tracker::tracking_data::ThroughputTracker, stats::TIME_TO_POLL_HOSTS,
+  long_term_stats::StatsMessage, shaped_devices_tracker::NETWORK_JSON,
+  stats::TIME_TO_POLL_HOSTS,
+  throughput_tracker::tracking_data::ThroughputTracker,
 };
+pub use heimdall_data::get_flow_stats;
 use log::{info, warn};
 use lqos_bus::{BusResponse, IpStats, TcHandle, XdpPpingResult};
-use lqos_utils::{fdtimer::periodic, unix_time::time_since_boot, XdpIpAddress};
+use lqos_utils::{
+  fdtimer::periodic, unix_time::time_since_boot, XdpIpAddress,
+};
 use once_cell::sync::Lazy;
-use std::time::Duration;
+use std::{sync::mpsc::Sender, time::Duration};
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
 pub static THROUGHPUT_TRACKER: Lazy<ThroughputTracker> =
   Lazy::new(ThroughputTracker::new);
 
-pub fn spawn_throughput_monitor() {
+/// Create the throughput monitor thread, and begin polling for
+/// throughput data every second.
+///
+/// ## Arguments
+///
+/// * `long_term_stats_tx` - an optional MPSC sender to notify the
+///   collection thread that there is fresh data.
+pub fn spawn_throughput_monitor(
+  long_term_stats_tx: Option<Sender<StatsMessage>>,
+) {
   info!("Starting the bandwidth monitor thread.");
   let interval_ms = 1000; // 1 second
   info!("Bandwidth check period set to {interval_ms} ms.");
@@ -35,7 +47,14 @@ pub fn spawn_throughput_monitor() {
       THROUGHPUT_TRACKER.update_totals();
       THROUGHPUT_TRACKER.next_cycle();
       let duration_ms = start.elapsed().as_micros();
-      TIME_TO_POLL_HOSTS.store(duration_ms as u64, std::sync::atomic::Ordering::Relaxed);
+      TIME_TO_POLL_HOSTS
+        .store(duration_ms as u64, std::sync::atomic::Ordering::Relaxed);
+      if let Some(tx) = &long_term_stats_tx {
+        let result = tx.send(StatsMessage::ThroughputReady);
+        if let Err(e) = result {
+          warn!("Error sending message to stats collection system. {e:?}");
+        }
+      }
     });
   });
 }
@@ -74,8 +93,10 @@ type TopList = (XdpIpAddress, (u64, u64), (u64, u64), f32, TcHandle, String);
 
 pub fn top_n(start: u32, end: u32) -> BusResponse {
   let mut full_list: Vec<TopList> = {
-    let tp_cycle = THROUGHPUT_TRACKER.cycle.load(std::sync::atomic::Ordering::Relaxed);
-    THROUGHPUT_TRACKER.raw_data
+    let tp_cycle =
+      THROUGHPUT_TRACKER.cycle.load(std::sync::atomic::Ordering::Relaxed);
+    THROUGHPUT_TRACKER
+      .raw_data
       .iter()
       .filter(|v| !v.key().as_ip().is_loopback())
       .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
@@ -119,8 +140,10 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
 
 pub fn worst_n(start: u32, end: u32) -> BusResponse {
   let mut full_list: Vec<TopList> = {
-    let tp_cycle = THROUGHPUT_TRACKER.cycle.load(std::sync::atomic::Ordering::Relaxed);
-    THROUGHPUT_TRACKER.raw_data
+    let tp_cycle =
+      THROUGHPUT_TRACKER.cycle.load(std::sync::atomic::Ordering::Relaxed);
+    THROUGHPUT_TRACKER
+      .raw_data
       .iter()
       .filter(|v| !v.key().as_ip().is_loopback())
       .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
@@ -164,8 +187,10 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
 }
 pub fn best_n(start: u32, end: u32) -> BusResponse {
   let mut full_list: Vec<TopList> = {
-    let tp_cycle = THROUGHPUT_TRACKER.cycle.load(std::sync::atomic::Ordering::Relaxed);
-    THROUGHPUT_TRACKER.raw_data
+    let tp_cycle =
+      THROUGHPUT_TRACKER.cycle.load(std::sync::atomic::Ordering::Relaxed);
+    THROUGHPUT_TRACKER
+      .raw_data
       .iter()
       .filter(|v| !v.key().as_ip().is_loopback())
       .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
@@ -210,7 +235,8 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
 }
 
 pub fn xdp_pping_compat() -> BusResponse {
-  let raw_cycle = THROUGHPUT_TRACKER.cycle.load(std::sync::atomic::Ordering::Relaxed);
+  let raw_cycle =
+    THROUGHPUT_TRACKER.cycle.load(std::sync::atomic::Ordering::Relaxed);
   let result = THROUGHPUT_TRACKER
     .raw_data
     .iter()
@@ -249,7 +275,8 @@ pub fn xdp_pping_compat() -> BusResponse {
 
 pub fn rtt_histogram() -> BusResponse {
   let mut result = vec![0; 20];
-  let reader_cycle = THROUGHPUT_TRACKER.cycle.load(std::sync::atomic::Ordering::Relaxed);
+  let reader_cycle =
+    THROUGHPUT_TRACKER.cycle.load(std::sync::atomic::Ordering::Relaxed);
   for data in THROUGHPUT_TRACKER
     .raw_data
     .iter()
@@ -272,8 +299,10 @@ pub fn rtt_histogram() -> BusResponse {
 pub fn host_counts() -> BusResponse {
   let mut total = 0;
   let mut shaped = 0;
-  let tp_cycle = THROUGHPUT_TRACKER.cycle.load(std::sync::atomic::Ordering::Relaxed);
-  THROUGHPUT_TRACKER.raw_data
+  let tp_cycle =
+    THROUGHPUT_TRACKER.cycle.load(std::sync::atomic::Ordering::Relaxed);
+  THROUGHPUT_TRACKER
+    .raw_data
     .iter()
     .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
     .for_each(|d| {
@@ -301,7 +330,8 @@ pub fn all_unknown_ips() -> BusResponse {
   let five_minutes_ago_nanoseconds = five_minutes_ago.as_nanos();
 
   let mut full_list: Vec<FullList> = {
-    THROUGHPUT_TRACKER.raw_data
+    THROUGHPUT_TRACKER
+      .raw_data
       .iter()
       .filter(|v| !v.key().as_ip().is_loopback())
       .filter(|d| d.tc_handle.as_u32() == 0)
