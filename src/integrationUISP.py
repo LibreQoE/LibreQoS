@@ -125,7 +125,7 @@ def buildFullGraph():
 							download = int(download / 2)
 							upload = int(download / 2)
 						if device['identification']['site']['id'] in foundAirFibersBySite:
-							if (download > foundAirFibersBySite[device['identification']['site']['id']]['download']) or (upload > foundAirFibersBySite[device['identification']['site']['id']]['upload']):
+							if (download > foundAirFibersBySite['download']) or (upload > foundAirFibersBySite['upload']):
 								foundAirFibersBySite[device['identification']['site']['id']]['download'] = download
 								foundAirFibersBySite[device['identification']['site']['id']]['upload'] = upload
 						else:
