@@ -1,0 +1,39 @@
+{% extends "layout/main.html" %}
+
+{% block content %}
+    <div id="container-lg vh-100">
+        <div class="row">
+            <div class="col-sm-12">
+                <div class="card bg-light">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="fa fa-users"></i> Shaped Devices</h5>
+                        <div class="row">
+                            <div class="col">
+                                <input id="search" class="form-control" placeholder="Search" style="min-width: 150px">
+                            </div>
+                            <div class="col">
+                                <a href="#" class="btn btn-primary" id="btnSearch"><i class='fa fa-search'></i></a>
+                            </div>
+                            <div class="col">
+                                <!--<a href="/shaped-add" class="btn btn-success"><i class='fa fa-plus'></i> Add</a>-->
+                            </div>
+                        </div>
+                        <table class="table table-sm table-striped datatable">
+                            <thead>
+                                <th>Circuit</th>
+                                <th>Device</th>
+                                <th>Plan</th>
+                                <th>IPs</th>
+                                <th><i class="fa fa-gear"></i></th>
+                            </thead>
+                            <tbody id="shapedList"></tbody>
+                        </table>
+                        <p>
+                            Total Shaped Devices: <span id="shapedTotal"></span>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}

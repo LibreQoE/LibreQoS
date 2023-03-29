@@ -1,0 +1,59 @@
+{% extends "layout/main.html" %}
+
+{% block content %}
+	<div class="container-lg">
+		<div class="row">
+			<div class="col">
+				<div class="card mb-4">
+					<div class="card-header">
+                        <strong></strong>
+                        <span class="small ms-1"></span>
+                    </div>
+					<div class="card-body">
+                        <h5 class="card-title">Shaped Devices</h5>
+                        <table class="table table-sm table-striped datatable">
+                            <thead>
+								<th width="40%">Circuit</th>
+								<th width="10%">Device</th>
+								<th width="10%">Plan</th>
+								<th width="25%">IPs</th>
+                                <th width="15%"></th>
+                            </thead>
+                            <tbody>
+								{% for device in devices.iter() %}
+									<tr>
+										<td>
+                                            <a href="/circuit/{{device.circuit_id}}">
+                                                {{device.circuit_name}}
+                                            </a>
+                                        </td>
+										<td>{{device.device_name}}</td>
+										<td>
+                                            {{device.download_max_mbps}}
+                                            <i class="fa fa-down-long fa-fw"></i>
+                                            {{device.upload_max_mbps}}
+                                            <i class="fa fa-up-long fa-fw"></i>
+                                        </td>
+										<td>
+                                            {% for ip in device.ipv4.iter() %}
+                                                {{ ip.0 }}/{{ ip.1 }}
+                                            {% endfor %}
+                                        </td>
+										<td class="justify-content-md-end">
+                                            <a href="#" class="btn btn-info btn-sm me-2">
+                                                <i class="fa fa-pencil"></i>
+                                            </a>
+                                            <a href="#" class="btn btn-danger btn-sm">
+                                                <i class="fa fa-trash"></i>
+                                            </a>
+                                        </td>
+									</tr>
+								{% endfor %}
+							</tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}

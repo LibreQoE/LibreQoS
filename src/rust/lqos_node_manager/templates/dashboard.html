@@ -1,0 +1,406 @@
+{% extends "layout/main.html" %}
+
+{% block content %}
+	<div class="container-lg">
+		<div class="row">
+			<div class="col-sm-6 col-lg-3">
+				<div class="card mb-4 text-white bg-primary-gradient">
+					<div class="card-body pb-0 d-flex justify-content-between align-items-start">
+						<div>
+							<div class="fs-4 fw-semibold">
+								<span class="live-download">0</span>Mbps
+								<span class="fs-6 fw-normal">
+									<i class="icon fa fa-down-long fa-fw"></i>
+								</span>
+							</div>
+							<div>Download</div>
+						</div>
+					</div>
+					<div class="c-chart-wrapper mt-3 mx-3" style="height:25px;">
+						<canvas class="chart" id="card-chart1" height="25" width="274" style="display: block; box-sizing: border-box; height: 25px; width: 274px;"></canvas>
+					</div>
+				</div>
+			</div>
+			<!-- /.col-->
+			<div class="col-sm-6 col-lg-3">
+				<div class="card mb-4 text-white bg-info-gradient">
+					<div class="card-body pb-0 d-flex justify-content-between align-items-start">
+						<div>
+							<div class="fs-4 fw-semibold">
+								<span class="live-upload">0</span>Mbps
+								<span class="fs-6 fw-normal">
+									<i class="icon fa fa-up-long fa-fw"></i>
+								</span>
+							</div>
+							<div>Upload</div>
+						</div>
+					</div>
+					<div class="c-chart-wrapper mt-3 mx-3" style="height:25px;">
+						<canvas class="chart" id="card-chart2" height="25" width="274" style="display: block; box-sizing: border-box; height: 25px; width: 274px;"></canvas>
+					</div>
+				</div>
+			</div>
+			<!-- /.col-->
+			<div class="col-sm-6 col-lg-3">
+				<div class="card mb-4 text-white bg-warning-gradient">
+					<div class="card-body pb-0 d-flex justify-content-between align-items-start">
+						<div>
+							<div class="fs-4 fw-semibold">
+								<span class="live-average-download">0</span>Mbps
+								<span class="fs-6 fw-normal">
+									<i class="icon fa fa-down-long fa-fw"></i>
+								</span>
+							</div>
+							<div>Average Download</div>
+						</div>
+					</div>
+					<div class="c-chart-wrapper mt-3" style="height:25px;">
+						<canvas class="chart" id="card-chart3" height="25" width="306" style="display: block; box-sizing: border-box; height: 25px; width: 306px;"></canvas>
+					</div>
+				</div>
+			</div>
+			<!-- /.col-->
+			<div class="col-sm-6 col-lg-3">
+				<div class="card mb-4 text-white bg-danger-gradient">
+					<div class="card-body pb-0 d-flex justify-content-between align-items-start">
+						<div>
+							<div class="fs-4 fw-semibold">
+								<span class="live-average-rtt">0</span>ms
+							</div>
+							<div>Average RTT</div>
+						</div>
+					</div>
+					<div class="c-chart-wrapper mt-3 mx-3" style="height:25px;">
+						<canvas class="chart" id="card-chart4" height="25" width="274" style="display: block; box-sizing: border-box; height: 25px; width: 274px;"></canvas>
+					</div>
+				</div>
+			</div>
+			<!-- /.col-->
+		</div>
+		<!-- /.row-->
+		<div class="row">
+			<div class="col col-lg-7">
+				<div class="card mb-4">
+					<div class="card-body">
+						<div class="d-flex justify-content-between">
+							<div>
+								<h5 class="card-title mb-0">Traffic</h5>
+								<div class="small text-medium-emphasis">Last 5 Minutes</div>
+							</div>
+							<div class="d-none d-md-block" role="toolbar">
+								<span class="text-medium-emphasis">Packets</span>
+								<span class="fw-semibold">
+									<span class="live-download-packets">0</span>K
+									<i class="icon fa fa-down-long fa-fw"></i>
+								</span>
+								<span class="text-medium-emphasis">/</span>
+								<span class="fw-semibold">
+									<span class="live-upload-packets">0</span>K
+									<i class="icon fa fa-up-long fa-fw"></i>
+								</span>
+									
+							</div>
+						</div>
+						<div class="c-chart-wrapper" style="height:100px;margin-top:40px;">
+							<canvas class="chart" id="main-chart" height="100" style="display: block; box-sizing: border-box; height: 100px;"></canvas>
+							<div class="chartjs-tooltip" style="opacity: 0; left: 50.0215px; top: 161.509px;">
+								<table style="margin: 0px;">
+									<thead class="chartjs-tooltip-header">
+										<tr class="chartjs-tooltip-header-item" style="border-width: 0px;">
+											<th style="border-width: 0px;">January</th>
+										</tr>
+									</thead>
+									<tbody class="chartjs-tooltip-body">
+										<tr class="chartjs-tooltip-body-item">
+											<td style="border-width: 0px;"><span style="background: rgba(82, 153, 224, 0.1); border-color: rgb(82, 153, 224); border-width: 2px; margin-right: 10px; height: 10px; width: 10px; display: inline-block;"></span>My First dataset: 74</td>
+										</tr>
+										<tr class="chartjs-tooltip-body-item">
+											<td style="border-width: 0px;"><span style="background: rgba(0, 0, 0, 0.1); border-color: rgb(81, 150, 104); border-width: 2px; margin-right: 10px; height: 10px; width: 10px; display: inline-block;"></span>My Second dataset: 174</td>
+										</tr>
+										<tr class="chartjs-tooltip-body-item">
+											<td style="border-width: 0px;"><span style="background: rgba(0, 0, 0, 0.1); border-color: rgb(199, 113, 113); border-width: 2px; margin-right: 10px; height: 10px; width: 10px; display: inline-block;"></span>My Third dataset: 65</td>
+										</tr>
+									</tbody>
+								</table>
+							</div>
+						</div>
+					</div>
+					<div class="card-footer">
+						<div class="row row-cols-1 row-cols-md-4 text-center">
+							<div class="col mb-0">
+								<div class="text-medium-emphasis">Shaped Download</div>
+								<div class="fw-semibold"><span class="live-shaped-download">0M</span></div>
+							</div>
+							<div class="col mb-0">
+								<div class="text-medium-emphasis">Unshaped Download</div>
+								<div class="fw-semibold"><span class="live-unshaped-download">0M</span></div>
+							</div>
+							<div class="col mb-0">
+								<div class="text-medium-emphasis">Shaped Upload</div>
+								<div class="fw-semibold"><span class="live-shaped-upload">0M</span></div>
+							</div>
+							<div class="col mb-0">
+								<div class="text-medium-emphasis">Unshaped Upload</div>
+								<div class="fw-semibold"><span class="live-unshaped-upload">0M</span></div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="col col-lg-5">
+				<div class="card mb-4">
+					<div class="card-body">
+						<div class="d-flex justify-content-between">
+							<div>
+								<h5 class="card-title mb-0">Site Funnel</h5>
+								<div class="small text-medium-emphasis"></div>
+							</div>
+						</div>
+						<div class="c-chart-wrapper">
+							<table class="table table-sm">
+								<tbody>
+									<tr>
+										<td>&nbsp;</td>
+										<td></td>
+										<td></td>
+										<td></td>
+										<td></td>
+									</tr>
+									<tr>
+										<td>&nbsp;</td>
+										<td></td>
+										<td></td>
+										<td></td>
+										<td></td>
+									</tr>
+									<tr>
+										<td>&nbsp;</td>
+										<td></td>
+										<td></td>
+										<td></td>
+										<td></td>
+									</tr>
+									<tr>
+										<td>&nbsp;</td>
+										<td></td>
+										<td></td>
+										<td></td>
+										<td></td>
+									</tr>
+									<tr>
+										<td>&nbsp;</td>
+										<td></td>
+										<td></td>
+										<td></td>
+										<td></td>
+									</tr>
+									<tr>
+										<td>&nbsp;</td>
+										<td></td>
+										<td></td>
+										<td></td>
+										<td></td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+		<div class="row">
+			<div class="col col-lg-6">
+				<div class="card mb-4">
+					<div class="card-body">
+						<div class="d-flex justify-content-between">
+							<div>
+								<h5 class="card-title mb-0">Top 10 Downloading</h5>
+							</div>
+						</div>
+						<div class="c-chart-wrapper">
+							<table class="table table-sm">
+								<thead>
+									<tr>
+										<th width="40%">Circuit</th>
+										<th width="15%">DL <i class="fa fa-down-long fa-fw"></i></th>
+										<th width="15%">UL <i class="fa fa-up-long fa-fw"></i></th>
+										<th width="15%">RTT (ms)</th>
+										<th width="15%">Shaped</th>
+									</tr>
+								</thead>
+								<tbody class="live-tt">
+									<tr>
+										<td>&nbsp;</td>
+										<td></td>
+										<td></td>
+										<td></td>
+										<td></td>
+									</tr>
+									<tr>
+										<td>&nbsp;</td>
+										<td></td>
+										<td></td>
+										<td></td>
+										<td></td>
+									</tr>
+									<tr>
+										<td>&nbsp;</td>
+										<td></td>
+										<td></td>
+										<td></td>
+										<td></td>
+									</tr>
+									<tr>
+										<td>&nbsp;</td>
+										<td></td>
+										<td></td>
+										<td></td>
+										<td></td>
+									</tr>
+									<tr>
+										<td>&nbsp;</td>
+										<td></td>
+										<td></td>
+										<td></td>
+										<td></td>
+									</tr>
+									<tr>
+										<td>&nbsp;</td>
+										<td></td>
+										<td></td>
+										<td></td>
+										<td></td>
+									</tr>
+									<tr>
+										<td>&nbsp;</td>
+										<td></td>
+										<td></td>
+										<td></td>
+										<td></td>
+									</tr>
+									<tr>
+										<td>&nbsp;</td>
+										<td></td>
+										<td></td>
+										<td></td>
+										<td></td>
+									</tr>
+									<tr>
+										<td>&nbsp;</td>
+										<td></td>
+										<td></td>
+										<td></td>
+										<td></td>
+									</tr>
+									<tr>
+										<td>&nbsp;</td>
+										<td></td>
+										<td></td>
+										<td></td>
+										<td></td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="col col-lg-6">
+				<div class="card mb-4">
+					<div class="card-body">
+						<div class="d-flex justify-content-between">
+							<div>
+								<h5 class="card-title mb-0">Worst 10 RTT</h5>
+							</div>
+						</div>
+						<div class="c-chart-wrapper">
+							<table class="table table-sm">
+								<thead>
+									<tr>
+										<th width="40%">Circuit</th>
+										<th width="15%">DL <i class="fa fa-down-long fa-fw"></i></th>
+										<th width="15%">UL <i class="fa fa-up-long fa-fw"></i></th>
+										<th width="15%">RTT (ms)</th>
+										<th width="15%">Shaped</th>
+									</tr>
+								</thead>
+								<tbody class="live-wrtt">
+									<tr>
+										<td>&nbsp;</td>
+										<td></td>
+										<td></td>
+										<td></td>
+										<td></td>
+									</tr>
+									<tr>
+										<td>&nbsp;</td>
+										<td></td>
+										<td></td>
+										<td></td>
+										<td></td>
+									</tr>
+									<tr>
+										<td>&nbsp;</td>
+										<td></td>
+										<td></td>
+										<td></td>
+										<td></td>
+									</tr>
+									<tr>
+										<td>&nbsp;</td>
+										<td></td>
+										<td></td>
+										<td></td>
+										<td></td>
+									</tr>
+									<tr>
+										<td>&nbsp;</td>
+										<td></td>
+										<td></td>
+										<td></td>
+										<td></td>
+									</tr>
+									<tr>
+										<td>&nbsp;</td>
+										<td></td>
+										<td></td>
+										<td></td>
+										<td></td>
+									</tr>
+									<tr>
+										<td>&nbsp;</td>
+										<td></td>
+										<td></td>
+										<td></td>
+										<td></td>
+									</tr>
+									<tr>
+										<td>&nbsp;</td>
+										<td></td>
+										<td></td>
+										<td></td>
+										<td></td>
+									</tr>
+									<tr>
+										<td>&nbsp;</td>
+										<td></td>
+										<td></td>
+										<td></td>
+										<td></td>
+									</tr>
+									<tr>
+										<td>&nbsp;</td>
+										<td></td>
+										<td></td>
+										<td></td>
+										<td></td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+{% endblock %}

@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+
+{% block body %}
+	<div class="sidebar sidebar-light sidebar-fixed" id="sidebar">
+		<div class="sidebar-brand d-none d-md-flex">
+			<img src="/assets/tinylogo.svg#full" class="sidebar-brand-full" width="46" height="46" alt="LibreQoS Logo">
+			<span class="sidebar-brand-full fs-4"> LibreQoS</span>
+			<img src="/assets/tinylogo.svg#signet" class="sidebar-brand-narrow" width="46" height="46" alt="LibreQoS Logo">
+		</div>
+		<ul class="sidebar-nav" data-coreui="navigation" data-simplebar>
+			<li class="nav-item">
+				<a class="nav-link" href="/dashboard">
+					<i class="nav-icon fa fa-home fa-fw"></i>
+					Dashboard
+				</a>
+			</li>
+			<li class="nav-title">
+				Network
+			</li>
+			<li class="nav-item">
+				<a class="nav-link" href="/tree/0">
+					<i class="nav-icon fa fa-sitemap fa-fw"></i>
+					Tree
+				</a>
+			</li>
+			<li class="nav-item">
+				<a class="nav-link" href="/shaped">
+					<i class="nav-icon fa fa-server fa-fw"></i>
+					Shaped Devices
+					<span class="badge bg-success-gradient ms-auto" data-lqos-shaped-count>0</span>
+				</a>
+			</li>
+			<li class="nav-item">
+				<a class="nav-link" href="/unknown">
+					<i class="nav-icon fa fa-circle-question fa-fw"></i>
+					Unknown IPs
+					<span class="badge bg-warning-gradient ms-auto" data-lqos-unknown-count>0</span>
+				</a>
+			</li>
+			{% if current_user.role.to_string() == "admin" -%}
+			<li class="nav-title">
+				System
+			</li>
+			<li class="nav-group">
+				<a class="nav-link nav-group-toggle" href="#">
+					<i class="nav-icon fa fa-gears fa-fw"></i>
+					Configuration
+				</a>
+				<ul class="nav-group-items">
+					<li class="nav-item">
+						<a class="nav-link" href="/config/crm">
+							<i class="nav-icon fa fa-people-roof fa-fw"></i>
+							CRM
+						</a>
+					</li>
+					<li class="nav-item">
+						<a class="nav-link" href="/config/network">
+							<i class="nav-icon fa fa-ethernet fa-fw"></i>
+							Network
+						</a>
+					</li>
+					<li class="nav-item">
+						<a class="nav-link" href="/config/server">
+							<i class="nav-icon fa fa-hard-drive fa-fw"></i>
+							Server
+						</a>
+					</li>
+					<li class="nav-item">
+						<a class="nav-link" href="/config/shaper">
+							<i class="nav-icon fa fa-shapes fa-fw"></i>
+							Shaper
+						</a>
+					</li>
+					<li class="nav-item">
+						<a class="nav-link" href="/config/tuning">
+							<i class="nav-icon fa fa-wrench fa-fw"></i>
+							Tuning
+						</a>
+					</li>
+					<li class="nav-item">
+						<a class="nav-link" href="/config/users">
+							<i class="nav-icon fa fa-users fa-fw"></i>
+							Users
+						</a>
+					</li>
+				</ul>
+			</li>
+			{% endif -%}
+			<li class="nav-item px-3 d-narrow-none">
+				<div class="text-uppercase mb-1">
+					<small><b>CPU Usage</b></small>
+				</div>
+				<div class="progress progress-thin">
+					<div class="progress-bar bg-warning-gradient live-cpu" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+				</div>
+				<small class="text-medium-emphasis"><span class="live-cpu-consumed"></span></small>
+			</li>
+			<li class="nav-item px-3 d-narrow-none">
+				<div class="text-uppercase mb-1">
+					<small><b>Memory Usage</b></small>
+				</div>
+				<div class="progress progress-thin">
+					<div class="progress-bar bg-success-gradient live-ram" data-lqos-ram role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+				</div>
+				<small class="text-medium-emphasis"><span data-lqos-ram-consumed class="live-ram-consumed"></span>/<span data-lqos-ram-total class="live-ram-total"></span></small>
+			</li>
+			<li class="nav-item px-3 mb-3 d-narrow-none">
+				<div class="text-uppercase mb-1">
+					<small><b>Hard Drive Usage</b></small>
+				</div>
+				<div class="progress progress-thin">
+					<div class="progress-bar bg-info-gradient live-disk" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+				</div>
+				<small class="text-medium-emphasis"><span class="live-disk-consumed"></span>/<span class="live-disk-total"></span></small>
+			</li>
+		</ul>
+		<button class="sidebar-toggler" type="button" data-coreui-toggle="unfoldable"></button>
+	</div>
+	<div class="sidebar sidebar-light sidebar-lg sidebar-end sidebar-overlaid hide" id="aside">
+		<div class="sidebar-header bg-transparent p-0">
+			<ul class="nav nav-underline nav-underline-primary" role="tablist">
+				<li class="nav-item">
+					<a class="nav-link active" data-coreui-toggle="tab" href="#display" role="tab">
+						<h6 class="mb-0"><i class="fa fa-display fa-fw me-2"></i>Display</h6>
+					</a>
+				</li>
+			</ul>
+			<button class="sidebar-close" type="button" data-coreui-close="sidebar">
+			<i class="fa fa-xmark"></i>
+			</button>
+		</div>
+		<div class="tab-content">
+			<div class="tab-pane p-3 active" id="display" role="tabpanel">
+				<div class="aside-options">
+					<div class="alert alert-info" role="alert">
+						<small class="text-medium-emphasis">
+							These settings are per-computer and stored locally in your browser.
+						</small>
+					</div>
+				</div>
+				<div class="aside-options">
+					<div class="clearfix mt-4">
+						<div class="form-check form-switch form-switch-lg">
+							<input class="form-check-input me-0" id="btn-toggle-theme" type="checkbox" onchange="toggleThemeChange(this)">
+							<label class="form-check-label fw-semibold small" for="btn-toggle-theme">Night Mode</label>
+						</div>
+					</div>
+				</div>
+				<div class="aside-options">
+					<div class="clearfix mt-4">
+						<div class="form-check form-switch form-switch-lg">
+							<input class="form-check-input me-0" id="flexSwitchCheckDefaultLg" type="checkbox" checked="">
+							<label class="form-check-label fw-semibold small" for="flexSwitchCheckDefaultLg">Redact Customer Information</label>
+						</div>
+					</div>
+				</div>
+				<div class="aside-options">
+					<div class="clearfix mt-4">
+						<label class="form-check-label fw-semibold small" for="flexSwitchCheckDefaultLg">RTT Color Mode</label>
+						<select class="form-select" aria-label="Default select example">
+							<option selected>Regular Colors</option>
+							<option>Metaverse Colors</option>
+						</select>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<div class="wrapper d-flex flex-column min-vh-100 bg-light dark:bg-transparent">
+		<header class="header header-sticky mb-4">
+			<div class="container-fluid">
+				<button class="header-toggler px-md-0 me-md-3" type="button" onclick="coreui.Sidebar.getInstance(document.querySelector('#sidebar')).toggle()">
+					<i class="fa fa-bars fa-lg"></i>
+				</button>
+				<nav class="header-nav me-auto">
+					<div class="input-group">
+						<input class="form-control" type="text" placeholder="What are you looking for?">
+					</div>
+				</nav>
+				<ul class="header-nav d-none d-md-flex">
+					<li class="nav-item position-relative">
+						<a class="nav-link" href="#" role="button" aria-haspopup="true" aria-expanded="false">
+							<i class="icon icon-lg fa fa-dashboard fa-fw my-1 mx-2"></i>
+						</a>
+					</li>
+					<li class="nav-item position-relative">
+						<a class="nav-link" href="/shaped" role="button" aria-haspopup="true" aria-expanded="false">
+							<i class="icon icon-lg fa fa-server fa-fw my-1 mx-2"></i>
+							<span class="badge rounded-pill position-absolute top-0 end-0 bg-success-gradient" data-lqos-shaped-count>0</span>
+						</a>
+					</li>
+					<li class="nav-item position-relative">
+						<a class="nav-link" href="/unknown" role="button" aria-haspopup="true" aria-expanded="false">
+							<i class="icon icon-lg fa fa-circle-question fa-fw my-1 mx-2"></i>
+							<span class="badge rounded-pill position-absolute top-0 end-0 bg-warning-gradient" data-lqos-unknown-count>0</span>
+						</a>
+					</li>
+				</ul>
+				<ul class="header-nav">
+					<li class="nav-item dropdown d-flex align-items-center">
+						<a class="nav-link py-0" data-coreui-toggle="dropdown" href="#" role="button" aria-haspopup="true" aria-expanded="false">
+							<i class="icon icon-lg fa fa-user-circle fa-fw pe-2 my-1 mx-2"></i>
+							{{ current_user.username }}
+						</a>
+						<div class="dropdown-menu dropdown-menu-end pt-0">
+							<div class="dropdown-header bg-light py-2 dark:bg-white dark:bg-opacity-10">
+								<div class="fw-semibold">Account</div>
+							</div>
+							{% if current_user.role.to_string() != "anonymous" -%}
+							<a class="dropdown-item" href="#">
+								<i class="icon fa fa-key fa-fw me-2"></i>
+								Change Password
+							</a>
+							<div class="dropdown-divider"></div>
+							{% endif -%}
+							<a class="dropdown-item" href="/auth/logout">
+								<i class="icon fa fa-right-from-bracket fa-fw me-2"></i>
+								Logout
+							</a>
+						</div>
+					</li>
+				</ul>
+				<button class="header-toggler px-md-0 d-none d-md-flex" type="button" onclick="coreui.Sidebar.getInstance(document.querySelector('#aside')).show()">
+					<i class="icon icon-lg fa fa-display fa-fw my-1 mx-2"></i>
+				</button>
+			</div>
+		</header>
+		<div class="body flex-grow-1 px-3">
+			{% block content %}{% endblock %}
+		</div>
+		<footer class="footer">
+			<div>v1.5</div>
+			<div class="ms-auto">&copy; 2023 <a href="https://libreqos.io/" target="_blank">LibreQoE LLC</a></div>
+		</footer>
+	</div>
+	<script src="/assets/lqos.js"></script>
+{% endblock %}

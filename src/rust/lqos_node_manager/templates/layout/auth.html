@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block body %}
+	{% block content %}{% endblock %}
+	<script>
+		document.addEventListener("DOMContentLoaded", function(event) {
+		  setTimeout(function() {
+			document.body.classList.remove('c-no-layout-transition')
+		  }, 2000);
+		});
+	</script>
+{% endblock %}
+
+
+
+

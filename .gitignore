@@ -99,3 +99,4 @@ Sessionx.vim
 tramp
 .\#*
 \#*
+src/rust/lqos_node_manager/.vscode/settings.json

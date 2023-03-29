@@ -1,0 +1,51 @@
+{% extends "layout/main.html" %}
+
+{% block content %}
+	<div class="container-lg h-100">
+		<div class="row">
+			<div class="col">
+				<div class="card mb-4">
+					<div class="card-body">
+                        <h5 class="card-title">
+							Unmapped IP Addresses
+						</h5>
+                        <a id="btnDownloadCsv" class="btn btn-info">
+							<i class="fa fa-download"></i>
+							Download CSV
+						</a>
+                        <table class="table table-sm table-striped datatable">
+                            <thead>
+                                <th>IP</th>
+                                <th>Total Bandwidth</th>
+                                <th>Total Packets</th>
+                                <th>Last Seen</th>
+                                <th></th>
+                            </thead>
+                            <tbody>
+								{% for device in devices.iter() %}
+									<tr>
+										<td>{{device.ip_address}}</td>
+										<td>
+                                            {{device.bits_per_second.0}}
+                                            <i class="fa fa-down-long fa-fw"></i>
+                                            {{device.bits_per_second.1}}
+                                            <i class="fa fa-up-long fa-fw"></i>
+                                        </td>
+										<td>
+                                            {{device.packets_per_second.0}}
+                                            <i class="fa fa-down-long fa-fw"></i>
+                                            {{device.packets_per_second.1}}
+                                            <i class="fa fa-up-long fa-fw"></i>
+                                        </td>
+										<td></td>
+										<td></td>
+									</tr>
+								{% endfor %}
+							</tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
