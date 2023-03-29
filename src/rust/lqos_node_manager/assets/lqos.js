@@ -1,81 +1,22 @@
-document.addEventListener("DOMContentLoaded", () => {
-	let webSocket = new WebSocket('ws://10.1.1.222:3000/ws');
-	webSocket.onmessage = function(e) { process_main_ws(e.data) };
-	
-	var element = document.getElementById('btn-toggle-theme');
-	if (document.body.classList.contains('dark-theme')) {
-		if (typeof(element) != 'undefined' && element != null) {
-			document.getElementById('btn-toggle-theme').checked = true;
-		} else {
-			document.getElementById('btn-toggle-theme').checked = false;
-		}
-	} else {
-		if (typeof(element) != 'undefined' && element != null) {
-			document.getElementById('btn-toggle-theme').checked = false;
-		}
-	}
-});
-
-function process_main_ws(data) {
-	let type = JSON.parse(data)[0];
-	let message = JSON.parse(data)[1]
-	if (type == "SHPDIP") {
-		update_shaped(message);
-	} else if (type == "UNKNIP") {
-		update_unknown(message);
-	} else if (type == "DISK") {
-		
-	} else if (type == "RAM") {
-		
-	} else if (type == "CPU") {
-		
-	}
+function bytesToSize(bytes) {
+    var sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    if (bytes == 0) return 'Bytes';
+    var i = parseInt(Math.floor(Math.log(bytes) / Math.log(1024)));
+    if (i == 0) return bytes + ' ' + sizes[i];
+    return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + sizes[i];
 }
 
-function update_shaped(values){
-	var spans = document.getElementsByClassName("live-shaped");
-
-	for(i=0;i<spans.length;i++)	{
-		spans[i].innerHTML = values;
-	}
+function bytesToSpeed(bytes) {
+    const speeds = ['bps', 'kbps', 'Mbps', 'Gbps', 'Tbps'];
+    if (bytes == 0) return 'bps';
+    var i = parseInt(Math.floor(Math.log(bytes) / Math.log(1024)));
+    if (i == 0) return bytes + ' ' + sizes[i];
+    return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + sizes[i];
 }
 
-function update_unknown(values){
-	var spans = document.getElementsByClassName("live-unknown");
-
-	for(i=0;i<spans.length;i++)	{
-		spans[i].innerHTML = values;
-	}
-}
-
-function update_cpu(values){
-	var spans = document.getElementsByClassName("live-cpu");
-
-	for(i=0;i<spans.length;i++)	{
-		spans[i].innerHTML = values;
-	}
-}
-
-function update_disk(values){
-	var spans = document.getElementsByClassName("live-disk");
-
-	for(i=0;i<spans.length;i++)	{
-		spans[i].innerHTML = values;
-	}
-}
-
-function update_ram(values){
-	var spans = document.getElementsByClassName("live-ram");
-
-	for(i=0;i<spans.length;i++)	{
-		spans[i].innerHTML = values;
-	}
-}
-
+// Need this to send a websocket message and store the users browser state there.
 function toggleThemeChange(src) {
 	var event = document.createEvent('Event');
-	event.initEvent('themeChange', true, true);
-
 	if (document.body.classList.contains('dark-theme')) {
 		document.body.classList.remove('dark-theme');
 	} else {
@@ -84,147 +25,10 @@ function toggleThemeChange(src) {
 	document.body.dispatchEvent(event);
 }
 
-function metaverse_color_ramp(n) {
-    if (n <= 9) {
-        return "#32b08c";
-    } else if (n <= 20) {
-        return "#ffb94a";
-    } else if (n <=50) {
-        return "#f95f53";
-    } else if (n <=70) {
-        return "#bf3d5e";
-    } else {
-        return "#dc4e58";
-    }
-}
-
-function regular_color_ramp(n) {
-    if (n <= 100) {
-        return "#aaffaa";
-    } else if (n <= 150) {
-        return "goldenrod";
-    } else {
-        return "#ffaaaa";
-    }
-}
-
-function color_ramp(n) {
-    let colorPreference = window.localStorage.getItem("colorPreference");
-    if (colorPreference == null) {
-        window.localStorage.setItem("colorPreference", 0);
-        colorPreference = 0;
-    }
-    if (colorPreference == 0) {
-        return regular_color_ramp(n);
-    } else {
-        return metaverse_color_ramp(n);
-    }
-}
-
-function cssrules() {
-    var rules = {};
-    for (var i=0; i<document.styleSheets.length; ++i) {
-        var cssRules = document.styleSheets[i].cssRules;
-        for (var j=0; j<cssRules.length; ++j)
-            rules[cssRules[j].selectorText] = cssRules[j];
-    }
-    return rules;
-}
-
-function css_getclass(name) {
-    var rules = cssrules();
-    if (!rules.hasOwnProperty(name))
-        throw 'TODO: deal_with_notfound_case';
-    return rules[name];
-}
-
-function updateHostCounts() {
-    $.get("/api/host_counts", (hc) => {
-        $("#shapedCount").text(hc[0]);
-        $("#unshapedCount").text(hc[1]);
-        setTimeout(updateHostCounts, 5000);
-    });
-    $.get("/api/username", (un) => {
-		$("#currentLogin span").text(un);
-    });
-    $("#startTest").on('click', () => {
-        $.get("/api/run_btest", () => {});
-    });
-}
-
-function colorReloadButton() {
-    $("body").append(reloadModal);
-    $("#btnReload").on('click', () => {
-        $.get("/api/reload_libreqos", (result) => {
-            const myModal = new bootstrap.Modal(document.getElementById('reloadModal'), {focus: true});
-            $("#reloadLibreResult").text(result);
-            myModal.show();    
-        });
-    });
-    $.get("/api/reload_required", (req) => {
-        if (req) {
-            $("#btnReload").addClass('btn-warning');
-            $("#btnReload").css('color', 'darkred');
-        } else {
-            $("#btnReload").addClass('btn-secondary');
-        }
-    });
-
-    // Redaction
-    if (isRedacted()) {
-        console.log("Redacting");
-        //css_getclass(".redact").style.filter = "blur(4px)";
-        css_getclass(".redact").style.fontFamily = "klingon";
-    }
-}
-
-function isRedacted() {
-    let redact = localStorage.getItem("redact");
-    if (redact == null) {
-        localStorage.setItem("redact", false);
-        redact = false;
-    }
-    if (redact == "false") {
-        redact = false;
-    } else if (redact == "true") {
-        redact = true;
-    }
-    return redact;
-}
-
-const phrases = [
-    "quSDaq ba’lu’’a’", // Is this seat taken?
-    "vjIjatlh", // speak
-    "pe’vIl mu’qaDmey", // curse well
-    "nuqDaq ‘oH puchpa’’e’", // where's the bathroom?
-    "nuqDaq ‘oH tach’e’", // Where's the bar?
-    "tera’ngan Soj lujab’a’", // Do they serve Earth food?
-    "qut na’ HInob", // Give me the salty crystals
-    "qagh Sopbe’", // He doesn't eat gagh
-    "HIja", // Yes
-    "ghobe’", // No
-    "Dochvetlh vIneH", // I want that thing
-    "Hab SoSlI’ Quch", // Your mother has a smooth forehead
-    "nuqjatlh", // What did you say?
-    "jagh yIbuStaH", // Concentrate on the enemy
-    "Heghlu’meH QaQ jajvam", // Today is a good day to die
-    "qaStaH nuq jay’", // WTF is happening?
-    "wo’ batlhvaD", // For the honor of the empire
-    "tlhIngan maH", // We are Klingon!
-    "Qapla’", // Success!
-]
-
-function redactText(text) {
-    if (!isRedacted()) return text;
-    let redacted = "";
-    let sum = 0;
-    for(let i = 0; i < text.length; i++){
-        let code = text.charCodeAt(i);
-        sum += code;
-    }
-    sum = sum % phrases.length;
-    return phrases[sum];
-}
+const rampColors = {
+    meta: ["#32b08c", "#ffb94a", "#f95f53", "#bf3d5e", "#dc4e58"],
+    regular: ["#aaffaa", "goldenrod", "#ffaaaa"],
+};
 
 function scaleNumber(n) {
     if (n > 1000000000000) {
@@ -238,3 +42,193 @@ function scaleNumber(n) {
     }
     return n;
 }
+
+class LqosWs {
+    document;
+    socketRef;
+    eventHandler;
+    #Events = class {
+        document;
+        socketRef;
+        #key_function_map = {
+            update_cpu: this.#update_cpu,
+            update_disk: this.#update_disk,
+            update_ram: this.#update_ram,
+            update_shaped_count: this.#update_shaped_count,
+            update_unknown_count: this.#update_unknown_count,
+        }
+        constructor(lqos_ws) {
+            console.log("LqosWs Event Handler Constructed! {}", lqos_ws);
+            this.document = lqos_ws.document;
+            this.socketRef = lqos_ws.socketRef;
+        }
+        dispatch(message){
+            console.log("LqosWs Event: Dispatching event... {}", message.subject);
+            this.document.dispatchEvent(new CustomEvent(message.subject, { detail: message }));
+        }
+        process(event) {
+            console.log("LqosWs Event: Processing event... {}", event);
+            this.#key_function_map[event.detail.subject](event.detail.data);
+        }
+        reload_lqos() {
+
+        }
+        subscribe(data) {
+            console.log("LqosWs Event: Subscribed to... {}", data.subject);
+            let event = this;
+            this.document.addEventListener(data.data.subject, function(e){event.process(e)});
+            this.socketRef.send(JSON.stringify(data));
+        }
+        #update_cpu(data) {
+            console.log("LqosWs Event: Updating CPU: {}", data.subject);
+            var cpu_sum = data.reduce((partialSum, a) => partialSum + a, 0);
+            var cpu_avg = Math.ceil(cpu_sum/data.length);
+            var spans = document.querySelectorAll("data-lqos-cpu");
+            let i = 0;
+            while(i<spans.length)	{
+                spans[i].style.width = cpu_avg + "%";
+                spans[i].innerText = cpu_avg + "%";
+                i++;
+            }
+        }
+        #update_disk(data) {
+            console.log("LqosWs Event: Updating DISK: {}", data);
+            var spans = document.querySelectorAll('[data-lqos-disk]');
+            let i = 0;
+            while(i<spans.length)	{
+                spans[i].innerHTML = data;
+                i++;
+            }
+        }
+        #update_ram(data) {
+            console.log("LqosWs Event: Updating RAM: {}", data);
+            let consumed_ram = data[0];
+            let total_ram = data[1];
+            let ram_percentage = Math.ceil(consumed_ram/total_ram);
+            let consumed_spans = document.querySelectorAll('[data-lqos-ram-consumed]');
+            let total_spans = document.querySelectorAll('[data-lqos-ram-total]');
+            let spans = document.querySelectorAll('[data-lqos-ram]');
+            let i = 0;
+            while(i<spans.length) {
+                spans[i].style.width = ram_percentage + "%";
+                spans[i].innerText = ram_percentage + "%";
+                i++;
+            }
+            i = 0;
+            while(i<consumed_spans.length) {
+                consumed_spans[i].innerText = bytesToSize(consumed_ram);
+                i++;
+            }
+            i = 0;
+            while(i<total_spans.length) {
+                total_spans[i].innerText = bytesToSize(total_ram);
+                i++;
+            }
+        }
+        #update_shaped_count(data) {
+            console.log("LqosWs Event: Updating SHAPED COUNT: {}", data);
+            let spans = document.querySelectorAll('[data-lqos-shaped-count]');
+            let i = 0;
+            while(i<spans.length) {
+                spans[i].innerHTML = data;
+                i++;
+            }
+        }
+        #update_unknown_count(data) {
+            console.log("LqosWs Event: Updating UNKNOWN COUNT: {}", data);
+            let spans = document.querySelectorAll('[data-lqos-unknown-count]');
+            let i = 0;
+            while(i<spans.length) {
+                spans[i].innerHTML = data;
+                i++;
+            }
+        }
+    }
+    #Message = class Message {
+        data;
+        subject;
+        packed = false;
+        #subject_keys = {
+            // Add keys here for validation
+            update_cpu: "update_cpu",
+            update_disk: "update_disk",
+            update_ram: "update_ram",
+            update_shaped_count: "update_shaped_count",
+            update_unknown_count: "update_unknown_count",
+        }
+        constructor(event) {
+            this.subject = event.subject;
+            this.data = event.data;
+            (event.packed) && this.#decode();
+        }
+        #decode() {
+            this.data = msgpack.decode(new Uint8Array(this.data));
+        }
+        toJSON() {
+            return {
+                subject: this.subject,
+                data: this.data,
+                packed: this.packed
+            }
+        }
+        process(eventHandler) {
+            console.log("LqosWs Message: Processing...");
+            if (this.subject && this.#subject_keys[this.subject]){
+                eventHandler.dispatch(this);
+            } else {
+                if (this.subject == "subscribe") {
+                    console.log("LqosWs Message: Subscribe request... {}", this);
+                    if (this.data && this.#subject_keys[this.data.subject])
+                        eventHandler.subscribe(this);
+                } else if (this.subject == "unsubscribe") {
+                    console.log("LqosWs Message: Unsubscribe request... {}", this);
+                    if (this.data && this.#subject_keys[this.data.subject])
+                        eventHandler.unsubscribe(this);
+                }
+            }
+        }
+    }
+    #Connect() {
+        console.log("LqosWs Connecting...");
+        this.socketRef = new WebSocket('ws://' + location.host + '/ws');
+        var lqos_ws = this;
+        this.socketRef.onopen = function(){
+            console.log("LqosWs Connected!");
+            lqos_ws.eventHandler = new lqos_ws.#Events(lqos_ws);
+            lqos_ws.#Setup();
+        };
+        this.socketRef.onmessage = function(e) {
+            console.log("LqosWs Received Message... {}", e);
+            new lqos_ws.#Message(JSON.parse(e.data)).process(lqos_ws.eventHandler);
+        };
+        this.socketRef.onclose = function(e) {
+            console.log("LqosWs Closed. {}", e);
+            console.log("LqosWs Reconnecting...");
+            if (!lqos_ws.socketRef || lqos_ws.socketRef.readyState == 3)
+                lqos_ws.#Connect();
+        };
+    }
+    constructor(document) {
+        console.log("Constructing LqosWs");
+        this.document = document;
+        this.#Connect();
+    }
+    #Setup(){
+        this.subscribe({subject: 'subscribe', data: {subject: 'update_cpu', data: '', packed: false}});
+        this.subscribe({subject: 'subscribe', data: {subject: 'update_disk', data: '', packed: false}});
+        this.subscribe({subject: 'subscribe', data: {subject: 'update_ram', data: '', packed: false}});
+        this.subscribe({subject: 'subscribe', data: {subject: 'update_shaped_count', data: '', packed: false}});
+        this.subscribe({subject: 'subscribe', data: {subject: 'update_unknown_count', data: '', packed: false}});
+    }
+    subscribe(event) {
+        if (event)
+            new this.#Message(event).process(this.eventHandler);
+    }
+    unsubscribe() {
+        this.socketRef.send();
+    }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    var lqos_webSocket = new LqosWs(document);
+});
