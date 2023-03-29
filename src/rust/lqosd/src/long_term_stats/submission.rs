@@ -22,7 +22,7 @@ pub fn get_stats_host() -> BusResponse {
     let current = CURRENT_STATS.read().unwrap();
     if let Some(c) = &*current {
         BusResponse::LongTermHosts(
-            c.hosts.iter().cloned().map(|h| std::convert::Into::<StatsHost>::into(h)).collect()
+            c.hosts.iter().cloned().map(std::convert::Into::<StatsHost>::into).collect()
         )
     } else {
         BusResponse::Fail("No Data".to_string())
