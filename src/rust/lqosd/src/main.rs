@@ -226,6 +226,9 @@ fn handle_bus_requests(
       BusRequest::GetLongTermStats(StatsRequest::AllHosts) => {
         long_term_stats::get_stats_host()
       }
+      BusRequest::GetLongTermStats(StatsRequest::Tree) => {
+        long_term_stats::get_stats_tree()
+      }
     });
   }
 }

@@ -13,5 +13,10 @@ pub async fn main() -> Result<()> {
       println!("{stats:?}");
     }
   }
+  for resp in bus_request(vec![BusRequest::GetLongTermStats(StatsRequest::Tree)]).await? {
+    if let BusResponse::LongTermTree(stats) = resp {
+      println!("{stats:?}");
+    }
+  }
   Ok(())
 }

@@ -159,4 +159,5 @@ pub enum BusRequest {
 pub enum StatsRequest {
   CurrentTotals,
   AllHosts,
+  Tree,
 }

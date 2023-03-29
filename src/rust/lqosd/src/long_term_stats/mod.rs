@@ -6,6 +6,7 @@ mod data_collector;
 mod collation_utils;
 mod collator;
 mod submission;
+mod tree;
 use log::{info, warn};
 use lqos_config::EtcLqos;
 use lqos_utils::fdtimer::periodic;
@@ -13,7 +14,7 @@ use std::{
   sync::mpsc::{self, Receiver, Sender},
   thread,
 };
-pub(crate) use submission::{get_stats_totals, get_stats_host};
+pub(crate) use submission::{get_stats_totals, get_stats_host, get_stats_tree};
 
 /// Messages to/from the stats collection thread
 pub enum StatsMessage {

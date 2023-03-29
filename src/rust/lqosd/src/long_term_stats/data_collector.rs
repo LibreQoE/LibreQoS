@@ -19,6 +19,7 @@ pub(crate) struct SessionHost {
   pub(crate) ip_address: IpAddr,
   pub(crate) bits_per_second: (u64, u64),
   pub(crate) median_rtt: f32,
+  pub(crate) tree_parent_indices: Vec<usize>,
 }
 
 pub(crate) static SESSION_BUFFER: Lazy<Mutex<Vec<StatsSession>>> =
@@ -65,6 +66,7 @@ pub(crate) fn gather_throughput_stats() {
         ip_address: tp.key().as_ip(),
         bits_per_second,
         median_rtt: tp.median_latency(),
+        tree_parent_indices: tp.network_json_parents.clone().unwrap_or(Vec::new()),
       });
     });
 
