@@ -291,14 +291,19 @@ class NetworkGraph:
 
 		del self.__visited
 		
+		# Child nodes inherit bandwidth maximums of parents. We apply this here to avoid bugs when compression is applied with flattenA().
 		def inheritBandwidthMaxes(data, parentMaxDL, parentMaxUL):
 			for node in data:
 				if isinstance(node, str):
 					if (isinstance(data[node], dict)) and (node != 'children'):
+						# Cap based on this node's max bandwidth, or parent node's max bandwidth, whichever is lower
 						data[node]['downloadBandwidthMbps'] = min(int(data[node]['downloadBandwidthMbps']),int(parentMaxDL))
 						data[node]['uploadBandwidthMbps'] = min(int(data[node]['uploadBandwidthMbps']),int(parentMaxUL))
+						# Recursive call this function for children nodes attached to this node
 						if 'children' in data[node]:
+							# We need to keep tabs on the minor counter, because we can't have repeating class IDs. Here, we bring back the minor counter from the recursive function
 							inheritBandwidthMaxes(data[node]['children'], data[node]['downloadBandwidthMbps'], data[node]['uploadBandwidthMbps'])
+		# Here is the actual call to the recursive function
 		inheritBandwidthMaxes(topLevelNode, parentMaxDL=upstreamBandwidthCapacityDownloadMbps, parentMaxUL=upstreamBandwidthCapacityUploadMbps)
 		
 		with open('network.json', 'w') as f:
