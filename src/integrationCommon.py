@@ -2,7 +2,7 @@
 # integrations.
 
 from typing import List, Any
-from ispConfig import allowedSubnets, ignoreSubnets, generatedPNUploadMbps, generatedPNDownloadMbps, circuitNameUseAddress
+from ispConfig import allowedSubnets, ignoreSubnets, generatedPNUploadMbps, generatedPNDownloadMbps, circuitNameUseAddress, upstreamBandwidthCapacityDownloadMbps, upstreamBandwidthCapacityUploadMbps
 import ipaddress
 import enum
 
@@ -290,7 +290,17 @@ class NetworkGraph:
 					child)
 
 		del self.__visited
-
+		
+		def inheritBandwidthMaxes(data, parentMaxDL, parentMaxUL):
+			for node in data:
+				if isinstance(node, str):
+					if (isinstance(data[node], dict)) and (node != 'children'):
+						data[node]['downloadBandwidthMbps'] = min(int(data[node]['downloadBandwidthMbps']),int(parentMaxDL))
+						data[node]['uploadBandwidthMbps'] = min(int(data[node]['uploadBandwidthMbps']),int(parentMaxUL))
+						if 'children' in data[node]:
+							inheritBandwidthMaxes(data[node]['children'], data[node]['downloadBandwidthMbps'], data[node]['uploadBandwidthMbps'])
+		inheritBandwidthMaxes(topLevelNode, parentMaxDL=upstreamBandwidthCapacityDownloadMbps, parentMaxUL=upstreamBandwidthCapacityUploadMbps)
+		
 		with open('network.json', 'w') as f:
 			json.dump(topLevelNode, f, indent=4)
 
