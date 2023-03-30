@@ -99,7 +99,7 @@ def buildFullGraph():
 				download = int(download)
 				upload = int(upload)
 				siteBandwidth[name] = {"download": download, "upload": upload}
-
+	
 	# Find AP capacities from UISP
 	for device in devices:
 		if device['identification']['role'] == "ap":
@@ -110,7 +110,27 @@ def buildFullGraph():
 				upload = int(device['overview']['uplinkCapacity'] / 1000000)
 				siteBandwidth[device['identification']['name']] = {
 					"download": download, "upload": upload}
-
+	
+	# Find Site Capacities by AirFiber capacities
+	foundAirFibersBySite = {}
+	for device in devices:
+		if device['identification']['site']['type'] == 'site':
+			if device['identification']['role'] == "station":
+				if device['identification']['type'] == "airFiber":
+					if device['overview']['status'] == 'active':
+						download = int(device['overview']['downlinkCapacity']/ 1000000)
+						upload = int(device['overview']['uplinkCapacity']/ 1000000)
+						# Make sure to use half of reported bandwidth for AF60-LRs
+						if device['identification']['model'] == "AF60-LR":
+							download = int(download / 2)
+							upload = int(download / 2)
+						if device['identification']['site']['id'] in foundAirFibersBySite:
+							if (download > foundAirFibersBySite['download']) or (upload > foundAirFibersBySite['upload']):
+								foundAirFibersBySite[device['identification']['site']['id']]['download'] = download
+								foundAirFibersBySite[device['identification']['site']['id']]['upload'] = upload
+						else:
+							foundAirFibersBySite[device['identification']['site']['id']] = {'download': download, 'upload': upload}
+	
 	print("Building Topology")
 	net = NetworkGraph()
 	# Add all sites and client sites
@@ -133,6 +153,9 @@ def buildFullGraph():
 					# Use the CSV bandwidth values
 					download = siteBandwidth[name]["download"]
 					upload = siteBandwidth[name]["upload"]
+				elif id in foundAirFibersBySite:
+					download = foundAirFibersBySite[id]['download']
+					upload = foundAirFibersBySite[id]['upload']
 				else:
 					# Add them just in case
 					siteBandwidth[name] = {
@@ -209,7 +232,8 @@ def buildFullGraph():
 
 	# Save integrationUISPbandwidths.csv
 	# (the newLine fixes generating extra blank lines)
-	with open('integrationUISPbandwidths.csv', 'w', newline='') as csvfile:
+	# Saves as .template as to not overwrite
+	with open('integrationUISPbandwidths.template.csv', 'w', newline='') as csvfile:
 		wr = csv.writer(csvfile, quoting=csv.QUOTE_ALL)
 		wr.writerow(['ParentNode', 'Download Mbps', 'Upload Mbps'])
 		for device in siteBandwidth:
