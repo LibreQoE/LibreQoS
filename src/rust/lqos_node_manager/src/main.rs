@@ -22,11 +22,15 @@ static GLOBAL: Jemalloc = Jemalloc;
 
 #[launch]
 fn rocket() -> _ {
-  //tracker::SHAPED_DEVICES.read().write_csv("ShapedDeviceWriteTest.csv").unwrap();
   let server = rocket::build()
     .attach(AdHoc::on_liftoff("Poll lqosd", |_| {
       Box::pin(async move {
         rocket::tokio::spawn(tracker::update_tracking());
+      })
+    }))
+    .attach(AdHoc::on_liftoff("Poll throughput", |_| {
+      Box::pin(async move {
+        rocket::tokio::spawn(tracker::update_total_throughput_buffer());
       })
     }))
     .register("/", catchers![static_pages::login])
@@ -47,6 +51,7 @@ fn rocket() -> _ {
         static_pages::klingon,
         // API calls
         tracker::current_throughput,
+        tracker::throughput_ring_buffer,
         tracker::cpu_usage,
         tracker::ram_usage,
         tracker::top_10_downloaders,
