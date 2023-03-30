@@ -1,56 +1,56 @@
 {% extends "layout/main.html" %}
 
 {% block content %}
-<div class="container-lg h-100">
-	<div class="row">
-		<div class="col-sm-4">
-			<div class="card mb-4">
-				<div class="card-body">
-					<h5 class="card-title">Last 5 Minutes</h5>
-					<div id="tpGraph" class="graph98 graph150"></div>
+	<div class="container-lg h-100">
+		<div class="row">
+			<div class="col-sm-4">
+				<div class="card mb-4">
+					<div class="card-body">
+						<h5 class="card-title">Last 5 Minutes</h5>
+						<div id="tpGraph" class="graph98 graph150"></div>
+					</div>
+				</div>
+			</div>
+			<!-- RTT Histogram -->
+			<div class="col-sm-4">
+				<div class="card mb-4">
+					<div class="card-body">
+						<h5 class="card-title">TCP Round-Trip Time Histogram</h5>
+						<div id="rttHistogram" class="graph98 graph150"></div>
+					</div>
+				</div>
+			</div>
+			<!-- Info -->
+			<div class="col-sm-4">
+				<div class="card mb-4">
+					<div class="card-body">
+						<h5 class="card-title"><span id="nodeName" class='redact'></span></h5>
+						<strong>DL Limit</strong>: <span id="nodeDL"></span><br />
+						<strong>UL Limit</strong>: <span id="nodeUL"></span><br />    
+						<div id="breadcrumbs"></div>
+					</div>
 				</div>
 			</div>
 		</div>
-		<!-- RTT Histogram -->
-		<div class="col-sm-4">
-			<div class="card mb-4">
-				<div class="card-body">
-					<h5 class="card-title">TCP Round-Trip Time Histogram</h5>
-					<div id="rttHistogram" class="graph98 graph150"></div>
+		<div class="row">
+			<!-- List of network circuits -->
+			<div class="col-sm-6">
+				<div class="card mb-4">
+					<div class="card-body">
+						<h5 class="card-title">Child Nodes</h5>
+						<div id="treeList"></div>
+					</div>
 				</div>
 			</div>
-		</div>
-		<!-- Info -->
-		<div class="col-sm-4">
-			<div class="card mb-4">
-				<div class="card-body">
-					<h5 class="card-title"><span id="nodeName" class='redact'></span></h5>
-					<strong>DL Limit</strong>: <span id="nodeDL"></span><br />
-					<strong>UL Limit</strong>: <span id="nodeUL"></span><br />    
-					<div id="breadcrumbs"></div>
+			<!-- List of client circuits -->
+			<div class="col-sm-6">
+				<div class="card mb-4">
+					<div class="card-body">
+						<h5 class="card-title">Attached Clients</h5>
+						<div id="clientList"></div>
+					</div>
 				</div>
 			</div>
 		</div>
 	</div>
-	<div class="row">
-		<!-- List of network circuits -->
-		<div class="col-sm-6">
-			<div class="card mb-4">
-				<div class="card-body">
-					<h5 class="card-title">Child Nodes</h5>
-					<div id="treeList"></div>
-				</div>
-			</div>
-		</div>
-		<!-- List of client circuits -->
-		<div class="col-sm-6">
-			<div class="card mb-4">
-				<div class="card-body">
-					<h5 class="card-title">Attached Clients</h5>
-					<div id="clientList"></div>
-				</div>
-			</div>
-		</div>
-	</div>
-</div>
 {% endblock %}

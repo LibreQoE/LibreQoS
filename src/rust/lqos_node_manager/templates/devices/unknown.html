@@ -24,20 +24,20 @@
                             <tbody>
 								{% for device in devices.iter() %}
 									<tr>
-										<td>{{device.ip_address}}</td>
-										<td>
+										<td class="align-middle">{{device.ip_address}}</td>
+										<td class="align-middle">
                                             {{device.bits_per_second.0}}
                                             <i class="fa fa-down-long fa-fw"></i>
                                             {{device.bits_per_second.1}}
                                             <i class="fa fa-up-long fa-fw"></i>
                                         </td>
-										<td>
+										<td class="align-middle">
                                             {{device.packets_per_second.0}}
                                             <i class="fa fa-down-long fa-fw"></i>
                                             {{device.packets_per_second.1}}
                                             <i class="fa fa-up-long fa-fw"></i>
                                         </td>
-										<td></td>
+										<td class="align-middle"></td>
 										<td></td>
 									</tr>
 								{% endfor %}

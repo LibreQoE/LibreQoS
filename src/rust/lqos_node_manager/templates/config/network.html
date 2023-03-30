@@ -6,16 +6,70 @@
             <div class="col">
                 <div class="card mb-4">
                     <div class="card-header">
-                        <strong>Network</strong>
+                        <strong>Configure Network</strong>
                         <span class="small ms-1"></span>
                     </div>
                     <div class="card-body">
-                        <div class="mb-3 row">
-                            <label for="" class="col-sm-2 col-form-label"></label>
-                            <div class="col-sm-10">
-                                <input type="text" readonly class="form-control-plaintext">
+                        <form>
+                            <div class="mb-3 row">
+                                <h6>Mode Selection</h6>
+                                <label for="" class="col-sm-2 col-form-label text-end">Single Interface Mode?</label>
+                                <div class="col-sm-4">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox">
+                                    </div>
+                                </div>
                             </div>
-                        </div>
+                            <fieldset data-network-nic>
+                                <h6>NIC Selection</h6>
+                                <div class="mb-3 row">
+                                    <label for="" class="col-sm-2 col-form-label text-end">Core Facing NIC</label>
+                                    <div class="col-sm-4">
+                                        <select class="form-select form-select-sm" aria-label="">
+                                            <option selected=""></option>
+                                        </select>
+                                    </div>
+                                    <label for="" class="col-sm-2 col-form-label text-end">Internet Facing NIC</label>
+                                    <div class="col-sm-4">
+                                        <select class="form-select form-select-sm" aria-label="">
+                                            <option selected=""></option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </fieldset>
+                            <fieldset data-network-vlan>
+                                <h6>NIC Selection</h6>
+                                <div class="mb-3 row">
+                                    <label for="" class="col-sm-2 col-form-label text-end">NIC</label>
+                                    <div class="col-sm-4">
+                                        <select class="form-select form-select-sm" aria-label="">
+                                            <option selected=""></option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <h6>VLAN Selection</h6>
+                                <div class="mb-3 row">
+                                    <label for="" class="col-sm-2 col-form-label text-end">Core Facing VLAN</label>
+                                    <div class="col-sm-4">
+                                        <input class="form-control form-control-sm" type="number" min="1" max="4096" aria-label="">
+                                    </div>
+                                    <label for="" class="col-sm-2 col-form-label text-end">Internet Facing VLAN</label>
+                                    <div class="col-sm-4">
+                                        <input class="form-control form-control-sm" type="number" min="1" max="4096" aria-label="">
+                                    </div>
+                                </div>
+                            </fieldset>
+                            <div class="mb-3 row">
+                                <h6>Bridge Selection</h6>
+                                <div class="alert alert-primary" role="alert">Bitfrost XDP bypasses the entire Linux bridge system for a significant performance improvement.</div>
+                                <label for="" class="col-sm-2 col-form-label text-end">Bitfrost XDP Enabled</label>
+                                <div class="col-sm-4">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" disabled>
+                                    </div>
+                                </div>
+                            </div>
+                        </form>
                     </div>
                 </div>
             </div>

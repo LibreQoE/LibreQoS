@@ -6,16 +6,58 @@
             <div class="col">
                 <div class="card mb-4">
                     <div class="card-header">
-                        <strong>Shaper</strong>
+                        <strong>Configure Shaper</strong>
                         <span class="small ms-1"></span>
                     </div>
                     <div class="card-body">
-                        <div class="mb-3 row">
-                            <label for="" class="col-sm-2 col-form-label"></label>
-                            <div class="col-sm-10">
-                                <input type="text" readonly class="form-control-plaintext">
+                        <form>
+                            <div class="mb-3 row">
+                                <h6>Mode Selection</h6>
+                                <div class="alert alert-primary" role="alert">FQ_CODEL offers good latency management and low CPU overhead. CAKE requires more CPU, but offers excellent latency management.</div>
+                                <label for="" class="col-sm-2 col-form-label text-end">SQM Mode</label>
+                                <div class="col-sm-10">
+                                    <select class="form-select form-select-sm" aria-label="">
+                                        <option selected="">FQ_Codel</option>
+                                        <option selected="">Cake + Diffserv4</option>
+                                        <option selected="">Cake + Diffserv4 + ACK Filter</option>
+                                    </select>
+                                </div>
+                                <div class="alert alert-primary" role="alert">Monitor mode disables all traffic shaping, allowing you to watch your network undisturbed.</div>
+                                <label for="" class="col-sm-2 col-form-label text-end">Monitor Mode</label>
+                                <div class="col-sm-10">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox">
+                                    </div>
+                                </div>
                             </div>
-                        </div>
+                            <div class="mb-3 row">
+                                <h6>Bandwidth</h6>
+                                <label for="" class="col-sm-2 col-form-label text-end">Download Bandwidth</label>
+                                <div class="col-sm-4">
+                                    <input class="form-control form-control-sm" type="number" min="1" max="1000000000" step="100" aria-label="">
+                                </div>
+                                <label for="" class="col-sm-2 col-form-label text-end">Upload Bandwidth</label>
+                                <div class="col-sm-4">
+                                    <input class="form-control form-control-sm" type="number" min="1" max="1000000000" step="100" aria-label="">
+                                </div>
+                                <div class="alert alert-primary" role="alert">Devices without a parent will be placed underneath evenly-balanced generated nodes. This defines the available bandwidth for those nodes. If in doubt, set to equal your total bandwidth.</div>
+                                <label for="" class="col-sm-2 col-form-label text-end">Node Download Bandwidth</label>
+                                <div class="col-sm-4">
+                                    <input class="form-control form-control-sm" type="number" min="1" max="1000000000" step="100" aria-label="">
+                                </div>
+                                <label for="" class="col-sm-2 col-form-label text-end">Node Upload Bandwidth</label>
+                                <div class="col-sm-4">
+                                    <input class="form-control form-control-sm" type="number" min="1" max="1000000000" step="100" aria-label="">
+                                </div>
+                                <div class="alert alert-primary" role="alert">Bin packing is only useful for devices without parent nodes in the shaper tree. Enable this option to automatically assign devices to nodes based on the device's plans, evenly balancing load across CPUs.</div>
+                                <label for="" class="col-sm-2 col-form-label text-end">Use Binpacking</label>
+                                <div class="col-sm-10">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox">
+                                    </div>
+                                </div>
+                            </div>
+                        </form>
                     </div>
                 </div>
             </div>

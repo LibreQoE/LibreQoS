@@ -1,46 +1,38 @@
 {% extends "layout/auth.html" %}
 {% block content %}
-<div class="bg-light min-vh-100 d-flex flex-row align-items-center dark:bg-transparent">
-	<div class="container">
-		<div class="row justify-content-center">
-			<div class="col-lg-4">
-				<div class="card-group d-block d-md-flex row">
-					<div class="card col-md-7 p-4 mb-0">
-						<div class="card-body">
-							<h1>Login</h1>
-							<p class="text-medium-emphasis">Sign In to your account</p>
-							<form method="POST" class="needs-validation" novalidate>
-								<div class="input-group mb-3">
-									<span class="input-group-text">
-										<i class="fa fa-user"></i>
-									</span>
-									<input class="form-control" type="text" name="username" placeholder="Username" required>
-								</div>
-								<div class="input-group mb-4">
-									<span class="input-group-text">
-										<i class="fa fa-key"></i>
-									</span>
-									<input class="form-control" type="password" name="password" placeholder="Password" required>
-								</div>
-								<div class="row">
-									<div class="col text-end">
-										<button class="btn btn-primary px-4" type="submit">Login</button>
+	<div class="bg-light min-vh-100 d-flex flex-row align-items-center dark:bg-transparent">
+		<div class="container">
+			<div class="row justify-content-center">
+				<div class="col-lg-4">
+					<div class="card-group d-block d-md-flex row">
+						<div class="card col-md-7 p-4 mb-0">
+							<div class="card-body">
+								<h1>Login</h1>
+								<p class="text-medium-emphasis">Sign In to your account</p>
+								<form method="POST" class="needs-validation" novalidate>
+									<div class="input-group mb-3">
+										<span class="input-group-text">
+											<i class="fa fa-user"></i>
+										</span>
+										<input class="form-control" type="text" name="username" placeholder="Username" required>
 									</div>
-								</div>
-							</form>
+									<div class="input-group mb-4">
+										<span class="input-group-text">
+											<i class="fa fa-key"></i>
+										</span>
+										<input class="form-control" type="password" name="password" placeholder="Password" required>
+									</div>
+									<div class="row">
+										<div class="col text-end">
+											<button class="btn btn-primary px-4" type="submit">Login</button>
+										</div>
+									</div>
+								</form>
+							</div>
 						</div>
 					</div>
 				</div>
 			</div>
 		</div>
 	</div>
-</div>
-<script src="/assets/coreui.bundle.min.js"></script>
-<script>
-	document.addEventListener("DOMContentLoaded", function(event) {
-	  setTimeout(function() {
-		document.body.classList.remove('c-no-layout-transition')
-	  }, 2000);
-	});
-</script>
 {% endblock %}

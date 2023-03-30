@@ -22,24 +22,24 @@
                             <tbody>
 								{% for device in devices.iter() %}
 									<tr>
-										<td>
+										<td class="align-middle">
                                             <a href="/circuit/{{device.circuit_id}}">
                                                 {{device.circuit_name}}
                                             </a>
                                         </td>
-										<td>{{device.device_name}}</td>
-										<td>
-                                            {{device.download_max_mbps}}
+										<td class="align-middle">{{device.device_name}}</td>
+										<td class="align-middle">
+                                            {{device.download_max_mbps}}Mbps
                                             <i class="fa fa-down-long fa-fw"></i>
-                                            {{device.upload_max_mbps}}
+                                            {{device.upload_max_mbps}}Mbps
                                             <i class="fa fa-up-long fa-fw"></i>
                                         </td>
-										<td>
+										<td class="align-middle">
                                             {% for ip in device.ipv4.iter() %}
                                                 {{ ip.0 }}/{{ ip.1 }}
                                             {% endfor %}
                                         </td>
-										<td class="justify-content-md-end">
+										<td class="text-end">
                                             <a href="#" class="btn btn-info btn-sm me-2">
                                                 <i class="fa fa-pencil"></i>
                                             </a>

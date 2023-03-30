@@ -6,16 +6,28 @@
             <div class="col">
                 <div class="card mb-4">
                     <div class="card-header">
-                        <strong>Server</strong>
+                        <strong>Configure Server</strong>
                         <span class="small ms-1"></span>
                     </div>
                     <div class="card-body">
-                        <div class="mb-3 row">
-                            <label for="" class="col-sm-2 col-form-label"></label>
-                            <div class="col-sm-10">
-                                <input type="text" readonly class="form-control-plaintext">
+                        <form>
+                            <div class="mb-3 row">
+                                <div class="alert alert-primary" role="alert">Disabling actual shell commands stops LibreQoS from actually doing anything. Simulated output is logged to the console and text files, allowing for debugging.</div>
+                                <label for="" class="col-sm-2 col-form-label text-end">Enable Actual Shell Commands</label>
+                                <div class="col-sm-4">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox">
+                                    </div>
+                                </div>
+                                <div class="alert alert-primary" role="alert">Running shell commands with "sudo" isn't necessary on a default configuration.</div>
+                                <label for="" class="col-sm-2 col-form-label text-end">Run Shell Commands as Sudo</label>
+                                <div class="col-sm-4">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox">
+                                    </div>
+                                </div>
                             </div>
-                        </div>
+                        </form>
                     </div>
                 </div>
             </div>
