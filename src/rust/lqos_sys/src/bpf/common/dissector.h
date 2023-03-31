@@ -345,8 +345,7 @@ static __always_inline void snoop(struct dissector_t *dissector)
 
             parse_tcp_ts(hdr, dissector->end, &dissector->tsval, &dissector->tsecr);
         }
-    }
-    break;
+    } break;
     case IPPROTO_UDP:
     {
         struct udphdr *hdr = get_udp_header(dissector);
@@ -354,12 +353,13 @@ static __always_inline void snoop(struct dissector_t *dissector)
         {
             if (hdr + 1 > dissector->end)
             {
+                bpf_debug("UDP header past end");
                 return;
             }
             dissector->src_port = hdr->source;
             dissector->dst_port = hdr->dest;
         }
-    }
+    } break;
     case IPPROTO_ICMP:
     {
         struct icmphdr *hdr = get_icmp_header(dissector);
@@ -367,14 +367,14 @@ static __always_inline void snoop(struct dissector_t *dissector)
         {
             if ((char *)hdr + sizeof(struct icmphdr) > dissector->end)
             {
+                bpf_debug("ICMP header past end");
                 return;
             }
             dissector->ip_protocol = 1;
             dissector->src_port = bpf_ntohs(hdr->type);
-            dissector->dst_port = bpf_ntohs(hdr->type);
-        }
-    }
-    break;
+            dissector->dst_port = bpf_ntohs(hdr->code);
+        }    
+    } break;
     }
 }
 
