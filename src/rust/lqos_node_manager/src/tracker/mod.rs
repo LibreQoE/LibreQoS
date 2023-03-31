@@ -50,7 +50,7 @@ impl From<&IpStats> for IpStatsWithPlan {
           &circuit.circuit_name
         };
         result.ip_address = format!("{} ({})", name, result.ip_address);
-        result.plan = (circuit.download_max_mbps, circuit.download_min_mbps);
+        result.plan = (circuit.download_max_mbps, circuit.upload_max_mbps);
       }
     }
 
