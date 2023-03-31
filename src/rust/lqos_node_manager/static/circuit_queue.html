@@ -813,13 +813,13 @@
                     }
                     html += "<tr>";
                     html += "<td>" + data[i][0][FlowTrans.proto] + "</td>";
-                    html += "<td>" + data[i][0][FlowTrans.src] + "</td>";
+                    html += "<td>" + ipToHostname(data[i][0][FlowTrans.src]) + "</td>";
                     if (data[i][0].proto == "ICMP") {
                         html += "<td>" + icmpType(data[i][0][FlowTrans.src_port]) + "</td>";
                     } else {
                         html += "<td>" + data[i][0][FlowTrans.src_port] + "</td>";
                     }
-                    html += "<td>" + data[i][0][FlowTrans.dst] + "</td>";
+                    html += "<td>" + ipToHostname(data[i][0][FlowTrans.dst]) + "</td>";
                     if (data[i][0][FlowTrans.proto] == "ICMP") {
                         if (data[i][1] != null) {
                             html += "<td>" + icmpType(data[i][1][FlowTrans.src_port]) + "</td>";

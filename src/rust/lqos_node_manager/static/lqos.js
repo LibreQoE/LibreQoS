@@ -448,3 +448,19 @@ function zero_to_null(array) {
         if (array[i] == 0) array[i] = null;
     }
 }
+
+var dnsCache = {};
+
+function ipToHostname(ip) {
+    if (dnsCache.hasOwnProperty(ip)) {
+        if (dnsCache[ip] != ip) {
+            return ip + "<br /><span style='font-size: 6pt'>" + dnsCache[ip] + "</span>";
+        } else {
+            return ip;
+        }
+    }
+    $.get("/api/dns/" + encodeURI(ip), (hostname) => {
+        dnsCache[ip] = hostname;
+    })
+    return ip;
+}
