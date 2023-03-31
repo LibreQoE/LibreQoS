@@ -94,8 +94,9 @@
                         </ul>
                     </div>
                     <div class="col-sm-2">
-                        <a href="#" class="btn btn-small btn-info" id="btnPause"><i class="fa fa-pause"></i> Pause</a> 
-                        <a href="#" class="btn btn-small btn-info" id="btnSlow"><i class="fa fa-hourglass"></i> Slow Mode</a>
+                        <a href="#" class="btn btn-small btn-info" id="btnPause"><i class="fa fa-pause"></i> Pause</a>
+                        <a href="#" class="btn btn-small btn-info" id="btnSlow"><i class="fa fa-hourglass"></i> Slow
+                            Mode</a>
                     </div>
                 </div>
             </div>
@@ -389,12 +390,13 @@
                 if (this.backlogPlotted == null) {
                     this.backlogPlotted = true;
                     Plotly.newPlot(
-                        graph, 
-                        graphData, 
-                        { 
-                            margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, 
-                            yaxis: { automargin: true, title: "Bytes" }, 
-                            xaxis: { automargin: true, title: "Time since now" } });
+                        graph,
+                        graphData,
+                        {
+                            margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 },
+                            yaxis: { automargin: true, title: "Bytes" },
+                            xaxis: { automargin: true, title: "Time since now" }
+                        });
                 } else {
                     Plotly.redraw(graph, graphData);
                 }
@@ -411,11 +413,13 @@
 
                 if (this.delaysPlotted == null) {
                     Plotly.newPlot(
-                        graph, 
-                        graphData, 
-                        { margin: { l: 8, r: 0, b: 0, t: 0, pad: 4 }, 
-                        yaxis: { automargin: true, title: "log10(ms)", range: [-1.0, 1.0] }, 
-                        xaxis: { automargin: true, title: "Time since now" } });
+                        graph,
+                        graphData,
+                        {
+                            margin: { l: 8, r: 0, b: 0, t: 0, pad: 4 },
+                            yaxis: { automargin: true, title: "log10(ms)", range: [-1.0, 1.0] },
+                            xaxis: { automargin: true, title: "Time since now" }
+                        });
                     this.delaysPlotted = true;
                 } else {
                     Plotly.redraw(graph, graphData);
@@ -849,14 +853,14 @@
         var slowMode = false;
 
         function showFps() {
-            if(!lastCalledTime) {
+            if (!lastCalledTime) {
                 lastCalledTime = Date.now();
                 fps = 0;
                 return;
             }
-            delta = (Date.now() - lastCalledTime)/1000;
+            delta = (Date.now() - lastCalledTime) / 1000;
             lastCalledTime = Date.now();
-            fps = 1/delta;
+            fps = 1 / delta;
             //$("#fps").text(fps.toFixed(0));
             worstDelta = Math.max(delta, worstDelta);
         }
@@ -867,6 +871,7 @@
                 switch (activeTab) {
                     case "pills-funnel-tab": {
                         getFunnel();
+                        getThroughput();
                     } break;
                     case "pills-flows-tab": {
                         getFlows();
