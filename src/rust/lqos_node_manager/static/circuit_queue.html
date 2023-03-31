@@ -7,6 +7,7 @@
     <link href="/vendor/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="/vendor/solid.min.css">
     <link rel="stylesheet" href="/lqos.css">
+    <link rel="icon" href="/favicon.png">
     <title>LibreQoS - Local Node Manager</title>
     <script src="/lqos.js"></script>
     <script src="/vendor/plotly-2.16.1.min.js"></script>
@@ -93,7 +94,8 @@
                         </ul>
                     </div>
                     <div class="col-sm-2">
-                        <div id="raw"></div>
+                        <a href="#" class="btn btn-small btn-info" id="btnPause"><i class="fa fa-pause"></i> Pause</a> 
+                        <a href="#" class="btn btn-small btn-info" id="btnSlow"><i class="fa fa-hourglass"></i> Slow Mode</a>
                     </div>
                 </div>
             </div>
@@ -303,8 +305,21 @@
             }
 
             ingestDelays(subData, currentX, tin) {
-                this.delays.store(tin, currentX, 0, subData[0][CDT.tins][tin][CDTT.avg_delay_us] * 0.001);
-                this.delays.store(tin, currentX, 1, 0.0 - subData[1][CDT.tins][tin][CDTT.avg_delay_us] * 0.001);
+                let down = subData[0][CDT.tins][tin][CDTT.avg_delay_us] * 0.001;
+                let up = subData[1][CDT.tins][tin][CDTT.avg_delay_us] * 0.001;
+                if (down == 0.0) {
+                    down = null;
+                } else {
+                    down = Math.log10(down);
+                }
+                if (up == 0.0) {
+                    up = null;
+                } else {
+                    //console.log(up);
+                    up = 0.0 - Math.log10(up);
+                }
+                this.delays.store(tin, currentX, 0, down);
+                this.delays.store(tin, currentX, 1, up);
             }
 
             ingestQueueLen(subData, currentX) {
@@ -373,7 +388,13 @@
                 
                 if (this.backlogPlotted == null) {
                     this.backlogPlotted = true;
-                    Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Bytes" }, xaxis: { automargin: true, title: "Time since now" } });
+                    Plotly.newPlot(
+                        graph, 
+                        graphData, 
+                        { 
+                            margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, 
+                            yaxis: { automargin: true, title: "Bytes" }, 
+                            xaxis: { automargin: true, title: "Time since now" } });
                 } else {
                     Plotly.redraw(graph, graphData);
                 }
@@ -389,7 +410,12 @@
                 ];
 
                 if (this.delaysPlotted == null) {
-                    Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "ms" }, xaxis: { automargin: true, title: "Time since now" } });
+                    Plotly.newPlot(
+                        graph, 
+                        graphData, 
+                        { margin: { l: 8, r: 0, b: 0, t: 0, pad: 4 }, 
+                        yaxis: { automargin: true, title: "log10(ms)", range: [-1.0, 1.0] }, 
+                        xaxis: { automargin: true, title: "Time since now" } });
                     this.delaysPlotted = true;
                 } else {
                     Plotly.redraw(graph, graphData);
@@ -519,10 +545,10 @@
                 up = 0 - up;
                 let down_slot = Math.floor((down / circuit_info[CircuitInfo.capacity][0]) * 10.0);
                 let up_slot = Math.floor((up / circuit_info[CircuitInfo.capacity][1]) * 10.0);
-                /*if (down_slot < 0) down_slot = 0;
+                if (down_slot < 0) down_slot = 0;
                 if (up_slot < 0) up_slot = 0;
-                if (down_slot > 11) down_slot = 11;
-                if (up_slot > 11) up_slot = 11;*/
+                if (down_slot > 10) down_slot = 10;
+                if (up_slot > 10) up_slot = 10;
                 this.quantiles[0][down_slot] += 1;
                 this.quantiles[1][up_slot] += 1;
                 //console.log(down_slot, up_slot);            
@@ -795,22 +821,50 @@
 
         let id = 0;
         let activeTab = "pills-home-tab";
+        var lastCalledTime;
+        var fps;
+        var worstDelta = 0;
+        var paused = false;
+        var slowMode = false;
 
-        function oneSecondCadence() {
-            //console.log(activeTab);
-            switch (activeTab) {
-                case "pills-funnel-tab": {
-                    getFunnel();
-                } break;
-                case "pills-flows-tab": {
-                    getFlows();
-                } break;
-                default: {
-                    pollQueue();
-                    getThroughput();
+        function showFps() {
+            if(!lastCalledTime) {
+                lastCalledTime = Date.now();
+                fps = 0;
+                return;
+            }
+            delta = (Date.now() - lastCalledTime)/1000;
+            lastCalledTime = Date.now();
+            fps = 1/delta;
+            //$("#fps").text(fps.toFixed(0));
+            worstDelta = Math.max(delta, worstDelta);
+        }
+
+        function updateFrame() {
+            showFps();
+            if (!paused) {
+                switch (activeTab) {
+                    case "pills-funnel-tab": {
+                        getFunnel();
+                    } break;
+                    case "pills-flows-tab": {
+                        getFlows();
+                    } break;
+                    default: {
+                        pollQueue();
+                        getThroughput();
+                    }
                 }
             }
-            setTimeout(oneSecondCadence, 1000);
+            // Doing this to balance out the FPS
+            // It will tend towards the slowest
+            if (slowMode) {
+                setTimeout(updateFrame, 1000);
+            } else {
+                setTimeout(() => {
+                    requestAnimationFrame(updateFrame);
+                }, worstDelta * 200);
+            }
         }
 
         function wireUpTabEvents() {
@@ -821,8 +875,45 @@
             });
         }
 
+        function isSlowMode() {
+            let slow = localStorage.getItem("slowMode");
+            if (slow == null) {
+                localStorage.setItem("slowMode", false);
+                slow = false;
+            }
+            if (slow == "false") {
+                slow = false;
+            } else if (slow == "true") {
+                slow = true;
+            }
+            return slow;
+        }
+
         function start() {
             wireUpTabEvents();
+            $("#btnPause").on('click', () => {
+                paused = !paused;
+                if (paused) {
+                    $("#btnPause").html("<i class='fa fa-play'></i> Resume");
+                } else {
+                    $("#btnPause").html("<i class='fa fa-pause'></i> Pause");
+                }
+            });
+            slowMode = isSlowMode();
+            if (slowMode) {
+                $("#btnSlow").html("<i class='fa fa-fast-forward'></i> Fast Mode");
+            } else {
+                $("#btnSlow").html("<i class='fa fa-hourglass'></i> Slow Mode");
+            }
+            $("#btnSlow").on('click', () => {
+                slowMode = !slowMode;
+                localStorage.setItem("slowMode", slowMode);
+                if (slowMode) {
+                    $("#btnSlow").html("<i class='fa fa-fast-forward'></i> Fast Mode");
+                } else {
+                    $("#btnSlow").html("<i class='fa fa-hourglass'></i> Slow Mode");
+                }
+            });
             colorReloadButton();
             updateHostCounts();
             const params = new Proxy(new URLSearchParams(window.location.search), {
@@ -830,7 +921,8 @@
             });
             id = params.id;
             $.get("/api/watch_circuit/" + params.id, () => {
-                oneSecondCadence();
+                //updateFrame();
+                requestAnimationFrame(updateFrame);
             });
         }
 

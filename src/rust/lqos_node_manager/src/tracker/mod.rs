@@ -3,11 +3,11 @@ mod cache_manager;
 use std::net::IpAddr;
 
 use self::cache::{
-  CPU_USAGE, NUM_CPUS, RAM_USED, TOTAL_RAM,
+  CPU_USAGE, NUM_CPUS, RAM_USED, TOTAL_RAM, THROUGHPUT_BUFFER,
 };
 use crate::{auth_guard::AuthGuard, cache_control::NoCache};
 pub use cache::SHAPED_DEVICES;
-pub use cache_manager::update_tracking;
+pub use cache_manager::{update_tracking, update_total_throughput_buffer};
 use lqos_bus::{bus_request, BusRequest, BusResponse, IpStats, TcHandle};
 use rocket::serde::{Deserialize, Serialize, msgpack::MsgPack};
 
@@ -49,7 +49,7 @@ impl From<&IpStats> for IpStatsWithPlan {
           &circuit.circuit_name
         };
         result.ip_address = format!("{} ({})", name, result.ip_address);
-        result.plan = (circuit.download_max_mbps, circuit.download_min_mbps);
+        result.plan = (circuit.download_max_mbps, circuit.upload_max_mbps);
       }
     }
 
@@ -70,23 +70,15 @@ pub struct ThroughputPerSecond {
 pub async fn current_throughput(
   _auth: AuthGuard,
 ) -> NoCache<MsgPack<ThroughputPerSecond>> {
-  let mut result = ThroughputPerSecond::default();
-  if let Ok(messages) =
-    bus_request(vec![BusRequest::GetCurrentThroughput]).await
-  {
-    for msg in messages {
-      if let BusResponse::CurrentThroughput {
-        bits_per_second,
-        packets_per_second,
-        shaped_bits_per_second,
-      } = msg
-      {
-        result.bits_per_second = bits_per_second;
-        result.packets_per_second = packets_per_second;
-        result.shaped_bits_per_second = shaped_bits_per_second;
-      }
-    }
-  }
+  let result = THROUGHPUT_BUFFER.read().await.current();
+  NoCache::new(MsgPack(result))
+}
+
+#[get("/api/throughput_ring_buffer")]
+pub async fn throughput_ring_buffer(
+  _auth: AuthGuard,
+) -> NoCache<MsgPack<(usize, Vec<ThroughputPerSecond>)>> {
+  let result = THROUGHPUT_BUFFER.read().await.copy();
   NoCache::new(MsgPack(result))
 }
 

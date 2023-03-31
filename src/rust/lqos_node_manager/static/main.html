@@ -7,11 +7,12 @@
     <link href="/vendor/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="/vendor/solid.min.css">
     <link rel="stylesheet" href="/lqos.css">
+    <link rel="icon" href="/favicon.png">
     <title>LibreQoS - Local Node Manager</title>
     <script src="/lqos.js"></script>
     <script src="/vendor/plotly-2.16.1.min.js"></script>
     <script src="/vendor/jquery.min.js"></script><script src="/vendor/msgpack.min.js"></script>
-    <script defer src="/vendor/bootstrap.bundle.min.js"></script>
+    <script defer src="/vendor/bootstrap.bundle.min.js"></script>    
 </head>
 
 <body class="bg-secondary">
@@ -167,6 +168,29 @@
     <script>
         var throughput = new MultiRingBuffer(300);
 
+        // Loads the complete ringbuffer for initial display
+        function fillCurrentThroughput() {
+            msgPackGet("/api/throughput_ring_buffer", (tp) => {
+                //console.log(tp);
+                const bits = 0;
+                const packets = 1;
+                const shaped = 2;
+
+                let head = tp[0];
+                for (let i=head; i<300; ++i) {
+                    throughput.push("pps", tp[1][i][packets][0], tp[1][i][packets][1]);
+                    throughput.push("total", tp[1][i][bits][0], tp[1][i][bits][1]);
+                    throughput.push("shaped", tp[1][i][shaped][0], tp[1][i][shaped][1]);
+                }
+                for (let i=0; i<head; ++i) {
+                    throughput.push("pps", tp[1][i][packets][0], tp[1][i][packets][1]);
+                    throughput.push("total", tp[1][i][bits][0], tp[1][i][bits][1]);
+                    throughput.push("shaped", tp[1][i][shaped][0], tp[1][i][shaped][1]);
+                }
+                throughput.plotTotalThroughput("tpGraph");
+            });
+        }
+
         function updateCurrentThroughput() {
             msgPackGet("/api/current_throughput", (tp) => {
                 const bits = 0;
@@ -177,7 +201,7 @@
                 $("#bpsDown").text(scaleNumber(tp[bits][0]));
                 $("#bpsUp").text(scaleNumber(tp[bits][1]));
 
-                throughput.push("pps", tp[1][0], tp[packets][1]);
+                throughput.push("pps", tp[packets][0], tp[packets][1]);
                 throughput.push("total", tp[bits][0], tp[bits][1]);
                 throughput.push("shaped", tp[shaped][0], tp[shaped][1]);
                 throughput.plotTotalThroughput("tpGraph");
@@ -318,7 +342,7 @@
             }
 
             colorReloadButton();
-            updateCurrentThroughput();
+            fillCurrentThroughput();
             updateCpu();
             updateRam();
             updateTop10();

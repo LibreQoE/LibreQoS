@@ -46,7 +46,7 @@ pub struct CakeDiffTin {
   pub backlog_bytes: u32,
   pub drops: u32,
   pub marks: u32,
-  pub avg_delay_us: u32,
+  pub base_delay_us: u32,
 }
 
 fn cake_diff(
@@ -65,7 +65,7 @@ fn cake_diff(
           backlog_bytes: new.backlog_bytes,
           drops: new.drops.saturating_sub(prev.drops),
           marks: new.ecn_marks.saturating_sub(prev.ecn_marks),
-          avg_delay_us: new.avg_delay_us,
+          base_delay_us: new.base_delay_us,
         })
         .collect();
       return Ok(QueueDiff::Cake(CakeDiff {

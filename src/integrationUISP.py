@@ -176,7 +176,7 @@ def buildFullGraph():
 		# If this is the uispSite node, it becomes the root. Otherwise, add it to the
 		# node soup.
 		if name == uispSite:
-			net.replaceRootNote(node)
+			net.replaceRootNode(node)
 		else:
 			net.addRawNode(node)
 

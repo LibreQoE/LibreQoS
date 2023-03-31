@@ -9,8 +9,8 @@ use nix::sys::{
   time::{TimeSpec, TimeValLike},
   timerfd::{ClockId, Expiration, TimerFd, TimerFlags, TimerSetTimeFlags},
 };
-use rocket::tokio::task::spawn_blocking;
-use std::{sync::atomic::AtomicBool};
+use rocket::tokio::{task::spawn_blocking, time::Instant};
+use std::{sync::atomic::AtomicBool, time::Duration};
 
 /// Once per second, update CPU and RAM usage and ask
 /// `lqosd` for updated system statistics.
@@ -116,5 +116,18 @@ fn watch_for_shaped_devices_changing() -> Result<()> {
   loop {
     let result = watcher.watch();
     info!("ShapedDevices watcher returned: {result:?}");
+  }
+}
+
+/// Fires once per second and updates the global traffic ringbuffer.
+pub async fn update_total_throughput_buffer() {
+  loop {
+    let now = Instant::now();
+    let mut lock = THROUGHPUT_BUFFER.write().await;
+    lock.tick().await;
+    let wait_time = Duration::from_secs(1) - now.elapsed();
+    if wait_time.as_micros() > 0 {
+      rocket::tokio::time::sleep(Duration::from_secs(1)).await;
+    }
   }
 }
