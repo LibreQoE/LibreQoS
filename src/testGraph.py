@@ -53,7 +53,7 @@ class TestGraph(unittest.TestCase):
         from integrationCommon import NetworkGraph, NetworkNode, NodeType
         graph = NetworkGraph()
         node = NetworkNode("Test", type = NodeType.site)
-        graph.replaceRootNote(node)
+        graph.replaceRootNode(node)
         self.assertEqual(graph.nodes[0].id, "Test")
 
     def add_child_by_named_parent(self):

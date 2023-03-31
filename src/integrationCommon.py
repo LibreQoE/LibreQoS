@@ -135,7 +135,7 @@ class NetworkGraph:
 				node.parentId = self.exceptionCPEs[node.displayName]
 			self.nodes.append(node)
 
-	def replaceRootNote(self, node: NetworkNode) -> None:
+	def replaceRootNode(self, node: NetworkNode) -> None:
 		# Replaces the automatically generated root node
 		# with a new node. Useful when you have a top-level
 		# node specified (e.g. "uispSite" in the UISP
