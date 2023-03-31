@@ -4,6 +4,8 @@
 
 mod cpu_ram;
 mod shaped_devices;
+mod throughput;
 
 pub use cpu_ram::*;
 pub use shaped_devices::*;
+pub use throughput::THROUGHPUT_BUFFER;
