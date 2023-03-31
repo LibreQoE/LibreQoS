@@ -331,10 +331,11 @@ def getCircuitLatencyStats(subscriberCircuits):
 			# If we can't identify RTT this time around, use most recently recorded RTT
 			# None by default, change if found in priorQuery
 			circuit['stats']['sinceLastQuery']['tcpLatency'] = None
-			if 'priorQuery' in circuit['stats'] and circuit['stats']['priorQuery'] != None:
-				if 'priorQuery' in circuit['stats']:
-					if 'tcpLatency' in circuit['stats']['priorQuery']:
-						circuit['stats']['sinceLastQuery']['tcpLatency'] = circuit['stats']['priorQuery']['tcpLatency']
+			if 'priorQuery' in circuit['stats']:
+				if circuit['stats']['priorQuery'] != None:
+					if 'priorQuery' in circuit['stats']:
+						if 'tcpLatency' in circuit['stats']['priorQuery']:
+							circuit['stats']['sinceLastQuery']['tcpLatency'] = circuit['stats']['priorQuery']['tcpLatency']
 
 	return subscriberCircuits
 
