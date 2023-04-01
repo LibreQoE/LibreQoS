@@ -28,7 +28,7 @@ use crate::AppState;
 
 use crate::lqos::tracker::{
 	current_throughput, throughput_ring, cpu_usage, ram_usage, top_10_downloaders, worst_10_rtt, 
-	rtt_histogram, busy_quantile, shaped_devices, unknown_hosts, shaped_devices_count, unknown_hosts_count
+	rtt_histogram, shaped_devices, unknown_hosts, shaped_devices_count, unknown_hosts_count
 };
 
 pub fn routes() -> Router<AppState> {
@@ -89,7 +89,7 @@ async fn get_shaped_devices(
 	Extension(user): Extension<auth::User>,
 	State(state): State<AppState>
 ) -> impl IntoResponse {
-	let shaped_devices = shaped_devices();
+	let shaped_devices = shaped_devices().await;
 	let template = ShapedDevicesTemplate { title: "Shaped Devices".to_string(), current_user: user, devices: shaped_devices };
     (StatusCode::OK, Html(template.render().unwrap()).into_response())
 }
@@ -106,7 +106,7 @@ async fn get_unknown_devices(
 	Extension(user): Extension<auth::User>,
 	State(state): State<AppState>
 ) -> impl IntoResponse {
-	let unknown_devices = unknown_hosts();
+	let unknown_devices = unknown_hosts().await;
 	let template = UnknownDevicesTemplate { title: "Unknown Devices".to_string(), current_user: user, devices: unknown_devices };
     (StatusCode::OK, Html(template.render().unwrap()).into_response())
 }

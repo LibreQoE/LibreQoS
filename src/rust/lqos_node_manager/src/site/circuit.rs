@@ -35,7 +35,12 @@ async fn circuit_queue(
     State(state): State<AppState>
 ) -> impl IntoResponse {
     let mut result;
-    if let Some(device) = tracker::SHAPED_DEVICES.read().devices.iter().find(|d| d.circuit_id == circuit_id) {
+    if let Some(device) = tracker::SHAPED_DEVICES
+        .read()
+        .unwrap()
+        .devices
+        .iter()
+        .find(|d| d.circuit_id == circuit_id) {
         result = CircuitInfo {
             name: device.circuit_name.clone(),
             capacity: (

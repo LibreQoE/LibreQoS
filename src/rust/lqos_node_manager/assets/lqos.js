@@ -51,11 +51,11 @@ class LqosWs {
         document;
         socketRef;
         #key_function_map = {
-            update_cpu: this.#update_cpu,
-            update_disk: this.#update_disk,
-            update_ram: this.#update_ram,
-            update_shaped_count: this.#update_shaped_count,
-            update_unknown_count: this.#update_unknown_count,
+            cpu: this.#cpu,
+            disk: this.#disk,
+            ram: this.#ram,
+            shaped_count: this.#shaped_count,
+            unknown_count: this.#unknown_count,
         }
         constructor(lqos_ws) {
             console.log("LqosWs Event Handler Constructed! {}", lqos_ws);
@@ -68,7 +68,7 @@ class LqosWs {
         }
         process(event) {
             console.log("LqosWs Event: Processing event... {}", event);
-            this.#key_function_map[event.detail.subject](event.detail.data);
+            this.#key_function_map[event.detail.subject](JSON.parse(event.detail.data));
         }
         reload_lqos() {
 
@@ -79,69 +79,48 @@ class LqosWs {
             this.document.addEventListener(data.data.subject, function(e){event.process(e)});
             this.socketRef.send(JSON.stringify(data));
         }
-        #update_cpu(data) {
-            console.log("LqosWs Event: Updating CPU: {}", data.subject);
+        #cpu(data) {
+            console.log("LqosWs Event: Updating CPU: {}", data);
             var cpu_sum = data.reduce((partialSum, a) => partialSum + a, 0);
             var cpu_avg = Math.ceil(cpu_sum/data.length);
-            var spans = document.querySelectorAll("data-lqos-cpu");
-            let i = 0;
-            while(i<spans.length)	{
-                spans[i].style.width = cpu_avg + "%";
-                spans[i].innerText = cpu_avg + "%";
-                i++;
-            }
+            document.querySelectorAll("data-lqos-cpu").forEach((span) => {
+                span.style.width = cpu_avg + "%";
+                span.innerText = cpu_avg + "%";
+            });
         }
-        #update_disk(data) {
+        #disk(data) {
             console.log("LqosWs Event: Updating DISK: {}", data);
-            var spans = document.querySelectorAll('[data-lqos-disk]');
-            let i = 0;
-            while(i<spans.length)	{
-                spans[i].innerHTML = data;
-                i++;
-            }
+            document.querySelectorAll('[data-lqos-disk]').forEach((span) => {
+                span.innerHTML = data;
+            });
         }
-        #update_ram(data) {
+        #ram(data) {
             console.log("LqosWs Event: Updating RAM: {}", data);
             let consumed_ram = data[0];
             let total_ram = data[1];
             let ram_percentage = Math.ceil(consumed_ram/total_ram);
-            let consumed_spans = document.querySelectorAll('[data-lqos-ram-consumed]');
-            let total_spans = document.querySelectorAll('[data-lqos-ram-total]');
-            let spans = document.querySelectorAll('[data-lqos-ram]');
-            let i = 0;
-            while(i<spans.length) {
-                spans[i].style.width = ram_percentage + "%";
-                spans[i].innerText = ram_percentage + "%";
-                i++;
-            }
-            i = 0;
-            while(i<consumed_spans.length) {
-                consumed_spans[i].innerText = bytesToSize(consumed_ram);
-                i++;
-            }
-            i = 0;
-            while(i<total_spans.length) {
-                total_spans[i].innerText = bytesToSize(total_ram);
-                i++;
-            }
+            document.querySelectorAll('[data-lqos-ram-consumed]').forEach((span) => {
+                span.innerText = bytesToSize(consumed_ram);
+            });
+            document.querySelectorAll('[data-lqos-ram-total]').forEach((span) => {
+                span.innerText = bytesToSize(total_ram);
+            });
+            document.querySelectorAll('[data-lqos-ram]').forEach((span) => {
+                span.style.width = ram_percentage + "%";
+                span.innerText = ram_percentage + "%";
+            });
         }
-        #update_shaped_count(data) {
+        #shaped_count(data) {
             console.log("LqosWs Event: Updating SHAPED COUNT: {}", data);
-            let spans = document.querySelectorAll('[data-lqos-shaped-count]');
-            let i = 0;
-            while(i<spans.length) {
-                spans[i].innerHTML = data;
-                i++;
-            }
+            document.querySelectorAll('[data-lqos-shaped-count]').forEach((span) => {
+                span.innerHTML = data;
+            });
         }
-        #update_unknown_count(data) {
+        #unknown_count(data) {
             console.log("LqosWs Event: Updating UNKNOWN COUNT: {}", data);
-            let spans = document.querySelectorAll('[data-lqos-unknown-count]');
-            let i = 0;
-            while(i<spans.length) {
-                spans[i].innerHTML = data;
-                i++;
-            }
+            let spans = document.querySelectorAll('[data-lqos-unknown-count]').forEach((span) => {
+                span.innerHTML = data;
+            });
         }
     }
     #Message = class Message {
@@ -150,11 +129,11 @@ class LqosWs {
         packed = false;
         #subject_keys = {
             // Add keys here for validation
-            update_cpu: "update_cpu",
-            update_disk: "update_disk",
-            update_ram: "update_ram",
-            update_shaped_count: "update_shaped_count",
-            update_unknown_count: "update_unknown_count",
+            cpu: "cpu",
+            disk: "disk",
+            ram: "ram",
+            shaped_count: "shaped_count",
+            unknown_count: "unknown_count",
         }
         constructor(event) {
             this.subject = event.subject;
@@ -214,11 +193,9 @@ class LqosWs {
         this.#Connect();
     }
     #Setup(){
-        this.subscribe({subject: 'subscribe', data: {subject: 'update_cpu', data: '', packed: false}});
-        this.subscribe({subject: 'subscribe', data: {subject: 'update_disk', data: '', packed: false}});
-        this.subscribe({subject: 'subscribe', data: {subject: 'update_ram', data: '', packed: false}});
-        this.subscribe({subject: 'subscribe', data: {subject: 'update_shaped_count', data: '', packed: false}});
-        this.subscribe({subject: 'subscribe', data: {subject: 'update_unknown_count', data: '', packed: false}});
+        document.querySelectorAll('[data-lqos-subscribe]').forEach((subscription) => {
+            this.subscribe({subject: 'subscribe', data: {subject: subscription.getAttribute('data-lqos-subscribe'), data: subscription.getAttribute('data-lqos-data') || "", packed: false}});
+        });
     }
     subscribe(event) {
         if (event)

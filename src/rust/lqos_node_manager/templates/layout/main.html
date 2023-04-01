@@ -27,14 +27,14 @@
 				<a class="nav-link" href="/shaped">
 					<i class="nav-icon fa fa-server fa-fw"></i>
 					Shaped Devices
-					<span class="badge bg-success-gradient ms-auto" data-lqos-shaped-count>0</span>
+					<span class="badge bg-success-gradient ms-auto" data-lqos-shaped-count data-lqos-subscribe="shaped_count" data-lqos-data="">0</span>
 				</a>
 			</li>
 			<li class="nav-item">
 				<a class="nav-link" href="/unknown">
 					<i class="nav-icon fa fa-circle-question fa-fw"></i>
 					Unknown IPs
-					<span class="badge bg-warning-gradient ms-auto" data-lqos-unknown-count>0</span>
+					<span class="badge bg-warning-gradient ms-auto" data-lqos-unknown-count data-lqos-subscribe="unknown_count" data-lqos-data="">0</span>
 				</a>
 			</li>
 			{% if current_user.role.to_string() == "admin" -%}
@@ -86,7 +86,7 @@
 				</ul>
 			</li>
 			{% endif -%}
-			<li class="nav-item px-3 d-narrow-none">
+			<li class="nav-item px-3 d-narrow-none" data-lqos-subscribe="cpu" data-lqos-data="">
 				<div class="text-uppercase mb-1">
 					<small><b>CPU Usage</b></small>
 				</div>
@@ -95,16 +95,16 @@
 				</div>
 				<small class="text-medium-emphasis"><span class="live-cpu-consumed"></span></small>
 			</li>
-			<li class="nav-item px-3 d-narrow-none">
+			<li class="nav-item px-3 d-narrow-none" data-lqos-subscribe="ram" data-lqos-data="">
 				<div class="text-uppercase mb-1">
 					<small><b>Memory Usage</b></small>
 				</div>
 				<div class="progress progress-thin">
 					<div class="progress-bar bg-success-gradient live-ram" data-lqos-ram role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
 				</div>
-				<small class="text-medium-emphasis"><span data-lqos-ram-consumed class="live-ram-consumed"></span>/<span data-lqos-ram-total class="live-ram-total"></span></small>
+				<small class="text-medium-emphasis"><span data-lqos-ram-consumed class="live-ram-consumed"></span>/<span data-lqos-ram-total></span></small>
 			</li>
-			<li class="nav-item px-3 mb-3 d-narrow-none">
+			<li class="nav-item px-3 mb-3 d-narrow-none" data-lqos-subscribe="disk" data-lqos-data="">
 				<div class="text-uppercase mb-1">
 					<small><b>Hard Drive Usage</b></small>
 				</div>

@@ -1,3 +1,5 @@
+pub mod event;
+
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -8,16 +10,17 @@ use axum::{
     response::IntoResponse,
     routing::get,
 	Extension,
-	Json,
     Router,
 };
 
-use std::{ops::ControlFlow, sync::{Arc, Mutex}, collections::HashSet};
+use std::{borrow::Borrow, ops::ControlFlow, sync::{Arc, Mutex}, collections::HashMap};
 use serde_json::{Result, Value, json};
 use serde::{Serialize, Deserialize};
 use std::net::SocketAddr;
 
 use crate::lqos::tracker;
+
+use crate::site::websocket::event::{WsEvent, WsMessage};
 
 use futures::{
 	sink::SinkExt,
@@ -33,16 +36,9 @@ pub fn routes() -> Router<AppState> {
         .route("/ws", get(ws_handler))
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct EventMessage {
-	subject: String,
-	data: serde_json::Value,
-	packed: bool,
-}
-
 #[derive(Debug)]
 struct WsState {
-	subscriptions: Mutex<HashSet<String>>,
+	subscriptions: Mutex<HashMap<String, String>>,
 }
 
 pub async fn ws_handler(
@@ -58,7 +54,7 @@ async fn handle_socket(
 ) {
     let (mut tx, mut rx) = socket.split();
 
-	let subscriptions = Mutex::new(HashSet::new());
+	let subscriptions = Mutex::new(HashMap::new());
 	let ws_state = Arc::new(WsState { subscriptions });
 	
 	let wsstate = ws_state.clone();
@@ -66,47 +62,42 @@ async fn handle_socket(
 	let mut send_task = tokio::spawn(async move {
 		let mut count = 0;
 		loop {
-			if check_subscription(&wsstate, "update_shaped_count") && count % 25 == 0 {
-				let data = json!(tracker::shaped_devices_count());
-				let message_contents = EventMessage {
-					subject: "update_shaped_count".to_string(),
-					data: data,
-					packed: false
-				};
-				tx.send(Message::Text(serde_json::to_string(&message_contents).unwrap())).await;
+			// Shaped IPs ~5 second updates
+			if check_subscription(&wsstate, "shaped_count") && count % 25 == 0 {
+				let message = serde_json::to_string(&WsMessage::new("shaped_count", &json!(tracker::shaped_devices_count().await).to_string(), false)).unwrap();
+				tracing::debug!("Sending event: {:#?}", &message);
+				tx.send(Message::Text(message)).await;
 			}
 
 			// Unknown IPs ~5 second updates
-			if check_subscription(&wsstate, "update_unknown_count") && count % 25 == 0 {
-				let data = json!(tracker::unknown_hosts_count());
-				let message_contents = EventMessage {
-					subject: "update_unknown_count".to_string(),
-					data: data,
-					packed: false
-				};
-				tx.send(Message::Text(serde_json::to_string(&message_contents).unwrap())).await;
+			if check_subscription(&wsstate, "unknown_count") && count % 25 == 0 {
+				let message = serde_json::to_string(&WsMessage::new("unknown_count", &json!(tracker::unknown_hosts_count().await).to_string(), false)).unwrap();
+				tracing::debug!("Sending event: {:#?}", &message);
+				tx.send(Message::Text(message)).await;
 			}
 			
 			// CPU ~2 second updates
-			if check_subscription(&wsstate, "update_cpu") && count % 10 == 0 {
-				let data = json!(tracker::cpu_usage());
-				let message_contents = EventMessage {
-					subject: "update_cpu".to_string(),
-					data: data,
-					packed: false
-				};
-				tx.send(Message::Text(serde_json::to_string(&message_contents).unwrap())).await;
+			if check_subscription(&wsstate, "cpu") && count % 10 == 0 {
+				let message = serde_json::to_string(&WsMessage::new("cpu", &json!(tracker::cpu_usage().await).to_string(), false)).unwrap();
+				tracing::debug!("Sending event: {:#?}", &message);
+				tx.send(Message::Text(message)).await;
 			}
 
 			// RAM ~30 second updates
-			if check_subscription(&wsstate, "update_ram") && count % 150 == 0 {
-				let data = json!(tracker::ram_usage());
-				let message_contents = EventMessage {
-					subject: "update_ram".to_string(),
-					data: data,
-					packed: false
-				};
-				tx.send(Message::Text(serde_json::to_string(&message_contents).unwrap())).await;
+			if check_subscription(&wsstate, "ram") && count % 150 == 0 {
+				let message = serde_json::to_string(&WsMessage::new("ram", &json!(tracker::ram_usage().await).to_string(), false)).unwrap();
+				tracing::debug!("Sending event: {:#?}", &message);
+				tx.send(Message::Text(message)).await;
+			}
+
+			if check_subscription(&wsstate, "circuit_throughput") && count % 150 == 0 {
+				let message = serde_json::to_string(&WsMessage::new("circuit_throughput", &json!(tracker::ram_usage().await).to_string(), false)).unwrap();
+				tracing::debug!("Sending event: {:#?}", &message);
+				tx.send(Message::Text(message)).await;
+			}
+
+			if check_subscription(&wsstate, "circuit_raw_queue") && count % 150 == 0 {
+				
 			}
 			
 			// Reset counter to keep the number manageable
@@ -123,16 +114,21 @@ async fn handle_socket(
 
     let mut recv_task = tokio::spawn(async move {
         while let Some(Ok(Message::Text(text))) = rx.next().await {
-			tracing::debug!("Received message {:#?}", text);
-			let event_message: EventMessage = serde_json::from_str(&text).unwrap();
-			if event_message.subject == "subscribe" {
-				let subscribe_message: EventMessage = serde_json::from_str(&event_message.data.to_string()).unwrap();
-				tracing::debug!("Received subscribe request {:#?}", subscribe_message.subject);
-				&ws_state.subscriptions.lock().unwrap().insert(subscribe_message.subject.to_string().to_owned());
-			} else if event_message.subject == "unsubscribe" {
-				let unsubscribe_message: EventMessage = serde_json::from_str(&event_message.data.to_string()).unwrap();
-				tracing::debug!("Received unsubscribe request {:#?}", unsubscribe_message.subject);
-				&ws_state.subscriptions.lock().unwrap().remove(&unsubscribe_message.subject.to_string());
+			let event = WsEvent::new(&text);
+			match event.subject.as_str() {
+				"subscribe" => {
+					let message: WsMessage = event.data;
+					tracing::debug!("Received subscribe event {:#?}", &message.subject);
+					&ws_state.subscriptions.lock().unwrap().insert(message.subject.to_string().to_owned(), message.data.to_string().to_owned());
+				},
+				"unsubscribe" => {
+					let message: WsMessage = event.data;
+					tracing::debug!("Received unsubscribe event {:#?}", &message.subject);
+					&ws_state.subscriptions.lock().unwrap().remove(&message.subject.to_string());
+				},
+				_ => {
+					tracing::debug!("Received unknown event {:#?}", event);
+				}
 			}
         }
     });
@@ -145,7 +141,7 @@ async fn handle_socket(
 
 fn check_subscription(state: &WsState, subject: &str) -> bool {
     let mut subscriptions = state.subscriptions.lock().unwrap();
-    if subscriptions.contains(subject) {
+    if subscriptions.contains_key(subject) {
 		return true;
     }
 	return false;
