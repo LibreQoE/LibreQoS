@@ -2,13 +2,11 @@ use askama::Template;
 
 use axum::{
 	http::StatusCode,
-    extract::{
-		Path,
-		State,
-    },
+    extract::{Path,	State},
     response::{Html, IntoResponse, Extension},
     routing::get,
-    Router,
+    Form,
+	Router,
 };
 
 use crate::auth::{self, RequireAuth, Role};
@@ -21,24 +19,29 @@ pub fn routes() -> Router<AppState> {
         .route("/server", get(get_server).post(post_server).layer(RequireAuth::login_with_role(Role::Admin..)))
         .route("/shaper", get(get_shaper).post(post_shaper).layer(RequireAuth::login_with_role(Role::Admin..)))
         .route("/tuning", get(get_tuning).post(post_tuning).layer(RequireAuth::login_with_role(Role::Admin..)))
+        .route("/users", get(get_users).post(post_users).layer(RequireAuth::login_with_role(Role::Admin..)))
 }
 
 #[derive(Template)]
 #[template(path = "config/crm.html")]
 struct CrmTemplate {
     title: String,
-	current_user: auth::User
+	current_user: auth::User,
+	state: AppState
 }
 
 async fn get_crm(
-	Extension(user): Extension<auth::User>
+	Extension(user): Extension<auth::User>,
+	State(state): State<AppState>
 ) -> impl IntoResponse {
-	let template = CrmTemplate { title: "Configure CRM".to_string(), current_user: user };
+	let template = CrmTemplate { title: "Configure CRM".to_string(), current_user: user, state: state};
 	(StatusCode::OK, Html(template.render().unwrap()).into_response()).into_response()
 }
 
 async fn post_crm(
-	Extension(user): Extension<auth::User>
+	Extension(user): Extension<auth::User>,
+	State(state): State<AppState>,
+	Form(data): Form<auth::Credentials>
 ) -> impl IntoResponse {
     (StatusCode::OK, Html("").into_response())
 }
@@ -47,18 +50,22 @@ async fn post_crm(
 #[template(path = "config/network.html")]
 struct NetworkTemplate {
     title: String,
-	current_user: auth::User
+	current_user: auth::User,
+	state: AppState
 }
 
 async fn get_network(
-	Extension(user): Extension<auth::User>
+	Extension(user): Extension<auth::User>,
+	State(state): State<AppState>
 ) -> impl IntoResponse {
-	let template = NetworkTemplate { title: "Configure Network".to_string(), current_user: user };
+	let template = NetworkTemplate { title: "Configure Network".to_string(), current_user: user, state: state };
 	(StatusCode::OK, Html(template.render().unwrap()).into_response()).into_response()
 }
 
 async fn post_network(
-	Extension(user): Extension<auth::User>
+	Extension(user): Extension<auth::User>,
+	State(state): State<AppState>,
+	Form(data): Form<auth::Credentials>
 ) -> impl IntoResponse {
     (StatusCode::OK, Html("").into_response())
 }
@@ -67,18 +74,22 @@ async fn post_network(
 #[template(path = "config/server.html")]
 struct ServerTemplate {
     title: String,
-	current_user: auth::User
+	current_user: auth::User,
+	state: AppState
 }
 
 async fn get_server(
-	Extension(user): Extension<auth::User>
+	Extension(user): Extension<auth::User>,
+	State(state): State<AppState>
 ) -> impl IntoResponse {
-	let template = ServerTemplate { title: "Configure Server".to_string(), current_user: user };
+	let template = ServerTemplate { title: "Configure Server".to_string(), current_user: user, state: state };
 	(StatusCode::OK, Html(template.render().unwrap()).into_response()).into_response()
 }
 
 async fn post_server(
-	Extension(user): Extension<auth::User>
+	Extension(user): Extension<auth::User>,
+	State(state): State<AppState>,
+	Form(data): Form<auth::Credentials>
 ) -> impl IntoResponse {
     (StatusCode::OK, Html("").into_response())
 }
@@ -87,18 +98,22 @@ async fn post_server(
 #[template(path = "config/shaper.html")]
 struct ShaperTemplate {
     title: String,
-	current_user: auth::User
+	current_user: auth::User,
+	state: AppState
 }
 
 async fn get_shaper(
-	Extension(user): Extension<auth::User>
+	Extension(user): Extension<auth::User>,
+	State(state): State<AppState>
 ) -> impl IntoResponse {
-	let template = ShaperTemplate { title: "Configure Shaper".to_string(), current_user: user };
+	let template = ShaperTemplate { title: "Configure Shaper".to_string(), current_user: user, state: state };
 	(StatusCode::OK, Html(template.render().unwrap()).into_response()).into_response()
 }
 
 async fn post_shaper(
-	Extension(user): Extension<auth::User>
+	Extension(user): Extension<auth::User>,
+	State(state): State<AppState>,
+	Form(data): Form<auth::Credentials>
 ) -> impl IntoResponse {
     (StatusCode::OK, Html("").into_response())
 }
@@ -107,24 +122,68 @@ async fn post_shaper(
 #[template(path = "config/tuning.html")]
 struct TuningTemplate {
     title: String,
-	current_user: auth::User
+	current_user: auth::User,
+	state: AppState
 }
 
 async fn get_tuning(
-	Extension(user): Extension<auth::User>
+	Extension(user): Extension<auth::User>,
+	State(state): State<AppState>
 ) -> impl IntoResponse {
-	let template = TuningTemplate { title: "Configure Tuning".to_string(), current_user: user };
+	let template = TuningTemplate { title: "Configure Tuning".to_string(), current_user: user, state: state };
 	(StatusCode::OK, Html(template.render().unwrap()).into_response()).into_response()
 }
 
 async fn post_tuning(
-	Extension(user): Extension<auth::User>
+	Extension(user): Extension<auth::User>,
+	State(state): State<AppState>,
+	Form(data): Form<auth::Credentials>
+) -> impl IntoResponse {
+    (StatusCode::OK, Html("").into_response())
+}
+
+#[derive(Template)]
+#[template(path = "config/users/index.html")]
+struct UsersTemplate {
+    title: String,
+	current_user: auth::User,
+	state: AppState
+}
+
+async fn get_users(
+	Extension(user): Extension<auth::User>,
+	State(state): State<AppState>
 ) -> impl IntoResponse {
     (StatusCode::OK, Html("").into_response())
 }
 
 async fn post_users(
-	Extension(user): Extension<auth::User>
+	Extension(user): Extension<auth::User>,
+	State(state): State<AppState>,
+	Form(data): Form<auth::Credentials>
+) -> impl IntoResponse {
+    (StatusCode::OK, Html("").into_response())
+}
+
+#[derive(Template)]
+#[template(path = "config/users/edit.html")]
+struct UserTemplate {
+    title: String,
+	current_user: auth::User,
+	state: AppState
+}
+
+async fn get_user(
+	Extension(user): Extension<auth::User>,
+	State(state): State<AppState>
+) -> impl IntoResponse {
+    (StatusCode::OK, Html("").into_response())
+}
+
+async fn post_user(
+	Extension(user): Extension<auth::User>,
+	State(state): State<AppState>,
+	Form(data): Form<auth::Credentials>
 ) -> impl IntoResponse {
     (StatusCode::OK, Html("").into_response())
 }

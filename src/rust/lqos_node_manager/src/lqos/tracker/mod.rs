@@ -9,11 +9,8 @@ pub use cache::SHAPED_DEVICES;
 pub use cache_manager::{update_tracking, update_total_throughput_buffer};
 use lqos_bus::{bus_request, BusRequest, BusResponse, IpStats, TcHandle};
 use lqos_config::ShapedDevice;
-use lazy_static::lazy_static;
-use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use axum::Json;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct IpStatsWithPlan {

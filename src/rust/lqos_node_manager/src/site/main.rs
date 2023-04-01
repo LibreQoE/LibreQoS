@@ -1,43 +1,29 @@
 use askama::Template;
 
 use axum::{
+    extract::State,
 	http::StatusCode,
     response::{Html, IntoResponse, Extension},
     routing::{get, post},
-    extract::{
-		ConnectInfo,
-		State,
-		ws::{Message, WebSocket, WebSocketUpgrade},
-	},
-    Router,
-	TypedHeader,
+    Form,
+	Router,
 };
 
-use lqos_bus::{IpStats, TcHandle};
+use lqos_bus::IpStats;
 use lqos_config::{self, ShapedDevice};
 
-use futures_util::SinkExt;
-use futures_util::StreamExt;
-
-use serde_json::{Result, Value, json};
-
-use std::net::Ipv4Addr;
-
-use crate::auth;
+use crate::auth::{self, RequireAuth, Role};
 use crate::AppState;
 
-use crate::lqos::tracker::{
-	current_throughput, throughput_ring, cpu_usage, ram_usage, top_10_downloaders, worst_10_rtt, 
-	rtt_histogram, shaped_devices, unknown_hosts, shaped_devices_count, unknown_hosts_count
-};
+use crate::lqos::tracker::{shaped_devices, unknown_hosts};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-		.route("/dashboard", get(get_dashboard))
-		.route("/devices/add", get(get_add_device).layer(auth::RequireAuth::login()))
-		.route("/devices/add", post(post_add_device).layer(auth::RequireAuth::login()))
-		.route("/unknown", get(get_unknown_devices))
-		.route("/shaped", get(get_shaped_devices))
+		.route("/dashboard", get(get_dashboard).layer(RequireAuth::login()))
+		.route("/devices/add", get(get_add_device).layer(RequireAuth::login_with_role(Role::Admin..)))
+		.route("/devices/add", post(post_add_device).layer(RequireAuth::login_with_role(Role::Admin..)))
+		.route("/unknown", get(get_unknown_devices).layer(RequireAuth::login()))
+		.route("/shaped", get(get_shaped_devices).layer(RequireAuth::login()))
 }
 
 #[derive(Template)]
@@ -45,13 +31,14 @@ pub fn routes() -> Router<AppState> {
 struct DashboardTemplate {
     title: String,
     current_user: auth::User,
+	state: AppState
 }
 
 async fn get_dashboard(
 	Extension(user): Extension<auth::User>,
 	State(state): State<AppState>
 ) -> impl IntoResponse {
-	let template = DashboardTemplate { title: "Dashboard".to_string(), current_user: user };
+	let template = DashboardTemplate { title: "Dashboard".to_string(), current_user: user, state: state };
     (StatusCode::OK, Html(template.render().unwrap()).into_response())
 }
 
@@ -60,20 +47,22 @@ async fn get_dashboard(
 struct AddDeviceTemplate {
     title: String,
     current_user: auth::User,
+	state: AppState
 }
 
 async fn get_add_device(
 	Extension(user): Extension<auth::User>,
 	State(state): State<AppState>
 ) -> impl IntoResponse {
-	let template = AddDeviceTemplate { title: "New Device".to_string(), current_user: user };
+	let template = AddDeviceTemplate { title: "New Device".to_string(), current_user: user, state: state };
     (StatusCode::OK, Html(template.render().unwrap()).into_response())
 }
 
 async fn post_add_device(
-	Extension(user): Extension<auth::User>
+	Extension(user): Extension<auth::User>,
+	State(state): State<AppState>
 ) -> impl IntoResponse {
-	let template = AddDeviceTemplate { title: "New Device".to_string(), current_user: user };
+	let template = AddDeviceTemplate { title: "New Device".to_string(), current_user: user, state: state };
     (StatusCode::OK, Html(template.render().unwrap()).into_response())
 }
 
@@ -83,6 +72,7 @@ struct ShapedDevicesTemplate {
     title: String,
     current_user: auth::User,
 	devices: Vec<ShapedDevice>,
+	state: AppState
 }
 
 async fn get_shaped_devices(
@@ -90,7 +80,7 @@ async fn get_shaped_devices(
 	State(state): State<AppState>
 ) -> impl IntoResponse {
 	let shaped_devices = shaped_devices().await;
-	let template = ShapedDevicesTemplate { title: "Shaped Devices".to_string(), current_user: user, devices: shaped_devices };
+	let template = ShapedDevicesTemplate { title: "Shaped Devices".to_string(), current_user: user, devices: shaped_devices, state: state };
     (StatusCode::OK, Html(template.render().unwrap()).into_response())
 }
 
@@ -100,6 +90,7 @@ struct UnknownDevicesTemplate {
     title: String,
     current_user: auth::User,
 	devices: Vec<IpStats>,
+	state: AppState
 }
 
 async fn get_unknown_devices(
@@ -107,6 +98,6 @@ async fn get_unknown_devices(
 	State(state): State<AppState>
 ) -> impl IntoResponse {
 	let unknown_devices = unknown_hosts().await;
-	let template = UnknownDevicesTemplate { title: "Unknown Devices".to_string(), current_user: user, devices: unknown_devices };
+	let template = UnknownDevicesTemplate { title: "Unknown Devices".to_string(), current_user: user, devices: unknown_devices, state: state };
     (StatusCode::OK, Html(template.render().unwrap()).into_response())
 }

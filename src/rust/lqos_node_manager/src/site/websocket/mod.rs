@@ -3,20 +3,16 @@ pub mod event;
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-		ConnectInfo,
 		State,
-        TypedHeader,
     },
     response::IntoResponse,
     routing::get,
-	Extension,
     Router,
 };
 
-use std::{borrow::Borrow, ops::ControlFlow, sync::{Arc, Mutex}, collections::HashMap};
-use serde_json::{Result, Value, json};
-use serde::{Serialize, Deserialize};
-use std::net::SocketAddr;
+use std::{sync::{Arc, Mutex}, collections::HashMap};
+use serde_json::json;
+use crate::auth::{self, RequireAuth};
 
 use crate::lqos::tracker;
 
@@ -25,15 +21,14 @@ use crate::site::websocket::event::{WsEvent, WsMessage};
 use futures::{
 	sink::SinkExt,
 	stream::{
-		StreamExt, SplitSink, SplitStream
+		StreamExt
 	}
 };
-use crate::auth;
 use crate::AppState;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/ws", get(ws_handler))
+        .route("/ws", get(ws_handler).layer(RequireAuth::login()))
 }
 
 #[derive(Debug)]

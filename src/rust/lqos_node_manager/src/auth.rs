@@ -14,7 +14,6 @@ use std::{collections::HashMap, sync::Arc};
 use serde::{Serialize, Deserialize};
 use lazy_static::lazy_static;
 use rand::Rng;
-use parking_lot::Mutex;
 use tokio::sync::RwLock;
 use lqos_config::WebUsers;
 use core::fmt::Display;

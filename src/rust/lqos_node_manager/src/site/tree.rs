@@ -1,30 +1,28 @@
 use askama::Template;
 
 use axum::{
+	extract::{Path,	State},
 	http::StatusCode,
-	extract::{
-		Path,
-		State,
-    },
     response::{Html, IntoResponse, Extension},
     routing::get,
-    Router,
+    Form,
+	Router,
 };
 
-use lqos_config;
-use crate::auth;
+use crate::auth::{self, RequireAuth};
 use crate::AppState;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/:tree_id", get(parent_tree))
+        .route("/:tree_id", get(parent_tree).layer(RequireAuth::login()))
 }
 
 async fn parent_tree(
 	Path(tree_id): Path<usize>,
-	Extension(user): Extension<auth::User>
+	Extension(user): Extension<auth::User>,
+	State(state): State<AppState>
 ) -> impl IntoResponse {
-	let template = TreeTemplate { title: "Network Tree".to_string(), current_user: user };
+	let template = TreeTemplate { title: "Network Tree".to_string(), current_user: user, state: state };
 	(StatusCode::OK, Html(template.render().unwrap()).into_response()).into_response()
 }
 
@@ -33,4 +31,5 @@ async fn parent_tree(
 struct TreeTemplate {
     title: String,
 	current_user: auth::User,
+	state: AppState
 }

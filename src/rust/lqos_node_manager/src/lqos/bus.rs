@@ -1,6 +1,6 @@
 use lqos_bus::{bus_request, BusRequest, BusResponse};
 use lqos_config::Tunables;
-use serde::{Deserialize, Serialize};
+use serde::{Serialize};
 use axum::Json;
 
 pub async fn watch_queue(circuit_id: String) {

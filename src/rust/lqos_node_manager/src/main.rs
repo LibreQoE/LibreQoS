@@ -10,14 +10,13 @@ use axum::{
     routing::{get, get_service},
     Router,
 };
-use std::{net::SocketAddr, collections::HashSet, sync::{Arc, Mutex}};
+use std::net::SocketAddr;
 use tower::ServiceBuilder;
 use tower_http::{
 	cors::{Any, CorsLayer},
 	services::{ServeDir},
 	trace::TraceLayer,
 };
-use std::time::Duration;
 
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 // Use JemAllocator only on supported platforms
