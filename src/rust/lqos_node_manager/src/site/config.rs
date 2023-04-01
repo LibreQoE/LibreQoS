@@ -11,7 +11,7 @@ use axum::{
     Router,
 };
 
-use crate::auth;
+use crate::auth::{self, RequireAuth, Role};
 use crate::AppState;
 
 pub fn routes() -> Router<AppState> {
