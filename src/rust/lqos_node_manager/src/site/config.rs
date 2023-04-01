@@ -16,11 +16,11 @@ use crate::AppState;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/crm", get(get_crm).post(post_crm))
-        .route("/network", get(get_network).post(post_network))
-        .route("/server", get(get_server).post(post_server))
-        .route("/shaper", get(get_shaper).post(post_shaper))
-        .route("/tuning", get(get_tuning).post(post_tuning))
+        .route("/crm", get(get_crm).post(post_crm).layer(RequireAuth::login_with_role(Role::Admin..)))
+        .route("/network", get(get_network).post(post_network).layer(RequireAuth::login_with_role(Role::Admin..)))
+        .route("/server", get(get_server).post(post_server).layer(RequireAuth::login_with_role(Role::Admin..)))
+        .route("/shaper", get(get_shaper).post(post_shaper).layer(RequireAuth::login_with_role(Role::Admin..)))
+        .route("/tuning", get(get_tuning).post(post_tuning).layer(RequireAuth::login_with_role(Role::Admin..)))
 }
 
 #[derive(Template)]
