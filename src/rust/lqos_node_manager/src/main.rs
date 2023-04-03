@@ -41,6 +41,7 @@ async fn main() {
         .init();
 		
 	tokio::spawn(lqos::tracker::update_tracking());
+	tokio::spawn(lqos::tracker::update_total_throughput_buffer());
 	
 	let cors = CorsLayer::new().allow_origin(Any);
 

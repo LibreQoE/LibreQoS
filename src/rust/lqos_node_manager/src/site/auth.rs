@@ -28,8 +28,7 @@ struct LoginTemplate {
 pub async fn get_login_handler(
 	auth: auth::AuthContext,
 ) -> impl IntoResponse {
-    let user = auth.current_user.clone();
-    if user {
+    if auth.current_user.is_some() {
 		Redirect::to("/dashboard").into_response()
 	} else {
 		let template = LoginTemplate { title: "Login".to_string() };

@@ -10,6 +10,7 @@ use axum_login::{
     AuthLayer, AuthUser, RequireAuthorizationLayer
 };
 
+use async_redis_session::RedisSessionStore;
 use std::{collections::HashMap, sync::Arc};
 use serde::{Serialize, Deserialize};
 use lazy_static::lazy_static;
@@ -89,8 +90,9 @@ pub type AuthContext = axum_login::extractors::AuthContext<User, AuthMemoryStore
 
 pub type RequireAuth = RequireAuthorizationLayer<User, Role>;
 
-pub fn session_layer() -> SessionLayer<SessionMemoryStore> {
-	let store = SessionMemoryStore::new();
+pub fn session_layer() -> SessionLayer<RedisSessionStore> {
+	//let store = SessionMemoryStore::new();
+	let store = RedisSessionStore::new("redis://127.0.0.1").unwrap().with_prefix("sessions/");
 	SessionLayer::new(store, SECRET.as_ref()).with_secure(false)
 }
 

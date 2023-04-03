@@ -91,7 +91,7 @@
 					<small><b>CPU Usage</b></small>
 				</div>
 				<div class="progress progress-thin">
-					<div class="progress-bar bg-warning-gradient live-cpu" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+					<div class="progress-bar bg-warning-gradient live-cpu" data-lqos-cpu role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
 				</div>
 				<small class="text-medium-emphasis"><span class="live-cpu-consumed"></span></small>
 			</li>
@@ -233,5 +233,6 @@
 			<div class="ms-auto">&copy; 2023 <a href="https://libreqos.io/" target="_blank">LibreQoE LLC</a></div>
 		</footer>
 	</div>
+	<script src="/assets/echarts.min.js"></script>
 	<script src="/assets/lqos.js"></script>
 {% endblock %}

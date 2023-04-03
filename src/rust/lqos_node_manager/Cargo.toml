@@ -15,7 +15,7 @@ axum-login = { version = "0.4.1" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.68"
 tokio = { version = "1.0", features = ["rt-multi-thread"] }
-#tokio-stream = "0.1"
+tokio-stream = "0.1"
 tokio-tungstenite = "0.18.0"
 tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.4", features = ["cors", "fs", "trace"] }
@@ -27,6 +27,7 @@ headers = "0.3"
 rand = { version = "0.8.5", features = ["min_const_gen"] }
 lazy_static = "1.4"
 parking_lot = "0.12"
+async-redis-session = "0.2.2"
 
 lqos_bus = { path = "../lqos_bus" }
 lqos_config = { path = "../lqos_config" }

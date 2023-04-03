@@ -8,7 +8,7 @@ use self::cache::{
 pub use cache::SHAPED_DEVICES;
 pub use cache_manager::{update_tracking, update_total_throughput_buffer};
 use lqos_bus::{bus_request, BusRequest, BusResponse, IpStats, TcHandle};
-use lqos_config::ShapedDevice;
+use lqos_config::{ShapedDevice, NetworkJsonTransport};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -85,6 +85,17 @@ pub async fn ram_usage() -> serde_json::Value {
   let ram_usage = RAM_USED.load(std::sync::atomic::Ordering::Relaxed);
   let total_ram = TOTAL_RAM.load(std::sync::atomic::Ordering::Relaxed);
   json!(vec![ram_usage, total_ram])
+}
+
+pub async fn site_funnel() -> Vec<(usize, NetworkJsonTransport)> {
+  if let Ok(responses) = bus_request(vec![BusRequest::TopMapQueues(5)]).await {
+    for response in responses {
+      if let BusResponse::NetworkMap(nodes) = response {
+        return nodes.to_owned()
+      }
+    }
+  }
+  Vec::new()
 }
 
 pub async fn top_10_downloaders() -> Vec<IpStatsWithPlan> {

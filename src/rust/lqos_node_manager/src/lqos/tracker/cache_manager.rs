@@ -121,13 +121,13 @@ fn watch_for_shaped_devices_changing() -> Result<()> {
 
 /// Fires once per second and updates the global traffic ringbuffer.
 pub async fn update_total_throughput_buffer() {
+  let interval = Duration::from_millis(200);
+  let mut next_time = Instant::now() + interval;
   loop {
     let now = Instant::now();
     let mut lock = THROUGHPUT_BUFFER.write().await;
     lock.tick().await;
-    let wait_time = Duration::from_secs(1) - now.elapsed();
-    if wait_time.as_micros() > 0 {
-      tokio::time::sleep(Duration::from_secs(1)).await;
-    }
+    tokio::time::sleep(next_time - Instant::now()).await;
+    next_time += interval;
   }
 }
