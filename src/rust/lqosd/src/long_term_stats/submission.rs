@@ -1,5 +1,6 @@
 use std::sync::RwLock;
 use lqos_bus::{BusResponse, long_term_stats::StatsHost};
+use lqos_config::EtcLqos;
 use once_cell::sync::Lazy;
 use super::collator::StatsSubmission;
 
@@ -7,6 +8,14 @@ pub(crate) static CURRENT_STATS: Lazy<RwLock<Option<StatsSubmission>>> = Lazy::n
 
 pub(crate) fn new_submission(data: StatsSubmission) {
     *CURRENT_STATS.write().unwrap() = Some(data);
+
+    if let Ok(cfg) = EtcLqos::load() {
+        if let Some(cfg) = &cfg.long_term_stats {
+            if let Some(license) = &cfg.license_key {
+                println!("We've got a license key");
+            }
+        }
+    }
 }
 
 pub fn get_stats_totals() -> BusResponse {

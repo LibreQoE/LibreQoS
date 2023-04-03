@@ -1344,6 +1344,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "license_server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger",
+ "log",
+ "lqos_bus",
+ "serde",
+ "serde_cbor",
+ "tokio",
+]
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"

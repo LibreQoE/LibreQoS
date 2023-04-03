@@ -37,3 +37,13 @@ pub struct StatsTreeNode {
   pub parents: Vec<usize>,
   pub immediate_parent: Option<usize>,
 }
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct LicenseCheck {
+  key: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum LicenseReply {
+  Denied
+}

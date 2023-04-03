@@ -141,6 +141,10 @@ pub struct LongTermStats {
   /// How frequently should stats be accumulated into a long-term
   /// min/max/avg format per tick?
   pub collation_period_seconds: u32,
+
+  /// The license key for submitting stats to a LibreQoS hosted
+  /// statistics server
+  pub license_key: Option<String>,
 }
 
 impl EtcLqos {
