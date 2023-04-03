@@ -3,29 +3,54 @@ use lqos_bus::{bus_request, BusRequest, BusResponse};
 use once_cell::sync::Lazy;
 use rocket::tokio::sync::RwLock;
 
-pub static THROUGHPUT_BUFFER: Lazy<RwLock<TotalThroughput>> =
-  Lazy::new(|| RwLock::new(TotalThroughput::new()));
+const THROUGHPUT_BUFFER_SIZE: usize = 300;
+
+pub static THROUGHPUT_BUFFER: Lazy<TotalThroughput> = Lazy::new(TotalThroughput::new);
+
+pub struct TotalThroughput {
+  inner: RwLock<TotalThroughputInner>
+}
+
+impl TotalThroughput {
+  fn new() -> Self {
+    TotalThroughput { inner: RwLock::new(TotalThroughputInner::new()) }
+  }
+
+  pub async fn tick(&self) {
+    let mut lock = self.inner.write().await;
+    lock.tick().await;
+  }
+
+  pub async fn current(&self) -> ThroughputPerSecond {
+    self.inner.read().await.current()
+  }
+
+  pub async fn copy(&self) -> (usize, Vec<ThroughputPerSecond>) {
+    self.inner.read().await.copy()
+  }
+}
+
 
 /// Maintains an in-memory ringbuffer of the last 5 minutes of
 /// throughput data.
-pub struct TotalThroughput {
+struct TotalThroughputInner {
   data: Vec<ThroughputPerSecond>,
   head: usize,
   prev_head: usize,
 }
 
-impl TotalThroughput {
+impl TotalThroughputInner {
   /// Create a new throughput ringbuffer system
-  pub fn new() -> Self {
+  fn new() -> Self {
     Self {
-      data: vec![ThroughputPerSecond::default(); 300],
+      data: vec![ThroughputPerSecond::default(); THROUGHPUT_BUFFER_SIZE],
       head: 0,
       prev_head: 0,
     }
   }
 
   /// Run once per second to update the ringbuffer with current data
-  pub async fn tick(&mut self) {
+  async fn tick(&mut self) {
     if let Ok(messages) =
       bus_request(vec![BusRequest::GetCurrentThroughput]).await
     {
@@ -48,13 +73,13 @@ impl TotalThroughput {
   }
 
   /// Retrieve just the current throughput data (1 tick)
-  pub fn current(&self) -> ThroughputPerSecond {
+  fn current(&self) -> ThroughputPerSecond {
     self.data[self.prev_head]
   }
 
   /// Retrieve the head (0-299) and the full current throughput
   /// buffer. Used to populate the dashboard the first time.
-  pub fn copy(&self) -> (usize, Vec<ThroughputPerSecond>) {
+  fn copy(&self) -> (usize, Vec<ThroughputPerSecond>) {
     (self.head, self.data.clone())
   }
 }

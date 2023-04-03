@@ -123,8 +123,7 @@ fn watch_for_shaped_devices_changing() -> Result<()> {
 pub async fn update_total_throughput_buffer() {
   loop {
     let now = Instant::now();
-    let mut lock = THROUGHPUT_BUFFER.write().await;
-    lock.tick().await;
+    THROUGHPUT_BUFFER.tick().await;
     let wait_time = Duration::from_secs(1) - now.elapsed();
     if wait_time.as_micros() > 0 {
       rocket::tokio::time::sleep(Duration::from_secs(1)).await;
