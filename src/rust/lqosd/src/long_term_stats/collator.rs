@@ -1,3 +1,5 @@
+use lqos_utils::unix_time::unix_now;
+
 use super::{
   collation_utils::{MinMaxAvg, MinMaxAvgPair},
   submission::new_submission, tree::{NetworkTreeEntry, get_network_tree},
@@ -7,6 +9,7 @@ use std::{collections::HashMap, net::IpAddr};
 
 #[derive(Debug, Clone)]
 pub(crate) struct StatsSubmission {
+  pub(crate) timestamp: u64,
   pub(crate) bits_per_second: MinMaxAvgPair<u64>,
   pub(crate) shaped_bits_per_second: MinMaxAvgPair<u64>,
   pub(crate) packets_per_second: MinMaxAvgPair<u64>,
@@ -87,6 +90,7 @@ pub(crate) fn collate_stats() {
   let shaped_bits_per_second = MinMaxAvgPair::from_slice(&sbps);
 
   let mut submission = StatsSubmission {
+    timestamp: unix_now().unwrap_or(0),
     bits_per_second,
     shaped_bits_per_second,
     packets_per_second,
