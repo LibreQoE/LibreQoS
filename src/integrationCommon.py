@@ -418,7 +418,7 @@ class NetworkGraph:
 
 		import graphviz
 		dot = graphviz.Digraph(
-			'network', comment="Network Graph", engine="fdp")
+			'network', comment="Network Graph", engine="dot")
 
 		for (i, node) in enumerate(self.nodes):
 			if ((node.type != NodeType.client and node.type != NodeType.device) or showClients):
