@@ -1,137 +1,135 @@
 {% extends "layout/main.html" %}
 
 {% block content %}
-	<div class="container-lg">
-		<div class="row">
-			<div class="col col-lg-3">
-				<div class="card mb-4">
-					<div class="card-body">
-						<div class="d-flex justify-content-between">
-							<div>
-								<h5 class="card-title mb-0">{{ circuit_info.name }}</h5>
-								<div class="small text-medium-emphasis">
-									{{ circuit_info.capacity.0 }}
-									<i class="fa fa-down-long fa-fw"></i>
-									{{ circuit_info.capacity.1 }}
-									<i class="fa fa-up-long fa-fw"></i>
-								</div>
-							</div>
-						</div>
-					</div>
-				</div>
-			</div>
-			<div class="col-sm-4">
-				<div class="card mb-4">
-					<div class="card-body">
-						<div class="d-flex justify-content-between">
-							<div>
-								<h5 class="card-title mb-0">Backlog</h5>
-								<div class="small text-medium-emphasis"></div>
-							</div>
-						</div>
-					</div>
-				</div>
-			</div>
-			<div class="col-sm-5">
-				<div class="card mb-4">
-					<div class="card-body">
-						<div class="d-flex justify-content-between">
-							<div>
-								<h5 class="card-title mb-0">Capacity Quantile</h5>
-								<div class="small text-medium-emphasis"></div>
+	<div class="row">
+		<div class="col col-lg-3">
+			<div class="card mb-4">
+				<div class="card-body">
+					<div class="d-flex justify-content-between">
+						<div>
+							<h5 class="card-title mb-0">{{ circuit_info.name }}</h5>
+							<div class="small text-medium-emphasis">
+								{{ circuit_info.capacity.0 }}
+								<i class="fa fa-down-long fa-fw"></i>
+								{{ circuit_info.capacity.1 }}
+								<i class="fa fa-up-long fa-fw"></i>
 							</div>
 						</div>
 					</div>
 				</div>
 			</div>
 		</div>
-		<div class="row">
-			<div class="col-sm-6">
-				<div class="card mb-4">
-					<div class="card-body">
-						<div class="d-flex justify-content-between">
-							<div>
-								<h5 class="card-title mb-0">Delays</h5>
-								<div class="small text-medium-emphasis"></div>
-							</div>
-						</div>
-					</div>
-				</div>
-			</div>
-			<div class="col-sm-6">
-				<div class="card mb-4">
-					<div class="card-body">
-						<div class="d-flex justify-content-between">
-							<div>
-								<h5 class="card-title mb-0">Queue Length</h5>
-								<div class="small text-medium-emphasis"></div>
-							</div>
+		<div class="col-sm-4">
+			<div class="card mb-4">
+				<div class="card-body">
+					<div class="d-flex justify-content-between">
+						<div>
+							<h5 class="card-title mb-0">Backlog</h5>
+							<div class="small text-medium-emphasis"></div>
 						</div>
 					</div>
 				</div>
 			</div>
 		</div>
-		<div class="row">
-			<div class="col-sm-2">
-				<div class="card mb-4">
-					<div class="card-body">
-						<div class="d-flex justify-content-between">
-							<div>
-								<h5 class="card-title mb-0">Queue Memory</h5>
-								<div class="small text-medium-emphasis"></div>
-							</div>
+		<div class="col-sm-5">
+			<div class="card mb-4">
+				<div class="card-body">
+					<div class="d-flex justify-content-between">
+						<div>
+							<h5 class="card-title mb-0">Capacity Quantile</h5>
+							<div class="small text-medium-emphasis"></div>
 						</div>
 					</div>
 				</div>
 			</div>
 		</div>
-		<div class="row">
-			<div class="col-sm-6">
-				<div class="card mb-4">
-					<div class="card-body">
-						<div class="d-flex justify-content-between">
-							<div>
-								<h5 class="card-title mb-0">Bulk</h5>
-								<div class="small text-medium-emphasis"></div>
-							</div>
-						</div>
-					</div>
-				</div>
-			</div>
-			<div class="col-sm-6">
-				<div class="card mb-4">
-					<div class="card-body">
-						<div class="d-flex justify-content-between">
-							<div>
-								<h5 class="card-title mb-0">Best Effort</h5>
-								<div class="small text-medium-emphasis"></div>
-							</div>
+	</div>
+	<div class="row">
+		<div class="col-sm-6">
+			<div class="card mb-4">
+				<div class="card-body">
+					<div class="d-flex justify-content-between">
+						<div>
+							<h5 class="card-title mb-0">Delays</h5>
+							<div class="small text-medium-emphasis"></div>
 						</div>
 					</div>
 				</div>
 			</div>
 		</div>
-		<div class="row">
-			<div class="col-sm-6">
-				<div class="card mb-4">
-					<div class="card-body">
-						<div class="d-flex justify-content-between">
-							<div>
-								<h5 class="card-title mb-0">Video</h5>
-								<div class="small text-medium-emphasis"></div>
-							</div>
+		<div class="col-sm-6">
+			<div class="card mb-4">
+				<div class="card-body">
+					<div class="d-flex justify-content-between">
+						<div>
+							<h5 class="card-title mb-0">Queue Length</h5>
+							<div class="small text-medium-emphasis"></div>
 						</div>
 					</div>
 				</div>
 			</div>
-			<div class="col-sm-6">
-				<div class="card mb-4">
-					<div class="card-body">
-						<div class="d-flex justify-content-between">
-							<div>
-								<h5 class="card-title mb-0">Voice</h5>
-								<div class="small text-medium-emphasis"></div>
-							</div>
+		</div>
+	</div>
+	<div class="row">
+		<div class="col-sm-2">
+			<div class="card mb-4">
+				<div class="card-body">
+					<div class="d-flex justify-content-between">
+						<div>
+							<h5 class="card-title mb-0">Queue Memory</h5>
+							<div class="small text-medium-emphasis"></div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<div class="row">
+		<div class="col-sm-6">
+			<div class="card mb-4">
+				<div class="card-body">
+					<div class="d-flex justify-content-between">
+						<div>
+							<h5 class="card-title mb-0">Bulk</h5>
+							<div class="small text-medium-emphasis"></div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+		<div class="col-sm-6">
+			<div class="card mb-4">
+				<div class="card-body">
+					<div class="d-flex justify-content-between">
+						<div>
+							<h5 class="card-title mb-0">Best Effort</h5>
+							<div class="small text-medium-emphasis"></div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<div class="row">
+		<div class="col-sm-6">
+			<div class="card mb-4">
+				<div class="card-body">
+					<div class="d-flex justify-content-between">
+						<div>
+							<h5 class="card-title mb-0">Video</h5>
+							<div class="small text-medium-emphasis"></div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+		<div class="col-sm-6">
+			<div class="card mb-4">
+				<div class="card-body">
+					<div class="d-flex justify-content-between">
+						<div>
+							<h5 class="card-title mb-0">Voice</h5>
+							<div class="small text-medium-emphasis"></div>
 						</div>
 					</div>
 				</div>
