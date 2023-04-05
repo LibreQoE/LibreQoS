@@ -220,3 +220,23 @@ pub enum EtcLqosError {
   #[error("Unable to write to /etc/lqos.conf")]
   WriteFail,
 }
+
+#[cfg(test)]
+mod test {
+  const EXAMPLE_LQOS_CONF: &str = include_str!("../../../lqos.example");
+
+  #[test]
+  fn round_trip_toml() {
+    let doc = EXAMPLE_LQOS_CONF.parse::<toml_edit::Document>().unwrap();
+    let reserialized = doc.to_string();
+    assert_eq!(EXAMPLE_LQOS_CONF, reserialized);
+  }
+
+  #[test]
+  fn add_node_id() {
+    let mut doc = EXAMPLE_LQOS_CONF.parse::<toml_edit::Document>().unwrap();
+    doc["node_id"] = toml_edit::value("test");
+    let reserialized = doc.to_string();
+    assert!(reserialized.contains("node_id = \"test\""));
+  }
+}
