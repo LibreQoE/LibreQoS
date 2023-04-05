@@ -118,8 +118,12 @@ def buildFullGraph():
 			if device['identification']['role'] == "station":
 				if device['identification']['type'] == "airFiber":
 					if device['overview']['status'] == 'active':
-						download = int(device['overview']['downlinkCapacity']/ 1000000)
-						upload = int(device['overview']['uplinkCapacity']/ 1000000)
+						if device['overview']['downlinkCapacity'] is not None and device['overview']['uplinkCapacity'] is not None:
+							download = int(device['overview']['downlinkCapacity']/ 1000000)
+							upload = int(device['overview']['uplinkCapacity']/ 1000000)
+						else:
+							download = generatedPNDownloadMbps
+							upload = generatedPNUploadMbps
 						# Make sure to use half of reported bandwidth for AF60-LRs
 						if device['identification']['model'] == "AF60-LR":
 							download = int(download / 2)
