@@ -1,8 +1,9 @@
 //! Provides an interface to the Heimdall packet watching
 //! system. Heimdall watches traffic flows, and is notified
 //! about their contents via the eBPF Perf system.
-
+#![warn(missing_docs)]
 mod config;
+/// Interface to the performance tracking system
 pub mod perf_interface;
 pub mod stats;
 pub use config::{HeimdalConfig, HeimdallMode};
