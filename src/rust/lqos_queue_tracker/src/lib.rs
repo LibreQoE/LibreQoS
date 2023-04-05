@@ -1,3 +1,10 @@
+//! Retrieves queue statistics from the Linux `tc` shaper, and stores
+//! them in a `QueueStore` for later retrieval. The `QueueStore` is
+//! thread-safe, and can be accessed from multiple threads. It is
+//! updated periodically by a separate thread, and accumulates statistics
+//! between polling periods.
+
+#![warn(missing_docs)]
 mod bus;
 mod circuit_to_queue;
 mod interval;
