@@ -383,6 +383,10 @@ class NetworkGraph:
 						#Remove brackets and quotes of list so LibreQoS.py can parse it
 						device["ipv4"] = str(device["ipv4"]).replace('[','').replace(']','').replace("'",'')
 						device["ipv6"] = str(device["ipv6"]).replace('[','').replace(']','').replace("'",'')
+						if circuit["upload"] is None: 
+							circuit["upload"] = 0.0
+						if circuit["download"] is None: 
+							circuit["download"] = 0.0
 						row = [
 							circuit["id"],
 							circuit["name"],
@@ -392,10 +396,10 @@ class NetworkGraph:
 							device["mac"],
 							device["ipv4"],
 							device["ipv6"],
-							int(circuit["download"] * 0.98),
-							int(circuit["upload"] * 0.98),
-							int(circuit["download"] * bandwidthOverheadFactor),
-							int(circuit["upload"] * bandwidthOverheadFactor),
+							int(float(circuit["download"]) * 0.98),
+							int(float(circuit["upload"]) * 0.98),
+							int(float(circuit["download"]) * bandwidthOverheadFactor),
+							int(float(circuit["upload"]) * bandwidthOverheadFactor),
 							""
 						]
 						wr.writerow(row)
