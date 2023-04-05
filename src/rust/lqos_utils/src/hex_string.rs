@@ -37,6 +37,7 @@ pub fn read_hex_string(s: &str) -> Result<u32, HexParseError> {
 /// parsing a string into a `u32` hex number.
 #[derive(Error, Debug)]
 pub enum HexParseError {
+  /// The hex string could not be decoded
   #[error("Unable to decode string into valid hex")]
   ParseError,
 }
