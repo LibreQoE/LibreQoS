@@ -76,19 +76,36 @@ def buildFlatGraph():
 		net.createNetworkJson()
 	net.createShapedDevices()
 
-def buildFullGraph():
-	# Attempts to build a full network graph, incorporating as much of the UISP
-	# hierarchy as possible.
-	from integrationCommon import NetworkGraph, NetworkNode, NodeType
-	from ispConfig import generatedPNUploadMbps, generatedPNDownloadMbps
+def linkSiteTarget(link, direction):
+	# Helper function to extract the site ID from a data link. Returns
+	# None if not present.
+	if link[direction]['site'] is not None:
+		return link[direction]['site']['identification']['id']
+	
+	return None
 
-	# Load network sites
-	print("Loading Data from UISP")
-	sites = uispRequest("sites")
-	devices = uispRequest("devices?withInterfaces=true&authorized=true")
-	dataLinks = uispRequest("data-links?siteLinksOnly=true")
+def findSiteLinks(dataLinks, siteId):
+	# Searches the Data Links for any links to/from the specified site.
+	# Returns a list of site IDs that are linked to the specified site.
+	links = []
+	for dl in dataLinks:
+		fromSiteId = linkSiteTarget(dl, "from")
+		if fromSiteId is not None and fromSiteId == siteId:
+			# We have a link originating in this site.
+			target = linkSiteTarget(dl, "to")
+			if target is not None:
+				links.append(target)
 
-	# Do we already have a integrationUISPbandwidths.csv file?
+		toSiteId = linkSiteTarget(dl, "to")
+		if toSiteId is not None and toSiteId == siteId:
+			# We have a link originating in this site.
+			target = linkSiteTarget(dl, "from")
+			if target is not None:
+				links.append(target)
+	return links
+
+def buildSiteBandwidths():
+	# Builds a dictionary of site bandwidths from the integrationUISPbandwidths.csv file.
 	siteBandwidth = {}
 	if os.path.isfile("integrationUISPbandwidths.csv"):
 		with open('integrationUISPbandwidths.csv') as csv_file:
@@ -99,8 +116,10 @@ def buildFullGraph():
 				download = int(download)
 				upload = int(upload)
 				siteBandwidth[name] = {"download": download, "upload": upload}
-	
-	# Find AP capacities from UISP
+	return siteBandwidth
+
+def findApCapacities(devices, siteBandwidth):
+	# Searches the UISP devices for APs and adds their capacities to the siteBandwidth dictionary.
 	for device in devices:
 		if device['identification']['role'] == "ap":
 			name = device['identification']['name']
@@ -110,8 +129,8 @@ def buildFullGraph():
 				upload = int(device['overview']['uplinkCapacity'] / 1000000)
 				siteBandwidth[device['identification']['name']] = {
 					"download": download, "upload": upload}
-	
-	# Find Site Capacities by AirFiber capacities
+
+def findAirfibers(devices, generatedPNDownloadMbps, generatedPNUploadMbps):
 	foundAirFibersBySite = {}
 	for device in devices:
 		if device['identification']['site']['type'] == 'site':
@@ -134,7 +153,100 @@ def buildFullGraph():
 								foundAirFibersBySite[device['identification']['site']['id']]['upload'] = upload
 						else:
 							foundAirFibersBySite[device['identification']['site']['id']] = {'download': download, 'upload': upload}
+	return foundAirFibersBySite
+
+def buildSiteList(sites, dataLinks):
+	# Builds a list of sites, including their IDs, names, and connections.
+	# Connections are determined by the dataLinks list.
+	siteList = []
+	for site in sites:
+		newSite = {
+			'id': site['identification']['id'], 
+			'name': site['identification']['name'],
+			'connections': findSiteLinks(dataLinks, site['identification']['id']),
+			'cost': 10000,
+			'parent': "",
+			'type': type,
+		}
+		siteList.append(newSite)
+	return siteList
+
+def findInSiteList(siteList, name):
+	# Searches the siteList for a site with the specified name.
+	for site in siteList:
+		if site['name'] == name:
+			return site
+	return None
+
+def findInSiteListById(siteList, id):
+	# Searches the siteList for a site with the specified name.
+	for site in siteList:
+		if site['id'] == id:
+			return site
+	return None
+
+def debugSpaces(n):
+	# Helper function to print n spaces.
+	spaces = ""
+	for i in range(int(n)):
+		spaces = spaces + " "
+	return spaces
+
+def walkGraphOutwards(siteList, root):
+	def walkGraph(node, parent, cost, backPath):
+		site = findInSiteListById(siteList, node)
+		if cost < site['cost']:
+			# It's cheaper to get here this way, so update the cost and parent.
+			site['cost'] = cost
+			site['parent'] = parent['id']
+			#print(debugSpaces(cost/10) + parent['name'] + "->" + site['name'] + " -> New cost: " + str(cost))
+
+		for connection in site['connections']:
+			if not connection in backPath:
+				#target = findInSiteListById(siteList, connection)
+				#print(debugSpaces((cost+10)/10) + site['name'] + " -> " + target['name'] + " (" + str(target['cost']) + ")")
+				newBackPath = backPath.copy()
+				newBackPath.append(site['id'])
+				walkGraph(connection, site, cost+10, newBackPath)
+
+	for connection in root['connections']:
+		# Force the parent since we're at the top
+		site = findInSiteListById(siteList, connection)
+		site['parent'] = root['id']
+		walkGraph(connection, root, 20, [root['id']])
+
+def buildFullGraph():
+	# Attempts to build a full network graph, incorporating as much of the UISP
+	# hierarchy as possible.
+	from integrationCommon import NetworkGraph, NetworkNode, NodeType
+	from ispConfig import generatedPNUploadMbps, generatedPNDownloadMbps
+
+	# Load network sites
+	print("Loading Data from UISP")
+	sites = uispRequest("sites")
+	devices = uispRequest("devices?withInterfaces=true&authorized=true")
+	dataLinks = uispRequest("data-links?siteLinksOnly=true")
+
+	# Build Site Capacities
+	siteBandwidth = buildSiteBandwidths()
+	findApCapacities(devices, siteBandwidth)
+	foundAirFibersBySite = findAirfibers(devices, generatedPNDownloadMbps, generatedPNUploadMbps)
 	
+	# Create a list of just network sites
+	siteList = buildSiteList(sites, dataLinks)
+	rootSite = findInSiteList(siteList, uispSite)
+	if rootSite is None:
+		print("ERROR: Unable to find root site in UISP")
+		return
+	walkGraphOutwards(siteList, rootSite)
+	# Debug code: dump the list of site parents
+	# for s in siteList:
+	# 	if s['parent'] == "":
+	# 		p = "None"
+	# 	else:
+	# 		p = findInSiteListById(siteList, s['parent'])['name']
+	# 		print(s['name'] + " (" + str(s['cost']) + ") <-- " + p)
+
 	print("Building Topology")
 	net = NetworkGraph()
 	# Add all sites and client sites
@@ -146,10 +258,12 @@ def buildFullGraph():
 		upload = generatedPNUploadMbps
 		address = ""
 		customerName = ""
-		if site['identification']['parent'] is None:
-			parent = ""
-		else:
-			parent = site['identification']['parent']['id']
+		parent = findInSiteListById(siteList, id)['parent']
+		if parent == "":
+			if site['identification']['parent'] is None:
+				parent = ""
+			else:
+				parent = site['identification']['parent']['id']
 		match type:
 			case "site":
 				nodeType = NodeType.site
