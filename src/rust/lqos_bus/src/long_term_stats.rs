@@ -69,6 +69,23 @@ pub struct StatsTreeNode {
     pub immediate_parent: Option<usize>,
 }
 
+/// Collation of all stats for a given time period
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct StatsSubmission {
+    /// License Key
+    pub key: String,
+    /// Node ID
+    pub node_id: String,
+    /// Timestamp of the collation (UNIX time)
+    pub timestamp: u64,
+    /// Total traffic statistics
+    pub totals: StatsTotals,
+    /// Per-host statistics
+    pub hosts: Vec<StatsHost>,
+    /// Tree of traffic summaries
+    pub tree: Vec<StatsTreeNode>,
+}
+
 /// Network-transmitted query to ask the status of a license
 /// key.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

@@ -28,4 +28,5 @@ members = [
     "lqos_heimdall", # Library for managing Heimdall flow watching
     "lqstats", # A CLI utility for retrieving long-term statistics
     "long_term_stats/license_server", # Licensing Server for LibreQoS Long-term stats
+    "long_term_stats/lts_node", # Long-term stats cluster node
 ]
