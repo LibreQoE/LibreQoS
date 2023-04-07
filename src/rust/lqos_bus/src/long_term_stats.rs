@@ -83,7 +83,12 @@ pub enum LicenseReply {
     /// The license is denied
     Denied,
     /// The license is valid
-    Valid,
+    Valid {
+        /// When does the license expire?
+        expiry: u64,
+        /// Address to which statistics should be submitted
+        stats_host: String,
+    },
 }
 
 /// Errors that can occur when checking licenses

@@ -68,7 +68,10 @@ async fn check_license(
     log::info!("Checking license from {address:?}, key: {}", request.key);
     if request.key == "test" {
         log::info!("License is valid");
-        Ok(LicenseReply::Valid)
+        Ok(LicenseReply::Valid {
+            expiry: 0, // Temporary value
+            stats_host: "127.0.0.1:9127".to_string(), // Also temporary
+        })
     } else {
         log::info!("License is denied");
         Ok(LicenseReply::Denied)

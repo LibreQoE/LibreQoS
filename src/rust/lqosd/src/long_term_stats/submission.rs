@@ -16,8 +16,9 @@ pub(crate) async fn new_submission(data: StatsSubmission) {
         LicenseState::Denied => {
             log::error!("Your license is invalid. Please contact support.");
         }
-        LicenseState::Valid => {
+        LicenseState::Valid{ expiry, stats_host } => {
             // TODO: Send to server
+            println!("Send stats to {stats_host} before {expiry}");
         }
     }
 }
