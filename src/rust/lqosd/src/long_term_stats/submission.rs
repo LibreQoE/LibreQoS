@@ -1,19 +1,23 @@
 use std::sync::RwLock;
 use lqos_bus::{BusResponse, long_term_stats::StatsHost};
-use lqos_config::EtcLqos;
 use once_cell::sync::Lazy;
-use super::collator::StatsSubmission;
+use super::{collator::StatsSubmission, licensing::{get_license_status, LicenseState}};
 
 pub(crate) static CURRENT_STATS: Lazy<RwLock<Option<StatsSubmission>>> = Lazy::new(|| RwLock::new(None));
 
-pub(crate) fn new_submission(data: StatsSubmission) {
+pub(crate) async fn new_submission(data: StatsSubmission) {
     *CURRENT_STATS.write().unwrap() = Some(data);
 
-    if let Ok(cfg) = EtcLqos::load() {
-        if let Some(cfg) = &cfg.long_term_stats {
-            if let Some(license) = &cfg.license_key {
-                println!("We've got a license key");
-            }
+    let license = get_license_status().await;
+    match license {
+        LicenseState::Unknown => {
+            log::info!("Temporary error finding license status. Will retry.");
+        }
+        LicenseState::Denied => {
+            log::error!("Your license is invalid. Please contact support.");
+        }
+        LicenseState::Valid => {
+            // TODO: Send to server
         }
     }
 }

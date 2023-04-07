@@ -72,15 +72,15 @@ async fn main() -> Result<()> {
   };
 
   // Spawn tracking sub-systems
-  let long_term_stats_tx = long_term_stats::start_long_term_stats();
+  let long_term_stats_tx = long_term_stats::start_long_term_stats().await;
   join!(
     start_heimdall(),
     spawn_queue_structure_monitor(),
     shaped_devices_tracker::shaped_devices_watcher(),
     shaped_devices_tracker::network_json_watcher(),
     anonymous_usage::start_anonymous_usage(),
+    throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone()),
   );
-  throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone());
   spawn_queue_monitor();
 
   // Handle signals
@@ -96,11 +96,11 @@ async fn main() -> Result<()> {
               warn!("This should never happen - terminating on unknown signal")
             }
           }
-          if let Some(tx) = long_term_stats_tx {
+          /*if let Some(tx) = long_term_stats_tx {
             // Deliberately ignoring the error because we're trying to
             // exit ASAP and don't really care!
-            let _ = tx.send(long_term_stats::StatsMessage::Quit);
-          }
+            let _ = tx.send(long_term_stats::StatsMessage::Quit).await;
+          }*/
           std::mem::drop(kernels);
           UnixSocketServer::signal_cleanup();
           std::mem::drop(file_lock);

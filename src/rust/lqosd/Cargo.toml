@@ -27,6 +27,7 @@ nix = "0"
 sysinfo = "0"
 dashmap = "5"
 num-traits = "0.2"
+thiserror = "1"
 
 # Support JemAlloc on supported platforms
 [target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]

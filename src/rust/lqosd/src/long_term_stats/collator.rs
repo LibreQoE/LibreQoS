@@ -70,9 +70,9 @@ impl From<SubmissionHost> for lqos_bus::long_term_stats::StatsHost {
 ///
 /// (n) is defined in /etc/lqos.conf in the `collation_period_seconds`
 /// field of the `[long_term_stats]` section.
-pub(crate) fn collate_stats() {
+pub(crate) async fn collate_stats() {
   // Obtain exclusive access to the session
-  let mut writer = SESSION_BUFFER.lock().unwrap();
+  let mut writer = SESSION_BUFFER.lock().await;
   if writer.is_empty() {
     // Nothing to do - so exit
     return;
@@ -155,5 +155,5 @@ pub(crate) fn collate_stats() {
   std::mem::drop(writer);
 
   // Submit
-  new_submission(submission);
+  new_submission(submission).await;
 }
