@@ -1,8 +1,9 @@
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
 use once_cell::sync::Lazy;
+use tokio::sync::Mutex;
 use std::{
   net::IpAddr,
-  sync::{atomic::AtomicU64, Mutex},
+  sync::atomic::AtomicU64,
 };
 
 static SUBMISSION_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -25,7 +26,7 @@ pub(crate) struct SessionHost {
 pub(crate) static SESSION_BUFFER: Lazy<Mutex<Vec<StatsSession>>> =
   Lazy::new(|| Mutex::new(Vec::new()));
 
-pub(crate) fn gather_throughput_stats() {
+pub(crate) async fn gather_throughput_stats() {
   let count =
     SUBMISSION_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
   if count < 5 {
@@ -70,5 +71,5 @@ pub(crate) fn gather_throughput_stats() {
       });
     });
 
-  SESSION_BUFFER.lock().unwrap().push(session);
+  SESSION_BUFFER.lock().await.push(session);
 }

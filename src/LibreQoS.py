@@ -172,7 +172,7 @@ def validateNetworkAndDevices():
 					for ipEntry in ipv4_list:
 						if ipEntry in seenTheseIPsAlready:
 							warnings.warn("Provided IPv4 '" + ipEntry + "' in ShapedDevices.csv at row " + str(rowNum) + " is duplicate.", stacklevel=2)
-							devicesValidatedOrNot = False
+							#devicesValidatedOrNot = False
 							seenTheseIPsAlready.append(ipEntry)
 						else:
 							if (type(ipaddress.ip_network(ipEntry)) is ipaddress.IPv4Network) or (type(ipaddress.ip_address(ipEntry)) is ipaddress.IPv4Address):
