@@ -1,6 +1,7 @@
 //! Manages the `/etc/lqos.conf` file.
 use log::error;
 use serde::{Deserialize, Serialize};
+use toml_edit::{Document, value};
 use std::{fs, path::Path};
 use thiserror::Error;
 
@@ -136,16 +137,26 @@ impl EtcLqos {
       return Err(EtcLqosError::ConfigDoesNotExist);
     }
     if let Ok(raw) = std::fs::read_to_string("/etc/lqos.conf") {
-      let config_result: Result<Self, toml::de::Error> = toml::from_str(&raw);
-      match config_result {
-        Ok(mut config) => {
-          check_config(&mut config);
-          Ok(config)
-        }
+      let document = raw.parse::<Document>();
+      match document {
         Err(e) => {
           error!("Unable to parse TOML from /etc/lqos.conf");
           error!("Full error: {:?}", e);
           Err(EtcLqosError::CannotParseToml)
+        }
+        Ok(mut config_doc) => {
+          let cfg = toml_edit::de::from_document::<EtcLqos>(config_doc.clone());
+          match cfg {
+            Ok(mut cfg) => {
+              check_config(&mut config_doc, &mut cfg);
+              Ok(cfg)
+            }
+            Err(e) => {
+              error!("Unable to parse TOML from /etc/lqos.conf");
+              error!("Full error: {:?}", e);
+              Err(EtcLqosError::CannotParseToml)
+            }
+          }
         }
       }
     } else {
@@ -156,7 +167,7 @@ impl EtcLqos {
 
   /// Saves changes made to /etc/lqos.conf
   /// Copies current configuration into /etc/lqos.conf.backup first
-  pub fn save(&self) -> Result<(), EtcLqosError> {
+  pub fn save(&self, document: &mut Document) -> Result<(), EtcLqosError> {
     let cfg_path = Path::new("/etc/lqos.conf");
     let backup_path = Path::new("/etc/lqos.conf.backup");
     if let Err(e) = std::fs::copy(cfg_path, backup_path) {
@@ -164,26 +175,17 @@ impl EtcLqos {
       log::error!("{e:?}");
       return Err(EtcLqosError::BackupFail);
     }
-    let new_cfg = toml::to_string_pretty(&self);
-    match new_cfg {
-      Err(e) => {
-        log::error!("Unable to serialize new /etc/lqos.conf");
-        log::error!("{e:?}");
-        return Err(EtcLqosError::SerializeFail);
-      }
-      Ok(new_cfg) => {
-        if let Err(e) = fs::write(cfg_path, new_cfg) {
-          log::error!("Unable to write to /etc/lqos.conf");
-          log::error!("{e:?}");
-          return Err(EtcLqosError::WriteFail);
-        }
-      }
+    let new_cfg = document.to_string();
+    if let Err(e) = fs::write(cfg_path, new_cfg) {
+      log::error!("Unable to write to /etc/lqos.conf");
+      log::error!("{e:?}");
+      return Err(EtcLqosError::WriteFail);
     }
     Ok(())
   }
 }
 
-fn check_config(cfg: &mut EtcLqos) {
+fn check_config(cfg_doc: &mut Document, cfg: &mut EtcLqos) {
   use sha2::digest::Update;
   use sha2::Digest;
 
@@ -191,6 +193,12 @@ fn check_config(cfg: &mut EtcLqos) {
     if let Ok(machine_id) = std::fs::read_to_string("/etc/machine-id") {
       let hash = sha2::Sha256::new().chain(machine_id).finalize();
       cfg.node_id = Some(format!("{:x}", hash));
+      cfg_doc["node_id"] = value(format!("{:x}", hash));
+      println!("Updating");
+      if let Err(e) = cfg.save(cfg_doc) {
+        log::error!("Unable to save /etc/lqos.conf");
+        log::error!("{e:?}");
+      }
     }
   }
 }
@@ -211,4 +219,24 @@ pub enum EtcLqosError {
   SerializeFail,
   #[error("Unable to write to /etc/lqos.conf")]
   WriteFail,
+}
+
+#[cfg(test)]
+mod test {
+  const EXAMPLE_LQOS_CONF: &str = include_str!("../../../lqos.example");
+
+  #[test]
+  fn round_trip_toml() {
+    let doc = EXAMPLE_LQOS_CONF.parse::<toml_edit::Document>().unwrap();
+    let reserialized = doc.to_string();
+    assert_eq!(EXAMPLE_LQOS_CONF, reserialized);
+  }
+
+  #[test]
+  fn add_node_id() {
+    let mut doc = EXAMPLE_LQOS_CONF.parse::<toml_edit::Document>().unwrap();
+    doc["node_id"] = toml_edit::value("test");
+    let reserialized = doc.to_string();
+    assert!(reserialized.contains("node_id = \"test\""));
+  }
 }
