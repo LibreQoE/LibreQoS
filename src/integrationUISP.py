@@ -192,9 +192,14 @@ def debugSpaces(n):
 		spaces = spaces + " "
 	return spaces
 
-def walkGraphOutwards(siteList, root):
+def walkGraphOutwards(siteList, root, routeOverrides):
 	def walkGraph(node, parent, cost, backPath):
 		site = findInSiteListById(siteList, node)
+		routeName = parent['name'] + "->" + site['name']
+		if routeName in routeOverrides:
+			# We have an overridden cost for this route, so use it instead
+			#print("--> Using overridden cost for " + routeName + ". New cost: " + str(routeOverrides[routeName]) + ".")
+			cost = routeOverrides[routeName]
 		if cost < site['cost']:
 			# It's cheaper to get here this way, so update the cost and parent.
 			site['cost'] = cost
@@ -213,7 +218,20 @@ def walkGraphOutwards(siteList, root):
 		# Force the parent since we're at the top
 		site = findInSiteListById(siteList, connection)
 		site['parent'] = root['id']
-		walkGraph(connection, root, 20, [root['id']])
+		walkGraph(connection, root, 10, [root['id']])
+
+def loadRoutingOverrides():
+	# Loads integrationUISProutes.csv and returns a set of "from", "to", "cost"
+	overrides = {}
+	if os.path.isfile("integrationUISProutes.csv"):
+		with open("integrationUISProutes.csv", "r") as f:
+			reader = csv.reader(f)
+			for row in reader:
+				if not row[0].startswith("#") and len(row) == 3:
+					fromSite, toSite, cost = row
+					overrides[fromSite.strip() + "->" + toSite.strip()] = int(cost)
+	#print(overrides)
+	return overrides
 
 def buildFullGraph():
 	# Attempts to build a full network graph, incorporating as much of the UISP
@@ -235,10 +253,11 @@ def buildFullGraph():
 	# Create a list of just network sites
 	siteList = buildSiteList(sites, dataLinks)
 	rootSite = findInSiteList(siteList, uispSite)
+	routeOverrides = loadRoutingOverrides()
 	if rootSite is None:
 		print("ERROR: Unable to find root site in UISP")
 		return
-	walkGraphOutwards(siteList, rootSite)
+	walkGraphOutwards(siteList, rootSite, routeOverrides)
 	# Debug code: dump the list of site parents
 	# for s in siteList:
 	# 	if s['parent'] == "":
