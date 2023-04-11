@@ -272,7 +272,26 @@ def buildFullGraph():
 	# 	else:
 	# 		p = findInSiteListById(siteList, s['parent'])['name']
 	# 		print(s['name'] + " (" + str(s['cost']) + ") <-- " + p)
-
+	
+	# Find Nodes Connected By PtMP
+	nodeOffPtMP = {}
+	for site in sites:
+		id = site['identification']['id']
+		name = site['identification']['name']
+		type = site['identification']['type']
+		parent = findInSiteListById(siteList, id)['parent']
+		if type == 'site':
+			for link in dataLinks:
+				if link['from']['site']['identification']['id'] == parent:
+					if link['to']['site']['identification']['id'] == id:
+						if link['from']['device']['overview']['wirelessMode'] == 'ap-ptmp':
+							# Capacity of the PtMP client radio feeding the PoP will be used as the site bandwidth limit
+							download = int(round(link['to']['device']['overview']['downlinkCapacity']/1000000))
+							upload = int(round(link['to']['device']['overview']['uplinkCapacity']/1000000))
+							nodeOffPtMP[id] = { 'parent': link['from']['device']['identification']['id'],
+												'download': download,
+												'upload': upload
+												}
 	print("Building Topology")
 	net = NetworkGraph()
 	# Add all sites and client sites
@@ -293,10 +312,15 @@ def buildFullGraph():
 		match type:
 			case "site":
 				nodeType = NodeType.site
+				if id in nodeOffPtMP:
+					parent = nodeOffPtMP[id]['parent']
 				if name in siteBandwidth:
 					# Use the CSV bandwidth values
 					download = siteBandwidth[name]["download"]
 					upload = siteBandwidth[name]["upload"]
+				elif id in nodeOffPtMP:
+					download = nodeOffPtMP[id]['download']
+					upload = nodeOffPtMP[id]['upload']
 				elif id in foundAirFibersBySite:
 					download = foundAirFibersBySite[id]['download']
 					upload = foundAirFibersBySite[id]['upload']
@@ -365,7 +389,7 @@ def buildFullGraph():
 									# Add some defaults in case they want to change them
 									siteBandwidth[node.displayName] = {
 										"download": generatedPNDownloadMbps, "upload": generatedPNUploadMbps}
-
+	
 	net.prepareTree()
 	net.plotNetworkGraph(False)
 	if net.doesNetworkJsonExist():
