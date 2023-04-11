@@ -3,8 +3,12 @@ checkPythonVersion()
 import requests
 import os
 import csv
-from ispConfig import uispSite, uispStrategy
 from integrationCommon import isIpv4Permitted, fixSubnet
+try:
+	from ispConfig import uispSite, uispStrategy, overwriteNetworkJSONalways
+except:
+	from ispConfig import uispSite, uispStrategy
+	overwriteNetworkJSONalways = False
 
 def uispRequest(target):
 	# Sends an HTTP request to UISP and returns the
@@ -71,7 +75,10 @@ def buildFlatGraph():
 	net.prepareTree()
 	net.plotNetworkGraph(False)
 	if net.doesNetworkJsonExist():
-		print("network.json already exists. Leaving in-place.")
+		if overwriteNetworkJSONalways:
+			net.createNetworkJson()
+		else:
+			print("network.json already exists and overwriteNetworkJSONalways set to False. Leaving in-place.")
 	else:
 		net.createNetworkJson()
 	net.createShapedDevices()
@@ -362,7 +369,10 @@ def buildFullGraph():
 	net.prepareTree()
 	net.plotNetworkGraph(False)
 	if net.doesNetworkJsonExist():
-		print("network.json already exists. Leaving in-place.")
+		if overwriteNetworkJSONalways:
+			net.createNetworkJson()
+		else:
+			print("network.json already exists and overwriteNetworkJSONalways set to False. Leaving in-place.")
 	else:
 		net.createNetworkJson()
 	net.createShapedDevices()
