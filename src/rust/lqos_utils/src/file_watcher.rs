@@ -145,10 +145,14 @@ impl FileWatcher {
   }
 }
 
+/// Errors that can occur when watching a file.
 #[derive(Error, Debug)]
 pub enum WatchedFileError {
+  /// Unable to create the file watcher.
   #[error("Unable to create watcher")]
   CreateWatcherError,
+
+  /// Unable to start the file watcher system.
   #[error("Unable to start watcher")]
   StartWatcherError,
 }
