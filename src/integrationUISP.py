@@ -272,7 +272,21 @@ def buildFullGraph():
 	# 	else:
 	# 		p = findInSiteListById(siteList, s['parent'])['name']
 	# 		print(s['name'] + " (" + str(s['cost']) + ") <-- " + p)
-
+	
+	# Find Nodes Connected By PtMP
+	nodeOffPtMP = {}
+	for site in sites:
+		id = site['identification']['id']
+		name = site['identification']['name']
+		type = site['identification']['type']
+		parent = findInSiteListById(siteList, id)['parent']
+		if type == 'site':
+			for link in dataLinks:
+				if link['from']['site']['identification']['id'] == parent:
+					if link['to']['site']['identification']['id'] == id:
+						if link['from']['device']['overview']['wirelessMode'] == 'ap-ptmp':
+							nodeOffPtMP[id] = link['from']['device']['identification']['id']
+	
 	print("Building Topology")
 	net = NetworkGraph()
 	# Add all sites and client sites
@@ -293,6 +307,8 @@ def buildFullGraph():
 		match type:
 			case "site":
 				nodeType = NodeType.site
+				if id in nodeOffPtMP:
+					parent = nodeOffPtMP[id]
 				if name in siteBandwidth:
 					# Use the CSV bandwidth values
 					download = siteBandwidth[name]["download"]
@@ -365,7 +381,7 @@ def buildFullGraph():
 									# Add some defaults in case they want to change them
 									siteBandwidth[node.displayName] = {
 										"download": generatedPNDownloadMbps, "upload": generatedPNUploadMbps}
-
+	
 	net.prepareTree()
 	net.plotNetworkGraph(False)
 	if net.doesNetworkJsonExist():
