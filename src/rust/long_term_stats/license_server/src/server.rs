@@ -1,5 +1,9 @@
+<<<<<<< Updated upstream
 use lqos_bus::long_term_stats::{LicenseCheck, LicenseReply};
 use pgdb::sqlx::{Pool, Postgres};
+=======
+use lqos_bus::long_term_stats::{LicenseReply, LicenseRequest};
+>>>>>>> Stashed changes
 use std::net::SocketAddr;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -72,7 +76,7 @@ async fn decode(buf: &[u8], address: SocketAddr, pool: Pool<Postgres>) -> anyhow
 }
 
 async fn check_license(
-    request: &LicenseCheck,
+    request: &LicenseRequest,
     address: SocketAddr,
     pool: Pool<Postgres>,
 ) -> anyhow::Result<LicenseReply> {

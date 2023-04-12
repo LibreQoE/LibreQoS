@@ -67,6 +67,10 @@ async fn check_license(unix_time: u64) -> LicenseState {
                                     expiry, stats_host
                                 };
                             }
+                            _ => {
+                                log::warn!("Unexpected type of data received. Denying to be safe.");
+                                lock.state = LicenseState::Denied; 
+                            }
                         }
                         return lock.state.clone();
                     }

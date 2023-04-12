@@ -89,9 +89,21 @@ pub struct StatsSubmission {
 /// Network-transmitted query to ask the status of a license
 /// key.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct LicenseCheck {
-    /// The key to check
-    pub key: String,
+pub enum LicenseRequest {
+    /// Check the validity of a key
+    LicenseCheck { 
+        /// The Key to Check
+        key: String 
+    },
+    /// Exchange Keys
+    KeyExchange {
+        /// The node ID of the requesting shaper node
+        node_id: String,
+        /// The license key of the requesting shaper node
+        license_key: String,
+        /// The sodium-style public key of the requesting shaper node
+        public_key: Vec<u8>,
+    }
 }
 
 /// License server responses for a key
@@ -106,6 +118,11 @@ pub enum LicenseReply {
         /// Address to which statistics should be submitted
         stats_host: String,
     },
+    /// Key Exchange
+    MyPublicKey{
+        /// The server's public key
+        public_key: Vec<u8>,
+    }
 }
 
 /// Errors that can occur when checking licenses
@@ -127,7 +144,7 @@ pub enum LicenseCheckError {
 
 fn build_license_request(key: String) -> Result<Vec<u8>, LicenseCheckError> {
     let mut result = Vec::new();
-    let payload = serde_cbor::to_vec(&LicenseCheck { key });
+    let payload = serde_cbor::to_vec(&LicenseRequest::LicenseCheck{ key });
     if let Err(e) = payload {
         log::warn!("Unable to serialize statistics. Not sending them.");
         log::warn!("{e:?}");

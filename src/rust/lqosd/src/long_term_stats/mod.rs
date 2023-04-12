@@ -9,6 +9,7 @@ mod submission;
 mod tree;
 mod licensing;
 mod lts_queue;
+mod pki;
 use std::time::Duration;
 use log::{info, warn};
 use lqos_config::EtcLqos;
