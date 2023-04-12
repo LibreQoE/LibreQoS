@@ -282,9 +282,9 @@ def buildFullGraph():
 		parent = findInSiteListById(siteList, id)['parent']
 		if type == 'site':
 			for link in dataLinks:
-				if link['from']['site']['identification']['id'] == parent:
-					if link['to']['site']['identification']['id'] == id:
-						if link['from']['device']['overview']['wirelessMode'] == 'ap-ptmp':
+				if link['from']['site'] is not None and link['from']['site']['identification']['id'] == parent:
+					if link['to']['site'] is not None and link['to']['site']['identification']['id'] == id:
+						if link['from']['device'] is not None and link['to']['device'] is not None and link['to']['device']['overview'] is not None and link['to']['device']['overview']['downlinkCapacity'] is not None and link['from']['device']['overview']['wirelessMode'] == 'ap-ptmp':
 							# Capacity of the PtMP client radio feeding the PoP will be used as the site bandwidth limit
 							download = int(round(link['to']['device']['overview']['downlinkCapacity']/1000000))
 							upload = int(round(link['to']['device']['overview']['uplinkCapacity']/1000000))
