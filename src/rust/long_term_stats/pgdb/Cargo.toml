@@ -1,0 +1,13 @@
+[package]
+name = "pgdb"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+once_cell = "1"
+thiserror = "1"
+env_logger = "0"
+log = "0"
+lqos_bus = { path = "../../lqos_bus" }
+sqlx = { version = "0.7.0-alpha.2", default_features = false, features = [ "runtime-tokio", "tls-rustls", "postgres" ] }
+futures = "0"
