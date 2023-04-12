@@ -32,8 +32,10 @@ pub fn time_since_boot() -> Result<TimeSpec, TimeError> {
   }
 }
 
+/// Error type for time functions.
 #[derive(Error, Debug)]
 pub enum TimeError {
+  /// The clock isn't ready yet.
   #[error("Clock not ready")]
   ClockNotReady,
 }

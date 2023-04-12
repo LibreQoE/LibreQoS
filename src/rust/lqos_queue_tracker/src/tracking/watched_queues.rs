@@ -31,6 +31,13 @@ pub fn expiration_in_the_future() -> u64 {
   unix_now().unwrap_or(0) + 10
 }
 
+/// Start watching a queue. This will cause the queue to be read
+/// periodically, and its statistics stored in the `QueueStore`.
+/// If the queue is already being watched, this function will
+/// do nothing.
+/// 
+/// # Arguments
+/// * `circuit_id` - The circuit ID to watch
 pub fn add_watched_queue(circuit_id: &str) {
   //info!("Watching queue {circuit_id}");
   let max = num_possible_cpus().unwrap() * 2;
@@ -74,6 +81,11 @@ pub(crate) fn expire_watched_queues() {
   WATCHED_QUEUES.retain(|_,w| w.expires_unix_time > now);
 }
 
+/// Indicates that a watched queue is still being watched. Update the
+/// expiration time for the queue.
+/// 
+/// # Arguments
+/// * `circuit_id` - The circuit ID to watch
 pub fn still_watching(circuit_id: &str) {
   if let Some(mut q) = WATCHED_QUEUES.get_mut(circuit_id) {
     //info!("Still watching circuit: {circuit_id}");

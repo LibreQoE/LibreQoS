@@ -68,7 +68,7 @@ impl WebUsers {
 
   fn save_to_disk(&self) -> Result<(), AuthenticationError> {
     let path = Self::path()?;
-    let new_contents = toml::to_string(&self);
+    let new_contents = toml_edit::ser::to_string(&self);
     if let Err(e) = new_contents {
       return Err(AuthenticationError::SerializationError(e));
     }
@@ -109,7 +109,7 @@ impl WebUsers {
     } else {
       // Load from disk
       if let Ok(raw) = read_to_string(path) {
-        let parse_result = toml::from_str(&raw);
+        let parse_result = toml_edit::de::from_str(&raw);
         if let Ok(users) = parse_result {
           Ok(users)
         } else {
@@ -255,7 +255,7 @@ pub enum AuthenticationError {
   #[error("Unable to load /etc/lqos.conf")]
   UnableToLoadEtcLqos,
   #[error("Unable to serialize to TOML")]
-  SerializationError(toml::ser::Error),
+  SerializationError(toml_edit::ser::Error),
   #[error("Unable to remove existing web users file")]
   UnableToDelete,
   #[error("Unable to open lqusers.toml for writing. Check permissions?")]

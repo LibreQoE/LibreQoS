@@ -1,6 +1,6 @@
 use crate::auth_guard::AuthGuard;
 use crate::cache_control::NoCache;
-use crate::tracker::SHAPED_DEVICES;
+use crate::tracker::{SHAPED_DEVICES, lookup_dns};
 use lqos_bus::{bus_request, BusRequest, BusResponse, FlowTransport, PacketHeader, QueueStoreTransit};
 use rocket::fs::NamedFile;
 use rocket::http::Status;
@@ -160,6 +160,15 @@ pub async fn pcap(id: usize, filename: String) -> Result<NoCache<NamedFile>, Sta
   }
 
   Err(Status::NotFound)
+}
+
+#[get("/api/dns/<ip>")]
+pub async fn dns_query(ip: String) -> NoCache<String> {
+  if let Ok(ip) = ip.parse::<IpAddr>() {
+    NoCache::new(lookup_dns(ip))
+  } else {
+    NoCache::new(ip)
+  }
 }
 
 #[cfg(feature = "equinix_tests")]

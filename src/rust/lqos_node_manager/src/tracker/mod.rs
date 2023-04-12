@@ -10,6 +10,7 @@ pub use cache::SHAPED_DEVICES;
 pub use cache_manager::{update_tracking, update_total_throughput_buffer};
 use lqos_bus::{bus_request, BusRequest, BusResponse, IpStats, TcHandle};
 use rocket::serde::{Deserialize, Serialize, msgpack::MsgPack};
+pub use cache::lookup_dns;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(crate = "rocket::serde")]

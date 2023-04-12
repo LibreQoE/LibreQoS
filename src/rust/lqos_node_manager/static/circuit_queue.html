@@ -94,8 +94,9 @@
                         </ul>
                     </div>
                     <div class="col-sm-2">
-                        <a href="#" class="btn btn-small btn-info" id="btnPause"><i class="fa fa-pause"></i> Pause</a> 
-                        <a href="#" class="btn btn-small btn-info" id="btnSlow"><i class="fa fa-hourglass"></i> Slow Mode</a>
+                        <a href="#" class="btn btn-small btn-info" id="btnPause"><i class="fa fa-pause"></i> Pause</a>
+                        <a href="#" class="btn btn-small btn-info" id="btnSlow"><i class="fa fa-hourglass"></i> Slow
+                            Mode</a>
                     </div>
                 </div>
             </div>
@@ -385,16 +386,17 @@
                     { x: this.x_axis, y: this.backlog.tins[2].y, type: 'scattergl', mode: 'markers', name: 'Video', marker: { size: 4 } },
                     { x: this.x_axis, y: this.backlog.tins[3].y, type: 'scattergl', mode: 'markers', name: 'Voice', marker: { size: 4 } },
                 ];
-                
+
                 if (this.backlogPlotted == null) {
                     this.backlogPlotted = true;
                     Plotly.newPlot(
-                        graph, 
-                        graphData, 
-                        { 
-                            margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, 
-                            yaxis: { automargin: true, title: "Bytes" }, 
-                            xaxis: { automargin: true, title: "Time since now" } });
+                        graph,
+                        graphData,
+                        {
+                            margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 },
+                            yaxis: { automargin: true, title: "Bytes" },
+                            xaxis: { automargin: true, title: "Time since now" }
+                        });
                 } else {
                     Plotly.redraw(graph, graphData);
                 }
@@ -411,11 +413,13 @@
 
                 if (this.delaysPlotted == null) {
                     Plotly.newPlot(
-                        graph, 
-                        graphData, 
-                        { margin: { l: 8, r: 0, b: 0, t: 0, pad: 4 }, 
-                        yaxis: { automargin: true, title: "log10(ms)", range: [-1.0, 1.0] }, 
-                        xaxis: { automargin: true, title: "Time since now" } });
+                        graph,
+                        graphData,
+                        {
+                            margin: { l: 8, r: 0, b: 0, t: 0, pad: 4 },
+                            yaxis: { automargin: true, title: "log10(ms)", range: [-1.0, 1.0] },
+                            xaxis: { automargin: true, title: "Time since now" }
+                        });
                     this.delaysPlotted = true;
                 } else {
                     Plotly.redraw(graph, graphData);
@@ -441,7 +445,7 @@
                 let graphData = [
                     { x: this.x_axis, y: this.throughput.tins[tin].y, type: 'scatter', mode: 'markers' }
                 ];
-                if (this.tinsPlotted == null) {   
+                if (this.tinsPlotted == null) {
                     Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Bits" }, xaxis: { automargin: true, title: "Time since now" } });
                 } else {
                     Plotly.redraw(graph, graphData);
@@ -502,7 +506,7 @@
                 this.per_ip = {};
                 this.y = {};
                 this.x_axis = [];
-                for (let i=0; i<capacity; ++i) {
+                for (let i = 0; i < capacity; ++i) {
                     this.x_axis.push(i);
                     this.x_axis.push(i);
                 }
@@ -514,7 +518,7 @@
             }
 
             clearQuantiles() {
-                for (let i=0; i<12; ++i) {
+                for (let i = 0; i < 12; ++i) {
                     this.quantiles[0][i] = 0;
                     this.quantiles[1][i] = 0;
                 }
@@ -526,7 +530,7 @@
                 if (!this.per_ip.hasOwnProperty(ip)) {
                     this.per_ip[ip] = [];
                     this.y[ip] = [];
-                    for (let i=0; i<this.capacity; ++i) {
+                    for (let i = 0; i < this.capacity; ++i) {
                         this.per_ip[ip].push(0);
                         this.per_ip[ip].push(0);
                         this.y[ip].push(0);
@@ -536,7 +540,7 @@
                 this.per_ip[ip][this.head] = down;
                 this.per_ip[ip][this.head + 1] = 0.0 - up;
                 this.head += 2;
-                if (this.head > this.capacity*2) {
+                if (this.head > this.capacity * 2) {
                     this.head = 0;
                 }
             }
@@ -557,30 +561,30 @@
             prepare() {
                 this.clearQuantiles();
                 for (const ip in this.per_ip) {
-                    let counter = this.capacity*2;
-                    for (let i = this.head; i < this.capacity*2; i++) {
-                        this.y[ip][counter] = this.per_ip[ip][i];              
+                    let counter = this.capacity * 2;
+                    for (let i = this.head; i < this.capacity * 2; i++) {
+                        this.y[ip][counter] = this.per_ip[ip][i];
                         counter--;
                     }
                     for (let i = 0; i < this.head; i++) {
                         this.y[ip][counter] = this.per_ip[ip][i];
                         counter--;
                     }
-                    for (let i=2; i<22; i+=2) {
-                        this.addQuantile(this.y[ip][i], this.y[ip][i+1]);
+                    for (let i = 2; i < 22; i += 2) {
+                        this.addQuantile(this.y[ip][i], this.y[ip][i + 1]);
                     }
                 }
             }
 
-            plot() {
-                let graph = document.getElementById("throughputGraph");
+            plot(target) {
+                let graph = document.getElementById(target);
                 let graphData = [];
                 for (const ip in this.per_ip) {
                     graphData.push({ x: this.x_axis, y: this.y[ip], name: ip, mode: 'markers', type: 'scattergl', marker: { size: 3 } });
                 }
-                if (this.plotted == null) {
-                    Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Traffic (bits)" }, xaxis: { automargin: true, title: "Time since now" } });                    
-                    this.plotted = true;
+                if (!this.hasOwnProperty("plotted" + target)) {
+                    Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Traffic (bits)" }, xaxis: { automargin: true, title: "Time since now" } });
+                    this["plotted" + target] = true;
                 } else {
                     Plotly.redraw(graph, graphData);
                 }
@@ -608,7 +612,7 @@
                 msgPackGet("/api/circuit_throughput/" + encodeURI(id), (data) => {
                     if (tpData == null) tpData = new ThroughputMonitor(300);
                     ips = [];
-                    for (let i=0; i < data.length; i++) {
+                    for (let i = 0; i < data.length; i++) {
                         let ip = data[i][0];
                         ips.push(ip);
                         let down = data[i][1];
@@ -616,13 +620,13 @@
                         tpData.ingest(ip, down, up);
                     }
                     tpData.prepare();
-                    tpData.plot();
+                    tpData.plot("throughputGraph");
                     tpData.plotQuantiles();
                 });
             }
         }
 
-        let funnels = new MultiRingBuffer(300);
+        let funnels = new ThroughputMonitor(300);
         let rtts = {};
         let circuitId = "";
         let builtFunnelDivs = false;
@@ -635,8 +639,24 @@
             circuitId = encodeURI(id);
             msgPackGet("/api/funnel_for_queue/" + circuitId, (data) => {
                 let html = "";
+
+                // Add the client on top
+                let row = "<div class='row row220'>";
+
+                row += "<div class='col-sm-12'>";
+                row += "<div class='card bg-light'>";
+                row += "<h5 class='card-title'><i class='fa fa-hourglass'></i> Client Throughput</h5>";
+                row += "<div id='tp_client' class='graph98 graph150'></div>";
+                row += "</div>";
+                row += "</div>";
+
+                row += "</div>";
+                html += row;
+
+                // Funnels
                 for (let i = 0; i < data.length; ++i) {
-                    funnels.push(data[i][0], data[i][1][NetTrans.current_throughput][0] * 8, data[i][1][NetTrans.current_throughput][1] * 8);
+                    //funnels.push(data[i][0], data[i][1][NetTrans.current_throughput][0] * 8, data[i][1][NetTrans.current_throughput][1] * 8);
+                    funnels.ingest(data[i][0], data[i][1][NetTrans.current_throughput][0] * 8, data[i][1][NetTrans.current_throughput][1] * 8);
                     rtts[data[i][0]] = new RttHistogram();
 
                     let row = "<div class='row row220'>";
@@ -660,33 +680,38 @@
                 }
                 $("#pills-funnel").html(html);
                 builtFunnelDivs = true;
-                setTimeout(plotFunnels, 10);
             });
         }
 
         let plottedFunnels = {};
 
         function plotFunnels() {
+            if (tpData != null) tpData.plot("tp_client");
+            funnels.prepare();
             msgPackGet("/api/funnel_for_queue/" + encodeURI(circuitId), (data) => {
                 for (let i = 0; i < data.length; ++i) {
-                    funnels.push(data[i][0], data[i][1][NetTrans.current_throughput][0] * 8, data[i][1][NetTrans.current_throughput][1] * 8);
-                    for (const [k, v] of Object.entries(funnels.data)) {
-                        let target_div = "tp" + k;                        
-                        let graphData = v.toScatterGraphData();
-                        let graph = document.getElementById(target_div);
-                        if (!plotFunnels.hasOwnProperty(target_div)) {
-                            Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true }, xaxis: { automargin: true, title: "Time since now" } }, { responsive: true });
-                        } else {
-                            Plotly.redraw(graph, graphData);
-                        }
-                    }
-
                     rtts[data[i][0]].clear();
+                    funnels.ingest(data[i][0], data[i][1][NetTrans.current_throughput][0] * 8, data[i][1][NetTrans.current_throughput][1] * 8);
                     for (let j = 0; j < data[i][1][NetTrans.rtts].length; j++) {
                         rtts[data[i][0]].push(data[i][1][NetTrans.rtts][j]);
                     }
+
                     rtts[data[i][0]].plot("rtt" + data[i][0]);
                 }
+
+                for (const [k, v] of Object.entries(funnels.y)) {
+                    let target_div = "tp" + k;
+                    let graphData = [
+                        { x: funnels.x_axis, y: v, type: 'scatter', mode: 'markers', marker: { size: 3 } }
+                    ];
+                    let graph = document.getElementById(target_div);
+                    if (!plotFunnels.hasOwnProperty(target_div)) {
+                        Plotly.newPlot(graph, graphData, { margin: { l: 0, r: 0, b: 0, t: 0, pad: 4 }, yaxis: { automargin: true, title: "Traffic (bits)" }, xaxis: { automargin: true, title: "Time since now" } });
+                    } else {
+                        Plotly.redraw(graph, graphData);
+                    }
+                }
+
             });
         }
 
@@ -788,13 +813,13 @@
                     }
                     html += "<tr>";
                     html += "<td>" + data[i][0][FlowTrans.proto] + "</td>";
-                    html += "<td>" + data[i][0][FlowTrans.src] + "</td>";
+                    html += "<td>" + ipToHostname(data[i][0][FlowTrans.src]) + "</td>";
                     if (data[i][0].proto == "ICMP") {
                         html += "<td>" + icmpType(data[i][0][FlowTrans.src_port]) + "</td>";
                     } else {
                         html += "<td>" + data[i][0][FlowTrans.src_port] + "</td>";
                     }
-                    html += "<td>" + data[i][0][FlowTrans.dst] + "</td>";
+                    html += "<td>" + ipToHostname(data[i][0][FlowTrans.dst]) + "</td>";
                     if (data[i][0][FlowTrans.proto] == "ICMP") {
                         if (data[i][1] != null) {
                             html += "<td>" + icmpType(data[i][1][FlowTrans.src_port]) + "</td>";
@@ -828,14 +853,14 @@
         var slowMode = false;
 
         function showFps() {
-            if(!lastCalledTime) {
+            if (!lastCalledTime) {
                 lastCalledTime = Date.now();
                 fps = 0;
                 return;
             }
-            delta = (Date.now() - lastCalledTime)/1000;
+            delta = (Date.now() - lastCalledTime) / 1000;
             lastCalledTime = Date.now();
-            fps = 1/delta;
+            fps = 1 / delta;
             //$("#fps").text(fps.toFixed(0));
             worstDelta = Math.max(delta, worstDelta);
         }
@@ -846,6 +871,7 @@
                 switch (activeTab) {
                     case "pills-funnel-tab": {
                         getFunnel();
+                        getThroughput();
                     } break;
                     case "pills-flows-tab": {
                         getFlows();

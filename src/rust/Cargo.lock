@@ -734,6 +734,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "dns-lookup"
+version = "1.0.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "53ecafc952c4528d9b51a458d1a8904b81783feff9fde08ab6ed2545ff396872"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "socket2",
+ "winapi",
+]
+
+[[package]]
 name = "either"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -800,7 +812,7 @@ dependencies = [
  "atomic",
  "pear",
  "serde",
- "toml 0.5.11",
+ "toml",
  "uncased",
  "version_check",
 ]
@@ -1424,7 +1436,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror",
- "toml 0.7.2",
+ "toml_edit",
  "uuid",
 ]
 
@@ -1448,7 +1460,9 @@ name = "lqos_node_manager"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "dashmap",
  "default-net",
+ "dns-lookup",
  "jemallocator",
  "lqos_bus",
  "lqos_config",
@@ -2771,18 +2785,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4f7f0dd8d50a853a531c426359045b1998f04219d88799810762cd4ad314234"
 dependencies = [
  "serde",
-]
-
-[[package]]
-name = "toml"
-version = "0.7.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7afcae9e3f0fe2c370fd4657108972cbb2fa9db1b9f84849cefd80741b01cb6"
-dependencies = [
- "serde",
- "serde_spanned",
- "toml_datetime",
- "toml_edit",
 ]
 
 [[package]]

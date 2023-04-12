@@ -76,6 +76,9 @@ fn track_queues() {
   expire_watched_queues();
 }
 
+/// Spawns a thread that periodically reads the queue statistics from
+/// the Linux `tc` shaper, and stores them in a `QueueStore` for later
+/// retrieval.
 pub fn spawn_queue_monitor() {
   std::thread::spawn(|| {
     // Setup the queue monitor loop
