@@ -35,7 +35,7 @@ impl Queue {
 pub(crate) static QUEUE: Lazy<Queue> = Lazy::new(Queue::new);
 
 async fn send_queue(host: String) {
-    let url = format!("http://{host}/submit");
+    let url = format!("http://{host}:9127/submit");
 
     let mut lock = QUEUE.queue.lock().await;
     if lock.is_empty() {
