@@ -1,3 +1,9 @@
+/// Helper macro to create an enum that can be serialized to a string
+/// and deserialized from a string.
+/// 
+/// ## Parameters
+/// * `$enum_name`: the name of the enum to create
+/// * `$($option:ident),*`: the options of the enum
 #[macro_export]
 macro_rules! string_table_enum {
     ($enum_name: ident, $($option:ident),*) => {
@@ -36,6 +42,13 @@ macro_rules! string_table_enum {
     };
 }
 
+/// Helper macro to create an enum that can be serialized to a string
+/// and deserialized from a string. Adds explicit support for dashes
+/// in identifiers.
+/// 
+/// ## Parameters
+/// * `$enum_name`: the name of the enum to create
+/// * `$($option:ident),*`: the options of the enum
 #[macro_export]
 macro_rules! dashy_table_enum {
     ($enum_name: ident, $($option:ident),*) => {

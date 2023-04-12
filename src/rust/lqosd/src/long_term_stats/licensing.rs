@@ -48,7 +48,7 @@ async fn check_license(unix_time: u64) -> LicenseState {
             if let Some(key) = cfg.license_key {
                 if key == MISERLY_NO_KEY {
                     log::warn!("You are using the self-hosting license key. We'd be happy to sell you a real one.");
-                    return LicenseState::Valid { expiry: 0, stats_host: "127.0.0.1:9127".to_string() }
+                    return LicenseState::Valid { expiry: 0, stats_host: "192.168.100.11:9127".to_string() }
                 }
 
                 let mut lock = LICENSE_STATUS.write().await;

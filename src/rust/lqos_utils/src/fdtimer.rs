@@ -5,6 +5,13 @@ use nix::sys::{
 };
 use std::sync::atomic::AtomicBool;
 
+/// `periodic` runs a function at a given interval.
+/// 
+/// ## Parameters
+/// 
+/// * `interval_ms`: the interval in milliseconds.
+/// * `task_name`: the name of the task to run.
+/// * `tick_function`: the function to run at the given interval.
 pub fn periodic(
   interval_ms: u64,
   task_name: &str,

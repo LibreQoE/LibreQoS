@@ -145,7 +145,7 @@ fn build_license_request(key: String) -> Result<Vec<u8>, LicenseCheckError> {
     Ok(result)
 }
 
-const LICENSE_SERVER: &str = "127.0.0.1:9126";
+const LICENSE_SERVER: &str = "192.168.100.11:9126";
 
 /// Ask the license server if the license is valid
 /// 

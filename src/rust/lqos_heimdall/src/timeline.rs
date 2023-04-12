@@ -150,6 +150,13 @@ pub fn hyperfocus_on_target(ip: XdpIpAddress) -> Option<(usize, usize)> {
   }
 }
 
+/// Request a dump of the packet headers collected during a hyperfocus session.
+/// This will return `None` if the session id is invalid or the session has
+/// expired.
+/// ## Returns
+/// * Either `None` or a vector of packet headers.
+/// ## Arguments
+/// * `session_id` - The session id of the hyperfocus session.
 pub fn n_second_packet_dump(session_id: usize) -> Option<Vec<PacketHeader>> {
   if let Some(session) = FOCUS_SESSIONS.get(&session_id) {
     Some(session.data.iter().map(|e| e.as_header()).collect())
@@ -158,6 +165,14 @@ pub fn n_second_packet_dump(session_id: usize) -> Option<Vec<PacketHeader>> {
   }
 }
 
+/// Request a dump of the packet headers collected during a hyperfocus session,
+/// in LibPCAP format. This will return `None` if the session id is invalid or
+/// the session has expired, or the temporary filename used to store the dump
+/// if it is available.
+/// ## Returns
+/// * Either `None` or the filename of the dump.
+/// ## Arguments
+/// * `session_id` - The session id of the hyperfocus session.
 pub fn n_second_pcap(session_id: usize) -> Option<String> {
   if let Some(mut session) = FOCUS_SESSIONS.get_mut(&session_id) {
     let filename = format!("/tmp/cap_sess_{session_id}");

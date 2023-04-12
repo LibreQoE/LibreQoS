@@ -133,6 +133,7 @@ pub fn read_flows() {
   });
 }
 
+/// Expire flows that have not been seen in a while.
 pub fn expire_heimdall_flows() {
   if let Ok(now) = time_since_boot() {
     let since_boot = Duration::from(now);
@@ -142,6 +143,7 @@ pub fn expire_heimdall_flows() {
   }
 }
 
+/// Get the flow stats for a given IP address.
 pub fn get_flow_stats(ip: XdpIpAddress) -> BusResponse {
   let mut result = Vec::new();
 
