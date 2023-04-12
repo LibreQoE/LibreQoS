@@ -12,7 +12,9 @@ async fn main() -> anyhow::Result<()> {
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "warn"),
     );
 
-    tokio::spawn(server()).await;
+    if let Err(e) = tokio::spawn(server()).await {
+        log::error!("Server exited with error: {}", e);
+    }
 
     Ok(())
 }
