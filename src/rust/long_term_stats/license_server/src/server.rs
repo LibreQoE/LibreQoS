@@ -1,4 +1,5 @@
 use lqos_bus::long_term_stats::{LicenseCheck, LicenseReply};
+use pgdb::sqlx::{Pool, Postgres};
 use std::net::SocketAddr;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -10,14 +11,23 @@ pub async fn start() -> anyhow::Result<()> {
     let listener = TcpListener::bind(":::9126").await?;
     log::info!("Listening on :::9126");
 
+    let pool = pgdb::get_connection_pool(5).await;
+    if pool.is_err() {
+        log::error!("Unable to connect to the database");
+        log::error!("{pool:?}");
+        return Err(anyhow::Error::msg("Unable to connect to the database"));
+    }
+    let pool = pool.unwrap();
+
     loop {
         let (mut socket, address) = listener.accept().await?;
         log::info!("Connection from {address:?}");
+        let pool = pool.clone();
         spawn(async move {
             let mut buf = vec![0u8; 10240];
             if let Ok(bytes) = socket.read(&mut buf).await {
                 log::info!("Received {bytes} bytes from {address:?}");
-                match decode(&buf, address).await {
+                match decode(&buf, address, pool).await {
                     Err(e) => log::error!("{e:?}"),
                     Ok(reply) => {
                         let bytes = build_reply(&reply);
@@ -38,7 +48,7 @@ pub async fn start() -> anyhow::Result<()> {
     }
 }
 
-async fn decode(buf: &[u8], address: SocketAddr) -> anyhow::Result<LicenseReply> {
+async fn decode(buf: &[u8], address: SocketAddr, pool: Pool<Postgres>) -> anyhow::Result<LicenseReply> {
     const U64SIZE: usize = std::mem::size_of::<u64>();
     let version_buf = &buf[0..2].try_into()?;
     let version = u16::from_be_bytes(*version_buf);
@@ -51,7 +61,7 @@ async fn decode(buf: &[u8], address: SocketAddr) -> anyhow::Result<LicenseReply>
             let start = 2 + U64SIZE;
             let end = start + size as usize;
             let payload: LicenseCheck = serde_cbor::from_slice(&buf[start..end])?;
-            let license = check_license(&payload, address).await?;
+            let license = check_license(&payload, address, pool).await?;
             Ok(license)
         }
         _ => {
@@ -64,6 +74,7 @@ async fn decode(buf: &[u8], address: SocketAddr) -> anyhow::Result<LicenseReply>
 async fn check_license(
     request: &LicenseCheck,
     address: SocketAddr,
+    pool: Pool<Postgres>,
 ) -> anyhow::Result<LicenseReply> {
     log::info!("Checking license from {address:?}, key: {}", request.key);
     if request.key == "test" {
@@ -73,6 +84,19 @@ async fn check_license(
             stats_host: "127.0.0.1:9127".to_string(), // Also temporary
         })
     } else {
+        match pgdb::get_stats_host_for_key(pool, &request.key).await {
+            Ok(host) => {
+                log::info!("License is valid");
+                return Ok(LicenseReply::Valid {
+                    expiry: 0, // Temporary value
+                    stats_host: host,
+                });
+            }
+            Err(e) => {
+                log::warn!("Unable to get stats host for key: {e:?}");
+            }
+        }        
+
         log::info!("License is denied");
         Ok(LicenseReply::Denied)
     }

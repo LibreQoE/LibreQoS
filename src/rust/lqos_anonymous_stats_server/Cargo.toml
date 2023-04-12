@@ -12,5 +12,5 @@ log = "0"
 lqos_bus = { path = "../lqos_bus" }
 serde = { version = "1.0", features = ["derive"] }
 serde_cbor = "0" # For RFC8949/7409 format C binary objects
-sqlite = "0"
+sqlite = "0.30.4"
 axum = "0.6"

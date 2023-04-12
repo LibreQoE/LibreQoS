@@ -11,3 +11,4 @@ log = "0"
 serde_cbor = "0" # For RFC8949/7409 format C binary objects
 serde = { version = "1.0", features = ["derive"] }
 lqos_bus = { path = "../../lqos_bus" }
+pgdb = { path = "../pgdb" }
