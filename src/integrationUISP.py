@@ -250,22 +250,23 @@ def findNodesBranchedOffPtMP(siteList, dataLinks, sites):
 			if ('parent' in site['identification']) and (site['identification']['parent'] is not None):
 				parent = site['identification']['parent']['id']
 				for link in dataLinks:
-					if ('identification' in link['to']['site']) and (link['to']['site']['identification'] is not None):
-						if ('identification' in link['from']['site']) and (link['from']['site']['identification'] is not None):
-							if link['from']['site']['identification']['id'] == parent:
-								if link['to']['site']['identification']['id'] == id:
-									if link['from']['device']['overview']['wirelessMode'] == 'ap-ptmp':
-										if 'overview' in link['to']['device']:
-											if ('downlinkCapacity' in link['to']['device']['overview']) and ('uplinkCapacity' in link['to']['device']['overview']):
-												if (link['to']['device']['overview']['downlinkCapacity'] is not None) and (link['to']['device']['overview']['uplinkCapacity'] is not None): 
-													# Capacity of the PtMP client radio feeding the PoP will be used as the site bandwidth limit
-													download = int(round(link['to']['device']['overview']['downlinkCapacity']/1000000))
-													upload = int(round(link['to']['device']['overview']['uplinkCapacity']/1000000))
-													nodeOffPtMP[id] = { 'parent': link['from']['device']['identification']['id'],
-																'parentName': link['from']['device']['identification']['name'],
-																'download': download,
-																'upload': upload
-																}
+					if (link['to']['site'] is not None) and (link['to']['site']['identification'] is not None):
+						if ('identification' in link['to']['site']) and (link['to']['site']['identification'] is not None):
+							if ('identification' in link['from']['site']) and (link['from']['site']['identification'] is not None):
+								if link['from']['site']['identification']['id'] == parent:
+									if link['to']['site']['identification']['id'] == id:
+										if link['from']['device']['overview']['wirelessMode'] == 'ap-ptmp':
+											if 'overview' in link['to']['device']:
+												if ('downlinkCapacity' in link['to']['device']['overview']) and ('uplinkCapacity' in link['to']['device']['overview']):
+													if (link['to']['device']['overview']['downlinkCapacity'] is not None) and (link['to']['device']['overview']['uplinkCapacity'] is not None): 
+														# Capacity of the PtMP client radio feeding the PoP will be used as the site bandwidth limit
+														download = int(round(link['to']['device']['overview']['downlinkCapacity']/1000000))
+														upload = int(round(link['to']['device']['overview']['uplinkCapacity']/1000000))
+														nodeOffPtMP[id] = { 'parent': link['from']['device']['identification']['id'],
+																	'parentName': link['from']['device']['identification']['name'],
+																	'download': download,
+																	'upload': upload
+																	}
 	return nodeOffPtMP
 
 def buildFullGraph():
