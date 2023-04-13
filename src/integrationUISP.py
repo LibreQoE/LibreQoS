@@ -294,8 +294,6 @@ def buildFullGraph():
 	rootSite = findInSiteList(siteList, uispSite)
 	print("Finding PtP Capacities")
 	foundAirFibersBySite = findAirfibers(devices, generatedPNDownloadMbps, generatedPNUploadMbps)
-	print("Finding PtMP Capacities")
-	nodeOffPtMP = findNodesBranchedOffPtMP(siteList, dataLinks, sites)
 	
 	print('Creating list of route overrides')
 	routeOverrides = loadRoutingOverrides()
@@ -305,6 +303,8 @@ def buildFullGraph():
 	print('Creating graph')
 	walkGraphOutwards(siteList, rootSite, routeOverrides)
 	
+	print("Finding PtMP Capacities")
+	nodeOffPtMP = findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite)
 	
 	# Debug code: dump the list of site parents
 	# for s in siteList:
