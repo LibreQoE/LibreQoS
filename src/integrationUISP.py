@@ -238,35 +238,37 @@ def loadRoutingOverrides():
 	#print(overrides)
 	return overrides
 
-def findNodesBranchedOffPtMP(siteList, dataLinks, sites):
+def findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite):
 	nodeOffPtMP = {}
-	#print(siteList)
 	for site in sites:
 		id = site['identification']['id']
 		name = site['identification']['name']
 		type = site['identification']['type']
-		if type == 'site':
-			#parent = findInSiteListById(siteList, id)['parent']
-			if ('parent' in site['identification']) and (site['identification']['parent'] is not None):
-				parent = site['identification']['parent']['id']
-				for link in dataLinks:
-					if (link['to']['site'] is not None) and (link['to']['site']['identification'] is not None):
-						if ('identification' in link['to']['site']) and (link['to']['site']['identification'] is not None):
-							if ('identification' in link['from']['site']) and (link['from']['site']['identification'] is not None):
-								if link['from']['site']['identification']['id'] == parent:
-									if link['to']['site']['identification']['id'] == id:
-										if link['from']['device']['overview']['wirelessMode'] == 'ap-ptmp':
-											if 'overview' in link['to']['device']:
-												if ('downlinkCapacity' in link['to']['device']['overview']) and ('uplinkCapacity' in link['to']['device']['overview']):
-													if (link['to']['device']['overview']['downlinkCapacity'] is not None) and (link['to']['device']['overview']['uplinkCapacity'] is not None): 
-														# Capacity of the PtMP client radio feeding the PoP will be used as the site bandwidth limit
-														download = int(round(link['to']['device']['overview']['downlinkCapacity']/1000000))
-														upload = int(round(link['to']['device']['overview']['uplinkCapacity']/1000000))
-														nodeOffPtMP[id] = { 'parent': link['from']['device']['identification']['id'],
-																	'parentName': link['from']['device']['identification']['name'],
-																	'download': download,
-																	'upload': upload
-																	}
+		if id != rootSite['id']:
+			trueParent = findInSiteListById(siteList, id)['parent']
+			if type == 'site':
+				#parent = findInSiteListById(siteList, id)['parent']
+				if ('parent' in site['identification']) and (site['identification']['parent'] is not None):
+					parent = site['identification']['parent']['id']
+					for link in dataLinks:
+						if (link['to']['site'] is not None) and (link['to']['site']['identification'] is not None):
+							if ('identification' in link['to']['site']) and (link['to']['site']['identification'] is not None):
+								if ('identification' in link['from']['site']) and (link['from']['site']['identification'] is not None):
+									# Respect parent defined by topology and overrides
+									if link['from']['site']['identification']['id'] == trueParent:
+										if link['to']['site']['identification']['id'] == id:
+											if link['from']['device']['overview']['wirelessMode'] == 'ap-ptmp':
+												if 'overview' in link['to']['device']:
+													if ('downlinkCapacity' in link['to']['device']['overview']) and ('uplinkCapacity' in link['to']['device']['overview']):
+														if (link['to']['device']['overview']['downlinkCapacity'] is not None) and (link['to']['device']['overview']['uplinkCapacity'] is not None): 
+															# Capacity of the PtMP client radio feeding the PoP will be used as the site bandwidth limit
+															download = int(round(link['to']['device']['overview']['downlinkCapacity']/1000000))
+															upload = int(round(link['to']['device']['overview']['uplinkCapacity']/1000000))
+															nodeOffPtMP[id] = { 'parent': link['from']['device']['identification']['id'],
+																		'parentName': link['from']['device']['identification']['name'],
+																		'download': download,
+																		'upload': upload
+																		}
 	return nodeOffPtMP
 
 def buildFullGraph():
@@ -334,6 +336,8 @@ def buildFullGraph():
 		match type:
 			case "site":
 				nodeType = NodeType.site
+				if id in nodeOffPtMP:
+					parent = nodeOffPtMP[id]['parent']
 				if name in siteBandwidth:
 					# Use the CSV bandwidth values
 					download = siteBandwidth[name]["download"]
