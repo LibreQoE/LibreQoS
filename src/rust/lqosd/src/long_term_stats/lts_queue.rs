@@ -1,6 +1,10 @@
-use lqos_bus::long_term_stats::StatsSubmission;
+use std::sync::atomic::AtomicBool;
+use lqos_bus::long_term_stats::{StatsSubmission, exchange_keys_with_license_server};
+use lqos_config::EtcLqos;
 use once_cell::sync::Lazy;
 use tokio::sync::Mutex;
+use crate::long_term_stats::pki::store_server_public_key;
+use super::pki::KEYPAIR;
 
 struct QueueSubmission {
     attempts: u8,
@@ -33,8 +37,37 @@ impl Queue {
 }
 
 pub(crate) static QUEUE: Lazy<Queue> = Lazy::new(Queue::new);
+static DONE_KEY_EXCHANGE: AtomicBool = AtomicBool::new(false);
 
 async fn send_queue(host: String) {
+    if !DONE_KEY_EXCHANGE.load(std::sync::atomic::Ordering::Relaxed) {
+        let cfg = EtcLqos::load().unwrap();
+        let node_id = cfg.node_id.unwrap();
+        let license_key = cfg.long_term_stats.unwrap().license_key.unwrap();
+        let keypair = (KEYPAIR.read().unwrap()).clone();
+        match exchange_keys_with_license_server(node_id, license_key, keypair.public_key.clone()).await {
+            Ok(lqos_bus::long_term_stats::LicenseReply::MyPublicKey { public_key }) => {
+                store_server_public_key(&public_key);
+                log::info!("Received a public key for the server");
+            }
+            Ok(_) => {
+                log::warn!("License server sent an unexpected response.");
+                return;
+            }
+            Err(e) => {
+                log::warn!("Error exchanging keys with license server: {}", e);
+                return;
+            }
+        }
+
+        DONE_KEY_EXCHANGE.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    if !DONE_KEY_EXCHANGE.load(std::sync::atomic::Ordering::Relaxed) {
+        log::warn!("Not sending stats because key exchange failed.");
+        return;
+    }
+
     let url = format!("http://{host}:9127/submit");
 
     let mut lock = QUEUE.queue.lock().await;

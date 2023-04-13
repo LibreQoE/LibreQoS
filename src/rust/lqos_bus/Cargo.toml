@@ -18,6 +18,7 @@ tokio = { version = "1", features = [ "rt", "macros", "net", "io-util", "time" ]
 log = "0"
 nix = "0"
 serde_cbor = "0" # For RFC8949/7409 format C binary objects
+dryoc = { version = "0.5", features = ["serde"] }
 
 [dev-dependencies]
 criterion = { version = "0", features = [ "html_reports", "async_tokio"] }

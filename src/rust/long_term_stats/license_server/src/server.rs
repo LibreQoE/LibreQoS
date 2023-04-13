@@ -1,9 +1,5 @@
-<<<<<<< Updated upstream
-use lqos_bus::long_term_stats::{LicenseCheck, LicenseReply};
-use pgdb::sqlx::{Pool, Postgres};
-=======
 use lqos_bus::long_term_stats::{LicenseReply, LicenseRequest};
->>>>>>> Stashed changes
+use pgdb::sqlx::{Pool, Postgres};
 use std::net::SocketAddr;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -52,7 +48,11 @@ pub async fn start() -> anyhow::Result<()> {
     }
 }
 
-async fn decode(buf: &[u8], address: SocketAddr, pool: Pool<Postgres>) -> anyhow::Result<LicenseReply> {
+async fn decode(
+    buf: &[u8],
+    address: SocketAddr,
+    pool: Pool<Postgres>,
+) -> anyhow::Result<LicenseReply> {
     const U64SIZE: usize = std::mem::size_of::<u64>();
     let version_buf = &buf[0..2].try_into()?;
     let version = u16::from_be_bytes(*version_buf);
@@ -64,7 +64,7 @@ async fn decode(buf: &[u8], address: SocketAddr, pool: Pool<Postgres>) -> anyhow
         1 => {
             let start = 2 + U64SIZE;
             let end = start + size as usize;
-            let payload: LicenseCheck = serde_cbor::from_slice(&buf[start..end])?;
+            let payload: LicenseRequest = serde_cbor::from_slice(&buf[start..end])?;
             let license = check_license(&payload, address, pool).await?;
             Ok(license)
         }
@@ -80,29 +80,36 @@ async fn check_license(
     address: SocketAddr,
     pool: Pool<Postgres>,
 ) -> anyhow::Result<LicenseReply> {
-    log::info!("Checking license from {address:?}, key: {}", request.key);
-    if request.key == "test" {
-        log::info!("License is valid");
-        Ok(LicenseReply::Valid {
-            expiry: 0, // Temporary value
-            stats_host: "127.0.0.1:9127".to_string(), // Also temporary
-        })
-    } else {
-        match pgdb::get_stats_host_for_key(pool, &request.key).await {
-            Ok(host) => {
+    match request {
+        LicenseRequest::LicenseCheck { key } => {
+            log::info!("Checking license from {address:?}, key: {key}");
+            if key == "test" {
                 log::info!("License is valid");
-                return Ok(LicenseReply::Valid {
-                    expiry: 0, // Temporary value
-                    stats_host: host,
-                });
-            }
-            Err(e) => {
-                log::warn!("Unable to get stats host for key: {e:?}");
-            }
-        }        
+                Ok(LicenseReply::Valid {
+                    expiry: 0,                                // Temporary value
+                    stats_host: "127.0.0.1:9127".to_string(), // Also temporary
+                })
+            } else {
+                match pgdb::get_stats_host_for_key(pool, key).await {
+                    Ok(host) => {
+                        log::info!("License is valid");
+                        return Ok(LicenseReply::Valid {
+                            expiry: 0, // Temporary value
+                            stats_host: host,
+                        });
+                    }
+                    Err(e) => {
+                        log::warn!("Unable to get stats host for key: {e:?}");
+                    }
+                }
 
-        log::info!("License is denied");
-        Ok(LicenseReply::Denied)
+                log::info!("License is denied");
+                Ok(LicenseReply::Denied)
+            }
+        }
+        LicenseRequest::KeyExchange { node_id, license_key, public_key } => {
+            Ok(LicenseReply::Denied)
+        }
     }
 }
 
