@@ -370,8 +370,6 @@ def buildFullGraph():
 		match type:
 			case "site":
 				nodeType = NodeType.site
-				if id in nodeOffPtMP:
-					parent = nodeOffPtMP[id]['parent']
 				if name in siteBandwidth:
 					# Use the CSV bandwidth values
 					download = siteBandwidth[name]["download"]
@@ -381,13 +379,13 @@ def buildFullGraph():
 					if id in foundAirFibersBySite:
 						download = foundAirFibersBySite[id]['download']
 						upload = foundAirFibersBySite[id]['upload']
-						#print('Site ' + name + ' will use bandwidth from foundAirFibersBySite.')
-					# Use limits from nodeOffPtMP only if they're greater than what is already set
-					if id in nodeOffPtMP:
-						if (nodeOffPtMP[id]['download'] >= download) or (nodeOffPtMP[id]['upload'] >= upload):
-							download = nodeOffPtMP[id]['download']
-							upload = nodeOffPtMP[id]['upload']
-							#print('Site ' + name + ' will use bandwidth from nodeOffPtMP.')
+					# If no airFibers were found, and node originates off PtMP, treat as child node of that PtMP AP
+					else:
+						if id in nodeOffPtMP:
+							if (nodeOffPtMP[id]['download'] >= download) or (nodeOffPtMP[id]['upload'] >= upload):
+								download = nodeOffPtMP[id]['download']
+								upload = nodeOffPtMP[id]['upload']
+					
 				siteBandwidth[name] = {
 						"download": download, "upload": upload}
 			case default:
