@@ -30,3 +30,8 @@ pub mod anonymous;
 
 /// Module offering types for long-term stats transit
 pub mod long_term_stats;
+
+/// Re-export bincode
+pub mod bincode {
+  pub use bincode::*;
+}
