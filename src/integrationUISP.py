@@ -295,6 +295,26 @@ def buildFullGraph():
 	devices = uispRequest("devices?withInterfaces=true&authorized=true")
 	dataLinks = uispRequest("data-links?siteLinksOnly=true")
 
+	# If multiple Internet-connected sites, create Internet root node:
+	internetConnectedSites = []
+	for link in dataLinks:
+		if link['canDelete'] ==  False:
+			if link['from']['device']['identification']['id'] == link['to']['device']['identification']['id']:
+				siteID = link['from']['site']['identification']['id']
+				# Found internet link
+				internetConnectedSites.append(siteID)
+	if len(internetConnectedSites) > 1:
+		internetSite = {'id': '001', 'identification': {'id': '001', 'status': 'active', 'name': 'Internet', 'parent': None, 'type': 'site'}}
+		sites.append(internetSite)
+		uispSite = 'Internet'
+		for link in dataLinks:
+			if link['canDelete'] ==  False:
+				if link['from']['device']['identification']['id'] == link['to']['device']['identification']['id']:
+					link['from']['site']['identification']['id'] = '001'
+					link['from']['site']['identification']['name'] = 'Internet'
+					# Found internet link
+					internetConnectedSites.append(siteID)
+	
 	# Build Site Capacities
 	print("Compiling Site Bandwidths")
 	siteBandwidth = buildSiteBandwidths()
