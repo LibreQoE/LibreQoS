@@ -131,11 +131,23 @@ def findApCapacities(devices, siteBandwidth):
 		if device['identification']['role'] == "ap":
 			name = device['identification']['name']
 			if not name in siteBandwidth and device['overview']['downlinkCapacity'] and device['overview']['uplinkCapacity']:
+				safeToUse = True
 				download = int(device['overview']
 							   ['downlinkCapacity'] / 1000000)
 				upload = int(device['overview']['uplinkCapacity'] / 1000000)
-				siteBandwidth[device['identification']['name']] = {
-					"download": download, "upload": upload}
+				if download < 15:
+					print("WARNING: Device '" + device['identification']['hostname'] + "' has unusually low download capacity (" + str(upload) + " Mbps). Discarding in favor of parent site rates.")
+					safeToUse = False
+				if upload < 15:
+					print("WARNING: Device '" + device['identification']['hostname'] + "' has unusually low upload capacity (" + str(download) + " Mbps). Discarding in favor of parent site rates.")
+					safeToUse = False
+				if device['identification']['model'] == 'WaveAP':
+					if (download < 500) or (upload < 500):
+						download = 2450
+						upload = 2450
+				if safeToUse:
+					siteBandwidth[device['identification']['name']] = {
+						"download": download, "upload": upload}
 
 def findAirfibers(devices, generatedPNDownloadMbps, generatedPNUploadMbps):
 	foundAirFibersBySite = {}
