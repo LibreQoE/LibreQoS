@@ -1604,9 +1604,11 @@ name = "license_server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "dryoc",
  "env_logger",
  "log",
  "lqos_bus",
+ "once_cell",
  "pgdb",
  "serde",
  "serde_cbor",

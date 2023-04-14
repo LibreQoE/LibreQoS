@@ -7,6 +7,8 @@ use tokio::{
     spawn,
 };
 
+use crate::pki::LIBREQOS_KEYPAIR;
+
 pub async fn start() -> anyhow::Result<()> {
     let listener = TcpListener::bind(":::9126").await?;
     log::info!("Listening on :::9126");
@@ -33,6 +35,7 @@ pub async fn start() -> anyhow::Result<()> {
                         let bytes = build_reply(&reply);
                         match bytes {
                             Ok(bytes) => {
+                                log::info!("Submitting {} bytes to network", bytes.len());
                                 if let Err(e) = socket.write_all(&bytes).await {
                                     log::error!("Write error: {e:?}");
                                 }
@@ -108,7 +111,12 @@ async fn check_license(
             }
         }
         LicenseRequest::KeyExchange { node_id, license_key, public_key } => {
-            Ok(LicenseReply::Denied)
+            log::info!("Public key exchange requested by {node_id}");
+
+            // TODO: Associate the node & license key with their key
+
+            let public_key = LIBREQOS_KEYPAIR.read().unwrap().public_key.clone();
+            Ok(LicenseReply::MyPublicKey { public_key })
         }
     }
 }

@@ -1,4 +1,5 @@
 mod server;
+mod pki;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

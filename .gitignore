@@ -54,6 +54,7 @@ src/webusers.toml
 src/lqusers.toml
 src/dist
 src/rust/lqos_anonymous_stats_server/anonymous.sqlite
+src/rust/long_term_stats/license_server/lqkeys.bin
 
 # Ignore Rust build artifacts
 src/rust/target
