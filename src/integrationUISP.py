@@ -287,7 +287,7 @@ def buildFullGraph():
 	# Attempts to build a full network graph, incorporating as much of the UISP
 	# hierarchy as possible.
 	from integrationCommon import NetworkGraph, NetworkNode, NodeType
-	from ispConfig import generatedPNUploadMbps, generatedPNDownloadMbps
+	from ispConfig import uispSite, generatedPNUploadMbps, generatedPNDownloadMbps
 
 	# Load network sites
 	print("Loading Data from UISP")
