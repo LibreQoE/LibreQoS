@@ -250,18 +250,17 @@ def loadRoutingOverrides():
 	#print(overrides)
 	return overrides
 
-def findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite):
+def findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite, foundAirFibersBySite):
 	nodeOffPtMP = {}
-	for site in sites:
-		id = site['identification']['id']
-		name = site['identification']['name']
-		type = site['identification']['type']
+	for site in siteList:
+		id = site['id']
+		name = site['name']
 		if id != rootSite['id']:
-			trueParent = findInSiteListById(siteList, id)['parent']
-			if type == 'site':
+			if id not in foundAirFibersBySite:
+				trueParent = findInSiteListById(siteList, id)['parent']
 				#parent = findInSiteListById(siteList, id)['parent']
-				if ('parent' in site['identification']) and (site['identification']['parent'] is not None):
-					parent = site['identification']['parent']['id']
+				if site['parent'] is not None:
+					parent = site['parent']
 					for link in dataLinks:
 						if (link['to']['site'] is not None) and (link['to']['site']['identification'] is not None):
 							if ('identification' in link['to']['site']) and (link['to']['site']['identification'] is not None):
@@ -276,18 +275,40 @@ def findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite):
 															# Capacity of the PtMP client radio feeding the PoP will be used as the site bandwidth limit
 															download = int(round(link['to']['device']['overview']['downlinkCapacity']/1000000))
 															upload = int(round(link['to']['device']['overview']['uplinkCapacity']/1000000))
-															nodeOffPtMP[id] = { 'parent': link['from']['device']['identification']['id'],
-																		'parentName': link['from']['device']['identification']['name'],
-																		'download': download,
+															nodeOffPtMP[id] = {'download': download,
 																		'upload': upload
 																		}
-	return nodeOffPtMP
+															#print('Site ' + name + ' will use PtMP AP as parent.')
+															site['parent'] = parent					
+	return siteList, nodeOffPtMP
+
+def handleMultipleInternetNodes(sites, dataLinks, uispSite):
+	internetConnectedSites = []
+	for link in dataLinks:
+		if link['canDelete'] ==  False:
+			if link['from']['device']['identification']['id'] == link['to']['device']['identification']['id']:
+				siteID = link['from']['site']['identification']['id']
+				# Found internet link
+				internetConnectedSites.append(siteID)
+	if len(internetConnectedSites) > 1:
+		internetSite = {'id': '001', 'identification': {'id': '001', 'status': 'active', 'name': 'Internet', 'parent': None, 'type': 'site'}}
+		sites.append(internetSite)
+		uispSite = 'Internet'
+		for link in dataLinks:
+			if link['canDelete'] ==  False:
+				if link['from']['device']['identification']['id'] == link['to']['device']['identification']['id']:
+					link['from']['site']['identification']['id'] = '001'
+					link['from']['site']['identification']['name'] = 'Internet'
+					# Found internet link
+					internetConnectedSites.append(siteID)
+		print("Multiple Internet links detected. Will create 'Internet' root node.")
+	return(sites, dataLinks, uispSite)
 
 def buildFullGraph():
 	# Attempts to build a full network graph, incorporating as much of the UISP
 	# hierarchy as possible.
 	from integrationCommon import NetworkGraph, NetworkNode, NodeType
-	from ispConfig import generatedPNUploadMbps, generatedPNDownloadMbps
+	from ispConfig import uispSite, generatedPNUploadMbps, generatedPNDownloadMbps
 
 	# Load network sites
 	print("Loading Data from UISP")
@@ -295,6 +316,9 @@ def buildFullGraph():
 	devices = uispRequest("devices?withInterfaces=true&authorized=true")
 	dataLinks = uispRequest("data-links?siteLinksOnly=true")
 
+	# If multiple Internet-connected sites, create Internet root node:
+	sites, dataLinks, uispSite = handleMultipleInternetNodes(sites, dataLinks, uispSite)
+	
 	# Build Site Capacities
 	print("Compiling Site Bandwidths")
 	siteBandwidth = buildSiteBandwidths()
@@ -306,7 +330,6 @@ def buildFullGraph():
 	rootSite = findInSiteList(siteList, uispSite)
 	print("Finding PtP Capacities")
 	foundAirFibersBySite = findAirfibers(devices, generatedPNDownloadMbps, generatedPNUploadMbps)
-	
 	print('Creating list of route overrides')
 	routeOverrides = loadRoutingOverrides()
 	if rootSite is None:
@@ -314,9 +337,8 @@ def buildFullGraph():
 		return
 	print('Creating graph')
 	walkGraphOutwards(siteList, rootSite, routeOverrides)
-	
 	print("Finding PtMP Capacities")
-	nodeOffPtMP = findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite)
+	siteList, nodeOffPtMP = findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite, foundAirFibersBySite)
 	
 	# Debug code: dump the list of site parents
 	# for s in siteList:
@@ -348,8 +370,6 @@ def buildFullGraph():
 		match type:
 			case "site":
 				nodeType = NodeType.site
-				if id in nodeOffPtMP:
-					parent = nodeOffPtMP[id]['parent']
 				if name in siteBandwidth:
 					# Use the CSV bandwidth values
 					download = siteBandwidth[name]["download"]
@@ -359,13 +379,13 @@ def buildFullGraph():
 					if id in foundAirFibersBySite:
 						download = foundAirFibersBySite[id]['download']
 						upload = foundAirFibersBySite[id]['upload']
-						#print('Site ' + name + ' will use bandwidth from foundAirFibersBySite.')
-					# Use limits from nodeOffPtMP only if they're greater than what is already set
-					if id in nodeOffPtMP:
-						if (nodeOffPtMP[id]['download'] >= download) or (nodeOffPtMP[id]['upload'] >= upload):
-							download = nodeOffPtMP[id]['download']
-							upload = nodeOffPtMP[id]['upload']
-							#print('Site ' + name + ' will use bandwidth from nodeOffPtMP.')
+					# If no airFibers were found, and node originates off PtMP, treat as child node of that PtMP AP
+					else:
+						if id in nodeOffPtMP:
+							if (nodeOffPtMP[id]['download'] >= download) or (nodeOffPtMP[id]['upload'] >= upload):
+								download = nodeOffPtMP[id]['download']
+								upload = nodeOffPtMP[id]['upload']
+					
 				siteBandwidth[name] = {
 						"download": download, "upload": upload}
 			case default:
