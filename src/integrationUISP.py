@@ -250,18 +250,17 @@ def loadRoutingOverrides():
 	#print(overrides)
 	return overrides
 
-def findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite):
+def findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite, foundAirFibersBySite):
 	nodeOffPtMP = {}
-	for site in sites:
-		id = site['identification']['id']
-		name = site['identification']['name']
-		type = site['identification']['type']
+	for site in siteList:
+		id = site['id']
+		name = site['name']
 		if id != rootSite['id']:
-			trueParent = findInSiteListById(siteList, id)['parent']
-			if type == 'site':
+			if id not in foundAirFibersBySite:
+				trueParent = findInSiteListById(siteList, id)['parent']
 				#parent = findInSiteListById(siteList, id)['parent']
-				if ('parent' in site['identification']) and (site['identification']['parent'] is not None):
-					parent = site['identification']['parent']['id']
+				if site['parent'] is not None:
+					parent = site['parent']
 					for link in dataLinks:
 						if (link['to']['site'] is not None) and (link['to']['site']['identification'] is not None):
 							if ('identification' in link['to']['site']) and (link['to']['site']['identification'] is not None):
@@ -276,12 +275,12 @@ def findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite):
 															# Capacity of the PtMP client radio feeding the PoP will be used as the site bandwidth limit
 															download = int(round(link['to']['device']['overview']['downlinkCapacity']/1000000))
 															upload = int(round(link['to']['device']['overview']['uplinkCapacity']/1000000))
-															nodeOffPtMP[id] = { 'parent': link['from']['device']['identification']['id'],
-																		'parentName': link['from']['device']['identification']['name'],
-																		'download': download,
+															nodeOffPtMP[id] = {'download': download,
 																		'upload': upload
 																		}
-	return nodeOffPtMP
+															#print('Site ' + name + ' will use PtMP AP as parent.')
+															site['parent'] = parent					
+	return siteList, nodeOffPtMP
 
 def handleMultipleInternetNodes(sites, dataLinks, uispSite):
 	internetConnectedSites = []
@@ -302,6 +301,7 @@ def handleMultipleInternetNodes(sites, dataLinks, uispSite):
 					link['from']['site']['identification']['name'] = 'Internet'
 					# Found internet link
 					internetConnectedSites.append(siteID)
+		print("Multiple Internet links detected. Will create 'Internet' root node.")
 	return(sites, dataLinks, uispSite)
 
 def buildFullGraph():
@@ -330,7 +330,6 @@ def buildFullGraph():
 	rootSite = findInSiteList(siteList, uispSite)
 	print("Finding PtP Capacities")
 	foundAirFibersBySite = findAirfibers(devices, generatedPNDownloadMbps, generatedPNUploadMbps)
-	
 	print('Creating list of route overrides')
 	routeOverrides = loadRoutingOverrides()
 	if rootSite is None:
@@ -338,9 +337,8 @@ def buildFullGraph():
 		return
 	print('Creating graph')
 	walkGraphOutwards(siteList, rootSite, routeOverrides)
-	
 	print("Finding PtMP Capacities")
-	nodeOffPtMP = findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite)
+	siteList, nodeOffPtMP = findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite, foundAirFibersBySite)
 	
 	# Debug code: dump the list of site parents
 	# for s in siteList:
