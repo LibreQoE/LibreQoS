@@ -143,6 +143,17 @@ pub enum LicenseCheckError {
     DeserializeFail,
 }
 
+/// Stores a license id and node id for transport
+#[derive(Serialize, Deserialize)]
+pub struct NodeIdAndLicense {
+    /// The node id
+    pub node_id: String,
+    /// The license key
+    pub license_key: String,
+    /// The Sodium Nonce
+    pub nonce: [u8; 24],
+}
+
 fn build_license_request(key: String) -> Result<Vec<u8>, LicenseCheckError> {
     let mut result = Vec::new();
     let payload = serde_cbor::to_vec(&LicenseRequest::LicenseCheck{ key });

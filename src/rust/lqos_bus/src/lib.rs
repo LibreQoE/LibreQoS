@@ -35,3 +35,8 @@ pub mod long_term_stats;
 pub mod bincode {
   pub use bincode::*;
 }
+
+/// Re-export CBOR
+pub mod cbor {
+  pub use serde_cbor::*;
+}
