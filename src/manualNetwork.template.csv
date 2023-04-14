@@ -1,0 +1,4 @@
+Site Name,Download Mbps,Upload Mbps,Parent Site Name
+SiteA,1000,1000,
+SiteB,975,975,SiteA
+SiteC,950,950,SiteB
