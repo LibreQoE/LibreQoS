@@ -160,9 +160,9 @@ def findAirfibers(devices, generatedPNDownloadMbps, generatedPNUploadMbps):
 							download = int(device['overview']['downlinkCapacity']/ 1000000)
 							upload = int(device['overview']['uplinkCapacity']/ 1000000)
 							# Make sure to use half of reported bandwidth for AF60/AF60-LRs
-							if (device['identification']['model'] == "AF60-LR") or (device['identification']['model'] == "AF60"):
-								download = int(download / 2)
-								upload = int(download / 2)
+							#if (device['identification']['model'] == "AF60-LR") or (device['identification']['model'] == "AF60"):
+							#	download = int(download / 2)
+							#	upload = int(download / 2)
 							if device['identification']['site']['id'] in foundAirFibersBySite:
 								if (download > foundAirFibersBySite[device['identification']['site']['id']]['download']) or (upload > foundAirFibersBySite[device['identification']['site']['id']]['upload']):
 									foundAirFibersBySite[device['identification']['site']['id']]['download'] = download
