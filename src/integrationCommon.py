@@ -437,5 +437,5 @@ class NetworkGraph:
 						if (self.nodes[child].type != NodeType.client and self.nodes[child].type != NodeType.device) or showClients:
 							dot.edge("N" + str(i), "N" + str(child))
 
-		dot.render("network.pdf")
+		dot.render("network")
 
