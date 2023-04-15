@@ -418,7 +418,7 @@ class NetworkGraph:
 
 		import graphviz
 		dot = graphviz.Digraph(
-			'network', comment="Network Graph", engine="dot")
+			'network', comment="Network Graph", engine="dot", graph_attr={'rankdir':'LR'})
 
 		for (i, node) in enumerate(self.nodes):
 			if ((node.type != NodeType.client and node.type != NodeType.device) or showClients):
@@ -436,6 +436,6 @@ class NetworkGraph:
 					if child != i:
 						if (self.nodes[child].type != NodeType.client and self.nodes[child].type != NodeType.device) or showClients:
 							dot.edge("N" + str(i), "N" + str(child))
-
+		dot = dot.unflatten(stagger=3)#, fanout=True)
 		dot.render("network")
 
