@@ -135,11 +135,8 @@ def findApCapacities(devices, siteBandwidth):
 				download = int(device['overview']
 							   ['downlinkCapacity'] / 1000000)
 				upload = int(device['overview']['uplinkCapacity'] / 1000000)
-				if download < 15:
-					print("WARNING: Device '" + device['identification']['hostname'] + "' has unusually low download capacity (" + str(upload) + " Mbps). Discarding in favor of parent site rates.")
-					safeToUse = False
-				if upload < 15:
-					print("WARNING: Device '" + device['identification']['hostname'] + "' has unusually low upload capacity (" + str(download) + " Mbps). Discarding in favor of parent site rates.")
+				if (download < 15) or (upload < 15):
+					print("WARNING: Device '" + device['identification']['hostname'] + "' has unusually low capacity (" + str(download) + '/' + str(upload) + " Mbps). Discarding in favor of parent site rates.")
 					safeToUse = False
 				if device['identification']['model'] == 'WaveAP':
 					if (download < 500) or (upload < 500):
