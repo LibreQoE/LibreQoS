@@ -275,8 +275,9 @@ def findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite, foundAirFiber
 															nodeOffPtMP[id] = {'download': download,
 																		'upload': upload
 																		}
-															#print('Site ' + name + ' will use PtMP AP as parent.')
-															site['parent'] = parent					
+															site['parent'] = parent
+															if site['type'] == 'site':
+																print('Site ' + name + ' will use PtMP AP as parent.')
 	return siteList, nodeOffPtMP
 
 def handleMultipleInternetNodes(sites, dataLinks, uispSite):
