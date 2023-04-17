@@ -1,4 +1,3 @@
-use lqos_config::EtcLqos;
 use lqos_utils::unix_time::unix_now;
 
 use super::{
@@ -30,17 +29,11 @@ pub(crate) struct SubmissionHost {
 
 impl From<StatsSubmission> for lqos_bus::long_term_stats::StatsSubmission {
     fn from(value: StatsSubmission) -> Self {
-        let cfg = EtcLqos::load().unwrap();
-        let lts_cfg = cfg.long_term_stats.unwrap();
-        let key = lts_cfg.license_key.unwrap_or("".to_string());
-        let node_id = cfg.node_id.unwrap_or("".to_string());
         Self {
-            key,
-            node_id,
             timestamp: value.timestamp,
-            totals: value.clone().into(),
-            hosts: value.hosts.into_iter().map(Into::into).collect(),
-            tree: value.tree.into_iter().map(Into::into).collect(),
+            totals: Some(value.clone().into()),
+            hosts: Some(value.hosts.into_iter().map(Into::into).collect()),
+            tree: Some(value.tree.into_iter().map(Into::into).collect()),
         }
     }
 }

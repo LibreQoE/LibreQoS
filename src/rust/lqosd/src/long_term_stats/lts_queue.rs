@@ -24,7 +24,7 @@ impl Queue {
         }
     }
 
-    pub async fn push(&self, data: lqos_bus::long_term_stats::StatsSubmission, host: &str) {
+    pub async fn push(&self, data: lqos_bus::long_term_stats::StatsSubmission, host: String) {
         {
             let mut lock = self.queue.lock().await;
             lock.push(QueueSubmission {

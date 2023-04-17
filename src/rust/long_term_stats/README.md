@@ -12,3 +12,11 @@ stop you.
 * Setup the database schema (TBD).
 * Put the connection string for your database in `/etc/lqdb` on each host.
 
+## For each stats node in the cluster
+
+* Install InfluxDB.
+* Install lts_node.
+* Setup `/etc/lqdb`.
+* Copy `lts_keys.bin` from the license server to the `lts_node` directory.
+* Run the process.
+* Add the node to the license server.

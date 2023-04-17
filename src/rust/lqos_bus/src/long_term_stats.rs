@@ -73,18 +73,14 @@ pub struct StatsTreeNode {
 /// Collation of all stats for a given time period
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct StatsSubmission {
-    /// License Key
-    pub key: String,
-    /// Node ID
-    pub node_id: String,
     /// Timestamp of the collation (UNIX time)
     pub timestamp: u64,
     /// Total traffic statistics
-    pub totals: StatsTotals,
+    pub totals: Option<StatsTotals>,
     /// Per-host statistics
-    pub hosts: Vec<StatsHost>,
+    pub hosts: Option<Vec<StatsHost>>,
     /// Tree of traffic summaries
-    pub tree: Vec<StatsTreeNode>,
+    pub tree: Option<Vec<StatsTreeNode>>,
 }
 
 /// Network-transmitted query to ask the status of a license
@@ -144,7 +140,7 @@ pub enum LicenseCheckError {
 }
 
 /// Stores a license id and node id for transport
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct NodeIdAndLicense {
     /// The node id
     pub node_id: String,

@@ -17,7 +17,7 @@ pub(crate) async fn new_submission(data: StatsSubmission) {
             log::error!("Your license is invalid. Please contact support.");
         }
         LicenseState::Valid{ stats_host, .. } => {
-            QUEUE.push(data.into(), &stats_host).await;
+            tokio::spawn(QUEUE.push(data.into(), stats_host));
         }
     }
 }
