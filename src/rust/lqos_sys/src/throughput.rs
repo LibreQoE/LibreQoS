@@ -29,5 +29,7 @@ pub struct HostCounter {
 pub fn throughput_for_each(
   callback: &mut dyn FnMut(&XdpIpAddress, &[HostCounter]),
 ) {
-  crate::bpf_iterator::iterate_throughput(callback);
+  unsafe {
+    crate::bpf_iterator::iterate_throughput(callback);
+  }
 }
