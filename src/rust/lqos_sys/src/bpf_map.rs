@@ -94,6 +94,7 @@ where
           value_ptr as *mut c_void,
         );
         //result.push((key.clone(), value.clone()));
+        println!("old callback");
         callback(&key, &value);
         prev_key = key_ptr;
       }

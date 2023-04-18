@@ -1542,6 +1542,7 @@ dependencies = [
  "nix",
  "once_cell",
  "thiserror",
+ "zerocopy",
 ]
 
 [[package]]
