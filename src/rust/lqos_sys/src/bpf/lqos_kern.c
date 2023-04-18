@@ -336,21 +336,32 @@ struct bpf_iter__bpf_map_elem {
 	void *value;
 };
 
+volatile const int NUM_CPUS = 0;
+
 SEC("iter/bpf_map_elem")
 int throughput_reader(struct bpf_iter__bpf_map_elem *ctx)
 {
     // The sequence file
     struct seq_file *seq = ctx->meta->seq;
-    struct host_counter *counter = ctx->value;
+    void *counter = ctx->value;
     struct in6_addr *ip = ctx->key;
+    __u32 num_cpus = NUM_CPUS;
 
     // Bail on end
     if (counter == NULL || ip == NULL) {
         return 0;
     }
 
+    if (ctx->meta->seq_num == 0) {
+        bpf_seq_write(seq, &num_cpus, sizeof(__u32));
+    }
+
     bpf_seq_write(seq, ip, sizeof(struct in6_addr));
-    bpf_seq_write(seq, counter, sizeof(struct host_counter));
+    for (__u32 i=0; i<NUM_CPUS; i++) {
+        struct host_counter * content = counter+(i*48);
+        bpf_seq_write(seq, content, sizeof(struct host_counter));
+    }
+
     //BPF_SEQ_PRINTF(seq, "%d %d\n", counter->download_bytes, counter->upload_bytes);
     return 0;
 }
@@ -362,10 +373,15 @@ int rtt_reader(struct bpf_iter__bpf_map_elem *ctx)
     struct seq_file *seq = ctx->meta->seq;
     struct rotating_performance *counter = ctx->value;
     struct in6_addr *ip = ctx->key;
+    __u32 num_cpus = 1;
 
     // Bail on end
     if (counter == NULL || ip == NULL) {
         return 0;
+    }
+
+    if (ctx->meta->seq_num == 0) {
+        bpf_seq_write(seq, &num_cpus, sizeof(__u32));
     }
 
     //BPF_SEQ_PRINTF(seq, "%d %d\n", counter->next_entry, counter->rtt[0]);

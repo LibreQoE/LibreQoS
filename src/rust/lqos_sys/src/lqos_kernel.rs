@@ -14,7 +14,7 @@ use log::{info, warn};
 use nix::libc::{geteuid, if_nametoindex};
 use std::{ffi::{CString, c_void}, process::Command};
 
-use self::bpf::lqos_kern;
+use self::bpf::{lqos_kern, libbpf_num_possible_cpus};
 
 pub(crate) mod bpf {
   #![allow(warnings, unused)]
@@ -123,6 +123,7 @@ pub fn attach_xdp_and_tc_to_interface(
   set_strict_mode()?;
   let skeleton = unsafe {
     let skeleton = open_kernel()?;
+    (*(*skeleton).rodata).NUM_CPUS = libbpf_num_possible_cpus();
     (*(*skeleton).data).direction = match direction {
       InterfaceDirection::Internet => 1,
       InterfaceDirection::IspNetwork => 2,
