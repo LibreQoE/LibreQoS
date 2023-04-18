@@ -14,6 +14,8 @@ use log::{info, warn};
 use nix::libc::{geteuid, if_nametoindex};
 use std::{ffi::{CString, c_void}, process::Command};
 
+use self::bpf::lqos_kern;
+
 pub(crate) mod bpf {
   #![allow(warnings, unused)]
   include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
@@ -114,7 +116,7 @@ pub fn attach_xdp_and_tc_to_interface(
   interface_name: &str,
   direction: InterfaceDirection,
   heimdall_event_handler: bpf::ring_buffer_sample_fn,
-) -> Result<()> {
+) -> Result<*mut lqos_kern> {
   check_root()?;
   // Check the interface is valid
   let interface_index = interface_name_to_index(interface_name)?;
@@ -229,7 +231,8 @@ pub fn attach_xdp_and_tc_to_interface(
     }
   }
 
-  Ok(())
+  
+  Ok(skeleton)
 }
 
 unsafe fn attach_xdp_best_available(

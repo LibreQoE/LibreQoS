@@ -319,4 +319,59 @@ int bifrost(struct __sk_buff *skb)
     return TC_ACT_UNSPEC;
 }
 
+/*
+ * Structs for map iteration programs
+ * See https://github.com/xdp-project/bpf-examples
+ */
+struct bpf_iter_meta {
+	struct seq_file *seq;
+	__u64 session_id;
+	__u64 seq_num;
+} __attribute__((preserve_access_index));
+
+struct bpf_iter__bpf_map_elem {
+	struct bpf_iter_meta *meta;
+	struct bpf_map *map;
+	void *key;
+	void *value;
+};
+
+SEC("iter/bpf_map_elem")
+int throughput_reader(struct bpf_iter__bpf_map_elem *ctx)
+{
+    // The sequence file
+    struct seq_file *seq = ctx->meta->seq;
+    struct host_counter *counter = ctx->value;
+    struct in6_addr *ip = ctx->key;
+
+    // Bail on end
+    if (counter == NULL || ip == NULL) {
+        return 0;
+    }
+
+    bpf_seq_write(seq, ip, sizeof(struct in6_addr));
+    bpf_seq_write(seq, counter, sizeof(struct host_counter));
+    //BPF_SEQ_PRINTF(seq, "%d %d\n", counter->download_bytes, counter->upload_bytes);
+    return 0;
+}
+
+SEC("iter/bpf_map_elem")
+int rtt_reader(struct bpf_iter__bpf_map_elem *ctx)
+{
+    // The sequence file
+    struct seq_file *seq = ctx->meta->seq;
+    struct rotating_performance *counter = ctx->value;
+    struct in6_addr *ip = ctx->key;
+
+    // Bail on end
+    if (counter == NULL || ip == NULL) {
+        return 0;
+    }
+
+    //BPF_SEQ_PRINTF(seq, "%d %d\n", counter->next_entry, counter->rtt[0]);
+    bpf_seq_write(seq, ip, sizeof(struct in6_addr));
+    bpf_seq_write(seq, counter, sizeof(struct rotating_performance));
+    return 0;
+}
+
 char _license[] SEC("license") = "GPL";

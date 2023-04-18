@@ -22,6 +22,7 @@ mod lqos_kernel;
 mod tcp_rtt;
 mod throughput;
 mod linux;
+mod bpf_iterator;
 
 pub use ip_mapping::{
   add_ip_to_tc, clear_ips_from_tc, del_ip_from_tc, list_mapped_ips,

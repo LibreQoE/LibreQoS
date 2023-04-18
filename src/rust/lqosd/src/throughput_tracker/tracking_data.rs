@@ -111,18 +111,18 @@ impl ThroughputTracker {
       if let Some(mut entry) = raw_data.get_mut(xdp_ip) {
         entry.bytes = (0, 0);
         entry.packets = (0, 0);
-        for c in counts {
-          entry.bytes.0 += c.download_bytes;
-          entry.bytes.1 += c.upload_bytes;
-          entry.packets.0 += c.download_packets;
-          entry.packets.1 += c.upload_packets;
-          if c.tc_handle != 0 {
-            entry.tc_handle = TcHandle::from_u32(c.tc_handle);
+        //for c in counts {
+          entry.bytes.0 += counts.download_bytes;
+          entry.bytes.1 += counts.upload_bytes;
+          entry.packets.0 += counts.download_packets;
+          entry.packets.1 += counts.upload_packets;
+          if counts.tc_handle != 0 {
+            entry.tc_handle = TcHandle::from_u32(counts.tc_handle);
           }
-          if c.last_seen != 0 {
-            entry.last_seen = c.last_seen;
+          if counts.last_seen != 0 {
+            entry.last_seen = counts.last_seen;
           }
-        }
+        //}
         if entry.packets != entry.prev_packets {
           entry.most_recent_cycle = self_cycle;
 
@@ -155,15 +155,15 @@ impl ThroughputTracker {
           last_fresh_rtt_data_cycle: 0,
           last_seen: 0,
         };
-        for c in counts {
-          entry.bytes.0 += c.download_bytes;
-          entry.bytes.1 += c.upload_bytes;
-          entry.packets.0 += c.download_packets;
-          entry.packets.1 += c.upload_packets;
-          if c.tc_handle != 0 {
-            entry.tc_handle = TcHandle::from_u32(c.tc_handle);
+        //for c in counts {
+          entry.bytes.0 += counts.download_bytes;
+          entry.bytes.1 += counts.upload_bytes;
+          entry.packets.0 += counts.download_packets;
+          entry.packets.1 += counts.upload_packets;
+          if counts.tc_handle != 0 {
+            entry.tc_handle = TcHandle::from_u32(counts.tc_handle);
           }
-        }
+        //}
         raw_data.insert(*xdp_ip, entry);
       }
     });
@@ -171,10 +171,9 @@ impl ThroughputTracker {
 
   pub(crate) fn apply_rtt_data(&self) {
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
-    rtt_for_each(&mut |raw_ip, rtt| {
+    rtt_for_each(&mut |ip, rtt| {
       if rtt.has_fresh_data != 0 {
-        let ip = XdpIpAddress(*raw_ip);
-        if let Some(mut tracker) = self.raw_data.get_mut(&ip) {
+        if let Some(mut tracker) = self.raw_data.get_mut(ip) {
           tracker.recent_rtt_data = rtt.rtt;
           tracker.last_fresh_rtt_data_cycle = self_cycle;
           if let Some(parents) = &tracker.network_json_parents {
