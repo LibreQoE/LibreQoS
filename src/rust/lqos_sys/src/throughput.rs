@@ -27,7 +27,7 @@ pub struct HostCounter {
 /// Iterates through all throughput entries, and sends them in turn to `callback`.
 /// This elides the need to clone or copy data.
 pub fn throughput_for_each(
-  callback: &mut dyn FnMut(&XdpIpAddress, &HostCounter),
+  callback: &mut dyn FnMut(&XdpIpAddress, &[HostCounter]),
 ) {
   crate::bpf_iterator::iterate_throughput(callback);
 }

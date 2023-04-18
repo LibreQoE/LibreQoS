@@ -47,7 +47,7 @@ impl<KEY, VALUE> BpfMapIterator<KEY, VALUE> {
     let mut buf = Vec::new();
     let bytes_read = file.read_to_end(&mut buf);
     match bytes_read {
-      Ok(_) => Ok(BpfMapIter { buffer: buf, index: 0, _phantom: PhantomData }),
+      Ok(_) => Ok(BpfMapIter::new(buf)),
       Err(e) => {
         log::error!("Unable to read from kernel map iterator file");
         log::error!("{e:?}");
@@ -69,12 +69,26 @@ pub(crate) struct BpfMapIter<K, V> {
   buffer: Vec<u8>,
   index: usize,
   _phantom: PhantomData<(K, V)>,
+  num_cpus: u32,
 }
 
 impl<K, V> BpfMapIter<K, V> {
   const KEY_SIZE: usize = std::mem::size_of::<K>();
   const VALUE_SIZE: usize = std::mem::size_of::<V>();
   const TOTAL_SIZE: usize = Self::KEY_SIZE + Self::VALUE_SIZE;
+
+  fn new(buffer: Vec<u8>) -> Self {
+    let first_four : [u8; 4] = [buffer[0], buffer[1], buffer[2], buffer[3]];
+    let num_cpus = u32::from_ne_bytes(first_four);
+    //println!("CPUs: {num_cpus}");
+
+    Self {
+      buffer,
+      index: std::mem::size_of::<i32>(),
+      _phantom: PhantomData,
+      num_cpus,
+    }
+  }
 }
 
 impl<K, V> Iterator for BpfMapIter<K, V>
@@ -82,18 +96,23 @@ where
   K: FromBytes + Debug,
   V: FromBytes + Debug,
 {
-  type Item = (K, V);
+  type Item = (K, Vec<V>);
 
   fn next(&mut self) -> Option<Self::Item> {
     if self.index + Self::TOTAL_SIZE <= self.buffer.len() {      
       let key = K::read_from(&self.buffer[self.index..self.index + Self::KEY_SIZE]);
       self.index += Self::KEY_SIZE;
-      let value = V::read_from(
-        &self.buffer
-          [self.index ..self.index + Self::VALUE_SIZE],
-      );
-      self.index += Self::VALUE_SIZE;
-      Some((key.unwrap(), value.unwrap()))
+      let mut vals = Vec::new();
+      for _ in 0..self.num_cpus {
+        let value = V::read_from(
+          &self.buffer
+            [self.index ..self.index + Self::VALUE_SIZE],
+        );
+        vals.push(value.unwrap());
+        self.index += Self::VALUE_SIZE;
+      }
+      //println!("{key:?} {vals:?}");
+      Some((key.unwrap(), vals))
     } else {
       None
     }
@@ -118,7 +137,7 @@ static RTT_TRACKER: Lazy<
   Mutex<Option<BpfMapIterator<XdpIpAddress, RttTrackingEntry>>>,
 > = Lazy::new(|| Mutex::new(None));
 
-pub fn iterate_throughput(callback: &mut dyn FnMut(&XdpIpAddress, &HostCounter)) {
+pub fn iterate_throughput(callback: &mut dyn FnMut(&XdpIpAddress, &[HostCounter])) {
   let mut traffic = MAP_TRAFFIC.lock().unwrap();
   if traffic.is_none() {
     let lock = BPF_SKELETON.lock().unwrap();
@@ -162,7 +181,7 @@ pub fn iterate_rtt(callback: &mut dyn FnMut(&XdpIpAddress, &RttTrackingEntry)) {
 
   if let Some(iter) = traffic.as_mut() {
     iter.iter().unwrap().for_each(|(k, v)| {
-      callback(&k, &v);
+      callback(&k, &v[0]); // Not per-CPU
     });
   }
 }

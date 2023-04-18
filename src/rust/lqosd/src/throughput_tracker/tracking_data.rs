@@ -111,18 +111,18 @@ impl ThroughputTracker {
       if let Some(mut entry) = raw_data.get_mut(xdp_ip) {
         entry.bytes = (0, 0);
         entry.packets = (0, 0);
-        //for c in counts {
-          entry.bytes.0 += counts.download_bytes;
-          entry.bytes.1 += counts.upload_bytes;
-          entry.packets.0 += counts.download_packets;
-          entry.packets.1 += counts.upload_packets;
-          if counts.tc_handle != 0 {
-            entry.tc_handle = TcHandle::from_u32(counts.tc_handle);
+        for c in counts {
+          entry.bytes.0 += c.download_bytes;
+          entry.bytes.1 += c.upload_bytes;
+          entry.packets.0 += c.download_packets;
+          entry.packets.1 += c.upload_packets;
+          if c.tc_handle != 0 {
+            entry.tc_handle = TcHandle::from_u32(c.tc_handle);
           }
-          if counts.last_seen != 0 {
-            entry.last_seen = counts.last_seen;
+          if c.last_seen != 0 {
+            entry.last_seen = c.last_seen;
           }
-        //}
+        }
         if entry.packets != entry.prev_packets {
           entry.most_recent_cycle = self_cycle;
 
@@ -131,8 +131,8 @@ impl ThroughputTracker {
             net_json.add_throughput_cycle(
               parents,
               (
-                entry.bytes.0 - entry.prev_bytes.0,
-                entry.bytes.1 - entry.prev_bytes.1,
+                entry.bytes.0.saturating_sub(entry.prev_bytes.0),
+                entry.bytes.1.saturating_sub(entry.prev_bytes.1),
               ),
             );
           }
@@ -155,15 +155,15 @@ impl ThroughputTracker {
           last_fresh_rtt_data_cycle: 0,
           last_seen: 0,
         };
-        //for c in counts {
-          entry.bytes.0 += counts.download_bytes;
-          entry.bytes.1 += counts.upload_bytes;
-          entry.packets.0 += counts.download_packets;
-          entry.packets.1 += counts.upload_packets;
-          if counts.tc_handle != 0 {
-            entry.tc_handle = TcHandle::from_u32(counts.tc_handle);
+        for c in counts {
+          entry.bytes.0 += c.download_bytes;
+          entry.bytes.1 += c.upload_bytes;
+          entry.packets.0 += c.download_packets;
+          entry.packets.1 += c.upload_packets;
+          if c.tc_handle != 0 {
+            entry.tc_handle = TcHandle::from_u32(c.tc_handle);
           }
-        //}
+        }
         raw_data.insert(*xdp_ip, entry);
       }
     });
