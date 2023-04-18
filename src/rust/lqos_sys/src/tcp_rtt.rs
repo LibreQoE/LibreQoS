@@ -32,5 +32,7 @@ impl Default for RttTrackingEntry {
 ///
 /// Executes `callback` for each entry.
 pub fn rtt_for_each(callback: &mut dyn FnMut(&XdpIpAddress, &RttTrackingEntry)) {
-  iterate_rtt(callback);
+  unsafe {
+    iterate_rtt(callback);
+  }
 }

@@ -129,17 +129,16 @@ enum BpfIteratorError {
   UnableToCreateIterator,
 }
 
-static MAP_TRAFFIC: Lazy<
-  Mutex<Option<BpfMapIterator<XdpIpAddress, HostCounter>>>,
-> = Lazy::new(|| Mutex::new(None));
+static mut MAP_TRAFFIC: Lazy<
+  Option<BpfMapIterator<XdpIpAddress, HostCounter>>,
+> = Lazy::new(|| None);
 
-static RTT_TRACKER: Lazy<
-  Mutex<Option<BpfMapIterator<XdpIpAddress, RttTrackingEntry>>>,
-> = Lazy::new(|| Mutex::new(None));
+static mut RTT_TRACKER: Lazy<
+  Option<BpfMapIterator<XdpIpAddress, RttTrackingEntry>>,
+> = Lazy::new(|| None);
 
-pub fn iterate_throughput(callback: &mut dyn FnMut(&XdpIpAddress, &[HostCounter])) {
-  let mut traffic = MAP_TRAFFIC.lock().unwrap();
-  if traffic.is_none() {
+pub unsafe fn iterate_throughput(callback: &mut dyn FnMut(&XdpIpAddress, &[HostCounter])) {
+  if MAP_TRAFFIC.is_none() {
     let lock = BPF_SKELETON.lock().unwrap();
     if let Some(skeleton) = lock.as_ref() {
       let skeleton = skeleton.get_ptr();
@@ -149,12 +148,12 @@ pub fn iterate_throughput(callback: &mut dyn FnMut(&XdpIpAddress, &[HostCounter]
           (*skeleton).maps.map_traffic,
         )
       } {
-        *traffic = Some(iter);
+        *MAP_TRAFFIC = Some(iter);
       }
     }
   }
 
-  if let Some(iter) = traffic.as_mut() {
+  if let Some(iter) = MAP_TRAFFIC.as_mut() {
     iter.iter().unwrap().for_each(|(k, v)| {
       //println!("{:?} {:?}", k, v);
       callback(&k, &v);
@@ -162,9 +161,8 @@ pub fn iterate_throughput(callback: &mut dyn FnMut(&XdpIpAddress, &[HostCounter]
   }
 }
 
-pub fn iterate_rtt(callback: &mut dyn FnMut(&XdpIpAddress, &RttTrackingEntry)) {
-  let mut traffic = RTT_TRACKER.lock().unwrap();
-  if traffic.is_none() {
+pub unsafe fn iterate_rtt(callback: &mut dyn FnMut(&XdpIpAddress, &RttTrackingEntry)) {
+  if RTT_TRACKER.is_none() {
     let lock = BPF_SKELETON.lock().unwrap();
     if let Some(skeleton) = lock.as_ref() {
       let skeleton = skeleton.get_ptr();
@@ -174,12 +172,12 @@ pub fn iterate_rtt(callback: &mut dyn FnMut(&XdpIpAddress, &RttTrackingEntry)) {
           (*skeleton).maps.rtt_tracker,
         )
       } {
-        *traffic = Some(iter);
+        *RTT_TRACKER = Some(iter);
       }
     }
   }
 
-  if let Some(iter) = traffic.as_mut() {
+  if let Some(iter) = RTT_TRACKER.as_mut() {
     iter.iter().unwrap().for_each(|(k, v)| {
       callback(&k, &v[0]); // Not per-CPU
     });
