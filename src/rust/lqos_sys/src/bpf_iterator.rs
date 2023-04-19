@@ -5,7 +5,7 @@ use crate::{
 use lqos_utils::XdpIpAddress;
 use once_cell::sync::Lazy;
 use std::{
-  fs::File, io::Read, marker::PhantomData, os::fd::FromRawFd, sync::Mutex, fmt::Debug,
+  fs::File, io::Read, marker::PhantomData, os::fd::FromRawFd, fmt::Debug,
 };
 use thiserror::Error;
 use zerocopy::FromBytes;
