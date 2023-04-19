@@ -354,6 +354,7 @@ int throughput_reader(struct bpf_iter__bpf_map_elem *ctx)
 
     if (ctx->meta->seq_num == 0) {
         bpf_seq_write(seq, &num_cpus, sizeof(__u32));
+        bpf_seq_write(seq, &num_cpus, sizeof(__u32)); // Repeat for padding
     }
 
     bpf_seq_write(seq, ip, sizeof(struct in6_addr));
@@ -382,6 +383,7 @@ int rtt_reader(struct bpf_iter__bpf_map_elem *ctx)
 
     if (ctx->meta->seq_num == 0) {
         bpf_seq_write(seq, &num_cpus, sizeof(__u32));
+        bpf_seq_write(seq, &num_cpus, sizeof(__u32)); // Padding
     }
 
     //BPF_SEQ_PRINTF(seq, "%d %d\n", counter->next_entry, counter->rtt[0]);
