@@ -374,16 +374,10 @@ int rtt_reader(struct bpf_iter__bpf_map_elem *ctx)
     struct seq_file *seq = ctx->meta->seq;
     struct rotating_performance *counter = ctx->value;
     struct in6_addr *ip = ctx->key;
-    __u32 num_cpus = 1;
 
     // Bail on end
     if (counter == NULL || ip == NULL) {
         return 0;
-    }
-
-    if (ctx->meta->seq_num == 0) {
-        bpf_seq_write(seq, &num_cpus, sizeof(__u32));
-        bpf_seq_write(seq, &num_cpus, sizeof(__u32)); // Padding
     }
 
     //BPF_SEQ_PRINTF(seq, "%d %d\n", counter->next_entry, counter->rtt[0]);
