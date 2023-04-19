@@ -29,7 +29,9 @@ struct BpfMapIterator<KEY, VALUE> {
 unsafe impl<KEY, VALUE> Sync for BpfMapIterator<KEY, VALUE> {}
 unsafe impl<KEY, VALUE> Send for BpfMapIterator<KEY, VALUE> {}
 
-impl<KEY, VALUE> BpfMapIterator<KEY, VALUE> {
+impl<KEY, VALUE> BpfMapIterator<KEY, VALUE> 
+where VALUE: FromBytes + Debug + Clone + Default
+{
   /// Create a new link to an eBPF map, that *must* have an iterator
   /// function defined in the eBPF program - and exposed in the
   /// skeleton.
@@ -107,10 +109,13 @@ pub(crate) struct BpfMapIter<K, V> {
   buffer: Vec<u8>,
   index: usize,
   _phantom: PhantomData<(K, V)>,
-  num_cpus: u32,
+  num_cpus: usize,
+  row_data: Vec<V>,
 }
 
-impl<K, V> BpfMapIter<K, V> {
+impl<K, V> BpfMapIter<K, V> 
+where V: FromBytes + Debug + Clone + Default
+{
   const KEY_SIZE: usize = std::mem::size_of::<K>();
   const VALUE_SIZE: usize = std::mem::size_of::<V>();
   const TOTAL_SIZE: usize = Self::KEY_SIZE + Self::VALUE_SIZE;
@@ -120,7 +125,7 @@ impl<K, V> BpfMapIter<K, V> {
   /// throughout.
   fn new(buffer: Vec<u8>) -> Self {
     let first_four : [u8; 4] = [buffer[0], buffer[1], buffer[2], buffer[3]];
-    let num_cpus = u32::from_ne_bytes(first_four);
+    let num_cpus = u32::from_ne_bytes(first_four) as usize;
     //println!("CPUs: {num_cpus}");
 
     Self {
@@ -128,14 +133,15 @@ impl<K, V> BpfMapIter<K, V> {
       index: std::mem::size_of::<i32>(),
       _phantom: PhantomData,
       num_cpus,
+      row_data: vec![V::default(); num_cpus],
     }
   }
 }
 
 impl<K, V> Iterator for BpfMapIter<K, V>
 where
-  K: FromBytes + Debug,
-  V: FromBytes + Debug,
+  K: FromBytes + Debug + Clone,
+  V: FromBytes + Debug + Clone + Default,
 {
   type Item = (K, Vec<V>);
 
@@ -143,17 +149,16 @@ where
     if self.index + Self::TOTAL_SIZE <= self.buffer.len() {      
       let key = K::read_from(&self.buffer[self.index..self.index + Self::KEY_SIZE]);
       self.index += Self::KEY_SIZE;
-      let mut vals = Vec::new();
-      for _ in 0..self.num_cpus {
+      for cpu in 0..self.num_cpus {
         let value = V::read_from(
           &self.buffer
             [self.index ..self.index + Self::VALUE_SIZE],
         );
-        vals.push(value.unwrap());
+        self.row_data[cpu] = value.unwrap();
         self.index += Self::VALUE_SIZE;
       }
       //println!("{key:?} {vals:?}");
-      Some((key.unwrap(), vals))
+      Some((key.unwrap(), self.row_data.clone()))
     } else {
       None
     }
