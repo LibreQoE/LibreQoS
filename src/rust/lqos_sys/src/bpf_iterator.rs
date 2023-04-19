@@ -1,6 +1,6 @@
 use crate::{
   kernel_wrapper::BPF_SKELETON, lqos_kernel::bpf, HostCounter,
-  RttTrackingEntry,
+  RttTrackingEntry, heimdall_data::{HeimdallKey, HeimdallData},
 };
 use lqos_utils::XdpIpAddress;
 use once_cell::sync::Lazy;
@@ -90,7 +90,11 @@ where
         log::error!("{e:?}");
         Err(BpfIteratorError::UnableToCreateIterator)
       }
-      Ok(_) => {
+      Ok(bytes) => {
+        if bytes == 0 {
+          // Not having any data is not an error
+          return Ok(());
+        }
         let first_four_bytes: [u8; 4] = [buf[0], buf[1], buf[2], buf[3]];
         let num_cpus = u32::from_ne_bytes(first_four_bytes) as usize;
         let mut index = 8;
@@ -98,11 +102,13 @@ where
           let key_start = index;
           let key_end = key_start + Self::KEY_SIZE;
           let key_slice = &buf[key_start..key_end];
+          //println!("{:?}", unsafe { &key_slice.align_to::<KEY>() });
           let (_head, key, _tail) = unsafe { &key_slice.align_to::<KEY>() };
 
           let value_start = key_end;
           let value_end = value_start + (num_cpus * Self::VALUE_SIZE);
           let value_slice = &buf[value_start..value_end];
+          //println!("{:?}", unsafe { &value_slice.align_to::<VALUE>() });
           let (_head, values, _tail) =
             unsafe { &value_slice.align_to::<VALUE>() };
           debug_assert_eq!(values.len(), num_cpus);
@@ -181,6 +187,10 @@ static mut RTT_TRACKER: Lazy<
   Option<BpfMapIterator<XdpIpAddress, RttTrackingEntry>>,
 > = Lazy::new(|| None);
 
+static mut HEIMDALL_TRACKER: Lazy<
+  Option<BpfMapIterator<HeimdallKey, HeimdallData>>,
+> = Lazy::new(|| None);
+
 pub unsafe fn iterate_throughput(
   callback: &mut dyn FnMut(&XdpIpAddress, &[HostCounter]),
 ) {
@@ -224,5 +234,30 @@ pub unsafe fn iterate_rtt(
 
   if let Some(iter) = RTT_TRACKER.as_mut() {
     let _ = iter.for_each(callback);
+  }
+}
+
+pub fn iterate_heimdall(
+  callback: &mut dyn FnMut(&HeimdallKey, &[HeimdallData]),
+) {
+  unsafe {
+    if HEIMDALL_TRACKER.is_none() {
+      let lock = BPF_SKELETON.lock().unwrap();
+      if let Some(skeleton) = lock.as_ref() {
+        let skeleton = skeleton.get_ptr();
+        if let Ok(iter) = {
+          BpfMapIterator::new(
+            (*skeleton).progs.heimdall_reader,
+            (*skeleton).maps.heimdall,
+          )
+        } {
+          *HEIMDALL_TRACKER = Some(iter);
+        }
+      }
+    }
+
+    if let Some(iter) = HEIMDALL_TRACKER.as_mut() {
+      let _ = iter.for_each_per_cpu(callback);
+    }
   }
 }
