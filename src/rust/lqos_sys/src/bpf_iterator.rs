@@ -10,15 +10,39 @@ use std::{
 use thiserror::Error;
 use zerocopy::FromBytes;
 
+/// Represents a link to an eBPF defined iterator. The iterators
+/// must be available in the BPF skeleton, and the skeleton must
+/// be loaded. These are designed to be lazy-initialized on a
+/// per-map basis. The `MAP_TRAFFIC` and `RTT_ITERATOR` types
+/// implement this type.
+/// 
+/// Normal usage is to initialize the iterator and keep it around.
+/// When you need to query the iterator, execute the `iter` method
+/// and treat it as a normal Rust iterator.
 struct BpfMapIterator<KEY, VALUE> {
   link: *mut bpf::bpf_link,
   _phantom: PhantomData<(KEY, VALUE)>,
 }
 
+// The BPF map is re-entrant and thread safe. There's no clean
+// way to represent this in Rust, so we just mark it as such.
 unsafe impl<KEY, VALUE> Sync for BpfMapIterator<KEY, VALUE> {}
 unsafe impl<KEY, VALUE> Send for BpfMapIterator<KEY, VALUE> {}
 
 impl<KEY, VALUE> BpfMapIterator<KEY, VALUE> {
+  /// Create a new link to an eBPF map, that *must* have an iterator
+  /// function defined in the eBPF program - and exposed in the
+  /// skeleton.
+  /// 
+  /// # Safety
+  /// 
+  /// * This is unsafe, it relies on the skeleton having been properly
+  ///   initialized prior to using this type.
+  /// 
+  /// # Arguments
+  /// 
+  /// * `program` - The eBPF program that points to the iterator function.
+  /// * `map` - The eBPF map that the iterator function will iterate over.
   fn new(
     program: *mut bpf::bpf_program,
     map: *mut bpf::bpf_map,
@@ -31,6 +55,9 @@ impl<KEY, VALUE> BpfMapIterator<KEY, VALUE> {
     }
   }
 
+  /// Create a "link file descriptor", connecting the eBPF iterator
+  /// to a Linux file descriptor. This instantiates the iterator
+  /// in the kernel and allows us to read from it.
   fn as_file(&self) -> Result<File, BpfIteratorError> {
     let link_fd = unsafe { bpf::bpf_link__fd(self.link) };
     let iter_fd = unsafe { bpf::bpf_iter_create(link_fd) };
@@ -42,6 +69,11 @@ impl<KEY, VALUE> BpfMapIterator<KEY, VALUE> {
     }
   }
 
+  /// Transform the iterator into a Rust iterator. This can then
+  /// be used like a regular iterator. The iterator owns the
+  /// file's buffer and provides references. The iterator MUST
+  /// outlive the functions that use it (you can clone all you
+  /// like).
   fn iter(&self) -> Result<BpfMapIter<KEY, VALUE>, BpfIteratorError> {
     let mut file = self.as_file()?;
     let mut buf = Vec::new();
@@ -57,6 +89,8 @@ impl<KEY, VALUE> BpfMapIterator<KEY, VALUE> {
   }
 }
 
+/// When the iterator is dropped, we need to destroy the link.
+/// This is handled by the kernel when the program is unloaded.
 impl<KEY, VALUE> Drop for BpfMapIterator<KEY, VALUE> {
   fn drop(&mut self) {
     unsafe {
@@ -65,6 +99,10 @@ impl<KEY, VALUE> Drop for BpfMapIterator<KEY, VALUE> {
   }
 }
 
+/// Rust iterator for reading data from eBPF map iterators.
+/// Transforms the data into the appropriate types, and returns
+/// a tuple of the key, and a vector of values (1 per CPU for 
+/// CPU_MAP types, 1 entry for all others).
 pub(crate) struct BpfMapIter<K, V> {
   buffer: Vec<u8>,
   index: usize,
@@ -77,6 +115,9 @@ impl<K, V> BpfMapIter<K, V> {
   const VALUE_SIZE: usize = std::mem::size_of::<V>();
   const TOTAL_SIZE: usize = Self::KEY_SIZE + Self::VALUE_SIZE;
 
+  /// Transforms the buffer into a Rust iterator. The buffer
+  /// is *moved* into the iterator, which retains ownership
+  /// throughout.
   fn new(buffer: Vec<u8>) -> Self {
     let first_four : [u8; 4] = [buffer[0], buffer[1], buffer[2], buffer[3]];
     let num_cpus = u32::from_ne_bytes(first_four);
