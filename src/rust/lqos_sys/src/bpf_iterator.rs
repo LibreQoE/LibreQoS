@@ -237,6 +237,7 @@ pub unsafe fn iterate_rtt(
   }
 }
 
+/// Iterate through the heimdall map and call the callback for each entry.
 pub fn iterate_heimdall(
   callback: &mut dyn FnMut(&HeimdallKey, &[HeimdallData]),
 ) {
