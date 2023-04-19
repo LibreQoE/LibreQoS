@@ -130,10 +130,7 @@ where
         Err(BpfIteratorError::UnableToCreateIterator)
       }
       Ok(_) => {
-        let first_four_bytes: [u8; 4] = [buf[0], buf[1], buf[2], buf[3]];
-        let num_cpus = u32::from_ne_bytes(first_four_bytes) as usize;
-        debug_assert_eq!(num_cpus, 1);
-        let mut index = 8;
+        let mut index = 0;
         while index + Self::TOTAL_SIZE <= buf.len() {
           let key_start = index;
           let key_end = key_start + Self::KEY_SIZE;
