@@ -11,6 +11,7 @@ stop you.
 * Install PostgreSQL somewhere on your network. You only want one PostgreSQL host per long-term node stats cluster.
 * Setup the database schema (TBD).
 * Put the connection string for your database in `/etc/lqdb` on each host.
+* Install the `sqlx` tool with `cargo install sqlx-cli --no-default-features --features rustls,postgres`
 
 ## For each stats node in the cluster
 
