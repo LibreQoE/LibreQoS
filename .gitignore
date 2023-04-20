@@ -44,6 +44,8 @@ src/statsByParentNode.json
 src/lastGoodConfig.json
 src/lastGoodConfig.csv
 src/mikrotikDHCPRouterList.csv
+src/integrationUISPbandwidths.csv
+src/integrationUISProutes.csv
 src/longTermStats.json
 src/queuingStructure.json
 src/tinsStats.json
