@@ -27,10 +27,11 @@ pub async fn add_stats_host(cnn: Pool<Postgres>, hostname: String) -> Result<i64
 
     // Insert the stats host
     log::info!("Inserting new stats host: {} ({})", hostname, new_id);
-    sqlx::query("INSERT INTO stats_hosts (id, ip_address, can_accept_new_clients) VALUES ($1, $2, $3)")
+    sqlx::query("INSERT INTO stats_hosts (id, ip_address, can_accept_new_clients, influx_host) VALUES ($1, $2, $3, $4)")
         .bind(new_id)
         .bind(&hostname)
         .bind(true)
+        .bind(&hostname)
         .execute(&cnn)
         .await
         .map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;   

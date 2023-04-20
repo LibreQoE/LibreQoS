@@ -23,7 +23,8 @@ CREATE TABLE public.shaper_nodes (
 CREATE TABLE public.stats_hosts (
     id integer NOT NULL,
     ip_address character varying(128) NOT NULL,
-    can_accept_new_clients boolean NOT NULL DEFAULT true
+    can_accept_new_clients boolean NOT NULL DEFAULT true,
+    influx_host character varying(128) NOT NULL
 );
 
 CREATE SEQUENCE public.stats_hosts_id_seq
