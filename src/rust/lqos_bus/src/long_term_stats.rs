@@ -206,22 +206,30 @@ pub async fn ask_license_server(key: String) -> Result<LicenseReply, LicenseChec
                 return Err(LicenseCheckError::SendFail);
             }
         }
-        let mut stream = stream.unwrap(); // This unwrap is safe, we checked that it exists previously
-        let ret = stream.write(&buffer).await;
-        if ret.is_err() {
-            log::error!("Unable to write to {LICENSE_SERVER} stream.");
-            log::error!("{:?}", ret);
-            return Err(LicenseCheckError::SendFail);
-        }
-        let mut buf = Vec::with_capacity(10240);
-        let ret = stream.read_to_end(&mut buf).await;
-        if ret.is_err() {
-            log::error!("Unable to read from {LICENSE_SERVER} stream.");
-            log::error!("{:?}", ret);
-            return Err(LicenseCheckError::SendFail);
-        }
-
-        decode_response(&buf)
+        let stream = stream;
+        match stream {
+            Ok(mut stream) => {
+                let ret = stream.write(&buffer).await;
+                if ret.is_err() {
+                    log::error!("Unable to write to {LICENSE_SERVER} stream.");
+                    log::error!("{:?}", ret);
+                    return Err(LicenseCheckError::SendFail);
+                }
+                let mut buf = Vec::with_capacity(10240);
+                let ret = stream.read_to_end(&mut buf).await;
+                if ret.is_err() {
+                    log::error!("Unable to read from {LICENSE_SERVER} stream.");
+                    log::error!("{:?}", ret);
+                    return Err(LicenseCheckError::SendFail);
+                }
+        
+                decode_response(&buf)
+            }
+            Err(e) => {
+                log::warn!("TCP stream failed to connect: {:?}", e);
+                Err(LicenseCheckError::ReceiveFail)
+            }
+        }        
     } else {
         Err(LicenseCheckError::SerializeFail)
     }

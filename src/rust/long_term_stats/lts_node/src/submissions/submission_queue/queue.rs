@@ -30,7 +30,7 @@ async fn run_queue(cnn: Pool<Postgres>, mut rx: Receiver<SubmissionType>) -> any
 }
 
 async fn ingest_stats(cnn: Pool<Postgres>, node_id: NodeIdAndLicense, stats: StatsSubmission) -> anyhow::Result<()> {
-    log::info!("Ingesting stats for node {node_id:?}");
+    log::info!("Ingesting stats for node {}", node_id.node_id);
 
     if let Some(org) = get_org_details(cnn, &node_id.license_key).await {
         let ts = stats.timestamp as i64;
