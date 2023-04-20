@@ -147,3 +147,6 @@ net.createShapedDevices() # Create the `ShapedDevices.csv` file.
 You can also add a call to `net.plotNetworkGraph(False)` (use `True` to also include every customer; this can make for a HUGE file) to create a PDF file (currently named `network.pdf.pdf`) displaying your topology. The example shown here looks like this:
 
 ![](testdata/sample_layout.png)
+
+## Longest Prefix Match Tip
+You could theoretically throttle all unknown IPs until they are associated with a client. For example, you could limit every unknown to 1.5x0.5 with single entry in ShapedDevices.csv, until you associate them with an account. IPs need to be non-exact matches. So you can't have two 192.168.1.1 entries, but you can have a 192.168.1.0/24 subnet and a 192.168.1.2/32 - they aren't duplicates, and the LPM search is smart enough to pick the most exact match.
