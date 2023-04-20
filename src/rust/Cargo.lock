@@ -2596,11 +2596,13 @@ version = "0.1.0"
 dependencies = [
  "env_logger",
  "futures",
+ "influxdb2",
  "log",
  "lqos_bus",
  "once_cell",
  "sqlx",
  "thiserror",
+ "uuid",
 ]
 
 [[package]]

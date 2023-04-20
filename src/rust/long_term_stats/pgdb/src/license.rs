@@ -74,4 +74,10 @@ pub enum StatsHostError {
     DatabaseError(String),
     #[error("Host already exists")]
     HostAlreadyExists,
+    #[error("Organization already exists")]
+    OrganizationAlreadyExists,
+    #[error("No available stats hosts")]
+    NoStatsHostsAvailable,
+    #[error("InfluxDB Error")]
+    InfluxError(String),
 }

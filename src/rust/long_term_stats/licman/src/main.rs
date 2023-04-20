@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use pgdb::create_free_trial;
 use std::process::exit;
 
 #[derive(Parser)]
@@ -16,11 +17,23 @@ enum Commands {
         #[command(subcommand)]
         command: Option<HostsCommands>,
     },
+    /// Manage licenses
+    License {
+        #[command(subcommand)]
+        command: Option<LicenseCommands>,
+    },
 }
 
 #[derive(Subcommand)]
 enum HostsCommands {
-    Add { hostname: String },
+    /// Add a host to the list of available stats storing hosts
+    Add { hostname: String, influx_host: String, api_key: String },
+}
+
+#[derive(Subcommand)]
+enum LicenseCommands {
+    /// Create a new free trial license
+    FreeTrial { organization: String },
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -42,9 +55,9 @@ async fn main() -> Result<()> {
     let cli = Args::parse();
     match cli.command {
         Some(Commands::Hosts {
-            command: Some(HostsCommands::Add { hostname }),
+            command: Some(HostsCommands::Add { hostname, influx_host, api_key }),
         }) => {
-            match pgdb::add_stats_host(pool, hostname).await {
+            match pgdb::add_stats_host(pool, hostname, influx_host, api_key).await {
                 Err(e) => {
                     log::error!("Unable to add stats host: {e:?}");
                     exit(1);
@@ -54,7 +67,18 @@ async fn main() -> Result<()> {
                 }
             }
         }
-        Some(Commands::Hosts { command: None }) | None => {
+        Some(Commands::License{command: Some(LicenseCommands::FreeTrial { organization })}) => {
+            match create_free_trial(pool, &organization).await {
+                Err(e) => {
+                    log::error!("Unable to create free trial: {e:?}");
+                    exit(1);
+                }
+                Ok(key) => {
+                    println!("Your new license key is: {}", key);
+                }
+            }
+        }
+        _ => {
             println!("Run with --help to see instructions");
             exit(0);
         }

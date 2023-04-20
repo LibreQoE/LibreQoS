@@ -1,4 +1,4 @@
-use sqlx::{Pool, Postgres};
+use sqlx::{Pool, Postgres, Row};
 use crate::license::StatsHostError;
 
 #[derive(Clone, sqlx::FromRow, Debug)]
@@ -18,4 +18,15 @@ pub async fn get_organization(cnn: Pool<Postgres>, key: &str) -> Result<Organiza
         .await
         .map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
     Ok(row)
+}
+
+pub async fn does_organization_name_exist(cnn: Pool<Postgres>, name: &str) -> Result<bool, StatsHostError> {
+    let row = sqlx::query("SELECT COUNT(*) AS count FROM organizations WHERE name=$1")
+        .bind(name)
+        .fetch_one(&cnn)
+        .await
+        .map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
+    
+    let count: i64 = row.try_get("count").map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
+    Ok(count > 0)
 }

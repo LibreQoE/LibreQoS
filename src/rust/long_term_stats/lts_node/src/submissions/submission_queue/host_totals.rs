@@ -11,7 +11,8 @@ pub async fn collect_host_totals(
     totals: Option<StatsTotals>,
 ) -> anyhow::Result<()> {
     if let Some(totals) = totals {
-        let client = Client::new(&org.influx_host, &org.influx_org, &org.influx_token);
+        let influx_url = format!("http://{}:8086", org.influx_host);
+        let client = Client::new(&influx_url, &org.influx_org, &org.influx_token);
         let points = vec![
             DataPoint::builder("packets")
                 .tag("host_id", node_id.to_string())
