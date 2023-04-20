@@ -14,6 +14,8 @@ use log::{info, warn};
 use nix::libc::{geteuid, if_nametoindex};
 use std::{ffi::{CString, c_void}, process::Command};
 
+use self::bpf::{lqos_kern, libbpf_num_possible_cpus};
+
 pub(crate) mod bpf {
   #![allow(warnings, unused)]
   include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
@@ -114,13 +116,14 @@ pub fn attach_xdp_and_tc_to_interface(
   interface_name: &str,
   direction: InterfaceDirection,
   heimdall_event_handler: bpf::ring_buffer_sample_fn,
-) -> Result<()> {
+) -> Result<*mut lqos_kern> {
   check_root()?;
   // Check the interface is valid
   let interface_index = interface_name_to_index(interface_name)?;
   set_strict_mode()?;
   let skeleton = unsafe {
     let skeleton = open_kernel()?;
+    (*(*skeleton).rodata).NUM_CPUS = libbpf_num_possible_cpus();
     (*(*skeleton).data).direction = match direction {
       InterfaceDirection::Internet => 1,
       InterfaceDirection::IspNetwork => 2,
@@ -229,7 +232,8 @@ pub fn attach_xdp_and_tc_to_interface(
     }
   }
 
-  Ok(())
+  
+  Ok(skeleton)
 }
 
 unsafe fn attach_xdp_best_available(

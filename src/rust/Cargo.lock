@@ -1456,6 +1456,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "lqos_map_perf"
+version = "0.1.0"
+dependencies = [
+ "lqos_sys",
+]
+
+[[package]]
 name = "lqos_node_manager"
 version = "0.1.0"
 dependencies = [
@@ -1535,6 +1542,7 @@ dependencies = [
  "nix",
  "once_cell",
  "thiserror",
+ "zerocopy",
 ]
 
 [[package]]

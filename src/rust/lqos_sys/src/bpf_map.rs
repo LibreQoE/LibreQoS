@@ -72,34 +72,6 @@ where
     result
   }
 
-  /// Iterates the undlering BPF map, and sends references to the
-  /// results directly to a callback
- pub fn for_each(&self, callback: &mut dyn FnMut(&K, &V)) {
-    let mut prev_key: *mut K = null_mut();
-    let mut key: K = K::default();
-    let key_ptr: *mut K = &mut key;
-    let mut value = V::default();
-    let value_ptr: *mut V = &mut value;
-
-    unsafe {
-      while bpf_map_get_next_key(
-        self.fd,
-        prev_key as *mut c_void,
-        key_ptr as *mut c_void,
-      ) == 0
-      {
-        bpf_map_lookup_elem(
-          self.fd,
-          key_ptr as *mut c_void,
-          value_ptr as *mut c_void,
-        );
-        //result.push((key.clone(), value.clone()));
-        callback(&key, &value);
-        prev_key = key_ptr;
-      }
-    }
-  }
-
   /// Inserts an entry into a BPF map.
   /// Use this sparingly, because it briefly pauses XDP access to the
   /// underlying map (through internal locking we can't reach from

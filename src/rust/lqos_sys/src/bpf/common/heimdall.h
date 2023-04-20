@@ -67,6 +67,7 @@ struct heimdall_key
     __u8 ip_protocol;
     __u16 src_port;
     __u16 dst_port;
+    __u8 pad;
 };
 
 struct heimdall_data {
@@ -155,6 +156,7 @@ static __always_inline void update_heimdall(struct dissector_t *dissector, __u32
             {
                 bpf_debug("Failed to insert tracking");
             }
+            //bpf_debug("Inserted tracking");
         }
     } else if (mode == 2) {
         struct heimdall_event event = {0};
