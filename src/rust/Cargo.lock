@@ -1821,6 +1821,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "licman"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.2.1",
+ "env_logger",
+ "log",
+ "pgdb",
+ "tokio",
+]
+
+[[package]]
 name = "link-cplusplus"
 version = "1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"

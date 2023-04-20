@@ -72,4 +72,6 @@ pub async fn fetch_public_key(cnn: Pool<Postgres>, license_key: &str, node_id: &
 pub enum StatsHostError {
     #[error("Database error occurred")]
     DatabaseError(String),
+    #[error("Host already exists")]
+    HostAlreadyExists,
 }

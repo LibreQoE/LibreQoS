@@ -20,4 +20,4 @@ stop you.
 * Setup `/etc/lqdb`.
 * Copy `lts_keys.bin` from the license server to the `lts_node` directory.
 * Run the process.
-* Add the node to the license server.
+* Login to the licensing server, and run `licman host add <ip of the new host>`
