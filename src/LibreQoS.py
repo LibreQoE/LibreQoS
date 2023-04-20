@@ -18,6 +18,7 @@ import argparse
 import logging
 import shutil
 import binpacking
+from deepdiff import DeepDiff
 
 from ispConfig import sqm, upstreamBandwidthCapacityDownloadMbps, upstreamBandwidthCapacityUploadMbps, \
 	interfaceA, interfaceB, enableActualShellCommands, useBinPackingToBalanceCPU, monitorOnlyMode, \
@@ -917,14 +918,7 @@ def refreshShapersUpdateOnly():
 	else:
 		print("ERROR: lqosd is not running. Aborting")
 		os._exit(-1)
-
-	# Check that we aren't running LibreQoS.py more than once at a time
-	if is_libre_already_running():
-		print("LibreQoS.py is already running in another process. Aborting.")
-		os._exit(-1)
-
-	# We've got this far, so create a lock file
-	create_lock_file()
+	
 	
 	# Starting
 	print("refreshShapers starting at " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
@@ -943,34 +937,26 @@ def refreshShapersUpdateOnly():
 	# Check validation
 	safeToRunRefresh = False
 	if (validateNetworkAndDevices() == True):
-		shutil.copyfile('ShapedDevices.csv', 'lastGoodConfig.csv')
-		shutil.copyfile('network.json', 'lastGoodConfig.json')
-		print("Backed up good config as lastGoodConfig.csv and lastGoodConfig.json")
 		safeToRunRefresh = True
 	else:
 		warnings.warn("Validation failed. Will now exit.", stacklevel=2)
 	
 	if safeToRunRefresh == True:
+		networkChanged = False
+		devicesChanged = False
+		# Check for changes to network.json
+		if os.path.isfile('lastGoodConfig.json'):
+			with open('lastGoodConfig.json', 'r') as j:
+				originalNetwork = json.loads(j.read())
+			with open('network.json', 'r') as j:
+				newestNetwork = json.loads(j.read())
+			ddiff = DeepDiff(originalNetwork, newestNetwork, ignore_order=True)
+			if ddiff != {}:
+				networkChanged = True
 		
-		# Load queuingStructure
-		with open('queuingStructure.json', 'r') as infile:
-			queuingStructure = json.loads(infile.read())
-	
-		
-		network = queuingStructure['Network']
-		lastUsedClassIDCounterByCPU = queuingStructure['lastUsedClassIDCounterByCPU']
-		generatedPNs = queuingStructure['generatedPNs']
-
+		# Check for changes to ShapedDevices.csv
 		newlyUpdatedSubscriberCircuits,	newlyUpdatedDictForCircuitsWithoutParentNodes = loadSubscriberCircuits('ShapedDevices.csv')					
 		lastLoadedSubscriberCircuits, lastLoadedDictForCircuitsWithoutParentNodes = loadSubscriberCircuits('ShapedDevices.lastLoaded.csv')		
-		
-		
-		# Load stats files
-		with open('statsByParentNode.json', 'r') as j:
-			parentNodes = json.loads(j.read())
-
-		with open('statsByCircuit.json', 'r') as j:
-			subscriberCircuits = json.loads(j.read())
 		
 		newlyUpdatedSubscriberCircuitsByID = {}
 		for circuit in newlyUpdatedSubscriberCircuits:
@@ -982,327 +968,35 @@ def refreshShapersUpdateOnly():
 			circuitid = circuit['circuitID']
 			lastLoadedSubscriberCircuitsByID[circuitid] = circuit
 		
-		
-		def removeDeviceIPsFromFilter(circuit):
-			for device in circuit['devices']:
-				for ipv4 in device['ipv4s']:
-					#shell('./bin/xdp_iphash_to_cpu_cmdline del ip ' + str(ipv4))
-					delete_ip_mapping(str(ipv4))
-				for ipv6 in device['ipv6s']:
-					#shell('./bin/xdp_iphash_to_cpu_cmdline del ip ' + str(ipv6))
-					delete_ip_mapping(str(ipv6))
-		
-		
-		def addDeviceIPsToFilter(circuit, cpuNumHex, classId, upload = False):
-			# `lqosd` expects the CPU and ClassIDs to be in Hex.
-			# `ClassId` wasn't present in the circuit data, so it's now a required parameter.
-			for device in circuit['devices']:
-				for ipv4 in device['ipv4s']:
-					#shell('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv4) + ' --cpu ' + cpuNumHex + ' --classid ' + circuit['classid'])
-					add_ip_mapping(str(ipv4), classId, str(cpuNumHex), upload)
-				for ipv6 in device['ipv6s']:
-					#shell('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv6) + ' --cpu ' + cpuNumHex + ' --classid ' + circuit['classid'])
-					add_ip_mapping(str(ipv6), classId, str(cpuNumHex), upload)
-		
-		
-		def getAllParentNodes(data, allParentNodes):
-			for node in data:
-				if isinstance(node, str):
-					if (isinstance(data[node], dict)) and (node != 'children'):
-						thisParentNode = node
-						if thisParentNode not in allParentNodes:
-							allParentNodes.append(thisParentNode)
-						if 'children' in data[node]:
-							result = getAllParentNodes(data[node]['children'], allParentNodes)
-							for entry in result:
-								if entry not in allParentNodes:
-									allParentNodes.append(entry)
-			return allParentNodes	
-		allParentNodes = getAllParentNodes(network, [])
-
-
-		def getClassIDofParentNodes(data, classIDOfParentNodes):
-			revisedClassIDOfParentNodes = classIDOfParentNodes
-			for node in data:
-				if isinstance(node, str):
-					if (isinstance(data[node], dict)) and (node != 'children'):
-						thisParentNode = node
-						classIDOfParentNodes[thisParentNode] = data[node]['classid']
-						if 'children' in data[node]:
-							result = getClassIDofParentNodes(data[node]['children'], revisedClassIDOfParentNodes)
-							revisedClassIDOfParentNodes.update(result)
-			return revisedClassIDOfParentNodes	
-		classIDOfParentNodes = getClassIDofParentNodes(network, {})
-		
-		
-		def getAllCircuitIDs(data, allCircuitIDs):
-			for node in data:
-				if isinstance(node, str):
-					if (isinstance(data[node], dict)) and (node != 'children'):
-						thisParentNode = node
-						if 'circuits' in data[node]:
-							for circuit in data[node]['circuits']:
-								if circuit['circuitID'] not in allCircuitIDs:
-									allCircuitIDs.append(circuit['circuitID'])
-						if 'children' in data[node]:
-							result = getAllCircuitIDs(data[node]['children'], allCircuitIDs)
-							for entry in result:
-								if entry not in allCircuitIDs:
-									allCircuitIDs.append(result)
-			return allCircuitIDs
-		allCircuitIDs = getAllCircuitIDs(network, [])
-
-
-		def getClassIDofExistingCircuitID(data, classIDofExistingCircuitID):
-			revisedClassIDofExistingCircuitID = classIDofExistingCircuitID
-			for node in data:
-				if isinstance(node, str):
-					if (isinstance(data[node], dict)) and (node != 'children'):
-						thisParentNode = node
-						if 'circuits' in data[node]:
-							for circuit in data[node]['circuits']:
-								revisedClassIDofExistingCircuitID[circuit['circuitID']] = circuit['classid']
-						if 'children' in data[node]:
-							result = getClassIDofExistingCircuitID(data[node]['children'], revisedClassIDofExistingCircuitID)
-							revisedClassIDofExistingCircuitID.update(result)
-			return revisedClassIDofExistingCircuitID	
-		classIDofExistingCircuitID = getClassIDofExistingCircuitID(network, {})
-
-
-		def getParentNodeOfCircuitID(data, parentNodeOfCircuitID, allCircuitIDs):
-			for node in data:
-				if isinstance(node, str):
-					if (isinstance(data[node], dict)) and (node != 'children'):
-						thisParentNode = node
-						if 'circuits' in data[node]:
-							for circuit in data[node]['circuits']:
-								parentNodeOfCircuitID[circuit['circuitID']] = thisParentNode
-						if 'children' in data[node]:
-							result = getParentNodeOfCircuitID(data[node]['children'], parentNodeOfCircuitID, allCircuitIDs)
-							parentNodeOfCircuitID.update(result)
-			return parentNodeOfCircuitID	
-		parentNodeOfCircuitID = getParentNodeOfCircuitID(network, {}, allCircuitIDs)
-		
-		
-		def getCPUnumOfParentNodes(data, cpuNumOfParentNode):
-			revisedCpuNumOfParentNode = cpuNumOfParentNode
-			for node in data:
-				if isinstance(node, str):
-					if (isinstance(data[node], dict)) and (node != 'children'):
-						thisParentNode = node
-						revisedCpuNumOfParentNode[thisParentNode] = data[node]['cpuNum']
-						if 'children' in data[node]:
-							result = getCPUnumOfParentNodes(data[node]['children'], revisedCpuNumOfParentNode)
-							revisedCpuNumOfParentNode.update(result)
-			return revisedCpuNumOfParentNode	
-		
-		cpuNumOfParentNodeHex = getCPUnumOfParentNodes(network, {})
-		cpuNumOfParentNodeInt = {}
-		for key, value in cpuNumOfParentNodeHex.items():
-			cpuNumOfParentNodeInt[key] = int(value,16) + 1
-		
-		
-		def addCircuitHTBandQdisc(circuit, parentNodeClassID):
-			minor = circuit['classid'].split(':')[1]
-			for interface in [interfaceA, interfaceB]:
-				if interface == interfaceA:
-					rate = str(circuit['minDownload'])
-					ceil = str(circuit['maxDownload'])
-				else:
-					rate = str(circuit['minUpload'])
-					ceil = str(circuit['maxUpload'])
-				command = 'tc class add dev ' + interface + ' parent ' + parentNodeClassID + ' classid ' + minor + ' htb rate ' + rate + 'Mbit ceil ' + ceil + 'Mbit'
-				print(command)
-				shell(command)
-				# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
-				if monitorOnlyMode == False:
-					command = 'tc qdisc add dev ' + interface + ' parent ' + classID + ' ' + sqm
-					print(command)
-					shell(command)
-		
-		
-		def delHTBclass(classid):
-			for interface in [interfaceA, interfaceB]:
-				command = 'tc class del dev ' + interface + ' classid ' + classid
-				print(command)
-				shell(command)
-		
-		
-		generatedPNcounter = 1
-		circuitsIDsToRemove = []
-		circuitsToUpdateByID = {}
-		circuitsToAddByParentNode = {}
 		for circuitID, circuit in lastLoadedSubscriberCircuitsByID.items():
-			# Same circuit, update parameters (bandwidth, devices)
-			bandwidthChanged = False
-			devicesChanged = False
 			if (circuitID in newlyUpdatedSubscriberCircuitsByID) and (circuitID in lastLoadedSubscriberCircuitsByID):
 				if newlyUpdatedSubscriberCircuitsByID[circuitID]['maxDownload'] != lastLoadedSubscriberCircuitsByID[circuitID]['maxDownload']:
-					bandwidthChanged = True
+					devicesChanged = True
 				if newlyUpdatedSubscriberCircuitsByID[circuitID]['maxUpload'] != lastLoadedSubscriberCircuitsByID[circuitID]['maxUpload']:
-					bandwidthChanged = True
+					devicesChanged = True
 				if newlyUpdatedSubscriberCircuitsByID[circuitID]['minDownload'] != lastLoadedSubscriberCircuitsByID[circuitID]['minDownload']:
-					bandwidthChanged = True
+					devicesChanged = True
 				if newlyUpdatedSubscriberCircuitsByID[circuitID]['minUpload'] != lastLoadedSubscriberCircuitsByID[circuitID]['minUpload']:
-					bandwidthChanged = True					
+					devicesChanged = True					
 				if newlyUpdatedSubscriberCircuitsByID[circuitID]['devices'] != lastLoadedSubscriberCircuitsByID[circuitID]['devices']:
 					devicesChanged = True
-				if bandwidthChanged == True:
-					if newlyUpdatedSubscriberCircuitsByID[circuitID]['ParentNode'] == lastLoadedSubscriberCircuitsByID[circuitID]['ParentNode']:
-						parentNodeActual = circuit['ParentNode']
-						if parentNodeActual == 'none':
-							# In flat network, there's still a Parent Node (GENERATED_PN_X) so we need to use that here
-							parentNodeActual = parentNodeOfCircuitID[circuitID]
-						parentNodeClassID = classIDOfParentNodes[parentNodeActual]
-						classid = classIDofExistingCircuitID[circuitID]
-						minor = classid.split(':')[1]
-						for interface in [interfaceA, interfaceB]:
-							if interface == interfaceA:
-								rate = str(newlyUpdatedSubscriberCircuitsByID[circuitID]['minDownload'])
-								ceil = str(newlyUpdatedSubscriberCircuitsByID[circuitID]['maxDownload'])
-							else:
-								rate = str(newlyUpdatedSubscriberCircuitsByID[circuitID]['minUpload'])
-								ceil = str(newlyUpdatedSubscriberCircuitsByID[circuitID]['maxUpload'])
-							command = 'tc class change dev ' + interface + ' parent ' + parentNodeClassID + ' classid ' + minor + ' htb rate ' + rate + 'Mbit ceil ' + ceil + 'Mbit'
-							shell(command)
-					else:
-						removeDeviceIPsFromFilter(lastLoadedSubscriberCircuitsByID[circuitID])
-						# Delete HTB class, qdisc. Then recreat it.
-						classID = classIDofExistingCircuitID[circuitID]
-						circuit['classid'] = classID
-						delHTBclass(classID)
-						parentNodeClassID = classIDOfParentNodes[parentNodeOfCircuitID[circuitID]]
-						addCircuitHTBandQdisc(circuit, parentNodeClassID)
-						cpuNumHex = cpuNumOfParentNodeHex[parentNodeActual]
-						addDeviceIPsToFilter(newlyUpdatedSubscriberCircuitsByID[circuitID], cpuNumHex, classID)
-				if devicesChanged:
-					parentNodeActual = circuit['ParentNode']
-					if parentNodeActual == 'none':
-						# In flat network, there's still a Parent Node (GENERATED_PN_X) so we need to use that here
-						parentNodeActual = parentNodeOfCircuitID[circuitID]
-					cpuNumHex = cpuNumOfParentNodeHex[parentNodeActual]
-					parentNodeClassID = classIDOfParentNodes[parentNodeActual]
-					addDeviceIPsToFilter(newlyUpdatedSubscriberCircuitsByID[circuitID], cpuNumHex, parentNodeClassID)
-				
-				newlyUpdatedSubscriberCircuitsByID[circuitID]['classid'] = lastLoadedSubscriberCircuitsByID[circuitID]['classid']
-				if (bandwidthChanged) or (devicesChanged):
-					circuitsToUpdateByID[circuitID] = newlyUpdatedSubscriberCircuitsByID[circuitID]
-			
-			
-			# Removed circuit
-			if (circuitID in lastLoadedSubscriberCircuitsByID) and (circuitID not in newlyUpdatedSubscriberCircuitsByID):
-				circuitsIDsToRemove.append(circuitID)
-				removeDeviceIPsFromFilter(lastLoadedSubscriberCircuitsByID[circuitID])
-				classid = classIDofExistingCircuitID[circuitID]
-				delHTBclass(classid)
-		
-		
-		# New circuit
+				if newlyUpdatedSubscriberCircuitsByID[circuitID]['ParentNode'] != lastLoadedSubscriberCircuitsByID[circuitID]['ParentNode']:
+					devicesChanged = True
+			else:
+				devicesChanged = True
 		for circuitID, circuit in newlyUpdatedSubscriberCircuitsByID.items():
-			if (circuitID in newlyUpdatedSubscriberCircuitsByID) and (circuitID not in lastLoadedSubscriberCircuitsByID):
-				if newlyUpdatedSubscriberCircuitsByID[circuitID]['ParentNode'] == 'none':
-					newlyUpdatedSubscriberCircuitsByID[circuitID]['ParentNode'] = 'Generated_PN_' + str(generatedPNcounter)
-					generatedPNcounter += 1
-					if generatedPNcounter > len(generatedPNs):
-						generatedPNcounter = 1
-				cpuNumHex = cpuNumOfParentNodeHex[circuit['ParentNode']]
-				
-				cpuNumInt = cpuNumOfParentNodeInt[circuit['ParentNode']]
-				parentNodeClassID = classIDOfParentNodes[circuit['ParentNode']]
-				classID = parentNodeClassID.split(':')[0] + ':' + hex(lastUsedClassIDCounterByCPU[str(cpuNumInt)])
-				lastUsedClassIDCounterByCPU[str(cpuNumInt)] = lastUsedClassIDCounterByCPU[str(cpuNumInt)] + 1
-				circuit['classid'] = classID
-				# Add HTB class, qdisc
-				addCircuitHTBandQdisc(circuit, parentNodeClassID)
-				addDeviceIPsToFilter(circuit, cpuNumHex, parentNodeClassID)
-				if circuit['ParentNode'] in circuitsToAddByParentNode:
-					temp = circuitsToAddByParentNode[circuit['ParentNode']]
-					temp.append(circuit)
-					circuitsToAddByParentNode[circuit['ParentNode']] = temp
-				else:
-					temp = []
-					temp.append(circuit)
-					circuitsToAddByParentNode[circuit['ParentNode']] = temp
+			if (circuitID not in lastLoadedSubscriberCircuitsByID):
+				devicesChanged = True
 		
 		
-		# Update network structure reflecting new circuits, removals, and changes
-		itemsToChange = (circuitsIDsToRemove, circuitsToUpdateByID,	circuitsToAddByParentNode)
-		def updateNetworkStructure(data, depth, itemsToChange):
-			circuitsIDsToRemove, circuitsToUpdateByID,	circuitsToAddByParentNode = itemsToChange
-			parentNodesToAddCircuitsTo = []
-			for thing in circuitsToAddByParentNode:
-				parentNodesToAddCircuitsTo.append(thing)
-			revisedData = data
-			for node in revisedData:
-				if isinstance(node, str):
-					if (isinstance(revisedData[node], dict)) and (node != 'children'):
-						thisParentNode = node
-						if 'circuits' in revisedData[node]:
-							for circuit in revisedData[node]['circuits']:
-								if circuit['circuitID'] in circuitsToUpdateByID:
-									circuit = circuitsToUpdateByID[circuit['circuitID']]
-									print('updated')
-								if circuit['circuitID'] in circuitsIDsToRemove:
-									revisedData[node]['circuits'].remove(circuit)
-						if thisParentNode in parentNodesToAddCircuitsTo:
-							if 'circuits' in revisedData[node]:
-								temp = revisedData[node]['circuits']
-								for circuit in circuitsToAddByParentNode[thisParentNode]:
-									temp.append(circuit)
-									print('added ')
-									print(circuit)
-								revisedData[node]['circuits'] = temp
-							else:
-								temp = []
-								for circuit in circuitsToAddByParentNode[thisParentNode]:
-									temp.append(circuit)
-								revisedData[node]['circuits'] = temp
-						if 'children' in revisedData[node]:
-							result = updateNetworkStructure(revisedData[node]['children'], depth+1, itemsToChange)
-							revisedData[node]['children'] = result
-			return revisedData	
-		network = updateNetworkStructure(network, 0 , itemsToChange)
-		
-		
-		# Record start time of actual filter reload
-		reloadStartTime = datetime.now()
-		
-		
-		# Record end time of all reload commands
-		reloadEndTime = datetime.now()
-		
-		
-		queuingStructure = {}
-		queuingStructure['Network'] = network
-		queuingStructure['lastUsedClassIDCounterByCPU'] = lastUsedClassIDCounterByCPU
-		queuingStructure['generatedPNs'] = generatedPNs
-		# Save queuingStructure
-		with open('queuingStructure.json', 'w') as infile:
-			json.dump(queuingStructure, infile, indent=4)		
-		
-		
-		# copy ShapedDevices.csv and save as ShapedDevices.lastLoaded.csv and lastGoodConfig.csv
-		shutil.copyfile('ShapedDevices.csv', 'ShapedDevices.lastLoaded.csv')
-		shutil.copyfile('ShapedDevices.csv', 'lastGoodConfig.csv')
-		
-		
-		# Save for stats
-		with open('statsByCircuit.json', 'w') as f:
-			f.write(json.dumps(subscriberCircuits, indent=4))
-		with open('statsByParentNode.json', 'w') as f:
-			f.write(json.dumps(parentNodes, indent=4))
-		
-		
-		# Report reload time
-		reloadTimeSeconds = ((reloadEndTime - reloadStartTime).seconds) + (((reloadEndTime - reloadStartTime).microseconds) / 1000000)
-		print("Queue and IP filter partial reload completed in " + "{:g}".format(round(reloadTimeSeconds,1)) + " seconds")
-		
+		if devicesChanged or networkChanged:
+			print('Observed changes to ShapedDevices.csv or network.json. Applying full reload now')
+			refreshShapers()
+		else:
+			print('Observed no changes to ShapedDevices.csv or network.json. Leaving queues as is.')
 		
 		# Done
 		print("refreshShapersUpdateOnly completed on " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
-	
-	# Free the lock file
-	free_lock_file()
 
 if __name__ == '__main__':
 	# Check that the host lqosd is running

@@ -30,4 +30,5 @@ members = [
     "long_term_stats/license_server", # Licensing Server for LibreQoS Long-term stats
     "long_term_stats/lts_node", # Long-term stats cluster node
     "long_term_stats/pgdb", # PostgreSQL interface for the LTS system
+    "lqos_map_perf", # A CLI tool for testing eBPF map performance
 ]

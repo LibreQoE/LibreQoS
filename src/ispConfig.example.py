@@ -23,6 +23,9 @@ interfaceA = 'eth1'
 # Interface connected to edge router
 interfaceB = 'eth2'
 
+# Queue refresh scheduler (lqos_scheduler). Minutes between reloads.
+queueRefreshIntervalMins = 30
+
 # WORK IN PROGRESS. Note that interfaceA determines the "stick" interface
 # I could only get scanning to work if I issued ethtool -K enp1s0f1 rxvlan off
 OnAStick = False

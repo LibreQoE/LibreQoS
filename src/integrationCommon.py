@@ -63,6 +63,22 @@ class NodeType(enum.IntEnum):
 	clientWithChildren = 5
 	device = 6
 
+def nodeTypeToString(integer):
+	string = ''
+	match integer:
+		case 1: 
+			string = 'root'
+		case 2: 
+			string = 'site'
+		case 3: 
+			string = 'ap'
+		case 4: 
+			string = 'client'
+		case 5: 
+			string = 'clientWithChildren'
+		case 6: 
+			string = 'device'
+	return(string)
 
 class NetworkNode:
 	# Defines a node on a LibreQoS network graph.
@@ -311,6 +327,7 @@ class NetworkGraph:
 		node = {
 			"downloadBandwidthMbps": self.nodes[idx].downloadMbps,
 			"uploadBandwidthMbps": self.nodes[idx].uploadMbps,
+			'type': nodeTypeToString(self.nodes[idx].type),
 		}
 		children = {}
 		hasChildren = False
@@ -418,7 +435,7 @@ class NetworkGraph:
 
 		import graphviz
 		dot = graphviz.Digraph(
-			'network', comment="Network Graph", engine="dot")
+			'network', comment="Network Graph", engine="dot", graph_attr={'rankdir':'LR'})
 
 		for (i, node) in enumerate(self.nodes):
 			if ((node.type != NodeType.client and node.type != NodeType.device) or showClients):
@@ -436,6 +453,6 @@ class NetworkGraph:
 					if child != i:
 						if (self.nodes[child].type != NodeType.client and self.nodes[child].type != NodeType.device) or showClients:
 							dot.edge("N" + str(i), "N" + str(child))
-
-		dot.render("network.pdf")
+		dot = dot.unflatten(stagger=3)#, fanout=True)
+		dot.render("network")
 

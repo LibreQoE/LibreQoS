@@ -44,6 +44,8 @@ src/statsByParentNode.json
 src/lastGoodConfig.json
 src/lastGoodConfig.csv
 src/mikrotikDHCPRouterList.csv
+src/integrationUISPbandwidths.csv
+src/integrationUISProutes.csv
 src/longTermStats.json
 src/queuingStructure.json
 src/tinsStats.json
@@ -68,7 +70,7 @@ src/bin/lqos_node_manager
 src/bin/webusers
 src/bin/lqusers
 src/bin/Rocket.toml
-
+src/bin/lqos_map_perf
 
 # Ignore project folders for some IDEs
 .idea/
