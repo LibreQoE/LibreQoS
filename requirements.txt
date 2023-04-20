@@ -11,3 +11,4 @@ schedule
 waitress
 setuptools >= 65.5.1
 apscheduler
+deepdiff

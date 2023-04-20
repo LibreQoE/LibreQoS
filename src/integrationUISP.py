@@ -131,11 +131,20 @@ def findApCapacities(devices, siteBandwidth):
 		if device['identification']['role'] == "ap":
 			name = device['identification']['name']
 			if not name in siteBandwidth and device['overview']['downlinkCapacity'] and device['overview']['uplinkCapacity']:
+				safeToUse = True
 				download = int(device['overview']
 							   ['downlinkCapacity'] / 1000000)
 				upload = int(device['overview']['uplinkCapacity'] / 1000000)
-				siteBandwidth[device['identification']['name']] = {
-					"download": download, "upload": upload}
+				if (download < 15) or (upload < 15):
+					print("WARNING: Device '" + device['identification']['hostname'] + "' has unusually low capacity (" + str(download) + '/' + str(upload) + " Mbps). Discarding in favor of parent site rates.")
+					safeToUse = False
+				if device['identification']['model'] == 'WaveAP':
+					if (download < 500) or (upload < 500):
+						download = 2450
+						upload = 2450
+				if safeToUse:
+					siteBandwidth[device['identification']['name']] = {
+						"download": download, "upload": upload}
 
 def findAirfibers(devices, generatedPNDownloadMbps, generatedPNUploadMbps):
 	foundAirFibersBySite = {}
@@ -147,19 +156,17 @@ def findAirfibers(devices, generatedPNDownloadMbps, generatedPNUploadMbps):
 						if device['overview']['downlinkCapacity'] is not None and device['overview']['uplinkCapacity'] is not None:
 							download = int(device['overview']['downlinkCapacity']/ 1000000)
 							upload = int(device['overview']['uplinkCapacity']/ 1000000)
-						else:
-							download = generatedPNDownloadMbps
-							upload = generatedPNUploadMbps
-						# Make sure to use half of reported bandwidth for AF60-LRs
-						if device['identification']['model'] == "AF60-LR":
-							download = int(download / 2)
-							upload = int(download / 2)
-						if device['identification']['site']['id'] in foundAirFibersBySite:
-							if (download > foundAirFibersBySite[device['identification']['site']['id']]['download']) or (upload > foundAirFibersBySite[device['identification']['site']['id']]['upload']):
-								foundAirFibersBySite[device['identification']['site']['id']]['download'] = download
-								foundAirFibersBySite[device['identification']['site']['id']]['upload'] = upload
-						else:
-							foundAirFibersBySite[device['identification']['site']['id']] = {'download': download, 'upload': upload}
+							# Make sure to factor in gigabit port for AF60/AF60-LRs
+							if (device['identification']['model'] == "AF60-LR") or (device['identification']['model'] == "AF60"):
+								download = min(download,950)
+								upload = min(upload,950)
+							if device['identification']['site']['id'] in foundAirFibersBySite:
+								if (download > foundAirFibersBySite[device['identification']['site']['id']]['download']) or (upload > foundAirFibersBySite[device['identification']['site']['id']]['upload']):
+									foundAirFibersBySite[device['identification']['site']['id']]['download'] = download
+									foundAirFibersBySite[device['identification']['site']['id']]['upload'] = upload
+									#print(device['identification']['name'] + ' will override bandwidth for site ' + device['identification']['site']['name'])
+							else:
+								foundAirFibersBySite[device['identification']['site']['id']] = {'download': download, 'upload': upload}
 	return foundAirFibersBySite
 
 def buildSiteList(sites, dataLinks):
@@ -240,11 +247,66 @@ def loadRoutingOverrides():
 	#print(overrides)
 	return overrides
 
+def findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite, foundAirFibersBySite):
+	nodeOffPtMP = {}
+	for site in siteList:
+		id = site['id']
+		name = site['name']
+		if id != rootSite['id']:
+			if id not in foundAirFibersBySite:
+				trueParent = findInSiteListById(siteList, id)['parent']
+				#parent = findInSiteListById(siteList, id)['parent']
+				if site['parent'] is not None:
+					parent = site['parent']
+					for link in dataLinks:
+						if (link['to']['site'] is not None) and (link['to']['site']['identification'] is not None):
+							if ('identification' in link['to']['site']) and (link['to']['site']['identification'] is not None):
+								if ('identification' in link['from']['site']) and (link['from']['site']['identification'] is not None):
+									# Respect parent defined by topology and overrides
+									if link['from']['site']['identification']['id'] == trueParent:
+										if link['to']['site']['identification']['id'] == id:
+											if link['from']['device']['overview']['wirelessMode'] == 'ap-ptmp':
+												if 'overview' in link['to']['device']:
+													if ('downlinkCapacity' in link['to']['device']['overview']) and ('uplinkCapacity' in link['to']['device']['overview']):
+														if (link['to']['device']['overview']['downlinkCapacity'] is not None) and (link['to']['device']['overview']['uplinkCapacity'] is not None): 
+															# Capacity of the PtMP client radio feeding the PoP will be used as the site bandwidth limit
+															download = int(round(link['to']['device']['overview']['downlinkCapacity']/1000000))
+															upload = int(round(link['to']['device']['overview']['uplinkCapacity']/1000000))
+															nodeOffPtMP[id] = {'download': download,
+																		'upload': upload
+																		}
+															site['parent'] = parent
+															if site['type'] == 'site':
+																print('Site ' + name + ' will use PtMP AP as parent.')
+	return siteList, nodeOffPtMP
+
+def handleMultipleInternetNodes(sites, dataLinks, uispSite):
+	internetConnectedSites = []
+	for link in dataLinks:
+		if link['canDelete'] ==  False:
+			if link['from']['device']['identification']['id'] == link['to']['device']['identification']['id']:
+				siteID = link['from']['site']['identification']['id']
+				# Found internet link
+				internetConnectedSites.append(siteID)
+	if len(internetConnectedSites) > 1:
+		internetSite = {'id': '001', 'identification': {'id': '001', 'status': 'active', 'name': 'Internet', 'parent': None, 'type': 'site'}}
+		sites.append(internetSite)
+		uispSite = 'Internet'
+		for link in dataLinks:
+			if link['canDelete'] ==  False:
+				if link['from']['device']['identification']['id'] == link['to']['device']['identification']['id']:
+					link['from']['site']['identification']['id'] = '001'
+					link['from']['site']['identification']['name'] = 'Internet'
+					# Found internet link
+					internetConnectedSites.append(siteID)
+		print("Multiple Internet links detected. Will create 'Internet' root node.")
+	return(sites, dataLinks, uispSite)
+
 def buildFullGraph():
 	# Attempts to build a full network graph, incorporating as much of the UISP
 	# hierarchy as possible.
 	from integrationCommon import NetworkGraph, NetworkNode, NodeType
-	from ispConfig import generatedPNUploadMbps, generatedPNDownloadMbps
+	from ispConfig import uispSite, generatedPNUploadMbps, generatedPNDownloadMbps
 
 	# Load network sites
 	print("Loading Data from UISP")
@@ -252,19 +314,30 @@ def buildFullGraph():
 	devices = uispRequest("devices?withInterfaces=true&authorized=true")
 	dataLinks = uispRequest("data-links?siteLinksOnly=true")
 
-	# Build Site Capacities
-	siteBandwidth = buildSiteBandwidths()
-	findApCapacities(devices, siteBandwidth)
-	foundAirFibersBySite = findAirfibers(devices, generatedPNDownloadMbps, generatedPNUploadMbps)
+	# If multiple Internet-connected sites, create Internet root node:
+	sites, dataLinks, uispSite = handleMultipleInternetNodes(sites, dataLinks, uispSite)
 	
+	# Build Site Capacities
+	print("Compiling Site Bandwidths")
+	siteBandwidth = buildSiteBandwidths()
+	print("Finding AP Capacities")
+	findApCapacities(devices, siteBandwidth)
 	# Create a list of just network sites
+	print('Creating list of sites')
 	siteList = buildSiteList(sites, dataLinks)
 	rootSite = findInSiteList(siteList, uispSite)
+	print("Finding PtP Capacities")
+	foundAirFibersBySite = findAirfibers(devices, generatedPNDownloadMbps, generatedPNUploadMbps)
+	print('Creating list of route overrides')
 	routeOverrides = loadRoutingOverrides()
 	if rootSite is None:
 		print("ERROR: Unable to find root site in UISP")
 		return
+	print('Creating graph')
 	walkGraphOutwards(siteList, rootSite, routeOverrides)
+	print("Finding PtMP Capacities")
+	siteList, nodeOffPtMP = findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite, foundAirFibersBySite)
+	
 	# Debug code: dump the list of site parents
 	# for s in siteList:
 	# 	if s['parent'] == "":
@@ -273,25 +346,8 @@ def buildFullGraph():
 	# 		p = findInSiteListById(siteList, s['parent'])['name']
 	# 		print(s['name'] + " (" + str(s['cost']) + ") <-- " + p)
 	
-	# Find Nodes Connected By PtMP
-	nodeOffPtMP = {}
-	for site in sites:
-		id = site['identification']['id']
-		name = site['identification']['name']
-		type = site['identification']['type']
-		parent = findInSiteListById(siteList, id)['parent']
-		if type == 'site':
-			for link in dataLinks:
-				if link['from']['site'] is not None and link['from']['site']['identification']['id'] == parent:
-					if link['to']['site'] is not None and link['to']['site']['identification']['id'] == id:
-						if link['from']['device'] is not None and link['to']['device'] is not None and link['to']['device']['overview'] is not None and link['to']['device']['overview']['downlinkCapacity'] is not None and link['from']['device']['overview']['wirelessMode'] == 'ap-ptmp':
-							# Capacity of the PtMP client radio feeding the PoP will be used as the site bandwidth limit
-							download = int(round(link['to']['device']['overview']['downlinkCapacity']/1000000))
-							upload = int(round(link['to']['device']['overview']['uplinkCapacity']/1000000))
-							nodeOffPtMP[id] = { 'parent': link['from']['device']['identification']['id'],
-												'download': download,
-												'upload': upload
-												}
+	
+
 	print("Building Topology")
 	net = NetworkGraph()
 	# Add all sites and client sites
@@ -312,21 +368,23 @@ def buildFullGraph():
 		match type:
 			case "site":
 				nodeType = NodeType.site
-				if id in nodeOffPtMP:
-					parent = nodeOffPtMP[id]['parent']
 				if name in siteBandwidth:
 					# Use the CSV bandwidth values
 					download = siteBandwidth[name]["download"]
 					upload = siteBandwidth[name]["upload"]
-				elif id in nodeOffPtMP:
-					download = nodeOffPtMP[id]['download']
-					upload = nodeOffPtMP[id]['upload']
-				elif id in foundAirFibersBySite:
-					download = foundAirFibersBySite[id]['download']
-					upload = foundAirFibersBySite[id]['upload']
-				else:
-					# Add them just in case
-					siteBandwidth[name] = {
+				else:					
+					# Use limits from foundAirFibersBySite
+					if id in foundAirFibersBySite:
+						download = foundAirFibersBySite[id]['download']
+						upload = foundAirFibersBySite[id]['upload']
+					# If no airFibers were found, and node originates off PtMP, treat as child node of that PtMP AP
+					else:
+						if id in nodeOffPtMP:
+							if (nodeOffPtMP[id]['download'] >= download) or (nodeOffPtMP[id]['upload'] >= upload):
+								download = nodeOffPtMP[id]['download']
+								upload = nodeOffPtMP[id]['upload']
+					
+				siteBandwidth[name] = {
 						"download": download, "upload": upload}
 			case default:
 				nodeType = NodeType.client
@@ -364,7 +422,7 @@ def buildFullGraph():
 
 				# TODO: Figure out Mikrotik IPv6?
 				mac = device['identification']['mac']
-
+				
 				net.addRawNode(NetworkNode(id=device['identification']['id'], displayName=device['identification']
 							   ['name'], parentId=id, type=NodeType.device, ipv4=ipv4, ipv6=ipv6, mac=mac))
 
