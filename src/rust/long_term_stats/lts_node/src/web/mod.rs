@@ -7,9 +7,21 @@ use axum::{
     routing::get,
     Router,
 };
+
+const JS_BUNDLE: &str = include_str!("../../../site_build/output/app.js");
+const JS_MAP: &str = include_str!("../../../site_build/output/app.js.map");
+const CSS: &str = include_str!("../../../site_build/output/style.css");
+const CSS_MAP: &str = include_str!("../../../site_build/output/style.css.map");
+const HTML_MAIN: &str = include_str!("../../../site_build/src/main.html");
+
 pub async fn webserver() {
     let app = Router::new()
-        .route("/", get(index_page));
+        .route("/", get(index_page))
+        .route("/app.js", get(js_bundle))
+        .route("/app.js.map", get(js_map))
+        .route("/style.css", get(css))
+        .route("/style.css.map", get(css_map))
+        ;
 
     log::info!("Listening for web traffic on 0.0.0.0:9127");
     axum::Server::bind(&"0.0.0.0:9127".parse().unwrap())
@@ -19,5 +31,33 @@ pub async fn webserver() {
 }
 
 async fn index_page() -> Html<String> {
-    Html("Hello, World!".to_string())
+    Html(HTML_MAIN.to_string())
+}
+
+async fn js_bundle() -> axum::response::Response<String> {
+    axum::response::Response::builder()
+        .header("Content-Type", "text/javascript")
+        .body(JS_BUNDLE.to_string())
+        .unwrap()
+}
+
+async fn js_map() -> axum::response::Response<String> {
+    axum::response::Response::builder()
+        .header("Content-Type", "text/json")
+        .body(JS_MAP.to_string())
+        .unwrap()
+}
+
+async fn css() -> axum::response::Response<String> {
+    axum::response::Response::builder()
+        .header("Content-Type", "text/css")
+        .body(CSS.to_string())
+        .unwrap()
+}
+
+async fn css_map() -> axum::response::Response<String> {
+    axum::response::Response::builder()
+        .header("Content-Type", "text/json")
+        .body(CSS_MAP.to_string())
+        .unwrap()
 }

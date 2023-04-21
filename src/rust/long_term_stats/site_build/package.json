@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "@types/bootstrap": "^5.2.6",
+    "bootstrap": "^5.2.3",
+    "esbuild": "0.17.17"
+  }
+}
