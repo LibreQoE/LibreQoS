@@ -1,10 +1,12 @@
+//! The webserver listens on port 9127, but it is intended that this only
+//! listen on localhost and have a reverse proxy in front of it. The proxy
+//! should provide HTTPS.
+
 use axum::{
     response::Html,
-    routing::{get, post},
-    Router, Json,
+    routing::get,
+    Router,
 };
-use lqos_bus::long_term_stats::StatsSubmission;
-
 pub async fn webserver() {
     let app = Router::new()
         .route("/", get(index_page));

@@ -190,7 +190,7 @@ fn build_key_exchange_request(node_id: String, license_key: String, public_key: 
     Ok(result)
 }
 
-const LICENSE_SERVER: &str = "192.168.100.10:9126";
+const LICENSE_SERVER: &str = "license.libreqos.io:9126";
 
 /// Ask the license server if the license is valid
 /// 
