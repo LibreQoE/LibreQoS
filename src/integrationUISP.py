@@ -3,6 +3,7 @@ checkPythonVersion()
 import requests
 import os
 import csv
+from datetime import datetime, timedelta
 from integrationCommon import isIpv4Permitted, fixSubnet
 try:
 	from ispConfig import uispSite, uispStrategy, overwriteNetworkJSONalways
@@ -333,7 +334,7 @@ def buildFullGraph():
 	if rootSite is None:
 		print("ERROR: Unable to find root site in UISP")
 		return
-	print('Creating graph')
+	print('Walking graph outwards')
 	walkGraphOutwards(siteList, rootSite, routeOverrides)
 	print("Finding PtMP Capacities")
 	siteList, nodeOffPtMP = findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite, foundAirFibersBySite)
@@ -449,6 +450,7 @@ def buildFullGraph():
 										"download": generatedPNDownloadMbps, "upload": generatedPNUploadMbps}
 	
 	net.prepareTree()
+	print('Plotting network graph')
 	net.plotNetworkGraph(False)
 	if net.doesNetworkJsonExist():
 		if overwriteNetworkJSONalways:
@@ -472,10 +474,13 @@ def buildFullGraph():
 
 
 def importFromUISP():
+	startTime = datetime.now()
 	match uispStrategy:
 		case "full": buildFullGraph()
 		case default: buildFlatGraph()
-
+	endTime = datetime.now()
+	runTimeSeconds = ((endTime - startTime).seconds) + (((endTime - startTime).microseconds) / 1000000)
+	print("UISP import completed in " + "{:g}".format(round(runTimeSeconds,1)) + " seconds")
 
 if __name__ == '__main__':
 	importFromUISP()
