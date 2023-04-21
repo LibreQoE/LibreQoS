@@ -220,13 +220,13 @@ def walkGraphOutwards(siteList, root, routeOverrides):
 			site['parent'] = parent['id']
 			#print(debugSpaces(cost/10) + parent['name'] + "->" + site['name'] + " -> New cost: " + str(cost))
 
-		for connection in site['connections']:
-			if not connection in backPath:
-				#target = findInSiteListById(siteList, connection)
-				#print(debugSpaces((cost+10)/10) + site['name'] + " -> " + target['name'] + " (" + str(target['cost']) + ")")
-				newBackPath = backPath.copy()
-				newBackPath.append(site['id'])
-				walkGraph(connection, site, cost+10, newBackPath)
+			for connection in site['connections']:
+				if not connection in backPath:
+					#target = findInSiteListById(siteList, connection)
+					#print(debugSpaces((cost+10)/10) + site['name'] + " -> " + target['name'] + " (" + str(target['cost']) + ")")
+					newBackPath = backPath.copy()
+					newBackPath.append(site['id'])
+					walkGraph(connection, site, cost+10, newBackPath)
 
 	for connection in root['connections']:
 		# Force the parent since we're at the top
@@ -284,7 +284,7 @@ def handleMultipleInternetNodes(sites, dataLinks, uispSite):
 	internetConnectedSites = []
 	for link in dataLinks:
 		if link['canDelete'] ==  False:
-			if link['from']['device']['identification']['id'] == link['to']['device']['identification']['id']:
+			if link['from']['device'] is not None and link['to']['device'] is not None and link['from']['device']['identification']['id'] == link['to']['device']['identification']['id']:
 				siteID = link['from']['site']['identification']['id']
 				# Found internet link
 				internetConnectedSites.append(siteID)
