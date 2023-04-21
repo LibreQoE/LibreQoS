@@ -1,10 +1,42 @@
 import html from './template.html';
+import { Page } from '../page'
+import { getValueFromForm } from '../helpers';
 
-export class LoginPage {
+export class LoginPage implements Page {
     constructor() {
-        document.body.innerHTML = html;
+        document.body.innerHTML = html;        
+    }
+
+    wireup() {
+        // Connect the button
         let button = document.getElementById('btnLogin');
-        if (button)
-            button.onclick = () => { alert('blah') };
+        if (button) {
+            button.onclick = onLogin;
+        }
+
+        // Set focus
+        let input = document.getElementById('license');
+        if (input) {
+            input.focus();
+        }
+    }    
+}
+
+function onLogin() {
+    let license = getValueFromForm('license');
+    let username = getValueFromForm('username');
+    let password = getValueFromForm('password');
+
+    if (license == "") {
+        alert("Please enter a license key");
+        return;
+    }
+    if (username == "") {
+        alert("Please enter a username");
+        return;
+    }
+    if (password == "") {
+        alert("Please enter a password");
+        return;
     }
 }

@@ -1,4 +1,5 @@
 import 'bootstrap/dist/css/bootstrap.css';
-import { LoginPage } from './login/login';
+import { SiteRouter } from './router';
 
-let loginPanel = new LoginPage();
+let router = new SiteRouter();
+router.initialRoute();
