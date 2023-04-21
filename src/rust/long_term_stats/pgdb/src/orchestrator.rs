@@ -9,11 +9,6 @@ use influxdb2::{
 use sqlx::{Pool, Postgres};
 use uuid::Uuid;
 
-const SETUP_TRIAL_LICENSE: &str = "BEGIN TRANSACTION;
-INSERT INTO licenses (key, stats_host) VALUES ($1, $2);
-INSERT INTO organizations (key, name, influx_host, influx_org, influx_token, influx_bucket) VALUES ($1, $3, $4, $5, $6, $7);
-COMMIT;";
-
 pub async fn create_free_trial(
     cnn: Pool<Postgres>,
     organization_name: &str,
