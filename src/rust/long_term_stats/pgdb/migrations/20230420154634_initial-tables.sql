@@ -70,3 +70,12 @@ CREATE TABLE public.logins
         ON DELETE NO ACTION
         NOT VALID
 );
+
+CREATE TABLE public.active_tokens
+(
+    key character varying(254) NOT NULL,
+    token character varying(254) NOT NULL,
+    username character varying(64) NOT NULL,
+    expires timestamp without time zone NOT NULL DEFAULT NOW() + interval '2 hours',
+    PRIMARY KEY (token)
+);

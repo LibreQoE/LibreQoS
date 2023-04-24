@@ -75,8 +75,12 @@ export class LoginPage implements Page {
         if (event.msg) {
             if (event.msg == "loginOk") {
                 // TODO: Store the credentials globally
+                window.login = event;
+                window.auth.hasCredentials = true;
+                window.auth.token = event.token;
+                localStorage.setItem("token", event.token);
                 window.router.goto("dashboard");
-            } else if (event.msg = "loginFailed") {
+            } else if (event.msg = "loginFail") {
                 alert("Login failed");
                 let btn = document.getElementById('btnLogin');
                 if (btn) {
@@ -84,5 +88,9 @@ export class LoginPage implements Page {
                 }
             }
         }
+    }
+
+    ontick(): void {
+        // Do nothing
     }
 }

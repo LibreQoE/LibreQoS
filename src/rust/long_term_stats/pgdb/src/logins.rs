@@ -7,6 +7,7 @@ use crate::license::StatsHostError;
 #[derive(Debug)]
 pub struct LoginDetails {
     pub token: String,
+    pub license: String,
     pub name: String,
 }
 
@@ -33,7 +34,17 @@ pub async fn try_login(cnn: Pool<Postgres>, key: &str, username: &str, password:
     let details = LoginDetails {
         token: uuid,
         name: nicename,
+        license: key.to_string(),
     };
+
+    sqlx::query("INSERT INTO active_tokens (token, key, username) VALUES ($1, $2, $3)")
+        .bind(&details.token)
+        .bind(key)
+        .bind(username)
+        .execute(&cnn)
+        .await
+        .map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
+
     Ok(details)
 }
 
@@ -58,4 +69,40 @@ pub async fn add_user(cnn: Pool<Postgres>, key: &str, username: &str, password: 
         .await
         .map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
     Ok(())
+}
+
+pub async fn refresh_token(cnn: Pool<Postgres>, token_id: &str) -> Result<(), StatsHostError> {
+    sqlx::query("UPDATE active_tokens SET last_seen = NOW() WHERE token = $1")
+        .bind(token_id)
+        .execute(&cnn)
+        .await
+        .map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
+    Ok(())
+}
+
+pub async fn token_to_credentials(cnn: Pool<Postgres>, token_id: &str) -> Result<LoginDetails, StatsHostError> {
+    let row = sqlx::query("SELECT key, username FROM active_tokens WHERE token = $1")
+        .bind(token_id)
+        .fetch_one(&cnn)
+        .await
+        .map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
+
+    let key: String = row.try_get("key").map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
+    let username: String = row.try_get("username").map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
+
+    let row = sqlx::query("SELECT nicename FROM logins WHERE key = $1 AND username = $2")
+        .bind(&key)
+        .bind(username)
+        .fetch_one(&cnn)
+        .await
+        .map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
+
+    let nicename: String = row.try_get("nicename").map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
+    let details = LoginDetails {
+        token: token_id.to_string(),
+        name: nicename,
+        license: key,
+    };
+
+    Ok(details)
 }

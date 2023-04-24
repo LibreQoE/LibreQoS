@@ -8,6 +8,7 @@ declare global {
         router: SiteRouter;
         bus: Bus;
         auth: Auth;
+        login: any;
     }
 }
 
@@ -16,3 +17,7 @@ window.bus = new Bus();
 window.router = new SiteRouter();
 window.bus.connect();
 window.router.initialRoute();
+
+window.setInterval(() => {
+    window.router.ontick();
+}, 1000);
