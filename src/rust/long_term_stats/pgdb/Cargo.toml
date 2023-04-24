@@ -13,3 +13,4 @@ sqlx = { version = "0.6.3", features = [ "runtime-tokio-rustls", "postgres" ] }
 futures = "0"
 uuid = { version = "1", features = ["v4", "fast-rng" ] }
 influxdb2 = "0"
+sha2 = "0"

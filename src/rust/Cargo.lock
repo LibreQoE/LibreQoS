@@ -2650,6 +2650,7 @@ dependencies = [
  "log",
  "lqos_bus",
  "once_cell",
+ "sha2",
  "sqlx",
  "thiserror",
  "uuid",

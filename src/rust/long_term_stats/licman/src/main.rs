@@ -22,6 +22,11 @@ enum Commands {
         #[command(subcommand)]
         command: Option<LicenseCommands>,
     },
+    /// Manage users
+    Users {
+        #[command(subcommand)]
+        command: Option<UsersCommands>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -34,6 +39,14 @@ enum HostsCommands {
 enum LicenseCommands {
     /// Create a new free trial license
     FreeTrial { organization: String },
+}
+
+#[derive(Subcommand)]
+enum UsersCommands {
+    /// Add a new user
+    Add { key: String, username: String, password: String, nicename: String },
+    /// Delete a user
+    Delete { key: String, username: String },
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -75,6 +88,17 @@ async fn main() -> Result<()> {
                 }
                 Ok(key) => {
                     println!("Your new license key is: {}", key);
+                }
+            }
+        }
+        Some(Commands::Users{command: Some(UsersCommands::Add { key, username, password, nicename })}) => {
+            match pgdb::add_user(pool, &key, &username, &password, &nicename).await {
+                Err(e) => {
+                    log::error!("Unable to add user: {e:?}");
+                    exit(1);
+                }
+                Ok(_) => {
+                    println!("Added user {}", username);
                 }
             }
         }

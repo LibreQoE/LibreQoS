@@ -80,4 +80,6 @@ pub enum StatsHostError {
     NoStatsHostsAvailable,
     #[error("InfluxDB Error")]
     InfluxError(String),
+    #[error("No such login")]
+    InvalidLogin,
 }

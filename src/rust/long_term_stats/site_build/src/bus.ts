@@ -9,12 +9,25 @@ export class Bus {
 
     connect() {
         this.ws = new WebSocket("ws://192.168.100.10:9127/ws");
-        this.ws.onopen = () => { 
+        this.ws.onopen = () => {
+            let indicator = document.getElementById("connStatus");
+            if (indicator) {
+                indicator.style.color = "green";
+            }
             this.sendToken();
         };
-        this.ws.onclose = (e) => { console.log("close", e) };
+        this.ws.onclose = (e) => {
+            let indicator = document.getElementById("connStatus");
+            if (indicator) {
+                indicator.style.color = "red";
+            }
+            console.log("close", e) 
+        };
         this.ws.onerror = (e) => { console.log("error", e) };
-        this.ws.onmessage = (e) => { console.log("message", e.data) };
+        this.ws.onmessage = (e) => { 
+            console.log("message", e.data) 
+            window.router.onMessage(e.data);
+        };
     }
 
     sendToken() {

@@ -32,4 +32,10 @@ export class SiteRouter {
         }
         this.curentPage.wireup();
     }
+
+    onMessage(event: any) {
+        if (this.curentPage) {
+            this.curentPage.onmessage(event);
+        }
+    }
 }

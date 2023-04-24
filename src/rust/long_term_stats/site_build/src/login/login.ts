@@ -4,7 +4,10 @@ import { getValueFromForm } from '../helpers';
 
 export class LoginPage implements Page {
     constructor() {
-        document.body.innerHTML = html;        
+        let container = document.getElementById('main');
+        if (container) {
+            container.innerHTML = html;        
+        }
     }
 
     wireup() {
@@ -14,8 +17,20 @@ export class LoginPage implements Page {
             button.onclick = this.onLogin;
         }
 
+        let stored_license = localStorage.getItem('license');
+        if (stored_license) {
+            let input = document.getElementById('license') as HTMLInputElement;
+            if (input) {
+                input.value = stored_license;
+            }
+        }
+
         // Set focus
-        let input = document.getElementById('license');
+        let focusTarget = "license";
+        if (stored_license) {
+            focusTarget = "username";
+        }
+        let input = document.getElementById(focusTarget);
         if (input) {
             input.focus();
         }
@@ -39,6 +54,13 @@ export class LoginPage implements Page {
             return;
         }
 
+        localStorage.setItem('license', license);
+
+        let btn = document.getElementById('btnLogin');
+        if (btn) {
+            btn.innerHTML = "<i class=\"fa-solid fa-spinner fa-spin\"></i>";
+        }
+
         let data = {
             msg: "login",
             license: license,
@@ -47,5 +69,20 @@ export class LoginPage implements Page {
         };
         let json: string = JSON.stringify(data);
         window.bus.ws.send(json);
+    }
+
+    onmessage(event: any) {
+        if (event.msg) {
+            if (event.msg == "loginOk") {
+                // TODO: Store the credentials globally
+                window.router.goto("dashboard");
+            } else if (event.msg = "loginFailed") {
+                alert("Login failed");
+                let btn = document.getElementById('btnLogin');
+                if (btn) {
+                    btn.textContent = "Login";
+                }
+            }
+        }
     }
 }

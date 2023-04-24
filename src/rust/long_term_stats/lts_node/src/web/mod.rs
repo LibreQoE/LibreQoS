@@ -4,6 +4,8 @@
 mod wss;
 use crate::web::wss::ws_handler;
 use axum::{response::Html, routing::get, Router};
+use pgdb::sqlx::Pool;
+use pgdb::sqlx::Postgres;
 use tower_http::trace::TraceLayer;
 use tower_http::trace::DefaultMakeSpan;
 
@@ -13,7 +15,7 @@ const CSS: &str = include_str!("../../../site_build/output/style.css");
 const CSS_MAP: &str = include_str!("../../../site_build/output/style.css.map");
 const HTML_MAIN: &str = include_str!("../../../site_build/src/main.html");
 
-pub async fn webserver() {
+pub async fn webserver(cnn: Pool<Postgres>) {
     let app = Router::new()
         .route("/", get(index_page))
         .route("/app.js", get(js_bundle))
@@ -21,6 +23,7 @@ pub async fn webserver() {
         .route("/style.css", get(css))
         .route("/style.css.map", get(css_map))
         .route("/ws", get(ws_handler))
+        .with_state(cnn)
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(DefaultMakeSpan::default().include_headers(true)),

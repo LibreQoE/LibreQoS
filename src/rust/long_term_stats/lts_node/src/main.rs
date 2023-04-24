@@ -27,7 +27,7 @@ async fn main() -> anyhow::Result<()> {
     // Start the webserver
     {
         log::info!("Starting the webserver");
-        tokio::spawn(web::webserver());
+        tokio::spawn(web::webserver(pool.clone()));
     }
 
     // Start the submissions serer

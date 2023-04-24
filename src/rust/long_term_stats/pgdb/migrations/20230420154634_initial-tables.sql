@@ -57,3 +57,16 @@ ALTER TABLE ONLY public.organizations
 ALTER TABLE ONLY public.licenses
     ADD CONSTRAINT stats_host_fk FOREIGN KEY (stats_host) REFERENCES public.stats_hosts(id) NOT VALID;
 
+CREATE TABLE public.logins
+(
+    key character varying(254) NOT NULL,
+    username character varying(64) NOT NULL,
+    password_hash character varying(64) NOT NULL,
+    nicename character varying(64) NOT NULL,
+    CONSTRAINT pk_logins_licenses PRIMARY KEY (key, username),
+    CONSTRAINT fk_login_licenses FOREIGN KEY (key)
+        REFERENCES public.licenses (key) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE NO ACTION
+        NOT VALID
+);
