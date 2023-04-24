@@ -11,7 +11,7 @@ export class LoginPage implements Page {
         // Connect the button
         let button = document.getElementById('btnLogin');
         if (button) {
-            button.onclick = onLogin;
+            button.onclick = this.onLogin;
         }
 
         // Set focus
@@ -20,23 +20,32 @@ export class LoginPage implements Page {
             input.focus();
         }
     }    
-}
 
-function onLogin() {
-    let license = getValueFromForm('license');
-    let username = getValueFromForm('username');
-    let password = getValueFromForm('password');
+    onLogin() {
+        let license = getValueFromForm('license');
+        let username = getValueFromForm('username');
+        let password = getValueFromForm('password');
+    
+        if (license == "") {
+            alert("Please enter a license key");
+            return;
+        }
+        if (username == "") {
+            alert("Please enter a username");
+            return;
+        }
+        if (password == "") {
+            alert("Please enter a password");
+            return;
+        }
 
-    if (license == "") {
-        alert("Please enter a license key");
-        return;
-    }
-    if (username == "") {
-        alert("Please enter a username");
-        return;
-    }
-    if (password == "") {
-        alert("Please enter a password");
-        return;
+        let data = {
+            msg: "login",
+            license: license,
+            username: username,
+            password: password,
+        };
+        let json: string = JSON.stringify(data);
+        window.bus.ws.send(json);
     }
 }

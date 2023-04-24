@@ -1,22 +1,16 @@
+import { Auth } from './auth';
 import { LoginPage } from './login/login';
 import { Page } from './page';
 
 export class SiteRouter {
-    hasCredentials: boolean;
     curentPage: Page | undefined;
 
     constructor() {
         this.curentPage = undefined;
-        let token = localStorage.getItem("token");
-        if (token) {
-            this.hasCredentials = true;
-        } else {
-            this.hasCredentials = false;
-        }
     }
 
     initialRoute() {
-        if (this.hasCredentials) {
+        if (window.auth.hasCredentials) {
             this.goto("dashboard");
         } else {
             this.goto("login");

@@ -1,12 +1,11 @@
 //! The webserver listens on port 9127, but it is intended that this only
 //! listen on localhost and have a reverse proxy in front of it. The proxy
 //! should provide HTTPS.
-
-use axum::{
-    response::Html,
-    routing::get,
-    Router,
-};
+mod wss;
+use crate::web::wss::ws_handler;
+use axum::{response::Html, routing::get, Router};
+use tower_http::trace::TraceLayer;
+use tower_http::trace::DefaultMakeSpan;
 
 const JS_BUNDLE: &str = include_str!("../../../site_build/output/app.js");
 const JS_MAP: &str = include_str!("../../../site_build/output/app.js.map");
@@ -21,7 +20,11 @@ pub async fn webserver() {
         .route("/app.js.map", get(js_map))
         .route("/style.css", get(css))
         .route("/style.css.map", get(css_map))
-        ;
+        .route("/ws", get(ws_handler))
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(DefaultMakeSpan::default().include_headers(true)),
+        );
 
     log::info!("Listening for web traffic on 0.0.0.0:9127");
     axum::Server::bind(&"0.0.0.0:9127".parse().unwrap())
