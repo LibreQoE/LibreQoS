@@ -285,7 +285,7 @@ def handleMultipleInternetNodes(sites, dataLinks, uispSite):
 	internetConnectedSites = []
 	for link in dataLinks:
 		if link['canDelete'] ==  False:
-			if link['from']['device']['identification']['id'] == link['to']['device']['identification']['id']:
+			if link['from']['device'] is not None and link['to']['device'] is not None and link['from']['device']['identification']['id'] == link['to']['device']['identification']['id']:
 				siteID = link['from']['site']['identification']['id']
 				# Found internet link
 				internetConnectedSites.append(siteID)

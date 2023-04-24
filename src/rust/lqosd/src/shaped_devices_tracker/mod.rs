@@ -96,6 +96,7 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
           rtts: Vec::new(),
           parents: Vec::new(),
           immediate_parent: None,
+          node_type: String::new(),
         },
       ));
     }
