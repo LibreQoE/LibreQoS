@@ -42,8 +42,10 @@ You can graph bandwidth and TCP RTT by client and node (Site, AP, etc), using In
 
 ## Server Recommendations
 It is most cost-effective to buy a used server with specifications matching your unique requirements, as laid out in the System Requirements section below.
-For those who do not have the time to do that, here is a server config for up to 20 Gbps throughput:
-* 20 Gbps | [Dell R450 Config](https://www.dell.com/en-us/shop/servers-storage-and-networking/poweredge-r450-rack-server/spd/poweredge-r450/pe_r450_15127_vi_vp?configurationid=63956ce8-1714-47c0-89ec-c6729c1ca867)
+For those who do not have the time to do that, here are some off-the-shelf options to consider:
+* 1 Gbps | [Supermicro SuperServer E100-9W-L](https://www.thinkmate.com/system/superserver-e100-9w-l)
+* 10 Gbps | [Supermicro SuperServer 510T-ML (Choose E-2388G)](https://www.thinkmate.com/system/superserver-510t-ml)
+* 20 Gbps | [Dell R450 Config](https://www.dell.com/en-us/shop/servers-storage-and-networking/poweredge-r450-rack-server/spd/poweredge-r450/pe_r450_15127_vi_vp?configurationid=a7663c54-6e4a-4c96-9a21-bc5a69d637ba)
 
 The [AsRock 1U4LW-B6502L2T](https://www.thinkmate.com/system/asrock-1u4lw-b6502l2t/635744) can be a great lower-cost option as well.
 
