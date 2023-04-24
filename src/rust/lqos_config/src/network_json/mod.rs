@@ -48,7 +48,7 @@ impl NetworkJsonNode {
       rtts: self.rtts.iter().map(|n| *n as f32 / 100.0).collect(),
       parents: self.parents.clone(),
       immediate_parent: self.immediate_parent,
-      node_type: String::new(),
+      node_type: None,
     }
   }
 }
@@ -72,7 +72,7 @@ pub struct NetworkJsonTransport {
   pub immediate_parent: Option<usize>,
   /// The type of node (site, ap, etc.)
   #[serde(rename = "type")]
-  pub node_type: String,
+  pub node_type: Option<String>,
 }
 
 /// Holder for the network.json representation.
