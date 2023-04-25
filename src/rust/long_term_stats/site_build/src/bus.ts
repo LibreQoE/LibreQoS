@@ -59,6 +59,10 @@ export class Bus {
     requestThroughputChart() {
         this.ws.send("{ \"msg\": \"throughputChart\" }");
     }
+
+    requestRttChart() {
+        this.ws.send("{ \"msg\": \"rttChart\" }");
+    }
 }
 
 function formatToken(token: string) {

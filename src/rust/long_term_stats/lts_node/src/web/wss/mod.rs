@@ -65,6 +65,13 @@ async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
                                 log::info!("Throughput requested but no credentials provided");
                             }
                         }
+                        "rttChart" => {
+                            if let Some(credentials) = &credentials {
+                                dashboard::rtt(cnn.clone(), &mut socket, &credentials.license_key).await;
+                            } else {
+                                log::info!("Throughput requested but no credentials provided");
+                            }
+                        }
                         _ => {
                             log::warn!("Unknown message type: {msg_type}");
                         }

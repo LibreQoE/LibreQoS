@@ -5,6 +5,8 @@ import { Component } from '../components/component';
 import { NodeStatus } from '../components/node_status';
 import { PacketsChart } from '../components/packets';
 import { ThroughputChart } from '../components/throughput';
+import { RttChart } from '../components/rtt_graph';
+import { RttHisto } from '../components/rtt_histo';
 
 export class DashboardPage implements Page {
     menu: MenuPage;
@@ -20,6 +22,8 @@ export class DashboardPage implements Page {
             new NodeStatus(),
             new PacketsChart(),
             new ThroughputChart(),
+            new RttChart(),
+            new RttHisto(),
         ];
     }
 
