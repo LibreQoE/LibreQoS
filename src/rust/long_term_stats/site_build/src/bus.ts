@@ -25,7 +25,7 @@ export class Bus {
         };
         this.ws.onerror = (e) => { console.log("error", e) };
         this.ws.onmessage = (e) => { 
-            console.log("message", e.data)
+            //console.log("message", e.data)
             let json = JSON.parse(e.data);
             if (json.msg && json.msg == "authOk") {
                 window.auth.hasCredentials = true;
@@ -50,6 +50,14 @@ export class Bus {
 
     requestNodeStatus() {
         this.ws.send("{ \"msg\": \"nodeStatus\" }");
+    }
+
+    requestPacketChart() {
+        this.ws.send("{ \"msg\": \"packetChart\" }");
+    }
+
+    requestThroughputChart() {
+        this.ws.send("{ \"msg\": \"throughputChart\" }");
     }
 }
 

@@ -6,6 +6,7 @@ use pgdb::sqlx::{Pool, Postgres};
 use serde_json::Value;
 mod login;
 mod nodes;
+mod dashboard;
 
 pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Pool<Postgres>>) -> impl IntoResponse {
     ws.on_upgrade(move |sock| handle_socket(sock, state))
@@ -48,6 +49,20 @@ async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
                                 nodes::node_status(cnn.clone(), &mut socket, &credentials.license_key).await;
                             } else {
                                 log::info!("Node status requested but no credentials provided");
+                            }
+                        }
+                        "packetChart" => {
+                            if let Some(credentials) = &credentials {
+                                dashboard::packets(cnn.clone(), &mut socket, &credentials.license_key).await;
+                            } else {
+                                log::info!("Throughput requested but no credentials provided");
+                            }
+                        }
+                        "throughputChart" => {
+                            if let Some(credentials) = &credentials {
+                                dashboard::bits(cnn.clone(), &mut socket, &credentials.license_key).await;
+                            } else {
+                                log::info!("Throughput requested but no credentials provided");
                             }
                         }
                         _ => {

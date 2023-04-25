@@ -13,7 +13,7 @@ install `esbuild` and `npm` (ugh). You can do this with:
 ```bash
 (change directory to site_build folder)
 sudo apt-get install npm
-npm install --save-exact esbuild
+npm install
 ````
 
 You can run the build manually by running `./esbuild.sh` in this

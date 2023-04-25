@@ -19,3 +19,12 @@
     width: 0.5rem;
     height: 100vh;
   }
+
+  .break {
+    flex-basis: 100%;
+    height: 0;
+  }
+
+  .row {
+    margin-bottom: 2px;
+  }
