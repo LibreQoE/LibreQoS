@@ -7,7 +7,7 @@
 use lqos_bus::long_term_stats::{NodeIdAndLicense, StatsSubmission};
 use pgdb::sqlx::{Pool, Postgres};
 use tokio::{sync::mpsc::{Sender, Receiver}, join};
-use crate::submissions::submission_queue::{host_totals::collect_host_totals, organization_cache::get_org_details, per_host::collect_per_host};
+use crate::submissions::submission_queue::{host_totals::collect_host_totals, organization_cache::get_org_details, per_host::collect_per_host, tree::collect_tree};
 
 const SUBMISSION_QUEUE_SIZE: usize = 100;
 pub type SubmissionType = (NodeIdAndLicense, StatsSubmission);
@@ -36,8 +36,9 @@ async fn ingest_stats(cnn: Pool<Postgres>, node_id: NodeIdAndLicense, stats: Sta
         // TODO: Error handling
         let _ = join!(
             update_last_seen(cnn.clone(), &node_id),
-            collect_host_totals(&org, &node_id.node_id, ts, stats.totals),
+            collect_host_totals(&org, &node_id.node_id, ts, &stats.totals),
             collect_per_host(&org, &node_id.node_id, ts, &stats.hosts),
+            collect_tree(&org, &node_id.node_id, ts, &stats.tree),
         );
     } else {
         log::warn!("Unable to find organization for license {}", node_id.license_key);

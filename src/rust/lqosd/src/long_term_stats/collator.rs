@@ -43,6 +43,7 @@ impl From<NetworkTreeEntry> for lqos_bus::long_term_stats::StatsTreeNode {
         Self {
             name: value.name.clone(),
             max_throughput: value.max_throughput,
+            current_throughput: value.current_throughput,
             parents: value.parents,
             immediate_parent: value.immediate_parent,
         }

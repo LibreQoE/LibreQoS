@@ -7,6 +7,7 @@ use crate::shaped_devices_tracker::NETWORK_JSON;
 pub(crate) struct NetworkTreeEntry {
     pub(crate) name: String,
     pub(crate) max_throughput: (u32, u32),
+    pub(crate) current_throughput: (u32, u32),
     pub(crate) parents: Vec<usize>,
     pub(crate) immediate_parent: Option<usize>,
 }
@@ -18,6 +19,10 @@ impl From<&NetworkJsonNode> for NetworkTreeEntry {
             max_throughput: value.max_throughput,
             parents: value.parents.clone(),
             immediate_parent: value.immediate_parent,
+            current_throughput: (
+                value.current_throughput.0.load(std::sync::atomic::Ordering::Relaxed) as u32,
+                value.current_throughput.1.load(std::sync::atomic::Ordering::Relaxed) as u32,
+            ),
         }
     }
 }
@@ -27,6 +32,7 @@ impl From<&NetworkTreeEntry> for StatsTreeNode {
         Self {
             name: value.name.clone(),
             max_throughput: value.max_throughput,
+            current_throughput: value.current_throughput,
             parents: value.parents.clone(),
             immediate_parent: value.immediate_parent,
         }

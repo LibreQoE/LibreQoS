@@ -8,7 +8,7 @@ pub async fn collect_host_totals(
     org: &OrganizationDetails,
     node_id: &str,
     timestamp: i64,
-    totals: Option<StatsTotals>,
+    totals: &Option<StatsTotals>,
 ) -> anyhow::Result<()> {
     if let Some(totals) = totals {
         let influx_url = format!("http://{}:8086", org.influx_host);

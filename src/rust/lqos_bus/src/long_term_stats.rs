@@ -64,6 +64,8 @@ pub struct StatsTreeNode {
     pub name: String,
     /// Maximum allowed throughput (from network.json)
     pub max_throughput: (u32, u32),
+    /// Current throughput (from network.json)
+    pub current_throughput: (u32, u32),
     /// Indices of parents in the tree
     pub parents: Vec<usize>,
     /// Index of immediate parent in the tree
