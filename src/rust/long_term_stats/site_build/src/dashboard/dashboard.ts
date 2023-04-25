@@ -42,7 +42,7 @@ export class DashboardPage implements Page {
                         if (node.last_seen < 20) {
                             color = "success";
                         }
-                        html += "<span class='badge text-bg-" + color + "'><i class='fa-solid fa-server'></i> " + node.node_id + "</span> ";
+                        html += "<span class='badge rounded-pill text-bg-" + color + "'><i class='fa-solid fa-server'></i> " + node.node_id + "</span> ";
                     }
                     status.innerHTML = html;
                 }                

@@ -7,13 +7,16 @@ sqm = 'cake diffserv4'
 # ensure actual shaping. After changing this value, run "sudo systemctl restart LibreQoS.service"
 monitorOnlyMode = False
 
-# How many Mbps are available to the edge of this network
+# How many Mbps are available to the edge of this network.
+# Any circuits, generated nodes, or network.json nodes, will all be capped at no more than this amount.
 upstreamBandwidthCapacityDownloadMbps = 1000
 upstreamBandwidthCapacityUploadMbps = 1000
 
-# Devices in ShapedDevices.csv without a defined ParentNode will be placed under a generated
-# parent node, evenly spread out across CPU cores. Here, define the bandwidth limit for each
-# of those generated parent nodes.
+# Consider these values your bandwidth bottleneck per-CPU-core.
+# This will depend on your CPU's single-thread passmark score.
+# Devices in ShapedDevices.csv without a defined ParentNode (such as if you have a flat {} network)
+# will be placed under one of these generated parent node, evenly spread out across CPU cores.
+# This defines the bandwidth limit for each of those generated parent nodes.
 generatedPNDownloadMbps = 1000
 generatedPNUploadMbps = 1000
 
