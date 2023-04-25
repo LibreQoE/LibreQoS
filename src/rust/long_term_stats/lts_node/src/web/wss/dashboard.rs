@@ -1,9 +1,7 @@
-use std::f32::consts::E;
-
 use crate::submissions::get_org_details;
 use axum::extract::ws::{WebSocket, Message};
 use chrono::{DateTime, FixedOffset, Utc};
-use influxdb2::{models::Query, Client, FromDataPoint, FromMap};
+use influxdb2::{models::Query, Client, FromDataPoint};
 use pgdb::sqlx::{Pool, Postgres};
 use serde::Serialize;
 
