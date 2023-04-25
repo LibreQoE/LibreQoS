@@ -26,10 +26,20 @@ export class MenuPage implements Page {
     }
 
     wireup() {
-    }    
+    }
 
     onmessage(event: any) {
         if (event.msg) {
+            if (event.msg == "authOk") {
+                let username = document.getElementById('menuUser');
+                if (username) {
+                    if (window.login) {
+                        username.textContent = window.login.name;
+                    } else {
+                        username.textContent = "Unknown";
+                    }
+                }
+            }
         }
     }
 

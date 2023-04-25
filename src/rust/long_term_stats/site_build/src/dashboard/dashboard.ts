@@ -1,9 +1,12 @@
 import html from './template.html';
 import { Page } from '../page'
 import { MenuPage } from '../menu/menu';
+import { Component } from '../components/component';
+import { NodeStatus } from '../components/node_status/node_status';
 
 export class DashboardPage implements Page {
     menu: MenuPage;
+    components: Component[]
 
     constructor() {
         this.menu = new MenuPage("menuDash");
@@ -11,42 +14,31 @@ export class DashboardPage implements Page {
         if (container) {
             container.innerHTML = html;
         }
+        this.components = [
+            new NodeStatus()
+        ];
     }
 
     wireup() {
-        window.bus.requestNodeStatus();
+        this.components.forEach(component => {
+            component.wireup();
+        });
     }    
 
     ontick(): void {
         this.menu.ontick();
-        window.bus.requestNodeStatus();
+        this.components.forEach(component => {
+            component.ontick();
+        });
     }
 
     onmessage(event: any) {
         if (event.msg) {
             this.menu.onmessage(event);
 
-            if (event.msg == "nodeStatus") {
-                let status = document.getElementById("nodeStatus");
-                let html = "";
-                if (status) {
-                    for (let i = 0; i < event.nodes.length; i++) {
-                        let node = event.nodes[i];
-                        let color = "danger";
-                        if (node.last_seen > 86400) {
-                            color = "secondary";
-                        } 
-                        if (node.last_seen < 60) {
-                            color = "warning";
-                        } 
-                        if (node.last_seen < 20) {
-                            color = "success";
-                        }
-                        html += "<span class='badge rounded-pill text-bg-" + color + "'><i class='fa-solid fa-server'></i> " + node.node_id + "</span> ";
-                    }
-                    status.innerHTML = html;
-                }                
-            }
+            this.components.forEach(component => {
+                component.onmessage(event);
+            });            
         }
     }
 }
