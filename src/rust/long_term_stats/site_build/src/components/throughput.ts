@@ -5,13 +5,6 @@ import * as echarts from 'echarts';
 export class ThroughputChart implements Component {
     div: HTMLElement;
     myChart: echarts.ECharts;
-    download: any;
-    downloadMin: any;
-    downloadMax: any;
-    upload: any;
-    uploadMin: any;
-    uploadMax: any;
-    x: any;
     chartMade: boolean = false;
 
     constructor() {
@@ -29,22 +22,107 @@ export class ThroughputChart implements Component {
 
     onmessage(event: any): void {
         if (event.msg == "bitsChart") {
-            //console.log(event);
-            this.download = [];
-            this.downloadMin = [];
-            this.downloadMax = [];
-            this.upload = [];
-            this.uploadMin = [];
-            this.uploadMax = [];
-            this.x = [];
-            for (let i = 0; i < event.down.length; i++) {
-                this.download.push(event.down[i].value);
-                this.downloadMin.push(event.down[i].l);
-                this.downloadMax.push(event.down[i].u);
-                this.upload.push(0.0 - event.up[i].value);
-                this.uploadMin.push(0.0 - event.up[i].l);
-                this.uploadMax.push(0.0 - event.up[i].u);
-                this.x.push(event.down[i].date);
+            let series: echarts.SeriesOption[] = [];
+
+            // Iterate all provides nodes and create a set of series for each,
+            // providing upload and download banding per node.
+            let x: any[] = [];
+            let first = true;
+            let legend: string[] = [];
+            for (let i=0; i<event.nodes.length; i++) {
+                let node = event.nodes[i];
+                legend.push(node.node_name + " DL");
+                legend.push(node.node_name + " UL");
+                //console.log(node);
+
+                let d: number[] = [];
+                let u: number[] = [];
+                let l: number[] = [];
+                for (let j=0; j<node.down.length; j++) {
+                    if (first) x.push(node.down[j].date);                 
+                    d.push(node.down[j].value);
+                    u.push(node.down[j].u);
+                    l.push(node.down[j].l);
+                }
+                if (first) first = false;
+
+                let min: echarts.SeriesOption = {
+                    name: "L",
+                    type: "line",
+                    data: l,
+                    symbol: 'none',
+                    stack: 'confidence-band-' + node.node_id,
+                    lineStyle: {
+                        opacity: 0
+                    },
+                };
+                let max: echarts.SeriesOption = {
+                    name: "U",
+                    type: "line",
+                    data: u,
+                    symbol: 'none',
+                    stack: 'confidence-band' + node.node_id,
+                    lineStyle: {
+                        opacity: 0
+                    },
+                    areaStyle: {
+                        color: '#ccc'
+                    },
+                };
+                let val: echarts.SeriesOption = {
+                    name: node.node_name + " DL",
+                    type: "line",
+                    data: d,
+                    symbol: 'none',
+                };
+
+                series.push(min);
+                series.push(max);
+                series.push(val);
+
+                // Do the same for upload
+                d = [];
+                u = [];
+                l = [];
+                for (let j=0; j<node.down.length; j++) {
+                    d.push(0.0 - node.up[j].value);
+                    u.push(0.0 - node.up[j].u);
+                    l.push(0.0 - node.up[j].l);
+                }
+
+                min = {
+                    name: "L",
+                    type: "line",
+                    data: l,
+                    symbol: 'none',
+                    stack: 'confidence-band-' + node.node_id,
+                    lineStyle: {
+                        opacity: 0
+                    },
+                };
+                max = {
+                    name: "U",
+                    type: "line",
+                    data: u,
+                    symbol: 'none',
+                    stack: 'confidence-band' + node.node_id,
+                    lineStyle: {
+                        opacity: 0
+                    },
+                    areaStyle: {
+                        color: '#ccc'
+                    },
+                };
+                val = {
+                    name: node.node_name + " UL",
+                    type: "line",
+                    data: d,
+                    symbol: 'none',
+                };
+
+                series.push(min);
+                series.push(max);
+                series.push(val);
             }
 
             if (!this.chartMade) {
@@ -53,9 +131,15 @@ export class ThroughputChart implements Component {
                 this.myChart.setOption<echarts.EChartsOption>(
                     (option = {
                         title: { text: "Bits" },
+                        legend: {
+                            orient: "horizontal",
+                            right: 10,
+                            top: "bottom",
+                            data: legend,
+                        },
                         xAxis: {
                             type: 'category',
-                            data: this.x,
+                            data: x,
                         },
                         yAxis: {
                             type: 'value',
@@ -65,73 +149,7 @@ export class ThroughputChart implements Component {
                                 }
                             }
                         },
-                        series: [
-                            {
-                                name: "L",
-                                type: "line",
-                                data: this.downloadMin,
-                                symbol: 'none',
-                                stack: 'confidence-band',
-                                lineStyle: {
-                                    opacity: 0
-                                },
-                            },
-                            {
-                                name: "U",
-                                type: "line",
-                                data: this.downloadMax,
-                                symbol: 'none',
-                                stack: 'confidence-band',
-                                lineStyle: {
-                                    opacity: 0
-                                },
-                                areaStyle: {
-                                    color: '#ccc'
-                                },
-                            },
-                            {
-                                name: "Download",
-                                type: "line",
-                                data: this.download,
-                                symbol: 'none',
-                                itemStyle: {
-                                    color: '#333'
-                                },
-                            },
-                            // Upload
-                            {
-                                name: "LU",
-                                type: "line",
-                                data: this.uploadMin,
-                                symbol: 'none',
-                                stack: 'confidence-band',
-                                lineStyle: {
-                                    opacity: 0
-                                },
-                            },
-                            {
-                                name: "UU",
-                                type: "line",
-                                data: this.uploadMax,
-                                symbol: 'none',
-                                stack: 'confidence-band',
-                                lineStyle: {
-                                    opacity: 0
-                                },
-                                areaStyle: {
-                                    color: '#ccc'
-                                },
-                            },
-                            {
-                                name: "Upload",
-                                type: "line",
-                                data: this.upload,
-                                symbol: 'none',
-                                itemStyle: {
-                                    color: '#333'
-                                },
-                            },
-                        ]
+                        series: series
                     })
                 );
                 option && this.myChart.setOption(option);

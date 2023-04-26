@@ -4,7 +4,7 @@ use axum::{
 };
 use pgdb::sqlx::{Pool, Postgres};
 use serde_json::Value;
-use crate::web::wss::queries::send_packets_for_all_nodes;
+use crate::web::wss::queries::{send_packets_for_all_nodes, send_throughput_for_all_nodes};
 mod login;
 mod nodes;
 mod dashboard;
@@ -62,7 +62,7 @@ async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
                         }
                         "throughputChart" => {
                             if let Some(credentials) = &credentials {
-                                dashboard::bits(cnn.clone(), &mut socket, &credentials.license_key).await;
+                                let _ = send_throughput_for_all_nodes(cnn.clone(), &mut socket, &credentials.license_key).await;
                             } else {
                                 log::info!("Throughput requested but no credentials provided");
                             }
