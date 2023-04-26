@@ -8,8 +8,10 @@ use futures::future::join_all;
 use influxdb2::{models::Query, Client};
 use pgdb::sqlx::{Pool, Postgres};
 
-pub async fn send_packets_for_all_nodes(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str) -> anyhow::Result<()> {
-    let nodes = get_packets_for_all_nodes(cnn, key).await?;
+use super::time_period::InfluxTimePeriod;
+
+pub async fn send_packets_for_all_nodes(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod) -> anyhow::Result<()> {
+    let nodes = get_packets_for_all_nodes(cnn, key, period).await?;
 
     let chart = PacketChart { msg: "packetChart".to_string(), nodes };
         let json = serde_json::to_string(&chart).unwrap();
@@ -22,7 +24,7 @@ pub async fn send_packets_for_all_nodes(cnn: Pool<Postgres>, socket: &mut WebSoc
 /// # Arguments
 /// * `cnn` - A connection pool to the database
 /// * `key` - The organization's license key
-pub async fn get_packets_for_all_nodes(cnn: Pool<Postgres>, key: &str) -> anyhow::Result<Vec<PacketHost>> {
+pub async fn get_packets_for_all_nodes(cnn: Pool<Postgres>, key: &str, period: InfluxTimePeriod) -> anyhow::Result<Vec<PacketHost>> {
     let node_status = pgdb::node_status(cnn.clone(), key).await?;
     let mut futures = Vec::new();
     for node in node_status {
@@ -31,6 +33,7 @@ pub async fn get_packets_for_all_nodes(cnn: Pool<Postgres>, key: &str) -> anyhow
             key,
             node.node_id.to_string(),
             node.node_name.to_string(),
+            period.clone(),
         ));
     }
     let all_nodes: anyhow::Result<Vec<PacketHost>> = join_all(futures).await
@@ -50,6 +53,7 @@ pub async fn get_packets_for_node(
     key: &str,
     node_id: String,
     node_name: String,
+    period: InfluxTimePeriod,
 ) -> anyhow::Result<PacketHost> {
     if let Some(org) = get_org_details(cnn, key).await {
         let influx_url = format!("http://{}:8086", org.influx_host);
@@ -57,13 +61,13 @@ pub async fn get_packets_for_node(
 
         let qs = format!(
             "from(bucket: \"{}\")
-        |> range(start: -5m)
+        |> {}
         |> filter(fn: (r) => r[\"_measurement\"] == \"packets\")
         |> filter(fn: (r) => r[\"organization_id\"] == \"{}\")
         |> filter(fn: (r) => r[\"host_id\"] == \"{}\")
-        |> aggregateWindow(every: 10s, fn: mean, createEmpty: false)
+        |> {}
         |> yield(name: \"last\")",
-            org.influx_bucket, org.key, node_id
+            org.influx_bucket, period.range(), org.key, node_id, period.aggregate_window()
         );
 
         let query = Query::new(qs);
@@ -84,7 +88,7 @@ pub async fn get_packets_for_node(
                 for row in rows.iter().filter(|r| r.direction == "down") {
                     down.push(Packets {
                         value: row.avg,
-                        date: row.time.format("%H:%M:%S").to_string(),
+                        date: row.time.format("%Y-%m-%d %H:%M:%S").to_string(),
                         l: row.min,
                         u: row.max - row.min,
                     });
@@ -94,7 +98,7 @@ pub async fn get_packets_for_node(
                 for row in rows.iter().filter(|r| r.direction == "up") {
                     up.push(Packets {
                         value: row.avg,
-                        date: row.time.format("%H:%M:%S").to_string(),
+                        date: row.time.format("%Y-%m-%d %H:%M:%S").to_string(),
                         l: row.min,
                         u: row.max - row.min,
                     });

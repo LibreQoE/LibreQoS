@@ -3,26 +3,34 @@ use futures::future::join_all;
 use influxdb2::{Client, models::Query};
 use pgdb::sqlx::{Pool, Postgres};
 use crate::submissions::get_org_details;
-use self::{throughput_host::{ThroughputHost, Throughput, ThroughputChart}, throughput_row::ThroughputRow};
+use self::{rtt_row::RttRow, rtt_host::{Rtt, RttHost, RttChart}};
 
 use super::time_period::InfluxTimePeriod;
-mod throughput_host;
-mod throughput_row;
+mod rtt_row;
+mod rtt_host;
 
-pub async fn send_throughput_for_all_nodes(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod) -> anyhow::Result<()> {
-    let nodes = get_throughput_for_all_nodes(cnn, key, period).await?;
+pub async fn send_rtt_for_all_nodes(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod) -> anyhow::Result<()> {
+    let nodes = get_rtt_for_all_nodes(cnn, key, period).await?;
 
-    let chart = ThroughputChart { msg: "bitsChart".to_string(), nodes };
+    let mut histogram = vec![0; 20];
+    for node in nodes.iter() {
+        for rtt in node.rtt.iter() {
+            let bucket = usize::min(19, (rtt.value / 200.0) as usize);
+            histogram[bucket] += 1;
+        }
+    }
+
+    let chart = RttChart { msg: "rttChart".to_string(), nodes, histogram };
         let json = serde_json::to_string(&chart).unwrap();
         socket.send(Message::Text(json)).await.unwrap();
     Ok(())
 }
 
-pub async fn get_throughput_for_all_nodes(cnn: Pool<Postgres>, key: &str, period: InfluxTimePeriod) -> anyhow::Result<Vec<ThroughputHost>> {
+pub async fn get_rtt_for_all_nodes(cnn: Pool<Postgres>, key: &str, period: InfluxTimePeriod) -> anyhow::Result<Vec<RttHost>> {
     let node_status = pgdb::node_status(cnn.clone(), key).await?;
     let mut futures = Vec::new();
     for node in node_status {
-        futures.push(get_throughput_for_node(
+        futures.push(get_rtt_for_node(
             cnn.clone(),
             key,
             node.node_id.to_string(),
@@ -30,18 +38,18 @@ pub async fn get_throughput_for_all_nodes(cnn: Pool<Postgres>, key: &str, period
             period.clone(),
         ));
     }
-    let all_nodes: anyhow::Result<Vec<ThroughputHost>> = join_all(futures).await
+    let all_nodes: anyhow::Result<Vec<RttHost>> = join_all(futures).await
         .into_iter().collect();
     all_nodes
 }
 
-pub async fn get_throughput_for_node(
+pub async fn get_rtt_for_node(
     cnn: Pool<Postgres>,
     key: &str,
     node_id: String,
     node_name: String,
     period: InfluxTimePeriod,
-) -> anyhow::Result<ThroughputHost> {
+) -> anyhow::Result<RttHost> {
     if let Some(org) = get_org_details(cnn, key).await {
         let influx_url = format!("http://{}:8086", org.influx_host);
         let client = Client::new(influx_url, &org.influx_org, &org.influx_token);
@@ -49,7 +57,7 @@ pub async fn get_throughput_for_node(
         let qs = format!(
             "from(bucket: \"{}\")
         |> {}
-        |> filter(fn: (r) => r[\"_measurement\"] == \"bits\")
+        |> filter(fn: (r) => r[\"_measurement\"] == \"rtt\")
         |> filter(fn: (r) => r[\"organization_id\"] == \"{}\")
         |> filter(fn: (r) => r[\"host_id\"] == \"{}\")
         |> {}
@@ -58,7 +66,7 @@ pub async fn get_throughput_for_node(
         );
 
         let query = Query::new(qs);
-        let rows = client.query::<ThroughputRow>(Some(query)).await;
+        let rows = client.query::<RttRow>(Some(query)).await;
         match rows {
             Err(e) => {
                 tracing::error!("Error querying InfluxDB: {}", e);
@@ -68,12 +76,11 @@ pub async fn get_throughput_for_node(
                 // Parse and send the data
                 //println!("{rows:?}");
 
-                let mut down = Vec::new();
-                let mut up = Vec::new();
+                let mut rtt = Vec::new();
 
                 // Fill download
-                for row in rows.iter().filter(|r| r.direction == "down") {
-                    down.push(Throughput {
+                for row in rows.iter() {
+                    rtt.push(Rtt {
                         value: row.avg,
                         date: row.time.format("%Y-%m-%d %H:%M:%S").to_string(),
                         l: row.min,
@@ -81,21 +88,10 @@ pub async fn get_throughput_for_node(
                     });
                 }
 
-                // Fill upload
-                for row in rows.iter().filter(|r| r.direction == "up") {
-                    up.push(Throughput {
-                        value: row.avg,
-                        date: row.time.format("%Y-%m-%d %H:%M:%S").to_string(),
-                        l: row.min,
-                        u: row.max - row.min,
-                    });
-                }
-
-                return Ok(ThroughputHost{
+                return Ok(RttHost{
                     node_id,
                     node_name,
-                    down,
-                    up,
+                    rtt,
                 });
             }
         }

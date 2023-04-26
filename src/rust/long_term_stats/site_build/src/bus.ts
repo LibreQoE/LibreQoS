@@ -3,24 +3,29 @@ import { SiteRouter } from "./router";
 
 export class Bus {
     ws: WebSocket;
+    connected: boolean;
 
     constructor() {
+        this.connected = false;
+    }
+
+    updateConnected() {
+        let indicator = document.getElementById("connStatus");
+        if (indicator && this.connected) {
+            indicator.style.color = "green";
+        } else if (indicator) {
+            indicator.style.color = "red";
+        }
     }
 
     connect() {
         this.ws = new WebSocket("ws://192.168.100.10:9127/ws");
         this.ws.onopen = () => {
-            let indicator = document.getElementById("connStatus");
-            if (indicator) {
-                indicator.style.color = "green";
-            }
+            this.connected = true;
             this.sendToken();
         };
         this.ws.onclose = (e) => {
-            let indicator = document.getElementById("connStatus");
-            if (indicator) {
-                indicator.style.color = "red";
-            }
+            this.connected = false;
             console.log("close", e) 
         };
         this.ws.onerror = (e) => { console.log("error", e) };
@@ -53,15 +58,15 @@ export class Bus {
     }
 
     requestPacketChart() {
-        this.ws.send("{ \"msg\": \"packetChart\" }");
+        this.ws.send("{ \"msg\": \"packetChart\", \"period\": \"" + window.graphPeriod + "\" }");
     }
 
     requestThroughputChart() {
-        this.ws.send("{ \"msg\": \"throughputChart\" }");
+        this.ws.send("{ \"msg\": \"throughputChart\", \"period\": \"" + window.graphPeriod + "\" }");
     }
 
     requestRttChart() {
-        this.ws.send("{ \"msg\": \"rttChart\" }");
+        this.ws.send("{ \"msg\": \"rttChart\", \"period\": \"" + window.graphPeriod + "\" }");
     }
 }
 
