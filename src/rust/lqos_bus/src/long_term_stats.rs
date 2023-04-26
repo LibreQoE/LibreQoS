@@ -92,19 +92,21 @@ pub struct StatsSubmission {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum LicenseRequest {
     /// Check the validity of a key
-    LicenseCheck { 
+    LicenseCheck {
         /// The Key to Check
-        key: String 
+        key: String,
     },
     /// Exchange Keys
     KeyExchange {
         /// The node ID of the requesting shaper node
         node_id: String,
+        /// The pretty name of the requesting shaper node
+        node_name: String,
         /// The license key of the requesting shaper node
         license_key: String,
         /// The sodium-style public key of the requesting shaper node
         public_key: PublicKey,
-    }
+    },
 }
 
 /// License server responses for a key
@@ -120,10 +122,10 @@ pub enum LicenseReply {
         stats_host: String,
     },
     /// Key Exchange
-    MyPublicKey{
+    MyPublicKey {
         /// The server's public key
         public_key: PublicKey,
-    }
+    },
 }
 
 /// Errors that can occur when checking licenses
@@ -156,7 +158,7 @@ pub struct NodeIdAndLicense {
 
 fn build_license_request(key: String) -> Result<Vec<u8>, LicenseCheckError> {
     let mut result = Vec::new();
-    let payload = serde_cbor::to_vec(&LicenseRequest::LicenseCheck{ key });
+    let payload = serde_cbor::to_vec(&LicenseRequest::LicenseCheck { key });
     if let Err(e) = payload {
         log::warn!("Unable to serialize statistics. Not sending them.");
         log::warn!("{e:?}");
@@ -174,9 +176,19 @@ fn build_license_request(key: String) -> Result<Vec<u8>, LicenseCheckError> {
     Ok(result)
 }
 
-fn build_key_exchange_request(node_id: String, license_key: String, public_key: PublicKey) -> Result<Vec<u8>, LicenseCheckError> {
+fn build_key_exchange_request(
+    node_id: String,
+    node_name: String,
+    license_key: String,
+    public_key: PublicKey,
+) -> Result<Vec<u8>, LicenseCheckError> {
     let mut result = Vec::new();
-    let payload = serde_cbor::to_vec(&LicenseRequest::KeyExchange { node_id, license_key, public_key });
+    let payload = serde_cbor::to_vec(&LicenseRequest::KeyExchange {
+        node_id,
+        node_name,
+        license_key,
+        public_key,
+    });
     if let Err(e) = payload {
         log::warn!("Unable to serialize statistics. Not sending them.");
         log::warn!("{e:?}");
@@ -197,9 +209,9 @@ fn build_key_exchange_request(node_id: String, license_key: String, public_key: 
 const LICENSE_SERVER: &str = "license.libreqos.io:9126";
 
 /// Ask the license server if the license is valid
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `key` - The license key to check
 pub async fn ask_license_server(key: String) -> Result<LicenseReply, LicenseCheckError> {
     if let Ok(buffer) = build_license_request(key) {
@@ -226,22 +238,27 @@ pub async fn ask_license_server(key: String) -> Result<LicenseReply, LicenseChec
                     log::error!("{:?}", ret);
                     return Err(LicenseCheckError::SendFail);
                 }
-        
+
                 decode_response(&buf)
             }
             Err(e) => {
                 log::warn!("TCP stream failed to connect: {:?}", e);
                 Err(LicenseCheckError::ReceiveFail)
             }
-        }        
+        }
     } else {
         Err(LicenseCheckError::SerializeFail)
     }
 }
 
 /// Ask the license server for the public key
-pub async fn exchange_keys_with_license_server(node_id: String, license_key: String, public_key: PublicKey) -> Result<LicenseReply, LicenseCheckError> {
-    if let Ok(buffer) = build_key_exchange_request(node_id, license_key, public_key) {
+pub async fn exchange_keys_with_license_server(
+    node_id: String,
+    node_name: String,
+    license_key: String,
+    public_key: PublicKey,
+) -> Result<LicenseReply, LicenseCheckError> {
+    if let Ok(buffer) = build_key_exchange_request(node_id, node_name, license_key, public_key) {
         let stream = TcpStream::connect(LICENSE_SERVER).await;
         if let Err(e) = &stream {
             if e.kind() == std::io::ErrorKind::NotFound {

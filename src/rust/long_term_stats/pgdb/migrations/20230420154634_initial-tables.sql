@@ -16,6 +16,7 @@ CREATE TABLE public.organizations (
 CREATE TABLE public.shaper_nodes (
     license_key character varying(254) NOT NULL,
     node_id character varying(254) NOT NULL,
+    node_name character varying(254) NOT NULL,
     last_seen timestamp without time zone DEFAULT now() NOT NULL,
     public_key bytea
 );

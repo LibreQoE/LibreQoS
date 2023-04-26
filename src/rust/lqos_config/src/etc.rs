@@ -18,9 +18,11 @@ pub struct EtcLqos {
 
   /// If present, provides a unique ID for the node. Used for
   /// anonymous stats (to identify nodes without providing an actual
-  /// identity), and will be used for long-term data retention to
-  /// disambiguate cluster or multi-head-end nodes.
+  /// identity), and long-term stas.
   pub node_id: Option<String>,
+
+  /// If present, provide a name for the node.
+  pub node_name: Option<String>,
 
   /// If present, defines how the Bifrost XDP bridge operates.
   pub bridge: Option<BridgeConfig>,

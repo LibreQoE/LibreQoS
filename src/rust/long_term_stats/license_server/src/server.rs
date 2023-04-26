@@ -110,14 +110,14 @@ async fn check_license(
                 Ok(LicenseReply::Denied)
             }
         }
-        LicenseRequest::KeyExchange { node_id, license_key, public_key } => {
+        LicenseRequest::KeyExchange { node_id, node_name, license_key, public_key } => {
             log::info!("Public key exchange requested by {node_id}");
 
             // Check if the node_id / license key combination exists
             // If it does, update it to the current last-seen and the new public key
             // If it doesn't, insert it
             let public_key = lqos_bus::cbor::to_vec(&public_key).unwrap();
-            let result = pgdb::insert_or_update_node_public_key(pool, node_id, license_key, &public_key).await;
+            let result = pgdb::insert_or_update_node_public_key(pool, node_id, node_name, license_key, &public_key).await;
             if result.is_err() {
                 log::warn!("Unable to insert or update node public key: {result:?}");
                 return Err(anyhow::Error::msg("Unable to insert or update node public key"));

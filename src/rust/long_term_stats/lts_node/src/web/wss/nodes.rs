@@ -11,6 +11,7 @@ struct NodeStatus {
 #[derive(Serialize)]
 struct Node {
     node_id: String,
+    node_name: String,
     last_seen: i32,
 }
 
@@ -18,6 +19,7 @@ impl From<pgdb::NodeStatus> for Node {
     fn from(ns: pgdb::NodeStatus) -> Self {
         Self {
             node_id: ns.node_id,
+            node_name: ns.node_name,
             last_seen: ns.last_seen,
         }
     }

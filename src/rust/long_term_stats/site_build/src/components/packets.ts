@@ -53,6 +53,12 @@ export class PacketsChart implements Component {
                 this.myChart.setOption<echarts.EChartsOption>(
                     (option = {
                         title: { text: "Packets" },
+                        legend: {
+                            orient: "horizontal",
+                            right: 10,
+                            top: "bottom",
+                            data: ["Download", "Upload"],
+                        },
                         xAxis: {
                             type: 'category',
                             data: this.x,

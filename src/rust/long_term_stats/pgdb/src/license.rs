@@ -15,7 +15,7 @@ pub async fn get_stats_host_for_key(cnn: Pool<Postgres>, key: &str) -> Result<St
     Ok(ip_address.to_string())
 }
 
-pub async fn insert_or_update_node_public_key(cnn: Pool<Postgres>, node_id: &str, license_key: &str, public_key: &[u8]) -> Result<(), StatsHostError> {
+pub async fn insert_or_update_node_public_key(cnn: Pool<Postgres>, node_id: &str, node_name: &str, license_key: &str, public_key: &[u8]) -> Result<(), StatsHostError> {
     let row = sqlx::query("SELECT COUNT(*) AS count FROM shaper_nodes WHERE node_id=$1 AND license_key=$2")
         .bind(node_id)
         .bind(license_key)
@@ -28,10 +28,11 @@ pub async fn insert_or_update_node_public_key(cnn: Pool<Postgres>, node_id: &str
         0 => {
             // Insert
             log::info!("Inserting new node: {} {}", node_id, license_key);
-            sqlx::query("INSERT INTO shaper_nodes (license_key, node_id, public_key) VALUES ($1, $2, $3)")
+            sqlx::query("INSERT INTO shaper_nodes (license_key, node_id, public_key, node_name) VALUES ($1, $2, $3, $4)")
                 .bind(license_key)
                 .bind(node_id)
                 .bind(public_key)
+                .bind(node_name)
                 .execute(&cnn)
                 .await
                 .map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
@@ -39,10 +40,11 @@ pub async fn insert_or_update_node_public_key(cnn: Pool<Postgres>, node_id: &str
         1 => {
             // Update
             log::info!("Updating node: {} {}", node_id, license_key);
-            sqlx::query("UPDATE shaper_nodes SET public_key=$1, last_seen=NOW() WHERE node_id=$2 AND license_key=$3")
+            sqlx::query("UPDATE shaper_nodes SET public_key=$1, last_seen=NOW(), node_name=$4 WHERE node_id=$2 AND license_key=$3")
                 .bind(public_key)
                 .bind(node_id)
                 .bind(license_key)
+                .bind(node_name)
                 .execute(&cnn)
                 .await
                 .map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;

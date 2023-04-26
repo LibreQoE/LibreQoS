@@ -44,9 +44,14 @@ async fn send_queue(host: String) {
     if !DONE_KEY_EXCHANGE.load(std::sync::atomic::Ordering::Relaxed) {
         let cfg = EtcLqos::load().unwrap();
         let node_id = cfg.node_id.unwrap();
+        let node_name = if let Some(node_name) = cfg.node_name {
+            node_name
+        } else {
+            node_id.clone()
+        };
         let license_key = cfg.long_term_stats.unwrap().license_key.unwrap();
         let keypair = (KEYPAIR.read().unwrap()).clone();
-        match exchange_keys_with_license_server(node_id, license_key, keypair.public_key.clone()).await {
+        match exchange_keys_with_license_server(node_id, node_name, license_key, keypair.public_key.clone()).await {
             Ok(lqos_bus::long_term_stats::LicenseReply::MyPublicKey { public_key }) => {
                 store_server_public_key(&public_key);
                 log::info!("Received a public key for the server");
