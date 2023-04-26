@@ -8,13 +8,13 @@ export function getValueFromForm(id: string): string {
 
 export function scaleNumber(n: any): string {
     if (n >= 1000000000000) {
-        return (n / 1000000000000).toFixed(0) + "T";
+        return (n / 1000000000000).toFixed(1) + "T";
     } else if (n >= 1000000000) {
-        return (n / 1000000000).toFixed(0) + "G";
+        return (n / 1000000000).toFixed(1) + "G";
     } else if (n >= 1000000) {
-        return (n / 1000000).toFixed(0) + "M";
+        return (n / 1000000).toFixed(1) + "M";
     } else if (n >= 1000) {
-        return (n / 1000).toFixed(0) + "K";
+        return (n / 1000).toFixed(1) + "K";
     }
     return n;
 }
