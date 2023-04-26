@@ -19,7 +19,9 @@ export class Bus {
     }
 
     connect() {
-        this.ws = new WebSocket("ws://192.168.100.10:9127/ws");
+        const currentUrlWithoutAnchors = window.location.href.split('#')[0].replace("https://", "").replace("http://", "");
+        const url = "ws://" + currentUrlWithoutAnchors + "ws";
+        this.ws = new WebSocket(url);
         this.ws.onopen = () => {
             this.connected = true;
             this.sendToken();
