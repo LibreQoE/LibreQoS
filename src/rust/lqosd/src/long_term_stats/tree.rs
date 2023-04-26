@@ -10,6 +10,7 @@ pub(crate) struct NetworkTreeEntry {
     pub(crate) current_throughput: (u32, u32),
     pub(crate) parents: Vec<usize>,
     pub(crate) immediate_parent: Option<usize>,
+    pub(crate) node_type: Option<String>,
 }
 
 impl From<&NetworkJsonNode> for NetworkTreeEntry {
@@ -23,6 +24,7 @@ impl From<&NetworkJsonNode> for NetworkTreeEntry {
                 value.current_throughput.0.load(std::sync::atomic::Ordering::Relaxed) as u32,
                 value.current_throughput.1.load(std::sync::atomic::Ordering::Relaxed) as u32,
             ),
+            node_type: value.node_type.clone(),
         }
     }
 }
@@ -35,6 +37,7 @@ impl From<&NetworkTreeEntry> for StatsTreeNode {
             current_throughput: value.current_throughput,
             parents: value.parents.clone(),
             immediate_parent: value.immediate_parent,
+            node_type: value.node_type.clone(),
         }
     }
 }

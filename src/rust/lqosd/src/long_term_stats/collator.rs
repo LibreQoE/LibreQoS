@@ -46,6 +46,7 @@ impl From<NetworkTreeEntry> for lqos_bus::long_term_stats::StatsTreeNode {
             current_throughput: value.current_throughput,
             parents: value.parents,
             immediate_parent: value.immediate_parent,
+            node_type: value.node_type,
         }
     }
 }

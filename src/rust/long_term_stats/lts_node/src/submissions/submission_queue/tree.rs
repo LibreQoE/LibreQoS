@@ -10,6 +10,7 @@ pub async fn collect_tree(
     totals: &Option<Vec<StatsTreeNode>>,
 ) -> anyhow::Result<()> {
     if let Some(tree) = totals {
+        println!("{tree:?}");
         let influx_url = format!("http://{}:8086", org.influx_host);
         let client = Client::new(&influx_url, &org.influx_org, &org.influx_token);
         let mut points: Vec<DataPoint> = Vec::new();

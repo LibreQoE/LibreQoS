@@ -70,6 +70,8 @@ pub struct StatsTreeNode {
     pub parents: Vec<usize>,
     /// Index of immediate parent in the tree
     pub immediate_parent: Option<usize>,
+    /// Node Type
+    pub node_type: Option<String>,
 }
 
 /// Collation of all stats for a given time period
