@@ -26,8 +26,8 @@ export class RttHisto implements Component {
             //console.log(event);
             this.download = [];
             this.x = [];
-            for (let i = 0; i < event.histo.length; i++) {
-                this.download.push(event.histo[i]);
+            for (let i = 0; i < event.histogram.length; i++) {
+                this.download.push(event.histogram[i]);
                 this.x.push(i * 10);
             }
 
@@ -50,9 +50,6 @@ export class RttHisto implements Component {
                                 name: "RTT",
                                 type: "bar",
                                 data: this.download,
-                                itemStyle: {
-                                    color: '#333'
-                                },
                             },
                         ]
                     })

@@ -61,7 +61,7 @@ export class ThroughputChart implements Component {
                     type: "line",
                     data: u,
                     symbol: 'none',
-                    stack: 'confidence-band' + node.node_id,
+                    stack: 'confidence-band-' + node.node_id,
                     lineStyle: {
                         opacity: 0
                     },
@@ -105,7 +105,7 @@ export class ThroughputChart implements Component {
                     type: "line",
                     data: u,
                     symbol: 'none',
-                    stack: 'confidence-band' + node.node_id,
+                    stack: 'confidence-band-' + node.node_id,
                     lineStyle: {
                         opacity: 0
                     },

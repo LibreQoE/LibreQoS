@@ -4,10 +4,9 @@ use axum::{
 };
 use pgdb::sqlx::{Pool, Postgres};
 use serde_json::Value;
-use crate::web::wss::queries::{send_packets_for_all_nodes, send_throughput_for_all_nodes};
+use crate::web::wss::queries::{send_packets_for_all_nodes, send_throughput_for_all_nodes, send_rtt_for_all_nodes};
 mod login;
 mod nodes;
-mod dashboard;
 mod queries;
 
 pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Pool<Postgres>>) -> impl IntoResponse {
@@ -69,7 +68,7 @@ async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
                         }
                         "rttChart" => {
                             if let Some(credentials) = &credentials {
-                                dashboard::rtt(cnn.clone(), &mut socket, &credentials.license_key).await;
+                                let _ = send_rtt_for_all_nodes(cnn.clone(), &mut socket, &credentials.license_key).await;
                             } else {
                                 log::info!("Throughput requested but no credentials provided");
                             }

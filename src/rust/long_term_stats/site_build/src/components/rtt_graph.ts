@@ -5,10 +5,6 @@ import * as echarts from 'echarts';
 export class RttChart implements Component {
     div: HTMLElement;
     myChart: echarts.ECharts;
-    download: any;
-    downloadMin: any;
-    downloadMax: any;
-    x: any;
     chartMade: boolean = false;
 
     constructor() {
@@ -26,16 +22,62 @@ export class RttChart implements Component {
 
     onmessage(event: any): void {
         if (event.msg == "rttChart") {
-            //console.log(event);
-            this.download = [];
-            this.downloadMin = [];
-            this.downloadMax = [];
-            this.x = [];
-            for (let i = 0; i < event.data.length; i++) {
-                this.download.push(event.data[i].value);
-                this.downloadMin.push(event.data[i].l);
-                this.downloadMax.push(event.data[i].u);
-                this.x.push(event.data[i].date);
+            let series: echarts.SeriesOption[] = [];
+
+            // Iterate all provides nodes and create a set of series for each,
+            // providing upload and download banding per node.
+            let x: any[] = [];
+            let first = true;
+            let legend: string[] = [];
+            for (let i=0; i<event.nodes.length; i++) {
+                let node = event.nodes[i];
+                legend.push(node.node_name);
+                //console.log(node);
+
+                let d: number[] = [];
+                let u: number[] = [];
+                let l: number[] = [];
+                for (let j=0; j<node.rtt.length; j++) {
+                    if (first) x.push(node.rtt[j].date);                 
+                    d.push(node.rtt[j].value);
+                    u.push(node.rtt[j].u);
+                    l.push(node.rtt[j].l);
+                }
+                if (first) first = false;
+
+                let min: echarts.SeriesOption = {
+                    name: "L",
+                    type: "line",
+                    data: l,
+                    symbol: 'none',
+                    stack: 'confidence-band-' + node.node_id,
+                    lineStyle: {
+                        opacity: 0
+                    },
+                };
+                let max: echarts.SeriesOption = {
+                    name: "U",
+                    type: "line",
+                    data: u,
+                    symbol: 'none',
+                    stack: 'confidence-band-' + node.node_id,
+                    lineStyle: {
+                        opacity: 0
+                    },
+                    areaStyle: {
+                        color: '#ccc'
+                    },
+                };
+                let val: echarts.SeriesOption = {
+                    name: node.node_name,
+                    type: "line",
+                    data: d,
+                    symbol: 'none',
+                };
+
+                series.push(min);
+                series.push(max);
+                series.push(val);
             }
 
             if (!this.chartMade) {
@@ -44,48 +86,21 @@ export class RttChart implements Component {
                 this.myChart.setOption<echarts.EChartsOption>(
                     (option = {
                         title: { text: "TCP Round-Trip Time" },
+                        legend: {
+                            orient: "horizontal",
+                            right: 10,
+                            top: "bottom",
+                            data: legend,
+                        },
                         xAxis: {
                             type: 'category',
-                            data: this.x,
+                            data: x,
                         },
                         yAxis: {
                             type: 'value',
                             name: 'ms',
                         },
-                        series: [
-                            {
-                                name: "L",
-                                type: "line",
-                                data: this.downloadMin,
-                                symbol: 'none',
-                                stack: 'confidence-band',
-                                lineStyle: {
-                                    opacity: 0
-                                },
-                            },
-                            {
-                                name: "U",
-                                type: "line",
-                                data: this.downloadMax,
-                                symbol: 'none',
-                                stack: 'confidence-band',
-                                lineStyle: {
-                                    opacity: 0
-                                },
-                                areaStyle: {
-                                    color: '#ccc'
-                                },
-                            },
-                            {
-                                name: "Download",
-                                type: "line",
-                                data: this.download,
-                                symbol: 'none',
-                                itemStyle: {
-                                    color: '#333'
-                                },
-                            },
-                        ]
+                        series: series
                     })
                 );
                 option && this.myChart.setOption(option);
