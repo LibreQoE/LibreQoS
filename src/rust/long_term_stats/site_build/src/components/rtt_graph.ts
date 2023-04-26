@@ -26,7 +26,7 @@ export class RttChart implements Component {
 
     onmessage(event: any): void {
         if (event.msg == "rttChart") {
-            console.log(event);
+            //console.log(event);
             this.download = [];
             this.downloadMin = [];
             this.downloadMax = [];
