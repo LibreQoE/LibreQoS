@@ -6,6 +6,8 @@ import { PacketsChartSingle } from '../components/packets_single';
 import { RttHisto } from '../components/rtt_histo';
 import { ThroughputChartSingle } from '../components/throughput_single';
 import { RttChartSingle } from '../components/rtt_graph_single';
+import { NodeCpuChart } from '../components/node_cpu';
+import { NodeRamChart } from '../components/node_ram';
 
 export class ShaperNodePage implements Page {
     menu: MenuPage;
@@ -26,6 +28,8 @@ export class ShaperNodePage implements Page {
             new ThroughputChartSingle(this.node_id, this.node_name),
             new RttChartSingle(this.node_id, this.node_name),
             new RttHisto(),
+            new NodeCpuChart(this.node_id, this.node_name),
+            new NodeRamChart(this.node_id, this.node_name),
         ];
         let name = document.getElementById('nodeName');
         if (name) {

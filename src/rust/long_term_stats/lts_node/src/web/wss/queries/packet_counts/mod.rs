@@ -7,7 +7,6 @@ use axum::extract::ws::{WebSocket, Message};
 use futures::future::join_all;
 use influxdb2::{models::Query, Client};
 use pgdb::sqlx::{Pool, Postgres};
-
 use super::time_period::InfluxTimePeriod;
 
 pub async fn send_packets_for_all_nodes(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod) -> anyhow::Result<()> {

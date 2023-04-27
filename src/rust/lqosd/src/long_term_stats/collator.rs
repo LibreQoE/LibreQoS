@@ -1,4 +1,6 @@
 use lqos_utils::unix_time::unix_now;
+use once_cell::sync::Lazy;
+use sysinfo::{System, SystemExt};
 
 use super::{
     collation_utils::{MinMaxAvg, MinMaxAvgPair},
@@ -6,7 +8,7 @@ use super::{
     tree::{get_network_tree, NetworkTreeEntry},
 };
 use crate::long_term_stats::data_collector::SESSION_BUFFER;
-use std::{collections::HashMap, net::IpAddr};
+use std::{collections::HashMap, net::IpAddr, sync::Mutex};
 
 #[derive(Debug, Clone)]
 pub(crate) struct StatsSubmission {
@@ -27,9 +29,32 @@ pub(crate) struct SubmissionHost {
     pub(crate) tree_parent_indices: Vec<usize>,
 }
 
+static SYS: Lazy<Mutex<System>> = Lazy::new(|| Mutex::new(System::new_all()));
+
+fn get_cpu_ram() -> (Vec<u32>, u32) {
+    use sysinfo::CpuExt;
+    let mut lock = SYS.lock().unwrap();
+    lock.refresh_cpu();
+    lock.refresh_memory();
+
+    let cpus: Vec<u32> = lock.cpus()
+        .iter()
+        .map(|cpu| cpu.cpu_usage() as u32) // Always rounds down
+        .collect();
+
+    let memory = (lock.used_memory() as f32 / lock.total_memory() as f32) * 100.0;    
+
+    //println!("cpu: {:?}, ram: {}", cpus, memory);
+
+    (cpus, memory as u32)
+}
+
 impl From<StatsSubmission> for lqos_bus::long_term_stats::StatsSubmission {
     fn from(value: StatsSubmission) -> Self {
+        let (cpu, ram) = get_cpu_ram();
         Self {
+            cpu_usage: cpu,
+            ram_percent: ram,
             timestamp: value.timestamp,
             totals: Some(value.clone().into()),
             hosts: Some(value.hosts.into_iter().map(Into::into).collect()),

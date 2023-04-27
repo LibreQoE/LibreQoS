@@ -85,6 +85,10 @@ pub struct StatsSubmission {
     pub hosts: Option<Vec<StatsHost>>,
     /// Tree of traffic summaries
     pub tree: Option<Vec<StatsTreeNode>>,
+    /// CPU utiliation on the shaper
+    pub cpu_usage: Vec<u32>,
+    /// RAM utilization on the shaper
+    pub ram_percent: u32,
 }
 
 /// Network-transmitted query to ask the status of a license

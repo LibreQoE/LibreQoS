@@ -89,14 +89,15 @@ async fn send_queue(host: String) {
             if e.kind() == std::io::ErrorKind::NotFound {
                 log::error!("Unable to access {host}. Check that lqosd is running and you have appropriate permissions.");
             }
-        }
-        let mut stream = stream.unwrap(); // This unwrap is safe, we checked that it exists previously
-        let ret = stream.write(&submission_buffer).await;
-        if ret.is_err() {
-            log::error!("Unable to write to {host} stream.");
-            log::error!("{:?}", ret);
         } else {
-            s.sent = true;
+            let mut stream = stream.unwrap(); // This unwrap is safe, we checked that it exists previously
+            let ret = stream.write(&submission_buffer).await;
+            if ret.is_err() {
+                log::error!("Unable to write to {host} stream.");
+                log::error!("{:?}", ret);
+            } else {
+                s.sent = true;
+            }
         }
     }
 

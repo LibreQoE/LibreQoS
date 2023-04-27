@@ -103,6 +103,17 @@ export class Bus {
         let json = JSON.stringify(request);
         this.ws.send(json);
     }
+
+    requestNodePerfChart(node_id: string, node_name: string) {
+        let request = {
+            msg: "nodePerf",
+            period: window.graphPeriod,
+            node_id: node_id,
+            node_name: node_name,
+        };
+        let json = JSON.stringify(request);
+        this.ws.send(json);
+    }
 }
 
 function formatToken(token: string) {
