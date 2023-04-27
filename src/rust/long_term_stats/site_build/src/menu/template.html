@@ -2,7 +2,7 @@
     <div class="d-flex flex-row flex-fill text-bg-dark" style="padding: 6px;">
         <a href="#" class="d-flex align-items-center mb-3 mb-md-0 me-md-auto text-white text-decoration-none">
             <!-- Logo -->
-            <span class="fs-4">LibreQoS</span>
+            <span class="fs-4" onclick="window.router.goto('dashboard')">LibreQoS</span>
         </a>
 
         <div class="dropdown" style="padding: 6px;">
@@ -35,9 +35,14 @@
     <div class="d-flex flex-column flex-shrink-0 p-3 text-bg-dark" style="width: 280px">
         <ul class="nav nav-pills flex-column mb-auto">
             <li class="nav-item">
-                <a href="#" class="nav-link text-white" aria-current="page" id="menuDash">
+                <span class="nav-link text-white" aria-current="page" id="menuDash" onclick="window.router.goto('dashboard')">
                     Dashboard
-                </a>
+                </span>
+            </li>
+            <li class="nav-item">
+                <span class="nav-link text-white" aria-current="page" id="nodesDash" onclick="window.router.goto('shapernodes')">
+                    Shaper Nodes
+                </span>
             </li>
         </ul>
         <hr>

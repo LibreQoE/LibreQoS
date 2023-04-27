@@ -63,12 +63,45 @@ export class Bus {
         this.ws.send("{ \"msg\": \"packetChart\", \"period\": \"" + window.graphPeriod + "\" }");
     }
 
+    requestPacketChartSingle(node_id: string, node_name: string) {
+        let request = {
+            msg: "packetChartSingle",
+            period: window.graphPeriod,
+            node_id: node_id,
+            node_name: node_name,
+        };
+        let json = JSON.stringify(request);
+        this.ws.send(json);
+    }
+
     requestThroughputChart() {
         this.ws.send("{ \"msg\": \"throughputChart\", \"period\": \"" + window.graphPeriod + "\" }");
     }
 
+    requestThroughputChartSingle(node_id: string, node_name: string) {
+        let request = {
+            msg: "throughputChartSingle",
+            period: window.graphPeriod,
+            node_id: node_id,
+            node_name: node_name,
+        };
+        let json = JSON.stringify(request);
+        this.ws.send(json);
+    }
+
     requestRttChart() {
         this.ws.send("{ \"msg\": \"rttChart\", \"period\": \"" + window.graphPeriod + "\" }");
+    }
+
+    requestRttChartSingle(node_id: string, node_name: string) {
+        let request = {
+            msg: "rttChartSingle",
+            period: window.graphPeriod,
+            node_id: node_id,
+            node_name: node_name,
+        };
+        let json = JSON.stringify(request);
+        this.ws.send(json);
     }
 }
 

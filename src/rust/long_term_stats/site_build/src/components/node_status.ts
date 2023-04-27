@@ -26,7 +26,8 @@ export class NodeStatus implements Component {
                     if (node.last_seen < 20) {
                         color = "success";
                     }
-                    html += "<span class='badge rounded-pill text-bg-" + color + "'><i class='fa-solid fa-server'></i> " + node.node_name + "</span> ";
+                    let url = "\"shaperNode:" + node.node_id + ":" + node.node_name.replace(':', '_') + "\"";
+                    html += "<span href='#' onclick='window.router.goto(" + url + ")' class='badge rounded-pill text-bg-" + color + "'><i class='fa-solid fa-server'></i> " + node.node_name + "</span> ";
                 }
                 status.innerHTML = html;
             }                

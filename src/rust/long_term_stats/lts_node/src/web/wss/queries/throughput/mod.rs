@@ -18,6 +18,15 @@ pub async fn send_throughput_for_all_nodes(cnn: Pool<Postgres>, socket: &mut Web
     Ok(())
 }
 
+pub async fn send_throughput_for_node(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod, node_id: String, node_name: String) -> anyhow::Result<()> {
+    let node = get_throughput_for_node(cnn, key, node_id, node_name, period).await?;
+
+    let chart = ThroughputChart { msg: "bitsChart".to_string(), nodes: vec![node] };
+        let json = serde_json::to_string(&chart).unwrap();
+        socket.send(Message::Text(json)).await.unwrap();
+    Ok(())
+}
+
 pub async fn get_throughput_for_all_nodes(cnn: Pool<Postgres>, key: &str, period: InfluxTimePeriod) -> anyhow::Result<Vec<ThroughputHost>> {
     let node_status = pgdb::node_status(cnn.clone(), key).await?;
     let mut futures = Vec::new();

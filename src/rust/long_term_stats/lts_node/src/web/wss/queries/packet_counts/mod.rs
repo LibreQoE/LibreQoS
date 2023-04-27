@@ -19,6 +19,15 @@ pub async fn send_packets_for_all_nodes(cnn: Pool<Postgres>, socket: &mut WebSoc
     Ok(())
 }
 
+pub async fn send_packets_for_node(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod, node_id: String, node_name: String) -> anyhow::Result<()> {
+    let node = get_packets_for_node(cnn, key, node_id, node_name, period).await?;
+
+    let chart = PacketChart { msg: "packetChart".to_string(), nodes: vec![node] };
+        let json = serde_json::to_string(&chart).unwrap();
+        socket.send(Message::Text(json)).await.unwrap();
+    Ok(())
+}
+
 /// Requests packet-per-second data for all shaper nodes for a given organization
 ///
 /// # Arguments

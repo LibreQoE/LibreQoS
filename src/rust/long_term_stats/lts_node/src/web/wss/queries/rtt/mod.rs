@@ -26,6 +26,24 @@ pub async fn send_rtt_for_all_nodes(cnn: Pool<Postgres>, socket: &mut WebSocket,
     Ok(())
 }
 
+pub async fn send_rtt_for_node(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod, node_id: String, node_name: String) -> anyhow::Result<()> {
+    let node = get_rtt_for_node(cnn, key, node_id, node_name, period).await?;
+    let nodes = vec![node];
+
+    let mut histogram = vec![0; 20];
+    for node in nodes.iter() {
+        for rtt in node.rtt.iter() {
+            let bucket = usize::min(19, (rtt.value / 200.0) as usize);
+            histogram[bucket] += 1;
+        }
+    }
+
+    let chart = RttChart { msg: "rttChart".to_string(), nodes, histogram };
+        let json = serde_json::to_string(&chart).unwrap();
+        socket.send(Message::Text(json)).await.unwrap();
+    Ok(())
+}
+
 pub async fn get_rtt_for_all_nodes(cnn: Pool<Postgres>, key: &str, period: InfluxTimePeriod) -> anyhow::Result<Vec<RttHost>> {
     let node_status = pgdb::node_status(cnn.clone(), key).await?;
     let mut futures = Vec::new();
