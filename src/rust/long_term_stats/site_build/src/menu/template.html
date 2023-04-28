@@ -22,8 +22,9 @@
           </div>
 
         <form class="d-flex" role="search">
-            <input class="form-control me-2" type="search" placeholder="Search" aria-label="Search">
-            <button class="btn btn-outline-success" type="submit">Search</button>
+            <input id="txtSearch" class="form-control me-2" type="search" placeholder="Search" aria-label="Search">
+            <button id="btnSearch" class="btn btn-outline-success" type="submit">Search</button>
+            <div id="searchResults" style="position: fixed; display: none; color: black; background-color: #eee; top:55px; left: 0x; width: 300px; height: auto; z-index: 2000;">Blah</div>
         </form>
 
         <div id="connStatus" class="fs-4" style="color: red; padding: 6px;"><i class="fa-sharp fa-solid fa-plug"></i>

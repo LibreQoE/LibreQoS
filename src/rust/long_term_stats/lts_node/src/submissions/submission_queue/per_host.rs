@@ -57,7 +57,6 @@ pub async fn collect_per_host(
 
             const SQL: &str = "INSERT INTO devices (key, host_id, circuit_id, device_id, circuit_name, device_name, parent_node, mac_address, ip_address) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (key, host_id, device_id) DO UPDATE SET circuit_id = $3, circuit_name = $5, device_name = $6, parent_node = $7, mac_address = $8, ip_address = $9;";
 
-            if !host.device_id.is_empty() {
                 log::info!("Submitting device");
                 let result = pgdb::sqlx::query(SQL)
                     .bind(org.key.to_string())
@@ -73,8 +72,8 @@ pub async fn collect_per_host(
                     .await;
                 if let Err(e) = result {
                     log::error!("Error inserting tree node: {}", e);
+                    panic!();
                 }
-            }
         }
 
         let result = trans.commit().await;

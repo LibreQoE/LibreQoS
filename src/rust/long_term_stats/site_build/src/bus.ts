@@ -114,6 +114,15 @@ export class Bus {
         let json = JSON.stringify(request);
         this.ws.send(json);
     }
+
+    sendSearch(term: string) {
+        let request = {
+            msg: "search",
+            term: term,
+        };
+        let json = JSON.stringify(request);
+        this.ws.send(json);
+    }
 }
 
 function formatToken(token: string) {

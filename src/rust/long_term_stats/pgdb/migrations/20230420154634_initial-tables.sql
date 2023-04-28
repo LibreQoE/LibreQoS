@@ -1,4 +1,8 @@
 -- Creates the initial tables for the license server
+
+-- We're using Trigrams for faster text search
+CREATE EXTENSION pg_trgm;
+
 CREATE TABLE public.licenses (
     key character varying(254) NOT NULL,
     stats_host integer NOT NULL
