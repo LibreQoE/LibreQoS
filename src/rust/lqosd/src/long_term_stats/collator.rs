@@ -27,6 +27,11 @@ pub(crate) struct SubmissionHost {
     pub(crate) bits_per_second: MinMaxAvgPair<u64>,
     pub(crate) median_rtt: MinMaxAvg<u32>,
     pub(crate) tree_parent_indices: Vec<usize>,
+    pub(crate) device_id: String,
+    pub(crate) parent_node: String,
+    pub(crate) device_name: String,
+    pub(crate) circuit_name: String,
+    pub(crate) mac: String,
 }
 
 static SYS: Lazy<Mutex<System>> = Lazy::new(|| Mutex::new(System::new_all()));
@@ -37,12 +42,13 @@ fn get_cpu_ram() -> (Vec<u32>, u32) {
     lock.refresh_cpu();
     lock.refresh_memory();
 
-    let cpus: Vec<u32> = lock.cpus()
+    let cpus: Vec<u32> = lock
+        .cpus()
         .iter()
         .map(|cpu| cpu.cpu_usage() as u32) // Always rounds down
         .collect();
 
-    let memory = (lock.used_memory() as f32 / lock.total_memory() as f32) * 100.0;    
+    let memory = (lock.used_memory() as f32 / lock.total_memory() as f32) * 100.0;
 
     //println!("cpu: {:?}, ram: {}", cpus, memory);
 
@@ -72,6 +78,7 @@ impl From<NetworkTreeEntry> for lqos_bus::long_term_stats::StatsTreeNode {
             parents: value.parents,
             immediate_parent: value.immediate_parent,
             node_type: value.node_type,
+            rtt: value.rtts,
         }
     }
 }
@@ -114,6 +121,11 @@ impl From<SubmissionHost> for lqos_bus::long_term_stats::StatsHost {
             bits: value.bits_per_second.into(),
             rtt: value.median_rtt.into(),
             tree_indices: value.tree_parent_indices,
+            device_id: value.device_id,
+            parent_node: value.parent_node,
+            circuit_name: value.circuit_name,
+            device_name: value.device_name,
+            mac: value.mac,
         }
     }
 }
@@ -151,10 +163,12 @@ pub(crate) async fn collate_stats() {
 
     // Collate host stats
     let mut host_accumulator =
-        HashMap::<(&IpAddr, &String), Vec<(u64, u64, f32, Vec<usize>)>>::new();
+        HashMap::<(&IpAddr, &String, &String, &String, &String, &String, &String), Vec<(u64, u64, f32, Vec<usize>)>>::new();
     writer.iter().for_each(|session| {
         session.hosts.iter().for_each(|host| {
-            if let Some(ha) = host_accumulator.get_mut(&(&host.ip_address, &host.circuit_id)) {
+            if let Some(ha) = host_accumulator.get_mut(&(
+                &host.ip_address, &host.circuit_id, &host.device_id, &host.parent_node, &host.circuit_name, &host.device_name, &host.mac)
+            ) {
                 ha.push((
                     host.bits_per_second.0,
                     host.bits_per_second.1,
@@ -163,7 +177,7 @@ pub(crate) async fn collate_stats() {
                 ));
             } else {
                 host_accumulator.insert(
-                    (&host.ip_address, &host.circuit_id),
+                    (&host.ip_address, &host.circuit_id, &host.device_id, &host.parent_node, &host.circuit_name, &host.device_name, &host.mac),
                     vec![(
                         host.bits_per_second.0,
                         host.bits_per_second.1,
@@ -175,7 +189,7 @@ pub(crate) async fn collate_stats() {
         });
     });
 
-    for ((ip, circuit), data) in host_accumulator.iter() {
+    for ((ip, circuit, device_id, parent_node, circuit_name, device_name, mac), data) in host_accumulator.iter() {
         let bps: Vec<(u64, u64)> = data.iter().map(|(d, u, _rtt, _tree)| (*d, *u)).collect();
         let bps = MinMaxAvgPair::<u64>::from_slice(&bps);
         let fps: Vec<u32> = data
@@ -189,12 +203,18 @@ pub(crate) async fn collate_stats() {
             .map(|(_d, _u, _rtt, tree)| tree)
             .next()
             .unwrap_or(Vec::new());
+        
         submission.hosts.push(SubmissionHost {
             circuit_id: circuit.to_string(),
             ip_address: **ip,
             bits_per_second: bps,
             median_rtt: fps,
             tree_parent_indices: tree,
+            device_id: device_id.to_string(),
+            parent_node: parent_node.to_string(),
+            circuit_name: circuit_name.to_string(),
+            device_name: device_name.to_string(),
+            mac: mac.to_string(),
         });
     }
 

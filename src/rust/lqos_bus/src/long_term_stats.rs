@@ -47,8 +47,18 @@ pub struct StatsTotals {
 pub struct StatsHost {
     /// Host circuit_id as it appears in ShapedDevices.csv
     pub circuit_id: String,
+    /// Device id as it appears in ShapedDevices.csv
+    pub device_id: String,
+    /// Parent node (hopefully in network.json!)
+    pub parent_node: String,
+    /// Device name as it appears in ShapedDevices.csv
+    pub device_name: String,
+    /// Circuit name as it appears in ShapedDevices.csv
+    pub circuit_name: String,
     /// Host's IP address
     pub ip_address: String,
+    /// Host's MAC address
+    pub mac: String,
     /// Host's traffic statistics
     pub bits: StatsSummary,
     /// Host's RTT statistics
@@ -66,6 +76,8 @@ pub struct StatsTreeNode {
     pub max_throughput: (u32, u32),
     /// Current throughput (from network.json)
     pub current_throughput: (u32, u32),
+    /// RTT summaries
+    pub rtt: (u16, u16, u16),
     /// Indices of parents in the tree
     pub parents: Vec<usize>,
     /// Index of immediate parent in the tree

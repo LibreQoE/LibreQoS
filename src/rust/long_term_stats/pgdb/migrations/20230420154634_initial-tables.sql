@@ -21,6 +21,31 @@ CREATE TABLE public.shaper_nodes (
     public_key bytea
 );
 
+CREATE TABLE public.site_tree
+(
+    key character varying(254) NOT NULL,
+    site_name character varying(254) NOT NULL,
+    host_id character varying(254) NOT NULL,
+    index integer NOT NULL,
+    parent integer NOT NULL,
+    site_type character varying(32),
+    PRIMARY KEY (key, site_name, host_id)
+);
+
+CREATE TABLE public.devices
+(
+    key character varying(254) NOT NULL,
+    host_id character varying(254) NOT NULL,
+    device_id character varying(254) NOT NULL,
+    circuit_id character varying(254) NOT NULL,
+    parent_node character varying(254) NOT NULL,
+    circuit_name character varying(254) NOT NULL,
+    device_name character varying(254) NOT NULL,
+    mac_address character(20) NOT NULL DEFAULT '',
+    ip_address character varying(128) NOT NULL DEFAULT '',
+    PRIMARY KEY (key, host_id, device_id)
+);
+
 CREATE TABLE public.stats_hosts (
     id integer NOT NULL,
     ip_address character varying(128) NOT NULL,

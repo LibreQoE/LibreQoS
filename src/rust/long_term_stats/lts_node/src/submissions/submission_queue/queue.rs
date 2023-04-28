@@ -37,8 +37,8 @@ async fn ingest_stats(cnn: Pool<Postgres>, node_id: NodeIdAndLicense, stats: Sta
         let _ = join!(
             update_last_seen(cnn.clone(), &node_id),
             collect_host_totals(&org, &node_id.node_id, ts, &stats.totals),
-            collect_per_host(&org, &node_id.node_id, ts, &stats.hosts),
-            collect_tree(&org, &node_id.node_id, ts, &stats.tree),
+            collect_per_host(cnn.clone(), &org, &node_id.node_id, ts, &stats.hosts),
+            collect_tree(cnn.clone(), &org, &node_id.node_id, ts, &stats.tree),
             collect_node_perf(&org, &node_id.node_id, ts, &stats.cpu_usage, stats.ram_percent),
         );
     } else {

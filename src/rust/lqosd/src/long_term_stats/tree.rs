@@ -8,6 +8,7 @@ pub(crate) struct NetworkTreeEntry {
     pub(crate) name: String,
     pub(crate) max_throughput: (u32, u32),
     pub(crate) current_throughput: (u32, u32),
+    pub(crate) rtts: (u16, u16, u16),
     pub(crate) parents: Vec<usize>,
     pub(crate) immediate_parent: Option<usize>,
     pub(crate) node_type: Option<String>,
@@ -15,6 +16,21 @@ pub(crate) struct NetworkTreeEntry {
 
 impl From<&NetworkJsonNode> for NetworkTreeEntry {
     fn from(value: &NetworkJsonNode) -> Self {
+        let mut max = 0;
+        let mut min = if value.rtts.is_empty() {
+            0
+        } else {
+            u16::MAX
+        };
+        let mut sum = 0;
+        for n in value.rtts.iter() {
+            let n = *n;
+            sum += n;
+            if n < min { min = n; }
+            if n > max { max = n; }
+        }
+        let avg = sum.checked_div(value.rtts.len() as u16).unwrap_or(0);
+
         Self {
             name: value.name.clone(),
             max_throughput: value.max_throughput,
@@ -25,6 +41,7 @@ impl From<&NetworkJsonNode> for NetworkTreeEntry {
                 value.current_throughput.1.load(std::sync::atomic::Ordering::Relaxed) as u32,
             ),
             node_type: value.node_type.clone(),
+            rtts: (min, max, avg),
         }
     }
 }
@@ -38,6 +55,7 @@ impl From<&NetworkTreeEntry> for StatsTreeNode {
             parents: value.parents.clone(),
             immediate_parent: value.immediate_parent,
             node_type: value.node_type.clone(),
+            rtt: value.rtts,
         }
     }
 }
