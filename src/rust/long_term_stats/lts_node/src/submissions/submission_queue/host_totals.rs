@@ -1,7 +1,7 @@
 use futures::prelude::*;
 use influxdb2::models::DataPoint;
 use influxdb2::Client;
-use lts_client::StatsTotals;
+use lts_client::transport_data::StatsTotals;
 use pgdb::OrganizationDetails;
 
 pub async fn collect_host_totals(

@@ -1,6 +1,6 @@
 use futures::prelude::*;
 use influxdb2::{models::DataPoint, Client};
-use lts_client::StatsTreeNode;
+use lts_client::transport_data::StatsTreeNode;
 use pgdb::{
     sqlx::{Pool, Postgres},
     OrganizationDetails,

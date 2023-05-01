@@ -4,8 +4,7 @@
 //! for storage.
 
 use std::net::SocketAddr;
-use dryoc::dryocbox::*;
-use lts_client::{NodeIdAndLicense, StatsSubmission};
+use lts_client::{transport_data::{NodeIdAndLicense, StatsSubmission}, dryoc::dryocbox::{PublicKey, DryocBox}};
 use pgdb::sqlx::{Pool, Postgres};
 use tokio::{
     io::AsyncReadExt,

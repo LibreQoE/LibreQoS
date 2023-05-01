@@ -1,5 +1,5 @@
 use influxdb2::{Client, models::DataPoint};
-use lts_client::StatsHost;
+use lts_client::transport_data::StatsHost;
 use pgdb::{OrganizationDetails, sqlx::{Pool, Postgres}};
 use futures::prelude::*;
 

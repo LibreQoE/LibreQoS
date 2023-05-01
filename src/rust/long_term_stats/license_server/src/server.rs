@@ -1,4 +1,4 @@
-use lts_client::{LicenseReply, LicenseRequest};
+use lts_client::transport_data::{LicenseReply, LicenseRequest};
 use pgdb::sqlx::{Pool, Postgres};
 use std::net::SocketAddr;
 use tokio::{
@@ -66,7 +66,7 @@ async fn decode(
         1 => {
             let start = 2 + U64SIZE;
             let end = start + size as usize;
-            let payload: LicenseRequest = serde_cbor::from_slice(&buf[start..end])?;
+            let payload: LicenseRequest = lts_client::cbor::from_slice(&buf[start..end])?;
             let license = check_license(&payload, address, pool).await?;
             Ok(license)
         }
@@ -130,7 +130,7 @@ async fn check_license(
 
 fn build_reply(reply: &LicenseReply) -> anyhow::Result<Vec<u8>> {
     let mut result = Vec::new();
-    let payload = serde_cbor::to_vec(reply);
+    let payload = lts_client::cbor::to_vec(reply);
     if let Err(e) = payload {
         log::warn!("Unable to serialize statistics. Not sending them.");
         log::warn!("{e:?}");

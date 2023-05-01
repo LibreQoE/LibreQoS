@@ -1,6 +1,5 @@
 use std::sync::atomic::AtomicBool;
-use dryoc::dryocbox::*;
-use lts_client::{StatsSubmission, exchange_keys_with_license_server, NodeIdAndLicense};
+use lts_client::{transport_data::{StatsSubmission, exchange_keys_with_license_server, NodeIdAndLicense}, dryoc::{dryocbox::{Nonce, DryocBox}, types::{ByteArray, NewByteArray}}};
 use lqos_config::EtcLqos;
 use once_cell::sync::Lazy;
 use tokio::{sync::Mutex, net::TcpStream, io::AsyncWriteExt};
@@ -24,7 +23,7 @@ impl Queue {
         }
     }
 
-    pub async fn push(&self, data: lts_client::StatsSubmission, host: String) {
+    pub async fn push(&self, data: lts_client::transport_data::StatsSubmission, host: String) {
         {
             let mut lock = self.queue.lock().await;
             lock.push(QueueSubmission {
@@ -52,7 +51,7 @@ async fn send_queue(host: String) {
         let license_key = cfg.long_term_stats.unwrap().license_key.unwrap();
         let keypair = (KEYPAIR.read().unwrap()).clone();
         match exchange_keys_with_license_server(node_id, node_name, license_key, keypair.public_key.clone()).await {
-            Ok(lts_client::LicenseReply::MyPublicKey { public_key }) => {
+            Ok(lts_client::transport_data::LicenseReply::MyPublicKey { public_key }) => {
                 store_server_public_key(&public_key);
                 log::info!("Received a public key for the server");
             }

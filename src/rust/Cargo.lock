@@ -1844,14 +1844,12 @@ name = "license_server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "dryoc",
  "env_logger",
  "log",
  "lts_client",
  "once_cell",
  "pgdb",
  "serde",
- "serde_cbor",
  "tokio",
 ]
 
@@ -2098,7 +2096,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "dashmap 5.4.0",
- "dryoc",
  "env_logger",
  "jemallocator",
  "log",
@@ -2170,7 +2167,6 @@ dependencies = [
  "anyhow",
  "axum",
  "chrono",
- "dryoc",
  "env_logger",
  "futures",
  "influxdb2",
