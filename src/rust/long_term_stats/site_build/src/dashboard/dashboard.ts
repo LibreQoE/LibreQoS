@@ -7,6 +7,7 @@ import { PacketsChart } from '../components/packets';
 import { ThroughputChart } from '../components/throughput';
 import { RttChart } from '../components/rtt_graph';
 import { RttHisto } from '../components/rtt_histo';
+import { RootHeat } from '../components/root_heat';
 
 export class DashboardPage implements Page {
     menu: MenuPage;
@@ -24,13 +25,14 @@ export class DashboardPage implements Page {
             new ThroughputChart(),
             new RttChart(),
             new RttHisto(),
+            new RootHeat(),
         ];
     }
 
     wireup() {
         this.components.forEach(component => {
             component.wireup();
-        });
+        });        
     }    
 
     ontick(): void {
@@ -46,7 +48,7 @@ export class DashboardPage implements Page {
 
             this.components.forEach(component => {
                 component.onmessage(event);
-            });            
+            });
         }
     }
 }
