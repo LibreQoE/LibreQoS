@@ -4,7 +4,7 @@
 //! thread. The consumer thread spawns tokio tasks to actually
 //! perform the processing.
 
-use lqos_bus::long_term_stats::{NodeIdAndLicense, StatsSubmission};
+use lts_client::{NodeIdAndLicense, StatsSubmission};
 use pgdb::sqlx::{Pool, Postgres};
 use tokio::{sync::mpsc::{Sender, Receiver}, join};
 use crate::submissions::submission_queue::{host_totals::collect_host_totals, organization_cache::get_org_details, per_host::collect_per_host, tree::collect_tree, node_perf::collect_node_perf};

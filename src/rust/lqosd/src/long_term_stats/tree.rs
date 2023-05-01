@@ -1,4 +1,4 @@
-use lqos_bus::long_term_stats::StatsTreeNode;
+use lts_client::StatsTreeNode;
 use lqos_config::NetworkJsonNode;
 
 use crate::shaped_devices_tracker::NETWORK_JSON;

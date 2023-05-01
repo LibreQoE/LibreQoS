@@ -1,4 +1,4 @@
-use lqos_bus::long_term_stats::{LicenseReply, LicenseRequest};
+use lts_client::{LicenseReply, LicenseRequest};
 use pgdb::sqlx::{Pool, Postgres};
 use std::net::SocketAddr;
 use tokio::{
@@ -6,7 +6,6 @@ use tokio::{
     net::TcpListener,
     spawn,
 };
-
 use crate::pki::LIBREQOS_KEYPAIR;
 
 pub async fn start() -> anyhow::Result<()> {
@@ -116,7 +115,7 @@ async fn check_license(
             // Check if the node_id / license key combination exists
             // If it does, update it to the current last-seen and the new public key
             // If it doesn't, insert it
-            let public_key = lqos_bus::cbor::to_vec(&public_key).unwrap();
+            let public_key = lts_client::cbor::to_vec(&public_key).unwrap();
             let result = pgdb::insert_or_update_node_public_key(pool, node_id, node_name, license_key, &public_key).await;
             if result.is_err() {
                 log::warn!("Unable to insert or update node public key: {result:?}");

@@ -1,5 +1,6 @@
 use std::sync::RwLock;
-use lqos_bus::{BusResponse, long_term_stats::StatsHost};
+use lqos_bus::{BusResponse};
+use lts_client::StatsHost;
 use once_cell::sync::Lazy;
 use super::{collator::StatsSubmission, licensing::{get_license_status, LicenseState}, lts_queue::QUEUE};
 

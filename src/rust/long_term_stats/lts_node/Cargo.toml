@@ -11,7 +11,7 @@ env_logger = "0"
 log = "0"
 serde = { version = "1.0", features = ["derive"] }
 axum = {version = "0.6", features = ["ws", "headers"] }
-lqos_bus = { path = "../../lqos_bus" }
+lts_client = { path = "../lts_client" }
 serde_json = "1"
 pgdb = { path = "../pgdb" }
 dryoc = { version = "0.5", features = ["serde"] }

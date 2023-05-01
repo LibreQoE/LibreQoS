@@ -5,7 +5,7 @@
 
 use std::net::SocketAddr;
 use dryoc::dryocbox::*;
-use lqos_bus::long_term_stats::{NodeIdAndLicense, StatsSubmission};
+use lts_client::{NodeIdAndLicense, StatsSubmission};
 use pgdb::sqlx::{Pool, Postgres};
 use tokio::{
     io::AsyncReadExt,
@@ -66,12 +66,12 @@ async fn decode(
     // Read the header
     let start = 2 + U64SIZE;
     let end = start + size as usize;
-    let header: NodeIdAndLicense = lqos_bus::cbor::from_slice(&buf[start..end])?;
+    let header: NodeIdAndLicense = lts_client::cbor::from_slice(&buf[start..end])?;
 
     // Check the header against the database and retrieve the current
     // public key
     let public_key = pgdb::fetch_public_key(pool, &header.license_key, &header.node_id).await?;
-    let public_key: PublicKey = lqos_bus::cbor::from_slice(&public_key)?;
+    let public_key: PublicKey = lts_client::cbor::from_slice(&public_key)?;
     let private_key = LIBREQOS_KEYPAIR.read().unwrap().secret_key.clone();
 
     // Retrieve the payload size
@@ -90,7 +90,7 @@ async fn decode(
         .expect("unable to decrypt");
 
     // Try to deserialize
-    let payload: StatsSubmission = lqos_bus::cbor::from_slice(&decrypted)?;
+    let payload: StatsSubmission = lts_client::cbor::from_slice(&decrypted)?;
 
     Ok((header, payload))
 }

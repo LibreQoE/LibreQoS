@@ -1,4 +1,4 @@
-use lqos_bus::long_term_stats::{ask_license_server, LicenseReply};
+use lts_client::{ask_license_server, LicenseReply};
 use lqos_config::EtcLqos;
 use lqos_utils::unix_time::unix_now;
 use once_cell::sync::Lazy;

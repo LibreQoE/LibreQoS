@@ -32,5 +32,6 @@ members = [
     "long_term_stats/lts_node", # Long-term stats cluster node
     "long_term_stats/pgdb", # PostgreSQL interface for the LTS system
     "long_term_stats/licman", # A CLI tool for managing the licensing server
+    "long_term_stats/lts_client", # Shared data and client-side code for long-term stats
     "lqos_map_perf", # A CLI tool for testing eBPF map performance
 ]

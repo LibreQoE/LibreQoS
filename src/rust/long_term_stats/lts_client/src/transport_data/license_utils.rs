@@ -1,4 +1,13 @@
 //! Functions for talking to the license server
+//! 
+//! License requests use the following format:
+//! `u16` containing the version number (currently 1), in big-endian (network order)
+//! `u64` containing the size of the payload, in big-endian (network order)
+//! `payload` containing the actual payload. The payload is a CBOR-encoded.
+//! 
+//! License requests are not expected to be frequent, and the connection is
+//! not reused. We use a simple framing protocol, and terminate the connection
+//! after use.
 
 use super::{LicenseCheckError, LicenseRequest, LicenseReply, LICENSE_SERVER};
 use dryoc::dryocbox::PublicKey;

@@ -1,8 +1,8 @@
 use super::QueueStoreTransit;
 use crate::{
-  ip_stats::PacketHeader, long_term_stats::{StatsTotals, StatsHost, StatsTreeNode}, FlowTransport,
-  IpMapping, IpStats, XdpPpingResult,
+  ip_stats::PacketHeader, FlowTransport, IpMapping, IpStats, XdpPpingResult,
 };
+use lts_client::{StatsTotals, StatsHost, StatsTreeNode};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 

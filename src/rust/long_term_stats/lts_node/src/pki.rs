@@ -1,7 +1,7 @@
 use std::{sync::RwLock, path::Path};
 use dryoc::dryocbox::*;
-use lqos_bus::bincode;
 use once_cell::sync::Lazy;
+use lts_client::bincode;
 
 pub(crate) static LIBREQOS_KEYPAIR: Lazy<RwLock<KeyPair>> = Lazy::new(|| RwLock::new(generate_new_keypair()));
 const KEY_PATH: &str = "lqkeys.bin"; // Store in the working directory
@@ -26,7 +26,7 @@ pub(crate) fn generate_new_keypair() -> KeyPair {
 #[cfg(test)]
 mod test {
     use dryoc::dryocbox::*;
-    use lqos_bus::bincode;
+    use lts_client::bincode;
 
     #[test]
     fn test_sealed_box_roundtrip() {

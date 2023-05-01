@@ -1847,7 +1847,7 @@ dependencies = [
  "dryoc",
  "env_logger",
  "log",
- "lqos_bus",
+ "lts_client",
  "once_cell",
  "pgdb",
  "serde",
@@ -1946,10 +1946,10 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "criterion",
- "dryoc",
  "log",
  "lqos_config",
  "lqos_utils",
+ "lts_client",
  "nix",
  "serde",
  "serde_cbor",
@@ -2108,6 +2108,7 @@ dependencies = [
  "lqos_queue_tracker",
  "lqos_sys",
  "lqos_utils",
+ "lts_client",
  "nix",
  "num-traits",
  "once_cell",
@@ -2150,6 +2151,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "lts_client"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "dryoc",
+ "log",
+ "serde",
+ "serde_cbor",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "lts_node"
 version = "0.1.0"
 dependencies = [
@@ -2162,7 +2176,7 @@ dependencies = [
  "influxdb2",
  "influxdb2-structmap",
  "log",
- "lqos_bus",
+ "lts_client",
  "num-traits",
  "once_cell",
  "pgdb",

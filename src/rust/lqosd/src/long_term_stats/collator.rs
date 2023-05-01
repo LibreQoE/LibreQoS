@@ -55,7 +55,7 @@ fn get_cpu_ram() -> (Vec<u32>, u32) {
     (cpus, memory as u32)
 }
 
-impl From<StatsSubmission> for lqos_bus::long_term_stats::StatsSubmission {
+impl From<StatsSubmission> for lts_client::StatsSubmission {
     fn from(value: StatsSubmission) -> Self {
         let (cpu, ram) = get_cpu_ram();
         Self {
@@ -69,7 +69,7 @@ impl From<StatsSubmission> for lqos_bus::long_term_stats::StatsSubmission {
     }
 }
 
-impl From<NetworkTreeEntry> for lqos_bus::long_term_stats::StatsTreeNode {
+impl From<NetworkTreeEntry> for lts_client::StatsTreeNode {
     fn from(value: NetworkTreeEntry) -> Self {
         Self {
             name: value.name.clone(),
@@ -83,7 +83,7 @@ impl From<NetworkTreeEntry> for lqos_bus::long_term_stats::StatsTreeNode {
     }
 }
 
-impl From<StatsSubmission> for lqos_bus::long_term_stats::StatsTotals {
+impl From<StatsSubmission> for lts_client::StatsTotals {
     fn from(value: StatsSubmission) -> Self {
         Self {
             bits: value.bits_per_second.into(),
@@ -93,7 +93,7 @@ impl From<StatsSubmission> for lqos_bus::long_term_stats::StatsTotals {
     }
 }
 
-impl From<MinMaxAvgPair<u64>> for lqos_bus::long_term_stats::StatsSummary {
+impl From<MinMaxAvgPair<u64>> for lts_client::StatsSummary {
     fn from(value: MinMaxAvgPair<u64>) -> Self {
         Self {
             min: (value.down.min, value.up.min),
@@ -103,7 +103,7 @@ impl From<MinMaxAvgPair<u64>> for lqos_bus::long_term_stats::StatsSummary {
     }
 }
 
-impl From<MinMaxAvg<u32>> for lqos_bus::long_term_stats::StatsRttSummary {
+impl From<MinMaxAvg<u32>> for lts_client::StatsRttSummary {
     fn from(value: MinMaxAvg<u32>) -> Self {
         Self {
             min: value.min,
@@ -113,7 +113,7 @@ impl From<MinMaxAvg<u32>> for lqos_bus::long_term_stats::StatsRttSummary {
     }
 }
 
-impl From<SubmissionHost> for lqos_bus::long_term_stats::StatsHost {
+impl From<SubmissionHost> for lts_client::StatsHost {
     fn from(value: SubmissionHost) -> Self {
         Self {
             circuit_id: value.circuit_id.to_string(),
