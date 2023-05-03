@@ -3,20 +3,21 @@
 //! If everything checks out, they are sent to the submission queue
 //! for storage.
 
-use std::net::SocketAddr;
-use lts_client::{transport_data::{NodeIdAndLicense, StatsSubmission}, dryoc::dryocbox::{PublicKey, DryocBox}};
-use pgdb::sqlx::{Pool, Postgres};
-use tokio::{
-    io::AsyncReadExt,
-    net::TcpListener,
-    spawn, sync::mpsc::Sender,
-};
-use crate::pki::LIBREQOS_KEYPAIR;
 use super::submission_queue::SubmissionType;
+use crate::pki::LIBREQOS_KEYPAIR;
+use lts_client::{
+    dryoc::dryocbox::{DryocBox, PublicKey},
+    transport_data::{LtsCommand, NodeIdAndLicense},
+};
+use pgdb::sqlx::{Pool, Postgres};
+use tokio::{io::AsyncReadExt, net::{TcpListener, TcpStream}, spawn, sync::mpsc::Sender};
 
 /// Starts the submission server, listening on port 9128.
 /// The server runs in the background.
-pub async fn submissions_server(cnn: Pool<Postgres>, sender: Sender<SubmissionType>) -> anyhow::Result<()> {
+pub async fn submissions_server(
+    cnn: Pool<Postgres>,
+    sender: Sender<SubmissionType>,
+) -> anyhow::Result<()> {
     let listener = TcpListener::bind(":::9128").await?;
     log::info!("Listening for stats submissions on :::9128");
 
@@ -26,46 +27,58 @@ pub async fn submissions_server(cnn: Pool<Postgres>, sender: Sender<SubmissionTy
         let pool = cnn.clone();
         let my_sender = sender.clone();
         spawn(async move {
-            let mut buffer = Vec::new();
-            if let Ok(bytes) = socket.read_to_end(&mut buffer).await {
-                log::info!("Received {bytes} bytes from {address:?}");
-
-                let decode_result = decode(&buffer, address, pool).await;
-                if decode_result.is_err() {
-                    log::error!("{decode_result:?}");
-                    return;
-                }
-                let stats = decode_result.unwrap();
-                if let Err(e) = my_sender.send(stats).await {
-                    log::error!("Unable to send stats to the queue: {}", e);
+            loop {
+                if let Ok(message) = read_message(&mut socket, pool.clone()).await {
+                    my_sender.send(message).await.unwrap();
+                } else {
+                    log::error!("Read failed. Dropping socket.");
+                    break;
                 }
             }
         });
     }
 }
 
-async fn decode(
-    buf: &[u8],
-    address: SocketAddr,
-    pool: Pool<Postgres>,
-) -> anyhow::Result<SubmissionType> {
-    const U64SIZE: usize = std::mem::size_of::<u64>();
-    let version_buf = &buf[0..2].try_into()?;
-    let version = u16::from_be_bytes(*version_buf);
-    let size_buf = &buf[2..2 + U64SIZE].try_into()?;
-    let size = u64::from_be_bytes(*size_buf);
+async fn read_message(socket: &mut TcpStream, pool: Pool<Postgres>) -> anyhow::Result<SubmissionType> {
+    read_version(socket).await?;
+    let header_size = read_size(socket).await?;
+    let header = read_header(socket, header_size as usize).await?;
+    let body_size = read_size(socket).await?;
+    let message = read_body(socket, pool.clone(), body_size as usize, &header).await?;
+    Ok((header, message))
+}
 
-    // Check the version
-    log::info!("Received a version {version} header of serialized size {size} from {address:?}");
+async fn read_version(stream: &mut TcpStream) -> anyhow::Result<()> {
+    let version = stream.read_u16().await?;
     if version != 1 {
-        log::warn!("Received a version {version} header from {address:?}");
+        log::warn!("Received a version {version} header.");
         return Err(anyhow::Error::msg("Received an unknown version header"));
     }
+    Ok(())
+}
 
-    // Read the header
-    let start = 2 + U64SIZE;
-    let end = start + size as usize;
-    let header: NodeIdAndLicense = lts_client::cbor::from_slice(&buf[start..end])?;
+async fn read_size(stream: &mut TcpStream) -> anyhow::Result<u64> {
+    let size = stream.read_u64().await?;
+    Ok(size)
+}
+
+async fn read_header(stream: &mut TcpStream, size: usize) -> anyhow::Result<NodeIdAndLicense> {
+    let mut buffer = vec![0u8; size];
+    let _bytes_read = stream.read(&mut buffer).await?;
+    let header: NodeIdAndLicense = lts_client::cbor::from_slice(&buffer)?;
+    Ok(header)
+}
+
+async fn read_body(stream: &mut TcpStream, pool: Pool<Postgres>, size: usize, header: &NodeIdAndLicense) -> anyhow::Result<LtsCommand> {
+    log::info!("Reading body of size {size}");
+    log::info!("{header:?}");
+
+    let mut buffer = vec![0u8; size];
+    let bytes_read = stream.read_exact(&mut buffer).await?;
+    if bytes_read != size {
+        log::warn!("Received a body of size {bytes_read}, expected {size}");
+        return Err(anyhow::Error::msg("Received a body of unexpected size"));
+    }
 
     // Check the header against the database and retrieve the current
     // public key
@@ -73,23 +86,12 @@ async fn decode(
     let public_key: PublicKey = lts_client::cbor::from_slice(&public_key)?;
     let private_key = LIBREQOS_KEYPAIR.read().unwrap().secret_key.clone();
 
-    // Retrieve the payload size
-    let size_buf = &buf[end .. end + U64SIZE].try_into()?;
-    let size = u64::from_be_bytes(*size_buf);
-    let payload_encrypted = &buf[end + U64SIZE .. end + U64SIZE + size as usize];
-    
     // Decrypt
-    let dryocbox = DryocBox::from_bytes(payload_encrypted).expect("failed to read box");
+    let dryocbox = DryocBox::from_bytes(&buffer).expect("failed to read box");
     let decrypted = dryocbox
-        .decrypt_to_vec(
-            &header.nonce.into(),
-            &public_key,
-            &private_key,
-        )
-        .expect("unable to decrypt");
+        .decrypt_to_vec(&header.nonce.into(), &public_key, &private_key)?;
 
     // Try to deserialize
-    let payload: StatsSubmission = lts_client::cbor::from_slice(&decrypted)?;
-
-    Ok((header, payload))
+    let payload = lts_client::cbor::from_slice(&decrypted)?;
+    Ok(payload)
 }

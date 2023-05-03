@@ -2,13 +2,14 @@ mod heimdall_data;
 mod throughput_entry;
 mod tracking_data;
 use crate::{
-    long_term_stats::StatsMessage, shaped_devices_tracker::NETWORK_JSON, stats::TIME_TO_POLL_HOSTS,
-    throughput_tracker::tracking_data::ThroughputTracker,
+    shaped_devices_tracker::{NETWORK_JSON, STATS_NEEDS_NEW_SHAPED_DEVICES, SHAPED_DEVICES}, stats::TIME_TO_POLL_HOSTS,
+    throughput_tracker::tracking_data::ThroughputTracker, long_term_stats::get_network_tree,
 };
 pub use heimdall_data::get_flow_stats;
 use log::{info, warn};
 use lqos_bus::{BusResponse, IpStats, TcHandle, XdpPpingResult};
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
+use lts_client::collector::{StatsUpdateMessage, ThroughputSummary, HostSummary};
 use once_cell::sync::Lazy;
 use tokio::{
     sync::mpsc::Sender,
@@ -26,14 +27,14 @@ pub static THROUGHPUT_TRACKER: Lazy<ThroughputTracker> = Lazy::new(ThroughputTra
 ///
 /// * `long_term_stats_tx` - an optional MPSC sender to notify the
 ///   collection thread that there is fresh data.
-pub async fn spawn_throughput_monitor(long_term_stats_tx: Option<Sender<StatsMessage>>) {
+pub async fn spawn_throughput_monitor(long_term_stats_tx: Sender<StatsUpdateMessage>) {
     info!("Starting the bandwidth monitor thread.");
     let interval_ms = 1000; // 1 second
     info!("Bandwidth check period set to {interval_ms} ms.");
     tokio::spawn(throughput_task(interval_ms, long_term_stats_tx));
 }
 
-async fn throughput_task(interval_ms: u64, long_term_stats_tx: Option<Sender<StatsMessage>>) {
+async fn throughput_task(interval_ms: u64, long_term_stats_tx: Sender<StatsUpdateMessage>) {
     loop {
         let start = Instant::now();
         {
@@ -47,17 +48,68 @@ async fn throughput_task(interval_ms: u64, long_term_stats_tx: Option<Sender<Sta
         THROUGHPUT_TRACKER.next_cycle();
         let duration_ms = start.elapsed().as_micros();
         TIME_TO_POLL_HOSTS.store(duration_ms as u64, std::sync::atomic::Ordering::Relaxed);
-        if let Some(tx) = &long_term_stats_tx {
-            let result = tx.send(StatsMessage::ThroughputReady).await;
-            if let Err(e) = result {
-                warn!("Error sending message to stats collection system. {e:?}");
-            }
-        }
+        submit_throughput_stats(long_term_stats_tx.clone()).await;
 
         let sleep_duration = Duration::from_millis(interval_ms) - start.elapsed();
         if sleep_duration.as_millis() > 0 {
             tokio::time::sleep(sleep_duration).await;
         }
+    }
+}
+
+async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>) {
+    // If ShapedDevices has changed, notify the stats thread
+    if let Ok(changed) = STATS_NEEDS_NEW_SHAPED_DEVICES.compare_exchange(
+        true,
+        false,
+        std::sync::atomic::Ordering::Relaxed,
+        std::sync::atomic::Ordering::Relaxed,
+    ) {
+        if changed {
+            let shaped_devices = SHAPED_DEVICES.read().unwrap().devices.clone();
+            let _ = long_term_stats_tx
+                .send(StatsUpdateMessage::ShapedDevicesChanged(shaped_devices))
+                .await;
+        }
+    }
+
+    // Gather Global Stats
+    let packets_per_second = (
+        THROUGHPUT_TRACKER
+            .packets_per_second
+            .0
+            .load(std::sync::atomic::Ordering::Relaxed),
+        THROUGHPUT_TRACKER
+            .packets_per_second
+            .1
+            .load(std::sync::atomic::Ordering::Relaxed),
+    );
+    let bits_per_second = THROUGHPUT_TRACKER.bits_per_second();
+    let shaped_bits_per_second = THROUGHPUT_TRACKER.shaped_bits_per_second();
+    let hosts = THROUGHPUT_TRACKER
+        .raw_data
+        .iter()
+        .map(|host| HostSummary {
+            ip: host.key().as_ip(),
+            circuit_id: host.circuit_id.clone(),
+            bits_per_second: (host.bytes_per_second.0 * 8, host.bytes_per_second.1 * 8),
+            median_rtt: host.median_latency(),
+        })
+        .collect();
+
+    let summary = Box::new((ThroughputSummary{
+        bits_per_second,
+        shaped_bits_per_second,
+        packets_per_second,
+        hosts,
+    }, get_network_tree()));
+
+    // Send the stats
+    let result = long_term_stats_tx
+        .send(StatsUpdateMessage::ThroughputReady(summary))
+        .await;
+    if let Err(e) = result {
+        warn!("Error sending message to stats collection system. {e:?}");
     }
 }
 

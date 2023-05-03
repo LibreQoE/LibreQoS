@@ -24,6 +24,7 @@ use lqos_queue_tracker::{
   spawn_queue_structure_monitor,
 };
 use lqos_sys::LibreQoSKernels;
+use lts_client::collector::start_long_term_stats;
 use signal_hook::{
   consts::{SIGHUP, SIGINT, SIGTERM},
   iterator::Signals,
@@ -72,7 +73,7 @@ async fn main() -> Result<()> {
   };
 
   // Spawn tracking sub-systems
-  let long_term_stats_tx = long_term_stats::start_long_term_stats().await;
+  let long_term_stats_tx = start_long_term_stats().await;
   join!(
     start_heimdall(),
     spawn_queue_structure_monitor(),
@@ -96,11 +97,9 @@ async fn main() -> Result<()> {
               warn!("This should never happen - terminating on unknown signal")
             }
           }
-          /*if let Some(tx) = long_term_stats_tx {
-            // Deliberately ignoring the error because we're trying to
-            // exit ASAP and don't really care!
-            let _ = tx.send(long_term_stats::StatsMessage::Quit).await;
-          }*/
+          let _ = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(long_term_stats_tx.send(lts_client::collector::StatsUpdateMessage::Quit));
           std::mem::drop(kernels);
           UnixSocketServer::signal_cleanup();
           std::mem::drop(file_lock);

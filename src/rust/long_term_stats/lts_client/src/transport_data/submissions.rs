@@ -1,6 +1,7 @@
 //! Holds data-types to be submitted as part of long-term stats
 //! collection.
 
+use lqos_config::ShapedDevice;
 use serde::{Serialize, Deserialize};
 
 /// Type that provides a minimum, maximum and average value
@@ -43,38 +44,28 @@ pub struct StatsTotals {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct StatsHost {
     /// Host circuit_id as it appears in ShapedDevices.csv
-    pub circuit_id: String,
-    /// Device id as it appears in ShapedDevices.csv
-    pub device_id: String,
-    /// Parent node (hopefully in network.json!)
-    pub parent_node: String,
-    /// Device name as it appears in ShapedDevices.csv
-    pub device_name: String,
-    /// Circuit name as it appears in ShapedDevices.csv
-    pub circuit_name: String,
+    pub circuit_id: Option<String>,
     /// Host's IP address
     pub ip_address: String,
-    /// Host's MAC address
-    pub mac: String,
     /// Host's traffic statistics
     pub bits: StatsSummary,
     /// Host's RTT statistics
     pub rtt: StatsRttSummary,
-    /// Positional arguments indicating which tree entries apply
-    pub tree_indices: Vec<usize>,
 }
 
 /// Node inside a traffic summary tree
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct StatsTreeNode {
+    /// Index in the tree vector
+    pub index: usize,
     /// Name (from network.json)
     pub name: String,
     /// Maximum allowed throughput (from network.json)
     pub max_throughput: (u32, u32),
     /// Current throughput (from network.json)
-    pub current_throughput: (u32, u32),
+    pub current_throughput: StatsSummary,
     /// RTT summaries
-    pub rtt: (u16, u16, u16),
+    pub rtt: StatsRttSummary,
     /// Indices of parents in the tree
     pub parents: Vec<usize>,
     /// Index of immediate parent in the tree
@@ -98,4 +89,11 @@ pub struct StatsSubmission {
     pub cpu_usage: Vec<u32>,
     /// RAM utilization on the shaper
     pub ram_percent: u32,
+}
+
+/// Submission to the `lts_node` process
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum LtsCommand {
+    Submit(Box<StatsSubmission>),
+    Devices(Vec<ShapedDevice>),
 }

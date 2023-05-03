@@ -1,7 +1,16 @@
 //! Shared data and functionality for the long-term statistics system.
 
+/// Transport data and helpers for the long-term statistics system.
 pub mod transport_data;
+
+/// Shared public key infrastructure data and functionality for the long-term statistics system.
 pub mod pki;
+
+/// Collection system for `lqosd`
+pub mod collector;
+
+/// Submissions system for `lqosd`
+pub mod submission_queue;
 
 /// Re-export bincode
 pub mod bincode {

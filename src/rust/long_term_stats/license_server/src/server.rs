@@ -122,7 +122,7 @@ async fn check_license(
                 return Err(anyhow::Error::msg("Unable to insert or update node public key"));
             }
 
-            let public_key = LIBREQOS_KEYPAIR.read().unwrap().public_key.clone();
+            let public_key = LIBREQOS_KEYPAIR.read().await.public_key.clone();
             Ok(LicenseReply::MyPublicKey { public_key })
         }
     }

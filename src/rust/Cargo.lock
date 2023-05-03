@@ -2154,8 +2154,13 @@ dependencies = [
  "bincode",
  "dryoc",
  "log",
+ "lqos_config",
+ "lqos_utils",
+ "num-traits",
+ "once_cell",
  "serde",
  "serde_cbor",
+ "sysinfo",
  "thiserror",
  "tokio",
 ]
