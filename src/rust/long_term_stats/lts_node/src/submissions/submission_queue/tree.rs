@@ -31,7 +31,9 @@ pub async fn collect_tree(
                     .tag("node_name", node.name.to_string())
                     .tag("direction", "down".to_string())
                     .timestamp(timestamp)
-                    .field("bits", node.current_throughput.0 as i64)
+                    .field("bits_min", node.current_throughput.min.0 as i64)
+                    .field("bits_max", node.current_throughput.max.0 as i64)
+                    .field("bits_avg", node.current_throughput.avg.0 as i64)
                     .build()?,
             );
             points.push(
@@ -41,7 +43,9 @@ pub async fn collect_tree(
                     .tag("node_name", node.name.to_string())
                     .tag("direction", "up".to_string())
                     .timestamp(timestamp)
-                    .field("bits", node.current_throughput.1 as i64)
+                    .field("bits_min", node.current_throughput.min.1 as i64)
+                    .field("bits_max", node.current_throughput.max.1 as i64)
+                    .field("bits_avg", node.current_throughput.avg.1 as i64)
                     .build()?,
             );
             points.push(
@@ -50,9 +54,9 @@ pub async fn collect_tree(
                     .tag("organization_id", org.key.to_string())
                     .tag("node_name", node.name.to_string())
                     .timestamp(timestamp)
-                    .field("rtt_min", node.rtt.0 as i64 / 100)
-                    .field("rtt_max", node.rtt.1 as i64 / 100)
-                    .field("rtt_avg", node.rtt.2 as i64 / 100)
+                    .field("rtt_min", node.rtt.min as i64 / 100)
+                    .field("rtt_max", node.rtt.max as i64 / 100)
+                    .field("rtt_avg", node.rtt.avg as i64 / 100)
                     .build()?,
             );
 

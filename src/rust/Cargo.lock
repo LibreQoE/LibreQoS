@@ -2177,6 +2177,7 @@ dependencies = [
  "influxdb2",
  "influxdb2-structmap",
  "log",
+ "lqos_config",
  "lts_client",
  "num-traits",
  "once_cell",

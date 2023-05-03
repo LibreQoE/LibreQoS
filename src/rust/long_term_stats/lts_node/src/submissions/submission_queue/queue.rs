@@ -5,13 +5,12 @@
 //! perform the processing.
 
 use crate::submissions::submission_queue::{
-    organization_cache::get_org_details,
+    devices::ingest_shaped_devices, host_totals::collect_host_totals, node_perf::collect_node_perf,
+    organization_cache::get_org_details, tree::collect_tree, per_host::collect_per_host,
 };
-use lts_client::transport_data::{NodeIdAndLicense, LtsCommand};
+use lts_client::transport_data::{LtsCommand, NodeIdAndLicense};
 use pgdb::sqlx::{Pool, Postgres};
-use tokio::{
-    sync::mpsc::{Receiver, Sender},
-};
+use tokio::sync::mpsc::{Receiver, Sender};
 
 const SUBMISSION_QUEUE_SIZE: usize = 100;
 pub type SubmissionType = (NodeIdAndLicense, LtsCommand);
@@ -43,27 +42,31 @@ async fn ingest_stats(
         //println!("{:?}", command);
         match command {
             LtsCommand::Devices(devices) => {
-                println!("Devices: {:?}", devices);
-            },
-            LtsCommand::Submit(submission) => {
-                println!("Submission: {:?}", submission);
-            },
+                log::info!("Ingesting Shaped Devices");
+                update_last_seen(cnn.clone(), &node_id).await;
+                if let Err(e) = ingest_shaped_devices(cnn, &org, &node_id.node_id, &devices).await {
+                    log::error!("Error ingesting shaped devices: {}", e);
+                }
+            }
+            LtsCommand::Submit(stats) => {
+                //println!("Submission: {:?}", submission);
+                log::info!("Ingesting regular statistics dump");
+                let ts = stats.timestamp as i64;
+                let _ = tokio::join!(
+                    update_last_seen(cnn.clone(), &node_id),
+                    collect_host_totals(&org, &node_id.node_id, ts, &stats.totals),
+                    collect_node_perf(
+                        &org,
+                        &node_id.node_id,
+                        ts,
+                        &stats.cpu_usage,
+                        stats.ram_percent
+                    ),
+                    collect_tree(cnn.clone(), &org, &node_id.node_id, ts, &stats.tree),
+                    collect_per_host(&org, &node_id.node_id, ts, &stats.hosts),
+                );
+            }
         }
-/*         let ts = stats.timestamp as i64;
-        // TODO: Error handling
-        let _ = join!(
-            update_last_seen(cnn.clone(), &node_id),
-            collect_host_totals(&org, &node_id.node_id, ts, &stats.totals),
-            //collect_per_host(cnn.clone(), &org, &node_id.node_id, ts, &stats.hosts),
-            //collect_tree(cnn.clone(), &org, &node_id.node_id, ts, &stats.tree),
-            collect_node_perf(
-                &org,
-                &node_id.node_id,
-                ts,
-                &stats.cpu_usage,
-                stats.ram_percent
-            ),
-        );*/
     } else {
         log::warn!(
             "Unable to find organization for license {}",

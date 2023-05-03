@@ -36,18 +36,32 @@ CREATE TABLE public.site_tree
     PRIMARY KEY (key, site_name, host_id)
 );
 
-CREATE TABLE public.devices
+CREATE TABLE public.shaped_devices
 (
     key character varying(254) NOT NULL,
-    host_id character varying(254) NOT NULL,
-    device_id character varying(254) NOT NULL,
+    node_id character varying(254) NOT NULL,
     circuit_id character varying(254) NOT NULL,
-    parent_node character varying(254) NOT NULL,
-    circuit_name character varying(254) NOT NULL,
-    device_name character varying(254) NOT NULL,
-    mac_address character(20) NOT NULL DEFAULT '',
-    ip_address character varying(128) NOT NULL DEFAULT '',
-    PRIMARY KEY (key, host_id, device_id)
+    device_id character varying(254) NOT NULL,
+    circuit_name character varying(254) NOT NULL DEFAULT '',
+    device_name character varying(254) NOT NULL DEFAULT '',
+    parent_node character varying(254) NOT NULL DEFAULT '',
+    mac character varying(254) NOT NULL DEFAULT '',
+    download_min_mbps integer NOT NULL DEFAULT 0,
+    upload_min_mbps integer NOT NULL DEFAULT 0,
+    download_max_mbps integer NOT NULL DEFAULT 0,
+    upload_max_mbps integer NOT NULL DEFAULT 0,
+    comment text,
+    PRIMARY KEY (key, node_id, circuit_id, device_id)
+);
+
+CREATE TABLE public.shaped_device_ip
+(
+    key character varying(254) COLLATE pg_catalog."default" NOT NULL,
+    node_id character varying(254) COLLATE pg_catalog."default" NOT NULL,
+    circuit_id character varying(254) COLLATE pg_catalog."default" NOT NULL,
+    ip_range character varying(254) COLLATE pg_catalog."default" NOT NULL,
+    subnet integer NOT NULL,
+    CONSTRAINT shaped_device_ip_pkey PRIMARY KEY (key, node_id, circuit_id, ip_range, subnet)
 );
 
 CREATE TABLE public.stats_hosts (
