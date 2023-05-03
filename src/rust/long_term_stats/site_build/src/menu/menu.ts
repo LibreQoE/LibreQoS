@@ -81,6 +81,8 @@ export class MenuPage implements Page {
     icon(type: string): string {
         switch (type) {
             case "circuit": return "<i class='fa fa-user'></i>"; break;
+            case "site": return "<i class='fa fa-building'></i>"; break;
+            case "ap": return "<i class='fa fa-wifi'></i>"; break;
             default: return "<i class='fa fa-question'></i>";
         }
     }

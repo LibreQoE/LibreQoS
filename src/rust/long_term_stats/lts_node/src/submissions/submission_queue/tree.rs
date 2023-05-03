@@ -6,7 +6,7 @@ use pgdb::{
     OrganizationDetails,
 };
 
-const SQL: &str = "INSERT INTO site_tree (key, host_id, site_name, index, parent, site_type) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (key, host_id, site_name) DO UPDATE SET index = $4, parent = $5, site_type = $6 WHERE site_tree.key=$1 AND site_tree.host_id=$2 AND site_tree.site_name=$3";
+const SQL: &str = "INSERT INTO site_tree (key, host_id, site_name, index, parent, site_type) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (key, host_id, site_name) DO NOTHING";
 
 pub async fn collect_tree(
     cnn: Pool<Postgres>,
@@ -22,6 +22,12 @@ pub async fn collect_tree(
         let mut points: Vec<DataPoint> = Vec::new();
 
         let mut trans = cnn.begin().await?;
+
+        pgdb::sqlx::query("DELETE FROM site_tree WHERE key=$1 AND host_id=$2")
+            .bind(org.key.to_string())
+            .bind(node_id)
+            .execute(&mut trans)
+            .await?;
 
         for (i, node) in tree.iter().enumerate() {
             points.push(
