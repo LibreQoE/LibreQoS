@@ -7,6 +7,7 @@ mod rtt;
 mod node_perf;
 mod search;
 mod site_heat_map;
+pub mod site_tree;
 pub mod time_period;
 pub use packet_counts::{ send_packets_for_all_nodes, send_packets_for_node };
 pub use throughput::{ send_throughput_for_all_nodes, send_throughput_for_node };

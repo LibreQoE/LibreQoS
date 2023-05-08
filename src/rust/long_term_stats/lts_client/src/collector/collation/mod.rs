@@ -49,11 +49,11 @@ pub(crate) async fn collate_stats(comm_tx: Sender<SenderChannelMessage>) {
             }
         });
 
-        e.network_tree.iter().enumerate().for_each(|(index, node)| {
+        e.network_tree.iter().for_each(|(index, node)| {
             if let Some(t) = tree_accumulator.get_mut(&node.name) {
-                t.push((index, node));
+                t.push((*index, node));
             } else {
-                tree_accumulator.insert(node.name.clone(), vec![(index, node)]);
+                tree_accumulator.insert(node.name.clone(), vec![(*index, node)]);
             }
         });
     });

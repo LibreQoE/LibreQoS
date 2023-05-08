@@ -1,5 +1,7 @@
 use crate::web::wss::queries::{
-    send_packets_for_all_nodes, send_rtt_for_all_nodes, send_throughput_for_all_nodes, send_packets_for_node, send_throughput_for_node, send_rtt_for_node, send_perf_for_node, omnisearch, root_heat_map,
+    omnisearch, root_heat_map, send_packets_for_all_nodes, send_packets_for_node,
+    send_perf_for_node, send_rtt_for_all_nodes, send_rtt_for_node, send_throughput_for_all_nodes,
+    send_throughput_for_node, site_tree::send_site_tree,
 };
 use axum::{
     extract::{
@@ -176,7 +178,8 @@ async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
                                     &mut socket,
                                     &credentials.license_key,
                                     json.get("term").unwrap().as_str().unwrap(),
-                                ).await;
+                                )
+                                .await;
                             }
                         }
                         "siteRootHeat" => {
@@ -190,6 +193,17 @@ async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
                                 .await;
                             } else {
                                 log::info!("Throughput requested but no credentials provided");
+                            }
+                        }
+                        "siteTree" => {
+                            if let Some(credentials) = &credentials {
+                                send_site_tree(
+                                    cnn.clone(),
+                                    &mut socket,
+                                    &credentials.license_key,
+                                    json.get("parent").unwrap().as_str().unwrap(),
+                                )
+                                .await;
                             }
                         }
                         _ => {

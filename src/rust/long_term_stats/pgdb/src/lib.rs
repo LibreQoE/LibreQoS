@@ -6,6 +6,7 @@ mod orchestrator;
 mod logins;
 mod nodes;
 mod search;
+mod tree;
 
 pub mod sqlx {
     pub use sqlx::*;
@@ -19,3 +20,4 @@ pub use orchestrator::create_free_trial;
 pub use logins::{try_login, delete_user, add_user, refresh_token, token_to_credentials};
 pub use nodes::{new_stats_arrived, node_status, NodeStatus};
 pub use search::*;
+pub use tree::*;

@@ -9,7 +9,7 @@ use super::{ThroughputSummary, network_tree::NetworkTreeEntry};
 /// Messages to/from the stats collection thread
 pub enum StatsUpdateMessage {
   /// Fresh throughput stats have been collected
-  ThroughputReady(Box<(ThroughputSummary, Vec<NetworkTreeEntry>)>),
+  ThroughputReady(Box<(ThroughputSummary, Vec<(usize, NetworkTreeEntry)>)>),
   /// ShapedDevices.csv has changed and the server needs new data
   ShapedDevicesChanged(Vec<ShapedDevice>),
   /// It's time to collate the session buffer

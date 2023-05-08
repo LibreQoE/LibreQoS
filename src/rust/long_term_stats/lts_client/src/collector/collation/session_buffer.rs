@@ -7,5 +7,5 @@ pub(crate) static SESSION_BUFFER: Lazy<Mutex<Vec<StatsSession>>> =
 
 pub(crate) struct StatsSession {
     pub(crate) throughput: ThroughputSummary,
-    pub(crate) network_tree: Vec<NetworkTreeEntry>,
+    pub(crate) network_tree: Vec<(usize, NetworkTreeEntry)>,
 }

@@ -127,6 +127,10 @@ export class Bus {
         let json = JSON.stringify(request);
         this.ws.send(json);
     }
+
+    requestTree(parent: string) {
+        this.ws.send("{ \"msg\": \"siteTree\", \"parent\": \"" + parent + "\" }");
+    }
 }
 
 function formatToken(token: string) {

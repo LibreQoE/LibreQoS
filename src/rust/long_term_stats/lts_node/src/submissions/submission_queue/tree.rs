@@ -70,7 +70,7 @@ pub async fn collect_tree(
                 .bind(org.key.to_string())
                 .bind(node_id)
                 .bind(&node.name)
-                .bind(i as i32)
+                .bind(node.index as i32)
                 .bind(node.immediate_parent.unwrap_or(0) as i32)
                 .bind(node.node_type.as_ref().unwrap_or(&String::new()).clone())
                 .execute(&mut trans)

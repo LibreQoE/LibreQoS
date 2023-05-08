@@ -5,13 +5,16 @@ use lts_client::{
     collector::NetworkTreeEntry, submission_queue::get_current_stats
 };
 
-pub(crate) fn get_network_tree() -> Vec<NetworkTreeEntry> {
+pub(crate) fn get_network_tree() -> Vec<(usize, NetworkTreeEntry)> {
     if let Ok(reader) = NETWORK_JSON.read() {
-        return reader
+        let result = reader
             .nodes
             .iter()
-            .map(|n| n.into())
-            .collect::<Vec<NetworkTreeEntry>>();
+            .enumerate()
+            .map(|(idx, n)| (idx, n.into()))
+            .collect::<Vec<(usize, NetworkTreeEntry)>>();
+        //println!("{result:#?}");
+        return result;
     }
     Vec::new()
 }
