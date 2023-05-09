@@ -52,7 +52,7 @@ export class RootHeat implements Component {
 
                 // Create all the series entries for this category
                 for (let i=0; i<event.data[key].length; i++) {
-                    data.push([i, count, event.data[key][i][1]]);
+                    data.push([i, count, event.data[key][i][1].toFixed(1)]);
                 }
 
                 count++;

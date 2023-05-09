@@ -2,6 +2,8 @@ import html from './template.html';
 import { Page } from '../page'
 import { MenuPage } from '../menu/menu';
 import { Component } from '../components/component';
+import mermaid from 'mermaid';
+import { rttColor, scaleNumber, siteIcon, usageColor } from '../helpers';
 
 export class SiteTreePage implements Page {
     menu: MenuPage;
@@ -81,35 +83,99 @@ class TreeItem {
     parent: number;
     site_name: string;
     site_type: string;
+    max_down: number;
+    max_up: number;
+    current_down: number;
+    current_up: number;
+    current_rtt: number;
 }
 
+const mbps_to_bps = 1000000;
+
 function buildTree(data: TreeItem[]) {
-    console.log(data);
+    data.sort((a,b) => {
+        return a.site_name.localeCompare(b.site_name);
+    });
     let tree = document.getElementById("site_tree") as HTMLDivElement;
-    let html = "";
+    let html = "<table class='table table-striped'>";
+    html += "<thead><tr><th>Site</th><th>Max</th><th>Current</th><th>Utilization</th><th>RTT (ms)</th></tr></thead>";
+    html += "<tbody>";
+    let def = "graph TD\n";
 
     for (let i=0; i<data.length; i++) {
         if (data[i].parent == 0) {
-            html += "(" + data[i].site_type + ") " + data[i].site_name + "<br />";
+            let up = (data[i].current_up / (data[i].max_up * mbps_to_bps)) * 100.0;
+            let down = (data[i].current_down / (data[i].max_down * mbps_to_bps)) * 100.0;
+            let peak = Math.max(up, down);
+            let usageBg = usageColor(peak);
+            let rttBg = rttColor(data[i].current_rtt / 100);
+            html += "<tr>";
+            html += "<td>" + siteIcon(data[i].site_type) + " " + data[i].site_name;
+            html += "</td><td>" + scaleNumber(data[i].max_down * mbps_to_bps) + " / " + scaleNumber(data[i].max_up * mbps_to_bps) + "</td>";
+            html += "</td><td>" + scaleNumber(data[i].current_down) + " / " + scaleNumber(data[i].current_up) + "</td>";
+            html += "<td style='background-color: " + usageBg + "'>" + up.toFixed(1) + "% / " + down.toFixed(1) + "%</td>";
+            html += "<td style='background-color: " + rttBg + "'>" + (data[i].current_rtt / 100).toFixed(1) + "</td>";
+            html += "</tr>";
             html += treeChildren(data, data[i].index, 1);
+            def += "Root --> " + data[i].index + "[" + t(data[i].site_name) + "]\n";
+            def += graphChildren(data, data[i].index, 1);
         }
     }
 
+    html += "</tbody></table>";
     tree.innerHTML = html;
+
+    //console.log(def);
+    merman(def).then(() => {});
+}
+
+async function merman(def: string) {
+    let container = document.getElementById("site_map") as HTMLDivElement;
+    const { svg, bindFunctions } = await mermaid.render("site_map_svg", def);
+    container.innerHTML = svg;
+    bindFunctions?.(container);
 }
 
 function treeChildren(data: TreeItem[], parent: number, depth: number) : string {
     let html = "";
     for (let i=0; i<data.length; i++) {
         if (data[i].parent == parent && data[i].site_name != "Root") {
+            let up = (data[i].current_up / (data[i].max_up * mbps_to_bps)) * 100.0;
+            let down = (data[i].current_down / (data[i].max_down * mbps_to_bps)) * 100.0;
+            let peak = Math.max(up, down);
+            let usageBg = usageColor(peak);
+            let rttBg = rttColor(data[i].current_rtt / 100);
+            html += "<tr><td>";        
             for (let j=0; j<depth; j++) {
                 html += "&nbsp;&nbsp;&nbsp;&nbsp;";
             }
-            html += "(" + data[i].site_type + ") " + data[i].site_name + "<br />";
+            html += siteIcon(data[i].site_type) + " " + data[i].site_name;
+            html += "</td><td>" + scaleNumber(data[i].max_down * mbps_to_bps) + " / " + scaleNumber(data[i].max_up * mbps_to_bps) + "</td>";
+            html += "</td><td>" + scaleNumber(data[i].current_down) + " / " + scaleNumber(data[i].current_up) + "</td>";
+            html += "<td style='background-color: " + usageBg + "'>" + up.toFixed(1) + "% / " + down.toFixed(1) + "%</td>";
+            html += "<td style='background-color: " + rttBg + "'>" + (data[i].current_rtt / 100).toFixed(1) + "</td>";
+            html += "</tr>";
             if (depth < 20) {
-                treeChildren(data, data[i].index, depth + 1);
+                html += treeChildren(data, data[i].index, depth + 1);
             }
         }
     }
     return html;
+}
+
+function t(s:string): string {
+    return s.replace("(", "").replace(")", "").replace(" ", "_");
+}
+
+function graphChildren(data: TreeItem[], parent: number, depth: number) : string {
+    let def = "";
+    for (let i=0; i<data.length; i++) {
+        if (data[i].parent == parent && data[i].site_name != "Root" && data[i].index != parent) {
+            if (i < 20) def += parent + " --> " + data[i].index + "\n";
+            if (depth < 20) {
+                def += graphChildren(data, data[i].index, depth + 1);
+            }
+        }
+    }
+    return def;
 }

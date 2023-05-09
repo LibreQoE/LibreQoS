@@ -33,6 +33,11 @@ CREATE TABLE public.site_tree
     index integer NOT NULL,
     parent integer NOT NULL,
     site_type character varying(32),
+    max_up integer NOT NULL DEFAULT 0,
+    max_down integer NOT NULL DEFAULT 0,
+    current_up integer NOT NULL DEFAULT 0,
+    current_down integer NOT NULL DEFAULT 0,
+    current_rtt integer NOT NULL DEFAULT 0,
     PRIMARY KEY (key, site_name, host_id)
 );
 

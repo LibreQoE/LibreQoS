@@ -1,5 +1,6 @@
 import html from './template.html';
 import { Page } from '../page'
+import { siteIcon } from '../helpers';
 
 export class MenuPage implements Page {
     activePanel: string;
@@ -78,15 +79,6 @@ export class MenuPage implements Page {
         }
     }
 
-    icon(type: string): string {
-        switch (type) {
-            case "circuit": return "<i class='fa fa-user'></i>"; break;
-            case "site": return "<i class='fa fa-building'></i>"; break;
-            case "ap": return "<i class='fa fa-wifi'></i>"; break;
-            default: return "<i class='fa fa-question'></i>";
-        }
-    }
-
     searchResult(hits) {
         //console.log(hits);
         let r = document.getElementById("searchResults");
@@ -94,7 +86,7 @@ export class MenuPage implements Page {
             let html = "<table>";
             for (let i = 0; i < hits.length; i++) {
                 html += "<tr onclick='window.router.goto(\"" + hits[i].url + "\")''>";
-                html += "<td>" + this.icon(hits[i].icon) + "</td>";
+                html += "<td>" + siteIcon(hits[i].icon) + "</td>";
                 html += "<td>" + hits[i].name + "</td>";
                 //html += hits[i].url;
                 html += "</tr>";
