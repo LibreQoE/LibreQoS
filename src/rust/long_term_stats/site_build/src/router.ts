@@ -4,6 +4,7 @@ import { LoginPage } from './login/login';
 import { Page } from './page';
 import { ShaperNodePage } from './shapernode/shapernode';
 import { ShaperNodesPage } from './shapernodes/shapernodes';
+import { SitePage } from './site/site';
 import { SiteTreePage } from './site_tree/site_tree';
 
 export class SiteRouter {
@@ -68,6 +69,11 @@ export class SiteRouter {
             case "sitetree": {
                 this.currentAnchor = "sitetree";
                 this.curentPage = new SiteTreePage();
+                break;
+            }
+            case "site": {
+                this.currentAnchor = "site:" + split[1];
+                this.curentPage = new SitePage(split[1]);
                 break;
             }
             default: {

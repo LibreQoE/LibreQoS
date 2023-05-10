@@ -23,3 +23,26 @@ impl Default for ThroughputRow {
         }
     }
 }
+
+#[derive(Debug, FromDataPoint)]
+pub struct ThroughputRowBySite {
+    pub direction: String,
+    pub host_id: String,
+    pub bits_min: f64,
+    pub bits_max: f64,
+    pub bits_avg: f64,
+    pub time: DateTime<FixedOffset>,
+}
+
+impl Default for ThroughputRowBySite {
+    fn default() -> Self {
+        Self {
+            direction: "".to_string(),
+            host_id: "".to_string(),
+            bits_min: 0.0,
+            bits_max: 0.0,
+            bits_avg: 0.0,
+            time: DateTime::<Utc>::MIN_UTC.into(),
+        }
+    }
+}

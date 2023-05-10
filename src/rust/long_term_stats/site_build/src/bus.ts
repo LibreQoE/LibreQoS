@@ -89,6 +89,16 @@ export class Bus {
         this.ws.send(json);
     }
 
+    requestThroughputChartSite(site_id: string) {
+        let request = {
+            msg: "throughputChartSite",
+            period: window.graphPeriod,
+            site_id: decodeURI(site_id),
+        };
+        let json = JSON.stringify(request);
+        this.ws.send(json);
+    }
+
     requestRttChart() {
         this.ws.send("{ \"msg\": \"rttChart\", \"period\": \"" + window.graphPeriod + "\" }");
     }
@@ -99,6 +109,16 @@ export class Bus {
             period: window.graphPeriod,
             node_id: node_id,
             node_name: node_name,
+        };
+        let json = JSON.stringify(request);
+        this.ws.send(json);
+    }
+
+    requestRttChartSite(site_id: string) {
+        let request = {
+            msg: "rttChartSite",
+            period: window.graphPeriod,
+            site_id: decodeURI(site_id),
         };
         let json = JSON.stringify(request);
         this.ws.send(json);
@@ -130,6 +150,15 @@ export class Bus {
 
     requestTree(parent: string) {
         this.ws.send("{ \"msg\": \"siteTree\", \"parent\": \"" + parent + "\" }");
+    }
+
+    requestSiteInfo(site_id: string) {
+        let request = {
+            msg: "siteInfo",
+            site_id: decodeURI(site_id),
+        };
+        let json = JSON.stringify(request);
+        this.ws.send(json);
     }
 }
 

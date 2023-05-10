@@ -1,7 +1,7 @@
 use crate::web::wss::queries::{
     omnisearch, root_heat_map, send_packets_for_all_nodes, send_packets_for_node,
     send_perf_for_node, send_rtt_for_all_nodes, send_rtt_for_node, send_throughput_for_all_nodes,
-    send_throughput_for_node, site_tree::send_site_tree,
+    send_throughput_for_node, site_tree::send_site_tree, send_throughput_for_all_nodes_by_site, send_site_info, send_rtt_for_all_nodes_site,
 };
 use axum::{
     extract::{
@@ -113,6 +113,20 @@ async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
                                 log::info!("Throughput requested but no credentials provided");
                             }
                         }
+                        "throughputChartSite" => {
+                            if let Some(credentials) = &credentials {
+                                let _ = send_throughput_for_all_nodes_by_site(
+                                    cnn.clone(),
+                                    &mut socket,
+                                    &credentials.license_key,
+                                    json.get("site_id").unwrap().as_str().unwrap().to_string(),
+                                    period,
+                                )
+                                .await;
+                            } else {
+                                log::info!("Throughput requested but no credentials provided");
+                            }
+                        }
                         "throughputChartSingle" => {
                             if let Some(credentials) = &credentials {
                                 let _ = send_throughput_for_node(
@@ -134,6 +148,20 @@ async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
                                     cnn.clone(),
                                     &mut socket,
                                     &credentials.license_key,
+                                    period,
+                                )
+                                .await;
+                            } else {
+                                log::info!("Throughput requested but no credentials provided");
+                            }
+                        }
+                        "rttChartSite" => {
+                            if let Some(credentials) = &credentials {
+                                let _ = send_rtt_for_all_nodes_site(
+                                    cnn.clone(),
+                                    &mut socket,
+                                    &credentials.license_key,
+                                    json.get("site_id").unwrap().as_str().unwrap().to_string(),
                                     period,
                                 )
                                 .await;
@@ -202,6 +230,17 @@ async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
                                     &mut socket,
                                     &credentials.license_key,
                                     json.get("parent").unwrap().as_str().unwrap(),
+                                )
+                                .await;
+                            }
+                        }
+                        "siteInfo" => {
+                            if let Some(credentials) = &credentials {
+                                send_site_info(
+                                    cnn.clone(),
+                                    &mut socket,
+                                    &credentials.license_key,
+                                    json.get("site_id").unwrap().as_str().unwrap(),
                                 )
                                 .await;
                             }

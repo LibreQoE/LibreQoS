@@ -3,12 +3,13 @@ import { Page } from '../page'
 import { MenuPage } from '../menu/menu';
 import { Component } from '../components/component';
 import mermaid from 'mermaid';
-import { rttColor, scaleNumber, siteIcon, usageColor } from '../helpers';
+import { makeUrl, rttColor, scaleNumber, siteIcon, usageColor } from '../helpers';
 
 export class SiteTreePage implements Page {
     menu: MenuPage;
     components: Component[];
     selectedNode: string;
+    count: number = 0;
 
     constructor() {
         this.menu = new MenuPage("sitetreeDash");
@@ -33,6 +34,10 @@ export class SiteTreePage implements Page {
         this.components.forEach(component => {
             component.ontick();
         });
+        if (this.count % 10 == 0 && this.selectedNode != "") {
+            fetchTree(this.selectedNode);
+        }
+        this.count++;
     }
 
     onmessage(event: any) {
@@ -90,7 +95,7 @@ class TreeItem {
     current_rtt: number;
 }
 
-const mbps_to_bps = 1000000;
+export const mbps_to_bps = 1000000;
 
 function buildTree(data: TreeItem[]) {
     data.sort((a,b) => {
@@ -110,7 +115,8 @@ function buildTree(data: TreeItem[]) {
             let usageBg = usageColor(peak);
             let rttBg = rttColor(data[i].current_rtt / 100);
             html += "<tr>";
-            html += "<td>" + siteIcon(data[i].site_type) + " " + data[i].site_name;
+            let url = makeUrl(data[i].site_type, data[i].site_name);
+            html += "<td>" + siteIcon(data[i].site_type) + " <a href='#" + url + "' onclick='window.router.goto(\"" + url + "\")'>" + data[i].site_name + "</a>";
             html += "</td><td>" + scaleNumber(data[i].max_down * mbps_to_bps) + " / " + scaleNumber(data[i].max_up * mbps_to_bps) + "</td>";
             html += "</td><td>" + scaleNumber(data[i].current_down) + " / " + scaleNumber(data[i].current_up) + "</td>";
             html += "<td style='background-color: " + usageBg + "'>" + up.toFixed(1) + "% / " + down.toFixed(1) + "%</td>";
@@ -149,7 +155,8 @@ function treeChildren(data: TreeItem[], parent: number, depth: number) : string 
             for (let j=0; j<depth; j++) {
                 html += "&nbsp;&nbsp;&nbsp;&nbsp;";
             }
-            html += siteIcon(data[i].site_type) + " " + data[i].site_name;
+            let url = makeUrl(data[i].site_type, data[i].site_name);
+            html += siteIcon(data[i].site_type) + " <a href='#" + url + "' onclick='window.router.goto(\"" + url + "\")'>" + data[i].site_name + "</a>";
             html += "</td><td>" + scaleNumber(data[i].max_down * mbps_to_bps) + " / " + scaleNumber(data[i].max_up * mbps_to_bps) + "</td>";
             html += "</td><td>" + scaleNumber(data[i].current_down) + " / " + scaleNumber(data[i].current_up) + "</td>";
             html += "<td style='background-color: " + usageBg + "'>" + up.toFixed(1) + "% / " + down.toFixed(1) + "%</td>";

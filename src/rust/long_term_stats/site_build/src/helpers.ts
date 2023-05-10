@@ -37,12 +37,21 @@ export function usageColor(percent: number): string {
     return "#aaffaa";
 }
 
-export function rttColor(n) {
+export function rttColor(n: number): string {
     if (n <= 100) {
         return "#aaffaa";
     } else if (n <= 150) {
         return "goldenrod";
     } else {
         return "#ffaaaa";
+    }
+}
+
+export function makeUrl(type: string, id: string): string {
+    switch (type) {
+        case "site": return "site:" + id;
+        case "ap": return "ap:" + id;
+        case "circuit": return "circuit:" + id;
+        default: return "site:" + id;
     }
 }

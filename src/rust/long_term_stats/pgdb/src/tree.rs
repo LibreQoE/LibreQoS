@@ -26,3 +26,16 @@ pub async fn get_site_tree(
         .await
         .map_err(|e| StatsHostError::DatabaseError(e.to_string()))
 }
+
+pub async fn get_site_info(
+    cnn: Pool<Postgres>,
+    key: &str,
+    site_name: &str,
+) -> Result<TreeNode, StatsHostError> {
+    sqlx::query_as::<_, TreeNode>("SELECT site_name, index, parent, site_type, max_down, max_up, current_down, current_up, current_rtt FROM site_tree WHERE key = $1 AND site_name=$2")
+        .bind(key)
+        .bind(site_name)
+        .fetch_one(&cnn)
+        .await
+        .map_err(|e| StatsHostError::DatabaseError(e.to_string()))
+}
