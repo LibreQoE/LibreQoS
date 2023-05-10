@@ -27,7 +27,7 @@ pub async fn search_devices(
     from shaped_devices, input
     where 
     key = $2 AND
-    input.q <% (circuit_name || ' ' || device_name || ' ' || mac)
+    (input.q <<-> (circuit_name || ' ' || device_name || ' ' || mac)) < 0.15
     order by input.q <<-> (circuit_name || ' ' || device_name || ' ' || mac)";
 
     let rows = sqlx::query_as::<_, DeviceHit>(SQL)
@@ -83,7 +83,7 @@ pub async fn search_sites(
     from site_tree, input
     where 
     key = $2 AND
-    input.q <% site_name
+    (input.q <<-> site_name) < 0.15
     order by input.q <<-> site_name";
 
     let rows = sqlx::query_as::<_, SiteHit>(SQL)
