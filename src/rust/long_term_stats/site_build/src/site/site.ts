@@ -6,6 +6,7 @@ import { ThroughputSiteChart } from '../components/throughput_site';
 import { SiteInfo } from '../components/site_info';
 import { RttChartSite } from '../components/rtt_site';
 import { RttHistoSite } from '../components/rtt_histo_site';
+import { SiteBreadcrumbs } from '../components/site_breadcrumbs';
 
 export class SitePage implements Page {
     menu: MenuPage;
@@ -24,6 +25,7 @@ export class SitePage implements Page {
             new ThroughputSiteChart(siteId),
             new RttChartSite(siteId),
             new RttHistoSite(),
+            new SiteBreadcrumbs(siteId),
         ];
     }
 

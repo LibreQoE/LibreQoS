@@ -24,7 +24,6 @@ export class SiteInfo implements Component {
     onmessage(event: any): void {
         if (event.msg == "site_info") {
             //console.log(event.data);
-            (document.getElementById("siteName") as HTMLElement).innerText = event.data.site_name;
             let div = document.getElementById("siteInfo") as HTMLDivElement;
             let html = "";
             html += "<table class='table table-striped'>";

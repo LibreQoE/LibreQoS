@@ -160,6 +160,15 @@ export class Bus {
         let json = JSON.stringify(request);
         this.ws.send(json);
     }
+
+    requestSiteParents(site_id: string) {
+        let request = {
+            msg: "siteParents",
+            site_id: decodeURI(site_id),
+        };
+        let json = JSON.stringify(request);
+        this.ws.send(json);
+    }
 }
 
 function formatToken(token: string) {
