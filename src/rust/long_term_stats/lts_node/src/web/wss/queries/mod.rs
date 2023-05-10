@@ -16,6 +16,6 @@ pub use throughput::{ send_throughput_for_all_nodes, send_throughput_for_node, s
 pub use rtt::{ send_rtt_for_all_nodes, send_rtt_for_node, send_rtt_for_all_nodes_site };
 pub use node_perf::send_perf_for_node;
 pub use search::omnisearch;
-pub use site_heat_map::root_heat_map;
+pub use site_heat_map::{root_heat_map, site_heat_map};
 pub use site_info::send_site_info;
 pub use site_parents::send_site_parents;

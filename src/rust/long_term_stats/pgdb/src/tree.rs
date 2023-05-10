@@ -40,6 +40,21 @@ pub async fn get_site_info(
         .map_err(|e| StatsHostError::DatabaseError(e.to_string()))
 }
 
+pub async fn get_site_id_from_name(
+    cnn: Pool<Postgres>,
+    key: &str,
+    site_name: &str,
+) -> Result<i32, StatsHostError> {
+    let site_id_db = sqlx::query("SELECT index FROM site_tree WHERE key = $1 AND site_name=$2")
+        .bind(key)
+        .bind(site_name)
+        .fetch_one(&cnn)
+        .await
+        .map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
+    let site_id: i32 = site_id_db.try_get("index").map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
+    Ok(site_id)
+}
+
 pub async fn get_parent_list(
     cnn: Pool<Postgres>,
     key: &str,

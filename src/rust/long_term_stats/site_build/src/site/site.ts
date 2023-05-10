@@ -7,6 +7,7 @@ import { SiteInfo } from '../components/site_info';
 import { RttChartSite } from '../components/rtt_site';
 import { RttHistoSite } from '../components/rtt_histo_site';
 import { SiteBreadcrumbs } from '../components/site_breadcrumbs';
+import { SiteHeat } from '../components/site_heat';
 
 export class SitePage implements Page {
     menu: MenuPage;
@@ -26,6 +27,7 @@ export class SitePage implements Page {
             new RttChartSite(siteId),
             new RttHistoSite(),
             new SiteBreadcrumbs(siteId),
+            new SiteHeat(siteId),
         ];
     }
 

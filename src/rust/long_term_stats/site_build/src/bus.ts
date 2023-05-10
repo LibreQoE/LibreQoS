@@ -139,6 +139,16 @@ export class Bus {
         this.ws.send("{ \"msg\": \"siteRootHeat\", \"period\": \"" + window.graphPeriod + "\" }");
     }
 
+    requestSiteHeat(site_id: string) {
+        let request = {
+            msg: "siteHeat",
+            period: window.graphPeriod,
+            site_id: decodeURI(site_id),
+        };
+        let json = JSON.stringify(request);
+        this.ws.send(json);
+    }
+
     sendSearch(term: string) {
         let request = {
             msg: "search",
