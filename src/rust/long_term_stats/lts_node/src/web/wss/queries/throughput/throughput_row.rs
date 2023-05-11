@@ -46,3 +46,26 @@ impl Default for ThroughputRowBySite {
         }
     }
 }
+
+#[derive(Debug, FromDataPoint)]
+pub struct ThroughputRowByCircuit {
+    pub direction: String,
+    pub ip: String,
+    pub min: f64,
+    pub max: f64,
+    pub avg: f64,
+    pub time: DateTime<FixedOffset>,
+}
+
+impl Default for ThroughputRowByCircuit {
+    fn default() -> Self {
+        Self {
+            direction: "".to_string(),
+            ip: "".to_string(),
+            min: 0.0,
+            max: 0.0,
+            avg: 0.0,
+            time: DateTime::<Utc>::MIN_UTC.into(),
+        }
+    }
+}

@@ -89,6 +89,16 @@ export class Bus {
         this.ws.send(json);
     }
 
+    requestThroughputChartCircuit(circuit_id: string) {
+        let request = {
+            msg: "throughputChartCircuit",
+            period: window.graphPeriod,
+            circuit_id: decodeURI(circuit_id),
+        };
+        let json = JSON.stringify(request);
+        this.ws.send(json);
+    }
+
     requestThroughputChartSite(site_id: string) {
         let request = {
             msg: "throughputChartSite",
@@ -166,6 +176,15 @@ export class Bus {
         let request = {
             msg: "siteInfo",
             site_id: decodeURI(site_id),
+        };
+        let json = JSON.stringify(request);
+        this.ws.send(json);
+    }
+
+    requestCircuitInfo(circuit_id: string) {
+        let request = {
+            msg: "circuitInfo",
+            circuit_id: decodeURI(circuit_id),
         };
         let json = JSON.stringify(request);
         this.ws.send(json);

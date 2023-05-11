@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 pub struct ThroughputHost {
     pub node_id: String,
     pub node_name: String,
@@ -8,7 +8,7 @@ pub struct ThroughputHost {
     pub up: Vec<Throughput>,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 pub struct Throughput {
     pub value: f64,
     pub date: String,

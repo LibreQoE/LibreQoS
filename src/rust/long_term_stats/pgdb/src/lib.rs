@@ -7,6 +7,7 @@ mod logins;
 mod nodes;
 mod search;
 mod tree;
+mod circuit;
 
 pub mod sqlx {
     pub use sqlx::*;
@@ -21,3 +22,4 @@ pub use logins::{try_login, delete_user, add_user, refresh_token, token_to_crede
 pub use nodes::{new_stats_arrived, node_status, NodeStatus};
 pub use search::*;
 pub use tree::*;
+pub use circuit::*;
