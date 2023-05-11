@@ -97,6 +97,11 @@ uispSite = ''
 #   or site options.
 # * "full" - build a complete network map
 uispStrategy = "full"
+# Handling of UISP suspensions:
+# * "none" - do not handle suspensions
+# * "ignore" - do not add suspended customers to the network map
+# * "slow" - limit suspended customers to 1mbps
+uispSuspendedStrategy = "none"
 # List any sites that should not be included, with each site name surrounded by '' and separated by commas
 excludeSites = []
 # If you use IPv6, this can be used to find associated IPv6 prefixes for your clients' IPv4 addresses, and match them
