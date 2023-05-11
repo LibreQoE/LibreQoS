@@ -4,6 +4,7 @@ import { MenuPage } from '../menu/menu';
 import { Component } from '../components/component';
 import { CircuitInfo } from '../components/circuit_info';
 import { ThroughputCircuitChart } from '../components/throughput_circuit';
+import { RttChartCircuit } from '../components/rtt_circuit';
 
 export class CircuitPage implements Page {
     menu: MenuPage;
@@ -20,6 +21,7 @@ export class CircuitPage implements Page {
         this.components = [
             new CircuitInfo(this.circuitId),
             new ThroughputCircuitChart(this.circuitId),
+            new RttChartCircuit(this.circuitId),
         ];
     }
 

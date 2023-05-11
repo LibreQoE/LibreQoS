@@ -134,6 +134,16 @@ export class Bus {
         this.ws.send(json);
     }
 
+    requestRttChartCircuit(circuit_id: string) {
+        let request = {
+            msg: "rttChartCircuit",
+            period: window.graphPeriod,
+            circuit_id: decodeURI(circuit_id),
+        };
+        let json = JSON.stringify(request);
+        this.ws.send(json);
+    }
+
     requestNodePerfChart(node_id: string, node_name: string) {
         let request = {
             msg: "nodePerf",
