@@ -1,5 +1,6 @@
 import { AccessPointPage } from './ap/ap';
 import { Auth } from './auth';
+import { CircuitPage } from './circuit/circuit';
 import { DashboardPage } from './dashboard/dashboard';
 import { LoginPage } from './login/login';
 import { Page } from './page';
@@ -80,6 +81,11 @@ export class SiteRouter {
             case "ap": {
                 this.currentAnchor = "ap:" + split[1];
                 this.curentPage = new AccessPointPage(split[1]);
+                break;
+            }
+            case "circuit": {
+                this.currentAnchor = "circuit:" + split[1];
+                this.curentPage = new CircuitPage(split[1]);
                 break;
             }
             default: {
