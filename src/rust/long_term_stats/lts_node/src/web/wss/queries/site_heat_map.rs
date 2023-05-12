@@ -20,7 +20,7 @@ pub async fn root_heat_map(
         let client = Client::new(influx_url, &org.influx_org, &org.influx_token);
 
         // Get sites where parent=0 (for this setup)
-        let hosts: Vec<String> = query("SELECT DISTINCT site_name FROM site_tree WHERE key=$1 AND parent=0 AND site_type='site'")
+        let hosts: Vec<String> = query("SELECT DISTINCT site_name FROM site_tree WHERE key=$1 AND parent=0")
         .bind(key)
         .fetch_all(&cnn)
         .await?
