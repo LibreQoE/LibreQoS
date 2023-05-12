@@ -15,6 +15,7 @@ export class Bus {
             indicator.style.color = "green";
         } else if (indicator) {
             indicator.style.color = "red";
+            retryConnect();
         }
     }
 
@@ -30,7 +31,10 @@ export class Bus {
             this.connected = false;
             console.log("close", e) 
         };
-        this.ws.onerror = (e) => { console.log("error", e) };
+        this.ws.onerror = (e) => { 
+            console.log("error", e) 
+            this.connected = false;
+        };
         this.ws.onmessage = (e) => { 
             //console.log("message", e.data)
             let json = JSON.parse(e.data);
@@ -212,4 +216,10 @@ export class Bus {
 
 function formatToken(token: string) {
     return "{ \"msg\": \"auth\", \"token\": \"" + token + "\" }";
+}
+
+function retryConnect() {
+    if (!window.bus.connected) {
+        window.bus.connect();
+    }
 }
