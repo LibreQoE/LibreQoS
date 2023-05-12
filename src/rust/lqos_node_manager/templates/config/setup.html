@@ -1,0 +1,47 @@
+{% extends "layout/auth.html" %}
+{% block content %}
+    <div class="bg-light min-vh-100 d-flex flex-row align-items-center dark:bg-transparent">
+        <div class="container">
+            <div class="row justify-content-center">
+                <div class="col-lg-4">
+                    <div class="card-group d-block d-md-flex row">
+                        <div class="card col-md-8 p-4 mb-0">
+                            <div style="text-align:center;margin-top:40px;">
+                                <span class="step"></span>
+                                <span class="step"></span>
+                                <span class="step"></span>
+                                <span class="step"></span>
+                            </div>
+                            <form action="/config/setup">
+                                <div class="tab">Create a LibreQoS Account
+                                    <p><input oninput="this.className = ''"></p>
+                                    <p><input oninput="this.className = ''"></p>
+                                </div>
+                                <div class="tab">System Configuration
+                                    <p><input oninput="this.className = ''"></p>
+                                    <p><input oninput="this.className = ''"></p>
+                                </div>
+                                <div class="tab">Network Configuration
+                                    <p><input oninput="this.className = ''"></p>
+                                    <p><input oninput="this.className = ''"></p>
+                                    <p><input oninput="this.className = ''"></p>
+                                </div>
+                                <div class="tab">CRM Integration
+                                    <p><input oninput="this.className = ''"></p>
+                                    <p><input oninput="this.className = ''"></p>
+                                </div>
+                                <div style="overflow:auto;">
+                                    <div style="float:right;">
+                                        <button type="button" id="prevBtn" onclick="nextPrev(-1)">Previous</button>
+                                        <button type="button" id="nextBtn" onclick="nextPrev(1)">Next</button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+	<script src="/assets/setup.js"></script>
+{% endblock %}

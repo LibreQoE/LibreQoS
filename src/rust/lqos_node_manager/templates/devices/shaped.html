@@ -6,24 +6,29 @@
             <div class="card mb-4">
                 <div class="card-header">
                     <strong>Shaped Devices</strong>
-                    <span class="small ms-1"></span>
                 </div>
                 <div class="card-body">
                     <table class="table table-sm table-striped datatable">
                         <thead>
-                            <th width="35%">Circuit</th>
-                            <th width="15%">Device</th>
-                            <th width="15%">Plan</th>
-                            <th width="25%">IPs</th>
-                            <th width="10%"></th>
+                            <th width="5%"></th>
+                            <th width="40%">Circuit</th>
+                            <th width="20%">Device</th>
+                            <th width="20%">Plan</th>
+                            <th width="15%"></th>
                         </thead>
                         <tbody>
                             {% for device in devices.iter() %}
-                                <tr>
-                                    <td class="align-middle">
+                                <tr id="{{device.circuit_id}}">
+                                    <td class="align-middle text-center"><i class="fa fa-square fa-fw pe-2" style="color: #808080;"></i></td>
+                                    <td class="py-0">
                                         <a href="/circuit/{{device.circuit_id}}">
                                             {{device.circuit_name}}
-                                        </a>
+                                        </a><br />
+                                        <small>
+                                            {% for ip in device.ipv4.iter() %}
+                                                {{ ip.0 }}/{{ ip.1 }}
+                                            {% endfor %}
+                                        </small>
                                     </td>
                                     <td class="align-middle">{{device.device_name}}</td>
                                     <td class="align-middle">
@@ -32,17 +37,18 @@
                                         {{device.upload_max_mbps}}Mbps
                                         <i class="fa fa-up-long fa-fw"></i>
                                     </td>
-                                    <td class="align-middle">
-                                        {% for ip in device.ipv4.iter() %}
-                                            {{ ip.0 }}/{{ ip.1 }}
-                                        {% endfor %}
-                                    </td>
-                                    <td class="text-end">
-                                        <a href="#" class="btn btn-info btn-sm me-2">
-                                            <i class="fa fa-pencil"></i>
+                                    <td class="text-end align-middle">
+                                        <a href="#" class="btn btn-outline-success btn-sm me-2">
+                                            <i class="nav-icon fa fa-people-roof fa-fw"></i>
                                         </a>
-                                        <a href="#" class="btn btn-danger btn-sm">
-                                            <i class="fa fa-trash"></i>
+                                        <a href="#" class="btn btn-outline-info btn-sm me-2">
+                                            <i class="fa fa-eye fa-fw"></i>
+                                        </a>
+                                        <a href="#" class="btn btn-outline-primary btn-sm me-2">
+                                            <i class="fa fa-pencil fa-fw"></i>
+                                        </a>
+                                        <a href="#" class="btn btn-ghost-light btn-sm">
+                                            <i class="fa fa-ellipsis fa-fw"></i>
                                         </a>
                                     </td>
                                 </tr>

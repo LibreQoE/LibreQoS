@@ -1,36 +1,34 @@
 use askama::Template;
 
 use axum::{
+    Extension,
 	http::StatusCode,
+    response::IntoResponse,
     extract::{Path,	State},
-    response::{Html, IntoResponse, Extension},
     routing::get,
     Router,
 };
-
-use crate::auth::{self, RequireAuth};
+use std::sync::Arc;
+use crate::auth::{self, RequireAuth, AuthContext, Credentials, User, Role};
 use crate::AppState;
-use crate::lqos::tracker;
+use crate::lqos;
+use crate::utils::HtmlTemplate;
 use serde::{Serialize};
-
-#[derive(Serialize, Clone)]
-pub struct CircuitInfo {
-  pub name: String,
-  pub capacity: (u64, u64),
-}
 
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/:circuit_id", get(circuit_queue).layer(RequireAuth::login()))
 }
 
-async fn circuit_queue(
-	Extension(user): Extension<auth::User>,
-	Path(circuit_id): Path<String>,
-    State(state): State<AppState>
-) -> impl IntoResponse {
+#[derive(Serialize, Clone)]
+pub struct CircuitInfo {
+    pub name: String,
+    pub capacity: (u64, u64),
+}
+
+pub async fn circuit_info(circuit_id: String) -> CircuitInfo {
     let result;
-    if let Some(device) = tracker::SHAPED_DEVICES
+    if let Some(device) = lqos::SHAPED_DEVICES
         .read()
         .unwrap()
         .devices
@@ -49,15 +47,24 @@ async fn circuit_queue(
             capacity: (1_000_000, 1_000_000),
         };
     }
-	let template = CircuitTemplate { title: "Circuit Queue".to_string(), current_user: user, circuit_info: result, state: state };
-	(StatusCode::OK, Html(template.render().unwrap()).into_response()).into_response()
+    result
 }
 
 #[derive(Template)]
 #[template(path = "circuit.html")]
 struct CircuitTemplate {
     title: String,
-	current_user: auth::User,
+	current_user: User,
+	state: AppState,
     circuit_info: CircuitInfo,
-	state: AppState
+}
+
+async fn circuit_queue(
+	Extension(user): Extension<User>,
+	Path(circuit_id): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let circuit_info: CircuitInfo = circuit_info(circuit_id).await;
+	let template = CircuitTemplate { title: "Circuit Queue".to_string(), current_user: user, state: state, circuit_info: circuit_info };
+    HtmlTemplate(template)
 }

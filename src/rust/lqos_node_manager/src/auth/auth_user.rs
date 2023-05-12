@@ -5,25 +5,29 @@ use axum_login::{
 		},
 		SessionLayer,
 	},
-	memory_store::MemoryStore as AuthMemoryStore,
+	UserStore,
     secrecy::SecretVec,
     AuthLayer, AuthUser, RequireAuthorizationLayer
 };
 
+use axum::extract::State;
+
 use async_redis_session::RedisSessionStore;
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, env, marker::PhantomData, sync::{Arc, Mutex}};
 use serde::{Serialize, Deserialize};
 use lazy_static::lazy_static;
 use rand::Rng;
 use tokio::sync::RwLock;
-use lqos_config::WebUsers;
+use lqos_config::{UserRole, WebUser, WebUsers};
 use core::fmt::Display;
 
 use crate::error::AppError;
+use crate::AppState;
+use crate::auth::user_store::WebUserStore;
+use uuid::Uuid;
 
 lazy_static! {
-	pub static ref DATABASE: Arc<RwLock<HashMap<String, User>>> = Arc::new(RwLock::new(HashMap::new()));
-	pub static ref SECRET: [u8; 64] = rand::thread_rng().gen::<[u8; 64]>();
+	pub static ref SECRET: [u8; 64] = (*b"Z0FlIV4wenVQIT54NWJJVHcieyppSSdwOyVMQGNFO3pBVFRAZ3pkMnV2YzwnOHR4").try_into().unwrap();
 }
 
 /// Access rights of a user
@@ -32,6 +36,13 @@ pub enum Role {
   Anonymous,
   ReadOnly,
   Admin,
+}
+
+impl From<UserRole> for Role {
+    fn from(a: UserRole) -> Self {
+        let serialised = serde_json::to_value(&a).unwrap();
+        serde_json::from_value(serialised).unwrap()
+    }
 }
 
 impl From<&str> for Role {
@@ -59,11 +70,21 @@ impl Display for Role {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct User {
-	pub id: String,
+    pub id: String,
 	pub username: String,
-	password_hash: String,
+	pub password_hash: String,
 	pub role: Role,
-	pub mode: String,
+}
+
+impl From<WebUser> for User {
+    fn from(a: WebUser) -> Self {
+        Self {
+            id: a.token,
+            username: a.username,
+            password_hash: a.password_hash,
+            role: a.role.into(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -74,30 +95,29 @@ pub struct Credentials {
 
 impl AuthUser<Role> for User {
     fn get_id(&self) -> String {
-        format!("{}", self.id)
+        self.id.clone()
     }
-
     fn get_password_hash(&self) -> SecretVec<u8> {
         SecretVec::new(self.password_hash.clone().into())
     }
-
     fn get_role(&self) -> Option<Role> {
         Some(self.role.clone())
     }
 }
 
-pub type AuthContext = axum_login::extractors::AuthContext<User, AuthMemoryStore<User>, Role>;
+pub type AuthContext = axum_login::extractors::AuthContext<User, WebUserStore<User>, Role>;
 
 pub type RequireAuth = RequireAuthorizationLayer<User, Role>;
 
 pub fn session_layer() -> SessionLayer<RedisSessionStore> {
-	//let store = SessionMemoryStore::new();
-	let store = RedisSessionStore::new("redis://127.0.0.1").unwrap().with_prefix("sessions/");
-	SessionLayer::new(store, SECRET.as_ref()).with_secure(false)
+	let store = RedisSessionStore::new("redis://127.0.0.1/").unwrap();
+	SessionLayer::new(store, SECRET.as_ref())
+        .with_session_ttl(Some(std::time::Duration::from_secs(60 * 60)))
+        .with_secure(false)
 }
 
-pub fn auth_layer() -> AuthLayer<AuthMemoryStore<User>, User, Role> {
-	let store = AuthMemoryStore::new(&DATABASE);
+pub fn auth_layer() -> AuthLayer<WebUserStore<User>, User, Role> {
+	let store = WebUserStore::new(WebUsers::load_or_create().unwrap());
 	AuthLayer::new(store, SECRET.as_ref())
 }
 
@@ -105,23 +125,9 @@ pub async fn authenticate_user(data: Credentials, mut auth: AuthContext) -> Resu
 	if WebUsers::does_users_file_exist().unwrap() {
 		if let Some(users) = Some(WebUsers::load_or_create().unwrap()) {
 			if let Ok(token) = users.login(&data.username, &data.password) {
-				let role = users.get_role_from_token(&token.as_str()).unwrap();
-				let mut user = User {
-					id: token,
-					password_hash: "$argon2id$v=19$m=4096,t=3,p=1$L0MVanZGzDvqdp+3uJiHDg$d0R/Bac3IXudaqTIp4d4wBJaSCghXkcuU6ESy1c0JVc".into(),
-					role: Role::from(role.to_string().as_str()),
-					username: data.username,
-					mode: "light".to_string(),
-				};
-				if user.get_id() == "default" {
-					user.role = Role::Anonymous;
-					user.username = "Anonymous".to_string();
-				}
-				// Send user to axum_login for session creation/management
+				let user: User = User::from(users.get_user_from_token(&token.as_str()).unwrap());
 				match auth.login(&user).await {
 					Ok(_) => {
-						// Write user to memory store
-						DATABASE.write().await.insert(user.get_id(), user.clone());
 						return Ok(true)
 					},
 					Err(_) => {

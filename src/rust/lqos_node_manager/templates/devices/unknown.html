@@ -6,20 +6,19 @@
             <div class="card mb-4">
                 <div class="card-header">
                     <strong>Unmapped IP Addresses</strong>
-                    <span class="small ms-1"><i class="fa fa-download"></i></span>
                 </div>
                 <div class="card-body">
                     <table class="table table-sm table-striped datatable">
                         <thead>
-                            <th>IP</th>
-                            <th>Total Bandwidth</th>
-                            <th>Total Packets</th>
-                            <th>Last Seen</th>
-                            <th></th>
+                            <th width="15%">IP</th>
+                            <th width="30%">Total Bandwidth</th>
+                            <th width="30%">Total Packets</th>
+                            <th width="15%">Last Seen</th>
+                            <th width="10%"></th>
                         </thead>
                         <tbody>
                             {% for device in devices.iter() %}
-                                <tr>
+                                <tr id="">
                                     <td class="align-middle">{{device.ip_address}}</td>
                                     <td class="align-middle">
                                         {{device.bits_per_second.0}}

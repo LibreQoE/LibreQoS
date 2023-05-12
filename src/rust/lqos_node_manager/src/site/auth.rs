@@ -3,14 +3,14 @@ use askama::Template;
 use axum::{
 	http::StatusCode,
     extract::{State},
-    response::{Html, IntoResponse, Redirect},
+    response::{IntoResponse, Redirect},
     routing::{get},
 	Form,
 	Router,
 };
-
-use crate::auth::{self, RequireAuth};
+use crate::auth::{self, authenticate_user, RequireAuth, AuthContext, Credentials, User, Role};
 use crate::AppState;
+use crate::utils::HtmlTemplate;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -26,43 +26,43 @@ struct LoginTemplate {
 }
 
 pub async fn get_login_handler(
-	auth: auth::AuthContext,
+	auth: AuthContext,
 ) -> impl IntoResponse {
     if auth.current_user.is_some() {
-		Redirect::to("/dashboard").into_response()
+        Redirect::to("/dashboard").into_response()
 	} else {
 		let template = LoginTemplate { title: "Login".to_string() };
-		(StatusCode::OK, Html(template.render().unwrap()).into_response()).into_response()
+        HtmlTemplate(template).into_response()
 	}
 }
 
 pub async fn post_login_handler(
-	auth: auth::AuthContext,
-	Form(data): Form<auth::Credentials>,
+	mut auth: AuthContext,
+	Form(data): Form<Credentials>,
 ) -> impl IntoResponse {
-	if auth::authenticate_user(data, auth).await.unwrap() {
-		Redirect::to("/dashboard").into_response()
-	} else {
+    if authenticate_user(data, auth).await.unwrap() {
+        Redirect::to("/dashboard").into_response()
+    } else {
 		let template = LoginTemplate { title: "Login".to_string() };
-		(StatusCode::OK, Html(template.render().unwrap()).into_response()).into_response()
+        HtmlTemplate(template).into_response()
 	}
 }
 
 pub async fn logout_handler(
-	mut auth: auth::AuthContext,
-	State(state): State<AppState>
-) -> Redirect {
+	mut auth: AuthContext,
+	State(state): State<AppState>,
+) -> impl IntoResponse {
     let user = auth.current_user.clone();
     if let Some(user) = user {
 		auth.logout().await;
 		tracing::debug!("User logged out: {:?}", user.username);
 	}
-	Redirect::to("/auth/login")
+    Redirect::to("/auth/login").into_response()
 }
 
 pub async fn change_password(
-	auth: auth::AuthContext,
-	State(state): State<AppState>
-) -> impl IntoResponse {
-	(StatusCode::OK, Html("")).into_response()
+	auth: AuthContext,
+	State(state): State<AppState>,
+) {
+
 }

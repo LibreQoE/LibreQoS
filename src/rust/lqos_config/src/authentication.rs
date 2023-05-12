@@ -43,18 +43,18 @@ impl Display for UserRole {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct WebUser {
-  username: String,
-  password_hash: String,
-  role: UserRole,
-  token: String,
+pub struct WebUser {
+  pub username: String,
+  pub password_hash: String,
+  pub role: UserRole,
+  pub token: String,
 }
 
 /// Container holding the authorized web users.
 #[derive(Clone, Debug, Deserialize, Serialize, Default)]
 pub struct WebUsers {
-  allow_unauthenticated_to_view: bool,
-  users: Vec<WebUser>,
+  pub allow_unauthenticated_to_view: bool,
+  pub users: Vec<WebUser>,
 }
 
 impl WebUsers {
@@ -197,6 +197,19 @@ impl WebUsers {
       Ok("default".to_string())
     } else {
       Err(AuthenticationError::InvalidLogin)
+    }
+  }
+
+  /// Given a token, lookup the matching user and return their role.
+  pub fn get_user_from_token(
+    &self,
+    token: &str,
+  ) -> Result<WebUser, AuthenticationError> {
+    if let Some(user) = self.users.iter().find(|u| u.token == token) {
+      Ok(user.clone())
+    } else {
+      warn!("Token {token} not found, invalid data access attempt.");
+      Err(AuthenticationError::InvalidToken)
     }
   }
 

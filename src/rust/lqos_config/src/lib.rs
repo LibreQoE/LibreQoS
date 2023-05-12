@@ -13,7 +13,7 @@ mod network_json;
 mod program_control;
 mod shaped_devices;
 
-pub use authentication::{UserRole, WebUsers};
+pub use authentication::{UserRole, WebUser, WebUsers};
 pub use etc::{BridgeConfig, BridgeInterface, BridgeVlan, EtcLqos, Tunables};
 pub use libre_qos_config::LibreQoSConfig;
 pub use network_json::{NetworkJson, NetworkJsonNode, NetworkJsonTransport};

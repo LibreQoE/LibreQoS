@@ -13,7 +13,7 @@
 								<i class="icon fa fa-down-long fa-fw"></i>
 							</span>
 						</div>
-						<div>Download</div>
+						<div>Total Download</div>
 					</div>
 				</div>
 			</div>
@@ -30,7 +30,7 @@
 								<i class="icon fa fa-up-long fa-fw"></i>
 							</span>
 						</div>
-						<div>Upload</div>
+						<div>Total Upload</div>
 					</div>
 				</div>
 			</div>
@@ -47,7 +47,7 @@
 								<i class="icon fa fa-down-long fa-fw"></i>
 							</span>
 						</div>
-						<div>Average Download</div>
+						<div>Average Device Download</div>
 					</div>
 				</div>
 			</div>
@@ -55,7 +55,7 @@
 		<!-- /.col-->
 		<div class="col-sm-6 col-lg-3">
 			<div class="card mb-4 text-white bg-danger-gradient">
-				<div class="c-chart-wrapper" style="height:125px;" data-lqos-subscribe="rtt" data-lqos-data=""></div>
+				<div class="c-chart-wrapper" style="height:125px;" data-subscribe data-subscribe-subject="rtt" data-subscribe-content=""></div>
 				<div class="card-body pb-0 d-flex justify-content-between align-items-start" style="position: absolute;">
 					<div>
 						<div class="fs-4 fw-semibold">
@@ -91,7 +91,7 @@
 								
 						</div>
 					</div>
-					<div class="c-chart-wrapper" style="height:135px;" data-lqos-subscribe="current_throughput" data-lqos-data=""></div>
+					<div class="c-chart-wrapper" style="height:135px;" data-subscribe data-subscribe-subject="current_throughput" data-subscribe-content=""></div>
 				</div>
 				<div class="card-footer">
 					<div class="row row-cols-1 row-cols-md-4 text-center">
@@ -121,54 +121,11 @@
 					<div class="d-flex justify-content-between">
 						<div>
 							<h5 class="card-title mb-0">Site Funnel</h5>
-							<div class="small text-medium-emphasis"></div>
 						</div>
 					</div>
-					<div class="c-chart-wrapper" data-lqos-subscribe="site_funnel" data-lqos-data="">
+					<div class="c-chart-wrapper" data-subscribe data-subscribe-subject="site_funnel" data-subscribe-content="">
 						<table class="table table-sm mb-0">
 							<tbody id="live-site-funnel">
-								<tr>
-									<td>&nbsp;</td>
-									<td></td>
-									<td></td>
-									<td></td>
-									<td></td>
-								</tr>
-								<tr>
-									<td>&nbsp;</td>
-									<td></td>
-									<td></td>
-									<td></td>
-									<td></td>
-								</tr>
-								<tr>
-									<td>&nbsp;</td>
-									<td></td>
-									<td></td>
-									<td></td>
-									<td></td>
-								</tr>
-								<tr>
-									<td>&nbsp;</td>
-									<td></td>
-									<td></td>
-									<td></td>
-									<td></td>
-								</tr>
-								<tr>
-									<td>&nbsp;</td>
-									<td></td>
-									<td></td>
-									<td></td>
-									<td></td>
-								</tr>
-								<tr>
-									<td>&nbsp;</td>
-									<td></td>
-									<td></td>
-									<td></td>
-									<td></td>
-								</tr>
 							</tbody>
 						</table>
 					</div>
@@ -185,88 +142,17 @@
 							<h5 class="card-title mb-0">Top 10 Downloading</h5>
 						</div>
 					</div>
-					<div class="c-chart-wrapper" data-lqos-subscribe="top_ten_download" data-lqos-data="">
+					<div class="c-chart-wrapper" data-subscribe data-subscribe-subject="top_ten_download" data-subscribe-content="">
 						<table class="table table-sm mb-0">
 							<thead>
 								<tr>
 									<th width="40%">Circuit</th>
-									<th width="15%">DL <i class="fa fa-down-long fa-fw"></i></th>
-									<th width="15%">UL <i class="fa fa-up-long fa-fw"></i></th>
-									<th width="15%">RTT (ms)</th>
-									<th width="15%">Shaped</th>
+									<th width="20%" class="text-end">DL <i class="fa fa-down-long fa-fw"></i></th>
+									<th width="20%" class="text-end">UL <i class="fa fa-up-long fa-fw"></i></th>
+									<th width="20%" class="text-end">Shaped</th>
 								</tr>
 							</thead>
 							<tbody id="live-tt">
-								<tr>
-									<td>&nbsp;</td>
-									<td></td>
-									<td></td>
-									<td></td>
-									<td></td>
-								</tr>
-								<tr>
-									<td>&nbsp;</td>
-									<td></td>
-									<td></td>
-									<td></td>
-									<td></td>
-								</tr>
-								<tr>
-									<td>&nbsp;</td>
-									<td></td>
-									<td></td>
-									<td></td>
-									<td></td>
-								</tr>
-								<tr>
-									<td>&nbsp;</td>
-									<td></td>
-									<td></td>
-									<td></td>
-									<td></td>
-								</tr>
-								<tr>
-									<td>&nbsp;</td>
-									<td></td>
-									<td></td>
-									<td></td>
-									<td></td>
-								</tr>
-								<tr>
-									<td>&nbsp;</td>
-									<td></td>
-									<td></td>
-									<td></td>
-									<td></td>
-								</tr>
-								<tr>
-									<td>&nbsp;</td>
-									<td></td>
-									<td></td>
-									<td></td>
-									<td></td>
-								</tr>
-								<tr>
-									<td>&nbsp;</td>
-									<td></td>
-									<td></td>
-									<td></td>
-									<td></td>
-								</tr>
-								<tr>
-									<td>&nbsp;</td>
-									<td></td>
-									<td></td>
-									<td></td>
-									<td></td>
-								</tr>
-								<tr>
-									<td>&nbsp;</td>
-									<td></td>
-									<td></td>
-									<td></td>
-									<td></td>
-								</tr>
 							</tbody>
 						</table>
 					</div>
@@ -281,88 +167,17 @@
 							<h5 class="card-title mb-0">Worst 10 RTT</h5>
 						</div>
 					</div>
-					<div class="c-chart-wrapper" data-lqos-subscribe="worst_ten_rtt" data-lqos-data="">
+					<div class="c-chart-wrapper" data-subscribe data-subscribe-subject="worst_ten_rtt" data-subscribe-content="">
 						<table class="table table-sm mb-0">
 							<thead>
 								<tr>
 									<th width="40%">Circuit</th>
-									<th width="15%">DL <i class="fa fa-down-long fa-fw"></i></th>
-									<th width="15%">UL <i class="fa fa-up-long fa-fw"></i></th>
-									<th width="15%">RTT (ms)</th>
-									<th width="15%">Shaped</th>
+									<th width="20%" class="text-end">DL <i class="fa fa-down-long fa-fw"></i></th>
+									<th width="20%" class="text-end">UL <i class="fa fa-up-long fa-fw"></i></th>
+									<th width="20%" class="text-end">Shaped</th>
 								</tr>
 							</thead>
 							<tbody id="live-wrtt">
-								<tr>
-									<td>&nbsp;</td>
-									<td></td>
-									<td></td>
-									<td></td>
-									<td></td>
-								</tr>
-								<tr>
-									<td>&nbsp;</td>
-									<td></td>
-									<td></td>
-									<td></td>
-									<td></td>
-								</tr>
-								<tr>
-									<td>&nbsp;</td>
-									<td></td>
-									<td></td>
-									<td></td>
-									<td></td>
-								</tr>
-								<tr>
-									<td>&nbsp;</td>
-									<td></td>
-									<td></td>
-									<td></td>
-									<td></td>
-								</tr>
-								<tr>
-									<td>&nbsp;</td>
-									<td></td>
-									<td></td>
-									<td></td>
-									<td></td>
-								</tr>
-								<tr>
-									<td>&nbsp;</td>
-									<td></td>
-									<td></td>
-									<td></td>
-									<td></td>
-								</tr>
-								<tr>
-									<td>&nbsp;</td>
-									<td></td>
-									<td></td>
-									<td></td>
-									<td></td>
-								</tr>
-								<tr>
-									<td>&nbsp;</td>
-									<td></td>
-									<td></td>
-									<td></td>
-									<td></td>
-								</tr>
-								<tr>
-									<td>&nbsp;</td>
-									<td></td>
-									<td></td>
-									<td></td>
-									<td></td>
-								</tr>
-								<tr>
-									<td>&nbsp;</td>
-									<td></td>
-									<td></td>
-									<td></td>
-									<td></td>
-								</tr>
 							</tbody>
 						</table>
 					</div>

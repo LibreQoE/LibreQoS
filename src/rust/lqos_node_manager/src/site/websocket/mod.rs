@@ -1,25 +1,30 @@
 pub mod event;
+pub mod message;
 
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
 		State,
     },
-    response::IntoResponse,
+    response::{IntoResponse, Extension, Redirect},
     routing::get,
     Router,
 };
 
-use std::{sync::{Arc, Mutex}, collections::HashMap};
+use axum::extract::connect_info::ConnectInfo;
+use std::{net::SocketAddr, sync::{Arc, Mutex}, collections::HashMap};
 use serde_json::json;
-use crate::auth::{self, RequireAuth};
 
-use crate::lqos::tracker;
+use crate::auth::{RequireAuth, AuthContext, Credentials, User, Role};
 
-use crate::site::websocket::event::{WsEvent, WsMessage};
+use crate::lqos;
+
+use message::*;
+use event::*;
 
 use tokio::{
 	sync::{
+        oneshot,
 		mpsc::{self, UnboundedSender},
 		RwLock
 	},
@@ -31,189 +36,76 @@ use futures::{
 	sink::SinkExt,
 	stream::{
 		StreamExt
-	}
+	},
 };
 use crate::AppState;
+use crate::site::websocket::event::{Task, WsEvent};
+
+use async_channel::{unbounded};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/ws", get(ws_handler).layer(RequireAuth::login()))
 }
 
-#[derive(Debug)]
-struct WsState {
-	subscriptions: Mutex<HashMap<String, String>>,
+#[derive(Debug, Clone)]
+pub struct WsState {
+	subscriptions: Arc<Mutex<HashMap<String, String>>>,
+}
+
+impl WsState {
+    fn subscribe(&self, subject: &str, data: &str) {
+        self.subscriptions.lock().unwrap().insert(subject.to_string().to_owned(), data.to_string().to_owned());
+    }
+    fn unsubscribe(&self, subject: &str) {
+        self.subscriptions.lock().unwrap().remove(&subject.to_string());
+    }
 }
 
 pub async fn ws_handler(
+	Extension(user): Extension<User>,
 	ws: WebSocketUpgrade,
-	State(state): State<AppState>,
+	State(app_state): State<AppState>,
 ) -> impl IntoResponse {
-	ws.on_upgrade(|socket| handle_socket(socket, state))
+    ws.on_upgrade(move |socket| handle_socket(socket, app_state))
 }
 
 async fn handle_socket(
-	socket: WebSocket,
-	state: AppState,
+	mut ws: WebSocket,
+	app_state: AppState
 ) {
-    let (mut user_tx, mut user_rx) = socket.split();
-	let (tx, rx) = mpsc::unbounded_channel();
-	let mut rx = UnboundedReceiverStream::new(rx);
+    let (mut ws_tx, mut ws_rx) = ws.split();
 
-	tokio::spawn(rx.forward(user_tx));
+    let mut async_rx = app_state.async_rx.clone();
 
-	let subscriptions = Mutex::new(HashMap::new());
-	let ws_state = Arc::new(WsState { subscriptions });
+	let subscriptions = Arc::new(Mutex::new(HashMap::new()));
+	let ws_state = WsState {
+        subscriptions: subscriptions
+    };
 
-	let wsstate = ws_state.clone();
-
-	let mut send_task = tokio::spawn(async move {
-		let mut count = 0;
-		let interval = Duration::from_millis(200);
-		let mut next_time = Instant::now() + interval;
-		loop {
-			// Shaped IPs ~1 updates
-			if check_subscription(&wsstate, "shaped_count") && count % 5 == 0 {
-				let tx = tx.clone();
-				tokio::spawn(async move{
-					let message = serde_json::to_string(&WsMessage::new("shaped_count", &json!(tracker::shaped_devices_count().await).to_string(), false)).unwrap();
-					tracing::debug!("Sending event: {:#?}", &message);
-					tx.send(Ok(Message::Text(message)));
-				});
-			}
-
-			// Unknown IPs ~1s updates
-			if check_subscription(&wsstate, "unknown_count") && count % 5 == 0 {
-				let tx = tx.clone();
-				tokio::spawn(async move{
-					let message = serde_json::to_string(&WsMessage::new("unknown_count", &json!(tracker::unknown_hosts_count().await).to_string(), false)).unwrap();
-					tracing::debug!("Sending event: {:#?}", &message);
-					tx.send(Ok(Message::Text(message)));
-				});
-			}
-			
-			// CPU ~1s updates
-			if check_subscription(&wsstate, "cpu") && count % 5 == 0 {
-				let tx = tx.clone();
-				tokio::spawn(async move{
-					let message = serde_json::to_string(&WsMessage::new("cpu", &json!(tracker::cpu_usage().await).to_string(), false)).unwrap();
-					tracing::debug!("Sending event: {:#?}", &message);
-					tx.send(Ok(Message::Text(message)));
-				});
-			}
-
-			// RAM ~1s updates
-			if check_subscription(&wsstate, "ram") && count % 5 == 0 {
-				let tx = tx.clone();
-				tokio::spawn(async move{
-					let message = serde_json::to_string(&WsMessage::new("ram", &json!(tracker::ram_usage().await).to_string(), false)).unwrap();
-					tracing::debug!("Sending event: {:#?}", &message);
-					tx.send(Ok(Message::Text(message)));
-				});
-			}
-
-			// Circuit Throughput ~200ms updates
-			if check_subscription(&wsstate, "circuit_throughput") && count % 1 == 0 {
-				let tx = tx.clone();
-				tokio::spawn(async move{
-					let message = serde_json::to_string(&WsMessage::new("circuit_throughput", &json!("").to_string(), false)).unwrap();
-					tracing::debug!("Sending event: {:#?}", &message);
-					tx.send(Ok(Message::Text(message)));
-				});
-			}
-
-			// RTT ~5s updates
-			if check_subscription(&wsstate, "rtt") && count % 5 == 0 {
-				let tx = tx.clone();
-				tokio::spawn(async move{
-					let message = serde_json::to_string(&WsMessage::new("rtt", &json!(tracker::rtt_histogram().await).to_string(), false)).unwrap();
-					tracing::debug!("Sending event: {:#?}", &message);
-					tx.send(Ok(Message::Text(message)));
-				});
-			}
-
-			// Current Throughput ~1s updates
-			if check_subscription(&wsstate, "current_throughput") && count % 1 == 0 {
-				let tx = tx.clone();
-				tokio::spawn(async move{
-					let message = serde_json::to_string(&WsMessage::new("current_throughput", &json!(tracker::current_throughput().await).to_string(), false)).unwrap();
-					tracing::debug!("Sending event: {:#?}", &message);
-					tx.send(Ok(Message::Text(message)));
-				});
-			}
-
-			// Raw Circuit Queue ~200ms updates
-			if check_subscription(&wsstate, "circuit_raw_queue") && count % 5 == 0 {
-				let tx = tx.clone();
-				tokio::spawn(async move{
-					let message = serde_json::to_string(&WsMessage::new("circuit_raw_queue", &json!("").to_string(), false)).unwrap();
-					tracing::debug!("Sending event: {:#?}", &message);
-					tx.send(Ok(Message::Text(message)));
-				});
-			}
-
-			// Top 10 Download ~2s updates
-			if check_subscription(&wsstate, "top_ten_download") && count % 10 == 0 {
-				let tx = tx.clone();
-				tokio::spawn(async move{
-					let message = serde_json::to_string(&WsMessage::new("top_ten_download", &json!(tracker::top_10_downloaders().await).to_string(), false)).unwrap();
-					tracing::debug!("Sending event: {:#?}", &message);
-					tx.send(Ok(Message::Text(message)));
-				});
-			}
-
-			// Worst 10 RTT ~2s updates
-			if check_subscription(&wsstate, "worst_ten_rtt") && count % 10 == 0 {
-				let tx = tx.clone();
-				tokio::spawn(async move{
-					let message = serde_json::to_string(&WsMessage::new("worst_ten_rtt", &json!(tracker::worst_10_rtt().await ).to_string(), false)).unwrap();
-					tracing::debug!("Sending event: {:#?}", &message);
-					tx.send(Ok(Message::Text(message)));
-				});
-			}
-
-			// Site Funnel ~1s updates
-			if check_subscription(&wsstate, "site_funnel") && count % 5 == 0 {
-				let tx = tx.clone();
-				tokio::spawn(async move{
-					let message = serde_json::to_string(&WsMessage::new("site_funnel", &json!(tracker::site_funnel().await).to_string(), false)).unwrap();
-					tracing::debug!("Sending event: {:#?}", &message);
-					tx.send(Ok(Message::Text(message)));
-				});
-			}
-			
-			// Reset counter to keep the number manageable
-			count += 1;
-			if count == 300 {
-				count = 0;
-			}
-			
-			//tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-			tokio::time::sleep(next_time - Instant::now()).await;
-			next_time += interval;
-		}
-	});
-
-	let ws_state = ws_state.clone();
+    let wsstate = ws_state.clone();
+    let mut send_task = tokio::spawn(async move {
+        while let Ok(task_results) = async_rx.recv().await {
+            let wsstate = wsstate.clone();
+            let event = WsEvent::new(
+                "clientupdate",
+                WsMessage::new(
+                    "",
+                    &json!("{}").to_string(),
+                    false
+                )
+            );
+            if check_subscription(wsstate, &event.message.subject) {
+                let message_text = serde_json::to_string(&event).unwrap();
+                ws_tx.send(Message::Text(message_text)).await;
+            }
+        }
+    });
 
     let mut recv_task = tokio::spawn(async move {
-        while let Some(Ok(Message::Text(text))) = user_rx.next().await {
-			let event = WsEvent::new(&text);
-			match event.subject.as_str() {
-				"subscribe" => {
-					let message: WsMessage = event.data;
-					tracing::debug!("Received subscribe event {:#?}", &message.subject);
-					&ws_state.subscriptions.lock().unwrap().insert(message.subject.to_string().to_owned(), message.data.to_string().to_owned());
-				},
-				"unsubscribe" => {
-					let message: WsMessage = event.data;
-					tracing::debug!("Received unsubscribe event {:#?}", &message.subject);
-					&ws_state.subscriptions.lock().unwrap().remove(&message.subject.to_string());
-				},
-				_ => {
-					tracing::debug!("Received unknown event {:#?}", event);
-				}
-			}
+        while let Some(Ok(Message::Text(event))) = ws_rx.next().await {
+            let wsstate = ws_state.clone();
+			WsEvent::decode(&event).process(wsstate);
         }
     });
 
@@ -223,8 +115,8 @@ async fn handle_socket(
     };
 }
 
-fn check_subscription(state: &WsState, subject: &str) -> bool {
-    let mut subscriptions = state.subscriptions.lock().unwrap();
+fn check_subscription(ws_state: WsState, subject: &str) -> bool {
+    let mut subscriptions = ws_state.subscriptions.lock().unwrap();
     if subscriptions.contains_key(subject) {
 		return true;
     }
