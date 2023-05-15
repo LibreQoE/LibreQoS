@@ -128,3 +128,25 @@ CREATE TABLE public.active_tokens
     expires timestamp without time zone NOT NULL DEFAULT NOW() + interval '2 hours',
     PRIMARY KEY (token)
 );
+
+---- Indices
+
+CREATE INDEX site_tree_key
+    ON public.site_tree USING btree
+    (key ASC NULLS LAST)
+;
+
+CREATE INDEX site_tree_key_parent
+    ON public.site_tree USING btree
+    (key ASC NULLS LAST, parent ASC NULLS LAST)
+;
+
+CREATE INDEX shaped_devices_key_circuit_id
+    ON public.shaped_devices USING btree
+    (key ASC NULLS LAST, circuit_id ASC NULLS LAST)
+;
+
+CREATE INDEX stats_host_ip
+    ON public.stats_hosts USING btree
+    (ip_address ASC NULLS LAST)
+;
