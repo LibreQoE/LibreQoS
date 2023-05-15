@@ -32,6 +32,7 @@ pub async fn submissions_server(
                     my_sender.send(message).await.unwrap();
                 } else {
                     log::error!("Read failed. Dropping socket.");
+                    std::mem::drop(socket);
                     break;
                 }
             }
@@ -90,6 +91,8 @@ async fn read_body(stream: &mut TcpStream, pool: Pool<Postgres>, size: usize, he
     let dryocbox = DryocBox::from_bytes(&buffer).expect("failed to read box");
     let decrypted = dryocbox
         .decrypt_to_vec(&header.nonce.into(), &public_key, &private_key)?;
+
+    let decrypted = miniz_oxide::inflate::decompress_to_vec(&decrypted).expect("failed to decompress");
 
     // Try to deserialize
     let payload = lts_client::cbor::from_slice(&decrypted)?;

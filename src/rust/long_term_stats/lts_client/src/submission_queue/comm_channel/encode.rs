@@ -20,6 +20,9 @@ pub(crate) async fn encode_submission(submission: &LtsCommand) -> Result<Vec<u8>
 
     // Pack the submission body into bytes
     let payload_bytes = serde_cbor::to_vec(&submission).map_err(|_| QueueError::SendFail)?;
+
+    // TODO: Compress it?
+    let payload_bytes = miniz_oxide::deflate::compress_to_vec(&payload_bytes, 8);
     
     // Encrypt it
     let remote_public = SERVER_PUBLIC_KEY.read().await.clone().unwrap();

@@ -9,11 +9,11 @@ use pgdb::sqlx::Postgres;
 use tower_http::trace::TraceLayer;
 use tower_http::trace::DefaultMakeSpan;
 
-const JS_BUNDLE: &str = include_str!("../../../site_build/output/app.js");
-const JS_MAP: &str = include_str!("../../../site_build/output/app.js.map");
-const CSS: &str = include_str!("../../../site_build/output/style.css");
-const CSS_MAP: &str = include_str!("../../../site_build/output/style.css.map");
-const HTML_MAIN: &str = include_str!("../../../site_build/src/main.html");
+const JS_BUNDLE: &str = include_str!("../../web/app.js");
+const JS_MAP: &str = include_str!("../../web/app.js.map");
+const CSS: &str = include_str!("../../web/style.css");
+const CSS_MAP: &str = include_str!("../../web/style.css.map");
+const HTML_MAIN: &str = include_str!("../../web/main.html");
 
 pub async fn webserver(cnn: Pool<Postgres>) {
     let app = Router::new()

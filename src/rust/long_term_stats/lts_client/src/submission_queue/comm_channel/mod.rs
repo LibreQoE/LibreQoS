@@ -18,7 +18,7 @@ pub(crate) async fn start_communication_channel(mut rx: Receiver<SenderChannelMe
         match rx.try_recv() {
             Ok(SenderChannelMessage::QueueReady) => {
                 // If not connected, see if we are allowed to connect and get a target
-                if !connected {
+                if !connected || stream.is_none() {
                     log::info!("Establishing LTS TCP channel.");
                     stream = connect_if_permitted().await;
                     if stream.is_some() {
