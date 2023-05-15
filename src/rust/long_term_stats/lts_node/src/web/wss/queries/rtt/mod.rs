@@ -157,7 +157,7 @@ pub async fn get_rtt_for_node(
         let rows = client.query::<RttRow>(Some(query)).await;
         match rows {
             Err(e) => {
-                tracing::error!("Error querying InfluxDB: {}", e);
+                tracing::error!("Error querying InfluxDB (rtt node): {}", e);
                 return Err(anyhow::Error::msg("Unable to query influx"));
             }
             Ok(rows) => {
@@ -216,7 +216,7 @@ pub async fn get_rtt_for_node_site(
         let rows = client.query::<RttSiteRow>(Some(query)).await;
         match rows {
             Err(e) => {
-                tracing::error!("Error querying InfluxDB: {}", e);
+                tracing::error!("Error querying InfluxDB (rtt node site): {}", e);
                 return Err(anyhow::Error::msg("Unable to query influx"));
             }
             Ok(rows) => {
@@ -275,7 +275,7 @@ pub async fn get_rtt_for_node_circuit(
         let rows = client.query::<RttCircuitRow>(Some(query)).await;
         match rows {
             Err(e) => {
-                tracing::error!("Error querying InfluxDB: {}", e);
+                tracing::error!("Error querying InfluxDB (rtt_node_circuit): {}", e);
                 return Err(anyhow::Error::msg("Unable to query influx"));
             }
             Ok(rows) => {

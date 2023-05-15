@@ -128,7 +128,7 @@ pub async fn get_throughput_for_node(
         let rows = client.query::<ThroughputRow>(Some(query)).await;
         match rows {
             Err(e) => {
-                tracing::error!("Error querying InfluxDB: {}", e);
+                tracing::error!("Error querying InfluxDB (throughput node): {}", e);
                 return Err(anyhow::Error::msg("Unable to query influx"));
             }
             Ok(rows) => {
@@ -200,7 +200,7 @@ pub async fn get_throughput_for_node_by_site(
         let rows = client.query::<ThroughputRowBySite>(Some(query)).await;
         match rows {
             Err(e) => {
-                tracing::error!("Error querying InfluxDB: {}", e);
+                tracing::error!("Error querying InfluxDB (throughput site): {}", e);
                 return Err(anyhow::Error::msg("Unable to query influx"));
             }
             Ok(rows) => {
@@ -272,7 +272,7 @@ pub async fn get_throughput_for_node_by_circuit(
         let rows = client.query::<ThroughputRowByCircuit>(Some(query)).await;
         match rows {
             Err(e) => {
-                tracing::error!("Error querying InfluxDB: {}", e);
+                tracing::error!(" (throughput circuit): {}", e);
                 return Err(anyhow::Error::msg("Unable to query influx"));
             }
             Ok(rows) => {

@@ -82,7 +82,7 @@ pub async fn get_packets_for_node(
         let rows = client.query::<PacketRow>(Some(query)).await;
         match rows {
             Err(e) => {
-                tracing::error!("Error querying InfluxDB: {}", e);
+                tracing::error!("Error querying InfluxDB (packets by node): {}", e);
                 return Err(anyhow::Error::msg("Unable to query influx"));
             }
             Ok(rows) => {

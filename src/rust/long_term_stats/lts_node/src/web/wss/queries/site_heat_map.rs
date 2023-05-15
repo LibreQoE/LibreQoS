@@ -57,7 +57,7 @@ pub async fn root_heat_map(
         let rows = client.query::<HeatRow>(Some(query)).await;
         match rows {
             Err(e) => {
-                tracing::error!("Error querying InfluxDB: {}", e);
+                tracing::error!("Error querying InfluxDB (root heat map): {}", e);
                 return Err(anyhow::Error::msg("Unable to query influx"));
             }
             Ok(rows) => {
@@ -132,12 +132,16 @@ async fn site_circuits_heat_map(
         period.aggregate_window()
     );
     //println!("{qs}\n\n");
+    if qs.contains("filter(fn: (r))") {
+        // No hosts to filter
+        return Ok(());
+    }
 
     let query = Query::new(qs);
     let rows = client.query::<HeatCircuitRow>(Some(query)).await;
     match rows {
         Err(e) => {
-            tracing::error!("Error querying InfluxDB: {}", e);
+            tracing::error!("Error querying InfluxDB (site_circuits_heat_map): {}", e);
             return Err(anyhow::Error::msg("Unable to query influx"));
         }
         Ok(rows) => {
@@ -214,7 +218,7 @@ pub async fn site_heat_map(
         let rows = client.query::<HeatRow>(Some(query)).await;
         match rows {
             Err(e) => {
-                tracing::error!("Error querying InfluxDB: {}", e);
+                tracing::error!("Error querying InfluxDB (site-heat-map): {}", e);
                 return Err(anyhow::Error::msg("Unable to query influx"));
             }
             Ok(rows) => {
