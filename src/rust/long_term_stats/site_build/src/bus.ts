@@ -113,6 +113,16 @@ export class Bus {
         this.ws.send(json);
     }
 
+    requestThroughputStackSite(site_id: string) {
+        let request = {
+            msg: "throughputStackSite",
+            period: window.graphPeriod,
+            site_id: decodeURI(site_id),
+        };
+        let json = JSON.stringify(request);
+        this.ws.send(json);
+    }
+
     requestRttChart() {
         this.ws.send("{ \"msg\": \"rttChart\", \"period\": \"" + window.graphPeriod + "\" }");
     }

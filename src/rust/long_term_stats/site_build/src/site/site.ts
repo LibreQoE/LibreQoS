@@ -8,6 +8,7 @@ import { RttChartSite } from '../components/rtt_site';
 import { RttHistoSite } from '../components/rtt_histo_site';
 import { SiteBreadcrumbs } from '../components/site_breadcrumbs';
 import { SiteHeat } from '../components/site_heat';
+import { SiteStackChart } from '../components/site_stack';
 
 export class SitePage implements Page {
     menu: MenuPage;
@@ -28,6 +29,7 @@ export class SitePage implements Page {
             new RttHistoSite(),
             new SiteBreadcrumbs(siteId),
             new SiteHeat(siteId),
+            new SiteStackChart(siteId),
         ];
     }
 
@@ -35,6 +37,7 @@ export class SitePage implements Page {
         this.components.forEach(component => {
             component.wireup();
         });
+        window.bus.requestThroughputStackSite(this.siteId);
     }
 
     ontick(): void {

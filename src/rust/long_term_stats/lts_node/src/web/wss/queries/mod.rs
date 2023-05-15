@@ -23,4 +23,5 @@ pub use site_parents::send_site_parents;
 pub use throughput::{
     send_throughput_for_all_nodes, send_throughput_for_all_nodes_by_circuit,
     send_throughput_for_all_nodes_by_site, send_throughput_for_node,
+    send_site_stack_map,
 };
