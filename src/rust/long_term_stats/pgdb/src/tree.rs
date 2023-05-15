@@ -45,6 +45,9 @@ pub async fn get_site_id_from_name(
     key: &str,
     site_name: &str,
 ) -> Result<i32, StatsHostError> {
+    if site_name == "root" {
+        return Ok(0);
+    }
     let site_id_db = sqlx::query("SELECT index FROM site_tree WHERE key = $1 AND site_name=$2")
         .bind(key)
         .bind(site_name)

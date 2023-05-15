@@ -31,8 +31,8 @@ export class PacketsChart implements Component {
             let legend: string[] = [];
             for (let i=0; i<event.nodes.length; i++) {
                 let node = event.nodes[i];
-                legend.push(node.node_name + " DL");
-                legend.push(node.node_name + " UL");
+                legend.push(node.node_name);
+                //legend.push(node.node_name + " UL");
                 //console.log(node);
 
                 let d: number[] = [];
@@ -70,7 +70,7 @@ export class PacketsChart implements Component {
                     },
                 };
                 let val: echarts.SeriesOption = {
-                    name: node.node_name + " DL",
+                    name: node.node_name,
                     type: "line",
                     data: d,
                     symbol: 'none',
@@ -114,7 +114,7 @@ export class PacketsChart implements Component {
                     },
                 };
                 val = {
-                    name: node.node_name + " UL",
+                    name: node.node_name,
                     type: "line",
                     data: d,
                     symbol: 'none',

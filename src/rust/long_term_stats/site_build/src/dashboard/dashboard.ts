@@ -8,6 +8,7 @@ import { ThroughputChart } from '../components/throughput';
 import { RttChart } from '../components/rtt_graph';
 import { RttHisto } from '../components/rtt_histo';
 import { RootHeat } from '../components/root_heat';
+import { SiteStackChart } from '../components/site_stack';
 
 export class DashboardPage implements Page {
     menu: MenuPage;
@@ -26,6 +27,7 @@ export class DashboardPage implements Page {
             new RttChart(),
             new RttHisto(),
             new RootHeat(),
+            new SiteStackChart("root"),
         ];
     }
 

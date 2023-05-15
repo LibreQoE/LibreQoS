@@ -36,7 +36,7 @@ export class RootHeat implements Component {
                 keys.push(key);
             }
             keys = keys.sort().reverse();
-            console.log(keys);
+            //console.log(keys);
 
             for (let j=0; j<keys.length; j++) {
                 let key = keys[j];

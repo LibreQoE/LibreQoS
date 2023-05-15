@@ -109,22 +109,24 @@ function buildTree(data: TreeItem[]) {
 
     for (let i=0; i<data.length; i++) {
         if (data[i].parent == 0) {
-            let up = (data[i].current_up / (data[i].max_up * mbps_to_bps)) * 100.0;
-            let down = (data[i].current_down / (data[i].max_down * mbps_to_bps)) * 100.0;
-            let peak = Math.max(up, down);
-            let usageBg = usageColor(peak);
-            let rttBg = rttColor(data[i].current_rtt / 100);
-            html += "<tr>";
-            let url = makeUrl(data[i].site_type, data[i].site_name);
-            html += "<td>" + siteIcon(data[i].site_type) + " <a href='#" + url + "' onclick='window.router.goto(\"" + url + "\")'>" + data[i].site_name + "</a>";
-            html += "</td><td>" + scaleNumber(data[i].max_down * mbps_to_bps) + " / " + scaleNumber(data[i].max_up * mbps_to_bps) + "</td>";
-            html += "</td><td>" + scaleNumber(data[i].current_down) + " / " + scaleNumber(data[i].current_up) + "</td>";
-            html += "<td style='background-color: " + usageBg + "'>" + up.toFixed(1) + "% / " + down.toFixed(1) + "%</td>";
-            html += "<td style='background-color: " + rttBg + "'>" + (data[i].current_rtt / 100).toFixed(1) + "</td>";
-            html += "</tr>";
-            html += treeChildren(data, data[i].index, 1);
-            def += "Root --> " + data[i].index + "[" + t(data[i].site_name) + "]\n";
-            def += graphChildren(data, data[i].index, 1);
+            if (data[i].site_name != "Root") {
+                let up = (data[i].current_up / (data[i].max_up * mbps_to_bps)) * 100.0;
+                let down = (data[i].current_down / (data[i].max_down * mbps_to_bps)) * 100.0;
+                let peak = Math.max(up, down);
+                let usageBg = usageColor(peak);
+                let rttBg = rttColor(data[i].current_rtt / 100);
+                html += "<tr>";
+                let url = makeUrl(data[i].site_type, data[i].site_name);
+                html += "<td>" + siteIcon(data[i].site_type) + " <a href='#" + url + "' onclick='window.router.goto(\"" + url + "\")'>" + data[i].site_name + "</a>";
+                html += "</td><td>" + scaleNumber(data[i].max_down * mbps_to_bps) + " / " + scaleNumber(data[i].max_up * mbps_to_bps) + "</td>";
+                html += "</td><td>" + scaleNumber(data[i].current_down) + " / " + scaleNumber(data[i].current_up) + "</td>";
+                html += "<td style='background-color: " + usageBg + "'>" + up.toFixed(1) + "% / " + down.toFixed(1) + "%</td>";
+                html += "<td style='background-color: " + rttBg + "'>" + (data[i].current_rtt / 100).toFixed(1) + "</td>";
+                html += "</tr>";
+                html += treeChildren(data, data[i].index, 1);
+                def += "Root --> " + data[i].index + "[" + t(data[i].site_name) + "]\n";
+                def += graphChildren(data, data[i].index, 1);
+            }
         }
     }
 
