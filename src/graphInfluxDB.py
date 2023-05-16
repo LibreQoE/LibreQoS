@@ -120,20 +120,38 @@ def getCircuitBandwidthStats(subscriberCircuits, tinsStats):
 		circuit['stats']['sinceLastQuery']['packetsSentDownload'] = circuit['stats']['sinceLastQuery']['packetsSentUpload'] = 0.0
 		
 		try:
-			circuit['stats']['sinceLastQuery']['bytesSentDownload'] = circuit['stats']['currentQuery']['bytesSentDownload'] - circuit['stats']['priorQuery']['bytesSentDownload']
-			circuit['stats']['sinceLastQuery']['bytesSentUpload'] = circuit['stats']['currentQuery']['bytesSentUpload'] - circuit['stats']['priorQuery']['bytesSentUpload']
+			if (circuit['stats']['currentQuery']['bytesSentDownload'] - circuit['stats']['priorQuery']['bytesSentDownload']) >= 0.0:
+				circuit['stats']['sinceLastQuery']['bytesSentDownload'] = circuit['stats']['currentQuery']['bytesSentDownload'] - circuit['stats']['priorQuery']['bytesSentDownload']
+			else:
+				circuit['stats']['sinceLastQuery']['bytesSentDownload'] = 0.0
+			if (circuit['stats']['currentQuery']['bytesSentUpload'] - circuit['stats']['priorQuery']['bytesSentUpload']) >= 0.0:
+				circuit['stats']['sinceLastQuery']['bytesSentUpload'] = circuit['stats']['currentQuery']['bytesSentUpload'] - circuit['stats']['priorQuery']['bytesSentUpload']
+			else:
+				circuit['stats']['sinceLastQuery']['bytesSentUpload'] = 0.0
 		except:
 			circuit['stats']['sinceLastQuery']['bytesSentDownload'] = 0.0
 			circuit['stats']['sinceLastQuery']['bytesSentUpload'] = 0.0
 		try:
-			circuit['stats']['sinceLastQuery']['packetDropsDownload'] = circuit['stats']['currentQuery']['packetDropsDownload'] - circuit['stats']['priorQuery']['packetDropsDownload']
-			circuit['stats']['sinceLastQuery']['packetDropsUpload'] = circuit['stats']['currentQuery']['packetDropsUpload'] - circuit['stats']['priorQuery']['packetDropsUpload']
+			if (circuit['stats']['currentQuery']['packetDropsDownload'] - circuit['stats']['priorQuery']['packetDropsDownload']) >= 0.0:
+				circuit['stats']['sinceLastQuery']['packetDropsDownload'] = circuit['stats']['currentQuery']['packetDropsDownload'] - circuit['stats']['priorQuery']['packetDropsDownload']
+			else:
+				circuit['stats']['sinceLastQuery']['packetDropsDownload'] = 0.0
+			if (circuit['stats']['currentQuery']['packetDropsUpload'] - circuit['stats']['priorQuery']['packetDropsUpload']) >= 0.0:
+				circuit['stats']['sinceLastQuery']['packetDropsUpload'] = circuit['stats']['currentQuery']['packetDropsUpload'] - circuit['stats']['priorQuery']['packetDropsUpload']
+			else:
+				circuit['stats']['sinceLastQuery']['packetDropsUpload'] = 0.0
 		except:
 			circuit['stats']['sinceLastQuery']['packetDropsDownload'] = 0.0
 			circuit['stats']['sinceLastQuery']['packetDropsUpload'] = 0.0
 		try:
-			circuit['stats']['sinceLastQuery']['packetsSentDownload'] = circuit['stats']['currentQuery']['packetsSentDownload'] - circuit['stats']['priorQuery']['packetsSentDownload']
-			circuit['stats']['sinceLastQuery']['packetsSentUpload'] = circuit['stats']['currentQuery']['packetsSentUpload'] - circuit['stats']['priorQuery']['packetsSentUpload']
+			if (circuit['stats']['currentQuery']['packetsSentDownload'] - circuit['stats']['priorQuery']['packetsSentDownload']) >= 0.0:
+				circuit['stats']['sinceLastQuery']['packetsSentDownload'] = circuit['stats']['currentQuery']['packetsSentDownload'] - circuit['stats']['priorQuery']['packetsSentDownload']
+			else:
+				circuit['stats']['sinceLastQuery']['packetsSentDownload'] = 0.0
+			if (circuit['stats']['currentQuery']['packetsSentUpload'] - circuit['stats']['priorQuery']['packetsSentUpload']) >= 0.0:
+				circuit['stats']['sinceLastQuery']['packetsSentUpload'] = circuit['stats']['currentQuery']['packetsSentUpload'] - circuit['stats']['priorQuery']['packetsSentUpload']
+			else:
+				circuit['stats']['sinceLastQuery']['packetsSentUpload'] = 0.0
 		except:
 			circuit['stats']['sinceLastQuery']['packetsSentDownload'] = 0.0
 			circuit['stats']['sinceLastQuery']['packetsSentUpload'] = 0.0
