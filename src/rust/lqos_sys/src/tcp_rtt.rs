@@ -1,8 +1,10 @@
-use crate::bpf_map::BpfMap;
+use lqos_utils::XdpIpAddress;
+use zerocopy::FromBytes;
+use crate::bpf_iterator::iterate_rtt;
 
 /// Entry from the XDP rtt_tracker map.
 #[repr(C)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, FromBytes)]
 pub struct RttTrackingEntry {
   /// Array containing TCP round-trip times. Convert to an `f32` and divide by `100.0` for actual numbers.
   pub rtt: [u32; 60],
@@ -29,10 +31,8 @@ impl Default for RttTrackingEntry {
 /// Only IP addresses facing the ISP Network side are tracked.
 ///
 /// Executes `callback` for each entry.
-pub fn rtt_for_each(callback: &mut dyn FnMut(&[u8; 16], &RttTrackingEntry)) {
-  if let Ok(rtt_tracker) =
-    BpfMap::<[u8; 16], RttTrackingEntry>::from_path("/sys/fs/bpf/rtt_tracker")
-  {
-    rtt_tracker.for_each(callback);
+pub fn rtt_for_each(callback: &mut dyn FnMut(&XdpIpAddress, &RttTrackingEntry)) {
+  unsafe {
+    iterate_rtt(callback);
   }
 }

@@ -68,7 +68,7 @@ src/bin/lqos_node_manager
 src/bin/webusers
 src/bin/lqusers
 src/bin/Rocket.toml
-
+src/bin/lqos_map_perf
 
 # Ignore project folders for some IDEs
 .idea/

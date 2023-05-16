@@ -1,42 +1,10 @@
 use crate::{timeline::expire_timeline, FLOW_EXPIRE_SECS};
 use dashmap::DashMap;
 use lqos_bus::{tos_parser, BusResponse, FlowTransport};
-use lqos_sys::bpf_per_cpu_map::BpfPerCpuMap;
+use lqos_sys::heimdall_data::{HeimdallKey, HeimdallData};
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 use once_cell::sync::Lazy;
 use std::{collections::HashSet, time::Duration};
-
-/// Representation of the eBPF `heimdall_key` type.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
-#[repr(C)]
-pub struct HeimdallKey {
-  /// Mapped `XdpIpAddress` source for the flow.
-  pub src_ip: XdpIpAddress,
-  /// Mapped `XdpIpAddress` destination for the flow
-  pub dst_ip: XdpIpAddress,
-  /// IP protocol (see the Linux kernel!)
-  pub ip_protocol: u8,
-  /// Source port number, or ICMP type.
-  pub src_port: u16,
-  /// Destination port number.
-  pub dst_port: u16,
-}
-
-/// Mapped representation of the eBPF `heimdall_data` type.
-#[derive(Debug, Clone, Default)]
-#[repr(C)]
-pub struct HeimdallData {
-  /// Last seen, in nanoseconds (since boot time).
-  pub last_seen: u64,
-  /// Number of bytes since the flow started being tracked
-  pub bytes: u64,
-  /// Number of packets since the flow started being tracked
-  pub packets: u64,
-  /// IP header TOS value
-  pub tos: u8,
-  /// Reserved to pad the structure
-  pub reserved: [u8; 3],
-}
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct FlowKey {
@@ -95,11 +63,12 @@ static FLOW_DATA: Lazy<DashMap<FlowKey, FlowData>> = Lazy::new(DashMap::new);
 fn heimdall_for_each(
   callback: &mut dyn FnMut(&HeimdallKey, &[HeimdallData]),
 ) {
-  if let Ok(heimdall) = BpfPerCpuMap::<HeimdallKey, HeimdallData>::from_path(
+  /*if let Ok(heimdall) = BpfPerCpuMap::<HeimdallKey, HeimdallData>::from_path(
     "/sys/fs/bpf/heimdall",
   ) {
     heimdall.for_each(callback);
-  }
+  }*/
+  lqos_sys::iterate_heimdall(callback);
 }
 
 

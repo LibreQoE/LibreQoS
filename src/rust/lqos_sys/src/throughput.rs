@@ -1,10 +1,9 @@
 use lqos_utils::XdpIpAddress;
-
-use crate::{bpf_per_cpu_map::BpfPerCpuMap};
+use zerocopy::FromBytes;
 
 /// Representation of the XDP map from map_traffic
 #[repr(C)]
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, FromBytes)]
 pub struct HostCounter {
   /// Download bytes counter (keeps incrementing)
   pub download_bytes: u64,
@@ -30,9 +29,7 @@ pub struct HostCounter {
 pub fn throughput_for_each(
   callback: &mut dyn FnMut(&XdpIpAddress, &[HostCounter]),
 ) {
-  if let Ok(throughput) = BpfPerCpuMap::<XdpIpAddress, HostCounter>::from_path(
-    "/sys/fs/bpf/map_traffic",
-  ) {
-    throughput.for_each(callback);
+  unsafe {
+    crate::bpf_iterator::iterate_throughput(callback);
   }
 }

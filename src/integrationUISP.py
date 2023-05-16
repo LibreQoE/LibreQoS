@@ -221,13 +221,13 @@ def walkGraphOutwards(siteList, root, routeOverrides):
 			site['parent'] = parent['id']
 			#print(debugSpaces(cost/10) + parent['name'] + "->" + site['name'] + " -> New cost: " + str(cost))
 
-		for connection in site['connections']:
-			if not connection in backPath:
-				#target = findInSiteListById(siteList, connection)
-				#print(debugSpaces((cost+10)/10) + site['name'] + " -> " + target['name'] + " (" + str(target['cost']) + ")")
-				newBackPath = backPath.copy()
-				newBackPath.append(site['id'])
-				walkGraph(connection, site, cost+10, newBackPath)
+			for connection in site['connections']:
+				if not connection in backPath:
+					#target = findInSiteListById(siteList, connection)
+					#print(debugSpaces((cost+10)/10) + site['name'] + " -> " + target['name'] + " (" + str(target['cost']) + ")")
+					newBackPath = backPath.copy()
+					newBackPath.append(site['id'])
+					walkGraph(connection, site, cost+10, newBackPath)
 
 	for connection in root['connections']:
 		# Force the parent since we're at the top

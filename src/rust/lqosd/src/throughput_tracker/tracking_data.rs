@@ -131,8 +131,8 @@ impl ThroughputTracker {
             net_json.add_throughput_cycle(
               parents,
               (
-                entry.bytes.0 - entry.prev_bytes.0,
-                entry.bytes.1 - entry.prev_bytes.1,
+                entry.bytes.0.saturating_sub(entry.prev_bytes.0),
+                entry.bytes.1.saturating_sub(entry.prev_bytes.1),
               ),
             );
           }
@@ -171,10 +171,9 @@ impl ThroughputTracker {
 
   pub(crate) fn apply_rtt_data(&self) {
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
-    rtt_for_each(&mut |raw_ip, rtt| {
+    rtt_for_each(&mut |ip, rtt| {
       if rtt.has_fresh_data != 0 {
-        let ip = XdpIpAddress(*raw_ip);
-        if let Some(mut tracker) = self.raw_data.get_mut(&ip) {
+        if let Some(mut tracker) = self.raw_data.get_mut(ip) {
           tracker.recent_rtt_data = rtt.rtt;
           tracker.last_fresh_rtt_data_cycle = self_cycle;
           if let Some(parents) = &tracker.network_json_parents {

@@ -1,7 +1,27 @@
+use std::sync::Mutex;
+use once_cell::sync::Lazy;
 use crate::lqos_kernel::{
   attach_xdp_and_tc_to_interface, unload_xdp_from_interface,
-  InterfaceDirection, bpf::ring_buffer_sample_fn,
+  InterfaceDirection, bpf::{ring_buffer_sample_fn, self},
 };
+
+/// Safer wrapper around pointers to `bpf::lqos_kern`. It really isn't
+/// a great idea to be passing mutable pointers around like this, but the C
+/// world insists on it.
+pub(crate) struct LqosKernBpfWrapper {
+  ptr: *mut bpf::lqos_kern,
+}
+
+impl LqosKernBpfWrapper {
+  pub(crate) fn get_ptr(&self) -> *mut bpf::lqos_kern {
+    self.ptr
+  }
+}
+
+unsafe impl Sync for LqosKernBpfWrapper {}
+unsafe impl Send for LqosKernBpfWrapper {}
+
+pub(crate) static BPF_SKELETON: Lazy<Mutex<Option<LqosKernBpfWrapper>>> = Lazy::new(|| Mutex::new(None));
 
 /// A wrapper-type that stores the interfaces to which the XDP and TC programs should
 /// be attached. Performs the attachment process, and hooks "drop" to unattach the
@@ -31,7 +51,7 @@ impl LibreQoSKernels {
       to_isp: to_isp.to_string(),
       on_a_stick: false,
     };
-    attach_xdp_and_tc_to_interface(
+    let skeleton = attach_xdp_and_tc_to_interface(
       &kernel.to_internet,
       InterfaceDirection::Internet,
       heimdall_event_handler,
@@ -41,6 +61,7 @@ impl LibreQoSKernels {
       InterfaceDirection::IspNetwork,
       heimdall_event_handler,
     )?;
+    BPF_SKELETON.lock().unwrap().replace(LqosKernBpfWrapper { ptr: skeleton });
     Ok(kernel)
   }
 
@@ -66,12 +87,12 @@ impl LibreQoSKernels {
       to_isp: String::new(),
       on_a_stick: true,
     };
-    attach_xdp_and_tc_to_interface(
+    let skeleton = attach_xdp_and_tc_to_interface(
       &kernel.to_internet,
       InterfaceDirection::OnAStick(internet_vlan, isp_vlan),
       heimdall_event_handler,
     )?;
-
+    BPF_SKELETON.lock().unwrap().replace(LqosKernBpfWrapper { ptr: skeleton });
     Ok(kernel)
   }
 }

@@ -246,3 +246,77 @@ int tc_attach_ingress(int ifindex, bool verbose, struct lqos_kern *obj)
 out:
 	return err;
 }
+
+// Iterator code
+#include <stdio.h>
+#include <unistd.h>
+
+struct bpf_link *setup_iterator_link(
+	struct bpf_program *prog, 
+	struct bpf_map *map
+) {
+	int map_fd; // File descriptor for the map itself
+	struct bpf_link *link; // Value to return with the link
+	union bpf_iter_link_info linfo = { 0 };
+	DECLARE_LIBBPF_OPTS(bpf_iter_attach_opts, iter_opts,
+		.link_info = &linfo,
+		.link_info_len = sizeof(linfo));
+
+	  map_fd = bpf_map__fd(map);
+	  if (map_fd < 0) {
+		fprintf(stderr, "bpf_map__fd() fails\n");
+		return NULL;
+	  }
+	  linfo.map.map_fd = map_fd;
+
+      link = bpf_program__attach_iter(prog, &iter_opts);
+      if (!link) {
+              fprintf(stderr, "bpf_program__attach_iter() fails\n");
+              return NULL;
+      }
+	  return link;
+}
+
+int read_tp_buffer(struct bpf_program *prog, struct bpf_map *map)
+{
+      struct bpf_link *link;
+      char buf[16] = {};
+      int iter_fd = -1, len;
+      int ret = 0;
+	  int map_fd;
+
+	  union bpf_iter_link_info linfo = { 0 };
+	  DECLARE_LIBBPF_OPTS(bpf_iter_attach_opts, iter_opts,
+			    .link_info = &linfo,
+			    .link_info_len = sizeof(linfo));
+
+	  map_fd = bpf_map__fd(map);
+	  if (map_fd < 0) {
+		fprintf(stderr, "bpf_map__fd() fails\n");
+		return map_fd;
+	  }
+	  linfo.map.map_fd = map_fd;
+
+      link = bpf_program__attach_iter(prog, &iter_opts);
+      if (!link) {
+              fprintf(stderr, "bpf_program__attach_iter() fails\n");
+              return -1;
+      }
+      iter_fd = bpf_iter_create(bpf_link__fd(link));
+      if (iter_fd < 0) {
+              fprintf(stderr, "bpf_iter_create() fails\n");
+              ret = -1;
+              goto free_link;
+      }
+      /* not check contents, but ensure read() ends without error */
+      while ((len = read(iter_fd, buf, sizeof(buf) - 1)) > 0) {
+              buf[len] = 0;
+              printf("%s", buf);
+      }
+      printf("\n");
+free_link:
+      if (iter_fd >= 0)
+              close(iter_fd);
+      bpf_link__destroy(link);
+      return 0;
+}
