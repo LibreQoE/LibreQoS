@@ -377,7 +377,7 @@ def getCircuitLatencyStats(subscriberCircuits):
 						if 'tcpLatency' in circuit['stats']['priorQuery']:
 							circuit['stats']['sinceLastQuery']['tcpLatency'] = circuit['stats']['priorQuery']['tcpLatency']
 			except:
-				continue
+				circuit['stats']['sinceLastQuery']['tcpLatency'] = None
 				# priorQuery had no latency information, using None instead
 	return subscriberCircuits
 
