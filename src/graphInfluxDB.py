@@ -6,7 +6,6 @@ from pathlib import Path
 import statistics
 import time
 import psutil
-from pprint import pprint
 
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
