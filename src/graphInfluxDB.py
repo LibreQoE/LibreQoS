@@ -226,7 +226,7 @@ def buildTinStats(data, allPacketsDownload, allPacketsUpload):
 			try:
 				data['sinceLastQuery'][tinK][directionK]['sent_packets'] = currentQuerySentPackets - priorQuerySentPackets
 			except Exception as e:
-				exceptionWithMessage("QoE Tins Sent Packet Broken: {}".format(e))
+				print("QoE Tins Sent Packet Broken: {}".format(e))
 
 			try:
 				currentQueryDrops = data['currentQuery'][tinK][directionK]['drops'] if data['currentQuery'][tinK][directionK]['drops'] > 0 else 0.0
@@ -239,7 +239,7 @@ def buildTinStats(data, allPacketsDownload, allPacketsUpload):
 			try:	
 				data['sinceLastQuery'][tinK][directionK]['drops'] = currentQueryDrops - priorQueryDrops
 			except Exception as e:
-				exceptionWithMessage("QoE Tins Drops Broken: {}".format(e))
+				print("QoE Tins Drops Broken: {}".format(e))
 
 			try:
 				directionPercentage = directionV['drops'] / directionV['sent_packets'] if directionV['sent_packets'] > 0 else 0.0
@@ -248,12 +248,12 @@ def buildTinStats(data, allPacketsDownload, allPacketsUpload):
 			try:
 				data['sinceLastQuery'][tinK][directionK]['dropPercentage'] = max(round(directionPercentage * 100.0, 3), 0.0)
 			except Exception as e:
-				exceptionWithMessage("QoE Tins Drop Percentage Broken: {}".format(e))
+				print("QoE Tins Drop Percentage Broken: {}".format(e))
 			
 			try:
 				data['sinceLastQuery'][tinK][directionK]['utilizationPercentage'] = min(round((directionV['sent_packets'] / allPackets[directionK]) * 100.0, 3), 100.0) if allPackets[directionK] > 0 else 0.0
 			except Exception as e:
-				exceptionWithMessage("QoE Tins Percentage Utilization Broken: {}".format(e))
+				print("QoE Tins Percentage Utilization Broken: {}".format(e))
 
 	return data
 
