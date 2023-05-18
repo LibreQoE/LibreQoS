@@ -18,7 +18,6 @@ class exceptionWithMessage(Exception):
 		self.message = message
 		trace = "not able to retrieve trace"
 		trace = traceback.format_exc()
-		notifySpike(message, trace, detail)
 		super().__init__(self.message)
 
 def getInterfaceStats(interface):
