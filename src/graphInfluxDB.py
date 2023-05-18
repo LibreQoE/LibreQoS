@@ -13,13 +13,6 @@ from influxdb_client.client.write_api import SYNCHRONOUS
 
 from ispConfig import interfaceA, interfaceB, influxDBEnabled, influxDBBucket, influxDBOrg, influxDBtoken, influxDBurl, sqm
 
-class exceptionWithMessage(Exception):
-	def __init__(self, message, detail = None):
-		self.message = message
-		trace = "not able to retrieve trace"
-		trace = traceback.format_exc()
-		super().__init__(self.message)
-
 def getInterfaceStats(interface):
 	command = 'tc -j -s qdisc show dev ' + interface
 	jsonAr = json.loads(subprocess.run(command.split(' '), stdout=subprocess.PIPE).stdout.decode('utf-8'))
@@ -36,203 +29,183 @@ def chunk_list(l, n):
 		yield l[i:i + n]
 
 def getCircuitBandwidthStats(subscriberCircuits, tinsStats):
+	interfaces = [interfaceA, interfaceB]
+	ifaceStats = list(map(getInterfaceStats, interfaces))
 	
-	try:
-		interfaces = [interfaceA, interfaceB]
-		ifaceStats = list(map(getInterfaceStats, interfaces))
-		
-		for circuit in subscriberCircuits:
-			if 'stats' not in circuit:
-				circuit['stats'] = {}
-			if 'currentQuery' in circuit['stats']:
-				circuit['stats']['priorQuery'] = circuit['stats']['currentQuery']
-				circuit['stats']['currentQuery'] = {}
-				circuit['stats']['sinceLastQuery'] = {}
-			else:
-				#circuit['stats']['priorQuery'] = {}
-				#circuit['stats']['priorQuery']['time'] = datetime.now().isoformat()
-				circuit['stats']['currentQuery'] = {}
-				circuit['stats']['sinceLastQuery'] = {}
-			if 'tinsStats' not in circuit:
-				circuit['tinsStats'] = {}
-			if 'currentQuery' in circuit['tinsStats']:
-				circuit['tinsStats']['priorQuery'] = circuit['tinsStats']['currentQuery']
-				circuit['tinsStats']['currentQuery'] = {}
-				circuit['tinsStats']['sinceLastQuery'] = {}
-			else:
-				circuit['tinsStats']['currentQuery'] = {}
-				circuit['tinsStats']['sinceLastQuery'] = {}
-
-		#for entry in tinsStats:
-		if 'currentQuery' in tinsStats:
-			tinsStats['priorQuery'] = tinsStats['currentQuery']
-			tinsStats['currentQuery'] = {}
-			tinsStats['sinceLastQuery'] = {}
+	for circuit in subscriberCircuits:
+		if 'stats' not in circuit:
+			circuit['stats'] = {}
+		if 'currentQuery' in circuit['stats']:
+			circuit['stats']['priorQuery'] = circuit['stats']['currentQuery']
+			circuit['stats']['currentQuery'] = {}
+			circuit['stats']['sinceLastQuery'] = {}
 		else:
-			tinsStats['currentQuery'] = {}
-			tinsStats['sinceLastQuery'] = {}
-		
-		tinsStats['currentQuery'] = {	'Bulk': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
-										'BestEffort': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
-										'Video': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
-										'Voice': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
-									}
-		tinsStats['sinceLastQuery'] = {	'Bulk': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
-										'BestEffort': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
-										'Video': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
-										'Voice': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
-									}
-		
-		for circuit in subscriberCircuits:
-			circuit['tinsStats']['currentQuery'] = { 'Bulk': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
-				'BestEffort': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
-				'Video': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
-				'Voice': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
-			}
-			circuit['tinsStats']['sinceLastQuery'] = { 'Bulk': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
-				'BestEffort': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
-				'Video': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
-				'Voice': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
-			}
-			for (interface, stats, dirSuffix) in zip(interfaces, ifaceStats, ['Download', 'Upload']):
+			#circuit['stats']['priorQuery'] = {}
+			#circuit['stats']['priorQuery']['time'] = datetime.now().isoformat()
+			circuit['stats']['currentQuery'] = {}
+			circuit['stats']['sinceLastQuery'] = {}
+		if 'tinsStats' not in circuit:
+			circuit['tinsStats'] = {}
+		if 'currentQuery' in circuit['tinsStats']:
+			circuit['tinsStats']['priorQuery'] = circuit['tinsStats']['currentQuery']
+			circuit['tinsStats']['currentQuery'] = {}
+			circuit['tinsStats']['sinceLastQuery'] = {}
+		else:
+			circuit['tinsStats']['currentQuery'] = {}
+			circuit['tinsStats']['sinceLastQuery'] = {}
 
-				element = stats[circuit['classid']] if circuit['classid'] in stats else False
-
-				if element:
-					bytesSent = float(element['bytes'])
-
-					""" if "priorQuery" in circuit['stats']:
-						if bytesSent - circuit['stats']['priorQuery']['bytesSentDownload'] < 0.0:
-							exceptionWithMessage(
-								"Less download data usage now versus the past, this should not be possible.",
-								{
-									"circuit": json.dumps(circuit),
-									"element": json.dumps(element)
-								}
-							) """
-
-					drops = float(element['drops'])
-					packets = float(element['packets'])
-					if (element['drops'] > 0) and (element['packets'] > 0):
-						overloadFactor = float(round(element['drops']/element['packets'],3))
-					else:
-						overloadFactor = 0.0
-					
-					if 'cake diffserv4' in sqm:
-						tinCounter = 1
-						for tin in element['tins']:
-							sent_packets = float(tin['sent_packets'])
-							ack_drops = float(tin['ack_drops'])
-							ecn_mark = float(tin['ecn_mark'])
-							tinDrops = float(tin['drops'])
-							trueDrops = ecn_mark + tinDrops - ack_drops
-							if tinCounter == 1:
-								tinsStats['currentQuery']['Bulk'][dirSuffix]['sent_packets'] += sent_packets
-								circuit['tinsStats']['currentQuery']['Bulk'][dirSuffix]['sent_packets'] += sent_packets
-								tinsStats['currentQuery']['Bulk'][dirSuffix]['drops'] += trueDrops
-								circuit['tinsStats']['currentQuery']['Bulk'][dirSuffix]['drops'] += trueDrops
-							elif tinCounter == 2:
-								tinsStats['currentQuery']['BestEffort'][dirSuffix]['sent_packets'] += sent_packets
-								circuit['tinsStats']['currentQuery']['BestEffort'][dirSuffix]['sent_packets'] += sent_packets
-								tinsStats['currentQuery']['BestEffort'][dirSuffix]['drops'] += trueDrops
-								circuit['tinsStats']['currentQuery']['BestEffort'][dirSuffix]['drops'] += trueDrops
-							elif tinCounter == 3:
-								tinsStats['currentQuery']['Video'][dirSuffix]['sent_packets'] += sent_packets
-								circuit['tinsStats']['currentQuery']['Video'][dirSuffix]['sent_packets'] += sent_packets
-								tinsStats['currentQuery']['Video'][dirSuffix]['drops'] += trueDrops
-								circuit['tinsStats']['currentQuery']['Video'][dirSuffix]['drops'] += trueDrops
-							elif tinCounter == 4:
-								tinsStats['currentQuery']['Voice'][dirSuffix]['sent_packets'] += sent_packets
-								circuit['tinsStats']['currentQuery']['Voice'][dirSuffix]['sent_packets'] += sent_packets
-								tinsStats['currentQuery']['Voice'][dirSuffix]['drops'] += trueDrops
-								circuit['tinsStats']['currentQuery']['Voice'][dirSuffix]['drops'] += trueDrops
-							tinCounter += 1
-
-					circuit['stats']['currentQuery']['bytesSent' + dirSuffix] = bytesSent
-					circuit['stats']['currentQuery']['packetDrops' + dirSuffix] = drops
-					circuit['stats']['currentQuery']['packetsSent' + dirSuffix] = packets
-					circuit['stats']['currentQuery']['overloadFactor' + dirSuffix] = overloadFactor
-					
-					#if 'cake diffserv4' in sqm:
-					#	circuit['stats']['currentQuery']['tins'] = theseTins
-
-			circuit['stats']['currentQuery']['time'] = datetime.now().isoformat()
-			
-		allPacketsDownload = 0.0
-		allPacketsUpload = 0.0
-		for circuit in subscriberCircuits:
-			circuit['stats']['sinceLastQuery']['bitsDownload'] = circuit['stats']['sinceLastQuery']['bitsUpload'] = 0.0
-			circuit['stats']['sinceLastQuery']['bytesSentDownload'] = circuit['stats']['sinceLastQuery']['bytesSentUpload'] = 0.0
-			circuit['stats']['sinceLastQuery']['packetDropsDownload'] = circuit['stats']['sinceLastQuery']['packetDropsUpload'] = 0.0
-			circuit['stats']['sinceLastQuery']['packetsSentDownload'] = circuit['stats']['sinceLastQuery']['packetsSentUpload'] = 0.0
-			
-			try:
-				if (circuit['stats']['currentQuery']['bytesSentDownload'] - circuit['stats']['priorQuery']['bytesSentDownload']) >= 0.0:
-					circuit['stats']['sinceLastQuery']['bytesSentDownload'] = circuit['stats']['currentQuery']['bytesSentDownload'] - circuit['stats']['priorQuery']['bytesSentDownload']
-				else:
-					circuit['stats']['sinceLastQuery']['bytesSentDownload'] = 0.0
-				if (circuit['stats']['currentQuery']['bytesSentUpload'] - circuit['stats']['priorQuery']['bytesSentUpload']) >= 0.0:
-					circuit['stats']['sinceLastQuery']['bytesSentUpload'] = circuit['stats']['currentQuery']['bytesSentUpload'] - circuit['stats']['priorQuery']['bytesSentUpload']
-				else:
-					circuit['stats']['sinceLastQuery']['bytesSentUpload'] = 0.0
-			except:
-				circuit['stats']['sinceLastQuery']['bytesSentDownload'] = 0.0
-				circuit['stats']['sinceLastQuery']['bytesSentUpload'] = 0.0
-			try:
-				if (circuit['stats']['currentQuery']['packetDropsDownload'] - circuit['stats']['priorQuery']['packetDropsDownload']) >= 0.0:
-					circuit['stats']['sinceLastQuery']['packetDropsDownload'] = circuit['stats']['currentQuery']['packetDropsDownload'] - circuit['stats']['priorQuery']['packetDropsDownload']
-				else:
-					circuit['stats']['sinceLastQuery']['packetDropsDownload'] = 0.0
-				if (circuit['stats']['currentQuery']['packetDropsUpload'] - circuit['stats']['priorQuery']['packetDropsUpload']) >= 0.0:
-					circuit['stats']['sinceLastQuery']['packetDropsUpload'] = circuit['stats']['currentQuery']['packetDropsUpload'] - circuit['stats']['priorQuery']['packetDropsUpload']
-				else:
-					circuit['stats']['sinceLastQuery']['packetDropsUpload'] = 0.0
-			except:
-				circuit['stats']['sinceLastQuery']['packetDropsDownload'] = 0.0
-				circuit['stats']['sinceLastQuery']['packetDropsUpload'] = 0.0
-			try:
-				if (circuit['stats']['currentQuery']['packetsSentDownload'] - circuit['stats']['priorQuery']['packetsSentDownload']) >= 0.0:
-					circuit['stats']['sinceLastQuery']['packetsSentDownload'] = circuit['stats']['currentQuery']['packetsSentDownload'] - circuit['stats']['priorQuery']['packetsSentDownload']
-				else:
-					circuit['stats']['sinceLastQuery']['packetsSentDownload'] = 0.0
-				if (circuit['stats']['currentQuery']['packetsSentUpload'] - circuit['stats']['priorQuery']['packetsSentUpload']) >= 0.0:
-					circuit['stats']['sinceLastQuery']['packetsSentUpload'] = circuit['stats']['currentQuery']['packetsSentUpload'] - circuit['stats']['priorQuery']['packetsSentUpload']
-				else:
-					circuit['stats']['sinceLastQuery']['packetsSentUpload'] = 0.0
-			except:
-				circuit['stats']['sinceLastQuery']['packetsSentDownload'] = 0.0
-				circuit['stats']['sinceLastQuery']['packetsSentUpload'] = 0.0
-			
-			allPacketsDownload += circuit['stats']['sinceLastQuery']['packetsSentDownload']
-			allPacketsUpload += circuit['stats']['sinceLastQuery']['packetsSentUpload']
-			
-			if 'priorQuery' in circuit['stats']:
-				if 'time' in circuit['stats']['priorQuery']:
-					currentQueryTime = datetime.fromisoformat(circuit['stats']['currentQuery']['time'])
-					priorQueryTime = datetime.fromisoformat(circuit['stats']['priorQuery']['time'])
-					deltaSeconds = (currentQueryTime - priorQueryTime).total_seconds()
-					if deltaSeconds < 0:
-						exceptionWithMessage("Current query time ({}) is before last query time ({}), time sync may be broken. serviceId is {}. Name is: {}.".format(currentQueryTime, priorQueryTime, circuit['circuitID'], circuit['circuitName']))
-					circuit['stats']['sinceLastQuery']['bitsDownload'] = round((circuit['stats']['sinceLastQuery']['bytesSentDownload'] * 8) / deltaSeconds) if deltaSeconds > 0 else 0
-					circuit['stats']['sinceLastQuery']['bitsUpload'] = round((circuit['stats']['sinceLastQuery']['bytesSentUpload'] * 8) / deltaSeconds) if deltaSeconds > 0 else 0
-			else:
-				circuit['stats']['sinceLastQuery']['bitsDownload'] = (circuit['stats']['sinceLastQuery']['bytesSentDownload'] * 8)
-				circuit['stats']['sinceLastQuery']['bitsUpload'] = (circuit['stats']['sinceLastQuery']['bytesSentUpload'] * 8)
-
-			# Process Tin Statistics by Circuit
-			circuit['tinsStats'] = buildTinStats(circuit['tinsStats'], circuit['stats']['sinceLastQuery']['packetsSentDownload'], circuit['stats']['sinceLastQuery']['packetsSentUpload'])
-
-		# Process Network-Level Tin Statistics
-		tinsStats = buildTinStats(tinsStats, allPacketsDownload, allPacketsUpload)
-		
-		return subscriberCircuits, tinsStats
+	#for entry in tinsStats:
+	if 'currentQuery' in tinsStats:
+		tinsStats['priorQuery'] = tinsStats['currentQuery']
+		tinsStats['currentQuery'] = {}
+		tinsStats['sinceLastQuery'] = {}
+	else:
+		tinsStats['currentQuery'] = {}
+		tinsStats['sinceLastQuery'] = {}
 	
-	except exceptionWithMessage:
-		print("There was an exception but it was caught and sent to Spike. Will try again next time around.")
-	except Exception as e:
-		exceptionWithMessage("getCircuitBandwidthStats: {}".format(e))
-	except:
-		exceptionWithMessage("getCircuitBandwidthStats")
+	tinsStats['currentQuery'] = {	'Bulk': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
+									'BestEffort': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
+									'Video': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
+									'Voice': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
+								}
+	tinsStats['sinceLastQuery'] = {	'Bulk': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
+									'BestEffort': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
+									'Video': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
+									'Voice': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
+								}
+	
+	for circuit in subscriberCircuits:
+		circuit['tinsStats']['currentQuery'] = { 'Bulk': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
+			'BestEffort': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
+			'Video': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
+			'Voice': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
+		}
+		circuit['tinsStats']['sinceLastQuery'] = { 'Bulk': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
+			'BestEffort': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
+			'Video': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
+			'Voice': {'Download': {'sent_packets': 0.0, 'drops': 0.0}, 'Upload': {'sent_packets': 0.0, 'drops': 0.0}},
+		}
+		for (interface, stats, dirSuffix) in zip(interfaces, ifaceStats, ['Download', 'Upload']):
+
+			element = stats[circuit['classid']] if circuit['classid'] in stats else False
+
+			if element:
+				bytesSent = float(element['bytes'])
+				drops = float(element['drops'])
+				packets = float(element['packets'])
+				if (element['drops'] > 0) and (element['packets'] > 0):
+					overloadFactor = float(round(element['drops']/element['packets'],3))
+				else:
+					overloadFactor = 0.0
+				
+				if 'cake diffserv4' in sqm:
+					tinCounter = 1
+					for tin in element['tins']:
+						sent_packets = float(tin['sent_packets'])
+						ack_drops = float(tin['ack_drops'])
+						ecn_mark = float(tin['ecn_mark'])
+						tinDrops = float(tin['drops'])
+						trueDrops = ecn_mark + tinDrops - ack_drops
+						if tinCounter == 1:
+							tinsStats['currentQuery']['Bulk'][dirSuffix]['sent_packets'] += sent_packets
+							circuit['tinsStats']['currentQuery']['Bulk'][dirSuffix]['sent_packets'] += sent_packets
+							tinsStats['currentQuery']['Bulk'][dirSuffix]['drops'] += trueDrops
+							circuit['tinsStats']['currentQuery']['Bulk'][dirSuffix]['drops'] += trueDrops
+						elif tinCounter == 2:
+							tinsStats['currentQuery']['BestEffort'][dirSuffix]['sent_packets'] += sent_packets
+							circuit['tinsStats']['currentQuery']['BestEffort'][dirSuffix]['sent_packets'] += sent_packets
+							tinsStats['currentQuery']['BestEffort'][dirSuffix]['drops'] += trueDrops
+							circuit['tinsStats']['currentQuery']['BestEffort'][dirSuffix]['drops'] += trueDrops
+						elif tinCounter == 3:
+							tinsStats['currentQuery']['Video'][dirSuffix]['sent_packets'] += sent_packets
+							circuit['tinsStats']['currentQuery']['Video'][dirSuffix]['sent_packets'] += sent_packets
+							tinsStats['currentQuery']['Video'][dirSuffix]['drops'] += trueDrops
+							circuit['tinsStats']['currentQuery']['Video'][dirSuffix]['drops'] += trueDrops
+						elif tinCounter == 4:
+							tinsStats['currentQuery']['Voice'][dirSuffix]['sent_packets'] += sent_packets
+							circuit['tinsStats']['currentQuery']['Voice'][dirSuffix]['sent_packets'] += sent_packets
+							tinsStats['currentQuery']['Voice'][dirSuffix]['drops'] += trueDrops
+							circuit['tinsStats']['currentQuery']['Voice'][dirSuffix]['drops'] += trueDrops
+						tinCounter += 1
+
+				circuit['stats']['currentQuery']['bytesSent' + dirSuffix] = bytesSent
+				circuit['stats']['currentQuery']['packetDrops' + dirSuffix] = drops
+				circuit['stats']['currentQuery']['packetsSent' + dirSuffix] = packets
+				circuit['stats']['currentQuery']['overloadFactor' + dirSuffix] = overloadFactor
+				
+				#if 'cake diffserv4' in sqm:
+				#	circuit['stats']['currentQuery']['tins'] = theseTins
+
+		circuit['stats']['currentQuery']['time'] = datetime.now().isoformat()
+		
+	allPacketsDownload = 0.0
+	allPacketsUpload = 0.0
+	for circuit in subscriberCircuits:
+		circuit['stats']['sinceLastQuery']['bitsDownload'] = circuit['stats']['sinceLastQuery']['bitsUpload'] = 0.0
+		circuit['stats']['sinceLastQuery']['bytesSentDownload'] = circuit['stats']['sinceLastQuery']['bytesSentUpload'] = 0.0
+		circuit['stats']['sinceLastQuery']['packetDropsDownload'] = circuit['stats']['sinceLastQuery']['packetDropsUpload'] = 0.0
+		circuit['stats']['sinceLastQuery']['packetsSentDownload'] = circuit['stats']['sinceLastQuery']['packetsSentUpload'] = 0.0
+		
+		try:
+			if (circuit['stats']['currentQuery']['bytesSentDownload'] - circuit['stats']['priorQuery']['bytesSentDownload']) >= 0.0:
+				circuit['stats']['sinceLastQuery']['bytesSentDownload'] = circuit['stats']['currentQuery']['bytesSentDownload'] - circuit['stats']['priorQuery']['bytesSentDownload']
+			else:
+				circuit['stats']['sinceLastQuery']['bytesSentDownload'] = 0.0
+			if (circuit['stats']['currentQuery']['bytesSentUpload'] - circuit['stats']['priorQuery']['bytesSentUpload']) >= 0.0:
+				circuit['stats']['sinceLastQuery']['bytesSentUpload'] = circuit['stats']['currentQuery']['bytesSentUpload'] - circuit['stats']['priorQuery']['bytesSentUpload']
+			else:
+				circuit['stats']['sinceLastQuery']['bytesSentUpload'] = 0.0
+		except:
+			circuit['stats']['sinceLastQuery']['bytesSentDownload'] = 0.0
+			circuit['stats']['sinceLastQuery']['bytesSentUpload'] = 0.0
+		try:
+			if (circuit['stats']['currentQuery']['packetDropsDownload'] - circuit['stats']['priorQuery']['packetDropsDownload']) >= 0.0:
+				circuit['stats']['sinceLastQuery']['packetDropsDownload'] = circuit['stats']['currentQuery']['packetDropsDownload'] - circuit['stats']['priorQuery']['packetDropsDownload']
+			else:
+				circuit['stats']['sinceLastQuery']['packetDropsDownload'] = 0.0
+			if (circuit['stats']['currentQuery']['packetDropsUpload'] - circuit['stats']['priorQuery']['packetDropsUpload']) >= 0.0:
+				circuit['stats']['sinceLastQuery']['packetDropsUpload'] = circuit['stats']['currentQuery']['packetDropsUpload'] - circuit['stats']['priorQuery']['packetDropsUpload']
+			else:
+				circuit['stats']['sinceLastQuery']['packetDropsUpload'] = 0.0
+		except:
+			circuit['stats']['sinceLastQuery']['packetDropsDownload'] = 0.0
+			circuit['stats']['sinceLastQuery']['packetDropsUpload'] = 0.0
+		try:
+			if (circuit['stats']['currentQuery']['packetsSentDownload'] - circuit['stats']['priorQuery']['packetsSentDownload']) >= 0.0:
+				circuit['stats']['sinceLastQuery']['packetsSentDownload'] = circuit['stats']['currentQuery']['packetsSentDownload'] - circuit['stats']['priorQuery']['packetsSentDownload']
+			else:
+				circuit['stats']['sinceLastQuery']['packetsSentDownload'] = 0.0
+			if (circuit['stats']['currentQuery']['packetsSentUpload'] - circuit['stats']['priorQuery']['packetsSentUpload']) >= 0.0:
+				circuit['stats']['sinceLastQuery']['packetsSentUpload'] = circuit['stats']['currentQuery']['packetsSentUpload'] - circuit['stats']['priorQuery']['packetsSentUpload']
+			else:
+				circuit['stats']['sinceLastQuery']['packetsSentUpload'] = 0.0
+		except:
+			circuit['stats']['sinceLastQuery']['packetsSentDownload'] = 0.0
+			circuit['stats']['sinceLastQuery']['packetsSentUpload'] = 0.0
+		
+		allPacketsDownload += circuit['stats']['sinceLastQuery']['packetsSentDownload']
+		allPacketsUpload += circuit['stats']['sinceLastQuery']['packetsSentUpload']
+		
+		if 'priorQuery' in circuit['stats']:
+			if 'time' in circuit['stats']['priorQuery']:
+				currentQueryTime = datetime.fromisoformat(circuit['stats']['currentQuery']['time'])
+				priorQueryTime = datetime.fromisoformat(circuit['stats']['priorQuery']['time'])
+				deltaSeconds = (currentQueryTime - priorQueryTime).total_seconds()
+				if deltaSeconds < 0:
+					print("Current query time ({}) is before last query time ({}), time sync may be broken. serviceId is {}. Name is: {}.".format(currentQueryTime, priorQueryTime, circuit['circuitID'], circuit['circuitName']))
+				circuit['stats']['sinceLastQuery']['bitsDownload'] = round((circuit['stats']['sinceLastQuery']['bytesSentDownload'] * 8) / deltaSeconds) if deltaSeconds > 0 else 0
+				circuit['stats']['sinceLastQuery']['bitsUpload'] = round((circuit['stats']['sinceLastQuery']['bytesSentUpload'] * 8) / deltaSeconds) if deltaSeconds > 0 else 0
+		else:
+			circuit['stats']['sinceLastQuery']['bitsDownload'] = (circuit['stats']['sinceLastQuery']['bytesSentDownload'] * 8)
+			circuit['stats']['sinceLastQuery']['bitsUpload'] = (circuit['stats']['sinceLastQuery']['bytesSentUpload'] * 8)
+
+		# Process Tin Statistics by Circuit
+		circuit['tinsStats'] = buildTinStats(circuit['tinsStats'], circuit['stats']['sinceLastQuery']['packetsSentDownload'], circuit['stats']['sinceLastQuery']['packetsSentUpload'])
+
+	# Process Network-Level Tin Statistics
+	tinsStats = buildTinStats(tinsStats, allPacketsDownload, allPacketsUpload)
+	
+	return subscriberCircuits, tinsStats
 
 def buildTinStats(data, allPacketsDownload, allPacketsUpload):
 	# data is the dictionary that we want to do the calculations for, usually circuit['tinsStats'] or tinsStats.
