@@ -12,3 +12,6 @@ waitress
 setuptools >= 65.5.1
 apscheduler
 deepdiff
+sphinx==6.2.1
+sphinx_rtd_theme
+myst-parser
