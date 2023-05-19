@@ -8,7 +8,7 @@ if "%SPHINXBUILD%" == "" (
 	set SPHINXBUILD=sphinx-build
 )
 set SOURCEDIR=.
-set BUILDDIR=_build
+set BUILDDIR=_readthedocs
 
 %SPHINXBUILD% >NUL 2>NUL
 if errorlevel 9009 (
