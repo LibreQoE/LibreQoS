@@ -44,6 +44,7 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../README.html">Sponsors</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../README.html#support-libreqos">Support LibreQoS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../README.html#documentation">Documentation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../README.html#matrix-chat">Matrix Chat</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../README.html#features">Features</a></li>
 </ul>
@@ -113,7 +114,7 @@
 <h2>UISP Integration<a class="headerlink" href="#uisp-integration" title="Permalink to this heading"></a></h2>
 <p>First, set the relevant parameters for UISP (uispAuthToken, UISPbaseURL, etc.) in ispConfig.py.</p>
 <p>To test the UISP Integration, use</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">python3</span> <span class="n">integrationUISP</span><span class="o">.</span><span class="n">py</span>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>python3<span class="w"> </span>integrationUISP.py
 </pre></div>
 </div>
 <p>On the first successful run, it will create a network.json and ShapedDevices.csv file.
@@ -126,7 +127,7 @@ You have the option to run integrationUISP.py automatically on boot and every 30
 <h2>Splynx Integration<a class="headerlink" href="#splynx-integration" title="Permalink to this heading"></a></h2>
 <p>First, set the relevant parameters for Splynx (splynx_api_key, splynx_api_secret, etc.) in ispConfig.py.</p>
 <p>To test the Splynx Integration, use</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">python3</span> <span class="n">integrationSplynx</span><span class="o">.</span><span class="n">py</span>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>python3<span class="w"> </span>integrationSplynx.py
 </pre></div>
 </div>
 <p>On the first successful run, it will create a ShapedDevices.csv file.

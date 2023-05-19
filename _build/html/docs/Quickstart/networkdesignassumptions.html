@@ -17,7 +17,7 @@
     <script src="../../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../../genindex.html" />
     <link rel="search" title="Search" href="../../search.html" />
-    <link rel="next" title="System Requirements" href="../System%20Requirements/Compute.html" />
+    <link rel="next" title="LibreQoS v1.3.1 to v1.4 Change Summary" href="../ChangeNotes/v1.4.html" />
     <link rel="prev" title="Sponsors" href="../../README.html" /> 
 </head>
 
@@ -44,21 +44,50 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../README.html">Sponsors</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../README.html#support-libreqos">Support LibreQoS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../README.html#documentation">Documentation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../README.html#matrix-chat">Matrix Chat</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../README.html#features">Features</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Read me first!:</span></p>
+<p class="caption" role="heading"><span class="caption-text">Read me first!</span></p>
 <ul class="current">
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Network Design Assumptions</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#network-interface-card">Network Interface Card</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#officially-supported-configuration">Officially supported configuration</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#network-interface-card">Network Interface Card</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#alternate-configuration-not-officially-supported">Alternate configuration (Not officially supported)</a></li>
 </ul>
 </li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Quickstart Considerations:</span></p>
+<p class="caption" role="heading"><span class="caption-text">Change Notes:</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../System%20Requirements/Compute.html">System Requirements</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../System%20Requirements/Networking.html">Network Interface Requirements</a></li>
-<li class="toctree-l1"><a class="reference internal" href="quickstart.html">LibreQoS Quickstart Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ChangeNotes/v1.4.html">LibreQoS v1.3.1 to v1.4 Change Summary</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Quickstart:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../SystemRequirements/Compute.html">System Requirements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../SystemRequirements/Networking.html">Network Interface Requirements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart-prereq.html">Server Setup - Pre-requisites</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart-libreqos-1.4.html">Install LibreQoS 1.4</a></li>
+<li class="toctree-l1"><a class="reference internal" href="configuration.html">Configure LibreQoS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="services-and-run.html">LibreQoS daemons</a></li>
+<li class="toctree-l1"><a class="reference internal" href="share.html">Share your before and after</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Updates:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../Updates/update.html">Updating 1.4 To Latest Version</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Technical Documentation:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../TechnicalDocs/complex-install.html">Complex install (Not Recommended)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../TechnicalDocs/troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../TechnicalDocs/integrations.html">Integrations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../TechnicalDocs/extras.html">Extras</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../TechnicalDocs/performance-tuning.html">Performance Tuning</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Legacy:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../Legacy/v1.3.1.html">LibreQoS v1.3.1</a></li>
 </ul>
 
         </div>
@@ -87,7 +116,8 @@
              
   <section id="network-design-assumptions">
 <h1>Network Design Assumptions<a class="headerlink" href="#network-design-assumptions" title="Permalink to this heading"></a></h1>
-<p>Officially supported configuration:</p>
+<section id="officially-supported-configuration">
+<h2>Officially supported configuration<a class="headerlink" href="#officially-supported-configuration" title="Permalink to this heading"></a></h2>
 <ul class="simple">
 <li><p>LibreQoS placed inline in network, usually between an edge router (NAT, firewall) and core router (distribution to sites across network).</p>
 <ul>
@@ -99,15 +129,41 @@
 <li><p>OSPF primary link (low cost) through the server running LibreQoS</p></li>
 <li><p>OSPF backup link (high cost, maybe 200 for example)</p></li>
 </ul>
-<p><img alt="" src="https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/design.png" /></p>
-<p>Is it possible to use LibreQoS in-line without a core router, but that setup requires depending on STP instead of OSPF, which can cause issues. Such configurations are not officially supported.</p>
+<p><img alt="Offical Configuration" src="https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/design.png" /></p>
 <section id="network-interface-card">
-<h2>Network Interface Card<a class="headerlink" href="#network-interface-card" title="Permalink to this heading"></a></h2>
-<p>You must have one of these:
-*single NIC with two interfaces,
-*two NICs with single interface,
-*2x VLANs interface (using one or two NICs).</p>
+<h3>Network Interface Card<a class="headerlink" href="#network-interface-card" title="Permalink to this heading"></a></h3>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>You must have one of these:</p>
+<ul class="simple">
+<li><p>single NIC with two interfaces,</p></li>
+<li><p>two NICs with single interface,</p></li>
+<li><p>2x VLANs interface (using one or two NICs).</p></li>
+</ul>
+</div>
 <p>LibreQoS requires NICs to have 2 or more RX/TX queues and XDP support. While many cards theoretically meet these requirements, less commonly used cards tend to have unreported driver bugs which impede XDP functionality and make them unusable for our purposes. At this time we recommend the Intel x520, Intel x710, and Nvidia (ConnectX-5 or newer) NICs. We cannot guarantee compatibility with other cards.</p>
+</section>
+</section>
+<section id="alternate-configuration-not-officially-supported">
+<h2>Alternate configuration (Not officially supported)<a class="headerlink" href="#alternate-configuration-not-officially-supported" title="Permalink to this heading"></a></h2>
+<p>This alternate configuration uses Spanning Tree Protocol (STP) to modify the data path in the event the LibreQoS device is offline for maintenance or another problem.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Most of the same considerations apply to the alternate configuration as they do to the officially supported configuation</p>
+</div>
+<ul class="simple">
+<li><p>LibreQoS placed inline in network, usually between an edge router (NAT, firewall) and core router (distribution to sites across network).</p>
+<ul>
+<li><p>If you use NAT/CG-NAT, place LibreQoS inline south of where NAT is applied, as LibreQoS needs to shape internal addresses (100.64.0.0/12) not public post-NAT IPs.</p></li>
+</ul>
+</li>
+<li><p>Edge router and Core switch should have 1500 MTU on links between them</p></li>
+<li><p>If you use MPLS, you would terminate MPLS traffic somewhere south of the core/distribution switch. LibreQoS cannot decapsulate MPLS on its own.</p></li>
+<li><p>Spanning Tree primary link (low cost) through the server running LibreQoS</p></li>
+<li><p>Spanning Tree backup link (high cost, maybe 80 for example)</p></li>
+</ul>
+<p>Keep in mind that if you use different bandwidth links, for example, 10 Gbps through LibreQoS, and 1 Gbps between core switch and edge router, you may need to be more intentional with your STP costs.</p>
+<p><img alt="Alternate Configuration" src="../../_images/stp-diagram.png" /></p>
 </section>
 </section>
 
@@ -116,7 +172,7 @@
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="../../README.html" class="btn btn-neutral float-left" title="Sponsors" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="../System%20Requirements/Compute.html" class="btn btn-neutral float-right" title="System Requirements" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="../ChangeNotes/v1.4.html" class="btn btn-neutral float-right" title="LibreQoS v1.3.1 to v1.4 Change Summary" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

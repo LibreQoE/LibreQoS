@@ -16,7 +16,8 @@
         <script src="../../_static/sphinx_highlight.js"></script>
     <script src="../../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../../genindex.html" />
-    <link rel="search" title="Search" href="../../search.html" /> 
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="prev" title="Performance Tuning" href="../TechnicalDocs/performance-tuning.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -42,6 +43,7 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../README.html">Sponsors</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../README.html#support-libreqos">Support LibreQoS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../README.html#documentation">Documentation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../README.html#matrix-chat">Matrix Chat</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../README.html#features">Features</a></li>
 </ul>
@@ -49,10 +51,14 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../Quickstart/networkdesignassumptions.html">Network Design Assumptions</a></li>
 </ul>
+<p class="caption" role="heading"><span class="caption-text">Change Notes:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../ChangeNotes/v1.4.html">LibreQoS v1.3.1 to v1.4 Change Summary</a></li>
+</ul>
 <p class="caption" role="heading"><span class="caption-text">Quickstart:</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../System%20Requirements/Compute.html">System Requirements</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../System%20Requirements/Networking.html">Network Interface Requirements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../SystemRequirements/Compute.html">System Requirements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../SystemRequirements/Networking.html">Network Interface Requirements</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../Quickstart/quickstart-prereq.html">Server Setup - Pre-requisites</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../Quickstart/quickstart-libreqos-1.4.html">Install LibreQoS 1.4</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../Quickstart/share.html">Share your before and after</a></li>
@@ -63,10 +69,60 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Technical Documentation:</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../Technical%20Docs/troubleshooting.html">Troubleshooting</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../Technical%20Docs/integrations.html">Integrations</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../Technical%20Docs/extras.html">Extras</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../Technical%20Docs/performance-tuning.html">Performance Tuning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../TechnicalDocs/troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../TechnicalDocs/integrations.html">Integrations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../TechnicalDocs/extras.html">Extras</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../TechnicalDocs/performance-tuning.html">Performance Tuning</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Legacy:</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">LibreQoS v1.3.1</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#libreqos-v1-3-1-installation-usage-guide-physical-server-and-ubuntu-22-04">LibreQoS v1.3.1 Installation &amp; Usage Guide  - Physical Server and Ubuntu 22.04</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#notes-for-upgrading-from-v1-2-or-prior">Notes for upgrading from v1.2 or prior</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#custom-crm-integrations">Custom CRM Integrations</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#network-design-assumptions">Network Design Assumptions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#network-interface-card">Network Interface Card</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#server-setup">Server Setup</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#install-ubuntu">Install Ubuntu</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#use-installer-script-for-sponsors-skip-if-not-applicable">Use Installer Script (For Sponsors - Skip If Not Applicable)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#setup">Setup</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#disable-irqbalance">Disable IRQbalance</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#disable-offloading">Disable Offloading</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#add-a-bridge-between-edge-core-interfaces">Add a bridge between edge/core interfaces</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#install-libreqos-and-dependencies">Install LibreQoS and dependencies</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#install-and-compile-cpumap-pping">Install and compile cpumap-pping</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#install-influxdb-for-graphing">Install InfluxDB for Graphing</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#modify-ispconfig-py">Modify ispConfig.py</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#integrations">Integrations</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#uisp-integration">UISP Integration</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#network-json">Network.json</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#manual-editing">Manual Editing</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#shapeddevices-csv">ShapedDevices.csv</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#how-to-run-libreqos">How to run LibreQoS</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#one-time-debug-runs">One-Time / Debug Runs</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#running-as-a-service">Running as a service</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#crontab">Crontab</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#common-issues">Common Issues</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#program-running-but-traffic-not-shaping">Program Running, But Traffic Not Shaping</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rtnetlink-answers-invalid-argument">RTNETLINK answers: Invalid argument</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#performance-tuning">Performance Tuning</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#ospf">OSPF</a></li>
+</ul>
+</li>
+</ul>
+</li>
 </ul>
 
         </div>
@@ -495,7 +551,9 @@ sudo<span class="w"> </span>/etc/init.d/cron<span class="w"> </span>start
 
            </div>
           </div>
-          <footer>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="../TechnicalDocs/performance-tuning.html" class="btn btn-neutral float-left" title="Performance Tuning" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
 
   <hr/>
 

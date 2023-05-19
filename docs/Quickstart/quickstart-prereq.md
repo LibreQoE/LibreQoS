@@ -1,13 +1,13 @@
-## Server Setup - Pre-requisites
+# Server Setup - Pre-requisites
 
 Disable hyperthreading on the BIOS/UEFI of your host system. Hyperthreaading is also known as Simultaneous Multi Threading (SMT) on AMD systems. Disabling this is very important for optimal performance of the XDP cpumap filtering and, in turn, throughput and latency.
 
-* Boot, pressing the appropriate key to enter the BIOS settings
-* For AMD systems, you will have to navigate the settings to find the "SMT Control" setting. Usually it is under something like ```Advanced -> AMD CBS -> CPU Common Options -> Thread Enablement -> SMT Control``` Once you find it, switch to "Disabled" or "Off"
-* For Intel systems, you will also have to navigate the settings to find the "hyperthrading" toggle option. On HP servers it's under ```System Configuration > BIOS/Platform Configuration (RBSU) > Processor Options > Intel (R) Hyperthreading Options.```
-* Save changes and reboot
+- Boot, pressing the appropriate key to enter the BIOS settings
+- For AMD systems, you will have to navigate the settings to find the "SMT Control" setting. Usually it is under something like ```Advanced -> AMD CBS -> CPU Common Options -> Thread Enablement -> SMT Control``` Once you find it, switch to "Disabled" or "Off"
+- For Intel systems, you will also have to navigate the settings to find the "hyperthrading" toggle option. On HP servers it's under ```System Configuration > BIOS/Platform Configuration (RBSU) > Processor Options > Intel (R) Hyperthreading Options.```
+- Save changes and reboot
 
-### Install Ubuntu Server
+## Install Ubuntu Server
 
 We recommend Ubuntu Server because its kernel version tends to track closely with the mainline Linux releases. Our current documentation assumes Ubuntu Server. To run LibreQoS v1.4, Linux kernel 5.11 or greater is required, as 5.11 includes some important XDP patches. Ubuntu Server 22.04 uses kernel 5.13, which meets that requirement.
 
@@ -21,28 +21,36 @@ You can download Ubuntu Server 22.04 from <a href="https://ubuntu.com/download/s
 6. You can use scp or sftp to access files from your LibreQoS server for easier file editing. Here's how to access via scp or sftp using an [Ubuntu](https://www.addictivetips.com/ubuntu-linux-tips/sftp-server-ubuntu/) or [Windows](https://winscp.net/eng/index.php) machine.
 
 ### Choose Bridge Type
+
 There are two options for the bridge to pass data through your two interfaces:
-* Bifrost XDP-Accelerated Bridge
-* Regular Linux Bridge
+
+- Bifrost XDP-Accelerated Bridge
+- Regular Linux Bridge
 
 The Bifrost Bridge is faster and generally recommended, but may not work perfectly in a VM setup using virtualized NICs.
 To use the Bifrost bridge, skip the regular Linux bridge section below, and be sure to enable Bifrost/XDP in lqos.conf a few sections below.
 
 ### Adding a regular Linux bridge (if not using Bifrost XDP bridge)
+
 From the Ubuntu VM, create a linux interface bridge - br0 - with the two shaping interfaces.
 Find your existing .yaml file in /etc/netplan/ with
-```
+
+```shell
 cd /etc/netplan/
 ls
 ```
+
 Then edit the .yaml file there with
-```
+
+```shell
 sudo nano XX-cloud-init.yaml
 ```
-with XX corresponding to the name of the existing file.
+
+With XX corresponding to the name of the existing file.
 
 Editing the .yaml file, we need to define the shaping interfaces (here, ens19 and ens20) and add the bridge with those two interfaces. Assuming your interfaces are ens18, ens19, and ens20, here is what your file might look like:
-```
+
+```yaml
 # This is the network config written by 'subiquity'
 network:
   ethernets:
@@ -68,10 +76,12 @@ network:
         - ens19
         - ens20
 ```
+
 Make sure to replace 10.0.0.12/24 with your LibreQoS VM's address and subnet, and to replace the default gateway 10.0.0.1 with whatever your default gateway is.
 
 Then run
-```
+
+```shell
 sudo netplan apply
 ```
 
@@ -84,24 +94,34 @@ To install InfluxDB 2.x., follow the steps at [https://portal.influxdata.com/dow
 For high throughput networks (5+ Gbps) you will likely want to install InfluxDB to a separate machine or VM from that of the LibreQoS server to avoid CPU load.
 
 Restart your system that is running InfluxDB
-```
+
+```shell
 sudo reboot
 ```
+
 Check to ensure InfluxDB is running properly. This command should show "Active: active" with green dot.
-```
+
+```shell
 sudo service influxdb status
 ```
+
 Check that Web UI is running:<br>
-```
+
+```shell
 http://SERVER_IP_ADDRESS:8086
 ```
+
 Create Bucket
-* Data > Buckets > Create Bucket
+
+- Data > Buckets > Create Bucket
 
 Call the bucket `libreqos` (all lowercase).<br>
 Have it store as many days of data as you prefer. 7 days is standard.<>
-Import Dashboard
-* Boards > Create Dashboard > Import Dashboard
+Import Dashboard `Boards > Create Dashboard > Import Dashboard`
 Then upload the file [influxDBdashboardTemplate.json](https://github.com/rchac/LibreQoS/blob/main/src/influxDBdashboardTemplate.json) to InfluxDB.
 
 [Generate an InfluxDB Token](https://docs.influxdata.com/influxdb/cloud/security/tokens/create-token/). It will be added to ispConfig.py in the following steps.
+
+```{note}
+You may want to install a reverse proxy in front of the web interfaces for influx and lqos. Setting these up is outside the scope of this document, but some examples are [Caddy](https://caddyserver.com/), and Nginx [Proxy Manager](https://nginxproxymanager.com/)
+```

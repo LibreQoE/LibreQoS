@@ -1,4 +1,4 @@
-## Share your before and after
+# Share your before and after
 
 We ask that you please share an anonymized screenshot of your LibreQoS deployment before (monitor only mode) and after (queuing enabled) to our [Matrix Channel](https://matrix.to/#/#libreqos:matrix.org). This helps us gauge the impact of our software. It also makes us smile.
 
@@ -8,7 +8,7 @@ We ask that you please share an anonymized screenshot of your LibreQoS deploymen
 4. Resume regular queuing
 5. Screenshot
 
-### Enable monitor only mode
+## Enable monitor only mode
 
 ```shell
 sudo systemctl stop lqos_scheduler
@@ -16,16 +16,16 @@ sudo systemctl restart lqosd
 sudo systemctl restart lqos_node_manager
 ```
 
-### Klingon mode
+## Klingon mode
 
 Please go to the Web UI and click Configuration. Toggle Redact Customer Information (screenshot mode) and then Apply Changes.
 
-### Resume regular queuing
+## Resume regular queuing
 
 ```shell
 sudo systemctl start lqos_scheduler
 ```
 
-### Screenshot
+## Screenshot
 
 To generate a screenshot - please go to the Web UI and click Configuration. Toggle Redact Customer Information (screenshot mode), Apply Changes, and then return to the dashboard to take a screenshot.

@@ -32,6 +32,8 @@ Welcome to the LibreQoS documentation!
    docs/SystemRequirements/Networking
    docs/Quickstart/quickstart-prereq
    docs/Quickstart/quickstart-libreqos-1.4
+   docs/Quickstart/configuration
+   docs/Quickstart/services-and-run
    docs/Quickstart/share
 
 .. toctree::
@@ -44,6 +46,7 @@ Welcome to the LibreQoS documentation!
    :maxdepth: 1
    :caption: Technical Documentation:
 
+   docs/TechnicalDocs/complex-install
    docs/TechnicalDocs/troubleshooting
    docs/TechnicalDocs/integrations
    docs/TechnicalDocs/extras

@@ -18,7 +18,7 @@
     <link rel="index" title="Index" href="../../genindex.html" />
     <link rel="search" title="Search" href="../../search.html" />
     <link rel="next" title="Install LibreQoS 1.4" href="quickstart-libreqos-1.4.html" />
-    <link rel="prev" title="Network Interface Requirements" href="../System%20Requirements/Networking.html" /> 
+    <link rel="prev" title="Network Interface Requirements" href="../SystemRequirements/Networking.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -44,28 +44,51 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../README.html">Sponsors</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../README.html#support-libreqos">Support LibreQoS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../README.html#documentation">Documentation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../README.html#matrix-chat">Matrix Chat</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../README.html#features">Features</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Read me first!:</span></p>
+<p class="caption" role="heading"><span class="caption-text">Read me first!</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="networkdesignassumptions.html">Network Design Assumptions</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Quickstart Considerations:</span></p>
+<p class="caption" role="heading"><span class="caption-text">Change Notes:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../ChangeNotes/v1.4.html">LibreQoS v1.3.1 to v1.4 Change Summary</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Quickstart:</span></p>
 <ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="../System%20Requirements/Compute.html">System Requirements</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../System%20Requirements/Networking.html">Network Interface Requirements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../SystemRequirements/Compute.html">System Requirements</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../SystemRequirements/Networking.html">Network Interface Requirements</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Server Setup - Pre-requisites</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#install-ubuntu-server">Install Ubuntu Server</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#choose-bridge-type">Choose Bridge Type</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#adding-a-regular-linux-bridge-if-not-using-bifrost-xdp-bridge">Adding a regular Linux bridge (if not using Bifrost XDP bridge)</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#install-influxdb-optional-but-recommended">Install InfluxDB (Optional but Recommended)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#install-ubuntu-server">Install Ubuntu Server</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#choose-bridge-type">Choose Bridge Type</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#adding-a-regular-linux-bridge-if-not-using-bifrost-xdp-bridge">Adding a regular Linux bridge (if not using Bifrost XDP bridge)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#install-influxdb-optional-but-recommended">Install InfluxDB (Optional but Recommended)</a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart-libreqos-1.4.html">Install LibreQoS 1.4</a></li>
-<li class="toctree-l1"><a class="reference internal" href="quickstart-libreqos-1.4.html#updating-from-v1-3">Updating from v1.3</a></li>
-<li class="toctree-l1"><a class="reference internal" href="quickstart-libreqos-1.4.html#configure-libreqos">Configure LibreQoS</a></li>
-<li class="toctree-l1"><a class="reference internal" href="quickstart-libreqos-1.4.html#libreqos-daemons">LibreQoS daemons</a></li>
+<li class="toctree-l1"><a class="reference internal" href="configuration.html">Configure LibreQoS</a></li>
+<li class="toctree-l1"><a class="reference internal" href="services-and-run.html">LibreQoS daemons</a></li>
+<li class="toctree-l1"><a class="reference internal" href="share.html">Share your before and after</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Updates:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../Updates/update.html">Updating 1.4 To Latest Version</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Technical Documentation:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../TechnicalDocs/complex-install.html">Complex install (Not Recommended)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../TechnicalDocs/troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../TechnicalDocs/integrations.html">Integrations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../TechnicalDocs/extras.html">Extras</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../TechnicalDocs/performance-tuning.html">Performance Tuning</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Legacy:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../Legacy/v1.3.1.html">LibreQoS v1.3.1</a></li>
 </ul>
 
         </div>
@@ -113,9 +136,8 @@
 <li><p>Ensure SSH server is enabled so you can more easily log into the server later.</p></li>
 <li><p>You can use scp or sftp to access files from your LibreQoS server for easier file editing. Here’s how to access via scp or sftp using an <a class="reference external" href="https://www.addictivetips.com/ubuntu-linux-tips/sftp-server-ubuntu/">Ubuntu</a> or <a class="reference external" href="https://winscp.net/eng/index.php">Windows</a> machine.</p></li>
 </ol>
-</section>
 <section id="choose-bridge-type">
-<h2>Choose Bridge Type<a class="headerlink" href="#choose-bridge-type" title="Permalink to this heading"></a></h2>
+<h3>Choose Bridge Type<a class="headerlink" href="#choose-bridge-type" title="Permalink to this heading"></a></h3>
 <p>There are two options for the bridge to pass data through your two interfaces:</p>
 <ul class="simple">
 <li><p>Bifrost XDP-Accelerated Bridge</p></li>
@@ -125,66 +147,66 @@
 To use the Bifrost bridge, skip the regular Linux bridge section below, and be sure to enable Bifrost/XDP in lqos.conf a few sections below.</p>
 </section>
 <section id="adding-a-regular-linux-bridge-if-not-using-bifrost-xdp-bridge">
-<h2>Adding a regular Linux bridge (if not using Bifrost XDP bridge)<a class="headerlink" href="#adding-a-regular-linux-bridge-if-not-using-bifrost-xdp-bridge" title="Permalink to this heading"></a></h2>
+<h3>Adding a regular Linux bridge (if not using Bifrost XDP bridge)<a class="headerlink" href="#adding-a-regular-linux-bridge-if-not-using-bifrost-xdp-bridge" title="Permalink to this heading"></a></h3>
 <p>From the Ubuntu VM, create a linux interface bridge - br0 - with the two shaping interfaces.
 Find your existing .yaml file in /etc/netplan/ with</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">cd</span> <span class="o">/</span><span class="n">etc</span><span class="o">/</span><span class="n">netplan</span><span class="o">/</span>
-<span class="n">ls</span>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>/etc/netplan/
+ls
 </pre></div>
 </div>
 <p>Then edit the .yaml file there with</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">sudo</span> <span class="n">nano</span> <span class="n">XX</span><span class="o">-</span><span class="n">cloud</span><span class="o">-</span><span class="n">init</span><span class="o">.</span><span class="n">yaml</span>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>nano<span class="w"> </span>XX-cloud-init.yaml
 </pre></div>
 </div>
-<p>with XX corresponding to the name of the existing file.</p>
+<p>With XX corresponding to the name of the existing file.</p>
 <p>Editing the .yaml file, we need to define the shaping interfaces (here, ens19 and ens20) and add the bridge with those two interfaces. Assuming your interfaces are ens18, ens19, and ens20, here is what your file might look like:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># This is the network config written by &#39;subiquity&#39;</span>
-<span class="n">network</span><span class="p">:</span>
-  <span class="n">ethernets</span><span class="p">:</span>
-    <span class="n">ens18</span><span class="p">:</span>
-      <span class="n">addresses</span><span class="p">:</span>
-      <span class="o">-</span> <span class="mf">10.0.0.12</span><span class="o">/</span><span class="mi">24</span>
-      <span class="n">routes</span><span class="p">:</span>
-      <span class="o">-</span> <span class="n">to</span><span class="p">:</span> <span class="n">default</span>
-        <span class="n">via</span><span class="p">:</span> <span class="mf">10.0.0.1</span>
-      <span class="n">nameservers</span><span class="p">:</span>
-        <span class="n">addresses</span><span class="p">:</span>
-        <span class="o">-</span> <span class="mf">1.1.1.1</span>
-        <span class="o">-</span> <span class="mf">8.8.8.8</span>
-        <span class="n">search</span><span class="p">:</span> <span class="p">[]</span>
-    <span class="n">ens19</span><span class="p">:</span>
-      <span class="n">dhcp4</span><span class="p">:</span> <span class="n">no</span>
-    <span class="n">ens20</span><span class="p">:</span>
-      <span class="n">dhcp4</span><span class="p">:</span> <span class="n">no</span>
-  <span class="n">version</span><span class="p">:</span> <span class="mi">2</span>
-  <span class="n">bridges</span><span class="p">:</span>
-    <span class="n">br0</span><span class="p">:</span>
-      <span class="n">interfaces</span><span class="p">:</span>
-        <span class="o">-</span> <span class="n">ens19</span>
-        <span class="o">-</span> <span class="n">ens20</span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="c1"># This is the network config written by &#39;subiquity&#39;</span>
+<span class="nt">network</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">ethernets</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">ens18</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">addresses</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10.0.0.12/24</span>
+<span class="w">      </span><span class="nt">routes</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">to</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">default</span>
+<span class="w">        </span><span class="nt">via</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10.0.0.1</span>
+<span class="w">      </span><span class="nt">nameservers</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">addresses</span><span class="p">:</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.1.1.1</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8.8.8.8</span>
+<span class="w">        </span><span class="nt">search</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+<span class="w">    </span><span class="nt">ens19</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">dhcp4</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">no</span>
+<span class="w">    </span><span class="nt">ens20</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">dhcp4</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">no</span>
+<span class="w">  </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+<span class="w">  </span><span class="nt">bridges</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">br0</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">interfaces</span><span class="p">:</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ens19</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ens20</span>
 </pre></div>
 </div>
 <p>Make sure to replace 10.0.0.12/24 with your LibreQoS VM’s address and subnet, and to replace the default gateway 10.0.0.1 with whatever your default gateway is.</p>
 <p>Then run</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">sudo</span> <span class="n">netplan</span> <span class="n">apply</span>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>netplan<span class="w"> </span>apply
 </pre></div>
 </div>
 </section>
 <section id="install-influxdb-optional-but-recommended">
-<h2>Install InfluxDB (Optional but Recommended)<a class="headerlink" href="#install-influxdb-optional-but-recommended" title="Permalink to this heading"></a></h2>
+<h3>Install InfluxDB (Optional but Recommended)<a class="headerlink" href="#install-influxdb-optional-but-recommended" title="Permalink to this heading"></a></h3>
 <p>InfluxDB allows you to track long-term stats beyond what lqos_node_manager can so far.</p>
 <p>To install InfluxDB 2.x., follow the steps at <a class="reference external" href="https://portal.influxdata.com/downloads/">https://portal.influxdata.com/downloads/</a>.</p>
 <p>For high throughput networks (5+ Gbps) you will likely want to install InfluxDB to a separate machine or VM from that of the LibreQoS server to avoid CPU load.</p>
 <p>Restart your system that is running InfluxDB</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">sudo</span> <span class="n">reboot</span>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>reboot
 </pre></div>
 </div>
 <p>Check to ensure InfluxDB is running properly. This command should show “Active: active” with green dot.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">sudo</span> <span class="n">service</span> <span class="n">influxdb</span> <span class="n">status</span>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>service<span class="w"> </span>influxdb<span class="w"> </span>status
 </pre></div>
 </div>
 <p>Check that Web UI is running:<br></p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">http</span><span class="p">:</span><span class="o">//</span><span class="n">SERVER_IP_ADDRESS</span><span class="p">:</span><span class="mi">8086</span>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>http://SERVER_IP_ADDRESS:8086
 </pre></div>
 </div>
 <p>Create Bucket</p>
@@ -193,12 +215,14 @@ Find your existing .yaml file in /etc/netplan/ with</p>
 </ul>
 <p>Call the bucket <code class="docutils literal notranslate"><span class="pre">libreqos</span></code> (all lowercase).<br>
 Have it store as many days of data as you prefer. 7 days is standard.&lt;&gt;
-Import Dashboard</p>
-<ul class="simple">
-<li><p>Boards &gt; Create Dashboard &gt; Import Dashboard
-Then upload the file <a class="reference external" href="https://github.com/rchac/LibreQoS/blob/main/src/influxDBdashboardTemplate.json">influxDBdashboardTemplate.json</a> to InfluxDB.</p></li>
-</ul>
+Import Dashboard <code class="docutils literal notranslate"><span class="pre">Boards</span> <span class="pre">&gt;</span> <span class="pre">Create</span> <span class="pre">Dashboard</span> <span class="pre">&gt;</span> <span class="pre">Import</span> <span class="pre">Dashboard</span></code>
+Then upload the file <a class="reference external" href="https://github.com/rchac/LibreQoS/blob/main/src/influxDBdashboardTemplate.json">influxDBdashboardTemplate.json</a> to InfluxDB.</p>
 <p><a class="reference external" href="https://docs.influxdata.com/influxdb/cloud/security/tokens/create-token/">Generate an InfluxDB Token</a>. It will be added to ispConfig.py in the following steps.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>You may want to install a reverse proxy in front of the web interfaces for influx and lqos. Setting these up is outside the scope of this document, but some examples are <a class="reference external" href="https://caddyserver.com/">Caddy</a>, and Nginx <a class="reference external" href="https://nginxproxymanager.com/">Proxy Manager</a></p>
+</div>
+</section>
 </section>
 </section>
 
@@ -206,7 +230,7 @@ Then upload the file <a class="reference external" href="https://github.com/rcha
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="../System%20Requirements/Networking.html" class="btn btn-neutral float-left" title="Network Interface Requirements" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../SystemRequirements/Networking.html" class="btn btn-neutral float-left" title="Network Interface Requirements" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
         <a href="quickstart-libreqos-1.4.html" class="btn btn-neutral float-right" title="Install LibreQoS 1.4" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
