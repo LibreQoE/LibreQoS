@@ -108,4 +108,4 @@ So for example, an ISP delivering 1Gbps service plans with 10Gbps aggregate thro
     * Intel X520
     
 ## Get Started
-- [v1.4](https://github.com/LibreQoE/LibreQoS/wiki/v1.4)
+- [ReadTheDocs](https://libreqos.readthedocs.io/en/develop/docs/SystemRequirements/Compute.html)
