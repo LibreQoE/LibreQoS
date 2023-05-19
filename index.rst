@@ -3,18 +3,55 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to the LibreQoE documentation!
+Welcome to the LibreQoS documentation!
 ====================================
 
 .. toctree::
-   :maxdepth: 2
-   :caption: Contents:
+   :maxdepth: 1
+   :caption: Readme:
 
+   README
 
+.. toctree::
+   :maxdepth: 1
+   :caption: Read me first!
 
-Indices and tables
-==================
+   docs/Quickstart/networkdesignassumptions
 
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+.. toctree::
+   :maxdepth: 1
+   :caption: Change Notes:
+
+   docs/ChangeNotes/v1.4
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Quickstart:
+
+   docs/SystemRequirements/Compute
+   docs/SystemRequirements/Networking
+   docs/Quickstart/quickstart-prereq
+   docs/Quickstart/quickstart-libreqos-1.4
+   docs/Quickstart/share
+
+.. toctree::
+   ::maxdepth: 1
+   :caption: Updates:
+
+   docs/Updates/update
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Technical Documentation:
+
+   docs/TechnicalDocs/troubleshooting
+   docs/TechnicalDocs/integrations
+   docs/TechnicalDocs/extras
+   docs/TechnicalDocs/performance-tuning
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Legacy:
+
+   docs/Legacy/v1.3.1
+
