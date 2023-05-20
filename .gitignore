@@ -105,3 +105,9 @@ tramp
 # virtual environments
 .venv
 venv
+
+# pshinx
+_build
+
+# MacOS
+.DS_Store
