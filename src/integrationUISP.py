@@ -10,8 +10,8 @@ from datetime import datetime, timedelta
 from integrationCommon import isIpv4Permitted, fixSubnet
 
 try:
-    from ispConfig import uispSite, uispStrategy, overwriteNetworkJSONalways
-except:
+    from ispConfig import uispSite, uispStrategy, overwriteNetworkJSONalways, suspendedDownload, suspendedUpload
+except ImportError:
     from ispConfig import uispSite, uispStrategy
 
     overwriteNetworkJSONalways = False
@@ -45,27 +45,35 @@ def buildFlatGraph():
     net = NetworkGraph()
 
     for site in sites:
-        type = site["identification"]["type"]
-        if type == "endpoint":
-            id = site["identification"]["id"]
+        siteType = site["identification"]["type"]
+        if siteType == "endpoint":
+            if site.get("ucrm"):
+                _name = site["ucrm"]["client"]["name"]
+                _custId = site["ucrm"]["client"]["id"]
+            siteId = site["identification"]["id"]
             address = site["description"]["address"]
-            customerName = ""
+            customerName = _name
+            customerID = _custId
             name = site["identification"]["name"]
-            type = site["identification"]["type"]
+            siteType = site["identification"]["type"]
             download = generatedPNDownloadMbps
             upload = generatedPNUploadMbps
             if (site["qos"]["downloadSpeed"]) and (site["qos"]["uploadSpeed"]):
                 download = int(round(site["qos"]["downloadSpeed"] / 1000000))
                 upload = int(round(site["qos"]["uploadSpeed"] / 1000000))
+            if site.get("ucrm") and site["ucrm"]["service"]["status"] != 1:
+                download = suspendedDownload
+                upload = suspendedUpload
 
             node = NetworkNode(
-                id=id,
+                siteId=siteId,
                 displayName=name,
-                type=NodeType.client,
+                siteType=NodeType.client,
                 download=download,
                 upload=upload,
                 address=address,
                 customerName=customerName,
+                customerId=customerID,
             )
             net.addRawNode(node)
             for device in devices:
@@ -88,12 +96,14 @@ def buildFlatGraph():
                     # TODO: Figure out Mikrotik IPv6?
                     mac = device["identification"]["mac"]
 
+                    if site["identification"].get("parent"):
+                        _parent_id = site["identification"]["parent"]["id"]
                     net.addRawNode(
                         NetworkNode(
-                            id=device["identification"]["id"],
+                            siteId=device["identification"]["id"],
                             displayName=device["identification"]["name"],
-                            parentId=id,
-                            type=NodeType.device,
+                            parentId=_parent_id,
+                            siteType=NodeType.device,
                             ipv4=ipv4,
                             ipv6=ipv6,
                             mac=mac,
@@ -473,20 +483,28 @@ def buildFullGraph():
     net = NetworkGraph()
     # Add all sites and client sites
     for site in sites:
-        id = site["identification"]["id"]
+        if site.get("ucrm"):
+            _name = site["ucrm"]["client"]["name"]
+            _custId = site["ucrm"]["client"]["id"]
+        if site["identification"].get("parent"):
+            _parent_id = site["identification"]["parent"]["id"]
+        else:
+            _parent_id = ""
+        siteId = site["identification"]["id"]
         name = site["identification"]["name"]
-        type = site["identification"]["type"]
+        siteType = site["identification"]["type"]
         download = generatedPNDownloadMbps
         upload = generatedPNUploadMbps
-        address = ""
+        address = site["description"]["address"] if not None else None
         customerName = ""
-        parent = findInSiteListById(siteList, id)["parent"]
+        customerId = _custId if not None else None
+        parent = findInSiteListById(siteList, siteId)["parent"]
         if parent == "":
             if site["identification"]["parent"] is None:
                 parent = ""
             else:
                 parent = site["identification"]["parent"]["id"]
-        match type:
+        match siteType:
             case "site":
                 nodeType = NodeType.site
                 if name in siteBandwidth:
@@ -495,17 +513,17 @@ def buildFullGraph():
                     upload = siteBandwidth[name]["upload"]
                 else:
                     # Use limits from foundAirFibersBySite
-                    if id in foundAirFibersBySite:
-                        download = foundAirFibersBySite[id]["download"]
-                        upload = foundAirFibersBySite[id]["upload"]
+                    if siteId in foundAirFibersBySite:
+                        download = foundAirFibersBySite[siteId]["download"]
+                        upload = foundAirFibersBySite[siteId]["upload"]
                     # If no airFibers were found, and node originates off PtMP, treat as child node of that PtMP AP
                     else:
-                        if id in nodeOffPtMP:
-                            if (nodeOffPtMP[id]["download"] >= download) or (
-                                nodeOffPtMP[id]["upload"] >= upload
+                        if siteId in nodeOffPtMP:
+                            if (nodeOffPtMP[siteId]["download"] >= download) or (
+                                nodeOffPtMP[siteId]["upload"] >= upload
                             ):
-                                download = nodeOffPtMP[id]["download"]
-                                upload = nodeOffPtMP[id]["upload"]
+                                download = nodeOffPtMP[siteId]["download"]
+                                upload = nodeOffPtMP[siteId]["upload"]
 
                 siteBandwidth[name] = {"download": download, "upload": upload}
             case default:
@@ -518,16 +536,20 @@ def buildFullGraph():
                 if (site["qos"]["downloadSpeed"]) and (site["qos"]["uploadSpeed"]):
                     download = int(round(site["qos"]["downloadSpeed"] / 1000000))
                     upload = int(round(site["qos"]["uploadSpeed"] / 1000000))
+                if site.get("ucrm") and site["ucrm"]["service"]["status"] != 1:
+                    download = suspendedDownload
+                    upload = suspendedUpload
 
         node = NetworkNode(
-            id=id,
+            siteId=siteId,
             displayName=name,
-            type=nodeType,
+            siteType=nodeType,
             parentId=parent,
             download=download,
             upload=upload,
             address=address,
             customerName=customerName,
+            customerId=customerId,
         )
         # If this is the uispSite node, it becomes the root. Otherwise, add it to the
         # node soup.
@@ -558,10 +580,10 @@ def buildFullGraph():
 
                 net.addRawNode(
                     NetworkNode(
-                        id=device["identification"]["id"],
+                        siteId=device["identification"]["id"],
                         displayName=device["identification"]["name"],
-                        parentId=id,
-                        type=NodeType.device,
+                        parentId=_parent_id,
+                        siteType=NodeType.device,
                         ipv4=ipv4,
                         ipv6=ipv6,
                         mac=mac,
@@ -570,10 +592,10 @@ def buildFullGraph():
 
     # Now iterate access points, and look for connections to sites
     for node in net.nodes:
-        if node.type == NodeType.device:
+        if node.siteType == NodeType.device:
             for dl in dataLinks:
                 if (
-                    dl["from"]["device"] is not None and dl["from"]["device"]["identification"]["id"] == node.id
+                    dl["from"]["device"] is not None and dl["from"]["device"]["identification"]["id"] == node.siteId
                 ):
                     if (
                         dl["to"]["site"] is not None and dl["from"]["site"]["identification"]["id"] != dl["to"]["site"]["identification"]["id"]
@@ -582,9 +604,9 @@ def buildFullGraph():
                         if target > -1:
                             # We found the site
                             if (
-                                net.nodes[target].type == NodeType.client or net.nodes[target].type == NodeType.clientWithChildren
+                                net.nodes[target].siteType == NodeType.client or net.nodes[target].siteType == NodeType.clientWithChildren
                             ):
-                                net.nodes[target].parentId = node.id
+                                net.nodes[target].parentId = node.siteId
                                 node.type = NodeType.ap
                                 if node.displayName in siteBandwidth:
                                     # Use the bandwidth numbers from the CSV file

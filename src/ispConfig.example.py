@@ -76,6 +76,11 @@ overwriteNetworkJSONalways = False
 ignoreSubnets = ["192.168.0.0/16"]
 allowedSubnets = ["100.64.0.0/10"]
 
+# ISP Integration
+# Set bandwidths for suspended/inactive clients in Mbps
+suspendedDownload = 1
+suspendedUpload = 1
+
 # Splynx Integration
 automaticImportSplynx = False
 splynx_api_key = ""
