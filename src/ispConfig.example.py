@@ -1,7 +1,7 @@
 # 'fq_codel' or 'cake diffserv4'
 # 'cake diffserv4' is recommended
 # sqm = 'fq_codel'
-sqm = 'cake diffserv4'
+sqm = "cake diffserv4"
 
 # Used to passively monitor the network for before / after comparisons. Leave as False to
 # ensure actual shaping. After changing this value, run "sudo systemctl restart LibreQoS.service"
@@ -21,10 +21,10 @@ generatedPNDownloadMbps = 1000
 generatedPNUploadMbps = 1000
 
 # Interface connected to core router
-interfaceA = 'eth1'
+interfaceA = "eth1"
 
 # Interface connected to edge router
-interfaceB = 'eth2'
+interfaceB = "eth2"
 
 # Queue refresh scheduler (lqos_scheduler). Minutes between reloads.
 queueRefreshIntervalMins = 30
@@ -73,24 +73,24 @@ circuitNameUseAddress = True
 overwriteNetworkJSONalways = False
 
 # If a device shows a WAN IP within these subnets, assume they are behind NAT / un-shapable, and ignore them
-ignoreSubnets = ['192.168.0.0/16']
-allowedSubnets = ['100.64.0.0/10']
+ignoreSubnets = ["192.168.0.0/16"]
+allowedSubnets = ["100.64.0.0/10"]
 
 # Splynx Integration
 automaticImportSplynx = False
-splynx_api_key = ''
-splynx_api_secret = ''
+splynx_api_key = ""
+splynx_api_secret = ""
 # Everything before /api/2.0/ on your Splynx instance
-splynx_api_url = 'https://YOUR_URL.splynx.app'
+splynx_api_url = "https://YOUR_URL.splynx.app"
 
 # UISP integration
 automaticImportUISP = False
-uispAuthToken = ''
+uispAuthToken = ""
 # Everything before /nms/ on your UISP instance
-UISPbaseURL = 'https://examplesite.com'
+UISPbaseURL = "https://examplesite.com"
 # UISP Site - enter the name of the root site in your network tree
 # to act as the starting point for the tree mapping
-uispSite = ''
+uispSite = ""
 # Strategy:
 # * "flat" - create all client sites directly off the top of the tree,
 #   provides maximum performance - at the expense of not offering AP,
@@ -120,18 +120,18 @@ apiHostPost = 5000
 
 
 httpRestIntegrationConfig = {
-    'enabled': False,
-    'baseURL': 'https://domain',
-    'networkURI': '/some/path',
-    'shaperURI': '/some/path/etc',
-    'requestsConfig': {
-        'verify': True,  # Good for Dev if your dev env doesnt have cert
-         'params': {  # params for query string ie uri?some-arg=some-value
-           'search': 'hold-my-beer'
-         },
+    "enabled": False,
+    "baseURL": "https://domain",
+    "networkURI": "/some/path",
+    "shaperURI": "/some/path/etc",
+    "requestsConfig": {
+        "verify": True,  # Good for Dev if your dev env doesnt have cert
+        "params": {  # params for query string ie uri?some-arg=some-value
+            "search": "hold-my-beer"
+        },
         #'headers': {
-           # 'Origin': 'SomeHeaderValue',
-        #},
+        # 'Origin': 'SomeHeaderValue',
+        # },
     },
     # If you want to store a timestamped copy/backup of both network.json and Shaper.csv each time they are updated,
     # provide a path
