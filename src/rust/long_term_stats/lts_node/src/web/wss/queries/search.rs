@@ -1,6 +1,8 @@
-use axum::extract::ws::{WebSocket, Message};
+use axum::extract::ws::WebSocket;
 use pgdb::sqlx::{Pool, Postgres};
-use serde::Serialize;
+use wasm_pipe_types::SearchResult;
+
+use crate::web::wss::send_response;
 
 pub async fn omnisearch(
     cnn: Pool<Postgres>,
@@ -23,29 +25,9 @@ pub async fn omnisearch(
     hits.dedup_by(|a,b| a.name == b.name && a.url == b.url);
     hits.sort_by(|a,b| a.score.partial_cmp(&b.score).unwrap());
 
-    let msg = SearchMessage {
-        msg: "search".to_string(),
-        hits
-    };
-    log::warn!("{msg:?}");
-    let json = serde_json::to_string(&msg).unwrap();
-    socket.send(Message::Text(json)).await.unwrap();
+    send_response(socket, wasm_pipe_types::WasmResponse::SearchResult { hits }).await;
 
     Ok(())
-}
-
-#[derive(Serialize, Debug)]
-struct SearchMessage {
-    msg: String,
-    hits: Vec<SearchResult>,
-}
-
-#[derive(Serialize, Debug)]
-struct SearchResult {
-    name: String,
-    url: String,
-    score: f64,
-    icon: String,
 }
 
 async fn search_devices(

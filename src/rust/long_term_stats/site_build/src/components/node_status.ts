@@ -1,3 +1,4 @@
+import { request_node_status } from "../../wasm/wasm_pipe";
 import { Component } from "./component";
 
 export class NodeStatus implements Component {
@@ -6,16 +7,16 @@ export class NodeStatus implements Component {
     }
 
     ontick(): void {
-        window.bus.requestNodeStatus();
+        request_node_status();
     }
 
     onmessage(event: any): void {
-        if (event.msg == "nodeStatus") {
+        if (event.msg == "NodeStatus") {
             let status = document.getElementById("nodeStatus");
             let html = "";
             if (status) {
-                for (let i = 0; i < event.nodes.length; i++) {
-                    let node = event.nodes[i];
+                for (let i = 0; i < event.NodeStatus.nodes.length; i++) {
+                    let node = event.NodeStatus.nodes[i];
                     let color = "danger";
                     if (node.last_seen > 86400) {
                         color = "secondary";

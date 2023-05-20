@@ -1,29 +1,24 @@
 //! Packet-per-second data queries
-mod packet_host;
 mod packet_row;
-use self::{packet_host::{Packets, PacketHost, PacketChart}, packet_row::PacketRow};
-use crate::submissions::get_org_details;
-use axum::extract::ws::{WebSocket, Message};
+use self::packet_row::PacketRow;
+use crate::{submissions::get_org_details, web::wss::send_response};
+use axum::extract::ws::WebSocket;
 use futures::future::join_all;
 use influxdb2::{models::Query, Client};
 use pgdb::sqlx::{Pool, Postgres};
+use wasm_pipe_types::{PacketHost, Packets};
 use super::time_period::InfluxTimePeriod;
 
 pub async fn send_packets_for_all_nodes(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod) -> anyhow::Result<()> {
     let nodes = get_packets_for_all_nodes(cnn, key, period).await?;
-
-    let chart = PacketChart { msg: "packetChart".to_string(), nodes };
-        let json = serde_json::to_string(&chart).unwrap();
-        socket.send(Message::Text(json)).await.unwrap();
+    send_response(socket, wasm_pipe_types::WasmResponse::PacketChart { nodes }).await;
     Ok(())
 }
 
 pub async fn send_packets_for_node(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod, node_id: String, node_name: String) -> anyhow::Result<()> {
     let node = get_packets_for_node(cnn, key, node_id, node_name, period).await?;
 
-    let chart = PacketChart { msg: "packetChart".to_string(), nodes: vec![node] };
-        let json = serde_json::to_string(&chart).unwrap();
-        socket.send(Message::Text(json)).await.unwrap();
+    send_response(socket, wasm_pipe_types::WasmResponse::PacketChart { nodes: vec![node] }).await;
     Ok(())
 }
 

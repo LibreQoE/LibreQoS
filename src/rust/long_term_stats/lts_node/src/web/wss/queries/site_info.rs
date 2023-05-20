@@ -1,7 +1,9 @@
-use axum::extract::ws::{WebSocket, Message};
+use axum::extract::ws::WebSocket;
 use pgdb::sqlx::{Pool, Postgres};
 use serde::Serialize;
-use super::site_tree::SiteTree;
+use wasm_pipe_types::{SiteTree, WasmResponse};
+use crate::web::wss::send_response;
+use super::site_tree::tree_to_host;
 
 #[derive(Serialize)]
 struct SiteInfoMessage {
@@ -12,14 +14,7 @@ struct SiteInfoMessage {
 
 pub async fn send_site_info(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, site_id: &str) {
     if let Ok(host) = pgdb::get_site_info(cnn, key, site_id).await {
-        let host = SiteTree::from(host);
-        let msg = SiteInfoMessage {
-            msg: "site_info".to_string(),
-            data: host,
-        };
-        let json = serde_json::to_string(&msg).unwrap();
-        if let Err(e) = socket.send(Message::Text(json)).await {
-            tracing::error!("Error sending message: {}", e);
-        }
+        let host = tree_to_host(host);
+        send_response(socket, WasmResponse::SiteInfo { data: host }).await;
     }
 }

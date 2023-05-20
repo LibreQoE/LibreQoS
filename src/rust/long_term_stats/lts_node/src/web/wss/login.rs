@@ -1,7 +1,9 @@
-use axum::extract::ws::{WebSocket, Message};
+use axum::extract::ws::WebSocket;
 use pgdb::sqlx::{Pool, Postgres};
 use serde::Serialize;
-use serde_json::Value;
+use wasm_pipe_types::WasmResponse;
+
+use super::send_response;
 
 #[derive(Debug, Serialize)]
 pub struct LoginResult {
@@ -11,71 +13,45 @@ pub struct LoginResult {
     pub license_key: String,
 }
 
-pub async fn on_login(json: &Value, socket: &mut WebSocket, cnn: Pool<Postgres>) -> Option<LoginResult> {
-    if let (
-        Some(Value::String(license)),
-        Some(Value::String(username)),
-        Some(Value::String(password)),
-    ) = (
-        json.get("license"),
-        json.get("username"),
-        json.get("password"),
-    ) {
-        let login = pgdb::try_login(cnn, license, username, password).await;
-        if let Ok(login) = login {
-            let lr = LoginResult {
-                msg: "loginOk".to_string(),
-                token: login.token,
-                name: login.name,
-                license_key: license.to_string(),
-            };
-            if let Ok(login) = serde_json::to_string(&lr) {
-                let msg = Message::Text(login);
-                socket.send(msg).await.unwrap();
-                return Some(lr);
-            }
-        } else {
-            let lr = LoginResult {
-                msg: "loginFail".to_string(),
-                token: String::new(),
-                name: String::new(),
-                license_key: license.to_string(),
-            };
-            if let Ok(login) = serde_json::to_string(&lr) {
-                let msg = Message::Text(login);
-                socket.send(msg).await.unwrap();
-            }
-        }
+pub async fn on_login(license: &str, username: &str, password: &str, socket: &mut WebSocket, cnn: Pool<Postgres>) -> Option<LoginResult> {
+    let login = pgdb::try_login(cnn, license, username, password).await;
+    if let Ok(login) = login {
+        let lr = WasmResponse::LoginOk {
+            token: login.token.clone(),
+            name: login.name.clone(),
+            license_key: license.to_string(),
+        };
+        send_response(socket, lr).await;
+        return Some(LoginResult {
+            msg: "Login Ok".to_string(),
+            token: login.token.to_string(),
+            name: login.name.to_string(),
+            license_key: license.to_string(),
+        });
+    } else {
+        let lr = WasmResponse::LoginFail;
+        send_response(socket, lr).await;
     }
-    None
+None
 }
 
-pub async fn on_token_auth(json: &Value, socket: &mut WebSocket, cnn: Pool<Postgres>) -> Option<LoginResult> {
-    let token_id = json.get("token").unwrap().as_str().unwrap();
+pub async fn on_token_auth(token_id: &str, socket: &mut WebSocket, cnn: Pool<Postgres>) -> Option<LoginResult> {
     let login = pgdb::token_to_credentials(cnn, token_id).await;
     if let Ok(login) = login {
-        let lr = LoginResult {
-            msg: "authOk".to_string(),
-            token: login.token,
-            name: login.name,
-            license_key: login.license,
+        let lr = WasmResponse::AuthOk {
+            token: login.token.clone(),
+            name: login.name.clone(),
+            license_key: login.license.clone(),
         };
-        if let Ok(login) = serde_json::to_string(&lr) {
-            let msg = Message::Text(login);
-            socket.send(msg).await.unwrap();
-            return Some(lr);
-        }
+        send_response(socket, lr).await;
+        return Some(LoginResult {
+            msg: "Login Ok".to_string(),
+            token: login.token.to_string(),
+            name: login.name.to_string(),
+            license_key: login.license.to_string(),
+        });
     } else {
-        let lr = LoginResult {
-            msg: "authFail".to_string(),
-            token: String::new(),
-            name: String::new(),
-            license_key: String::new(),
-        };
-        if let Ok(login) = serde_json::to_string(&lr) {
-            let msg = Message::Text(login);
-            socket.send(msg).await.unwrap();
-        }
+        send_response(socket, WasmResponse::AuthFail).await;
     }
     None
 }

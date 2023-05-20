@@ -1,4 +1,5 @@
 import { Component } from "./component";
+import { request_node_status } from "../../wasm/wasm_pipe";
 
 export class NodeList implements Component {
     wireup(): void {
@@ -6,11 +7,11 @@ export class NodeList implements Component {
     }
 
     ontick(): void {
-        window.bus.requestNodeStatus();
+        request_node_status();
     }
 
     onmessage(event: any): void {
-        if (event.msg == "nodeStatus") {
+        if (event.msg == "NodeStatus") {
             let status = document.getElementById("nodeList");
             let html = "";
             if (status) {
@@ -18,8 +19,8 @@ export class NodeList implements Component {
                 html += "<thead>";
                 html += "<th>Node ID</th><th>Node Name</th><th>Last Seen</th>";
                 html += "</thead><tbody>";
-                for (let i = 0; i < event.nodes.length; i++) {
-                    let node = event.nodes[i];
+                for (let i = 0; i < event.NodeStatus.nodes.length; i++) {
+                    let node = event.NodeStatus.nodes[i];
                     let url = "\"shaperNode:" + node.node_id + ":" + node.node_name.replace(':', '_') + "\"";
                     let oc = "onclick='window.router.goto(" + url + ")'";
                     html += "<tr>";

@@ -37,7 +37,6 @@ export class SitePage implements Page {
         this.components.forEach(component => {
             component.wireup();
         });
-        window.bus.requestThroughputStackSite(this.siteId);
     }
 
     ontick(): void {

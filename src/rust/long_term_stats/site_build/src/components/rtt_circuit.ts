@@ -1,6 +1,7 @@
 import { scaleNumber } from "../helpers";
 import { Component } from "./component";
 import * as echarts from 'echarts';
+import { request_rtt_chart_for_circuit } from "../../wasm/wasm_pipe";
 
 export class RttChartCircuit implements Component {
     div: HTMLElement;
@@ -9,7 +10,7 @@ export class RttChartCircuit implements Component {
     circuitId: string;
 
     constructor(circuitId: string) {
-        this.circuitId = circuitId;
+        this.circuitId = decodeURI(circuitId);
         this.div = document.getElementById("rttChart") as HTMLElement;
         this.myChart = echarts.init(this.div);
         this.myChart.showLoading();
@@ -19,11 +20,11 @@ export class RttChartCircuit implements Component {
     }
 
     ontick(): void {
-        window.bus.requestRttChartCircuit(this.circuitId);
+        request_rtt_chart_for_circuit(window.graphPeriod, this.circuitId);
     }
 
     onmessage(event: any): void {
-        if (event.msg == "rttChartCircuit") {
+        if (event.msg == "RttChartCircuit") {
             let series: echarts.SeriesOption[] = [];
 
             // Iterate all provides nodes and create a set of series for each,
@@ -31,8 +32,8 @@ export class RttChartCircuit implements Component {
             let x: any[] = [];
             let first = true;
             let legend: string[] = [];
-            for (let i=0; i<event.nodes.length; i++) {
-                let node = event.nodes[i];
+            for (let i=0; i<event.RttChartCircuit.nodes.length; i++) {
+                let node = event.RttChartCircuit.nodes[i];
                 legend.push(node.node_name);
                 //console.log(node);
 

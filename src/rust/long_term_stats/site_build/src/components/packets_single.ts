@@ -1,3 +1,4 @@
+import { request_packet_chart_for_node } from "../../wasm/wasm_pipe";
 import { scaleNumber } from "../helpers";
 import { Component } from "./component";
 import * as echarts from 'echarts';
@@ -21,11 +22,11 @@ export class PacketsChartSingle implements Component {
     }
 
     ontick(): void {
-        window.bus.requestPacketChartSingle(this.node_id, this.node_name);
+        request_packet_chart_for_node(window.graphPeriod, this.node_id, this.node_name);
     }
 
     onmessage(event: any): void {
-        if (event.msg == "packetChart") {
+        if (event.msg == "PacketChart") {
             let series: echarts.SeriesOption[] = [];
 
             // Iterate all provides nodes and create a set of series for each,
@@ -33,8 +34,8 @@ export class PacketsChartSingle implements Component {
             let x: any[] = [];
             let first = true;
             let legend: string[] = [];
-            for (let i=0; i<event.nodes.length; i++) {
-                let node = event.nodes[i];
+            for (let i=0; i<event.PacketChart.nodes.length; i++) {
+                let node = event.PacketChart.nodes[i];
                 legend.push(node.node_name);
                 //legend.push(node.node_name + " UL");
                 //console.log(node);

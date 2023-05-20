@@ -22,12 +22,12 @@ export class RttHistoSite implements Component {
     }
 
     onmessage(event: any): void {
-        if (event.msg == "rttChartSite") {
+        if (event.msg == "RttChartSite") {
             //console.log(event);
             this.download = [];
             this.x = [];
-            for (let i = 0; i < event.histogram.length; i++) {
-                this.download.push(event.histogram[i]);
+            for (let i = 0; i < event.RttChartSite.histogram.length; i++) {
+                this.download.push(event.RttChartSite.histogram[i]);
                 this.x.push(i * 10);
             }
 

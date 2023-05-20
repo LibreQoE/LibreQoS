@@ -1,3 +1,4 @@
+import { request_node_perf_chart } from "../../wasm/wasm_pipe";
 import { scaleNumber } from "../helpers";
 import { Component } from "./component";
 import * as echarts from 'echarts';
@@ -21,11 +22,11 @@ export class NodeRamChart implements Component {
     }
 
     ontick(): void {
-        window.bus.requestNodePerfChart(this.node_id, this.node_name);
+        request_node_perf_chart(window.graphPeriod, this.node_id, this.node_name);
     }
 
     onmessage(event: any): void {
-        if (event.msg == "nodePerfChart") {
+        if (event.msg == "NodePerfChart") {
             let series: echarts.SeriesOption[] = [];
 
             // Iterate all provides nodes and create a set of series for each,
@@ -33,8 +34,8 @@ export class NodeRamChart implements Component {
             let x: any[] = [];
             let first = true;
             let legend: string[] = [];
-            for (let i=0; i<event.nodes.length; i++) {
-                let node = event.nodes[i];
+            for (let i=0; i<event.NodePerfChart.nodes.length; i++) {
+                let node = event.NodePerfChart.nodes[i];
                 legend.push(node.node_name);
                 //console.log(node);
 

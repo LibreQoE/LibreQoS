@@ -1,49 +1,38 @@
 use std::collections::HashMap;
 mod site_stack;
-use axum::extract::ws::{WebSocket, Message};
+use axum::extract::ws::WebSocket;
 use futures::future::join_all;
 use influxdb2::{Client, models::Query};
 use pgdb::sqlx::{Pool, Postgres};
-use crate::submissions::get_org_details;
-use self::{throughput_host::{ThroughputHost, Throughput, ThroughputChart}, throughput_row::{ThroughputRow, ThroughputRowBySite, ThroughputRowByCircuit}};
+use wasm_pipe_types::{ThroughputHost, Throughput};
+use crate::{submissions::get_org_details, web::wss::send_response};
+use self::throughput_row::{ThroughputRow, ThroughputRowBySite, ThroughputRowByCircuit};
 use super::time_period::InfluxTimePeriod;
-mod throughput_host;
 mod throughput_row;
 pub use site_stack::send_site_stack_map;
 
 pub async fn send_throughput_for_all_nodes(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod) -> anyhow::Result<()> {
     let nodes = get_throughput_for_all_nodes(cnn, key, period).await?;
-
-    let chart = ThroughputChart { msg: "bitsChart".to_string(), nodes };
-        let json = serde_json::to_string(&chart).unwrap();
-        socket.send(Message::Text(json)).await.unwrap();
+    send_response(socket, wasm_pipe_types::WasmResponse::BitsChart { nodes }).await;
     Ok(())
 }
 
 pub async fn send_throughput_for_all_nodes_by_site(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, site_name: String, period: InfluxTimePeriod) -> anyhow::Result<()> {
     let nodes = get_throughput_for_all_nodes_by_site(cnn, key, period, &site_name).await?;
 
-    let chart = ThroughputChart { msg: "bitsChartSite".to_string(), nodes };
-        let json = serde_json::to_string(&chart).unwrap();
-        socket.send(Message::Text(json)).await.unwrap();
+    send_response(socket, wasm_pipe_types::WasmResponse::BitsChart { nodes }).await;
     Ok(())
 }
 
 pub async fn send_throughput_for_all_nodes_by_circuit(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, circuit_id: String, period: InfluxTimePeriod) -> anyhow::Result<()> {
     let nodes = get_throughput_for_all_nodes_by_circuit(cnn, key, period, &circuit_id).await?;
-
-    let chart = ThroughputChart { msg: "bitsChartCircuit".to_string(), nodes };
-        let json = serde_json::to_string(&chart).unwrap();
-        socket.send(Message::Text(json)).await.unwrap();
+    send_response(socket, wasm_pipe_types::WasmResponse::BitsChart { nodes }).await;
     Ok(())
 }
 
 pub async fn send_throughput_for_node(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod, node_id: String, node_name: String) -> anyhow::Result<()> {
     let node = get_throughput_for_node(cnn, key, node_id, node_name, period).await?;
-
-    let chart = ThroughputChart { msg: "bitsChart".to_string(), nodes: vec![node] };
-        let json = serde_json::to_string(&chart).unwrap();
-        socket.send(Message::Text(json)).await.unwrap();
+    send_response(socket, wasm_pipe_types::WasmResponse::BitsChart { nodes: vec![node] }).await;
     Ok(())
 }
 

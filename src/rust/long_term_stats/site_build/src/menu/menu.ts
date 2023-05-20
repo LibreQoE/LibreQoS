@@ -1,6 +1,7 @@
 import html from './template.html';
 import { Page } from '../page'
 import { siteIcon } from '../helpers';
+import { request_search } from "../../wasm/wasm_pipe";
 
 export class MenuPage implements Page {
     activePanel: string;
@@ -56,7 +57,7 @@ export class MenuPage implements Page {
         if (r) {
             r.style.display = "none";
         }
-        window.bus.sendSearch(term);
+        request_search(term);
     }
 
     onmessage(event: any) {
@@ -72,8 +73,8 @@ export class MenuPage implements Page {
                         }
                     }
                 } break;
-                case "search": {
-                    this.searchResult(event.hits);
+                case "SearchResult": {
+                    this.searchResult(event.SearchResult.hits);
                 } break;
             }
         }

@@ -1,6 +1,7 @@
 import { scaleNumber } from "../helpers";
 import { Component } from "./component";
 import * as echarts from 'echarts';
+import { request_rtt_chart } from "../../wasm/wasm_pipe";
 
 export class RttChart implements Component {
     div: HTMLElement;
@@ -17,11 +18,11 @@ export class RttChart implements Component {
     }
 
     ontick(): void {
-        window.bus.requestRttChart();
+        request_rtt_chart(window.graphPeriod);
     }
 
     onmessage(event: any): void {
-        if (event.msg == "rttChart") {
+        if (event.msg == "RttChart") {
             let series: echarts.SeriesOption[] = [];
 
             // Iterate all provides nodes and create a set of series for each,
@@ -29,8 +30,8 @@ export class RttChart implements Component {
             let x: any[] = [];
             let first = true;
             let legend: string[] = [];
-            for (let i=0; i<event.nodes.length; i++) {
-                let node = event.nodes[i];
+            for (let i=0; i<event.RttChart.nodes.length; i++) {
+                let node = event.RttChart.nodes[i];
                 legend.push(node.node_name);
                 //console.log(node);
 

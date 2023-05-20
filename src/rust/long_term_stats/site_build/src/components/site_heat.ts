@@ -1,5 +1,6 @@
 import { Component } from "./component";
 import * as echarts from 'echarts';
+import { request_site_heat } from "../../wasm/wasm_pipe";
 
 export class SiteHeat implements Component {
     div: HTMLElement;
@@ -8,24 +9,26 @@ export class SiteHeat implements Component {
     siteId: string;
 
     constructor(siteId: string) {
-        this.siteId = siteId;
+        this.siteId = decodeURI(siteId);
         this.div = document.getElementById("rootHeat") as HTMLElement;
         this.myChart = echarts.init(this.div);
         this.myChart.showLoading();
     }
 
     wireup(): void {
-        window.bus.requestSiteHeat(this.siteId);        
+        console.log("SiteHeat wireup");
+        request_site_heat(window.graphPeriod, this.siteId);
     }
 
     ontick(): void {
+        console.log("SiteHeat ontick");
         this.counter++;
         if (this.counter % 10 == 0)
-        window.bus.requestSiteHeat(this.siteId);       
+            request_site_heat(window.graphPeriod, this.siteId);
     }
 
     onmessage(event: any): void {
-        if (event.msg == "siteHeat") {
+        if (event.msg == "SiteHeat") {
             this.myChart.hideLoading();
 
             let categories: string[] = [];
@@ -34,7 +37,7 @@ export class SiteHeat implements Component {
             let count = 0;
             let data: any[] = [];
             let keys: string[] = [];
-            for (const key in event.data) {
+            for (const key in event.SiteHeat.data) {
                 keys.push(key);
             }
             keys = keys.sort().reverse();
@@ -47,14 +50,14 @@ export class SiteHeat implements Component {
                 // Push the X axis values
                 if (first) {
                     first = false;
-                    for (let i=0; i<event.data[key].length; i++) {
-                        x.push(event.data[key][i][0]);
+                    for (let i=0; i<event.SiteHeat.data[key].length; i++) {
+                        x.push(event.SiteHeat.data[key][i][0]);
                     }
                 }
 
                 // Create all the series entries for this category
-                for (let i=0; i<event.data[key].length; i++) {
-                    data.push([i, count, event.data[key][i][1].toFixed(1)]);
+                for (let i=0; i<event.SiteHeat.data[key].length; i++) {
+                    data.push([i, count, event.SiteHeat.data[key][i][1].toFixed(1)]);
                 }
 
                 count++;

@@ -1,9 +1,9 @@
-use axum::extract::ws::{WebSocket, Message};
+use axum::extract::ws::WebSocket;
 use chrono::{DateTime, FixedOffset, Utc};
 use influxdb2::{Client, FromDataPoint, models::Query};
 use pgdb::sqlx::{Pool, Postgres};
-use serde::Serialize;
-use crate::submissions::get_org_details;
+use wasm_pipe_types::{PerfHost, Perf};
+use crate::{submissions::get_org_details, web::wss::send_response};
 use super::time_period::InfluxTimePeriod;
 
 #[derive(Debug, FromDataPoint)]
@@ -27,27 +27,6 @@ impl Default for PerfRow {
     }
 }
 
-#[derive(Serialize, Debug)]
-pub struct PerfHost {
-    pub node_id: String,
-    pub node_name: String,
-    pub stats: Vec<Perf>,
-}
-
-#[derive(Serialize, Debug)]
-pub struct Perf {
-    pub date: String,
-    pub cpu: f64,
-    pub cpu_max: f64,
-    pub ram: f64,
-}
-
-#[derive(Serialize, Debug)]
-pub struct PacketChart {
-    pub msg: String,
-    pub nodes: Vec<PerfHost>,
-}
-
 pub async fn send_perf_for_node(
     cnn: Pool<Postgres>,
     socket: &mut WebSocket,
@@ -57,13 +36,7 @@ pub async fn send_perf_for_node(
     node_name: String,
 ) -> anyhow::Result<()> {
     let node = get_perf_for_node(cnn, key, node_id, node_name, period).await?;
-
-    let chart = PacketChart {
-        msg: "nodePerfChart".to_string(),
-        nodes: vec![node],
-    };
-    let json = serde_json::to_string(&chart).unwrap();
-    socket.send(Message::Text(json)).await.unwrap();
+    send_response(socket, wasm_pipe_types::WasmResponse::NodePerfChart { nodes: vec![node] }).await;
     Ok(())
 }
 

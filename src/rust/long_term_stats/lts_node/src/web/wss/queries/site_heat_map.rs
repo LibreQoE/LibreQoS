@@ -1,12 +1,14 @@
 use super::time_period::InfluxTimePeriod;
 use crate::submissions::get_org_details;
-use axum::extract::ws::{Message, WebSocket};
+use crate::web::wss::send_response;
+use axum::extract::ws::WebSocket;
 use chrono::{DateTime, FixedOffset, Utc};
 use influxdb2::Client;
 use influxdb2::{models::Query, FromDataPoint};
 use pgdb::OrganizationDetails;
 use pgdb::sqlx::{query, Pool, Postgres, Row};
 use serde::Serialize;
+use wasm_pipe_types::WasmResponse;
 use std::collections::HashMap;
 
 pub async fn root_heat_map(
@@ -69,12 +71,7 @@ pub async fn root_heat_map(
                         sorter.insert(row.node_name.clone(), vec![(row.time, row.rtt_avg)]);
                     }
                 }
-                let msg = HeatMessage {
-                    msg: "rootHeat".to_string(),
-                    data: sorter,
-                };
-                let json = serde_json::to_string(&msg).unwrap();
-                socket.send(Message::Text(json)).await.unwrap();
+                send_response(socket, WasmResponse::RootHeat { data: sorter}).await;
             }
         }
     }
@@ -232,13 +229,7 @@ pub async fn site_heat_map(
                 }
 
                 site_circuits_heat_map(cnn, key, site_name, period, &mut sorter, client, &org).await?;
-
-                let msg = HeatMessage {
-                    msg: "siteHeat".to_string(),
-                    data: sorter,
-                };
-                let json = serde_json::to_string(&msg).unwrap();
-                socket.send(Message::Text(json)).await.unwrap();
+                send_response(socket, WasmResponse::SiteHeat { data: sorter }).await;
             }
         }
     }

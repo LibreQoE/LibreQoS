@@ -1,3 +1,4 @@
+import { connect_wasm_pipe, is_wasm_connected } from "../wasm/wasm_pipe";
 import { Auth } from "./auth";
 import { SiteRouter } from "./router";
 
@@ -6,12 +7,15 @@ export class Bus {
     connected: boolean;
 
     constructor() {
+        const currentUrlWithoutAnchors = window.location.href.split('#')[0].replace("https://", "").replace("http://", "");
+        const url = "ws://" + currentUrlWithoutAnchors + "ws";
         this.connected = false;
     }
 
     updateConnected() {
+        //console.log("Connection via WASM: " + is_wasm_connected());
         let indicator = document.getElementById("connStatus");
-        if (indicator && this.connected) {
+        if (indicator && is_wasm_connected()) {
             indicator.style.color = "green";
         } else if (indicator) {
             indicator.style.color = "red";
@@ -22,75 +26,15 @@ export class Bus {
     connect() {
         const currentUrlWithoutAnchors = window.location.href.split('#')[0].replace("https://", "").replace("http://", "");
         const url = "ws://" + currentUrlWithoutAnchors + "ws";
-        this.ws = new WebSocket(url);
-        this.ws.onopen = () => {
-            this.connected = true;
-            this.sendToken();
-        };
-        this.ws.onclose = (e) => {
-            this.connected = false;
-            console.log("close", e) 
-        };
-        this.ws.onerror = (e) => { 
-            console.log("error", e) 
-            this.connected = false;
-        };
-        this.ws.onmessage = (e) => { 
-            //console.log("message", e.data)
-            let json = JSON.parse(e.data);
-            if (json.msg && json.msg == "authOk") {
-                window.auth.hasCredentials = true;
-                window.login = json;
-                window.auth.token = json.token;
-            } else if (json.msg && json.msg == "authFail") {
-                window.auth.hasCredentials = false;
-                window.login = null;
-                window.auth.token = null;
-                localStorage.removeItem("token");
-                window.router.goto("login");
-            }
-            window.router.onMessage(json);
-        };
+        connect_wasm_pipe(url);
     }
 
-    sendToken() {
+    getToken(): string {
         if (window.auth.hasCredentials && window.auth.token) {
-            this.ws.send(formatToken(window.auth.token));
+            return window.auth.token;
+        } else {
+            return "";
         }
-    }
-
-    requestNodeStatus() {
-        this.ws.send("{ \"msg\": \"nodeStatus\" }");
-    }
-
-    requestPacketChart() {
-        this.ws.send("{ \"msg\": \"packetChart\", \"period\": \"" + window.graphPeriod + "\" }");
-    }
-
-    requestPacketChartSingle(node_id: string, node_name: string) {
-        let request = {
-            msg: "packetChartSingle",
-            period: window.graphPeriod,
-            node_id: node_id,
-            node_name: node_name,
-        };
-        let json = JSON.stringify(request);
-        this.ws.send(json);
-    }
-
-    requestThroughputChart() {
-        this.ws.send("{ \"msg\": \"throughputChart\", \"period\": \"" + window.graphPeriod + "\" }");
-    }
-
-    requestThroughputChartSingle(node_id: string, node_name: string) {
-        let request = {
-            msg: "throughputChartSingle",
-            period: window.graphPeriod,
-            node_id: node_id,
-            node_name: node_name,
-        };
-        let json = JSON.stringify(request);
-        this.ws.send(json);
     }
 
     requestThroughputChartCircuit(circuit_id: string) {
@@ -108,31 +52,6 @@ export class Bus {
             msg: "throughputChartSite",
             period: window.graphPeriod,
             site_id: decodeURI(site_id),
-        };
-        let json = JSON.stringify(request);
-        this.ws.send(json);
-    }
-
-    requestThroughputStackSite(site_id: string) {
-        let request = {
-            msg: "throughputStackSite",
-            period: window.graphPeriod,
-            site_id: decodeURI(site_id),
-        };
-        let json = JSON.stringify(request);
-        this.ws.send(json);
-    }
-
-    requestRttChart() {
-        this.ws.send("{ \"msg\": \"rttChart\", \"period\": \"" + window.graphPeriod + "\" }");
-    }
-
-    requestRttChartSingle(node_id: string, node_name: string) {
-        let request = {
-            msg: "rttChartSingle",
-            period: window.graphPeriod,
-            node_id: node_id,
-            node_name: node_name,
         };
         let json = JSON.stringify(request);
         this.ws.send(json);
@@ -158,21 +77,6 @@ export class Bus {
         this.ws.send(json);
     }
 
-    requestNodePerfChart(node_id: string, node_name: string) {
-        let request = {
-            msg: "nodePerf",
-            period: window.graphPeriod,
-            node_id: node_id,
-            node_name: node_name,
-        };
-        let json = JSON.stringify(request);
-        this.ws.send(json);
-    }
-
-    requestSiteRootHeat() {
-        this.ws.send("{ \"msg\": \"siteRootHeat\", \"period\": \"" + window.graphPeriod + "\" }");
-    }
-
     requestSiteHeat(site_id: string) {
         let request = {
             msg: "siteHeat",
@@ -190,10 +94,6 @@ export class Bus {
         };
         let json = JSON.stringify(request);
         this.ws.send(json);
-    }
-
-    requestTree(parent: string) {
-        this.ws.send("{ \"msg\": \"siteTree\", \"parent\": \"" + parent + "\" }");
     }
 
     requestSiteInfo(site_id: string) {
@@ -224,12 +124,33 @@ export class Bus {
     }
 }
 
-function formatToken(token: string) {
-    return "{ \"msg\": \"auth\", \"token\": \"" + token + "\" }";
-}
-
 function retryConnect() {
     if (!window.bus.connected) {
         window.bus.connect();
     }
+}
+
+// WASM callback
+export function onAuthFail() {
+    window.auth.hasCredentials = false;
+    window.login = null;
+    window.auth.token = null;
+    localStorage.removeItem("token");
+    window.router.goto("login");
+}
+
+// WASM callback
+export function onAuthOk(token: string, name: string, license_key: string) {
+    window.auth.hasCredentials = true;
+    window.login = { msg: "authOk", token: token, name: name, license_key: license_key };
+    window.auth.token = token;
+}
+
+// WASM Callback
+export function onMessage(rawJson: string) {
+    let json = JSON.parse(rawJson);
+    //console.log(json);
+    //console.log(Object.keys(json));
+    json.msg = Object.keys(json)[0];
+    window.router.onMessage(json);   
 }

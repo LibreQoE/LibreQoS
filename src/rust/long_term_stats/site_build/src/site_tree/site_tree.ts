@@ -4,6 +4,7 @@ import { MenuPage } from '../menu/menu';
 import { Component } from '../components/component';
 import mermaid from 'mermaid';
 import { makeUrl, rttColor, scaleNumber, siteIcon, usageColor } from '../helpers';
+import { request_node_status, request_tree } from '../../wasm/wasm_pipe';
 
 export class SiteTreePage implements Page {
     menu: MenuPage;
@@ -26,7 +27,7 @@ export class SiteTreePage implements Page {
         this.components.forEach(component => {
             component.wireup();
         });
-        window.bus.requestNodeStatus();
+        request_node_status();
     }
 
     ontick(): void {
@@ -48,20 +49,20 @@ export class SiteTreePage implements Page {
                 component.onmessage(event);
             });
 
-            if (event.msg == "nodeStatus") {
+            if (event.msg == "NodeStatus") {
                 let drop_down = document.getElementById("shaper_node_select") as HTMLSelectElement;
                 if (drop_down) {
                     let items = "";
-                    for (let i = 0; i < event.nodes.length; i++) {
+                    for (let i = 0; i < event.NodeStatus.nodes.length; i++) {
                         let isSelected = "";
-                        if (i ==0 || this.selectedNode == event.nodes[i].node_id) {
+                        if (i ==0 || this.selectedNode == event.NodeStatus.nodes[i].node_id) {
                             isSelected = "selected";
                             if (i == 0) {
-                                this.selectedNode = event.nodes[i].node_id;
+                                this.selectedNode = event.NodeStatus.nodes[i].node_id;
                                 fetchTree(this.selectedNode);
                             }
                         }
-                        items += "<option " + isSelected + " value='" + event.nodes[i].node_id + "'>" + event.nodes[i].node_name + "</option>";
+                        items += "<option " + isSelected + " value='" + event.NodeStatus.nodes[i].node_id + "'>" + event.NodeStatus.nodes[i].node_name + "</option>";
                     }
                     drop_down.innerHTML = items;
                     drop_down.onchange = () => {
@@ -72,15 +73,15 @@ export class SiteTreePage implements Page {
                 }
             }
 
-            if (event.msg == "site_tree") {
-                buildTree(event.data);
+            if (event.msg == "SiteTree") {
+                buildTree(event.SiteTree.data);
             }
         }
     }
 }
 
 function fetchTree(parent: string) {
-    window.bus.requestTree(parent);
+    request_tree(parent);
 }
 
 class TreeItem {

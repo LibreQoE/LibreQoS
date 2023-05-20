@@ -1,7 +1,7 @@
-use crate::web::wss::queries::{
-    throughput::throughput_host::ThroughputChart, time_period::InfluxTimePeriod,
-};
-use axum::extract::ws::{Message, WebSocket};
+use crate::web::wss::{queries::{
+    time_period::InfluxTimePeriod,
+}, send_response};
+use axum::extract::ws::WebSocket;
 use pgdb::sqlx::{Pool, Postgres, Row};
 
 use super::{get_throughput_for_all_nodes_by_circuit, get_throughput_for_all_nodes_by_site};
@@ -58,12 +58,7 @@ pub async fn send_site_stack_map(
     }
     //println!("{result:?}");
 
-    let chart = ThroughputChart {
-        msg: "siteStack".to_string(),
-        nodes: result,
-    };
-    let json = serde_json::to_string(&chart).unwrap();
-    socket.send(Message::Text(json)).await.unwrap();
+    send_response(socket, wasm_pipe_types::WasmResponse::SiteStack { nodes: result }).await;
 
     Ok(())
 }

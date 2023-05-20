@@ -1,3 +1,4 @@
+import { request_root_heat } from "../../wasm/wasm_pipe";
 import { Component } from "./component";
 import * as echarts from 'echarts';
 
@@ -13,17 +14,17 @@ export class RootHeat implements Component {
     }
 
     wireup(): void {
-        window.bus.requestSiteRootHeat();        
+        request_root_heat(window.graphPeriod);    
     }
 
     ontick(): void {
         this.counter++;
         if (this.counter % 10 == 0)
-            window.bus.requestSiteRootHeat();        
+            request_root_heat(window.graphPeriod);    
     }
 
     onmessage(event: any): void {
-        if (event.msg == "rootHeat") {
+        if (event.msg == "RootHeat") {
             this.myChart.hideLoading();
 
             let categories: string[] = [];
@@ -32,7 +33,7 @@ export class RootHeat implements Component {
             let count = 0;
             let data: any[] = [];
             let keys: string[] = [];
-            for (const key in event.data) {
+            for (const key in event.RootHeat.data) {
                 keys.push(key);
             }
             keys = keys.sort().reverse();
@@ -45,14 +46,14 @@ export class RootHeat implements Component {
                 // Push the X axis values
                 if (first) {
                     first = false;
-                    for (let i=0; i<event.data[key].length; i++) {
-                        x.push(event.data[key][i][0]);
+                    for (let i=0; i<event.RootHeat.data[key].length; i++) {
+                        x.push(event.RootHeat.data[key][i][0]);
                     }
                 }
 
                 // Create all the series entries for this category
-                for (let i=0; i<event.data[key].length; i++) {
-                    data.push([i, count, event.data[key][i][1].toFixed(1)]);
+                for (let i=0; i<event.RootHeat.data[key].length; i++) {
+                    data.push([i, count, event.RootHeat.data[key][i][1].toFixed(1)]);
                 }
 
                 count++;

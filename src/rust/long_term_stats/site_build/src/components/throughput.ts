@@ -1,3 +1,4 @@
+import { request_throughput_chart } from "../../wasm/wasm_pipe";
 import { scaleNumber } from "../helpers";
 import { Component } from "./component";
 import * as echarts from 'echarts';
@@ -17,11 +18,11 @@ export class ThroughputChart implements Component {
     }
 
     ontick(): void {
-        window.bus.requestThroughputChart();
+        request_throughput_chart(window.graphPeriod);
     }
 
     onmessage(event: any): void {
-        if (event.msg == "bitsChart") {
+        if (event.msg == "BitsChart") {
             let series: echarts.SeriesOption[] = [];
 
             // Iterate all provides nodes and create a set of series for each,
@@ -29,8 +30,8 @@ export class ThroughputChart implements Component {
             let x: any[] = [];
             let first = true;
             let legend: string[] = [];
-            for (let i=0; i<event.nodes.length; i++) {
-                let node = event.nodes[i];
+            for (let i=0; i<event.BitsChart.nodes.length; i++) {
+                let node = event.BitsChart.nodes[i];
                 legend.push(node.node_name);
                 //legend.push(node.node_name + " UL");
                 //console.log(node);

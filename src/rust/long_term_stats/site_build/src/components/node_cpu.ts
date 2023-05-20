@@ -25,7 +25,7 @@ export class NodeCpuChart implements Component {
     }
 
     onmessage(event: any): void {
-        if (event.msg == "nodePerfChart") {
+        if (event.msg == "NodePerfChart") {
             let series: echarts.SeriesOption[] = [];
 
             // Iterate all provides nodes and create a set of series for each,
@@ -33,8 +33,8 @@ export class NodeCpuChart implements Component {
             let x: any[] = [];
             let first = true;
             let legend: string[] = [];
-            for (let i=0; i<event.nodes.length; i++) {
-                let node = event.nodes[i];
+            for (let i=0; i<event.NodePerfChart.nodes.length; i++) {
+                let node = event.NodePerfChart.nodes[i];
                 legend.push(node.node_name + " CPU %");
                 legend.push(node.node_name + " Single Core Peak");
                 //console.log(node);

@@ -8,5 +8,6 @@ await esbuild.build({
   sourcemap: true,
 //  target: ['chrome58', 'firefox57', 'safari11', 'edge16'],
   outdir: 'output/',
-  loader: { '.html': 'text'}
+  loader: { '.html': 'text'},
+  format: 'esm',
 })

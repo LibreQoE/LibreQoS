@@ -1,3 +1,4 @@
+import { request_site_stack } from "../../wasm/wasm_pipe";
 import { scaleNumber } from "../helpers";
 import { Component } from "./component";
 import * as echarts from 'echarts';
@@ -7,6 +8,7 @@ export class SiteStackChart implements Component {
     myChart: echarts.ECharts;
     chartMade: boolean = false;
     siteId: string;
+    counter: number = 0;
 
     constructor(siteId: string) {
         this.siteId = siteId;
@@ -19,11 +21,14 @@ export class SiteStackChart implements Component {
     }
 
     ontick(): void {
-        window.bus.requestThroughputStackSite(this.siteId);
+        this.counter++;
+        if (this.counter % 10 == 0 || this.counter == 0) {
+            request_site_stack(window.graphPeriod, this.siteId);
+        }
     }
 
     onmessage(event: any): void {
-        if (event.msg == "siteStack") {
+        if (event.msg == "SiteStack") {
             let series: echarts.SeriesOption[] = [];
 
             // Iterate all provides nodes and create a set of series for each,
@@ -31,8 +36,8 @@ export class SiteStackChart implements Component {
             let x: any[] = [];
             let first = true;
             let legend: string[] = [];
-            for (let i = 0; i < event.nodes.length; i++) {
-                let node = event.nodes[i];
+            for (let i = 0; i < event.SiteStack.nodes.length; i++) {
+                let node = event.SiteStack.nodes[i];
                 if (node.node_name != "Root") {
                     legend.push(node.node_name);
                     //legend.push(node.node_name + " UL");

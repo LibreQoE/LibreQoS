@@ -1,6 +1,7 @@
 import html from './template.html';
 import { Page } from '../page'
 import { getValueFromForm } from '../helpers';
+import { send_login } from '../../wasm/wasm_pipe';
 
 export class LoginPage implements Page {
     constructor() {
@@ -61,26 +62,19 @@ export class LoginPage implements Page {
             btn.innerHTML = "<i class=\"fa-solid fa-spinner fa-spin\"></i>";
         }
 
-        let data = {
-            msg: "login",
-            license: license,
-            username: username,
-            password: password,
-        };
-        let json: string = JSON.stringify(data);
-        window.bus.ws.send(json);
+        send_login(license, username, password);
     }
 
     onmessage(event: any) {
         if (event.msg) {
-            if (event.msg == "loginOk") {
+            if (event.msg == "LoginOk") {
                 // TODO: Store the credentials globally
-                window.login = event;
+                window.login = event.LoginOk;
                 window.auth.hasCredentials = true;
-                window.auth.token = event.token;
-                localStorage.setItem("token", event.token);
+                window.auth.token = event.LoginOk.token;
+                localStorage.setItem("token", event.LoginOk.token);
                 window.router.goto("dashboard");
-            } else if (event.msg = "loginFail") {
+            } else if (event.msg = "LoginFail") {
                 alert("Login failed");
                 let btn = document.getElementById('btnLogin');
                 if (btn) {

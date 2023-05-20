@@ -1,13 +1,13 @@
-use axum::extract::ws::{WebSocket, Message};
+use axum::extract::ws::WebSocket;
 use futures::future::join_all;
 use influxdb2::{Client, models::Query};
 use pgdb::sqlx::{Pool, Postgres};
-use crate::{submissions::get_org_details, web::wss::queries::rtt::rtt_row::RttCircuitRow};
-use self::{rtt_row::{RttRow, RttSiteRow}, rtt_host::{Rtt, RttHost, RttChart}};
+use wasm_pipe_types::{RttHost, Rtt};
+use crate::{submissions::get_org_details, web::wss::{queries::rtt::rtt_row::RttCircuitRow, send_response}};
+use self::rtt_row::{RttRow, RttSiteRow};
 
 use super::time_period::InfluxTimePeriod;
 mod rtt_row;
-mod rtt_host;
 
 pub async fn send_rtt_for_all_nodes(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod) -> anyhow::Result<()> {
     let nodes = get_rtt_for_all_nodes(cnn, key, period).await?;
@@ -19,10 +19,8 @@ pub async fn send_rtt_for_all_nodes(cnn: Pool<Postgres>, socket: &mut WebSocket,
             histogram[bucket] += 1;
         }
     }
+    send_response(socket, wasm_pipe_types::WasmResponse::RttChart { nodes, histogram }).await;
 
-    let chart = RttChart { msg: "rttChart".to_string(), nodes, histogram };
-        let json = serde_json::to_string(&chart).unwrap();
-        socket.send(Message::Text(json)).await.unwrap();
     Ok(())
 }
 
@@ -37,9 +35,7 @@ pub async fn send_rtt_for_all_nodes_site(cnn: Pool<Postgres>, socket: &mut WebSo
         }
     }
 
-    let chart = RttChart { msg: "rttChartSite".to_string(), nodes, histogram };
-        let json = serde_json::to_string(&chart).unwrap();
-        socket.send(Message::Text(json)).await.unwrap();
+    send_response(socket, wasm_pipe_types::WasmResponse::RttChartSite { nodes, histogram }).await;
     Ok(())
 }
 
@@ -54,9 +50,7 @@ pub async fn send_rtt_for_all_nodes_circuit(cnn: Pool<Postgres>, socket: &mut We
         }
     }
 
-    let chart = RttChart { msg: "rttChartCircuit".to_string(), nodes, histogram };
-        let json = serde_json::to_string(&chart).unwrap();
-        socket.send(Message::Text(json)).await.unwrap();
+    send_response(socket, wasm_pipe_types::WasmResponse::RttChartCircuit { nodes, histogram }).await;
     Ok(())
 }
 
@@ -72,9 +66,7 @@ pub async fn send_rtt_for_node(cnn: Pool<Postgres>, socket: &mut WebSocket, key:
         }
     }
 
-    let chart = RttChart { msg: "rttChart".to_string(), nodes, histogram };
-        let json = serde_json::to_string(&chart).unwrap();
-        socket.send(Message::Text(json)).await.unwrap();
+    send_response(socket, wasm_pipe_types::WasmResponse::RttChart { nodes, histogram }).await;
     Ok(())
 }
 

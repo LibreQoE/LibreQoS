@@ -1,8 +1,13 @@
 import 'bootstrap/dist/css/bootstrap.css';
 import 'bootstrap/dist/js/bootstrap.js';
 import { SiteRouter } from './router';
-import { Bus } from './bus';
+import { Bus, onAuthFail, onAuthOk, onMessage } from './bus';
 import { Auth } from './auth';
+
+import init from '../wasm/wasm_pipe.js';
+
+await init();
+console.log("WASM loaded");
 
 declare global {
     interface Window {
@@ -14,6 +19,9 @@ declare global {
         changeGraphPeriod: any;
     }
 }
+(window as any).onAuthFail = onAuthFail;
+(window as any).onAuthOk = onAuthOk;
+(window as any).onMessage = onMessage;
 
 window.auth = new Auth;
 window.bus = new Bus();
@@ -29,6 +37,7 @@ window.graphPeriod = graphPeriod;
 window.changeGraphPeriod = (period: string) => changeGraphPeriod(period);
 
 window.setInterval(() => {
+    console.log("tick");
     window.router.ontick();
     window.bus.updateConnected();
 }, 1000);
