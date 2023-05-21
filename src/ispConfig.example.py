@@ -68,6 +68,8 @@ influxDBtoken = ""
 
 # Use Customer Name or Address as Circuit Name
 circuitNameUseAddress = True
+# Use Customer Account number and Service Id UISP Only. This will take precedence over circuitNameUseAddress
+circuitNameUseAcctService = False
 
 # Should integrationUISP overwrite network.json on each run?
 overwriteNetworkJSONalways = False

@@ -50,10 +50,12 @@ def buildFlatGraph():
             if site.get("ucrm"):
                 _name = site["ucrm"]["client"]["name"]
                 _custId = site["ucrm"]["client"]["id"]
+                _serviceId = site["ucrm"]["service"]["id"]
             siteId = site["identification"]["id"]
             address = site["description"]["address"]
             customerName = _name
-            customerID = _custId
+            customerId = _custId if not None else ""
+            serviceId = _serviceId if not None else ""
             name = site["identification"]["name"]
             siteType = site["identification"]["type"]
             download = generatedPNDownloadMbps
@@ -73,14 +75,12 @@ def buildFlatGraph():
                 upload=upload,
                 address=address,
                 customerName=customerName,
-                customerId=customerID,
+                customerId=customerId,
+                serviceId=serviceId,
             )
             net.addRawNode(node)
             for device in devices:
-                if (
-                    device["identification"]["site"] is not None
-                    and device["identification"]["site"]["id"] == id
-                ):
+                if (device["identification"]["site"] is not None and device["identification"]["site"]["id"] == siteId):
                     # The device is at this site, so add it
                     ipv4 = []
                     ipv6 = []
@@ -486,6 +486,7 @@ def buildFullGraph():
         if site.get("ucrm"):
             _name = site["ucrm"]["client"]["name"]
             _custId = site["ucrm"]["client"]["id"]
+            _serviceId = site["ucrm"]["service"]["id"]
         if site["identification"].get("parent"):
             _parent_id = site["identification"]["parent"]["id"]
         else:
@@ -497,7 +498,8 @@ def buildFullGraph():
         upload = generatedPNUploadMbps
         address = site["description"]["address"] if not None else None
         customerName = ""
-        customerId = _custId if not None else None
+        customerId = _custId if not None else ""
+        serviceId = _serviceId if not None else ""
         parent = findInSiteListById(siteList, siteId)["parent"]
         if parent == "":
             if site["identification"]["parent"] is None:
@@ -529,9 +531,9 @@ def buildFullGraph():
             case default:
                 nodeType = NodeType.client
                 address = site["description"]["address"]
-                try:
+                if site.get("ucrm"):
                     customerName = site["ucrm"]["client"]["name"]
-                except:
+                else:
                     customerName = ""
                 if (site["qos"]["downloadSpeed"]) and (site["qos"]["uploadSpeed"]):
                     download = int(round(site["qos"]["downloadSpeed"] / 1000000))
@@ -550,6 +552,7 @@ def buildFullGraph():
             address=address,
             customerName=customerName,
             customerId=customerId,
+            serviceId=serviceId
         )
         # If this is the uispSite node, it becomes the root. Otherwise, add it to the
         # node soup.
@@ -559,10 +562,7 @@ def buildFullGraph():
             net.addRawNode(node)
 
         for device in devices:
-            if (
-                device["identification"]["site"] is not None
-                and device["identification"]["site"]["id"] == id
-            ):
+            if (device["identification"]["site"] is not None and device["identification"]["site"]["id"] == siteId):
                 # The device is at this site, so add it
                 ipv4 = []
                 ipv6 = []

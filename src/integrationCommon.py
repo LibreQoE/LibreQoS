@@ -7,6 +7,7 @@ from ispConfig import (
     generatedPNUploadMbps,
     generatedPNDownloadMbps,
     circuitNameUseAddress,
+    circuitNameUseAcctService,
     upstreamBandwidthCapacityDownloadMbps,
     upstreamBandwidthCapacityUploadMbps,
     suspendedDownload,
@@ -117,6 +118,7 @@ class NetworkNode:
     mac: str
     customerName: str
     customerId: str
+    serviceId: str
 
     def __init__(
         self,
@@ -132,13 +134,14 @@ class NetworkNode:
         mac: str = "",
         customerName: str = "",
         customerId: str = "",
+        serviceId: str= "",
     ) -> None:
-        self.siteId = id
+        self.siteId = siteId
         self.parentIndex = 0
         self.siteType = siteType
         self.parentId = parentId
         if displayName == "":
-            self.displayName = id
+            self.displayName = siteId
         else:
             self.displayName = displayName
         self.downloadMbps = download
@@ -148,6 +151,7 @@ class NetworkNode:
         self.address = address
         self.customerName = customerName
         self.customerId = customerId
+        self.serviceId = serviceId
         self.mac = mac
 
 
@@ -461,6 +465,8 @@ class NetworkGraph:
 
                 if circuitNameUseAddress:
                     displayNameToUse = node.address
+                elif circuitNameUseAcctService:
+                    displayNameToUse = f"{node.customerId}_{node.serviceId}"
                 else:
                     displayNameToUse = node.customerName
                 circuit = {
@@ -472,14 +478,12 @@ class NetworkGraph:
                     "devices": [],
                 }
                 for child in self.findChildIndices(i):
-                    if self.nodes[child].type == NodeType.device and (
-                        len(self.nodes[child].ipv4) + len(self.nodes[child].ipv6) > 0
-                    ):
+                    if self.nodes[child].siteType == NodeType.device and (len(self.nodes[child].ipv4) + len(self.nodes[child].ipv6) > 0):
                         ipv4 = self.nodes[child].ipv4
                         ipv6 = self.nodes[child].ipv6
                         self.__addIpv6FromMap(ipv4, ipv6)
                         device = {
-                            "id": self.nodes[child].id,
+                            "id": self.nodes[child].siteId,
                             "name": self.nodes[child].displayName,
                             "mac": self.nodes[child].mac,
                             "ipv4": ipv4,
