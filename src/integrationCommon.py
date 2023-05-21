@@ -463,10 +463,15 @@ class NetworkGraph:
                 if parent == "Shaper Root":
                     parent = ""
 
+                if ',' in node.customerName:
+                    _uispCustomerCircuitName = node.customerName.split(',', 1)[1].strip() + " " + node.customerName.split(',', 1)[0].strip()
+                else:
+                    _uispCustomerCircuitName = node.customerName
+
                 if circuitNameUseAddress:
                     displayNameToUse = node.address
                 elif circuitNameUseAcctService:
-                    displayNameToUse = f"{node.customerId}_{node.serviceId}"
+                    displayNameToUse = f"{_uispCustomerCircuitName}-{node.customerId}_{node.serviceId}"
                 else:
                     displayNameToUse = node.customerName
                 circuit = {
