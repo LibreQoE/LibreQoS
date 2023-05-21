@@ -238,7 +238,7 @@ class NetworkGraph:
                     if node.siteId == child.parentId:
                         child.parentIndex = i
 
-    def findNodeIndexById(self, id: str) -> int:
+    def findNodeIndexById(self, siteId: str) -> int:
         """
         Finds a single node by identity(id)
         Return -1 if not found
@@ -532,7 +532,7 @@ class NetworkGraph:
                     if circuit["download"] is None:
                         circuit["download"] = 0.0
                     row = [
-                        circuit["id"],
+                        circuit["siteId"],
                         circuit["name"],
                         device["id"],
                         device["name"],

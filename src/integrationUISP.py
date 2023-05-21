@@ -96,13 +96,11 @@ def buildFlatGraph():
                     # TODO: Figure out Mikrotik IPv6?
                     mac = device["identification"]["mac"]
 
-                    if site["identification"].get("parent"):
-                        _parent_id = site["identification"]["parent"]["id"]
                     net.addRawNode(
                         NetworkNode(
                             siteId=device["identification"]["id"],
                             displayName=device["identification"]["name"],
-                            parentId=_parent_id,
+                            parentId=siteId,
                             siteType=NodeType.device,
                             ipv4=ipv4,
                             ipv6=ipv6,
@@ -582,7 +580,7 @@ def buildFullGraph():
                     NetworkNode(
                         siteId=device["identification"]["id"],
                         displayName=device["identification"]["name"],
-                        parentId=_parent_id,
+                        parentId=siteId,
                         siteType=NodeType.device,
                         ipv4=ipv4,
                         ipv6=ipv6,
