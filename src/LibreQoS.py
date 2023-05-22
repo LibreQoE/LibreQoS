@@ -209,7 +209,7 @@ def validateNetworkAndDevices():
 						devicesValidatedOrNot = False
 			try:
 				a = int(downloadMin)
-				if a < 1:
+				if a < 0:
 					warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 1 Mbps.", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
@@ -217,7 +217,7 @@ def validateNetworkAndDevices():
 				devicesValidatedOrNot = False
 			try:
 				a = int(uploadMin)
-				if a < 1:
+				if a < 0:
 					warnings.warn("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 1 Mbps.", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
