@@ -108,3 +108,7 @@ Sessionx.vim
 tramp
 .\#*
 \#*
+
+# virtual environments
+.venv
+venv

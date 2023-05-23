@@ -114,45 +114,74 @@ def getCircuitBandwidthStats(subscriberCircuits, tinsStats):
 	allPacketsDownload = 0.0
 	allPacketsUpload = 0.0
 	for circuit in subscriberCircuits:
-		circuit['stats']['sinceLastQuery']['bitsDownload'] = circuit['stats']['sinceLastQuery']['bitsUpload'] = 0.0
-		circuit['stats']['sinceLastQuery']['bytesSentDownload'] = circuit['stats']['sinceLastQuery']['bytesSentUpload'] = 0.0
-		circuit['stats']['sinceLastQuery']['packetDropsDownload'] = circuit['stats']['sinceLastQuery']['packetDropsUpload'] = 0.0
-		circuit['stats']['sinceLastQuery']['packetsSentDownload'] = circuit['stats']['sinceLastQuery']['packetsSentUpload'] = 0.0
+		circuit['stats']['sinceLastQuery']['bitsDownload'] = circuit['stats']['sinceLastQuery']['bitsUpload'] = None
+		circuit['stats']['sinceLastQuery']['bytesSentDownload'] = circuit['stats']['sinceLastQuery']['bytesSentUpload'] = None
+		circuit['stats']['sinceLastQuery']['packetDropsDownload'] = circuit['stats']['sinceLastQuery']['packetDropsUpload'] = None
+		circuit['stats']['sinceLastQuery']['packetsSentDownload'] = circuit['stats']['sinceLastQuery']['packetsSentUpload'] = None
 		
 		try:
-			circuit['stats']['sinceLastQuery']['bytesSentDownload'] = circuit['stats']['currentQuery']['bytesSentDownload'] - circuit['stats']['priorQuery']['bytesSentDownload']
-			circuit['stats']['sinceLastQuery']['bytesSentUpload'] = circuit['stats']['currentQuery']['bytesSentUpload'] - circuit['stats']['priorQuery']['bytesSentUpload']
+			if (circuit['stats']['currentQuery']['bytesSentDownload'] - circuit['stats']['priorQuery']['bytesSentDownload']) >= 0.0:
+				circuit['stats']['sinceLastQuery']['bytesSentDownload'] = circuit['stats']['currentQuery']['bytesSentDownload'] - circuit['stats']['priorQuery']['bytesSentDownload']
+			else:
+				circuit['stats']['sinceLastQuery']['bytesSentDownload'] = None
+			if (circuit['stats']['currentQuery']['bytesSentUpload'] - circuit['stats']['priorQuery']['bytesSentUpload']) >= 0.0:
+				circuit['stats']['sinceLastQuery']['bytesSentUpload'] = circuit['stats']['currentQuery']['bytesSentUpload'] - circuit['stats']['priorQuery']['bytesSentUpload']
+			else:
+				circuit['stats']['sinceLastQuery']['bytesSentUpload'] = None
 		except:
-			circuit['stats']['sinceLastQuery']['bytesSentDownload'] = 0.0
-			circuit['stats']['sinceLastQuery']['bytesSentUpload'] = 0.0
+			circuit['stats']['sinceLastQuery']['bytesSentDownload'] = None
+			circuit['stats']['sinceLastQuery']['bytesSentUpload'] = None
 		try:
-			circuit['stats']['sinceLastQuery']['packetDropsDownload'] = circuit['stats']['currentQuery']['packetDropsDownload'] - circuit['stats']['priorQuery']['packetDropsDownload']
-			circuit['stats']['sinceLastQuery']['packetDropsUpload'] = circuit['stats']['currentQuery']['packetDropsUpload'] - circuit['stats']['priorQuery']['packetDropsUpload']
+			if (circuit['stats']['currentQuery']['packetDropsDownload'] - circuit['stats']['priorQuery']['packetDropsDownload']) >= 0.0:
+				circuit['stats']['sinceLastQuery']['packetDropsDownload'] = circuit['stats']['currentQuery']['packetDropsDownload'] - circuit['stats']['priorQuery']['packetDropsDownload']
+			else:
+				circuit['stats']['sinceLastQuery']['packetDropsDownload'] = None
+			if (circuit['stats']['currentQuery']['packetDropsUpload'] - circuit['stats']['priorQuery']['packetDropsUpload']) >= 0.0:
+				circuit['stats']['sinceLastQuery']['packetDropsUpload'] = circuit['stats']['currentQuery']['packetDropsUpload'] - circuit['stats']['priorQuery']['packetDropsUpload']
+			else:
+				circuit['stats']['sinceLastQuery']['packetDropsUpload'] = None
 		except:
-			circuit['stats']['sinceLastQuery']['packetDropsDownload'] = 0.0
-			circuit['stats']['sinceLastQuery']['packetDropsUpload'] = 0.0
+			circuit['stats']['sinceLastQuery']['packetDropsDownload'] = None
+			circuit['stats']['sinceLastQuery']['packetDropsUpload'] = None
 		try:
-			circuit['stats']['sinceLastQuery']['packetsSentDownload'] = circuit['stats']['currentQuery']['packetsSentDownload'] - circuit['stats']['priorQuery']['packetsSentDownload']
-			circuit['stats']['sinceLastQuery']['packetsSentUpload'] = circuit['stats']['currentQuery']['packetsSentUpload'] - circuit['stats']['priorQuery']['packetsSentUpload']
+			if (circuit['stats']['currentQuery']['packetsSentDownload'] - circuit['stats']['priorQuery']['packetsSentDownload']) >= 0.0:
+				circuit['stats']['sinceLastQuery']['packetsSentDownload'] = circuit['stats']['currentQuery']['packetsSentDownload'] - circuit['stats']['priorQuery']['packetsSentDownload']
+			else:
+				circuit['stats']['sinceLastQuery']['packetsSentDownload'] = None
+			if (circuit['stats']['currentQuery']['packetsSentUpload'] - circuit['stats']['priorQuery']['packetsSentUpload']) >= 0.0:
+				circuit['stats']['sinceLastQuery']['packetsSentUpload'] = circuit['stats']['currentQuery']['packetsSentUpload'] - circuit['stats']['priorQuery']['packetsSentUpload']
+			else:
+				circuit['stats']['sinceLastQuery']['packetsSentUpload'] = None
 		except:
-			circuit['stats']['sinceLastQuery']['packetsSentDownload'] = 0.0
-			circuit['stats']['sinceLastQuery']['packetsSentUpload'] = 0.0
+			circuit['stats']['sinceLastQuery']['packetsSentDownload'] = None
+			circuit['stats']['sinceLastQuery']['packetsSentUpload'] = None
 		
-		allPacketsDownload += circuit['stats']['sinceLastQuery']['packetsSentDownload']
-		allPacketsUpload += circuit['stats']['sinceLastQuery']['packetsSentUpload']
+		if(circuit['stats']['sinceLastQuery']['packetsSentDownload']):
+			allPacketsDownload += circuit['stats']['sinceLastQuery']['packetsSentDownload']
+		if(circuit['stats']['sinceLastQuery']['packetsSentUpload']):
+			allPacketsUpload += circuit['stats']['sinceLastQuery']['packetsSentUpload']
 		
 		if 'priorQuery' in circuit['stats']:
 			if 'time' in circuit['stats']['priorQuery']:
 				currentQueryTime = datetime.fromisoformat(circuit['stats']['currentQuery']['time'])
 				priorQueryTime = datetime.fromisoformat(circuit['stats']['priorQuery']['time'])
 				deltaSeconds = (currentQueryTime - priorQueryTime).total_seconds()
-				circuit['stats']['sinceLastQuery']['bitsDownload'] = round(
-					((circuit['stats']['sinceLastQuery']['bytesSentDownload'] * 8) / deltaSeconds)) if deltaSeconds > 0 else 0
-				circuit['stats']['sinceLastQuery']['bitsUpload'] = round(
-					((circuit['stats']['sinceLastQuery']['bytesSentUpload'] * 8) / deltaSeconds)) if deltaSeconds > 0 else 0
+				if (circuit['stats']['sinceLastQuery']['bytesSentDownload']):
+					circuit['stats']['sinceLastQuery']['bitsDownload'] = round((circuit['stats']['sinceLastQuery']['bytesSentDownload'] * 8) / deltaSeconds) if deltaSeconds > 0 else 0
+				else:
+					circuit['stats']['sinceLastQuery']['bitsDownload'] = None
+				if (circuit['stats']['sinceLastQuery']['bytesSentUpload']):
+					circuit['stats']['sinceLastQuery']['bitsUpload'] = round((circuit['stats']['sinceLastQuery']['bytesSentUpload'] * 8) / deltaSeconds) if deltaSeconds > 0 else 0
+				else:
+					circuit['stats']['sinceLastQuery']['bitsUpload'] = None
+				
 		else:
-			circuit['stats']['sinceLastQuery']['bitsDownload'] = (circuit['stats']['sinceLastQuery']['bytesSentDownload'] * 8)
-			circuit['stats']['sinceLastQuery']['bitsUpload'] = (circuit['stats']['sinceLastQuery']['bytesSentUpload'] * 8)
+			circuit['stats']['sinceLastQuery']['bitsDownload'] = None
+			if(circuit['stats']['sinceLastQuery']['bytesSentDownload']):
+				circuit['stats']['sinceLastQuery']['bitsDownload'] = (circuit['stats']['sinceLastQuery']['bytesSentDownload'] * 8)
+			circuit['stats']['sinceLastQuery']['bitsUpload'] = None
+			if(circuit['stats']['sinceLastQuery']['bytesSentUpload']):
+				circuit['stats']['sinceLastQuery']['bitsUpload'] = (circuit['stats']['sinceLastQuery']['bytesSentUpload'] * 8)
 	
 	tinsStats['sinceLastQuery']['Bulk']['Download']['dropPercentage'] = tinsStats['sinceLastQuery']['Bulk']['Upload']['dropPercentage'] = 0.0
 	tinsStats['sinceLastQuery']['BestEffort']['Download']['dropPercentage'] = tinsStats['sinceLastQuery']['BestEffort']['Upload']['dropPercentage'] = 0.0
@@ -257,14 +286,20 @@ def getParentNodeBandwidthStats(parentNodes, subscriberCircuits):
 		thisParentNodeStats = {'sinceLastQuery': {}}
 		for circuit in subscriberCircuits:
 			if circuit['ParentNode'] == parentNode['parentNodeName']:
-				thisNodeBitsDownload += circuit['stats']['sinceLastQuery']['bitsDownload']
-				thisNodeBitsUpload += circuit['stats']['sinceLastQuery']['bitsUpload']
+				if circuit['stats']['sinceLastQuery']['bitsDownload']:
+					thisNodeBitsDownload += circuit['stats']['sinceLastQuery']['bitsDownload']
+				if circuit['stats']['sinceLastQuery']['bitsUpload']:
+					thisNodeBitsUpload += circuit['stats']['sinceLastQuery']['bitsUpload']
 				#thisNodeDropsDownload += circuit['packetDropsDownloadSinceLastQuery']
 				#thisNodeDropsUpload += circuit['packetDropsUploadSinceLastQuery']
-				thisNodeDropsTotal += (circuit['stats']['sinceLastQuery']['packetDropsDownload'] + circuit['stats']['sinceLastQuery']['packetDropsUpload'])
-				packetsSentDownloadAggregate += circuit['stats']['sinceLastQuery']['packetsSentDownload']
-				packetsSentUploadAggregate += circuit['stats']['sinceLastQuery']['packetsSentUpload']
-				packetsSentTotalAggregate += (circuit['stats']['sinceLastQuery']['packetsSentDownload'] + circuit['stats']['sinceLastQuery']['packetsSentUpload'])
+				if circuit['stats']['sinceLastQuery']['packetDropsDownload'] and circuit['stats']['sinceLastQuery']['packetDropsUpload']:
+					thisNodeDropsTotal += (circuit['stats']['sinceLastQuery']['packetDropsDownload'] + circuit['stats']['sinceLastQuery']['packetDropsUpload'])
+				if circuit['stats']['sinceLastQuery']['packetsSentDownload']:
+					packetsSentDownloadAggregate += circuit['stats']['sinceLastQuery']['packetsSentDownload']
+				if circuit['stats']['sinceLastQuery']['packetsSentUpload']:
+					packetsSentUploadAggregate += circuit['stats']['sinceLastQuery']['packetsSentUpload']
+				if circuit['stats']['sinceLastQuery']['packetsSentDownload'] and circuit['stats']['sinceLastQuery']['packetsSentUpload']:
+					packetsSentTotalAggregate += (circuit['stats']['sinceLastQuery']['packetsSentDownload'] + circuit['stats']['sinceLastQuery']['packetsSentUpload'])
 				circuitsMatched += 1
 		if (packetsSentDownloadAggregate > 0) and (packetsSentUploadAggregate > 0):
 			#overloadFactorDownloadSinceLastQuery = float(round((thisNodeDropsDownload/packetsSentDownloadAggregate)*100.0, 3))
@@ -406,22 +441,34 @@ def refreshBandwidthGraphs():
 
 	queriesToSendCount = 0
 	for chunk in chunkedsubscriberCircuits:
+		seenSomethingBesides0s = False
 		queriesToSend = []
 		for circuit in chunk:
-			bitsDownload = float(circuit['stats']['sinceLastQuery']['bitsDownload'])
-			bitsUpload = float(circuit['stats']['sinceLastQuery']['bitsUpload'])
-			percentUtilizationDownload = round((bitsDownload / round(circuit['maxDownload'] * 1000000))*100.0, 1)
-			percentUtilizationUpload = round((bitsUpload / round(circuit['maxUpload'] * 1000000))*100.0, 1)
+			bitsDownloadMin = float(circuit['minDownload']) * 1000000 if circuit['minDownload'] else None
+			bitsDownloadMax = float(circuit['maxDownload']) * 1000000 if circuit['maxDownload'] else None
+			bitsUploadMin = float(circuit['minUpload']) * 1000000 if circuit['minUpload'] else None
+			bitsUploadMax = float(circuit['maxUpload']) * 1000000 if circuit['maxUpload'] else None
+			bitsDownload = float(circuit['stats']['sinceLastQuery']['bitsDownload']) if circuit['stats']['sinceLastQuery']['bitsDownload'] else None
+			bitsUpload = float(circuit['stats']['sinceLastQuery']['bitsUpload']) if circuit['stats']['sinceLastQuery']['bitsUpload'] else None
+			bytesSentDownload = float(circuit['stats']['sinceLastQuery']['bytesSentDownload']) if circuit['stats']['sinceLastQuery']['bytesSentDownload'] else None
+			bytesSentUpload = float(circuit['stats']['sinceLastQuery']['bytesSentUpload']) if circuit['stats']['sinceLastQuery']['bytesSentUpload'] else None
+			percentUtilizationDownload = round((bitsDownload / round(circuit['maxDownload'] * 1000000))*100.0, 1) if bitsDownload and circuit['maxDownload'] else None
+			percentUtilizationUpload = round((bitsUpload / round(circuit['maxUpload'] * 1000000))*100.0, 1) if bitsUpload and circuit['maxUpload'] else None
+			if bitsDownload and bitsUpload:
+				if (bitsDownload > 0.0) or (bitsUpload > 0.0):
+					seenSomethingBesides0s = True
 			p = Point('Bandwidth').tag("Circuit", circuit['circuitName']).tag("ParentNode", circuit['ParentNode']).tag("Type", "Circuit").field("Download", bitsDownload).field("Upload", bitsUpload).time(timestamp)
 			queriesToSend.append(p)
 			p = Point('Utilization').tag("Circuit", circuit['circuitName']).tag("ParentNode", circuit['ParentNode']).tag("Type", "Circuit").field("Download", percentUtilizationDownload).field("Upload", percentUtilizationUpload).time(timestamp)
 			queriesToSend.append(p)
 
-		write_api.write(bucket=influxDBBucket, record=queriesToSend)
+		if seenSomethingBesides0s:
+			write_api.write(bucket=influxDBBucket, record=queriesToSend)
 		# print("Added " + str(len(queriesToSend)) + " points to InfluxDB.")
 		queriesToSendCount += len(queriesToSend)
 
 	queriesToSend = []
+	seenSomethingBesides0s = False
 	for parentNode in parentNodes:
 		bitsDownload = float(parentNode['stats']['sinceLastQuery']['bitsDownload'])
 		bitsUpload = float(parentNode['stats']['sinceLastQuery']['bitsUpload'])
@@ -430,6 +477,9 @@ def refreshBandwidthGraphs():
 		droppedPacketsAllTime += dropsTotal
 		percentUtilizationDownload = round((bitsDownload / round(parentNode['maxDownload'] * 1000000))*100.0, 1)
 		percentUtilizationUpload = round((bitsUpload / round(parentNode['maxUpload'] * 1000000))*100.0, 1)
+		if bitsDownload and bitsUpload:
+			if (bitsDownload > 0.0) or (bitsUpload > 0.0):
+				seenSomethingBesides0s = True
 		p = Point('Bandwidth').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("Download", bitsDownload).field("Upload", bitsUpload).time(timestamp)
 		queriesToSend.append(p)
 		p = Point('Utilization').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("Download", percentUtilizationDownload).field("Upload", percentUtilizationUpload).time(timestamp)
@@ -437,11 +487,13 @@ def refreshBandwidthGraphs():
 		p = Point('Overload').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("Overload", overloadFactor).time(timestamp)
 		queriesToSend.append(p)
 
-	write_api.write(bucket=influxDBBucket, record=queriesToSend)
+	if seenSomethingBesides0s:
+		write_api.write(bucket=influxDBBucket, record=queriesToSend)
 	# print("Added " + str(len(queriesToSend)) + " points to InfluxDB.")
 	queriesToSendCount += len(queriesToSend)
 	
 	if 'cake diffserv4' in sqm:
+		seenSomethingBesides0s = False
 		queriesToSend = []
 		listOfTins = ['Bulk', 'BestEffort', 'Video', 'Voice']
 		for tin in listOfTins:
@@ -449,10 +501,13 @@ def refreshBandwidthGraphs():
 			queriesToSend.append(p)
 			# Check to ensure tin percentage has value (!= None) before graphing. During partial or full reload these will have a value of None.
 			if (tinsStats['sinceLastQuery'][tin]['Download']['percentage'] != None) and (tinsStats['sinceLastQuery'][tin]['Upload']['percentage'] != None):
+				if (tinsStats['sinceLastQuery'][tin]['Download']['percentage'] > 0.0) or (tinsStats['sinceLastQuery'][tin]['Upload']['percentage'] > 0.0):
+					seenSomethingBesides0s = True
 				p = Point('Tins Assigned').tag("Type", "Tin").tag("Tin", tin).field("Download", tinsStats['sinceLastQuery'][tin]['Download']['percentage']).field("Upload", tinsStats['sinceLastQuery'][tin]['Upload']['percentage']).time(timestamp)
 				queriesToSend.append(p)
 
-		write_api.write(bucket=influxDBBucket, record=queriesToSend)
+		if seenSomethingBesides0s:
+			write_api.write(bucket=influxDBBucket, record=queriesToSend)
 		# print("Added " + str(len(queriesToSend)) + " points to InfluxDB.")
 		queriesToSendCount += len(queriesToSend)
 	
