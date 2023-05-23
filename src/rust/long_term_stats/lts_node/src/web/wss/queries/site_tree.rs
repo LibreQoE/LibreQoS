@@ -6,7 +6,7 @@ use pgdb::{
 use wasm_pipe_types::SiteTree;
 use crate::web::wss::send_response;
 
-pub async fn send_site_tree(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, parent: &str) {
+pub async fn send_site_tree(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, parent: &str) {
     let tree = pgdb::get_site_tree(cnn, key, parent).await.unwrap();
     let tree = tree
         .into_iter()

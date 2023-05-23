@@ -38,7 +38,7 @@ async fn ingest_stats(
 ) -> anyhow::Result<()> {
     log::info!("Ingesting stats for node {}", node_id.node_id);
 
-    if let Some(org) = get_org_details(cnn.clone(), &node_id.license_key).await {
+    if let Some(org) = get_org_details(&cnn, &node_id.license_key).await {
         //println!("{:?}", command);
         match command {
             LtsCommand::Devices(devices) => {

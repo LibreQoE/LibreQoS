@@ -11,10 +11,10 @@ pub struct OrganizationDetails {
     pub influx_bucket: String,
 }
 
-pub async fn get_organization(cnn: Pool<Postgres>, key: &str) -> Result<OrganizationDetails, StatsHostError> {
+pub async fn get_organization(cnn: &Pool<Postgres>, key: &str) -> Result<OrganizationDetails, StatsHostError> {
     let row = sqlx::query_as::<_, OrganizationDetails>("SELECT * FROM organizations WHERE key=$1")
         .bind(key)
-        .fetch_one(&cnn)
+        .fetch_one(cnn)
         .await
         .map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
     Ok(row)

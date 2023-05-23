@@ -7,7 +7,7 @@ static ORG_CACHE: Lazy<RwLock<HashMap<String, OrganizationDetails>>> = Lazy::new
     RwLock::new(HashMap::new())
 });
 
-pub async fn get_org_details(cnn: Pool<Postgres>, key: &str) -> Option<OrganizationDetails> {
+pub async fn get_org_details(cnn: &Pool<Postgres>, key: &str) -> Option<OrganizationDetails> {
     { // Safety scope - lock is dropped on exit
         let cache = ORG_CACHE.read().await;
         if let Some(org) = cache.get(key) {

@@ -5,20 +5,20 @@ use wasm_pipe_types::SearchResult;
 use crate::web::wss::send_response;
 
 pub async fn omnisearch(
-    cnn: Pool<Postgres>,
+    cnn: &Pool<Postgres>,
     socket: &mut WebSocket,
     key: &str,
     term: &str,
 ) -> anyhow::Result<()> {
     log::warn!("Searching for {term}");
 
-    let hits = search_devices(cnn.clone(), key, term).await;
+    let hits = search_devices(cnn, key, term).await;
     if let Err(e) = &hits {
         log::error!("{e:?}");
     }
     let mut hits = hits.unwrap();
 
-    hits.extend(search_ips(cnn.clone(), key, term).await?);
+    hits.extend(search_ips(cnn, key, term).await?);
     hits.extend(search_sites(cnn, key, term).await?);
 
     hits.sort_by(|a,b| a.name.cmp(&b.name));
@@ -31,7 +31,7 @@ pub async fn omnisearch(
 }
 
 async fn search_devices(
-    cnn: Pool<Postgres>,
+    cnn: &Pool<Postgres>,
     key: &str,
     term: &str,
 ) -> anyhow::Result<Vec<SearchResult>> {
@@ -48,7 +48,7 @@ async fn search_devices(
 }
 
 async fn search_ips(
-    cnn: Pool<Postgres>,
+    cnn: &Pool<Postgres>,
     key: &str,
     term: &str,
 ) -> anyhow::Result<Vec<SearchResult>> {
@@ -65,7 +65,7 @@ async fn search_ips(
 }
 
 async fn search_sites(
-    cnn: Pool<Postgres>,
+    cnn: &Pool<Postgres>,
     key: &str,
     term: &str,
 ) -> anyhow::Result<Vec<SearchResult>> {

@@ -15,33 +15,33 @@ pub struct TreeNode {
 }
 
 pub async fn get_site_tree(
-    cnn: Pool<Postgres>,
+    cnn: &Pool<Postgres>,
     key: &str,
     host_id: &str,
 ) -> Result<Vec<TreeNode>, StatsHostError> {
     sqlx::query_as::<_, TreeNode>("SELECT site_name, index, parent, site_type, max_down, max_up, current_down, current_up, current_rtt FROM site_tree WHERE key = $1 AND host_id=$2")
         .bind(key)
         .bind(host_id)
-        .fetch_all(&cnn)
+        .fetch_all(cnn)
         .await
         .map_err(|e| StatsHostError::DatabaseError(e.to_string()))
 }
 
 pub async fn get_site_info(
-    cnn: Pool<Postgres>,
+    cnn: &Pool<Postgres>,
     key: &str,
     site_name: &str,
 ) -> Result<TreeNode, StatsHostError> {
     sqlx::query_as::<_, TreeNode>("SELECT site_name, index, parent, site_type, max_down, max_up, current_down, current_up, current_rtt FROM site_tree WHERE key = $1 AND site_name=$2")
         .bind(key)
         .bind(site_name)
-        .fetch_one(&cnn)
+        .fetch_one(cnn)
         .await
         .map_err(|e| StatsHostError::DatabaseError(e.to_string()))
 }
 
 pub async fn get_site_id_from_name(
-    cnn: Pool<Postgres>,
+    cnn: &Pool<Postgres>,
     key: &str,
     site_name: &str,
 ) -> Result<i32, StatsHostError> {
@@ -51,7 +51,7 @@ pub async fn get_site_id_from_name(
     let site_id_db = sqlx::query("SELECT index FROM site_tree WHERE key = $1 AND site_name=$2")
         .bind(key)
         .bind(site_name)
-        .fetch_one(&cnn)
+        .fetch_one(cnn)
         .await
         .map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
     let site_id: i32 = site_id_db.try_get("index").map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
@@ -59,7 +59,7 @@ pub async fn get_site_id_from_name(
 }
 
 pub async fn get_parent_list(
-    cnn: Pool<Postgres>,
+    cnn: &Pool<Postgres>,
     key: &str,
     site_name: &str,
 ) -> Result<Vec<(String, String)>, StatsHostError> {
@@ -69,7 +69,7 @@ pub async fn get_parent_list(
     let site_id_db = sqlx::query("SELECT index FROM site_tree WHERE key = $1 AND site_name=$2")
         .bind(key)
         .bind(site_name)
-        .fetch_one(&cnn)
+        .fetch_one(cnn)
         .await
         .map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
     let mut site_id: i32 = site_id_db.try_get("index").map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
@@ -79,7 +79,7 @@ pub async fn get_parent_list(
         let parent_db = sqlx::query("SELECT site_name, parent, site_type FROM site_tree WHERE key = $1 AND index=$2")
             .bind(key)
             .bind(site_id)
-            .fetch_one(&cnn)
+            .fetch_one(cnn)
             .await
             .map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
         let parent: String = parent_db.try_get("site_name").map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
@@ -92,7 +92,7 @@ pub async fn get_parent_list(
 }
 
 pub async fn get_child_list(
-    cnn: Pool<Postgres>,
+    cnn: &Pool<Postgres>,
     key: &str,
     site_name: &str,
 ) -> Result<Vec<(String, String, String)>, StatsHostError> {
@@ -102,7 +102,7 @@ pub async fn get_child_list(
     let site_id_db = sqlx::query("SELECT index FROM site_tree WHERE key = $1 AND site_name=$2")
         .bind(key)
         .bind(site_name)
-        .fetch_one(&cnn)
+        .fetch_one(cnn)
         .await
         .map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
     let site_id: i32 = site_id_db.try_get("index").map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
@@ -111,7 +111,7 @@ pub async fn get_child_list(
     let child_sites = sqlx::query("SELECT site_name, parent, site_type FROM site_tree WHERE key=$1 AND parent=$2")
         .bind(key)
         .bind(site_id)
-        .fetch_all(&cnn)
+        .fetch_all(cnn)
         .await
         .map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
 
@@ -125,7 +125,7 @@ pub async fn get_child_list(
     let child_circuits = sqlx::query("SELECT circuit_id, circuit_name FROM shaped_devices WHERE key=$1 AND parent_node=$2")
         .bind(key)
         .bind(site_name)
-        .fetch_all(&cnn)
+        .fetch_all(cnn)
         .await
         .map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
 

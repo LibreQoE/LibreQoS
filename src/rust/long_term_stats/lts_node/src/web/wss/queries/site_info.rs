@@ -12,7 +12,7 @@ struct SiteInfoMessage {
 }
 
 
-pub async fn send_site_info(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, site_id: &str) {
+pub async fn send_site_info(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, site_id: &str) {
     if let Ok(host) = pgdb::get_site_info(cnn, key, site_id).await {
         let host = tree_to_host(host);
         send_response(socket, WasmResponse::SiteInfo { data: host }).await;

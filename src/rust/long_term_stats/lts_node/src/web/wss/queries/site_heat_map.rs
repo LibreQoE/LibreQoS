@@ -5,30 +5,31 @@ use axum::extract::ws::WebSocket;
 use chrono::{DateTime, FixedOffset, Utc};
 use influxdb2::Client;
 use influxdb2::{models::Query, FromDataPoint};
-use pgdb::OrganizationDetails;
 use pgdb::sqlx::{query, Pool, Postgres, Row};
+use pgdb::OrganizationDetails;
 use serde::Serialize;
-use wasm_pipe_types::WasmResponse;
 use std::collections::HashMap;
+use wasm_pipe_types::WasmResponse;
 
 pub async fn root_heat_map(
-    cnn: Pool<Postgres>,
+    cnn: &Pool<Postgres>,
     socket: &mut WebSocket,
     key: &str,
     period: InfluxTimePeriod,
 ) -> anyhow::Result<()> {
-    if let Some(org) = get_org_details(cnn.clone(), key).await {
+    if let Some(org) = get_org_details(cnn, key).await {
         let influx_url = format!("http://{}:8086", org.influx_host);
         let client = Client::new(influx_url, &org.influx_org, &org.influx_token);
 
         // Get sites where parent=0 (for this setup)
-        let hosts: Vec<String> = query("SELECT DISTINCT site_name FROM site_tree WHERE key=$1 AND parent=0")
-        .bind(key)
-        .fetch_all(&cnn)
-        .await?
-        .iter()
-        .map(|row| row.try_get("site_name").unwrap())
-        .collect();
+        let hosts: Vec<String> =
+            query("SELECT DISTINCT site_name FROM site_tree WHERE key=$1 AND parent=0")
+                .bind(key)
+                .fetch_all(cnn)
+                .await?
+                .iter()
+                .map(|row| row.try_get("site_name").unwrap())
+                .collect();
 
         let mut host_filter = "filter(fn: (r) => ".to_string();
         for host in hosts.iter() {
@@ -71,7 +72,7 @@ pub async fn root_heat_map(
                         sorter.insert(row.node_name.clone(), vec![(row.time, row.rtt_avg)]);
                     }
                 }
-                send_response(socket, WasmResponse::RootHeat { data: sorter}).await;
+                send_response(socket, WasmResponse::RootHeat { data: sorter }).await;
             }
         }
     }
@@ -80,7 +81,7 @@ pub async fn root_heat_map(
 }
 
 async fn site_circuits_heat_map(
-    cnn: Pool<Postgres>,
+    cnn: &Pool<Postgres>,
     key: &str,
     site_name: &str,
     period: InfluxTimePeriod,
@@ -93,7 +94,7 @@ async fn site_circuits_heat_map(
         query("SELECT DISTINCT circuit_id, circuit_name FROM shaped_devices WHERE key=$1 AND parent_node=$2")
             .bind(key)
             .bind(site_name)
-            .fetch_all(&cnn)
+            .fetch_all(cnn)
             .await?
             .iter()
             .map(|row| (row.try_get("circuit_id").unwrap(), row.try_get("circuit_name").unwrap()))
@@ -158,25 +159,25 @@ async fn site_circuits_heat_map(
 }
 
 pub async fn site_heat_map(
-    cnn: Pool<Postgres>,
+    cnn: &Pool<Postgres>,
     socket: &mut WebSocket,
     key: &str,
     site_name: &str,
     period: InfluxTimePeriod,
 ) -> anyhow::Result<()> {
-    if let Some(org) = get_org_details(cnn.clone(), key).await {
+    if let Some(org) = get_org_details(cnn, key).await {
         let influx_url = format!("http://{}:8086", org.influx_host);
         let client = Client::new(influx_url, &org.influx_org, &org.influx_token);
 
         // Get the site index
-        let site_id = pgdb::get_site_id_from_name(cnn.clone(), key, site_name).await?;
+        let site_id = pgdb::get_site_id_from_name(cnn, key, site_name).await?;
 
         // Get sites where parent=site_id (for this setup)
         let hosts: Vec<String> =
             query("SELECT DISTINCT site_name FROM site_tree WHERE key=$1 AND parent=$2")
                 .bind(key)
                 .bind(site_id)
-                .fetch_all(&cnn)
+                .fetch_all(cnn)
                 .await?
                 .iter()
                 .map(|row| row.try_get("site_name").unwrap())
@@ -190,7 +191,8 @@ pub async fn site_heat_map(
         host_filter += ")";
 
         if host_filter.ends_with("(r))") {
-            host_filter = "filter(fn: (r) => r[\"node_name\"] == \"bad_sheep_no_data\")".to_string();
+            host_filter =
+                "filter(fn: (r) => r[\"node_name\"] == \"bad_sheep_no_data\")".to_string();
         }
 
         // Query influx for RTT averages
@@ -228,7 +230,8 @@ pub async fn site_heat_map(
                     }
                 }
 
-                site_circuits_heat_map(cnn, key, site_name, period, &mut sorter, client, &org).await?;
+                site_circuits_heat_map(cnn, key, site_name, period, &mut sorter, client, &org)
+                    .await?;
                 send_response(socket, WasmResponse::SiteHeat { data: sorter }).await;
             }
         }

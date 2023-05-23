@@ -28,7 +28,7 @@ impl Default for PerfRow {
 }
 
 pub async fn send_perf_for_node(
-    cnn: Pool<Postgres>,
+    cnn: &Pool<Postgres>,
     socket: &mut WebSocket,
     key: &str,
     period: InfluxTimePeriod,
@@ -41,7 +41,7 @@ pub async fn send_perf_for_node(
 }
 
 pub async fn get_perf_for_node(
-    cnn: Pool<Postgres>,
+    cnn: &Pool<Postgres>,
     key: &str,
     node_id: String,
     node_name: String,

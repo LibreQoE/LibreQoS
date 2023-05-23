@@ -4,12 +4,12 @@ use pgdb::sqlx::{Pool, Postgres};
 use crate::web::wss::send_response;
 
 pub async fn send_site_parents(
-    cnn: Pool<Postgres>,
+    cnn: &Pool<Postgres>,
     socket: &mut WebSocket,
     key: &str,
     site_name: &str,
 ) {
-    if let Ok(parents) = pgdb::get_parent_list(cnn.clone(), key, site_name).await {
+    if let Ok(parents) = pgdb::get_parent_list(cnn, key, site_name).await {
         send_response(socket, wasm_pipe_types::WasmResponse::SiteParents { data: parents }).await;
     }
 

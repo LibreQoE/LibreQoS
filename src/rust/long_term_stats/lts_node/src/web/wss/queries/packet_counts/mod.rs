@@ -9,14 +9,14 @@ use pgdb::sqlx::{Pool, Postgres};
 use wasm_pipe_types::{PacketHost, Packets};
 use super::time_period::InfluxTimePeriod;
 
-pub async fn send_packets_for_all_nodes(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod) -> anyhow::Result<()> {
+pub async fn send_packets_for_all_nodes(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod) -> anyhow::Result<()> {
     let nodes = get_packets_for_all_nodes(cnn, key, period).await?;
     send_response(socket, wasm_pipe_types::WasmResponse::PacketChart { nodes }).await;
     Ok(())
 }
 
-pub async fn send_packets_for_node(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod, node_id: String, node_name: String) -> anyhow::Result<()> {
-    let node = get_packets_for_node(cnn, key, node_id, node_name, period).await?;
+pub async fn send_packets_for_node(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod, node_id: &str, node_name: &str) -> anyhow::Result<()> {
+    let node = get_packets_for_node(cnn, key, node_id.to_string(), node_name.to_string(), period).await?;
 
     send_response(socket, wasm_pipe_types::WasmResponse::PacketChart { nodes: vec![node] }).await;
     Ok(())
@@ -27,12 +27,12 @@ pub async fn send_packets_for_node(cnn: Pool<Postgres>, socket: &mut WebSocket, 
 /// # Arguments
 /// * `cnn` - A connection pool to the database
 /// * `key` - The organization's license key
-pub async fn get_packets_for_all_nodes(cnn: Pool<Postgres>, key: &str, period: InfluxTimePeriod) -> anyhow::Result<Vec<PacketHost>> {
-    let node_status = pgdb::node_status(cnn.clone(), key).await?;
+pub async fn get_packets_for_all_nodes(cnn: &Pool<Postgres>, key: &str, period: InfluxTimePeriod) -> anyhow::Result<Vec<PacketHost>> {
+    let node_status = pgdb::node_status(cnn, key).await?;
     let mut futures = Vec::new();
     for node in node_status {
         futures.push(get_packets_for_node(
-            cnn.clone(),
+            cnn,
             key,
             node.node_id.to_string(),
             node.node_name.to_string(),
@@ -52,7 +52,7 @@ pub async fn get_packets_for_all_nodes(cnn: Pool<Postgres>, key: &str, period: I
 /// * `node_id` - The ID of the node to query
 /// * `node_name` - The name of the node to query
 pub async fn get_packets_for_node(
-    cnn: Pool<Postgres>,
+    cnn: &Pool<Postgres>,
     key: &str,
     node_id: String,
     node_name: String,

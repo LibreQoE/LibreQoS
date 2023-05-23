@@ -17,7 +17,7 @@ pub struct SiteHit {
 }
 
 pub async fn search_devices(
-    cnn: Pool<Postgres>,
+    cnn: &Pool<Postgres>,
     key: &str,
     term: &str,
 ) -> Result<Vec<DeviceHit>, StatsHostError> {
@@ -33,7 +33,7 @@ pub async fn search_devices(
     let rows = sqlx::query_as::<_, DeviceHit>(SQL)
         .bind(term)
         .bind(key)
-        .fetch_all(&cnn)
+        .fetch_all(cnn)
         .await
         .map_err(|e| StatsHostError::DatabaseError(e.to_string()));
 
@@ -45,7 +45,7 @@ pub async fn search_devices(
 }
 
 pub async fn search_ip(
-    cnn: Pool<Postgres>,
+    cnn: &Pool<Postgres>,
     key: &str,
     term: &str,
 ) -> Result<Vec<DeviceHit>, StatsHostError> {
@@ -62,7 +62,7 @@ pub async fn search_ip(
     let rows = sqlx::query_as::<_, DeviceHit>(SQL)
         .bind(term)
         .bind(key)
-        .fetch_all(&cnn)
+        .fetch_all(cnn)
         .await
         .map_err(|e| StatsHostError::DatabaseError(e.to_string()));
 
@@ -74,7 +74,7 @@ pub async fn search_ip(
 }
 
 pub async fn search_sites(
-    cnn: Pool<Postgres>,
+    cnn: &Pool<Postgres>,
     key: &str,
     term: &str,
 ) -> Result<Vec<SiteHit>, StatsHostError> {
@@ -89,7 +89,7 @@ pub async fn search_sites(
     let rows = sqlx::query_as::<_, SiteHit>(SQL)
         .bind(term)
         .bind(key)
-        .fetch_all(&cnn)
+        .fetch_all(cnn)
         .await
         .map_err(|e| StatsHostError::DatabaseError(e.to_string()));
 

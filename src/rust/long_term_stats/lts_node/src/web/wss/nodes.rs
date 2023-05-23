@@ -12,7 +12,7 @@ fn convert(ns: pgdb::NodeStatus) -> Node {
     }
 }
 
-pub async fn node_status(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str) {
+pub async fn node_status(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str) {
     log::info!("Fetching node status, {key}");
     let nodes = pgdb::node_status(cnn, key).await;
     match nodes {

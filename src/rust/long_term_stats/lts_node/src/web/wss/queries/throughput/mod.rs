@@ -11,37 +11,37 @@ use super::time_period::InfluxTimePeriod;
 mod throughput_row;
 pub use site_stack::send_site_stack_map;
 
-pub async fn send_throughput_for_all_nodes(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod) -> anyhow::Result<()> {
+pub async fn send_throughput_for_all_nodes(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod) -> anyhow::Result<()> {
     let nodes = get_throughput_for_all_nodes(cnn, key, period).await?;
     send_response(socket, wasm_pipe_types::WasmResponse::BitsChart { nodes }).await;
     Ok(())
 }
 
-pub async fn send_throughput_for_all_nodes_by_site(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, site_name: String, period: InfluxTimePeriod) -> anyhow::Result<()> {
+pub async fn send_throughput_for_all_nodes_by_site(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, site_name: String, period: InfluxTimePeriod) -> anyhow::Result<()> {
     let nodes = get_throughput_for_all_nodes_by_site(cnn, key, period, &site_name).await?;
 
     send_response(socket, wasm_pipe_types::WasmResponse::BitsChart { nodes }).await;
     Ok(())
 }
 
-pub async fn send_throughput_for_all_nodes_by_circuit(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, circuit_id: String, period: InfluxTimePeriod) -> anyhow::Result<()> {
+pub async fn send_throughput_for_all_nodes_by_circuit(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, circuit_id: String, period: InfluxTimePeriod) -> anyhow::Result<()> {
     let nodes = get_throughput_for_all_nodes_by_circuit(cnn, key, period, &circuit_id).await?;
     send_response(socket, wasm_pipe_types::WasmResponse::BitsChart { nodes }).await;
     Ok(())
 }
 
-pub async fn send_throughput_for_node(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod, node_id: String, node_name: String) -> anyhow::Result<()> {
+pub async fn send_throughput_for_node(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod, node_id: String, node_name: String) -> anyhow::Result<()> {
     let node = get_throughput_for_node(cnn, key, node_id, node_name, period).await?;
     send_response(socket, wasm_pipe_types::WasmResponse::BitsChart { nodes: vec![node] }).await;
     Ok(())
 }
 
-pub async fn get_throughput_for_all_nodes(cnn: Pool<Postgres>, key: &str, period: InfluxTimePeriod) -> anyhow::Result<Vec<ThroughputHost>> {
-    let node_status = pgdb::node_status(cnn.clone(), key).await?;
+pub async fn get_throughput_for_all_nodes(cnn: &Pool<Postgres>, key: &str, period: InfluxTimePeriod) -> anyhow::Result<Vec<ThroughputHost>> {
+    let node_status = pgdb::node_status(cnn, key).await?;
     let mut futures = Vec::new();
     for node in node_status {
         futures.push(get_throughput_for_node(
-            cnn.clone(),
+            cnn,
             key,
             node.node_id.to_string(),
             node.node_name.to_string(),
@@ -53,12 +53,12 @@ pub async fn get_throughput_for_all_nodes(cnn: Pool<Postgres>, key: &str, period
     all_nodes
 }
 
-pub async fn get_throughput_for_all_nodes_by_site(cnn: Pool<Postgres>, key: &str, period: InfluxTimePeriod, site_name: &str) -> anyhow::Result<Vec<ThroughputHost>> {
-    let node_status = pgdb::node_status(cnn.clone(), key).await?;
+pub async fn get_throughput_for_all_nodes_by_site(cnn: &Pool<Postgres>, key: &str, period: InfluxTimePeriod, site_name: &str) -> anyhow::Result<Vec<ThroughputHost>> {
+    let node_status = pgdb::node_status(cnn, key).await?;
     let mut futures = Vec::new();
     for node in node_status {
         futures.push(get_throughput_for_node_by_site(
-            cnn.clone(),
+            cnn,
             key,
             node.node_id.to_string(),
             node.node_name.to_string(),
@@ -71,12 +71,12 @@ pub async fn get_throughput_for_all_nodes_by_site(cnn: Pool<Postgres>, key: &str
     all_nodes
 }
 
-pub async fn get_throughput_for_all_nodes_by_circuit(cnn: Pool<Postgres>, key: &str, period: InfluxTimePeriod, circuit_id: &str) -> anyhow::Result<Vec<ThroughputHost>> {
-    let node_status = pgdb::node_status(cnn.clone(), key).await?;
+pub async fn get_throughput_for_all_nodes_by_circuit(cnn: &Pool<Postgres>, key: &str, period: InfluxTimePeriod, circuit_id: &str) -> anyhow::Result<Vec<ThroughputHost>> {
+    let node_status = pgdb::node_status(cnn, key).await?;
     let mut futures = Vec::new();
     for node in node_status {
         futures.push(get_throughput_for_node_by_circuit(
-            cnn.clone(),
+            cnn,
             key,
             node.node_id.to_string(),
             node.node_name.to_string(),
@@ -92,7 +92,7 @@ pub async fn get_throughput_for_all_nodes_by_circuit(cnn: Pool<Postgres>, key: &
 }
 
 pub async fn get_throughput_for_node(
-    cnn: Pool<Postgres>,
+    cnn: &Pool<Postgres>,
     key: &str,
     node_id: String,
     node_name: String,
@@ -160,7 +160,7 @@ pub async fn get_throughput_for_node(
 }
 
 pub async fn get_throughput_for_node_by_site(
-    cnn: Pool<Postgres>,
+    cnn: &Pool<Postgres>,
     key: &str,
     node_id: String,
     node_name: String,
@@ -232,7 +232,7 @@ pub async fn get_throughput_for_node_by_site(
 }
 
 pub async fn get_throughput_for_node_by_circuit(
-    cnn: Pool<Postgres>,
+    cnn: &Pool<Postgres>,
     key: &str,
     node_id: String,
     node_name: String,

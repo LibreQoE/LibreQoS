@@ -21,7 +21,7 @@ fn from(circuit: pgdb::CircuitInfo) -> CircuitList {
     }
 }
 
-pub async fn send_circuit_info(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, circuit_id: &str) {
+pub async fn send_circuit_info(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, circuit_id: &str) {
     if let Ok(hosts) = pgdb::get_circuit_info(cnn, key, circuit_id).await {
         let hosts = hosts.into_iter().map(from).collect::<Vec<_>>();
         send_response(socket, wasm_pipe_types::WasmResponse::CircuitInfo { data: hosts }).await;

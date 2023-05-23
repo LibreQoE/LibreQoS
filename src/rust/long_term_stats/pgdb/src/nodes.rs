@@ -20,10 +20,10 @@ pub struct NodeStatus {
     pub last_seen: i32,
 }
 
-pub async fn node_status(cnn: Pool<Postgres>, license: &str) -> Result<Vec<NodeStatus>, StatsHostError> {
+pub async fn node_status(cnn: &Pool<Postgres>, license: &str) -> Result<Vec<NodeStatus>, StatsHostError> {
     let res = sqlx::query_as::<_, NodeStatus>("SELECT node_id, node_name, extract('epoch' from NOW()-last_seen)::integer AS last_seen FROM shaper_nodes WHERE license_key=$1")
         .bind(license)
-        .fetch_all(&cnn)
+        .fetch_all(cnn)
         .await;
 
     match res {

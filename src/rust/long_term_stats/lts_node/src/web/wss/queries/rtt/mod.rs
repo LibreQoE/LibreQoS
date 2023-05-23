@@ -9,7 +9,7 @@ use self::rtt_row::{RttRow, RttSiteRow};
 use super::time_period::InfluxTimePeriod;
 mod rtt_row;
 
-pub async fn send_rtt_for_all_nodes(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod) -> anyhow::Result<()> {
+pub async fn send_rtt_for_all_nodes(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod) -> anyhow::Result<()> {
     let nodes = get_rtt_for_all_nodes(cnn, key, period).await?;
 
     let mut histogram = vec![0; 20];
@@ -24,7 +24,7 @@ pub async fn send_rtt_for_all_nodes(cnn: Pool<Postgres>, socket: &mut WebSocket,
     Ok(())
 }
 
-pub async fn send_rtt_for_all_nodes_site(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, site_id: String, period: InfluxTimePeriod) -> anyhow::Result<()> {
+pub async fn send_rtt_for_all_nodes_site(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, site_id: String, period: InfluxTimePeriod) -> anyhow::Result<()> {
     let nodes = get_rtt_for_all_nodes_site(cnn, key, &site_id, period).await?;
 
     let mut histogram = vec![0; 20];
@@ -39,7 +39,7 @@ pub async fn send_rtt_for_all_nodes_site(cnn: Pool<Postgres>, socket: &mut WebSo
     Ok(())
 }
 
-pub async fn send_rtt_for_all_nodes_circuit(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, site_id: String, period: InfluxTimePeriod) -> anyhow::Result<()> {
+pub async fn send_rtt_for_all_nodes_circuit(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, site_id: String, period: InfluxTimePeriod) -> anyhow::Result<()> {
     let nodes = get_rtt_for_all_nodes_circuit(cnn, key, &site_id, period).await?;
 
     let mut histogram = vec![0; 20];
@@ -54,7 +54,7 @@ pub async fn send_rtt_for_all_nodes_circuit(cnn: Pool<Postgres>, socket: &mut We
     Ok(())
 }
 
-pub async fn send_rtt_for_node(cnn: Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod, node_id: String, node_name: String) -> anyhow::Result<()> {
+pub async fn send_rtt_for_node(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod, node_id: String, node_name: String) -> anyhow::Result<()> {
     let node = get_rtt_for_node(cnn, key, node_id, node_name, period).await?;
     let nodes = vec![node];
 
@@ -70,12 +70,12 @@ pub async fn send_rtt_for_node(cnn: Pool<Postgres>, socket: &mut WebSocket, key:
     Ok(())
 }
 
-pub async fn get_rtt_for_all_nodes(cnn: Pool<Postgres>, key: &str, period: InfluxTimePeriod) -> anyhow::Result<Vec<RttHost>> {
-    let node_status = pgdb::node_status(cnn.clone(), key).await?;
+pub async fn get_rtt_for_all_nodes(cnn: &Pool<Postgres>, key: &str, period: InfluxTimePeriod) -> anyhow::Result<Vec<RttHost>> {
+    let node_status = pgdb::node_status(cnn, key).await?;
     let mut futures = Vec::new();
     for node in node_status {
         futures.push(get_rtt_for_node(
-            cnn.clone(),
+            cnn,
             key,
             node.node_id.to_string(),
             node.node_name.to_string(),
@@ -87,12 +87,12 @@ pub async fn get_rtt_for_all_nodes(cnn: Pool<Postgres>, key: &str, period: Influ
     all_nodes
 }
 
-pub async fn get_rtt_for_all_nodes_site(cnn: Pool<Postgres>, key: &str, site_id: &str, period: InfluxTimePeriod) -> anyhow::Result<Vec<RttHost>> {
-    let node_status = pgdb::node_status(cnn.clone(), key).await?;
+pub async fn get_rtt_for_all_nodes_site(cnn: &Pool<Postgres>, key: &str, site_id: &str, period: InfluxTimePeriod) -> anyhow::Result<Vec<RttHost>> {
+    let node_status = pgdb::node_status(cnn, key).await?;
     let mut futures = Vec::new();
     for node in node_status {
         futures.push(get_rtt_for_node_site(
-            cnn.clone(),
+            cnn,
             key,
             node.node_id.to_string(),
             node.node_name.to_string(),
@@ -105,12 +105,12 @@ pub async fn get_rtt_for_all_nodes_site(cnn: Pool<Postgres>, key: &str, site_id:
     all_nodes
 }
 
-pub async fn get_rtt_for_all_nodes_circuit(cnn: Pool<Postgres>, key: &str, circuit_id: &str, period: InfluxTimePeriod) -> anyhow::Result<Vec<RttHost>> {
-    let node_status = pgdb::node_status(cnn.clone(), key).await?;
+pub async fn get_rtt_for_all_nodes_circuit(cnn: &Pool<Postgres>, key: &str, circuit_id: &str, period: InfluxTimePeriod) -> anyhow::Result<Vec<RttHost>> {
+    let node_status = pgdb::node_status(cnn, key).await?;
     let mut futures = Vec::new();
     for node in node_status {
         futures.push(get_rtt_for_node_circuit(
-            cnn.clone(),
+            cnn,
             key,
             node.node_id.to_string(),
             node.node_name.to_string(),
@@ -124,7 +124,7 @@ pub async fn get_rtt_for_all_nodes_circuit(cnn: Pool<Postgres>, key: &str, circu
 }
 
 pub async fn get_rtt_for_node(
-    cnn: Pool<Postgres>,
+    cnn: &Pool<Postgres>,
     key: &str,
     node_id: String,
     node_name: String,
@@ -180,7 +180,7 @@ pub async fn get_rtt_for_node(
 }
 
 pub async fn get_rtt_for_node_site(
-    cnn: Pool<Postgres>,
+    cnn: &Pool<Postgres>,
     key: &str,
     node_id: String,
     node_name: String,
@@ -239,7 +239,7 @@ pub async fn get_rtt_for_node_site(
 }
 
 pub async fn get_rtt_for_node_circuit(
-    cnn: Pool<Postgres>,
+    cnn: &Pool<Postgres>,
     key: &str,
     node_id: String,
     node_name: String,

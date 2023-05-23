@@ -19,7 +19,7 @@ pub struct CircuitInfo {
 }
 
 pub async fn get_circuit_info(
-    cnn: Pool<Postgres>,
+    cnn: &Pool<Postgres>,
     key: &str,
     circuit_id: &str,
 ) -> Result<Vec<CircuitInfo>, StatsHostError> {
@@ -28,7 +28,7 @@ pub async fn get_circuit_info(
     sqlx::query_as::<_, CircuitInfo>(SQL)
         .bind(key)
         .bind(circuit_id)
-        .fetch_all(&cnn)
+        .fetch_all(cnn)
         .await
         .map_err(|e| StatsHostError::DatabaseError(e.to_string()))
 }

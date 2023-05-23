@@ -47,3 +47,9 @@ impl InfluxTimePeriod {
         )
     }
 }
+
+impl From<&String> for InfluxTimePeriod {
+    fn from(period: &String) -> Self {
+        Self::new(period)
+    }
+}
