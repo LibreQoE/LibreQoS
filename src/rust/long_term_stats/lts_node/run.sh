@@ -10,4 +10,4 @@ cp ../../site_build/output/* .
 cp ../../site_build/src/main.html .
 cp ../../site_build/wasm/wasm_pipe_bg.wasm .
 popd
-RUST_LOG=info RUST_BACKTRACE=1 cargo run --release
+RUST_LOG=info RUST_BACKTRACE=1 cargo run

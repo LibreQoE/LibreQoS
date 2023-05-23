@@ -14,3 +14,5 @@ futures = "0"
 uuid = { version = "1", features = ["v4", "fast-rng" ] }
 influxdb2 = "0"
 sha2 = "0"
+dashmap = "5"
+lqos_utils = { path = "../../lqos_utils" }

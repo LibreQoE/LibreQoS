@@ -270,12 +270,12 @@ async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
     }
 }
 
-fn serialize_resposne(response: WasmResponse) -> Vec<u8> {
+fn serialize_response(response: WasmResponse) -> Vec<u8> {
     let cbor = lts_client::cbor::to_vec(&response).unwrap();
     miniz_oxide::deflate::compress_to_vec(&cbor, 8)
 }
 
 pub async fn send_response(socket: &mut WebSocket, response: WasmResponse) {
-    let serialized = serialize_resposne(response);
+    let serialized = serialize_response(response);
     socket.send(Message::Binary(serialized)).await.unwrap();
 }
