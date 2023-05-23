@@ -150,3 +150,8 @@ CREATE INDEX stats_host_ip
     ON public.stats_hosts USING btree
     (ip_address ASC NULLS LAST)
 ;
+
+CREATE INDEX shaper_nodes_license_key_idx
+    ON public.shaper_nodes USING btree
+    (license_key ASC NULLS LAST)
+;
