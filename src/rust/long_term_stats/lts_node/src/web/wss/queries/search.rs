@@ -10,11 +10,11 @@ pub async fn omnisearch(
     key: &str,
     term: &str,
 ) -> anyhow::Result<()> {
-    log::warn!("Searching for {term}");
+    tracing::warn!("Searching for {term}");
 
     let hits = search_devices(cnn, key, term).await;
     if let Err(e) = &hits {
-        log::error!("{e:?}");
+        tracing::error!("{e:?}");
     }
     let mut hits = hits.unwrap();
 

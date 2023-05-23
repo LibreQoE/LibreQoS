@@ -35,7 +35,7 @@ pub async fn webserver(cnn: Pool<Postgres>) {
                 .make_span_with(DefaultMakeSpan::default().include_headers(true)),
         );
 
-    log::info!("Listening for web traffic on 0.0.0.0:9127");
+    tracing::info!("Listening for web traffic on 0.0.0.0:9127");
     axum::Server::bind(&"0.0.0.0:9127".parse().unwrap())
         .serve(app.into_make_service())
         .await

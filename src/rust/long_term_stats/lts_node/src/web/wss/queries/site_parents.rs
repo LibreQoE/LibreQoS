@@ -17,6 +17,6 @@ pub async fn send_site_parents(
     if let Ok(children) = child_result {
         send_response(socket, wasm_pipe_types::WasmResponse::SiteChildren { data: children }).await;
     } else {
-        log::error!("Error getting children: {:?}", child_result);
+        tracing::error!("Error getting children: {:?}", child_result);
     }
 }

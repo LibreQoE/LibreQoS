@@ -13,7 +13,7 @@ fn convert(ns: pgdb::NodeStatus) -> Node {
 }
 
 pub async fn node_status(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str) {
-    log::info!("Fetching node status, {key}");
+    tracing::info!("Fetching node status, {key}");
     let nodes = pgdb::node_status(cnn, key).await;
     match nodes {
         Ok(nodes) => {
@@ -21,7 +21,7 @@ pub async fn node_status(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str
             send_response(socket, wasm_pipe_types::WasmResponse::NodeStatus { nodes }).await;
         },
         Err(e) => {
-            log::error!("Unable to obtain node status: {}", e);
+            tracing::error!("Unable to obtain node status: {}", e);
         }
     }
 }

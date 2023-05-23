@@ -31,18 +31,18 @@ pub async fn ws_handler(
 }
 
 async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
-    log::info!("WebSocket Connected");
+    tracing::info!("WebSocket Connected");
     let mut credentials: Option<login::LoginResult> = None;
     while let Some(msg) = socket.recv().await {
         let cnn = cnn.clone();
         let msg = msg.unwrap();
 
         // Get the binary message and decompress it
-        log::info!("Received a message: {:?}", msg);
+        tracing::info!("Received a message: {:?}", msg);
         let raw = msg.into_data();
         let uncompressed = miniz_oxide::inflate::decompress_to_vec(&raw).unwrap();
         let msg = lts_client::cbor::from_slice::<WasmRequest>(&uncompressed).unwrap();
-        log::info!("{msg:?}");
+        tracing::info!("{msg:?}");
 
         // Update the token credentials (if there are any)
         if let Some(credentials) = &credentials {
@@ -264,7 +264,7 @@ async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
                 send_circuit_info(&cnn, wss, &credentials.license_key, circuit_id).await;
             }
             (_, None) => {
-                log::error!("No credentials");
+                tracing::error!("No credentials");
             }
         }
     }
