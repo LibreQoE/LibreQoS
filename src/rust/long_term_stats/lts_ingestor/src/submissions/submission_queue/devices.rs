@@ -1,5 +1,6 @@
 use lqos_config::ShapedDevice;
 use pgdb::{OrganizationDetails, sqlx::{Pool, Postgres}};
+use tracing::{warn, error};
 
 pub async fn ingest_shaped_devices(
     cnn: Pool<Postgres>,
@@ -75,9 +76,9 @@ pub async fn ingest_shaped_devices(
     }
 
     let result = trans.commit().await;
-        log::warn!("Transaction committed");
+        warn!("Transaction committed");
         if let Err(e) = result {
-            log::error!("Error committing transaction: {}", e);
+            error!("Error committing transaction: {}", e);
         }
 
     Ok(())

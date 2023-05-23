@@ -10,9 +10,8 @@ pgdb = { path = "../pgdb" }
 lts_client = { path = "../lts_client" }
 lqos_config = { path = "../../lqos_config" }
 tokio = { version = "1.25.0", features = ["full"] }
+tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-env_logger = "0"
-log = "0"
 anyhow = "1"
 influxdb2 = "0"
 influxdb2-structmap = "0"

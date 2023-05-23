@@ -2121,17 +2121,16 @@ name = "lts_ingestor"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "env_logger",
  "futures",
  "influxdb2",
  "influxdb2-structmap",
- "log",
  "lqos_config",
  "lts_client",
  "miniz_oxide",
  "once_cell",
  "pgdb",
  "tokio",
+ "tracing",
  "tracing-subscriber 0.3.17",
 ]
 

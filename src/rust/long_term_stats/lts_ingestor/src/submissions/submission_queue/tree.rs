@@ -5,6 +5,7 @@ use pgdb::{
     sqlx::{Pool, Postgres},
     OrganizationDetails,
 };
+use tracing::{info, error};
 
 const SQL: &str = "INSERT INTO site_tree (key, host_id, site_name, index, parent, site_type, max_up, max_down, current_up, current_down, current_rtt) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) ON CONFLICT (key, host_id, site_name) DO NOTHING";
 
@@ -81,14 +82,14 @@ pub async fn collect_tree(
                 .execute(&mut trans)
                 .await;
             if let Err(e) = result {
-                log::error!("Error inserting tree node: {}", e);
+                error!("Error inserting tree node: {}", e);
             }
         }
 
         let result = trans.commit().await;
-        log::info!("Transaction committed");
+        info!("Transaction committed");
         if let Err(e) = result {
-            log::error!("Error committing transaction: {}", e);
+            error!("Error committing transaction: {}", e);
         }
 
         client

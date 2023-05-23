@@ -2,6 +2,7 @@ use influxdb2::{Client, models::DataPoint};
 use lts_client::transport_data::StatsHost;
 use pgdb::OrganizationDetails;
 use futures::prelude::*;
+use tracing::info;
 
 pub async fn collect_per_host(
     org: &OrganizationDetails,
@@ -13,7 +14,7 @@ pub async fn collect_per_host(
         let influx_url = format!("http://{}:8086", org.influx_host);
         let client = Client::new(&influx_url, &org.influx_org, &org.influx_token);
         let mut points: Vec<DataPoint> = Vec::new();
-        log::info!("Received per-host stats, {} hosts", hosts.len());        
+        info!("Received per-host stats, {} hosts", hosts.len());        
 
         for host in hosts.iter() {
             let circuit_id = if let Some(cid) = &host.circuit_id {
