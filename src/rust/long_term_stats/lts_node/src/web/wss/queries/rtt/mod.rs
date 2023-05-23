@@ -1,9 +1,9 @@
 use axum::extract::ws::WebSocket;
 use futures::future::join_all;
 use influxdb2::{Client, models::Query};
-use pgdb::sqlx::{Pool, Postgres};
+use pgdb::{sqlx::{Pool, Postgres}, organization_cache::get_org_details};
 use wasm_pipe_types::{RttHost, Rtt};
-use crate::{submissions::get_org_details, web::wss::{queries::rtt::rtt_row::RttCircuitRow, send_response}};
+use crate::{web::wss::{queries::rtt::rtt_row::RttCircuitRow, send_response}};
 use self::rtt_row::{RttRow, RttSiteRow};
 
 use super::time_period::InfluxTimePeriod;

@@ -8,6 +8,7 @@ mod nodes;
 mod search;
 mod tree;
 mod circuit;
+pub mod organization_cache;
 
 pub mod sqlx {
     pub use sqlx::*;

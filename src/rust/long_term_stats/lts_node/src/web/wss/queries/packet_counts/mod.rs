@@ -1,24 +1,41 @@
 //! Packet-per-second data queries
 mod packet_row;
 use self::packet_row::PacketRow;
-use crate::{submissions::get_org_details, web::wss::send_response};
+use super::time_period::InfluxTimePeriod;
+use crate::web::wss::send_response;
 use axum::extract::ws::WebSocket;
 use futures::future::join_all;
 use influxdb2::{models::Query, Client};
-use pgdb::sqlx::{Pool, Postgres};
+use pgdb::{sqlx::{Pool, Postgres}, organization_cache::get_org_details};
 use wasm_pipe_types::{PacketHost, Packets};
-use super::time_period::InfluxTimePeriod;
 
-pub async fn send_packets_for_all_nodes(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod) -> anyhow::Result<()> {
+pub async fn send_packets_for_all_nodes(
+    cnn: &Pool<Postgres>,
+    socket: &mut WebSocket,
+    key: &str,
+    period: InfluxTimePeriod,
+) -> anyhow::Result<()> {
     let nodes = get_packets_for_all_nodes(cnn, key, period).await?;
     send_response(socket, wasm_pipe_types::WasmResponse::PacketChart { nodes }).await;
     Ok(())
 }
 
-pub async fn send_packets_for_node(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod, node_id: &str, node_name: &str) -> anyhow::Result<()> {
-    let node = get_packets_for_node(cnn, key, node_id.to_string(), node_name.to_string(), period).await?;
+pub async fn send_packets_for_node(
+    cnn: &Pool<Postgres>,
+    socket: &mut WebSocket,
+    key: &str,
+    period: InfluxTimePeriod,
+    node_id: &str,
+    node_name: &str,
+) -> anyhow::Result<()> {
+    let node =
+        get_packets_for_node(cnn, key, node_id.to_string(), node_name.to_string(), period).await?;
 
-    send_response(socket, wasm_pipe_types::WasmResponse::PacketChart { nodes: vec![node] }).await;
+    send_response(
+        socket,
+        wasm_pipe_types::WasmResponse::PacketChart { nodes: vec![node] },
+    )
+    .await;
     Ok(())
 }
 
@@ -27,7 +44,11 @@ pub async fn send_packets_for_node(cnn: &Pool<Postgres>, socket: &mut WebSocket,
 /// # Arguments
 /// * `cnn` - A connection pool to the database
 /// * `key` - The organization's license key
-pub async fn get_packets_for_all_nodes(cnn: &Pool<Postgres>, key: &str, period: InfluxTimePeriod) -> anyhow::Result<Vec<PacketHost>> {
+pub async fn get_packets_for_all_nodes(
+    cnn: &Pool<Postgres>,
+    key: &str,
+    period: InfluxTimePeriod,
+) -> anyhow::Result<Vec<PacketHost>> {
     let node_status = pgdb::node_status(cnn, key).await?;
     let mut futures = Vec::new();
     for node in node_status {
@@ -39,13 +60,12 @@ pub async fn get_packets_for_all_nodes(cnn: &Pool<Postgres>, key: &str, period: 
             period.clone(),
         ));
     }
-    let all_nodes: anyhow::Result<Vec<PacketHost>> = join_all(futures).await
-        .into_iter().collect();
+    let all_nodes: anyhow::Result<Vec<PacketHost>> = join_all(futures).await.into_iter().collect();
     all_nodes
 }
 
 /// Requests packet-per-second data for a single shaper node.
-/// 
+///
 /// # Arguments
 /// * `cnn` - A connection pool to the database
 /// * `key` - The organization's license key
@@ -70,7 +90,11 @@ pub async fn get_packets_for_node(
         |> filter(fn: (r) => r[\"host_id\"] == \"{}\")
         |> {}
         |> yield(name: \"last\")",
-            org.influx_bucket, period.range(), org.key, node_id, period.aggregate_window()
+            org.influx_bucket,
+            period.range(),
+            org.key,
+            node_id,
+            period.aggregate_window()
         );
 
         let query = Query::new(qs);
@@ -107,7 +131,7 @@ pub async fn get_packets_for_node(
                     });
                 }
 
-                return Ok(PacketHost{
+                return Ok(PacketHost {
                     node_id,
                     node_name,
                     down,

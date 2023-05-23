@@ -1,10 +1,10 @@
 use super::time_period::InfluxTimePeriod;
-use crate::submissions::get_org_details;
 use crate::web::wss::send_response;
 use axum::extract::ws::WebSocket;
 use chrono::{DateTime, FixedOffset, Utc};
 use influxdb2::Client;
 use influxdb2::{models::Query, FromDataPoint};
+use pgdb::organization_cache::get_org_details;
 use pgdb::sqlx::{query, Pool, Postgres, Row};
 use pgdb::OrganizationDetails;
 use serde::Serialize;

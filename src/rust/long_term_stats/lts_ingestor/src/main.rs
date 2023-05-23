@@ -1,4 +1,5 @@
-mod web;
+mod submissions;
+mod pki;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -16,9 +17,18 @@ async fn main() -> anyhow::Result<()> {
     }
     let pool = pool.unwrap();
 
-    // Start the webserver
-    log::info!("Starting the webserver");
-    let _ = tokio::spawn(web::webserver(pool)).await;
+    // Start the submission queue
+    let submission_sender = {
+        log::info!("Starting the submission queue");
+        submissions::submissions_queue(pool.clone()).await?
+    };
 
+    
+    // Start the submissions serer
+    log::info!("Starting the submissions server");
+    if let Err(e) = tokio::spawn(submissions::submissions_server(pool.clone(), submission_sender)).await {
+        log::error!("Server exited with error: {}", e);
+    }
+    
     Ok(())
 }

@@ -1,9 +1,9 @@
 use axum::extract::ws::WebSocket;
 use chrono::{DateTime, FixedOffset, Utc};
 use influxdb2::{Client, FromDataPoint, models::Query};
-use pgdb::sqlx::{Pool, Postgres};
+use pgdb::{sqlx::{Pool, Postgres}, organization_cache::get_org_details};
 use wasm_pipe_types::{PerfHost, Perf};
-use crate::{submissions::get_org_details, web::wss::send_response};
+use crate::web::wss::send_response;
 use super::time_period::InfluxTimePeriod;
 
 #[derive(Debug, FromDataPoint)]
