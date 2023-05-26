@@ -301,7 +301,7 @@ def getParentNodeBandwidthStats(parentNodes, subscriberCircuits):
 				if circuit['stats']['sinceLastQuery']['packetsSentDownload'] and circuit['stats']['sinceLastQuery']['packetsSentUpload']:
 					packetsSentTotalAggregate += (circuit['stats']['sinceLastQuery']['packetsSentDownload'] + circuit['stats']['sinceLastQuery']['packetsSentUpload'])
 				circuitsMatched += 1
-		if (packetsSentDownloadAggregate > 0) and (packetsSentUploadAggregate > 0):
+		if (packetsSentDownloadAggregate > 0) and (packetsSentUploadAggregate > 0) and (packetsSentTotalAggregate > 0):
 			#overloadFactorDownloadSinceLastQuery = float(round((thisNodeDropsDownload/packetsSentDownloadAggregate)*100.0, 3))
 			#overloadFactorUploadSinceLastQuery = float(round((thisNodeDropsUpload/packetsSentUploadAggregate)*100.0, 3))
 			overloadFactorTotalSinceLastQuery = float(round((thisNodeDropsTotal/packetsSentTotalAggregate)*100.0, 1))
