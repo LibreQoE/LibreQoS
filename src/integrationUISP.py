@@ -152,7 +152,7 @@ def findAirfibers(devices, generatedPNDownloadMbps, generatedPNUploadMbps):
 	for device in devices:
 		if device['identification']['site']['type'] == 'site':
 			if device['identification']['role'] == "station":
-				if device['identification']['type'] == "airFiber":
+				if device['identification']['type'] == "airFiber" or device['identification']['type'] == "airMax":
 					if device['overview']['status'] == 'active':
 						if device['overview']['downlinkCapacity'] is not None and device['overview']['uplinkCapacity'] is not None:
 							download = int(device['overview']['downlinkCapacity']/ 1000000)
