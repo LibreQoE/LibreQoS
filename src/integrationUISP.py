@@ -193,8 +193,18 @@ def findAirfibers(devices, generatedPNDownloadMbps, generatedPNUploadMbps):
 					if device['overview']['status'] == 'active':
 						if device['overview']['downlinkCapacity'] is not None and device['overview']['uplinkCapacity'] is not None:
 							# Exclude PtMP LTU clients
-							excludedAsPtMP = ['LTU-LR', 'LTU-PRO', 'LTU-LITE']
-							if (device['identification']['model'] not in excludedAsPtMP):
+							safeToUse = True
+							if ("apDevice" in device["attributes"]) and (device["attributes"]["apDevice"] != None):
+								if "model" in device["attributes"]["apDevice"]:
+									if device["attributes"]["apDevice"]["model"] == "LTU-Rocket":
+										safeToUse = False
+							# Exclude Links With Bad Data in UISP
+							if ("overview" in device) and (device["overview"] != None):
+								if "wirelessMode" in device["overview"]:
+									if device["overview"]["wirelessMode"] == None:
+										safeToUse = False
+							if (safeToUse):
+								#print(device['identification']['model'])
 								download = int(device['overview']['downlinkCapacity']/ 1000000)
 								upload = int(device['overview']['uplinkCapacity']/ 1000000)
 								# Correct AirMax Capacities
@@ -297,6 +307,7 @@ def findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite, foundAirFiber
 		id = site['id']
 		name = site['name']
 		if id != rootSite['id']:
+			
 			if id not in foundAirFibersBySite:
 				trueParent = findInSiteListById(siteList, id)['parent']
 				#parent = findInSiteListById(siteList, id)['parent']
@@ -315,7 +326,7 @@ def findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite, foundAirFiber
 										# Respect parent defined by topology and overrides
 										if link['from']['site']['identification']['id'] == trueParent:
 											if link['to']['site']['identification']['id'] == id:
-												if link['from']['device']['overview']['wirelessMode'] == 'ap-ptmp':
+												if (link['from']['device']['overview']['wirelessMode'] == 'ap-ptmp') or (link['from']['device']['overview']['wirelessMode'] == 'ap'):
 													if 'overview' in link['to']['device']:
 														if ('downlinkCapacity' in link['to']['device']['overview']) and ('uplinkCapacity' in link['to']['device']['overview']):
 															if (link['to']['device']['overview']['downlinkCapacity'] is not None) and (link['to']['device']['overview']['uplinkCapacity'] is not None): 
@@ -328,7 +339,7 @@ def findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite, foundAirFiber
 																			parent: apID
 																			}
 																site['parent'] = apID
-																#print('Site ' + name + ' will use PtMP AP as parent.')
+																print('Site ' + name + ' will use PtMP AP as parent.')
 	return siteList, nodeOffPtMP
 
 def handleMultipleInternetNodes(sites, dataLinks, uispSite):
