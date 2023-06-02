@@ -479,6 +479,8 @@ def buildFullGraph():
 
     print("Building Topology")
     net = NetworkGraph()
+    _custId = ""
+    _serviceId = ""
     # Add all sites and client sites
     for site in sites:
         if site.get("ucrm"):
