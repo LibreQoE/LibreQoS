@@ -192,22 +192,25 @@ def findAirfibers(devices, generatedPNDownloadMbps, generatedPNUploadMbps):
 				if device['identification']['type'] == "airFiber" or device['identification']['type'] == "airMax":
 					if device['overview']['status'] == 'active':
 						if device['overview']['downlinkCapacity'] is not None and device['overview']['uplinkCapacity'] is not None:
-							download = int(device['overview']['downlinkCapacity']/ 1000000)
-							upload = int(device['overview']['uplinkCapacity']/ 1000000)
-							# Correct AirMax Capacities
-							if device['identification']['type'] == 'airMax':
-								download, upload = airMaxCapacityCorrection(device, download, upload)
-							# Make sure to factor in gigabit port for AF60/AF60-LRs
-							if (device['identification']['model'] == "AF60-LR") or (device['identification']['model'] == "AF60"):
-								download = min(download,950)
-								upload = min(upload,950)
-							if device['identification']['site']['id'] in foundAirFibersBySite:
-								if (download > foundAirFibersBySite[device['identification']['site']['id']]['download']) or (upload > foundAirFibersBySite[device['identification']['site']['id']]['upload']):
-									foundAirFibersBySite[device['identification']['site']['id']]['download'] = download
-									foundAirFibersBySite[device['identification']['site']['id']]['upload'] = upload
-									#print(device['identification']['name'] + ' will override bandwidth for site ' + device['identification']['site']['name'])
-							else:
-								foundAirFibersBySite[device['identification']['site']['id']] = {'download': download, 'upload': upload}
+							# Exclude PtMP LTU clients
+							excludedAsPtMP = ['LTU-LR', 'LTU-PRO', 'LTU-LITE']
+							if (device['identification']['model'] not in excludedAsPtMP):
+								download = int(device['overview']['downlinkCapacity']/ 1000000)
+								upload = int(device['overview']['uplinkCapacity']/ 1000000)
+								# Correct AirMax Capacities
+								if device['identification']['type'] == 'airMax':
+									download, upload = airMaxCapacityCorrection(device, download, upload)
+								# Make sure to factor in gigabit port for AF60/AF60-LRs
+								if (device['identification']['model'] == "AF60-LR") or (device['identification']['model'] == "AF60"):
+									download = min(download,950)
+									upload = min(upload,950)
+								if device['identification']['site']['id'] in foundAirFibersBySite:
+									if (download > foundAirFibersBySite[device['identification']['site']['id']]['download']) or (upload > foundAirFibersBySite[device['identification']['site']['id']]['upload']):
+										foundAirFibersBySite[device['identification']['site']['id']]['download'] = download
+										foundAirFibersBySite[device['identification']['site']['id']]['upload'] = upload
+										#print(device['identification']['name'] + ' will override bandwidth for site ' + device['identification']['site']['name'])
+								else:
+									foundAirFibersBySite[device['identification']['site']['id']] = {'download': download, 'upload': upload}
 	return foundAirFibersBySite
 
 def buildSiteList(sites, dataLinks):
@@ -297,27 +300,34 @@ def findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite, foundAirFiber
 			if id not in foundAirFibersBySite:
 				trueParent = findInSiteListById(siteList, id)['parent']
 				#parent = findInSiteListById(siteList, id)['parent']
-				if site['parent'] is not None:
-					parent = site['parent']
-					for link in dataLinks:
-						if (link['to']['site'] is not None) and (link['to']['site']['identification'] is not None):
-							if ('identification' in link['to']['site']) and (link['to']['site']['identification'] is not None):
-								if ('identification' in link['from']['site']) and (link['from']['site']['identification'] is not None):
-									# Respect parent defined by topology and overrides
-									if link['from']['site']['identification']['id'] == trueParent:
-										if link['to']['site']['identification']['id'] == id:
-											if link['from']['device']['overview']['wirelessMode'] == 'ap-ptmp':
-												if 'overview' in link['to']['device']:
-													if ('downlinkCapacity' in link['to']['device']['overview']) and ('uplinkCapacity' in link['to']['device']['overview']):
-														if (link['to']['device']['overview']['downlinkCapacity'] is not None) and (link['to']['device']['overview']['uplinkCapacity'] is not None): 
-															# Capacity of the PtMP client radio feeding the PoP will be used as the site bandwidth limit
-															download = int(round(link['to']['device']['overview']['downlinkCapacity']/1000000))
-															upload = int(round(link['to']['device']['overview']['uplinkCapacity']/1000000))
-															nodeOffPtMP[id] = {'download': download,
-																		'upload': upload
-																		}
-															site['parent'] = parent
-															if site['type'] == 'site':
+				isTrueSite = False
+				for siteItem in sites:
+					if siteItem['identification']['id'] == id:
+						if siteItem['identification']['type'] == 'site':
+							isTrueSite = True
+				if isTrueSite:
+					if site['parent'] is not None:
+						parent = site['parent']
+						for link in dataLinks:
+							if (link['to']['site'] is not None) and (link['to']['site']['identification'] is not None):
+								if ('identification' in link['to']['site']) and (link['to']['site']['identification'] is not None):
+									if ('identification' in link['from']['site']) and (link['from']['site']['identification'] is not None):
+										# Respect parent defined by topology and overrides
+										if link['from']['site']['identification']['id'] == trueParent:
+											if link['to']['site']['identification']['id'] == id:
+												if link['from']['device']['overview']['wirelessMode'] == 'ap-ptmp':
+													if 'overview' in link['to']['device']:
+														if ('downlinkCapacity' in link['to']['device']['overview']) and ('uplinkCapacity' in link['to']['device']['overview']):
+															if (link['to']['device']['overview']['downlinkCapacity'] is not None) and (link['to']['device']['overview']['uplinkCapacity'] is not None): 
+																
+																# Capacity of the PtMP client radio feeding the PoP will be used as the site bandwidth limit
+																download = int(round(link['to']['device']['overview']['downlinkCapacity']/1000000))
+																upload = int(round(link['to']['device']['overview']['uplinkCapacity']/1000000))
+																nodeOffPtMP[id] = {'download': download,
+																			'upload': upload
+																			}
+																site['parent'] = parent
+															
 																print('Site ' + name + ' will use PtMP AP as parent.')
 	return siteList, nodeOffPtMP
 
