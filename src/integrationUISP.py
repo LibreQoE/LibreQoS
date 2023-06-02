@@ -319,16 +319,16 @@ def findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite, foundAirFiber
 													if 'overview' in link['to']['device']:
 														if ('downlinkCapacity' in link['to']['device']['overview']) and ('uplinkCapacity' in link['to']['device']['overview']):
 															if (link['to']['device']['overview']['downlinkCapacity'] is not None) and (link['to']['device']['overview']['uplinkCapacity'] is not None): 
-																
+																apID = link['from']['device']['identification']['id']
 																# Capacity of the PtMP client radio feeding the PoP will be used as the site bandwidth limit
 																download = int(round(link['to']['device']['overview']['downlinkCapacity']/1000000))
 																upload = int(round(link['to']['device']['overview']['uplinkCapacity']/1000000))
 																nodeOffPtMP[id] = {'download': download,
-																			'upload': upload
+																			'upload': upload,
+																			parent: apID
 																			}
-																site['parent'] = parent
-															
-																print('Site ' + name + ' will use PtMP AP as parent.')
+																site['parent'] = apID
+																#print('Site ' + name + ' will use PtMP AP as parent.')
 	return siteList, nodeOffPtMP
 
 def handleMultipleInternetNodes(sites, dataLinks, uispSite):
@@ -434,6 +434,7 @@ def buildFullGraph():
 							if (nodeOffPtMP[id]['download'] >= download) or (nodeOffPtMP[id]['upload'] >= upload):
 								download = nodeOffPtMP[id]['download']
 								upload = nodeOffPtMP[id]['upload']
+								#parent = nodeOffPtMP[id]['parent']
 					
 				siteBandwidth[name] = {
 						"download": download, "upload": upload}
