@@ -14,6 +14,10 @@ try:
 	from ispConfig import airMax_capacity
 except:
 	airMax_capacity = 0.65
+try:
+	from ispConfig import ltu_capacity
+except:
+	ltu_capacity = 0.90
 
 def uispRequest(target):
 	# Sends an HTTP request to UISP and returns the
@@ -143,13 +147,16 @@ def findApCapacities(devices, siteBandwidth):
 				dlRatio = None
 				if device['identification']['type'] == 'airMax':
 					download, upload = airMaxCapacityCorrection(device, download, upload)
-				if (download < 15) or (upload < 15):
-					print("WARNING: Device '" + device['identification']['hostname'] + "' has unusually low capacity (" + str(download) + '/' + str(upload) + " Mbps). Discarding in favor of parent site rates.")
-					safeToUse = False
+				elif device['identification']['model'] == 'LTU-Rocket':
+					download = download * ltu_capacity
+					upload = upload * ltu_capacity
 				if device['identification']['model'] == 'WaveAP':
 					if (download < 500) or (upload < 500):
 						download = 2450
 						upload = 2450
+				if (download < 15) or (upload < 15):
+					print("WARNING: Device '" + device['identification']['hostname'] + "' has unusually low capacity (" + str(download) + '/' + str(upload) + " Mbps). Discarding in favor of parent site rates.")
+					safeToUse = False
 				if safeToUse:
 					siteBandwidth[device['identification']['name']] = {
 						"download": download, "upload": upload}
