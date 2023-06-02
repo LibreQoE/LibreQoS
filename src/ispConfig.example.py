@@ -97,6 +97,9 @@ uispSite = ''
 #   or site options.
 # * "full" - build a complete network map
 uispStrategy = "full"
+# Assumed capacity of airMax radios vs reported capacity by UISP. For example, 65% would be 0.65
+# Applies to flexible frame only. Fixed frame will have capacity based on its ratio.
+airMax_capacity = 0.65
 # List any sites that should not be included, with each site name surrounded by '' and separated by commas
 excludeSites = []
 # If you use IPv6, this can be used to find associated IPv6 prefixes for your clients' IPv4 addresses, and match them
