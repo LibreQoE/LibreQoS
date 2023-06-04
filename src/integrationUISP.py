@@ -192,12 +192,11 @@ def findAirfibers(devices, generatedPNDownloadMbps, generatedPNUploadMbps):
 				if device['identification']['type'] == "airFiber" or device['identification']['type'] == "airMax":
 					if device['overview']['status'] == 'active':
 						if device['overview']['downlinkCapacity'] is not None and device['overview']['uplinkCapacity'] is not None:
-							# Exclude PtMP LTU clients
+							# Exclude PtMP clients. Those will be found by findNodesBranchedOffPtMP
 							safeToUse = True
-							if ("apDevice" in device["attributes"]) and (device["attributes"]["apDevice"] != None):
-								if "model" in device["attributes"]["apDevice"]:
-									if device["attributes"]["apDevice"]["model"] == "LTU-Rocket":
-										safeToUse = False
+							if ("wirelessMode" in device["overview"]) and (device["overview"]["wirelessMode"] != None):
+								if device["overview"]["wirelessMode"] == "sta-ptmp":
+									safeToUse = False
 							# Exclude Links With Bad Data in UISP
 							if ("overview" in device) and (device["overview"] != None):
 								if "wirelessMode" in device["overview"]:
