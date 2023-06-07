@@ -37,4 +37,5 @@ members = [
     "long_term_stats/wasm_pipe", # Provides a WebAssembly tight/compressed data pipeline
     "long_term_stats/wasm_pipe_types", # Common types between the WASM conduit and the WASM server
     "lqos_map_perf", # A CLI tool for testing eBPF map performance
+    "uisp", # REST support for the UISP API
 ]
