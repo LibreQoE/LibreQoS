@@ -2065,6 +2065,7 @@ dependencies = [
  "sysinfo",
  "thiserror",
  "tokio",
+ "uisp",
 ]
 
 [[package]]

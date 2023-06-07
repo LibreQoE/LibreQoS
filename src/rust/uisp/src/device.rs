@@ -46,11 +46,11 @@ impl Device {
         None
     }
 
-    fn strip_ip(ip: &String) -> String {
-        if !ip.contains("/") {
-            ip.clone()
+    fn strip_ip(ip: &str) -> String {
+        if !ip.contains('/') {
+            ip.to_string()
         } else {
-            ip[0..ip.find("/").unwrap()].to_string()
+            ip[0..ip.find('/').unwrap()].to_string()
         }
     }
 
