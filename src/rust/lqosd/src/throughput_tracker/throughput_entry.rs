@@ -19,7 +19,17 @@ pub(crate) struct ThroughputEntry {
 }
 
 impl ThroughputEntry {
-  pub(crate) fn median_latency(&self) -> f32 {
+  /// Calculate the median latency from the recent_rtt_data
+  /// Returns an optional, because there might not be any
+  /// data to track.
+  /// Also explicitly rejects 0 values, and flows that have
+  /// less than 1 Mb of data---they are usually long-polling.
+  pub(crate) fn median_latency(&self) -> Option<f32> {
+    // Reject sub 1Mb flows
+    if self.bytes.0 < 1_000_000 || self.bytes.1 < 1_000_000 {
+      return None;
+    }
+
     let mut shifted: Vec<f32> = self
       .recent_rtt_data
       .iter()
@@ -27,9 +37,9 @@ impl ThroughputEntry {
       .map(|n| *n as f32 / 100.0)
       .collect();
     if shifted.len() < 5 {
-      return 0.0;
+      return None;
     }
     shifted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    shifted[shifted.len() / 2]
+    Some(shifted[shifted.len() / 2])
   }
 }
