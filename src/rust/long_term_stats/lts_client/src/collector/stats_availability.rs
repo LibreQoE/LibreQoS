@@ -16,4 +16,6 @@ pub enum StatsUpdateMessage {
   CollationTime,
   /// The daemon is exiting
   Quit,
+  /// Time to gather UISP data
+  UispCollationTime,
 }

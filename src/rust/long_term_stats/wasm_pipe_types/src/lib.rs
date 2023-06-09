@@ -26,6 +26,7 @@ pub enum WasmRequest {
     SiteParents { site_id: String },
     Search { term: String },
     CircuitInfo { circuit_id: String },
+    ExtendedDeviceInfo { circuit_id: String },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -50,6 +51,7 @@ pub enum WasmResponse {
     SiteChildren { data: Vec<(String, String, String)> },
     SearchResult { hits: Vec<SearchResult> },
     CircuitInfo { data: Vec<CircuitList> },
+    DeviceExt { data: Vec<ExtendedDeviceInfo> },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -162,4 +164,26 @@ pub struct CircuitList {
     pub comment: String,
     pub ip_range: String,
     pub subnet: i32,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ExtendedDeviceInfo {
+    pub device_id: String,
+    pub name: String,
+    pub model: String,
+    pub firmware: String,
+    pub status: String,
+    pub mode: String,
+    pub channel_width: i32,
+    pub tx_power: i32,
+    pub interfaces: Vec<ExtendedDeviceInterface>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ExtendedDeviceInterface {
+    pub name: String,
+    pub mac: String,
+    pub status: String,
+    pub speed: String,
+    pub ip_list: String,
 }

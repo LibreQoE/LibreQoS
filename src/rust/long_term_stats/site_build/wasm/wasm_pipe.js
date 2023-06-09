@@ -465,6 +465,15 @@ export function request_circuit_info(circuit_id) {
     wasm.request_circuit_info(ptr0, len0);
 }
 
+/**
+* @param {string} circuit_id
+*/
+export function request_ext_device_info(circuit_id) {
+    const ptr0 = passStringToWasm0(circuit_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.request_ext_device_info(ptr0, len0);
+}
+
 function handleError(f, args) {
     try {
         return f.apply(this, args);
@@ -627,11 +636,11 @@ function __wbg_get_imports() {
     imports.wbg.__wbg_setonopen_6fd8b28538150568 = function(arg0, arg1) {
         getObject(arg0).onopen = getObject(arg1);
     };
-    imports.wbg.__wbindgen_closure_wrapper1710 = function(arg0, arg1, arg2) {
+    imports.wbg.__wbindgen_closure_wrapper1798 = function(arg0, arg1, arg2) {
         const ret = makeMutClosure(arg0, arg1, 70, __wbg_adapter_12);
         return addHeapObject(ret);
     };
-    imports.wbg.__wbindgen_closure_wrapper1711 = function(arg0, arg1, arg2) {
+    imports.wbg.__wbindgen_closure_wrapper1799 = function(arg0, arg1, arg2) {
         const ret = makeMutClosure(arg0, arg1, 70, __wbg_adapter_12);
         return addHeapObject(ret);
     };

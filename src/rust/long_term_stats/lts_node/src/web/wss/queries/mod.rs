@@ -11,6 +11,7 @@ mod site_info;
 mod site_parents;
 pub mod site_tree;
 mod throughput;
+pub mod ext_device;
 pub mod time_period;
 pub use circuit_info::send_circuit_info;
 pub use node_perf::send_perf_for_node;

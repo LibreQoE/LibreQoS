@@ -129,6 +129,33 @@ CREATE TABLE public.active_tokens
     PRIMARY KEY (token)
 );
 
+CREATE TABLE public.uisp_devices_ext
+(
+    key character varying(254) NOT NULL,
+    device_id character varying(254) NOT NULL,
+    name character varying(254) NOT NULL DEFAULT '',
+    model character varying(254) NOT NULL DEFAULT '',
+    firmware character varying(64) NOT NULL DEFAULT '',
+    status character varying(64) NOT NULL DEFAULT '',
+    mode character varying(64) NOT NULL DEFAULT '',
+    channel_width integer NOT NULL DEFAULT 0,
+    tx_power integer NOT NULL DEFAULT 0,
+    PRIMARY KEY (key, device_id)
+);
+
+CREATE TABLE public.uisp_devices_interfaces
+(
+    key character varying(254) NOT NULL,
+    device_id character varying(254) NOT NULL,
+    id serial NOT NULL,
+    name character varying(64) NOT NULL DEFAULT '',
+    mac character varying(64) NOT NULL DEFAULT '',
+    status character varying(64) NOT NULL DEFAULT '',
+    speed character varying(64) NOT NULL DEFAULT '',
+    ip_list character varying(254) NOT NULL DEFAULT '',
+    PRIMARY KEY (key, device_id, id)
+);
+
 ---- Indices
 
 CREATE INDEX site_tree_key

@@ -7,7 +7,7 @@ use crate::web::wss::{
         send_site_info, send_site_parents, send_site_stack_map, send_throughput_for_all_nodes,
         send_throughput_for_all_nodes_by_circuit, send_throughput_for_all_nodes_by_site,
         send_throughput_for_node, site_heat_map, site_tree::send_site_tree,
-        time_period::InfluxTimePeriod,
+        time_period::InfluxTimePeriod, ext_device::send_extended_device_info,
     },
 };
 use axum::{
@@ -262,6 +262,9 @@ async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
             }
             (WasmRequest::CircuitInfo { circuit_id }, Some(credentials)) => {
                 send_circuit_info(&cnn, wss, &credentials.license_key, circuit_id).await;
+            }
+            (WasmRequest::ExtendedDeviceInfo { circuit_id }, Some(credentials)) => {
+                send_extended_device_info(&cnn, wss, &credentials.license_key, circuit_id).await;
             }
             (_, None) => {
                 tracing::error!("No credentials");

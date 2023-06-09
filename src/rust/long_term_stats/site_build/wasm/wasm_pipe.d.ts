@@ -111,6 +111,10 @@ export function request_search(term: string): void;
 * @param {string} circuit_id
 */
 export function request_circuit_info(circuit_id: string): void;
+/**
+* @param {string} circuit_id
+*/
+export function request_ext_device_info(circuit_id: string): void;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
@@ -140,6 +144,7 @@ export interface InitOutput {
   readonly request_site_parents: (a: number, b: number) => void;
   readonly request_search: (a: number, b: number) => void;
   readonly request_circuit_info: (a: number, b: number) => void;
+  readonly request_ext_device_info: (a: number, b: number) => void;
   readonly __wbindgen_malloc: (a: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number) => number;
   readonly __wbindgen_export_2: WebAssembly.Table;

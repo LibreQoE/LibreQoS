@@ -35,6 +35,13 @@ impl Device {
         None
     }
 
+    pub fn get_firmware(&self) -> Option<String> {
+        if let Some(firmware) = &self.identification.firmwareVersion {
+            return Some(firmware.clone());
+        }
+        None
+    }
+
     pub fn get_id(&self) -> String {
         self.identification.id.clone()
     }
@@ -42,6 +49,24 @@ impl Device {
     pub fn get_site_id(&self) -> Option<String> {
         if let Some(site) = &self.identification.site {
             return Some(site.id.clone());
+        }
+        None
+    }
+
+    pub fn get_status(&self) -> Option<String> {
+        if let Some(overview) = &self.overview {
+            if let Some(status) = &overview.status {
+                return Some(status.clone());
+            }
+        }
+        None
+    }
+
+    pub fn get_frequency(&self) -> Option<f64> {
+        if let Some(overview) = &self.overview {
+            if let Some(frequency) = &overview.frequency {
+                return Some(*frequency);
+            }
         }
         None
     }

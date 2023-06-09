@@ -133,10 +133,11 @@ pub(crate) async fn collate_stats(comm_tx: Sender<SenderChannelMessage>) {
                 avg: (packets_per_second.down.avg, packets_per_second.up.avg),
             },
         }),
-        cpu_usage: cpu,
-        ram_percent: ram,
+        cpu_usage: Some(cpu),
+        ram_percent: Some(ram),
         hosts: Some(stats_hosts),
         tree: Some(tree_entries),
+        uisp_devices: None,
     }, comm_tx).await;
 
     // Clear the collection buffer

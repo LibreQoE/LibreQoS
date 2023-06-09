@@ -147,6 +147,12 @@ pub struct LongTermStats {
   /// The license key for submitting stats to a LibreQoS hosted
   /// statistics server
   pub license_key: Option<String>,
+
+  /// UISP reporting period (in seconds). UISP queries can be slow,
+  /// so hitting it every second or 10 seconds is going to cause problems
+  /// for some people. A good default may be 5 minutes. Not specifying this
+  /// disabled UISP integration.
+  pub uisp_reporting_interval_seconds: Option<u64>,
 }
 
 impl EtcLqos {

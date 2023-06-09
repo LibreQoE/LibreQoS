@@ -6,7 +6,7 @@
 
 use crate::submissions::submission_queue::{
     devices::ingest_shaped_devices, host_totals::collect_host_totals, node_perf::collect_node_perf,
-    organization_cache::get_org_details, tree::collect_tree, per_host::collect_per_host,
+    organization_cache::get_org_details, tree::collect_tree, per_host::collect_per_host, uisp_devices::collect_uisp_devices,
 };
 use lts_client::transport_data::{LtsCommand, NodeIdAndLicense};
 use pgdb::sqlx::{Pool, Postgres};
@@ -32,7 +32,7 @@ async fn run_queue(cnn: Pool<Postgres>, mut rx: Receiver<SubmissionType>) -> any
     Ok(())
 }
 
-#[tracing::instrument]
+//#[tracing::instrument]
 async fn ingest_stats(
     cnn: Pool<Postgres>,
     node_id: NodeIdAndLicense,
@@ -52,20 +52,21 @@ async fn ingest_stats(
             }
             LtsCommand::Submit(stats) => {
                 //println!("Submission: {:?}", submission);
-                info!("Ingesting regular statistics dump");
+                info!("Ingesting statistics dump");
                 let ts = stats.timestamp as i64;
                 let _ = tokio::join!(
                     update_last_seen(cnn.clone(), &node_id),
-                    collect_host_totals(&org, &node_id.node_id, ts, &stats.totals),
+                    collect_host_totals(&org, &node_id.node_id, ts, &stats.totals),                    
                     collect_node_perf(
                         &org,
                         &node_id.node_id,
                         ts,
                         &stats.cpu_usage,
-                        stats.ram_percent
+                        &stats.ram_percent
                     ),
                     collect_tree(cnn.clone(), &org, &node_id.node_id, ts, &stats.tree),
                     collect_per_host(&org, &node_id.node_id, ts, &stats.hosts),
+                    collect_uisp_devices(cnn.clone(), &org, &stats.uisp_devices, ts),
                 );
             }
         }

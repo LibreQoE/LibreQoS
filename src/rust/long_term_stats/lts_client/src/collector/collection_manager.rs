@@ -7,12 +7,15 @@
 //! lose min/max values.
 
 use super::StatsUpdateMessage;
-use crate::{collector::{collation::{collate_stats, StatsSession}, SESSION_BUFFER}, submission_queue::{enqueue_shaped_devices_if_allowed, comm_channel::{SenderChannelMessage, start_communication_channel}}};
+use crate::{collector::{collation::{collate_stats, StatsSession}, SESSION_BUFFER, uisp_ext::gather_uisp_data}, submission_queue::{enqueue_shaped_devices_if_allowed, comm_channel::{SenderChannelMessage, start_communication_channel}}};
 use lqos_config::EtcLqos;
+use once_cell::sync::Lazy;
 use std::{sync::atomic::AtomicU64, time::Duration};
 use tokio::sync::mpsc::{self, Receiver, Sender};
+use dashmap::DashSet;
 
 static STATS_COUNTER: AtomicU64 = AtomicU64::new(0);
+pub(crate) static DEVICE_ID_LIST: Lazy<DashSet<String>> = Lazy::new(DashSet::new);
 
 /// Launches the long-term statistics manager task. Returns immediately,
 /// because it creates the channel and then spawns listener threads.
@@ -24,6 +27,7 @@ pub async fn start_long_term_stats() -> Sender<StatsUpdateMessage> {
 
     tokio::spawn(lts_manager(update_rx, comm_tx));
     tokio::spawn(collation_scheduler(update_tx.clone()));
+    tokio::spawn(uisp_collection_manager(update_tx.clone()));
     tokio::spawn(start_communication_channel(comm_rx));
 
     // Return the channel, for notifications
@@ -46,6 +50,7 @@ async fn lts_manager(mut rx: Receiver<StatsUpdateMessage>, comm_tx: Sender<Sende
             Some(StatsUpdateMessage::ThroughputReady(throughput)) => {
                 let counter = STATS_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 if counter > 5 {
+                    log::info!("Enqueueing throughput data for collation");
                     SESSION_BUFFER.lock().await.push(StatsSession {
                         throughput: throughput.0,
                         network_tree: throughput.1,
@@ -53,10 +58,21 @@ async fn lts_manager(mut rx: Receiver<StatsUpdateMessage>, comm_tx: Sender<Sende
                 }
             }
             Some(StatsUpdateMessage::ShapedDevicesChanged(shaped_devices)) => {
+                log::info!("Enqueueing shaped devices for collation");
+                // Update the device id list
+                DEVICE_ID_LIST.clear();
+                shaped_devices.iter().for_each(|d| {
+                    DEVICE_ID_LIST.insert(d.device_id.clone());
+                });
                 tokio::spawn(enqueue_shaped_devices_if_allowed(shaped_devices, comm_tx.clone()));
             }
             Some(StatsUpdateMessage::CollationTime) => {
+                log::info!("Collation time reached");
                 tokio::spawn(collate_stats(comm_tx.clone()));
+            }
+            Some(StatsUpdateMessage::UispCollationTime) => {
+                log::info!("UISP Collation time reached");
+                tokio::spawn(gather_uisp_data(comm_tx.clone()));
             }
             Some(StatsUpdateMessage::Quit) => {
                 // The daemon is exiting, terminate
@@ -78,4 +94,24 @@ fn get_collation_period() -> Duration {
     }
 
     Duration::from_secs(60)
+}
+
+fn get_uisp_collation_period() -> Option<Duration> {
+    if let Ok(cfg) = EtcLqos::load() {
+        if let Some(lts) = &cfg.long_term_stats {
+            return Some(Duration::from_secs(lts.uisp_reporting_interval_seconds.unwrap_or(300)));
+        }
+    }
+
+    None
+}
+
+async fn uisp_collection_manager(control_tx: Sender<StatsUpdateMessage>) {
+    if let Some(period) = get_uisp_collation_period() {
+        log::info!("Starting UISP poller with period {:?}", period);
+        loop {
+            control_tx.send(StatsUpdateMessage::UispCollationTime).await.unwrap();
+            tokio::time::sleep(period).await;
+        }
+    }
 }

@@ -222,3 +222,8 @@ pub fn request_search(term: String) {
 pub fn request_circuit_info(circuit_id: String) {
     send_message(WasmRequest::CircuitInfo { circuit_id });
 }
+
+#[wasm_bindgen]
+pub fn request_ext_device_info(circuit_id: String) {
+    send_message(WasmRequest::ExtendedDeviceInfo { circuit_id });
+}

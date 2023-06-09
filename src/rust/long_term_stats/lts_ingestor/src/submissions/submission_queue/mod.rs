@@ -5,5 +5,6 @@ mod organization_cache;
 mod per_host;
 mod tree;
 mod node_perf;
+mod uisp_devices;
 pub use queue::{submissions_queue, SubmissionType};
 pub use organization_cache::get_org_details;

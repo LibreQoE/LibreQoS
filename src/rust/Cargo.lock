@@ -2065,7 +2065,6 @@ dependencies = [
  "sysinfo",
  "thiserror",
  "tokio",
- "uisp",
 ]
 
 [[package]]
@@ -2103,6 +2102,7 @@ name = "lts_client"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "dashmap 5.4.0",
  "dryoc",
  "log",
  "lqos_config",
@@ -2115,6 +2115,7 @@ dependencies = [
  "sysinfo",
  "thiserror",
  "tokio",
+ "uisp",
 ]
 
 [[package]]
