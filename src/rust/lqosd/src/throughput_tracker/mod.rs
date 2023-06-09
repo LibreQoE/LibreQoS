@@ -84,7 +84,7 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
           *te.key(),
           te.bytes_per_second,
           te.packets_per_second,
-          te.median_latency(),
+          te.median_latency().unwrap_or(0.0),
           te.tc_handle,
           te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
         )
@@ -124,13 +124,13 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
       .iter()
       .filter(|v| !v.key().as_ip().is_loopback())
       .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
-      .filter(|te| te.median_latency() > 0.0)
+      .filter(|te| te.median_latency().is_some())
       .map(|te| {
         (
           *te.key(),
           te.bytes_per_second,
           te.packets_per_second,
-          te.median_latency(),
+          te.median_latency().unwrap_or(0.0),
           te.tc_handle,
           te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
         )
@@ -162,6 +162,7 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
     .collect();
   BusResponse::WorstRtt(result)
 }
+
 pub fn best_n(start: u32, end: u32) -> BusResponse {
   let mut full_list: Vec<TopList> = {
     let tp_cycle = THROUGHPUT_TRACKER.cycle.load(std::sync::atomic::Ordering::Relaxed);
@@ -169,13 +170,13 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
       .iter()
       .filter(|v| !v.key().as_ip().is_loopback())
       .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
-      .filter(|te| te.median_latency() > 0.0)
+      .filter(|te| te.median_latency().is_some())
       .map(|te| {
         (
           *te.key(),
           te.bytes_per_second,
           te.packets_per_second,
-          te.median_latency(),
+          te.median_latency().unwrap_or(0.0),
           te.tc_handle,
           te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
         )
@@ -311,7 +312,7 @@ pub fn all_unknown_ips() -> BusResponse {
           *te.key(),
           te.bytes,
           te.packets,
-          te.median_latency(),
+          te.median_latency().unwrap_or(0.0),
           te.tc_handle,
           te.most_recent_cycle,
         )
