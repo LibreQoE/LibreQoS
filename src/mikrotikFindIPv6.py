@@ -18,22 +18,29 @@ def pullMikrotikIPv6():
 		macToIPv4 = {}
 		macToIPv6 = {}
 		clientAddressToIPv6 = {}
-		list_dhcp = api.get_resource('/ip/dhcp-server/lease')
-		entries = list_dhcp.get()
+		# list_dhcp4 = api.get_resource('/ip/dhcp-server/lease')
+		# entries = list_dhcp4.get()
+		# for entry in entries:
+			# try:
+				# macToIPv4[entry['mac-address']] = entry['address']
+			# except:
+				# pass
+		list_arp4 = api.get_resource('/ip/arp')
+		entries = list_arp4.get()
 		for entry in entries:
 			try:
 				macToIPv4[entry['mac-address']] = entry['address']
 			except:
 				pass
-		list_dhcp = api.get_resource('/ipv6/dhcp-server/binding')
-		entries = list_dhcp.get()
+		list_binding6 = api.get_resource('/ipv6/dhcp-server/binding')
+		entries = list_binding6.get()
 		for entry in entries:
 			try:
 				clientAddressToIPv6[entry['client-address']] = entry['address']
 			except:
 				pass
-		list_dhcp = api.get_resource('/ipv6/neighbor')
-		entries = list_dhcp.get()
+		list_neighbor6 = api.get_resource('/ipv6/neighbor')
+		entries = list_neighbor6.get()
 		for entry in entries:
 			try:
 				realIPv6 = clientAddressToIPv6[entry['address']]
