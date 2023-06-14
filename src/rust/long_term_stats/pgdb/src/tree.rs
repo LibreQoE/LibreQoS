@@ -139,3 +139,45 @@ pub async fn get_child_list(
 
     Ok(result)
 }
+
+pub async fn get_circuit_parent_list(
+    cnn: &Pool<Postgres>,
+    key: &str,
+    circuit_id: &str,
+) -> Result<Vec<(String, String)>, StatsHostError> {
+    let mut result = Vec::new();
+
+    // Get the site name to start at
+    let site_name : String = sqlx::query("SELECT parent_node FROM shaped_devices WHERE key = $1 AND circuit_id= $2")
+        .bind(key)
+        .bind(circuit_id)
+        .fetch_one(cnn)
+        .await
+        .map_err(|e| StatsHostError::DatabaseError(e.to_string()))?
+        .get(0);
+
+    // Get the site index
+    let site_id_db = sqlx::query("SELECT index FROM site_tree WHERE key = $1 AND site_name=$2")
+        .bind(key)
+        .bind(site_name)
+        .fetch_one(cnn)
+        .await
+        .map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
+    let mut site_id: i32 = site_id_db.try_get("index").map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
+
+    // Get the parent list
+    while site_id != 0 {
+        let parent_db = sqlx::query("SELECT site_name, parent, site_type FROM site_tree WHERE key = $1 AND index=$2")
+            .bind(key)
+            .bind(site_id)
+            .fetch_one(cnn)
+            .await
+            .map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
+        let parent: String = parent_db.try_get("site_name").map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
+        let site_type: String = parent_db.try_get("site_type").map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
+        site_id = parent_db.try_get("parent").map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
+        result.push((site_type, parent));
+    }
+
+    Ok(result)
+}

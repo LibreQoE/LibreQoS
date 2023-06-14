@@ -214,6 +214,16 @@ pub fn request_site_parents(site_id: String) {
 }
 
 #[wasm_bindgen]
+pub fn request_circuit_parents(circuit_id: String) {
+    send_message(WasmRequest::CircuitParents { circuit_id });
+}
+
+#[wasm_bindgen]
+pub fn request_root_parents() {
+    send_message(WasmRequest::RootParents);
+}
+
+#[wasm_bindgen]
 pub fn request_search(term: String) {
     send_message(WasmRequest::Search { term });
 }
@@ -226,4 +236,14 @@ pub fn request_circuit_info(circuit_id: String) {
 #[wasm_bindgen]
 pub fn request_ext_device_info(circuit_id: String) {
     send_message(WasmRequest::ExtendedDeviceInfo { circuit_id });
+}
+
+#[wasm_bindgen]
+pub fn request_ext_snr_graph(period: String, device_id: String) {
+    send_message(WasmRequest::SignalNoiseChartExt { period, device_id });
+}
+
+#[wasm_bindgen]
+pub fn request_ext_capacity_graph(period: String, device_id: String) {
+    send_message(WasmRequest::DeviceCapacityChartExt { period, device_id });
 }

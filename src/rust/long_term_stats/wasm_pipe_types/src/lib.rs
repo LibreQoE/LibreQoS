@@ -24,9 +24,13 @@ pub enum WasmRequest {
     Tree { parent: String },
     SiteInfo { site_id: String },
     SiteParents { site_id: String },
+    CircuitParents { circuit_id: String },
+    RootParents,
     Search { term: String },
     CircuitInfo { circuit_id: String },
     ExtendedDeviceInfo { circuit_id: String },
+    SignalNoiseChartExt { period: String, device_id: String },
+    DeviceCapacityChartExt { period: String, device_id: String },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -52,6 +56,8 @@ pub enum WasmResponse {
     SearchResult { hits: Vec<SearchResult> },
     CircuitInfo { data: Vec<CircuitList> },
     DeviceExt { data: Vec<ExtendedDeviceInfo> },
+    DeviceExtSnr { data: Vec<SignalNoiseChartExt>, device_id: String },
+    DeviceExtCapacity { data: Vec<CapacityChartExt>, device_id: String },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -186,4 +192,18 @@ pub struct ExtendedDeviceInterface {
     pub status: String,
     pub speed: String,
     pub ip_list: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SignalNoiseChartExt {
+    pub date: String,
+    pub signal: f64,
+    pub noise: f64,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CapacityChartExt {
+    pub date: String,
+    pub dl: f64,
+    pub ul: f64,
 }

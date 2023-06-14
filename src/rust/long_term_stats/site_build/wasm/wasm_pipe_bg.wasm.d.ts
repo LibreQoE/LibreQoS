@@ -23,9 +23,13 @@ export function request_site_heat(a: number, b: number, c: number, d: number): v
 export function request_tree(a: number, b: number): void;
 export function request_site_info(a: number, b: number): void;
 export function request_site_parents(a: number, b: number): void;
+export function request_circuit_parents(a: number, b: number): void;
+export function request_root_parents(): void;
 export function request_search(a: number, b: number): void;
 export function request_circuit_info(a: number, b: number): void;
 export function request_ext_device_info(a: number, b: number): void;
+export function request_ext_snr_graph(a: number, b: number, c: number, d: number): void;
+export function request_ext_capacity_graph(a: number, b: number, c: number, d: number): void;
 export function __wbindgen_malloc(a: number): number;
 export function __wbindgen_realloc(a: number, b: number, c: number): number;
 export const __wbindgen_export_2: WebAssembly.Table;

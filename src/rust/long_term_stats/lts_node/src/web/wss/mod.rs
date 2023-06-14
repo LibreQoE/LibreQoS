@@ -1,13 +1,19 @@
 use crate::web::wss::{
     nodes::node_status,
     queries::{
+        ext_device::{
+            send_extended_device_capacity_graph, send_extended_device_info,
+            send_extended_device_snr_graph,
+        },
         omnisearch, root_heat_map, send_circuit_info, send_packets_for_all_nodes,
         send_packets_for_node, send_perf_for_node, send_rtt_for_all_nodes,
         send_rtt_for_all_nodes_circuit, send_rtt_for_all_nodes_site, send_rtt_for_node,
         send_site_info, send_site_parents, send_site_stack_map, send_throughput_for_all_nodes,
         send_throughput_for_all_nodes_by_circuit, send_throughput_for_all_nodes_by_site,
-        send_throughput_for_node, site_heat_map, site_tree::send_site_tree,
-        time_period::InfluxTimePeriod, ext_device::send_extended_device_info,
+        send_throughput_for_node, site_heat_map,
+        site_tree::send_site_tree,
+        time_period::InfluxTimePeriod,
+        send_circuit_parents, send_root_parents,
     },
 };
 use axum::{
@@ -257,6 +263,12 @@ async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
             (WasmRequest::SiteParents { site_id }, Some(credentials)) => {
                 send_site_parents(&cnn, wss, &credentials.license_key, site_id).await;
             }
+            (WasmRequest::CircuitParents { circuit_id }, Some(credentials)) => {
+                send_circuit_parents(&cnn, wss, &credentials.license_key, circuit_id).await;
+            }
+            (WasmRequest::RootParents, Some(credentials)) => {
+                send_root_parents(&cnn, wss, &credentials.license_key).await;
+            }
             (WasmRequest::Search { term }, Some(credentials)) => {
                 let _ = omnisearch(&cnn, wss, &credentials.license_key, term).await;
             }
@@ -265,6 +277,26 @@ async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
             }
             (WasmRequest::ExtendedDeviceInfo { circuit_id }, Some(credentials)) => {
                 send_extended_device_info(&cnn, wss, &credentials.license_key, circuit_id).await;
+            }
+            (WasmRequest::SignalNoiseChartExt { period, device_id }, Some(credentials)) => {
+                let _ = send_extended_device_snr_graph(
+                    &cnn,
+                    wss,
+                    &credentials.license_key,
+                    device_id,
+                    InfluxTimePeriod::new(period),
+                )
+                .await;
+            }
+            (WasmRequest::DeviceCapacityChartExt { period, device_id }, Some(credentials)) => {
+                let _ = send_extended_device_capacity_graph(
+                    &cnn,
+                    wss,
+                    &credentials.license_key,
+                    device_id,
+                    InfluxTimePeriod::new(period),
+                )
+                .await;
             }
             (_, None) => {
                 tracing::error!("No credentials");

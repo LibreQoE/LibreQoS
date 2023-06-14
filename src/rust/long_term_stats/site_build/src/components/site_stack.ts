@@ -18,6 +18,7 @@ export class SiteStackChart implements Component {
     }
 
     wireup(): void {
+        request_site_stack(window.graphPeriod, this.siteId);
     }
 
     ontick(): void {

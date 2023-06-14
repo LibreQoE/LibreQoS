@@ -20,7 +20,7 @@ pub use rtt::{send_rtt_for_all_nodes, send_rtt_for_all_nodes_site, send_rtt_for_
 pub use search::omnisearch;
 pub use site_heat_map::{root_heat_map, site_heat_map};
 pub use site_info::send_site_info;
-pub use site_parents::send_site_parents;
+pub use site_parents::{send_site_parents, send_circuit_parents, send_root_parents};
 pub use throughput::{
     send_throughput_for_all_nodes, send_throughput_for_all_nodes_by_circuit,
     send_throughput_for_all_nodes_by_site, send_throughput_for_node,
