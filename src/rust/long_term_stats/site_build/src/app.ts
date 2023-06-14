@@ -40,9 +40,13 @@ window.setInterval(() => {
     console.log("tick");
     window.router.ontick();
     window.bus.updateConnected();
+    let btn = document.getElementById("graphPeriodBtn") as HTMLButtonElement;
+    btn.innerText = window.graphPeriod;
 }, 1000);
 
  function changeGraphPeriod(period: string) {
     window.graphPeriod = period;
     localStorage.setItem('graphPeriod', period);
+    let btn = document.getElementById("graphPeriodBtn") as HTMLButtonElement;
+    btn.innerText = period;
 }
