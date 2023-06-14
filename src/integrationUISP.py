@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from integrationCommon import isIpv4Permitted, fixSubnet
 
 try:
-    from ispConfig import uispSite, uispStrategy, overwriteNetworkJSONalways, suspendedDownload, suspendedUpload
+    from ispConfig import uispSite, uispStrategy, overwriteNetworkJSONalways, suspendedDownload, suspendedUpload, airMax_capacity
 except ImportError:
     from ispConfig import uispSite, uispStrategy
 
@@ -28,7 +28,6 @@ def uispRequest(target):
     headers = {"accept": "application/json", "x-auth-token": uispAuthToken}
     r = requests.get(url, headers=headers, timeout=10)
     return r.json()
-
 
 def buildFlatGraph():
     """Builds a high-performance (but lacking in site or AP bandwidth control) network."""
@@ -204,6 +203,29 @@ def findApCapacities(devices, siteBandwidth):
                     }
 
 
+def airMaxCapacityCorrection(device, download, upload):
+	dlRatio = None
+	for interface in device['interfaces']:
+		if ('wireless' in interface) and (interface['wireless'] != None):
+			if 'dlRatio' in interface['wireless']:
+				dlRatio = interface['wireless']['dlRatio']
+	# UISP reports unrealistically high capacities for airMax.
+	# For fixed frame, multiply capacity by the ratio for download/upload.
+	# For Flexible Frame, use 65% of reported capcity.
+	# 67/33
+	if dlRatio == 67:
+		download = download * 0.67
+		upload = upload * 0.33
+	# 50/50
+	elif dlRatio == 50:
+		download = download * 0.50
+		upload = upload * 0.50
+	# Flexible frame
+	elif dlRatio == None:
+		download = download * airMax_capacity
+		upload = upload * airMax_capacity
+	return (download, upload)
+
 def findAirfibers(devices, generatedPNDownloadMbps, generatedPNUploadMbps):
     """Search UISP and find any AirFiber Devices."""
     foundAirFibersBySite = {}
@@ -253,7 +275,6 @@ def findAirfibers(devices, generatedPNDownloadMbps, generatedPNUploadMbps):
                                     device["identification"]["site"]["id"]
                                 ] = {"download": download, "upload": upload}
     return foundAirFibersBySite
-
 
 def buildSiteList(sites, dataLinks):
     """
@@ -385,7 +406,6 @@ def findNodesBranchedOffPtMP(
                                                                 print(f"Site {name} will use PtMP AP as parent.")
     return siteList, nodeOffPtMP
 
-
 def handleMultipleInternetNodes(sites, dataLinks, uispSite):
     """Handles multiple internet Nodes. Returns applicable sites, dataLinks, and uispSite."""
     internetConnectedSites = []
@@ -506,8 +526,7 @@ def buildFullGraph():
                 parent = ""
             else:
                 parent = site["identification"]["parent"]["id"]
-        match siteType:
-            case "site":
+        if siteType == "site":
                 nodeType = NodeType.site
                 if name in siteBandwidth:
                     # Use the CSV bandwidth values
@@ -528,7 +547,7 @@ def buildFullGraph():
                                 upload = nodeOffPtMP[siteId]["upload"]
 
                 siteBandwidth[name] = {"download": download, "upload": upload}
-            case default:
+        else:
                 nodeType = NodeType.client
                 address = site["description"]["address"]
                 if site.get("ucrm"):
@@ -651,11 +670,10 @@ def buildFullGraph():
 def importFromUISP():
     """Import sites, devices, and service plans from UISP."""
     startTime = datetime.now()
-    match uispStrategy:
-        case "full":
-            buildFullGraph()
-        case default:
-            buildFlatGraph()
+    if uispStrategy == "full":
+        buildFullGraph()
+    else:
+        buildFlatGraph()
     endTime = datetime.now()
     runTimeSeconds = ((endTime - startTime).seconds) + (
         ((endTime - startTime).microseconds) / 1000000
