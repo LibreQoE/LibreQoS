@@ -62,11 +62,11 @@ export class RootHeat implements Component {
                 name: categories[i],
                 type: 'heatmap',
                 data: data,
-                label: { show: true },
+                label: { show: true, textStyle: { fontSize: 6 } },
                 emphasis: {
                     itemStyle: {
                         shadowBlur: 10,
-                        shadowColor: 'rgba(0, 0, 0, 0.5)'
+                        shadowColor: 'rgba(0, 0, 0, 0.5)',                        
                     }
                 }
             })

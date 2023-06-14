@@ -136,6 +136,7 @@ export class PacketsChartSingle implements Component {
                 this.myChart.setOption<echarts.EChartsOption>(
                     (option = {
                         title: { text: "Packets" },
+                        tooltip: { trigger: "axis" },
                         legend: {
                             orient: "horizontal",
                             right: 10,

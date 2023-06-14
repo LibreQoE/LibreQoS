@@ -91,6 +91,7 @@ export class RttChartSingle implements Component {
                 this.myChart.setOption<echarts.EChartsOption>(
                     (option = {
                         title: { text: "TCP Round-Trip Time" },
+                        tooltip: { trigger: "axis" },
                         legend: {
                             orient: "horizontal",
                             right: 10,

@@ -136,6 +136,7 @@ export class ThroughputChartSingle implements Component {
                 this.myChart.setOption<echarts.EChartsOption>(
                     (option = {
                         title: { text: "Bits" },
+                        tooltip: { trigger: "axis" },
                         legend: {
                             orient: "horizontal",
                             right: 10,

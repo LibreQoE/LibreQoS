@@ -96,6 +96,7 @@ export class SiteStackChart implements Component {
                 this.myChart.setOption<echarts.EChartsOption>(
                     (option = {
                         title: { text: "Child Node Throughput (Bits)" },
+                        tooltip: { trigger: "axis" },
                         legend: {
                             orient: "vertical",
                             right: 0,

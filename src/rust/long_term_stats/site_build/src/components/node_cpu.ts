@@ -71,6 +71,7 @@ export class NodeCpuChart implements Component {
                 this.myChart.setOption<echarts.EChartsOption>(
                     (option = {
                         title: { text: "CPU Usage" },
+                        tooltip: { trigger: "axis" },
                         legend: {
                             orient: "horizontal",
                             right: 10,
