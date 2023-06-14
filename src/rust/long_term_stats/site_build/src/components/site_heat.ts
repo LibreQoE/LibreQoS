@@ -4,15 +4,13 @@ import { request_site_heat } from "../../wasm/wasm_pipe";
 
 export class SiteHeat implements Component {
     div: HTMLElement;
-    myChart: echarts.ECharts;
+    myChart: echarts.ECharts | null = null;
     counter: number = 0;
     siteId: string;
 
     constructor(siteId: string) {
         this.siteId = decodeURI(siteId);
         this.div = document.getElementById("rootHeat") as HTMLElement;
-        this.myChart = echarts.init(this.div);
-        this.myChart.showLoading();
     }
 
     wireup(): void {
@@ -29,7 +27,6 @@ export class SiteHeat implements Component {
 
     onmessage(event: any): void {
         if (event.msg == "SiteHeat") {
-            this.myChart.hideLoading();
 
             let categories: string[] = [];
             let x: string[] = [];
@@ -101,6 +98,14 @@ export class SiteHeat implements Component {
                     }
                   },
             };
+
+            if (this.myChart == null) {
+                let elements = categories.length;
+                let height = (elements * 20) + 250;
+                this.div.style.height = height + "px";
+                this.myChart = echarts.init(this.div);
+            }
+
             this.myChart.setOption(option);
         }
     }

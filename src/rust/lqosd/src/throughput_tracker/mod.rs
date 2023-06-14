@@ -50,9 +50,10 @@ async fn throughput_task(interval_ms: u64, long_term_stats_tx: Sender<StatsUpdat
         TIME_TO_POLL_HOSTS.store(duration_ms as u64, std::sync::atomic::Ordering::Relaxed);
         submit_throughput_stats(long_term_stats_tx.clone()).await;
 
-        let sleep_duration = Duration::from_millis(interval_ms) - start.elapsed();
-        if sleep_duration.as_millis() > 0 {
-            tokio::time::sleep(sleep_duration).await;
+        let elapsed = start.elapsed();
+        if elapsed.as_secs_f32() < 1.0 {
+          let sleep_duration = Duration::from_millis(interval_ms) - start.elapsed();
+          tokio::time::sleep(sleep_duration).await;
         }
     }
 }

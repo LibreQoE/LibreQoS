@@ -20,7 +20,9 @@ export class RootBreadcrumbs implements Component {
             //console.log(event.data);
             let html = "<option value=''>-- Children --</option>";
             for (let i=0; i<event.SiteChildren.data.length; i++) {
-                html += "<option value='" + makeUrl(event.SiteChildren.data[i][0], event.SiteChildren.data[i][1]) + "'>" + event.SiteChildren.data[i][2] + "</option>";
+                if (event.SiteChildren.data[i][1] != "Root") {
+                    html += "<option value='" + makeUrl(event.SiteChildren.data[i][0], event.SiteChildren.data[i][1]) + "'>" + event.SiteChildren.data[i][2] + "</option>";
+                }
             }
             let select = document.getElementById("siteChildren") as HTMLSelectElement;
             select.innerHTML = html;

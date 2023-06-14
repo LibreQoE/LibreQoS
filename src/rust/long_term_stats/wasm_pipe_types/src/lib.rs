@@ -91,6 +91,12 @@ pub struct ThroughputHost {
     pub up: Vec<Throughput>,
 }
 
+impl ThroughputHost {
+    pub fn total(&self) -> f64 {
+        self.down.iter().map(|x| x.value).sum::<f64>() + self.up.iter().map(|x| x.value).sum::<f64>()
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Throughput {
     pub value: f64,

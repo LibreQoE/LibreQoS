@@ -112,3 +112,11 @@ tramp
 # virtual environments
 .venv
 venv
+src/integrationUISPbandwidths.template.csv
+src/lts_keys.bin
+src/network
+src/network.json.good
+src/network.pdf
+src/ShapedDevices.csv.good
+.gitignore
+src/rust/lqosd/lts_keys.bin

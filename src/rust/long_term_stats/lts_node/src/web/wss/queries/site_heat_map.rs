@@ -29,6 +29,7 @@ pub async fn root_heat_map(
                 .await?
                 .iter()
                 .map(|row| row.try_get("site_name").unwrap())
+                .filter(|row| row != "Root")
                 .collect();
 
         let mut host_filter = "filter(fn: (r) => ".to_string();
