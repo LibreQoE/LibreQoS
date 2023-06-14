@@ -29,7 +29,6 @@ def uispRequest(target):
     r = requests.get(url, headers=headers, timeout=10)
     return r.json()
 
-
 def buildFlatGraph():
     """Builds a high-performance (but lacking in site or AP bandwidth control) network."""
     from integrationCommon import NetworkGraph, NetworkNode, NodeType
@@ -204,6 +203,29 @@ def findApCapacities(devices, siteBandwidth):
                     }
 
 
+def airMaxCapacityCorrection(device, download, upload):
+	dlRatio = None
+	for interface in device['interfaces']:
+		if ('wireless' in interface) and (interface['wireless'] != None):
+			if 'dlRatio' in interface['wireless']:
+				dlRatio = interface['wireless']['dlRatio']
+	# UISP reports unrealistically high capacities for airMax.
+	# For fixed frame, multiply capacity by the ratio for download/upload.
+	# For Flexible Frame, use 65% of reported capcity.
+	# 67/33
+	if dlRatio == 67:
+		download = download * 0.67
+		upload = upload * 0.33
+	# 50/50
+	elif dlRatio == 50:
+		download = download * 0.50
+		upload = upload * 0.50
+	# Flexible frame
+	elif dlRatio == None:
+		download = download * airMax_capacity
+		upload = upload * airMax_capacity
+	return (download, upload)
+
 def findAirfibers(devices, generatedPNDownloadMbps, generatedPNUploadMbps):
     """Search UISP and find any AirFiber Devices."""
     foundAirFibersBySite = {}
@@ -253,7 +275,6 @@ def findAirfibers(devices, generatedPNDownloadMbps, generatedPNUploadMbps):
                                     device["identification"]["site"]["id"]
                                 ] = {"download": download, "upload": upload}
     return foundAirFibersBySite
-
 
 def buildSiteList(sites, dataLinks):
     """
@@ -384,7 +405,6 @@ def findNodesBranchedOffPtMP(
                                                             if site["type"] == "site":
                                                                 print(f"Site {name} will use PtMP AP as parent.")
     return siteList, nodeOffPtMP
-
 
 def handleMultipleInternetNodes(sites, dataLinks, uispSite):
     """Handles multiple internet Nodes. Returns applicable sites, dataLinks, and uispSite."""
@@ -644,7 +664,6 @@ def buildFullGraph():
                 siteBandwidth[device]["upload"],
             )
             wr.writerow(entry)
-
 
 def importFromUISP():
     """Import sites, devices, and service plans from UISP."""
