@@ -80,21 +80,15 @@ class NodeType(enum.IntEnum):
 
 
 def nodeTypeToString(integer):
-    string = ""
-    match integer:
-        case 1:
-            string = "root"
-        case 2:
-            string = "site"
-        case 3:
-            string = "ap"
-        case 4:
-            string = "client"
-        case 5:
-            string = "clientWithChildren"
-        case 6:
-            string = "device"
-    return string
+    mapping = {
+        1: "root",
+        2: "site",
+        3: "ap",
+        4: "client",
+        5: "clientWithChildren",
+        6: "device"
+    }
+    return mapping.get(integer, "")
 
 
 class NetworkNode:
@@ -582,19 +576,15 @@ class NetworkGraph:
                 node.siteType != NodeType.client and node.siteType != NodeType.device
             ) or showClients:
                 color = "white"
-                match node.siteType:
-                    case NodeType.root:
-                        color = "green"
-                    case NodeType.site:
-                        color = "red"
-                    case NodeType.ap:
-                        color = "blue"
-                    case NodeType.clientWithChildren:
-                        color = "magenta"
-                    case NodeType.device:
-                        color = "white"
-                    case default:
-                        color = "grey"
+                color_mapping = {
+                    NodeType.root: "green",
+                    NodeType.site: "red",
+                    NodeType.ap: "blue",
+                    NodeType.clientWithChildren: "magenta",
+                    NodeType.device: "white"
+                }
+
+                color = color_mapping.get(node.siteType, "grey")
                 dot.node("N" + str(i), node.displayName, color=color)
                 children = self.findChildIndices(i)
                 for child in children:

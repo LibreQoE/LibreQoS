@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from integrationCommon import isIpv4Permitted, fixSubnet
 
 try:
-    from ispConfig import uispSite, uispStrategy, overwriteNetworkJSONalways, suspendedDownload, suspendedUpload
+    from ispConfig import uispSite, uispStrategy, overwriteNetworkJSONalways, suspendedDownload, suspendedUpload, airMax_capacity
 except ImportError:
     from ispConfig import uispSite, uispStrategy
 
@@ -524,8 +524,7 @@ def buildFullGraph():
                 parent = ""
             else:
                 parent = site["identification"]["parent"]["id"]
-        match siteType:
-            case "site":
+        if siteType == "site":
                 nodeType = NodeType.site
                 if name in siteBandwidth:
                     # Use the CSV bandwidth values
@@ -546,7 +545,7 @@ def buildFullGraph():
                                 upload = nodeOffPtMP[siteId]["upload"]
 
                 siteBandwidth[name] = {"download": download, "upload": upload}
-            case default:
+        else:
                 nodeType = NodeType.client
                 address = site["description"]["address"]
                 if site.get("ucrm"):
@@ -665,14 +664,14 @@ def buildFullGraph():
             )
             wr.writerow(entry)
 
+
 def importFromUISP():
     """Import sites, devices, and service plans from UISP."""
     startTime = datetime.now()
-    match uispStrategy:
-        case "full":
-            buildFullGraph()
-        case default:
-            buildFlatGraph()
+    if uispStrategy == "full":
+        buildFullGraph()
+    else:
+        buildFlatGraph()
     endTime = datetime.now()
     runTimeSeconds = ((endTime - startTime).seconds) + (
         ((endTime - startTime).microseconds) / 1000000
