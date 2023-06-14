@@ -89,11 +89,12 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>)
     let hosts = THROUGHPUT_TRACKER
         .raw_data
         .iter()
+        .filter(|host| host.median_latency().is_some())
         .map(|host| HostSummary {
             ip: host.key().as_ip(),
             circuit_id: host.circuit_id.clone(),
             bits_per_second: (host.bytes_per_second.0 * 8, host.bytes_per_second.1 * 8),
-            median_rtt: host.median_latency(),
+            median_rtt: host.median_latency().unwrap_or(0.0),
         })
         .collect();
 
@@ -147,149 +148,141 @@ type TopList = (XdpIpAddress, (u64, u64), (u64, u64), f32, TcHandle, String);
 
 pub fn top_n(start: u32, end: u32) -> BusResponse {
     let mut full_list: Vec<TopList> = {
-        let tp_cycle = THROUGHPUT_TRACKER
-            .cycle
-            .load(std::sync::atomic::Ordering::Relaxed);
-        THROUGHPUT_TRACKER
-            .raw_data
-            .iter()
-            .filter(|v| !v.key().as_ip().is_loopback())
-            .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
-            .map(|te| {
-                (
-                    *te.key(),
-                    te.bytes_per_second,
-                    te.packets_per_second,
-                    te.median_latency(),
-                    te.tc_handle,
-                    te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
-                )
-            })
-            .collect()
+      let tp_cycle = THROUGHPUT_TRACKER.cycle.load(std::sync::atomic::Ordering::Relaxed);
+      THROUGHPUT_TRACKER.raw_data
+        .iter()
+        .filter(|v| !v.key().as_ip().is_loopback())
+        .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
+        .map(|te| {
+          (
+            *te.key(),
+            te.bytes_per_second,
+            te.packets_per_second,
+            te.median_latency().unwrap_or(0.0),
+            te.tc_handle,
+            te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
+          )
+        })
+        .collect()
     };
     full_list.sort_by(|a, b| b.1 .0.cmp(&a.1 .0));
     let result = full_list
-        .iter()
-        .skip(start as usize)
-        .take((end as usize) - (start as usize))
-        .map(
-            |(
-                ip,
-                (bytes_dn, bytes_up),
-                (packets_dn, packets_up),
-                median_rtt,
-                tc_handle,
-                circuit_id,
-            )| IpStats {
-                ip_address: ip.as_ip().to_string(),
-                circuit_id: circuit_id.clone(),
-                bits_per_second: (bytes_dn * 8, bytes_up * 8),
-                packets_per_second: (*packets_dn, *packets_up),
-                median_tcp_rtt: *median_rtt,
-                tc_handle: *tc_handle,
-            },
-        )
-        .collect();
+      .iter()
+      .skip(start as usize)
+      .take((end as usize) - (start as usize))
+      .map(
+        |(
+          ip,
+          (bytes_dn, bytes_up),
+          (packets_dn, packets_up),
+          median_rtt,
+          tc_handle,
+          circuit_id,
+        )| IpStats {
+          ip_address: ip.as_ip().to_string(),
+          circuit_id: circuit_id.clone(),
+          bits_per_second: (bytes_dn * 8, bytes_up * 8),
+          packets_per_second: (*packets_dn, *packets_up),
+          median_tcp_rtt: *median_rtt,
+          tc_handle: *tc_handle,
+        },
+      )
+      .collect();
     BusResponse::TopDownloaders(result)
-}
+  }
 
-pub fn worst_n(start: u32, end: u32) -> BusResponse {
+  pub fn worst_n(start: u32, end: u32) -> BusResponse {
     let mut full_list: Vec<TopList> = {
-        let tp_cycle = THROUGHPUT_TRACKER
-            .cycle
-            .load(std::sync::atomic::Ordering::Relaxed);
-        THROUGHPUT_TRACKER
-            .raw_data
-            .iter()
-            .filter(|v| !v.key().as_ip().is_loopback())
-            .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
-            .filter(|te| te.median_latency() > 0.0)
-            .map(|te| {
-                (
-                    *te.key(),
-                    te.bytes_per_second,
-                    te.packets_per_second,
-                    te.median_latency(),
-                    te.tc_handle,
-                    te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
-                )
-            })
-            .collect()
+      let tp_cycle = THROUGHPUT_TRACKER.cycle.load(std::sync::atomic::Ordering::Relaxed);
+      THROUGHPUT_TRACKER.raw_data
+        .iter()
+        .filter(|v| !v.key().as_ip().is_loopback())
+        .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
+        .filter(|te| te.median_latency().is_some())
+        .map(|te| {
+          (
+            *te.key(),
+            te.bytes_per_second,
+            te.packets_per_second,
+            te.median_latency().unwrap_or(0.0),
+            te.tc_handle,
+            te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
+          )
+        })
+        .collect()
     };
     full_list.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap());
     let result = full_list
-        .iter()
-        .skip(start as usize)
-        .take((end as usize) - (start as usize))
-        .map(
-            |(
-                ip,
-                (bytes_dn, bytes_up),
-                (packets_dn, packets_up),
-                median_rtt,
-                tc_handle,
-                circuit_id,
-            )| IpStats {
-                ip_address: ip.as_ip().to_string(),
-                circuit_id: circuit_id.clone(),
-                bits_per_second: (bytes_dn * 8, bytes_up * 8),
-                packets_per_second: (*packets_dn, *packets_up),
-                median_tcp_rtt: *median_rtt,
-                tc_handle: *tc_handle,
-            },
-        )
-        .collect();
+      .iter()
+      .skip(start as usize)
+      .take((end as usize) - (start as usize))
+      .map(
+        |(
+          ip,
+          (bytes_dn, bytes_up),
+          (packets_dn, packets_up),
+          median_rtt,
+          tc_handle,
+          circuit_id,
+        )| IpStats {
+          ip_address: ip.as_ip().to_string(),
+          circuit_id: circuit_id.clone(),
+          bits_per_second: (bytes_dn * 8, bytes_up * 8),
+          packets_per_second: (*packets_dn, *packets_up),
+          median_tcp_rtt: *median_rtt,
+          tc_handle: *tc_handle,
+        },
+      )
+      .collect();
     BusResponse::WorstRtt(result)
-}
-pub fn best_n(start: u32, end: u32) -> BusResponse {
+  }
+
+  pub fn best_n(start: u32, end: u32) -> BusResponse {
     let mut full_list: Vec<TopList> = {
-        let tp_cycle = THROUGHPUT_TRACKER
-            .cycle
-            .load(std::sync::atomic::Ordering::Relaxed);
-        THROUGHPUT_TRACKER
-            .raw_data
-            .iter()
-            .filter(|v| !v.key().as_ip().is_loopback())
-            .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
-            .filter(|te| te.median_latency() > 0.0)
-            .map(|te| {
-                (
-                    *te.key(),
-                    te.bytes_per_second,
-                    te.packets_per_second,
-                    te.median_latency(),
-                    te.tc_handle,
-                    te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
-                )
-            })
-            .collect()
+      let tp_cycle = THROUGHPUT_TRACKER.cycle.load(std::sync::atomic::Ordering::Relaxed);
+      THROUGHPUT_TRACKER.raw_data
+        .iter()
+        .filter(|v| !v.key().as_ip().is_loopback())
+        .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
+        .filter(|te| te.median_latency().is_some())
+        .map(|te| {
+          (
+            *te.key(),
+            te.bytes_per_second,
+            te.packets_per_second,
+            te.median_latency().unwrap_or(0.0),
+            te.tc_handle,
+            te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
+          )
+        })
+        .collect()
     };
     full_list.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap());
     full_list.reverse();
     let result = full_list
-        .iter()
-        .skip(start as usize)
-        .take((end as usize) - (start as usize))
-        .map(
-            |(
-                ip,
-                (bytes_dn, bytes_up),
-                (packets_dn, packets_up),
-                median_rtt,
-                tc_handle,
-                circuit_id,
-            )| IpStats {
-                ip_address: ip.as_ip().to_string(),
-                circuit_id: circuit_id.clone(),
-                bits_per_second: (bytes_dn * 8, bytes_up * 8),
-                packets_per_second: (*packets_dn, *packets_up),
-                median_tcp_rtt: *median_rtt,
-                tc_handle: *tc_handle,
-            },
-        )
-        .collect();
+      .iter()
+      .skip(start as usize)
+      .take((end as usize) - (start as usize))
+      .map(
+        |(
+          ip,
+          (bytes_dn, bytes_up),
+          (packets_dn, packets_up),
+          median_rtt,
+          tc_handle,
+          circuit_id,
+        )| IpStats {
+          ip_address: ip.as_ip().to_string(),
+          circuit_id: circuit_id.clone(),
+          bits_per_second: (bytes_dn * 8, bytes_up * 8),
+          packets_per_second: (*packets_dn, *packets_up),
+          median_tcp_rtt: *median_rtt,
+          tc_handle: *tc_handle,
+        },
+      )
+      .collect();
     BusResponse::BestRtt(result)
-}
+  }  
 
 pub fn xdp_pping_compat() -> BusResponse {
     let raw_cycle = THROUGHPUT_TRACKER
@@ -387,54 +380,54 @@ type FullList = (XdpIpAddress, (u64, u64), (u64, u64), f32, TcHandle, u64);
 pub fn all_unknown_ips() -> BusResponse {
     let boot_time = time_since_boot();
     if boot_time.is_err() {
-        warn!("The Linux system clock isn't available to provide time since boot, yet.");
-        warn!("This only happens immediately after a reboot.");
-        return BusResponse::NotReadyYet;
+      warn!("The Linux system clock isn't available to provide time since boot, yet.");
+      warn!("This only happens immediately after a reboot.");
+      return BusResponse::NotReadyYet;
     }
     let boot_time = boot_time.unwrap();
     let time_since_boot = Duration::from(boot_time);
-    let five_minutes_ago = time_since_boot.saturating_sub(Duration::from_secs(300));
+    let five_minutes_ago =
+      time_since_boot.saturating_sub(Duration::from_secs(300));
     let five_minutes_ago_nanoseconds = five_minutes_ago.as_nanos();
-
+  
     let mut full_list: Vec<FullList> = {
-        THROUGHPUT_TRACKER
-            .raw_data
-            .iter()
-            .filter(|v| !v.key().as_ip().is_loopback())
-            .filter(|d| d.tc_handle.as_u32() == 0)
-            .filter(|d| d.last_seen as u128 > five_minutes_ago_nanoseconds)
-            .map(|te| {
-                (
-                    *te.key(),
-                    te.bytes,
-                    te.packets,
-                    te.median_latency(),
-                    te.tc_handle,
-                    te.most_recent_cycle,
-                )
-            })
-            .collect()
+      THROUGHPUT_TRACKER.raw_data
+        .iter()
+        .filter(|v| !v.key().as_ip().is_loopback())
+        .filter(|d| d.tc_handle.as_u32() == 0)
+        .filter(|d| d.last_seen as u128 > five_minutes_ago_nanoseconds)
+        .map(|te| {
+          (
+            *te.key(),
+            te.bytes,
+            te.packets,
+            te.median_latency().unwrap_or(0.0),
+            te.tc_handle,
+            te.most_recent_cycle,
+          )
+        })
+        .collect()
     };
     full_list.sort_by(|a, b| b.5.partial_cmp(&a.5).unwrap());
     let result = full_list
-        .iter()
-        .map(
-            |(
-                ip,
-                (bytes_dn, bytes_up),
-                (packets_dn, packets_up),
-                median_rtt,
-                tc_handle,
-                _last_seen,
-            )| IpStats {
-                ip_address: ip.as_ip().to_string(),
-                circuit_id: String::new(),
-                bits_per_second: (bytes_dn * 8, bytes_up * 8),
-                packets_per_second: (*packets_dn, *packets_up),
-                median_tcp_rtt: *median_rtt,
-                tc_handle: *tc_handle,
-            },
-        )
-        .collect();
+      .iter()
+      .map(
+        |(
+          ip,
+          (bytes_dn, bytes_up),
+          (packets_dn, packets_up),
+          median_rtt,
+          tc_handle,
+          _last_seen,
+        )| IpStats {
+          ip_address: ip.as_ip().to_string(),
+          circuit_id: String::new(),
+          bits_per_second: (bytes_dn * 8, bytes_up * 8),
+          packets_per_second: (*packets_dn, *packets_up),
+          median_tcp_rtt: *median_rtt,
+          tc_handle: *tc_handle,
+        },
+      )
+      .collect();
     BusResponse::AllUnknownIps(result)
-}
+  }
