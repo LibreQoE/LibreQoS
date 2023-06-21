@@ -16,6 +16,12 @@ You can modify the network.json file to more accurately reflect bandwidth limits
 ShapedDevices.csv will be overwritten every time the UISP integration is run.
 You have the option to run integrationUISP.py automatically on boot and every 30 minutes, which is recommended. This can be enabled by setting ```automaticImportUISP = True``` in ispConfig.py
 
+There are a number of other variables for UISP in `ispConfig.py`. Here's some explanation on some of them.
+
+- `circuitNameUseAcctService` - This variable will create a circuit name in the format of `<customer_name>-<account_number>_<service_id>`. Only enable this if you are using UISP sync. Also set `circuitNameUseAddress` to false for this naming to take effect.
+- `suspendedDownload` - This specifies a download limit that will override whatever bandwidth plan the client has assigned to them if the service is not in an "active" state.
+- `suspendedUpload` - This specifies a upload limit that will override whatever bandwidth plan the client has assigned to them if the service is not in an "active" state.
+
 ## Splynx Integration
 
 First, set the relevant parameters for Splynx (splynx_api_key, splynx_api_secret, etc.) in ispConfig.py.

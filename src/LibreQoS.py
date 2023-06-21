@@ -225,16 +225,16 @@ def validateNetworkAndDevices():
 				devicesValidatedOrNot = False
 			try:
 				a = int(downloadMax)
-				if a < 2:
-					warnings.warn("Provided downloadMax '" + downloadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 2 Mbps.", stacklevel=2)
+				if a < 1:
+					warnings.warn("Provided downloadMax '" + downloadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 1 Mbps.", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
 				warnings.warn("Provided downloadMax '" + downloadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.", stacklevel=2)
 				devicesValidatedOrNot = False
 			try:
 				a = int(uploadMax)
-				if a < 2:
-					warnings.warn("Provided uploadMax '" + uploadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 2 Mbps.", stacklevel=2)
+				if a < 1:
+					warnings.warn("Provided uploadMax '" + uploadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 1 Mbps.", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
 				warnings.warn("Provided uploadMax '" + uploadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.", stacklevel=2)
