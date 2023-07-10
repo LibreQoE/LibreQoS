@@ -30,8 +30,6 @@ impl ThroughputTracker {
 
   pub(crate) fn copy_previous_and_reset_rtt(&self) {
     // Copy previous byte/packet numbers and reset RTT data
-    // We're using Rayon's "par_iter_mut" to spread the operation across
-    // all CPU cores.
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
     self.raw_data.iter_mut().for_each(|mut v| {
       if v.first_cycle < self_cycle {
