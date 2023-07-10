@@ -23,9 +23,7 @@ export class SiteStackChart implements Component {
 
     ontick(): void {
         this.counter++;
-        if (this.counter % 10 == 0 || this.counter == 0) {
-            request_site_stack(window.graphPeriod, this.siteId);
-        }
+        request_site_stack(window.graphPeriod, this.siteId);
     }
 
     onmessage(event: any): void {

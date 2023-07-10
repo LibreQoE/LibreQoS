@@ -15,6 +15,7 @@ export class PacketsChart implements Component {
     }
 
     wireup(): void {
+        request_packet_chart(window.graphPeriod);
     }
 
     ontick(): void {

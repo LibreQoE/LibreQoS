@@ -111,7 +111,7 @@ pub struct ThroughputChart {
     pub nodes: Vec<ThroughputHost>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Rtt {
     pub value: f64,
     pub date: String,

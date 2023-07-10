@@ -15,6 +15,7 @@ export class RttChart implements Component {
     }
 
     wireup(): void {
+        request_rtt_chart(window.graphPeriod);
     }
 
     ontick(): void {
@@ -38,8 +39,8 @@ export class RttChart implements Component {
                 let d: number[] = [];
                 let u: number[] = [];
                 let l: number[] = [];
-                for (let j=0; j<node.rtt.length; j++) {
-                    if (first) x.push(node.rtt[j].date);                 
+                for (let j=0; j<node.rtt.length; j++) {                    
+                    if (first) x.push(node.rtt[j].date);     
                     d.push(node.rtt[j].value);
                     u.push(node.rtt[j].u);
                     l.push(node.rtt[j].l);

@@ -15,6 +15,7 @@ export class ThroughputChart implements Component {
     }
 
     wireup(): void {
+        request_throughput_chart(window.graphPeriod);
     }
 
     ontick(): void {

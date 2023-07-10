@@ -15,10 +15,11 @@ pub async fn send_rtt_for_all_nodes(cnn: &Pool<Postgres>, socket: &mut WebSocket
     let mut histogram = vec![0; 20];
     for node in nodes.iter() {
         for rtt in node.rtt.iter() {
-            let bucket = usize::min(19, (rtt.value / 200.0) as usize);
+            let bucket = usize::min(19, (rtt.value / 10.0) as usize);
             histogram[bucket] += 1;
         }
     }
+    let nodes = vec![RttHost { node_id: "".to_string(), node_name: "".to_string(), rtt: rtt_bucket_merge(&nodes) }];
     send_response(socket, wasm_pipe_types::WasmResponse::RttChart { nodes, histogram }).await;
 
     Ok(())
@@ -68,6 +69,21 @@ pub async fn send_rtt_for_node(cnn: &Pool<Postgres>, socket: &mut WebSocket, key
 
     send_response(socket, wasm_pipe_types::WasmResponse::RttChart { nodes, histogram }).await;
     Ok(())
+}
+
+fn rtt_bucket_merge(rtt: &[RttHost]) -> Vec<Rtt> {
+    let mut entries: Vec<Rtt> = Vec::new();
+    for entry in rtt.iter() {
+        for entry in entry.rtt.iter() {
+            if let Some(e) = entries.iter().position(|d| d.date == entry.date) {
+                entries[e].l = f64::min(entries[e].l, entry.l);
+                entries[e].u = f64::max(entries[e].u, entry.u);
+            } else {
+                entries.push(entry.clone());
+            }
+        }
+    }
+    return entries;
 }
 
 pub async fn get_rtt_for_all_nodes(cnn: &Pool<Postgres>, key: &str, period: InfluxTimePeriod) -> anyhow::Result<Vec<RttHost>> {
@@ -158,13 +174,13 @@ pub async fn get_rtt_for_node(
 
                 let mut rtt = Vec::new();
 
-                // Fill download
+                // Fill RTT
                 for row in rows.iter() {
                     rtt.push(Rtt {
-                        value: row.avg,
+                        value: f64::min(200.0, row.avg),
                         date: row.time.format("%Y-%m-%d %H:%M:%S").to_string(),
-                        l: row.min,
-                        u: row.max - row.min,
+                        l: f64::min(200.0, row.min),
+                        u: f64::min(200.0, row.max) - f64::min(200.0, row.min),
                     });
                 }
 
