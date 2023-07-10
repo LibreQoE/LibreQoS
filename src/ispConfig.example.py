@@ -17,6 +17,7 @@ upstreamBandwidthCapacityUploadMbps = 1000
 # Devices in ShapedDevices.csv without a defined ParentNode (such as if you have a flat {} network)
 # will be placed under one of these generated parent node, evenly spread out across CPU cores.
 # This defines the bandwidth limit for each of those generated parent nodes.
+# If you are not sure what values to use, simply use the same values as upstreamBandwidthCapacityDownloadMbps and upstreamBandwidthCapacityUploadMbps
 generatedPNDownloadMbps = 1000
 generatedPNUploadMbps = 1000
 
