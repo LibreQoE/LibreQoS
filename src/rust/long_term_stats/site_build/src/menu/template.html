@@ -1,0 +1,69 @@
+<div class="d-flex flex-nowrap">
+    <div class="d-flex flex-row flex-fill text-bg-dark" style="padding: 6px;">
+        <a href="#" class="d-flex align-items-center mb-3 mb-md-0 me-md-auto text-white text-decoration-none">
+            <!-- Logo -->
+            <span class="fs-4" onclick="window.router.goto('dashboard')">LibreQoS</span>
+        </a>
+
+        <div class="dropdown" style="padding: 6px;">
+            <button class="btn btn-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" id="graphPeriodBtn">
+              Graph Period
+            </button>
+            <ul class="dropdown-menu">
+              <li><a class="dropdown-item" href="#" onclick="window.changeGraphPeriod('5m')">5 minutes</a></li>
+              <li><a class="dropdown-item" href="#" onclick="window.changeGraphPeriod('15m')">15 minutes</a></li>
+              <li><a class="dropdown-item" href="#" onclick="window.changeGraphPeriod('1h')">1 hour</a></li>
+              <li><a class="dropdown-item" href="#" onclick="window.changeGraphPeriod('6h')">6 hours</a></li>
+              <li><a class="dropdown-item" href="#" onclick="window.changeGraphPeriod('12h')">12 hours</a></li>
+              <li><a class="dropdown-item" href="#" onclick="window.changeGraphPeriod('24h')">24 hours</a></li>
+              <li><a class="dropdown-item" href="#" onclick="window.changeGraphPeriod('7d')">7 days</a></li>
+              <li><a class="dropdown-item" href="#" onclick="window.changeGraphPeriod('28d')">28 days</a></li>
+            </ul>
+          </div>
+
+        <form class="d-flex" role="search">
+            <input id="txtSearch" class="form-control me-2" type="search" placeholder="Search" aria-label="Search">
+            <button id="btnSearch" class="btn btn-outline-success" type="submit">Search</button>
+            <div id="searchResults" style="position: fixed; display: none; color: black; background-color: #eee; top:55px; left: 0x; width: 300px; height: auto; z-index: 2000;">Blah</div>
+        </form>
+
+        <div id="connStatus" class="fs-4" style="color: red; padding: 6px;"><i class="fa-sharp fa-solid fa-plug"></i>
+        </div>
+    </div>
+</div>
+
+<div class="d-flex flex-nowrap">
+    <div class="d-flex flex-column flex-shrink-0 p-3 text-bg-dark" style="width: 280px">
+        <ul class="nav nav-pills flex-column mb-auto">
+            <li class="nav-item">
+                <span class="nav-link text-white" aria-current="page" id="menuDash" onclick="window.router.goto('dashboard')">
+                    Dashboard
+                </span>
+            </li>
+            <li class="nav-item">
+                <span class="nav-link text-white" aria-current="page" id="nodesDash" onclick="window.router.goto('shapernodes')">
+                    Shaper Nodes
+                </span>
+            </li>
+            <li class="nav-item">
+                <span class="nav-link text-white" aria-current="page" id="sitetreeDash" onclick="window.router.goto('sitetree')">
+                    Site Tree
+                </span>
+            </li>
+        </ul>
+        <hr>
+        <ul class="nav nav-pills flex-column mb-auto">
+            <li class="nav-item">
+                <a href="#" class="nav-link text-white" aria-current="page" id="menuUser">
+                    Username
+                </a>
+            </li>
+        </ul>
+    </div>
+
+    <div class="b-example-divider b-example-vr"></div>
+
+    <div class="d-flex flex-row p-2 flex-fill" id="mainContent">
+
+    </div>
+</div>

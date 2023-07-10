@@ -17,6 +17,7 @@ upstreamBandwidthCapacityUploadMbps = 1000
 # Devices in ShapedDevices.csv without a defined ParentNode (such as if you have a flat {} network)
 # will be placed under one of these generated parent node, evenly spread out across CPU cores.
 # This defines the bandwidth limit for each of those generated parent nodes.
+# If you are not sure what values to use, simply use the same values as upstreamBandwidthCapacityDownloadMbps and upstreamBandwidthCapacityUploadMbps
 generatedPNDownloadMbps = 1000
 generatedPNUploadMbps = 1000
 
@@ -97,6 +98,11 @@ uispSite = ''
 #   or site options.
 # * "full" - build a complete network map
 uispStrategy = "full"
+# Handling of UISP suspensions:
+# * "none" - do not handle suspensions
+# * "ignore" - do not add suspended customers to the network map
+# * "slow" - limit suspended customers to 1mbps
+uispSuspendedStrategy = "none"
 # Assumed capacity of AirMax and LTU radios vs reported capacity by UISP. For example, 65% would be 0.65.
 # For AirMax, this applies to flexible frame only. AirMax fixed frame will have capacity based on ratio.
 airMax_capacity = 0.65

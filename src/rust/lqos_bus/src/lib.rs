@@ -21,9 +21,19 @@ pub use bus::{
   bus_request, decode_request, decode_response, encode_request,
   encode_response, BusClient, BusReply, BusRequest, BusResponse, BusSession,
   CakeDiffTinTransit, CakeDiffTransit, CakeTransit, QueueStoreTransit,
-  UnixSocketServer, BUS_SOCKET_PATH,
+  UnixSocketServer, BUS_SOCKET_PATH, StatsRequest
 };
 pub use tc_handle::TcHandle;
 
 /// Anonymous Usage Statistics Data Types
 pub mod anonymous;
+
+/// Re-export bincode
+pub mod bincode {
+  pub use bincode::*;
+}
+
+/// Re-export CBOR
+pub mod cbor {
+  pub use serde_cbor::*;
+}

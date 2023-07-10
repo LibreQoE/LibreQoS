@@ -1,0 +1,10 @@
+[package]
+name = "lqstats"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-2.0-only"
+
+[dependencies]
+tokio = { version = "1", features = [ "rt", "macros", "net", "io-util", "time" ] }
+anyhow = "1"
+lqos_bus = { path = "../lqos_bus" }

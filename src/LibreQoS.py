@@ -173,7 +173,7 @@ def validateNetworkAndDevices():
 					for ipEntry in ipv4_list:
 						if ipEntry in seenTheseIPsAlready:
 							warnings.warn("Provided IPv4 '" + ipEntry + "' in ShapedDevices.csv at row " + str(rowNum) + " is duplicate.", stacklevel=2)
-							devicesValidatedOrNot = False
+							#devicesValidatedOrNot = False
 							seenTheseIPsAlready.append(ipEntry)
 						else:
 							if (type(ipaddress.ip_network(ipEntry)) is ipaddress.IPv4Network) or (type(ipaddress.ip_address(ipEntry)) is ipaddress.IPv4Address):
@@ -740,6 +740,26 @@ def refreshShapers():
 		# Parse network structure. For each tier, generate commands to create corresponding HTB and leaf classes. Prepare commands for execution later
 		# Define lists for hash filters
 		def traverseNetwork(data):
+
+			# Cake needs help handling rates lower than 5 Mbps
+			def sqmFixupRate(rate:int, sqm:str) -> str:
+				# If we aren't using cake, just return the sqm string
+				if not sqm.startswith("cake") or "rtt" in sqm:
+					return sqm
+				# If we are using cake, we need to fixup the rate
+				# Based on: 1 MTU is 1500 bytes, or 12,000 bits.
+				# At 1 Mbps, (1,000 bits per ms) transmitting an MTU takes 12ms. Add 3ms for overhead, and we get 15ms.
+				#    So 15ms divided by 5 (for 1%) multiplied by 100 yields 300ms.
+				#    The same formula gives 180ms at 2Mbps
+				#    140ms at 3Mbps
+				#    120ms at 4Mbps
+				match rate:
+					case 1: return sqm + " rtt 300"
+					case 2: return sqm + " rtt 180"
+					case 3: return sqm + " rtt 140"
+					case 4: return sqm + " rtt 120"
+					case _: return sqm
+
 			for node in data:
 				command = 'class add dev ' + interfaceA + ' parent ' + data[node]['parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ str(data[node]['downloadBandwidthMbpsMin']) + 'mbit ceil '+ str(data[node]['downloadBandwidthMbps']) + 'mbit prio 3'
 				linuxTCcommands.append(command)
@@ -760,14 +780,18 @@ def refreshShapers():
 						command = 'class add dev ' + interfaceA + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ str(circuit['minDownload']) + 'mbit ceil '+ str(circuit['maxDownload']) + 'mbit prio 3' + tcComment
 						linuxTCcommands.append(command)
 						# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
-						if monitorOnlyMode == False:	
-							command = 'qdisc add dev ' + interfaceA + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + sqm
+						if monitorOnlyMode == False:
+							# SQM Fixup for lower rates
+							useSqm = sqmFixupRate(circuit['maxDownload'], sqm)
+							command = 'qdisc add dev ' + interfaceA + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
 							linuxTCcommands.append(command)
 						command = 'class add dev ' + interfaceB + ' parent ' + data[node]['up_classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ str(circuit['minUpload']) + 'mbit ceil '+ str(circuit['maxUpload']) + 'mbit prio 3'
 						linuxTCcommands.append(command)
 						# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
-						if monitorOnlyMode == False:	
-							command = 'qdisc add dev ' + interfaceB + ' parent ' + circuit['up_classMajor'] + ':' + circuit['classMinor'] + ' ' + sqm
+						if monitorOnlyMode == False:
+							# SQM Fixup for lower rates
+							useSqm = sqmFixupRate(circuit['maxUpload'], sqm)
+							command = 'qdisc add dev ' + interfaceB + ' parent ' + circuit['up_classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
 							linuxTCcommands.append(command)
 							pass
 						for device in circuit['devices']:
