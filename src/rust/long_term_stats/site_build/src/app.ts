@@ -42,7 +42,7 @@ window.setInterval(() => {
     window.bus.updateConnected();
     let btn = document.getElementById("graphPeriodBtn") as HTMLButtonElement;
     btn.innerText = window.graphPeriod;
-}, 1000);
+}, 10000);
 
  function changeGraphPeriod(period: string) {
     window.graphPeriod = period;

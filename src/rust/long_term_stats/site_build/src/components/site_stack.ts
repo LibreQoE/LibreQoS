@@ -49,9 +49,9 @@ export class SiteStackChart implements Component {
                     let l: number[] = [];
                     for (let j = 0; j < node.down.length; j++) {
                         if (first) x.push(node.down[j].date);
-                        d.push(node.down[j].value);
-                        u.push(node.down[j].u);
-                        l.push(node.down[j].l);
+                        d.push(node.down[j].value * 8.0);
+                        u.push(node.down[j].u * 8.0);
+                        l.push(node.down[j].l * 8.0);
                     }
                     if (first) first = false;
 
@@ -71,9 +71,9 @@ export class SiteStackChart implements Component {
                     u = [];
                     l = [];
                     for (let j = 0; j < node.down.length; j++) {
-                        d.push(0.0 - node.up[j].value);
-                        u.push(0.0 - node.up[j].u);
-                        l.push(0.0 - node.up[j].l);
+                        d.push(0.0 - (node.up[j].value * 8.0));
+                        u.push(0.0 - (node.up[j].u * 8.0));
+                        l.push(0.0 - (node.up[j].l * 8.0));
                     }
 
                     val = {
@@ -96,7 +96,22 @@ export class SiteStackChart implements Component {
                 this.myChart.setOption<echarts.EChartsOption>(
                     (option = {
                         title: { text: "Child Node Throughput (Bits)" },
-                        tooltip: { trigger: "axis" },
+                        tooltip: { 
+                            trigger: "axis",
+                            formatter: function (params: any) {
+                                console.log(params);
+                                let result = "";
+                                for (let i = 0; i < params.length; i+=2) {
+                                    let siteName = params[i].seriesName;
+                                    siteName += " (⬇️" + scaleNumber(params[i].value) + " / ⬆️" + scaleNumber(0.0 - params[i+1].value) + ")";
+                                    result += `${siteName}<br />`;
+                                }
+                                return result;
+                                //return `${params.seriesName}<br />
+                                //    ${params.name}: ${params.data.value}<br />
+                                //    ${params.data.name1}: ${params.data.value1}`;
+                            }
+                        },
                         legend: {
                             orient: "vertical",
                             right: 0,

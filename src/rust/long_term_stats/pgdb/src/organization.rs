@@ -12,11 +12,17 @@ pub struct OrganizationDetails {
 }
 
 pub async fn get_organization(cnn: &Pool<Postgres>, key: &str) -> Result<OrganizationDetails, StatsHostError> {
-    let row = sqlx::query_as::<_, OrganizationDetails>("SELECT * FROM organizations WHERE key=$1")
+    let mut row = sqlx::query_as::<_, OrganizationDetails>("SELECT * FROM organizations WHERE key=$1")
         .bind(key)
         .fetch_one(cnn)
         .await
         .map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
+    
+    // For local development - comment out
+    if row.influx_host == "127.0.0.1" {
+        row.influx_host = "146.190.156.69".to_string();
+    }
+    
     Ok(row)
 }
 
