@@ -58,11 +58,11 @@ pub async fn unknown_devices_range(
 
 #[get("/api/unknown_devices_csv")]
 pub async fn unknown_devices_csv(_auth: AuthGuard) -> NoCache<String> {
-  let mut result = String::new();
+  let mut result = "IP Address,Download,Upload\n".to_string();
   let reader = unknown_devices().await;
 
   for unknown in reader.iter() {
-    result += &format!("{}\n", unknown.ip_address);
+    result += &format!("{},{},{}\n", unknown.ip_address, unknown.bits_per_second.0, unknown.bits_per_second.1);
   }
   NoCache::new(result)
 }
