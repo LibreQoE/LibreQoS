@@ -359,14 +359,17 @@ class NetworkGraph:
 		# Builds ShapedDevices.csv from the network tree.
 			circuits = []
 			for (i, node) in enumerate(self.nodes):
-				if node.type == NodeType.client:
+				#if node.type == NodeType.client:
 					parent = self.nodes[node.parentIndex].displayName
 					if parent == "Shaper Root": parent = ""
 					
 					if circuitNameUseAddress:
 						displayNameToUse = node.address
 					else:
-						displayNameToUse = node.customerName
+						if node.type == NodeType.client:
+							displayNameToUse = node.displayName
+						else:
+							displayNameToUse = node.customerName + " (" + nodeTypeToString(node.type) + ")"
 					circuit = {
 						"id": node.id,
 						"name": displayNameToUse,

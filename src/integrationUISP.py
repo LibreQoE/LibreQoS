@@ -433,6 +433,7 @@ def buildFullGraph():
 		match type:
 			case "site":
 				nodeType = NodeType.site
+				customerName = name
 				if name in siteBandwidth:
 					# Use the CSV bandwidth values
 					download = siteBandwidth[name]["download"]
