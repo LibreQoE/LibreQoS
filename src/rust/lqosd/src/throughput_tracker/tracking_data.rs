@@ -154,10 +154,10 @@ impl ThroughputTracker {
           last_seen: 0,
         };
         for c in counts {
-          entry.bytes.0 += c.download_bytes;
-          entry.bytes.1 += c.upload_bytes;
-          entry.packets.0 += c.download_packets;
-          entry.packets.1 += c.upload_packets;
+          entry.prev_bytes.0 += c.download_bytes;
+          entry.prev_bytes.1 += c.upload_bytes;
+          entry.prev_packets.0 += c.download_packets;
+          entry.prev_packets.1 += c.upload_packets;
           if c.tc_handle != 0 {
             entry.tc_handle = TcHandle::from_u32(c.tc_handle);
           }
@@ -205,13 +205,17 @@ impl ThroughputTracker {
   }
 
   pub(crate) fn update_totals(&self) {
+    let current_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
     Self::set_atomic_tuple_to_zero(&self.bytes_per_second);
     Self::set_atomic_tuple_to_zero(&self.packets_per_second);
     Self::set_atomic_tuple_to_zero(&self.shaped_bytes_per_second);
     self
       .raw_data
       .iter()
-      .filter(|v| v.most_recent_cycle == self.cycle.load(std::sync::atomic::Ordering::Relaxed))
+      .filter(|v| 
+        v.most_recent_cycle == current_cycle &&
+        v.first_cycle + 2 < current_cycle
+      )
       .map(|v| {
         (
           v.bytes.0.saturating_sub(v.prev_bytes.0),
