@@ -193,12 +193,12 @@ impl ThroughputTracker {
 
   #[inline(always)]
   fn add_atomic_tuple(tuple: &(AtomicU64, AtomicU64), n: (u64, u64)) {
-    let mut n0 = tuple.0.load(std::sync::atomic::Ordering::Relaxed);
+    let n0 = tuple.0.load(std::sync::atomic::Ordering::Relaxed);
     if let Some(n) = n0.checked_add(n.0) {
       tuple.0.store(n, std::sync::atomic::Ordering::Relaxed);
     }
 
-    let mut n1 = tuple.1.load(std::sync::atomic::Ordering::Relaxed);
+    let n1 = tuple.1.load(std::sync::atomic::Ordering::Relaxed);
     if let Some(n) = n1.checked_add(n.1) {
       tuple.1.store(n, std::sync::atomic::Ordering::Relaxed);
     }
@@ -211,6 +211,7 @@ impl ThroughputTracker {
     self
       .raw_data
       .iter()
+      .filter(|v| v.most_recent_cycle == self.cycle.load(std::sync::atomic::Ordering::Relaxed))
       .map(|v| {
         (
           v.bytes.0.saturating_sub(v.prev_bytes.0),
