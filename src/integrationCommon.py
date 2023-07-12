@@ -359,7 +359,7 @@ class NetworkGraph:
 		# Builds ShapedDevices.csv from the network tree.
 			circuits = []
 			for (i, node) in enumerate(self.nodes):
-				#if node.type == NodeType.client:
+				if node.type == NodeType.client:
 					parent = self.nodes[node.parentIndex].displayName
 					if parent == "Shaper Root": parent = ""
 					
