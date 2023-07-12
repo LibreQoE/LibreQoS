@@ -57,7 +57,7 @@ async fn throughput_task(interval_ms: u64, long_term_stats_tx: Sender<StatsUpdat
         }).await {
             log::error!("Error polling network. {e:?}");
         }
-        submit_throughput_stats(long_term_stats_tx.clone()).await;
+        tokio::spawn(submit_throughput_stats(long_term_stats_tx.clone()));
 
         let elapsed = start.elapsed();
         if elapsed.as_secs_f32() < 1.0 {
