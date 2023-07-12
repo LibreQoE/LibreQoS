@@ -29,22 +29,26 @@ window.router = new SiteRouter();
 window.bus.connect();
 window.router.initialRoute();
 let graphPeriod = localStorage.getItem('graphPeriod');
-if (!graphPeriod) { 
-    graphPeriod = "5m"; 
+if (!graphPeriod) {
+    graphPeriod = "5m";
     localStorage.setItem('graphPeriod', graphPeriod);
 }
 window.graphPeriod = graphPeriod;
 window.changeGraphPeriod = (period: string) => changeGraphPeriod(period);
 
+// 10 Second interval for refreshing the page
 window.setInterval(() => {
-    console.log("tick");
     window.router.ontick();
-    window.bus.updateConnected();
     let btn = document.getElementById("graphPeriodBtn") as HTMLButtonElement;
     btn.innerText = window.graphPeriod;
 }, 10000);
 
- function changeGraphPeriod(period: string) {
+// Faster interval for tracking the WSS connection
+window.setInterval(() => {
+    window.bus.updateConnected();
+}, 500);
+
+function changeGraphPeriod(period: string) {
     window.graphPeriod = period;
     localStorage.setItem('graphPeriod', period);
     let btn = document.getElementById("graphPeriodBtn") as HTMLButtonElement;
