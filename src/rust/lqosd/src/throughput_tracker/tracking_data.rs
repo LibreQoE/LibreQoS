@@ -41,9 +41,10 @@ impl ThroughputTracker {
           u64::checked_sub(v.packets.0, v.prev_packets.0).unwrap_or(0);
         v.packets_per_second.1 =
           u64::checked_sub(v.packets.1, v.prev_packets.1).unwrap_or(0);
-        v.prev_bytes = v.bytes;
-        v.prev_packets = v.packets;
       }
+      v.prev_bytes = v.bytes;
+      v.prev_packets = v.packets;
+
       // Roll out stale RTT data
       if self_cycle > RETIRE_AFTER_SECONDS
         && v.last_fresh_rtt_data_cycle < self_cycle - RETIRE_AFTER_SECONDS
@@ -154,10 +155,10 @@ impl ThroughputTracker {
           last_seen: 0,
         };
         for c in counts {
-          entry.prev_bytes.0 += c.download_bytes;
-          entry.prev_bytes.1 += c.upload_bytes;
-          entry.prev_packets.0 += c.download_packets;
-          entry.prev_packets.1 += c.upload_packets;
+          entry.bytes.0 += c.download_bytes;
+          entry.bytes.1 += c.upload_bytes;
+          entry.packets.0 += c.download_packets;
+          entry.packets.1 += c.upload_packets;
           if c.tc_handle != 0 {
             entry.tc_handle = TcHandle::from_u32(c.tc_handle);
           }
