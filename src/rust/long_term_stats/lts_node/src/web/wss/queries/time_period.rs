@@ -46,6 +46,13 @@ impl InfluxTimePeriod {
             self.aggregate
         )
     }
+
+    pub fn aggregate_window_sum(&self) -> String {
+        format!(
+            "aggregateWindow(every: {}, fn: sum, createEmpty: false)",
+            self.aggregate
+        )
+    }
 }
 
 impl From<&String> for InfluxTimePeriod {

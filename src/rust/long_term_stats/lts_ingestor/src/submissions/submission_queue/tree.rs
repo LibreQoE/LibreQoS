@@ -31,10 +31,11 @@ pub async fn collect_tree(
             .await?;
 
         for node in tree.iter() {
-            let mut parents = node.parents.iter().map(|p| p.to_string()).collect::<Vec<String>>().join("S");
+            let mut parents = format!("S{}S", node.parents.iter().map(|p| p.to_string()).collect::<Vec<String>>().join("S"));
             if parents.is_empty() {
                 parents = "0S".to_string();
             }
+            let my_id = node.index.to_string();
             //let parent = node.immediate_parent.unwrap_or(0).to_string();
             //warn!("{}: {}", node.name, parents);
             //warn!("{parent}");
@@ -45,6 +46,7 @@ pub async fn collect_tree(
                     .tag("node_name", node.name.to_string())
                     .tag("direction", "down".to_string())
                     .tag("node_parents", parents.clone())
+                    .tag("node_index", my_id.clone())
                     .timestamp(timestamp)
                     .field("bits_min", node.current_throughput.min.0 as i64)
                     .field("bits_max", node.current_throughput.max.0 as i64)
@@ -58,6 +60,7 @@ pub async fn collect_tree(
                     .tag("node_name", node.name.to_string())
                     .tag("direction", "up".to_string())
                     .tag("node_parents", parents.clone())
+                    .tag("node_index", my_id.clone())
                     .timestamp(timestamp)
                     .field("bits_min", node.current_throughput.min.1 as i64)
                     .field("bits_max", node.current_throughput.max.1 as i64)
@@ -70,6 +73,7 @@ pub async fn collect_tree(
                     .tag("organization_id", org.key.to_string())
                     .tag("node_name", node.name.to_string())
                     .tag("node_parents", parents)
+                    .tag("node_index", my_id.clone())
                     .timestamp(timestamp)
                     .field("rtt_min", node.rtt.min as i64 / 100)
                     .field("rtt_max", node.rtt.max as i64 / 100)

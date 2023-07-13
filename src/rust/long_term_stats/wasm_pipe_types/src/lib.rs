@@ -45,7 +45,7 @@ pub enum WasmResponse {
     RttChart { nodes: Vec<RttHost>, histogram: Vec<u32> },
     RttChartSite { nodes: Vec<RttHost>, histogram: Vec<u32> },
     RttChartCircuit { nodes: Vec<RttHost>, histogram: Vec<u32> },
-    SiteStack { nodes: Vec<ThroughputHost> },
+    SiteStack { nodes: Vec<SiteStackHost> },
     RootHeat { data: HashMap<String, Vec<(DateTime<FixedOffset>, f64)>>},
     SiteHeat { data: HashMap<String, Vec<(DateTime<FixedOffset>, f64)>>},
     NodePerfChart { nodes: Vec<PerfHost> },
@@ -94,6 +94,18 @@ pub struct ThroughputHost {
 impl ThroughputHost {
     pub fn total(&self) -> f64 {
         self.down.iter().map(|x| x.value).sum::<f64>() + self.up.iter().map(|x| x.value).sum::<f64>()
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SiteStackHost {
+    pub node_name: String,
+    pub download: Vec<(String, i64)>,
+}
+
+impl SiteStackHost {
+    pub fn total(&self) -> i64 {
+        self.download.iter().map(|x| x.1).sum::<i64>()
     }
 }
 
