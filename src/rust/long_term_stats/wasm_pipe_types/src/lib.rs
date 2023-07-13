@@ -101,6 +101,7 @@ impl ThroughputHost {
 pub struct SiteStackHost {
     pub node_name: String,
     pub download: Vec<(String, i64)>,
+    pub upload: Vec<(String, i64)>,
 }
 
 impl SiteStackHost {

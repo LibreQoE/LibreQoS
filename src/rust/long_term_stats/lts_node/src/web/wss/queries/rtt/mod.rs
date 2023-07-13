@@ -2,13 +2,14 @@ use axum::extract::ws::WebSocket;
 use futures::future::join_all;
 use influxdb2::{Client, models::Query};
 use pgdb::{sqlx::{Pool, Postgres}, organization_cache::get_org_details};
+use tracing::instrument;
 use wasm_pipe_types::{RttHost, Rtt};
 use crate::web::wss::{queries::rtt::rtt_row::RttCircuitRow, send_response};
 use self::rtt_row::{RttRow, RttSiteRow};
-
 use super::time_period::InfluxTimePeriod;
 mod rtt_row;
 
+#[instrument(skip(cnn, socket, key, period))]
 pub async fn send_rtt_for_all_nodes(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod) -> anyhow::Result<()> {
     let nodes = get_rtt_for_all_nodes(cnn, key, period).await?;
 
@@ -25,6 +26,7 @@ pub async fn send_rtt_for_all_nodes(cnn: &Pool<Postgres>, socket: &mut WebSocket
     Ok(())
 }
 
+#[instrument(skip(cnn, socket, key, site_id, period))]
 pub async fn send_rtt_for_all_nodes_site(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, site_id: String, period: InfluxTimePeriod) -> anyhow::Result<()> {
     let nodes = get_rtt_for_all_nodes_site(cnn, key, &site_id, period).await?;
 
@@ -40,6 +42,7 @@ pub async fn send_rtt_for_all_nodes_site(cnn: &Pool<Postgres>, socket: &mut WebS
     Ok(())
 }
 
+#[instrument(skip(cnn, socket, key, site_id, period))]
 pub async fn send_rtt_for_all_nodes_circuit(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, site_id: String, period: InfluxTimePeriod) -> anyhow::Result<()> {
     let nodes = get_rtt_for_all_nodes_circuit(cnn, key, &site_id, period).await?;
 

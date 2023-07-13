@@ -60,6 +60,25 @@ export class SiteStackChart implements Component {
                     };
 
                     series.push(val);
+
+                    // Do the same for upload
+                    d = [];
+                    for (let j = 0; j < node.upload.length; j++) {
+                        if (first) x.push(node.upload[j][0]);
+                        d.push(0.0 - (node.upload[j][1] * 8.0));
+                    }
+                    if (first) first = false;
+
+                    val = {
+                        name: node.node_name,
+                        type: "line",
+                        data: d,
+                        symbol: 'none',
+                        stack: 'upload',
+                        areaStyle: {},
+                    };
+
+                    series.push(val);
                 }
             }
 
@@ -74,9 +93,9 @@ export class SiteStackChart implements Component {
                             formatter: function (params: any) {
                                 console.log(params);
                                 let result = "";
-                                for (let i = 0; i < params.length; i++) {
+                                for (let i = 0; i < params.length; i+=2) {
                                     let siteName = params[i].seriesName;
-                                    siteName += " (⬇️" + scaleNumber(params[i].value) + ")";
+                                    siteName += " (⬇️" + scaleNumber(params[i].value) + " / ⬆️" + scaleNumber(Math.abs(params[i+1].value)) + ")";
                                     result += `${siteName}<br />`;
                                 }
                                 return result;

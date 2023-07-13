@@ -8,9 +8,11 @@ use pgdb::organization_cache::get_org_details;
 use pgdb::sqlx::{query, Pool, Postgres, Row};
 use pgdb::OrganizationDetails;
 use serde::Serialize;
+use tracing::instrument;
 use std::collections::HashMap;
 use wasm_pipe_types::WasmResponse;
 
+#[instrument(skip(cnn,socket,key,period))]
 pub async fn root_heat_map(
     cnn: &Pool<Postgres>,
     socket: &mut WebSocket,
