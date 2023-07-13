@@ -3,7 +3,7 @@ use futures::future::join_all;
 use influxdb2::{Client, models::Query};
 use pgdb::{sqlx::{Pool, Postgres}, organization_cache::get_org_details};
 use wasm_pipe_types::{RttHost, Rtt};
-use crate::{web::wss::{queries::rtt::rtt_row::RttCircuitRow, send_response}};
+use crate::web::wss::{queries::rtt::rtt_row::RttCircuitRow, send_response};
 use self::rtt_row::{RttRow, RttSiteRow};
 
 use super::time_period::InfluxTimePeriod;
@@ -83,7 +83,7 @@ fn rtt_bucket_merge(rtt: &[RttHost]) -> Vec<Rtt> {
             }
         }
     }
-    return entries;
+    entries
 }
 
 pub async fn get_rtt_for_all_nodes(cnn: &Pool<Postgres>, key: &str, period: InfluxTimePeriod) -> anyhow::Result<Vec<RttHost>> {
