@@ -1,0 +1,18 @@
+[package]
+name = "pgdb"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+once_cell = "1"
+thiserror = "1"
+env_logger = "0"
+log = "0"
+lqos_bus = { path = "../../lqos_bus" }
+sqlx = { version = "0.6.3", features = [ "runtime-tokio-rustls", "postgres" ] }
+futures = "0"
+uuid = { version = "1", features = ["v4", "fast-rng" ] }
+influxdb2 = "0"
+sha2 = "0"
+dashmap = "5"
+lqos_utils = { path = "../../lqos_utils" }

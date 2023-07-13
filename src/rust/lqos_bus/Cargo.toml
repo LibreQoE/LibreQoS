@@ -14,6 +14,7 @@ bincode = "1"
 thiserror = "1"
 lqos_config = { path = "../lqos_config" }
 lqos_utils = { path = "../lqos_utils" }
+lts_client = { path = "../long_term_stats/lts_client" }
 tokio = { version = "1", features = [ "rt", "macros", "net", "io-util", "time" ] }
 log = "0"
 nix = "0"
