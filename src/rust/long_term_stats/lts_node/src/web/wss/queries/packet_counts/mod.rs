@@ -7,8 +7,10 @@ use axum::extract::ws::WebSocket;
 use futures::future::join_all;
 use influxdb2::{models::Query, Client};
 use pgdb::{sqlx::{Pool, Postgres}, organization_cache::get_org_details};
+use tracing::instrument;
 use wasm_pipe_types::{PacketHost, Packets};
 
+#[instrument(skip(cnn, socket, key, period))]
 pub async fn send_packets_for_all_nodes(
     cnn: &Pool<Postgres>,
     socket: &mut WebSocket,
@@ -20,6 +22,7 @@ pub async fn send_packets_for_all_nodes(
     Ok(())
 }
 
+#[instrument(skip(cnn, socket, key, period))]
 pub async fn send_packets_for_node(
     cnn: &Pool<Postgres>,
     socket: &mut WebSocket,

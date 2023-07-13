@@ -4,6 +4,7 @@ use axum::extract::ws::WebSocket;
 use futures::future::join_all;
 use influxdb2::{Client, models::Query};
 use pgdb::{sqlx::{Pool, Postgres}, organization_cache::get_org_details};
+use tracing::instrument;
 use wasm_pipe_types::{ThroughputHost, Throughput};
 use crate::web::wss::send_response;
 use self::throughput_row::{ThroughputRow, ThroughputRowBySite, ThroughputRowByCircuit};
@@ -11,12 +12,14 @@ use super::time_period::InfluxTimePeriod;
 mod throughput_row;
 pub use site_stack::send_site_stack_map;
 
+#[instrument(skip(cnn, socket, key, period))]
 pub async fn send_throughput_for_all_nodes(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod) -> anyhow::Result<()> {
     let nodes = get_throughput_for_all_nodes(cnn, key, period).await?;
     send_response(socket, wasm_pipe_types::WasmResponse::BitsChart { nodes }).await;
     Ok(())
 }
 
+#[instrument(skip(cnn, socket, key, period, site_name))]
 pub async fn send_throughput_for_all_nodes_by_site(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, site_name: String, period: InfluxTimePeriod) -> anyhow::Result<()> {
     let nodes = get_throughput_for_all_nodes_by_site(cnn, key, period, &site_name).await?;
 

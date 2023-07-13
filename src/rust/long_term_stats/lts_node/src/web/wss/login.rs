@@ -1,6 +1,7 @@
 use axum::extract::ws::WebSocket;
 use pgdb::sqlx::{Pool, Postgres};
 use serde::Serialize;
+use tracing::instrument;
 use wasm_pipe_types::WasmResponse;
 
 use super::send_response;
@@ -13,6 +14,7 @@ pub struct LoginResult {
     pub license_key: String,
 }
 
+#[instrument(skip(license, username, password, socket, cnn))]
 pub async fn on_login(license: &str, username: &str, password: &str, socket: &mut WebSocket, cnn: Pool<Postgres>) -> Option<LoginResult> {
     let login = pgdb::try_login(cnn, license, username, password).await;
     if let Ok(login) = login {
@@ -35,6 +37,7 @@ pub async fn on_login(license: &str, username: &str, password: &str, socket: &mu
 None
 }
 
+#[instrument(skip(token_id, socket, cnn))]
 pub async fn on_token_auth(token_id: &str, socket: &mut WebSocket, cnn: Pool<Postgres>) -> Option<LoginResult> {
     let login = pgdb::token_to_credentials(cnn, token_id).await;
     if let Ok(login) = login {

@@ -19,7 +19,7 @@ influxdb2-structmap = "0"
 num-traits = "0"
 futures = "0"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3" }
 tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.4.0", features = ["fs", "trace"] }
 chrono = "0"
