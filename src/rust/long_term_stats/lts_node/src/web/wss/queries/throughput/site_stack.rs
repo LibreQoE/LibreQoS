@@ -5,7 +5,7 @@ use tracing::instrument;
 use wasm_pipe_types::Throughput;
 use super::{get_throughput_for_all_nodes_by_circuit, get_throughput_for_all_nodes_by_site};
 
-#[instrument(skip(cnn, socket, key, period, site_id))]
+#[instrument(skip(cnn, socket, key, period))]
 pub async fn send_site_stack_map(
     cnn: &Pool<Postgres>,
     socket: &mut WebSocket,
