@@ -48,7 +48,7 @@ pub async fn send_site_stack_map(
         |> filter(fn: (r) => strings.hasSuffix(v: r[\"node_parents\"], suffix: \"S{}S\" + r[\"node_index\"] + \"S\" ))
         |> group(columns: [\"node_name\", \"node_parents\", \"_field\", \"node_index\", \"direction\"])
         |> {}
-        |> yield(name: \"sum\")",
+        |> yield(name: \"last\")",
         org.influx_bucket, period.range(), org.key, site_index, period.aggregate_window_sum());
 
         //println!("{qs}");
@@ -108,10 +108,14 @@ pub async fn send_site_stack_map(
                     });
                     result.iter().skip(MAX_HOSTS).for_each(|row| {
                         row.download.iter().enumerate().for_each(|(i, x)| {
-                            others.download[i].1 += x.1;
+                            if i < others.download.len() {
+                                others.download[i].1 += x.1;
+                            }
                         });
                         row.upload.iter().enumerate().for_each(|(i, x)| {
-                            others.upload[i].1 += x.1;
+                            if i < others.upload.len() {
+                                others.upload[i].1 += x.1;
+                            }
                         });
                     });
                     result.truncate(MAX_HOSTS);
