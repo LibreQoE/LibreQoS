@@ -17,7 +17,7 @@ Please support the continued development of LibreQoS by sponsoring us via [GitHu
 
 ## Documentation / Get Started
 
-[ReadTheDocs](https://libreqos.readthedocs.io)
+[ReadTheDocs](https://libreqos.readthedocs.io/en/latest/)
 
 ## Matrix Chat
 
