@@ -24,6 +24,7 @@ use axum::{
     response::IntoResponse,
 };
 use pgdb::sqlx::{Pool, Postgres};
+use tracing::instrument;
 use wasm_pipe_types::{WasmRequest, WasmResponse};
 mod login;
 mod nodes;
@@ -310,6 +311,7 @@ fn serialize_response(response: WasmResponse) -> Vec<u8> {
     miniz_oxide::deflate::compress_to_vec(&cbor, 8)
 }
 
+#[instrument(skip(socket, response))]
 pub async fn send_response(socket: &mut WebSocket, response: WasmResponse) {
     let serialized = serialize_response(response);
     socket.send(Message::Binary(serialized)).await.unwrap();

@@ -25,7 +25,7 @@ export class DashboardPage implements Page {
             new NodeStatus(),
             new PacketsChart(),
             new ThroughputChart(),
-            //new RttChart(),
+            new RttChart(),
             //new RttHisto(),
             new RootHeat(),
             new SiteStackChart("root"),
