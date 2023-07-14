@@ -157,7 +157,7 @@ fn reduce_to_x_entries(result: &mut Vec<SiteStackHost>) {
                 }
             });
         });
-        result.truncate(MAX_HOSTS);
+        result.truncate(MAX_HOSTS-1);
         result.push(others);
     }
 }
