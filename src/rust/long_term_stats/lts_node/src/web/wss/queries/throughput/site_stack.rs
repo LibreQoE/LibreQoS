@@ -72,16 +72,14 @@ async fn query_site_stack_influx(
 
     from(bucket: \"{}\")
     |> {}
-    |> filter(fn: (r) => r[\"_field\"] == \"bits_max\")
-    |> filter(fn: (r) => r[\"_measurement\"] == \"tree\")
-    |> filter(fn: (r) => r[\"organization_id\"] == \"{}\")
+    |> filter(fn: (r) => r[\"_field\"] == \"bits_max\" and r[\"_measurement\"] == \"tree\" and r[\"organization_id\"] == \"{}\")
+    |> {}
     |> filter(fn: (r) => strings.hasSuffix(v: r[\"node_parents\"], suffix: \"S{}S\" + r[\"node_index\"] + \"S\" ))
     |> group(columns: [\"node_name\", \"node_parents\", \"_field\", \"node_index\", \"direction\"])
-    |> {}
     |> yield(name: \"last\")",
-    org.influx_bucket, period.range(), org.key, site_index, period.aggregate_window_sum());
+    org.influx_bucket, period.range(), org.key, period.sample(), site_index);
 
-    //println!("{qs}");
+    println!("{qs}");
 
     let query = influxdb2::models::Query::new(qs);
     //let rows = client.query_raw(Some(query)).await;

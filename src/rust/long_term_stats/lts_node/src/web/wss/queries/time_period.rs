@@ -2,6 +2,7 @@
 pub struct InfluxTimePeriod {
     start: String,
     aggregate: String,
+    sample: i32,
 }
 
 impl InfluxTimePeriod {
@@ -30,9 +31,23 @@ impl InfluxTimePeriod {
             _ => "10s",
         };
 
+        let sample = match period {
+            "5m" => 1,
+            "15m" => 3,
+            "1h" => 10,
+            "6h" => 100,
+            "12h" => 200,
+            "24h" => 400,
+            "7d" => 2100,
+            "28d" => 4400,
+            _ => 1
+        };
+
+
         Self {
             start: start.to_string(),
             aggregate: aggregate.to_string(),
+            sample
         }
     }
 
@@ -47,11 +62,15 @@ impl InfluxTimePeriod {
         )
     }
 
-    pub fn aggregate_window_sum(&self) -> String {
+    pub fn aggregate_window_fn(&self, mode: &str) -> String {
         format!(
-            "aggregateWindow(every: {}, fn: sum, createEmpty: false)",
+            "aggregateWindow(every: {}, fn: {mode}, createEmpty: false)",
             self.aggregate
         )
+    }
+
+    pub fn sample(&self) -> String {
+        format!("sample(n: {}, pos: 1)", self.sample)
     }
 }
 
