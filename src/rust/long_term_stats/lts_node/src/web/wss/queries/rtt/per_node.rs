@@ -1,4 +1,4 @@
-use crate::web::wss::{queries::time_period::InfluxTimePeriod, send_response};
+use crate::web::wss::{queries::time_period::InfluxTimePeriod, send_response, influx_query_builder::InfluxQueryBuilder};
 use axum::extract::ws::WebSocket;
 use pgdb::{
     organization_cache::get_org_details,
@@ -17,17 +17,16 @@ pub async fn send_rtt_for_all_nodes(
     key: &str,
     period: InfluxTimePeriod,
 ) -> anyhow::Result<()> {
-    if let Some(org) = get_org_details(cnn, key).await {
-        let result = query_rtt_all_nodes(&org, &period).await;
-        match result {
-            Err(e) => error!("Error querying InfluxDB for Per Node RTT: {e:?}"),
-            Ok(result) => {
-                let node_status = pgdb::node_status(cnn, key).await?;
-                let nodes = rtt_rows_to_result(result, node_status);
-                send_response(socket, wasm_pipe_types::WasmResponse::RttChart { nodes, histogram: Vec::new() }).await;
-            }
-        }
-    }
+    let rows = InfluxQueryBuilder::new(period.clone())
+        .with_measurement("rtt")
+        .with_fields(&["avg", "min", "max"])
+        .with_groups(&["host_id", "_field"])
+        .execute::<RttRow>(cnn, key)
+        .await?;
+    let node_status = pgdb::node_status(cnn, key).await?;
+    let nodes = rtt_rows_to_result(rows, node_status);
+    send_response(socket, wasm_pipe_types::WasmResponse::RttChart { nodes, histogram: Vec::new() }).await;
+
     Ok(())
 }
 
