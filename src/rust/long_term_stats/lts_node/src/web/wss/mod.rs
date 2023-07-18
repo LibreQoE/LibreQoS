@@ -29,6 +29,7 @@ use wasm_pipe_types::{WasmRequest, WasmResponse};
 mod login;
 mod nodes;
 mod queries;
+mod influx_query_builder;
 
 pub async fn ws_handler(
     ws: WebSocketUpgrade,

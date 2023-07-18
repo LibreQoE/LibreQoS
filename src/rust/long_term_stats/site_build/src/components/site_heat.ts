@@ -21,8 +21,9 @@ export class SiteHeat implements Component {
     ontick(): void {
         console.log("SiteHeat ontick");
         this.counter++;
-        if (this.counter % 10 == 0)
+        if (this.counter == 0) {
             request_site_heat(window.graphPeriod, this.siteId);
+        }
     }
 
     onmessage(event: any): void {

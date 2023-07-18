@@ -2,13 +2,33 @@
 mod packet_row;
 use self::packet_row::PacketRow;
 use super::time_period::InfluxTimePeriod;
-use crate::web::wss::send_response;
+use crate::web::wss::{influx_query_builder::InfluxQueryBuilder, send_response};
 use axum::extract::ws::WebSocket;
-use futures::future::join_all;
-use influxdb2::{models::Query, Client};
-use pgdb::{sqlx::{Pool, Postgres}, organization_cache::get_org_details};
+use pgdb::sqlx::{Pool, Postgres};
 use tracing::instrument;
 use wasm_pipe_types::{PacketHost, Packets};
+
+fn add_by_direction(direction: &str, down: &mut Vec<Packets>, up: &mut Vec<Packets>, row: &PacketRow) {
+    match direction {
+        "down" => {
+            down.push(Packets {
+                value: row.avg,
+                date: row.time.format("%Y-%m-%d %H:%M:%S").to_string(),
+                l: row.min,
+                u: row.max - row.min,
+            });
+        }
+        "up" => {
+            up.push(Packets {
+                value: row.avg,
+                date: row.time.format("%Y-%m-%d %H:%M:%S").to_string(),
+                l: row.min,
+                u: row.max - row.min,
+            });
+        }
+        _ => {}
+    }
+}
 
 #[instrument(skip(cnn, socket, key, period))]
 pub async fn send_packets_for_all_nodes(
@@ -17,7 +37,38 @@ pub async fn send_packets_for_all_nodes(
     key: &str,
     period: InfluxTimePeriod,
 ) -> anyhow::Result<()> {
-    let nodes = get_packets_for_all_nodes(cnn, key, period).await?;
+    let node_status = pgdb::node_status(cnn, key).await?;
+    let mut nodes = Vec::<PacketHost>::new();
+    InfluxQueryBuilder::new(period.clone())
+        .with_measurement("packets")
+        .with_fields(&["min", "max", "avg"])
+        .with_groups(&["host_id", "min", "max", "avg", "direction", "_field"])
+        .execute::<PacketRow>(cnn, key)
+        .await?
+        .into_iter()
+        .for_each(|row| {
+            if let Some(node) = nodes.iter_mut().find(|n| n.node_id == row.host_id) {
+                add_by_direction(&row.direction, &mut node.down, &mut node.up, &row);
+            } else {
+                let mut down = Vec::new();
+                let mut up = Vec::new();
+
+                add_by_direction(&row.direction, &mut down, &mut up, &row);
+
+                let node_name = if let Some(node) = node_status.iter().find(|n| n.node_id == row.host_id) {
+                    node.node_name.clone()
+                } else {
+                    row.host_id.clone()
+                };
+
+                nodes.push(PacketHost {
+                    node_id: row.host_id,
+                    node_name,
+                    down,
+                    up,
+                });
+            }
+        });
     send_response(socket, wasm_pipe_types::WasmResponse::PacketChart { nodes }).await;
     Ok(())
 }
@@ -42,31 +93,6 @@ pub async fn send_packets_for_node(
     Ok(())
 }
 
-/// Requests packet-per-second data for all shaper nodes for a given organization
-///
-/// # Arguments
-/// * `cnn` - A connection pool to the database
-/// * `key` - The organization's license key
-pub async fn get_packets_for_all_nodes(
-    cnn: &Pool<Postgres>,
-    key: &str,
-    period: InfluxTimePeriod,
-) -> anyhow::Result<Vec<PacketHost>> {
-    let node_status = pgdb::node_status(cnn, key).await?;
-    let mut futures = Vec::new();
-    for node in node_status {
-        futures.push(get_packets_for_node(
-            cnn,
-            key,
-            node.node_id.to_string(),
-            node.node_name.to_string(),
-            period.clone(),
-        ));
-    }
-    let all_nodes: anyhow::Result<Vec<PacketHost>> = join_all(futures).await.into_iter().collect();
-    all_nodes
-}
-
 /// Requests packet-per-second data for a single shaper node.
 ///
 /// # Arguments
@@ -81,67 +107,53 @@ pub async fn get_packets_for_node(
     node_name: String,
     period: InfluxTimePeriod,
 ) -> anyhow::Result<PacketHost> {
-    if let Some(org) = get_org_details(cnn, key).await {
-        let influx_url = format!("http://{}:8086", org.influx_host);
-        let client = Client::new(influx_url, &org.influx_org, &org.influx_token);
+    let rows = InfluxQueryBuilder::new(period.clone())
+        .with_measurement("packets")
+        .with_host_id(&node_id)
+        .with_field("min")
+        .with_field("max")
+        .with_field("avg")
+        .execute::<PacketRow>(cnn, key)
+        .await;
 
-        let qs = format!(
-            "from(bucket: \"{}\")
-        |> {}
-        |> filter(fn: (r) => r[\"_measurement\"] == \"packets\")
-        |> filter(fn: (r) => r[\"organization_id\"] == \"{}\")
-        |> filter(fn: (r) => r[\"host_id\"] == \"{}\")
-        |> {}
-        |> yield(name: \"last\")",
-            org.influx_bucket,
-            period.range(),
-            org.key,
-            node_id,
-            period.aggregate_window()
-        );
+    match rows {
+        Err(e) => {
+            tracing::error!("Error querying InfluxDB (packets by node): {}", e);
+            Err(anyhow::Error::msg("Unable to query influx"))
+        }
+        Ok(rows) => {
+            // Parse and send the data
+            //println!("{rows:?}");
 
-        let query = Query::new(qs);
-        let rows = client.query::<PacketRow>(Some(query)).await;
-        match rows {
-            Err(e) => {
-                tracing::error!("Error querying InfluxDB (packets by node): {}", e);
-                return Err(anyhow::Error::msg("Unable to query influx"));
-            }
-            Ok(rows) => {
-                // Parse and send the data
-                //println!("{rows:?}");
+            let mut down = Vec::new();
+            let mut up = Vec::new();
 
-                let mut down = Vec::new();
-                let mut up = Vec::new();
-
-                // Fill download
-                for row in rows.iter().filter(|r| r.direction == "down") {
-                    down.push(Packets {
-                        value: row.avg,
-                        date: row.time.format("%Y-%m-%d %H:%M:%S").to_string(),
-                        l: row.min,
-                        u: row.max - row.min,
-                    });
-                }
-
-                // Fill upload
-                for row in rows.iter().filter(|r| r.direction == "up") {
-                    up.push(Packets {
-                        value: row.avg,
-                        date: row.time.format("%Y-%m-%d %H:%M:%S").to_string(),
-                        l: row.min,
-                        u: row.max - row.min,
-                    });
-                }
-
-                return Ok(PacketHost {
-                    node_id,
-                    node_name,
-                    down,
-                    up,
+            // Fill download
+            for row in rows.iter().filter(|r| r.direction == "down") {
+                down.push(Packets {
+                    value: row.avg,
+                    date: row.time.format("%Y-%m-%d %H:%M:%S").to_string(),
+                    l: row.min,
+                    u: row.max - row.min,
                 });
             }
+
+            // Fill upload
+            for row in rows.iter().filter(|r| r.direction == "up") {
+                up.push(Packets {
+                    value: row.avg,
+                    date: row.time.format("%Y-%m-%d %H:%M:%S").to_string(),
+                    l: row.min,
+                    u: row.max - row.min,
+                });
+            }
+
+            Ok(PacketHost {
+                node_id,
+                node_name,
+                down,
+                up,
+            })
         }
     }
-    Err(anyhow::Error::msg("Unable to query influx"))
 }
