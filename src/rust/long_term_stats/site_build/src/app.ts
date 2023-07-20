@@ -39,19 +39,22 @@ window.changeGraphPeriod = (period: string) => changeGraphPeriod(period);
 window.setInterval(() => {
     window.bus.updateConnected();    
     window.router.ontick();
-    let btn = document.getElementById("graphPeriodBtn") as HTMLButtonElement;
-    btn.innerText = window.graphPeriod;
 }, 10000);
 
 // Faster interval for tracking the WSS connection
 window.setInterval(() => {
+    updateDisplayedInterval();
     window.bus.updateConnected();
     window.bus.sendQueue();
 }, 500);
 
+function updateDisplayedInterval() {
+    let btn = document.getElementById("graphPeriodBtn") as HTMLButtonElement;
+    btn.innerText = window.graphPeriod;
+}
+
 function changeGraphPeriod(period: string) {
     window.graphPeriod = period;
     localStorage.setItem('graphPeriod', period);
-    let btn = document.getElementById("graphPeriodBtn") as HTMLButtonElement;
-    btn.innerText = period;
+    updateDisplayedInterval();
 }
