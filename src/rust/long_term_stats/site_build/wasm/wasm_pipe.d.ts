@@ -9,6 +9,13 @@ export function connect_wasm_pipe(url: string): void;
 */
 export function is_wasm_connected(): boolean;
 /**
+* @returns {boolean}
+*/
+export function is_wasm_connecting(): boolean;
+/**
+*/
+export function mark_connecting(): void;
+/**
 */
 export function send_wss_queue(): void;
 /**
@@ -142,6 +149,8 @@ export interface InitOutput {
   readonly memory: WebAssembly.Memory;
   readonly connect_wasm_pipe: (a: number, b: number) => void;
   readonly is_wasm_connected: () => number;
+  readonly is_wasm_connecting: () => number;
+  readonly mark_connecting: () => void;
   readonly send_wss_queue: () => void;
   readonly send_token: (a: number, b: number) => void;
   readonly send_login: (a: number, b: number, c: number, d: number, e: number, f: number) => void;

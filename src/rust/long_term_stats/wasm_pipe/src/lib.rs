@@ -23,6 +23,7 @@ extern "C" {
 }
 
 static mut CONNECTED: bool = false;
+static mut CONNECTING: bool = false;
 static mut WS: Option<WebSocket> = None;
 static mut QUEUE: VecDeque<Vec<u8>> = VecDeque::new();
 static mut URL: String = String::new();
@@ -41,7 +42,6 @@ pub fn connect_wasm_pipe(url: String) {
         if let Some(ws) = &mut WS {
             ws.set_binary_type(BinaryType::Arraybuffer);
 
-            ws.set_binary_type(BinaryType::Arraybuffer);
             let onmessage_callback = Closure::<dyn FnMut(_)>::new(move |e: MessageEvent| {
                 log("Message Received");
                 if let Ok(abuf) = e.data().dyn_into::<js_sys::ArrayBuffer>() {
@@ -69,14 +69,17 @@ pub fn connect_wasm_pipe(url: String) {
             let onerror_callback = Closure::<dyn FnMut(_)>::new(move |e: ErrorEvent| {
                 log(&format!("Error Received: {e:?}"));
                 CONNECTED = false;
+                CONNECTING = false;
             });
             let onclose_callback = Closure::<dyn FnMut(_)>::new(move |_e: ErrorEvent| {
                 log("Close Received");
                 CONNECTED = false;
+                CONNECTING = false;
             });
             let onopen_callback = Closure::<dyn FnMut(_)>::new(move |_e: ErrorEvent| {
                 log("Open Received");
                 CONNECTED = true;
+                CONNECTING = false;
                 let token = get_token();
                 send_token(token);
             });
@@ -99,6 +102,16 @@ pub fn is_wasm_connected() -> bool {
 }
 
 #[wasm_bindgen]
+pub fn is_wasm_connecting() -> bool {
+    unsafe { CONNECTING }
+}
+
+#[wasm_bindgen]
+pub fn mark_connecting() {
+    unsafe { CONNECTING = true; }
+}
+
+#[wasm_bindgen]
 pub fn send_wss_queue() {
     //log("Call to send queue");
     unsafe {
@@ -117,7 +130,7 @@ pub fn send_wss_queue() {
         } else {
             log("No WebSocket connection");
             CONNECTED = false;
-            connect_wasm_pipe(String::new());
+            CONNECTING = false;
         }
     }
 }

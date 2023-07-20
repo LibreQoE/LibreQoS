@@ -3,6 +3,8 @@
 export const memory: WebAssembly.Memory;
 export function connect_wasm_pipe(a: number, b: number): void;
 export function is_wasm_connected(): number;
+export function is_wasm_connecting(): number;
+export function mark_connecting(): void;
 export function send_wss_queue(): void;
 export function send_token(a: number, b: number): void;
 export function send_login(a: number, b: number, c: number, d: number, e: number, f: number): void;

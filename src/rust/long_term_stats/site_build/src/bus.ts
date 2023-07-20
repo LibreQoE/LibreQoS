@@ -1,15 +1,13 @@
-import { connect_wasm_pipe, is_wasm_connected, send_wss_queue } from "../wasm/wasm_pipe";
+import { connect_wasm_pipe, is_wasm_connected, send_wss_queue, is_wasm_connecting, mark_connecting } from "../wasm/wasm_pipe";
 import { Auth } from "./auth";
 import { SiteRouter } from "./router";
 
 export class Bus {
     ws: WebSocket;
-    connected: boolean;
 
     constructor() {
         const currentUrlWithoutAnchors = window.location.href.split('#')[0].replace("https://", "").replace("http://", "");
         const url = "ws://" + currentUrlWithoutAnchors + "ws";
-        this.connected = false;
     }
 
     updateConnected() {
@@ -129,8 +127,9 @@ export class Bus {
 }
 
 function retryConnect() {
-    if (!window.bus.connected) {
-        //window.bus.connect();
+    if (!is_wasm_connected() && !is_wasm_connecting()) {
+        mark_connecting();
+        window.bus.connect();
     }
 }
 

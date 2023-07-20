@@ -227,6 +227,20 @@ export function is_wasm_connected() {
 }
 
 /**
+* @returns {boolean}
+*/
+export function is_wasm_connecting() {
+    const ret = wasm.is_wasm_connecting();
+    return ret !== 0;
+}
+
+/**
+*/
+export function mark_connecting() {
+    wasm.mark_connecting();
+}
+
+/**
 */
 export function send_wss_queue() {
     wasm.send_wss_queue();
@@ -685,11 +699,11 @@ function __wbg_get_imports() {
         const ret = wasm.memory;
         return addHeapObject(ret);
     };
-    imports.wbg.__wbindgen_closure_wrapper459 = function(arg0, arg1, arg2) {
+    imports.wbg.__wbindgen_closure_wrapper465 = function(arg0, arg1, arg2) {
         const ret = makeMutClosure(arg0, arg1, 97, __wbg_adapter_12);
         return addHeapObject(ret);
     };
-    imports.wbg.__wbindgen_closure_wrapper461 = function(arg0, arg1, arg2) {
+    imports.wbg.__wbindgen_closure_wrapper467 = function(arg0, arg1, arg2) {
         const ret = makeMutClosure(arg0, arg1, 95, __wbg_adapter_15);
         return addHeapObject(ret);
     };
