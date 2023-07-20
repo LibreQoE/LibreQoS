@@ -87,23 +87,6 @@ pub async fn send_throughput_for_node(cnn: &Pool<Postgres>, socket: &mut WebSock
     Ok(())
 }
 
-pub async fn get_throughput_for_all_nodes(cnn: &Pool<Postgres>, key: &str, period: InfluxTimePeriod) -> anyhow::Result<Vec<ThroughputHost>> {
-    let node_status = pgdb::node_status(cnn, key).await?;
-    let mut futures = Vec::new();
-    for node in node_status {
-        futures.push(get_throughput_for_node(
-            cnn,
-            key,
-            node.node_id.to_string(),
-            node.node_name.to_string(),
-            period.clone(),
-        ));
-    }
-    let all_nodes: anyhow::Result<Vec<ThroughputHost>> = join_all(futures).await
-        .into_iter().collect();
-    all_nodes
-}
-
 pub async fn get_throughput_for_all_nodes_by_site(cnn: &Pool<Postgres>, key: &str, period: InfluxTimePeriod, site_name: &str) -> anyhow::Result<Vec<ThroughputHost>> {
     let node_status = pgdb::node_status(cnn, key).await?;
     let mut futures = Vec::new();

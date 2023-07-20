@@ -1,11 +1,10 @@
 use crate::web::wss::{queries::time_period::InfluxTimePeriod, send_response, influx_query_builder::InfluxQueryBuilder};
 use axum::extract::ws::WebSocket;
 use pgdb::{
-    organization_cache::get_org_details,
     sqlx::{Pool, Postgres},
-    NodeStatus, OrganizationDetails,
+    NodeStatus
 };
-use tracing::{error, instrument};
+use tracing::instrument;
 use wasm_pipe_types::{Rtt, RttHost};
 
 use super::rtt_row::RttRow;
@@ -28,30 +27,6 @@ pub async fn send_rtt_for_all_nodes(
     send_response(socket, wasm_pipe_types::WasmResponse::RttChart { nodes, histogram: Vec::new() }).await;
 
     Ok(())
-}
-
-#[instrument(skip(org, period))]
-async fn query_rtt_all_nodes(
-    org: &OrganizationDetails,
-    period: &InfluxTimePeriod,
-) -> anyhow::Result<Vec<RttRow>> {
-    let influx_url = format!("http://{}:8086", org.influx_host);
-    let client = influxdb2::Client::new(influx_url, &org.influx_org, &org.influx_token);
-    let qs = format!("from(bucket: \"{}\")
-    |> {}
-    |> filter(fn: (r) => r[\"_measurement\"] == \"rtt\")
-    |> filter(fn: (r) => r[\"_field\"] == \"avg\" or r[\"_field\"] == \"min\" or r[\"_field\"] == \"max\")
-    |> filter(fn: (r) => r[\"organization_id\"] == \"{}\")
-    |> group(columns: [\"host_id\", \"_field\"])
-    |> {}
-    |> yield(name: \"last\")
-    ", 
-    org.influx_bucket, period.range(), org.key, period.aggregate_window()
-    );
-    //println!("{qs}");
-
-    let query = influxdb2::models::Query::new(qs);
-    Ok(client.query::<RttRow>(Some(query)).await?)
 }
 
 fn rtt_rows_to_result(rows: Vec<RttRow>, node_status: Vec<NodeStatus>) -> Vec<RttHost> {
