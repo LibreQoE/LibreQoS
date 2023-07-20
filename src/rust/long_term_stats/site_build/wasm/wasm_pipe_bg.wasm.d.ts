@@ -17,6 +17,7 @@ export function request_throughput_chart_for_node(a: number, b: number, c: numbe
 export function request_throughput_chart_for_circuit(a: number, b: number, c: number, d: number): void;
 export function request_site_stack(a: number, b: number, c: number, d: number): void;
 export function request_rtt_chart(a: number, b: number): void;
+export function request_rtt_histogram(a: number, b: number): void;
 export function request_rtt_chart_for_site(a: number, b: number, c: number, d: number): void;
 export function request_rtt_chart_for_node(a: number, b: number, c: number, d: number, e: number, f: number): void;
 export function request_rtt_chart_for_circuit(a: number, b: number, c: number, d: number): void;

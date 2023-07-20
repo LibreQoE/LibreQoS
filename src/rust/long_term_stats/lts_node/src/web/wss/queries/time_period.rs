@@ -33,8 +33,8 @@ impl InfluxTimePeriod {
         };
 
         let sample = match period {
-            "5m" => 2,
-            "15m" => 6,
+            "5m" => 3,
+            "15m" => 10,
             "1h" => 40,
             "6h" => 100,
             "12h" => 200,

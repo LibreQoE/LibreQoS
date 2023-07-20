@@ -48,15 +48,15 @@ pub async fn send_rtt_for_node(cnn: &Pool<Postgres>, socket: &mut WebSocket, key
     let node = get_rtt_for_node(cnn, key, node_id, node_name, period).await?;
     let nodes = vec![node];
 
-    let mut histogram = vec![0; 20];
+    /*let mut histogram = vec![0; 20];
     for node in nodes.iter() {
         for rtt in node.rtt.iter() {
             let bucket = usize::min(19, (rtt.value / 200.0) as usize);
             histogram[bucket] += 1;
         }
-    }
+    }*/
 
-    send_response(socket, wasm_pipe_types::WasmResponse::RttChart { nodes, histogram }).await;
+    send_response(socket, wasm_pipe_types::WasmResponse::RttChart { nodes }).await;
     Ok(())
 }
 

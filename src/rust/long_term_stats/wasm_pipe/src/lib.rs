@@ -125,7 +125,12 @@ pub fn send_wss_queue() {
         if let Some(ws) = &mut WS {
             while let Some(msg) = QUEUE.pop_front() {
                 log(&format!("Sending message: {msg:?}"));
-                ws.send_with_u8_array(&msg).unwrap();
+                if let Err(e) = ws.send_with_u8_array(&msg) {
+                    log(&format!("Error sending message: {e:?}"));
+                    CONNECTED = false;
+                    CONNECTING = false;
+                    break;
+                }
             }
         } else {
             log("No WebSocket connection");
@@ -207,6 +212,11 @@ pub fn request_site_stack(period: String, site_id: String) {
 #[wasm_bindgen]
 pub fn request_rtt_chart(period: String) {
     send_message(WasmRequest::RttChart  { period });
+}
+
+#[wasm_bindgen]
+pub fn request_rtt_histogram(period: String) {
+    send_message(WasmRequest::RttHistogram { period });
 }
 
 #[wasm_bindgen]

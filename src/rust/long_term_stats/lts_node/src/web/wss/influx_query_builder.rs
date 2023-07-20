@@ -71,6 +71,11 @@ impl InfluxQueryBuilder {
         self
     }
 
+    pub fn sample_no_window(mut self) -> Self {
+        self.aggregate_window = false;
+        self
+    }
+
     fn build_query(&self, org: &OrganizationDetails) -> String {
         let mut lines = Vec::<String>::with_capacity(10);
 
@@ -123,6 +128,8 @@ impl InfluxQueryBuilder {
         // Aggregate Window
         if self.aggregate_window {
             lines.push(format!("|> {}", self.period.aggregate_window()));
+        } else {
+            lines.push(format!("|> {}", self.period.sample()));
         }
 
         // Yield as

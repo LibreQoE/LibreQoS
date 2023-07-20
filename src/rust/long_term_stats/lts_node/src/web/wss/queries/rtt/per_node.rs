@@ -7,7 +7,7 @@ use pgdb::{
 use tracing::instrument;
 use wasm_pipe_types::{Rtt, RttHost};
 
-use super::rtt_row::RttRow;
+use super::rtt_row::{RttRow, RttHistoRow};
 
 #[instrument(skip(cnn, socket, key, period))]
 pub async fn send_rtt_for_all_nodes(
@@ -24,7 +24,33 @@ pub async fn send_rtt_for_all_nodes(
         .await?;
     let node_status = pgdb::node_status(cnn, key).await?;
     let nodes = rtt_rows_to_result(rows, node_status);
-    send_response(socket, wasm_pipe_types::WasmResponse::RttChart { nodes, histogram: Vec::new() }).await;
+    send_response(socket, wasm_pipe_types::WasmResponse::RttChart { nodes }).await;
+
+    Ok(())
+}
+
+#[instrument(skip(cnn, socket, key, period))]
+pub async fn send_rtt_histogram_for_all_nodes(
+    cnn: &Pool<Postgres>,
+    socket: &mut WebSocket,
+    key: &str,
+    period: InfluxTimePeriod,
+) -> anyhow::Result<()> {
+    let rows = InfluxQueryBuilder::new(period.clone())
+        .with_measurement("rtt")
+        .with_field("avg")
+        .sample_no_window()
+        .execute::<RttHistoRow>(cnn, key)
+        .await?;
+
+    let mut histo = vec![0u32; 20];
+    rows.iter().for_each(|row| {
+        let rtt = f64::min(row.avg, 200.);
+        let bucket = usize::min((rtt / 10.0) as usize, 19);
+        histo[bucket] += 1;
+    });
+
+    send_response(socket, wasm_pipe_types::WasmResponse::RttHistogram { histogram: histo }).await;
 
     Ok(())
 }

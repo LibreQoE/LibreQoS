@@ -8,6 +8,7 @@ use crate::web::wss::{
         omnisearch, root_heat_map, send_circuit_info, send_packets_for_all_nodes,
         send_packets_for_node, send_perf_for_node, send_rtt_for_all_nodes,
         send_rtt_for_all_nodes_circuit, send_rtt_for_all_nodes_site, send_rtt_for_node,
+        send_rtt_histogram_for_all_nodes,
         send_site_info, send_site_parents, send_site_stack_map, send_throughput_for_all_nodes,
         send_throughput_for_all_nodes_by_circuit, send_throughput_for_all_nodes_by_site,
         send_throughput_for_node, site_heat_map,
@@ -163,6 +164,15 @@ async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
             // Rtt Chart
             (WasmRequest::RttChart { period }, Some(credentials)) => {
                 let _ = send_rtt_for_all_nodes(
+                    &cnn,
+                    wss,
+                    &credentials.license_key,
+                    InfluxTimePeriod::new(period),
+                )
+                .await;
+            }
+            (WasmRequest::RttHistogram { period }, Some(credentials)) => {
+                let _ = send_rtt_histogram_for_all_nodes(
                     &cnn,
                     wss,
                     &credentials.license_key,

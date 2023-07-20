@@ -74,6 +74,7 @@ async fn query_site_stack_influx(
     |> {}
     |> filter(fn: (r) => r[\"_field\"] == \"bits_max\" and r[\"_measurement\"] == \"tree\" and r[\"organization_id\"] == \"{}\")
     |> {}
+    |> filter(fn: (r) => exists r[\"node_parents\"] and exists r[\"node_index\"])
     |> filter(fn: (r) => strings.hasSuffix(v: r[\"node_parents\"], suffix: \"S{}S\" + r[\"node_index\"] + \"S\" ))
     |> group(columns: [\"node_name\", \"node_parents\", \"_field\", \"node_index\", \"direction\"])
     |> yield(name: \"last\")",

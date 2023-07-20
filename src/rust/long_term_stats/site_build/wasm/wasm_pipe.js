@@ -371,6 +371,15 @@ export function request_rtt_chart(period) {
 
 /**
 * @param {string} period
+*/
+export function request_rtt_histogram(period) {
+    const ptr0 = passStringToWasm0(period, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    wasm.request_rtt_histogram(ptr0, len0);
+}
+
+/**
+* @param {string} period
 * @param {string} site_id
 */
 export function request_rtt_chart_for_site(period, site_id) {
@@ -699,12 +708,12 @@ function __wbg_get_imports() {
         const ret = wasm.memory;
         return addHeapObject(ret);
     };
-    imports.wbg.__wbindgen_closure_wrapper465 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 97, __wbg_adapter_12);
+    imports.wbg.__wbindgen_closure_wrapper469 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 98, __wbg_adapter_12);
         return addHeapObject(ret);
     };
-    imports.wbg.__wbindgen_closure_wrapper467 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 95, __wbg_adapter_15);
+    imports.wbg.__wbindgen_closure_wrapper471 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 96, __wbg_adapter_15);
         return addHeapObject(ret);
     };
 

@@ -72,6 +72,10 @@ export function request_site_stack(period: string, site_id: string): void;
 export function request_rtt_chart(period: string): void;
 /**
 * @param {string} period
+*/
+export function request_rtt_histogram(period: string): void;
+/**
+* @param {string} period
 * @param {string} site_id
 */
 export function request_rtt_chart_for_site(period: string, site_id: string): void;
@@ -163,6 +167,7 @@ export interface InitOutput {
   readonly request_throughput_chart_for_circuit: (a: number, b: number, c: number, d: number) => void;
   readonly request_site_stack: (a: number, b: number, c: number, d: number) => void;
   readonly request_rtt_chart: (a: number, b: number) => void;
+  readonly request_rtt_histogram: (a: number, b: number) => void;
   readonly request_rtt_chart_for_site: (a: number, b: number, c: number, d: number) => void;
   readonly request_rtt_chart_for_node: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
   readonly request_rtt_chart_for_circuit: (a: number, b: number, c: number, d: number) => void;
