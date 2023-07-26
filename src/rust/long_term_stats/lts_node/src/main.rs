@@ -24,6 +24,9 @@ async fn main() -> anyhow::Result<()> {
     // Set the subscriber as the default
     tracing::subscriber::set_global_default(subscriber)?;
 
+    // Initialize the Tokio Console subscription
+    //console_subscriber::init();
+
     // Get the database connection pool
     let pool = pgdb::get_connection_pool(5).await;
     if pool.is_err() {

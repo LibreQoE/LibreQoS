@@ -16,6 +16,9 @@ pub struct InfluxQueryBuilder {
     aggregate_window: bool,
     yield_as: Option<String>,
     host_id: Option<String>,
+    filters: Vec<String>,
+    sample_after_org: bool,
+    fill_empty: bool,
 }
 
 impl InfluxQueryBuilder {
@@ -29,6 +32,9 @@ impl InfluxQueryBuilder {
             aggregate_window: true,
             yield_as: Some("last".to_string()),
             host_id: None,
+            filters: Vec::new(),
+            sample_after_org: false,
+            fill_empty: false,
         }
     }
 
@@ -76,6 +82,21 @@ impl InfluxQueryBuilder {
         self
     }
 
+    pub fn with_filter<S: ToString>(mut self, filter: S) -> Self {
+        self.filters.push(filter.to_string());
+        self
+    }
+
+    pub fn sample_after_org(mut self) -> Self {
+        self.sample_after_org = true;
+        self
+    }
+
+    pub fn fill_empty(mut self) -> Self {
+        self.fill_empty = true;
+        self
+    }
+
     fn build_query(&self, org: &OrganizationDetails) -> String {
         let mut lines = Vec::<String>::with_capacity(10);
 
@@ -108,9 +129,18 @@ impl InfluxQueryBuilder {
         // Filter by organization id
         lines.push(format!("|> filter(fn: (r) => r[\"organization_id\"] == \"{}\")", org.key));
 
+        if self.sample_after_org {
+            lines.push(format!("|> {}", self.period.sample()));
+        }
+
         // Filter by host_id
         if let Some(host_id) = &self.host_id {
             lines.push(format!("|> filter(fn: (r) => r[\"host_id\"] == \"{}\")", host_id));
+        }
+
+        // Add any other filters
+        for filter in self.filters.iter() {
+            lines.push(format!("|> filter(fn: (r) => {})", filter));
         }
 
         // Group by
@@ -127,7 +157,11 @@ impl InfluxQueryBuilder {
 
         // Aggregate Window
         if self.aggregate_window {
-            lines.push(format!("|> {}", self.period.aggregate_window()));
+            if self.fill_empty {
+                lines.push(format!("|> {}", self.period.aggregate_window_empty()));
+            } else {
+                lines.push(format!("|> {}", self.period.aggregate_window()));
+            }
         } else {
             lines.push(format!("|> {}", self.period.sample()));
         }

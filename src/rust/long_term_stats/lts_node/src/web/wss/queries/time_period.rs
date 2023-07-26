@@ -63,6 +63,13 @@ impl InfluxTimePeriod {
         )
     }
 
+    pub fn aggregate_window_empty(&self) -> String {
+        format!(
+            "aggregateWindow(every: {}, fn: mean, createEmpty: true)",
+            self.aggregate
+        )
+    }
+
     pub fn aggregate_window_fn(&self, mode: &str) -> String {
         format!(
             "aggregateWindow(every: {}, fn: {mode}, createEmpty: false)",
