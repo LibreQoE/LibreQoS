@@ -3,18 +3,11 @@
 /**
 * @param {string} url
 */
-export function connect_wasm_pipe(url: string): void;
+export function initialize_wss(url: string): void;
 /**
 * @returns {boolean}
 */
 export function is_wasm_connected(): boolean;
-/**
-* @returns {boolean}
-*/
-export function is_wasm_connecting(): boolean;
-/**
-*/
-export function mark_connecting(): void;
 /**
 */
 export function send_wss_queue(): void;
@@ -151,10 +144,8 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
-  readonly connect_wasm_pipe: (a: number, b: number) => void;
+  readonly initialize_wss: (a: number, b: number) => void;
   readonly is_wasm_connected: () => number;
-  readonly is_wasm_connecting: () => number;
-  readonly mark_connecting: () => void;
   readonly send_wss_queue: () => void;
   readonly send_token: (a: number, b: number) => void;
   readonly send_login: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
@@ -184,13 +175,12 @@ export interface InitOutput {
   readonly request_ext_device_info: (a: number, b: number) => void;
   readonly request_ext_snr_graph: (a: number, b: number, c: number, d: number) => void;
   readonly request_ext_capacity_graph: (a: number, b: number, c: number, d: number) => void;
-  readonly __wbindgen_malloc: (a: number) => number;
-  readonly __wbindgen_realloc: (a: number, b: number, c: number) => number;
+  readonly __wbindgen_export_0: (a: number) => number;
+  readonly __wbindgen_export_1: (a: number, b: number, c: number) => number;
   readonly __wbindgen_export_2: WebAssembly.Table;
-  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hb4b341652e081e3f: (a: number, b: number, c: number) => void;
-  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__ha318d2d73313995c: (a: number, b: number, c: number) => void;
-  readonly __wbindgen_free: (a: number, b: number) => void;
-  readonly __wbindgen_exn_store: (a: number) => void;
+  readonly __wbindgen_export_3: (a: number, b: number, c: number) => void;
+  readonly __wbindgen_export_4: (a: number, b: number) => void;
+  readonly __wbindgen_export_5: (a: number) => void;
 }
 
 export type SyncInitInput = BufferSource | WebAssembly.Module;

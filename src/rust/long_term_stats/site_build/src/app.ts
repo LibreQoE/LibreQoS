@@ -25,7 +25,7 @@ declare global {
 window.auth = new Auth;
 window.bus = new Bus();
 window.router = new SiteRouter();
-window.bus.connect();
+//window.bus.connect();
 window.router.initialRoute();
 let graphPeriod = localStorage.getItem('graphPeriod');
 if (!graphPeriod) {
@@ -49,7 +49,10 @@ window.setInterval(() => {
 }, 500);
 
 function updateDisplayedInterval() {
-    let btn = document.getElementById("graphPeriodBtn") as HTMLButtonElement;
+    let btn = document.getElementById("graphPeriodBtn") as HTMLButtonElement | null;
+    if (!btn) {
+        return;
+    }
     btn.innerText = window.graphPeriod;
 }
 
