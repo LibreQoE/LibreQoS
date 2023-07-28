@@ -83,7 +83,7 @@ struct Conduit {
     status: ConnectionStatus,
     socket: Option<WebSocket>,
     url: String,
-    message_queue: VecDeque<Vec<u8>>,
+    message_queue: VecDeque<WsRequestMessage>,
 }
 
 impl Conduit {
@@ -169,11 +169,7 @@ impl Conduit {
     }
 
     fn enqueue_message(&mut self, message: WsRequestMessage) {
-        let serialized = message.serialize();
-        match serialized {
-            Ok(msg) => self.message_queue.push_back(msg),
-            Err(e) => log(&format!("Error enqueing message: {:?}", e)),
-        }
+        self.message_queue.push_back(message);
     }
 
     fn send_queue(&mut self) {
@@ -182,15 +178,28 @@ impl Conduit {
             return;
         }
 
+        // Kill old messages, to avoid a flood on reconnect
+        self.message_queue.retain(|msg| msg.submitted.elapsed().as_secs_f32() < 10.0);
+        log(&format!("{} Enqueued Messages", self.message_queue.len()));
+
         // Send queued messages
         if let Some(ws) = &mut self.socket {
             while let Some(msg) = self.message_queue.pop_front() {
-                log(&format!("Sending message: {msg:?}"));
-                if let Err(e) = ws.send_with_u8_array(&msg) {
-                    log(&format!("Error sending message: {e:?}"));
-                    self.status = ConnectionStatus::New;
-                    break;
+                let msg = msg.serialize();
+                log("Message Serialized");
+                match msg {
+                    Ok(msg) => {
+                        if let Err(e) = ws.send_with_u8_array(&msg) {
+                            log(&format!("Error sending message: {e:?}"));
+                            self.status = ConnectionStatus::New;
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        log(&format!("Serialization error: {e:?}"));
+                    }
                 }
+                
             }
         } else {
             log("No WebSocket connection");

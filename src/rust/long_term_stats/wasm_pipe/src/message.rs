@@ -1,5 +1,6 @@
 use thiserror::Error;
 use wasm_pipe_types::{WasmRequest, WasmResponse};
+use web_time::Instant;
 
 #[derive(Error, Debug)]
 pub enum MessageError {
@@ -26,15 +27,21 @@ impl WsResponseMessage {
     }
 }
 
-pub struct WsRequestMessage(pub WasmRequest);
+pub struct WsRequestMessage {
+    pub message: WasmRequest,
+    pub submitted: Instant,
+}
 
 impl WsRequestMessage {
     pub fn new(msg: WasmRequest) -> Self {
-        Self(msg)
+        Self {
+            message: msg,
+            submitted: Instant::now(),
+        }
     }
 
     pub fn serialize(&self) -> Result<Vec<u8>, MessageError> {
-        let cbor = serde_cbor::to_vec(&self.0).map_err(|_| MessageError::Serialize)?;
+        let cbor = serde_cbor::to_vec(&self.message).map_err(|_| MessageError::Serialize)?;
         Ok(miniz_oxide::deflate::compress_to_vec(&cbor, 8))
     }
 }

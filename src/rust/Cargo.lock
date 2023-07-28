@@ -4574,6 +4574,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm_pipe_types",
  "web-sys",
+ "web-time",
 ]
 
 [[package]]
@@ -4591,6 +4592,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "16b5f940c7edfdc6d12126d98c9ef4d1b3d470011c47c76a6581df47ad9ba721"
 dependencies = [
  "js-sys",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "web-time"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19353897b48e2c4d849a2d73cb0aeb16dc2be4e00c565abfc11eb65a806e47de"
+dependencies = [
+ "js-sys",
+ "once_cell",
  "wasm-bindgen",
 ]
 
