@@ -52,7 +52,7 @@ pub enum WasmResponse {
     SiteHeat { data: HashMap<String, Vec<(DateTime<FixedOffset>, f64)>>},
     NodePerfChart { nodes: Vec<PerfHost> },
     SiteTree { data: Vec<SiteTree> },
-    SiteInfo { data: SiteTree },
+    SiteInfo { data: SiteTree, oversubscription: SiteOversubscription },
     SiteParents { data: Vec<(String, String)> },
     SiteChildren { data: Vec<(String, String, String)> },
     SearchResult { hits: Vec<SearchResult> },
@@ -167,6 +167,13 @@ pub struct SiteTree {
     pub current_down: i32,
     pub current_up: i32,
     pub current_rtt: i32,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SiteOversubscription {
+    pub dlmax: i64,
+    pub dlmin: i64,
+    pub devicecount: i64,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

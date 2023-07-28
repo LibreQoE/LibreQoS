@@ -49,29 +49,6 @@ export class RttChartSite implements Component {
                 }
                 if (first) first = false;
 
-                let min: echarts.SeriesOption = {
-                    name: "L",
-                    type: "line",
-                    data: l,
-                    symbol: 'none',
-                    stack: 'confidence-band-' + node.node_id,
-                    lineStyle: {
-                        opacity: 0
-                    },
-                };
-                let max: echarts.SeriesOption = {
-                    name: "U",
-                    type: "line",
-                    data: u,
-                    symbol: 'none',
-                    stack: 'confidence-band-' + node.node_id,
-                    lineStyle: {
-                        opacity: 0
-                    },
-                    areaStyle: {
-                        color: '#ccc'
-                    },
-                };
                 let val: echarts.SeriesOption = {
                     name: node.node_name,
                     type: "line",
@@ -79,8 +56,8 @@ export class RttChartSite implements Component {
                     symbol: 'none',
                 };
 
-                series.push(min);
-                series.push(max);
+                //series.push(min);
+                //series.push(max);
                 series.push(val);
             }
 
@@ -89,16 +66,11 @@ export class RttChartSite implements Component {
                 var option: echarts.EChartsOption;
                 this.myChart.setOption<echarts.EChartsOption>(
                     (option = {
-                        title: { text: "TCP Round-Trip Time" },
+                        title: { text: "Average TCP Round-Trip Time" },
                         tooltip: { 
                             trigger: "axis",
                             formatter: function (params: any) {
-                                let ret = "";
-                                for (let i=0; i<params.length; i+=3) {
-                                    if (params[i+2].value > 0) {
-                                        ret += "<strong>" + params[i+2].seriesName + "</strong>: " + params[i+2].value.toFixed(1) + " ms<br/>";
-                                    }
-                                }
+                                let ret = params[0].value.toFixed(1) + " ms<br/>";
                                 return ret;
                             }
                         },

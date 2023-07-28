@@ -196,4 +196,25 @@ impl InfluxQueryBuilder {
             Err(Error::msg("Organization not found"))
         }
     }
+
+    #[instrument(skip(cnn, key, query))]
+    pub async fn raw<T>(cnn: &Pool<Postgres>, key: &str, query: String) -> Result<Vec<T>> 
+    where T: FromMap + std::fmt::Debug
+    {
+        if let Some(org) = get_org_details(cnn, key).await {
+            let influx_url = format!("http://{}:8086", org.influx_host);
+            let client = Client::new(influx_url, &org.influx_org, &org.influx_token);
+            tracing::info!("{query}");
+            let query = Query::new(query);
+            let rows = client.query::<T>(Some(query)).await;
+            if let Ok(rows) = rows {
+                Ok(rows)
+            } else {
+                tracing::error!("InfluxDb query error: {rows:?}");
+                Err(Error::msg("Influx query error"))
+            }
+        } else {
+            Err(Error::msg("Organization not found"))
+        }
+    }
 }

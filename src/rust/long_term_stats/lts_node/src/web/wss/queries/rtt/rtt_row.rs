@@ -22,6 +22,23 @@ impl Default for RttRow {
     }
 }
 
+#[derive(Debug, FromDataPoint)]
+pub struct RttValue {
+    pub host_id: String,
+    pub avg: f64,
+    pub time: DateTime<FixedOffset>,
+}
+
+impl Default for RttValue {
+    fn default() -> Self {
+        Self {
+            host_id: "".to_string(),
+            avg: 0.0,
+            time: DateTime::<Utc>::MIN_UTC.into(),
+        }
+    }
+}
+
 #[derive(Debug, FromDataPoint, Default)]
 pub struct RttHistoRow {
     pub avg: f64,
