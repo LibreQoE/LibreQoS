@@ -17,6 +17,7 @@ export class RttChartSite implements Component {
     }
 
     wireup(): void {
+        request_rtt_chart_for_site(window.graphPeriod, this.siteId);
     }
 
     ontick(): void {

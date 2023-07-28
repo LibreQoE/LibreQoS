@@ -45,7 +45,7 @@ pub enum WasmResponse {
     BitsChart { nodes: Vec<ThroughputHost> },
     RttChart { nodes: Vec<RttHost> },
     RttHistogram { histogram: Vec<u32> },
-    RttChartSite { nodes: Vec<RttHost>, histogram: Vec<u32> },
+    RttChartSite { nodes: Vec<RttHost> },
     RttChartCircuit { nodes: Vec<RttHost>, histogram: Vec<u32> },
     SiteStack { nodes: Vec<SiteStackHost> },
     RootHeat { data: HashMap<String, Vec<(DateTime<FixedOffset>, f64)>>},
