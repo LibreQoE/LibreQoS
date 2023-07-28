@@ -97,7 +97,7 @@ export class CircuitPage implements Page {
 
                 div.outerHTML = html;
             } else if (event.msg == "DeviceExtSnr") {
-                console.log(event);
+                //console.log(event);
                 let div = document.getElementById("extdev_" + event.DeviceExtSnr.device_id) as HTMLDivElement;
 
                 let sig: number[] = [];
@@ -150,7 +150,7 @@ export class CircuitPage implements Page {
                 );
                 option && myChart.setOption(option);
             } else if (event.msg == "DeviceExtCapacity") {
-                console.log(event);
+                //console.log(event);
                 let div = document.getElementById("extdev_cap_" + event.DeviceExtCapacity.device_id) as HTMLDivElement;
 
                 let down: number[] = [];

@@ -54,7 +54,7 @@ export class RootHeat implements Component {
 
             let series: any[] = [];
             let i = 0;
-            console.log(categories);
+            //console.log(categories);
             series.push({
                 name: categories[i],
                 type: 'heatmap',

@@ -14,12 +14,12 @@ export class SiteHeat implements Component {
     }
 
     wireup(): void {
-        console.log("SiteHeat wireup");
+        //console.log("SiteHeat wireup");
         request_site_heat(window.graphPeriod, this.siteId);
     }
 
     ontick(): void {
-        console.log("SiteHeat ontick");
+        //console.log("SiteHeat ontick");
         this.counter++;
         if (this.counter == 0) {
             request_site_heat(window.graphPeriod, this.siteId);
