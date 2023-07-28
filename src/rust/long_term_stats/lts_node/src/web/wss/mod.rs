@@ -142,6 +142,7 @@ async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
                 .await;
             }
             (WasmRequest::ThroughputChartSite { period, site_id }, Some(credentials)) => {
+                let site_id = urlencoding::decode(site_id).unwrap();
                 let _ = send_throughput_for_all_nodes_by_site(
                     &cnn,
                     wss,

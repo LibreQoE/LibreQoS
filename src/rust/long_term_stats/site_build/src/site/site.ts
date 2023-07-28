@@ -24,12 +24,12 @@ export class SitePage implements Page {
         }
         this.components = [
             new SiteInfo(siteId),
-            new ThroughputSiteChart(siteId),
-            new RttChartSite(siteId),
-            new RttHistoSite(),
             new SiteBreadcrumbs(siteId),
-            new SiteHeat(siteId),
-            new SiteStackChart(siteId),
+            new ThroughputSiteChart(siteId),
+            //new RttChartSite(siteId),
+            //new RttHistoSite(),
+            //new SiteHeat(siteId),
+            //new SiteStackChart(siteId),
         ];
     }
 
