@@ -90,7 +90,18 @@ export class RttChartSite implements Component {
                 this.myChart.setOption<echarts.EChartsOption>(
                     (option = {
                         title: { text: "TCP Round-Trip Time" },
-                        tooltip: { trigger: "axis" },
+                        tooltip: { 
+                            trigger: "axis",
+                            formatter: function (params: any) {
+                                let ret = "";
+                                for (let i=0; i<params.length; i+=3) {
+                                    if (params[i+2].value > 0) {
+                                        ret += "<strong>" + params[i+2].seriesName + "</strong>: " + params[i+2].value.toFixed(1) + " ms<br/>";
+                                    }
+                                }
+                                return ret;
+                            }
+                        },
                         legend: {
                             orient: "horizontal",
                             right: 10,
