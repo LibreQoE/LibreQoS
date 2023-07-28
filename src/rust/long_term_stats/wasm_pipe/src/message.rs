@@ -4,11 +4,11 @@ use wasm_pipe_types::{WasmRequest, WasmResponse};
 #[derive(Error, Debug)]
 pub enum MessageError {
     #[error("Unable to decompress stream")]
-    DecompressError,
+    Decompress,
     #[error("Unable to de-serialize CBOR into native type")]
-    DeserializeError,
+    Deserialize,
     #[error("Unable to serialize CBOR from native type")]
-    SerializeError,
+    Serialize,
 }
 
 pub struct WsResponseMessage(pub WasmResponse);
@@ -19,9 +19,9 @@ impl WsResponseMessage {
         let array = js_sys::Uint8Array::new(&buffer);
         let raw = array.to_vec();
         let decompressed = miniz_oxide::inflate::decompress_to_vec(&raw)
-            .map_err(|_| MessageError::DecompressError)?;
+            .map_err(|_| MessageError::Decompress)?;
         let msg: WasmResponse =
-            serde_cbor::from_slice(&decompressed).map_err(|_| MessageError::DeserializeError)?;
+            serde_cbor::from_slice(&decompressed).map_err(|_| MessageError::Deserialize)?;
         Ok(Self(msg))
     }
 }
@@ -34,7 +34,7 @@ impl WsRequestMessage {
     }
 
     pub fn serialize(&self) -> Result<Vec<u8>, MessageError> {
-        let cbor = serde_cbor::to_vec(&self.0).map_err(|_| MessageError::SerializeError)?;
+        let cbor = serde_cbor::to_vec(&self.0).map_err(|_| MessageError::Serialize)?;
         Ok(miniz_oxide::deflate::compress_to_vec(&cbor, 8))
     }
 }
