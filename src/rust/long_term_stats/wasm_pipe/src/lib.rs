@@ -24,7 +24,7 @@ extern "C" {
 pub use conduit::{initialize_wss, is_wasm_connected, send_wss_queue};
 
 fn send_message(msg: WasmRequest) {
-    log(&format!("Enqueueing message: {msg:?}"));
+    //log(&format!("Enqueueing message: {msg:?}"));
     conduit::send_message(msg);
 }
 

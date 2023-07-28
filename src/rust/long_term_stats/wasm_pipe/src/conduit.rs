@@ -122,7 +122,7 @@ impl Conduit {
 
             // Wire up on_open
             let onopen_callback = Closure::<dyn FnMut(_)>::new(move |_e: ErrorEvent| {
-                log("Open Received");
+                //log("Open Received");
                 on_open();
             });
             socket.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
@@ -130,7 +130,7 @@ impl Conduit {
 
             // Wire up on message
             let onmessage_callback = Closure::<dyn FnMut(_)>::new(move |e: MessageEvent| {
-                log("Message Received");
+                //log("Message Received");
                 if let Ok(abuf) = e.data().dyn_into::<js_sys::ArrayBuffer>() {
                     let response = WsResponseMessage::from_array_buffer(abuf);
                     match response {
@@ -180,13 +180,13 @@ impl Conduit {
 
         // Kill old messages, to avoid a flood on reconnect
         self.message_queue.retain(|msg| msg.submitted.elapsed().as_secs_f32() < 10.0);
-        log(&format!("{} Enqueued Messages", self.message_queue.len()));
+        //log(&format!("{} Enqueued Messages", self.message_queue.len()));
 
         // Send queued messages
         if let Some(ws) = &mut self.socket {
             while let Some(msg) = self.message_queue.pop_front() {
                 let msg = msg.serialize();
-                log("Message Serialized");
+                //log("Message Serialized");
                 match msg {
                     Ok(msg) => {
                         if let Err(e) = ws.send_with_u8_array(&msg) {
