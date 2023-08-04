@@ -90,34 +90,34 @@ def tearDown(interfaceA, interfaceB):
 		clear_ip_mappings() # Use the bus
 		clearPriorSettings(interfaceA, interfaceB)
 
-def findQueuesAvailable():
+def findQueuesAvailable(interfaceName):
 	# Find queues and CPU cores available. Use min between those two as queuesAvailable
 	if enableActualShellCommands:
 		if queuesAvailableOverride == 0:
 			queuesAvailable = 0
-			path = '/sys/class/net/' + interfaceA + '/queues/'
+			path = '/sys/class/net/' + interfaceName + '/queues/'
 			directory_contents = os.listdir(path)
 			for item in directory_contents:
 				if "tx-" in str(item):
 					queuesAvailable += 1
-			print("NIC queues:\t\t\t" + str(queuesAvailable))
+			print(f"Interface {interfaceName} NIC queues:\t\t\t" + str(queuesAvailable))
 		else:
 			queuesAvailable = queuesAvailableOverride
-			print("NIC queues (Override):\t\t\t" + str(queuesAvailable))
+			print(f"Interface {interfaceName} NIC queues (Override):\t\t\t" + str(queuesAvailable))
 		cpuCount = multiprocessing.cpu_count()
 		print("CPU cores:\t\t\t" + str(cpuCount))
 		if queuesAvailable < 2:
-			raise SystemError('Only 1 NIC rx/tx queue available. You will need to use a NIC with 2 or more rx/tx queues available.')
+			raise SystemError(f'Only 1 NIC rx/tx queue available for interface {interfaceName}. You will need to use a NIC with 2 or more rx/tx queues available.')
 		if queuesAvailable < 2:
 			raise SystemError('Only 1 CPU core available. You will need to use a CPU with 2 or more CPU cores.')
 		queuesAvailable = min(queuesAvailable,cpuCount)
-		print("queuesAvailable set to:\t" + str(queuesAvailable))
+		print(f"queuesAvailable for interface {interfaceName} set to:\t" + str(queuesAvailable))
 	else:
 		print("As enableActualShellCommands is False, CPU core / queue count has been set to 16")
-		logging.info("NIC queues:\t\t\t" + str(16))
+		logging.info(f"Interface {interfaceName} NIC queues:\t\t\t" + str(16))
 		cpuCount = multiprocessing.cpu_count()
 		logging.info("CPU cores:\t\t\t" + str(16))
-		logging.info("queuesAvailable set to:\t" + str(16))
+		logging.info(f"queuesAvailable for interface {interfaceName} set to:\t" + str(16))
 		queuesAvailable = 16
 	return queuesAvailable
 
@@ -454,7 +454,10 @@ def refreshShapers():
 		
 		
 		# Pull rx/tx queues / CPU cores available
-		queuesAvailable = findQueuesAvailable()
+		# Handling the case when the number of queues for interfaces are different
+		InterfaceAQueuesAvailable = findQueuesAvailable(interfaceA)
+		InterfaceBQueuesAvailable = findQueuesAvailable(interfaceB)
+		queuesAvailable = min(InterfaceAQueuesAvailable, InterfaceBQueuesAvailable)
 		stickOffset = 0
 		if OnAStick:
 			print("On-a-stick override dividing queues")
