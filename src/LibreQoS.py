@@ -137,12 +137,28 @@ def validateNetworkAndDevices():
 		devicesValidatedOrNot = False
 	with open('network.json') as file:
 		try:
-			temporaryVariable = json.load(file) # put JSON-data to a variable
+			data = json.load(file) # put JSON-data to a variable
+			if data != {}:
+				#Traverse
+				observedNodes = {} # Will not be used later
+				def traverseToVerifyValidity(data):
+					for elem in data:
+						if isinstance(elem, str):
+							if (isinstance(data[elem], dict)) and (elem != 'children'):
+								if elem not in observedNodes:
+									observedNodes[elem] = {'downloadBandwidthMbps': data[elem]['uploadBandwidthMbps'], 'downloadBandwidthMbps': data[elem]['uploadBandwidthMbps']}
+									if 'children' in data[elem]:
+										traverseToVerifyValidity(data[elem]['children'])
+								else:
+									warnings.warn("Non-unique Node name in network.json: " + elem, stacklevel=2)
+									networkValidatedOrNot = False
+				traverseToVerifyValidity(data)
+				if len(observedNodes) < 1:
+					warnings.warn("network.json had 0 valid nodes. Only {} is accepted for that scenario.", stacklevel=2)
+					networkValidatedOrNot = False
 		except json.decoder.JSONDecodeError:
 			warnings.warn("network.json is an invalid JSON file", stacklevel=2) # in case json is invalid
-			networkValidatedOrNot
-	if networkValidatedOrNot == True:
-		print("network.json passed validation") 
+			networkValidatedOrNot = False
 	rowNum = 2
 	with open('ShapedDevices.csv') as csv_file:
 		csv_reader = csv.reader(csv_file, delimiter=',')
@@ -255,8 +271,11 @@ def validateNetworkAndDevices():
 		print("ShapedDevices.csv passed validation")
 	else:
 		print("ShapedDevices.csv failed validation")
-	
-	if (devicesValidatedOrNot == True) and (devicesValidatedOrNot == True):
+	if networkValidatedOrNot == True:
+		print("network.json passed validation")
+	else:
+		print("network.json failed validation")
+	if (devicesValidatedOrNot == True) and (networkValidatedOrNot == True):
 		return True
 	else:
 		return False
