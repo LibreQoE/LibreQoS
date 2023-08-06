@@ -149,7 +149,10 @@ class NetworkGraph:
 		if not node.displayName in self.excludeSites:
 			if node.displayName in self.exceptionCPEs.keys():
 				node.parentId = self.exceptionCPEs[node.displayName]
-			self.nodes.append(node)
+			if self.validateParentChildren(node):
+				self.nodes.append(node)
+			else:
+				print(f"Parent children realtion for node {node} is not correct.")
 
 	def replaceRootNode(self, node: NetworkNode) -> None:
 		# Replaces the automatically generated root node
@@ -209,6 +212,34 @@ class NetworkGraph:
 			if node.parentIndex == parentIndex:
 				result.append(i)
 		return result
+	
+
+	def validateParentChildren(self, node:NetworkNode) -> bool:
+		parentIndex = self.findNodeIndexById(node.parentId)
+		# parent is set to null 
+		if parentIndex == -1:
+			return True 
+		
+		parentType = self.nodes[parentIndex].type
+
+		# Each device should have a client as parent 
+		if node.type== NodeType.device and parentType !=NodeType.client:
+			return False
+
+		# Each client or clientWithChildren should have ap, site or clientWithChildren as parent
+		if node.type == NodeType.client or node.type == NodeType.clientWithChildren:
+			if parentType == NodeType.client or parentType == NodeType.device:
+				return False
+		
+		if node.type == NodeType.ap or node.type == NodeType.site:
+			if parentType != NodeType.site or parentType !=NodeType.root:
+				return False 
+			
+		# Checking the root node type having no parent
+		if node.type == NodeType.root and parentType != "":
+			return False
+		
+		return True 
 
 	def __promoteClientsWithChildren(self) -> None:
 		# Searches for client sites that have children,
