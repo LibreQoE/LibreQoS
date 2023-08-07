@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use wasm_bindgen::prelude::*;
 use wasm_pipe_types::{WasmRequest, WasmResponse};
 use web_sys::{BinaryType, ErrorEvent, MessageEvent, WebSocket};
@@ -22,6 +24,8 @@ extern "C" {
 
 static mut CONNECTED: bool = false;
 static mut WS: Option<WebSocket> = None;
+static mut QUEUE: VecDeque<Vec<u8>> = VecDeque::new();
+static mut URL: String = String::new();
 
 #[wasm_bindgen]
 pub fn connect_wasm_pipe(url: String) {
@@ -29,6 +33,9 @@ pub fn connect_wasm_pipe(url: String) {
         if CONNECTED {
             log("Already connected");
             return;
+        }
+        if !url.is_empty() {
+            URL = url.clone();
         }
         WS = Some(WebSocket::new(&url).unwrap());
         if let Some(ws) = &mut WS {
@@ -91,6 +98,30 @@ pub fn is_wasm_connected() -> bool {
     unsafe { CONNECTED && WS.is_some() }
 }
 
+#[wasm_bindgen]
+pub fn send_wss_queue() {
+    //log("Call to send queue");
+    unsafe {
+        // Bail out if there's nothing to do
+        if QUEUE.is_empty() {
+            //log("Queue is empty");
+            return;
+        }
+
+        // Send queued messages
+        if let Some(ws) = &mut WS {
+            while let Some(msg) = QUEUE.pop_front() {
+                log(&format!("Sending message: {msg:?}"));
+                ws.send_with_u8_array(&msg).unwrap();
+            }
+        } else {
+            log("No WebSocket connection");
+            CONNECTED = false;
+            connect_wasm_pipe(String::new());
+        }
+    }
+}
+
 fn build_message(msg: WasmRequest) -> Vec<u8> {
     let cbor = serde_cbor::to_vec(&msg).unwrap();
     miniz_oxide::deflate::compress_to_vec(&cbor, 8)
@@ -100,9 +131,7 @@ fn send_message(msg: WasmRequest) {
     log(&format!("Sending message: {msg:?}"));
     let msg = build_message(msg);
     unsafe {
-        if let Some(ws) = &mut WS {
-            ws.send_with_u8_array(&msg).unwrap();
-        }
+        QUEUE.push_back(msg);
     }
 }
 

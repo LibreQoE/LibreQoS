@@ -15,9 +15,9 @@ Learn more about [Equinix Metal here](https://deploy.equinix.com/metal/).
 
 Please support the continued development of LibreQoS by sponsoring us via [GitHub Sponsors](https://github.com/sponsors/LibreQoE) or [Patreon](https://patreon.com/libreqos).
 
-## Documentation
+## Documentation / Get Started
 
-[Docs](https://libreqos.readthedocs.io)
+[ReadTheDocs](https://libreqos.readthedocs.io/en/latest/)
 
 ## Matrix Chat
 
@@ -113,8 +113,5 @@ So for example, an ISP delivering 1Gbps service plans with 10Gbps aggregate thro
   * Known supported cards:
     * [NVIDIA Mellanox MCX512A-ACAT](https://www.fs.com/products/119649.html)
     * NVIDIA Mellanox MCX416A-CCAT
-    * [Intel X710](https://www.fs.com/products/75600.html)
+    * [Intel X710](https://www.fs.com/products/75600.html) * Note - possible i40e driver issue with XDP Redirect for high throughput 10G+
     * Intel X520
-    
-## Get Started
-- [ReadTheDocs](https://libreqos.readthedocs.io/en/develop/docs/SystemRequirements/Compute.html)

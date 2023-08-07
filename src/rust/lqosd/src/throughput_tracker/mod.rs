@@ -37,23 +37,34 @@ pub async fn spawn_throughput_monitor(long_term_stats_tx: Sender<StatsUpdateMess
 async fn throughput_task(interval_ms: u64, long_term_stats_tx: Sender<StatsUpdateMessage>) {
     loop {
         let start = Instant::now();
-        {
-            let net_json = NETWORK_JSON.read().unwrap();
-            net_json.zero_throughput_and_rtt();
-        } // Scope to end the lock
-        THROUGHPUT_TRACKER.copy_previous_and_reset_rtt();
-        THROUGHPUT_TRACKER.apply_new_throughput_counters();
-        THROUGHPUT_TRACKER.apply_rtt_data();
-        THROUGHPUT_TRACKER.update_totals();
-        THROUGHPUT_TRACKER.next_cycle();
-        let duration_ms = start.elapsed().as_micros();
-        TIME_TO_POLL_HOSTS.store(duration_ms as u64, std::sync::atomic::Ordering::Relaxed);
-        submit_throughput_stats(long_term_stats_tx.clone()).await;
+
+        // Perform the stats collection in a blocking thread, ensuring that
+        // the tokio runtime is not blocked.
+        if let Err(e) = tokio::task::spawn_blocking(move || {
+
+          {
+              let net_json = NETWORK_JSON.read().unwrap();
+              net_json.zero_throughput_and_rtt();
+          } // Scope to end the lock
+          THROUGHPUT_TRACKER.copy_previous_and_reset_rtt();
+          THROUGHPUT_TRACKER.apply_new_throughput_counters();
+          THROUGHPUT_TRACKER.apply_rtt_data();
+          THROUGHPUT_TRACKER.update_totals();
+          THROUGHPUT_TRACKER.next_cycle();
+          let duration_ms = start.elapsed().as_micros();
+          TIME_TO_POLL_HOSTS.store(duration_ms as u64, std::sync::atomic::Ordering::Relaxed);
+
+        }).await {
+            log::error!("Error polling network. {e:?}");
+        }
+        tokio::spawn(submit_throughput_stats(long_term_stats_tx.clone()));
 
         let elapsed = start.elapsed();
         if elapsed.as_secs_f32() < 1.0 {
           let sleep_duration = Duration::from_millis(interval_ms) - start.elapsed();
           tokio::time::sleep(sleep_duration).await;
+        } else {
+          log::error!("Throughput monitor thread is running behind. It took {elapsed} to poll the network.", elapsed=elapsed.as_secs_f32());
         }
     }
 }

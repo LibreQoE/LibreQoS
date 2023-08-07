@@ -1,4 +1,4 @@
-import { connect_wasm_pipe, is_wasm_connected } from "../wasm/wasm_pipe";
+import { connect_wasm_pipe, is_wasm_connected, send_wss_queue } from "../wasm/wasm_pipe";
 import { Auth } from "./auth";
 import { SiteRouter } from "./router";
 
@@ -21,6 +21,10 @@ export class Bus {
             indicator.style.color = "red";
             retryConnect();
         }
+    }
+
+    sendQueue() {
+        send_wss_queue();
     }
 
     connect() {
@@ -126,7 +130,7 @@ export class Bus {
 
 function retryConnect() {
     if (!window.bus.connected) {
-        window.bus.connect();
+        //window.bus.connect();
     }
 }
 
