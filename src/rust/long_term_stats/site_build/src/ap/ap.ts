@@ -26,7 +26,7 @@ export class AccessPointPage implements Page {
             new SiteInfo(siteId),
             new SiteBreadcrumbs(siteId),
             new ThroughputSiteChart(siteId),
-            new RttChartSite(siteId),
+            new RttChartSite(siteId, 1.0),
             new SiteHeat(siteId),
             new SiteStackChart(siteId),
         ];

@@ -8,12 +8,14 @@ export class RttChartSite implements Component {
     myChart: echarts.ECharts;
     chartMade: boolean = false;
     siteId: string;
+    multiplier: number;
 
-    constructor(siteId: string) {
+    constructor(siteId: string, multiplier: number = 10.0) {
         this.siteId = siteId;
         this.div = document.getElementById("rttChart") as HTMLElement;
         this.myChart = echarts.init(this.div);
         this.myChart.showLoading();
+        this.multiplier = multiplier;
     }
 
     wireup(): void {
@@ -43,7 +45,7 @@ export class RttChartSite implements Component {
                 let l: number[] = [];
                 for (let j=0; j<node.rtt.length; j++) {
                     if (first) x.push(node.rtt[j].date);                 
-                    d.push(node.rtt[j].value * 10.0);
+                    d.push(node.rtt[j].value * this.multiplier);
                     u.push(node.rtt[j].u);
                     l.push(node.rtt[j].l);
                 }
