@@ -3,16 +3,29 @@ use crate::web::wss::influx_query_builder::InfluxQueryBuilder;
 use crate::web::wss::send_response;
 use axum::extract::ws::WebSocket;
 use chrono::{DateTime, FixedOffset, Utc};
-use influxdb2::Client;
-use influxdb2::{models::Query, FromDataPoint};
-use pgdb::organization_cache::get_org_details;
+use influxdb2::FromDataPoint;
 use pgdb::sqlx::{query, Pool, Postgres, Row};
-use pgdb::OrganizationDetails;
 use serde::Serialize;
 use tracing::instrument;
 use std::collections::HashMap;
 use wasm_pipe_types::WasmResponse;
 use itertools::Itertools;
+
+fn headings_sorter<T: HeatMapData>(rows: Vec<T>) -> HashMap<String, Vec<(DateTime<FixedOffset>, f64)>> {
+    let mut headings = rows.iter().map(|r| r.time()).collect::<Vec<_>>();
+    headings.sort();
+    let headings: Vec<DateTime<FixedOffset>> = headings.iter().dedup().cloned().collect();
+    //println!("{headings:#?}");
+    let defaults = headings.iter().map(|h| (*h, 0.0)).collect::<Vec<_>>();
+    let mut sorter: HashMap<String, Vec<(DateTime<FixedOffset>, f64)>> = HashMap::new();
+    for row in rows.into_iter() {
+        let entry = sorter.entry(row.name()).or_insert(defaults.clone());
+        if let Some(idx) = headings.iter().position(|h| h == &row.time()) {
+            entry[idx] = (row.time(), row.avg());
+        }
+    }
+    sorter
+}
 
 #[instrument(skip(cnn,socket,key,period))]
 pub async fn root_heat_map(
@@ -33,102 +46,53 @@ pub async fn root_heat_map(
         .execute(cnn, key)
         .await?;
 
-    let mut headings = rows.iter().map(|r| r.time).collect::<Vec<_>>();
-    headings.sort();
-    let headings: Vec<DateTime<FixedOffset>> = headings.iter().dedup().cloned().collect();
-    //println!("{headings:#?}");
-    let defaults = headings.iter().map(|h| (*h, 0.0)).collect::<Vec<_>>();
-    let mut sorter: HashMap<String, Vec<(DateTime<FixedOffset>, f64)>> = HashMap::new();
-    for row in rows.into_iter() {
-        let entry = sorter.entry(row.node_name).or_insert(defaults.clone());
-        if let Some(idx) = headings.iter().position(|h| h == &row.time) {
-            entry[idx] = (row.time, row.rtt_avg);
-        }
-    }
-    //println!("{:?}", sorter);
+    let sorter = headings_sorter(rows);
     send_response(socket, WasmResponse::RootHeat { data: sorter }).await;
 
     Ok(())
 }
 
+#[instrument(skip(cnn, key, site_name, period))]
 async fn site_circuits_heat_map(
     cnn: &Pool<Postgres>,
     key: &str,
     site_name: &str,
     period: InfluxTimePeriod,
-    sorter: &mut HashMap<String, Vec<(DateTime<FixedOffset>, f64)>>,
-    client: Client,
-    org: &OrganizationDetails,
-) -> anyhow::Result<()> {
-    // Get sites where parent=site_id (for this setup)
+) -> anyhow::Result<Vec<HeatCircuitRow>> {
+    // List all hosts with this site as exact parent
     let hosts: Vec<(String, String)> =
-        query("SELECT DISTINCT circuit_id, circuit_name FROM shaped_devices WHERE key=$1 AND parent_node=$2")
-            .bind(key)
-            .bind(site_name)
-            .fetch_all(cnn)
-            .await?
-            .iter()
-            .map(|row| (row.try_get("circuit_id").unwrap(), row.try_get("circuit_name").unwrap()))
-            .collect();
+    query("SELECT DISTINCT circuit_id, circuit_name FROM shaped_devices WHERE key=$1 AND parent_node=$2")
+        .bind(key)
+        .bind(site_name)
+        .fetch_all(cnn)
+        .await?
+        .iter()
+        .map(|row| (row.try_get("circuit_id").unwrap(), row.try_get("circuit_name").unwrap()))
+        .collect();
 
-    let mut circuit_map = HashMap::new();
-    for (id, name) in hosts.iter() {
-        circuit_map.insert(id, name);
-    }
-    let hosts = hosts.iter().map(|(id, _)| id).collect::<Vec<_>>();
+    let host_filter = hosts.iter().map(|(id, _name)| format!("r[\"circuit_id\"] == \"{id}\"", id=id)).join(" or ");
+    println!("{host_filter}");
 
-    let mut host_filter = "filter(fn: (r) => ".to_string();
-    for host in hosts.iter() {
-        host_filter += &format!("r[\"circuit_id\"] == \"{host}\" or ");
-    }
-    host_filter = host_filter[0..host_filter.len() - 4].to_string();
-    host_filter += ")";
+    let rows: Vec<HeatCircuitRow> = InfluxQueryBuilder::new(period.clone())
+        .with_measurement("rtt")
+        .with_fields(&["avg"])
+        .sample_after_org()
+        .with_filter(host_filter)
+        .with_filter("r[\"_value\"] > 0.0")
+        .with_groups(&["_field", "circuit_id"])
+        .execute(cnn, key)
+        .await?
+        .into_iter()
+        .map(|row: HeatCircuitRow| HeatCircuitRow {
+            circuit_id: hosts.iter().find(|h| h.0 == row.circuit_id).unwrap().1.clone(),
+            ..row
+        })
+        .collect();
 
-    // Query influx for RTT averages
-    let qs = format!(
-        "from(bucket: \"{}\")
-    |> {}
-    |> filter(fn: (r) => r[\"_measurement\"] == \"rtt\")
-    |> filter(fn: (r) => r[\"organization_id\"] == \"{}\")
-    |> filter(fn: (r) => r[\"_field\"] == \"avg\")
-    |> {}
-    |> {}
-    |> yield(name: \"last\")",
-        org.influx_bucket,
-        period.range(),
-        org.key,
-        host_filter,
-        period.aggregate_window()
-    );
-    //println!("{qs}\n\n");
-    if qs.contains("filter(fn: (r))") {
-        // No hosts to filter
-        return Ok(());
-    }
-
-    let query = Query::new(qs);
-    let rows = client.query::<HeatCircuitRow>(Some(query)).await;
-    match rows {
-        Err(e) => {
-            tracing::error!("Error querying InfluxDB (site_circuits_heat_map): {}", e);
-            return Err(anyhow::Error::msg("Unable to query influx"));
-        }
-        Ok(rows) => {
-            for row in rows.iter() {
-                if let Some(name) = circuit_map.get(&row.circuit_id) {
-                    if let Some(hat) = sorter.get_mut(*name) {
-                        hat.push((row.time, row.avg));
-                    } else {
-                        sorter.insert(name.to_string(), vec![(row.time, row.avg)]);
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(())
+    Ok(rows)
 }
 
+#[instrument(skip(cnn, socket, key, period))]
 pub async fn site_heat_map(
     cnn: &Pool<Postgres>,
     socket: &mut WebSocket,
@@ -136,79 +100,43 @@ pub async fn site_heat_map(
     site_name: &str,
     period: InfluxTimePeriod,
 ) -> anyhow::Result<()> {
-    if let Some(org) = get_org_details(cnn, key).await {
-        let influx_url = format!("http://{}:8086", org.influx_host);
-        let client = Client::new(influx_url, &org.influx_org, &org.influx_token);
 
-        // Get the site index
-        let site_id = pgdb::get_site_id_from_name(cnn, key, site_name).await?;
+    let (site_id, circuits) = tokio::join!(
+        pgdb::get_site_id_from_name(cnn, key, site_name),
+        site_circuits_heat_map(cnn, key, site_name, period.clone()),
+    );
+    let (site_id, circuits) = (site_id?, circuits?);
 
-        // Get sites where parent=site_id (for this setup)
-        let hosts: Vec<String> =
-            query("SELECT DISTINCT site_name FROM site_tree WHERE key=$1 AND parent=$2")
-                .bind(key)
-                .bind(site_id)
-                .fetch_all(cnn)
-                .await?
-                .iter()
-                .map(|row| row.try_get("site_name").unwrap())
-                .collect();
+    let mut rows: Vec<HeatRow> = InfluxQueryBuilder::new(period.clone())
+        .with_import("strings")
+        .with_measurement("tree")
+        .with_fields(&["rtt_avg"])
+        .sample_after_org()
+        .with_filter("exists(r[\"node_parents\"])")
+        .with_filter(format!("strings.containsStr(substr: \"S{site_id}S\" + r[\"node_index\"] + \"S\", v: r[\"node_parents\"])"))
+        .with_filter("r[\"_value\"] > 0.0")
+        .with_groups(&["_field", "node_name"])
+        .execute(cnn, key)
+        .await?;
 
-        let mut host_filter = "filter(fn: (r) => ".to_string();
-        for host in hosts.iter() {
-            host_filter += &format!("r[\"node_name\"] == \"{host}\" or ");
-        }
-        host_filter = host_filter[0..host_filter.len() - 4].to_string();
-        host_filter += ")";
+    circuits.iter().for_each(|c| {
+        rows.push(HeatRow {
+            node_name: c.circuit_id.clone(),
+            rtt_avg: c.avg,
+            time: c.time,
+        })
+    });
 
-        if host_filter.ends_with("(r))") {
-            host_filter =
-                "filter(fn: (r) => r[\"node_name\"] == \"bad_sheep_no_data\")".to_string();
-        }
-
-        // Query influx for RTT averages
-        let qs = format!(
-            "from(bucket: \"{}\")
-        |> {}
-        |> filter(fn: (r) => r[\"_measurement\"] == \"tree\")
-        |> filter(fn: (r) => r[\"organization_id\"] == \"{}\")
-        |> filter(fn: (r) => r[\"_field\"] == \"rtt_avg\")
-        |> {}
-        |> {}
-        |> yield(name: \"last\")",
-            org.influx_bucket,
-            period.range(),
-            org.key,
-            host_filter,
-            period.aggregate_window()
-        );
-        //println!("{qs}\n\n");
-
-        let query = Query::new(qs);
-        let rows = client.query::<HeatRow>(Some(query)).await;
-        match rows {
-            Err(e) => {
-                tracing::error!("Error querying InfluxDB (site-heat-map): {}", e);
-                return Err(anyhow::Error::msg("Unable to query influx"));
-            }
-            Ok(rows) => {
-                let mut sorter: HashMap<String, Vec<(DateTime<FixedOffset>, f64)>> = HashMap::new();
-                for row in rows.iter() {
-                    if let Some(hat) = sorter.get_mut(&row.node_name) {
-                        hat.push((row.time, row.rtt_avg));
-                    } else {
-                        sorter.insert(row.node_name.clone(), vec![(row.time, row.rtt_avg)]);
-                    }
-                }
-
-                site_circuits_heat_map(cnn, key, site_name, period, &mut sorter, client, &org)
-                    .await?;
-                send_response(socket, WasmResponse::SiteHeat { data: sorter }).await;
-            }
-        }
-    }
+    let sorter = headings_sorter(rows);
+    send_response(socket, WasmResponse::SiteHeat { data: sorter }).await;
 
     Ok(())
+}
+
+trait HeatMapData {
+    fn avg(&self) -> f64;
+    fn time(&self) -> DateTime<FixedOffset>;
+    fn name(&self) -> String;
 }
 
 #[derive(Serialize)]
@@ -234,6 +162,20 @@ impl Default for HeatRow {
     }
 }
 
+impl HeatMapData for HeatRow {
+    fn avg(&self) -> f64 {
+        self.rtt_avg
+    }
+
+    fn time(&self) -> DateTime<FixedOffset> {
+        self.time
+    }
+
+    fn name(&self) -> String {
+        self.node_name.clone()
+    }
+}
+
 #[derive(Debug, FromDataPoint)]
 pub struct HeatCircuitRow {
     pub circuit_id: String,
@@ -248,5 +190,19 @@ impl Default for HeatCircuitRow {
             avg: 0.0,
             time: DateTime::<Utc>::MIN_UTC.into(),
         }
+    }
+}
+
+impl HeatMapData for HeatCircuitRow {
+    fn avg(&self) -> f64 {
+        self.avg
+    }
+
+    fn time(&self) -> DateTime<FixedOffset> {
+        self.time
+    }
+
+    fn name(&self) -> String {
+        self.circuit_id.clone()
     }
 }

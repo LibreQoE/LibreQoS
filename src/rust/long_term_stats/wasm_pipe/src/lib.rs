@@ -124,7 +124,6 @@ pub fn request_site_heat(period: String, site_id: String) {
     send_message(WasmRequest::SiteHeat { period, site_id });
 }
 
-
 #[wasm_bindgen]
 pub fn request_tree(parent: String) {
     send_message(WasmRequest::Tree { parent });

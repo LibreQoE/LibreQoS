@@ -17,7 +17,6 @@ pub async fn send_site_info(
     key: &str,
     site_id: &str,
 ) {
-    tracing::error!("REQUESTING SITE INFO");
     let (host, oversub) = tokio::join!(
         pgdb::get_site_info(cnn, key, site_id),
         pgdb::get_oversubscription(cnn, key, site_id)

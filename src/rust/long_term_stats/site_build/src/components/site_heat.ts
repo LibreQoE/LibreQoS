@@ -5,7 +5,6 @@ import { request_site_heat } from "../../wasm/wasm_pipe";
 export class SiteHeat implements Component {
     div: HTMLElement;
     myChart: echarts.ECharts | null = null;
-    counter: number = 0;
     siteId: string;
 
     constructor(siteId: string) {
@@ -14,16 +13,13 @@ export class SiteHeat implements Component {
     }
 
     wireup(): void {
-        //console.log("SiteHeat wireup");
+        console.log("SiteHeat wireup");
         request_site_heat(window.graphPeriod, this.siteId);
     }
 
     ontick(): void {
-        //console.log("SiteHeat ontick");
-        this.counter++;
-        if (this.counter == 0) {
-            request_site_heat(window.graphPeriod, this.siteId);
-        }
+        console.log("SiteHeat ontick");
+        request_site_heat(window.graphPeriod, this.siteId);
     }
 
     onmessage(event: any): void {
