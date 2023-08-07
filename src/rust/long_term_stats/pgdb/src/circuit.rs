@@ -1,4 +1,5 @@
-use sqlx::{Pool, Postgres, FromRow};
+use itertools::Itertools;
+use sqlx::{Pool, Postgres, FromRow, Row};
 
 use crate::license::StatsHostError;
 
@@ -80,4 +81,48 @@ pub async fn get_device_interfaces_ext(
         .fetch_all(cnn)
         .await
         .map_err(|e| StatsHostError::DatabaseError(e.to_string()))
+}
+
+pub async fn get_circuit_list_for_site(
+    cnn: &Pool<Postgres>,
+    key: &str,
+    site_name: &str,
+) -> Result<Vec<(String, String)>, StatsHostError> {
+    let hosts = sqlx::query("SELECT DISTINCT circuit_id, circuit_name FROM shaped_devices WHERE key=$1 AND parent_node=$2")
+        .bind(key)
+        .bind(site_name)
+        .fetch_all(cnn)
+        .await
+        .map_err(|e| StatsHostError::DatabaseError(e.to_string()))?
+        .iter()
+        .map(|row| (row.try_get("circuit_id").unwrap(), row.try_get("circuit_name").unwrap()))
+        .collect();
+
+    Ok(hosts)
+}
+
+pub async fn get_host_list_for_site(
+    cnn: &Pool<Postgres>,
+    key: &str,
+    site_name: &str,
+) -> Result<Vec<(String, String)>, StatsHostError> {
+    let hosts = sqlx::query("SELECT DISTINCT device_id, circuit_name FROM shaped_devices WHERE key=$1 AND parent_node=$2")
+        .bind(key)
+        .bind(site_name)
+        .fetch_all(cnn)
+        .await
+        .map_err(|e| StatsHostError::DatabaseError(e.to_string()))?
+        .iter()
+        .map(|row| (row.try_get("device_id").unwrap(), row.try_get("circuit_name").unwrap()))
+        .collect();
+
+    Ok(hosts)
+}
+
+pub fn circuit_list_to_influx_filter(hosts: &[(String, String)]) -> String {
+    hosts.iter().map(|(id, _name)| format!("r[\"circuit_id\"] == \"{id}\"", id=id)).join(" or ")
+}
+
+pub fn host_list_to_influx_filter(hosts: &[(String, String)]) -> String {
+    hosts.iter().map(|(id, _name)| format!("r[\"host_id\"] == \"{id}\"", id=id)).join(" or ")
 }

@@ -28,7 +28,7 @@ export class AccessPointPage implements Page {
             new ThroughputSiteChart(siteId),
             new RttChartSite(siteId),
             new SiteHeat(siteId),
-            //new SiteStackChart(siteId),
+            new SiteStackChart(siteId),
         ];
     }
 

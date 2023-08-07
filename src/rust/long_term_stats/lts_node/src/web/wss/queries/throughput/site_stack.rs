@@ -29,6 +29,25 @@ impl Default for SiteStackRow {
     }
 }
 
+#[derive(Debug, influxdb2::FromDataPoint)]
+pub struct CircuitStackRow {
+    pub circuit_id: String,
+    pub max: i64,
+    pub time: chrono::DateTime<chrono::FixedOffset>,
+    pub direction: String,
+}
+
+impl Default for CircuitStackRow {
+    fn default() -> Self {
+        Self {
+            circuit_id: "".to_string(),
+            max: 0,
+            time: chrono::DateTime::<chrono::Utc>::MIN_UTC.into(),
+            direction: "".to_string(),
+        }
+    }
+}
+
 #[instrument(skip(cnn, socket, key, period))]
 pub async fn send_site_stack_map(
     cnn: &Pool<Postgres>,
@@ -40,10 +59,21 @@ pub async fn send_site_stack_map(
     let site_index = pgdb::get_site_id_from_name(cnn, key, &site_id).await?;
 
     if let Some(org) = get_org_details(cnn, key).await {
-        let rows = query_site_stack_influx(&org, &period, site_index).await;
+        // Determine child hosts
+        let hosts = pgdb::get_circuit_list_for_site(cnn, key, &site_id).await?;
+        let host_filter = pgdb::circuit_list_to_influx_filter(&hosts);
+
+        let (circuits, rows) = tokio::join!(
+            query_circuits_influx(&org, &period, &hosts, &host_filter),
+            query_site_stack_influx(&org, &period, site_index)
+        );
+
         match rows {
             Err(e) => error!("Influxdb tree query error: {e}"),
-            Ok(rows) => {
+            Ok(mut rows) => {
+                if let Ok(circuits) = circuits {
+                    rows.extend(circuits);
+                }
                 let mut result = site_rows_to_hosts(rows);
                 reduce_to_x_entries(&mut result);
 
@@ -58,6 +88,39 @@ pub async fn send_site_stack_map(
     }
 
     Ok(())
+}
+
+#[instrument(skip(org, period, hosts, host_filter))]
+async fn query_circuits_influx(
+    org: &OrganizationDetails,
+    period: &InfluxTimePeriod,
+    hosts: &[(String, String)],
+    host_filter: &str,
+) -> anyhow::Result<Vec<SiteStackRow>> {
+    let influx_url = format!("http://{}:8086", org.influx_host);
+    let client = influxdb2::Client::new(influx_url, &org.influx_org, &org.influx_token);
+    let qs = format!("from(bucket: \"{}\")
+    |> {}
+    |> filter(fn: (r) => r[\"_field\"] == \"max\" and r[\"_measurement\"] == \"host_bits\" and r[\"organization_id\"] == \"{}\")
+    |> {}
+    |> filter(fn: (r) => {} )
+    |> group(columns: [\"circuit_id\", \"_field\", \"direction\"])
+    |> yield(name: \"last\")",
+    org.influx_bucket, period.range(), org.key, period.sample(), host_filter);
+
+    let query = influxdb2::models::Query::new(qs);
+    //let rows = client.query_raw(Some(query)).await;
+    let rows = client.query::<CircuitStackRow>(Some(query)).await?;
+    let rows = rows.into_iter().map(|row| {
+        SiteStackRow {
+            node_name: hosts.iter().find(|h| h.0 == row.circuit_id).unwrap().1.clone(),
+            node_parents: "".to_string(),
+            bits_max: row.max / 8,
+            time: row.time,
+            direction: row.direction,
+        }
+    }).collect();
+    Ok(rows)
 }
 
 #[instrument(skip(org, period, site_index))]
@@ -80,7 +143,7 @@ async fn query_site_stack_influx(
     |> yield(name: \"last\")",
     org.influx_bucket, period.range(), org.key, period.sample(), site_index);
 
-    println!("{qs}");
+    //println!("{qs}");
 
     let query = influxdb2::models::Query::new(qs);
     //let rows = client.query_raw(Some(query)).await;

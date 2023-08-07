@@ -51,7 +51,7 @@ export class SiteHeat implements Component {
 
                 // Create all the series entries for this category
                 for (let i=0; i<event.SiteHeat.data[key].length; i++) {
-                    data.push([i, count, event.SiteHeat.data[key][i][1].toFixed(1)]);
+                    data.push([i, count, event.SiteHeat.data[key][i][1].toFixed(0)]);
                 }
 
                 count++;

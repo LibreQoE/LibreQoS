@@ -222,6 +222,7 @@ async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
             }
             // Site Stack
             (WasmRequest::SiteStack { period, site_id }, Some(credentials)) => {
+                let site_id = urlencoding::decode(site_id).unwrap();
                 let _ = send_site_stack_map(
                     &cnn,
                     wss,
@@ -279,7 +280,7 @@ async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
                 send_site_parents(&cnn, wss, &credentials.license_key, &site_id).await;
             }
             (WasmRequest::CircuitParents { circuit_id }, Some(credentials)) => {
-                let circuit_id = urlencoding::decode(&circuit_id).unwrap();
+                let circuit_id = urlencoding::decode(circuit_id).unwrap();
                 send_circuit_parents(&cnn, wss, &credentials.license_key, &circuit_id).await;
             }
             (WasmRequest::RootParents, Some(credentials)) => {

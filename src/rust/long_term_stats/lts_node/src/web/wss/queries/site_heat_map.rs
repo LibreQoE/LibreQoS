@@ -4,7 +4,7 @@ use crate::web::wss::send_response;
 use axum::extract::ws::WebSocket;
 use chrono::{DateTime, FixedOffset, Utc};
 use influxdb2::FromDataPoint;
-use pgdb::sqlx::{query, Pool, Postgres, Row};
+use pgdb::sqlx::{Pool, Postgres};
 use serde::Serialize;
 use tracing::instrument;
 use std::collections::HashMap;
@@ -60,18 +60,8 @@ async fn site_circuits_heat_map(
     period: InfluxTimePeriod,
 ) -> anyhow::Result<Vec<HeatCircuitRow>> {
     // List all hosts with this site as exact parent
-    let hosts: Vec<(String, String)> =
-    query("SELECT DISTINCT circuit_id, circuit_name FROM shaped_devices WHERE key=$1 AND parent_node=$2")
-        .bind(key)
-        .bind(site_name)
-        .fetch_all(cnn)
-        .await?
-        .iter()
-        .map(|row| (row.try_get("circuit_id").unwrap(), row.try_get("circuit_name").unwrap()))
-        .collect();
-
-    let host_filter = hosts.iter().map(|(id, _name)| format!("r[\"circuit_id\"] == \"{id}\"", id=id)).join(" or ");
-    println!("{host_filter}");
+    let hosts = pgdb::get_circuit_list_for_site(cnn, key, site_name).await?;
+    let host_filter = pgdb::circuit_list_to_influx_filter(&hosts);
 
     let rows: Vec<HeatCircuitRow> = InfluxQueryBuilder::new(period.clone())
         .with_measurement("rtt")
