@@ -25,7 +25,7 @@ export class SiteInfo implements Component {
             let html = "";
             html += "<table class='table table-striped'>";
             html += "<tr><td>Max:</td><td>" + scaleNumber(event.SiteInfo.data.max_down * mbps_to_bps) + " / " + scaleNumber(event.SiteInfo.data.max_up * mbps_to_bps) + "</td></tr>";
-            html += "<tr><td>Current:</td><td>" + scaleNumber(event.SiteInfo.data.current_down) + " / " + scaleNumber(event.SiteInfo.data.current_up) + "</td></tr>";
+            html += "<tr><td>Current:</td><td>" + scaleNumber(event.SiteInfo.data.current_down * 8) + " / " + scaleNumber(event.SiteInfo.data.current_up) + "</td></tr>";
             html += "<tr><td>Current RTT:</td><td>" + event.SiteInfo.data.current_rtt / 100.0 + " ms</td></tr>";
             html += "</table>";
             div.innerHTML = html;

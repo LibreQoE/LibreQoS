@@ -24,12 +24,11 @@ export class AccessPointPage implements Page {
         }
         this.components = [
             new SiteInfo(siteId),
+            new SiteBreadcrumbs(siteId),
             new ThroughputSiteChart(siteId),
             new RttChartSite(siteId),
-            new RttHistoSite(),
-            new SiteBreadcrumbs(siteId),
             new SiteHeat(siteId),
-            new SiteStackChart(siteId),
+            //new SiteStackChart(siteId),
         ];
     }
 

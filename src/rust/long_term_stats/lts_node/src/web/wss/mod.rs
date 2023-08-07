@@ -275,10 +275,12 @@ async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
                 send_site_info(&cnn, wss, &credentials.license_key, site_id).await;
             }
             (WasmRequest::SiteParents { site_id }, Some(credentials)) => {
-                send_site_parents(&cnn, wss, &credentials.license_key, site_id).await;
+                let site_id = urlencoding::decode(site_id).unwrap();
+                send_site_parents(&cnn, wss, &credentials.license_key, &site_id).await;
             }
             (WasmRequest::CircuitParents { circuit_id }, Some(credentials)) => {
-                send_circuit_parents(&cnn, wss, &credentials.license_key, circuit_id).await;
+                let circuit_id = urlencoding::decode(&circuit_id).unwrap();
+                send_circuit_parents(&cnn, wss, &credentials.license_key, &circuit_id).await;
             }
             (WasmRequest::RootParents, Some(credentials)) => {
                 send_root_parents(&cnn, wss, &credentials.license_key).await;
