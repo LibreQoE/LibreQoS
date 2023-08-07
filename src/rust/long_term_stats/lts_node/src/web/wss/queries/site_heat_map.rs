@@ -1,4 +1,5 @@
 use super::time_period::InfluxTimePeriod;
+use crate::web::wss::influx_query_builder::InfluxQueryBuilder;
 use crate::web::wss::send_response;
 use axum::extract::ws::WebSocket;
 use chrono::{DateTime, FixedOffset, Utc};
@@ -8,16 +9,50 @@ use pgdb::organization_cache::get_org_details;
 use pgdb::sqlx::{query, Pool, Postgres, Row};
 use pgdb::OrganizationDetails;
 use serde::Serialize;
+use tracing::instrument;
 use std::collections::HashMap;
 use wasm_pipe_types::WasmResponse;
+use itertools::Itertools;
 
+#[instrument(skip(cnn,socket,key,period))]
 pub async fn root_heat_map(
     cnn: &Pool<Postgres>,
     socket: &mut WebSocket,
     key: &str,
     period: InfluxTimePeriod,
 ) -> anyhow::Result<()> {
-    if let Some(org) = get_org_details(cnn, key).await {
+    let rows: Vec<HeatRow> = InfluxQueryBuilder::new(period.clone())
+        .with_import("strings")
+        .with_measurement("tree")
+        .with_fields(&["rtt_avg"])
+        .sample_after_org()
+        .with_filter("exists(r[\"node_parents\"])")
+        .with_filter("strings.hasSuffix(suffix: \"S0S\" + r[\"node_index\"] + \"S\", v: r[\"node_parents\"])")
+        .with_filter("r[\"_value\"] > 0.0")
+        .with_groups(&["_field", "node_name"])
+        .execute(cnn, key)
+        .await?;
+
+    let mut headings = rows.iter().map(|r| r.time).collect::<Vec<_>>();
+    headings.sort();
+    let headings: Vec<DateTime<FixedOffset>> = headings.iter().dedup().cloned().collect();
+    //println!("{headings:#?}");
+    let defaults = headings.iter().map(|h| (*h, 0.0)).collect::<Vec<_>>();
+    let mut sorter: HashMap<String, Vec<(DateTime<FixedOffset>, f64)>> = HashMap::new();
+    for row in rows.into_iter() {
+        let entry = sorter.entry(row.node_name).or_insert(defaults.clone());
+        if let Some(idx) = headings.iter().position(|h| h == &row.time) {
+            entry[idx] = (row.time, row.rtt_avg);
+        }
+    }
+    //println!("{:?}", sorter);
+    send_response(socket, WasmResponse::RootHeat { data: sorter }).await;
+
+
+    /*if let Some(org) = get_org_details(cnn, key).await {
+
+
+
         let influx_url = format!("http://{}:8086", org.influx_host);
         let client = Client::new(influx_url, &org.influx_org, &org.influx_token);
 
@@ -46,6 +81,7 @@ pub async fn root_heat_map(
         |> filter(fn: (r) => r[\"_measurement\"] == \"tree\")
         |> filter(fn: (r) => r[\"organization_id\"] == \"{}\")
         |> filter(fn: (r) => r[\"_field\"] == \"rtt_avg\")
+        |> filter(fn: (r) => r[\"_value\"] > 0.0)
         |> {}
         |> {}
         |> yield(name: \"last\")",
@@ -55,7 +91,7 @@ pub async fn root_heat_map(
             host_filter,
             period.aggregate_window()
         );
-        //println!("{qs}");
+        println!("{qs}");
 
         let query = Query::new(qs);
         let rows = client.query::<HeatRow>(Some(query)).await;
@@ -76,7 +112,7 @@ pub async fn root_heat_map(
                 send_response(socket, WasmResponse::RootHeat { data: sorter }).await;
             }
         }
-    }
+    }*/
 
     Ok(())
 }

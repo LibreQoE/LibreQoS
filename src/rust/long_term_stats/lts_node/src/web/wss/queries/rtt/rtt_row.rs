@@ -22,6 +22,11 @@ impl Default for RttRow {
     }
 }
 
+#[derive(Debug, FromDataPoint, Default)]
+pub struct RttHistoRow {
+    pub avg: f64,
+}
+
 #[derive(Debug, FromDataPoint)]
 pub struct RttSiteRow {
     pub host_id: String,

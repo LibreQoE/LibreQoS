@@ -1,6 +1,7 @@
 import { scaleNumber } from "../helpers";
 import { Component } from "./component";
 import * as echarts from 'echarts';
+import { request_rtt_histogram } from "../../wasm/wasm_pipe";
 
 export class RttHisto implements Component {
     div: HTMLElement;
@@ -16,18 +17,20 @@ export class RttHisto implements Component {
     }
 
     wireup(): void {
+        request_rtt_histogram(window.graphPeriod);
     }
 
     ontick(): void {
+        request_rtt_histogram(window.graphPeriod);
     }
 
     onmessage(event: any): void {
-        if (event.msg == "RttChart") {
+        if (event.msg == "RttHistogram") {
             //console.log(event);
             this.download = [];
             this.x = [];
-            for (let i = 0; i < event.RttChart.histogram.length; i++) {
-                this.download.push(event.RttChart.histogram[i]);
+            for (let i = 0; i < event.RttHistogram.histogram.length; i++) {
+                this.download.push(event.RttHistogram.histogram[i]);
                 this.x.push(i * 10);
             }
 

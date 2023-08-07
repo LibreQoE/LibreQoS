@@ -37,19 +37,16 @@ export class SiteStackChart implements Component {
             let legend: string[] = [];
             for (let i = 0; i < event.SiteStack.nodes.length; i++) {
                 let node = event.SiteStack.nodes[i];
+                console.log(node);
                 if (node.node_name != "Root") {
                     legend.push(node.node_name);
                     //legend.push(node.node_name + " UL");
                     //console.log(node);
 
                     let d: number[] = [];
-                    let u: number[] = [];
-                    let l: number[] = [];
-                    for (let j = 0; j < node.down.length; j++) {
-                        if (first) x.push(node.down[j].date);
-                        d.push(node.down[j].value * 8.0);
-                        u.push(node.down[j].u * 8.0);
-                        l.push(node.down[j].l * 8.0);
+                    for (let j = 0; j < node.download.length; j++) {
+                        if (first) x.push(node.download[j][0]);
+                        d.push(node.download[j][1] * 8.0);
                     }
                     if (first) first = false;
 
@@ -66,13 +63,11 @@ export class SiteStackChart implements Component {
 
                     // Do the same for upload
                     d = [];
-                    u = [];
-                    l = [];
-                    for (let j = 0; j < node.down.length; j++) {
-                        d.push(0.0 - (node.up[j].value * 8.0));
-                        u.push(0.0 - (node.up[j].u * 8.0));
-                        l.push(0.0 - (node.up[j].l * 8.0));
+                    for (let j = 0; j < node.upload.length; j++) {
+                        if (first) x.push(node.upload[j][0]);
+                        d.push(0.0 - (node.upload[j][1] * 8.0));
                     }
+                    if (first) first = false;
 
                     val = {
                         name: node.node_name,
@@ -81,7 +76,6 @@ export class SiteStackChart implements Component {
                         symbol: 'none',
                         stack: 'upload',
                         areaStyle: {},
-                        label: { show: false }
                     };
 
                     series.push(val);
@@ -93,7 +87,7 @@ export class SiteStackChart implements Component {
                 var option: echarts.EChartsOption;
                 this.myChart.setOption<echarts.EChartsOption>(
                     (option = {
-                        title: { text: "Child Node Throughput (Bits)" },
+                        title: { text: "Child Node Throughput (Bits - Max)" },
                         tooltip: { 
                             trigger: "axis",
                             formatter: function (params: any) {
@@ -101,7 +95,7 @@ export class SiteStackChart implements Component {
                                 let result = "";
                                 for (let i = 0; i < params.length; i+=2) {
                                     let siteName = params[i].seriesName;
-                                    siteName += " (⬇️" + scaleNumber(params[i].value) + " / ⬆️" + scaleNumber(0.0 - params[i+1].value) + ")";
+                                    siteName += " (⬇️" + scaleNumber(params[i].value) + " / ⬆️" + scaleNumber(Math.abs(params[i+1].value)) + ")";
                                     result += `${siteName}<br />`;
                                 }
                                 return result;

@@ -25,7 +25,7 @@ declare global {
 window.auth = new Auth;
 window.bus = new Bus();
 window.router = new SiteRouter();
-window.bus.connect();
+//window.bus.connect();
 window.router.initialRoute();
 let graphPeriod = localStorage.getItem('graphPeriod');
 if (!graphPeriod) {
@@ -39,19 +39,25 @@ window.changeGraphPeriod = (period: string) => changeGraphPeriod(period);
 window.setInterval(() => {
     window.bus.updateConnected();    
     window.router.ontick();
-    let btn = document.getElementById("graphPeriodBtn") as HTMLButtonElement;
-    btn.innerText = window.graphPeriod;
 }, 10000);
 
 // Faster interval for tracking the WSS connection
 window.setInterval(() => {
+    updateDisplayedInterval();
     window.bus.updateConnected();
     window.bus.sendQueue();
 }, 500);
 
+function updateDisplayedInterval() {
+    let btn = document.getElementById("graphPeriodBtn") as HTMLButtonElement | null;
+    if (!btn) {
+        return;
+    }
+    btn.innerText = window.graphPeriod;
+}
+
 function changeGraphPeriod(period: string) {
     window.graphPeriod = period;
     localStorage.setItem('graphPeriod', period);
-    let btn = document.getElementById("graphPeriodBtn") as HTMLButtonElement;
-    btn.innerText = period;
+    updateDisplayedInterval();
 }

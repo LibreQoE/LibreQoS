@@ -1,5 +1,6 @@
 use axum::extract::ws::WebSocket;
 use pgdb::sqlx::{Pool, Postgres};
+use tracing::instrument;
 use wasm_pipe_types::Node;
 
 use crate::web::wss::send_response;
@@ -12,6 +13,7 @@ fn convert(ns: pgdb::NodeStatus) -> Node {
     }
 }
 
+#[instrument(skip(cnn, socket, key))]
 pub async fn node_status(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str) {
     tracing::info!("Fetching node status, {key}");
     let nodes = pgdb::node_status(cnn, key).await;

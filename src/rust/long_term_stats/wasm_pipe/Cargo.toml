@@ -13,6 +13,7 @@ miniz_oxide = "0.7.1"
 serde_cbor = "0" # For RFC8949/7409 format C binary objects
 wasm_pipe_types = { path = "../wasm_pipe_types" }
 serde_json = "1.0.96"
+thiserror = "1.0.44"
 
 [dependencies.web-sys]
 version = "0.3.22"

@@ -1,10 +1,35 @@
 use crate::web::wss::{queries::time_period::InfluxTimePeriod, send_response};
 use axum::extract::ws::WebSocket;
-use pgdb::sqlx::{Pool, Postgres, Row};
-use wasm_pipe_types::Throughput;
+use pgdb::{
+    organization_cache::get_org_details,
+    sqlx::{Pool, Postgres},
+    OrganizationDetails,
+};
+use tracing::{error, instrument};
+use wasm_pipe_types::SiteStackHost;
 
-use super::{get_throughput_for_all_nodes_by_circuit, get_throughput_for_all_nodes_by_site};
+#[derive(Debug, influxdb2::FromDataPoint)]
+pub struct SiteStackRow {
+    pub node_name: String,
+    pub node_parents: String,
+    pub bits_max: i64,
+    pub time: chrono::DateTime<chrono::FixedOffset>,
+    pub direction: String,
+}
 
+impl Default for SiteStackRow {
+    fn default() -> Self {
+        Self {
+            node_name: "".to_string(),
+            node_parents: "".to_string(),
+            bits_max: 0,
+            time: chrono::DateTime::<chrono::Utc>::MIN_UTC.into(),
+            direction: "".to_string(),
+        }
+    }
+}
+
+#[instrument(skip(cnn, socket, key, period))]
 pub async fn send_site_stack_map(
     cnn: &Pool<Postgres>,
     socket: &mut WebSocket,
@@ -13,99 +38,125 @@ pub async fn send_site_stack_map(
     site_id: String,
 ) -> anyhow::Result<()> {
     let site_index = pgdb::get_site_id_from_name(cnn, key, &site_id).await?;
-    //println!("Site index: {site_index}");
 
-    let sites: Vec<String> =
-        pgdb::sqlx::query("SELECT DISTINCT site_name FROM site_tree WHERE key=$1 AND parent=$2")
-            .bind(key)
-            .bind(site_index)
-            .fetch_all(cnn)
-            .await?
-            .iter()
-            .map(|row| row.try_get("site_name").unwrap())
-            .collect();
-    //println!("{sites:?}");
+    if let Some(org) = get_org_details(cnn, key).await {
+        let rows = query_site_stack_influx(&org, &period, site_index).await;
+        match rows {
+            Err(e) => error!("Influxdb tree query error: {e}"),
+            Ok(rows) => {
+                let mut result = site_rows_to_hosts(rows);
+                reduce_to_x_entries(&mut result);
 
-    let circuits: Vec<(String, String)> =
-        pgdb::sqlx::query("SELECT DISTINCT circuit_id, circuit_name FROM shaped_devices WHERE key=$1 AND parent_node=$2")
-            .bind(key)
-            .bind(site_id)
-            .fetch_all(cnn)
-            .await?
-            .iter()
-            .map(|row| (row.try_get("circuit_id").unwrap(), row.try_get("circuit_name").unwrap()))
-            .collect();
-    //println!("{circuits:?}");
-
-    let mut result = Vec::new();
-    for site in sites.into_iter() {
-        let mut throughput =
-            get_throughput_for_all_nodes_by_site(cnn, key, period.clone(), &site).await?;
-        throughput
-            .iter_mut()
-            .for_each(|row| row.node_name = site.clone());
-        result.extend(throughput);
+                // Send the reply
+                send_response(
+                    socket,
+                    wasm_pipe_types::WasmResponse::SiteStack { nodes: result },
+                )
+                .await;
+            }
+        }
     }
-    for circuit in circuits.into_iter() {
-        let mut throughput =
-            get_throughput_for_all_nodes_by_circuit(cnn, key, period.clone(), &circuit.0).await?;
-        throughput
-            .iter_mut()
-            .for_each(|row| row.node_name = circuit.1.clone());
-        result.extend(throughput);
-    }
-    //println!("{result:?}");
 
-    // Sort by total
+    Ok(())
+}
+
+#[instrument(skip(org, period, site_index))]
+async fn query_site_stack_influx(
+    org: &OrganizationDetails,
+    period: &InfluxTimePeriod,
+    site_index: i32,
+) -> anyhow::Result<Vec<SiteStackRow>> {
+    let influx_url = format!("http://{}:8086", org.influx_host);
+    let client = influxdb2::Client::new(influx_url, &org.influx_org, &org.influx_token);
+    let qs = format!("import \"strings\"
+
+    from(bucket: \"{}\")
+    |> {}
+    |> filter(fn: (r) => r[\"_field\"] == \"bits_max\" and r[\"_measurement\"] == \"tree\" and r[\"organization_id\"] == \"{}\")
+    |> {}
+    |> filter(fn: (r) => exists r[\"node_parents\"] and exists r[\"node_index\"])
+    |> filter(fn: (r) => strings.hasSuffix(v: r[\"node_parents\"], suffix: \"S{}S\" + r[\"node_index\"] + \"S\" ))
+    |> group(columns: [\"node_name\", \"node_parents\", \"_field\", \"node_index\", \"direction\"])
+    |> yield(name: \"last\")",
+    org.influx_bucket, period.range(), org.key, period.sample(), site_index);
+
+    println!("{qs}");
+
+    let query = influxdb2::models::Query::new(qs);
+    //let rows = client.query_raw(Some(query)).await;
+    Ok(client.query::<SiteStackRow>(Some(query)).await?)
+}
+
+fn site_rows_to_hosts(rows: Vec<SiteStackRow>) -> Vec<SiteStackHost> {
+    let mut result: Vec<SiteStackHost> = Vec::new();
+    for row in rows.iter() {
+        if let Some(r) = result.iter_mut().find(|r| r.node_name == row.node_name) {
+            if row.direction == "down" {
+                r.download.push((
+                    row.time.format("%Y-%m-%d %H:%M:%S").to_string(),
+                    row.bits_max,
+                ));
+            } else {
+                r.upload.push((
+                    row.time.format("%Y-%m-%d %H:%M:%S").to_string(),
+                    row.bits_max,
+                ));
+            }
+        } else if row.direction == "down" {
+            result.push(SiteStackHost {
+                node_name: row.node_name.clone(),
+                download: vec![(
+                    row.time.format("%Y-%m-%d %H:%M:%S").to_string(),
+                    row.bits_max,
+                )],
+                upload: vec![],
+            });
+        } else {
+            result.push(SiteStackHost {
+                node_name: row.node_name.clone(),
+                upload: vec![(
+                    row.time.format("%Y-%m-%d %H:%M:%S").to_string(),
+                    row.bits_max,
+                )],
+                download: vec![],
+            });
+        }
+    }
+    result
+}
+
+fn reduce_to_x_entries(result: &mut Vec<SiteStackHost>) {
+    // Sort descending by total
     result.sort_by(|a, b| {
         b.total()
             .partial_cmp(&a.total())
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    // If there are more than 9 entries, create an "others" to handle the remainder
-    if result.len() > 9 {
-        let mut others = wasm_pipe_types::ThroughputHost {
-            node_id: "others".to_string(),
+    const MAX_HOSTS: usize = 8;
+    if result.len() > MAX_HOSTS {
+        let mut others = SiteStackHost {
             node_name: "others".to_string(),
-            down: Vec::new(),
-            up: Vec::new(),
+            download: Vec::new(),
+            upload: Vec::new(),
         };
-        result[0].down.iter().for_each(|x| {
-            others.down.push(Throughput {
-                value: 0.0,
-                date: x.date.clone(),
-                l: 0.0,
-                u: 0.0,
+        result[0].download.iter().for_each(|x| {
+            others.download.push((x.0.clone(), 0));
+            others.upload.push((x.0.clone(), 0));
+        });
+        result.iter().skip(MAX_HOSTS).for_each(|row| {
+            row.download.iter().enumerate().for_each(|(i, x)| {
+                if i < others.download.len() {
+                    others.download[i].1 += x.1;
+                }
+            });
+            row.upload.iter().enumerate().for_each(|(i, x)| {
+                if i < others.upload.len() {
+                    others.upload[i].1 += x.1;
+                }
             });
         });
-        result[0].up.iter().for_each(|x| {
-            others.up.push(Throughput {
-                value: 0.0,
-                date: x.date.clone(),
-                l: 0.0,
-                u: 0.0,
-            });
-        });
-
-        result.iter().skip(9).for_each(|row| {
-            row.down.iter().enumerate().for_each(|(i, x)| {
-                others.down[i].value += x.value;
-            });
-            row.up.iter().enumerate().for_each(|(i, x)| {
-                others.up[i].value += x.value;
-            });
-        });
-
-        result.truncate(9);
+        result.truncate(MAX_HOSTS-1);
         result.push(others);
     }
-
-    send_response(
-        socket,
-        wasm_pipe_types::WasmResponse::SiteStack { nodes: result },
-    )
-    .await;
-
-    Ok(())
 }

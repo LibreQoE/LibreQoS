@@ -23,13 +23,13 @@ export class DashboardPage implements Page {
         }
         this.components = [
             new NodeStatus(),
+            new RootBreadcrumbs(),
             new PacketsChart(),
             new ThroughputChart(),
             new RttChart(),
             new RttHisto(),
             new RootHeat(),
             new SiteStackChart("root"),
-            new RootBreadcrumbs(),
         ];
     }
 

@@ -1,7 +1,9 @@
-#[derive(Clone)]
+#![allow(dead_code)]
+#[derive(Clone, Debug)]
 pub struct InfluxTimePeriod {
     start: String,
     aggregate: String,
+    sample: i32,
 }
 
 impl InfluxTimePeriod {
@@ -30,9 +32,23 @@ impl InfluxTimePeriod {
             _ => "10s",
         };
 
+        let sample = match period {
+            "5m" => 3,
+            "15m" => 10,
+            "1h" => 40,
+            "6h" => 100,
+            "12h" => 200,
+            "24h" => 400,
+            "7d" => 2100,
+            "28d" => 4400,
+            _ => 1
+        };
+
+
         Self {
             start: start.to_string(),
             aggregate: aggregate.to_string(),
+            sample
         }
     }
 
@@ -45,6 +61,24 @@ impl InfluxTimePeriod {
             "aggregateWindow(every: {}, fn: mean, createEmpty: false)",
             self.aggregate
         )
+    }
+
+    pub fn aggregate_window_empty(&self) -> String {
+        format!(
+            "aggregateWindow(every: {}, fn: mean, createEmpty: true)",
+            self.aggregate
+        )
+    }
+
+    pub fn aggregate_window_fn(&self, mode: &str) -> String {
+        format!(
+            "aggregateWindow(every: {}, fn: {mode}, createEmpty: false)",
+            self.aggregate
+        )
+    }
+
+    pub fn sample(&self) -> String {
+        format!("sample(n: {}, pos: 1)", self.sample)
     }
 }
 

@@ -1,15 +1,14 @@
-import { connect_wasm_pipe, is_wasm_connected, send_wss_queue } from "../wasm/wasm_pipe";
+import { is_wasm_connected, send_wss_queue, initialize_wss } from "../wasm/wasm_pipe";
 import { Auth } from "./auth";
 import { SiteRouter } from "./router";
 
 export class Bus {
     ws: WebSocket;
-    connected: boolean;
 
     constructor() {
         const currentUrlWithoutAnchors = window.location.href.split('#')[0].replace("https://", "").replace("http://", "");
         const url = "ws://" + currentUrlWithoutAnchors + "ws";
-        this.connected = false;
+        initialize_wss(url);
     }
 
     updateConnected() {
@@ -19,18 +18,11 @@ export class Bus {
             indicator.style.color = "green";
         } else if (indicator) {
             indicator.style.color = "red";
-            retryConnect();
         }
     }
 
     sendQueue() {
         send_wss_queue();
-    }
-
-    connect() {
-        const currentUrlWithoutAnchors = window.location.href.split('#')[0].replace("https://", "").replace("http://", "");
-        const url = "ws://" + currentUrlWithoutAnchors + "ws";
-        connect_wasm_pipe(url);
     }
 
     getToken(): string {
@@ -125,12 +117,6 @@ export class Bus {
         };
         let json = JSON.stringify(request);
         this.ws.send(json);
-    }
-}
-
-function retryConnect() {
-    if (!window.bus.connected) {
-        //window.bus.connect();
     }
 }
 

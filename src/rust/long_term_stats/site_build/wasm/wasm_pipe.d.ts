@@ -3,7 +3,7 @@
 /**
 * @param {string} url
 */
-export function connect_wasm_pipe(url: string): void;
+export function initialize_wss(url: string): void;
 /**
 * @returns {boolean}
 */
@@ -63,6 +63,10 @@ export function request_site_stack(period: string, site_id: string): void;
 * @param {string} period
 */
 export function request_rtt_chart(period: string): void;
+/**
+* @param {string} period
+*/
+export function request_rtt_histogram(period: string): void;
 /**
 * @param {string} period
 * @param {string} site_id
@@ -140,7 +144,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
-  readonly connect_wasm_pipe: (a: number, b: number) => void;
+  readonly initialize_wss: (a: number, b: number) => void;
   readonly is_wasm_connected: () => number;
   readonly send_wss_queue: () => void;
   readonly send_token: (a: number, b: number) => void;
@@ -154,6 +158,7 @@ export interface InitOutput {
   readonly request_throughput_chart_for_circuit: (a: number, b: number, c: number, d: number) => void;
   readonly request_site_stack: (a: number, b: number, c: number, d: number) => void;
   readonly request_rtt_chart: (a: number, b: number) => void;
+  readonly request_rtt_histogram: (a: number, b: number) => void;
   readonly request_rtt_chart_for_site: (a: number, b: number, c: number, d: number) => void;
   readonly request_rtt_chart_for_node: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
   readonly request_rtt_chart_for_circuit: (a: number, b: number, c: number, d: number) => void;
@@ -170,13 +175,12 @@ export interface InitOutput {
   readonly request_ext_device_info: (a: number, b: number) => void;
   readonly request_ext_snr_graph: (a: number, b: number, c: number, d: number) => void;
   readonly request_ext_capacity_graph: (a: number, b: number, c: number, d: number) => void;
-  readonly __wbindgen_malloc: (a: number) => number;
-  readonly __wbindgen_realloc: (a: number, b: number, c: number) => number;
+  readonly __wbindgen_export_0: (a: number) => number;
+  readonly __wbindgen_export_1: (a: number, b: number, c: number) => number;
   readonly __wbindgen_export_2: WebAssembly.Table;
-  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hb4b341652e081e3f: (a: number, b: number, c: number) => void;
-  readonly _dyn_core__ops__function__FnMut__A____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__ha318d2d73313995c: (a: number, b: number, c: number) => void;
-  readonly __wbindgen_free: (a: number, b: number) => void;
-  readonly __wbindgen_exn_store: (a: number) => void;
+  readonly __wbindgen_export_3: (a: number, b: number, c: number) => void;
+  readonly __wbindgen_export_4: (a: number, b: number) => void;
+  readonly __wbindgen_export_5: (a: number) => void;
 }
 
 export type SyncInitInput = BufferSource | WebAssembly.Module;

@@ -5,7 +5,6 @@ import * as echarts from 'echarts';
 export class RootHeat implements Component {
     div: HTMLElement;
     myChart: echarts.ECharts | null = null;
-    counter: number = 0;
 
     constructor() {
         this.div = document.getElementById("rootHeat") as HTMLElement;
@@ -16,9 +15,7 @@ export class RootHeat implements Component {
     }
 
     ontick(): void {
-        this.counter++;
-        if (this.counter % 10 == 0)
-            request_root_heat(window.graphPeriod);
+        request_root_heat(window.graphPeriod);
     }
 
     onmessage(event: any): void {

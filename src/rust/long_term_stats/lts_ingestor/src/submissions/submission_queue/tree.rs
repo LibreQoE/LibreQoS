@@ -17,7 +17,7 @@ pub async fn collect_tree(
     totals: &Option<Vec<StatsTreeNode>>,
 ) -> anyhow::Result<()> {
     if let Some(tree) = totals {
-        //println!("{tree:?}");
+        //info!("{tree:?}");
         let influx_url = format!("http://{}:8086", org.influx_host);
         let client = Client::new(&influx_url, &org.influx_org, &org.influx_token);
         let mut points: Vec<DataPoint> = Vec::new();
@@ -31,12 +31,22 @@ pub async fn collect_tree(
             .await?;
 
         for node in tree.iter() {
+            let mut parents = format!("S{}S", node.parents.iter().map(|p| p.to_string()).collect::<Vec<String>>().join("S"));
+            if parents.is_empty() {
+                parents = "0S".to_string();
+            }
+            let my_id = node.index.to_string();
+            //let parent = node.immediate_parent.unwrap_or(0).to_string();
+            //warn!("{}: {}", node.name, parents);
+            //warn!("{parent}");
             points.push(
                 DataPoint::builder("tree")
                     .tag("host_id", node_id.to_string())
                     .tag("organization_id", org.key.to_string())
                     .tag("node_name", node.name.to_string())
                     .tag("direction", "down".to_string())
+                    .tag("node_parents", parents.clone())
+                    .tag("node_index", my_id.clone())
                     .timestamp(timestamp)
                     .field("bits_min", node.current_throughput.min.0 as i64)
                     .field("bits_max", node.current_throughput.max.0 as i64)
@@ -49,6 +59,8 @@ pub async fn collect_tree(
                     .tag("organization_id", org.key.to_string())
                     .tag("node_name", node.name.to_string())
                     .tag("direction", "up".to_string())
+                    .tag("node_parents", parents.clone())
+                    .tag("node_index", my_id.clone())
                     .timestamp(timestamp)
                     .field("bits_min", node.current_throughput.min.1 as i64)
                     .field("bits_max", node.current_throughput.max.1 as i64)
@@ -60,6 +72,8 @@ pub async fn collect_tree(
                     .tag("host_id", node_id.to_string())
                     .tag("organization_id", org.key.to_string())
                     .tag("node_name", node.name.to_string())
+                    .tag("node_parents", parents)
+                    .tag("node_index", my_id.clone())
                     .timestamp(timestamp)
                     .field("rtt_min", node.rtt.min as i64 / 100)
                     .field("rtt_max", node.rtt.max as i64 / 100)
@@ -92,13 +106,16 @@ pub async fn collect_tree(
             error!("Error committing transaction: {}", e);
         }
 
-        client
+        if let Err(e) = client
             .write_with_precision(
                 &org.influx_bucket,
                 stream::iter(points),
                 influxdb2::api::write::TimestampPrecision::Seconds,
             )
-            .await?;
+            .await {
+                error!("Error committing tree to Influx: {}", e);
+            }
+        info!("Wrote tree to InfluxDB");
     }
     Ok(())
 }

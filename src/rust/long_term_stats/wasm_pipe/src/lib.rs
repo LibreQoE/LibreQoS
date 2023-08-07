@@ -1,8 +1,7 @@
-use std::collections::VecDeque;
-
 use wasm_bindgen::prelude::*;
-use wasm_pipe_types::{WasmRequest, WasmResponse};
-use web_sys::{BinaryType, ErrorEvent, MessageEvent, WebSocket};
+use wasm_pipe_types::WasmRequest;
+mod conduit;
+mod message;
 
 #[wasm_bindgen]
 extern "C" {
@@ -22,117 +21,11 @@ extern "C" {
     fn onMessage(json: String);
 }
 
-static mut CONNECTED: bool = false;
-static mut WS: Option<WebSocket> = None;
-static mut QUEUE: VecDeque<Vec<u8>> = VecDeque::new();
-static mut URL: String = String::new();
-
-#[wasm_bindgen]
-pub fn connect_wasm_pipe(url: String) {
-    unsafe {
-        if CONNECTED {
-            log("Already connected");
-            return;
-        }
-        if !url.is_empty() {
-            URL = url.clone();
-        }
-        WS = Some(WebSocket::new(&url).unwrap());
-        if let Some(ws) = &mut WS {
-            ws.set_binary_type(BinaryType::Arraybuffer);
-
-            ws.set_binary_type(BinaryType::Arraybuffer);
-            let onmessage_callback = Closure::<dyn FnMut(_)>::new(move |e: MessageEvent| {
-                log("Message Received");
-                if let Ok(abuf) = e.data().dyn_into::<js_sys::ArrayBuffer>() {
-                    let array = js_sys::Uint8Array::new(&abuf);
-                    //let len = array.byte_length() as usize;
-                    let raw = array.to_vec();
-                    let decompressed = miniz_oxide::inflate::decompress_to_vec(&raw).unwrap();
-                    let msg: WasmResponse = serde_cbor::from_slice(&decompressed).unwrap();
-                    //log(&format!("Message: {:?}", msg));
-
-                    match msg {
-                        WasmResponse::AuthOk { token, name, license_key } => {
-                            onAuthOk(token, name, license_key);
-                        }
-                        WasmResponse::AuthFail => {
-                            onAuthFail();
-                        }
-                        _ => {
-                            let json = serde_json::to_string(&msg).unwrap();
-                            onMessage(json);
-                        }
-                    }
-                }
-            });
-            let onerror_callback = Closure::<dyn FnMut(_)>::new(move |e: ErrorEvent| {
-                log(&format!("Error Received: {e:?}"));
-                CONNECTED = false;
-            });
-            let onclose_callback = Closure::<dyn FnMut(_)>::new(move |_e: ErrorEvent| {
-                log("Close Received");
-                CONNECTED = false;
-            });
-            let onopen_callback = Closure::<dyn FnMut(_)>::new(move |_e: ErrorEvent| {
-                log("Open Received");
-                CONNECTED = true;
-                let token = get_token();
-                send_token(token);
-            });
-            ws.set_onmessage(Some(onmessage_callback.as_ref().unchecked_ref()));
-            ws.set_onclose(Some(onclose_callback.as_ref().unchecked_ref()));
-            ws.set_onerror(Some(onerror_callback.as_ref().unchecked_ref()));
-            ws.set_onopen(Some(onopen_callback.as_ref().unchecked_ref()));
-            // Prevent closures from recursing
-            onopen_callback.forget();
-            onclose_callback.forget();
-            onerror_callback.forget();
-            onmessage_callback.forget();
-        }
-    }
-}
-
-#[wasm_bindgen]
-pub fn is_wasm_connected() -> bool {
-    unsafe { CONNECTED && WS.is_some() }
-}
-
-#[wasm_bindgen]
-pub fn send_wss_queue() {
-    //log("Call to send queue");
-    unsafe {
-        // Bail out if there's nothing to do
-        if QUEUE.is_empty() {
-            //log("Queue is empty");
-            return;
-        }
-
-        // Send queued messages
-        if let Some(ws) = &mut WS {
-            while let Some(msg) = QUEUE.pop_front() {
-                log(&format!("Sending message: {msg:?}"));
-                ws.send_with_u8_array(&msg).unwrap();
-            }
-        } else {
-            log("No WebSocket connection");
-            CONNECTED = false;
-            connect_wasm_pipe(String::new());
-        }
-    }
-}
-
-fn build_message(msg: WasmRequest) -> Vec<u8> {
-    let cbor = serde_cbor::to_vec(&msg).unwrap();
-    miniz_oxide::deflate::compress_to_vec(&cbor, 8)
-}
+pub use conduit::{initialize_wss, is_wasm_connected, send_wss_queue};
 
 fn send_message(msg: WasmRequest) {
-    log(&format!("Sending message: {msg:?}"));
-    let msg = build_message(msg);
-    unsafe {
-        QUEUE.push_back(msg);
-    }
+    log(&format!("Enqueueing message: {msg:?}"));
+    conduit::send_message(msg);
 }
 
 #[wasm_bindgen]
@@ -194,6 +87,11 @@ pub fn request_site_stack(period: String, site_id: String) {
 #[wasm_bindgen]
 pub fn request_rtt_chart(period: String) {
     send_message(WasmRequest::RttChart  { period });
+}
+
+#[wasm_bindgen]
+pub fn request_rtt_histogram(period: String) {
+    send_message(WasmRequest::RttHistogram { period });
 }
 
 #[wasm_bindgen]
