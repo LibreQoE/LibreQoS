@@ -1,5 +1,6 @@
 use crate::license::StatsHostError;
 use sqlx::{FromRow, Pool, Postgres, Row};
+use itertools::Itertools;
 
 #[derive(Debug, FromRow)]
 pub struct TreeNode {
@@ -123,7 +124,7 @@ pub async fn get_child_list(
 
     // Add child sites
     let child_sites = sqlx::query(
-        "SELECT site_name, parent, site_type FROM site_tree WHERE key=$1 AND parent=$2",
+        "SELECT DISTINCT site_name, parent, site_type FROM site_tree WHERE key=$1 AND parent=$2",
     )
     .bind(key)
     .bind(site_id)
@@ -162,6 +163,7 @@ pub async fn get_child_list(
     }
 
     result.sort_by(|a, b| a.2.cmp(&b.2));
+    let result = result.into_iter().dedup_by(|a,b| a.2 == b.2).collect();    
 
     Ok(result)
 }

@@ -2711,6 +2711,7 @@ dependencies = [
  "env_logger",
  "futures",
  "influxdb2",
+ "itertools 0.11.0",
  "log",
  "lqos_bus",
  "lqos_utils",
