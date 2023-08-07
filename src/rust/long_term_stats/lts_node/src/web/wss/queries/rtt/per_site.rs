@@ -6,8 +6,7 @@ use pgdb::{
 };
 use tracing::instrument;
 use wasm_pipe_types::{Rtt, RttHost};
-
-use super::rtt_row::{RttRow, RttHistoRow, RttSiteRow};
+use super::rtt_row::RttSiteRow;
 
 #[instrument(skip(cnn, socket, key, period))]
 pub async fn send_rtt_for_all_nodes_site(

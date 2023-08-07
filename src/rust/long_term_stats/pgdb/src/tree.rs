@@ -240,7 +240,7 @@ pub async fn get_oversubscription(cnn: &Pool<Postgres>, key: &str, site_name: &s
             children.level + 1,
             children.parent
             FROM site_tree st, children
-            WHERE children.index = st.parent AND children.level < 2 AND key=$3
+            WHERE children.index = st.parent AND children.level < 5 AND key=$3
     ),
     devices (circuit_id, download_max_mbps, download_min_mbps) AS (
         SELECT DISTINCT
@@ -249,6 +249,7 @@ pub async fn get_oversubscription(cnn: &Pool<Postgres>, key: &str, site_name: &s
         download_min_mbps
     FROM shaped_devices WHERE key=$4
     AND parent_node IN (SELECT site_name FROM children)
+    AND circuit_name NOT LIKE '%(site)'
     )
     
     SELECT 

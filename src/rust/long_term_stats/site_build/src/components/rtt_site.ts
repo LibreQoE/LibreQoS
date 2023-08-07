@@ -43,7 +43,7 @@ export class RttChartSite implements Component {
                 let l: number[] = [];
                 for (let j=0; j<node.rtt.length; j++) {
                     if (first) x.push(node.rtt[j].date);                 
-                    d.push(node.rtt[j].value);
+                    d.push(node.rtt[j].value * 10.0);
                     u.push(node.rtt[j].u);
                     l.push(node.rtt[j].l);
                 }

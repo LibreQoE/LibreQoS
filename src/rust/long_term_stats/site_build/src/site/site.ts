@@ -26,8 +26,8 @@ export class SitePage implements Page {
             new SiteBreadcrumbs(siteId),
             new ThroughputSiteChart(siteId),
             new RttChartSite(siteId),
-            //new SiteHeat(siteId),
-            //new SiteStackChart(siteId),
+            new SiteHeat(siteId),
+            new SiteStackChart(siteId),
         ];
     }
 

@@ -44,9 +44,9 @@ export class ThroughputSiteChart implements Component {
                 let l: number[] = [];
                 for (let j=0; j<node.down.length; j++) {
                     if (first) x.push(node.down[j].date);                 
-                    d.push(node.down[j].value);
-                    u.push(node.down[j].u);
-                    l.push(node.down[j].l);
+                    d.push(node.down[j].value * 8);
+                    u.push(node.down[j].u * 8);
+                    l.push(node.down[j].l * 8);
                 }
                 if (first) first = false;
 
