@@ -22,6 +22,10 @@ try:
 	from ispConfig import ltu_capacity
 except:
 	ltu_capacity = 0.90
+try:
+	from ispConfig import usePtMPasParent
+except:
+	usePtMPasParent = False
 
 def uispRequest(target):
 	# Sends an HTTP request to UISP and returns the
@@ -341,8 +345,9 @@ def findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite, foundAirFiber
 																			'upload': upload,
 																			parent: apID
 																			}
-																site['parent'] = apID
-																print('Site ' + name + ' will use PtMP AP as parent.')
+																if usePtMPasParent:
+																	site['parent'] = apID
+																	print('Site ' + name + ' will use PtMP AP as parent.')
 	return siteList, nodeOffPtMP
 
 def handleMultipleInternetNodes(sites, dataLinks, uispSite):
@@ -359,7 +364,7 @@ def handleMultipleInternetNodes(sites, dataLinks, uispSite):
 		uispSite = 'Internet'
 		for link in dataLinks:
 			if link['canDelete'] ==  False:
-				if link['from']['device']['identification']['id'] == link['to']['device']['identification']['id']:
+				if link['from']['device'] is not None and link['to']['device'] is not None and link['from']['device']['identification']['id'] == link['to']['device']['identification']['id']:
 					link['from']['site']['identification']['id'] = '001'
 					link['from']['site']['identification']['name'] = 'Internet'
 					# Found internet link
