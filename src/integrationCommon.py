@@ -235,7 +235,7 @@ class NetworkGraph:
 				return False
 		
 		if node.type == NodeType.ap or node.type == NodeType.site:
-			if parentType != NodeType.site or parentType != NodeType.root:
+			if not (parentType == NodeType.site or parentType == NodeType.root):
 				return False 
 			
 		# Checking the root node type having no parent
