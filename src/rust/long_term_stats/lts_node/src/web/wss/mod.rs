@@ -315,6 +315,12 @@ async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
                 )
                 .await;
             }
+            (WasmRequest::ApSignalExt { period, site_name }, Some(credentials)) => {
+
+            }
+            (WasmRequest::ApCapacityExt { period, site_name }, Some(credentials)) => {
+                
+            }
             (_, None) => {
                 tracing::error!("No credentials");
             }

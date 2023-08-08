@@ -126,3 +126,7 @@ pub fn circuit_list_to_influx_filter(hosts: &[(String, String)]) -> String {
 pub fn host_list_to_influx_filter(hosts: &[(String, String)]) -> String {
     hosts.iter().map(|(id, _name)| format!("r[\"host_id\"] == \"{id}\"", id=id)).join(" or ")
 }
+
+pub fn device_list_to_influx_filter(hosts: &[(String, String)]) -> String {
+    hosts.iter().map(|(id, _name)| format!("r[\"device_id\"] == \"{id}\"", id=id)).join(" or ")
+}

@@ -32,6 +32,8 @@ pub enum WasmRequest {
     ExtendedDeviceInfo { circuit_id: String },
     SignalNoiseChartExt { period: String, device_id: String },
     DeviceCapacityChartExt { period: String, device_id: String },
+    ApSignalExt { period: String, site_name: String },
+    ApCapacityExt { period: String, site_name: String },
 }
 
 #[derive(Serialize, Deserialize, Debug)]

@@ -173,3 +173,13 @@ pub fn request_ext_snr_graph(period: String, device_id: String) {
 pub fn request_ext_capacity_graph(period: String, device_id: String) {
     send_message(WasmRequest::DeviceCapacityChartExt { period, device_id });
 }
+
+#[wasm_bindgen]
+pub fn request_ext_capacity_ap(period: String, site_name: String) {
+    send_message(WasmRequest::ApCapacityExt { period, site_name });
+}
+
+#[wasm_bindgen]
+pub fn request_ext_signal_ap(period: String, site_name: String) {
+    send_message(WasmRequest::ApSignalExt { period, site_name });
+}
