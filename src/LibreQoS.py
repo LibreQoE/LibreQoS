@@ -106,9 +106,11 @@ def findQueuesAvailable(interfaceName):
 			print(f"Interface {interfaceName} NIC queues (Override):\t\t\t" + str(queuesAvailable))
 		cpuCount = multiprocessing.cpu_count()
 		print("CPU cores:\t\t\t" + str(cpuCount))
-		if queuesAvailable < 2:
-			raise SystemError(f'Only 1 NIC rx/tx queue available for interface {interfaceName}. You will need to use a NIC with 2 or more rx/tx queues available.')
-		if queuesAvailable < 2:
+		if queuesAvailable <1:
+			raise SystemError(f'No NIC rx/tx queue available for interface {interfaceName}.')
+		elif queuesAvailable < 2 and OnAStick:
+			raise SystemError(f'Only 1 NIC rx/tx queue available for interface {interfaceName}. You will need to use a NIC with 2 or more rx/tx queues available for OnAStick mode.')
+		if cpuCount < 2:
 			raise SystemError('Only 1 CPU core available. You will need to use a CPU with 2 or more CPU cores.')
 		queuesAvailable = min(queuesAvailable,cpuCount)
 		print(f"queuesAvailable for interface {interfaceName} set to:\t" + str(queuesAvailable))
