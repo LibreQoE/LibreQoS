@@ -1,14 +1,14 @@
-import html from './template.html';
+//import html from './template.html';
 import { Page } from '../page'
 import { getValueFromForm } from '../helpers';
 import { send_login } from '../../wasm/wasm_pipe';
 
 export class LoginPage implements Page {
     constructor() {
-        let container = document.getElementById('main');
+        /*let container = document.getElementById('main');
         if (container) {
             container.innerHTML = html;        
-        }
+        }*/
     }
 
     wireup() {

@@ -1,21 +1,36 @@
-import html from './template.html';
 import { Page } from '../page'
 import { siteIcon } from '../helpers';
 import { request_search } from "../../wasm/wasm_pipe";
 
+const menuElements = [ "menuDash", "nodesDash", "sitetreeDash", "menuUser" ];
+
 export class MenuPage implements Page {
     activePanel: string;
-    searchButton: HTMLButtonElement;
+    //searchButton: HTMLButtonElement;
     searchBar: HTMLInputElement;
 
     constructor(activeElement: string) {
-        let container = document.getElementById('main');
+        let container = document.getElementById('mainContent');
         if (container) {
-            container.innerHTML = html;
+            //container.innerHTML = html;
+
+            let loader = document.getElementById('SpinLoad');
+            if (loader) {
+                loader.style.display = "none";
+            }
+
+            menuElements.forEach(element => {
+                let e = document.getElementById(element);
+                if (e) {
+                    e.classList.remove('active');
+                    e.style.color = "";
+                }
+            });
 
             let activePanel = document.getElementById(activeElement);
             if (activePanel) {
                 activePanel.classList.add('active');
+                activePanel.style.color = "white";
             }
 
             let username = document.getElementById('menuUser');
@@ -28,7 +43,7 @@ export class MenuPage implements Page {
             }
 
             this.searchBar = <HTMLInputElement>document.getElementById("txtSearch");
-            this.searchButton = <HTMLButtonElement>document.getElementById("btnSearch");
+            //this.searchButton = <HTMLButtonElement>document.getElementById("btnSearch");
 
             this.wireup();
         }
@@ -45,10 +60,10 @@ export class MenuPage implements Page {
                 this.doSearch(searchText);
             }
         }
-        this.searchButton.onclick = () => {
+        /*this.searchButton.onclick = () => {
             let searchText = this.searchBar.value;
             this.doSearch(searchText);
-        }
+        }*/
     }
 
     doSearch(term: string) {

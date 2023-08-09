@@ -1,5 +1,5 @@
-import 'bootstrap/dist/css/bootstrap.css';
-import 'bootstrap/dist/js/bootstrap.js';
+//import 'bootstrap/dist/css/bootstrap.css';
+//import 'bootstrap/dist/js/bootstrap.js';
 import { SiteRouter } from './router';
 import { Bus, onAuthFail, onAuthOk, onMessage } from './bus';
 import { Auth } from './auth';
