@@ -22,11 +22,11 @@ export class SiteBreadcrumbs implements Component {
             let div = document.getElementById("siteName") as HTMLDivElement;
             let html = "";
             let crumbs = event.SiteParents.data.reverse();
+            html += "<a onclick='window.router.goto(\"#dashboard\")'>Root</a> |";
             for (let i = 0; i < crumbs.length-1; i++) {
                 let url = makeUrl(crumbs[i][0], crumbs[i][1]);
                 html += "<a onclick='window.router.goto(\"" + url + "\")'>" + crumbs[i][1] + "</a> | ";
             }
-            html += "<a onclick='window.router.goto(\"#dashboard\")'>Root</a> |";
             html += crumbs[crumbs.length-1][1] + " | ";
             html += "<select id='siteChildren'></select>";
             div.innerHTML = html;
