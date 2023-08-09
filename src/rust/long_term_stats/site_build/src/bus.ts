@@ -16,6 +16,12 @@ export class Bus {
         let indicator = document.getElementById("connStatus");
         if (indicator && is_wasm_connected()) {
             indicator.style.color = "green";
+
+            // Clear the loader
+            let loader = document.getElementById('SpinLoad');
+            if (loader) {
+                loader.style.display = "none";
+            }
         } else if (indicator) {
             indicator.style.color = "red";
         }

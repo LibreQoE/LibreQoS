@@ -12,12 +12,7 @@ export class MenuPage implements Page {
     constructor(activeElement: string) {
         let container = document.getElementById('mainContent');
         if (container) {
-            //container.innerHTML = html;
-
-            let loader = document.getElementById('SpinLoad');
-            if (loader) {
-                loader.style.display = "none";
-            }
+            //container.innerHTML = html;            
 
             menuElements.forEach(element => {
                 let e = document.getElementById(element);
