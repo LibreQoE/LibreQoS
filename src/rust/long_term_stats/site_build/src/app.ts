@@ -16,6 +16,8 @@ declare global {
         login: any;
         graphPeriod: string;
         changeGraphPeriod: any;
+        toggleThroughput: any;
+        toggleLatency: any;
     }
 }
 (window as any).onAuthFail = onAuthFail;
@@ -45,7 +47,11 @@ window.setInterval(() => {
 window.setInterval(() => {
     updateDisplayedInterval();
     window.bus.updateConnected();
-    window.bus.sendQueue();
+    try {
+        window.bus.sendQueue();
+    } catch (e) {
+        //console.log("Error sending queue: " + e);
+    }
 }, 500);
 
 function updateDisplayedInterval() {

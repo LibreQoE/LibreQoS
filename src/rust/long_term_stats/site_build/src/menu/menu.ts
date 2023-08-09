@@ -1,6 +1,7 @@
 import { Page } from '../page'
 import { siteIcon } from '../helpers';
 import { request_search } from "../../wasm/wasm_pipe";
+import { NodeStatus } from '../components/node_status';
 
 const menuElements = [ "menuDash", "nodesDash", "sitetreeDash", "menuUser" ];
 
@@ -8,6 +9,7 @@ export class MenuPage implements Page {
     activePanel: string;
     //searchButton: HTMLButtonElement;
     searchBar: HTMLInputElement;
+    nodeStatus: NodeStatus;
 
     constructor(activeElement: string) {
         let container = document.getElementById('mainContent');
@@ -39,7 +41,7 @@ export class MenuPage implements Page {
 
             this.searchBar = <HTMLInputElement>document.getElementById("txtSearch");
             //this.searchButton = <HTMLButtonElement>document.getElementById("btnSearch");
-
+            this.nodeStatus = new NodeStatus();
             this.wireup();
         }
     }
@@ -73,6 +75,9 @@ export class MenuPage implements Page {
     onmessage(event: any) {
         if (event.msg) {
             switch (event.msg) {
+                case "NodeStatus" : {
+                    this.nodeStatus.onmessage(event);
+                } break;
                 case "authOk": {
                     let username = document.getElementById('menuUser');
                     if (username) {
@@ -110,5 +115,6 @@ export class MenuPage implements Page {
 
     ontick(): void {
         // Do nothing
+        this.nodeStatus.ontick();
     }
 }

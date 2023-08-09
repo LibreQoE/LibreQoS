@@ -339,7 +339,8 @@
       <li class="nav-item text-nowrap">
 
         <form class="d-flex" role="search">
-          <input id="txtSearch" class="form-control me-2" type="search" placeholder="Search" aria-label="Search" autocomplete="off">
+          <input id="txtSearch" class="form-control me-2" type="search" placeholder="Search" aria-label="Search"
+            autocomplete="off">
           <div id="searchResults"
             style="position: fixed; display: none; color: black; background-color: #eee; top:55px; left: 0x; width: 300px; height: auto; z-index: 2000;">
             Blah</div>
@@ -403,6 +404,9 @@
               </li>
             </ul>
 
+            <div id="nodeStatus">
+            </div>
+
           </div>
         </div>
       </div>
@@ -411,14 +415,15 @@
         <div
           class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom"
           id="mainContent">
-            <i class="fa-solid fa-spinner fa-spin"></i>
-          </div>
+          <i class="fa-solid fa-spinner fa-spin"></i>
         </div>
-      </main>
     </div>
+    </main>
+  </div>
   </div>
 
-  <div id="SpinLoad" style="z-index: 2000; position: absolute; left: 0px; right: 0px; top: 0px; bottom: 0px; background: #ddd; font-size: 48px; color: #555; text-align: center;">
+  <div id="SpinLoad"
+    style="z-index: 2000; position: absolute; left: 0px; right: 0px; top: 0px; bottom: 0px; background: #ddd; font-size: 48px; color: #555; text-align: center;">
     <p>
       Loading, Please Wait...
       <i class="fa-solid fa-spinner fa-spin"></i>

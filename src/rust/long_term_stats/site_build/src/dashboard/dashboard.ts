@@ -22,7 +22,6 @@ export class DashboardPage implements Page {
             container.innerHTML = html;
         }
         this.components = [
-            new NodeStatus(),
             new RootBreadcrumbs(),
             new PacketsChart(),
             new ThroughputChart(),
@@ -31,6 +30,8 @@ export class DashboardPage implements Page {
             new RootHeat(),
             new SiteStackChart("root"),
         ];
+        window.toggleThroughput = toggleThroughput;
+        window.toggleLatency = toggleLatency;
     }
 
     wireup() {
@@ -54,5 +55,61 @@ export class DashboardPage implements Page {
                 component.onmessage(event);
             });
         }
+    }
+}
+
+function toggleThroughput(mode: string) {
+    let elements = [
+        document.getElementById("bitsholder"),
+        document.getElementById("packetsholder"),
+        document.getElementById("sitestackholder"),
+    ];
+
+    // Clear all
+    elements.forEach(element => {
+        if (element) {
+            element.style.height = "0px";
+            element.style.overflow = "none";
+        }
+    });
+
+    var element = 0;
+    switch (mode) {
+        case "tp": { var element = 0 } break;
+        case "pk": { var element = 1 } break;
+        case "st": { var element = 2 } break;
+    }
+
+    let e = elements[element];
+    if (e) {
+        e.style.height = "250px";
+        e.style.overflow = "auto";
+    }
+}
+
+function toggleLatency(mode: string) {
+    let elements = [
+        document.getElementById("rttHistoHolder"),
+        document.getElementById("rttChartHolder"),
+    ];
+
+    // Clear all
+    elements.forEach(element => {
+        if (element) {
+            element.style.height = "0px";
+            element.style.overflow = "none";
+        }
+    });
+
+    var element = 0;
+    switch (mode) {
+        case "histo": { var element = 0 } break;
+        case "line": { var element = 1 } break;
+    }
+
+    let e = elements[element];
+    if (e) {
+        e.style.height = "250px";
+        e.style.overflow = "auto";
     }
 }
