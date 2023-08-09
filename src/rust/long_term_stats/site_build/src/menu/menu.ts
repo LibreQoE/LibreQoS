@@ -53,7 +53,7 @@ export class MenuPage implements Page {
                 r.style.display = "none";
             }
             let searchText = this.searchBar.value;
-            if (searchText.length > 3) {
+            if (searchText.length > 2) {
                 this.doSearch(searchText);
             }
         }

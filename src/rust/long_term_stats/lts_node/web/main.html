@@ -338,7 +338,7 @@
       </li>
       <li class="nav-item text-nowrap">
 
-        <form class="d-flex" role="search">
+        <form class="d-flex" role="search" onkeydown="return event.key != 'Enter';">
           <input id="txtSearch" class="form-control me-2" type="search" placeholder="Search" aria-label="Search"
             autocomplete="off">
           <div id="searchResults"

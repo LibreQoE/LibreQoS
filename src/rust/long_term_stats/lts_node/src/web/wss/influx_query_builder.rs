@@ -139,7 +139,7 @@ impl InfluxQueryBuilder {
         }
 
         // Add any other filters
-        for filter in self.filters.iter() {
+        for filter in self.filters.iter().filter(|f| !f.is_empty()) {
             lines.push(format!("|> filter(fn: (r) => {})", filter));
         }
 
