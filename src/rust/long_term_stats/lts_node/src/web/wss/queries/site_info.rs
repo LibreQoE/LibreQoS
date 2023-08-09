@@ -1,8 +1,7 @@
 use super::site_tree::tree_to_host;
-use crate::web::wss::send_response;
-use axum::extract::ws::WebSocket;
 use pgdb::sqlx::{Pool, Postgres};
 use serde::Serialize;
+use tokio::sync::mpsc::Sender;
 use wasm_pipe_types::{SiteTree, WasmResponse, SiteOversubscription};
 
 #[derive(Serialize)]
@@ -13,7 +12,7 @@ struct SiteInfoMessage {
 
 pub async fn send_site_info(
     cnn: &Pool<Postgres>,
-    socket: &mut WebSocket,
+    tx: Sender<WasmResponse>,
     key: &str,
     site_id: &str,
 ) {
@@ -30,7 +29,7 @@ pub async fn send_site_info(
                 dlmin: oversub.dlmin,
                 devicecount: oversub.devicecount,
             };
-            send_response(socket, WasmResponse::SiteInfo { data: host, oversubscription }).await;
+            tx.send(WasmResponse::SiteInfo { data: host, oversubscription }).await.unwrap();
         } else {
             tracing::error!("{oversub:?}");
         }

@@ -2,11 +2,11 @@
 mod packet_row;
 use self::packet_row::PacketRow;
 use super::time_period::InfluxTimePeriod;
-use crate::web::wss::{influx_query_builder::InfluxQueryBuilder, send_response};
-use axum::extract::ws::WebSocket;
+use crate::web::wss::influx_query_builder::InfluxQueryBuilder;
 use pgdb::sqlx::{Pool, Postgres};
+use tokio::sync::mpsc::Sender;
 use tracing::instrument;
-use wasm_pipe_types::{PacketHost, Packets};
+use wasm_pipe_types::{PacketHost, Packets, WasmResponse};
 
 fn add_by_direction(direction: &str, down: &mut Vec<Packets>, up: &mut Vec<Packets>, row: &PacketRow) {
     match direction {
@@ -30,10 +30,10 @@ fn add_by_direction(direction: &str, down: &mut Vec<Packets>, up: &mut Vec<Packe
     }
 }
 
-#[instrument(skip(cnn, socket, key, period))]
+#[instrument(skip(cnn, tx, key, period))]
 pub async fn send_packets_for_all_nodes(
     cnn: &Pool<Postgres>,
-    socket: &mut WebSocket,
+    tx: Sender<WasmResponse>,
     key: &str,
     period: InfluxTimePeriod,
 ) -> anyhow::Result<()> {
@@ -69,14 +69,14 @@ pub async fn send_packets_for_all_nodes(
                 });
             }
         });
-    send_response(socket, wasm_pipe_types::WasmResponse::PacketChart { nodes }).await;
+    tx.send(wasm_pipe_types::WasmResponse::PacketChart { nodes }).await?;
     Ok(())
 }
 
-#[instrument(skip(cnn, socket, key, period))]
+#[instrument(skip(cnn, tx, key, period))]
 pub async fn send_packets_for_node(
     cnn: &Pool<Postgres>,
-    socket: &mut WebSocket,
+    tx: Sender<WasmResponse>,
     key: &str,
     period: InfluxTimePeriod,
     node_id: &str,
@@ -85,11 +85,7 @@ pub async fn send_packets_for_node(
     let node =
         get_packets_for_node(cnn, key, node_id.to_string(), node_name.to_string(), period).await?;
 
-    send_response(
-        socket,
-        wasm_pipe_types::WasmResponse::PacketChart { nodes: vec![node] },
-    )
-    .await;
+    tx.send(wasm_pipe_types::WasmResponse::PacketChart { nodes: vec![node] }).await?;
     Ok(())
 }
 

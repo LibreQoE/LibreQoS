@@ -1,9 +1,8 @@
-use axum::extract::ws::WebSocket;
 use chrono::{DateTime, FixedOffset, Utc};
 use influxdb2::{Client, FromDataPoint, models::Query};
 use pgdb::{sqlx::{Pool, Postgres}, organization_cache::get_org_details};
-use wasm_pipe_types::{PerfHost, Perf};
-use crate::web::wss::send_response;
+use tokio::sync::mpsc::Sender;
+use wasm_pipe_types::{PerfHost, Perf, WasmResponse};
 use super::time_period::InfluxTimePeriod;
 
 #[derive(Debug, FromDataPoint)]
@@ -29,14 +28,14 @@ impl Default for PerfRow {
 
 pub async fn send_perf_for_node(
     cnn: &Pool<Postgres>,
-    socket: &mut WebSocket,
+    tx: Sender<WasmResponse>,
     key: &str,
     period: InfluxTimePeriod,
     node_id: String,
     node_name: String,
 ) -> anyhow::Result<()> {
     let node = get_perf_for_node(cnn, key, node_id, node_name, period).await?;
-    send_response(socket, wasm_pipe_types::WasmResponse::NodePerfChart { nodes: vec![node] }).await;
+    tx.send(WasmResponse::NodePerfChart { nodes: vec![node] }).await?;
     Ok(())
 }
 

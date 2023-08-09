@@ -1,8 +1,6 @@
-use axum::extract::ws::WebSocket;
 use pgdb::sqlx::{Pool, Postgres};
-use wasm_pipe_types::CircuitList;
-
-use crate::web::wss::send_response;
+use tokio::sync::mpsc::Sender;
+use wasm_pipe_types::{CircuitList, WasmResponse};
 
 fn from(circuit: pgdb::CircuitInfo) -> CircuitList {
     CircuitList {
@@ -21,9 +19,10 @@ fn from(circuit: pgdb::CircuitInfo) -> CircuitList {
     }
 }
 
-pub async fn send_circuit_info(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, circuit_id: &str) {
+#[tracing::instrument(skip(cnn, tx, key, circuit_id))]
+pub async fn send_circuit_info(cnn: &Pool<Postgres>, tx: Sender<WasmResponse>, key: &str, circuit_id: &str) {
     if let Ok(hosts) = pgdb::get_circuit_info(cnn, key, circuit_id).await {
         let hosts = hosts.into_iter().map(from).collect::<Vec<_>>();
-        send_response(socket, wasm_pipe_types::WasmResponse::CircuitInfo { data: hosts }).await;
+        tx.send(WasmResponse::CircuitInfo { data: hosts }).await.unwrap();
     }
 }

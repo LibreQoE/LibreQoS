@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 mod site_stack;
-use axum::extract::ws::WebSocket;
 use futures::future::join_all;
 use influxdb2::{Client, models::Query};
 use pgdb::{sqlx::{Pool, Postgres}, organization_cache::get_org_details};
+use tokio::sync::mpsc::Sender;
 use tracing::instrument;
-use wasm_pipe_types::{ThroughputHost, Throughput};
-use crate::web::wss::{send_response, influx_query_builder::InfluxQueryBuilder};
+use wasm_pipe_types::{ThroughputHost, Throughput, WasmResponse};
+use crate::web::wss::influx_query_builder::InfluxQueryBuilder;
 use self::throughput_row::{ThroughputRow, ThroughputRowBySite, ThroughputRowByCircuit};
 use super::time_period::InfluxTimePeriod;
 mod throughput_row;
@@ -56,8 +56,8 @@ fn add_by_direction_site(direction: &str, down: &mut Vec<Throughput>, up: &mut V
     }
 }
 
-#[instrument(skip(cnn, socket, key, period))]
-pub async fn send_throughput_for_all_nodes(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod) -> anyhow::Result<()> {
+#[instrument(skip(cnn, tx, key, period))]
+pub async fn send_throughput_for_all_nodes(cnn: &Pool<Postgres>, tx: Sender<WasmResponse>, key: &str, period: InfluxTimePeriod) -> anyhow::Result<()> {
     let node_status = pgdb::node_status(cnn, key).await?;
     let mut nodes = Vec::<ThroughputHost>::new();
     InfluxQueryBuilder::new(period.clone())
@@ -85,12 +85,12 @@ pub async fn send_throughput_for_all_nodes(cnn: &Pool<Postgres>, socket: &mut We
                 nodes.push(ThroughputHost { node_id: row.host_id, node_name, down, up });
             }
         });
-    send_response(socket, wasm_pipe_types::WasmResponse::BitsChart { nodes }).await;
+    tx.send(WasmResponse::BitsChart { nodes }).await?;
     Ok(())    
 }
 
-#[instrument(skip(cnn, socket, key, period, site_name))]
-pub async fn send_throughput_for_all_nodes_by_site(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, site_name: String, period: InfluxTimePeriod) -> anyhow::Result<()> {
+#[instrument(skip(cnn, tx, key, period, site_name))]
+pub async fn send_throughput_for_all_nodes_by_site(cnn: &Pool<Postgres>, tx: Sender<WasmResponse>, key: &str, site_name: String, period: InfluxTimePeriod) -> anyhow::Result<()> {
     let node_status = pgdb::node_status(cnn, key).await?;
     let mut nodes = Vec::<ThroughputHost>::new();
     InfluxQueryBuilder::new(period.clone())
@@ -119,7 +119,7 @@ pub async fn send_throughput_for_all_nodes_by_site(cnn: &Pool<Postgres>, socket:
                 nodes.push(ThroughputHost { node_id: row.host_id, node_name, down, up });
             }
         });
-    send_response(socket, wasm_pipe_types::WasmResponse::BitsChart { nodes }).await;
+    tx.send(WasmResponse::BitsChart { nodes }).await?;
     Ok(())
 }
 
@@ -131,15 +131,15 @@ pub async fn send_throughput_for_all_nodes_by_site(cnn: &Pool<Postgres>, socket:
     Ok(())
 }*/
 
-pub async fn send_throughput_for_all_nodes_by_circuit(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, circuit_id: String, period: InfluxTimePeriod) -> anyhow::Result<()> {
+pub async fn send_throughput_for_all_nodes_by_circuit(cnn: &Pool<Postgres>, tx: Sender<WasmResponse>, key: &str, circuit_id: String, period: InfluxTimePeriod) -> anyhow::Result<()> {
     let nodes = get_throughput_for_all_nodes_by_circuit(cnn, key, period, &circuit_id).await?;
-    send_response(socket, wasm_pipe_types::WasmResponse::BitsChart { nodes }).await;
+    tx.send(WasmResponse::BitsChart { nodes }).await?;
     Ok(())
 }
 
-pub async fn send_throughput_for_node(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod, node_id: String, node_name: String) -> anyhow::Result<()> {
+pub async fn send_throughput_for_node(cnn: &Pool<Postgres>, tx: Sender<WasmResponse>, key: &str, period: InfluxTimePeriod, node_id: String, node_name: String) -> anyhow::Result<()> {
     let node = get_throughput_for_node(cnn, key, node_id, node_name, period).await?;
-    send_response(socket, wasm_pipe_types::WasmResponse::BitsChart { nodes: vec![node] }).await;
+    tx.send(WasmResponse::BitsChart { nodes: vec![node] }).await?;
     Ok(())
 }
 

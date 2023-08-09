@@ -1,12 +1,12 @@
-use crate::web::wss::{queries::time_period::InfluxTimePeriod, send_response};
-use axum::extract::ws::WebSocket;
+use crate::web::wss::queries::time_period::InfluxTimePeriod;
 use pgdb::{
     organization_cache::get_org_details,
     sqlx::{Pool, Postgres},
     OrganizationDetails,
 };
+use tokio::sync::mpsc::Sender;
 use tracing::{error, instrument};
-use wasm_pipe_types::SiteStackHost;
+use wasm_pipe_types::{SiteStackHost, WasmResponse};
 
 #[derive(Debug, influxdb2::FromDataPoint)]
 pub struct SiteStackRow {
@@ -48,10 +48,10 @@ impl Default for CircuitStackRow {
     }
 }
 
-#[instrument(skip(cnn, socket, key, period))]
+#[instrument(skip(cnn, tx, key, period))]
 pub async fn send_site_stack_map(
     cnn: &Pool<Postgres>,
-    socket: &mut WebSocket,
+    tx: Sender<WasmResponse>,
     key: &str,
     period: InfluxTimePeriod,
     site_id: String,
@@ -78,11 +78,7 @@ pub async fn send_site_stack_map(
                 reduce_to_x_entries(&mut result);
 
                 // Send the reply
-                send_response(
-                    socket,
-                    wasm_pipe_types::WasmResponse::SiteStack { nodes: result },
-                )
-                .await;
+                tx.send(WasmResponse::SiteStack { nodes: result }).await?;
             }
         }
     }

@@ -3,12 +3,14 @@ use axum::extract::ws::WebSocket;
 use chrono::{DateTime, FixedOffset};
 use influxdb2::{FromDataPoint, models::Query, Client};
 use pgdb::{sqlx::{Pool, Postgres}, organization_cache::get_org_details};
-use crate::web::wss::send_response;
+use tokio::sync::mpsc::Sender;
+use wasm_pipe_types::WasmResponse;
 use super::time_period::InfluxTimePeriod;
 
+#[tracing::instrument(skip(cnn, tx, key, circuit_id))]
 pub async fn send_extended_device_info(
     cnn: &Pool<Postgres>,
-    socket: &mut WebSocket,
+    tx: Sender<WasmResponse>,
     key: &str,
     circuit_id: &str,
 ) {
@@ -60,14 +62,15 @@ pub async fn send_extended_device_info(
         // If there is any, send it
         println!("{extended_data:?}");
         if !extended_data.is_empty() {
-            send_response(socket, wasm_pipe_types::WasmResponse::DeviceExt { data: extended_data }).await;
+            tx.send(WasmResponse::DeviceExt { data: extended_data }).await.unwrap();
         }
     }
 }
 
+#[tracing::instrument(skip(cnn, tx, key, device_id, period))]
 pub async fn send_extended_device_snr_graph(
     cnn: &Pool<Postgres>,
-    socket: &mut WebSocket,
+    tx: Sender<WasmResponse>,
     key: &str,
     device_id: &str,
     period: InfluxTimePeriod,
@@ -101,7 +104,7 @@ pub async fn send_extended_device_snr_graph(
             };
             sn.push(snr);
         });
-        send_response(socket, wasm_pipe_types::WasmResponse::DeviceExtSnr { data: sn, device_id: device_id.to_string() }).await;
+        tx.send(WasmResponse::DeviceExtSnr { data: sn, device_id: device_id.to_string() }).await?;
     }
     Ok(())
 }
@@ -129,9 +132,10 @@ pub struct SnrRow {
     pub time: DateTime<FixedOffset>,
 }
 
+#[tracing::instrument(skip(cnn, tx, key, device_id, period))]
 pub async fn send_extended_device_capacity_graph(
     cnn: &Pool<Postgres>,
-    socket: &mut WebSocket,
+    tx: Sender<WasmResponse>,
     key: &str,
     device_id: &str,
     period: InfluxTimePeriod,
@@ -165,7 +169,7 @@ pub async fn send_extended_device_capacity_graph(
             };
             sn.push(snr);
         });
-        send_response(socket, wasm_pipe_types::WasmResponse::DeviceExtCapacity { data: sn, device_id: device_id.to_string() }).await;
+        tx.send(WasmResponse::DeviceExtCapacity { data: sn, device_id: device_id.to_string() }).await;
     }
     Ok(())
 }

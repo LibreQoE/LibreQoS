@@ -3,19 +3,19 @@ pub use per_node::*;
 mod per_site;
 pub use per_site::*;
 
-use axum::extract::ws::WebSocket;
 use futures::future::join_all;
 use influxdb2::{Client, models::Query};
 use pgdb::{sqlx::{Pool, Postgres}, organization_cache::get_org_details};
+use tokio::sync::mpsc::Sender;
 use tracing::instrument;
-use wasm_pipe_types::{RttHost, Rtt};
-use crate::web::wss::{queries::rtt::rtt_row::RttCircuitRow, send_response};
+use wasm_pipe_types::{RttHost, Rtt, WasmResponse};
+use crate::web::wss::queries::rtt::rtt_row::RttCircuitRow;
 use self::rtt_row::RttRow;
 use super::time_period::InfluxTimePeriod;
 mod rtt_row;
 
-#[instrument(skip(cnn, socket, key, site_id, period))]
-pub async fn send_rtt_for_all_nodes_circuit(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, site_id: String, period: InfluxTimePeriod) -> anyhow::Result<()> {
+#[instrument(skip(cnn, tx, key, site_id, period))]
+pub async fn send_rtt_for_all_nodes_circuit(cnn: &Pool<Postgres>, tx: Sender<WasmResponse>, key: &str, site_id: String, period: InfluxTimePeriod) -> anyhow::Result<()> {
     let nodes = get_rtt_for_all_nodes_circuit(cnn, key, &site_id, period).await?;
 
     let mut histogram = vec![0; 20];
@@ -26,11 +26,11 @@ pub async fn send_rtt_for_all_nodes_circuit(cnn: &Pool<Postgres>, socket: &mut W
         }
     }
 
-    send_response(socket, wasm_pipe_types::WasmResponse::RttChartCircuit { nodes, histogram }).await;
+    tx.send(WasmResponse::RttChartCircuit { nodes, histogram }).await?;
     Ok(())
 }
 
-pub async fn send_rtt_for_node(cnn: &Pool<Postgres>, socket: &mut WebSocket, key: &str, period: InfluxTimePeriod, node_id: String, node_name: String) -> anyhow::Result<()> {
+pub async fn send_rtt_for_node(cnn: &Pool<Postgres>, tx: Sender<WasmResponse>, key: &str, period: InfluxTimePeriod, node_id: String, node_name: String) -> anyhow::Result<()> {
     let node = get_rtt_for_node(cnn, key, node_id, node_name, period).await?;
     let nodes = vec![node];
 
@@ -42,7 +42,7 @@ pub async fn send_rtt_for_node(cnn: &Pool<Postgres>, socket: &mut WebSocket, key
         }
     }*/
 
-    send_response(socket, wasm_pipe_types::WasmResponse::RttChart { nodes }).await;
+    tx.send(WasmResponse::RttChart { nodes }).await?;
     Ok(())
 }
 
