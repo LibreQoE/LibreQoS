@@ -169,7 +169,7 @@ pub async fn send_extended_device_capacity_graph(
             };
             sn.push(snr);
         });
-        tx.send(WasmResponse::DeviceExtCapacity { data: sn, device_id: device_id.to_string() }).await;
+        tx.send(WasmResponse::DeviceExtCapacity { data: sn, device_id: device_id.to_string() }).await?;
     }
     Ok(())
 }

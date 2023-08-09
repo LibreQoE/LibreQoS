@@ -24,8 +24,8 @@ pub(crate) fn tree_to_host(row: TreeNode) -> SiteTree {
         parent: row.parent,
         max_down: row.max_down,
         max_up: row.max_up,
-        current_down: row.current_down,
-        current_up: row.current_up,
+        current_down: row.current_down * 8,
+        current_up: row.current_up * 8,
         current_rtt: row.current_rtt,
     }
 }
