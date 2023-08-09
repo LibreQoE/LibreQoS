@@ -528,6 +528,30 @@ export function request_ext_capacity_graph(period, device_id) {
     wasm.request_ext_capacity_graph(ptr0, len0, ptr1, len1);
 }
 
+/**
+* @param {string} period
+* @param {string} site_name
+*/
+export function request_ext_capacity_ap(period, site_name) {
+    const ptr0 = passStringToWasm0(period, wasm.__wbindgen_export_0, wasm.__wbindgen_export_1);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(site_name, wasm.__wbindgen_export_0, wasm.__wbindgen_export_1);
+    const len1 = WASM_VECTOR_LEN;
+    wasm.request_ext_capacity_ap(ptr0, len0, ptr1, len1);
+}
+
+/**
+* @param {string} period
+* @param {string} site_name
+*/
+export function request_ext_signal_ap(period, site_name) {
+    const ptr0 = passStringToWasm0(period, wasm.__wbindgen_export_0, wasm.__wbindgen_export_1);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(site_name, wasm.__wbindgen_export_0, wasm.__wbindgen_export_1);
+    const len1 = WASM_VECTOR_LEN;
+    wasm.request_ext_signal_ap(ptr0, len0, ptr1, len1);
+}
+
 function handleError(f, args) {
     try {
         return f.apply(this, args);
