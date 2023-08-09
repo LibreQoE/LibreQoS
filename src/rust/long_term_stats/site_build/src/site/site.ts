@@ -5,7 +5,6 @@ import { Component } from '../components/component';
 import { ThroughputSiteChart } from '../components/throughput_site';
 import { SiteInfo } from '../components/site_info';
 import { RttChartSite } from '../components/rtt_site';
-import { RttHistoSite } from '../components/rtt_histo_site';
 import { SiteBreadcrumbs } from '../components/site_breadcrumbs';
 import { SiteHeat } from '../components/site_heat';
 import { SiteStackChart } from '../components/site_stack';
@@ -24,10 +23,9 @@ export class SitePage implements Page {
         }
         this.components = [
             new SiteInfo(siteId),
-            new ThroughputSiteChart(siteId),
-            new RttChartSite(siteId),
-            new RttHistoSite(),
             new SiteBreadcrumbs(siteId),
+            new ThroughputSiteChart(siteId),
+            new RttChartSite(siteId, 1.0),
             new SiteHeat(siteId),
             new SiteStackChart(siteId),
         ];

@@ -3,9 +3,7 @@ use axum::extract::ws::WebSocket;
 use chrono::{DateTime, FixedOffset};
 use influxdb2::{FromDataPoint, models::Query, Client};
 use pgdb::{sqlx::{Pool, Postgres}, organization_cache::get_org_details};
-
 use crate::web::wss::send_response;
-
 use super::time_period::InfluxTimePeriod;
 
 pub async fn send_extended_device_info(
@@ -105,6 +103,21 @@ pub async fn send_extended_device_snr_graph(
         });
         send_response(socket, wasm_pipe_types::WasmResponse::DeviceExtSnr { data: sn, device_id: device_id.to_string() }).await;
     }
+    Ok(())
+}
+
+pub async fn send_ap_snr(
+    cnn: &Pool<Postgres>,
+    socket: &mut WebSocket,
+    key: &str,
+    site_name: &str,
+    period: InfluxTimePeriod,
+
+) -> anyhow::Result<()> {
+    // Get list of child devices
+    let hosts = pgdb::get_host_list_for_site(cnn, key, site_name).await?;
+    let host_filter = pgdb::device_list_to_influx_filter(&hosts);
+
     Ok(())
 }
 

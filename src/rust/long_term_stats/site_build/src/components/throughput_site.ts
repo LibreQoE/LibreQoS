@@ -17,6 +17,7 @@ export class ThroughputSiteChart implements Component {
     }
 
     wireup(): void {
+        request_throughput_chart_for_site(window.graphPeriod, this.siteId);
     }
 
     ontick(): void {
@@ -43,9 +44,9 @@ export class ThroughputSiteChart implements Component {
                 let l: number[] = [];
                 for (let j=0; j<node.down.length; j++) {
                     if (first) x.push(node.down[j].date);                 
-                    d.push(node.down[j].value);
-                    u.push(node.down[j].u);
-                    l.push(node.down[j].l);
+                    d.push(node.down[j].value * 8);
+                    u.push(node.down[j].u * 8);
+                    l.push(node.down[j].l * 8);
                 }
                 if (first) first = false;
 
@@ -134,7 +135,20 @@ export class ThroughputSiteChart implements Component {
                 this.myChart.setOption<echarts.EChartsOption>(
                     (option = {
                         title: { text: "Bits" },
-                        tooltip: { trigger: "axis" },
+                        tooltip: { 
+                            trigger: "axis",
+                            formatter: function (params: any) {
+                                let ret = "";
+                                for (let i=0; i<params.length; i+=3) {
+                                    if (params[i+2].value > 0) {
+                                        ret += params[i+2].seriesName + ": " + scaleNumber(Math.abs(params[i+2].value)) + " ⬇️<br/>";
+                                    } else {
+                                        ret += params[i+2].seriesName + ": " + scaleNumber(Math.abs(params[i+2].value)) + " ⬆️<br/>";
+                                    }
+                                }
+                                return ret;
+                            }
+                        },
                         legend: {
                             orient: "horizontal",
                             right: 10,

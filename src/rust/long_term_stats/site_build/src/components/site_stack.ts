@@ -37,7 +37,7 @@ export class SiteStackChart implements Component {
             let legend: string[] = [];
             for (let i = 0; i < event.SiteStack.nodes.length; i++) {
                 let node = event.SiteStack.nodes[i];
-                console.log(node);
+                //console.log(node);
                 if (node.node_name != "Root") {
                     legend.push(node.node_name);
                     //legend.push(node.node_name + " UL");
@@ -91,7 +91,7 @@ export class SiteStackChart implements Component {
                         tooltip: { 
                             trigger: "axis",
                             formatter: function (params: any) {
-                                console.log(params);
+                                //console.log(params);
                                 let result = "";
                                 for (let i = 0; i < params.length; i+=2) {
                                     let siteName = params[i].seriesName;

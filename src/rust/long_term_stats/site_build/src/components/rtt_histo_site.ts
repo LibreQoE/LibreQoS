@@ -22,7 +22,7 @@ export class RttHistoSite implements Component {
     }
 
     onmessage(event: any): void {
-        if (event.msg == "RttChartSite") {
+        /*if (event.msg == "RttChartSite") {
             //console.log(event);
             this.download = [];
             this.x = [];
@@ -57,6 +57,6 @@ export class RttHistoSite implements Component {
                 option && this.myChart.setOption(option);
                 // this.chartMade = true;
             }
-        }
+        }*/
     }
 }

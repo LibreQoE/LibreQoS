@@ -5,7 +5,6 @@ import { request_site_heat } from "../../wasm/wasm_pipe";
 export class SiteHeat implements Component {
     div: HTMLElement;
     myChart: echarts.ECharts | null = null;
-    counter: number = 0;
     siteId: string;
 
     constructor(siteId: string) {
@@ -20,10 +19,7 @@ export class SiteHeat implements Component {
 
     ontick(): void {
         console.log("SiteHeat ontick");
-        this.counter++;
-        if (this.counter == 0) {
-            request_site_heat(window.graphPeriod, this.siteId);
-        }
+        request_site_heat(window.graphPeriod, this.siteId);
     }
 
     onmessage(event: any): void {
@@ -55,7 +51,7 @@ export class SiteHeat implements Component {
 
                 // Create all the series entries for this category
                 for (let i=0; i<event.SiteHeat.data[key].length; i++) {
-                    data.push([i, count, event.SiteHeat.data[key][i][1].toFixed(1)]);
+                    data.push([i, count, event.SiteHeat.data[key][i][1].toFixed(0)]);
                 }
 
                 count++;

@@ -46,7 +46,7 @@ export class RootHeat implements Component {
 
                 // Create all the series entries for this category
                 for (let i = 0; i < event.RootHeat.data[key].length; i++) {
-                    data.push([i, count, event.RootHeat.data[key][i][1].toFixed(1)]);
+                    data.push([i, count, event.RootHeat.data[key][i][1].toFixed(0)]);
                 }
 
                 count++;
@@ -54,7 +54,7 @@ export class RootHeat implements Component {
 
             let series: any[] = [];
             let i = 0;
-            console.log(categories);
+            //console.log(categories);
             series.push({
                 name: categories[i],
                 type: 'heatmap',

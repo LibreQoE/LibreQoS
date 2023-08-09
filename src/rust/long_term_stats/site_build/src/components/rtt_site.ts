@@ -8,15 +8,18 @@ export class RttChartSite implements Component {
     myChart: echarts.ECharts;
     chartMade: boolean = false;
     siteId: string;
+    multiplier: number;
 
-    constructor(siteId: string) {
+    constructor(siteId: string, multiplier: number = 10.0) {
         this.siteId = siteId;
         this.div = document.getElementById("rttChart") as HTMLElement;
         this.myChart = echarts.init(this.div);
         this.myChart.showLoading();
+        this.multiplier = multiplier;
     }
 
     wireup(): void {
+        request_rtt_chart_for_site(window.graphPeriod, this.siteId);
     }
 
     ontick(): void {
@@ -42,35 +45,12 @@ export class RttChartSite implements Component {
                 let l: number[] = [];
                 for (let j=0; j<node.rtt.length; j++) {
                     if (first) x.push(node.rtt[j].date);                 
-                    d.push(node.rtt[j].value);
+                    d.push(node.rtt[j].value * this.multiplier);
                     u.push(node.rtt[j].u);
                     l.push(node.rtt[j].l);
                 }
                 if (first) first = false;
 
-                let min: echarts.SeriesOption = {
-                    name: "L",
-                    type: "line",
-                    data: l,
-                    symbol: 'none',
-                    stack: 'confidence-band-' + node.node_id,
-                    lineStyle: {
-                        opacity: 0
-                    },
-                };
-                let max: echarts.SeriesOption = {
-                    name: "U",
-                    type: "line",
-                    data: u,
-                    symbol: 'none',
-                    stack: 'confidence-band-' + node.node_id,
-                    lineStyle: {
-                        opacity: 0
-                    },
-                    areaStyle: {
-                        color: '#ccc'
-                    },
-                };
                 let val: echarts.SeriesOption = {
                     name: node.node_name,
                     type: "line",
@@ -78,8 +58,8 @@ export class RttChartSite implements Component {
                     symbol: 'none',
                 };
 
-                series.push(min);
-                series.push(max);
+                //series.push(min);
+                //series.push(max);
                 series.push(val);
             }
 
@@ -88,8 +68,14 @@ export class RttChartSite implements Component {
                 var option: echarts.EChartsOption;
                 this.myChart.setOption<echarts.EChartsOption>(
                     (option = {
-                        title: { text: "TCP Round-Trip Time" },
-                        tooltip: { trigger: "axis" },
+                        title: { text: "Average TCP Round-Trip Time" },
+                        tooltip: { 
+                            trigger: "axis",
+                            formatter: function (params: any) {
+                                let ret = params[0].value.toFixed(1) + " ms<br/>";
+                                return ret;
+                            }
+                        },
                         legend: {
                             orient: "horizontal",
                             right: 10,

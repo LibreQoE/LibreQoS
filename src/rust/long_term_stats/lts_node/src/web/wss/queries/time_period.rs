@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct InfluxTimePeriod {
-    start: String,
-    aggregate: String,
+    pub start: String,
+    pub aggregate: String,
     sample: i32,
 }
 

@@ -55,7 +55,7 @@ pub async fn send_rtt_histogram_for_all_nodes(
     Ok(())
 }
 
-fn rtt_rows_to_result(rows: Vec<RttRow>, node_status: Vec<NodeStatus>) -> Vec<RttHost> {
+pub(crate) fn rtt_rows_to_result(rows: Vec<RttRow>, node_status: Vec<NodeStatus>) -> Vec<RttHost> {
     let mut result = Vec::<RttHost>::new();
     for row in rows.into_iter() {
         if let Some(host) = result.iter_mut().find(|h| h.node_id == row.host_id) {

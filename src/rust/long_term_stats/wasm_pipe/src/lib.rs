@@ -24,7 +24,7 @@ extern "C" {
 pub use conduit::{initialize_wss, is_wasm_connected, send_wss_queue};
 
 fn send_message(msg: WasmRequest) {
-    log(&format!("Enqueueing message: {msg:?}"));
+    //log(&format!("Enqueueing message: {msg:?}"));
     conduit::send_message(msg);
 }
 
@@ -124,7 +124,6 @@ pub fn request_site_heat(period: String, site_id: String) {
     send_message(WasmRequest::SiteHeat { period, site_id });
 }
 
-
 #[wasm_bindgen]
 pub fn request_tree(parent: String) {
     send_message(WasmRequest::Tree { parent });
@@ -173,4 +172,14 @@ pub fn request_ext_snr_graph(period: String, device_id: String) {
 #[wasm_bindgen]
 pub fn request_ext_capacity_graph(period: String, device_id: String) {
     send_message(WasmRequest::DeviceCapacityChartExt { period, device_id });
+}
+
+#[wasm_bindgen]
+pub fn request_ext_capacity_ap(period: String, site_name: String) {
+    send_message(WasmRequest::ApCapacityExt { period, site_name });
+}
+
+#[wasm_bindgen]
+pub fn request_ext_signal_ap(period: String, site_name: String) {
+    send_message(WasmRequest::ApSignalExt { period, site_name });
 }

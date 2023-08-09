@@ -142,6 +142,7 @@ async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
                 .await;
             }
             (WasmRequest::ThroughputChartSite { period, site_id }, Some(credentials)) => {
+                let site_id = urlencoding::decode(site_id).unwrap();
                 let _ = send_throughput_for_all_nodes_by_site(
                     &cnn,
                     wss,
@@ -181,6 +182,7 @@ async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
                 .await;
             }
             (WasmRequest::RttChartSite { period, site_id }, Some(credentials)) => {
+                let site_id = urlencoding::decode(site_id).unwrap();
                 let _ = send_rtt_for_all_nodes_site(
                     &cnn,
                     wss,
@@ -220,6 +222,7 @@ async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
             }
             // Site Stack
             (WasmRequest::SiteStack { period, site_id }, Some(credentials)) => {
+                let site_id = urlencoding::decode(site_id).unwrap();
                 let _ = send_site_stack_map(
                     &cnn,
                     wss,
@@ -273,10 +276,12 @@ async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
                 send_site_info(&cnn, wss, &credentials.license_key, site_id).await;
             }
             (WasmRequest::SiteParents { site_id }, Some(credentials)) => {
-                send_site_parents(&cnn, wss, &credentials.license_key, site_id).await;
+                let site_id = urlencoding::decode(site_id).unwrap();
+                send_site_parents(&cnn, wss, &credentials.license_key, &site_id).await;
             }
             (WasmRequest::CircuitParents { circuit_id }, Some(credentials)) => {
-                send_circuit_parents(&cnn, wss, &credentials.license_key, circuit_id).await;
+                let circuit_id = urlencoding::decode(circuit_id).unwrap();
+                send_circuit_parents(&cnn, wss, &credentials.license_key, &circuit_id).await;
             }
             (WasmRequest::RootParents, Some(credentials)) => {
                 send_root_parents(&cnn, wss, &credentials.license_key).await;
@@ -309,6 +314,12 @@ async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
                     InfluxTimePeriod::new(period),
                 )
                 .await;
+            }
+            (WasmRequest::ApSignalExt { period, site_name }, Some(credentials)) => {
+
+            }
+            (WasmRequest::ApCapacityExt { period, site_name }, Some(credentials)) => {
+                
             }
             (_, None) => {
                 tracing::error!("No credentials");

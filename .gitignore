@@ -63,6 +63,7 @@ src/rust/long_term_stats/site_build/node_modules
 src/rust/long_term_stats/site_build/output
 src/rust/long_term_stats/site_build/package-lock.json
 src/rust/long_term_stats/wasm_pipe/staging
+src/rust/long_term_stats/lts_node/deploy.sh
 
 # Ignore Rust build artifacts
 src/rust/target

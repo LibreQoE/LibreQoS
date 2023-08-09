@@ -28,3 +28,4 @@ tokio-util = { version = "0.7.8", features = ["io"] }
 wasm_pipe_types = { path = "../wasm_pipe_types" }
 console-subscriber = "0.1.10"
 itertools = "0.11.0"
+urlencoding = "2.1.3"

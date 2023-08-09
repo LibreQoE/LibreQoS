@@ -8,7 +8,7 @@ export class RootBreadcrumbs implements Component {
 
     wireup(): void {
         let div = document.getElementById("siteName") as HTMLDivElement;
-        div.innerHTML = "Root | <select id='siteChildren'></select>";
+        div.innerHTML = "<a onclick='window.router.goto(\"#dashboard\")'>Root</a> | <select id='siteChildren'></select>";
         request_root_parents();
     }
 

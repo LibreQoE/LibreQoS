@@ -32,6 +32,8 @@ pub enum WasmRequest {
     ExtendedDeviceInfo { circuit_id: String },
     SignalNoiseChartExt { period: String, device_id: String },
     DeviceCapacityChartExt { period: String, device_id: String },
+    ApSignalExt { period: String, site_name: String },
+    ApCapacityExt { period: String, site_name: String },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -45,14 +47,14 @@ pub enum WasmResponse {
     BitsChart { nodes: Vec<ThroughputHost> },
     RttChart { nodes: Vec<RttHost> },
     RttHistogram { histogram: Vec<u32> },
-    RttChartSite { nodes: Vec<RttHost>, histogram: Vec<u32> },
+    RttChartSite { nodes: Vec<RttHost> },
     RttChartCircuit { nodes: Vec<RttHost>, histogram: Vec<u32> },
     SiteStack { nodes: Vec<SiteStackHost> },
     RootHeat { data: HashMap<String, Vec<(DateTime<FixedOffset>, f64)>>},
     SiteHeat { data: HashMap<String, Vec<(DateTime<FixedOffset>, f64)>>},
     NodePerfChart { nodes: Vec<PerfHost> },
     SiteTree { data: Vec<SiteTree> },
-    SiteInfo { data: SiteTree },
+    SiteInfo { data: SiteTree, oversubscription: SiteOversubscription },
     SiteParents { data: Vec<(String, String)> },
     SiteChildren { data: Vec<(String, String, String)> },
     SearchResult { hits: Vec<SearchResult> },
@@ -167,6 +169,13 @@ pub struct SiteTree {
     pub current_down: i32,
     pub current_up: i32,
     pub current_rtt: i32,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SiteOversubscription {
+    pub dlmax: i64,
+    pub dlmin: i64,
+    pub devicecount: i64,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
