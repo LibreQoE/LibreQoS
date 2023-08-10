@@ -41,7 +41,7 @@ pub async fn ws_handler(
     ws.on_upgrade(move |sock| handle_socket(sock, state))
 }
 
-#[instrument(skip(socket, cnn))]
+#[instrument(skip(socket, cnn), name = "handle_wss")]
 async fn handle_socket(mut socket: WebSocket, cnn: Pool<Postgres>) {
     tracing::info!("WebSocket Connected");
     let credentials: Arc<Mutex<Option<login::LoginResult>>> = Arc::new(Mutex::new(None));
