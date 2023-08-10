@@ -6,44 +6,46 @@ pub struct InfluxTimePeriod {
     sample: i32,
 }
 
+const fn minutes_to_seconds(minutes: i32) -> i32 {
+    minutes * 60
+}
+
+const fn hours_to_seconds(hours: i32) -> i32 {
+    minutes_to_seconds(hours * 60)
+}
+
+const fn days_to_seconds(days: i32) -> i32 {
+    hours_to_seconds(days * 24)
+}
+
+const SAMPLES_PER_GRAPH: i32 = 30;
+
+const fn aggregate_window(seconds: i32) -> i32 {
+    seconds / SAMPLES_PER_GRAPH
+}
+
 impl InfluxTimePeriod {
     pub fn new(period: &str) -> Self {
-        let start = match period {
-            "5m" => "-5m",
-            "15m" => "-15m",
-            "1h" => "-60m",
-            "6h" => "-360m",
-            "12h" => "-720m",
-            "24h" => "-1440m",
-            "7d" => "-10080m",
-            "28d" => "-40320m",
-            _ => "-5m",
+        let start_seconds = match period {
+            "5m" => minutes_to_seconds(5),
+            "15m" => minutes_to_seconds(15),
+            "1h" => hours_to_seconds(1),
+            "6h" => hours_to_seconds(6),
+            "12h" => hours_to_seconds(12),
+            "24h" => hours_to_seconds(24),
+            "7d" => days_to_seconds(7),
+            "28d" => days_to_seconds(28),
+            _ => {
+                tracing::warn!("Unknown period: {}", period);
+                minutes_to_seconds(5)
+            }
         };
+        let start = format!("-{}s", start_seconds);       
+        let aggregate_seconds = aggregate_window(start_seconds);
+        let aggregate = format!("{}s", aggregate_seconds);
+        let sample = start_seconds / 100;
 
-        let aggregate = match period {
-            "5m" => "10s",
-            "15m" => "30s",
-            "1h" => "1m",
-            "6h" => "6m",
-            "12h" => "12m",
-            "24h" => "24m",
-            "7d" => "210m",
-            "28d" => "4h",
-            _ => "10s",
-        };
-
-        let sample = match period {
-            "5m" => 3,
-            "15m" => 10,
-            "1h" => 40,
-            "6h" => 100,
-            "12h" => 200,
-            "24h" => 400,
-            "7d" => 2100,
-            "28d" => 4400,
-            _ => 1
-        };
-
+        println!("Period: {period}, Seconds: {start_seconds}, AggSec: {aggregate_seconds}, Samples: {sample}");
 
         Self {
             start: start.to_string(),
