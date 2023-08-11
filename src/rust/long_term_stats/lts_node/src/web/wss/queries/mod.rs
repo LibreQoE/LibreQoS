@@ -1,6 +1,8 @@
 //! Provides pre-packaged queries for obtaining data, that will
 //! then be used by the web server to respond to requests.
 
+mod influx;
+pub(crate) use influx::*;
 mod circuit_info;
 pub mod ext_device;
 mod node_perf;
@@ -12,7 +14,6 @@ mod site_info;
 mod site_parents;
 pub mod site_tree;
 mod throughput;
-pub mod time_period;
 pub use circuit_info::send_circuit_info;
 pub use node_perf::send_perf_for_node;
 pub use packet_counts::{send_packets_for_all_nodes, send_packets_for_node};

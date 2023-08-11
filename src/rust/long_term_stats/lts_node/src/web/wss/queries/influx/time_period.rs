@@ -24,28 +24,43 @@ const fn aggregate_window(seconds: i32) -> i32 {
     seconds / SAMPLES_PER_GRAPH
 }
 
+fn period_string_to_seconds(period: &str) -> i32 {
+    let last_char = period.chars().last().unwrap();
+    let number_part = &period[..period.len() - 1];
+    let number = number_part.parse::<i32>().unwrap_or(5);
+    let start_seconds = match last_char {
+        's' => number,
+        'm' => minutes_to_seconds(number),
+        'h' => hours_to_seconds(number),
+        'd' => days_to_seconds(number),
+        _ => {
+            tracing::warn!("Unknown time unit: {last_char}");
+            minutes_to_seconds(5)      
+        }
+    };
+    start_seconds
+}
+
 impl InfluxTimePeriod {
     pub fn new(period: &str) -> Self {
-        let start_seconds = match period {
-            "5m" => minutes_to_seconds(5),
-            "15m" => minutes_to_seconds(15),
-            "1h" => hours_to_seconds(1),
-            "6h" => hours_to_seconds(6),
-            "12h" => hours_to_seconds(12),
-            "24h" => hours_to_seconds(24),
-            "7d" => days_to_seconds(7),
-            "28d" => days_to_seconds(28),
+        let last_char = period.chars().last().unwrap();
+        let number_part = &period[..period.len() - 1];
+        let number = number_part.parse::<i32>().unwrap_or(5);
+        let start_seconds = match last_char {
+            's' => number,
+            'm' => minutes_to_seconds(number),
+            'h' => hours_to_seconds(number),
+            'd' => days_to_seconds(number),
             _ => {
-                tracing::warn!("Unknown period: {}", period);
-                minutes_to_seconds(5)
+                tracing::warn!("Unknown time unit: {last_char}");
+                minutes_to_seconds(5)      
             }
         };
+
         let start = format!("-{}s", start_seconds);       
         let aggregate_seconds = aggregate_window(start_seconds);
         let aggregate = format!("{}s", aggregate_seconds);
         let sample = start_seconds / 100;
-
-        println!("Period: {period}, Seconds: {start_seconds}, AggSec: {aggregate_seconds}, Samples: {sample}");
 
         Self {
             start: start.to_string(),
@@ -87,5 +102,21 @@ impl InfluxTimePeriod {
 impl From<&String> for InfluxTimePeriod {
     fn from(period: &String) -> Self {
         Self::new(period)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_period_to_seconds() {
+        assert_eq!(period_string_to_seconds("5s"), 5);
+        assert_eq!(period_string_to_seconds("5m"), 300);
+        assert_eq!(period_string_to_seconds("5h"), 18000);
+        assert_eq!(period_string_to_seconds("5d"), 432000);
+
+        // Test that an unknown returns the default
+        assert_eq!(period_string_to_seconds("5x"), 300);
     }
 }

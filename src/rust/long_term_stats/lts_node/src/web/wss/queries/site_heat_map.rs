@@ -1,5 +1,3 @@
-use super::time_period::InfluxTimePeriod;
-use crate::web::wss::influx_query_builder::InfluxQueryBuilder;
 use chrono::{DateTime, FixedOffset, Utc};
 use influxdb2::FromDataPoint;
 use pgdb::sqlx::{Pool, Postgres};
@@ -9,6 +7,8 @@ use tracing::instrument;
 use std::collections::HashMap;
 use wasm_pipe_types::WasmResponse;
 use itertools::Itertools;
+
+use super::influx::{InfluxTimePeriod, InfluxQueryBuilder};
 
 fn headings_sorter<T: HeatMapData>(rows: Vec<T>) -> HashMap<String, Vec<(DateTime<FixedOffset>, f64)>> {
     let mut headings = rows.iter().map(|r| r.time()).collect::<Vec<_>>();

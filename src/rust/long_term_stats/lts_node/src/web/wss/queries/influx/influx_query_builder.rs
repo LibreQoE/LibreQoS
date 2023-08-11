@@ -4,7 +4,7 @@ use influxdb2_structmap::FromMap;
 use pgdb::{sqlx::{Pool, Postgres}, organization_cache::get_org_details, OrganizationDetails};
 use anyhow::{Result, Error};
 use tracing::instrument;
-use super::queries::time_period::InfluxTimePeriod;
+use super::InfluxTimePeriod;
 
 #[derive(Debug)]
 pub struct InfluxQueryBuilder {

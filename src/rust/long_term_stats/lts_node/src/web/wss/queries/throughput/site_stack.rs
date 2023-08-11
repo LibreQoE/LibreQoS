@@ -1,4 +1,3 @@
-use crate::web::wss::queries::time_period::InfluxTimePeriod;
 use pgdb::{
     organization_cache::get_org_details,
     sqlx::{Pool, Postgres},
@@ -7,6 +6,7 @@ use pgdb::{
 use tokio::sync::mpsc::Sender;
 use tracing::{error, instrument};
 use wasm_pipe_types::{SiteStackHost, WasmResponse};
+use crate::web::wss::queries::influx::InfluxTimePeriod;
 
 #[derive(Debug, influxdb2::FromDataPoint)]
 pub struct SiteStackRow {

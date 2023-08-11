@@ -3,7 +3,8 @@ use influxdb2::{Client, FromDataPoint, models::Query};
 use pgdb::{sqlx::{Pool, Postgres}, organization_cache::get_org_details};
 use tokio::sync::mpsc::Sender;
 use wasm_pipe_types::{PerfHost, Perf, WasmResponse};
-use super::time_period::InfluxTimePeriod;
+
+use super::influx::InfluxTimePeriod;
 
 #[derive(Debug, FromDataPoint)]
 pub struct PerfRow {

@@ -6,11 +6,10 @@ use pgdb::{sqlx::{Pool, Postgres}, organization_cache::get_org_details};
 use tokio::sync::mpsc::Sender;
 use tracing::instrument;
 use wasm_pipe_types::{ThroughputHost, Throughput, WasmResponse};
-use crate::web::wss::influx_query_builder::InfluxQueryBuilder;
 use self::throughput_row::{ThroughputRow, ThroughputRowBySite, ThroughputRowByCircuit};
-use super::time_period::InfluxTimePeriod;
 mod throughput_row;
 pub use site_stack::send_site_stack_map;
+use super::influx::{InfluxQueryBuilder, InfluxTimePeriod};
 
 fn add_by_direction(direction: &str, down: &mut Vec<Throughput>, up: &mut Vec<Throughput>, row: &ThroughputRow) {
     match direction {

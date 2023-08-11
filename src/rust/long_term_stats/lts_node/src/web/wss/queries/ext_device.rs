@@ -5,7 +5,7 @@ use influxdb2::{FromDataPoint, models::Query, Client};
 use pgdb::{sqlx::{Pool, Postgres}, organization_cache::get_org_details};
 use tokio::sync::mpsc::Sender;
 use wasm_pipe_types::WasmResponse;
-use super::time_period::InfluxTimePeriod;
+use super::influx::InfluxTimePeriod;
 
 #[tracing::instrument(skip(cnn, tx, key, circuit_id))]
 pub async fn send_extended_device_info(

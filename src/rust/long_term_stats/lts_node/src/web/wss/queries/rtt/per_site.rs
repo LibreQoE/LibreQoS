@@ -1,4 +1,3 @@
-use crate::web::wss::{queries::time_period::InfluxTimePeriod, influx_query_builder::InfluxQueryBuilder};
 use pgdb::{
     sqlx::{Pool, Postgres},
     NodeStatus
@@ -6,6 +5,7 @@ use pgdb::{
 use tokio::sync::mpsc::Sender;
 use tracing::instrument;
 use wasm_pipe_types::{Rtt, RttHost, WasmResponse};
+use crate::web::wss::queries::influx::{InfluxTimePeriod, InfluxQueryBuilder};
 use super::rtt_row::RttSiteRow;
 
 #[instrument(skip(cnn, tx, key, period))]

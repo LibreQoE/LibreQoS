@@ -1,12 +1,11 @@
 //! Packet-per-second data queries
 mod packet_row;
 use self::packet_row::PacketRow;
-use super::time_period::InfluxTimePeriod;
-use crate::web::wss::influx_query_builder::InfluxQueryBuilder;
 use pgdb::sqlx::{Pool, Postgres};
 use tokio::sync::mpsc::Sender;
 use tracing::instrument;
 use wasm_pipe_types::{PacketHost, Packets, WasmResponse};
+use super::influx::{InfluxTimePeriod, InfluxQueryBuilder};
 
 fn add_by_direction(direction: &str, down: &mut Vec<Packets>, up: &mut Vec<Packets>, row: &PacketRow) {
     match direction {

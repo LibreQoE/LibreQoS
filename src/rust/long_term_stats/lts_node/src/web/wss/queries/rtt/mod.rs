@@ -11,7 +11,7 @@ use tracing::instrument;
 use wasm_pipe_types::{RttHost, Rtt, WasmResponse};
 use crate::web::wss::queries::rtt::rtt_row::RttCircuitRow;
 use self::rtt_row::RttRow;
-use super::time_period::InfluxTimePeriod;
+use super::influx::InfluxTimePeriod;
 mod rtt_row;
 
 #[instrument(skip(cnn, tx, key, site_id, period))]

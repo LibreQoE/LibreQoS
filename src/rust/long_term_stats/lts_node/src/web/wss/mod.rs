@@ -1,5 +1,4 @@
 use std::sync::Arc;
-
 use crate::web::wss::{
     nodes::node_status,
     queries::{
@@ -15,7 +14,6 @@ use crate::web::wss::{
         send_throughput_for_all_nodes_by_circuit, send_throughput_for_all_nodes_by_site,
         send_throughput_for_node, site_heat_map,
         site_tree::send_site_tree,
-        time_period::InfluxTimePeriod,
     },
 };
 use axum::{
@@ -29,7 +27,7 @@ use pgdb::sqlx::{Pool, Postgres};
 use tokio::sync::{mpsc::Sender, Mutex};
 use tracing::instrument;
 use wasm_pipe_types::{WasmRequest, WasmResponse};
-mod influx_query_builder;
+use self::queries::InfluxTimePeriod;
 mod login;
 mod nodes;
 mod queries;
