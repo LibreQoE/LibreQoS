@@ -5,7 +5,7 @@ use pgdb::sqlx::{Pool, Postgres};
 use tokio::sync::mpsc::Sender;
 use tracing::instrument;
 use wasm_pipe_types::{PacketHost, Packets, WasmResponse};
-use super::influx::{InfluxTimePeriod, InfluxQueryBuilder};
+use super::{influx::{InfluxTimePeriod, InfluxQueryBuilder}, QueryBuilder};
 
 fn add_by_direction(direction: &str, down: &mut Vec<Packets>, up: &mut Vec<Packets>, row: &PacketRow) {
     match direction {
@@ -102,14 +102,19 @@ pub async fn get_packets_for_node(
     node_name: String,
     period: InfluxTimePeriod,
 ) -> anyhow::Result<PacketHost> {
-    let rows = InfluxQueryBuilder::new(period.clone())
-        .with_measurement("packets")
+    let rows = QueryBuilder::new()
+        .with_period(&period)
+        .derive_org(cnn, key)
+        .await
+        .bucket()
+        .range()
+        .measure_fields_org("packets", &["min", "max", "avg"])
         .with_host_id(&node_id)
-        .with_field("min")
-        .with_field("max")
-        .with_field("avg")
-        .execute::<PacketRow>(cnn, key)
+        .aggregate_window()
+        .execute::<PacketRow>()
         .await;
+
+
 
     match rows {
         Err(e) => {

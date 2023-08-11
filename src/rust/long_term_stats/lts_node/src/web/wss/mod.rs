@@ -364,7 +364,7 @@ async fn handle_socket_message(
                 tx,
                 &credentials.license_key,
                 device_id,
-                InfluxTimePeriod::new(period),
+                &InfluxTimePeriod::new(period),
             )
             .await;
         }
@@ -374,7 +374,7 @@ async fn handle_socket_message(
                 tx,
                 &credentials.license_key,
                 device_id,
-                InfluxTimePeriod::new(period),
+                &InfluxTimePeriod::new(period),
             )
             .await;
         }

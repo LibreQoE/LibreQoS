@@ -1,7 +1,11 @@
-use influxdb2::{Client, models::Query};
-use influxdb2_structmap::FromMap;
-use pgdb::{sqlx::{Pool, Postgres}, OrganizationDetails, organization_cache::get_org_details};
 use super::InfluxTimePeriod;
+use influxdb2::{models::Query, Client};
+use influxdb2_structmap::FromMap;
+use pgdb::{
+    organization_cache::get_org_details,
+    sqlx::{Pool, Postgres},
+    OrganizationDetails,
+};
 
 pub struct QueryBuilder<'a> {
     lines: Vec<String>,
@@ -10,13 +14,13 @@ pub struct QueryBuilder<'a> {
 }
 
 #[allow(dead_code)]
-impl <'a> QueryBuilder <'a> {
+impl<'a> QueryBuilder<'a> {
     /// Construct a new, completely empty query.
     pub fn new() -> Self {
         Self {
             lines: Vec::new(),
             period: None,
-            org: None,        
+            org: None,
         }
     }
 
@@ -50,7 +54,8 @@ impl <'a> QueryBuilder <'a> {
 
     pub fn bucket(mut self) -> Self {
         if let Some(org) = &self.org {
-            self.lines.push(format!("from(bucket: \"{}\")", org.influx_bucket));
+            self.lines
+                .push(format!("from(bucket: \"{}\")", org.influx_bucket));
         } else {
             tracing::warn!("No organization in query, cannot add bucket");
         }
@@ -75,13 +80,27 @@ impl <'a> QueryBuilder <'a> {
 
     pub fn filter_and(mut self, filters: &[&str]) -> Self {
         let all_filters = filters.join(" and ");
-        self.lines.push(format!("|> filter(fn: (r) => {})", all_filters));
+        self.lines
+            .push(format!("|> filter(fn: (r) => {})", all_filters));
         self
     }
 
     pub fn measure_field_org(mut self, measurement: &str, field: &str) -> Self {
         if let Some(org) = &self.org {
             self.lines.push(format!("|> filter(fn: (r) => r[\"_field\"] == \"{}\" and r[\"_measurement\"] == \"{}\" and r[\"organization_id\"] == \"{}\")", field, measurement, org.key));
+        } else {
+            tracing::warn!("No organization in query, cannot add measure_field_org");
+        }
+        self
+    }
+
+    pub fn measure_fields_org(mut self, measurement: &str, fields: &[&str]) -> Self {
+        if let Some(org) = &self.org {
+            let mut filters = Vec::new();
+            for field in fields.iter() {
+                filters.push(format!("r[\"_field\"] == \"{}\"", field));
+            }
+            self.lines.push(format!("|> filter(fn: (r) => r[\"_measurement\"] == \"{}\" and r[\"organization_id\"] == \"{}\" and ({}))", measurement, org.key, filters.join(" or ")));
         } else {
             tracing::warn!("No organization in query, cannot add measure_field_org");
         }
@@ -99,12 +118,22 @@ impl <'a> QueryBuilder <'a> {
 
     pub fn group(mut self, columns: &[&str]) -> Self {
         let group_by = columns.join(", ");
-        self.lines.push(format!("|> group(columns: [\"{}\"])", group_by));
+        self.lines
+            .push(format!("|> group(columns: [\"{}\"])", group_by));
+        self
+    }
+
+    pub fn with_host_id(mut self, host_id: &str) -> Self {
+        self.lines.push(format!(
+            "|> filter(fn: (r) => r[\"host_id\"] == \"{}\")",
+            host_id
+        ));
         self
     }
 
     pub async fn execute<T>(&self) -> anyhow::Result<Vec<T>>
-    where T: FromMap + std::fmt::Debug 
+    where
+        T: FromMap + std::fmt::Debug,
     {
         let qs = self.lines.join("\n");
         tracing::info!("Query:\n{}", qs);
