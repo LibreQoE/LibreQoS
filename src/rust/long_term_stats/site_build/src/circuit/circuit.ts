@@ -61,17 +61,32 @@ export class CircuitPage implements Page {
                     let d = event.DeviceExt.data[i];
                     html += "<div class='row'>";
 
-                    html += "<div class='col-4'>";
+                    let name = d.name;
+                    name += " (" + formatStatus(d.status);
+                    name += ", " + d.model;
+                    name += ", " + d.mode + " mode";
+                    name += ", " + d.firmware;
+                    name += ")";
+
+                    html += "<div class='col-12'>";
                     html += "<div class='card'>";
-                    html += "<div class='card-body' style='height: 250px'>";
-                    html += "<h4>" + d.name + "</h4>";
-                    html += "<strong>Status</strong>: " + d.status + "<br>";
-                    html += "<strong>Model</strong>: " + d.model + "<br>";
-                    html += "<strong>Mode</strong>: " + d.mode + "<br>";
-                    html += "<strong>Firmware</strong>: " + d.firmware + "<br>";
+                    html += "<div class='card-body'>";
+                    html += "<h5 class='card-title'><i class='fa fa-wifi'></i> " + name + "</h5>";
+                    console.log(d);
+
+                    for (let j=0; j<d.interfaces.length; j++) {
+                        let iface = d.interfaces[j];
+                        html += iface.name;
+                        html += " (" + iface.mac + ")";
+                        html += iface.ip_list;
+                        html += iface.status;
+                        html += "<br />";                  
+                    }
+
                     html += "</div>";
                     html += "</div>";
                     html += "</div>";
+                    html += "</div><div class='row'>";
 
                     html += "<div class='col-4'>";
                     html += "<div class='card'>";
@@ -209,5 +224,13 @@ export class CircuitPage implements Page {
                 option && myChart.setOption(option);
             }
         }
+    }
+}
+
+function formatStatus(status: String): String {
+    switch (status) {
+        case "active": return "<i class='fa fa-plug' style='color: green'></i> Active";
+        case "disconnected" : return "<i class='fa fa-times' style='color: red'></i> Disconnected";
+        default: return status;
     }
 }

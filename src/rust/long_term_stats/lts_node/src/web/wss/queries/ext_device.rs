@@ -16,6 +16,7 @@ pub async fn send_extended_device_info(
 ) {
     // Get devices for circuit
     if let Ok(hosts_list) = pgdb::get_circuit_info(cnn, key, circuit_id).await {
+        tracing::error!("Got hosts list: {:?}", hosts_list);
         // Get the hosts known to be in this circuit
         let mut hosts = HashSet::new();
         hosts_list.into_iter().for_each(|h| {

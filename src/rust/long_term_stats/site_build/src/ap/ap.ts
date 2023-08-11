@@ -9,6 +9,7 @@ import { RttHistoSite } from '../components/rtt_histo_site';
 import { SiteBreadcrumbs } from '../components/site_breadcrumbs';
 import { SiteHeat } from '../components/site_heat';
 import { SiteStackChart } from '../components/site_stack';
+import { request_ext_device_info } from '../../wasm/wasm_pipe';
 
 export class AccessPointPage implements Page {
     menu: MenuPage;
@@ -52,6 +53,8 @@ export class AccessPointPage implements Page {
             this.components.forEach(component => {
                 component.onmessage(event);
             });
+
+
         }
     }
 }

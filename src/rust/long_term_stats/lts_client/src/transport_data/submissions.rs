@@ -2,7 +2,7 @@
 //! collection.
 
 use lqos_config::ShapedDevice;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use uisp::Device;
 
 /// Type that provides a minimum, maximum and average value
@@ -133,8 +133,18 @@ impl From<Device> for UispExtDevice {
     fn from(d: Device) -> Self {
         let device_id = d.identification.id.to_string();
         let device_name = d.get_name().as_ref().unwrap_or(&"".to_string()).to_string();
-        let model = d.identification.modelName.as_ref().unwrap_or(&"".to_string()).to_string();
-        let firmware = d.identification.firmwareVersion.as_ref().unwrap_or(&"".to_string()).to_string();
+        let model = d
+            .identification
+            .modelName
+            .as_ref()
+            .unwrap_or(&"".to_string())
+            .to_string();
+        let firmware = d
+            .identification
+            .firmwareVersion
+            .as_ref()
+            .unwrap_or(&"".to_string())
+            .to_string();
         let mode = d.mode.as_ref().unwrap_or(&"".to_string()).to_string();
         let status;
         let frequency;
@@ -165,26 +175,59 @@ impl From<Device> for UispExtDevice {
         let mut iflist = Vec::new();
         if let Some(interfaces) = &d.interfaces {
             interfaces.iter().for_each(|i| {
-                if let (Some(id), Some(status), Some(wireless), Some(addr)) = (&i.identification, &i.status, &i.wireless, &i.addresses) {
+                if let Some(wireless) = &i.wireless {
                     if let Some(nf) = wireless.noiseFloor {
                         noise_floor = nf;
                     }
+                }
 
+                if let Some(addr) = &i.addresses {
                     let mut ip = Vec::new();
                     addr.iter().for_each(|a| {
                         if let Some(ipaddr) = &a.cidr {
                             ip.push(ipaddr.to_string());
                         }
                     });
+                }
 
-                    iflist.push(UispExtDeviceInterface {
-                        name: id.name.as_ref().unwrap_or(&"".to_string()).to_string(),
-                        mac: id.mac.as_ref().unwrap_or(&"".to_string()).to_string(),
-                        status: status.status.as_ref().unwrap_or(&"".to_string()).to_string(),
-                        speed: status.speed.as_ref().unwrap_or(&"".to_string()).to_string(),
-                        ip,
+                let mut if_name = "".to_string();
+                let mut if_mac = "".to_string();
+                if let Some(id) = &i.identification {
+                    if let Some(name) = &id.name {
+                        if_name = name.to_string();
+                    }
+                    if let Some(mac) = &id.mac {
+                        if_mac = mac.to_string();
+                    }
+                }
+
+                let mut if_status = "".to_string();
+                let mut if_speed = "".to_string();
+                if let Some(status) = &i.status {
+                    if let Some(s) = &status.status {
+                        if_status = s.to_string();
+                    }
+                    if let Some(s) = &status.speed {
+                        if_speed = s.to_string();
+                    }
+                }
+
+                let mut if_ip = Vec::new();
+                if let Some(addr) = &i.addresses {
+                    addr.iter().for_each(|a| {
+                        if let Some(ipaddr) = &a.cidr {
+                            if_ip.push(ipaddr.to_string());
+                        }
                     });
                 }
+
+                iflist.push(UispExtDeviceInterface {
+                    name: if_name,
+                    mac: if_mac,
+                    status: if_status,
+                    speed: if_speed,
+                    ip: if_ip,
+                });
             });
         }
 
