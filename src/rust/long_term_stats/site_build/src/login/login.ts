@@ -5,7 +5,7 @@ import { send_login } from '../../wasm/wasm_pipe';
 
 export class LoginPage implements Page {
     constructor() {
-        let container = document.getElementById('main');
+        let container = document.getElementById('mainContent');
         if (container) {
             container.innerHTML = html;        
         }

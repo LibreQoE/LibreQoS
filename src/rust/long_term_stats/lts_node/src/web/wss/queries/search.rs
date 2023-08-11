@@ -1,12 +1,11 @@
-use axum::extract::ws::WebSocket;
 use pgdb::sqlx::{Pool, Postgres};
-use wasm_pipe_types::SearchResult;
+use tokio::sync::mpsc::Sender;
+use wasm_pipe_types::{SearchResult, WasmResponse};
 
-use crate::web::wss::send_response;
-
+#[tracing::instrument(skip(cnn, tx, key, term))]
 pub async fn omnisearch(
     cnn: &Pool<Postgres>,
-    socket: &mut WebSocket,
+    tx: Sender<WasmResponse>,
     key: &str,
     term: &str,
 ) -> anyhow::Result<()> {
@@ -25,7 +24,7 @@ pub async fn omnisearch(
     hits.dedup_by(|a,b| a.name == b.name && a.url == b.url);
     hits.sort_by(|a,b| a.score.partial_cmp(&b.score).unwrap());
 
-    send_response(socket, wasm_pipe_types::WasmResponse::SearchResult { hits }).await;
+    tx.send(WasmResponse::SearchResult { hits }).await?;
 
     Ok(())
 }

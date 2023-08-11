@@ -1,21 +1,33 @@
-import html from './template.html';
 import { Page } from '../page'
 import { siteIcon } from '../helpers';
 import { request_search } from "../../wasm/wasm_pipe";
+import { NodeStatus } from '../components/node_status';
+
+const menuElements = [ "menuDash", "nodesDash", "sitetreeDash", "menuUser" ];
 
 export class MenuPage implements Page {
     activePanel: string;
-    searchButton: HTMLButtonElement;
+    //searchButton: HTMLButtonElement;
     searchBar: HTMLInputElement;
+    nodeStatus: NodeStatus;
 
     constructor(activeElement: string) {
-        let container = document.getElementById('main');
+        let container = document.getElementById('mainContent');
         if (container) {
-            container.innerHTML = html;
+            //container.innerHTML = html;            
+
+            menuElements.forEach(element => {
+                let e = document.getElementById(element);
+                if (e) {
+                    e.classList.remove('active');
+                    e.style.color = "";
+                }
+            });
 
             let activePanel = document.getElementById(activeElement);
             if (activePanel) {
                 activePanel.classList.add('active');
+                activePanel.style.color = "white";
             }
 
             let username = document.getElementById('menuUser');
@@ -28,8 +40,8 @@ export class MenuPage implements Page {
             }
 
             this.searchBar = <HTMLInputElement>document.getElementById("txtSearch");
-            this.searchButton = <HTMLButtonElement>document.getElementById("btnSearch");
-
+            //this.searchButton = <HTMLButtonElement>document.getElementById("btnSearch");
+            this.nodeStatus = new NodeStatus();
             this.wireup();
         }
     }
@@ -41,14 +53,14 @@ export class MenuPage implements Page {
                 r.style.display = "none";
             }
             let searchText = this.searchBar.value;
-            if (searchText.length > 3) {
+            if (searchText.length > 2) {
                 this.doSearch(searchText);
             }
         }
-        this.searchButton.onclick = () => {
+        /*this.searchButton.onclick = () => {
             let searchText = this.searchBar.value;
             this.doSearch(searchText);
-        }
+        }*/
     }
 
     doSearch(term: string) {
@@ -63,6 +75,9 @@ export class MenuPage implements Page {
     onmessage(event: any) {
         if (event.msg) {
             switch (event.msg) {
+                case "NodeStatus" : {
+                    this.nodeStatus.onmessage(event);
+                } break;
                 case "authOk": {
                     let username = document.getElementById('menuUser');
                     if (username) {
@@ -100,5 +115,6 @@ export class MenuPage implements Page {
 
     ontick(): void {
         // Do nothing
+        this.nodeStatus.ontick();
     }
 }

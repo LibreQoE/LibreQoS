@@ -1,12 +1,11 @@
 //! Packet-per-second data queries
 mod packet_row;
 use self::packet_row::PacketRow;
-use super::time_period::InfluxTimePeriod;
-use crate::web::wss::{influx_query_builder::InfluxQueryBuilder, send_response};
-use axum::extract::ws::WebSocket;
 use pgdb::sqlx::{Pool, Postgres};
+use tokio::sync::mpsc::Sender;
 use tracing::instrument;
-use wasm_pipe_types::{PacketHost, Packets};
+use wasm_pipe_types::{PacketHost, Packets, WasmResponse};
+use super::{influx::{InfluxTimePeriod, InfluxQueryBuilder}, QueryBuilder};
 
 fn add_by_direction(direction: &str, down: &mut Vec<Packets>, up: &mut Vec<Packets>, row: &PacketRow) {
     match direction {
@@ -30,10 +29,10 @@ fn add_by_direction(direction: &str, down: &mut Vec<Packets>, up: &mut Vec<Packe
     }
 }
 
-#[instrument(skip(cnn, socket, key, period))]
+#[instrument(skip(cnn, tx, key, period))]
 pub async fn send_packets_for_all_nodes(
     cnn: &Pool<Postgres>,
-    socket: &mut WebSocket,
+    tx: Sender<WasmResponse>,
     key: &str,
     period: InfluxTimePeriod,
 ) -> anyhow::Result<()> {
@@ -69,14 +68,14 @@ pub async fn send_packets_for_all_nodes(
                 });
             }
         });
-    send_response(socket, wasm_pipe_types::WasmResponse::PacketChart { nodes }).await;
+    tx.send(wasm_pipe_types::WasmResponse::PacketChart { nodes }).await?;
     Ok(())
 }
 
-#[instrument(skip(cnn, socket, key, period))]
+#[instrument(skip(cnn, tx, key, period))]
 pub async fn send_packets_for_node(
     cnn: &Pool<Postgres>,
-    socket: &mut WebSocket,
+    tx: Sender<WasmResponse>,
     key: &str,
     period: InfluxTimePeriod,
     node_id: &str,
@@ -85,11 +84,7 @@ pub async fn send_packets_for_node(
     let node =
         get_packets_for_node(cnn, key, node_id.to_string(), node_name.to_string(), period).await?;
 
-    send_response(
-        socket,
-        wasm_pipe_types::WasmResponse::PacketChart { nodes: vec![node] },
-    )
-    .await;
+    tx.send(wasm_pipe_types::WasmResponse::PacketChart { nodes: vec![node] }).await?;
     Ok(())
 }
 
@@ -107,14 +102,19 @@ pub async fn get_packets_for_node(
     node_name: String,
     period: InfluxTimePeriod,
 ) -> anyhow::Result<PacketHost> {
-    let rows = InfluxQueryBuilder::new(period.clone())
-        .with_measurement("packets")
+    let rows = QueryBuilder::new()
+        .with_period(&period)
+        .derive_org(cnn, key)
+        .await
+        .bucket()
+        .range()
+        .measure_fields_org("packets", &["min", "max", "avg"])
         .with_host_id(&node_id)
-        .with_field("min")
-        .with_field("max")
-        .with_field("avg")
-        .execute::<PacketRow>(cnn, key)
+        .aggregate_window()
+        .execute::<PacketRow>()
         .await;
+
+
 
     match rows {
         Err(e) => {

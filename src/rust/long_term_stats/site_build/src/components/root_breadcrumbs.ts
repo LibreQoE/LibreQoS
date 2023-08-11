@@ -3,6 +3,8 @@ import { makeUrl } from "../helpers";
 import { Component } from "./component";
 
 export class RootBreadcrumbs implements Component {
+    loaded: boolean = false;
+
     constructor() {
     }
 
@@ -13,6 +15,9 @@ export class RootBreadcrumbs implements Component {
     }
 
     ontick(): void {
+        if (!this.loaded) {
+            request_root_parents();
+        }
     }
 
     onmessage(event: any): void {
@@ -30,6 +35,7 @@ export class RootBreadcrumbs implements Component {
                 let select = document.getElementById("siteChildren") as HTMLSelectElement;
                 window.router.goto(select.value);
             };
+            this.loaded = true;
         }
     }
 }

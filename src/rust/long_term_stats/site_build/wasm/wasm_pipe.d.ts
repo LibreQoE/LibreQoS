@@ -139,6 +139,16 @@ export function request_ext_snr_graph(period: string, device_id: string): void;
 * @param {string} device_id
 */
 export function request_ext_capacity_graph(period: string, device_id: string): void;
+/**
+* @param {string} period
+* @param {string} site_name
+*/
+export function request_ext_capacity_ap(period: string, site_name: string): void;
+/**
+* @param {string} period
+* @param {string} site_name
+*/
+export function request_ext_signal_ap(period: string, site_name: string): void;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
@@ -175,6 +185,8 @@ export interface InitOutput {
   readonly request_ext_device_info: (a: number, b: number) => void;
   readonly request_ext_snr_graph: (a: number, b: number, c: number, d: number) => void;
   readonly request_ext_capacity_graph: (a: number, b: number, c: number, d: number) => void;
+  readonly request_ext_capacity_ap: (a: number, b: number, c: number, d: number) => void;
+  readonly request_ext_signal_ap: (a: number, b: number, c: number, d: number) => void;
   readonly __wbindgen_export_0: (a: number) => number;
   readonly __wbindgen_export_1: (a: number, b: number, c: number) => number;
   readonly __wbindgen_export_2: WebAssembly.Table;

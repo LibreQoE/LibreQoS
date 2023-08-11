@@ -1,15 +1,14 @@
-use super::time_period::InfluxTimePeriod;
-use crate::web::wss::influx_query_builder::InfluxQueryBuilder;
-use crate::web::wss::send_response;
-use axum::extract::ws::WebSocket;
 use chrono::{DateTime, FixedOffset, Utc};
 use influxdb2::FromDataPoint;
 use pgdb::sqlx::{Pool, Postgres};
 use serde::Serialize;
+use tokio::sync::mpsc::Sender;
 use tracing::instrument;
 use std::collections::HashMap;
 use wasm_pipe_types::WasmResponse;
 use itertools::Itertools;
+
+use super::influx::{InfluxTimePeriod, InfluxQueryBuilder};
 
 fn headings_sorter<T: HeatMapData>(rows: Vec<T>) -> HashMap<String, Vec<(DateTime<FixedOffset>, f64)>> {
     let mut headings = rows.iter().map(|r| r.time()).collect::<Vec<_>>();
@@ -27,10 +26,10 @@ fn headings_sorter<T: HeatMapData>(rows: Vec<T>) -> HashMap<String, Vec<(DateTim
     sorter
 }
 
-#[instrument(skip(cnn,socket,key,period))]
+#[instrument(skip(cnn,tx,key,period))]
 pub async fn root_heat_map(
     cnn: &Pool<Postgres>,
-    socket: &mut WebSocket,
+    tx: Sender<WasmResponse>,
     key: &str,
     period: InfluxTimePeriod,
 ) -> anyhow::Result<()> {
@@ -47,7 +46,7 @@ pub async fn root_heat_map(
         .await?;
 
     let sorter = headings_sorter(rows);
-    send_response(socket, WasmResponse::RootHeat { data: sorter }).await;
+    tx.send(WasmResponse::RootHeat { data: sorter }).await?;
 
     Ok(())
 }
@@ -82,10 +81,10 @@ async fn site_circuits_heat_map(
     Ok(rows)
 }
 
-#[instrument(skip(cnn, socket, key, period))]
+#[instrument(skip(cnn, tx, key, period))]
 pub async fn site_heat_map(
     cnn: &Pool<Postgres>,
-    socket: &mut WebSocket,
+    tx: Sender<WasmResponse>,
     key: &str,
     site_name: &str,
     period: InfluxTimePeriod,
@@ -118,7 +117,7 @@ pub async fn site_heat_map(
     });
 
     let sorter = headings_sorter(rows);
-    send_response(socket, WasmResponse::SiteHeat { data: sorter }).await;
+    tx.send(WasmResponse::SiteHeat { data: sorter }).await?;
 
     Ok(())
 }

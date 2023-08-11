@@ -75,7 +75,7 @@ pub async fn get_device_interfaces_ext(
     device_id: &str,
 ) -> Result<Vec<DeviceInterfaceExt>, StatsHostError>
 {
-    sqlx::query_as::<_, DeviceInterfaceExt>("SELECT name, mac, status, speed, ip_list FROM uis_devices_interfaces WHERE key=$1 AND device_id=$2")
+    sqlx::query_as::<_, DeviceInterfaceExt>("SELECT name, mac, status, speed, ip_list FROM uisp_devices_interfaces WHERE key=$1 AND device_id=$2")
         .bind(key)
         .bind(device_id)
         .fetch_all(cnn)

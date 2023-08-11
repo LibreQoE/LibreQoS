@@ -32,6 +32,8 @@ export function request_circuit_info(a: number, b: number): void;
 export function request_ext_device_info(a: number, b: number): void;
 export function request_ext_snr_graph(a: number, b: number, c: number, d: number): void;
 export function request_ext_capacity_graph(a: number, b: number, c: number, d: number): void;
+export function request_ext_capacity_ap(a: number, b: number, c: number, d: number): void;
+export function request_ext_signal_ap(a: number, b: number, c: number, d: number): void;
 export function __wbindgen_export_0(a: number): number;
 export function __wbindgen_export_1(a: number, b: number, c: number): number;
 export const __wbindgen_export_2: WebAssembly.Table;

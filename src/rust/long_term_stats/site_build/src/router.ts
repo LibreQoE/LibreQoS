@@ -44,6 +44,12 @@ export class SiteRouter {
 
     // Handle actual navigation between pages
     goto(page: string) {
+        // Clear any search results
+        let r = document.getElementById("searchResults");
+        if (r) {
+            r.style.display = "none";
+        }
+
         page = page.replace('#', '');
         //console.log("Navigate to " + page)
         let split = page.split(':');

@@ -1,19 +1,22 @@
 use std::collections::HashSet;
 use axum::extract::ws::WebSocket;
 use chrono::{DateTime, FixedOffset};
-use influxdb2::{FromDataPoint, models::Query, Client};
-use pgdb::{sqlx::{Pool, Postgres}, organization_cache::get_org_details};
-use crate::web::wss::send_response;
-use super::time_period::InfluxTimePeriod;
+use influxdb2::FromDataPoint;
+use pgdb::sqlx::{Pool, Postgres};
+use tokio::sync::mpsc::Sender;
+use wasm_pipe_types::{WasmResponse, SignalNoiseChartExt, CapacityChartExt};
+use super::{influx::InfluxTimePeriod, QueryBuilder};
 
+#[tracing::instrument(skip(cnn, tx, key, circuit_id))]
 pub async fn send_extended_device_info(
     cnn: &Pool<Postgres>,
-    socket: &mut WebSocket,
+    tx: Sender<WasmResponse>,
     key: &str,
     circuit_id: &str,
 ) {
     // Get devices for circuit
     if let Ok(hosts_list) = pgdb::get_circuit_info(cnn, key, circuit_id).await {
+        tracing::error!("Got hosts list: {:?}", hosts_list);
         // Get the hosts known to be in this circuit
         let mut hosts = HashSet::new();
         hosts_list.into_iter().for_each(|h| {
@@ -60,49 +63,40 @@ pub async fn send_extended_device_info(
         // If there is any, send it
         println!("{extended_data:?}");
         if !extended_data.is_empty() {
-            send_response(socket, wasm_pipe_types::WasmResponse::DeviceExt { data: extended_data }).await;
+            tx.send(WasmResponse::DeviceExt { data: extended_data }).await.unwrap();
         }
     }
 }
 
+#[tracing::instrument(skip(cnn, tx, key, device_id, period))]
 pub async fn send_extended_device_snr_graph(
     cnn: &Pool<Postgres>,
-    socket: &mut WebSocket,
+    tx: Sender<WasmResponse>,
     key: &str,
     device_id: &str,
-    period: InfluxTimePeriod,
+    period: &InfluxTimePeriod,
 ) -> anyhow::Result<()> {
-    if let Some(org) = get_org_details(cnn, key).await {
-        let influx_url = format!("http://{}:8086", org.influx_host);
-        let client = Client::new(influx_url, &org.influx_org, &org.influx_token);
-
-        let qs = format!(
-            "from(bucket: \"{}\")
-        |> {}
-        |> filter(fn: (r) => r[\"_measurement\"] == \"device_ext\")
-        |> filter(fn: (r) => r[\"organization_id\"] == \"{}\")
-        |> filter(fn: (r) => r[\"device_id\"] == \"{}\")
-        |> filter(fn: (r) => r[\"_field\"] == \"noise_floor\" or r[\"_field\"] == \"rx_signal\")
-        |> {}
-        |> yield(name: \"last\")",
-            org.influx_bucket, period.range(), org.key, device_id, period.aggregate_window()
-        );
-        //println!("{qs}");
-
-        let query = Query::new(qs);
-        let rows = client.query::<SnrRow>(Some(query)).await?;
-
-        let mut sn = Vec::new();
-        rows.iter().for_each(|row| {
-            let snr = wasm_pipe_types::SignalNoiseChartExt {
+    let rows = QueryBuilder::new()
+        .with_period(period)
+        .derive_org(cnn, key)
+        .await
+        .bucket()
+        .range()
+        .measure_fields_org("device_ext", &["noise_floor", "rx_signal"])
+        .filter(&format!("r[\"device_id\"] == \"{}\"", device_id))
+        .aggregate_window()
+        .execute::<SnrRow>()
+        .await?
+        .into_iter()
+        .map(|row| {
+            wasm_pipe_types::SignalNoiseChartExt {
                 noise: row.noise_floor,
                 signal: row.rx_signal,
                 date: row.time.format("%Y-%m-%d %H:%M:%S").to_string(),
-            };
-            sn.push(snr);
-        });
-        send_response(socket, wasm_pipe_types::WasmResponse::DeviceExtSnr { data: sn, device_id: device_id.to_string() }).await;
-    }
+            }
+        })
+        .collect::<Vec<SignalNoiseChartExt>>();
+    tx.send(WasmResponse::DeviceExtSnr { data: rows, device_id: device_id.to_string() }).await?;
     Ok(())
 }
 
@@ -129,44 +123,35 @@ pub struct SnrRow {
     pub time: DateTime<FixedOffset>,
 }
 
+#[tracing::instrument(skip(cnn, tx, key, device_id, period))]
 pub async fn send_extended_device_capacity_graph(
     cnn: &Pool<Postgres>,
-    socket: &mut WebSocket,
+    tx: Sender<WasmResponse>,
     key: &str,
     device_id: &str,
-    period: InfluxTimePeriod,
+    period: &InfluxTimePeriod,
 ) -> anyhow::Result<()> {
-    if let Some(org) = get_org_details(cnn, key).await {
-        let influx_url = format!("http://{}:8086", org.influx_host);
-        let client = Client::new(influx_url, &org.influx_org, &org.influx_token);
-
-        let qs = format!(
-            "from(bucket: \"{}\")
-        |> {}
-        |> filter(fn: (r) => r[\"_measurement\"] == \"device_ext\")
-        |> filter(fn: (r) => r[\"organization_id\"] == \"{}\")
-        |> filter(fn: (r) => r[\"device_id\"] == \"{}\")
-        |> filter(fn: (r) => r[\"_field\"] == \"dl_capacity\" or r[\"_field\"] == \"ul_capacity\")
-        |> {}
-        |> yield(name: \"last\")",
-            org.influx_bucket, period.range(), org.key, device_id, period.aggregate_window()
-        );
-        //println!("{qs}");
-
-        let query = Query::new(qs);
-        let rows = client.query::<CapacityRow>(Some(query)).await?;
-
-        let mut sn = Vec::new();
-        rows.iter().for_each(|row| {
-            let snr = wasm_pipe_types::CapacityChartExt {
+    let rows = QueryBuilder::new()
+        .with_period(period)
+        .derive_org(cnn, key)
+        .await
+        .bucket()
+        .range()
+        .measure_fields_org("device_ext", &["dl_capacity", "ul_capacity"])
+        .filter(&format!("r[\"device_id\"] == \"{}\"", device_id))
+        .aggregate_window()
+        .execute::<CapacityRow>()
+        .await?
+        .into_iter()
+        .map(|row| {
+            wasm_pipe_types::CapacityChartExt {
                 dl: row.dl_capacity,
                 ul: row.ul_capacity,
                 date: row.time.format("%Y-%m-%d %H:%M:%S").to_string(),
-            };
-            sn.push(snr);
-        });
-        send_response(socket, wasm_pipe_types::WasmResponse::DeviceExtCapacity { data: sn, device_id: device_id.to_string() }).await;
-    }
+            }
+        })
+        .collect::<Vec<CapacityChartExt>>();
+    tx.send(WasmResponse::DeviceExtCapacity { data: rows, device_id: device_id.to_string() }).await?;
     Ok(())
 }
 

@@ -1,10 +1,9 @@
-use axum::extract::ws::WebSocket;
 use chrono::{DateTime, FixedOffset, Utc};
-use influxdb2::{Client, FromDataPoint, models::Query};
-use pgdb::{sqlx::{Pool, Postgres}, organization_cache::get_org_details};
-use wasm_pipe_types::{PerfHost, Perf};
-use crate::web::wss::send_response;
-use super::time_period::InfluxTimePeriod;
+use influxdb2::FromDataPoint;
+use pgdb::sqlx::{Pool, Postgres};
+use tokio::sync::mpsc::Sender;
+use wasm_pipe_types::{Perf, PerfHost, WasmResponse};
+use super::{influx::InfluxTimePeriod, QueryBuilder};
 
 #[derive(Debug, FromDataPoint)]
 pub struct PerfRow {
@@ -29,14 +28,15 @@ impl Default for PerfRow {
 
 pub async fn send_perf_for_node(
     cnn: &Pool<Postgres>,
-    socket: &mut WebSocket,
+    tx: Sender<WasmResponse>,
     key: &str,
     period: InfluxTimePeriod,
     node_id: String,
     node_name: String,
 ) -> anyhow::Result<()> {
-    let node = get_perf_for_node(cnn, key, node_id, node_name, period).await?;
-    send_response(socket, wasm_pipe_types::WasmResponse::NodePerfChart { nodes: vec![node] }).await;
+    let node = get_perf_for_node(cnn, key, node_id, node_name, &period).await?;
+    tx.send(WasmResponse::NodePerfChart { nodes: vec![node] })
+        .await?;
     Ok(())
 }
 
@@ -45,53 +45,35 @@ pub async fn get_perf_for_node(
     key: &str,
     node_id: String,
     node_name: String,
-    period: InfluxTimePeriod,
+    period: &InfluxTimePeriod,
 ) -> anyhow::Result<PerfHost> {
-    if let Some(org) = get_org_details(cnn, key).await {
-        let influx_url = format!("http://{}:8086", org.influx_host);
-        let client = Client::new(influx_url, &org.influx_org, &org.influx_token);
+    let rows = QueryBuilder::new()
+        .with_period(period)
+        .derive_org(cnn, key)
+        .await
+        .bucket()
+        .range()
+        .measure_fields_org("perf", &["cpu", "cpu_max", "ram"])
+        .filter(&format!("r[\"host_id\"] == \"{}\"", node_id))
+        .aggregate_window()
+        .execute::<PerfRow>()
+        .await?;
 
-        let qs = format!(
-            "from(bucket: \"{}\")
-        |> {}
-        |> filter(fn: (r) => r[\"_measurement\"] == \"perf\")
-        |> filter(fn: (r) => r[\"organization_id\"] == \"{}\")
-        |> filter(fn: (r) => r[\"host_id\"] == \"{}\")
-        |> {}
-        |> yield(name: \"last\")",
-            org.influx_bucket, period.range(), org.key, node_id, period.aggregate_window()
-        );
+    let mut stats = Vec::new();
 
-        let query = Query::new(qs);
-        let rows = client.query::<PerfRow>(Some(query)).await;
-        match rows {
-            Err(e) => {
-                tracing::error!("Error querying InfluxDB (node-perf): {}", e);
-                return Err(anyhow::Error::msg("Unable to query influx"));
-            }
-            Ok(rows) => {
-                // Parse and send the data
-                //println!("{rows:?}");
-
-                let mut stats = Vec::new();
-
-                // Fill download
-                for row in rows.iter() {
-                    stats.push(Perf {
-                        date: row.time.format("%Y-%m-%d %H:%M:%S").to_string(),
-                        cpu: row.cpu,
-                        cpu_max: row.cpu_max,
-                        ram: row.ram,
-                    });
-                }
-
-                return Ok(PerfHost{
-                    node_id,
-                    node_name,
-                    stats,
-                });
-            }
-        }
+    // Fill download
+    for row in rows.iter() {
+        stats.push(Perf {
+            date: row.time.format("%Y-%m-%d %H:%M:%S").to_string(),
+            cpu: row.cpu,
+            cpu_max: row.cpu_max,
+            ram: row.ram,
+        });
     }
-    Err(anyhow::Error::msg("Unable to query influx"))
+
+    Ok(PerfHost {
+        node_id,
+        node_name,
+        stats,
+    })
 }

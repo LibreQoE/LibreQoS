@@ -1,18 +1,17 @@
-use crate::web::wss::{queries::time_period::InfluxTimePeriod, send_response, influx_query_builder::InfluxQueryBuilder};
-use axum::extract::ws::WebSocket;
 use pgdb::{
     sqlx::{Pool, Postgres},
     NodeStatus
 };
+use tokio::sync::mpsc::Sender;
 use tracing::instrument;
-use wasm_pipe_types::{Rtt, RttHost};
-
+use wasm_pipe_types::{Rtt, RttHost, WasmResponse};
+use crate::web::wss::queries::influx::{InfluxTimePeriod, InfluxQueryBuilder};
 use super::rtt_row::{RttRow, RttHistoRow};
 
-#[instrument(skip(cnn, socket, key, period))]
+#[instrument(skip(cnn, tx, key, period))]
 pub async fn send_rtt_for_all_nodes(
     cnn: &Pool<Postgres>,
-    socket: &mut WebSocket,
+    tx: Sender<WasmResponse>,
     key: &str,
     period: InfluxTimePeriod,
 ) -> anyhow::Result<()> {
@@ -24,15 +23,15 @@ pub async fn send_rtt_for_all_nodes(
         .await?;
     let node_status = pgdb::node_status(cnn, key).await?;
     let nodes = rtt_rows_to_result(rows, node_status);
-    send_response(socket, wasm_pipe_types::WasmResponse::RttChart { nodes }).await;
+    tx.send(WasmResponse::RttChart { nodes }).await?;
 
     Ok(())
 }
 
-#[instrument(skip(cnn, socket, key, period))]
+#[instrument(skip(cnn, tx, key, period))]
 pub async fn send_rtt_histogram_for_all_nodes(
     cnn: &Pool<Postgres>,
-    socket: &mut WebSocket,
+    tx: Sender<WasmResponse>,
     key: &str,
     period: InfluxTimePeriod,
 ) -> anyhow::Result<()> {
@@ -50,7 +49,7 @@ pub async fn send_rtt_histogram_for_all_nodes(
         histo[bucket] += 1;
     });
 
-    send_response(socket, wasm_pipe_types::WasmResponse::RttHistogram { histogram: histo }).await;
+    tx.send(WasmResponse::RttHistogram { histogram: histo }).await?;
 
     Ok(())
 }

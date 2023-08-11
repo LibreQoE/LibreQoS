@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 license = "GPL-2.0-only"
 
+[features]
+default = []
+tokio-console = ["console-subscriber"]
+
 [dependencies]
 tokio = { version = "1.25.0", features = ["full"] }
 anyhow = "1"
@@ -26,6 +30,6 @@ chrono = "0"
 miniz_oxide = "0.7.1"
 tokio-util = { version = "0.7.8", features = ["io"] }
 wasm_pipe_types = { path = "../wasm_pipe_types" }
-console-subscriber = "0.1.10"
+console-subscriber = {version = "0.1.10", optional = true }
 itertools = "0.11.0"
 urlencoding = "2.1.3"

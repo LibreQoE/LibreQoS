@@ -33,7 +33,7 @@ export class ShaperNodePage implements Page {
         ];
         let name = document.getElementById('nodeName');
         if (name) {
-            name.innerText = "Shaper Node: " + this.node_name;
+            name.innerText = "Shaper Node: " + decodeURI(this.node_name);
         }
     }
 

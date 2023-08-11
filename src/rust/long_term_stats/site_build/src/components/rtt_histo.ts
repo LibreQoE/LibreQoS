@@ -46,7 +46,7 @@ export class RttHisto implements Component {
                         },
                         yAxis: {
                             type: 'value',
-                            name: 'ms',
+                            name: 'frequency',
                         },
                         series: [
                             {

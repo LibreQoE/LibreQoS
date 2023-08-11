@@ -2,8 +2,8 @@ mod web;
 use tracing::{error, info};
 use tracing_subscriber::fmt::format::FmtSpan;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+#[cfg(not(feature="tokio-console"))]
+fn set_console_logging() -> anyhow::Result<()> {
     // install global collector configured based on RUST_LOG env var.
     let subscriber = tracing_subscriber::fmt()
         // Use a more compact, abbreviated log format
@@ -23,9 +23,29 @@ async fn main() -> anyhow::Result<()> {
 
     // Set the subscriber as the default
     tracing::subscriber::set_global_default(subscriber)?;
+    Ok(())
+}
 
+#[cfg(feature="tokio-console")]
+fn set_tokio_console() {
     // Initialize the Tokio Console subscription
-    //console_subscriber::init();
+    console_subscriber::init();
+}
+
+#[cfg(not(feature="tokio-console"))]
+fn setup_tracing() {
+    set_console_logging().unwrap();
+}
+
+#[cfg(feature="tokio-console")]
+fn setup_tracing() {
+    set_tokio_console();
+}
+
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    setup_tracing();
 
     // Get the database connection pool
     let pool = pgdb::get_connection_pool(5).await;

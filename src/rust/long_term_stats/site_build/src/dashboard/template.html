@@ -1,44 +1,32 @@
-<div class="container">
-    <div class="row">
-        <div class="col-12" id="nodeStatus">
-            <h1><i class="fa-solid fa-gauge"></i> Dashboard</h1>
-        </div>
-    </div>
+<div class="container">    
     <div class="row">
         <div class="col-12" id="siteName">
         </div>
     </div>
     <div class="row">
-        <div class="col-6">
+        <div class="col-12">
             <div class="card">
                 <div class="card-body">
-                    <div id="packetsChart" style="height: 250px"></div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-6">
-            <div class="card">
-                <div class="card-body">
-                    <div id="throughputChart" style="height: 250px"></div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="row">
-        <div class="col-6">
-            <div class="card">
-                <div class="card-body">
-                    <div id="rttChart" style="height: 250px"></div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-6">
-            <div class="card">
-                <div class="card-body">
-                    <div id="rttHisto" style="height: 250px"></div>
+                    <h5 class="card-title">
+                        <i class="fa-solid fa-gauge"></i> Throughput
+                        <div class="btn-group" role="group" aria-label="Throughput Graph Selector">
+                            <button type="button" class="btn btn-sm btn-secondary"
+                                onclick="window.toggleThroughput('tp')">Throughput</button>
+                            <button type="button" class="btn btn-sm btn-secondary"
+                                onclick="window.toggleThroughput('pk')">Packets</button>
+                            <button type="button" class="btn btn-sm btn-secondary"
+                                onclick="window.toggleThroughput('st')">Sites</button>
+                        </div>
+                    </h5>
+                    <div id="bitsholder" style="height: 250px; overflow: auto;">
+                        <div id="throughputChart" style="height: 250px"></div>
+                    </div>
+                    <div id="packetsholder" style="height: 0; overflow: hidden;">
+                        <div id="packetsChart" style="height: 250px"></div>
+                    </div>
+                    <div id="sitestackholder" style="height: 0; overflow: hidden;">
+                        <div id="siteStack" style="height: 250px"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -48,7 +36,21 @@
         <div class="col-12">
             <div class="card">
                 <div class="card-body">
-                    <div id="siteStack" style="height: 250px"></div>
+                    <h5 class="card-title">
+                        <i class="fa-solid fa-clock"></i> Latency (TCP Round-Trip Time)
+                        <div class="btn-group" role="group" aria-label="Latency Graph Selector">
+                            <button type="button" class="btn btn-sm btn-secondary"
+                                onclick="window.toggleLatency('histo')">Histogram</button>
+                            <button type="button" class="btn btn-sm btn-secondary"
+                                onclick="window.toggleLatency('line')">Time-Series</button>
+                        </div>
+                    </h5>
+                </div>
+                <div id="rttHistoHolder" style="height: 250px; overflow: auto;">
+                    <div id="rttHisto" style="height: 250px"></div>
+                </div>
+                <div id="rttChartHolder" style="height: 0; overflow: hidden;">
+                    <div id="rttChart" style="height: 250px"></div>
                 </div>
             </div>
         </div>
