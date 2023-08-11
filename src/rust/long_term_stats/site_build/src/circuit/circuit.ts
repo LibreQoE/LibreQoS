@@ -74,15 +74,24 @@ export class CircuitPage implements Page {
                     html += "<h5 class='card-title'><i class='fa fa-wifi'></i> " + name + "</h5>";
                     console.log(d);
 
+                    html += "<table class='table table-striped'>";
                     for (let j=0; j<d.interfaces.length; j++) {
+                        html += "<tr>";                        
                         let iface = d.interfaces[j];
-                        html += iface.name;
-                        html += " (" + iface.mac + ")";
-                        html += iface.ip_list;
-                        html += iface.status;
-                        html += "<br />";                  
+                        html += "<td>" + iface.name + "</td>";
+                        html += "<td>" + iface.mac + "</td>";
+                        html += "<td>" + iface.ip_list + "</td>";
+                        html += "<td>" + iface.status + "</td>";
+                        html += "<td>" + iface.speed + "</td>";
+                        html += "</tr>";                  
                     }
+                    html += "</table>";
+                    html += "<div class='card-body' id='extdev_" + d.device_id + "' style='height: 250px'></div>";
+                    html += "<div class='card-body' id='extdev_cap_" + d.device_id + "' style='height: 250px'></div>";
+                    request_ext_snr_graph(window.graphPeriod, d.device_id);
+                    request_ext_capacity_graph(window.graphPeriod, d.device_id);
 
+                    /*
                     html += "</div>";
                     html += "</div>";
                     html += "</div>";
@@ -107,7 +116,7 @@ export class CircuitPage implements Page {
                     request_ext_capacity_graph(window.graphPeriod, d.device_id);
 
                     // End row
-                    html += "</div>";
+                    html += "</div>";*/
                 }
 
                 div.outerHTML = html;
