@@ -144,6 +144,10 @@ pub async fn exchange_keys_with_license_server(
 }
 
 fn decode_response(buf: &[u8]) -> Result<LicenseReply, LicenseCheckError> {
+    if buf.len() < 2 + std::mem::size_of::<u64>() {
+        log::error!("License server returned an invalid response");
+        return Err(LicenseCheckError::DeserializeFail);
+    }
     const U64SIZE: usize = std::mem::size_of::<u64>();
     let version_buf = &buf[0..2]
         .try_into()
