@@ -144,23 +144,6 @@ async fn query_site_stack_influx(
         .execute::<SiteStackRow>()
         .await?
     )
-/* 
-    let influx_url = format!("http://{}:8086", org.influx_host);
-    let client = influxdb2::Client::new(influx_url, &org.influx_org, &org.influx_token);
-    let qs = format!("import \"strings\"
-
-    from(bucket: \"{}\")
-    |> {}
-    |> filter(fn: (r) => r[\"_field\"] == \"bits_max\" and r[\"_measurement\"] == \"tree\" and r[\"organization_id\"] == \"{}\")
-    |> filter(fn: (r) => exists r[\"node_parents\"] and exists r[\"node_index\"])
-    |> {}
-    |> filter(fn: (r) => strings.hasSuffix(v: r[\"node_parents\"], suffix: \"S{}S\" + r[\"node_index\"] + \"S\" ))
-    |> group(columns: [\"node_name\", \"node_parents\", \"_field\", \"node_index\", \"direction\"])",
-    org.influx_bucket, period.range(), org.key, period.aggregate_window(), site_index);
-
-    let query = influxdb2::models::Query::new(qs);
-    //let rows = client.query_raw(Some(query)).await;
-    Ok(client.query::<SiteStackRow>(Some(query)).await?)*/
 }
 
 fn site_rows_to_hosts(rows: Vec<SiteStackRow>) -> Vec<SiteStackHost> {
