@@ -1,3 +1,4 @@
+use crate::web::wss::queries::{influx::InfluxTimePeriod, QueryBuilder};
 use pgdb::{
     organization_cache::get_org_details,
     sqlx::{Pool, Postgres},
@@ -6,7 +7,6 @@ use pgdb::{
 use tokio::sync::mpsc::Sender;
 use tracing::{error, instrument};
 use wasm_pipe_types::{SiteStackHost, WasmResponse};
-use crate::web::wss::queries::influx::InfluxTimePeriod;
 
 #[derive(Debug, influxdb2::FromDataPoint)]
 pub struct SiteStackRow {
@@ -93,28 +93,34 @@ async fn query_circuits_influx(
     hosts: &[(String, String)],
     host_filter: &str,
 ) -> anyhow::Result<Vec<SiteStackRow>> {
-    let influx_url = format!("http://{}:8086", org.influx_host);
-    let client = influxdb2::Client::new(influx_url, &org.influx_org, &org.influx_token);
-    let qs = format!("from(bucket: \"{}\")
-    |> {}
-    |> filter(fn: (r) => r[\"_field\"] == \"max\" and r[\"_measurement\"] == \"host_bits\" and r[\"organization_id\"] == \"{}\")
-    |> {}
-    |> filter(fn: (r) => {} )
-    |> group(columns: [\"circuit_id\", \"_field\", \"direction\"])",
-    org.influx_bucket, period.range(), org.key, period.aggregate_window(), host_filter);
-
-    let query = influxdb2::models::Query::new(qs);
-    //let rows = client.query_raw(Some(query)).await;
-    let rows = client.query::<CircuitStackRow>(Some(query)).await?;
-    let rows = rows.into_iter().map(|row| {
-        SiteStackRow {
-            node_name: hosts.iter().find(|h| h.0 == row.circuit_id).unwrap().1.clone(),
+    if host_filter.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = QueryBuilder::new()
+        .with_period(period)
+        .with_org(org.clone())
+        .bucket()
+        .range()
+        .measure_field_org("host_bits", "max")
+        .aggregate_window()
+        .filter(host_filter)
+        .group(&["circuit_id", "_field", "direction"])
+        .execute::<CircuitStackRow>()
+        .await?
+        .into_iter()
+        .map(|row| SiteStackRow {
+            node_name: hosts
+                .iter()
+                .find(|h| h.0 == row.circuit_id)
+                .unwrap()
+                .1
+                .clone(),
             node_parents: "".to_string(),
             bits_max: row.max / 8.0,
             time: row.time,
             direction: row.direction,
-        }
-    }).collect();
+        })
+        .collect();
     Ok(rows)
 }
 
@@ -124,6 +130,21 @@ async fn query_site_stack_influx(
     period: &InfluxTimePeriod,
     site_index: i32,
 ) -> anyhow::Result<Vec<SiteStackRow>> {
+    Ok(QueryBuilder::new()
+        .add_line("import \"strings\"")
+        .with_period(period)
+        .with_org(org.clone())
+        .bucket()
+        .range()
+        .measure_field_org("tree", "bits_max")
+        .filter_and(&["exists r[\"node_parents\"]", "exists r[\"node_index\"]"])
+        .aggregate_window()
+        .filter(&format!("strings.hasSuffix(v: r[\"node_parents\"], suffix: \"S{}S\" + r[\"node_index\"] + \"S\")", site_index))
+        .group(&["node_name", "node_parents", "_field", "node_index", "direction"])
+        .execute::<SiteStackRow>()
+        .await?
+    )
+/* 
     let influx_url = format!("http://{}:8086", org.influx_host);
     let client = influxdb2::Client::new(influx_url, &org.influx_org, &org.influx_token);
     let qs = format!("import \"strings\"
@@ -139,7 +160,7 @@ async fn query_site_stack_influx(
 
     let query = influxdb2::models::Query::new(qs);
     //let rows = client.query_raw(Some(query)).await;
-    Ok(client.query::<SiteStackRow>(Some(query)).await?)
+    Ok(client.query::<SiteStackRow>(Some(query)).await?)*/
 }
 
 fn site_rows_to_hosts(rows: Vec<SiteStackRow>) -> Vec<SiteStackHost> {
@@ -211,7 +232,7 @@ fn reduce_to_x_entries(result: &mut Vec<SiteStackHost>) {
                 }
             });
         });
-        result.truncate(MAX_HOSTS-1);
+        result.truncate(MAX_HOSTS - 1);
         result.push(others);
     }
 }
