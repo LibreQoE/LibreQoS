@@ -30,6 +30,6 @@ async fn main() -> anyhow::Result<()> {
   // Start the logger
   set_console_logging().unwrap();
 
-  let _ = server::start().await;
+  let _ = server::listen_accept().await;
   Ok(())
 }

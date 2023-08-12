@@ -1,14 +1,16 @@
+use crate::pki::LIBREQOS_KEYPAIR;
 use lts_client::transport_data::{LicenseReply, LicenseRequest};
 use pgdb::sqlx::{Pool, Postgres};
 use std::net::SocketAddr;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpListener,
+    net::{TcpListener, TcpStream},
     spawn,
 };
-use crate::pki::LIBREQOS_KEYPAIR;
 
-pub async fn start() -> anyhow::Result<()> {
+/// Entry point for the main license server system.
+/// Starts listening on port 9126 for license requests.
+pub async fn listen_accept() -> anyhow::Result<()> {
     let listener = TcpListener::bind(":::9126").await?;
     tracing::info!("Listening on :::9126");
 
@@ -21,35 +23,47 @@ pub async fn start() -> anyhow::Result<()> {
     let pool = pool.unwrap();
 
     loop {
-        let (mut socket, address) = listener.accept().await?;
+        let (socket, address) = listener.accept().await?;
         tracing::info!("Connection from {address:?}");
         let pool = pool.clone();
         spawn(async move {
-            let mut buf = vec![0u8; 10240];
-            if let Ok(bytes) = socket.read(&mut buf).await {
-                tracing::info!("Received {bytes} bytes from {address:?}");
-                match decode(&buf, address, pool).await {
-                    Err(e) => tracing::error!("{e:?}"),
-                    Ok(reply) => {
-                        let bytes = build_reply(&reply);
-                        match bytes {
-                            Ok(bytes) => {
-                                tracing::info!("Submitting {} bytes to network", bytes.len());
-                                if let Err(e) = socket.write_all(&bytes).await {
-                                    tracing::error!("Write error: {e:?}");
-                                }
-                            }
-                            Err(e) => {
-                                tracing::error!("{e:?}");
-                            }
-                        }
-                    }
-                }
-            }
+            handle_connection(socket, address, pool)
         });
     }
 }
 
+#[tracing::instrument(skip(socket, pool))]
+async fn handle_connection(mut socket: TcpStream, address: SocketAddr, pool: Pool<Postgres>) {
+    let mut buf = vec![0u8; 10240];
+    if let Ok(bytes) = socket.read(&mut buf).await {
+        // Graceful shutdown handler
+        if bytes == 0 {
+            tracing::info!("Connection closed by peer");
+            return;
+        }
+
+        tracing::info!("Received {bytes} bytes from {address:?}");
+        match decode(&buf, address, pool).await {
+            Err(e) => tracing::error!("{e:?}"),
+            Ok(reply) => {
+                let bytes = build_reply(&reply);
+                match bytes {
+                    Ok(bytes) => {
+                        tracing::info!("Submitting {} bytes to network", bytes.len());
+                        if let Err(e) = socket.write_all(&bytes).await {
+                            tracing::error!("Write error: {e:?}");
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("{e:?}");
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[tracing::instrument(skip(buf, pool))]
 async fn decode(
     buf: &[u8],
     address: SocketAddr,
@@ -60,7 +74,9 @@ async fn decode(
     let version = u16::from_be_bytes(*version_buf);
     let size_buf = &buf[2..2 + U64SIZE].try_into()?;
     let size = u64::from_be_bytes(*size_buf);
-    tracing::info!("Received a version {version} payload of serialized size {size} from {address:?}");
+    tracing::info!(
+        "Received a version {version} payload of serialized size {size} from {address:?}"
+    );
 
     match version {
         1 => {
@@ -77,6 +93,7 @@ async fn decode(
     }
 }
 
+#[tracing::instrument(skip(request, pool))]
 async fn check_license(
     request: &LicenseRequest,
     address: SocketAddr,
@@ -109,17 +126,31 @@ async fn check_license(
                 Ok(LicenseReply::Denied)
             }
         }
-        LicenseRequest::KeyExchange { node_id, node_name, license_key, public_key } => {
+        LicenseRequest::KeyExchange {
+            node_id,
+            node_name,
+            license_key,
+            public_key,
+        } => {
             tracing::info!("Public key exchange requested by {node_id}");
 
             // Check if the node_id / license key combination exists
             // If it does, update it to the current last-seen and the new public key
             // If it doesn't, insert it
             let public_key = lts_client::cbor::to_vec(&public_key).unwrap();
-            let result = pgdb::insert_or_update_node_public_key(pool, node_id, node_name, license_key, &public_key).await;
+            let result = pgdb::insert_or_update_node_public_key(
+                pool,
+                node_id,
+                node_name,
+                license_key,
+                &public_key,
+            )
+            .await;
             if result.is_err() {
                 tracing::warn!("Unable to insert or update node public key: {result:?}");
-                return Err(anyhow::Error::msg("Unable to insert or update node public key"));
+                return Err(anyhow::Error::msg(
+                    "Unable to insert or update node public key",
+                ));
             }
 
             let public_key = LIBREQOS_KEYPAIR.read().await.public_key.clone();
