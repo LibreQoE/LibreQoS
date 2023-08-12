@@ -1875,13 +1875,13 @@ name = "license_server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "env_logger",
- "log",
  "lts_client",
  "once_cell",
  "pgdb",
  "serde",
  "tokio",
+ "tracing",
+ "tracing-subscriber 0.3.17",
 ]
 
 [[package]]
