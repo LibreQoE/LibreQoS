@@ -12,7 +12,7 @@ pub async fn start() -> anyhow::Result<()> {
     let listener = TcpListener::bind(":::9126").await?;
     log::info!("Listening on :::9126");
 
-    let pool = pgdb::get_connection_pool(5).await;
+    let pool = pgdb::get_connection_pool(10).await;
     if pool.is_err() {
         log::error!("Unable to connect to the database");
         log::error!("{pool:?}");
