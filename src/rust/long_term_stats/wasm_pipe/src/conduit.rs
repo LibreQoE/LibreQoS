@@ -101,7 +101,13 @@ impl Conduit {
         if self.url.is_empty() { return Err(WebSocketError::NoURL); }
         if self.status != ConnectionStatus::New { return Err(WebSocketError::AlreadyConnected); }
         if self.socket.is_some() { return Err(WebSocketError::AlreadyExists); }
-        self.socket = Some(WebSocket::new(&self.url).map_err(|_| WebSocketError::CreationError)?);
+        log(&format!("Connecting to: {}", self.url));
+        let conn_result = WebSocket::new(&self.url);
+        if conn_result.is_err() {
+            log(&format!("Error connecting: {:?}", conn_result));
+            return Err(WebSocketError::CreationError);
+        }
+        self.socket = Some(conn_result.unwrap());
         if let Some(socket) = &mut self.socket {
             socket.set_binary_type(BinaryType::Arraybuffer);
             

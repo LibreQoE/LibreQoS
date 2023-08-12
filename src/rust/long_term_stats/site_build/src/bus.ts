@@ -7,8 +7,13 @@ export class Bus {
 
     constructor() {
         const currentUrlWithoutAnchors = window.location.href.split('#')[0].replace("https://", "").replace("http://", "");
-        const url = "ws://" + currentUrlWithoutAnchors + "ws";
-        initialize_wss(url);
+        if (window.location.href.startsWith("https://")) {
+            const url = "wss://" + currentUrlWithoutAnchors + "ws";
+            initialize_wss(url);
+        } else {
+            const url = "ws://" + currentUrlWithoutAnchors + "ws";
+            initialize_wss(url);
+        }   
     }
 
     updateConnected() {

@@ -187,11 +187,11 @@ export interface InitOutput {
   readonly request_ext_capacity_graph: (a: number, b: number, c: number, d: number) => void;
   readonly request_ext_capacity_ap: (a: number, b: number, c: number, d: number) => void;
   readonly request_ext_signal_ap: (a: number, b: number, c: number, d: number) => void;
-  readonly __wbindgen_export_0: (a: number) => number;
-  readonly __wbindgen_export_1: (a: number, b: number, c: number) => number;
+  readonly __wbindgen_export_0: (a: number, b: number) => number;
+  readonly __wbindgen_export_1: (a: number, b: number, c: number, d: number) => number;
   readonly __wbindgen_export_2: WebAssembly.Table;
   readonly __wbindgen_export_3: (a: number, b: number, c: number) => void;
-  readonly __wbindgen_export_4: (a: number, b: number) => void;
+  readonly __wbindgen_export_4: (a: number, b: number, c: number) => void;
   readonly __wbindgen_export_5: (a: number) => void;
 }
 
