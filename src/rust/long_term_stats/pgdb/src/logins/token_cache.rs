@@ -94,3 +94,17 @@ pub async fn token_to_credentials(
 
     Ok(details)
 }
+
+pub async fn expire_tokens(cnn: &Pool<Postgres>) -> Result<(), StatsHostError> {
+    sqlx::query("SELECT * FROM active_tokens WHERE expires < NOW()")
+        .execute(cnn)
+        .await
+        .map_err(|e| StatsHostError::DatabaseError(e.to_string()))?;
+
+    let ten_mins_ago = unix_now().unwrap_or(0) - 600;
+    TOKEN_CACHE.retain(|k, v| {
+        v.last_seen < ten_mins_ago
+    });
+
+    Ok(())
+}

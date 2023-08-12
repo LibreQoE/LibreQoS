@@ -1,6 +1,7 @@
 use tracing_subscriber::fmt::format::FmtSpan;
 mod pki;
 mod server;
+mod token_expiration;
 
 fn set_console_logging() -> anyhow::Result<()> {
     // install global collector configured based on RUST_LOG env var.
@@ -39,6 +40,10 @@ async fn main() -> anyhow::Result<()> {
     // Start the logger
     set_console_logging().unwrap();
 
+    // Start the token expiration
+    tokio::spawn(token_expiration::token_expiration_loop(pool.clone()));
+
+    // Start the main server
     let _ = server::listen_accept(pool.clone()).await;
     Ok(())
 }
