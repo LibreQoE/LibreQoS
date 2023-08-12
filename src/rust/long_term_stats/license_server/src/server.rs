@@ -10,17 +10,9 @@ use tokio::{
 
 /// Entry point for the main license server system.
 /// Starts listening on port 9126 for license requests.
-pub async fn listen_accept() -> anyhow::Result<()> {
+pub async fn listen_accept(pool: Pool<Postgres>) -> anyhow::Result<()> {
     let listener = TcpListener::bind(":::9126").await?;
     tracing::info!("Listening on :::9126");
-
-    let pool = pgdb::get_connection_pool(10).await;
-    if pool.is_err() {
-        tracing::error!("Unable to connect to the database");
-        tracing::error!("{pool:?}");
-        return Err(anyhow::Error::msg("Unable to connect to the database"));
-    }
-    let pool = pool.unwrap();
 
     loop {
         let (socket, address) = listener.accept().await?;
