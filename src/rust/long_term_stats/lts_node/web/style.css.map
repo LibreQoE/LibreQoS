@@ -1,7 +1,0 @@
-{
-  "version": 3,
-  "sources": ["../src/style.css"],
-  "sourcesContent": ["/*@import 'bootstrap/dist/css/bootstrap.css';*/\n\n.b-example-divider {\n  height: 3rem;\n  background-color: rgba(0, 0, 0, .1);\n  border: solid rgba(0, 0, 0, .15);\n  border-width: 1px 0;\n  box-shadow: inset 0 .5em 1.5em rgba(0, 0, 0, .1), inset 0 .125em .5em rgba(0, 0, 0, .15);\n}\n\n.b-example-vr {\n  flex-shrink: 0;\n  width: 0.5rem;\n  height: 100vh;\n}\n\n.break {\n  flex-basis: 100%;\n  height: 0;\n}\n\n.row {\n  margin-bottom: 2px;\n}\n\n.bi {\n  display: inline-block;\n  width: 1rem;\n  height: 1rem;\n}\n\n/*\n   * Sidebar\n   */\n\n@media (min-width: 768px) {\n  .sidebar .offcanvas-lg {\n    position: -webkit-sticky;\n    position: sticky;\n    top: 48px;\n  }\n\n  .navbar-search {\n    display: block;\n  }\n}\n\n.sidebar .nav-link {\n  font-size: .875rem;\n  font-weight: 500;\n}\n\n.sidebar .nav-link.active {\n  color: #2470dc;\n}\n\n.sidebar-heading {\n  font-size: .75rem;\n}\n\n/*\n   * Navbar\n   */\n\n.navbar-brand {\n  padding-top: .75rem;\n  padding-bottom: .75rem;\n  background-color: rgba(0, 0, 0, .25);\n  box-shadow: inset -1px 0 0 rgba(0, 0, 0, .25);\n}\n\n.navbar .form-control {\n  padding: .75rem 1rem;\n}"],
-  "mappings": "AAEA,mBACE,YACA,2BACA,6BACA,mBACA,sEAGF,cACE,cACA,YACA,aAGF,OACE,gBACA,SAGF,KACE,kBAGF,IACE,qBACA,WACA,YAOF,0BACE,uBACE,wBACA,gBACA,SAGF,eACE,eAIJ,mBACE,kBACA,gBAGF,0BACE,cAGF,iBACE,iBAOF,cACE,mBACA,sBACA,2BACA,kCAGF,sBAvEA",
-  "names": []
-}
