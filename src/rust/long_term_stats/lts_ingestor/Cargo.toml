@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 pgdb = { path = "../pgdb" }
-lts_client = { path = "../lts_client" }
+lts_client = { path = "../../lts_client" }
 lqos_config = { path = "../../lqos_config" }
 tokio = { version = "1.25.0", features = ["full"] }
 tracing = "0.1"
