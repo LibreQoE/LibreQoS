@@ -78,6 +78,14 @@ pub(crate) async fn send_queue(stream: &mut TcpStream) -> Result<(), QueueError>
             log::error!("Unable to write to TCP stream.");
             log::error!("{:?}", ret);
             message.sent = false;
+            match crate::submission_queue::comm_channel::key_exchange().await {
+                true => {
+                    log::info!("Successfully exchanged license keys.");
+                }
+                false => {
+                    log::error!("Unable to talk to the licensing system to fix keys.");
+                }
+            }
             return Err(QueueError::SendFail);
         } else {
             message.sent = true;

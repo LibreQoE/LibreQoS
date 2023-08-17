@@ -28,6 +28,7 @@ static LICENSE_STATUS: Lazy<RwLock<LicenseStatus>> =
     Lazy::new(|| RwLock::new(LicenseStatus::default()));
 
 pub(crate) async fn get_license_status() -> LicenseState {
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     if let Ok(unix_time) = unix_now() {
         let license_status = {
             LICENSE_STATUS.read().await.clone()

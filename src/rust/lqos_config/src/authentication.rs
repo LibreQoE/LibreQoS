@@ -141,7 +141,7 @@ impl WebUsers {
     role: UserRole,
   ) -> Result<String, AuthenticationError> {
     let token; // Assigned in a branch
-    if let Some(mut user) =
+    if let Some(user) =
       self.users.iter_mut().find(|u| u.username == username)
     {
       user.password_hash = Self::hash_password(password);

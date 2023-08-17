@@ -1,4 +1,3 @@
-use std::path::Path;
 use dryoc::dryocbox::*;
 
 /// Genereate a new keypair and store it in a file. If the file exists,
@@ -11,20 +10,9 @@ use dryoc::dryocbox::*;
 /// # Returns
 /// 
 /// The generated or loaded keypair
-pub fn generate_new_keypair(key_path: &str) -> KeyPair {
-    let path = Path::new(key_path);
-    if path.exists() {
-        if let Ok(bytes) = std::fs::read(path) {
-            if let Ok(keypair) = bincode::deserialize(&bytes) {
-                log::info!("Loaded keypair from {}", path.display());
-                return keypair;
-            }
-        }
-    }
+pub fn generate_new_keypair() -> KeyPair {
     let keypair = KeyPair::gen();
-    let bytes = bincode::serialize(&keypair).unwrap();
-    std::fs::write(path, bytes).unwrap();
-    log::info!("Generated new keypair and stored it at {}", path.display());
+    log::info!("Generated new keypair");
     keypair
 }
 

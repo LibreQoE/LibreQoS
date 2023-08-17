@@ -1,8 +1,8 @@
 use std::time::Duration;
 use tokio::{sync::mpsc::Receiver, time::sleep, net::TcpStream};
-use self::keys::key_exchange;
 use super::{licensing::{get_license_status, LicenseState}, queue::send_queue};
 mod keys;
+pub(crate) use keys::key_exchange;
 mod encode;
 pub(crate) use encode::encode_submission;
 
@@ -60,6 +60,7 @@ async fn connect_if_permitted() -> Option<TcpStream> {
     let license = get_license_status().await;
     if let LicenseState::Valid { stats_host, .. } = license {
         if !key_exchange().await {
+            log::error!("Unable to exchange keys with license server.");
             return None;
         }
 
