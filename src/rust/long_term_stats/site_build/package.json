@@ -1,8 +1,0 @@
-{
-  "dependencies": {
-    "@types/echarts": "^4.9.17",
-    "echarts": "^5.4.2",
-    "esbuild": "^0.17.17",
-    "mermaid": "^10.1.0"
-  }
-}

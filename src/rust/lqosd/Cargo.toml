@@ -15,7 +15,7 @@ lqos_sys = { path = "../lqos_sys" }
 lqos_queue_tracker = { path = "../lqos_queue_tracker" }
 lqos_utils = { path = "../lqos_utils" }
 lqos_heimdall = { path = "../lqos_heimdall" }
-lts_client = { path = "../long_term_stats/lts_client" }
+lts_client = { path = "../lts_client" }
 tokio = { version = "1", features = [ "full", "parking_lot" ] }
 once_cell = "1.17.1"
 lqos_bus = { path = "../lqos_bus" }
