@@ -12,38 +12,21 @@ pub(crate) enum SenderChannelMessage {
 }
 
 pub(crate) async fn start_communication_channel(mut rx: Receiver<SenderChannelMessage>) {
-    let mut connected = false;
-    let mut stream: Option<TcpStream> = None;
+//    let mut connected = false;
+//    let mut stream: Option<TcpStream> = None;
     loop {
         match rx.try_recv() {
             Ok(SenderChannelMessage::QueueReady) => {
-                // If not connected, see if we are allowed to connect and get a target
-                if !connected || stream.is_none() {
-                    log::info!("Establishing LTS TCP channel.");
-                    stream = connect_if_permitted().await;
-                    if stream.is_some() {
-                        connected = true;
-                    }
-                }
+                let mut stream = connect_if_permitted().await;
 
                 // If we're still not connected, skip - otherwise, send the
                 // queued data
                 if let Some(tcpstream) = &mut stream {
-                    if connected && tcpstream.writable().await.is_ok() {
-                        // Send the data
-                        let all_good = send_queue(tcpstream).await;
-                        if all_good.is_err() {
-                            log::error!("Stream fail during send. Will re-send");
-                            connected = false;
-                            stream = None;
-                        }
-                    } else {
-                        stream = None;
-                        connected = false;
+                    // Send the data
+                    let all_good = send_queue(tcpstream).await;
+                    if all_good.is_err() {
+                        log::error!("Stream fail during send. Will re-send");
                     }
-                } else {
-                    connected = false;
-                    stream = None;
                 }
             }
             Ok(SenderChannelMessage::Quit) => {
