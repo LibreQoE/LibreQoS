@@ -14,7 +14,6 @@ pub(crate) async fn encode_submission_hello(license_key: &str, node_id: &str, no
         client_public_key: KEYPAIR.read().await.public_key.clone(),
     };
     let hello_bytes = serde_cbor::to_vec(&hello_message).map_err(|_| QueueError::SendFail)?;
-    result.extend((hello_bytes.len() as u64).to_be_bytes());
     result.extend(hello_bytes);
 
     Ok(result)
