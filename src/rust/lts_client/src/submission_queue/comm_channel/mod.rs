@@ -75,7 +75,17 @@ async fn connect_if_permitted() -> Result<TcpStream, QueueError> {
     // Send Hello
     let hello_message = encode_submission_hello(&license_key, &node_id, &node_name)
         .await?;
-    stream.write(&hello_message).await
+    stream.write_u16(2).await
+        .map_err(|e| {
+            log::error!("Unable to write version to {host}, {e:?}");
+            QueueError::SendFail
+        })?;
+    stream.write_u64(hello_message.len() as u64).await
+        .map_err(|e| {
+            log::error!("Unable to write size to {host}, {e:?}");
+            QueueError::SendFail
+        })?;
+    stream.write_all(&hello_message).await
         .map_err(|e| {
             log::error!("Unable to write to {host}, {e:?}");
             QueueError::SendFail

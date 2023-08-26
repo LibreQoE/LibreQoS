@@ -72,7 +72,7 @@ pub(crate) async fn send_queue(stream: &mut TcpStream) -> Result<(), QueueError>
     let mut lock = QUEUE.queue.lock().await;
     for message in lock.iter_mut() {
         let submission_buffer = encode_submission(&message.body).await?;
-        let ret = stream.write(&submission_buffer).await;
+        let ret = stream.write_all(&submission_buffer).await;
         log::info!("Sent submission: {} bytes.", submission_buffer.len());
         if ret.is_err() {
             log::error!("Unable to write to TCP stream.");

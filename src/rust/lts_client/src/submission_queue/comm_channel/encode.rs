@@ -5,8 +5,6 @@ use super::keys::{SERVER_PUBLIC_KEY, KEYPAIR};
 
 pub(crate) async fn encode_submission_hello(license_key: &str, node_id: &str, node_name: &str) -> Result<Vec<u8>, QueueError> {
     let mut result = Vec::new();
-    // Store the version as network order
-    result.extend(2u16.to_be_bytes());
 
     // Build the body
     let hello_message = HelloVersion2 {
