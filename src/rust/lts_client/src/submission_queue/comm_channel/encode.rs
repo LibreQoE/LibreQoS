@@ -1,7 +1,26 @@
 use dryoc::{dryocbox::{Nonce, DryocBox}, types::{NewByteArray, ByteArray}};
 use lqos_config::EtcLqos;
-use crate::{transport_data::{LtsCommand, NodeIdAndLicense}, submission_queue::queue::QueueError};
+use crate::{transport_data::{LtsCommand, NodeIdAndLicense, HelloVersion2}, submission_queue::queue::QueueError};
 use super::keys::{SERVER_PUBLIC_KEY, KEYPAIR};
+
+pub(crate) async fn encode_submission_hello(license_key: &str, node_id: &str, node_name: &str) -> Result<Vec<u8>, QueueError> {
+    let mut result = Vec::new();
+    // Store the version as network order
+    result.extend(2u16.to_be_bytes());
+
+    // Build the body
+    let hello_message = HelloVersion2 {
+        license_key: license_key.to_string(),
+        node_id: node_id.to_string(),
+        node_name: node_name.to_string(),
+        client_public_key: KEYPAIR.read().await.public_key.clone(),
+    };
+    let hello_bytes = serde_cbor::to_vec(&hello_message).map_err(|_| QueueError::SendFail)?;
+    result.extend((hello_bytes.len() as u64).to_be_bytes());
+    result.extend(hello_bytes);
+
+    Ok(result)
+}
 
 pub(crate) async fn encode_submission(submission: &LtsCommand) -> Result<Vec<u8>, QueueError> {
     let nonce = Nonce::gen();

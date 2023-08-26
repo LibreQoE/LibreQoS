@@ -72,3 +72,16 @@ pub struct NodeIdAndLicense {
     /// The Sodium Nonce
     pub nonce: [u8; 24],
 }
+
+/// For the new V2 hello license system, encodes a greeting
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HelloVersion2 {
+    /// The node id
+    pub node_id: String,
+    /// The license key
+    pub license_key: String,
+    // The name of the node requesting service
+    pub node_name: String,
+    /// The Sodium Public Key
+    pub client_public_key: PublicKey,
+}

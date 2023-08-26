@@ -99,6 +99,10 @@ pub(crate) async fn send_queue(stream: &mut TcpStream) -> Result<(), QueueError>
 
 #[derive(Error, Debug)]
 pub(crate) enum QueueError {
+    #[error("No local license key")]
+    NoLocalLicenseKey,
+    #[error("Stats are disabled")]
+    StatsDisabled,
     #[error("Unable to send")]
     SendFail,
 }
