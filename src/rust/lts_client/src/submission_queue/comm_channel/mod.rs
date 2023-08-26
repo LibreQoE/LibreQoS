@@ -65,7 +65,7 @@ async fn connect_if_permitted() -> Result<TcpStream, QueueError> {
     })?;
     
     // Connect
-    let host = "stats.libreqos.net:9128";
+    let host = "stats.libreqos.io:9128";
     let mut stream = TcpStream::connect(&host).await
         .map_err(|e| {
             log::error!("Unable to connect to {host}: {e:?}");
