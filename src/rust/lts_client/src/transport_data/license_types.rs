@@ -83,5 +83,5 @@ pub struct HelloVersion2 {
     // The name of the node requesting service
     pub node_name: String,
     /// The Sodium Public Key
-    pub client_public_key: PublicKey,
+    pub client_public_key: Vec<u8>,
 }

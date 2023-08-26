@@ -1,7 +1,7 @@
 use std::time::Duration;
 use lqos_config::EtcLqos;
 use tokio::{sync::mpsc::Receiver, time::sleep, net::TcpStream, io::{AsyncWriteExt, AsyncReadExt}};
-use crate::submission_queue::comm_channel::{encode::encode_submission_hello, keys::store_server_public_key};
+use crate::{submission_queue::comm_channel::keys::store_server_public_key, transport_data::HelloVersion2};
 use super::queue::{send_queue, QueueError};
 mod keys;
 pub(crate) use keys::key_exchange;
@@ -73,19 +73,26 @@ async fn connect_if_permitted() -> Result<TcpStream, QueueError> {
         })?;
 
     // Send Hello
-    let hello_message = encode_submission_hello(&license_key, &node_id, &node_name)
-        .await?;
+    let pk = crate::submission_queue::comm_channel::keys::KEYPAIR.read().await.public_key.clone();
+    let hellov2 = HelloVersion2 {
+        node_id: node_id.clone(),
+        license_key: license_key.clone(),
+        node_name: node_name.clone(),
+        client_public_key: serde_cbor::to_vec(&pk).map_err(|_| QueueError::SendFail)?,
+    };
+    let bytes = serde_cbor::to_vec(&hellov2)
+        .map_err(|_| QueueError::SendFail)?;
     stream.write_u16(2).await
         .map_err(|e| {
             log::error!("Unable to write version to {host}, {e:?}");
             QueueError::SendFail
         })?;
-    stream.write_u64(hello_message.len() as u64).await
+    stream.write_u64(bytes.len() as u64).await
         .map_err(|e| {
             log::error!("Unable to write size to {host}, {e:?}");
             QueueError::SendFail
         })?;
-    stream.write_all(&hello_message).await
+    stream.write_all(&bytes).await
         .map_err(|e| {
             log::error!("Unable to write to {host}, {e:?}");
             QueueError::SendFail
