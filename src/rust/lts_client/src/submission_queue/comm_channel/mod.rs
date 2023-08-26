@@ -87,6 +87,11 @@ async fn connect_if_permitted() -> Result<TcpStream, QueueError> {
             log::error!("Unable to write version to {host}, {e:?}");
             QueueError::SendFail
         })?;
+        stream.write_u16(2).await
+        .map_err(|e| {
+            log::error!("Unable to write padding to {host}, {e:?}");
+            QueueError::SendFail
+        })?;
     stream.write_u64(bytes.len() as u64).await
         .map_err(|e| {
             log::error!("Unable to write size to {host}, {e:?}");
