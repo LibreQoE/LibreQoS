@@ -15,8 +15,11 @@ pub(crate) async fn enqueue_if_allowed(data: StatsSubmission, comm_tx: Sender<Se
             log::error!("Your license is invalid. Please contact support.");
         }
         LicenseState::Valid{ .. } => {
+            log::info!("Sending data to the queue.");
             QUEUE.push(LtsCommand::Submit(Box::new(data))).await;
-            let _ = comm_tx.send(SenderChannelMessage::QueueReady).await;
+            if let Err(e) = comm_tx.send(SenderChannelMessage::QueueReady).await {
+                log::error!("Unable to send queue ready message: {}", e);
+            }
         }
     }
 }

@@ -74,7 +74,7 @@ pub struct NodeIdAndLicense {
 }
 
 /// For the new V2 hello license system, encodes a greeting
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct HelloVersion2 {
     /// The node id
     pub node_id: String,
