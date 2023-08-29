@@ -21,7 +21,7 @@ impl From<&NetworkJsonNode> for NetworkTreeEntry {
         };
         let mut sum: u64 = 0;
         for n in value.rtts.iter() {
-            let n = u64::min(*n as u64, 100);
+            let n = *n as u64;
             sum += n;
             if n < min { min = n; }
             if n > max { max = n; }
