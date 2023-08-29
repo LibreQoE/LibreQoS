@@ -20,13 +20,17 @@ impl From<&NetworkJsonNode> for NetworkTreeEntry {
             u64::MAX
         };
         let mut sum: u64 = 0;
+        let mut count = 0;
         for n in value.rtts.iter() {
             let n = *n as u64;
-            sum += n;
-            if n < min { min = n; }
-            if n > max { max = n; }
+            if n > 0 {
+                sum += n;
+                if n < min { min = n; }
+                if n > max { max = n; }
+                count += 1;
+            }
         }
-        let avg = sum.checked_div(value.rtts.len() as u64).unwrap_or(0);
+        let avg = sum.checked_div(count).unwrap_or(0);
 
         Self {
             name: value.name.clone(),
