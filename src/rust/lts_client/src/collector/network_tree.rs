@@ -17,16 +17,16 @@ impl From<&NetworkJsonNode> for NetworkTreeEntry {
         let mut min = if value.rtts.is_empty() {
             0
         } else {
-            u16::MAX
+            u64::MAX
         };
-        let mut sum = 0;
+        let mut sum: u64 = 0;
         for n in value.rtts.iter() {
-            let n = u16::min(*n, 100);
+            let n = u64::min(*n as u64, 100);
             sum += n;
             if n < min { min = n; }
             if n > max { max = n; }
         }
-        let avg = sum.checked_div(value.rtts.len() as u16).unwrap_or(0);
+        let avg = sum.checked_div(value.rtts.len() as u64).unwrap_or(0);
 
         Self {
             name: value.name.clone(),
@@ -38,7 +38,7 @@ impl From<&NetworkJsonNode> for NetworkTreeEntry {
                 value.current_throughput.1.load(std::sync::atomic::Ordering::Relaxed) as u32,
             ),
             node_type: value.node_type.clone(),
-            rtts: (min, max, avg),
+            rtts: (min as u16, max as u16, avg as u16),
         }
     }
 }
