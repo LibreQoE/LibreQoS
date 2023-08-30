@@ -71,53 +71,59 @@ def checkIfFirstRunSinceBoot():
 		print("First time run since system boot.")
 		return True
 	
-def clearPriorSettings(interfaceA, interfaceB):
+def clearPriorSettings(interfaceA, interfaceB, queuesAvailable, OnAStick):
 	if enableActualShellCommands:
 		if 'mq' in shellReturn('tc qdisc show dev ' + interfaceA + ' root'):
-			print('MQ detected. Will delete and recreate mq qdisc.')
-			# Clear tc filter
-			if OnAStick == True:
-				shell('tc qdisc delete dev ' + interfaceA + ' root')
-			else:
-				shell('tc qdisc delete dev ' + interfaceA + ' root')
-				shell('tc qdisc delete dev ' + interfaceB + ' root')
+			print('MQ detected. Will delete MQ leafs only.')
+			for i in range(queuesAvailable):
+				shell("tc qdisc del dev " + interfaceA + " parent 7fff:" + hex(i+1) + " handle " + hex(i+1))
+			if not OnAStick:
+				for i in range(queuesAvailable):
+					shell("tc qdisc del dev " + interfaceB + " parent 7fff:" + hex(i+1) + " handle " + hex(i+1))
+			# # Clear tc filter
+			# if OnAStick == True:
+				# shell('tc qdisc delete dev ' + interfaceA + ' root')
+			# else:
+				# shell('tc qdisc delete dev ' + interfaceA + ' root')
+				# shell('tc qdisc delete dev ' + interfaceB + ' root')
+				
 		
-def tearDown(interfaceA, interfaceB):
+def tearDown(interfaceA, interfaceB, queuesAvailable, OnAStick):
 	# Full teardown of everything for exiting LibreQoS
 	if enableActualShellCommands:
 		# Clear IP filters and remove xdp program from interfaces
 		#result = os.system('./bin/xdp_iphash_to_cpu_cmdline clear')
 		clear_ip_mappings() # Use the bus
-		clearPriorSettings(interfaceA, interfaceB)
+		#clearPriorSettings(interfaceA, interfaceB, queuesAvailable, OnAStick)
 
-def findQueuesAvailable():
+def findQueuesAvailable(interfaceName):
 	# Find queues and CPU cores available. Use min between those two as queuesAvailable
 	if enableActualShellCommands:
 		if queuesAvailableOverride == 0:
 			queuesAvailable = 0
-			path = '/sys/class/net/' + interfaceA + '/queues/'
+			path = '/sys/class/net/' + interfaceName + '/queues/'
 			directory_contents = os.listdir(path)
 			for item in directory_contents:
 				if "tx-" in str(item):
 					queuesAvailable += 1
-			print("NIC queues:\t\t\t" + str(queuesAvailable))
+			print(f"Interface {interfaceName} NIC queues:\t\t\t" + str(queuesAvailable))
 		else:
 			queuesAvailable = queuesAvailableOverride
-			print("NIC queues (Override):\t\t\t" + str(queuesAvailable))
+			print(f"Interface {interfaceName} NIC queues (Override):\t\t\t" + str(queuesAvailable))
 		cpuCount = multiprocessing.cpu_count()
 		print("CPU cores:\t\t\t" + str(cpuCount))
 		if queuesAvailable < 2:
-			raise SystemError('Only 1 NIC rx/tx queue available. You will need to use a NIC with 2 or more rx/tx queues available.')
+			raise SystemError(f'Only 1 NIC rx/tx queue available for interface {interfaceName}. You will need to use a NIC with 2 or more rx/tx queues available.')
 		if queuesAvailable < 2:
 			raise SystemError('Only 1 CPU core available. You will need to use a CPU with 2 or more CPU cores.')
 		queuesAvailable = min(queuesAvailable,cpuCount)
-		print("queuesAvailable set to:\t" + str(queuesAvailable))
+		print(f"queuesAvailable for interface {interfaceName} set to:\t" + str(queuesAvailable))
 	else:
 		print("As enableActualShellCommands is False, CPU core / queue count has been set to 16")
-		logging.info("NIC queues:\t\t\t" + str(16))
+		logging.info(f"Interface {interfaceName} NIC queues:\t\t\t" + str(16))
 		cpuCount = multiprocessing.cpu_count()
 		logging.info("CPU cores:\t\t\t" + str(16))
-		logging.info("queuesAvailable set to:\t" + str(16))
+		logging.info(f"queuesAvailable for interface {interfaceName} set to:\t" + str(16))
 		queuesAvailable = 16
 	return queuesAvailable
 
@@ -137,12 +143,28 @@ def validateNetworkAndDevices():
 		devicesValidatedOrNot = False
 	with open('network.json') as file:
 		try:
-			temporaryVariable = json.load(file) # put JSON-data to a variable
+			data = json.load(file) # put JSON-data to a variable
+			if data != {}:
+				#Traverse
+				observedNodes = {} # Will not be used later
+				def traverseToVerifyValidity(data):
+					for elem in data:
+						if isinstance(elem, str):
+							if (isinstance(data[elem], dict)) and (elem != 'children'):
+								if elem not in observedNodes:
+									observedNodes[elem] = {'downloadBandwidthMbps': data[elem]['uploadBandwidthMbps'], 'downloadBandwidthMbps': data[elem]['uploadBandwidthMbps']}
+									if 'children' in data[elem]:
+										traverseToVerifyValidity(data[elem]['children'])
+								else:
+									warnings.warn("Non-unique Node name in network.json: " + elem, stacklevel=2)
+									networkValidatedOrNot = False
+				traverseToVerifyValidity(data)
+				if len(observedNodes) < 1:
+					warnings.warn("network.json had 0 valid nodes. Only {} is accepted for that scenario.", stacklevel=2)
+					networkValidatedOrNot = False
 		except json.decoder.JSONDecodeError:
 			warnings.warn("network.json is an invalid JSON file", stacklevel=2) # in case json is invalid
-			networkValidatedOrNot
-	if networkValidatedOrNot == True:
-		print("network.json passed validation") 
+			networkValidatedOrNot = False
 	rowNum = 2
 	with open('ShapedDevices.csv') as csv_file:
 		csv_reader = csv.reader(csv_file, delimiter=',')
@@ -255,8 +277,11 @@ def validateNetworkAndDevices():
 		print("ShapedDevices.csv passed validation")
 	else:
 		print("ShapedDevices.csv failed validation")
-	
-	if (devicesValidatedOrNot == True) and (devicesValidatedOrNot == True):
+	if networkValidatedOrNot == True:
+		print("network.json passed validation")
+	else:
+		print("network.json failed validation")
+	if (devicesValidatedOrNot == True) and (networkValidatedOrNot == True):
 		return True
 	else:
 		return False
@@ -454,7 +479,10 @@ def refreshShapers():
 		
 		
 		# Pull rx/tx queues / CPU cores available
-		queuesAvailable = findQueuesAvailable()
+		# Handling the case when the number of queues for interfaces are different
+		InterfaceAQueuesAvailable = findQueuesAvailable(interfaceA)
+		InterfaceBQueuesAvailable = findQueuesAvailable(interfaceB)
+		queuesAvailable = min(InterfaceAQueuesAvailable, InterfaceBQueuesAvailable)
 		stickOffset = 0
 		if OnAStick:
 			print("On-a-stick override dividing queues")
@@ -697,9 +725,11 @@ def refreshShapers():
 		# Root HTB Setup
 		# Create MQ qdisc for each CPU core / rx-tx queue. Generate commands to create corresponding HTB and leaf classes. Prepare commands for execution later
 		thisInterface = interfaceA
-		logging.info("# MQ Setup for " + thisInterface)
-		command = 'qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq'
-		linuxTCcommands.append(command)
+		if 'mq' not in shellReturn('tc qdisc show dev ' + interfaceA + ' root'):
+			print('MQ not detected. Will create mq qdisc.')
+			logging.info("# MQ Setup for " + thisInterface)
+			command = 'qdisc add dev ' + thisInterface + ' root handle 7FFF: mq'
+			linuxTCcommands.append(command)
 		for queue in range(queuesAvailable):
 			command = 'qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2'
 			linuxTCcommands.append(command)
@@ -718,9 +748,11 @@ def refreshShapers():
 		# Note the use of stickOffset, and not replacing the root queue if we're on a stick
 		thisInterface = interfaceB
 		logging.info("# MQ Setup for " + thisInterface)
-		if not OnAStick:
-			command = 'qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq'
-			linuxTCcommands.append(command)
+		if 'mq' not in shellReturn('tc qdisc show dev ' + interfaceA + ' root'):
+			if not OnAStick:
+				print('MQ not detected. Will create mq qdisc.')
+				command = 'qdisc add dev ' + thisInterface + ' root handle 7FFF: mq'
+				linuxTCcommands.append(command)
 		for queue in range(queuesAvailable):
 			command = 'qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+stickOffset+1) + ' handle ' + hex(queue+stickOffset+1) + ': htb default 2'
 			linuxTCcommands.append(command)
@@ -831,7 +863,7 @@ def refreshShapers():
 		
 		
 		# Clear Prior Settings
-		clearPriorSettings(interfaceA, interfaceB)
+		clearPriorSettings(interfaceA, interfaceB, queuesAvailable, OnAStick)
 
 		
 		# Setup XDP and disable XPS regardless of whether it is first run or not (necessary to handle cases where systemctl stop was used)
@@ -841,7 +873,7 @@ def refreshShapers():
 			#result = os.system('./bin/xdp_iphash_to_cpu_cmdline clear')
 			clear_ip_mappings() # Use the bus
 		# Set up XDP-CPUMAP-TC
-		logging.info("# XDP Setup")
+		#logging.info("# XDP Setup")
 		# Commented out - the daemon does this
 		#shell('./cpumap-pping/bin/xps_setup.sh -d ' + interfaceA + ' --default --disable')
 		#shell('./cpumap-pping/bin/xps_setup.sh -d ' + interfaceB + ' --default --disable')
