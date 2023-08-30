@@ -751,8 +751,8 @@ def refreshShapers():
 		# Note the use of stickOffset, and not replacing the root queue if we're on a stick
 		thisInterface = interfaceB
 		logging.info("# MQ Setup for " + thisInterface)
-		if 'mq' not in shellReturn('tc qdisc show dev ' + interfaceA + ' root'):
-			if not OnAStick:
+		if not OnAStick:
+			if 'mq' not in shellReturn('tc qdisc show dev ' + interfaceB + ' root'):
 				print('MQ not detected. Will create mq qdisc.')
 				command = 'qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq'
 				linuxTCcommands.append(command)
