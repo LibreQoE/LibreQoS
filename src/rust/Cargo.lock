@@ -1574,6 +1574,7 @@ dependencies = [
  "lqos_utils",
  "nix 0.27.1",
  "once_cell",
+ "reqwest",
  "rocket",
  "rocket_async_compression",
  "sysinfo",
