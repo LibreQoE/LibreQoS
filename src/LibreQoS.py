@@ -94,7 +94,7 @@ def tearDown(interfaceA, interfaceB, queuesAvailable, OnAStick):
 		# Clear IP filters and remove xdp program from interfaces
 		#result = os.system('./bin/xdp_iphash_to_cpu_cmdline clear')
 		clear_ip_mappings() # Use the bus
-		#clearPriorSettings(interfaceA, interfaceB, queuesAvailable, OnAStick)
+		clearPriorSettings(interfaceA, interfaceB, queuesAvailable, OnAStick)
 
 def findQueuesAvailable(interfaceName):
 	# Find queues and CPU cores available. Use min between those two as queuesAvailable
@@ -1103,7 +1103,10 @@ if __name__ == '__main__':
 	if args.validate:
 		status = validateNetworkAndDevices()
 	elif args.clearrules:
-		tearDown(interfaceA, interfaceB)
+		InterfaceAQueuesAvailable = findQueuesAvailable(interfaceA)
+		InterfaceBQueuesAvailable = findQueuesAvailable(interfaceB)
+		queuesAvailable = min(InterfaceAQueuesAvailable, InterfaceBQueuesAvailable)
+		tearDown(interfaceA, interfaceB, queuesAvailable, OnAStick)
 	elif args.updateonly:
 		# Single-interface updates don't work at all right now.
 		if OnAStick:
