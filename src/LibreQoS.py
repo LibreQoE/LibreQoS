@@ -75,9 +75,12 @@ def clearPriorSettings(interfaceA, interfaceB, queuesAvailable, OnAStick):
 	if enableActualShellCommands:
 		if 'mq' in shellReturn('tc qdisc show dev ' + interfaceA + ' root'):
 			print('MQ detected. Will delete MQ leafs only.')
-			for i in range(queuesAvailable):
-				shell("tc qdisc del dev " + interfaceA + " parent 7fff:" + hex(i+1) + " handle " + hex(i+1))
-			if not OnAStick:
+			if OnAStick:
+				for i in range(queuesAvailable*2):
+					shell("tc qdisc del dev " + interfaceA + " parent 7fff:" + hex(i+1) + " handle " + hex(i+1))
+			else:
+				for i in range(queuesAvailable):
+					shell("tc qdisc del dev " + interfaceA + " parent 7fff:" + hex(i+1) + " handle " + hex(i+1))
 				for i in range(queuesAvailable):
 					shell("tc qdisc del dev " + interfaceB + " parent 7fff:" + hex(i+1) + " handle " + hex(i+1))
 			# # Clear tc filter
