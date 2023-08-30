@@ -15,7 +15,7 @@ struct VersionCheckRequest {
     node_id: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 #[serde(crate = "rocket::serde")]
 pub struct VersionCheckResponse {
     update_available: bool,
@@ -34,7 +34,7 @@ async fn send_version_check() -> anyhow::Result<VersionCheckResponse> {
             .json(&request)
             .send()
             .await?
-            .json::<VersionCheckResponse>()
+            .json()
             .await?;
 
         Ok(response)
@@ -48,12 +48,16 @@ pub async fn version_check() -> Json<String> {
     let last_check = LAST_VERSION_CHECK.load(std::sync::atomic::Ordering::Relaxed);
     if let Ok(now) = unix_now() {
         if now > last_check + ONE_HOUR_SECONDS {
+            let res = send_version_check().await;
             if let Ok(response) = send_version_check().await {
                 LAST_VERSION_CHECK.store(now, std::sync::atomic::Ordering::Relaxed);
 
                 if response.update_available {
                     return Json(String::from("Update available"));
                 }
+            } else {
+                error!("Unable to send version check");
+                error!("{res:?}");
             }
         }
     }
