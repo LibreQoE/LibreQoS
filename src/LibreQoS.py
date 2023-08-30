@@ -864,11 +864,6 @@ def refreshShapers():
 		# Record start time of actual filter reload
 		reloadStartTime = datetime.now()
 		
-		
-		# Clear Prior Settings
-		clearPriorSettings(interfaceA, interfaceB, queuesAvailable, OnAStick)
-
-		
 		# Setup XDP and disable XPS regardless of whether it is first run or not (necessary to handle cases where systemctl stop was used)
 		xdpStartTime = datetime.now()
 		if enableActualShellCommands:
@@ -885,7 +880,9 @@ def refreshShapers():
 		#shell('./cpumap-pping/src/tc_classify --dev-egress ' + interfaceA)
 		#shell('./cpumap-pping/src/tc_classify --dev-egress ' + interfaceB)	
 		xdpEndTime = datetime.now()
-		
+
+		# Clear Prior Settings
+		clearPriorSettings(interfaceA, interfaceB, queuesAvailable, OnAStick)
 		
 		# Execute actual Linux TC commands
 		tcStartTime = datetime.now()
