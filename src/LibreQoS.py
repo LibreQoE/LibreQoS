@@ -731,7 +731,7 @@ def refreshShapers():
 		if 'mq' not in shellReturn('tc qdisc show dev ' + interfaceA + ' root'):
 			print('MQ not detected. Will create mq qdisc.')
 			logging.info("# MQ Setup for " + thisInterface)
-			command = 'qdisc add dev ' + thisInterface + ' root handle 7FFF: mq'
+			command = 'qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq'
 			linuxTCcommands.append(command)
 		for queue in range(queuesAvailable):
 			command = 'qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2'
@@ -754,7 +754,7 @@ def refreshShapers():
 		if 'mq' not in shellReturn('tc qdisc show dev ' + interfaceA + ' root'):
 			if not OnAStick:
 				print('MQ not detected. Will create mq qdisc.')
-				command = 'qdisc add dev ' + thisInterface + ' root handle 7FFF: mq'
+				command = 'qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq'
 				linuxTCcommands.append(command)
 		for queue in range(queuesAvailable):
 			command = 'qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+stickOffset+1) + ' handle ' + hex(queue+stickOffset+1) + ': htb default 2'
