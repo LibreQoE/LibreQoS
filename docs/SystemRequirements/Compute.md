@@ -13,9 +13,8 @@ Single-thread CPU performance will determine the max throughput of a single HTB 
 | 100 Mbps            | 1000                     |
 | 250 Mbps            | 1250                     |
 | 500 Mbps            | 1500                     |
-| 1 Gbps              | 1750                     |
-| 2 Gbps              | 2000                     |
-| 3 Gbps              | 3000                     |
+| 1 Gbps              | 2000                     |
+| 2 Gbps              | 3000                     |
 | 4 Gbps              | 4000                     |
 
 Below is a table of approximate aggregate throughput capacity, assuming a a CPU with a [single thread](https://www.cpubenchmark.net/singleThread.html#server-thread) performance of 2700 or greater:
@@ -51,11 +50,10 @@ So for example, an ISP delivering 1Gbps service plans with 10Gbps aggregate thro
 It is most cost-effective to buy a used server with specifications matching your unique requirements, as laid out in the System Requirements section below.
 For those who do not have the time to do that, here are some off-the-shelf options to consider:
 
-|   Aggregate   | 100Mbps Plans | 250Mbps Plans | 500Mbps Plans |  1Gbps Plans  |  2Gbps Plans  |
-| ------------- | ------------- | ------------- | ------------- | ------------- | ------------- |
-| 1 Gbps Total  |       A       |               |               |               |               |
-| 10 Gbps Total |               |               |               |       B       |               |
-| 20 Gbps Total |               |               |               |               |       C       |
+|   Aggregate   | 100Mbps Plans |  1Gbps Plans  |  4Gbps Plans  |
+| ------------- | ------------- | ------------- | ------------- |
+| 1 Gbps Total  |       A       |               |               |
+| 10 Gbps Total |               |       B       |       C       |
 
 * A | [Supermicro SuperServer E100-9W-L](https://www.thinkmate.com/system/superserver-e100-9w-l)
 * B | [Supermicro SuperServer 510T-ML](https://www.thinkmate.com/system/superserver-510t-ml) (Select E-2388G)
