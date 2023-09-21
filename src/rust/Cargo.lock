@@ -1729,6 +1729,7 @@ dependencies = [
  "once_cell",
  "serde",
  "serde_cbor",
+ "serde_json",
  "sysinfo",
  "thiserror",
  "tokio",

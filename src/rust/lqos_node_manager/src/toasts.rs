@@ -64,7 +64,50 @@ pub async fn version_check() -> Json<String> {
     Json(String::from("All Good"))
 }
 
+#[derive(Serialize)]
+#[serde(crate = "rocket::serde")]
+pub enum StatsCheckResponse {
+    DoNothing,
+    NotSetup,
+    Disabled,
+    GoodToGo,
+}
+
+#[derive(Serialize)]
+#[serde(crate = "rocket::serde")]
+pub struct StatsCheckAction {
+    action: StatsCheckResponse,
+    node_id: String,
+}
+
 #[get("/api/stats_check")]
-pub async fn stats_check() -> Json<String> {
-    Json(String::from("No"))
+pub async fn stats_check() -> Json<StatsCheckAction> {
+    let mut response = StatsCheckAction {
+        action: StatsCheckResponse::DoNothing,
+        node_id: String::new(),
+    };
+
+    if let Ok(cfg) = EtcLqos::load() {
+        if let Some(lts) = &cfg.long_term_stats {
+            if !lts.gather_stats {
+                response = StatsCheckAction {
+                    action: StatsCheckResponse::Disabled,
+                    node_id: cfg.node_id.unwrap_or("(not configured)".to_string()),
+                };
+            } else {
+                // Stats are enabled
+                response = StatsCheckAction {
+                    action: StatsCheckResponse::GoodToGo,
+                    node_id: cfg.node_id.unwrap_or("(not configured)".to_string()),
+                };
+            }
+        } else {
+            response = StatsCheckAction {
+                action: StatsCheckResponse::NotSetup,
+                node_id: cfg.node_id.unwrap_or("(not configured)".to_string()),
+            };
+        }
+    }
+
+    Json(response)
 }
