@@ -1,7 +1,7 @@
 //! Async reader/parser for tc -s -j qdisc show dev (whatever)
 use thiserror::Error;
 use tokio::process::Command;
-use crate::collector::CakeStats;
+pub use crate::collector::CakeStats;
 use super::queue_structure::{read_queueing_structure, QueueNode};
 
 #[derive(Debug, Error)]

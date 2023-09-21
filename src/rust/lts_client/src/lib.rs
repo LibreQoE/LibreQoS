@@ -11,6 +11,7 @@ pub mod collector;
 
 /// Submissions system for `lqosd`
 pub mod submission_queue;
+pub use collector::CakeStats;
 
 /// Re-export bincode
 pub mod bincode {
