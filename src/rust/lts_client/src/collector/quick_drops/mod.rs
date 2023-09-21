@@ -11,7 +11,7 @@ pub(crate) use stats_diff::*;
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CakeStats {
-    pub(crate) circuit_id: String,
-    pub(crate) drops: u64,
-    pub(crate) marks: u64,
+    pub circuit_id: String,
+    pub drops: u64,
+    pub marks: u64,
 }
