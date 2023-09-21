@@ -15,8 +15,8 @@ Single-thread CPU performance will determine the max throughput of a single HTB 
 | 500 Mbps            | 1500                     |
 | 1 Gbps              | 1750                     |
 | 2 Gbps              | 2000                     |
-| 3 Gbps              | 2500                     |
-| 4 Gbps              | 3000                     |
+| 3 Gbps              | 3000                     |
+| 4 Gbps              | 4000                     |
 
 Below is a table of approximate aggregate throughput capacity, assuming a a CPU with a [single thread](https://www.cpubenchmark.net/singleThread.html#server-thread) performance of 2700 or greater:
 
