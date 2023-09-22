@@ -15,7 +15,7 @@ thiserror = "1"
 lqos_config = { path = "../lqos_config" }
 lqos_utils = { path = "../lqos_utils" }
 lts_client = { path = "../lts_client" }
-tokio = { version = "1", features = [ "rt", "macros", "net", "io-util", "time" ] }
+tokio = { version = "1", features = [ "full" ] }
 log = "0"
 nix = "0"
 serde_cbor = "0" # For RFC8949/7409 format C binary objects
