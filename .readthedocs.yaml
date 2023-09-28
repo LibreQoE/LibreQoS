@@ -57,8 +57,8 @@ sphinx:
 
 # See https://docs.readthedocs.io/en/stable/guides/reproducible-builds.html
 
-# python:
+python:
 
-#    install:
+   install:
 
-#    - requirements: docs/requirements.txt
+   - requirements: requirements.txt
