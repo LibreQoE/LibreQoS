@@ -174,7 +174,7 @@ function updateHostCounts() {
             }
             case "NotSetup": {
                 template = template.replace("$URL$", "https://stats.libreqos.io/trial1/" + encodeURI(data.node_id))
-                    .replace("$TEXT$", "<span style='color: #90EE90'>Statistics Free Trial</span>");
+                    .replace("$TEXT$", "<span class='badge badge-pill badge-success green-badge'>Statistics Free Trial</span>");
             } break;
             default: {
                 template = template.replace("$URL$", "https://stats.libreqos.io/")
