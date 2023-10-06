@@ -1,4 +1,4 @@
-use crate::transport_data::{ask_license_server, LicenseReply};
+use crate::transport_data::{ask_license_server, LicenseReply, ask_license_server_for_new_account};
 use lqos_config::EtcLqos;
 use lqos_utils::unix_time::unix_now;
 use once_cell::sync::Lazy;
@@ -44,7 +44,11 @@ pub(crate) async fn get_license_status() -> LicenseState {
 const MISERLY_NO_KEY: &str = "IDontSupportDevelopersAndShouldFeelBad";
 
 async fn check_license(unix_time: u64) -> LicenseState {
+    log::info!("Checking LTS stats license");
     if let Ok(cfg) = EtcLqos::load() {
+        // The config file is good. Is LTS enabled?
+        // If it isn't, we need to try very gently to see if a pending
+        // request has been submitted.
         if let Some(cfg) = cfg.long_term_stats {
             if let Some(key) = cfg.license_key {
                 if key == MISERLY_NO_KEY {
@@ -81,7 +85,29 @@ async fn check_license(unix_time: u64) -> LicenseState {
                     }
                 }
             }
+        } else {
+            // LTS is unconfigured - but not explicitly disabled.
+            // So we need to check if we have a pending request.
+            // If a license key has been assigned, then we'll setup
+            // LTS. If it hasn't, we'll just return Unknown.
+            if let Some(node_id) = &cfg.node_id {
+                if let Ok(result) = ask_license_server_for_new_account(node_id.to_string()).await {
+                    if let LicenseReply::NewActivation { license_key } = result {
+                        // We have a new license!
+                        let _ = lqos_config::enable_long_term_stats(license_key);
+                        // Note that we're not doing anything beyond this - the next cycle
+                        // will pick up on there actually being a license
+                    } else {
+                        log::info!("No pending LTS license found");
+                    }
+                }
+            } else {
+                // There's no node ID either - we can't talk to this
+                log::warn!("No NodeID is configured. No online services are possible.");
+            }
         }
+    } else {
+        log::error!("Unable to load lqosd configuration. Not going to try.");
     }
     LicenseState::Unknown
 }

@@ -211,6 +211,53 @@ impl EtcLqos {
   }
 }
 
+pub fn enable_long_term_stats(license_key: String) {
+  if let Ok(raw) = std::fs::read_to_string("/etc/lqos.conf") {
+    let document = raw.parse::<Document>();
+    match document {
+      Err(e) => {
+        error!("Unable to parse TOML from /etc/lqos.conf");
+        error!("Full error: {:?}", e);
+        return;
+      }
+      Ok(mut config_doc) => {
+        let cfg = toml_edit::de::from_document::<EtcLqos>(config_doc.clone());
+        match cfg {
+          Ok(mut cfg) => {
+            // Now we enable LTS if its not present
+            if let Ok(isp_config) = crate::LibreQoSConfig::load() {
+              if cfg.long_term_stats.is_none() {
+                cfg.long_term_stats = Some(LongTermStats {
+                  gather_stats: true,
+                  collation_period_seconds: 60,
+                  license_key: Some(license_key),
+                  uisp_reporting_interval_seconds: if isp_config.automatic_import_uisp {
+                     Some(300)
+                  } else {
+                    None
+                  }
+                });
+                config_doc["long_term_stats"] = value(toml_edit::ser::to_string(&cfg.long_term_stats.unwrap()).unwrap());
+                let new_cfg = config_doc.to_string();
+                if let Err(e) = fs::write(Path::new("/etc/lqos.conf"), new_cfg) {
+                  log::error!("Unable to write to /etc/lqos.conf");
+                  log::error!("{e:?}");
+                  return;
+                }
+              }
+            }
+          }
+          Err(e) => {
+            error!("Unable to parse TOML from /etc/lqos.conf");
+            error!("Full error: {:?}", e);
+            return;
+          }
+        }
+      }
+    }
+  }
+}
+
 fn check_config(cfg_doc: &mut Document, cfg: &mut EtcLqos) {
   use sha2::digest::Update;
   use sha2::Digest;

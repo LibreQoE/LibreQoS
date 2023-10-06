@@ -62,6 +62,7 @@ async fn connect_if_permitted() -> Result<TcpStream, QueueError> {
         QueueError::NoLocalLicenseKey
     })?;
     if !usage_cfg.gather_stats {
+        log::warn!("Gathering long-term stats is disabled.");
         return Err(QueueError::StatsDisabled);
     }
     let license_key = usage_cfg.license_key.ok_or_else(|| {

@@ -24,6 +24,11 @@ pub enum LicenseRequest {
         /// The sodium-style public key of the requesting shaper node
         public_key: PublicKey,
     },
+    /// Check to see if this node has been newly approved
+    PendingLicenseRequest {
+        /// The local node id
+        node_id: String,
+    }
 }
 
 /// License server responses for a key
@@ -43,6 +48,11 @@ pub enum LicenseReply {
         /// The server's public key
         public_key: PublicKey,
     },
+    /// New Activation
+    NewActivation {
+        /// The license key to apply
+        license_key: String,
+    }
 }
 
 /// Errors that can occur when checking licenses
