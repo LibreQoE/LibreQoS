@@ -211,6 +211,9 @@ impl EtcLqos {
   }
 }
 
+/// Run this if you've received the OK from the licensing server, and been
+/// sent a license key. This appends a [long_term_stats] section to your 
+/// config file - ONLY if one doesn't already exist.
 pub fn enable_long_term_stats(license_key: String) {
   if let Ok(raw) = std::fs::read_to_string("/etc/lqos.conf") {
     let document = raw.parse::<Document>();
@@ -223,21 +226,20 @@ pub fn enable_long_term_stats(license_key: String) {
       Ok(mut config_doc) => {
         let cfg = toml_edit::de::from_document::<EtcLqos>(config_doc.clone());
         match cfg {
-          Ok(mut cfg) => {
+          Ok(cfg) => {
             // Now we enable LTS if its not present
             if let Ok(isp_config) = crate::LibreQoSConfig::load() {
               if cfg.long_term_stats.is_none() {
-                cfg.long_term_stats = Some(LongTermStats {
-                  gather_stats: true,
-                  collation_period_seconds: 60,
-                  license_key: Some(license_key),
-                  uisp_reporting_interval_seconds: if isp_config.automatic_import_uisp {
-                     Some(300)
-                  } else {
-                    None
-                  }
-                });
-                config_doc["long_term_stats"] = value(toml_edit::ser::to_string(&cfg.long_term_stats.unwrap()).unwrap());
+               
+                let mut new_section = toml_edit::table();
+                new_section["gather_stats"] = value(true);
+                new_section["collation_period_seconds"] = value(60);
+                new_section["license_key"] = value(license_key);
+                if isp_config.automatic_import_uisp {
+                  new_section["uisp_reporting_interval_seconds"] = value(300);
+                }
+                config_doc["long_term_stats"] = new_section;
+
                 let new_cfg = config_doc.to_string();
                 if let Err(e) = fs::write(Path::new("/etc/lqos.conf"), new_cfg) {
                   log::error!("Unable to write to /etc/lqos.conf");
