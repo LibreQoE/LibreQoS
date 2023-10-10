@@ -60,6 +60,10 @@ for prog in $PROGS
 do
     pushd $prog > /dev/null
     cargo build $BUILD_FLAGS
+    if [ $? -ne 0 ]; then
+      echo "Cargo build failed. Exiting with code 1."
+    exit 1
+    fi    
     popd > /dev/null
 done
 
