@@ -22,6 +22,7 @@ pub(crate) async fn start_communication_channel(mut rx: Receiver<SenderChannelMe
             Ok(SenderChannelMessage::QueueReady) => {
                 log::info!("Trying to connect to stats.libreqos.io");
                 let mut stream = connect_if_permitted().await;
+                log::info!("Connection to stats.libreqos.io established");
 
                 // If we're still not connected, skip - otherwise, send the
                 // queued data
@@ -32,7 +33,7 @@ pub(crate) async fn start_communication_channel(mut rx: Receiver<SenderChannelMe
                         log::error!("Stream fail during send. Will re-send");
                     }
                 } else {
-                    log::error!("Unable to connect to stats.libreqos.io: {stream:?}");
+                    log::error!("Unable to submit data to stats.libreqos.io: {stream:?}");
                 }
             }
             Ok(SenderChannelMessage::Quit) => {
