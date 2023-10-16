@@ -20,6 +20,8 @@ You have the option to run integrationUISP.py automatically on boot and every 30
 
 First, set the relevant parameters for Splynx (splynx_api_key, splynx_api_secret, etc.) in ispConfig.py.
 
+The Splynx Integration uses Basic authentication. For using this type of authentication, please make sure you enable [Unsecure access](https://splynx.docs.apiary.io/#introduction/authentication) in your Splynx API key settings. Also the Splynx API key should be granted access to the necessary permissions.
+
 To test the Splynx Integration, use
 
 ```shell

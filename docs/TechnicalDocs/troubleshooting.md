@@ -22,3 +22,15 @@ This tends to show up when the MQ qdisc cannot be added correctly to the NIC int
 
 The scheduler (scheduler.py) runs the InfluxDB integration within a try/except statement. If it fails to update InfluxDB, it will report "Failed to update bandwidth graphs".
 To find the exact cause of the failure, please run ```python3 graphInfluxDB.py``` which will provde more specific errors.
+
+### All customer IPs are listed under Unknown IPs, rather than Shaped Devices in GUI
+```
+cd /opt/libreqos/src
+sudo systemctl stop lqos_scheduler
+sudo python3 LibreQoS.py
+```
+
+The console output from running LibreQoS.py directly provides more specific errors regarding issues with ShapedDevices.csv and network.json
+Once you have identified the error and fixed ShapedDevices.csv and/or Network.json, please then run
+
+```sudo systemctl start lqos_scheduler```

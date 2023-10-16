@@ -359,7 +359,7 @@ int throughput_reader(struct bpf_iter__bpf_map_elem *ctx)
 
     bpf_seq_write(seq, ip, sizeof(struct in6_addr));
     for (__u32 i=0; i<NUM_CPUS; i++) {
-        struct host_counter * content = counter+(i*48);
+        struct host_counter * content = counter+(i*sizeof(struct host_counter));
         bpf_seq_write(seq, content, sizeof(struct host_counter));
     }
 
