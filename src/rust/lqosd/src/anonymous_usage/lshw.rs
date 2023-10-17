@@ -44,7 +44,7 @@ pub(crate) fn get_nic_info() -> anyhow::Result<Vec<Nic>> {
             current_nic = Some(Nic::default());
         }
 
-        if let Some(mut nic) = current_nic.as_mut() {
+        if let Some(nic) = current_nic.as_mut() {
             if let Some(d) = trimmed.strip_prefix("description: ") {
                 nic.description = d.to_string();
             }

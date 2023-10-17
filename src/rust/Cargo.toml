@@ -28,14 +28,7 @@ members = [
     "lqos_heimdall", # Library for managing Heimdall flow watching
     "lqos_map_perf", # A CLI tool for testing eBPF map performance
     "lqstats", # A CLI utility for retrieving long-term statistics
-    "long_term_stats/license_server", # Licensing Server for LibreQoS Long-term stats
-    "long_term_stats/lts_node", # Long-term stats cluster node (web interface)
-    "long_term_stats/lts_ingestor", # Long-term stats data ingestor (feeding databases)
-    "long_term_stats/pgdb", # PostgreSQL interface for the LTS system
-    "long_term_stats/licman", # A CLI tool for managing the licensing server
-    "long_term_stats/lts_client", # Shared data and client-side code for long-term stats
-    "long_term_stats/wasm_pipe", # Provides a WebAssembly tight/compressed data pipeline
-    "long_term_stats/wasm_pipe_types", # Common types between the WASM conduit and the WASM server
+    "lts_client", # Shared data and client-side code for long-term stats
     "lqos_map_perf", # A CLI tool for testing eBPF map performance
     "uisp", # REST support for the UISP API
 ]

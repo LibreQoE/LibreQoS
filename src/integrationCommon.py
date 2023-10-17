@@ -356,6 +356,10 @@ class NetworkGraph:
 	def createShapedDevices(self):
 			import csv
 			from ispConfig import bandwidthOverheadFactor
+			try:
+				from ispConfig import committedBandwidthMultiplier
+			except:
+				committedBandwidthMultiplier = 0.98
 		# Builds ShapedDevices.csv from the network tree.
 			circuits = []
 			for (i, node) in enumerate(self.nodes):
@@ -416,8 +420,8 @@ class NetworkGraph:
 							device["mac"],
 							device["ipv4"],
 							device["ipv6"],
-							int(float(circuit["download"]) * 0.98),
-							int(float(circuit["upload"]) * 0.98),
+							int(float(circuit["download"]) * committedBandwidthMultiplier),
+							int(float(circuit["upload"]) * committedBandwidthMultiplier),
 							int(float(circuit["download"]) * bandwidthOverheadFactor),
 							int(float(circuit["upload"]) * bandwidthOverheadFactor),
 							""

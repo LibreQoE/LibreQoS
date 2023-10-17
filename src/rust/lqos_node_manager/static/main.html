@@ -44,10 +44,7 @@
 
             <ul class="navbar-nav ms-auto">
                 <li class="nav-item" id="currentLogin"></li>
-                <li class="nav-item">
-                    <a class="nav-link" href="#" id="startTest"><i class="fa fa-flag-checkered"></i> Run Bandwidth
-                        Test</a>
-                </li>
+                <li class="nav-item" id="statsLink"></li>
                 <li class="nav-item ms-auto">
                     <a class="nav-link" href="/config"><i class="fa fa-gear"></i> Configuration</a>
                 </li>
@@ -60,6 +57,8 @@
     </nav>
 
     <div id="container" class="pad4">
+
+        <div id="toasts"></div>
 
         <!-- Dashboard Row 1 -->
         <div class="row mbot8">
@@ -351,6 +350,17 @@
             updateHostCounts();
             updateSiteFunnel();
             OneSecondCadence();
+
+            // Version Check
+            $.get("/api/version_check", (data) => {
+                if (data != "All Good") {
+                    let html = "<div class='alert alert-info alert-dismissible fade show' role='alert'>";
+                    html += "<strong>LibreQoS Update Available!</strong>";
+                    html += "<button type='button' class='btn-close' data-bs-dismiss='alert' aria-label='Close'></button>";
+                    html += "</div>";
+                    $("#toasts").append(html);
+                }
+            });
         }
 
         $(document).ready(start);

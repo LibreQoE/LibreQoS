@@ -11,6 +11,7 @@ mod auth_guard;
 mod config_control;
 mod network_tree;
 mod queue_info;
+mod toasts;
 
 // Use JemAllocator only on supported platforms
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -105,6 +106,9 @@ fn rocket() -> _ {
         static_pages::fontawesome_solid,
         static_pages::fontawesome_webfont,
         static_pages::fontawesome_woff,
+        // Front page toast checks
+        toasts::version_check,
+        toasts::stats_check,
       ],
     );
 

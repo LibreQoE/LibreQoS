@@ -115,6 +115,8 @@ findIPv6usingMikrotik = False
 # If you want to provide a safe cushion for speed test results to prevent customer complains, you can set this to
 # 1.15 (15% above plan rate). If not, you can leave as 1.0
 bandwidthOverheadFactor = 1.0
+# Number to multiply the maximum/ceiling bandwidth with to determine the minimum bandwidth.
+committedBandwidthMultiplier = 0.98
 # For edge cases, set the respective ParentNode for these CPEs
 exceptionCPEs = {}
 # exceptionCPEs = {
