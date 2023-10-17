@@ -24,6 +24,11 @@ pub enum LicenseRequest {
         /// The sodium-style public key of the requesting shaper node
         public_key: PublicKey,
     },
+    /// Check to see if this node has been newly approved
+    PendingLicenseRequest {
+        /// The local node id
+        node_id: String,
+    }
 }
 
 /// License server responses for a key
@@ -43,6 +48,11 @@ pub enum LicenseReply {
         /// The server's public key
         public_key: PublicKey,
     },
+    /// New Activation
+    NewActivation {
+        /// The license key to apply
+        license_key: String,
+    }
 }
 
 /// Errors that can occur when checking licenses
@@ -71,4 +81,17 @@ pub struct NodeIdAndLicense {
     pub license_key: String,
     /// The Sodium Nonce
     pub nonce: [u8; 24],
+}
+
+/// For the new V2 hello license system, encodes a greeting
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct HelloVersion2 {
+    /// The node id
+    pub node_id: String,
+    /// The license key
+    pub license_key: String,
+    // The name of the node requesting service
+    pub node_name: String,
+    /// The Sodium Public Key
+    pub client_public_key: Vec<u8>,
 }

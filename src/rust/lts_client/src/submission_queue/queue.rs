@@ -15,8 +15,11 @@ pub(crate) async fn enqueue_if_allowed(data: StatsSubmission, comm_tx: Sender<Se
             log::error!("Your license is invalid. Please contact support.");
         }
         LicenseState::Valid{ .. } => {
+            log::info!("Sending data to the queue.");
             QUEUE.push(LtsCommand::Submit(Box::new(data))).await;
-            let _ = comm_tx.send(SenderChannelMessage::QueueReady).await;
+            if let Err(e) = comm_tx.send(SenderChannelMessage::QueueReady).await {
+                log::error!("Unable to send queue ready message: {}", e);
+            }
         }
     }
 }
@@ -72,12 +75,20 @@ pub(crate) async fn send_queue(stream: &mut TcpStream) -> Result<(), QueueError>
     let mut lock = QUEUE.queue.lock().await;
     for message in lock.iter_mut() {
         let submission_buffer = encode_submission(&message.body).await?;
-        let ret = stream.write(&submission_buffer).await;
+        let ret = stream.write_all(&submission_buffer).await;
         log::info!("Sent submission: {} bytes.", submission_buffer.len());
         if ret.is_err() {
             log::error!("Unable to write to TCP stream.");
             log::error!("{:?}", ret);
             message.sent = false;
+            match crate::submission_queue::comm_channel::key_exchange().await {
+                true => {
+                    log::info!("Successfully exchanged license keys.");
+                }
+                false => {
+                    log::error!("Unable to talk to the licensing system to fix keys.");
+                }
+            }
             return Err(QueueError::SendFail);
         } else {
             message.sent = true;
@@ -91,6 +102,10 @@ pub(crate) async fn send_queue(stream: &mut TcpStream) -> Result<(), QueueError>
 
 #[derive(Error, Debug)]
 pub(crate) enum QueueError {
+    #[error("No local license key")]
+    NoLocalLicenseKey,
+    #[error("Stats are disabled")]
+    StatsDisabled,
     #[error("Unable to send")]
     SendFail,
 }

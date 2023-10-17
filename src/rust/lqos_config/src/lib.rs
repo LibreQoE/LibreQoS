@@ -14,7 +14,7 @@ mod program_control;
 mod shaped_devices;
 
 pub use authentication::{UserRole, WebUsers};
-pub use etc::{BridgeConfig, BridgeInterface, BridgeVlan, EtcLqos, Tunables};
+pub use etc::{BridgeConfig, BridgeInterface, BridgeVlan, EtcLqos, Tunables, enable_long_term_stats};
 pub use libre_qos_config::LibreQoSConfig;
 pub use network_json::{NetworkJson, NetworkJsonNode, NetworkJsonTransport};
 pub use program_control::load_libreqos;

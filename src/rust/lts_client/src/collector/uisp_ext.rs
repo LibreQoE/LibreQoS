@@ -31,6 +31,7 @@ pub(crate) async fn gather_uisp_data(comm_tx: Sender<SenderChannelMessage>) {
                 cpu_usage: None,
                 ram_percent: None,
                 uisp_devices: Some(uisp_devices),
+                cake_stats: None,
             };
             new_submission(submission, comm_tx).await;
         } else {

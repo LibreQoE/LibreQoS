@@ -17,7 +17,27 @@ fn build_license_request(key: String) -> Result<Vec<u8>, LicenseCheckError> {
     let mut result = Vec::new();
     let payload = serde_cbor::to_vec(&LicenseRequest::LicenseCheck { key });
     if let Err(e) = payload {
-        log::warn!("Unable to serialize statistics. Not sending them.");
+        log::warn!("Unable to serialize license request. Not sending them.");
+        log::warn!("{e:?}");
+        return Err(LicenseCheckError::SerializeFail);
+    }
+    let payload = payload.unwrap();
+
+    // Store the version as network order
+    result.extend(1u16.to_be_bytes());
+    // Store the payload size as network order
+    result.extend((payload.len() as u64).to_be_bytes());
+    // Store the payload itself
+    result.extend(payload);
+
+    Ok(result)
+}
+
+fn build_activation_query(node_id: String) -> Result<Vec<u8>, LicenseCheckError> {
+    let mut result = Vec::new();
+    let payload = serde_cbor::to_vec(&LicenseRequest::PendingLicenseRequest { node_id } );
+    if let Err(e) = payload {
+        log::warn!("Unable to serialize license request. Not sending them.");
         log::warn!("{e:?}");
         return Err(LicenseCheckError::SerializeFail);
     }
@@ -71,6 +91,47 @@ fn build_key_exchange_request(
 /// * `key` - The license key to check
 pub async fn ask_license_server(key: String) -> Result<LicenseReply, LicenseCheckError> {
     if let Ok(buffer) = build_license_request(key) {
+        let stream = TcpStream::connect(LICENSE_SERVER).await;
+        if let Err(e) = &stream {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                log::error!("Unable to access {LICENSE_SERVER}. Check that lqosd is running and you have appropriate permissions.");
+                return Err(LicenseCheckError::SendFail);
+            }
+        }
+        let stream = stream;
+        match stream {
+            Ok(mut stream) => {
+                let ret = stream.write(&buffer).await;
+                if ret.is_err() {
+                    log::error!("Unable to write to {LICENSE_SERVER} stream.");
+                    log::error!("{:?}", ret);
+                    return Err(LicenseCheckError::SendFail);
+                }
+                let mut buf = Vec::with_capacity(10240);
+                let ret = stream.read_to_end(&mut buf).await;
+                if ret.is_err() {
+                    log::error!("Unable to read from {LICENSE_SERVER} stream.");
+                    log::error!("{:?}", ret);
+                    return Err(LicenseCheckError::SendFail);
+                }
+
+                decode_response(&buf)
+            }
+            Err(e) => {
+                log::warn!("TCP stream failed to connect: {:?}", e);
+                Err(LicenseCheckError::ReceiveFail)
+            }
+        }
+    } else {
+        Err(LicenseCheckError::SerializeFail)
+    }
+}
+
+pub async fn ask_license_server_for_new_account(
+    node_id: String,
+) -> Result<LicenseReply, LicenseCheckError>
+{
+    if let Ok(buffer) = build_activation_query(node_id) {
         let stream = TcpStream::connect(LICENSE_SERVER).await;
         if let Err(e) = &stream {
             if e.kind() == std::io::ErrorKind::NotFound {

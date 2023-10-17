@@ -5,6 +5,8 @@ use lqos_config::ShapedDevice;
 use serde::{Deserialize, Serialize};
 use uisp::Device;
 
+use crate::collector::CakeStats;
+
 /// Type that provides a minimum, maximum and average value
 /// for a given statistic within the associated time period.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -92,6 +94,9 @@ pub struct StatsSubmission {
     pub ram_percent: Option<u32>,
     /// UISP Device Information
     pub uisp_devices: Option<Vec<UispExtDevice>>,
+    /// Queue Stats
+    pub cake_stats: Option<(Vec<CakeStats>, Vec<CakeStats>)>,
+
 }
 
 /// Submission to the `lts_node` process

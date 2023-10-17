@@ -3,10 +3,10 @@ use lqos_config::EtcLqos;
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
 
-pub(crate) static KEYPAIR: Lazy<RwLock<KeyPair>> = Lazy::new(|| RwLock::new(generate_new_keypair("lts_keys.bin")));
+pub(crate) static KEYPAIR: Lazy<RwLock<KeyPair>> = Lazy::new(|| RwLock::new(generate_new_keypair()));
 pub(crate) static SERVER_PUBLIC_KEY: Lazy<RwLock<Option<PublicKey>>> = Lazy::new(|| RwLock::new(None));
 
-async fn store_server_public_key(key: &PublicKey) {
+pub(crate) async fn store_server_public_key(key: &PublicKey) {
     *SERVER_PUBLIC_KEY.write().await = Some(key.clone());
 }
 

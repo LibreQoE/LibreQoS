@@ -35,10 +35,16 @@ pub async fn start_long_term_stats() -> Sender<StatsUpdateMessage> {
 }
 
 async fn collation_scheduler(tx: Sender<StatsUpdateMessage>) {
+    log::info!("Starting collation scheduler");
     loop {
         let collation_period = get_collation_period();
-        tx.send(StatsUpdateMessage::CollationTime).await.unwrap();
+        log::info!("Collation period: {}s", collation_period.as_secs());
+        if tx.send(StatsUpdateMessage::CollationTime).await.is_err() {
+            log::warn!("Unable to send collation time message");
+        }
+        log::info!("Sent collation time message. Sleeping.");
         tokio::time::sleep(collation_period).await;
+        log::info!("Collation scheduler woke up.");
     }
 }
 
@@ -107,11 +113,20 @@ fn get_uisp_collation_period() -> Option<Duration> {
 }
 
 async fn uisp_collection_manager(control_tx: Sender<StatsUpdateMessage>) {
-    if let Some(period) = get_uisp_collation_period() {
-        log::info!("Starting UISP poller with period {:?}", period);
-        loop {
-            control_tx.send(StatsUpdateMessage::UispCollationTime).await.unwrap();
-            tokio::time::sleep(period).await;
+    // Outer loop: If UISP is disabled, check hourly to see if it
+    // was enabled. If it is enabled, start the inner loop.
+    loop {
+        // Inner loop - if there's a collation period set for UISP,
+        // poll it.
+        if let Some(period) = get_uisp_collation_period() {
+            log::info!("Starting UISP poller with period {:?}", period);
+            loop {
+                control_tx.send(StatsUpdateMessage::UispCollationTime).await.unwrap();
+                tokio::time::sleep(period).await;
+            }
+        } else {
+            // Sleep for one hour - then we'll check again
+            tokio::time::sleep(Duration::from_secs(3600)).await;
         }
     }
 }
