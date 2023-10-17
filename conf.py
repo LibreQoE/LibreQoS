@@ -7,7 +7,7 @@
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = "LibreQoE"
-copyright = "2023, LibreQoE"
+copyright = "2023, LibreQoE, LLC"
 author = "Zach Biles"
 
 # -- General configuration ---------------------------------------------------
