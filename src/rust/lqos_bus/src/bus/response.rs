@@ -1,7 +1,10 @@
-use crate::{IpMapping, IpStats, XdpPpingResult, FlowTransport, ip_stats::PacketHeader};
+use super::QueueStoreTransit;
+use crate::{
+  ip_stats::PacketHeader, FlowTransport, IpMapping, IpStats, XdpPpingResult,
+};
+use lts_client::transport_data::{StatsTotals, StatsHost, StatsTreeNode};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
-use super::QueueStoreTransit;
 
 /// A `BusResponse` object represents a single
 /// reply generated from a `BusRequest`, and batched
@@ -77,7 +80,7 @@ pub enum BusResponse {
   NodeNames(Vec<(usize, String)>),
 
   /// Statistics from lqosd
-  LqosdStats{
+  LqosdStats {
     /// Number of bus requests handled
     bus_requests: u64,
     /// Us to poll hosts
@@ -92,11 +95,11 @@ pub enum BusResponse {
   FlowData(Vec<(FlowTransport, Option<FlowTransport>)>),
 
   /// The index of the new packet collection session
-  PacketCollectionSession{ 
+  PacketCollectionSession {
     /// The identifier of the capture session
-    session_id: usize, 
+    session_id: usize,
     /// Number of seconds for which data will be captured
-    countdown: usize 
+    countdown: usize,
   },
 
   /// Packet header dump
@@ -104,4 +107,13 @@ pub enum BusResponse {
 
   /// Pcap format dump
   PcapDump(Option<String>),
+
+  /// Long-term stats top-level totals
+  LongTermTotals(StatsTotals),
+
+  /// Long-term stats host totals
+  LongTermHosts(Vec<StatsHost>),
+
+  /// Long-term stats tree
+  LongTermTree(Vec<StatsTreeNode>),
 }

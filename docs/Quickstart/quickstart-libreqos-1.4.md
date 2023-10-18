@@ -18,8 +18,8 @@ Run ```sudo crontab -e``` and remove any entries pertaining to LibreQoS from v1.
 Use the deb package from the [latest v1.4 release](https://github.com/LibreQoE/LibreQoS/releases/).
 
 ```shell
-sudo echo "deb http://stats.libreqos.io/ubuntu jammy main" > /etc/apt/sources.list.d/libreqos.list
-wget -O - -q http://stats.libreqos.io/repo.asc | apt-key add -
+sudo echo "deb http://stats.libreqos.io/ubuntu jammy main" | sudo tee -a /etc/apt/sources.list.d/libreqos.list
+sudo wget -O - -q http://stats.libreqos.io/repo.asc | sudo apt-key add -
 apt-get update
 apt-get install libreqos
 ```

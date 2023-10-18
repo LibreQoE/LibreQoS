@@ -56,6 +56,14 @@ src/webusers.toml
 src/lqusers.toml
 src/dist
 src/rust/lqos_anonymous_stats_server/anonymous.sqlite
+src/rust/long_term_stats/license_server/lqkeys.bin
+src/rust/long_term_stats/lts_node/lqkeys.bin
+src/rust/long_term_stats/pgdb/.env
+src/rust/long_term_stats/site_build/node_modules
+src/rust/long_term_stats/site_build/output
+src/rust/long_term_stats/site_build/package-lock.json
+src/rust/long_term_stats/wasm_pipe/staging
+src/rust/long_term_stats/lts_node/deploy.sh
 
 # Ignore Rust build artifacts
 src/rust/target
@@ -105,3 +113,11 @@ tramp
 # virtual environments
 .venv
 venv
+src/integrationUISPbandwidths.template.csv
+src/lts_keys.bin
+src/network
+src/network.json.good
+src/network.pdf
+src/ShapedDevices.csv.good
+.gitignore
+src/rust/lqosd/lts_keys.bin

@@ -6,5 +6,5 @@
   * Known supported cards:
     * [NVIDIA Mellanox MCX512A-ACAT](https://www.fs.com/products/119649.html)
     * NVIDIA Mellanox MCX416A-CCAT
-    * [Intel X710](https://www.fs.com/products/75600.html)
+    * [Intel X710](https://www.fs.com/products/75600.html) * Note - possible i40e driver issue with XDP Redirect for high throughput 10G+
     * Intel X520

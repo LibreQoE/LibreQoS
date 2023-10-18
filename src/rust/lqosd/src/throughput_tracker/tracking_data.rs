@@ -30,8 +30,6 @@ impl ThroughputTracker {
 
   pub(crate) fn copy_previous_and_reset_rtt(&self) {
     // Copy previous byte/packet numbers and reset RTT data
-    // We're using Rayon's "par_iter_mut" to spread the operation across
-    // all CPU cores.
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
     self.raw_data.iter_mut().for_each(|mut v| {
       if v.first_cycle < self_cycle {
@@ -43,9 +41,10 @@ impl ThroughputTracker {
           u64::checked_sub(v.packets.0, v.prev_packets.0).unwrap_or(0);
         v.packets_per_second.1 =
           u64::checked_sub(v.packets.1, v.prev_packets.1).unwrap_or(0);
-        v.prev_bytes = v.bytes;
-        v.prev_packets = v.packets;
       }
+      v.prev_bytes = v.bytes;
+      v.prev_packets = v.packets;
+
       // Roll out stale RTT data
       if self_cycle > RETIRE_AFTER_SECONDS
         && v.last_fresh_rtt_data_cycle < self_cycle - RETIRE_AFTER_SECONDS
@@ -195,17 +194,29 @@ impl ThroughputTracker {
 
   #[inline(always)]
   fn add_atomic_tuple(tuple: &(AtomicU64, AtomicU64), n: (u64, u64)) {
-    tuple.0.fetch_add(n.0, std::sync::atomic::Ordering::Relaxed);
-    tuple.1.fetch_add(n.1, std::sync::atomic::Ordering::Relaxed);
+    let n0 = tuple.0.load(std::sync::atomic::Ordering::Relaxed);
+    if let Some(n) = n0.checked_add(n.0) {
+      tuple.0.store(n, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    let n1 = tuple.1.load(std::sync::atomic::Ordering::Relaxed);
+    if let Some(n) = n1.checked_add(n.1) {
+      tuple.1.store(n, std::sync::atomic::Ordering::Relaxed);
+    }
   }
 
   pub(crate) fn update_totals(&self) {
+    let current_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
     Self::set_atomic_tuple_to_zero(&self.bytes_per_second);
     Self::set_atomic_tuple_to_zero(&self.packets_per_second);
     Self::set_atomic_tuple_to_zero(&self.shaped_bytes_per_second);
     self
       .raw_data
       .iter()
+      .filter(|v| 
+        v.most_recent_cycle == current_cycle &&
+        v.first_cycle + 2 < current_cycle
+      )
       .map(|v| {
         (
           v.bytes.0.saturating_sub(v.prev_bytes.0),

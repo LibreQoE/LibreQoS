@@ -11,6 +11,10 @@ except:
 	from ispConfig import uispSite, uispStrategy
 	overwriteNetworkJSONalways = False
 try:
+	from ispConfig import uispSuspendedStrategy
+except:
+	uispSuspendedStrategy = "none"
+try:
 	from ispConfig import airMax_capacity
 except:
 	airMax_capacity = 0.65
@@ -18,6 +22,10 @@ try:
 	from ispConfig import ltu_capacity
 except:
 	ltu_capacity = 0.90
+try:
+	from ispConfig import usePtMPasParent
+except:
+	usePtMPasParent = False
 
 def uispRequest(target):
 	# Sends an HTTP request to UISP and returns the
@@ -337,8 +345,9 @@ def findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite, foundAirFiber
 																			'upload': upload,
 																			parent: apID
 																			}
-																site['parent'] = apID
-																print('Site ' + name + ' will use PtMP AP as parent.')
+																if usePtMPasParent:
+																	site['parent'] = apID
+																	print('Site ' + name + ' will use PtMP AP as parent.')
 	return siteList, nodeOffPtMP
 
 def handleMultipleInternetNodes(sites, dataLinks, uispSite):
@@ -355,7 +364,7 @@ def handleMultipleInternetNodes(sites, dataLinks, uispSite):
 		uispSite = 'Internet'
 		for link in dataLinks:
 			if link['canDelete'] ==  False:
-				if link['from']['device']['identification']['id'] == link['to']['device']['identification']['id']:
+				if link['from']['device'] is not None and link['to']['device'] is not None and link['from']['device']['identification']['id'] == link['to']['device']['identification']['id']:
 					link['from']['site']['identification']['id'] = '001'
 					link['from']['site']['identification']['name'] = 'Internet'
 					# Found internet link
@@ -429,6 +438,7 @@ def buildFullGraph():
 		match type:
 			case "site":
 				nodeType = NodeType.site
+				customerName = name
 				if name in siteBandwidth:
 					# Use the CSV bandwidth values
 					download = siteBandwidth[name]["download"]
@@ -458,6 +468,18 @@ def buildFullGraph():
 				if (site['qos']['downloadSpeed']) and (site['qos']['uploadSpeed']):
 					download = int(round(site['qos']['downloadSpeed']/1000000))
 					upload = int(round(site['qos']['uploadSpeed']/1000000))
+				if site['identification'] is not None and site['identification']['suspended'] is not None and site['identification']['suspended'] == True:
+					if uispSuspendedStrategy == "ignore":
+						print("WARNING: Site " + name + " is suspended")
+						continue
+					if uispSuspendedStrategy == "slow":
+						print("WARNING: Site " + name + " is suspended")
+						download = 1
+						upload = 1
+
+				if site['identification']['status'] == "disconnected":
+					print("WARNING: Site " + name + " is disconnected")
+					continue
 
 		node = NetworkNode(id=id, displayName=name, type=nodeType,
 						   parentId=parent, download=download, upload=upload, address=address, customerName=customerName)

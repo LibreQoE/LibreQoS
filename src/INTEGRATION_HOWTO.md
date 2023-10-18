@@ -100,23 +100,23 @@ Let's attach some access points and point-of-presence sites:
 ```python
 net.addRawNode(NetworkNode(id="AP_A", displayName="AP_A", parentId="Site_1", type=NodeType.ap, download=500, upload=500))
 net.addRawNode(NetworkNode(id="Site_3", displayName="Site_3", parentId="Site_1", type=NodeType.site, download=500, upload=500))
-net.addRawNode(NetworkNode(id="PoP_5", displayName="PoP_5", parentId="Site_3", type=NodeType.site, download=200, upload=200))        
-net.addRawNode(NetworkNode(id="AP_9", displayName="AP_9", parentId="PoP_5", type=NodeType.ap, download=120, upload=120))
-net.addRawNode(NetworkNode(id="PoP_6", displayName="PoP_6", parentId="PoP_5", type=NodeType.site, download=60, upload=60))
-net.addRawNode(NetworkNode(id="AP_11", displayName="AP_11", parentId="PoP_6", type=NodeType.ap, download=30, upload=30))
-net.addRawNode(NetworkNode(id="PoP_1", displayName="PoP_1", parentId="Site_2", type=NodeType.site, download=200, upload=200))
-net.addRawNode(NetworkNode(id="AP_7", displayName="AP_7", parentId="PoP_1", type=NodeType.ap, download=100, upload=100))
+net.addRawNode(NetworkNode(id="Site_5", displayName="Site_5", parentId="Site_3", type=NodeType.site, download=200, upload=200))        
+net.addRawNode(NetworkNode(id="AP_9", displayName="AP_9", parentId="Site_5", type=NodeType.ap, download=120, upload=120))
+net.addRawNode(NetworkNode(id="Site_6", displayName="Site_6", parentId="Site_5", type=NodeType.site, download=60, upload=60))
+net.addRawNode(NetworkNode(id="AP_11", displayName="AP_11", parentId="Site_6", type=NodeType.ap, download=30, upload=30))
+net.addRawNode(NetworkNode(id="Site_4", displayName="Site_4", parentId="Site_2", type=NodeType.site, download=200, upload=200))
+net.addRawNode(NetworkNode(id="AP_7", displayName="AP_7", parentId="Site_4", type=NodeType.ap, download=100, upload=100))
 net.addRawNode(NetworkNode(id="AP_1", displayName="AP_1", parentId="Site_2", type=NodeType.ap, download=150, upload=150))
 ```
 
-When you attach a customer, you can specify a tree entry (e.g. `PoP_5`) as a parent:
+When you attach a customer, you can specify a tree entry (e.g. `Site_5`) as a parent:
 
 ```python
 # Add the customer
 customer = NetworkNode(
     id="Unique Customer ID",
     displayName="The Doe Family",
-    parentId="PoP_5",
+    parentId="Site_5",
     type=NodeType.client,
     download=100, # Download is in Mbit/second
     upload=20, # Upload is in Mbit/second
@@ -146,7 +146,7 @@ net.createShapedDevices() # Create the `ShapedDevices.csv` file.
 
 You can also add a call to `net.plotNetworkGraph(False)` (use `True` to also include every customer; this can make for a HUGE file) to create a PDF file (currently named `network.pdf.pdf`) displaying your topology. The example shown here looks like this:
 
-![](testdata/sample_layout.png)
+![](testdata/network_new.png)
 
 ## Longest Prefix Match Tip
 You could theoretically throttle all unknown IPs until they are associated with a client. For example, you could limit every unknown to 1.5x0.5 with single entry in ShapedDevices.csv, until you associate them with an account. IPs need to be non-exact matches. So you can't have two 192.168.1.1 entries, but you can have a 192.168.1.0/24 subnet and a 192.168.1.2/32 - they aren't duplicates, and the LPM search is smart enough to pick the most exact match.

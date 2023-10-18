@@ -5,7 +5,7 @@ from typing import List, Any
 from ispConfig import allowedSubnets, ignoreSubnets, generatedPNUploadMbps, generatedPNDownloadMbps, circuitNameUseAddress, upstreamBandwidthCapacityDownloadMbps, upstreamBandwidthCapacityUploadMbps
 import ipaddress
 import enum
-
+import os
 
 def isInAllowedSubnets(inputIP):
 	# Check whether an IP address occurs inside the allowedSubnets list
@@ -356,6 +356,10 @@ class NetworkGraph:
 	def createShapedDevices(self):
 			import csv
 			from ispConfig import bandwidthOverheadFactor
+			try:
+				from ispConfig import committedBandwidthMultiplier
+			except:
+				committedBandwidthMultiplier = 0.98
 		# Builds ShapedDevices.csv from the network tree.
 			circuits = []
 			for (i, node) in enumerate(self.nodes):
@@ -366,7 +370,10 @@ class NetworkGraph:
 					if circuitNameUseAddress:
 						displayNameToUse = node.address
 					else:
-						displayNameToUse = node.customerName
+						if node.type == NodeType.client:
+							displayNameToUse = node.displayName
+						else:
+							displayNameToUse = node.customerName + " (" + nodeTypeToString(node.type) + ")"
 					circuit = {
 						"id": node.id,
 						"name": displayNameToUse,
@@ -413,13 +420,22 @@ class NetworkGraph:
 							device["mac"],
 							device["ipv4"],
 							device["ipv6"],
-							int(float(circuit["download"]) * 0.98),
-							int(float(circuit["upload"]) * 0.98),
+							int(float(circuit["download"]) * committedBandwidthMultiplier),
+							int(float(circuit["upload"]) * committedBandwidthMultiplier),
 							int(float(circuit["download"]) * bandwidthOverheadFactor),
 							int(float(circuit["upload"]) * bandwidthOverheadFactor),
 							""
 						]
 						wr.writerow(row)
+				
+				# If we have an "appendToShapedDevices.csv" file, it gets appended to the end of the file.
+				# This is useful for adding devices that are not in the network tree, such as a
+				# "default" device that gets all the traffic that doesn't match any other device.
+				if os.path.isfile('appendToShapedDevices.csv'):
+					with open('appendToShapedDevices.csv', 'r') as f:
+						reader = csv.reader(f)
+						for row in reader:
+							wr.writerow(row)
 
 	def plotNetworkGraph(self, showClients=False):
 		# Requires `pip install graphviz` to function.

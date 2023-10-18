@@ -11,10 +11,11 @@ Single-thread CPU performance will determine the max throughput of a single HTB 
 | Customer Max Plan   | Passmark Single-Thread   |
 | --------------------| ------------------------ |
 | 100 Mbps            | 1000                     |
-| 250 Mbps            | 1500                     |
-| 500 Mbps            | 2000                     |
-| 1 Gbps              | 2500                     |
+| 250 Mbps            | 1250                     |
+| 500 Mbps            | 1500                     |
+| 1 Gbps              | 2000                     |
 | 2 Gbps              | 3000                     |
+| 4 Gbps              | 4000                     |
 
 Below is a table of approximate aggregate throughput capacity, assuming a a CPU with a [single thread](https://www.cpubenchmark.net/singleThread.html#server-thread) performance of 2700 or greater:
 
@@ -48,8 +49,12 @@ So for example, an ISP delivering 1Gbps service plans with 10Gbps aggregate thro
 ### Server Recommendations
 It is most cost-effective to buy a used server with specifications matching your unique requirements, as laid out in the System Requirements section below.
 For those who do not have the time to do that, here are some off-the-shelf options to consider:
-* 1 Gbps | [Supermicro SuperServer E100-9W-L](https://www.thinkmate.com/system/superserver-e100-9w-l)
-* 10 Gbps | [Supermicro SuperServer 510T-ML (Choose E-2388G)](https://www.thinkmate.com/system/superserver-510t-ml)
-* 20 Gbps | [Dell R450 Config](https://www.dell.com/en-us/shop/servers-storage-and-networking/poweredge-r450-rack-server/spd/poweredge-r450/pe_r450_15127_vi_vp?configurationid=a7663c54-6e4a-4c96-9a21-bc5a69d637ba)
 
-The [AsRock 1U4LW-B6502L2T](https://www.thinkmate.com/system/asrock-1u4lw-b6502l2t/635744) can be a great lower-cost option as well.
+|   Aggregate   | 100Mbps Plans |  1Gbps Plans  |  4Gbps Plans  |
+| ------------- | ------------- | ------------- | ------------- |
+| 1 Gbps Total  |       A       |               |               |
+| 10 Gbps Total |               |       B       |       C       |
+
+* A | [Supermicro SuperServer E100-9W-L](https://www.thinkmate.com/system/superserver-e100-9w-l)
+* B | [Supermicro SuperServer 510T-ML](https://www.thinkmate.com/system/superserver-510t-ml) (Select E-2388G)
+* C | [Supermicro AS-1015A-MT](https://store.supermicro.com/us_en/as-1015a-mt.html) (Ryzen 9 7700X, 2x16GB DDR5 4800MHz ECC, 1xSupermicro 10-Gigabit XL710+ X557)

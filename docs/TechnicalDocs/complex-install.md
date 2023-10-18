@@ -18,7 +18,7 @@ By specifying `libreqos` at the end, git will ensure the folder name is lowercas
 You need to have a few packages from `apt` installed:
 
 ```shell
-sudo apt-get install -y python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname -r` libbpf-dev
+sudo apt-get install -y python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname -r` libbpf-dev libssl-dev
 ```
 
 Then you need to install some Python dependencies:
