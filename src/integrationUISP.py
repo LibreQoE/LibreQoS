@@ -137,8 +137,8 @@ def buildSiteBandwidths():
 			next(csv_reader)
 			for row in csv_reader:
 				name, download, upload = row
-				download = int(download)
-				upload = int(upload)
+				download = int(float(download))
+				upload = int(float(upload))
 				siteBandwidth[name] = {"download": download, "upload": upload}
 	return siteBandwidth
 
@@ -384,8 +384,9 @@ def buildFullGraph():
 	devices = uispRequest("devices?withInterfaces=true&authorized=true")
 	dataLinks = uispRequest("data-links?siteLinksOnly=true")
 
-	# If multiple Internet-connected sites, create Internet root node:
-	sites, dataLinks, uispSite = handleMultipleInternetNodes(sites, dataLinks, uispSite)
+	# If no uispSite listed, and there are multiple Internet-connected sites, then create Internet root node:
+	if uispSite == "":
+		sites, dataLinks, uispSite = handleMultipleInternetNodes(sites, dataLinks, uispSite)
 	
 	# Build Site Capacities
 	print("Compiling Site Bandwidths")
