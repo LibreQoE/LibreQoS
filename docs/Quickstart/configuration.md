@@ -87,8 +87,8 @@ If you are using an integration, this file will be automatically generated. If y
 ### Manual Editing
 
 - Modify the ShapedDevices.csv file using your preferred spreadsheet editor (LibreOffice Calc, Excel, etc), following the template file - ShapedDevices.example.csv
-- Circuit ID is required. Must be a string of some sort (int is fine, gets parsed as string). Must NOT include any number symbols (#).
-- An IPv4 address or IPv6 address is required for each entry.
+- Circuit ID is required. Must be a string of some sort (int is fine, gets parsed as string). Must NOT include any number symbols (#). Every circuit needs a unique CircuitID - they cannot be reused. Here, circuit essentially means customer location. If a customer has multiple locations on different parts of your network, use a unique CircuitID for each of those locations.
+- At least one IPv4 address or IPv6 address is required for each entry.
 - The Access Point or Site name should be set in the Parent Node field. Parent Node can be left blank for flat networks.
 - The ShapedDevices.csv file allows you to set minimum guaranteed, and maximum allowed bandwidth per subscriber.
 - The minimum allowed plan rates for Circuits are 2Mbit. Bandwidth min and max should both be above that threshold.
