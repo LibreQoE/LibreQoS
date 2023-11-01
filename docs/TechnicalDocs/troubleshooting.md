@@ -8,11 +8,17 @@ In ispConfig.py, make sure the edge and core interfaces correspond to correctly 
 
 Make sure your services are running properly
 
-- `lqos.service`
+- `lqosd.service`
 - `lqos_node_manager`
 - `lqos_scheduler`
 
 Node manager and scheduler are dependent on the `lqos.service` being in a healthy, running state.
+
+For example to check the status of lqosd, run:
+```sudo systemctl status lqosd```
+
+### lqosd not running or failed to start
+At the command-line, type ```sudo RUST_LOG=info /opt/libreqos/src/bin/lqosd``` which will provide specifics regarding why it failed to start.
 
 ### RTNETLINK answers: Invalid argument
 
