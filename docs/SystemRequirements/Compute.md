@@ -47,14 +47,12 @@ So for example, an ISP delivering 1Gbps service plans with 10Gbps aggregate thro
 (* Estimated)
 
 ### Server Recommendations
-It is most cost-effective to buy a used server with specifications matching your unique requirements, as laid out in the System Requirements section below.
+It is most cost-effective to buy a used server with specifications matching your unique requirements, as laid out in the System Requirements section above.
 For those who do not have the time to do that, here are some off-the-shelf options to consider:
 
-|   Aggregate   | 100Mbps Plans |  1Gbps Plans  |  4Gbps Plans  |
+|   Aggregate   | 500Mbps Plans |  1Gbps Plans  |  4Gbps Plans  |
 | ------------- | ------------- | ------------- | ------------- |
-| 1 Gbps Total  |       A       |               |               |
-| 10 Gbps Total |               |       B       |       C       |
+| 10 Gbps Total |      A, B     |      A, B     |       B       |
 
-* A | [Supermicro SuperServer E100-9W-L](https://www.thinkmate.com/system/superserver-e100-9w-l)
-* B | [Supermicro SuperServer 510T-ML](https://www.thinkmate.com/system/superserver-510t-ml) (Select E-2388G)
-* C | [Supermicro AS-1015A-MT](https://store.supermicro.com/us_en/as-1015a-mt.html) (Ryzen 9 7700X, 2x16GB DDR5 4800MHz ECC, 1xSupermicro 10-Gigabit XL710+ X557)
+* A | [Supermicro SuperServer 510T-ML](https://www.thinkmate.com/system/superserver-510t-ml) (Select E-2388G)
+* B | [Supermicro AS-1015A-MT](https://store.supermicro.com/us_en/as-1015a-mt.html) (Ryzen 9 7700X, 2x16GB DDR5 4800MHz ECC, 1xSupermicro 10-Gigabit XL710+ X557)
