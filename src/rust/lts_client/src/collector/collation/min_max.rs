@@ -40,8 +40,12 @@ impl<
       min = T::min(min, *n);
       max = T::max(max, *n);
     });
+    let length = stats.len();
+    let median = if length == 0 { T::zero() } else {
+      stats[length/2]
+    };
 
-    Self { max, min, avg: median(stats) }
+    Self { max, min, avg: median(stats): median }
   }
 }
 
