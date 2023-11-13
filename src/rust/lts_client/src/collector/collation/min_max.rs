@@ -7,6 +7,21 @@ pub(crate) struct MinMaxAvg<T> {
   pub(crate) avg: T,
 }
 
+fn median<T>(stats: &[T]) -> T
+where
+  T: Bounded + Zero + std::ops::AddAssign<T> + Copy + std::cmp::Ord + CheckedDiv + NumCast,
+{
+  let mut sorted = stats.to_vec();
+  sorted.sort();
+  let len = sorted.len();
+  let mid = len / 2;
+  if len % 2 == 0 {
+    (sorted[mid] + sorted[mid - 1]).checked_div(&T::from(2).unwrap()).unwrap_or(T::zero())
+  } else {
+    sorted[mid]
+  }
+}
+
 impl<
     T: Bounded
       + Zero
@@ -20,17 +35,13 @@ impl<
   pub(crate) fn from_slice(stats: &[T]) -> Self {
     let mut min = T::max_value();
     let mut max = T::min_value();
-    let mut avg = T::zero();
 
     stats.iter().for_each(|n| {
-      avg += *n;
       min = T::min(min, *n);
       max = T::max(max, *n);
     });
-    let len = T::from(stats.len()).unwrap();
-    avg = avg.checked_div(&len).unwrap_or(T::zero());
 
-    Self { max, min, avg }
+    Self { max, min, avg: median(stats) }
   }
 }
 
