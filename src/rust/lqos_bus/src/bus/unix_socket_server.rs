@@ -78,7 +78,7 @@ impl UnixSocketServer {
   }
 
   fn make_socket_public() -> Result<(), UnixSocketServerError> {
-    lqos_utils::run_success!(
+    let _ = lqos_utils::run_success!(
       "/bin/chmod",
       "-R",
       "a+rwx",
