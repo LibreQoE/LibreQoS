@@ -44,10 +44,10 @@ impl<
     values.sort();
     let length = values.len();
     let median = if length == 0 { T::zero() } else {
-      values[length/2]
+      median(&values)
     };
 
-    Self { max, min, avg: median(stats): median }
+    Self { max, min, avg: median }
   }
 }
 
