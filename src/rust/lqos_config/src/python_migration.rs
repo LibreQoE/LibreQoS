@@ -180,11 +180,23 @@ impl PythonMigration {
 
 #[cfg(test)]
 mod test {
-    use super::PythonMigration;
+    use super::*;
+
+    const DEFAULT_ISP_CONFIG_PY: &str = include_str!("../../../ispConfig.example.py");
 
     #[test]
-    fn load_it() {
-        let cfg = PythonMigration::load().unwrap();
-        println!("{:#?}", cfg);
+    fn test_parsing_the_default() {
+        let mut cfg = PythonMigration::default();
+        prepare_freethreaded_python();
+        let mut worked = true;
+        Python::with_gil(|py| {
+            py.run(DEFAULT_ISP_CONFIG_PY, None, None).unwrap();
+            let result = PythonMigration::parse(&mut cfg, &py);
+            if result.is_err() {
+                println!("Error parsing Python config: {:?}", result);
+                worked = false;
+            }
+        });
+        assert!(worked)
     }
 }
