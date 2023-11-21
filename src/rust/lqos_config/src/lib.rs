@@ -12,6 +12,7 @@ mod libre_qos_config;
 mod network_json;
 mod program_control;
 mod shaped_devices;
+mod python_migration;
 
 pub use authentication::{UserRole, WebUsers};
 pub use etc::{BridgeConfig, BridgeInterface, BridgeVlan, EtcLqos, Tunables, enable_long_term_stats};
