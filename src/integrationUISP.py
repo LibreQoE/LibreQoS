@@ -302,7 +302,7 @@ def loadRoutingOverrides():
 		with open("integrationUISProutes.csv", "r") as f:
 			reader = csv.reader(f)
 			for row in reader:
-				if not row[0].startswith("#") and len(row) == 3:
+				if row and not row[0].startswith("#") and len(row) == 3:
 					fromSite, toSite, cost = row
 					overrides[fromSite.strip() + "->" + toSite.strip()] = int(cost)
 	#print(overrides)
