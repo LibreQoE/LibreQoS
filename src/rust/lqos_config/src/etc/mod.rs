@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use toml_edit::{Document, value};
 use std::{fs, path::Path};
 use thiserror::Error;
+mod python_migration;
 
 /// Represents the top-level of the `/etc/lqos.conf` file. Serialization
 /// structure.
