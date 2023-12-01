@@ -1,0 +1,35 @@
+version = "1.5"
+lqos_directory = "/opt/libreqos/src"
+node_id = "0000-0000-0000"
+node_name = "Example Node"
+
+[usage_stats]
+send_anonymous = true
+anonymous_server = "stats.libreqos.io:9125"
+
+[tuning]
+stop_irq_balance = true
+netdev_budget_usecs = 8000
+netdev_budget_packets = 300
+rx_usecs = 8
+tx_usecs = 8
+disable_rxvlan = true
+disable_txvlan = true
+disable_offload = [ "gso", "tso", "lro", "sg", "gro" ]
+
+# EITHER:
+[bridge]
+use_xdp_bridge = true
+to_internet = "eth0"
+to_network = "eth1"
+
+# OR:
+[single_interface]
+internet_vlan = 2
+network_vlan = 3
+
+[long_term_stats]
+gather_stats = true
+collation_period_seconds = 10
+license_key = "(data)"
+uisp_reporting_interval_seconds = 300
