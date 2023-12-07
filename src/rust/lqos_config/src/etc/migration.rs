@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use super::{
     python_migration::{PythonMigration, PythonMigrationError},
     v15::{Config, SingleInterfaceConfig, BridgeConfig},
@@ -41,18 +43,34 @@ pub fn migrate_if_needed() -> Result<(), MigrationError> {
         }
     } else {
         log::info!("No version found in configuration file, assuming 1.4x and migration is needed");
-        migrate_14_to_15()?;
+        let new_config = migrate_14_to_15()?;
+        // Backup the old configuration
+        std::fs::rename("/etc/lqos.conf", "/etc/lqos.conf.backup14")
+            .map_err(|e| MigrationError::ReadError(e))?;
+
+        // Rename the old Python configuration
+        let from = Path::new(new_config.lqos_directory.as_str())
+            .join("ispConfig.py");
+        let to = Path::new(new_config.lqos_directory.as_str())
+            .join("ispConfig.py.backup14");
+        
+        std::fs::rename(from, to)
+            .map_err(|e| MigrationError::ReadError(e))?;
+        
+        // Save the configuration
+        let raw = toml::to_string_pretty(&new_config).unwrap();
+        std::fs::write("/etc/lqos.conf", raw).map_err(|e| MigrationError::ReadError(e))?;
     }
 
     Ok(())
 }
 
-fn migrate_14_to_15() -> Result<(), MigrationError> {
+fn migrate_14_to_15() -> Result<Config, MigrationError> {
     // Load the 1.4 config file
     let old_config = EtcLqos::load().map_err(|e| MigrationError::LoadError(e))?;
     let python_config = PythonMigration::load().map_err(|e| MigrationError::PythonLoadError(e))?;
     let new_config = do_migration_14_to_15(&old_config, &python_config)?;
-    Ok(())
+    Ok(new_config)
 }
 
 fn do_migration_14_to_15(
