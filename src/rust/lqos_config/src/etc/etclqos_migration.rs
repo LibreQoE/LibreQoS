@@ -163,7 +163,15 @@ impl EtcLqos {
       return Err(EtcLqosError::ConfigDoesNotExist);
     }
     if let Ok(raw) = std::fs::read_to_string("/etc/lqos.conf") {
-      let document = raw.parse::<Document>();
+      Self::load_from_string(&raw)
+    } else {
+      error!("Unable to read contents of /etc/lqos.conf");
+      Err(EtcLqosError::CannotReadFile)
+    }
+  }
+
+  pub(crate) fn load_from_string(raw: &str) -> Result<Self, EtcLqosError> {
+    let document = raw.parse::<Document>();
       match document {
         Err(e) => {
           error!("Unable to parse TOML from /etc/lqos.conf");
@@ -185,10 +193,6 @@ impl EtcLqos {
           }
         }
       }
-    } else {
-      error!("Unable to read contents of /etc/lqos.conf");
-      Err(EtcLqosError::CannotReadFile)
-    }
   }
 
   /// Saves changes made to /etc/lqos.conf

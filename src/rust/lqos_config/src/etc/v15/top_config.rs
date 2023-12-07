@@ -46,6 +46,12 @@ pub struct Config {
 
     /// Integration Common Variables
     pub integration_common: super::integration_common::IntegrationConfig,
+
+    /// Spylnx Integration
+    pub spylnx_integration: super::spylnx_integration::SplynxIntegration,
+
+    /// UISP Integration
+    pub uisp_integration: super::uisp_integration::UispIntegration,
 }
 
 impl Config {
@@ -67,6 +73,15 @@ impl Config {
                 "Configuration file may not contain both a bridge and a single-interface section."
                     .to_string(),
             );
+        }
+        if self.version != "1.5" {
+            return Err(format!(
+                "Configuration file is at version {}, but this version of lqos only supports version 1.5.0",
+                self.version
+            ));
+        }
+        if self.node_id.is_empty() {
+            return Err("Node ID must be set".to_string());
         }
         Ok(())
     }
@@ -93,6 +108,8 @@ impl Default for Config {
             long_term_stats: super::long_term_stats::LongTermStats::default(),
             ip_ranges: super::ip_ranges::IpRanges::default(),
             integration_common: super::integration_common::IntegrationConfig::default(),
+            spylnx_integration: super::spylnx_integration::SplynxIntegration::default(),
+            uisp_integration: super::uisp_integration::UispIntegration::default(),
         }
     }
 }

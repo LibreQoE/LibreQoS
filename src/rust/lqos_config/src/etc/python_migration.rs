@@ -176,13 +176,26 @@ impl PythonMigration {
 
         Ok(old_config)
     }
+
+    pub(crate) fn load_from_string(s: &str) -> Result<Self, PythonMigrationError> {
+        let mut old_config = Self::default();
+        prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            py.run(s, None, None).unwrap();
+            let result = Self::parse(&mut old_config, &py);
+            if result.is_err() {
+                println!("Error parsing Python config: {:?}", result);
+            }
+        });
+
+        Ok(old_config)
+    }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-
-    const DEFAULT_ISP_CONFIG_PY: &str = include_str!("../../../../ispConfig.example.py");
+    use super::super::test_data::*;
 
     #[test]
     fn test_parsing_the_default() {
@@ -190,7 +203,7 @@ mod test {
         prepare_freethreaded_python();
         let mut worked = true;
         Python::with_gil(|py| {
-            py.run(DEFAULT_ISP_CONFIG_PY, None, None).unwrap();
+            py.run(PYTHON_CONFIG, None, None).unwrap();
             let result = PythonMigration::parse(&mut cfg, &py);
             if result.is_err() {
                 println!("Error parsing Python config: {:?}", result);
