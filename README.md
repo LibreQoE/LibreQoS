@@ -8,7 +8,11 @@ Learn more at [LibreQoS.io](https://libreqos.io/)!
 
 ## Sponsors
 
-Special thanks to Equinix for providing server resources to support the development of LibreQoS.
+LibreQoS' development is made possible by our sponsors, the NLnet Foundation and Equinix.
+
+LibreQoS has been funded through the NGI0 Entrust Fund, a fund established by NLnet with financial support from the European Commission’s Next Generation Internet programme, under the aegis of DG Communications Networks, Content and Technology under grant agreement No 101069594. Learn more at https://nlnet.nl/project/LibreQoS/
+
+Equinix supports LibreQoS through its Open Source program – providing access to hardware resources on its Equinix Metal infrastructure. Equinix’ support has been crucial for LibreQoS to scale past 10Gbps for higher-bandwidth networks. Learn more about Equinix Metal here.
 Learn more about [Equinix Metal here](https://deploy.equinix.com/metal/).
 
 ## Support LibreQoS
