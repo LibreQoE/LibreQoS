@@ -70,6 +70,12 @@ impl Config {
         }
         Ok(())
     }
+
+    fn load_from_string(s: &str) -> Result<Self, String> {
+        let config: Config = toml::from_str(s).map_err(|e| format!("Error parsing config: {}", e))?;
+        config.validate()?;
+        Ok(config)
+    }
 }
 
 impl Default for Config {
@@ -88,5 +94,16 @@ impl Default for Config {
             ip_ranges: super::ip_ranges::IpRanges::default(),
             integration_common: super::integration_common::IntegrationConfig::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::Config;
+
+    #[test]
+    fn load_example() {
+        let config = Config::load_from_string(include_str!("example.toml")).unwrap();
+        assert_eq!(config.version, "1.5");
     }
 }

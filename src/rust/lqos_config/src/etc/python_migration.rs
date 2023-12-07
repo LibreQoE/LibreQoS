@@ -182,7 +182,7 @@ impl PythonMigration {
 mod test {
     use super::*;
 
-    const DEFAULT_ISP_CONFIG_PY: &str = include_str!("../../../ispConfig.example.py");
+    const DEFAULT_ISP_CONFIG_PY: &str = include_str!("../../../../ispConfig.example.py");
 
     #[test]
     fn test_parsing_the_default() {

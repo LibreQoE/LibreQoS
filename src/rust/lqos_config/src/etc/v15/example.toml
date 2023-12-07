@@ -24,9 +24,9 @@ to_internet = "eth0"
 to_network = "eth1"
 
 # OR:
-[single_interface]
-internet_vlan = 2
-network_vlan = 3
+#[single_interface]
+#internet_vlan = 2
+#network_vlan = 3
 
 [queues]
 default_sqm = "cake diffserv4"

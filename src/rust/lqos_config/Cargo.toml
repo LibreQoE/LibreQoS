@@ -17,3 +17,4 @@ uuid = { version = "1", features = ["v4", "fast-rng" ] }
 log = "0"
 dashmap = "5"
 pyo3 = "0.20"
+toml = "0.8.8"
