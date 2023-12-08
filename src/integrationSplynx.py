@@ -50,7 +50,6 @@ def getRouters(headers):
 	for router in data:
 		routerID = router['id']
 		ipForRouter[routerID] = router['ip']
-	
 	print("Router IPs found: " + str(len(ipForRouter)))
 	return ipForRouter
 
@@ -62,6 +61,10 @@ def combineAddress(json):
 	else:
 		return json["street_1"] + " " + json["city"] + " " + json["zip_code"]
 
+def getAllServices(headers):
+	services = spylnxRequest("admin/customers/customer/0/internet-services?main_attributes%5Bstatus%5D=active", headers)
+	return services
+
 def createShaper():
 	net = NetworkGraph()
 
@@ -70,63 +73,70 @@ def createShaper():
 	tariff, downloadForTariffID, uploadForTariffID = getTariffs(headers)
 	customers = getCustomers(headers)
 	ipForRouter = getRouters(headers)
-
-	# It's not very clear how a service is meant to handle multiple
-	# devices on a shared tariff. Creating each service as a combined
-	# entity including the customer, to be on the safe side.
+	allServices = getAllServices(headers)
+	
+	allServicesDict = {}
+	for serviceItem in allServices:
+		if (serviceItem['status'] == 'active'):
+			allServicesDict[serviceItem["id"]] = serviceItem
+	
+	#It's not very clear how a service is meant to handle multiple
+	#devices on a shared tariff. Creating each service as a combined
+	#entity including the customer, to be on the safe side.
 	for customerJson in customers:
 		if customerJson['status'] == 'active':
-			services = spylnxRequest("admin/customers/customer/" + customerJson["id"] + "/internet-services", headers)
-			for serviceJson in services:
-				if (serviceJson['status'] == 'active'):
-					combinedId = "c_" + str(customerJson["id"]) + "_s_" + str(serviceJson["id"])
-					tariff_id = serviceJson['tariff_id']
-					customer = NetworkNode(
-						type=NodeType.client,
-						id=combinedId,
-						displayName=customerJson["name"],
-						address=combineAddress(customerJson),
-						customerName=customerJson["name"],
-						download=downloadForTariffID[tariff_id],
-						upload=uploadForTariffID[tariff_id],
-					)
-					net.addRawNode(customer)
-					
-					ipv4 = ''
-					ipv6 = ''
-					routerID = serviceJson['router_id']
-					# If not "Taking IPv4" (Router will assign IP), then use router's set IP
-					# Debug
-					taking_ipv4 = int(serviceJson['taking_ipv4'])
-					if taking_ipv4 == 0:
-						try:
-							ipv4 = ipForRouter[routerID]
-						except:
-							warnings.warn("taking_ipv4 was 0 for client " + combinedId + " but router ID was not found in ipForRouter", stacklevel=2)
-							ipv4 = ''
-					elif taking_ipv4 == 1:
-						ipv4 = serviceJson['ipv4']
+			if customerJson['id'] in allServicesDict:
+				serviceJson = allServicesDict[customerJson['id']]
+				#print(serviceJson)
+				combinedId = "c_" + str(customerJson["id"]) + "_s_" + str(serviceJson["id"])
+				tariff_id = serviceJson['tariff_id']
+				customer = NetworkNode(
+					type=NodeType.client,
+					id=combinedId,
+					displayName=customerJson["name"],
+					address=combineAddress(customerJson),
+					customerName=customerJson["name"],
+					download=downloadForTariffID[tariff_id],
+					upload=uploadForTariffID[tariff_id],
+				)
+				net.addRawNode(customer)
+				
+				ipv4 = ''
+				ipv6 = ''
+				routerID = serviceJson['router_id']
+				# If not "Taking IPv4" (Router will assign IP), then use router's set IP
+				# Debug
+				taking_ipv4 = int(serviceJson['taking_ipv4'])
+				if taking_ipv4 == 0:
+					try:
+						ipv4 = ipForRouter[routerID]
+					except:
+						warnings.warn("taking_ipv4 was 0 for client " + combinedId + " but router ID was not found in ipForRouter", stacklevel=2)
+						ipv4 = ''
+				elif taking_ipv4 == 1:
+					ipv4 = serviceJson['ipv4']
 						
-					# If not "Taking IPv6" (Router will assign IP), then use router's set IP
-					if isinstance(serviceJson['taking_ipv6'], str):
-						taking_ipv6 = int(serviceJson['taking_ipv6'])
-					else:
-						taking_ipv6 = serviceJson['taking_ipv6']
-					if taking_ipv6 == 0:
-						ipv6 = ''
-					elif taking_ipv6 == 1:
-						ipv6 = serviceJson['ipv6']
 					
-					device = NetworkNode(
-						id=combinedId+"_d" + str(serviceJson["id"]),
-						displayName=serviceJson["id"],
-						type=NodeType.device,
-						parentId=combinedId,
-						mac=serviceJson["mac"],
-						ipv4=[ipv4],
-						ipv6=[ipv6]
-					)
-					net.addRawNode(device)
+				# If not "Taking IPv6" (Router will assign IP), then use router's set IP
+				if isinstance(serviceJson['taking_ipv6'], str):
+					taking_ipv6 = int(serviceJson['taking_ipv6'])
+				else:
+					taking_ipv6 = serviceJson['taking_ipv6']
+				if taking_ipv6 == 0:
+					ipv6 = ''
+				elif taking_ipv6 == 1:
+					ipv6 = serviceJson['ipv6']
+				
+				device = NetworkNode(
+					id=combinedId+"_d" + str(serviceJson["id"]),
+					displayName=serviceJson["id"],
+					type=NodeType.device,
+					parentId=combinedId,
+					mac=serviceJson["mac"],
+					ipv4=[ipv4],
+					ipv6=[ipv6]
+				)
+				net.addRawNode(device)
 
 	net.prepareTree()
 	net.plotNetworkGraph(False)
