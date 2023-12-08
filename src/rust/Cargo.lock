@@ -1589,6 +1589,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "lqos_bus",
+ "lqos_config",
  "lqos_utils",
  "nix 0.27.1",
  "pyo3",

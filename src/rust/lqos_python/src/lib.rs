@@ -32,6 +32,20 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_wrapped(wrap_pyfunction!(is_libre_already_running))?;
   m.add_wrapped(wrap_pyfunction!(create_lock_file))?;
   m.add_wrapped(wrap_pyfunction!(free_lock_file))?;
+  m.add_wrapped(wrap_pyfunction!(check_config))?;
+  m.add_wrapped(wrap_pyfunction!(sqm))?;
+  m.add_wrapped(wrap_pyfunction!(upstream_bandwidth_capacity_download_mbps))?;
+  m.add_wrapped(wrap_pyfunction!(upstream_bandwidth_capacity_upload_mbps))?;
+  m.add_wrapped(wrap_pyfunction!(interface_a))?;
+  m.add_wrapped(wrap_pyfunction!(interface_b))?;
+  m.add_wrapped(wrap_pyfunction!(enable_actual_shell_commands))?;
+  m.add_wrapped(wrap_pyfunction!(use_bin_packing_to_balance_cpu))?;
+  m.add_wrapped(wrap_pyfunction!(monitor_mode_only))?;
+  m.add_wrapped(wrap_pyfunction!(run_shell_commands_as_sudo))?;
+  m.add_wrapped(wrap_pyfunction!(generated_pn_download_mbps))?;
+  m.add_wrapped(wrap_pyfunction!(generated_pn_upload_mbps))?;
+  m.add_wrapped(wrap_pyfunction!(queues_available_override))?;
+  m.add_wrapped(wrap_pyfunction!(on_a_stick))?;
   Ok(())
 }
 
@@ -253,4 +267,92 @@ fn create_lock_file() -> PyResult<()> {
 fn free_lock_file() -> PyResult<()> {
   let _ = remove_file(LOCK_FILE); // Ignore result
   Ok(())
+}
+
+#[pyfunction]
+fn check_config() -> PyResult<bool> {
+  let config = lqos_config::load_config();
+  if let Err(e) = config {
+    println!("Error loading config: {e}");
+    return Ok(false);
+  }
+  Ok(true)
+}
+
+#[pyfunction]
+fn sqm() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.queues.default_sqm.clone())
+}
+
+#[pyfunction]
+fn upstream_bandwidth_capacity_download_mbps() -> PyResult<u32> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.queues.uplink_bandwidth_mbps)
+}
+
+#[pyfunction]
+fn upstream_bandwidth_capacity_upload_mbps() -> PyResult<u32> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.queues.uplink_bandwidth_mbps)
+}
+
+#[pyfunction]
+fn interface_a() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.isp_interface())
+}
+
+#[pyfunction]
+fn interface_b() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.internet_interface())
+}
+
+#[pyfunction]
+fn enable_actual_shell_commands() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(!config.queues.dry_run)
+}
+
+#[pyfunction]
+fn use_bin_packing_to_balance_cpu() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.queues.use_binpacking)
+}
+
+#[pyfunction]
+fn monitor_mode_only() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.queues.monitor_only)
+}
+
+#[pyfunction]
+fn run_shell_commands_as_sudo() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.queues.sudo)
+}
+
+#[pyfunction]
+fn generated_pn_download_mbps() -> PyResult<u32> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.queues.generated_pn_download_mbps)
+}
+
+#[pyfunction]
+fn generated_pn_upload_mbps() -> PyResult<u32> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.queues.generated_pn_upload_mbps)
+}
+
+#[pyfunction]
+fn queues_available_override() -> PyResult<u32> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.queues.override_available_queues.unwrap_or(0))
+}
+
+#[pyfunction]
+fn on_a_stick() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.on_a_stick_mode())
 }
