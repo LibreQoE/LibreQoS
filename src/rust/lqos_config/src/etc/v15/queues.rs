@@ -2,7 +2,7 @@
 
 use serde::{Serialize, Deserialize};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct QueueConfig {
     /// Which SQM to use by default
     pub default_sqm: String,

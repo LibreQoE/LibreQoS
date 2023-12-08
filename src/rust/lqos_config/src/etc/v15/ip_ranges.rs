@@ -1,6 +1,6 @@
 use serde::{Serialize, Deserialize};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct IpRanges {
     pub ignore_subnets: Vec<String>,
     pub allow_subnets: Vec<String>,

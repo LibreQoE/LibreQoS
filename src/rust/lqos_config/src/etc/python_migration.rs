@@ -2,11 +2,12 @@
 //! provide conversion services for the new, unified configuration target
 //! for version 1.5.
 
-use crate::EtcLqos;
+use super::EtcLqos;
 use pyo3::{prepare_freethreaded_python, Python};
 use std::{
+    collections::HashMap,
     fs::read_to_string,
-    path::{Path, PathBuf}, collections::HashMap,
+    path::{Path, PathBuf},
 };
 use thiserror::Error;
 
@@ -96,7 +97,6 @@ pub struct PythonMigration {
     pub api_password: String,
     pub api_host_ip: String,
     pub api_host_port: u32,
-
     // TODO: httpRestIntegrationConfig
 }
 
@@ -194,8 +194,8 @@ impl PythonMigration {
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use super::super::test_data::*;
+    use super::*;
 
     #[test]
     fn test_parsing_the_default() {

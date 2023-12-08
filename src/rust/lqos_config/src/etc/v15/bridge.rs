@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Represents a two-interface bridge configuration.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct BridgeConfig {
     /// Use the XDP-accelerated bridge?
     pub use_xdp_bridge: bool,
@@ -27,16 +27,16 @@ impl Default for BridgeConfig {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct SingleInterfaceConfig {
     /// The name of the interface
     pub interface: String,
 
     /// The VLAN ID facing the Internet
-    pub internet_vlan: u16,
+    pub internet_vlan: u32,
 
     /// The VLAN ID facing the LAN
-    pub network_vlan: u16,
+    pub network_vlan: u32,
 }
 
 impl Default for SingleInterfaceConfig {

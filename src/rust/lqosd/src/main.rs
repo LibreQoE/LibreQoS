@@ -17,7 +17,6 @@ use crate::{
 use anyhow::Result;
 use log::{info, warn};
 use lqos_bus::{BusRequest, BusResponse, UnixSocketServer, StatsRequest};
-use lqos_config::LibreQoSConfig;
 use lqos_heimdall::{n_second_packet_dump, perf_interface::heimdall_handle_events, start_heimdall};
 use lqos_queue_tracker::{
   add_watched_queue, get_raw_circuit_data, spawn_queue_monitor,
@@ -57,19 +56,19 @@ async fn main() -> Result<()> {
   }
 
   info!("LibreQoS Daemon Starting");
-  let config = LibreQoSConfig::load()?;
-  tuning::tune_lqosd_from_config_file(&config)?;
+  let config = lqos_config::load_config()?;
+  tuning::tune_lqosd_from_config_file()?;
 
   // Start the XDP/TC kernels
-  let kernels = if config.on_a_stick_mode {
+  let kernels = if config.on_a_stick_mode() {
     LibreQoSKernels::on_a_stick_mode(
-      &config.internet_interface,
-      config.stick_vlans.1,
-      config.stick_vlans.0,
+      &config.internet_interface(),
+      config.stick_vlans().1 as u16,
+      config.stick_vlans().0 as u16,
       Some(heimdall_handle_events),
     )?
   } else {
-    LibreQoSKernels::new(&config.internet_interface, &config.isp_interface, Some(heimdall_handle_events))?
+    LibreQoSKernels::new(&config.internet_interface(), &config.isp_interface(), Some(heimdall_handle_events))?
   };
 
   // Spawn tracking sub-systems
@@ -107,13 +106,9 @@ async fn main() -> Result<()> {
         }
         SIGHUP => {
           warn!("Reloading configuration because of SIGHUP");
-          if let Ok(config) = LibreQoSConfig::load() {
-            let result = tuning::tune_lqosd_from_config_file(&config);
-            if let Err(err) = result {
-              warn!("Unable to HUP tunables: {:?}", err)
-            }
-          } else {
-            warn!("Unable to reload configuration");
+          let result = tuning::tune_lqosd_from_config_file();
+          if let Err(err) = result {
+            warn!("Unable to HUP tunables: {:?}", err)
           }
         }
         _ => warn!("No handler for signal: {sig}"),

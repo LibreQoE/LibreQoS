@@ -1,6 +1,6 @@
 use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UispIntegration {
     pub enable_uisp: bool,
     pub token: String,
@@ -17,7 +17,7 @@ pub struct UispIntegration {
     pub exception_cpes: Vec<ExceptionCpe>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExceptionCpe {
     pub cpe: String,
     pub parent: String,

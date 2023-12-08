@@ -1,12 +1,10 @@
+/// Provides support for migration from older versions of the configuration file.
 use std::path::Path;
-
 use super::{
     python_migration::{PythonMigration, PythonMigrationError},
-    v15::{Config, SingleInterfaceConfig, BridgeConfig},
-    EtcLqosError,
+    v15::{BridgeConfig, Config, SingleInterfaceConfig},
+    EtcLqosError, EtcLqos,
 };
-use crate::EtcLqos;
-/// Provides support for migration from older versions of the configuration file.
 use thiserror::Error;
 use toml_edit::Document;
 
@@ -49,14 +47,11 @@ pub fn migrate_if_needed() -> Result<(), MigrationError> {
             .map_err(|e| MigrationError::ReadError(e))?;
 
         // Rename the old Python configuration
-        let from = Path::new(new_config.lqos_directory.as_str())
-            .join("ispConfig.py");
-        let to = Path::new(new_config.lqos_directory.as_str())
-            .join("ispConfig.py.backup14");
-        
-        std::fs::rename(from, to)
-            .map_err(|e| MigrationError::ReadError(e))?;
-        
+        let from = Path::new(new_config.lqos_directory.as_str()).join("ispConfig.py");
+        let to = Path::new(new_config.lqos_directory.as_str()).join("ispConfig.py.backup14");
+
+        std::fs::rename(from, to).map_err(|e| MigrationError::ReadError(e))?;
+
         // Save the configuration
         let raw = toml::to_string_pretty(&new_config).unwrap();
         std::fs::write("/etc/lqos.conf", raw).map_err(|e| MigrationError::ReadError(e))?;
@@ -89,6 +84,7 @@ fn do_migration_14_to_15(
     migrate_integration_common(python_config, &mut new_config)?;
     migrate_spylnx(python_config, &mut new_config)?;
     migrate_uisp(python_config, &mut new_config)?;
+    migrate_queues( python_config, &mut new_config)?;
 
     new_config.validate().unwrap(); // Left as an upwrap because this should *never* happen
     Ok(new_config)
@@ -97,6 +93,7 @@ fn do_migration_14_to_15(
 fn migrate_top_level(old_config: &EtcLqos, new_config: &mut Config) -> Result<(), MigrationError> {
     new_config.version = "1.5".to_string();
     new_config.lqos_directory = old_config.lqos_directory.clone();
+    new_config.packet_capture_time = old_config.packet_capture_time.unwrap_or(10);
     if let Some(node_id) = &old_config.node_id {
         new_config.node_id = node_id.clone();
     } else {
@@ -148,8 +145,8 @@ fn migrate_bridge(
         new_config.bridge = None;
         new_config.single_interface = Some(SingleInterfaceConfig {
             interface: python_config.interface_a.clone(),
-            internet_vlan: python_config.stick_vlan_b as u16,
-            network_vlan: python_config.stick_vlan_b as u16,
+            internet_vlan: python_config.stick_vlan_b,
+            network_vlan: python_config.stick_vlan_b,
         });
     } else {
         new_config.single_interface = None;
@@ -158,16 +155,19 @@ fn migrate_bridge(
             to_internet: python_config.interface_b.clone(),
             to_network: python_config.interface_a.clone(),
         });
-
     }
     Ok(())
 }
 
-fn migrate_queues(old_config: &EtcLqos, python_config: &PythonMigration, new_config: &mut Config) -> Result<(), MigrationError> {
+fn migrate_queues(
+    python_config: &PythonMigration,
+    new_config: &mut Config,
+) -> Result<(), MigrationError> {
     new_config.queues.default_sqm = python_config.sqm.clone();
     new_config.queues.monitor_only = python_config.monitor_only_mode;
     new_config.queues.uplink_bandwidth_mbps = python_config.upstream_bandwidth_capacity_upload_mbps;
-    new_config.queues.downlink_bandwidth_mbps = python_config.upstream_bandwidth_capacity_download_mbps;
+    new_config.queues.downlink_bandwidth_mbps =
+        python_config.upstream_bandwidth_capacity_download_mbps;
     new_config.queues.generated_pn_upload_mbps = python_config.generated_pn_upload_mbps;
     new_config.queues.generated_pn_download_mbps = python_config.generated_pn_download_mbps;
     new_config.queues.dry_run = !python_config.enable_actual_shell_commands;
@@ -186,26 +186,37 @@ fn migrate_lts(old_config: &EtcLqos, new_config: &mut Config) -> Result<(), Migr
         new_config.long_term_stats.gather_stats = lts.gather_stats;
         new_config.long_term_stats.collation_period_seconds = lts.collation_period_seconds;
         new_config.long_term_stats.license_key = lts.license_key.clone();
-        new_config.long_term_stats.uisp_reporting_interval_seconds = lts.uisp_reporting_interval_seconds;
+        new_config.long_term_stats.uisp_reporting_interval_seconds =
+            lts.uisp_reporting_interval_seconds;
     } else {
         new_config.long_term_stats = super::v15::LongTermStats::default();
     }
     Ok(())
 }
 
-fn migrate_ip_ranges(python_config: &PythonMigration, new_config: &mut Config) -> Result<(), MigrationError> {
+fn migrate_ip_ranges(
+    python_config: &PythonMigration,
+    new_config: &mut Config,
+) -> Result<(), MigrationError> {
     new_config.ip_ranges.ignore_subnets = python_config.ignore_subnets.clone();
-    new_config.ip_ranges.allow_subnets = python_config.allowed_subnets.clone();    
+    new_config.ip_ranges.allow_subnets = python_config.allowed_subnets.clone();
     Ok(())
 }
 
-fn migrate_integration_common(python_config: &PythonMigration, new_config: &mut Config) -> Result<(), MigrationError> {
+fn migrate_integration_common(
+    python_config: &PythonMigration,
+    new_config: &mut Config,
+) -> Result<(), MigrationError> {
     new_config.integration_common.circuit_name_as_address = python_config.circuit_name_use_address;
-    new_config.integration_common.always_overwrite_network_json = python_config.overwrite_network_json_always;
+    new_config.integration_common.always_overwrite_network_json =
+        python_config.overwrite_network_json_always;
     Ok(())
 }
 
-fn migrate_spylnx(python_config: &PythonMigration, new_config: &mut Config) -> Result<(), MigrationError> {
+fn migrate_spylnx(
+    python_config: &PythonMigration,
+    new_config: &mut Config,
+) -> Result<(), MigrationError> {
     new_config.spylnx_integration.enable_spylnx = python_config.automatic_import_splynx;
     new_config.spylnx_integration.api_key = python_config.splynx_api_key.clone();
     new_config.spylnx_integration.api_secret = python_config.spylnx_api_secret.clone();
@@ -213,7 +224,10 @@ fn migrate_spylnx(python_config: &PythonMigration, new_config: &mut Config) -> R
     Ok(())
 }
 
-fn migrate_uisp(python_config: &PythonMigration, new_config: &mut Config) -> Result<(), MigrationError> {
+fn migrate_uisp(
+    python_config: &PythonMigration,
+    new_config: &mut Config,
+) -> Result<(), MigrationError> {
     new_config.uisp_integration.enable_uisp = python_config.automatic_import_uisp;
     new_config.uisp_integration.token = python_config.uisp_auth_token.clone();
     new_config.uisp_integration.url = python_config.uisp_base_url.clone();
@@ -225,7 +239,8 @@ fn migrate_uisp(python_config: &PythonMigration, new_config: &mut Config) -> Res
     new_config.uisp_integration.exclude_sites = python_config.exclude_sites.clone();
     new_config.uisp_integration.ipv6_with_mikrotik = python_config.find_ipv6_using_mikrotik;
     new_config.uisp_integration.bandwidth_overhead_factor = python_config.bandwidth_overhead_factor;
-    new_config.uisp_integration.commit_bandwidth_multiplier = python_config.committed_bandwidth_multiplier;
+    new_config.uisp_integration.commit_bandwidth_multiplier =
+        python_config.committed_bandwidth_multiplier;
     // TODO: ExceptionCPEs is going to require some real work
     Ok(())
 }

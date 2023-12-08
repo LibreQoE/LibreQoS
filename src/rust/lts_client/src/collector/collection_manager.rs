@@ -7,12 +7,22 @@
 //! lose min/max values.
 
 use super::StatsUpdateMessage;
-use crate::{collector::{collation::{collate_stats, StatsSession}, SESSION_BUFFER, uisp_ext::gather_uisp_data}, submission_queue::{enqueue_shaped_devices_if_allowed, comm_channel::{SenderChannelMessage, start_communication_channel}}};
-use lqos_config::EtcLqos;
+use crate::{
+    collector::{
+        collation::{collate_stats, StatsSession},
+        uisp_ext::gather_uisp_data,
+        SESSION_BUFFER,
+    },
+    submission_queue::{
+        comm_channel::{start_communication_channel, SenderChannelMessage},
+        enqueue_shaped_devices_if_allowed,
+    },
+};
+use dashmap::DashSet;
+use lqos_config::load_config;
 use once_cell::sync::Lazy;
 use std::{sync::atomic::AtomicU64, time::Duration};
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use dashmap::DashSet;
 
 static STATS_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub(crate) static DEVICE_ID_LIST: Lazy<DashSet<String>> = Lazy::new(DashSet::new);
@@ -22,21 +32,21 @@ pub(crate) static DEVICE_ID_LIST: Lazy<DashSet<String>> = Lazy::new(DashSet::new
 ///
 /// Returns a channel that may be used to notify of data availability.
 pub async fn start_long_term_stats() -> Sender<StatsUpdateMessage> {
-    let (update_tx, mut update_rx): (Sender<StatsUpdateMessage>, Receiver<StatsUpdateMessage>) = mpsc::channel(10);
-    let (comm_tx, comm_rx): (Sender<SenderChannelMessage>, Receiver<SenderChannelMessage>) = mpsc::channel(10);
+    let (update_tx, mut update_rx): (Sender<StatsUpdateMessage>, Receiver<StatsUpdateMessage>) =
+        mpsc::channel(10);
+    let (comm_tx, comm_rx): (Sender<SenderChannelMessage>, Receiver<SenderChannelMessage>) =
+        mpsc::channel(10);
 
-    if let Ok(cfg) = lqos_config::EtcLqos::load() {
-        if let Some(lts) = cfg.long_term_stats {
-            if !lts.gather_stats {
-                // Wire up a null recipient to the channel, so it receives messages
-                // but doesn't do anything with them.
-                tokio::spawn(async move {
-                    while let Some(_msg) = update_rx.recv().await {
-                        // Do nothing
-                    }
-                });
-                return update_tx;
-            }
+    if let Ok(cfg) = load_config() {
+        if !cfg.long_term_stats.gather_stats {
+            // Wire up a null recipient to the channel, so it receives messages
+            // but doesn't do anything with them.
+            tokio::spawn(async move {
+                while let Some(_msg) = update_rx.recv().await {
+                    // Do nothing
+                }
+            });
+            return update_tx;
         }
     }
 
@@ -85,7 +95,10 @@ async fn lts_manager(mut rx: Receiver<StatsUpdateMessage>, comm_tx: Sender<Sende
                 shaped_devices.iter().for_each(|d| {
                     DEVICE_ID_LIST.insert(d.device_id.clone());
                 });
-                tokio::spawn(enqueue_shaped_devices_if_allowed(shaped_devices, comm_tx.clone()));
+                tokio::spawn(enqueue_shaped_devices_if_allowed(
+                    shaped_devices,
+                    comm_tx.clone(),
+                ));
             }
             Some(StatsUpdateMessage::CollationTime) => {
                 log::info!("Collation time reached");
@@ -108,20 +121,18 @@ async fn lts_manager(mut rx: Receiver<StatsUpdateMessage>, comm_tx: Sender<Sende
 }
 
 fn get_collation_period() -> Duration {
-    if let Ok(cfg) = EtcLqos::load() {
-        if let Some(lts) = &cfg.long_term_stats {
-            return Duration::from_secs(lts.collation_period_seconds.into());
-        }
+    if let Ok(cfg) = load_config() {
+        return Duration::from_secs(cfg.long_term_stats.collation_period_seconds.into());
     }
 
     Duration::from_secs(60)
 }
 
 fn get_uisp_collation_period() -> Option<Duration> {
-    if let Ok(cfg) = EtcLqos::load() {
-        if let Some(lts) = &cfg.long_term_stats {
-            return Some(Duration::from_secs(lts.uisp_reporting_interval_seconds.unwrap_or(300)));
-        }
+    if let Ok(cfg) = load_config() {
+        return Some(Duration::from_secs(
+            cfg.long_term_stats.uisp_reporting_interval_seconds.unwrap_or(300),
+        ));
     }
 
     None
@@ -136,7 +147,10 @@ async fn uisp_collection_manager(control_tx: Sender<StatsUpdateMessage>) {
         if let Some(period) = get_uisp_collation_period() {
             log::info!("Starting UISP poller with period {:?}", period);
             loop {
-                control_tx.send(StatsUpdateMessage::UispCollationTime).await.unwrap();
+                control_tx
+                    .send(StatsUpdateMessage::UispCollationTime)
+                    .await
+                    .unwrap();
                 tokio::time::sleep(period).await;
             }
         } else {

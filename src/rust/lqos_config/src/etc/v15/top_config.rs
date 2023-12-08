@@ -7,7 +7,7 @@ use sha2::digest::Update;
 use sha2::Digest;
 use uuid::Uuid;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     /// Version number for the configuration file.
     /// This will be set to "1.5". Versioning will make
@@ -21,7 +21,13 @@ pub struct Config {
     pub node_id: String,
 
     /// Node name - human-readable name for this shaper.
-    pub node_name: String,    
+    pub node_name: String,
+
+    /// Packet capture time
+    pub packet_capture_time: usize,
+
+    /// Queue refresh interval
+    pub queue_check_period_ms: u64,
 
     /// Anonymous usage statistics
     pub usage_stats: UsageStats,
@@ -86,7 +92,7 @@ impl Config {
         Ok(())
     }
 
-    fn load_from_string(s: &str) -> Result<Self, String> {
+    pub fn load_from_string(s: &str) -> Result<Self, String> {
         let config: Config = toml::from_str(s).map_err(|e| format!("Error parsing config: {}", e))?;
         config.validate()?;
         Ok(config)
@@ -110,6 +116,42 @@ impl Default for Config {
             integration_common: super::integration_common::IntegrationConfig::default(),
             spylnx_integration: super::spylnx_integration::SplynxIntegration::default(),
             uisp_integration: super::uisp_integration::UispIntegration::default(),
+            packet_capture_time: 10,
+            queue_check_period_ms: 1000,
+        }
+    }
+}
+
+impl Config {
+    pub fn internet_interface(&self) -> String {
+        if let Some(bridge) = &self.bridge {
+            bridge.to_internet.clone()
+        } else if let Some(single_interface) = &self.single_interface {
+            single_interface.interface.clone()
+        } else {
+            panic!("No internet interface configured")
+        }
+    }
+
+    pub fn isp_interface(&self) -> String {
+        if let Some(bridge) = &self.bridge {
+            bridge.to_network.clone()
+        } else if let Some(single_interface) = &self.single_interface {
+            single_interface.interface.clone()
+        } else {
+            panic!("No ISP interface configured")
+        }
+    }
+
+    pub fn on_a_stick_mode(&self) -> bool {
+        self.bridge.is_none()
+    }
+
+    pub fn stick_vlans(&self) -> (u32, u32) {
+        if let Some(stick) = &self.single_interface {
+            (stick.network_vlan, stick.internet_vlan)
+        } else {
+            (0, 0)
         }
     }
 }
