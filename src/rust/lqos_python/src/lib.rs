@@ -46,6 +46,7 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_wrapped(wrap_pyfunction!(generated_pn_upload_mbps))?;
   m.add_wrapped(wrap_pyfunction!(queues_available_override))?;
   m.add_wrapped(wrap_pyfunction!(on_a_stick))?;
+  m.add_wrapped(wrap_pyfunction!(overwrite_network_json_always))?;
   Ok(())
 }
 
@@ -355,4 +356,10 @@ fn queues_available_override() -> PyResult<u32> {
 fn on_a_stick() -> PyResult<bool> {
   let config = lqos_config::load_config().unwrap();
   Ok(config.on_a_stick_mode())
+}
+
+#[pyfunction]
+fn overwrite_network_json_always() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.integration_common.always_overwrite_network_json)
 }
