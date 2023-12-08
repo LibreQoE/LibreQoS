@@ -23,6 +23,7 @@ const LOCK_FILE: &str = "/run/lqos/libreqos.lock";
 fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_class::<PyIpMapping>()?;
   m.add_class::<BatchedCommands>()?;
+  m.add_class::<PyExceptionCpe>()?;
   m.add_wrapped(wrap_pyfunction!(is_lqosd_alive))?;
   m.add_wrapped(wrap_pyfunction!(list_ip_mappings))?;
   m.add_wrapped(wrap_pyfunction!(clear_ip_mappings))?;
@@ -47,6 +48,15 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_wrapped(wrap_pyfunction!(queues_available_override))?;
   m.add_wrapped(wrap_pyfunction!(on_a_stick))?;
   m.add_wrapped(wrap_pyfunction!(overwrite_network_json_always))?;
+  m.add_wrapped(wrap_pyfunction!(allowed_subnets))?;
+  m.add_wrapped(wrap_pyfunction!(ignore_subnets))?;
+  m.add_wrapped(wrap_pyfunction!(circuit_name_use_address))?;
+  m.add_wrapped(wrap_pyfunction!(find_ipv6_using_mikrotik))?;
+  m.add_wrapped(wrap_pyfunction!(exclude_sites))?;
+  m.add_wrapped(wrap_pyfunction!(bandwidth_overhead_factor))?;
+  m.add_wrapped(wrap_pyfunction!(committed_bandwidth_multiplier))?;
+  m.add_wrapped(wrap_pyfunction!(exception_cpes))?;
+
   Ok(())
 }
 
@@ -362,4 +372,65 @@ fn on_a_stick() -> PyResult<bool> {
 fn overwrite_network_json_always() -> PyResult<bool> {
   let config = lqos_config::load_config().unwrap();
   Ok(config.integration_common.always_overwrite_network_json)
+}
+
+#[pyfunction]
+fn allowed_subnets() -> PyResult<Vec<String>> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.ip_ranges.allow_subnets.clone())
+}
+
+#[pyfunction]
+fn ignore_subnets() -> PyResult<Vec<String>> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.ip_ranges.ignore_subnets.clone())
+}
+
+#[pyfunction]
+fn circuit_name_use_address() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.integration_common.circuit_name_as_address)
+}
+
+#[pyfunction]
+fn find_ipv6_using_mikrotik() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.ipv6_with_mikrotik)
+}
+
+#[pyfunction]
+fn exclude_sites() -> PyResult<Vec<String>> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.exclude_sites.clone())
+}
+
+#[pyfunction]
+fn bandwidth_overhead_factor() -> PyResult<f32> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.bandwidth_overhead_factor)
+}
+
+#[pyfunction]
+fn committed_bandwidth_multiplier() -> PyResult<f32> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.commit_bandwidth_multiplier)
+}
+
+#[pyclass]
+pub struct PyExceptionCpe {
+  pub cpe: String,
+  pub parent: String,
+}
+
+#[pyfunction]
+fn exception_cpes() -> PyResult<Vec<PyExceptionCpe>> {
+  let config = lqos_config::load_config().unwrap();
+  let mut result = Vec::new();
+  for cpe in config.uisp_integration.exception_cpes.iter() {
+    result.push(PyExceptionCpe {
+      cpe: cpe.cpe.clone(),
+      parent: cpe.parent.clone(),
+    });
+  }
+  Ok(result)
 }
