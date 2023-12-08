@@ -171,6 +171,7 @@ impl EtcLqos {
   }
 
   pub(crate) fn load_from_string(raw: &str) -> Result<Self, EtcLqosError> {
+    log::info!("Trying to load old TOML version from /etc/lqos.conf");
     let document = raw.parse::<Document>();
       match document {
         Err(e) => {
@@ -188,6 +189,7 @@ impl EtcLqos {
             Err(e) => {
               error!("Unable to parse TOML from /etc/lqos.conf");
               error!("Full error: {:?}", e);
+              panic!();
               Err(EtcLqosError::CannotParseToml)
             }
           }

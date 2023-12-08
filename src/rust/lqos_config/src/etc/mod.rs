@@ -17,9 +17,9 @@ static CONFIG: Mutex<Option<Config>> = Mutex::new(None);
 
 /// Load the configuration from `/etc/lqos.conf`.
 pub fn load_config() -> Result<Config, LibreQoSConfigError> {
-    log::info!("Loading configuration file /etc/lqos.conf");
     let mut lock = CONFIG.lock().unwrap();
     if lock.is_none() {
+        log::info!("Loading configuration file /etc/lqos.conf");
         migrate_if_needed().map_err(|e| {
             log::error!("Unable to migrate configuration: {:?}", e);
             LibreQoSConfigError::FileNotFoud
@@ -41,9 +41,11 @@ pub fn load_config() -> Result<Config, LibreQoSConfigError> {
                 config_result
             )));
         }
+        log::info!("Set cached version of config file");
         *lock = Some(config_result.unwrap());
     }
 
+    log::info!("Returning cached config");
     Ok(lock.as_ref().unwrap().clone())
 }
 

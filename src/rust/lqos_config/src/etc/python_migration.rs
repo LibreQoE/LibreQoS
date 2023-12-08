@@ -29,11 +29,7 @@ fn isp_config_py_path(cfg: &EtcLqos) -> PathBuf {
 
 /// Does thie ispConfig.py file exist?
 fn config_exists(cfg: &EtcLqos) -> bool {
-    if let Ok(cfg) = crate::etc::EtcLqos::load() {
-        isp_config_py_path(&cfg).exists()
-    } else {
-        false
-    }
+    isp_config_py_path(&cfg).exists()
 }
 
 fn from_python<'a, T>(py: &'a Python, variable_name: &str) -> Result<T, PythonMigrationError>

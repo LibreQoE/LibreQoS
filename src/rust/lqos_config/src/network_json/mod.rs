@@ -1,4 +1,3 @@
-use crate::etc;
 use dashmap::DashSet;
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
@@ -105,7 +104,7 @@ impl NetworkJson {
   /// file.
   pub fn path() -> Result<PathBuf, NetworkJsonError> {
     let cfg =
-      etc::EtcLqos::load().map_err(|_| NetworkJsonError::ConfigLoadError)?;
+      crate::load_config().map_err(|_| NetworkJsonError::ConfigLoadError)?;
     let base_path = Path::new(&cfg.lqos_directory);
     Ok(base_path.join("network.json"))
   }

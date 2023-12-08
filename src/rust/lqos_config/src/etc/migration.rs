@@ -23,6 +23,7 @@ pub enum MigrationError {
 }
 
 pub fn migrate_if_needed() -> Result<(), MigrationError> {
+    log::info!("Checking config file version");
     let raw =
         std::fs::read_to_string("/etc/lqos.conf").map_err(|e| MigrationError::ReadError(e))?;
 
@@ -30,11 +31,12 @@ pub fn migrate_if_needed() -> Result<(), MigrationError> {
         .parse::<Document>()
         .map_err(|e| MigrationError::ParseError(e))?;
     if let Some((_key, version)) = doc.get_key_value("version") {
-        if version.as_str().unwrap() == "1.5.0" {
-            log::info!("Configuration file is already at version 1.5.0, no migration needed");
+        log::info!("Configuration file is at version {}", version.as_str().unwrap());
+        if version.as_str().unwrap().trim() == "1.5" {
+            log::info!("Configuration file is already at version 1.5, no migration needed");
             return Ok(());
         } else {
-            log::error!("Configuration file is at version {}, but this version of lqos only supports version 1.5.0", version.as_str().unwrap());
+            log::error!("Configuration file is at version {}, but this version of lqos only supports version 1.5", version.as_str().unwrap());
             return Err(MigrationError::UnknownVersion(
                 version.as_str().unwrap().to_string(),
             ));

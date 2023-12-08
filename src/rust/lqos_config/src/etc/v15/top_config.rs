@@ -80,9 +80,9 @@ impl Config {
                     .to_string(),
             );
         }
-        if self.version != "1.5" {
+        if self.version.trim() != "1.5" {
             return Err(format!(
-                "Configuration file is at version {}, but this version of lqos only supports version 1.5.0",
+                "Configuration file is at version [{}], but this version of lqos only supports version 1.5.0",
                 self.version
             ));
         }

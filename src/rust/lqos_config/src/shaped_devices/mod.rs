@@ -34,9 +34,11 @@ impl ConfigShapedDevices {
   /// file.
   pub fn path() -> Result<PathBuf, ShapedDevicesError> {
     let cfg =
-      etc::EtcLqos::load().map_err(|_| ShapedDevicesError::ConfigLoadError)?;
+      crate::load_config().map_err(|_| ShapedDevicesError::ConfigLoadError)?;
     let base_path = Path::new(&cfg.lqos_directory);
-    Ok(base_path.join("ShapedDevices.csv"))
+    let full_path = base_path.join("ShapedDevices.csv");
+    log::info!("ShapedDevices.csv path: {:?}", full_path);
+    Ok(full_path)
   }
 
   /// Does ShapedDevices.csv exist?
@@ -146,7 +148,7 @@ impl ConfigShapedDevices {
   /// Saves the current shaped devices list to `ShapedDevices.csv`
   pub fn write_csv(&self, filename: &str) -> Result<(), ShapedDevicesError> {
     let cfg =
-      etc::EtcLqos::load().map_err(|_| ShapedDevicesError::ConfigLoadError)?;
+      crate::load_config().map_err(|_| ShapedDevicesError::ConfigLoadError)?;
     let base_path = Path::new(&cfg.lqos_directory);
     let path = base_path.join(filename);
     let csv = self.to_csv_string()?;
