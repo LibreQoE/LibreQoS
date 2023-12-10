@@ -9,7 +9,7 @@ psutil
 requests
 schedule
 waitress
-setuptools >= 65.5.1
+setuptools >= 69.0.2
 apscheduler
 deepdiff
 sphinx
