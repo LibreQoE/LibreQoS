@@ -71,7 +71,6 @@ def getAllIPs(headers):
 	allIPv4 = spylnxRequest("admin/networking/ipv4-ip?main_attributes%5Bis_used%5D=1", headers)
 	allIPv6 = spylnxRequest("admin/networking/ipv6-ip", headers)
 	for ipv4 in allIPv4:
-		#print(ipv4)
 		if ipv4['customer_id'] not in ipv4ByCustomerID:
 			ipv4ByCustomerID[ipv4['customer_id']] = []
 		temp = ipv4ByCustomerID[ipv4['customer_id']]
@@ -144,9 +143,6 @@ def createShaper():
 						if len(servicesForCustomer) == 1:
 							if customerJson['id'] in ipv4ByCustomerID:
 								ipv4 = ipv4ByCustomerID[customerJson['id']]
-					
-					if len(ipv4) == 0:
-						print(service)
 						
 					# If not "Taking IPv6" (Router will assign IP), then use router's set IP
 					if isinstance(service['taking_ipv6'], str):
