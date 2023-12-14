@@ -10,10 +10,11 @@ import subprocess
 import warnings
 import argparse
 import logging
-from ispConfig import interfaceA, interfaceB, enableActualShellCommands, upstreamBandwidthCapacityDownloadMbps, upstreamBandwidthCapacityUploadMbps, generatedPNDownloadMbps, generatedPNUploadMbps
+from liblqos_python import interface_a, interface_b, enable_actual_shell_commands, upstream_bandwidth_capacity_download_mbps, \
+	upstream_bandwidth_capacity_upload_mbps, generated_pn_download_mbps, generated_pn_upload_mbps
 
 def shell(command):
-	if enableActualShellCommands:
+	if enable_actual_shell_commands():
 		logging.info(command)
 		commands = command.split(' ')
 		proc = subprocess.Popen(commands, stdout=subprocess.PIPE)
@@ -24,7 +25,7 @@ def shell(command):
 
 def safeShell(command):
 	safelyRan = True
-	if enableActualShellCommands:
+	if enable_actual_shell_commands():
 		commands = command.split(' ')
 		proc = subprocess.Popen(commands, stdout=subprocess.PIPE)
 		for line in io.TextIOWrapper(proc.stdout, encoding="utf-8"):  # or another encoding
@@ -61,7 +62,7 @@ def getQdiscForIPaddress(ipAddress):
 def printStatsFromIP(ipAddress):
 	qDiscID = getQdiscForIPaddress(ipAddress)
 	if qDiscID != None:
-		interfaces = [interfaceA, interfaceB]
+		interfaces = [interface_a(), interface_b()]
 		for interface in interfaces:		
 			command = 'tc -s qdisc show dev ' + interface + ' parent ' + qDiscID
 			commands = command.split(' ')
@@ -77,7 +78,7 @@ def printCircuitClassInfo(ipAddress):
 		print("IP: " + ipAddress + " | Class ID: " + qDiscID)
 		print()
 		theClassID = ''
-		interfaces = [interfaceA, interfaceB]
+		interfaces = [interface_a(), interface_b()]
 		downloadMin = ''
 		downloadMax = ''
 		uploadMin = ''
@@ -91,7 +92,7 @@ def printCircuitClassInfo(ipAddress):
 			for line in io.TextIOWrapper(proc.stdout, encoding="utf-8"):  # or another encoding
 				if "htb" in line:
 					listOfThings = line.split(" ")
-					if interface == interfaceA:
+					if interface == interface_a():
 						downloadMin = line.split(' rate ')[1].split(' ')[0]
 						downloadMax = line.split(' ceil ')[1].split(' ')[0]
 						burst = line.split(' burst ')[1].split(' ')[0]
@@ -103,8 +104,8 @@ def printCircuitClassInfo(ipAddress):
 		print("Upload rate/ceil: " + uploadMin + "/" + uploadMax)
 		print("burst/cburst: " + burst + "/" + cburst)
 	else:
-		download = min(upstreamBandwidthCapacityDownloadMbps, generatedPNDownloadMbps)
-		upload = min(upstreamBandwidthCapacityUploadMbps, generatedPNUploadMbps)
+		download = min(upstream_bandwidth_capacity_download_mbps(), generated_pn_download_mbps())
+		upload = min(upstream_bandwidth_capacity_upload_mbps(), generated_pn_upload_mbps())
 		bwString = str(download) + '/' + str(upload)
 		print("Invalid IP address provided (default queue limit is " + bwString + " Mbps)")
 
