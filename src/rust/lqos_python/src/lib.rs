@@ -65,6 +65,9 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_wrapped(wrap_pyfunction!(use_ptmp_as_parent))?;
   m.add_wrapped(wrap_pyfunction!(uisp_base_url))?;
   m.add_wrapped(wrap_pyfunction!(uisp_auth_token))?;
+  m.add_wrapped(wrap_pyfunction!(splynx_api_key))?;
+  m.add_wrapped(wrap_pyfunction!(splynx_api_secret))?;
+  m.add_wrapped(wrap_pyfunction!(splynx_api_url))?;
 
   Ok(())
 }
@@ -490,4 +493,22 @@ fn uisp_base_url() -> PyResult<String> {
 fn uisp_auth_token() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
   Ok(config.uisp_integration.token)
+}
+
+#[pyfunction]
+fn splynx_api_key() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.spylnx_integration.api_key)
+}
+
+#[pyfunction]
+fn splynx_api_secret() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.spylnx_integration.api_secret)
+}
+
+#[pyfunction]
+fn splynx_api_url() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.spylnx_integration.url)
 }
