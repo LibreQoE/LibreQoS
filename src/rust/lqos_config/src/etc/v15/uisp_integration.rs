@@ -15,6 +15,7 @@ pub struct UispIntegration {
     pub bandwidth_overhead_factor: f32,
     pub commit_bandwidth_multiplier: f32,
     pub exception_cpes: Vec<ExceptionCpe>,
+    pub use_ptmp_as_parent: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -39,6 +40,7 @@ impl Default for UispIntegration {
             bandwidth_overhead_factor: 1.0,
             commit_bandwidth_multiplier: 1.0,
             exception_cpes: vec![],
+            use_ptmp_as_parent: false,
         }
     }
 }

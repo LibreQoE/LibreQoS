@@ -33,6 +33,7 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_wrapped(wrap_pyfunction!(is_libre_already_running))?;
   m.add_wrapped(wrap_pyfunction!(create_lock_file))?;
   m.add_wrapped(wrap_pyfunction!(free_lock_file))?;
+  // Unified configuration items
   m.add_wrapped(wrap_pyfunction!(check_config))?;
   m.add_wrapped(wrap_pyfunction!(sqm))?;
   m.add_wrapped(wrap_pyfunction!(upstream_bandwidth_capacity_download_mbps))?;
@@ -56,6 +57,14 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_wrapped(wrap_pyfunction!(bandwidth_overhead_factor))?;
   m.add_wrapped(wrap_pyfunction!(committed_bandwidth_multiplier))?;
   m.add_wrapped(wrap_pyfunction!(exception_cpes))?;
+  m.add_wrapped(wrap_pyfunction!(uisp_site))?;
+  m.add_wrapped(wrap_pyfunction!(uisp_strategy))?;
+  m.add_wrapped(wrap_pyfunction!(uisp_suspended_strategy))?;
+  m.add_wrapped(wrap_pyfunction!(airmax_capacity))?;
+  m.add_wrapped(wrap_pyfunction!(ltu_capacity))?;
+  m.add_wrapped(wrap_pyfunction!(use_ptmp_as_parent))?;
+  m.add_wrapped(wrap_pyfunction!(uisp_base_url))?;
+  m.add_wrapped(wrap_pyfunction!(uisp_auth_token))?;
 
   Ok(())
 }
@@ -433,4 +442,52 @@ fn exception_cpes() -> PyResult<Vec<PyExceptionCpe>> {
     });
   }
   Ok(result)
+}
+
+#[pyfunction]
+fn uisp_site() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.site)
+}
+
+#[pyfunction]
+fn uisp_strategy() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.strategy)
+}
+
+#[pyfunction]
+fn uisp_suspended_strategy() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.suspended_strategy)
+}
+
+#[pyfunction]
+fn airmax_capacity() -> PyResult<f32> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.airmax_capacity)
+}
+
+#[pyfunction]
+fn ltu_capacity() -> PyResult<f32> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.ltu_capacity)
+}
+
+#[pyfunction]
+fn use_ptmp_as_parent() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.use_ptmp_as_parent)
+}
+
+#[pyfunction]
+fn uisp_base_url() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.url)
+}
+
+#[pyfunction]
+fn uisp_auth_token() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.token)
 }
