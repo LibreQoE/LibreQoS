@@ -52,7 +52,6 @@ pub fn read_line_as_number() -> u32 {
 }
 
 const LQOS_CONF: &str = "/etc/lqos.conf";
-const ISP_CONF: &str = "/opt/libreqos/src/ispConfig.py";
 const NETWORK_JSON: &str = "/opt/libreqos/src/network.json";
 const SHAPED_DEVICES: &str = "/opt/libreqos/src/ShapedDevices.csv";
 const LQUSERS: &str = "/opt/libreqos/src/lqusers.toml";
@@ -116,82 +115,6 @@ fn get_bandwidth(up: bool) -> u32 {
   }
 }
 
-const ETC_LQOS_CONF: &str = "lqos_directory = '/opt/libreqos/src'
-queue_check_period_ms = 1000
-node_id = \"{NODE_ID}\"
-
-[tuning]
-stop_irq_balance = true
-netdev_budget_usecs = 8000
-netdev_budget_packets = 300
-rx_usecs = 8
-tx_usecs = 8
-disable_rxvlan = true
-disable_txvlan = true
-disable_offload = [ \"gso\", \"tso\", \"lro\", \"sg\", \"gro\" ]
-
-[bridge]
-use_xdp_bridge = true
-interface_mapping = [
-       { name = \"{INTERNET}\", redirect_to = \"{ISP}\", scan_vlans = false },
-       { name = \"{ISP}\", redirect_to = \"{INTERNET}\", scan_vlans = false }
-]
-vlan_mapping = []
-
-[usage_stats]
-send_anonymous = {ALLOW_ANONYMOUS}
-anonymous_server = \"stats.libreqos.io:9125\"
-";
-
-fn write_etc_lqos_conf(internet: &str, isp: &str, allow_anonymous: bool) {
-  let new_id = Uuid::new_v4().to_string();
-  let output =
-    ETC_LQOS_CONF.replace("{INTERNET}", internet).replace("{ISP}", isp)
-    .replace("{NODE_ID}", &new_id)
-    .replace("{ALLOW_ANONYMOUS}", &allow_anonymous.to_string());
-  fs::write(LQOS_CONF, output).expect("Unable to write file");
-}
-
-pub fn write_isp_config_py(
-  dir: &str,
-  download: u32,
-  upload: u32,
-  lan: &str,
-  internet: &str,
-) {
-  // Copy ispConfig.example.py to ispConfig.py
-  let orig = format!("{dir}ispConfig.example.py");
-  let dest = format!("{dir}ispConfig.py");
-  std::fs::copy(orig, &dest).unwrap();
-
-  let config_file = std::fs::read_to_string(&dest).unwrap();
-  let mut new_config_file = String::new();
-  config_file.split('\n').for_each(|line| {
-    if line.starts_with('#') {
-      new_config_file += line;
-      new_config_file += "\n";
-    } else if line.contains("upstreamBandwidthCapacityDownloadMbps") {
-      new_config_file +=
-        &format!("upstreamBandwidthCapacityDownloadMbps = {download}\n");
-    } else if line.contains("upstreamBandwidthCapacityUploadMbps") {
-      new_config_file +=
-        &format!("upstreamBandwidthCapacityUploadMbps = {upload}\n");
-    } else if line.contains("interfaceA") {
-      new_config_file += &format!("interfaceA = \"{lan}\"\n");
-    } else if line.contains("interfaceB") {
-      new_config_file += &format!("interfaceB = \"{internet}\"\n");
-    } else if line.contains("generatedPNDownloadMbps") {
-      new_config_file += &format!("generatedPNDownloadMbps = {download}\n");
-    } else if line.contains("generatedPNUploadMbps") {
-      new_config_file += &format!("generatedPNUploadMbps = {upload}\n");
-    } else {
-      new_config_file += line;
-      new_config_file += "\n";
-    }
-  });
-  std::fs::write(&dest, new_config_file).unwrap();
-}
-
 fn write_network_json() {
   let output = "{}\n";
   fs::write(NETWORK_JSON, output).expect("Unable to write file");
@@ -223,6 +146,26 @@ fn anonymous() -> bool {
   }
 }
 
+fn write_combined_config(
+  to_internet: &str, 
+  to_network: &str,
+  download: u32,
+  upload: u32,
+  allow_anonymous: bool,
+) {
+  let mut config = lqos_config::Config::default();
+  config.node_id = lqos_config::Config::calculate_node_id();
+  config.single_interface = None;
+  config.bridge = Some(lqos_config::BridgeConfig { use_xdp_bridge:true, to_internet: to_internet.to_string(), to_network: to_network.to_string() });
+  config.queues.downlink_bandwidth_mbps = download;
+  config.queues.uplink_bandwidth_mbps = upload;
+  config.queues.generated_pn_download_mbps = download;
+  config.queues.generated_pn_upload_mbps = upload;
+  config.usage_stats.send_anonymous = allow_anonymous;
+  let raw = toml::to_string_pretty(&config).unwrap();
+  std::fs::write("/etc/lqos.conf", raw).unwrap();
+}
+
 fn main() {
   println!("{:^80}", "LibreQoS 1.4 Setup Assistant".yellow().on_blue());
   println!();
@@ -237,26 +180,11 @@ fn main() {
     );
     get_internet_interface(&interfaces, &mut if_internet);
     get_isp_interface(&interfaces, &mut if_isp);
-    let allow_anonymous = anonymous();
-    if let (Some(internet), Some(isp)) = (&if_internet, &if_isp) {
-      write_etc_lqos_conf(internet, isp, allow_anonymous);
-    }
-  }
-
-  if should_build(ISP_CONF) {
-    println!("{}{}", ISP_CONF.cyan(), "does not exist, building one.".white());
-    get_internet_interface(&interfaces, &mut if_internet);
-    get_isp_interface(&interfaces, &mut if_isp);
     let upload = get_bandwidth(true);
     let download = get_bandwidth(false);
+    let allow_anonymous = anonymous();
     if let (Some(internet), Some(isp)) = (&if_internet, &if_isp) {
-      write_isp_config_py(
-        "/opt/libreqos/src/",
-        download,
-        upload,
-        isp,
-        internet,
-      )
+      write_combined_config(internet, isp, download, upload, allow_anonymous);
     }
   }
 

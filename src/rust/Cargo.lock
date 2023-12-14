@@ -1626,6 +1626,8 @@ version = "0.1.0"
 dependencies = [
  "colored",
  "default-net",
+ "lqos_config",
+ "toml 0.8.8",
  "uuid",
 ]
 

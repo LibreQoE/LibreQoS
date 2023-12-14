@@ -11,7 +11,7 @@ mod python_migration;
 #[cfg(test)]
 pub mod test_data;
 mod v15;
-pub use v15::Tunables;
+pub use v15::{Tunables, BridgeConfig};
 
 static CONFIG: Mutex<Option<Config>> = Mutex::new(None);
 

@@ -13,7 +13,7 @@ mod program_control;
 mod shaped_devices;
 
 pub use authentication::{UserRole, WebUsers};
-pub use etc::{load_config, Config, enable_long_term_stats, Tunables};
+pub use etc::{load_config, Config, enable_long_term_stats, Tunables, BridgeConfig};
 pub use network_json::{NetworkJson, NetworkJsonNode, NetworkJsonTransport};
 pub use program_control::load_libreqos;
 pub use shaped_devices::{ConfigShapedDevices, ShapedDevice};

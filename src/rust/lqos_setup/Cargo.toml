@@ -8,3 +8,5 @@ license = "GPL-2.0-only"
 colored = "2"
 default-net = "0" # For obtaining an easy-to-use NIC list
 uuid = { version = "1", features = ["v4", "fast-rng" ] }
+lqos_config = { path = "../lqos_config" }
+toml = "0.8.8"
