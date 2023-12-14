@@ -77,6 +77,12 @@ overwriteNetworkJSONalways = False
 ignoreSubnets = ['192.168.0.0/16']
 allowedSubnets = ['100.64.0.0/10']
 
+# Powercode Integration
+automaticImportPowercode = False
+powercode_api_key = ''
+# Everything before :444/api/ in your Powercode instance URL
+powercode_api_url = ''
+
 # Splynx Integration
 automaticImportSplynx = False
 splynx_api_key = ''

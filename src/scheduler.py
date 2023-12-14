@@ -11,6 +11,12 @@ if automaticImportUISP:
 	from integrationUISP import importFromUISP
 if automaticImportSplynx:
 	from integrationSplynx import importFromSplynx
+try:
+	from ispConfig import automaticImportPowercode
+except:
+	automaticImportPowercode = False
+if automaticImportPowercode:
+	from integrationPowercode import importFromPowercode
 from apscheduler.schedulers.background import BlockingScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
 
@@ -27,6 +33,11 @@ def importFromCRM():
 			importFromSplynx()
 		except:
 			print("Failed to import from Splynx")
+	elif automaticImportPowercode:
+		try:
+			importFromPowercode()
+		except:
+			print("Failed to import from Powercode")
 
 def graphHandler():
 	try:
