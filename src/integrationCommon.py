@@ -149,8 +149,10 @@ class NetworkGraph:
 		# If a site is excluded (via excludedSites in ispConfig)
 		# it won't be added
 		if not node.displayName in self.excludeSites:
-			if node.displayName in self.exceptionCPEs.keys():
-				node.parentId = self.exceptionCPEs[node.displayName]
+			# TODO: Fixup exceptionCPE handling
+			#print(self.excludeSites)
+			#if node.displayName in self.exceptionCPEs.keys():
+			#	node.parentId = self.exceptionCPEs[node.displayName]
 			self.nodes.append(node)
 
 	def replaceRootNode(self, node: NetworkNode) -> None:

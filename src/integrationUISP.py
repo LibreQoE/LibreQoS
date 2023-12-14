@@ -405,7 +405,7 @@ def buildFullGraph():
 		id = site['identification']['id']
 		name = site['identification']['name']
 		type = site['identification']['type']
-		download = generated_pn_download_mbps
+		download = generated_pn_download_mbps()
 		upload = generated_pn_upload_mbps()
 		address = ""
 		customerName = ""
