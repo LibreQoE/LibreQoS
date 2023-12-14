@@ -68,6 +68,9 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_wrapped(wrap_pyfunction!(splynx_api_key))?;
   m.add_wrapped(wrap_pyfunction!(splynx_api_secret))?;
   m.add_wrapped(wrap_pyfunction!(splynx_api_url))?;
+  m.add_wrapped(wrap_pyfunction!(automatic_import_uisp))?;
+  m.add_wrapped(wrap_pyfunction!(automatic_import_splynx))?;
+  m.add_wrapped(wrap_pyfunction!(queue_refresh_interval_mins))?;
 
   Ok(())
 }
@@ -511,4 +514,22 @@ fn splynx_api_secret() -> PyResult<String> {
 fn splynx_api_url() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
   Ok(config.spylnx_integration.url)
+}
+
+#[pyfunction]
+fn automatic_import_uisp() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.enable_uisp)
+}
+
+#[pyfunction]
+fn automatic_import_splynx() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.enable_uisp)
+}
+
+#[pyfunction]
+fn queue_refresh_interval_mins() -> PyResult<u32> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.integration_common.queue_refresh_interval_mins)
 }
