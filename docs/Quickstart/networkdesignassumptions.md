@@ -9,7 +9,7 @@
 - OSPF primary link (low cost) through the server running LibreQoS
 - OSPF backup link (high cost, maybe 200 for example)
 
-![Offical Configuration](https://raw.githubusercontent.com/rchac/LibreQoS/main/docs/design.png)
+![Offical Configuration](https://raw.githubusercontent.com/LibreQoE/LibreQoS/main/docs/design.png)
 
 ### Network Interface Card
 
