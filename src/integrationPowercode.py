@@ -57,11 +57,15 @@ def createShaper():
 								customerIDs.append(customerIDint)
 	
 	allServices = {}
+	counter = 1
 	for customerID in customerIDs:
+		print("Importing " + str(counter) + "/" + str(len(customerIDs)) + " customers")
 		allServices.update(getServiceInfo(customerID))
+		counter += 1
 	
 	acceptableEquipment = ['Customer Owned Equipment', 'Router', 'Customer Owned Equipment', 'Managed Routers'] #'CPE'
 	
+	print("Consolidating imported customers")
 	devicesByCustomerID = {}
 	for customer in customerInfo:
 		if customer['status'] == 'Active':
