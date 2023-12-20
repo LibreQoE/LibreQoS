@@ -245,6 +245,7 @@ def getAccounts(sonar_active_status_ids):
 
 def mapApCpeMacs(ap):
     macs = []
+    macs_output = None
     if ap['model'] in sonar_airmax_ap_model_ids: #Tested with Prism Gen2AC and Rocket M5.
       macs_output = subprocess.run(['snmpwalk', '-Os', '-v', '1', '-c', snmp_community, ap['ip'], '.1.3.6.1.4.1.41112.1.4.7.1.1.1'], capture_output=True).stdout.decode('utf8')
     if ap['model'] in sonar_ltu_ap_model_ids: #Tested with LTU Rocket
