@@ -21,21 +21,20 @@ def getCustomerInfo():
 	r = requests.post(url, data=data, headers=headers, verify=False, timeout=10)
 	return r.json()
 
-def getServiceInfo(customerID):
+def getListServices():
 	headers= {'Content-Type': 'application/x-www-form-urlencoded'}
-	url = powercode_api_url + ":444/api/1/index.php"
+	url = powercode_api_url + ":444/api/preseem/index.php"
 	data = {}
 	data['apiKey'] = powercode_api_key
-	data['action'] = 'readCustomerService'
-	data['customerID'] = customerID
+	data['action'] = 'list_services'
 	
 	r = requests.post(url, data=data, headers=headers, verify=False, timeout=10)
 	servicesDict = {}
-	for service in r.json()['services']:
-		if 'internetInfo' in service:
-			servicesDict[service['serviceID']] = {}
-			servicesDict[service['serviceID']]['downloadMbps'] = int(round(int(service['internetInfo']['maxIn']) / 1000))
-			servicesDict[service['serviceID']]['uploadMbps'] = int(round(int(service['internetInfo']['maxOut']) / 1000))
+	for service in r.json():
+		if service['rate_down'] and service['rate_up']:
+			servicesDict[service['id']] = {}
+			servicesDict[service['id']]['downloadMbps'] = int(round(int(service['rate_down']) / 1000))
+			servicesDict[service['id']]['uploadMbps'] = int(round(int(service['rate_up']) / 1000))
 	return servicesDict
 
 def createShaper():
@@ -56,16 +55,10 @@ def createShaper():
 							if customerIDint not in customerIDs:
 								customerIDs.append(customerIDint)
 	
-	allServices = {}
-	counter = 1
-	for customerID in customerIDs:
-		print("Importing " + str(counter) + "/" + str(len(customerIDs)) + " customers")
-		allServices.update(getServiceInfo(customerID))
-		counter += 1
+	allServices = getListServices()
 	
 	acceptableEquipment = ['Customer Owned Equipment', 'Router', 'Customer Owned Equipment', 'Managed Routers'] #'CPE'
 	
-	print("Consolidating imported customers")
 	devicesByCustomerID = {}
 	for customer in customerInfo:
 		if customer['status'] == 'Active':
@@ -115,6 +108,7 @@ def createShaper():
 				ipv6=[]
 			)
 			net.addRawNode(newDevice)
+	print("Imported " + str(len(devicesByCustomerID)) + " customers")
 	net.prepareTree()
 	net.plotNetworkGraph(False)
 	if net.doesNetworkJsonExist():
