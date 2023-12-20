@@ -57,7 +57,7 @@ def createShaper():
 	
 	allServices = getListServices()
 	
-	acceptableEquipment = ['Customer Owned Equipment', 'Router', 'Customer Owned Equipment', 'Managed Routers'] #'CPE'
+	acceptableEquipment = ['Customer Owned Equipment', 'Router', 'Customer Owned Equipment', 'Managed Routers', 'CPE']
 	
 	devicesByCustomerID = {}
 	for customer in customerInfo:
