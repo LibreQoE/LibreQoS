@@ -2,17 +2,19 @@
 //! reads, writes and maps values from the Python file.
 
 use crate::etc;
+use ip_network::IpNetwork;
 use log::error;
 use serde::{Deserialize, Serialize};
 use std::{
   fs::{self, read_to_string, remove_file, OpenOptions},
   io::Write,
+  net::IpAddr,
   path::{Path, PathBuf},
 };
 use thiserror::Error;
 
 /// Represents the contents of an `ispConfig.py` file.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LibreQoSConfig {
   /// Interface facing the Internet
   pub internet_interface: String,
@@ -58,6 +60,39 @@ pub struct LibreQoSConfig {
 
   /// WARNING: generally don't touch this.
   pub override_queue_count: u32,
+
+  /// Is UISP integration enabled?
+  pub automatic_import_uisp: bool,
+
+  /// UISP Authentication Token
+  pub uisp_auth_token: String,
+
+  /// UISP Base URL (e.g. billing.myisp.com)
+  pub uisp_base_url: String,
+
+  /// Root site for UISP tree generation
+  pub uisp_root_site: String,
+
+  /// Circuit names use address?
+  pub circuit_name_use_address: bool,
+
+  /// UISP Strategy
+  pub uisp_strategy: String,
+
+  /// UISP Suspension Strategy
+  pub uisp_suspended_strategy: String,
+
+  /// Bandwidth Overhead Factor
+  pub bandwidth_overhead_factor: f32,
+
+  /// Subnets allowed to be included in device lists
+  pub allowed_subnets: String,
+
+  /// Subnets explicitly ignored from device lists
+  pub ignored_subnets: String,
+
+  /// Overwrite network.json even if it exists
+  pub overwrite_network_json_always: bool,
 }
 
 impl LibreQoSConfig {
@@ -107,6 +142,17 @@ impl LibreQoSConfig {
       enable_shell_commands: true,
       run_as_sudo: false,
       override_queue_count: 0,
+      automatic_import_uisp: false,
+      uisp_auth_token: "".to_string(),
+      uisp_base_url: "".to_string(),
+      uisp_root_site: "".to_string(),
+      circuit_name_use_address: false,
+      uisp_strategy: "".to_string(),
+      uisp_suspended_strategy: "".to_string(),
+      bandwidth_overhead_factor: 1.0,
+      allowed_subnets: "".to_string(),
+      ignored_subnets: "".to_string(),
+      overwrite_network_json_always: false,
     };
     result.parse_isp_config(path)?;
     Ok(result)
@@ -227,6 +273,49 @@ impl LibreQoSConfig {
           if line.starts_with("queuesAvailableOverride") {
             self.override_queue_count =
               split_at_equals(line).parse().unwrap_or(0);
+          }
+          if line.starts_with("automaticImportUISP") {
+            let mode = split_at_equals(line);
+            if mode == "True" {
+              self.automatic_import_uisp = true;
+            }
+          }
+          if line.starts_with("uispAuthToken") {
+            self.uisp_auth_token = split_at_equals(line);
+          }
+          if line.starts_with("UISPbaseURL") {
+            self.uisp_base_url = split_at_equals(line);
+          }
+          if line.starts_with("uispSite") {
+            self.uisp_root_site = split_at_equals(line);
+          }
+          if line.starts_with("circuitNameUseAddress") {
+            let mode = split_at_equals(line);
+            if mode == "True" {
+              self.circuit_name_use_address = true;
+            }
+          }
+          if line.starts_with("uispStrategy") {
+            self.uisp_strategy = split_at_equals(line);
+          }
+          if line.starts_with("uispSuspendedStrategy") {
+            self.uisp_suspended_strategy = split_at_equals(line);
+          }
+          if line.starts_with("bandwidthOverheadFactor") {
+            self.bandwidth_overhead_factor =
+              split_at_equals(line).parse().unwrap_or(1.0);
+          }
+          if line.starts_with("allowedSubnets") {
+            self.allowed_subnets = split_at_equals(line);
+          }
+          if line.starts_with("ignoreSubnets") {
+            self.ignored_subnets = split_at_equals(line);
+          }
+          if line.starts_with("overwriteNetworkJSONalways") {
+            let mode = split_at_equals(line);
+            if mode == "True" {
+              self.overwrite_network_json_always = true;
+            }
           }
         }
       }
@@ -361,6 +450,20 @@ impl LibreQoSConfig {
     }
     Ok(())
   }
+
+  /// Convert the Allowed Subnets list into a Trie for fast search
+  pub fn allowed_subnets_trie(&self) -> ip_network_table::IpNetworkTable<usize> {
+    let ip_list = ip_list_to_ips(&self.allowed_subnets).unwrap();
+    //println!("{ip_list:#?}");
+    ip_list_to_trie(&ip_list)
+  }
+
+  /// Convert the Ignored Subnets list into a Trie for fast search
+  pub fn ignored_subnets_trie(&self) -> ip_network_table::IpNetworkTable<usize> {
+    let ip_list = ip_list_to_ips(&self.ignored_subnets).unwrap();
+    //println!("{ip_list:#?}");
+    ip_list_to_trie(&ip_list)
+  }
 }
 
 fn split_at_equals(line: &str) -> String {
@@ -387,4 +490,52 @@ pub enum LibreQoSConfigError {
   CannotOpenForWrite,
   #[error("Unable to write to ispConfig.py")]
   CannotWrite,
+  #[error("Unable to read IP")]
+  CannotReadIP,
+}
+
+fn ip_list_to_ips(
+  source: &str,
+) -> Result<Vec<(IpAddr, u8)>, LibreQoSConfigError> {
+  // Remove any square brackets, spaces
+  let source = source.replace(['[', ']', ' '], "");
+
+  // Split at commas
+  Ok(
+    source
+      .split(',')
+      .map(|raw| {
+        let split: Vec<&str> = raw.split('/').collect();
+        let cidr = split[1].parse::<u8>().unwrap();
+        let addr = split[0].parse::<IpAddr>().unwrap();
+        (addr, cidr)
+      })
+      .collect(),
+  )
+}
+
+fn ip_list_to_trie(
+  source: &[(IpAddr, u8)],
+) -> ip_network_table::IpNetworkTable<usize> {
+  let mut table = ip_network_table::IpNetworkTable::new();
+  source
+    .iter()
+    .map(|(ip, subnet)| {
+      (
+        match ip {
+          IpAddr::V4(ip) => ip.to_ipv6_mapped(),
+          IpAddr::V6(ip) => *ip,
+        },
+        match ip {
+          IpAddr::V4(..) => *subnet + 96,
+          IpAddr::V6(..) => *subnet
+        },
+      )
+    })
+    .map(|(ip, cidr)| IpNetwork::new(ip, cidr).unwrap())
+    .enumerate()
+    .for_each(|(id, net)| {
+      table.insert(net, id);
+    });
+  table
 }

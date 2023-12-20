@@ -6,7 +6,7 @@ license = "GPL-2.0-only"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
-tokio = { version = "1", features = [ "rt", "macros", "net", "io-util", "time" ] }
+tokio = { version = "1", features = [ "full" ] }
 anyhow = "1"
 lqos_bus = { path = "../lqos_bus" }
 lqos_utils = { path = "../lqos_utils" }

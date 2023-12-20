@@ -160,8 +160,28 @@ function updateHostCounts() {
         }
         $("#currentLogin").html(html);
     });
-    $("#startTest").on('click', () => {
+    /*$("#startTest").on('click', () => {
         $.get("/api/run_btest", () => { });
+    });*/
+    // LTS Check
+    $.get("/api/stats_check", (data) => {
+        console.log(data);
+        let template = "<a class='nav-link' href='$URL$'><i class='fa fa-dashboard'></i> $TEXT$</a>";
+        switch (data.action) {
+            case "Disabled": {
+                template = template.replace("$URL$", "#")
+                    .replace("$TEXT$", "<span style='color: red'>Stats Disabled</span>");
+            }
+            case "NotSetup": {
+                template = template.replace("$URL$", "https://stats.libreqos.io/trial1/" + encodeURI(data.node_id))
+                    .replace("$TEXT$", "<span class='badge badge-pill badge-success green-badge'>Statistics Free Trial</span>");
+            } break;
+            default: {
+                template = template.replace("$URL$", "https://stats.libreqos.io/")
+                    .replace("$TEXT$", "Statistics");
+            }
+        }
+        $("#statsLink").html(template);
     });
 }
 

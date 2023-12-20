@@ -6,7 +6,7 @@ license = "GPL-2.0-only"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
-nix = "0"
+nix = { version = "0", features = ["time"] }
 log = "0"
 notify = { version = "5.0.0", default-features = false } # Not using crossbeam because of Tokio
 thiserror = "1"

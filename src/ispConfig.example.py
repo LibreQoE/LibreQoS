@@ -77,6 +77,12 @@ overwriteNetworkJSONalways = False
 ignoreSubnets = ['192.168.0.0/16']
 allowedSubnets = ['100.64.0.0/10']
 
+# Powercode Integration
+automaticImportPowercode = False
+powercode_api_key = ''
+# Everything before :444/api/ in your Powercode instance URL
+powercode_api_url = ''
+
 # Splynx Integration
 automaticImportSplynx = False
 splynx_api_key = ''
@@ -110,6 +116,15 @@ uispSite = ''
 #   or site options.
 # * "full" - build a complete network map
 uispStrategy = "full"
+# Handling of UISP suspensions:
+# * "none" - do not handle suspensions
+# * "ignore" - do not add suspended customers to the network map
+# * "slow" - limit suspended customers to 1mbps
+uispSuspendedStrategy = "none"
+# Assumed capacity of AirMax and LTU radios vs reported capacity by UISP. For example, 65% would be 0.65.
+# For AirMax, this applies to flexible frame only. AirMax fixed frame will have capacity based on ratio.
+airMax_capacity = 0.65
+ltu_capacity = 0.90
 # List any sites that should not be included, with each site name surrounded by '' and separated by commas
 excludeSites = []
 # If you use IPv6, this can be used to find associated IPv6 prefixes for your clients' IPv4 addresses, and match them
@@ -118,6 +133,8 @@ findIPv6usingMikrotik = False
 # If you want to provide a safe cushion for speed test results to prevent customer complains, you can set this to
 # 1.15 (15% above plan rate). If not, you can leave as 1.0
 bandwidthOverheadFactor = 1.0
+# Number to multiply the maximum/ceiling bandwidth with to determine the minimum bandwidth.
+committedBandwidthMultiplier = 0.98
 # For edge cases, set the respective ParentNode for these CPEs
 exceptionCPEs = {}
 # exceptionCPEs = {

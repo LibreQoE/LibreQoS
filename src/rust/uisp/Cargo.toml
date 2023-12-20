@@ -1,0 +1,10 @@
+[package]
+name = "uisp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lqos_config = { path = "../lqos_config" }
+serde = { version = "1.0", features = [ "derive" ] }
+reqwest = { version = "0.11", features = [ "json" ] }
+anyhow = "1"

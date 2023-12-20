@@ -5,7 +5,7 @@ edition = "2021"
 license = "GPL-2.0-only"
 
 [dependencies]
-tokio = { version = "1", features = [ "rt", "macros", "net", "io-util", "time" ] }
+tokio = { version = "1", features = [ "full" ] }
 lqos_bus = { path = "../lqos_bus" }
 lqos_utils = { path = "../lqos_utils" }
 anyhow = "1"

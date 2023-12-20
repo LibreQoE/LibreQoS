@@ -102,7 +102,8 @@ pub(crate) fn xps_setup_default_disable(interface: &str) -> Result<()> {
 fn sorted_txq_xps_cpus(interface: &str) -> Result<Vec<String>> {
   let mut result = Vec::new();
   let paths =
-    std::fs::read_dir(&format!("/sys/class/net/{interface}/queues/"))?;
+    std::fs::read_dir(&format!("/sys/class/net/{interface}/queues/"))
+      .map_err(|_| anyhow::anyhow!("/sys/class/net/{interface}/queues/ does not exist. Does this card only support one queue (not supported)?"))?;
   for path in paths {
     if let Ok(path) = &path {
       if path.path().is_dir() {

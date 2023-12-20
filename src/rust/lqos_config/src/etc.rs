@@ -18,9 +18,11 @@ pub struct EtcLqos {
 
   /// If present, provides a unique ID for the node. Used for
   /// anonymous stats (to identify nodes without providing an actual
-  /// identity), and will be used for long-term data retention to
-  /// disambiguate cluster or multi-head-end nodes.
+  /// identity), and long-term stas.
   pub node_id: Option<String>,
+
+  /// If present, provide a name for the node.
+  pub node_name: Option<String>,
 
   /// If present, defines how the Bifrost XDP bridge operates.
   pub bridge: Option<BridgeConfig>,
@@ -36,6 +38,9 @@ pub struct EtcLqos {
   /// run. Short times are good, there's a real performance penalty to
   /// capturing high-throughput streams. Defaults to 10 seconds.
   pub packet_capture_time: Option<usize>,
+
+  /// Long-term statistics retention settings.
+  pub long_term_stats: Option<LongTermStats>,
 }
 
 /// Represents a set of `sysctl` and `ethtool` tweaks that may be
@@ -129,6 +134,27 @@ pub struct UsageStats {
   pub anonymous_server: String,
 }
 
+/// Long Term Data Retention
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct LongTermStats {
+  /// Should we store long-term stats at all?
+  pub gather_stats: bool,
+
+  /// How frequently should stats be accumulated into a long-term
+  /// min/max/avg format per tick?
+  pub collation_period_seconds: u32,
+
+  /// The license key for submitting stats to a LibreQoS hosted
+  /// statistics server
+  pub license_key: Option<String>,
+
+  /// UISP reporting period (in seconds). UISP queries can be slow,
+  /// so hitting it every second or 10 seconds is going to cause problems
+  /// for some people. A good default may be 5 minutes. Not specifying this
+  /// disabled UISP integration.
+  pub uisp_reporting_interval_seconds: Option<u64>,
+}
+
 impl EtcLqos {
   /// Loads `/etc/lqos.conf`.
   pub fn load() -> Result<Self, EtcLqosError> {
@@ -182,6 +208,55 @@ impl EtcLqos {
       return Err(EtcLqosError::WriteFail);
     }
     Ok(())
+  }
+}
+
+/// Run this if you've received the OK from the licensing server, and been
+/// sent a license key. This appends a [long_term_stats] section to your 
+/// config file - ONLY if one doesn't already exist.
+pub fn enable_long_term_stats(license_key: String) {
+  if let Ok(raw) = std::fs::read_to_string("/etc/lqos.conf") {
+    let document = raw.parse::<Document>();
+    match document {
+      Err(e) => {
+        error!("Unable to parse TOML from /etc/lqos.conf");
+        error!("Full error: {:?}", e);
+        return;
+      }
+      Ok(mut config_doc) => {
+        let cfg = toml_edit::de::from_document::<EtcLqos>(config_doc.clone());
+        match cfg {
+          Ok(cfg) => {
+            // Now we enable LTS if its not present
+            if let Ok(isp_config) = crate::LibreQoSConfig::load() {
+              if cfg.long_term_stats.is_none() {
+               
+                let mut new_section = toml_edit::table();
+                new_section["gather_stats"] = value(true);
+                new_section["collation_period_seconds"] = value(60);
+                new_section["license_key"] = value(license_key);
+                if isp_config.automatic_import_uisp {
+                  new_section["uisp_reporting_interval_seconds"] = value(300);
+                }
+                config_doc["long_term_stats"] = new_section;
+
+                let new_cfg = config_doc.to_string();
+                if let Err(e) = fs::write(Path::new("/etc/lqos.conf"), new_cfg) {
+                  log::error!("Unable to write to /etc/lqos.conf");
+                  log::error!("{e:?}");
+                  return;
+                }
+              }
+            }
+          }
+          Err(e) => {
+            error!("Unable to parse TOML from /etc/lqos.conf");
+            error!("Full error: {:?}", e);
+            return;
+          }
+        }
+      }
+    }
   }
 }
 
