@@ -2,7 +2,7 @@ import time
 import datetime
 from LibreQoS import refreshShapers, refreshShapersUpdateOnly
 from graphInfluxDB import refreshBandwidthGraphs, refreshLatencyGraphs
-from ispConfig import influxDBEnabled, automaticImportUISP, automaticImportSplynx, automaticImportSonar
+from ispConfig import influxDBEnabled, automaticImportUISP, automaticImportSplynx
 try:
 	from ispConfig import queueRefreshIntervalMins
 except:
@@ -11,6 +11,16 @@ if automaticImportUISP:
 	from integrationUISP import importFromUISP
 if automaticImportSplynx:
 	from integrationSplynx import importFromSplynx
+try:
+	from ispConfig import automaticImportPowercode
+except:
+	automaticImportPowercode = False
+if automaticImportPowercode:
+	from integrationPowercode import importFromPowercode
+try:
+	from ispConfig import automaticImportSonar
+except:
+	automaticImportSonar = False
 if automaticImportSonar:
 	from integrationSonar import importFromSonar
 from apscheduler.schedulers.background import BlockingScheduler
@@ -29,6 +39,11 @@ def importFromCRM():
 			importFromSplynx()
 		except:
 			print("Failed to import from Splynx")
+	elif automaticImportPowercode:
+		try:
+			importFromPowercode()
+		except:
+			print("Failed to import from Powercode")
 	elif automaticImportSonar:
 		try:
 			importFromSonar()
