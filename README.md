@@ -34,8 +34,9 @@ Our Matrix chat channel is available at [https://matrix.to/#/#libreqos:matrix.or
 Long-Term Stats (LTS) is an analytics service built for LibreQoS that revolutionizes the way you track and analyze your network.
 With flexible time window views ranging from 5 minutes to 1 month, LTS gives you comprehensive insights into your network's performance.
 Built from the ground-up for performance and efficiency, LTS greatly outperforms our original InfluxDB plugin, and gives you rapidly rendered data to help you maximize your network perfromance.
-Enjoy a free month trial to see how LTS can deliver for your ISP.
 
-To get started, [update to v1.4](https://libreqos.readthedocs.io/en/latest/docs/Updates/update.html) and click "Start Stats Free Trial" in the top right corner of the LibreQoS WebUI.
+We provide a free 30-day trial of LTS, after which the rate is $0.30 USD per shaped subscriber.
+You can enroll in the 30-day free trial by [upgrading to the latest version of LibreQoS v1.4](https://libreqos.readthedocs.io/en/latest/docs/Updates/update.html) and selecting "Start Stats Free Trial" in the top-right corner of the local LibreQoS WebUI.
+
 <img alt="LibreQoS Long Term Stats" src="https://i0.wp.com/libreqos.io/wp-content/uploads/2023/11/01-Dashboard.png"></a>
 
