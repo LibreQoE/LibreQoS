@@ -7,6 +7,18 @@ if automatic_import_uisp():
 	from integrationUISP import importFromUISP
 if automatic_import_splynx():
 	from integrationSplynx import importFromSplynx
+try:
+	from ispConfig import automaticImportPowercode
+except:
+	automaticImportPowercode = False
+if automaticImportPowercode:
+	from integrationPowercode import importFromPowercode
+try:
+	from ispConfig import automaticImportSonar
+except:
+	automaticImportSonar = False
+if automaticImportSonar:
+	from integrationSonar import importFromSonar
 from apscheduler.schedulers.background import BlockingScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
 
@@ -23,6 +35,16 @@ def importFromCRM():
 			importFromSplynx()
 		except:
 			print("Failed to import from Splynx")
+	elif automaticImportPowercode:
+		try:
+			importFromPowercode()
+		except:
+			print("Failed to import from Powercode")
+	elif automaticImportSonar:
+		try:
+			importFromSonar()
+		except:
+			print("Failed to import from Sonar")
 
 #def graphHandler():
 #	try:

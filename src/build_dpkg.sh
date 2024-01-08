@@ -20,7 +20,7 @@ DEBIAN_DIR=$DPKG_DIR/DEBIAN
 LQOS_DIR=$DPKG_DIR/opt/libreqos/src
 ETC_DIR=$DPKG_DIR/etc
 MOTD_DIR=$DPKG_DIR/etc/update-motd.d
-LQOS_FILES="graphInfluxDB.py influxDBdashboardTemplate.json integrationCommon.py integrationRestHttp.py integrationSplynx.py integrationUISP.py ispConfig.example.py LibreQoS.py lqos.example lqTools.py mikrotikFindIPv6.py network.example.json pythonCheck.py README.md scheduler.py ShapedDevices.example.csv"
+LQOS_FILES="graphInfluxDB.py influxDBdashboardTemplate.json integrationCommon.py integrationRestHttp.py integrationSplynx.py integrationUISP.py integrationSonar.py ispConfig.example.py LibreQoS.py lqos.example lqTools.py mikrotikFindIPv6.py network.example.json pythonCheck.py README.md scheduler.py ShapedDevices.example.csv"
 LQOS_BIN_FILES="lqos_scheduler.service.example lqosd.service.example lqos_node_manager.service.example"
 RUSTPROGS="lqosd lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqos_node_manager lqusers lqos_setup lqos_map_perf"
 
