@@ -32,6 +32,13 @@ def pullMikrotikIPv6():
 				macToIPv4[entry['mac-address']] = entry['address']
 			except:
 				pass
+		list_dhcp4 = api.get_resource('/ip/dhcp-server/lease')
+		entries = list_dhcp4.get()
+		for entry in entries:
+			try:
+				macToIPv4[entry['mac-address']] = entry['address']
+			except:
+				pass
 		list_binding6 = api.get_resource('/ipv6/dhcp-server/binding')
 		entries = list_binding6.get()
 		for entry in entries:
