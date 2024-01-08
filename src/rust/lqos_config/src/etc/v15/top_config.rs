@@ -58,6 +58,9 @@ pub struct Config {
 
     /// UISP Integration
     pub uisp_integration: super::uisp_integration::UispIntegration,
+
+    /// Powercode Integration
+    pub powercode_integration: super::powercode_integration::PowercodeIntegration,
 }
 
 impl Config {
@@ -116,6 +119,7 @@ impl Default for Config {
             integration_common: super::integration_common::IntegrationConfig::default(),
             spylnx_integration: super::spylnx_integration::SplynxIntegration::default(),
             uisp_integration: super::uisp_integration::UispIntegration::default(),
+            powercode_integration: super::powercode_integration::PowercodeIntegration::default(),
             packet_capture_time: 10,
             queue_check_period_ms: 1000,
         }

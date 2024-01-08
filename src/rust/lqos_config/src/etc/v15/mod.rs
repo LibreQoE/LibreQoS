@@ -11,6 +11,7 @@ mod integration_common;
 mod ip_ranges;
 mod spylnx_integration;
 mod uisp_integration;
+mod powercode_integration;
 pub use bridge::*;
 pub use long_term_stats::LongTermStats;
 pub use tuning::Tunables;
