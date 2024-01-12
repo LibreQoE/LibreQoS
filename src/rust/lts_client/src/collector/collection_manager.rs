@@ -22,8 +22,23 @@ pub(crate) static DEVICE_ID_LIST: Lazy<DashSet<String>> = Lazy::new(DashSet::new
 ///
 /// Returns a channel that may be used to notify of data availability.
 pub async fn start_long_term_stats() -> Sender<StatsUpdateMessage> {
-    let (update_tx, update_rx): (Sender<StatsUpdateMessage>, Receiver<StatsUpdateMessage>) = mpsc::channel(10);
+    let (update_tx, mut update_rx): (Sender<StatsUpdateMessage>, Receiver<StatsUpdateMessage>) = mpsc::channel(10);
     let (comm_tx, comm_rx): (Sender<SenderChannelMessage>, Receiver<SenderChannelMessage>) = mpsc::channel(10);
+
+    if let Ok(cfg) = lqos_config::EtcLqos::load() {
+        if let Some(lts) = cfg.long_term_stats {
+            if !lts.gather_stats {
+                // Wire up a null recipient to the channel, so it receives messages
+                // but doesn't do anything with them.
+                tokio::spawn(async move {
+                    while let Some(_msg) = update_rx.recv().await {
+                        // Do nothing
+                    }
+                });
+                return update_tx;
+            }
+        }
+    }
 
     tokio::spawn(lts_manager(update_rx, comm_tx));
     tokio::spawn(collation_scheduler(update_tx.clone()));

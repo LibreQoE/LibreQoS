@@ -101,6 +101,18 @@ splynx_api_secret = ''
 # Everything before /api/2.0/ on your Splynx instance
 splynx_api_url = 'https://YOUR_URL.splynx.app'
 
+#Sonar Integration
+automaticImportSonar = False
+sonar_api_key = ''
+sonar_api_url = '' # ex 'https://company.sonar.software/api/graphql'
+# If there are radios in these lists, we will try to get the clients using snmp. This requires snmpwalk to be install on the server. You can use "sudo apt-get install snmp" for that. You will also need to fill in the snmp_community.
+sonar_airmax_ap_model_ids = [] # ex ['29','43']
+sonar_ltu_ap_model_ids = [] # ex ['4']
+snmp_community = ''
+# This is for all account statuses where we should be applying QoS. If you leave it blank, we'll use any status in account marked with "Activates Account" in Sonar.
+sonar_active_status_ids = []
+
+
 # UISP integration
 automaticImportUISP = False
 uispAuthToken = ''
