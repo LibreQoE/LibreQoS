@@ -2,7 +2,7 @@
 
 LibreQoS is a Quality of Experience (QoE) Smart Queue Management (SQM) system designed for Internet Service Providers to optimize the flow of their network traffic and thus reduce bufferbloat, keep the network responsive, and improve the end-user experience.
 
-Servers running LibreQoS can shape traffic for many thousands of customers.
+Servers running LibreQoS can shape traffic for thousands of customers. On higher-end servers, LibreQoS is capable of shaping 50-80 Gbps of traffic.
 
 Learn more at [LibreQoS.io](https://libreqos.io/)!
 
