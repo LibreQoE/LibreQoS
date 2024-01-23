@@ -25,9 +25,9 @@ Please support the continued development of LibreQoS by sponsoring us via [GitHu
 
 [ReadTheDocs](https://libreqos.readthedocs.io/en/latest/)
 
-## Matrix Chat
+## LibreQoS Chat
 
-Our Matrix chat channel is available at [https://matrix.to/#/#libreqos:matrix.org](https://matrix.to/#/#libreqos:matrix.org).
+Our Zulip chat server is available at [https://chat.libreqos.io/join/fvu3cerayyaumo377xwvpev6/](https://chat.libreqos.io/join/fvu3cerayyaumo377xwvpev6/).
 
 ## Long-Term Stats (LTS)
 
