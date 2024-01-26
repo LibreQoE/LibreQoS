@@ -27,6 +27,7 @@ to_network = "eth1"
 
 # OR:
 #[single_interface]
+#interface = "eth0"
 #internet_vlan = 2
 #network_vlan = 3
 
