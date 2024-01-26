@@ -147,7 +147,7 @@ fn migrate_bridge(
         new_config.bridge = None;
         new_config.single_interface = Some(SingleInterfaceConfig {
             interface: python_config.interface_a.clone(),
-            internet_vlan: python_config.stick_vlan_b,
+            internet_vlan: python_config.stick_vlan_a,
             network_vlan: python_config.stick_vlan_b,
         });
     } else {
