@@ -3,7 +3,7 @@ mod version;
 use std::{time::Duration, net::TcpStream, io::Write};
 use lqos_bus::anonymous::{AnonymousUsageV1, build_stats};
 use lqos_sys::num_possible_cpus;
-use sysinfo::{System, SystemExt, CpuExt};
+use sysinfo::System;
 use crate::{shaped_devices_tracker::{SHAPED_DEVICES, NETWORK_JSON}, stats::{HIGH_WATERMARK_DOWN, HIGH_WATERMARK_UP}};
 
 const SLOW_START_SECS: u64 = 1;
@@ -30,7 +30,7 @@ fn anonymous_usage_dump() -> anyhow::Result<()> {
     sys.refresh_all();
     data.total_memory = sys.total_memory();
     data.available_memory = sys.available_memory();
-    if let Some(kernel) = sys.kernel_version() {
+    if let Some(kernel) = sysinfo::System::kernel_version() {
         data.kernel_version = kernel;
     }
     data.usable_cores = num_possible_cpus().unwrap_or(0);

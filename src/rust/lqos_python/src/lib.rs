@@ -13,7 +13,7 @@ use std::{
 mod blocking;
 use anyhow::{Error, Result};
 use blocking::run_query;
-use sysinfo::{ProcessExt, System, SystemExt};
+use sysinfo::System;
 
 const LOCK_FILE: &str = "/run/lqos/libreqos.lock";
 

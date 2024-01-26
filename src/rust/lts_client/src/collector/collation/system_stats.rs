@@ -1,11 +1,10 @@
 use once_cell::sync::Lazy;
-use sysinfo::{System, SystemExt};
+use sysinfo::System;
 use tokio::sync::Mutex;
 
 static SYS: Lazy<Mutex<System>> = Lazy::new(|| Mutex::new(System::new_all()));
 
 pub(crate) async fn get_cpu_ram() -> (Vec<u32>, u32) {
-    use sysinfo::CpuExt;
     let mut lock = SYS.lock().await;
     lock.refresh_cpu();
     lock.refresh_memory();

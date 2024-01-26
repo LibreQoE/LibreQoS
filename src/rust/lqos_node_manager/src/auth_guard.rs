@@ -46,7 +46,7 @@ impl<'r> FromRequest<'r> for AuthGuard {
             return Outcome::Success(AuthGuard::ReadOnly)
           }
           _ => {
-            return Outcome::Failure((
+            return Outcome::Error((
               Status::Unauthorized,
               Error::msg("Invalid token"),
             ))
@@ -60,7 +60,7 @@ impl<'r> FromRequest<'r> for AuthGuard {
       }
     }
 
-    Outcome::Failure((Status::Unauthorized, Error::msg("Access Denied")))
+    Outcome::Error((Status::Unauthorized, Error::msg("Access Denied")))
   }
 }
 

@@ -18,9 +18,7 @@ use std::{sync::atomic::AtomicBool, time::Duration};
 /// it runs as part of start-up - and keeps running.
 /// Designed to never return or fail on error.
 pub async fn update_tracking() {
-  use sysinfo::CpuExt;
   use sysinfo::System;
-  use sysinfo::SystemExt;
   let mut sys = System::new_all();
 
   spawn_blocking(|| {
