@@ -108,7 +108,7 @@ impl PythonMigration {
         cfg.generated_pn_upload_mbps = from_python(&py, "generatedPNUploadMbps")?;
         cfg.interface_a = from_python(&py, "interfaceA")?;
         cfg.interface_b = from_python(&py, "interfaceB")?;
-        cfg.queue_refresh_interval_mins = from_python(&py, "queueRefreshIntervalMins")?;
+        cfg.queue_refresh_interval_mins = from_python(&py, "queueRefreshIntervalMins").unwrap_or(15);
         cfg.on_a_stick = from_python(&py, "OnAStick")?;
         cfg.stick_vlan_a = from_python(&py, "StickVlanA")?;
         cfg.stick_vlan_b = from_python(&py, "StickVlanB")?;
@@ -173,6 +173,7 @@ impl PythonMigration {
         Ok(old_config)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn load_from_string(s: &str) -> Result<Self, PythonMigrationError> {
         let mut old_config = Self::default();
         prepare_freethreaded_python();
