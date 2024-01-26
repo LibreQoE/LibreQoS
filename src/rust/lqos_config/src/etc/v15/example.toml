@@ -78,3 +78,8 @@ bandwidth_overhead_factor = 1.0
 commit_bandwidth_multiplier = 0.98
 exception_cpes = []
 use_ptmp_as_parent = false
+
+[powercode_integration]
+enable_powercode = false
+powercode_api_key = ""
+powercode_api_url = ""
