@@ -1,6 +1,6 @@
 mod serializable;
 mod shaped_device;
-use crate::{etc, SUPPORTED_CUSTOMERS};
+use crate::SUPPORTED_CUSTOMERS;
 use csv::{QuoteStyle, ReaderBuilder, WriterBuilder};
 use log::error;
 use serializable::SerializableShapedDevice;

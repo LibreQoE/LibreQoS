@@ -190,7 +190,7 @@ impl EtcLqos {
               error!("Unable to parse TOML from /etc/lqos.conf");
               error!("Full error: {:?}", e);
               panic!();
-              Err(EtcLqosError::CannotParseToml)
+              //Err(EtcLqosError::CannotParseToml)
             }
           }
         }
@@ -220,6 +220,7 @@ impl EtcLqos {
 /// Run this if you've received the OK from the licensing server, and been
 /// sent a license key. This appends a [long_term_stats] section to your 
 /// config file - ONLY if one doesn't already exist.
+#[allow(dead_code)]
 pub fn enable_long_term_stats(license_key: String) {
   if let Ok(raw) = std::fs::read_to_string("/etc/lqos.conf") {
     let document = raw.parse::<Document>();
@@ -296,8 +297,6 @@ pub enum EtcLqosError {
   CannotParseToml,
   #[error("Unable to backup /etc/lqos.conf to /etc/lqos.conf.backup")]
   BackupFail,
-  #[error("Unable to serialize new configuration")]
-  SerializeFail,
   #[error("Unable to write to /etc/lqos.conf")]
   WriteFail,
 }

@@ -7,6 +7,7 @@ use sha2::digest::Update;
 use sha2::Digest;
 use uuid::Uuid;
 
+/// Top-level configuration file for LibreQoS.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     /// Version number for the configuration file.
@@ -95,6 +96,8 @@ impl Config {
         Ok(())
     }
 
+    /// Loads a config file from a string (used for testing only)
+    #[allow(dead_code)]
     pub fn load_from_string(s: &str) -> Result<Self, String> {
         let config: Config = toml::from_str(s).map_err(|e| format!("Error parsing config: {}", e))?;
         config.validate()?;
@@ -127,6 +130,7 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Calculate the unterface facing the Internet
     pub fn internet_interface(&self) -> String {
         if let Some(bridge) = &self.bridge {
             bridge.to_internet.clone()
@@ -137,6 +141,7 @@ impl Config {
         }
     }
 
+    /// Calculate the interface facing the ISP
     pub fn isp_interface(&self) -> String {
         if let Some(bridge) = &self.bridge {
             bridge.to_network.clone()
@@ -147,10 +152,12 @@ impl Config {
         }
     }
 
+    /// Are we in single-interface mode?
     pub fn on_a_stick_mode(&self) -> bool {
         self.bridge.is_none()
     }
 
+    /// Get the VLANs for the stick interface
     pub fn stick_vlans(&self) -> (u32, u32) {
         if let Some(stick) = &self.single_interface {
             (stick.network_vlan, stick.internet_vlan)

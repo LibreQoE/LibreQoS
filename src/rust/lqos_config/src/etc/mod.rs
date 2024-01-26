@@ -49,6 +49,7 @@ pub fn load_config() -> Result<Config, LibreQoSConfigError> {
     Ok(lock.as_ref().unwrap().clone())
 }
 
+/// Enables LTS reporting in the configuration file.
 pub fn enable_long_term_stats(license_key: String) -> Result<(), LibreQoSConfigError> {
     let mut config = load_config()?;
     let mut lock = CONFIG.lock().unwrap();
