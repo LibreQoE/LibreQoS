@@ -75,6 +75,9 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_wrapped(wrap_pyfunction!(powercode_api_key))?;
   m.add_wrapped(wrap_pyfunction!(powercode_api_url))?;
   m.add_wrapped(wrap_pyfunction!(automatic_import_sonar))?;
+  m.add_wrapped(wrap_pyfunction!(sonar_api_url))?;
+  m.add_wrapped(wrap_pyfunction!(sonar_api_key))?;
+  m.add_wrapped(wrap_pyfunction!(snmp_community))?;
 
   Ok(())
 }
@@ -560,4 +563,22 @@ fn powercode_api_url() -> PyResult<String> {
 fn automatic_import_sonar() -> PyResult<bool> {
   let config = lqos_config::load_config().unwrap();
   Ok(config.sonar_integration.enable_sonar)
+}
+
+#[pyfunction]
+fn sonar_api_url() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.sonar_integration.sonar_api_url)
+}
+
+#[pyfunction]
+fn sonar_api_key() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.sonar_integration.sonar_api_key)
+}
+
+#[pyfunction]
+fn snmp_community() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.sonar_integration.snmp_community)
 }
