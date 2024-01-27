@@ -74,6 +74,7 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_wrapped(wrap_pyfunction!(automatic_import_powercode))?;
   m.add_wrapped(wrap_pyfunction!(powercode_api_key))?;
   m.add_wrapped(wrap_pyfunction!(powercode_api_url))?;
+  m.add_wrapped(wrap_pyfunction!(automatic_import_sonar))?;
 
   Ok(())
 }
@@ -553,4 +554,10 @@ fn powercode_api_key() -> PyResult<String> {
 fn powercode_api_url() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
   Ok(config.powercode_integration.powercode_api_url)
+}
+
+#[pyfunction]
+fn automatic_import_sonar() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.sonar_integration.enable_sonar)
 }

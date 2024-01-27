@@ -2,22 +2,15 @@ import time
 import datetime
 from LibreQoS import refreshShapers, refreshShapersUpdateOnly
 #from graphInfluxDB import refreshBandwidthGraphs, refreshLatencyGraphs
-from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue_refresh_interval_mins
+from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue_refresh_interval_mins, \
+	automatic_import_powercode, automatic_import_sonar
 if automatic_import_uisp():
 	from integrationUISP import importFromUISP
 if automatic_import_splynx():
 	from integrationSplynx import importFromSplynx
-try:
-	from ispConfig import automaticImportPowercode
-except:
-	automaticImportPowercode = False
-if automaticImportPowercode:
+if automatic_import_powercode():
 	from integrationPowercode import importFromPowercode
-try:
-	from ispConfig import automaticImportSonar
-except:
-	automaticImportSonar = False
-if automaticImportSonar:
+if automatic_import_sonar():
 	from integrationSonar import importFromSonar
 from apscheduler.schedulers.background import BlockingScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
@@ -35,12 +28,12 @@ def importFromCRM():
 			importFromSplynx()
 		except:
 			print("Failed to import from Splynx")
-	elif automaticImportPowercode:
+	elif automatic_import_powercode():
 		try:
 			importFromPowercode()
 		except:
 			print("Failed to import from Powercode")
-	elif automaticImportSonar:
+	elif automatic_import_sonar():
 		try:
 			importFromSonar()
 		except:
