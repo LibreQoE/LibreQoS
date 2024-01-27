@@ -6,8 +6,9 @@ pub struct SonarIntegration {
     pub sonar_api_url: String,
     pub sonar_api_key: String,
     pub snmp_community: String,
-    // TODO: It isn't clear what types `sonar_api_key,sonar_airmax_ap_model_ids,sonar_active_status_ids,sonar_ltu_ap_model_ids`
-    // are supposed to be. 
+    pub airmax_model_ids: Vec<String>,
+    pub ltu_model_ids: Vec<String>,
+    pub active_status_ids: Vec<String>,
 }
 
 impl Default for SonarIntegration {
@@ -17,6 +18,9 @@ impl Default for SonarIntegration {
             sonar_api_url: "".to_string(),
             sonar_api_key: "".to_string(),
             snmp_community: "public".to_string(),
+            airmax_model_ids: vec![],
+            ltu_model_ids: vec![],
+            active_status_ids: vec![],
         }
     }
 }

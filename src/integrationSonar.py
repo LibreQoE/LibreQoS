@@ -2,9 +2,10 @@ from pythonCheck import checkPythonVersion
 checkPythonVersion()
 import requests
 import subprocess
-from liblqos_python import sonar_api_key, sonar_api_url, snmp_community
-from ispConfig import sonar_airmax_ap_model_ids,sonar_active_status_ids,sonar_ltu_ap_model_ids
-all_models = sonar_airmax_ap_model_ids + sonar_ltu_ap_model_ids
+from liblqos_python import sonar_api_key, sonar_api_url, snmp_community, sonar_airmax_ap_model_ids, \
+  sonar_ltu_ap_model_ids, sonar_active_status_ids
+#from ispConfig import sonar_airmax_ap_model_ids,sonar_active_status_ids,sonar_ltu_ap_model_ids
+all_models = sonar_airmax_ap_model_ids() + sonar_ltu_ap_model_ids()
 from integrationCommon import NetworkGraph, NetworkNode, NodeType
 from multiprocessing.pool import ThreadPool
 
@@ -37,7 +38,7 @@ def sonarRequest(query,variables={}):
   return sonar_list
 
 def getActiveStatuses():
-  if not sonar_active_status_ids:
+  if not sonar_active_status_ids():
     query = """query getActiveStatuses {
                 account_statuses (activates_account: true) {
                   entities {
@@ -53,7 +54,7 @@ def getActiveStatuses():
       status_ids.append(status['id'])
     return status_ids
   else:
-     return sonar_active_status_ids
+     return sonar_active_status_ids()
 
 # Sometimes the IP will be under the field data for an item and sometimes it will be assigned to the inventory item itself.
 def findIPs(inventory_item):
@@ -185,7 +186,7 @@ def getAccounts(sonar_active_status_ids):
               }"""
   
   active_status_ids = []
-  for status_id in sonar_active_status_ids:
+  for status_id in sonar_active_status_ids():
      active_status_ids.append({
                       "attribute": "account_status_id",
                       "operator": "EQ",
@@ -247,9 +248,9 @@ def getAccounts(sonar_active_status_ids):
 def mapApCpeMacs(ap):
     macs = []
     macs_output = None
-    if ap['model'] in sonar_airmax_ap_model_ids: #Tested with Prism Gen2AC and Rocket M5.
+    if ap['model'] in sonar_airmax_ap_model_ids(): #Tested with Prism Gen2AC and Rocket M5.
       macs_output = subprocess.run(['snmpwalk', '-Os', '-v', '1', '-c', snmp_community(), ap['ip'], '.1.3.6.1.4.1.41112.1.4.7.1.1.1'], capture_output=True).stdout.decode('utf8')
-    if ap['model'] in sonar_ltu_ap_model_ids: #Tested with LTU Rocket
+    if ap['model'] in sonar_ltu_ap_model_ids(): #Tested with LTU Rocket
       macs_output = subprocess.run(['snmpwalk', '-Os', '-v', '1', '-c', snmp_community(), ap['ip'], '.1.3.6.1.4.1.41112.1.10.1.4.1.11'], capture_output=True).stdout.decode('utf8')
     if macs_output:
       name_output  = subprocess.run(['snmpwalk', '-Os', '-v', '1', '-c', snmp_community(), ap['ip'], '.1.3.6.1.2.1.1.5.0'], capture_output=True).stdout.decode('utf8')

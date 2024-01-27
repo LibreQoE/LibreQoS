@@ -90,3 +90,6 @@ enable_sonar = false
 sonar_api_key = ""
 sonar_api_url = ""
 snmp_community = "public"
+airmax_model_ids = [ "" ]
+ltu_model_ids = [ "" ]
+active_status_ids = [ "" ]

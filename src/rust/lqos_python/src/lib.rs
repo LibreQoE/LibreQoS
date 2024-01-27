@@ -78,6 +78,9 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_wrapped(wrap_pyfunction!(sonar_api_url))?;
   m.add_wrapped(wrap_pyfunction!(sonar_api_key))?;
   m.add_wrapped(wrap_pyfunction!(snmp_community))?;
+  m.add_wrapped(wrap_pyfunction!(sonar_airmax_ap_model_ids))?;
+  m.add_wrapped(wrap_pyfunction!(sonar_ltu_ap_model_ids))?;
+  m.add_wrapped(wrap_pyfunction!(sonar_active_status_ids))?;
 
   Ok(())
 }
@@ -581,4 +584,22 @@ fn sonar_api_key() -> PyResult<String> {
 fn snmp_community() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
   Ok(config.sonar_integration.snmp_community)
+}
+
+#[pyfunction]
+fn sonar_airmax_ap_model_ids() -> PyResult<Vec<String>> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.sonar_integration.airmax_model_ids)
+}
+
+#[pyfunction]
+fn sonar_ltu_ap_model_ids() -> PyResult<Vec<String>> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.sonar_integration.ltu_model_ids)
+}
+
+#[pyfunction]
+fn sonar_active_status_ids() -> PyResult<Vec<String>> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.sonar_integration.active_status_ids)
 }

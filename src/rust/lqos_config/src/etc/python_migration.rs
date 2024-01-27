@@ -100,8 +100,9 @@ pub struct PythonMigration {
     pub sonar_api_url: String,
     pub sonar_api_key: String,
     pub snmp_community: String,
-    // TODO: It isn't clear what types `sonar_api_key,sonar_airmax_ap_model_ids,sonar_active_status_ids,sonar_ltu_ap_model_ids`
-    // are supposed to be. 
+    pub sonar_airmax_ap_model_ids: Vec<String>,
+    pub sonar_ltu_ap_model_ids: Vec<String>,
+    pub sonar_active_status_ids: Vec<String>,
 
     // TODO: httpRestIntegrationConfig
 }
@@ -177,6 +178,9 @@ impl PythonMigration {
         cfg.sonar_api_key = from_python(&py, "sonar_api_key").unwrap_or("".to_string());
         cfg.sonar_api_url = from_python(&py, "sonar_api_url").unwrap_or("".to_string());
         cfg.snmp_community = from_python(&py, "snmp_community").unwrap_or("public".to_string());
+        cfg.sonar_active_status_ids = from_python(&py, "sonar_active_status_ids").unwrap_or(vec![]);
+        cfg.sonar_airmax_ap_model_ids = from_python(&py, "sonar_airmax_ap_model_ids").unwrap_or(vec![]);
+        cfg.sonar_ltu_ap_model_ids = from_python(&py, "sonar_ltu_ap_model_ids").unwrap_or(vec![]);        
 
         Ok(())
     }
