@@ -93,59 +93,90 @@ pub struct PythonMigration {
     pub api_password: String,
     pub api_host_ip: String,
     pub api_host_port: u32,
+    pub automatic_import_powercode: bool,
+    pub powercode_api_key: String,
+    pub powercode_api_url: String,
+    pub automatic_import_sonar: bool,
+    pub sonar_api_url: String,
+    pub sonar_api_key: String,
+    pub snmp_community: String,
+    // TODO: It isn't clear what types `sonar_api_key,sonar_airmax_ap_model_ids,sonar_active_status_ids,sonar_ltu_ap_model_ids`
+    // are supposed to be. 
+
     // TODO: httpRestIntegrationConfig
 }
 
 impl PythonMigration {
     fn parse(cfg: &mut Self, py: &Python) -> Result<(), PythonMigrationError> {
-        cfg.sqm = from_python(&py, "sqm")?;
-        cfg.monitor_only_mode = from_python(&py, "monitorOnlyMode")?;
+        cfg.sqm = from_python(&py, "sqm").unwrap_or("cake diffserv4".to_string());
+        cfg.monitor_only_mode = from_python(&py, "monitorOnlyMode").unwrap_or(false);
         cfg.upstream_bandwidth_capacity_download_mbps =
-            from_python(&py, "upstreamBandwidthCapacityDownloadMbps")?;
+            from_python(&py, "upstreamBandwidthCapacityDownloadMbps").unwrap_or(1000);
         cfg.upstream_bandwidth_capacity_upload_mbps =
-            from_python(&py, "upstreamBandwidthCapacityUploadMbps")?;
-        cfg.generated_pn_download_mbps = from_python(&py, "generatedPNDownloadMbps")?;
-        cfg.generated_pn_upload_mbps = from_python(&py, "generatedPNUploadMbps")?;
-        cfg.interface_a = from_python(&py, "interfaceA")?;
-        cfg.interface_b = from_python(&py, "interfaceB")?;
+            from_python(&py, "upstreamBandwidthCapacityUploadMbps").unwrap_or(1000);
+        cfg.generated_pn_download_mbps = from_python(&py, "generatedPNDownloadMbps").unwrap_or(1000);
+        cfg.generated_pn_upload_mbps = from_python(&py, "generatedPNUploadMbps").unwrap_or(1000);
+        cfg.interface_a = from_python(&py, "interfaceA").unwrap_or("eth1".to_string());
+        cfg.interface_b = from_python(&py, "interfaceB").unwrap_or("eth2".to_string());
         cfg.queue_refresh_interval_mins = from_python(&py, "queueRefreshIntervalMins").unwrap_or(15);
-        cfg.on_a_stick = from_python(&py, "OnAStick")?;
-        cfg.stick_vlan_a = from_python(&py, "StickVlanA")?;
-        cfg.stick_vlan_b = from_python(&py, "StickVlanB")?;
-        cfg.enable_actual_shell_commands = from_python(&py, "enableActualShellCommands")?;
-        cfg.run_shell_commands_as_sudo = from_python(&py, "runShellCommandsAsSudo")?;
-        cfg.queues_available_override = from_python(&py, "queuesAvailableOverride")?;
-        cfg.use_bin_packing_to_balance_cpu = from_python(&py, "useBinPackingToBalanceCPU")?;
-        cfg.influx_db_enabled = from_python(&py, "influxDBEnabled")?;
-        cfg.influx_db_url = from_python(&py, "influxDBurl")?;
-        cfg.infux_db_bucket = from_python(&py, "influxDBBucket")?;
-        cfg.influx_db_org = from_python(&py, "influxDBOrg")?;
-        cfg.influx_db_token = from_python(&py, "influxDBtoken")?;
-        cfg.circuit_name_use_address = from_python(&py, "circuitNameUseAddress")?;
-        cfg.overwrite_network_json_always = from_python(&py, "overwriteNetworkJSONalways")?;
-        cfg.ignore_subnets = from_python(&py, "ignoreSubnets")?;
-        cfg.allowed_subnets = from_python(&py, "allowedSubnets")?;
-        cfg.automatic_import_splynx = from_python(&py, "automaticImportSplynx")?;
-        cfg.splynx_api_key = from_python(&py, "splynx_api_key")?;
-        cfg.spylnx_api_secret = from_python(&py, "splynx_api_secret")?;
-        cfg.spylnx_api_url = from_python(&py, "splynx_api_url")?;
-        cfg.automatic_import_uisp = from_python(&py, "automaticImportUISP")?;
-        cfg.uisp_auth_token = from_python(&py, "uispAuthToken")?;
-        cfg.uisp_base_url = from_python(&py, "UISPbaseURL")?;
-        cfg.uisp_site = from_python(&py, "uispSite")?;
-        cfg.uisp_strategy = from_python(&py, "uispStrategy")?;
-        cfg.uisp_suspended_strategy = from_python(&py, "uispSuspendedStrategy")?;
-        cfg.airmax_capacity = from_python(&py, "airMax_capacity")?;
-        cfg.ltu_capacity = from_python(&py, "ltu_capacity")?;
-        cfg.exclude_sites = from_python(&py, "excludeSites")?;
-        cfg.find_ipv6_using_mikrotik = from_python(&py, "findIPv6usingMikrotik")?;
-        cfg.bandwidth_overhead_factor = from_python(&py, "bandwidthOverheadFactor")?;
-        cfg.committed_bandwidth_multiplier = from_python(&py, "committedBandwidthMultiplier")?;
-        cfg.exception_cpes = from_python(&py, "exceptionCPEs")?;
-        cfg.api_username = from_python(&py, "apiUsername")?;
-        cfg.api_password = from_python(&py, "apiPassword")?;
-        cfg.api_host_ip = from_python(&py, "apiHostIP")?;
-        cfg.api_host_port = from_python(&py, "apiHostPost")?;
+        cfg.on_a_stick = from_python(&py, "OnAStick").unwrap_or(false);
+        cfg.stick_vlan_a = from_python(&py, "StickVlanA").unwrap_or(0);
+        cfg.stick_vlan_b = from_python(&py, "StickVlanB").unwrap_or(0);
+        cfg.enable_actual_shell_commands = from_python(&py, "enableActualShellCommands").unwrap_or(true);
+        cfg.run_shell_commands_as_sudo = from_python(&py, "runShellCommandsAsSudo").unwrap_or(false);
+        cfg.queues_available_override = from_python(&py, "queuesAvailableOverride").unwrap_or(0);
+        cfg.use_bin_packing_to_balance_cpu = from_python(&py, "useBinPackingToBalanceCPU").unwrap_or(false);
+        
+        // Influx
+        cfg.influx_db_enabled = from_python(&py, "influxDBEnabled").unwrap_or(false);
+        cfg.influx_db_url = from_python(&py, "influxDBurl").unwrap_or("http://localhost:8086".to_string());
+        cfg.infux_db_bucket = from_python(&py, "influxDBBucket").unwrap_or("libreqos".to_string());
+        cfg.influx_db_org = from_python(&py, "influxDBOrg").unwrap_or("Your ISP Name Here".to_string());
+        cfg.influx_db_token = from_python(&py, "influxDBtoken").unwrap_or("".to_string());
+        
+        // Common
+        cfg.circuit_name_use_address = from_python(&py, "circuitNameUseAddress").unwrap_or(true);
+        cfg.overwrite_network_json_always = from_python(&py, "overwriteNetworkJSONalways").unwrap_or(false);
+        cfg.ignore_subnets = from_python(&py, "ignoreSubnets").unwrap_or(vec!["192.168.0.0/16".to_string()]);
+        cfg.allowed_subnets = from_python(&py, "allowedSubnets").unwrap_or(vec!["100.64.0.0/10".to_string()]);
+        cfg.exclude_sites = from_python(&py, "excludeSites").unwrap_or(vec![]);
+        cfg.find_ipv6_using_mikrotik = from_python(&py, "findIPv6usingMikrotik").unwrap_or(false);
+        
+        // Spylnx
+        cfg.automatic_import_splynx = from_python(&py, "automaticImportSplynx").unwrap_or(false);
+        cfg.splynx_api_key = from_python(&py, "splynx_api_key").unwrap_or("Your API Key Here".to_string());
+        cfg.spylnx_api_secret = from_python(&py, "splynx_api_secret").unwrap_or("Your API Secret Here".to_string());
+        cfg.spylnx_api_url = from_python(&py, "splynx_api_url").unwrap_or("https://your.splynx.url/api/v1".to_string());
+
+        // UISP
+        cfg.automatic_import_uisp = from_python(&py, "automaticImportUISP").unwrap_or(false);
+        cfg.uisp_auth_token = from_python(&py, "uispAuthToken").unwrap_or("Your API Token Here".to_string());
+        cfg.uisp_base_url = from_python(&py, "UISPbaseURL").unwrap_or("https://your.uisp.url".to_string());
+        cfg.uisp_site = from_python(&py, "uispSite").unwrap_or("Your parent site name here".to_string());
+        cfg.uisp_strategy = from_python(&py, "uispStrategy").unwrap_or("full".to_string());
+        cfg.uisp_suspended_strategy = from_python(&py, "uispSuspendedStrategy").unwrap_or("none".to_string());
+        cfg.airmax_capacity = from_python(&py, "airMax_capacity").unwrap_or(0.65);
+        cfg.ltu_capacity = from_python(&py, "ltu_capacity").unwrap_or(0.9);
+        cfg.bandwidth_overhead_factor = from_python(&py, "bandwidthOverheadFactor").unwrap_or(1.0);
+        cfg.committed_bandwidth_multiplier = from_python(&py, "committedBandwidthMultiplier").unwrap_or(0.98);
+        cfg.exception_cpes = from_python(&py, "exceptionCPEs").unwrap_or(HashMap::new());
+
+        // API
+        cfg.api_username = from_python(&py, "apiUsername").unwrap_or("testUser".to_string());
+        cfg.api_password = from_python(&py, "apiPassword").unwrap_or("testPassword".to_string());
+        cfg.api_host_ip = from_python(&py, "apiHostIP").unwrap_or("127.0.0.1".to_string());
+        cfg.api_host_port = from_python(&py, "apiHostPost").unwrap_or(5000);
+
+        // Powercode
+        cfg.automatic_import_powercode = from_python(&py, "automaticImportPowercode").unwrap_or(false);
+        cfg.powercode_api_key = from_python(&py,"powercode_api_key").unwrap_or("".to_string());
+        cfg.powercode_api_url = from_python(&py,"powercode_api_url").unwrap_or("".to_string());
+
+        // Sonar
+        cfg.automatic_import_sonar = from_python(&py, "automaticImportSonar").unwrap_or(false);
+        cfg.sonar_api_key = from_python(&py, "sonar_api_key").unwrap_or("".to_string());
+        cfg.sonar_api_url = from_python(&py, "sonar_api_url").unwrap_or("".to_string());
+        cfg.snmp_community = from_python(&py, "snmp_community").unwrap_or("public".to_string());
 
         Ok(())
     }

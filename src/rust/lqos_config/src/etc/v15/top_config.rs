@@ -62,6 +62,9 @@ pub struct Config {
 
     /// Powercode Integration
     pub powercode_integration: super::powercode_integration::PowercodeIntegration,
+
+    /// Sonar Integration
+    pub sonar_integration: super::sonar_integration::SonarIntegration,
 }
 
 impl Config {
@@ -123,6 +126,7 @@ impl Default for Config {
             spylnx_integration: super::spylnx_integration::SplynxIntegration::default(),
             uisp_integration: super::uisp_integration::UispIntegration::default(),
             powercode_integration: super::powercode_integration::PowercodeIntegration::default(),
+            sonar_integration: super::sonar_integration::SonarIntegration::default(),
             packet_capture_time: 10,
             queue_check_period_ms: 1000,
         }

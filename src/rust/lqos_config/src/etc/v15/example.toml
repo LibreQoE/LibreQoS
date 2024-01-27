@@ -84,3 +84,9 @@ use_ptmp_as_parent = false
 enable_powercode = false
 powercode_api_key = ""
 powercode_api_url = ""
+
+[sonar_integration]
+enable_sonar = false
+sonar_api_key = ""
+sonar_api_url = ""
+snmp_community = "public"

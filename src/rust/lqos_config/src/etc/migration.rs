@@ -86,6 +86,8 @@ fn do_migration_14_to_15(
     migrate_integration_common(python_config, &mut new_config)?;
     migrate_spylnx(python_config, &mut new_config)?;
     migrate_uisp(python_config, &mut new_config)?;
+    migrate_powercode(python_config, &mut new_config)?;
+    migrate_sonar(python_config, &mut new_config)?;
     migrate_queues( python_config, &mut new_config)?;
 
     new_config.validate().unwrap(); // Left as an upwrap because this should *never* happen
@@ -225,6 +227,27 @@ fn migrate_spylnx(
     new_config.spylnx_integration.api_key = python_config.splynx_api_key.clone();
     new_config.spylnx_integration.api_secret = python_config.spylnx_api_secret.clone();
     new_config.spylnx_integration.url = python_config.spylnx_api_url.clone();
+    Ok(())
+}
+
+fn migrate_powercode(
+    python_config: &PythonMigration,
+    new_config: &mut Config,
+) -> Result<(), MigrationError> {
+    new_config.powercode_integration.enable_powercode = python_config.automatic_import_powercode;
+    new_config.powercode_integration.powercode_api_url = python_config.powercode_api_url.clone();
+    new_config.powercode_integration.powercode_api_key = python_config.powercode_api_key.clone();
+    Ok(())
+}
+
+fn migrate_sonar(
+    python_config: &PythonMigration,
+    new_config: &mut Config,
+) -> Result<(), MigrationError> {
+    new_config.sonar_integration.enable_sonar = python_config.automatic_import_sonar;
+    new_config.sonar_integration.sonar_api_url = python_config.sonar_api_url.clone();
+    new_config.sonar_integration.sonar_api_key = python_config.sonar_api_key.clone();
+    new_config.sonar_integration.snmp_community = python_config.snmp_community.clone();
     Ok(())
 }
 
