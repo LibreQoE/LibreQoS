@@ -278,11 +278,11 @@ static __always_inline bool dissector_find_l3_offset(
 
 static __always_inline struct tcphdr *get_tcp_header(struct dissector_t *dissector)
 {
-    if (dissector->eth_type == ETH_P_IP)
+    if (dissector->eth_type == ETH_P_IP && dissector->ip_header.iph->protocol == IPPROTO_TCP)
     {
         return (struct tcphdr *)((char *)dissector->ip_header.iph + (dissector->ip_header.iph->ihl * 4));
     }
-    else if (dissector->eth_type == ETH_P_IPV6)
+    else if (dissector->eth_type == ETH_P_IPV6 && dissector->ip_header.ip6h->nexthdr == IPPROTO_TCP)
     {
         return (struct tcphdr *)(dissector->ip_header.ip6h + 1);
     }
