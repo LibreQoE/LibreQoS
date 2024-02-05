@@ -146,7 +146,7 @@ class NetworkGraph:
 
 	def addRawNode(self, node: NetworkNode) -> None:
 		# Adds a NetworkNode to the graph, unchanged.
-		# If a site is excluded (via excludedSites in ispConfig)
+		# If a site is excluded (via excludedSites in lqos.conf)
 		# it won't be added
 		if not node.displayName in self.excludeSites:
 			# TODO: Fixup exceptionCPE handling

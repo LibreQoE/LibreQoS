@@ -182,6 +182,13 @@ impl PythonMigration {
         cfg.sonar_airmax_ap_model_ids = from_python(&py, "sonar_airmax_ap_model_ids").unwrap_or(vec![]);
         cfg.sonar_ltu_ap_model_ids = from_python(&py, "sonar_ltu_ap_model_ids").unwrap_or(vec![]);        
 
+        // InfluxDB
+        cfg.influx_db_enabled = from_python(&py, "influxDBEnabled").unwrap_or(false);
+        cfg.influx_db_url = from_python(&py, "influxDBurl").unwrap_or("http://localhost:8086".to_string());
+        cfg.infux_db_bucket = from_python(&py, "influxDBBucket").unwrap_or("libreqos".to_string());
+        cfg.influx_db_org = from_python(&py, "influxDBOrg").unwrap_or("Your ISP Name Here".to_string());
+        cfg.influx_db_token = from_python(&py, "influxDBtoken").unwrap_or("".to_string());
+
         Ok(())
     }
 

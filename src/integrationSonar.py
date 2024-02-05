@@ -4,7 +4,6 @@ import requests
 import subprocess
 from liblqos_python import sonar_api_key, sonar_api_url, snmp_community, sonar_airmax_ap_model_ids, \
   sonar_ltu_ap_model_ids, sonar_active_status_ids
-#from ispConfig import sonar_airmax_ap_model_ids,sonar_active_status_ids,sonar_ltu_ap_model_ids
 all_models = sonar_airmax_ap_model_ids() + sonar_ltu_ap_model_ids()
 from integrationCommon import NetworkGraph, NetworkNode, NodeType
 from multiprocessing.pool import ThreadPool
@@ -120,7 +119,7 @@ def getSitesAndAps():
               }
 
   sites_and_aps = sonarRequest(query,variables)
-  # This should only return sites that have equipment on them that is in the list sonar_ubiquiti_ap_model_ids in ispConfig.py
+  # This should only return sites that have equipment on them that is in the list sonar_ubiquiti_ap_model_ids in lqos.conf
   sites = []
   aps = []
   for site in sites_and_aps:

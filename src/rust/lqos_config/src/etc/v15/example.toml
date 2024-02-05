@@ -93,3 +93,10 @@ snmp_community = "public"
 airmax_model_ids = [ "" ]
 ltu_model_ids = [ "" ]
 active_status_ids = [ "" ]
+
+[influxdb]
+enable_influxdb = false
+url = "http://localhost:8086"
+org = "libreqos"
+bucket = "Your ISP Name Here"
+token = ""

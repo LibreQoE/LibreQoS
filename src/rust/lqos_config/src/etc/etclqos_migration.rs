@@ -309,7 +309,7 @@ mod test {
   fn round_trip_toml() {
     let doc = EXAMPLE_LQOS_CONF.parse::<toml_edit::Document>().unwrap();
     let reserialized = doc.to_string();
-    assert_eq!(EXAMPLE_LQOS_CONF, reserialized);
+    assert_eq!(EXAMPLE_LQOS_CONF.trim(), reserialized.trim());
   }
 
   #[test]

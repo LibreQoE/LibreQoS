@@ -13,6 +13,7 @@ mod spylnx_integration;
 mod uisp_integration;
 mod powercode_integration;
 mod sonar_integration;
+mod influxdb;
 pub use bridge::*;
 pub use long_term_stats::LongTermStats;
 pub use tuning::Tunables;

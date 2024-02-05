@@ -81,6 +81,11 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_wrapped(wrap_pyfunction!(sonar_airmax_ap_model_ids))?;
   m.add_wrapped(wrap_pyfunction!(sonar_ltu_ap_model_ids))?;
   m.add_wrapped(wrap_pyfunction!(sonar_active_status_ids))?;
+  m.add_wrapped(wrap_pyfunction!(influx_db_enabled))?;
+  m.add_wrapped(wrap_pyfunction!(influx_db_bucket))?;
+  m.add_wrapped(wrap_pyfunction!(influx_db_org))?;
+  m.add_wrapped(wrap_pyfunction!(influx_db_token))?;
+  m.add_wrapped(wrap_pyfunction!(influx_db_url))?;
 
   Ok(())
 }
@@ -602,4 +607,34 @@ fn sonar_ltu_ap_model_ids() -> PyResult<Vec<String>> {
 fn sonar_active_status_ids() -> PyResult<Vec<String>> {
   let config = lqos_config::load_config().unwrap();
   Ok(config.sonar_integration.active_status_ids)
+}
+
+#[pyfunction]
+fn influx_db_enabled() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.influxdb.enable_influxdb)
+}
+
+#[pyfunction]
+fn influx_db_bucket() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.influxdb.bucket)
+}
+
+#[pyfunction]
+fn influx_db_org() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.influxdb.org)
+}
+
+#[pyfunction]
+fn influx_db_token() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.influxdb.token)
+}
+
+#[pyfunction]
+fn influx_db_url() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.influxdb.url)
 }

@@ -65,6 +65,9 @@ pub struct Config {
 
     /// Sonar Integration
     pub sonar_integration: super::sonar_integration::SonarIntegration,
+
+    /// InfluxDB Configuration
+    pub influxdb: super::influxdb::InfluxDbConfig,
 }
 
 impl Config {
@@ -127,6 +130,7 @@ impl Default for Config {
             uisp_integration: super::uisp_integration::UispIntegration::default(),
             powercode_integration: super::powercode_integration::PowercodeIntegration::default(),
             sonar_integration: super::sonar_integration::SonarIntegration::default(),
+            influxdb: super::influxdb::InfluxDbConfig::default(),
             packet_capture_time: 10,
             queue_check_period_ms: 1000,
         }

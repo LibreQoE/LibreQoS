@@ -89,6 +89,7 @@ fn do_migration_14_to_15(
     migrate_powercode(python_config, &mut new_config)?;
     migrate_sonar(python_config, &mut new_config)?;
     migrate_queues( python_config, &mut new_config)?;
+    migrate_influx(python_config, &mut new_config)?;
 
     new_config.validate().unwrap(); // Left as an upwrap because this should *never* happen
     Ok(new_config)
@@ -269,6 +270,18 @@ fn migrate_uisp(
     new_config.uisp_integration.commit_bandwidth_multiplier =
         python_config.committed_bandwidth_multiplier;
     // TODO: ExceptionCPEs is going to require some real work
+    Ok(())
+}
+
+fn migrate_influx(
+    python_config: &PythonMigration,
+    new_config: &mut Config,
+) -> Result<(), MigrationError> {
+    new_config.influxdb.enable_influxdb = python_config.influx_db_enabled;
+    new_config.influxdb.url = python_config.influx_db_url.clone();
+    new_config.influxdb.bucket = python_config.infux_db_bucket.clone();
+    new_config.influxdb.org = python_config.influx_db_org.clone();
+    new_config.influxdb.token = python_config.influx_db_token.clone();
     Ok(())
 }
 
