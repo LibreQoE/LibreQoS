@@ -2,26 +2,23 @@ mod lshw;
 mod version;
 use std::{time::Duration, net::TcpStream, io::Write};
 use lqos_bus::anonymous::{AnonymousUsageV1, build_stats};
-use lqos_config::{EtcLqos, LibreQoSConfig};
 use lqos_sys::num_possible_cpus;
-use sysinfo::{System, SystemExt, CpuExt};
+use sysinfo::System;
 use crate::{shaped_devices_tracker::{SHAPED_DEVICES, NETWORK_JSON}, stats::{HIGH_WATERMARK_DOWN, HIGH_WATERMARK_UP}};
 
 const SLOW_START_SECS: u64 = 1;
 const INTERVAL_SECS: u64 = 60 * 60 * 24;
 
 pub async fn start_anonymous_usage() {
-    if let Ok(cfg) = EtcLqos::load() {
-        if let Some(usage) = cfg.usage_stats {
-            if usage.send_anonymous {
-                std::thread::spawn(|| {
-                    std::thread::sleep(Duration::from_secs(SLOW_START_SECS));
-                    loop {
-                        let _ = anonymous_usage_dump();
-                        std::thread::sleep(Duration::from_secs(INTERVAL_SECS));
-                    }
-                });
-            }
+    if let Ok(cfg) = lqos_config::load_config() {
+        if cfg.usage_stats.send_anonymous {
+            std::thread::spawn(|| {
+                std::thread::sleep(Duration::from_secs(SLOW_START_SECS));
+                loop {
+                    let _ = anonymous_usage_dump();
+                    std::thread::sleep(Duration::from_secs(INTERVAL_SECS));
+                }
+            });
         }
     }
 }
@@ -33,7 +30,7 @@ fn anonymous_usage_dump() -> anyhow::Result<()> {
     sys.refresh_all();
     data.total_memory = sys.total_memory();
     data.available_memory = sys.available_memory();
-    if let Some(kernel) = sys.kernel_version() {
+    if let Some(kernel) = sysinfo::System::kernel_version() {
         data.kernel_version = kernel;
     }
     data.usable_cores = num_possible_cpus().unwrap_or(0);
@@ -52,30 +49,24 @@ fn anonymous_usage_dump() -> anyhow::Result<()> {
         data.distro = pv.trim().to_string();
     }
 
-    if let Ok(cfg) = LibreQoSConfig::load() {
-        data.sqm = cfg.sqm;
-        data.monitor_mode = cfg.monitor_mode;
+    if let Ok(cfg) = lqos_config::load_config() {
+        data.sqm = cfg.queues.default_sqm.clone();
+        data.monitor_mode = cfg.queues.monitor_only;
         data.total_capacity = (
-            cfg.total_download_mbps,
-            cfg.total_upload_mbps,
+            cfg.queues.downlink_bandwidth_mbps,
+            cfg.queues.uplink_bandwidth_mbps,
         );
         data.generated_pdn_capacity = (
-            cfg.generated_download_mbps,
-            cfg.generated_upload_mbps,
+            cfg.queues.generated_pn_download_mbps,
+            cfg.queues.generated_pn_upload_mbps,
         );
-        data.on_a_stick = cfg.on_a_stick_mode;
-    }
+        data.on_a_stick = cfg.on_a_stick_mode();
 
-    if let Ok(cfg) = EtcLqos::load() {
-        if let Some(node_id) = cfg.node_id {
-            data.node_id = node_id;
-            if let Some(bridge) = cfg.bridge {
-                data.using_xdp_bridge = bridge.use_xdp_bridge;
-            }
+        data.node_id = cfg.node_id.clone();
+        if let Some(bridge) = cfg.bridge {
+            data.using_xdp_bridge = bridge.use_xdp_bridge;
         }
-        if let Some(anon) = cfg.usage_stats {
-            server = anon.anonymous_server;
-        }
+        server = cfg.usage_stats.anonymous_server;
     }
 
     data.git_hash = env!("GIT_HASH").to_string();

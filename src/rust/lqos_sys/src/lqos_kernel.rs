@@ -205,21 +205,22 @@ pub fn attach_xdp_and_tc_to_interface(
   }
 
   // Attach to the ingress IF it is configured
-  if let Ok(etc) = lqos_config::EtcLqos::load() {
+  if let Ok(etc) = lqos_config::load_config() {
     if let Some(bridge) = &etc.bridge {
       if bridge.use_xdp_bridge {
         // Enable "promiscuous" mode on interfaces
-        for mapping in bridge.interface_mapping.iter() {
-          info!("Enabling promiscuous mode on {}", &mapping.name);
-          std::process::Command::new("/bin/ip")
-            .args(["link", "set", &mapping.name, "promisc", "on"])
-            .output()?;
-        }
+        info!("Enabling promiscuous mode on {}", &bridge.to_internet);
+        std::process::Command::new("/bin/ip")
+              .args(["link", "set", &bridge.to_internet, "promisc", "on"])
+              .output()?;
+        info!("Enabling promiscuous mode on {}", &bridge.to_network);
+        std::process::Command::new("/bin/ip")
+          .args(["link", "set", &bridge.to_network, "promisc", "on"])
+          .output()?;
 
         // Build the interface and vlan map entries
         crate::bifrost_maps::clear_bifrost()?;
-        crate::bifrost_maps::map_interfaces(&bridge.interface_mapping)?;
-        crate::bifrost_maps::map_vlans(&bridge.vlan_mapping)?;
+        crate::bifrost_maps::map_multi_interface_mode(&bridge.to_internet, &bridge.to_network)?;
 
         // Actually attach the TC ingress program
         let error = unsafe {
@@ -228,6 +229,26 @@ pub fn attach_xdp_and_tc_to_interface(
         if error != 0 {
           return Err(Error::msg("Unable to attach TC Ingress to interface"));
         }
+      }
+    }
+
+    if let Some(stick) = &etc.single_interface {
+      // Enable "promiscuous" mode on interface
+      info!("Enabling promiscuous mode on {}", &stick.interface);
+      std::process::Command::new("/bin/ip")
+        .args(["link", "set", &stick.interface, "promisc", "on"])
+        .output()?;
+
+      // Build the interface and vlan map entries
+      crate::bifrost_maps::clear_bifrost()?;
+      crate::bifrost_maps::map_single_interface_mode(&stick.interface, stick.internet_vlan as u32, stick.network_vlan as u32)?;
+
+      // Actually attach the TC ingress program
+      let error = unsafe {
+        bpf::tc_attach_ingress(interface_index as i32, false, skeleton)
+      };
+      if error != 0 {
+        return Err(Error::msg("Unable to attach TC Ingress to interface"));
       }
     }
   }

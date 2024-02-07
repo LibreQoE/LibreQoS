@@ -1,6 +1,5 @@
 use super::{queue_node::QueueNode, QueueStructureError};
 use log::error;
-use lqos_config::EtcLqos;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
@@ -10,7 +9,7 @@ pub struct QueueNetwork {
 
 impl QueueNetwork {
   pub fn path() -> Result<PathBuf, QueueStructureError> {
-    let cfg = EtcLqos::load();
+    let cfg = lqos_config::load_config();
     if cfg.is_err() {
       error!("unable to read /etc/lqos.conf");
       return Err(QueueStructureError::LqosConf);

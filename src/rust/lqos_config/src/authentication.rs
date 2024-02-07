@@ -59,7 +59,7 @@ pub struct WebUsers {
 
 impl WebUsers {
   fn path() -> Result<PathBuf, AuthenticationError> {
-    let base_path = crate::EtcLqos::load()
+    let base_path = crate::load_config()
       .map_err(|_| AuthenticationError::UnableToLoadEtcLqos)?
       .lqos_directory;
     let filename = Path::new(&base_path).join("lqusers.toml");

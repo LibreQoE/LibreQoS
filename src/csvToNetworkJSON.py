@@ -3,8 +3,7 @@ checkPythonVersion()
 import os
 import csv
 import json
-from ispConfig import uispSite, uispStrategy, overwriteNetworkJSONalways
-from ispConfig import generatedPNUploadMbps, generatedPNDownloadMbps, upstreamBandwidthCapacityDownloadMbps, upstreamBandwidthCapacityUploadMbps
+from liblqos_python import overwrite_network_json_always
 from integrationCommon import NetworkGraph, NetworkNode, NodeType
 
 def csvToNetworkJSONfile():
@@ -46,7 +45,7 @@ def csvToNetworkJSONfile():
 	net.prepareTree()
 	net.plotNetworkGraph(False)
 	if net.doesNetworkJsonExist():
-		if overwriteNetworkJSONalways:
+		if overwrite_network_json_always():
 			net.createNetworkJson()
 		else:
 			print("network.json already exists and overwriteNetworkJSONalways set to False. Leaving in-place.")

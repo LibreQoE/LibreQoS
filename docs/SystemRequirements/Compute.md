@@ -14,8 +14,8 @@ Single-thread CPU performance will determine the max throughput of a single HTB 
 | 250 Mbps            | 1250                     |
 | 500 Mbps            | 1500                     |
 | 1 Gbps              | 2000                     |
-| 2 Gbps              | 3000                     |
-| 4 Gbps              | 4000                     |
+| 3 Gbps              | 3000                     |
+| 10 Gbps             | 4000                     |
 
 Below is a table of approximate aggregate throughput capacity, assuming a a CPU with a [single thread](https://www.cpubenchmark.net/singleThread.html#server-thread) performance of 2700 or greater:
 
@@ -26,8 +26,8 @@ Below is a table of approximate aggregate throughput capacity, assuming a a CPU 
 | 5 Gbps                  | 6             |
 | 10 Gbps                 | 8             |
 | 20 Gbps                 | 16            |
-| 50 Gbps*                | 32            |
-
+| 50 Gbps                 | 32            |
+| 100 Gbps *              | 64            |
 (* Estimated)
 
 So for example, an ISP delivering 1Gbps service plans with 10Gbps aggregate throughput would choose a CPU with a 2500+ single-thread score and 8 cores, such as the Intel Xeon E-2388G @ 3.20GHz.

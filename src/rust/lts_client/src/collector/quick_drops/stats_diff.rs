@@ -1,3 +1,4 @@
+use lqos_config::load_config;
 use tokio::sync::Mutex;
 use once_cell::sync::Lazy;
 use super::CakeStats;
@@ -23,10 +24,10 @@ impl CakeTracker {
     }
 
     pub(crate) async fn update(&mut self) -> Option<(Vec<CakeStats>, Vec<CakeStats>)> {
-        if let Ok(cfg) = lqos_config::LibreQoSConfig::load() {
-            let outbound = &cfg.internet_interface;
-            let inbound = &cfg.isp_interface;
-            if cfg.on_a_stick_mode {
+        if let Ok(cfg) = load_config() {
+            let outbound = &cfg.internet_interface();
+            let inbound = &cfg.isp_interface();
+            if cfg.on_a_stick_mode() {
                 let reader = super::AsyncQueueReader::new(outbound);
                 if let Ok((Some(up), Some(down))) = reader.run_on_a_stick().await {
                     return self.read_up_down(up, down);

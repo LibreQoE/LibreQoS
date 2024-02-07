@@ -1,5 +1,5 @@
 use crate::{pki::generate_new_keypair, dryoc::dryocbox::{KeyPair, PublicKey}, transport_data::{exchange_keys_with_license_server, LicenseReply}};
-use lqos_config::EtcLqos;
+use lqos_config::load_config;
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
 
@@ -11,14 +11,14 @@ pub(crate) async fn store_server_public_key(key: &PublicKey) {
 }
 
 pub(crate) async fn key_exchange() -> bool {
-    let cfg = EtcLqos::load().unwrap();
-    let node_id = cfg.node_id.unwrap();
-    let node_name = if let Some(node_name) = cfg.node_name {
-        node_name
+    let cfg = load_config().unwrap();
+    let node_id = cfg.node_id.clone();
+    let node_name = if !cfg.node_name.is_empty() {
+        cfg.node_name
     } else {
         node_id.clone()
     };
-    let license_key = cfg.long_term_stats.unwrap().license_key.unwrap();
+    let license_key = cfg.long_term_stats.license_key.unwrap();
     let keypair = (KEYPAIR.read().await).clone();
     match exchange_keys_with_license_server(node_id, node_name, license_key, keypair.public_key.clone()).await {
         Ok(LicenseReply::MyPublicKey { public_key }) => {

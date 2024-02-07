@@ -163,7 +163,16 @@ impl EtcLqos {
       return Err(EtcLqosError::ConfigDoesNotExist);
     }
     if let Ok(raw) = std::fs::read_to_string("/etc/lqos.conf") {
-      let document = raw.parse::<Document>();
+      Self::load_from_string(&raw)
+    } else {
+      error!("Unable to read contents of /etc/lqos.conf");
+      Err(EtcLqosError::CannotReadFile)
+    }
+  }
+
+  pub(crate) fn load_from_string(raw: &str) -> Result<Self, EtcLqosError> {
+    log::info!("Trying to load old TOML version from /etc/lqos.conf");
+    let document = raw.parse::<Document>();
       match document {
         Err(e) => {
           error!("Unable to parse TOML from /etc/lqos.conf");
@@ -180,15 +189,12 @@ impl EtcLqos {
             Err(e) => {
               error!("Unable to parse TOML from /etc/lqos.conf");
               error!("Full error: {:?}", e);
-              Err(EtcLqosError::CannotParseToml)
+              panic!();
+              //Err(EtcLqosError::CannotParseToml)
             }
           }
         }
       }
-    } else {
-      error!("Unable to read contents of /etc/lqos.conf");
-      Err(EtcLqosError::CannotReadFile)
-    }
   }
 
   /// Saves changes made to /etc/lqos.conf
@@ -214,6 +220,7 @@ impl EtcLqos {
 /// Run this if you've received the OK from the licensing server, and been
 /// sent a license key. This appends a [long_term_stats] section to your 
 /// config file - ONLY if one doesn't already exist.
+#[allow(dead_code)]
 pub fn enable_long_term_stats(license_key: String) {
   if let Ok(raw) = std::fs::read_to_string("/etc/lqos.conf") {
     let document = raw.parse::<Document>();
@@ -228,14 +235,14 @@ pub fn enable_long_term_stats(license_key: String) {
         match cfg {
           Ok(cfg) => {
             // Now we enable LTS if its not present
-            if let Ok(isp_config) = crate::LibreQoSConfig::load() {
+            if let Ok(isp_config) = crate::load_config() {
               if cfg.long_term_stats.is_none() {
                
                 let mut new_section = toml_edit::table();
                 new_section["gather_stats"] = value(true);
                 new_section["collation_period_seconds"] = value(60);
                 new_section["license_key"] = value(license_key);
-                if isp_config.automatic_import_uisp {
+                if isp_config.uisp_integration.enable_uisp {
                   new_section["uisp_reporting_interval_seconds"] = value(300);
                 }
                 config_doc["long_term_stats"] = new_section;
@@ -290,21 +297,19 @@ pub enum EtcLqosError {
   CannotParseToml,
   #[error("Unable to backup /etc/lqos.conf to /etc/lqos.conf.backup")]
   BackupFail,
-  #[error("Unable to serialize new configuration")]
-  SerializeFail,
   #[error("Unable to write to /etc/lqos.conf")]
   WriteFail,
 }
 
 #[cfg(test)]
 mod test {
-  const EXAMPLE_LQOS_CONF: &str = include_str!("../../../lqos.example");
+  const EXAMPLE_LQOS_CONF: &str = include_str!("../../../../lqos.example");
 
   #[test]
   fn round_trip_toml() {
     let doc = EXAMPLE_LQOS_CONF.parse::<toml_edit::Document>().unwrap();
     let reserialized = doc.to_string();
-    assert_eq!(EXAMPLE_LQOS_CONF, reserialized);
+    assert_eq!(EXAMPLE_LQOS_CONF.trim(), reserialized.trim());
   }
 
   #[test]

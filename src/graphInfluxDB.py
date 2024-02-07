@@ -10,8 +10,7 @@ import psutil
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
 
-from ispConfig import interfaceA, interfaceB, influxDBEnabled, influxDBBucket, influxDBOrg, influxDBtoken, influxDBurl, sqm
-
+from liblqos_python import interface_a, interface_b, influx_db_enabled, influx_db_bucket, influx_db_org, influx_db_token, influx_db_url, sqm
 
 def getInterfaceStats(interface):
 	command = 'tc -j -s qdisc show dev ' + interface
@@ -29,7 +28,7 @@ def chunk_list(l, n):
 		yield l[i:i + n]
 
 def getCircuitBandwidthStats(subscriberCircuits, tinsStats):
-	interfaces = [interfaceA, interfaceB]
+	interfaces = [interface_a(), interface_b()]
 	ifaceStats = list(map(getInterfaceStats, interfaces))
 	
 	for circuit in subscriberCircuits:
@@ -79,7 +78,7 @@ def getCircuitBandwidthStats(subscriberCircuits, tinsStats):
 				else:
 					overloadFactor = 0.0
 				
-				if 'cake diffserv4' in sqm:
+				if 'cake diffserv4' in sqm():
 					tinCounter = 1
 					for tin in element['tins']:
 						sent_packets = float(tin['sent_packets'])
@@ -106,7 +105,7 @@ def getCircuitBandwidthStats(subscriberCircuits, tinsStats):
 				circuit['stats']['currentQuery']['packetsSent' + dirSuffix] = packets
 				circuit['stats']['currentQuery']['overloadFactor' + dirSuffix] = overloadFactor
 				
-				#if 'cake diffserv4' in sqm:
+				#if 'cake diffserv4' in sqm():
 				#	circuit['stats']['currentQuery']['tins'] = theseTins
 
 		circuit['stats']['currentQuery']['time'] = datetime.now().isoformat()
@@ -428,9 +427,9 @@ def refreshBandwidthGraphs():
 	parentNodes = getParentNodeBandwidthStats(parentNodes, subscriberCircuits)
 	print("Writing data to InfluxDB")
 	client = InfluxDBClient(
-		url=influxDBurl,
-		token=influxDBtoken,
-		org=influxDBOrg
+		url=influx_db_url(),
+		token=influx_db_token(),
+		org=influx_db_org()
 	)
 	
 	# Record current timestamp, use for all points added
@@ -463,7 +462,7 @@ def refreshBandwidthGraphs():
 			queriesToSend.append(p)
 
 		if seenSomethingBesides0s:
-			write_api.write(bucket=influxDBBucket, record=queriesToSend)
+			write_api.write(bucket=influx_db_bucket(), record=queriesToSend)
 		# print("Added " + str(len(queriesToSend)) + " points to InfluxDB.")
 		queriesToSendCount += len(queriesToSend)
 
@@ -488,11 +487,11 @@ def refreshBandwidthGraphs():
 		queriesToSend.append(p)
 
 	if seenSomethingBesides0s:
-		write_api.write(bucket=influxDBBucket, record=queriesToSend)
+		write_api.write(bucket=influx_db_bucket(), record=queriesToSend)
 	# print("Added " + str(len(queriesToSend)) + " points to InfluxDB.")
 	queriesToSendCount += len(queriesToSend)
 	
-	if 'cake diffserv4' in sqm:
+	if 'cake diffserv4' in sqm():
 		seenSomethingBesides0s = False
 		queriesToSend = []
 		listOfTins = ['Bulk', 'BestEffort', 'Video', 'Voice']
@@ -507,7 +506,7 @@ def refreshBandwidthGraphs():
 				queriesToSend.append(p)
 
 		if seenSomethingBesides0s:
-			write_api.write(bucket=influxDBBucket, record=queriesToSend)
+			write_api.write(bucket=influx_db_bucket(), record=queriesToSend)
 		# print("Added " + str(len(queriesToSend)) + " points to InfluxDB.")
 		queriesToSendCount += len(queriesToSend)
 	
@@ -517,7 +516,7 @@ def refreshBandwidthGraphs():
 	for index, item in enumerate(cpuVals):
 		p = Point('CPU').field('CPU_' + str(index), item)
 		queriesToSend.append(p)
-	write_api.write(bucket=influxDBBucket, record=queriesToSend)
+	write_api.write(bucket=influx_db_bucket(), record=queriesToSend)
 	queriesToSendCount += len(queriesToSend)
 	
 	print("Added " + str(queriesToSendCount) + " points to InfluxDB.")
@@ -557,9 +556,9 @@ def refreshLatencyGraphs():
 	parentNodes = getParentNodeLatencyStats(parentNodes, subscriberCircuits)
 	print("Writing data to InfluxDB")
 	client = InfluxDBClient(
-		url=influxDBurl,
-		token=influxDBtoken,
-		org=influxDBOrg
+		url=influx_db_url(),
+		token=influx_db_token(),
+		org=influx_db_org()
 	)
 	
 	# Record current timestamp, use for all points added
@@ -577,7 +576,7 @@ def refreshLatencyGraphs():
 				tcpLatency = float(circuit['stats']['sinceLastQuery']['tcpLatency'])
 				p = Point('TCP Latency').tag("Circuit", circuit['circuitName']).tag("ParentNode", circuit['ParentNode']).tag("Type", "Circuit").field("TCP Latency", tcpLatency).time(timestamp)
 				queriesToSend.append(p)
-		write_api.write(bucket=influxDBBucket, record=queriesToSend)
+		write_api.write(bucket=influx_db_bucket(), record=queriesToSend)
 		queriesToSendCount += len(queriesToSend)
 
 	queriesToSend = []
@@ -587,7 +586,7 @@ def refreshLatencyGraphs():
 			p = Point('TCP Latency').tag("Device", parentNode['parentNodeName']).tag("ParentNode", parentNode['parentNodeName']).tag("Type", "Parent Node").field("TCP Latency", tcpLatency).time(timestamp)
 			queriesToSend.append(p)
 	
-	write_api.write(bucket=influxDBBucket, record=queriesToSend)
+	write_api.write(bucket=influx_db_bucket(), record=queriesToSend)
 	queriesToSendCount += len(queriesToSend)
 	
 	listOfAllLatencies = []
@@ -597,7 +596,7 @@ def refreshLatencyGraphs():
 	if len(listOfAllLatencies) > 0:
 		currentNetworkLatency = statistics.median(listOfAllLatencies)
 		p = Point('TCP Latency').tag("Type", "Network").field("TCP Latency", currentNetworkLatency).time(timestamp)
-		write_api.write(bucket=influxDBBucket, record=p)
+		write_api.write(bucket=influx_db_bucket(), record=p)
 		queriesToSendCount += 1
 	
 	print("Added " + str(queriesToSendCount) + " points to InfluxDB.")

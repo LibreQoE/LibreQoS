@@ -1,7 +1,7 @@
 use crate::{auth_guard::AuthGuard, cache_control::NoCache};
 use default_net::get_interfaces;
 use lqos_bus::{bus_request, BusRequest, BusResponse};
-use lqos_config::{EtcLqos, LibreQoSConfig, Tunables};
+use lqos_config::{Tunables, Config};
 use rocket::{fs::NamedFile, serde::{json::Json, Serialize}};
 
 // Note that NoCache can be replaced with a cache option
@@ -30,31 +30,13 @@ pub async fn get_nic_list<'a>(
   NoCache::new(Json(result))
 }
 
-#[get("/api/python_config")]
-pub async fn get_current_python_config(
-  _auth: AuthGuard,
-) -> NoCache<Json<LibreQoSConfig>> {
-  let config = lqos_config::LibreQoSConfig::load().unwrap();
-  println!("{config:#?}");
-  NoCache::new(Json(config))
-}
-
-#[get("/api/lqosd_config")]
+#[get("/api/config")]
 pub async fn get_current_lqosd_config(
   _auth: AuthGuard,
-) -> NoCache<Json<EtcLqos>> {
-  let config = lqos_config::EtcLqos::load().unwrap();
+) -> NoCache<Json<Config>> {
+  let config = lqos_config::load_config().unwrap();
   println!("{config:#?}");
   NoCache::new(Json(config))
-}
-
-#[post("/api/python_config", data = "<config>")]
-pub async fn update_python_config(
-  _auth: AuthGuard,
-  config: Json<LibreQoSConfig>,
-) -> Json<String> {
-  config.save().unwrap();
-  Json("OK".to_string())
 }
 
 #[post("/api/lqos_tuning/<period>", data = "<tuning>")]

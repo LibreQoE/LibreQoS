@@ -1,5 +1,5 @@
 use std::time::Duration;
-use lqos_config::EtcLqos;
+use lqos_config::load_config;
 use tokio::{sync::mpsc::Receiver, time::sleep, net::TcpStream, io::{AsyncWriteExt, AsyncReadExt}};
 use crate::submission_queue::comm_channel::keys::store_server_public_key;
 use self::encode::encode_submission_hello;
@@ -49,24 +49,17 @@ pub(crate) async fn start_communication_channel(mut rx: Receiver<SenderChannelMe
 async fn connect_if_permitted() -> Result<TcpStream, QueueError> {
     log::info!("Connecting to stats.libreqos.io");
     // Check that we have a local license key and are enabled
-    let cfg = EtcLqos::load().map_err(|_| {
+    let cfg = load_config().map_err(|_| {
         log::error!("Unable to load config file.");
         QueueError::NoLocalLicenseKey
     })?;
-    let node_id = cfg.node_id.ok_or_else(|| {
-        log::warn!("No node ID configured.");
-        QueueError::NoLocalLicenseKey
-    })?;
-    let node_name = cfg.node_name.unwrap_or(node_id.clone());
-    let usage_cfg = cfg.long_term_stats.ok_or_else(|| {
-        log::warn!("Long-term stats are not configured.");
-        QueueError::NoLocalLicenseKey
-    })?;
-    if !usage_cfg.gather_stats {
+    let node_id = cfg.node_id.clone();
+    let node_name = cfg.node_name.clone();
+    if !cfg.long_term_stats.gather_stats {
         log::warn!("Gathering long-term stats is disabled.");
         return Err(QueueError::StatsDisabled);
     }
-    let license_key = usage_cfg.license_key.ok_or_else(|| {
+    let license_key = cfg.long_term_stats.license_key.ok_or_else(|| {
         log::warn!("No license key configured.");
         QueueError::NoLocalLicenseKey
     })?;

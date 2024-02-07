@@ -1,3 +1,4 @@
+use lqos_config::load_config;
 use lqos_utils::unix_time::unix_now;
 use tokio::sync::mpsc::Sender;
 use crate::{submission_queue::{comm_channel::SenderChannelMessage, new_submission}, transport_data::{StatsSubmission, UispExtDevice}, collector::collection_manager::DEVICE_ID_LIST};
@@ -9,7 +10,7 @@ pub(crate) async fn gather_uisp_data(comm_tx: Sender<SenderChannelMessage>) {
         return; // We're not ready
     }
 
-    if let Ok(config) = lqos_config::LibreQoSConfig::load() {
+    if let Ok(config) = load_config() {
         if let Ok(devices) = uisp::load_all_devices_with_interfaces(config).await {
             log::info!("Loaded {} UISP devices", devices.len());
 

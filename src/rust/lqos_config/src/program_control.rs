@@ -1,7 +1,5 @@
 use log::error;
 use thiserror::Error;
-
-use crate::etc;
 use std::{
   path::{Path, PathBuf},
   process::Command,
@@ -11,14 +9,14 @@ const PYTHON_PATH: &str = "/usr/bin/python3";
 
 fn path_to_libreqos() -> Result<PathBuf, ProgramControlError> {
   let cfg =
-    etc::EtcLqos::load().map_err(|_| ProgramControlError::ConfigLoadError)?;
+    crate::load_config().map_err(|_| ProgramControlError::ConfigLoadError)?;
   let base_path = Path::new(&cfg.lqos_directory);
   Ok(base_path.join("LibreQoS.py"))
 }
 
 fn working_directory() -> Result<PathBuf, ProgramControlError> {
   let cfg =
-    etc::EtcLqos::load().map_err(|_| ProgramControlError::ConfigLoadError)?;
+  crate::load_config().map_err(|_| ProgramControlError::ConfigLoadError)?;
   let base_path = Path::new(&cfg.lqos_directory);
   Ok(base_path.to_path_buf())
 }

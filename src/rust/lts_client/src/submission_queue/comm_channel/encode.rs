@@ -1,5 +1,5 @@
 use dryoc::{dryocbox::{Nonce, DryocBox}, types::{NewByteArray, ByteArray}};
-use lqos_config::EtcLqos;
+use lqos_config::load_config;
 use thiserror::Error;
 use crate::{transport_data::{LtsCommand, NodeIdAndLicense, HelloVersion2}, submission_queue::queue::QueueError};
 use super::keys::{SERVER_PUBLIC_KEY, KEYPAIR};
@@ -104,17 +104,13 @@ pub(crate) async fn encode_submission(submission: &LtsCommand) -> Result<Vec<u8>
 }
 
 fn get_license_key_and_node_id(nonce: &Nonce) -> Result<NodeIdAndLicense, QueueError> {
-    let cfg = EtcLqos::load().map_err(|_| QueueError::SendFail)?;
-    if let Some(node_id) = cfg.node_id {
-        if let Some(lts) = &cfg.long_term_stats {
-            if let Some(license_key) = &lts.license_key {
-                return Ok(NodeIdAndLicense {
-                    node_id,
-                    license_key: license_key.clone(),
-                    nonce: *nonce.as_array(),
-                });
-            }
-        }
+    let cfg = load_config().map_err(|_| QueueError::SendFail)?;
+    if let Some(license_key) = &cfg.long_term_stats.license_key {
+        return Ok(NodeIdAndLicense {
+            node_id: cfg.node_id.clone(),
+            license_key: license_key.clone(),
+            nonce: *nonce.as_array(),
+        });
     }
     Err(QueueError::SendFail)
 }

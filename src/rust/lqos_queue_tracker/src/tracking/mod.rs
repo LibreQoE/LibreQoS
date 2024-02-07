@@ -3,7 +3,6 @@ use crate::{
   queue_store::QueueStore, tracking::reader::read_named_queue_from_interface,
 };
 use log::info;
-use lqos_config::LibreQoSConfig;
 use lqos_utils::fdtimer::periodic;
 mod reader;
 mod watched_queues;
@@ -16,7 +15,7 @@ fn track_queues() {
     //info!("No queues marked for read.");
     return; // There's nothing to do - bail out fast
   }
-  let config = LibreQoSConfig::load();
+  let config = lqos_config::load_config();
   if config.is_err() {
     //warn!("Unable to read LibreQoS config. Skipping queue collection cycle.");
     return;
@@ -25,22 +24,22 @@ fn track_queues() {
   WATCHED_QUEUES.iter_mut().for_each(|q| {
     let (circuit_id, download_class, upload_class) = q.get();
 
-    let (download, upload) = if config.on_a_stick_mode {
+    let (download, upload) = if config.on_a_stick_mode() {
       (
         read_named_queue_from_interface(
-          &config.internet_interface,
+          &config.internet_interface(),
           download_class,
         ),
         read_named_queue_from_interface(
-          &config.internet_interface,
+          &config.internet_interface(),
           upload_class,
         ),
       )
     } else {
       (
-        read_named_queue_from_interface(&config.isp_interface, download_class),
+        read_named_queue_from_interface(&config.isp_interface(), download_class),
         read_named_queue_from_interface(
-          &config.internet_interface,
+          &config.internet_interface(),
           download_class,
         ),
       )
@@ -83,7 +82,7 @@ pub fn spawn_queue_monitor() {
   std::thread::spawn(|| {
     // Setup the queue monitor loop
     info!("Starting Queue Monitor Thread.");
-    let interval_ms = if let Ok(config) = lqos_config::EtcLqos::load() {
+    let interval_ms = if let Ok(config) = lqos_config::load_config() {
       config.queue_check_period_ms
     } else {
       1000

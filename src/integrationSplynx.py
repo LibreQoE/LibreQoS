@@ -2,23 +2,24 @@ from pythonCheck import checkPythonVersion
 checkPythonVersion()
 import requests
 import warnings
-from ispConfig import excludeSites, findIPv6usingMikrotik, bandwidthOverheadFactor, exceptionCPEs, splynx_api_key, splynx_api_secret, splynx_api_url
+from liblqos_python import exclude_sites, find_ipv6_using_mikrotik, bandwidth_overhead_factor, splynx_api_key, \
+	splynx_api_secret, splynx_api_url
 from integrationCommon import isIpv4Permitted
 import base64
 from requests.auth import HTTPBasicAuth
-if findIPv6usingMikrotik == True:
+if find_ipv6_using_mikrotik() == True:
 	from mikrotikFindIPv6 import pullMikrotikIPv6  
 from integrationCommon import NetworkGraph, NetworkNode, NodeType
 
 def buildHeaders():
-	credentials = splynx_api_key + ':' + splynx_api_secret
+	credentials = splynx_api_key() + ':' + splynx_api_secret()
 	credentials = base64.b64encode(credentials.encode()).decode()
 	return {'Authorization' : "Basic %s" % credentials}
 
 def spylnxRequest(target, headers):
 	# Sends a REST GET request to Spylnx and returns the
 	# result in JSON
-	url = splynx_api_url + "/api/2.0/" + target
+	url = splynx_api_url() + "/api/2.0/" + target
 	r = requests.get(url, headers=headers, timeout=10)
 	return r.json()
 

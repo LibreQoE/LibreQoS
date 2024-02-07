@@ -13,7 +13,7 @@ use std::{
 mod blocking;
 use anyhow::{Error, Result};
 use blocking::run_query;
-use sysinfo::{ProcessExt, System, SystemExt};
+use sysinfo::System;
 
 const LOCK_FILE: &str = "/run/lqos/libreqos.lock";
 
@@ -23,6 +23,7 @@ const LOCK_FILE: &str = "/run/lqos/libreqos.lock";
 fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_class::<PyIpMapping>()?;
   m.add_class::<BatchedCommands>()?;
+  m.add_class::<PyExceptionCpe>()?;
   m.add_wrapped(wrap_pyfunction!(is_lqosd_alive))?;
   m.add_wrapped(wrap_pyfunction!(list_ip_mappings))?;
   m.add_wrapped(wrap_pyfunction!(clear_ip_mappings))?;
@@ -32,6 +33,60 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_wrapped(wrap_pyfunction!(is_libre_already_running))?;
   m.add_wrapped(wrap_pyfunction!(create_lock_file))?;
   m.add_wrapped(wrap_pyfunction!(free_lock_file))?;
+  // Unified configuration items
+  m.add_wrapped(wrap_pyfunction!(check_config))?;
+  m.add_wrapped(wrap_pyfunction!(sqm))?;
+  m.add_wrapped(wrap_pyfunction!(upstream_bandwidth_capacity_download_mbps))?;
+  m.add_wrapped(wrap_pyfunction!(upstream_bandwidth_capacity_upload_mbps))?;
+  m.add_wrapped(wrap_pyfunction!(interface_a))?;
+  m.add_wrapped(wrap_pyfunction!(interface_b))?;
+  m.add_wrapped(wrap_pyfunction!(enable_actual_shell_commands))?;
+  m.add_wrapped(wrap_pyfunction!(use_bin_packing_to_balance_cpu))?;
+  m.add_wrapped(wrap_pyfunction!(monitor_mode_only))?;
+  m.add_wrapped(wrap_pyfunction!(run_shell_commands_as_sudo))?;
+  m.add_wrapped(wrap_pyfunction!(generated_pn_download_mbps))?;
+  m.add_wrapped(wrap_pyfunction!(generated_pn_upload_mbps))?;
+  m.add_wrapped(wrap_pyfunction!(queues_available_override))?;
+  m.add_wrapped(wrap_pyfunction!(on_a_stick))?;
+  m.add_wrapped(wrap_pyfunction!(overwrite_network_json_always))?;
+  m.add_wrapped(wrap_pyfunction!(allowed_subnets))?;
+  m.add_wrapped(wrap_pyfunction!(ignore_subnets))?;
+  m.add_wrapped(wrap_pyfunction!(circuit_name_use_address))?;
+  m.add_wrapped(wrap_pyfunction!(find_ipv6_using_mikrotik))?;
+  m.add_wrapped(wrap_pyfunction!(exclude_sites))?;
+  m.add_wrapped(wrap_pyfunction!(bandwidth_overhead_factor))?;
+  m.add_wrapped(wrap_pyfunction!(committed_bandwidth_multiplier))?;
+  m.add_wrapped(wrap_pyfunction!(exception_cpes))?;
+  m.add_wrapped(wrap_pyfunction!(uisp_site))?;
+  m.add_wrapped(wrap_pyfunction!(uisp_strategy))?;
+  m.add_wrapped(wrap_pyfunction!(uisp_suspended_strategy))?;
+  m.add_wrapped(wrap_pyfunction!(airmax_capacity))?;
+  m.add_wrapped(wrap_pyfunction!(ltu_capacity))?;
+  m.add_wrapped(wrap_pyfunction!(use_ptmp_as_parent))?;
+  m.add_wrapped(wrap_pyfunction!(uisp_base_url))?;
+  m.add_wrapped(wrap_pyfunction!(uisp_auth_token))?;
+  m.add_wrapped(wrap_pyfunction!(splynx_api_key))?;
+  m.add_wrapped(wrap_pyfunction!(splynx_api_secret))?;
+  m.add_wrapped(wrap_pyfunction!(splynx_api_url))?;
+  m.add_wrapped(wrap_pyfunction!(automatic_import_uisp))?;
+  m.add_wrapped(wrap_pyfunction!(automatic_import_splynx))?;
+  m.add_wrapped(wrap_pyfunction!(queue_refresh_interval_mins))?;
+  m.add_wrapped(wrap_pyfunction!(automatic_import_powercode))?;
+  m.add_wrapped(wrap_pyfunction!(powercode_api_key))?;
+  m.add_wrapped(wrap_pyfunction!(powercode_api_url))?;
+  m.add_wrapped(wrap_pyfunction!(automatic_import_sonar))?;
+  m.add_wrapped(wrap_pyfunction!(sonar_api_url))?;
+  m.add_wrapped(wrap_pyfunction!(sonar_api_key))?;
+  m.add_wrapped(wrap_pyfunction!(snmp_community))?;
+  m.add_wrapped(wrap_pyfunction!(sonar_airmax_ap_model_ids))?;
+  m.add_wrapped(wrap_pyfunction!(sonar_ltu_ap_model_ids))?;
+  m.add_wrapped(wrap_pyfunction!(sonar_active_status_ids))?;
+  m.add_wrapped(wrap_pyfunction!(influx_db_enabled))?;
+  m.add_wrapped(wrap_pyfunction!(influx_db_bucket))?;
+  m.add_wrapped(wrap_pyfunction!(influx_db_org))?;
+  m.add_wrapped(wrap_pyfunction!(influx_db_token))?;
+  m.add_wrapped(wrap_pyfunction!(influx_db_url))?;
+
   Ok(())
 }
 
@@ -253,4 +308,333 @@ fn create_lock_file() -> PyResult<()> {
 fn free_lock_file() -> PyResult<()> {
   let _ = remove_file(LOCK_FILE); // Ignore result
   Ok(())
+}
+
+#[pyfunction]
+fn check_config() -> PyResult<bool> {
+  let config = lqos_config::load_config();
+  if let Err(e) = config {
+    println!("Error loading config: {e}");
+    return Ok(false);
+  }
+  Ok(true)
+}
+
+#[pyfunction]
+fn sqm() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.queues.default_sqm.clone())
+}
+
+#[pyfunction]
+fn upstream_bandwidth_capacity_download_mbps() -> PyResult<u32> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.queues.uplink_bandwidth_mbps)
+}
+
+#[pyfunction]
+fn upstream_bandwidth_capacity_upload_mbps() -> PyResult<u32> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.queues.uplink_bandwidth_mbps)
+}
+
+#[pyfunction]
+fn interface_a() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.isp_interface())
+}
+
+#[pyfunction]
+fn interface_b() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.internet_interface())
+}
+
+#[pyfunction]
+fn enable_actual_shell_commands() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(!config.queues.dry_run)
+}
+
+#[pyfunction]
+fn use_bin_packing_to_balance_cpu() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.queues.use_binpacking)
+}
+
+#[pyfunction]
+fn monitor_mode_only() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.queues.monitor_only)
+}
+
+#[pyfunction]
+fn run_shell_commands_as_sudo() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.queues.sudo)
+}
+
+#[pyfunction]
+fn generated_pn_download_mbps() -> PyResult<u32> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.queues.generated_pn_download_mbps)
+}
+
+#[pyfunction]
+fn generated_pn_upload_mbps() -> PyResult<u32> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.queues.generated_pn_upload_mbps)
+}
+
+#[pyfunction]
+fn queues_available_override() -> PyResult<u32> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.queues.override_available_queues.unwrap_or(0))
+}
+
+#[pyfunction]
+fn on_a_stick() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.on_a_stick_mode())
+}
+
+#[pyfunction]
+fn overwrite_network_json_always() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.integration_common.always_overwrite_network_json)
+}
+
+#[pyfunction]
+fn allowed_subnets() -> PyResult<Vec<String>> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.ip_ranges.allow_subnets.clone())
+}
+
+#[pyfunction]
+fn ignore_subnets() -> PyResult<Vec<String>> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.ip_ranges.ignore_subnets.clone())
+}
+
+#[pyfunction]
+fn circuit_name_use_address() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.integration_common.circuit_name_as_address)
+}
+
+#[pyfunction]
+fn find_ipv6_using_mikrotik() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.ipv6_with_mikrotik)
+}
+
+#[pyfunction]
+fn exclude_sites() -> PyResult<Vec<String>> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.exclude_sites.clone())
+}
+
+#[pyfunction]
+fn bandwidth_overhead_factor() -> PyResult<f32> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.bandwidth_overhead_factor)
+}
+
+#[pyfunction]
+fn committed_bandwidth_multiplier() -> PyResult<f32> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.commit_bandwidth_multiplier)
+}
+
+#[pyclass]
+pub struct PyExceptionCpe {
+  pub cpe: String,
+  pub parent: String,
+}
+
+#[pyfunction]
+fn exception_cpes() -> PyResult<Vec<PyExceptionCpe>> {
+  let config = lqos_config::load_config().unwrap();
+  let mut result = Vec::new();
+  for cpe in config.uisp_integration.exception_cpes.iter() {
+    result.push(PyExceptionCpe {
+      cpe: cpe.cpe.clone(),
+      parent: cpe.parent.clone(),
+    });
+  }
+  Ok(result)
+}
+
+#[pyfunction]
+fn uisp_site() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.site)
+}
+
+#[pyfunction]
+fn uisp_strategy() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.strategy)
+}
+
+#[pyfunction]
+fn uisp_suspended_strategy() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.suspended_strategy)
+}
+
+#[pyfunction]
+fn airmax_capacity() -> PyResult<f32> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.airmax_capacity)
+}
+
+#[pyfunction]
+fn ltu_capacity() -> PyResult<f32> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.ltu_capacity)
+}
+
+#[pyfunction]
+fn use_ptmp_as_parent() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.use_ptmp_as_parent)
+}
+
+#[pyfunction]
+fn uisp_base_url() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.url)
+}
+
+#[pyfunction]
+fn uisp_auth_token() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.token)
+}
+
+#[pyfunction]
+fn splynx_api_key() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.spylnx_integration.api_key)
+}
+
+#[pyfunction]
+fn splynx_api_secret() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.spylnx_integration.api_secret)
+}
+
+#[pyfunction]
+fn splynx_api_url() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.spylnx_integration.url)
+}
+
+#[pyfunction]
+fn automatic_import_uisp() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.enable_uisp)
+}
+
+#[pyfunction]
+fn automatic_import_splynx() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.uisp_integration.enable_uisp)
+}
+
+#[pyfunction]
+fn queue_refresh_interval_mins() -> PyResult<u32> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.integration_common.queue_refresh_interval_mins)
+}
+
+#[pyfunction]
+fn automatic_import_powercode() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.powercode_integration.enable_powercode)
+}
+
+#[pyfunction]
+fn powercode_api_key() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.powercode_integration.powercode_api_key)
+}
+
+#[pyfunction]
+fn powercode_api_url() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.powercode_integration.powercode_api_url)
+}
+
+#[pyfunction]
+fn automatic_import_sonar() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.sonar_integration.enable_sonar)
+}
+
+#[pyfunction]
+fn sonar_api_url() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.sonar_integration.sonar_api_url)
+}
+
+#[pyfunction]
+fn sonar_api_key() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.sonar_integration.sonar_api_key)
+}
+
+#[pyfunction]
+fn snmp_community() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.sonar_integration.snmp_community)
+}
+
+#[pyfunction]
+fn sonar_airmax_ap_model_ids() -> PyResult<Vec<String>> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.sonar_integration.airmax_model_ids)
+}
+
+#[pyfunction]
+fn sonar_ltu_ap_model_ids() -> PyResult<Vec<String>> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.sonar_integration.ltu_model_ids)
+}
+
+#[pyfunction]
+fn sonar_active_status_ids() -> PyResult<Vec<String>> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.sonar_integration.active_status_ids)
+}
+
+#[pyfunction]
+fn influx_db_enabled() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.influxdb.enable_influxdb)
+}
+
+#[pyfunction]
+fn influx_db_bucket() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.influxdb.bucket)
+}
+
+#[pyfunction]
+fn influx_db_org() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.influxdb.org)
+}
+
+#[pyfunction]
+fn influx_db_token() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.influxdb.token)
+}
+
+#[pyfunction]
+fn influx_db_url() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.influxdb.url)
 }

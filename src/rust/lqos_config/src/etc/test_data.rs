@@ -1,10 +1,60 @@
+pub const OLD_CONFIG: &str = "
+# This file *must* be installed in `/etc/lqos.conf`.
+# Change the values to match your setup.
+
+# Where is LibreQoS installed?
+lqos_directory = '/home/herbert/Rust/LibreQoS/libreqos/LibreQoS/src'
+queue_check_period_ms = 1000
+packet_capture_time = 10 # Number of seconds to capture packets in an analysis session
+node_id = \"aee0eb53606ef621d386ef5fcfa0d72a5ba64fccd36df2997695dfb6d418c64b\"
+
+[usage_stats]
+send_anonymous = true
+anonymous_server = \"127.0.0.1:9125\"
+
+[tuning]
+# IRQ balance breaks XDP_Redirect, which we use. Recommended to leave as true.
+stop_irq_balance = false
+netdev_budget_usecs = 8000
+netdev_budget_packets = 300
+rx_usecs = 8
+tx_usecs = 8
+disable_rxvlan = true
+disable_txvlan = true
+# What offload types should be disabled on the NIC. The defaults are recommended here.
+disable_offload = [ \"gso\", \"tso\", \"lro\", \"sg\", \"gro\" ]
+
+# For a two interface setup, use the following - and replace
+# \"enp1s0f1\" and \"enp1s0f2\" with your network card names (obtained
+# from `ip link`):
+[bridge]
+use_xdp_bridge = false
+interface_mapping = [
+        { name = \"veth_toexternal\", redirect_to = \"veth_tointernal\", scan_vlans = false },
+        { name = \"veth_tointernal\", redirect_to = \"veth_toexternal\", scan_vlans = false }
+]
+vlan_mapping = []
+
+# For \"on a stick\" (single interface mode):
+# [bridge]
+# use_xdp_bridge = true
+# interface_mapping = [
+#         { name = \"enp1s0f1\", redirect_to = \"enp1s0f1\", scan_vlans = true }
+# ]
+# vlan_mapping = [
+#         { parent = \"enp1s0f1\", tag = 3, redirect_to = 4 },
+#         { parent = \"enp1s0f1\", tag = 4, redirect_to = 3 }
+# ]
+";
+
+pub const PYTHON_CONFIG : &str = "
 # 'fq_codel' or 'cake diffserv4'
 # 'cake diffserv4' is recommended
 # sqm = 'fq_codel'
 sqm = 'cake diffserv4'
 
 # Used to passively monitor the network for before / after comparisons. Leave as False to
-# ensure actual shaping. After changing this value, run "sudo systemctl restart LibreQoS.service"
+# ensure actual shaping. After changing this value, run \"sudo systemctl restart LibreQoS.service\"
 monitorOnlyMode = False
 
 # How many Mbps are available to the edge of this network.
@@ -22,15 +72,15 @@ generatedPNDownloadMbps = 1000
 generatedPNUploadMbps = 1000
 
 # Interface connected to core router
-interfaceA = 'eth1'
+interfaceA = 'veth_tointernal'
 
 # Interface connected to edge router
-interfaceB = 'eth2'
+interfaceB = 'veth_toexternal'
 
 # Queue refresh scheduler (lqos_scheduler). Minutes between reloads.
 queueRefreshIntervalMins = 30
 
-# WORK IN PROGRESS. Note that interfaceA determines the "stick" interface
+# WORK IN PROGRESS. Note that interfaceA determines the \"stick\" interface
 # I could only get scanning to work if I issued ethtool -K enp1s0f1 rxvlan off
 OnAStick = False
 # VLAN facing the core router
@@ -60,10 +110,10 @@ useBinPackingToBalanceCPU = False
 
 # Bandwidth & Latency Graphing
 influxDBEnabled = True
-influxDBurl = "http://localhost:8086"
-influxDBBucket = "libreqos"
-influxDBOrg = "Your ISP Name Here"
-influxDBtoken = ""
+influxDBurl = \"http://localhost:8086\"
+influxDBBucket = \"libreqos\"
+influxDBOrg = \"Your ISP Name Here\"
+influxDBtoken = \"\"
 
 # NMS/CRM Integration
 
@@ -77,41 +127,12 @@ overwriteNetworkJSONalways = False
 ignoreSubnets = ['192.168.0.0/16']
 allowedSubnets = ['100.64.0.0/10']
 
-# Powercode Integration
-automaticImportPowercode = False
-powercode_api_key = ''
-# Everything before :444/api/ in your Powercode instance URL
-powercode_api_url = ''
-
-# Sonar Integration
-automaticImportSonar = False
-sonar_api_key = ''
-sonar_api_url = '' # ex 'https://company.sonar.software/api/graphql'
-# If there are radios in these lists, we will try to get the clients using snmp. This requires snmpwalk to be install on the server. You can use "sudo apt-get install snmp" for that. You will also need to fill in the snmp_community.
-sonar_airmax_ap_model_ids = [] # ex ['29','43']
-sonar_ltu_ap_model_ids = [] # ex ['4']
-snmp_community = ''
-# This is for all account statuses where we should be applying QoS. If you leave it blank, we'll use any status in account marked with "Activates Account" in Sonar.
-sonar_active_status_ids = []
-
 # Splynx Integration
 automaticImportSplynx = False
 splynx_api_key = ''
 splynx_api_secret = ''
 # Everything before /api/2.0/ on your Splynx instance
 splynx_api_url = 'https://YOUR_URL.splynx.app'
-
-#Sonar Integration
-automaticImportSonar = False
-sonar_api_key = ''
-sonar_api_url = '' # ex 'https://company.sonar.software/api/graphql'
-# If there are radios in these lists, we will try to get the clients using snmp. This requires snmpwalk to be install on the server. You can use "sudo apt-get install snmp" for that. You will also need to fill in the snmp_community.
-sonar_airmax_ap_model_ids = [] # ex ['29','43']
-sonar_ltu_ap_model_ids = [] # ex ['4']
-snmp_community = ''
-# This is for all account statuses where we should be applying QoS. If you leave it blank, we'll use any status in account marked with "Activates Account" in Sonar.
-sonar_active_status_ids = []
-
 
 # UISP integration
 automaticImportUISP = False
@@ -122,16 +143,16 @@ UISPbaseURL = 'https://examplesite.com'
 # to act as the starting point for the tree mapping
 uispSite = ''
 # Strategy:
-# * "flat" - create all client sites directly off the top of the tree,
+# * \"flat\" - create all client sites directly off the top of the tree,
 #   provides maximum performance - at the expense of not offering AP,
 #   or site options.
-# * "full" - build a complete network map
-uispStrategy = "full"
+# * \"full\" - build a complete network map
+uispStrategy = \"full\"
 # Handling of UISP suspensions:
-# * "none" - do not handle suspensions
-# * "ignore" - do not add suspended customers to the network map
-# * "slow" - limit suspended customers to 1mbps
-uispSuspendedStrategy = "none"
+# * \"none\" - do not handle suspensions
+# * \"ignore\" - do not add suspended customers to the network map
+# * \"slow\" - limit suspended customers to 1mbps
+uispSuspendedStrategy = \"none\"
 # Assumed capacity of AirMax and LTU radios vs reported capacity by UISP. For example, 65% would be 0.65.
 # For AirMax, this applies to flexible frame only. AirMax fixed frame will have capacity based on ratio.
 airMax_capacity = 0.65
@@ -154,9 +175,9 @@ exceptionCPEs = {}
 # }
 
 # API Auth
-apiUsername = "testUser"
-apiPassword = "changeme8343486806"
-apiHostIP = "127.0.0.1"
+apiUsername = \"testUser\"
+apiPassword = \"changeme8343486806\"
+apiHostIP = \"127.0.0.1\"
 apiHostPost = 5000
 
 
@@ -167,14 +188,15 @@ httpRestIntegrationConfig = {
     'shaperURI': '/some/path/etc',
     'requestsConfig': {
         'verify': True,  # Good for Dev if your dev env doesnt have cert
-         'params': {  # params for query string ie uri?some-arg=some-value
-           'search': 'hold-my-beer'
-         },
+            'params': {  # params for query string ie uri?some-arg=some-value
+            'search': 'hold-my-beer'
+            },
         #'headers': {
-           # 'Origin': 'SomeHeaderValue',
+            # 'Origin': 'SomeHeaderValue',
         #},
     },
     # If you want to store a timestamped copy/backup of both network.json and Shaper.csv each time they are updated,
     # provide a path
     # 'logChanges': '/var/log/libreqos'
 }
+";

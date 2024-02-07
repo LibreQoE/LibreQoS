@@ -1,4 +1,4 @@
-use lqos_config::EtcLqos;
+use lqos_config::load_config;
 use lqos_utils::unix_time::unix_now;
 use rocket::serde::json::Json;
 use rocket::serde::{Deserialize, Serialize};
@@ -22,12 +22,12 @@ pub struct VersionCheckResponse {
 }
 
 async fn send_version_check() -> anyhow::Result<VersionCheckResponse> {
-    if let Ok(cfg) = EtcLqos::load() {
+    if let Ok(cfg) = load_config() {
         let current_hash = env!("GIT_HASH");
         let request = VersionCheckRequest {
             current_git_hash: current_hash.to_string(),
             version_string: VERSION_STRING.to_string(),
-            node_id: cfg.node_id.unwrap_or("(not configured)".to_string()),
+            node_id: cfg.node_id.to_string(),
         };
         let response = reqwest::Client::new()
             .post("https://stats.libreqos.io/api/version_check")
@@ -87,24 +87,17 @@ pub async fn stats_check() -> Json<StatsCheckAction> {
         node_id: String::new(),
     };
 
-    if let Ok(cfg) = EtcLqos::load() {
-        if let Some(lts) = &cfg.long_term_stats {
-            if !lts.gather_stats {
-                response = StatsCheckAction {
-                    action: StatsCheckResponse::Disabled,
-                    node_id: cfg.node_id.unwrap_or("(not configured)".to_string()),
-                };
-            } else {
-                // Stats are enabled
-                response = StatsCheckAction {
-                    action: StatsCheckResponse::GoodToGo,
-                    node_id: cfg.node_id.unwrap_or("(not configured)".to_string()),
-                };
-            }
-        } else {
+    if let Ok(cfg) = load_config() {
+        if !cfg.long_term_stats.gather_stats {
             response = StatsCheckAction {
-                action: StatsCheckResponse::NotSetup,
-                node_id: cfg.node_id.unwrap_or("(not configured)".to_string()),
+                action: StatsCheckResponse::Disabled,
+                node_id: cfg.node_id.to_string(),
+            };
+        } else {
+            // Stats are enabled
+            response = StatsCheckAction {
+                action: StatsCheckResponse::GoodToGo,
+                node_id: cfg.node_id.to_string(),
             };
         }
     }

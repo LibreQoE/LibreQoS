@@ -7,7 +7,6 @@ use crate::{
 };
 use dashmap::{DashMap, DashSet};
 use lqos_bus::{tos_parser, PacketHeader};
-use lqos_config::EtcLqos;
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 use once_cell::sync::Lazy;
 use std::{
@@ -110,8 +109,8 @@ pub fn hyperfocus_on_target(ip: XdpIpAddress) -> Option<(usize, usize)> {
   {
     // If explicitly set, obtain the capture time. Otherwise, default to
     // a reasonable 10 seconds.
-    let capture_time = if let Ok(cfg) = EtcLqos::load() {
-      cfg.packet_capture_time.unwrap_or(10)
+    let capture_time = if let Ok(cfg) = lqos_config::load_config() {
+      cfg.packet_capture_time
     } else {
       10
     };
