@@ -16,7 +16,7 @@ use lqos_config::{load_config, ConfigShapedDevices};
 use pyo3::pyclass;
 use serde::{Deserialize, Serialize};
 
-const URL: &str = "http:/localhost:9127/api/device_weights";
+const URL: &str = "https:/stats.libreqos.io/api/device_weights";
 
 /// This struct is used to send a request to the Long Term Stats API
 #[derive(Serialize, Deserialize)]
