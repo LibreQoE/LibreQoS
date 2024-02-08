@@ -14,6 +14,7 @@ mod blocking;
 use anyhow::{Error, Result};
 use blocking::run_query;
 use sysinfo::System;
+mod device_weights;
 
 const LOCK_FILE: &str = "/run/lqos/libreqos.lock";
 
@@ -24,6 +25,7 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_class::<PyIpMapping>()?;
   m.add_class::<BatchedCommands>()?;
   m.add_class::<PyExceptionCpe>()?;
+  m.add_class::<device_weights::DeviceWeightResponse>()?;
   m.add_wrapped(wrap_pyfunction!(is_lqosd_alive))?;
   m.add_wrapped(wrap_pyfunction!(list_ip_mappings))?;
   m.add_wrapped(wrap_pyfunction!(clear_ip_mappings))?;
@@ -86,6 +88,7 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_wrapped(wrap_pyfunction!(influx_db_org))?;
   m.add_wrapped(wrap_pyfunction!(influx_db_token))?;
   m.add_wrapped(wrap_pyfunction!(influx_db_url))?;
+  m.add_wrapped(wrap_pyfunction!(get_weights))?;
 
   Ok(())
 }
@@ -637,4 +640,14 @@ fn influx_db_token() -> PyResult<String> {
 fn influx_db_url() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
   Ok(config.influxdb.url)
+}
+
+#[pyfunction]
+pub fn get_weights() -> PyResult<Vec<device_weights::DeviceWeightResponse>> {
+    match device_weights::get_weights_rust() {
+        Ok(weights) => Ok(weights),
+        Err(e) => {
+            Err(PyOSError::new_err(e.to_string()))
+        }
+    }
 }
