@@ -18,6 +18,7 @@
 #include "common/tcp_rtt.h"
 #include "common/bifrost.h"
 #include "common/heimdall.h"
+#include "common/flows.h"
 
 //#define VERBOSE 1
 
@@ -98,55 +99,21 @@ int xdp_prog(struct xdp_md *ctx)
     // is requested.
     if (!dissector_find_l3_offset(&dissector, vlan_redirect)) return XDP_PASS;
     if (!dissector_find_ip_header(&dissector)) return XDP_PASS;
-    int effective_direction = determine_effective_direction(
+    u_int8_t effective_direction = determine_effective_direction(
         direction, 
         internet_vlan, 
         &dissector
     );
-
-    // Per-Flow RTT Tracking
-    //bpf_debug("Checking for TCP");
-    struct tcphdr * tcp = get_tcp_header(&dissector);
-    if (tcp != NULL) {
-        if (tcp + 1 < dissector.end)
-        {
-            //bpf_debug("TCP found");
-            if (tcp->syn) {
-                // We've found a SYN packet, so the connection is just starting.
-                if (effective_direction == 1) {
-                    bpf_debug("SYN->WAN, %d <-> %d", tcp->seq, tcp->ack_seq);
-                } else {
-                    bpf_debug("SYN->LAN, %d <-> %d", tcp->seq, tcp->ack_seq);
-                }
-            } else if (tcp->fin) {
-                // We've found a FIN packet, so the connection is expecting to end.
-                bpf_debug("FIN packet, %d", effective_direction);
-            } else if (tcp->rst) {
-                // We've found a RST packet, so the connection is being reset.
-                bpf_debug("RST packet, %d", effective_direction);
-            } else if (tcp->ack) {
-                // We've found an ACK packet, so the connection is established.
-
-                void *nh_pos = (tcp + 1) + (tcp->doff << 2);
-                bool is_valid = nh_pos - dissector.start < ctx->data_end - ctx->data;
-
-                if (is_valid) {
-                    //bpf_debug("ACK packet");
-                    if (effective_direction == 1) {
-                        // To the internet
-                        bpf_debug("ACK->WAN, %d <-> %d", tcp->seq, tcp->ack_seq);
-                    } else {
-                        // To the LAN
-                        bpf_debug("ACK->LAN, %d <-> %d", tcp->seq, tcp->ack_seq);
-                    }
-                }
-            }
-        }
-    }
+#ifdef VERBOSE
+    bpf_debug("(XDP) Effective direction: %d", effective_direction);
+#endif
 
 #ifdef VERBOSE
     bpf_debug("(XDP) Spotted VLAN: %u", dissector.current_vlan);
 #endif
+
+    // Per-Flow RTT Tracking
+    track_flows(&dissector, effective_direction);
 
     // Determine the lookup key by direction
     struct ip_hash_key lookup_key;
@@ -155,9 +122,6 @@ int xdp_prog(struct xdp_md *ctx)
         &lookup_key, 
         &dissector
     );
-#ifdef VERBOSE
-    bpf_debug("(XDP) Effective direction: %d", effective_direction);
-#endif
 
     // Find the desired TC handle and CPU target
     __u32 tc_handle = 0;

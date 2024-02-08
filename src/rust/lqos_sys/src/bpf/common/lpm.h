@@ -48,7 +48,7 @@ struct {
 } map_ip_to_cpu_and_tc_recip SEC(".maps");
 
 // Determine the effective direction of a packet
-static __always_inline int determine_effective_direction(int direction, __be16 internet_vlan, struct dissector_t * dissector) {
+static __always_inline u_int8_t determine_effective_direction(int direction, __be16 internet_vlan, struct dissector_t * dissector) {
     if (direction < 3) {
         return direction;
     } else {
@@ -64,7 +64,7 @@ static __always_inline int determine_effective_direction(int direction, __be16 i
 // into account redirection and "on a stick" setup.
 static __always_inline struct ip_hash_info * setup_lookup_key_and_tc_cpu(
     // This must have been pre-calculated by `determine_effective_direction`.
-    int direction,
+    u_int8_t direction,
     // Pointer to the "lookup key", which should contain the IP address
     // to search for. Prefix length will be set for you.
     struct ip_hash_key * lookup_key,
