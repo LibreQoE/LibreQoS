@@ -5,6 +5,8 @@
 #include "dissector.h"
 #include "debug.h"
 
+#define SECOND_IN_NANOS 1000000000
+
 // Defines a TCP connection flow key
 struct tcp_flow_key_t {
     struct in6_addr src;
@@ -27,6 +29,11 @@ struct tcp_flow_data_t {
     __u64 packets_received;
     __u64 retries_a;
     __u64 retries_b;
+
+    __u64 last_count_time;
+    __u64 next_count_time;
+    __u64 next_count_bytes;
+    __u64 rate_estimate;
 };
 
 // Map for tracking TCP flow progress.
@@ -141,7 +148,11 @@ static __always_inline void track_flows(
             .packets_sent = 1,
             .packets_received = 0,
             .retries_a = 0,
-            .retries_b = 0
+            .retries_b = 0,
+            .next_count_time = now + SECOND_IN_NANOS,
+            .next_count_bytes = dissector->skb_len,
+            .rate_estimate = 0,
+            .last_count_time = now
         };
         bpf_map_update_elem(&flowbee, &key, &data, BPF_ANY);
     }
@@ -180,6 +191,23 @@ static __always_inline void track_flows(
             // We don't need to record an RTT measurement and check for issues.
             //bpf_debug("%d / %d", data->time_a, data->time_b);
 
+            if (now > data->next_count_time) {
+                // Calculate the rate estimate
+                __u64 bytes = data->bytes_sent + data->bytes_received - data->next_count_bytes;
+                __u64 time = now - data->last_count_time;
+                data->rate_estimate = ((bytes * SECOND_IN_NANOS / time)*8)/1000000;
+                data->next_count_time = now + SECOND_IN_NANOS;
+                data->next_count_bytes = data->bytes_sent + data->bytes_received;
+                data->last_count_time = now;
+                bpf_debug("Rate estimate: %u mbits/sec", data->rate_estimate);
+
+                if (data->rate_estimate > 5) {
+                    __u64 rtt = now - last_seen;
+                    bpf_debug("RTT: %d nanos", rtt);
+                    data->last_rtt = rtt;
+                }
+            }
+
             if (data->time_a != 0 && sequence < data->time_a) {
                 // This is a retransmission
                 //bpf_debug("DIR 1 Retransmission (or out of order) detected");
@@ -193,9 +221,23 @@ static __always_inline void track_flows(
             // We need to record an RTT measurement, but we can check for issues.
             //bpf_debug("%d / %d", data->time_a, data->time_b);
 
-            __u64 rtt = now - last_seen;
-            //bpf_debug("RTT: %d nanos", rtt);
-            data->last_rtt = rtt;
+            if (now > data->next_count_time) {
+                // Calculate the rate estimate
+                __u64 bytes = data->bytes_sent + data->bytes_received - data->next_count_bytes;
+                __u64 time = now - data->last_count_time;
+                data->rate_estimate = ((bytes * SECOND_IN_NANOS / time)*8)/1000000;
+                data->next_count_time = now + SECOND_IN_NANOS;
+                data->next_count_bytes = data->bytes_sent + data->bytes_received;
+                data->last_count_time = now;
+                bpf_debug("Rate estimate: %u mbits/sec", data->rate_estimate);
+
+                if (data->rate_estimate > 5) {
+                    __u64 rtt = now - last_seen;
+                    bpf_debug("RTT: %d nanos", rtt);
+                    data->last_rtt = rtt;
+                }
+            }
+
 
             if (data->time_b != 0 && sequence < data->time_b) {
                 // This is a retransmission
