@@ -15,6 +15,7 @@ struct tcp_flow_key_t {
 
 // TCP connection flow entry
 struct tcp_flow_data_t {
+    __u64 start_time;
     __u64 last_seen_a;
     __u64 last_seen_b;
     __u64 bytes_sent;
@@ -24,6 +25,8 @@ struct tcp_flow_data_t {
     __u64 last_rtt;
     __u64 packets_sent;
     __u64 packets_received;
+    __u64 retries_a;
+    __u64 retries_b;
 };
 
 // Map for tracking TCP flow progress.
@@ -127,6 +130,7 @@ static __always_inline void track_flows(
         // We need to add this flow to the tracking table.
         bpf_debug("New TCP connection detected");
         struct tcp_flow_data_t data = {
+            .start_time = now,
             .last_seen_a = now,
             .last_seen_b = now,
             .bytes_sent = dissector->skb_len,
@@ -135,7 +139,9 @@ static __always_inline void track_flows(
             .time_b = 0,
             .last_rtt = 0,
             .packets_sent = 1,
-            .packets_received = 0
+            .packets_received = 0,
+            .retries_a = 0,
+            .retries_b = 0
         };
         bpf_map_update_elem(&flowbee, &key, &data, BPF_ANY);
     }
@@ -176,8 +182,9 @@ static __always_inline void track_flows(
 
             if (data->time_a != 0 && sequence < data->time_a) {
                 // This is a retransmission
-                bpf_debug("DIR 1 Retransmission (or out of order) detected");
-                bpf_debug("to 192.168.66.%d => SEQ %d < %d", dissector->dst_ip.in6_u.u6_addr8[15], sequence, data->time_a);
+                //bpf_debug("DIR 1 Retransmission (or out of order) detected");
+                //bpf_debug("to 192.168.66.%d => SEQ %d < %d", dissector->dst_ip.in6_u.u6_addr8[15], sequence, data->time_a);
+                data->retries_a++;
             }
 
             data->time_a = sequence;
@@ -192,8 +199,9 @@ static __always_inline void track_flows(
 
             if (data->time_b != 0 && sequence < data->time_b) {
                 // This is a retransmission
-                bpf_debug("DIR 2 Retransmission (or out of order) detected");
-                bpf_debug("to 192.168.66.%d => SEQ %d > %d", dissector->dst_ip.in6_u.u6_addr8[15], sequence, data->time_b);
+                //bpf_debug("DIR 2 Retransmission (or out of order) detected");
+                //bpf_debug("to 192.168.66.%d => SEQ %d > %d", dissector->dst_ip.in6_u.u6_addr8[15], sequence, data->time_b);
+                data->retries_b++;
             }
 
             data->time_b = sequence;
@@ -206,9 +214,11 @@ static __always_inline void track_flows(
         // We need to remove this flow from the tracking table.
         bpf_debug("TCP connection closed");
         // TODO: Submit the result somewhere
+        bpf_debug(" Flow Lifetime: %u nanos", now - data->start_time);
         bpf_debug(" BYTES   : %d / %d", data->bytes_sent, data->bytes_received);
         bpf_debug(" PACKETS : %d / %d", data->packets_sent, data->packets_received);
-        bpf_debug(" RTT     : %d", data->last_rtt);
+        bpf_debug(" RTT     : %d nanos", data->last_rtt);
+        bpf_debug(" RETRIES : %d / %d", data->retries_a, data->retries_b);
         // /TODO
         bpf_map_delete_elem(&flowbee, &key);
     } else if ( tcp->rst ) {
@@ -216,9 +226,11 @@ static __always_inline void track_flows(
         // We need to remove this flow from the tracking table.
         bpf_debug("TCP connection reset");
         // TODO: Submit the result somewhere
+        bpf_debug(" Flow Lifetime: %u nanos", now - data->start_time);
         bpf_debug(" BYTES   : %d / %d", data->bytes_sent, data->bytes_received);
         bpf_debug(" PACKETS : %d / %d", data->packets_sent, data->packets_received);
-        bpf_debug(" RTT     : %d", data->last_rtt);
+        bpf_debug(" RTT     : %d nanos", data->last_rtt);
+        bpf_debug(" RETRIES : %d / %d", data->retries_a, data->retries_b);
         // /TODO
         bpf_map_delete_elem(&flowbee, &key);
     }
