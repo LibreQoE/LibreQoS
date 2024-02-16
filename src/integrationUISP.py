@@ -479,7 +479,6 @@ def buildFullGraph():
 
 				if site['identification']['status'] == "disconnected":
 					print("WARNING: Site " + name + " is disconnected")
-					continue
 
 		node = NetworkNode(id=id, displayName=name, type=nodeType,
 						   parentId=parent, download=download, upload=upload, address=address, customerName=customerName)
