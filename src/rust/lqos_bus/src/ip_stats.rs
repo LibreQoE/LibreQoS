@@ -144,3 +144,31 @@ pub struct PacketHeader {
   /// TCP ECR val
   pub tcp_tsecr: u32,
 }
+
+/// Flowbee: a complete flow data, combining key and data.
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+pub struct FlowbeeData {
+  /// Mapped `XdpIpAddress` source for the flow.
+  pub remote_ip: String,
+  /// Mapped `XdpIpAddress` destination for the flow
+  pub local_ip: String,
+  /// Source port number, or ICMP type.
+  pub src_port: u16,
+  /// Destination port number.
+  pub dst_port: u16,
+  /// IP protocol (see the Linux kernel!)
+  pub ip_protocol: u8,
+  /// Bytes transmitted
+  pub bytes_sent: [u64; 2],
+  /// Packets transmitted
+  pub packets_sent: [u64; 2],
+  /// Rate estimate
+  pub rate_estimate_bps: [u64; 2],
+  /// Retry Counters
+  pub retries: [u32; 2],
+  /// Most recent RTT
+  pub last_rtt: [u64; 2],
+  /// Has the connection ended?
+  /// 0 = Alive, 1 = FIN, 2 = RST
+  pub end_status: u32,
+}

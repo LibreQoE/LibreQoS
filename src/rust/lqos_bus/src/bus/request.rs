@@ -152,6 +152,10 @@ pub enum BusRequest {
   /// display a "run bandwidht test" link.
   #[cfg(feature = "equinix_tests")]
   RequestLqosEquinixTest,
+
+  /// Request a dump of all active flows. This can be a lot of data.
+  /// so this is intended for debugging
+  DumpActiveFlows,
 }
 
 /// Specific requests from the long-term stats system

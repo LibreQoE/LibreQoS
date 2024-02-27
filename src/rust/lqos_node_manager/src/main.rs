@@ -12,6 +12,7 @@ mod config_control;
 mod network_tree;
 mod queue_info;
 mod toasts;
+mod flow_monitor;
 
 // Use JemAllocator only on supported platforms
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -109,6 +110,8 @@ fn rocket() -> _ {
         // Front page toast checks
         toasts::version_check,
         toasts::stats_check,
+        // Flowbee System
+        flow_monitor::all_flows_debug_dump,
       ],
     );
 

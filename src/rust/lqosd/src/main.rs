@@ -223,6 +223,9 @@ fn handle_bus_requests(
       BusRequest::GetLongTermStats(StatsRequest::Tree) => {
         long_term_stats::get_stats_tree()
       }
+      BusRequest::DumpActiveFlows => {
+        throughput_tracker::dump_active_flows()
+      }
     });
   }
 }

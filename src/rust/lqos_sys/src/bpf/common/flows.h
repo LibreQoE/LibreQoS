@@ -266,10 +266,11 @@ static __always_inline void process_tcp(
     u_int32_t tsval = dissector->tsval;
     u_int32_t tsecr = dissector->tsecr;
     if (BITCHECK(DIS_TCP_ACK) && tsval != 0) {
+        //bpf_debug("[FLOWS][%d] TSVAL: %u, TSECR: %u", direction, tsval, tsecr);
         if (direction == TO_INTERNET) {
-            if (tsval != data->tsval[0] || tsecr != data->tsecr[0]) {
+            if (tsval != data->tsval[0] && tsecr != data->tsecr[0]) {
 
-                if (tsval == data->tsecr[1]) {
+                if (tsval > data->tsecr[1]) {
                     __u64 elapsed = now - data->ts_change_time[1];
                     data->last_rtt[0] = elapsed;
                     //bpf_debug("[FLOWS][0] RTT: %llu", elapsed);
@@ -280,9 +281,9 @@ static __always_inline void process_tcp(
                 data->tsecr[0] = tsecr;
             }
         } else {
-            if (tsval != data->tsval[1] || tsecr != data->tsecr[1]) {
+            if (tsval != data->tsval[1] && tsecr != data->tsecr[1]) {
 
-                if (tsval == data->tsecr[0]) {
+                if (tsval > data->tsecr[0]) {
                     __u64 elapsed = now - data->ts_change_time[0];
                     data->last_rtt[1] = elapsed;
                     //bpf_debug("[FLOWS][1] RTT: %llu", elapsed);

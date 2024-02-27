@@ -1,6 +1,7 @@
 mod heimdall_data;
 mod throughput_entry;
 mod tracking_data;
+pub mod flow_data;
 use crate::{
     shaped_devices_tracker::{NETWORK_JSON, STATS_NEEDS_NEW_SHAPED_DEVICES, SHAPED_DEVICES}, stats::TIME_TO_POLL_HOSTS,
     throughput_tracker::tracking_data::ThroughputTracker, long_term_stats::get_network_tree,
@@ -15,6 +16,8 @@ use tokio::{
     sync::mpsc::Sender,
     time::{Duration, Instant},
 };
+
+use self::flow_data::ALL_FLOWS;
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
@@ -48,7 +51,7 @@ async fn throughput_task(interval_ms: u64, long_term_stats_tx: Sender<StatsUpdat
           } // Scope to end the lock
           THROUGHPUT_TRACKER.copy_previous_and_reset_rtt();
           THROUGHPUT_TRACKER.apply_new_throughput_counters();
-          THROUGHPUT_TRACKER.apply_rtt_data();
+          THROUGHPUT_TRACKER.apply_flow_data();
           THROUGHPUT_TRACKER.update_totals();
           THROUGHPUT_TRACKER.next_cycle();
           let duration_ms = start.elapsed().as_micros();
@@ -442,4 +445,28 @@ pub fn all_unknown_ips() -> BusResponse {
       )
       .collect();
     BusResponse::AllUnknownIps(result)
+  }
+
+  /// For debugging: dump all active flows!
+  pub fn dump_active_flows() -> BusResponse {
+    let lock = ALL_FLOWS.lock().unwrap();
+    let mut result = Vec::with_capacity(lock.len());
+
+    for (ip, flow) in lock.iter() {
+      result.push(lqos_bus::FlowbeeData {
+        remote_ip: ip.remote_ip.as_ip().to_string(),
+        local_ip: ip.local_ip.as_ip().to_string(),
+        src_port: ip.src_port,
+        dst_port: ip.dst_port,
+        ip_protocol: ip.ip_protocol,
+        bytes_sent: flow.bytes_sent,
+        packets_sent: flow.packets_sent,
+        rate_estimate_bps: flow.rate_estimate_bps,
+        retries: flow.retries,
+        last_rtt: flow.last_rtt,
+        end_status: flow.end_status,
+      });
+    }
+
+    BusResponse::AllActiveFlows(result)
   }
