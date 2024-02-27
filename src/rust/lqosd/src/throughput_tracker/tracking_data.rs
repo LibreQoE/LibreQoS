@@ -1,10 +1,10 @@
-use std::sync::atomic::AtomicU64;
+use std::{sync::atomic::AtomicU64, time::Duration};
 use crate::{shaped_devices_tracker::{SHAPED_DEVICES, NETWORK_JSON}, stats::{HIGH_WATERMARK_DOWN, HIGH_WATERMARK_UP}};
 use super::{throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
 use dashmap::DashMap;
 use lqos_bus::TcHandle;
 use lqos_sys::{iterate_flows, throughput_for_each};
-use lqos_utils::XdpIpAddress;
+use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 
 pub struct ThroughputTracker {
   pub(crate) cycle: AtomicU64,
@@ -185,27 +185,32 @@ impl ThroughputTracker {
       }
     });*/
 
-    iterate_flows(&mut |key, data| {
-      // 6 is TCP, not expired
-      if key.ip_protocol == 6 && data.end_status == 0 {
-        if let Some(mut tracker) = self.raw_data.get_mut(&key.local_ip) {
-          let rtt_as_nanos = data.last_rtt[0];
-          let data_as_ms_times_10 = rtt_as_nanos / 10000;
-          // Shift left
-          for i in 1..60 {
-            tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
-          }
-          tracker.recent_rtt_data[0] = data_as_ms_times_10 as u32;
-          tracker.last_fresh_rtt_data_cycle = self_cycle;
-          if let Some(parents) = &tracker.network_json_parents {
-            let net_json = NETWORK_JSON.write().unwrap();
-            if let Some(rtt) = tracker.median_latency() {
-              net_json.add_rtt_cycle(parents, rtt);
+    if let Ok(now) = time_since_boot() {
+      let since_boot = Duration::from(now);
+      let expire = (since_boot - Duration::from_secs(60)).as_nanos() as u64;
+      iterate_flows(&mut |key, data| {
+        // 6 is TCP, not expired
+        if key.ip_protocol == 6 && data.last_seen > expire && (data.last_rtt[0] != 0 || data.last_rtt[1] != 0) {
+          if let Some(mut tracker) = self.raw_data.get_mut(&key.local_ip) {
+            // Shift left
+            for i in 1..60 {
+              tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
+            }
+            tracker.recent_rtt_data[0] = u32::max(
+              (data.last_rtt[0] / 10000) as u32,
+              (data.last_rtt[1] / 10000) as u32,
+            );
+            tracker.last_fresh_rtt_data_cycle = self_cycle;
+            if let Some(parents) = &tracker.network_json_parents {
+              let net_json = NETWORK_JSON.write().unwrap();
+              if let Some(rtt) = tracker.median_latency() {
+                net_json.add_rtt_cycle(parents, rtt);
+              }
             }
           }
         }
-      }
-    });
+      });
+    }
   }
 
   #[inline(always)]

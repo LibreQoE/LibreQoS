@@ -9,7 +9,7 @@
 
 
 #define SECOND_IN_NANOS 1000000000
-#define TIMESTAMP_INTERVAL_NANOS 2000000000
+//#define TIMESTAMP_INTERVAL_NANOS 10000000
 
 // Some helpers to make understanding direction easier
 // for readability.
@@ -59,8 +59,6 @@ struct flow_data_t {
     __u32 tsecr[2];
     // When did the timestamp change?
     __u64 ts_change_time[2];
-    // When should we calculate RTT (to avoid flooding)
-    __u64 ts_calc_time[2];
     // Most recent RTT
     __u64 last_rtt[2];
     // Has the connection ended?
@@ -97,7 +95,6 @@ static __always_inline struct flow_data_t new_flow_data(
         .tsval = { 0, 0 },
         .tsecr = { 0, 0 },
         .ts_change_time = { 0, 0 },
-        .ts_calc_time = { now, now }, // Get a first number quickly
         .last_rtt = { 0, 0 },
         .end_status = 0
     };
@@ -220,7 +217,7 @@ static __always_inline void process_tcp(
     u_int64_t now
 ) {
     if ((BITCHECK(DIS_TCP_SYN) && !BITCHECK(DIS_TCP_ACK) && direction == TO_INTERNET) || 
-        (BITCHECK(DIS_TCP_SYN) && BITCHECK(DIS_TCP_ACK) && direction == FROM_INTERNET)) {
+        (BITCHECK(DIS_TCP_SYN) && !BITCHECK(DIS_TCP_ACK) && direction == FROM_INTERNET)) {
         // A customer is requesting a new TCP connection. That means
         // we need to start tracking this flow.
         #ifdef VERBOSE
@@ -273,11 +270,9 @@ static __always_inline void process_tcp(
             if (tsval != data->tsval[0] || tsecr != data->tsecr[0]) {
 
                 if (tsval == data->tsecr[1]) {
-                    if (now > data->ts_calc_time[0]) {
-                        __u64 elapsed = now - data->ts_change_time[1];
-                        data->ts_calc_time[0] = now + TIMESTAMP_INTERVAL_NANOS;
-                        data->last_rtt[0] = elapsed;
-                    }
+                    __u64 elapsed = now - data->ts_change_time[1];
+                    data->last_rtt[0] = elapsed;
+                    //bpf_debug("[FLOWS][0] RTT: %llu", elapsed);
                 }
 
                 data->ts_change_time[0] = now;
@@ -288,11 +283,9 @@ static __always_inline void process_tcp(
             if (tsval != data->tsval[1] || tsecr != data->tsecr[1]) {
 
                 if (tsval == data->tsecr[0]) {
-                    if (now > data->ts_calc_time[1]) {
-                        __u64 elapsed = now - data->ts_change_time[0];
-                        data->ts_calc_time[1] = now + TIMESTAMP_INTERVAL_NANOS;
-                        data->last_rtt[1] = elapsed;
-                    }
+                    __u64 elapsed = now - data->ts_change_time[0];
+                    data->last_rtt[1] = elapsed;
+                    //bpf_debug("[FLOWS][1] RTT: %llu", elapsed);
                 }
 
                 data->ts_change_time[1] = now;

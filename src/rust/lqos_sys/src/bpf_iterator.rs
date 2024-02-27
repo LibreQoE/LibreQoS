@@ -1,5 +1,6 @@
 use crate::{
-  flowbee_data::{FlowbeeData, FlowbeeKey}, heimdall_data::{HeimdallData, HeimdallKey}, kernel_wrapper::BPF_SKELETON, lqos_kernel::bpf, HostCounter, RttTrackingEntry
+  flowbee_data::{FlowbeeData, FlowbeeKey}, heimdall_data::{HeimdallData, HeimdallKey}, 
+  kernel_wrapper::BPF_SKELETON, lqos_kernel::bpf, HostCounter
 };
 use lqos_utils::XdpIpAddress;
 use once_cell::sync::Lazy;
@@ -192,10 +193,6 @@ static mut MAP_TRAFFIC: Lazy<
   Option<BpfMapIterator<XdpIpAddress, HostCounter>>,
 > = Lazy::new(|| None);
 
-static mut RTT_TRACKER: Lazy<
-  Option<BpfMapIterator<XdpIpAddress, RttTrackingEntry>>,
-> = Lazy::new(|| None);
-
 static mut HEIMDALL_TRACKER: Lazy<
   Option<BpfMapIterator<HeimdallKey, HeimdallData>>,
 > = Lazy::new(|| None);
@@ -225,35 +222,6 @@ pub unsafe fn iterate_throughput(
   if let Some(iter) = MAP_TRAFFIC.as_mut() {
     let _ = iter.for_each_per_cpu(callback);
   }
-}
-
-pub unsafe fn iterate_rtt(
-  callback: &mut dyn FnMut(&XdpIpAddress, &RttTrackingEntry),
-) {
-  if RTT_TRACKER.is_none() {
-    let lock = BPF_SKELETON.lock().unwrap();
-    if let Some(skeleton) = lock.as_ref() {
-      let skeleton = skeleton.get_ptr();
-      if let Ok(iter) = unsafe {
-        BpfMapIterator::new(
-          (*skeleton).progs.rtt_reader,
-          (*skeleton).maps.rtt_tracker,
-        )
-      } {
-        *RTT_TRACKER = Some(iter);
-      }
-    }
-  }
-
-  if let Some(iter) = RTT_TRACKER.as_mut() {
-    let _ = iter.for_each(callback);
-  }
-
-  // TEMPORARY
-  let mut callback = |key: &FlowbeeKey, data: &FlowbeeData| {
-    println!("{:?} {:?}", key, data);
-  };
-  iterate_flows(&mut callback);
 }
 
 /// Iterate through the heimdall map and call the callback for each entry.

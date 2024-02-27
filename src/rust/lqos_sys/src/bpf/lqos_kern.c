@@ -15,7 +15,6 @@
 #include "common/throughput.h"
 #include "common/lpm.h"
 #include "common/cpu_map.h"
-#include "common/tcp_rtt.h"
 #include "common/bifrost.h"
 #include "common/heimdall.h"
 #include "common/flows.h"
@@ -228,14 +227,6 @@ int tc_iphash_to_cpu(struct __sk_buff *skb)
     bpf_debug("(TC) effective direction: %d", effective_direction);
 #endif
 
-    // Call pping to obtain RTT times
-    struct parsing_context context = {0};
-    context.now = bpf_ktime_get_ns();
-    context.tcp = NULL;
-    context.dissector = &dissector;
-    context.active_host = &lookup_key.address;
-    //tc_pping_start(&context); // Commented out for comparison
-
     if (ip_info && ip_info->tc_handle != 0) {
         // We found a matching mapped TC flow
 #ifdef VERBOSE
@@ -372,25 +363,6 @@ int throughput_reader(struct bpf_iter__bpf_map_elem *ctx)
     }
 
     //BPF_SEQ_PRINTF(seq, "%d %d\n", counter->download_bytes, counter->upload_bytes);
-    return 0;
-}
-
-SEC("iter/bpf_map_elem")
-int rtt_reader(struct bpf_iter__bpf_map_elem *ctx)
-{
-    // The sequence file
-    struct seq_file *seq = ctx->meta->seq;
-    struct rotating_performance *counter = ctx->value;
-    struct in6_addr *ip = ctx->key;
-
-    // Bail on end
-    if (counter == NULL || ip == NULL) {
-        return 0;
-    }
-
-    //BPF_SEQ_PRINTF(seq, "%d %d\n", counter->next_entry, counter->rtt[0]);
-    bpf_seq_write(seq, ip, sizeof(struct in6_addr));
-    bpf_seq_write(seq, counter, sizeof(struct rotating_performance));
     return 0;
 }
 

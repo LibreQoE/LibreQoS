@@ -55,8 +55,6 @@ pub struct FlowbeeData {
   pub tsecr: [u32; 2],
   /// When did the timestamp change?
   pub ts_change_time: [u64; 2],
-  /// When should we calculate RTT (to avoid flooding)
-  pub ts_calc_time: [u64; 2],
   /// Most recent RTT
   pub last_rtt: [u64; 2],
   /// Has the connection ended?
