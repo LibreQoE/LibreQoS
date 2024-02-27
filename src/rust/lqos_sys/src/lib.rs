@@ -32,4 +32,4 @@ pub use linux::num_possible_cpus;
 pub use lqos_kernel::max_tracked_ips;
 pub use tcp_rtt::{rtt_for_each, RttTrackingEntry};
 pub use throughput::{throughput_for_each, HostCounter};
-pub use bpf_iterator::iterate_heimdall;
+pub use bpf_iterator::{iterate_heimdall, iterate_flows};

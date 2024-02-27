@@ -1,3 +1,5 @@
+//! Data structures for the Flowbee eBPF program.
+
 use lqos_utils::XdpIpAddress;
 use zerocopy::FromBytes;
 

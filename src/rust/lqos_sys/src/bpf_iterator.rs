@@ -250,7 +250,10 @@ pub unsafe fn iterate_rtt(
   }
 
   // TEMPORARY
-  iterate_flows();
+  let mut callback = |key: &FlowbeeKey, data: &FlowbeeData| {
+    println!("{:?} {:?}", key, data);
+  };
+  iterate_flows(&mut callback);
 }
 
 /// Iterate through the heimdall map and call the callback for each entry.
@@ -280,7 +283,9 @@ pub fn iterate_heimdall(
 }
 
 /// Iterate through the Flows 2 system tracker, retrieving all flows
-pub fn iterate_flows() {
+pub fn iterate_flows(
+  callback: &mut dyn FnMut(&FlowbeeKey, &FlowbeeData)
+) {
   unsafe {
     if FLOWBEE_TRACKER.is_none() {
       let lock = BPF_SKELETON.lock().unwrap();
@@ -297,12 +302,8 @@ pub fn iterate_flows() {
       }
     }
   
-    let mut callback = |key: &FlowbeeKey, data: &FlowbeeData| {
-      log::info!("Flow: {:#?} -> {:#?}", key, data);
-    };
-
     if let Some(iter) = FLOWBEE_TRACKER.as_mut() {
-      let _ = iter.for_each(&mut callback);
+      let _ = iter.for_each(callback);
     }
   }
 }
