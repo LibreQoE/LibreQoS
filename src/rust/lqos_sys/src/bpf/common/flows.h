@@ -125,22 +125,82 @@ static __always_inline struct flow_key_t build_flow_key(
     }
 }
 
+static __always_inline void update_flow_rates(
+    struct dissector_t *dissector,
+    u_int8_t direction,
+    struct flow_data_t *data,
+    __u64 now
+) {
+    data->last_seen = now;
+
+    // Update bytes and packets sent
+    if (direction == TO_INTERNET) {
+        data->bytes_sent[0] += dissector->skb_len;
+        data->packets_sent[0]++;
+
+        if (now > data->next_count_time[0]) {
+            // Calculate the rate estimate
+            __u64 bits = (data->bytes_sent[0] - data->next_count_bytes[0])*8;
+            __u64 time = (now - data->last_count_time[0]) / 1000000000; // Seconds
+            data->rate_estimate_bps[0] = bits/time;
+            data->next_count_time[0] = now + SECOND_IN_NANOS;
+            data->next_count_bytes[0] = data->bytes_sent[0];
+            data->last_count_time[0] = now;
+        }
+    } else {
+        data->bytes_sent[1] += dissector->skb_len;
+        data->packets_sent[1]++;
+
+        if (now > data->next_count_time[1]) {
+            // Calculate the rate estimate
+            __u64 bits = (data->bytes_sent[1] - data->next_count_bytes[1])*8;
+            __u64 time = (now - data->last_count_time[1]) / 1000000000; // Seconds
+            data->rate_estimate_bps[1] = bits/time;
+            data->next_count_time[1] = now + SECOND_IN_NANOS;
+            data->next_count_bytes[1] = data->bytes_sent[1];
+            data->last_count_time[1] = now;
+        }
+    }
+}
+
 // Handle Per-Flow ICMP Analysis
 static __always_inline void process_icmp(
     struct dissector_t *dissector,
     u_int8_t direction,
-    struct icmphdr *icmp
+    u_int64_t now
 ) {
-
+    struct flow_key_t key = build_flow_key(dissector, direction);
+    struct flow_data_t *data = bpf_map_lookup_elem(&flowbee, &key);
+    if (data == NULL) {
+        // There isn't a flow, so we need to make one
+        struct flow_data_t new_data = new_flow_data(now, dissector);
+        if (bpf_map_update_elem(&flowbee, &key, &new_data, BPF_ANY) != 0) {
+            bpf_debug("[FLOWS] Failed to add new flow to map");
+            return;
+        }
+        data = bpf_map_lookup_elem(&flowbee, &key);
+    }
+    update_flow_rates(dissector, direction, data, now);
 }
 
 // Handle Per-Flow UDP Analysis
 static __always_inline void process_udp(
     struct dissector_t *dissector,
     u_int8_t direction,
-    struct udphdr *udp
+    u_int64_t now
 ) {
-    
+    struct flow_key_t key = build_flow_key(dissector, direction);
+    struct flow_data_t *data = bpf_map_lookup_elem(&flowbee, &key);
+    if (data == NULL) {
+        // There isn't a flow, so we need to make one
+        struct flow_data_t new_data = new_flow_data(now, dissector);
+        if (bpf_map_update_elem(&flowbee, &key, &new_data, BPF_ANY) != 0) {
+            bpf_debug("[FLOWS] Failed to add new flow to map");
+            return;
+        }
+        data = bpf_map_lookup_elem(&flowbee, &key);
+    }
+    update_flow_rates(dissector, direction, data, now);
 }
 
 // Handle Per-Flow TCP Analysis
@@ -172,37 +232,7 @@ static __always_inline void process_tcp(
         return;
     }
 
-    // Update last seen to now
-    data->last_seen = now;
-
-    // Update bytes and packets sent
-    if (direction == TO_INTERNET) {
-        data->bytes_sent[0] += dissector->skb_len;
-        data->packets_sent[0]++;
-
-        if (now > data->next_count_time[0]) {
-            // Calculate the rate estimate
-            __u64 bits = (data->bytes_sent[0] - data->next_count_bytes[0])*8;
-            __u64 time = (now - data->last_count_time[0]) / 1000000000; // Seconds
-            data->rate_estimate_bps[0] = bits/time;
-            data->next_count_time[0] = now + SECOND_IN_NANOS;
-            data->next_count_bytes[0] = data->bytes_sent[0];
-            data->last_count_time[0] = now;
-        }
-    } else {
-        data->bytes_sent[1] += dissector->skb_len;
-        data->packets_sent[1]++;
-
-        if (now > data->next_count_time[1]) {
-            // Calculate the rate estimate
-            __u64 bits = (data->bytes_sent[1] - data->next_count_bytes[1])*8;
-            __u64 time = (now - data->last_count_time[1]) / 1000000000; // Seconds
-            data->rate_estimate_bps[1] = bits/time;
-            data->next_count_time[1] = now + SECOND_IN_NANOS;
-            data->next_count_bytes[1] = data->bytes_sent[1];
-            data->last_count_time[1] = now;
-        }
-    }
+    update_flow_rates(dissector, direction, data, now);
 
     // Sequence and Acknowledgement numbers
     __u32 sequence = bpf_ntohl(dissector->sequence);
@@ -282,32 +312,8 @@ static __always_inline void track_flows(
     switch (dissector->ip_protocol)
     {
         case IPPROTO_TCP: process_tcp(dissector, direction, now); break;
-        case IPPROTO_UDP: {
-            struct udphdr *udp = get_udp_header(dissector);
-            if (udp == NULL) {
-                // Bail out if it's not a UDP packet
-                return;
-            }
-            // Bail out if we've exceeded the packet size and there is no payload
-            // This keeps the safety checker happy and is generally a good idea
-            if (udp + 1 >= dissector->end) {
-                return;
-            }
-            process_udp(dissector, direction, udp);
-        } break;
-        case IPPROTO_ICMP: {
-            struct icmphdr *icmp = get_icmp_header(dissector);
-            if (icmp == NULL) {
-                // Bail out if it's not an ICMP packet
-                return;
-            }
-            // Bail out if we've exceeded the packet size and there is no payload
-            // This keeps the safety checker happy and is generally a good idea
-            if (icmp + 1 >= dissector->end) {
-                return;
-            }
-            process_icmp(dissector, direction, icmp);
-        } break;
+        case IPPROTO_UDP: process_udp(dissector, direction, now); break;
+        case IPPROTO_ICMP: process_icmp(dissector, direction, now); break;
         default: {
             #ifdef VERBOSE
             bpf_debug("[FLOWS] Unsupported protocol: %d", dissector->ip_protocol);
