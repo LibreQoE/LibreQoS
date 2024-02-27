@@ -112,9 +112,6 @@ int xdp_prog(struct xdp_md *ctx)
     bpf_debug("(XDP) Spotted VLAN: %u", dissector.current_vlan);
 #endif
 
-    // Per-Flow RTT Tracking
-    track_flows(&dissector, effective_direction);
-
     // Determine the lookup key by direction
     struct ip_hash_key lookup_key;
     struct ip_hash_info * ip_info = setup_lookup_key_and_tc_cpu(
@@ -130,6 +127,10 @@ int xdp_prog(struct xdp_md *ctx)
         tc_handle = ip_info->tc_handle;
         cpu = ip_info->cpu;
     }
+
+    // Per-Flow RTT Tracking
+    track_flows(&dissector, effective_direction);
+
     // Update the traffic tracking buffers
     track_traffic(
         effective_direction, 
