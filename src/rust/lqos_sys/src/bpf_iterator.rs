@@ -286,7 +286,7 @@ pub fn iterate_flows() {
       let lock = BPF_SKELETON.lock().unwrap();
       if let Some(skeleton) = lock.as_ref() {
         let skeleton = skeleton.get_ptr();
-        if let Ok(iter) = unsafe {
+        if let Ok(iter) = {
           BpfMapIterator::new(
             (*skeleton).progs.flow_reader,
             (*skeleton).maps.flowbee,
