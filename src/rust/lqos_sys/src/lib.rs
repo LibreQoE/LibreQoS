@@ -22,6 +22,7 @@ mod bpf_iterator;
 /// Data shared between eBPF and Heimdall that needs local access
 /// for map control.
 pub mod heimdall_data;
+pub mod flowbee_data;
 
 pub use ip_mapping::{
   add_ip_to_tc, clear_ips_from_tc, del_ip_from_tc, list_mapped_ips,

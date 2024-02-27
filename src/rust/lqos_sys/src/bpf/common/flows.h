@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+
 // TCP flow monitor system
 
 #include <linux/bpf.h>
@@ -24,6 +26,8 @@ struct flow_key_t {
     __u16 dst_port;
     __u8 protocol;
     __u8 pad;
+    __u8 pad1;
+    __u8 pad2;
 };
 
 // TCP connection flow entry
@@ -108,19 +112,23 @@ static __always_inline struct flow_key_t build_flow_key(
         return (struct flow_key_t) {
             .src = dissector->src_ip,
             .dst = dissector->dst_ip,
-            .src_port = dissector->src_port,
-            .dst_port = dissector->dst_port,
+            .src_port = bpf_htons(dissector->src_port),
+            .dst_port = bpf_htons(dissector->dst_port),
             .protocol = dissector->ip_protocol,
-            .pad = 0
+            .pad = 0,
+            .pad1 = 0,
+            .pad2 = 0
         };
     } else {
         return (struct flow_key_t) {
             .src = dissector->dst_ip,
             .dst = dissector->src_ip,
-            .src_port = dissector->dst_port,
-            .dst_port = dissector->src_port,
+            .src_port = bpf_htons(dissector->dst_port),
+            .dst_port = bpf_htons(dissector->src_port),
             .protocol = dissector->ip_protocol,
-            .pad = 0
+            .pad = 0,
+            .pad1 = 0,
+            .pad2 = 0
         };    
     }
 }
@@ -179,6 +187,7 @@ static __always_inline void process_icmp(
             return;
         }
         data = bpf_map_lookup_elem(&flowbee, &key);
+        if (data == NULL) return;
     }
     update_flow_rates(dissector, direction, data, now);
 }
@@ -199,6 +208,7 @@ static __always_inline void process_udp(
             return;
         }
         data = bpf_map_lookup_elem(&flowbee, &key);
+        if (data == NULL) return;
     }
     update_flow_rates(dissector, direction, data, now);
 }

@@ -422,4 +422,23 @@ int heimdall_reader(struct bpf_iter__bpf_map_elem *ctx) {
     return 0;
 }
 
+SEC("iter/bpf_map_elem")
+int flow_reader(struct bpf_iter__bpf_map_elem *ctx)
+{
+    // The sequence file
+    struct seq_file *seq = ctx->meta->seq;
+    struct flow_data_t *counter = ctx->value;
+    struct flow_key_t *ip = ctx->key;
+
+    // Bail on end
+    if (counter == NULL || ip == NULL) {
+        return 0;
+    }
+
+    //BPF_SEQ_PRINTF(seq, "%d %d\n", counter->next_entry, counter->rtt[0]);
+    bpf_seq_write(seq, ip, sizeof(struct flow_key_t));
+    bpf_seq_write(seq, counter, sizeof(struct flow_data_t));
+    return 0;
+}
+
 char _license[] SEC("license") = "GPL";

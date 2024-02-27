@@ -1,6 +1,5 @@
 use crate::{
-  kernel_wrapper::BPF_SKELETON, lqos_kernel::bpf, HostCounter,
-  RttTrackingEntry, heimdall_data::{HeimdallKey, HeimdallData},
+  flowbee_data::{FlowbeeData, FlowbeeKey}, heimdall_data::{HeimdallData, HeimdallKey}, kernel_wrapper::BPF_SKELETON, lqos_kernel::bpf, HostCounter, RttTrackingEntry
 };
 use lqos_utils::XdpIpAddress;
 use once_cell::sync::Lazy;
@@ -149,7 +148,17 @@ where
           let (_head, values, _tail) =
             unsafe { &value_slice.align_to::<VALUE>() };
 
-          callback(&key[0], &values[0]);
+          if !key.is_empty() && !values.is_empty() {
+            callback(&key[0], &values[0]);
+          } else {
+            log::error!("Empty key or value found in iterator");
+            if key.is_empty() {
+              log::error!("Empty key");
+            }
+            if values.is_empty() {
+              log::error!("Empty value");
+            }
+          }
 
           index += Self::KEY_SIZE + Self::VALUE_SIZE;
         }
@@ -189,6 +198,10 @@ static mut RTT_TRACKER: Lazy<
 
 static mut HEIMDALL_TRACKER: Lazy<
   Option<BpfMapIterator<HeimdallKey, HeimdallData>>,
+> = Lazy::new(|| None);
+
+static mut FLOWBEE_TRACKER: Lazy<
+  Option<BpfMapIterator<FlowbeeKey, FlowbeeData>>,
 > = Lazy::new(|| None);
 
 pub unsafe fn iterate_throughput(
@@ -235,6 +248,9 @@ pub unsafe fn iterate_rtt(
   if let Some(iter) = RTT_TRACKER.as_mut() {
     let _ = iter.for_each(callback);
   }
+
+  // TEMPORARY
+  iterate_flows();
 }
 
 /// Iterate through the heimdall map and call the callback for each entry.
@@ -259,6 +275,34 @@ pub fn iterate_heimdall(
 
     if let Some(iter) = HEIMDALL_TRACKER.as_mut() {
       let _ = iter.for_each_per_cpu(callback);
+    }
+  }
+}
+
+/// Iterate through the Flows 2 system tracker, retrieving all flows
+pub fn iterate_flows() {
+  unsafe {
+    if FLOWBEE_TRACKER.is_none() {
+      let lock = BPF_SKELETON.lock().unwrap();
+      if let Some(skeleton) = lock.as_ref() {
+        let skeleton = skeleton.get_ptr();
+        if let Ok(iter) = unsafe {
+          BpfMapIterator::new(
+            (*skeleton).progs.flow_reader,
+            (*skeleton).maps.flowbee,
+          )
+        } {
+          *FLOWBEE_TRACKER = Some(iter);
+        }
+      }
+    }
+  
+    let mut callback = |key: &FlowbeeKey, data: &FlowbeeData| {
+      log::info!("Flow: {:#?} -> {:#?}", key, data);
+    };
+
+    if let Some(iter) = FLOWBEE_TRACKER.as_mut() {
+      let _ = iter.for_each(&mut callback);
     }
   }
 }
