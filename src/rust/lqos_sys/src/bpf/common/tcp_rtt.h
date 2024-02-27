@@ -553,6 +553,7 @@ static __always_inline void pping_match_packet(struct flow_state *f_state,
         return;
 
     __u64 rtt = (p_info->time - *p_ts) / NS_PER_MS_TIMES_100;
+    bpf_debug("RTT (from TC): %u", p_info->time - *p_ts);
 
     // Delete timestamp entry as soon as RTT is calculated
     if (bpf_map_delete_elem(&packet_ts, &p_info->reply_pid) == 0)
@@ -716,3 +717,81 @@ static __always_inline void tc_pping_start(struct parsing_context *context)
 }
 
 #endif /* __TC_CLASSIFY_KERN_PPING_H */
+
+/*
+
+Understanding how this works (psuedocode):
+
+1. Parsing context is passed into tc_pping_start
+    1. We lookup the rotating_performance map for the active host (local side).
+        1. If it exists, we check to see if we are in "next entry" time window yet.
+        2. If we are, and the current time exceeds the "recycle time", we reset the
+           performance map and set the "recycle time" to the current time plus the
+           recycle interval. We exit the function.
+    2. We then check to see if the packet is TCP. If it is not, we exit the function.
+    3. We then check to see if the packet is complete. If it is not, we exit the function.
+    4. We then parse the packet identifier. If we are unable to parse the packet identifier,
+       we exit the function. (the `parse_packet_identifier` function).
+        1. We set the packet time to the current time.
+        2. We set the flow type to either AF_INET or AF_INET6.
+        3. We set the source and destination IP addresses.
+        4. We call `parse_tcp_identifier` to parse the TCP identifier.
+            1. We use `parse_tcp_ts` to extract the TSval and TSecr from the TCP header.
+               These are stored in `proto_info.pid` and `proto_info.reply_pid`.
+               If we fail to parse the TCP identifier, we exit the function.
+            2. We set "pid_valid" to true if the next header position is less than the end of the packet
+               or if the packet is a SYN packet. (i.e. ignore packets with no payload).
+            3. We set "reply_pid_valid" to true if the packet is an ACK packet.
+            4. RST events are set to "FLOW_EVENT_CLOSING_BOTH", FIN events are set to "FLOW_EVENT_CLOSING",
+               and SYN events are set to "FLOW_EVENT_OPENING".
+            5. We set the source and destination ports.
+        5. If we failed to parse the TCP identifier, we exit the function.
+        6. We set "pid.identifier" to "proto_info.pid" and "reply_pid.identifier" to "proto_info.reply_pid".
+        7. We set "pid_valid" to "proto_info.pid_valid" and "reply_pid_valid" to "proto_info.reply_pid_valid".
+        8. We set "event_type" to "proto_info.event_type".
+        9. We bail if the protocol is not AF_INET or AF_INET6.
+        10. We set "pid_flow_is_dfkey" to "is_dualflow_key(&p_info->pid.flow)".
+            1. Compare the source and destination addresses and return true when it
+                encounters a packet with the source address less than the destination address.
+            2. This appears to be a way to sort the flow keys.
+        11. We call `reverse_flow` with the reply flow and the forward flow.
+            1.Reverse flow sets the destination to the source.
+    5. We then call pping_parsed_packet with the parsing context and the packet info.
+        1. We call `lookup_or_create_dualflow_state` and return it if we found one.
+            1. We call `get_dualflow_key_from_packet` to get the flow key from the packet.
+                1.
+            2. If `pid_valid` is false, or the event type is "FLOW_EVENT_CLOSING" or "FLOW_EVENT_CLOSING_BOTH",
+               we return NULL.
+            3. If we still haven't got a flow state, we call `create_dualflow_state` with the parsing context,
+               the packet info, and a pointer to new_flow.
+                1. We call `get_dualflow_key_from_packet` to get the flow key from the packet.
+                    1. If "pid_flow_is_dfkey" we return pid.flow, otherwise reply_pid.flow.
+                2. We call `init_dualflow_state` with the new state and the packet info.
+                3. We create a new state in the flow state map (or return an existing one).
+            4. We set `fw_flow` with `get_flowstate_from_packet` and the packet info.
+                1. This in turns calls `fstate_from_dfkey` with the dual flow state and the packet info.
+                    1. If the packet flow is the dual flow key, we return dir1, otherwise dir2.
+            5. We call `update_forward_flowstate` with the packet info.
+                1. If the connection state is empty and the packet identifier is valid, we call `init_flowstate`
+                   with the flow state and the packet info.
+                   1. `init_flowstate` sets the connection state to "WAITOPEN" and the last timestamp to the packet time.
+            6. We call `pping_timestamp_packet` with the forward flow, the parsing context, the packet info, and new_flow.
+                1. If the flow state is not active, or the packet identifier is not valid, we return.
+                2. If the flow state is not new and the identifier is not new, we return.
+                3. If the flow state is not new and the packet is rate limited, we return.
+                4. We set the last timestamp to the packet time.
+            7. We set `rev_flow` with `get_reverse_flowstate_from_packet` and the packet info.
+                1.
+            8. We call `update_reverse_flowstate` with the parsing context, the packet info, and the reverse flow.
+                1.
+            9. We call `pping_match_packet` with the reverse flow, the packet info, and the active host.
+                1. If the flow state is not active, or the reply packet identifier is not valid, we return.
+                2. If the flow state has no outstanding timestamps, we return.
+                3. We call `bpf_map_lookup_elem` with the packet timestamp map and the reply packet identifier.
+                    1. If the lookup fails, or the packet time is less than the timestamp, we return.
+                4. We calculate the round trip time.
+                5. We call `bpf_map_delete_elem` with the packet timestamp map and the reply packet identifier.
+                    1. If the delete is successful, we decrement the outstanding timestamps.
+            10. We call `close_and_delete_flows` with the parsing context, the packet info, the forward flow, and the reverse flow.
+                1.
+*/

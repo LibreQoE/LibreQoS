@@ -233,7 +233,7 @@ int tc_iphash_to_cpu(struct __sk_buff *skb)
     context.tcp = NULL;
     context.dissector = &dissector;
     context.active_host = &lookup_key.address;
-    tc_pping_start(&context);
+    //tc_pping_start(&context); // Commented out for comparison
 
     if (ip_info && ip_info->tc_handle != 0) {
         // We found a matching mapped TC flow
