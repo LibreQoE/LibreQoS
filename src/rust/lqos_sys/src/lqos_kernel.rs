@@ -99,7 +99,8 @@ unsafe fn open_kernel() -> Result<*mut bpf::lqos_kern> {
 unsafe fn load_kernel(skeleton: *mut bpf::lqos_kern) -> Result<()> {
   let error = bpf::lqos_kern_load(skeleton);
   if error != 0 {
-    Err(Error::msg("Unable to load the XDP/TC kernel"))
+    let error = format!("Unable to load the XDP/TC kernel ({error})");
+    Err(Error::msg(error))
   } else {
     Ok(())
   }

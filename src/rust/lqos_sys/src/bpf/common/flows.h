@@ -70,7 +70,7 @@ struct flow_data_t {
 // This is pinned and not per-CPU, because half the data appears on either side of the bridge.
 struct
 {
-    __uint(type, BPF_MAP_TYPE_LRU_HASH);
+    __uint(type, BPF_MAP_TYPE_LRU_HASH); // TODO: BPF_MAP_TYPE_LRU_PERCPU_HASH?
     __type(key, struct flow_key_t);
     __type(value, struct flow_data_t);
     __uint(max_entries, MAX_FLOWS);

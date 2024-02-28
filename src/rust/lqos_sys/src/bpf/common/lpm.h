@@ -11,7 +11,6 @@
 #include "maximums.h"
 #include "debug.h"
 #include "dissector.h"
-#include "dissector_tc.h"
 
 // Data structure used for map_ip_hash
 struct ip_hash_info {

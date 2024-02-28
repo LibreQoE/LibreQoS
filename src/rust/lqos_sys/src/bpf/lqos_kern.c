@@ -10,6 +10,7 @@
 #include <linux/pkt_sched.h> /* TC_H_MAJ + TC_H_MIN */
 #include "common/debug.h"
 #include "common/dissector.h"
+#include "common/dissector_tc.h"
 #include "common/maximums.h"
 #include "common/throughput.h"
 #include "common/lpm.h"
@@ -53,6 +54,18 @@ int direction = 255;
 // these are mapped to the respective VLAN facing directions.
 __be16 internet_vlan = 0; // Note: turn these into big-endian
 __be16 isp_vlan = 0;
+
+// Helpers from https://elixir.bootlin.com/linux/v5.4.153/source/tools/testing/selftests/bpf/progs/test_xdp_meta.c#L37
+#define __round_mask(x, y) ((__typeof__(x))((y) - 1))
+#define round_up(x, y) ((((x) - 1) | __round_mask(x, y)) + 1)
+#define ctx_ptr(ctx, mem) (void *)(unsigned long)ctx->mem
+
+
+// Structure for passing metadata from XDP to TC
+struct metadata_pass_t {
+    __u32 tc_handle;
+    __u32 cpu;
+};
 
 // XDP Entry Point
 SEC("xdp")
@@ -138,7 +151,6 @@ int xdp_prog(struct xdp_md *ctx)
         tc_handle
     );
 
-
     // Send on its way
     if (tc_handle != 0) {
         // Send data to Heimdall
@@ -158,6 +170,32 @@ int xdp_prog(struct xdp_md *ctx)
             return XDP_PASS; // No CPU found
         }
         __u32 cpu_dest = *cpu_lookup;
+
+        // Experimental: can we adjust the metadata?
+        int ret = bpf_xdp_adjust_meta(ctx, -round_up(ETH_ALEN, sizeof(struct metadata_pass_t)));
+        if (ret < 0) {
+            #ifdef VERBOSE
+            bpf_debug("Error: unable to adjust metadata, ret: %d", ret);
+            #endif
+        } else {
+            #ifdef VERBOSE
+            bpf_debug("Metadata adjusted, ret: %d", ret);
+            #endif
+
+            __u8 *data_meta = ctx_ptr(ctx, data_meta);
+            __u8 *data_end  = ctx_ptr(ctx, data_end);
+            __u8 *data      = ctx_ptr(ctx, data);
+
+            if (data + ETH_ALEN > data_end || data_meta + round_up(ETH_ALEN, 4) > data) {
+                bpf_debug("Bounds error on the metadata");
+                return XDP_DROP;
+            }
+            struct metadata_pass_t meta = (struct metadata_pass_t) {
+                .tc_handle = tc_handle,
+                .cpu = cpu
+            };
+            __builtin_memcpy(data_meta, &meta, sizeof(struct metadata_pass_t));
+        }
 
         // Redirect based on CPU
 #ifdef VERBOSE
@@ -202,6 +240,43 @@ int tc_iphash_to_cpu(struct __sk_buff *skb)
                 cpu, skb->queue_mapping);
         }
     } // Scope to remove tcq_cfg when done with it
+
+    // Do we have metadata?
+    if (skb->data != skb->data_meta) {
+        #ifdef VERBOSE
+        bpf_debug("(TC) Metadata is present");
+        #endif
+        int size = skb->data_meta - skb->data;
+        if (size < sizeof(struct metadata_pass_t)) {
+            bpf_debug("(TC) Metadata too small");
+        } else {
+            // Use it here
+            __u8 *data_meta = ctx_ptr(skb, data_meta);
+            __u8 *data_end  = ctx_ptr(skb, data_end);
+            __u8 *data      = ctx_ptr(skb, data);
+
+	        if (data + ETH_ALEN > data_end || data_meta + round_up(ETH_ALEN, 4) > data)
+            {
+                bpf_debug("(TC) Bounds error on the metadata");
+		        return TC_ACT_SHOT;
+            }
+
+            struct metadata_pass_t *meta = (struct metadata_pass_t *)data_meta;
+            #ifdef VERBOSE
+            bpf_debug("(TC) Metadata: CPU: %u, TC: %u", meta->cpu, meta->tc_handle);
+            #endif
+            if (meta->tc_handle != 0) {
+                // We can short-circuit the redirect and bypass the second
+                // LPM lookup! Yay!
+                skb->priority = meta->tc_handle;
+                return TC_ACT_OK;
+            }
+        }
+    } else {
+        #ifdef VERBOSE
+        bpf_debug("(TC) No metadata present");
+        #endif
+    }
 
     // Once again parse the packet
     // Note that we are returning OK on failure, which is a little odd.
