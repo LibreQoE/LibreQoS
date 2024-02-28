@@ -8,7 +8,7 @@ use crate::{
 };
 pub use heimdall_data::get_flow_stats;
 use log::{info, warn};
-use lqos_bus::{BusResponse, IpStats, TcHandle, XdpPpingResult};
+use lqos_bus::{BusResponse, FlowbeeProtocol, IpStats, TcHandle, XdpPpingResult};
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 use lts_client::collector::{StatsUpdateMessage, ThroughputSummary, HostSummary};
 use once_cell::sync::Lazy;
@@ -458,7 +458,7 @@ pub fn all_unknown_ips() -> BusResponse {
         local_ip: ip.local_ip.as_ip().to_string(),
         src_port: ip.src_port,
         dst_port: ip.dst_port,
-        ip_protocol: ip.ip_protocol,
+        ip_protocol: FlowbeeProtocol::from(ip.ip_protocol),
         bytes_sent: flow.bytes_sent,
         packets_sent: flow.packets_sent,
         rate_estimate_bps: flow.rate_estimate_bps,

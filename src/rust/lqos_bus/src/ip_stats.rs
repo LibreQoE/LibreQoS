@@ -145,6 +145,27 @@ pub struct PacketHeader {
   pub tcp_tsecr: u32,
 }
 
+/// Flowbee protocol enumeration
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+pub enum FlowbeeProtocol {
+  /// TCP (type 6)
+  TCP,
+  /// UDP (type 17)
+  UDP,
+  /// ICMP (type 1)
+  ICMP
+}
+
+impl From<u8> for FlowbeeProtocol {
+    fn from(value: u8) -> Self {
+        match value {
+            6 => Self::TCP,
+            17 => Self::UDP,
+            _ => Self::ICMP,
+        }
+    }
+}
+
 /// Flowbee: a complete flow data, combining key and data.
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub struct FlowbeeData {
@@ -157,7 +178,7 @@ pub struct FlowbeeData {
   /// Destination port number.
   pub dst_port: u16,
   /// IP protocol (see the Linux kernel!)
-  pub ip_protocol: u8,
+  pub ip_protocol: FlowbeeProtocol,
   /// Bytes transmitted
   pub bytes_sent: [u64; 2],
   /// Packets transmitted

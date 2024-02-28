@@ -14,7 +14,7 @@ mod bus;
 mod ip_stats;
 pub use ip_stats::{
   tos_parser, FlowProto, FlowTransport, IpMapping, IpStats, PacketHeader,
-  XdpPpingResult, FlowbeeData
+  XdpPpingResult, FlowbeeData, FlowbeeProtocol
 };
 mod tc_handle;
 pub use bus::{
