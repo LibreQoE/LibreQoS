@@ -10,7 +10,6 @@
 #include <linux/pkt_sched.h> /* TC_H_MAJ + TC_H_MIN */
 #include "common/debug.h"
 #include "common/dissector.h"
-#include "common/dissector_tc.h"
 #include "common/maximums.h"
 #include "common/throughput.h"
 #include "common/lpm.h"
