@@ -15,6 +15,7 @@
 #include "common/throughput.h"
 #include "common/lpm.h"
 #include "common/cpu_map.h"
+//#include "common/tcp_rtt.h"
 #include "common/bifrost.h"
 #include "common/heimdall.h"
 #include "common/flows.h"
@@ -226,6 +227,16 @@ int tc_iphash_to_cpu(struct __sk_buff *skb)
 #ifdef VERBOSE
     bpf_debug("(TC) effective direction: %d", effective_direction);
 #endif
+
+/*
+    // Call pping to obtain RTT times
+    struct parsing_context context = {0};
+    context.now = bpf_ktime_get_ns();
+    context.tcp = NULL;
+    context.dissector = &dissector;
+    context.active_host = &lookup_key.address;
+    tc_pping_start(&context);
+*/
 
     if (ip_info && ip_info->tc_handle != 0) {
         // We found a matching mapped TC flow
