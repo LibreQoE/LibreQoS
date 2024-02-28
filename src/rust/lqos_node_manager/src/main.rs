@@ -112,6 +112,7 @@ fn rocket() -> _ {
         toasts::stats_check,
         // Flowbee System
         flow_monitor::all_flows_debug_dump,
+        flow_monitor::count_flows,
       ],
     );
 

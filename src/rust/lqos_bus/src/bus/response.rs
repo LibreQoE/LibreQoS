@@ -119,4 +119,7 @@ pub enum BusResponse {
 
   /// All Active Flows (Not Recommended - Debug Use)
   AllActiveFlows(Vec<FlowbeeData>),
+
+  /// Count active flows
+  CountActiveFlows(u64),
 }

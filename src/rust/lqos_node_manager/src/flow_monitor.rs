@@ -13,3 +13,15 @@ pub async fn all_flows_debug_dump() -> NoCache<Json<Vec<FlowbeeData>>> {
 
   NoCache::new(Json(result))
 }
+
+#[get("/api/flows/count")]
+pub async fn count_flows() -> NoCache<Json<u64>> {
+  let responses =
+    bus_request(vec![BusRequest::CountActiveFlows]).await.unwrap();
+  let result = match &responses[0] {
+    BusResponse::CountActiveFlows(count) => *count,
+    _ => 0,
+  };
+
+  NoCache::new(Json(result))
+}

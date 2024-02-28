@@ -156,6 +156,9 @@ pub enum BusRequest {
   /// Request a dump of all active flows. This can be a lot of data.
   /// so this is intended for debugging
   DumpActiveFlows,
+
+  /// Count the nubmer of active flows.
+  CountActiveFlows,
 }
 
 /// Specific requests from the long-term stats system

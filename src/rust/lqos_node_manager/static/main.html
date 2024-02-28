@@ -66,7 +66,7 @@
             <div class="col-sm-4">
                 <div class="card bg-light">
                     <div class="card-body">
-                        <h5 class="card-title"><i class="fa fa-bolt"></i> Current Throughput</h5>
+                        <h5 class="card-title"><i class="fa fa-bolt"></i> Current Throughput <span class="badge badge-pill green-badge" id="flowCount">?</span></h5>
                         <table class="table">
                             <tr>
                                 <td class="bold">Packets/Second</td>
@@ -187,6 +187,12 @@
                     throughput.push("shaped", tp[1][i][shaped][0], tp[1][i][shaped][1]);
                 }
                 throughput.plotTotalThroughput("tpGraph");
+            });
+        }
+
+        function updateFlowCounter() {
+            $.get("/api/flows/count", (data) => {
+                $("#flowCount").text(data + " flows");
             });
         }
 
@@ -316,6 +322,7 @@
 
         function OneSecondCadence() {
             updateCurrentThroughput();
+            updateFlowCounter();
             updateSiteFunnel();
 
             if (tickCount % 5 == 0) {
@@ -342,6 +349,7 @@
 
             colorReloadButton();
             fillCurrentThroughput();
+            updateFlowCounter();
             updateCpu();
             updateRam();
             updateTop10();

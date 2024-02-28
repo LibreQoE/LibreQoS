@@ -226,6 +226,9 @@ fn handle_bus_requests(
       BusRequest::DumpActiveFlows => {
         throughput_tracker::dump_active_flows()
       }
+      BusRequest::CountActiveFlows => {
+        throughput_tracker::count_active_flows()
+      }
     });
   }
 }

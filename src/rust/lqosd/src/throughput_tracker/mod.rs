@@ -470,3 +470,9 @@ pub fn all_unknown_ips() -> BusResponse {
 
     BusResponse::AllActiveFlows(result)
   }
+
+  /// Count active flows
+  pub fn count_active_flows() -> BusResponse {
+    let lock = ALL_FLOWS.lock().unwrap();
+    BusResponse::CountActiveFlows(lock.len() as u64)
+  }
