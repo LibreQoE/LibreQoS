@@ -229,6 +229,7 @@ fn handle_bus_requests(
       BusRequest::CountActiveFlows => {
         throughput_tracker::count_active_flows()
       }
+      BusRequest::TopFlows { n } => throughput_tracker::top_flows(*n),
     });
   }
 }

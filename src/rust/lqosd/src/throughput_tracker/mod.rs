@@ -476,3 +476,35 @@ pub fn all_unknown_ips() -> BusResponse {
     let lock = ALL_FLOWS.lock().unwrap();
     BusResponse::CountActiveFlows(lock.len() as u64)
   }
+
+  /// Top Flows Report
+  pub fn top_flows(n: u32) -> BusResponse {
+    let lock = ALL_FLOWS.lock().unwrap();
+    let mut table = lock.clone();
+    table.sort_by(|a, b| {
+      let a_total = a.1.rate_estimate_bps[0] + a.1.rate_estimate_bps[1];
+      let b_total = b.1.rate_estimate_bps[0] + b.1.rate_estimate_bps[1];
+      b_total.cmp(&a_total)
+    });
+    let result = table
+      .iter()
+      .take(n as usize)
+      .map(|(ip, flow)| {
+        lqos_bus::FlowbeeData {
+          remote_ip: ip.remote_ip.as_ip().to_string(),
+          local_ip: ip.local_ip.as_ip().to_string(),
+          src_port: ip.src_port,
+          dst_port: ip.dst_port,
+          ip_protocol: FlowbeeProtocol::from(ip.ip_protocol),
+          bytes_sent: flow.bytes_sent,
+          packets_sent: flow.packets_sent,
+          rate_estimate_bps: flow.rate_estimate_bps,
+          retries: flow.retries,
+          last_rtt: flow.last_rtt,
+          end_status: flow.end_status,
+        }
+      })
+      .collect();
+
+    BusResponse::TopFlows(result)
+  }

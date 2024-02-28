@@ -159,6 +159,9 @@ pub enum BusRequest {
 
   /// Count the nubmer of active flows.
   CountActiveFlows,
+
+  /// Top Flows Reports
+  TopFlows{ n: u32 },
 }
 
 /// Specific requests from the long-term stats system

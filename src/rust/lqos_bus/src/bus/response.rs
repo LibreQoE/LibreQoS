@@ -122,4 +122,7 @@ pub enum BusResponse {
 
   /// Count active flows
   CountActiveFlows(u64),
+
+  /// Top Flopws
+  TopFlows(Vec<FlowbeeData>),
 }

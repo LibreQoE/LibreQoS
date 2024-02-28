@@ -25,3 +25,15 @@ pub async fn count_flows() -> NoCache<Json<u64>> {
 
   NoCache::new(Json(result))
 }
+
+#[get("/api/flows/top5")]
+pub async fn top_5_flows() -> NoCache<Json<Vec<FlowbeeData>>> {
+  let responses =
+    bus_request(vec![BusRequest::TopFlows { n: 5 }]).await.unwrap();
+  let result = match &responses[0] {
+    BusResponse::TopFlows(flowbee) => flowbee.to_owned(),
+    _ => Vec::new(),
+  };
+
+  NoCache::new(Json(result))
+}
