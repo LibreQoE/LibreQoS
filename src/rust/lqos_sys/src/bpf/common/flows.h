@@ -109,8 +109,8 @@ static __always_inline struct flow_key_t build_flow_key(
         return (struct flow_key_t) {
             .src = dissector->src_ip,
             .dst = dissector->dst_ip,
-            .src_port = bpf_htons(dissector->src_port),
-            .dst_port = bpf_htons(dissector->dst_port),
+            .src_port = bpf_htons(dissector->dst_port),
+            .dst_port = bpf_htons(dissector->src_port),
             .protocol = dissector->ip_protocol,
             .pad = 0,
             .pad1 = 0,
@@ -120,8 +120,8 @@ static __always_inline struct flow_key_t build_flow_key(
         return (struct flow_key_t) {
             .src = dissector->dst_ip,
             .dst = dissector->src_ip,
-            .src_port = bpf_htons(dissector->dst_port),
-            .dst_port = bpf_htons(dissector->src_port),
+            .src_port = bpf_htons(dissector->src_port),
+            .dst_port = bpf_htons(dissector->dst_port),
             .protocol = dissector->ip_protocol,
             .pad = 0,
             .pad1 = 0,
