@@ -245,7 +245,14 @@ static __always_inline void process_tcp(
     // Sequence and Acknowledgement numbers
     __u32 sequence = bpf_ntohl(dissector->sequence);
     __u32 ack_seq = bpf_ntohl(dissector->ack_seq);
-    if (data->last_sequence[rate_index] != 0 && sequence < data->last_sequence[rate_index]) {
+    if (
+        data->last_sequence[rate_index] != 0 && // We have a previous sequence number
+        sequence < data->last_sequence[rate_index] && // This is a retransmission
+        (
+            data->last_sequence[rate_index] > 0x10000 && // Wrap around possible
+            sequence > data->last_sequence[rate_index] - 0x10000 // Wrap around didn't occur            
+        ) 
+    ) {
         // This is a retransmission
         data->retries[rate_index]++;
     }
