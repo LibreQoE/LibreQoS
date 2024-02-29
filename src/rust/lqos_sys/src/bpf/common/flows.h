@@ -9,6 +9,7 @@
 
 
 #define SECOND_IN_NANOS 1000000000
+#define MS_IN_NANOS     1000000
 //#define TIMESTAMP_INTERVAL_NANOS 10000000
 
 // Some helpers to make understanding direction easier
@@ -88,7 +89,9 @@ static __always_inline struct flow_data_t new_flow_data(
         .start_time = now,
         .bytes_sent = { 0, 0 },
         .packets_sent = { 0, 0 },
-        .next_count_time = { now + SECOND_IN_NANOS, now + SECOND_IN_NANOS },
+        // Track flow rates at an MS scale rather than per-second
+        // to minimize rounding errors.
+        .next_count_time = { now + MS_IN_NANOS, now + MS_IN_NANOS },
         .last_count_time = { now, now },
         .next_count_bytes = { dissector->skb_len, dissector->skb_len },
         .rate_estimate_bps = { 0, 0 },
@@ -148,10 +151,10 @@ static __always_inline void update_flow_rates(
     if (now > data->next_count_time[rate_index]) {
         // Calculate the rate estimate
         __u64 bits = (data->bytes_sent[rate_index] - data->next_count_bytes[rate_index])*8;
-        __u64 time = (now - data->last_count_time[rate_index]) / 1000000000; // Seconds
-        data->rate_estimate_bps[rate_index] = bits/time;
-        data->next_count_time[rate_index] = now + SECOND_IN_NANOS;
-        data->next_count_bytes[rate_index] = data->bytes_sent[0];
+        __u64 time = (now - data->last_count_time[rate_index]) / 1000000; // Milliseconds
+        data->rate_estimate_bps[rate_index] = (bits/time) * 1000; // bits per second
+        data->next_count_time[rate_index] = now + MS_IN_NANOS;
+        data->next_count_bytes[rate_index] = data->bytes_sent[rate_index];
         data->last_count_time[rate_index] = now;
     }
 }
