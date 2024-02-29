@@ -156,7 +156,7 @@ static __always_inline void update_flow_rates(
         data->next_count_time[rate_index] = now + MS_IN_NANOS_T10;
         data->next_count_bytes[rate_index] = data->bytes_sent[rate_index];
         data->last_count_time[rate_index] = now;
-        bpf_debug("[FLOWS] Rate Estimate: %llu", data->rate_estimate_bps[rate_index]);
+        //bpf_debug("[FLOWS] Rate Estimate: %llu", data->rate_estimate_bps[rate_index]);
     }
 }
 
