@@ -161,7 +161,27 @@ pub enum BusRequest {
   CountActiveFlows,
 
   /// Top Flows Reports
-  TopFlows{ n: u32 },
+  TopFlows{ 
+    /// The type of top report to request
+    flow_type: TopFlowType,
+    /// The number of flows to return
+    n: u32 
+  },
+}
+
+/// Defines the type of "top" flow being requested
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy)]
+pub enum TopFlowType {
+  /// Top flows by current estimated bandwidth use
+  RateEstimate,
+  /// Top flows by total bytes transferred
+  Bytes,
+  /// Top flows by total packets transferred
+  Packets,
+  /// Top flows by total drops
+  Drops,
+  /// Top flows by round-trip time estimate
+  RoundTripTime,
 }
 
 /// Specific requests from the long-term stats system

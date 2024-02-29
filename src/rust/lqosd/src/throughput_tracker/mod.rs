@@ -8,7 +8,7 @@ use crate::{
 };
 pub use heimdall_data::get_flow_stats;
 use log::{info, warn};
-use lqos_bus::{BusResponse, FlowbeeProtocol, IpStats, TcHandle, XdpPpingResult};
+use lqos_bus::{BusResponse, FlowbeeProtocol, IpStats, TcHandle, TopFlowType, XdpPpingResult};
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 use lts_client::collector::{StatsUpdateMessage, ThroughputSummary, HostSummary};
 use once_cell::sync::Lazy;
@@ -478,14 +478,49 @@ pub fn all_unknown_ips() -> BusResponse {
   }
 
   /// Top Flows Report
-  pub fn top_flows(n: u32) -> BusResponse {
+  pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
     let lock = ALL_FLOWS.lock().unwrap();
     let mut table = lock.clone();
-    table.sort_by(|a, b| {
-      let a_total = a.1.rate_estimate_bps[0] + a.1.rate_estimate_bps[1];
-      let b_total = b.1.rate_estimate_bps[0] + b.1.rate_estimate_bps[1];
-      b_total.cmp(&a_total)
-    });
+
+
+    match flow_type {
+      TopFlowType::RateEstimate => {
+        table.sort_by(|a, b| {
+          let a_total = a.1.rate_estimate_bps[0] + a.1.rate_estimate_bps[1];
+          let b_total = b.1.rate_estimate_bps[0] + b.1.rate_estimate_bps[1];
+          b_total.cmp(&a_total)
+        });
+      }
+      TopFlowType::Bytes => {
+        table.sort_by(|a, b| {
+          let a_total = a.1.bytes_sent[0] + a.1.bytes_sent[1];
+          let b_total = b.1.bytes_sent[0] + b.1.bytes_sent[1];
+          b_total.cmp(&a_total)
+        });
+      }
+      TopFlowType::Packets => {
+        table.sort_by(|a, b| {
+          let a_total = a.1.packets_sent[0] + a.1.packets_sent[1];
+          let b_total = b.1.packets_sent[0] + b.1.packets_sent[1];
+          b_total.cmp(&a_total)
+        });
+      }
+      TopFlowType::Drops => {
+        table.sort_by(|a, b| {
+          let a_total = a.1.retries[0] + a.1.retries[1];
+          let b_total = b.1.retries[0] + b.1.retries[1];
+          b_total.cmp(&a_total)
+        });
+      }
+      TopFlowType::RoundTripTime => {
+        table.sort_by(|a, b| {
+          let a_total = a.1.last_rtt[0] + a.1.last_rtt[1];
+          let b_total = b.1.last_rtt[0] + b.1.last_rtt[1];
+          b_total.cmp(&a_total)
+        });
+      }
+    }
+
     let result = table
       .iter()
       .take(n as usize)

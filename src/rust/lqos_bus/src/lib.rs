@@ -21,7 +21,7 @@ pub use bus::{
   bus_request, decode_request, decode_response, encode_request,
   encode_response, BusClient, BusReply, BusRequest, BusResponse, BusSession,
   CakeDiffTinTransit, CakeDiffTransit, CakeTransit, QueueStoreTransit,
-  UnixSocketServer, BUS_SOCKET_PATH, StatsRequest
+  UnixSocketServer, BUS_SOCKET_PATH, StatsRequest, TopFlowType
 };
 pub use tc_handle::TcHandle;
 
