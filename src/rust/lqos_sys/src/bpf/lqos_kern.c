@@ -63,8 +63,7 @@ __be16 isp_vlan = 0;
 
 // Structure for passing metadata from XDP to TC
 struct metadata_pass_t {
-    __u32 tc_handle;
-    __u32 cpu;
+    __u32 tc_handle; // The encoded TC handle
 };
 
 // XDP Entry Point
@@ -195,7 +194,6 @@ int xdp_prog(struct xdp_md *ctx)
             }
             struct metadata_pass_t meta = (struct metadata_pass_t) {
                 .tc_handle = tc_handle,
-                .cpu = cpu
             };
             __builtin_memcpy(data_meta, &meta, sizeof(struct metadata_pass_t));
         }
