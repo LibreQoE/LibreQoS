@@ -171,7 +171,10 @@ int xdp_prog(struct xdp_md *ctx)
         }
         __u32 cpu_dest = *cpu_lookup;
 
-        // Experimental: can we adjust the metadata?
+        // Can we adjust the metadata? We'll try to do so, and if we can store the
+        // needed info there. Not all drivers support this, so it has to remain
+        // optional. This call invalidates the ctx->data pointer, so it has to be
+        // done last.
         int ret = bpf_xdp_adjust_meta(ctx, -round_up(ETH_ALEN, sizeof(struct metadata_pass_t)));
         if (ret < 0) {
             #ifdef VERBOSE
