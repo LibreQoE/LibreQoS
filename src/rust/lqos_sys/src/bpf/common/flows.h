@@ -280,32 +280,17 @@ static __always_inline void process_tcp(
     u_int32_t tsecr = dissector->tsecr;
     if (tsval != 0) {
         //bpf_debug("[FLOWS][%d] TSVAL: %u, TSECR: %u", direction, tsval, tsecr);
-        if (direction == TO_INTERNET) {
-            if (tsval != data->tsval[0] && tsecr != data->tsecr[0]) {
+        if (tsval != data->tsval[rate_index] && tsecr != data->tsecr[rate_index]) {
 
-                if (tsecr == data->tsval[1]) {
-                    __u64 elapsed = now - data->ts_change_time[1];
-                    data->last_rtt[0] = elapsed;
-                    //bpf_debug("[FLOWS][%d] RTT: %llu", direction, elapsed);
-                }
-
-                data->ts_change_time[0] = now;
-                data->tsval[0] = tsval;
-                data->tsecr[0] = tsecr;
+            if (tsecr == data->tsval[other_rate_index]) {
+                __u64 elapsed = now - data->ts_change_time[other_rate_index];
+                data->last_rtt[rate_index] = elapsed;
+                //bpf_debug("[FLOWS][%d] RTT: %llu", direction, elapsed);
             }
-        } else {
-            if (tsval != data->tsecr[1] && tsecr != data->tsval[1]) {
 
-                if (tsval == data->tsecr[0]) {
-                    __u64 elapsed = now - data->ts_change_time[0];
-                    data->last_rtt[1] = elapsed;
-                    //bpf_debug("[FLOWS][%d] RTT: %llu", direction, elapsed);
-                }
-
-                data->ts_change_time[1] = now;
-                data->tsval[1] = tsval;
-                data->tsecr[1] = tsecr;
-            }
+            data->ts_change_time[rate_index] = now;
+            data->tsval[rate_index] = tsval;
+            data->tsecr[rate_index] = tsecr;
         }
     }
 
