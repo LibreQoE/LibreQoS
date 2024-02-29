@@ -115,10 +115,12 @@ static __always_inline struct flow_key_t build_flow_key(
 ) {
     __u16 src_port = direction == FROM_INTERNET ? bpf_htons(dissector->src_port) : bpf_htons(dissector->dst_port);
     __u16 dst_port = direction == FROM_INTERNET ? bpf_htons(dissector->dst_port) : bpf_htons(dissector->src_port);
+    struct in6_addr src = direction == FROM_INTERNET ? dissector->src_ip : dissector->dst_ip;
+    struct in6_addr dst = direction == FROM_INTERNET ? dissector->dst_ip : dissector->src_ip;
 
     return (struct flow_key_t) {
-        .src = dissector->src_ip,
-        .dst = dissector->dst_ip,
+        .src = src,
+        .dst = dst,
         .src_port = src_port,
         .dst_port = dst_port,
         .protocol = dissector->ip_protocol,
@@ -206,6 +208,33 @@ static __always_inline void process_udp(
     update_flow_rates(dissector, rate_index, data, now);
 }
 
+// Store the most recent sequence and ack numbers, and detect retransmissions.
+// This will also trigger on duplicate packets, and out-of-order - but those
+// are both an indication that you have issues anyway. So that's ok by me!
+static __always_inline void detect_retries(
+    struct dissector_t *dissector,
+    u_int8_t rate_index,
+    struct flow_data_t *data
+) {
+    __u32 sequence = bpf_ntohl(dissector->sequence);
+    __u32 ack_seq = bpf_ntohl(dissector->ack_seq);
+    if (
+        data->last_sequence[rate_index] != 0 && // We have a previous sequence number
+        sequence < data->last_sequence[rate_index] && // This is a retransmission
+        (
+            data->last_sequence[rate_index] > 0x10000 && // Wrap around possible
+            sequence > data->last_sequence[rate_index] - 0x10000 // Wrap around didn't occur            
+        ) 
+    ) {
+        // This is a retransmission
+        data->retries[rate_index]++;
+    }
+
+    // Store the sequence and ack numbers for the next packet
+    data->last_sequence[rate_index] = sequence;
+    data->last_ack[rate_index] = ack_seq;
+}
+
 // Handle Per-Flow TCP Analysis
 static __always_inline void process_tcp(
     struct dissector_t *dissector,
@@ -236,6 +265,7 @@ static __always_inline void process_tcp(
     struct flow_data_t *data = bpf_map_lookup_elem(&flowbee, &key);
     if (data == NULL) {
         // If it isn't a flow we're tracking, bail out now
+        bpf_debug("Bailing");
         return;
     }
 
@@ -243,23 +273,7 @@ static __always_inline void process_tcp(
     update_flow_rates(dissector, rate_index, data, now);
 
     // Sequence and Acknowledgement numbers
-    __u32 sequence = bpf_ntohl(dissector->sequence);
-    __u32 ack_seq = bpf_ntohl(dissector->ack_seq);
-    if (
-        data->last_sequence[rate_index] != 0 && // We have a previous sequence number
-        sequence < data->last_sequence[rate_index] && // This is a retransmission
-        (
-            data->last_sequence[rate_index] > 0x10000 && // Wrap around possible
-            sequence > data->last_sequence[rate_index] - 0x10000 // Wrap around didn't occur            
-        ) 
-    ) {
-        // This is a retransmission
-        data->retries[rate_index]++;
-    }
-
-    // Store the sequence and ack numbers for the next packet
-    data->last_sequence[rate_index] = sequence;
-    data->last_ack[rate_index] = ack_seq;
+    detect_retries(dissector, rate_index, data);
 
     // Timestamps to calculate RTT
     u_int32_t tsval = dissector->tsval;
