@@ -319,7 +319,7 @@ class NetworkGraph:
 						data[node]['uploadBandwidthMbps'] = min(int(data[node]['uploadBandwidthMbps']),int(parentMaxUL))
 						if 'children' in data[node]:
 							inheritBandwidthMaxes(data[node]['children'], data[node]['downloadBandwidthMbps'], data[node]['uploadBandwidthMbps'])
-		inheritBandwidthMaxes(topLevelNode, parentMaxDL=upstream_bandwidth_capacity_download_mbps, parentMaxUL=upstream_bandwidth_capacity_upload_mbps)
+		inheritBandwidthMaxes(topLevelNode, parentMaxDL=upstream_bandwidth_capacity_download_mbps(), parentMaxUL=upstream_bandwidth_capacity_upload_mbps())
 		
 		with open('network.json', 'w') as f:
 			json.dump(topLevelNode, f, indent=4)

@@ -12,7 +12,7 @@
 //! ```
 
 use anyhow::Result;
-use lqos_config::{load_config, ConfigShapedDevices};
+use lqos_config::{load_config, ConfigShapedDevices, ShapedDevice};
 use pyo3::pyclass;
 use serde::{Deserialize, Serialize};
 
@@ -130,4 +130,70 @@ pub(crate) fn get_weights_rust() -> Result<Vec<DeviceWeightResponse>> {
     }
 
     Ok(shaped_devices_weights)
+}
+
+fn recurse_weights(
+    device_list: &[ShapedDevice],
+    device_weights: &[DeviceWeightResponse],
+    network: &lqos_config::NetworkJson,
+    node_index: usize,
+) -> Result<i64> {
+    let mut weight = 0;
+    let n = &network.nodes[node_index];
+    //println!("     Tower: {}", n.name);
+
+    device_list
+        .iter()
+        .filter(|d| d.parent_node == n.name)
+        .for_each(|d| {
+            if let Some(w) = device_weights.iter().find(|w| w.circuit_id == d.circuit_id) {
+                weight += w.weight;
+            }
+        });
+    //println!("     Weight: {}", weight);
+
+    for (i, n) in network.nodes
+        .iter()
+        .enumerate()
+        .filter(|(_i, n)| n.immediate_parent == Some(node_index)) 
+    {
+        //println!("     Child: {}", n.name);
+        weight += recurse_weights(device_list, device_weights, network, i)?;
+    }
+    Ok(weight)
+}
+
+#[pyclass]
+pub struct NetworkNodeWeight {
+    #[pyo3(get)]
+    pub name: String,
+    #[pyo3(get)]
+    pub weight: i64,
+}
+
+/// Calculate the top-level network tree nodes and then
+/// calculate the weights for each node
+pub(crate) fn calculate_tree_weights() -> Result<Vec<NetworkNodeWeight>> {
+    let device_list = ConfigShapedDevices::load()?.devices;
+    let device_weights = get_weights_rust()?;
+    let network = lqos_config::NetworkJson::load()?;
+    let root_index = network.nodes.iter().position(|n| n.immediate_parent.is_none()).unwrap();
+    let mut result = Vec::new();
+    //println!("Root index is: {}", root_index);
+
+    // Find all network nodes one off the top
+    network
+        .nodes
+        .iter()
+        .enumerate()
+        .filter(|(_,n)| n.immediate_parent.is_some() && n.immediate_parent.unwrap() == root_index)
+        .for_each(|(idx, n)| {
+            //println!("Node: {} ", n.name);
+            let weight = recurse_weights(&device_list, &device_weights, &network, idx).unwrap();
+            //println!("Node: {} : {weight}", n.name);
+            result.push(NetworkNodeWeight { name: n.name.clone(), weight });
+        });
+
+    result.sort_by(|a,b| b.weight.cmp(&a.weight));
+    Ok(result)
 }

@@ -89,6 +89,7 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_wrapped(wrap_pyfunction!(influx_db_token))?;
   m.add_wrapped(wrap_pyfunction!(influx_db_url))?;
   m.add_wrapped(wrap_pyfunction!(get_weights))?;
+  m.add_wrapped(wrap_pyfunction!(get_tree_weights))?;
 
   Ok(())
 }
@@ -646,6 +647,16 @@ fn influx_db_url() -> PyResult<String> {
 pub fn get_weights() -> PyResult<Vec<device_weights::DeviceWeightResponse>> {
     match device_weights::get_weights_rust() {
         Ok(weights) => Ok(weights),
+        Err(e) => {
+            Err(PyOSError::new_err(e.to_string()))
+        }
+    }
+}
+
+#[pyfunction]
+pub fn get_tree_weights() -> PyResult<Vec<device_weights::NetworkNodeWeight>> {
+    match device_weights::calculate_tree_weights() {
+        Ok(w) => Ok(w),
         Err(e) => {
             Err(PyOSError::new_err(e.to_string()))
         }
