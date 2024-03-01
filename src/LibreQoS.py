@@ -514,12 +514,13 @@ def refreshShapers():
 		if use_bin_packing_to_balance_cpu():
 			print("Using binpacking module to sort circuits by CPU core")
 			weights = get_weights()
-			for circuitId in dictForCircuitsWithoutParentNodes:
-				for circuit in subscriberCircuits:
-					if circuit['idForCircuitsWithoutParentNodes'] == circuitId:
-						for w in weights:
-							if w.circuit_id == circuit['circuitID']:
-								dictForCircuitsWithoutParentNodes[circuitId] = w.weight
+			if weights is not None and dictForCircuitsWithoutParentNodes is not None:
+				for circuitId in dictForCircuitsWithoutParentNodes:
+					for circuit in subscriberCircuits:
+						if 'idForCircuitsWithoutParentNodes' in circuit and circuit['idForCircuitsWithoutParentNodes'] == circuitId:
+							for w in weights:
+								if w.circuit_id == circuit['circuitID']:
+									dictForCircuitsWithoutParentNodes[circuitId] = w.weight
 			bins = binpacking.to_constant_bin_number(dictForCircuitsWithoutParentNodes, numberOfGeneratedPNs)
 			genPNcounter = 0
 			for binItem in bins:
@@ -622,15 +623,16 @@ def refreshShapers():
 		# Track minor counter by CPU. This way we can have > 32000 hosts (htb has u16 limit to minor handle)
 		for x in range(queuesAvailable):
 			minorByCPUpreloaded[x+1] = 3
-		def traverseNetwork(data, depth, major, minorByCPU, queue, parentClassID, upParentClassID, parentMaxDL, parentMaxUL, bins):
+		def traverseNetwork(data, depth, major, minorByCPU, queue, parentClassID, upParentClassID, parentMaxDL, parentMaxUL):
 			for node in data:
-				circuitsForThisNetworkNode = []				
-				if depth==0 and use_bin_packing_to_balance_cpu():
+				circuitsForThisNetworkNode = []
+				#TODO: DELETE ME
+				#if depth==0 and use_bin_packing_to_balance_cpu() and not on_a_stick():
 					# Lookup the "major" number from the bins
-					for x in range(queuesAvailable):
-						if node in bins[x]:
-							major = x+1
-							print("Assigned major " + str(major) + " to node " + node)
+				#	for x in range(queuesAvailable):
+				#		if node in bins[x]:
+							#packedMajor = x+1
+				#			print("Assigned major " + str(major) + " to node " + node)
 
 				nodeClassID = hex(major) + ':' + hex(minorByCPU[queue])
 				upNodeClassID = hex(major+stickOffset) + ':' + hex(minorByCPU[queue])
@@ -714,7 +716,7 @@ def refreshShapers():
 				if 'children' in data[node]:
 					# We need to keep tabs on the minor counter, because we can't have repeating class IDs. Here, we bring back the minor counter from the recursive function
 					minorByCPU[queue] = minorByCPU[queue] + 1
-					minorByCPU = traverseNetwork(data[node]['children'], depth+1, major, minorByCPU, queue, nodeClassID, upNodeClassID, data[node]['downloadBandwidthMbps'], data[node]['uploadBandwidthMbps'], bins)
+					minorByCPU = traverseNetwork(data[node]['children'], depth+1, major, minorByCPU, queue, nodeClassID, upNodeClassID, data[node]['downloadBandwidthMbps'], data[node]['uploadBandwidthMbps'])
 				# If top level node, increment to next queue / cpu core
 				if depth == 0:
 					if queue >= queuesAvailable:
@@ -727,7 +729,7 @@ def refreshShapers():
 		
 		# If we're in binpacking mode, we need to sort the network structure a bit
 		bins = []
-		if use_bin_packing_to_balance_cpu():
+		if use_bin_packing_to_balance_cpu() and not on_a_stick():
 			print("BinPacking is enabled, so we're going to sort your network.")
 			cpuBin = {}
 			weights = get_tree_weights()
@@ -736,9 +738,28 @@ def refreshShapers():
 			bins = binpacking.to_constant_bin_number(cpuBin, queuesAvailable)
 			#for x in range(queuesAvailable):
 			#	print("Bin " + str(x) + " = ", bins[x])
+			#print(network)
+
+			binnedNetwork = {}
+			for cpu in range(queuesAvailable):
+				cpuKey = "CpueQueue" + str(cpu)
+				binnedNetwork[cpuKey] = {
+					'downloadBandwidthMbps': generated_pn_download_mbps(),
+					'uploadBandwidthMbps': generated_pn_upload_mbps(),
+					'type': 'site',
+					'downloadBandwidthMbpsMin': generated_pn_download_mbps(),
+					'uploadBandwidthMbpsMin': generated_pn_upload_mbps(),
+					'children': {}
+				}
+			for node in network:
+				for bin in range(queuesAvailable):
+					if node in bins[bin]:
+						binnedNetwork["CpueQueue" + str(bin)]['children'][node] = network[node]
+			#print("Binned network = ", binnedNetwork)
+			network = binnedNetwork
 		
 		# Here is the actual call to the recursive traverseNetwork() function. finalMinor is not used.
-		minorByCPU = traverseNetwork(network, 0, major=1, minorByCPU=minorByCPUpreloaded, queue=1, parentClassID=None, upParentClassID=None, parentMaxDL=upstream_bandwidth_capacity_download_mbps(), parentMaxUL=upstream_bandwidth_capacity_upload_mbps(), bins=bins)
+		minorByCPU = traverseNetwork(network, 0, major=1, minorByCPU=minorByCPUpreloaded, queue=1, parentClassID=None, upParentClassID=None, parentMaxDL=upstream_bandwidth_capacity_download_mbps(), parentMaxUL=upstream_bandwidth_capacity_upload_mbps())
 		
 		linuxTCcommands = []
 		devicesShaped = []
