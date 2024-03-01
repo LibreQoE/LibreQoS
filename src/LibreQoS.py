@@ -759,9 +759,14 @@ def refreshShapers():
 					'children': {}
 				}
 			for node in network:
+				found = False
 				for bin in range(queuesAvailable):
 					if node in bins[bin]:
 						binnedNetwork["CpueQueue" + str(bin)]['children'][node] = network[node]
+						found = True
+				if found == False:
+					newQueueId = queuesAvailable-1
+					binnedNetwork["CpueQueue" + str(newQueueId)]['children'][node] = network[node]
 			#print("Binned network = ", binnedNetwork)
 			network = binnedNetwork
 		
