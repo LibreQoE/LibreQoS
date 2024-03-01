@@ -625,14 +625,21 @@ def refreshShapers():
 			minorByCPUpreloaded[x+1] = 3
 		def traverseNetwork(data, depth, major, minorByCPU, queue, parentClassID, upParentClassID, parentMaxDL, parentMaxUL):
 			for node in data:
+				if data[node]['type'] == "virtual":
+					print(node + " is a virtual node. Skipping.")
+					if depth == 0:
+						parentClassID = hex(major) + ':'
+						upParentClassID = hex(major+stickOffset) + ':'
+					data[node]['parentClassID'] = parentClassID
+					data[node]['up_parentClassID'] = upParentClassID
+					data[node]['classMajor'] = hex(major)
+					data[node]['up_classMajor'] = hex(major + stickOffset)
+					data[node]['classMinor'] = hex(minorByCPU[queue])
+					data[node]['cpuNum'] = hex(queue-1)
+					data[node]['up_cpuNum'] = hex(queue-1+stickOffset)
+					traverseNetwork(data[node]['children'], depth, major, minorByCPU, queue, parentClassID, upParentClassID, parentMaxDL, parentMaxUL)
+					continue
 				circuitsForThisNetworkNode = []
-				#TODO: DELETE ME
-				#if depth==0 and use_bin_packing_to_balance_cpu() and not on_a_stick():
-					# Lookup the "major" number from the bins
-				#	for x in range(queuesAvailable):
-				#		if node in bins[x]:
-							#packedMajor = x+1
-				#			print("Assigned major " + str(major) + " to node " + node)
 
 				nodeClassID = hex(major) + ':' + hex(minorByCPU[queue])
 				upNodeClassID = hex(major+stickOffset) + ':' + hex(minorByCPU[queue])
@@ -746,7 +753,7 @@ def refreshShapers():
 				binnedNetwork[cpuKey] = {
 					'downloadBandwidthMbps': generated_pn_download_mbps(),
 					'uploadBandwidthMbps': generated_pn_upload_mbps(),
-					'type': 'site',
+					'type': 'virtual',
 					'downloadBandwidthMbpsMin': generated_pn_download_mbps(),
 					'uploadBandwidthMbpsMin': generated_pn_upload_mbps(),
 					'children': {}
