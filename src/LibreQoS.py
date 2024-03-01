@@ -625,20 +625,20 @@ def refreshShapers():
 			minorByCPUpreloaded[x+1] = 3
 		def traverseNetwork(data, depth, major, minorByCPU, queue, parentClassID, upParentClassID, parentMaxDL, parentMaxUL):
 			for node in data:
-				if data[node]['type'] == "virtual":
-					print(node + " is a virtual node. Skipping.")
-					if depth == 0:
-						parentClassID = hex(major) + ':'
-						upParentClassID = hex(major+stickOffset) + ':'
-					data[node]['parentClassID'] = parentClassID
-					data[node]['up_parentClassID'] = upParentClassID
-					data[node]['classMajor'] = hex(major)
-					data[node]['up_classMajor'] = hex(major + stickOffset)
-					data[node]['classMinor'] = hex(minorByCPU[queue])
-					data[node]['cpuNum'] = hex(queue-1)
-					data[node]['up_cpuNum'] = hex(queue-1+stickOffset)
-					traverseNetwork(data[node]['children'], depth, major, minorByCPU, queue, parentClassID, upParentClassID, parentMaxDL, parentMaxUL)
-					continue
+				#if data[node]['type'] == "virtual":
+				#	print(node + " is a virtual node. Skipping.")
+				#	if depth == 0:
+				#		parentClassID = hex(major) + ':'
+				#		upParentClassID = hex(major+stickOffset) + ':'
+				#	data[node]['parentClassID'] = parentClassID
+				#	data[node]['up_parentClassID'] = upParentClassID
+				#	data[node]['classMajor'] = hex(major)
+				#	data[node]['up_classMajor'] = hex(major + stickOffset)
+				#	data[node]['classMinor'] = hex(minorByCPU[queue])
+				#	data[node]['cpuNum'] = hex(queue-1)
+				#	data[node]['up_cpuNum'] = hex(queue-1+stickOffset)
+				#	traverseNetwork(data[node]['children'], depth, major, minorByCPU, queue, parentClassID, upParentClassID, parentMaxDL, parentMaxUL)
+				#	continue
 				circuitsForThisNetworkNode = []
 
 				nodeClassID = hex(major) + ':' + hex(minorByCPU[queue])
@@ -743,8 +743,8 @@ def refreshShapers():
 			for w in weights:
 				cpuBin[w.name] = w.weight
 			bins = binpacking.to_constant_bin_number(cpuBin, queuesAvailable)
-			#for x in range(queuesAvailable):
-			#	print("Bin " + str(x) + " = ", bins[x])
+			for x in range(queuesAvailable):
+				print("Bin " + str(x) + " = ", bins[x])
 			#print(network)
 
 			binnedNetwork = {}
@@ -753,7 +753,7 @@ def refreshShapers():
 				binnedNetwork[cpuKey] = {
 					'downloadBandwidthMbps': generated_pn_download_mbps(),
 					'uploadBandwidthMbps': generated_pn_upload_mbps(),
-					'type': 'virtual',
+					'type': 'site',
 					'downloadBandwidthMbpsMin': generated_pn_download_mbps(),
 					'uploadBandwidthMbpsMin': generated_pn_upload_mbps(),
 					'children': {}
