@@ -208,26 +208,28 @@ pub fn attach_xdp_and_tc_to_interface(
   // Attach to the ingress IF it is configured
   if let Ok(etc) = lqos_config::load_config() {
     if let Some(bridge) = &etc.bridge {
-      // Enable "promiscuous" mode on interfaces
-      info!("Enabling promiscuous mode on {}", &bridge.to_internet);
-      std::process::Command::new("/bin/ip")
-            .args(["link", "set", &bridge.to_internet, "promisc", "on"])
-            .output()?;
-      info!("Enabling promiscuous mode on {}", &bridge.to_network);
-      std::process::Command::new("/bin/ip")
-        .args(["link", "set", &bridge.to_network, "promisc", "on"])
-        .output()?;
+      if bridge.use_xdp_bridge {
+        // Enable "promiscuous" mode on interfaces
+        info!("Enabling promiscuous mode on {}", &bridge.to_internet);
+        std::process::Command::new("/bin/ip")
+              .args(["link", "set", &bridge.to_internet, "promisc", "on"])
+              .output()?;
+        info!("Enabling promiscuous mode on {}", &bridge.to_network);
+        std::process::Command::new("/bin/ip")
+          .args(["link", "set", &bridge.to_network, "promisc", "on"])
+          .output()?;
 
-      // Build the interface and vlan map entries
-      crate::bifrost_maps::clear_bifrost()?;
-      crate::bifrost_maps::map_multi_interface_mode(&bridge.to_internet, &bridge.to_network)?;
+        // Build the interface and vlan map entries
+        crate::bifrost_maps::clear_bifrost()?;
+        crate::bifrost_maps::map_multi_interface_mode(&bridge.to_internet, &bridge.to_network)?;
 
-      // Actually attach the TC ingress program
-      let error = unsafe {
-        bpf::tc_attach_ingress(interface_index as i32, false, skeleton)
-      };
-      if error != 0 {
-        return Err(Error::msg("Unable to attach TC Ingress to interface"));
+        // Actually attach the TC ingress program
+        let error = unsafe {
+          bpf::tc_attach_ingress(interface_index as i32, false, skeleton)
+        };
+        if error != 0 {
+          return Err(Error::msg("Unable to attach TC Ingress to interface"));
+        }
       }
     }
 

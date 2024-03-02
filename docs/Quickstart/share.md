@@ -1,6 +1,6 @@
 # Share your before and after
 
-We ask that you please share an anonymized screenshot of your LibreQoS deployment before (monitor only mode) and after (queuing enabled) to our [Matrix Channel](https://matrix.to/#/#libreqos:matrix.org). This helps us gauge the impact of our software. It also makes us smile.
+We ask that you please share an anonymized screenshot of your LibreQoS deployment before (monitor only mode) and after (queuing enabled) to the [LibreQoS Chat](https://chat.libreqos.io/join/fvu3cerayyaumo377xwvpev6/). This helps us gauge the impact of our software. It also makes us smile.
 
 1. Enable monitor only mode
 2. Klingon mode (Redact customer info)
