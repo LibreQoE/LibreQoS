@@ -51,6 +51,9 @@ pub struct Config {
     /// IP Range definitions
     pub ip_ranges: super::ip_ranges::IpRanges,
 
+    /// Network flows configuration
+    pub flows: Option<super::flows::FlowConfig>,
+
     /// Integration Common Variables
     pub integration_common: super::integration_common::IntegrationConfig,
 
@@ -133,6 +136,7 @@ impl Default for Config {
             influxdb: super::influxdb::InfluxDbConfig::default(),
             packet_capture_time: 10,
             queue_check_period_ms: 1000,
+            flows: None,
         }
     }
 }

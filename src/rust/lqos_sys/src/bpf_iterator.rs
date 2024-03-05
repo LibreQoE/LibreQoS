@@ -1,6 +1,5 @@
 use crate::{
-  flowbee_data::{FlowbeeData, FlowbeeKey}, heimdall_data::{HeimdallData, HeimdallKey}, 
-  kernel_wrapper::BPF_SKELETON, lqos_kernel::bpf, HostCounter
+  bpf_map::BpfMap, flowbee_data::{FlowbeeData, FlowbeeKey}, heimdall_data::{HeimdallData, HeimdallKey}, kernel_wrapper::BPF_SKELETON, lqos_kernel::bpf, HostCounter
 };
 use lqos_utils::XdpIpAddress;
 use once_cell::sync::Lazy;
@@ -274,4 +273,22 @@ pub fn iterate_flows(
       let _ = iter.for_each(callback);
     }
   }
+}
+
+/// Adjust flows to have status 2 - already processed
+///
+// Arguments: the list of flow keys to expire
+pub fn end_flows(flows: &mut [FlowbeeKey]) -> anyhow::Result<()> {
+  let mut map = BpfMap::<FlowbeeKey, FlowbeeData>::from_path("/sys/fs/bpf/flowbee")?;
+
+  let mut dead_flow = FlowbeeData {
+    end_status: 2,
+    ..Default::default()
+  };
+
+  for flow in flows {
+    map.insert_or_update(flow, &mut dead_flow)?;
+  }
+
+  Ok(())
 }

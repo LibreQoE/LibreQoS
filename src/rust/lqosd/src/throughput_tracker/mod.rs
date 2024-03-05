@@ -9,6 +9,7 @@ use crate::{
 pub use heimdall_data::get_flow_stats;
 use log::{info, warn};
 use lqos_bus::{BusResponse, FlowbeeProtocol, IpStats, TcHandle, TopFlowType, XdpPpingResult};
+use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 use lts_client::collector::{StatsUpdateMessage, ThroughputSummary, HostSummary};
 use once_cell::sync::Lazy;
@@ -30,19 +31,50 @@ pub static THROUGHPUT_TRACKER: Lazy<ThroughputTracker> = Lazy::new(ThroughputTra
 ///
 /// * `long_term_stats_tx` - an optional MPSC sender to notify the
 ///   collection thread that there is fresh data.
-pub async fn spawn_throughput_monitor(long_term_stats_tx: Sender<StatsUpdateMessage>) {
+pub async fn spawn_throughput_monitor(
+  long_term_stats_tx: Sender<StatsUpdateMessage>,
+  netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, FlowbeeData)>,
+) {
     info!("Starting the bandwidth monitor thread.");
     let interval_ms = 1000; // 1 second
     info!("Bandwidth check period set to {interval_ms} ms.");
-    tokio::spawn(throughput_task(interval_ms, long_term_stats_tx));
+    tokio::spawn(throughput_task(interval_ms, long_term_stats_tx, netflow_sender));
 }
 
-async fn throughput_task(interval_ms: u64, long_term_stats_tx: Sender<StatsUpdateMessage>) {
+async fn throughput_task(
+  interval_ms: u64, 
+  long_term_stats_tx: Sender<StatsUpdateMessage>,
+  netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, FlowbeeData)>
+) {
+    // Obtain the flow timeout from the config, default to 30 seconds
+    let timeout_seconds = if let Ok(config) = lqos_config::load_config() {
+      if let Some(flow_config) = config.flows {
+        flow_config.flow_timeout_seconds
+      } else {
+        30
+      }
+    } else {
+      30
+    };
+
+    // Obtain the netflow_enabled from the config, default to false
+    let netflow_enabled = if let Ok(config) = lqos_config::load_config() {
+      if let Some(flow_config) = config.flows {
+        flow_config.netflow_enabled
+      } else {
+        false
+      }
+    } else {
+      false
+    };
+
+
     loop {
         let start = Instant::now();
 
         // Perform the stats collection in a blocking thread, ensuring that
         // the tokio runtime is not blocked.
+        let my_netflow_sender = netflow_sender.clone();
         if let Err(e) = tokio::task::spawn_blocking(move || {
 
           {
@@ -51,7 +83,11 @@ async fn throughput_task(interval_ms: u64, long_term_stats_tx: Sender<StatsUpdat
           } // Scope to end the lock
           THROUGHPUT_TRACKER.copy_previous_and_reset_rtt();
           THROUGHPUT_TRACKER.apply_new_throughput_counters();
-          THROUGHPUT_TRACKER.apply_flow_data();
+          THROUGHPUT_TRACKER.apply_flow_data(
+            timeout_seconds,
+            netflow_enabled,
+            my_netflow_sender.clone(),
+          );
           THROUGHPUT_TRACKER.update_totals();
           THROUGHPUT_TRACKER.next_cycle();
           let duration_ms = start.elapsed().as_micros();
@@ -465,6 +501,8 @@ pub fn all_unknown_ips() -> BusResponse {
         retries: flow.retries,
         last_rtt: flow.last_rtt,
         end_status: flow.end_status,
+        tos: flow.tos,
+        flags: flow.flags,
       });
     }
 
@@ -537,6 +575,8 @@ pub fn all_unknown_ips() -> BusResponse {
           retries: flow.retries,
           last_rtt: flow.last_rtt,
           end_status: flow.end_status,
+          tos: flow.tos,
+          flags: flow.flags,
         }
       })
       .collect();

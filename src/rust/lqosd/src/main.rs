@@ -12,7 +12,7 @@ mod long_term_stats;
 use std::net::IpAddr;
 use crate::{
   file_lock::FileLock,
-  ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow},
+  ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow}, throughput_tracker::flow_data::setup_netflow_tracker,
 };
 use anyhow::Result;
 use log::{info, warn};
@@ -73,13 +73,14 @@ async fn main() -> Result<()> {
 
   // Spawn tracking sub-systems
   let long_term_stats_tx = start_long_term_stats().await;
+  let flow_tx = setup_netflow_tracker();
   join!(
     start_heimdall(),
     spawn_queue_structure_monitor(),
     shaped_devices_tracker::shaped_devices_watcher(),
     shaped_devices_tracker::network_json_watcher(),
     anonymous_usage::start_anonymous_usage(),
-    throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone()),
+    throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone(), flow_tx),
   );
   spawn_queue_monitor();
 

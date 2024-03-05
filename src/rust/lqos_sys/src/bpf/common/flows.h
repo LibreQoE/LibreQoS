@@ -64,7 +64,13 @@ struct flow_data_t {
     __u64 last_rtt[2];
     // Has the connection ended?
     // 0 = Alive, 1 = FIN, 2 = RST
-    __u32 end_status;
+    __u8 end_status;
+    // TOS
+    __u8 tos;
+    // IP Flags
+    __u8 ip_flags;
+    // Padding
+    __u8 pad;
 };
 
 // Map for tracking TCP flow progress.
@@ -102,7 +108,9 @@ static __always_inline struct flow_data_t new_flow_data(
         .tsecr = { 0, 0 },
         .ts_change_time = { 0, 0 },
         .last_rtt = { 0, 0 },
-        .end_status = 0
+        .end_status = 0,
+        .tos = 0,
+        .ip_flags = 0,
     };
     return data;
 }
@@ -145,6 +153,7 @@ static __always_inline void update_flow_rates(
     __u64 now
 ) {
     data->last_seen = now;
+    data->end_status = 0; // Reset the end status
 
     // Update bytes and packets sent
     data->bytes_sent[rate_index] += dissector->skb_len;
@@ -254,6 +263,8 @@ static __always_inline void process_tcp(
         #endif
         struct flow_key_t key = build_flow_key(dissector, direction);
         struct flow_data_t data = new_flow_data(now, dissector);
+        data.tos = dissector->tos;
+        data.ip_flags = 0; // Obtain these
         if (bpf_map_update_elem(&flowbee, &key, &data, BPF_ANY) != 0) {
             bpf_debug("[FLOWS] Failed to add new flow to map");
         }

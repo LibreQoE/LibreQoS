@@ -30,4 +30,4 @@ pub use kernel_wrapper::LibreQoSKernels;
 pub use linux::num_possible_cpus;
 pub use lqos_kernel::max_tracked_ips;
 pub use throughput::{throughput_for_each, HostCounter};
-pub use bpf_iterator::{iterate_heimdall, iterate_flows};
+pub use bpf_iterator::{iterate_heimdall, iterate_flows, end_flows};

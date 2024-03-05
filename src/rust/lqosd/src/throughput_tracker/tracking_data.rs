@@ -3,7 +3,7 @@ use crate::{shaped_devices_tracker::{SHAPED_DEVICES, NETWORK_JSON}, stats::{HIGH
 use super::{flow_data::ALL_FLOWS, throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
 use dashmap::DashMap;
 use lqos_bus::TcHandle;
-use lqos_sys::{iterate_flows, throughput_for_each};
+use lqos_sys::{flowbee_data::{FlowbeeData, FlowbeeKey}, iterate_flows, throughput_for_each};
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 
 pub struct ThroughputTracker {
@@ -168,16 +168,41 @@ impl ThroughputTracker {
     });
   }
 
-  pub(crate) fn apply_flow_data(&self) {
+  pub(crate) fn apply_flow_data(
+    &self, 
+    timeout_seconds: u64,
+    netflow_enabled: bool,
+    sender: std::sync::mpsc::Sender<(FlowbeeKey, FlowbeeData)>,
+  ) {
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
 
     if let Ok(now) = time_since_boot() {
       let since_boot = Duration::from(now);
-      let expire = (since_boot - Duration::from_secs(60)).as_nanos() as u64;
+      let expire = (since_boot - Duration::from_secs(timeout_seconds)).as_nanos() as u64;
+
+      // Track the expired keys
+      let mut expired_keys = Vec::new();
+
       if let Ok(mut flow_lock) = ALL_FLOWS.try_lock() {
         flow_lock.clear(); // Remove all previous values
+        
+        // Track through all the flows
         iterate_flows(&mut |key, data| {
-          if data.last_seen > expire {
+
+          if data.end_status == 2 {
+            // The flow has been handled already and should be ignored
+            return;
+          }
+
+          if data.last_seen < expire {
+            // This flow has expired. Add it to the list to be cleaned
+            expired_keys.push(key.clone());
+
+            // Send it off to netperf for analysis if we are supporting doing so.
+            if netflow_enabled {
+              let _ = sender.send((key.clone(), data.clone()));
+            }
+          } else {
             // We have a valid flow, so it needs to be tracked
             flow_lock.push((key.clone(), data.clone()));
 
@@ -202,7 +227,14 @@ impl ThroughputTracker {
               }
             }
           }
-        });
+        }); // End flow iterator
+
+        if !expired_keys.is_empty() {
+          let ret = lqos_sys::end_flows(&mut expired_keys);
+          if let Err(e) = ret {
+            log::warn!("Failed to end flows: {:?}", e);
+          }
+        }
       } else {
         log::warn!("Failed to lock ALL_FLOWS");
       }

@@ -59,5 +59,11 @@ pub struct FlowbeeData {
   pub last_rtt: [u64; 2],
   /// Has the connection ended?
   /// 0 = Alive, 1 = FIN, 2 = RST
-  pub end_status: u32,
+  pub end_status: u8,
+  /// Raw IP TOS
+  pub tos: u8,
+  /// Raw TCP flags
+  pub flags: u8,
+  /// Padding.
+  pub padding: u8,
 }
