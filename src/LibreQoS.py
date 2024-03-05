@@ -736,7 +736,7 @@ def refreshShapers():
 		
 		# If we're in binpacking mode, we need to sort the network structure a bit
 		bins = []
-		if use_bin_packing_to_balance_cpu() and not on_a_stick():
+		if use_bin_packing_to_balance_cpu():
 			print("BinPacking is enabled, so we're going to sort your network.")
 			cpuBin = {}
 			weights = get_tree_weights()
