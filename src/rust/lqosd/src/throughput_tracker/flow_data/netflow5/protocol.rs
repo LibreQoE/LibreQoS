@@ -36,7 +36,6 @@ impl Netflow5Header {
             sampling_interval: 0,
         }
     }
-
 }
 
 /// Standard Netflow 5 record

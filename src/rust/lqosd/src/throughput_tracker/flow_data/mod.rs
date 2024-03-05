@@ -2,12 +2,13 @@
 //! of netflow protocols.
 
 mod netflow5;
+mod netflow9;
 mod flow_tracker;
 
 use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
 use std::sync::mpsc::{channel, Sender};
 pub(crate) use flow_tracker::ALL_FLOWS;
-use crate::throughput_tracker::flow_data::netflow5::Netflow5;
+use crate::throughput_tracker::flow_data::{netflow5::Netflow5, netflow9::Netflow9};
 
 trait FlowbeeRecipient {
     fn send(&mut self, key: FlowbeeKey, data: FlowbeeData);
@@ -33,6 +34,11 @@ pub fn setup_netflow_tracker() -> Sender<(FlowbeeKey, FlowbeeData)> {
                         let endpoint = Netflow5::new(target).unwrap();
                         endpoints.push(Box::new(endpoint));
                         log::info!("Netflow 5 endpoint added");
+                    }
+                    9 => {
+                        let endpoint = Netflow9::new(target).unwrap();
+                        endpoints.push(Box::new(endpoint));
+                        log::info!("Netflow 9 endpoint added");
                     }
                     _ => log::error!("Unsupported netflow version: {version}"),
                 }
