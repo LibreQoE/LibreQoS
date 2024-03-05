@@ -73,7 +73,7 @@ impl FlowbeeRecipient for Netflow5 {
             buffer.extend_from_slice(packet1_bytes);
             buffer.extend_from_slice(packet2_bytes);
 
-            log::debug!("Sending netflow packet to {target}", target = self.target);
+            //log::debug!("Sending netflow packet to {target}", target = self.target);
             self.socket.send_to(&buffer, &self.target).unwrap();
 
             self.sequence = self.sequence.wrapping_add(2);
@@ -99,10 +99,10 @@ impl Netflow5Header {
         let uptime = time_since_boot().unwrap();
 
         Self {
-            version: 5,
-            count: 2,
-            sys_uptime: uptime.num_milliseconds() as u32,
-            unix_secs: uptime.num_seconds() as u32,
+            version: (5u16).to_be(),
+            count: (2u16).to_be(),
+            sys_uptime: (uptime.num_milliseconds() as u32).to_be(),
+            unix_secs: (uptime.num_seconds() as u32).to_be(),
             unix_nsecs: 0,
             flow_sequence,
             engine_type: 0,
@@ -154,12 +154,12 @@ fn to_netflow_5(key: &FlowbeeKey, data: &FlowbeeData) -> anyhow::Result<(Netflow
             src_addr: src_ip,
             dst_addr: dst_ip,
             next_hop: 0,
-            input: 0,
-            output: 1,
+            input: (0u16).to_be(),
+            output: (1u16).to_be(),
             d_pkts,
             d_octets,
-            first: data.start_time as u32, // Convert to milliseconds
-            last: data.last_seen as u32, // Convert to milliseconds
+            first: ((data.start_time  / 1_000_000) as u32).to_be(), // Convert to milliseconds
+            last: ((data.last_seen / 1_000_000) as u32).to_be(), // Convert to milliseconds
             src_port: key.src_port.to_be(),
             dst_port: key.dst_port.to_be(),
             pad1: 0,
