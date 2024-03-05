@@ -34,8 +34,14 @@ impl FlowbeeRecipient for Netflow9 {
         }
 
         if needs_template {
-            let template = protocol::template_data_ipv4(self.sequence);
-            self.socket.send_to(&template, &self.target).unwrap();
+            // Get the header, ipv4 template and ipv6 templates and send them all.
+            let header = Netflow9Header::new(self.sequence);
+            let header_bytes = unsafe { std::slice::from_raw_parts(&header as *const _ as *const u8, std::mem::size_of::<Netflow9Header>()) };
+            let mut buffer = Vec::with_capacity(header_bytes.len());
+            buffer.extend_from_slice(header_bytes);
+            buffer.extend_from_slice(&protocol::template_data_ipv4(self.sequence));
+            buffer.extend_from_slice(&protocol::template_data_ipv6(self.sequence));
+            self.socket.send_to(&buffer, &self.target).unwrap();
             self.last_sent_template = Some(Instant::now());
         }
 
