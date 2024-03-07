@@ -2,7 +2,6 @@
 //! Mostly derived from https://netflow.caligare.com/netflow_v9.htm
 
 use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
-use std::net::IpAddr;
 mod field_types;
 use field_types::*;
 pub(crate) mod field_encoder;
