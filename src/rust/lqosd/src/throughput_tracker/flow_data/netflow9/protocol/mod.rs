@@ -65,67 +65,31 @@ fn ipv4_record(key: &FlowbeeKey, data: &FlowbeeData, direction: usize) -> anyhow
 }
 
 fn ipv6_record(key: &FlowbeeKey, data: &FlowbeeData, direction: usize) -> anyhow::Result<Vec<u8>> {
-    // Configure IP directions
-    let local = key.local_ip.as_ip();
-    let remote = key.remote_ip.as_ip();
-    if let (IpAddr::V6(local), IpAddr::V6(remote)) = (local, remote) {
-        let src_ip = local.octets();
-        let dst_ip = remote.octets();
+    let field_bytes = field_encoder::encode_fields_from_template(
+        &template_ipv6::FIELDS_IPV6,
+        direction,
+        key,
+        data,
+    )?;
 
-        // Build the field values
-        let mut field_bytes: Vec<u8> = Vec::new();
+    // Build the actual record
+    let mut bytes = Vec::new();
+    // Add the flowset_id. Template ID is 257
+    bytes.extend_from_slice(&(257u16).to_be_bytes());
 
-        // Bytes Sent
-        field_bytes.extend_from_slice(&data.bytes_sent[direction].to_be_bytes());
+    // Add the length. Length includes 2 bytes for flowset and 2 bytes for the length field
+    // itself. That's odd.
+    let padding = (field_bytes.len() + 4) % 4;
+    let size = (bytes.len() + field_bytes.len() + padding + 2) as u16;
+    bytes.extend_from_slice(&size.to_be_bytes());
 
-        // Packet Sent
-        field_bytes.extend_from_slice(&data.packets_sent[direction].to_be_bytes());
+    // Add the data itself
+    bytes.extend_from_slice(&field_bytes);
 
-        // Add the protocol
-        field_bytes.push(key.ip_protocol);
-
-        // Add the source port
-        field_bytes.extend_from_slice(&key.src_port.to_be_bytes());
-
-        // Add the source address
-        if direction == 0 {
-            field_bytes.extend_from_slice(&src_ip);
-        } else {
-            field_bytes.extend_from_slice(&dst_ip);
-        }
-
-        // Add the destination port
-        field_bytes.extend_from_slice(&key.dst_port.to_be_bytes());
-
-        // Add the destination address
-        if direction == 0 {
-            field_bytes.extend_from_slice(&dst_ip);
-        } else {
-            field_bytes.extend_from_slice(&src_ip);
-        }
-
-        // Add the TOS
-        field_bytes.push(0);
-
-        // Build the actual record
-        let mut bytes = Vec::new();
-        // Add the flowset_id. Template ID is 257
-        bytes.extend_from_slice(&(257u16).to_be_bytes());
-
-        // Add the length. Length includes 2 bytes for flowset and 2 bytes for the length field
-        // itself. That's odd.
-        bytes.extend_from_slice(&((field_bytes.len() as u16 + 4).to_be_bytes()));
-
-        // Add the data itself
-        bytes.extend_from_slice(&field_bytes);
-
-        // Pad to 32-bits
-        while bytes.len() % 4 != 0 {
-            bytes.push(0);
-        }
-
-        Ok(bytes)
-    } else {
-        anyhow::bail!("IPv4 data in an IPv6 function was a bad idea");
+    // Pad to 32-bits
+    while bytes.len() % 4 != 0 {
+        bytes.push(0);
     }
+
+    Ok(bytes)
 }
