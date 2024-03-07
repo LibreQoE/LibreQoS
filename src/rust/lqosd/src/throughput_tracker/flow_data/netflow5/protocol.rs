@@ -21,12 +21,12 @@ pub(crate) struct Netflow5Header {
 
 impl Netflow5Header {
     /// Create a new Netflow 5 header
-    pub(crate) fn new(flow_sequence: u32) -> Self {
+    pub(crate) fn new(flow_sequence: u32, num_records: u16) -> Self {
         let uptime = time_since_boot().unwrap();
 
         Self {
             version: (5u16).to_be(),
-            count: (2u16).to_be(),
+            count: num_records.to_be(),
             sys_uptime: (uptime.num_milliseconds() as u32).to_be(),
             unix_secs: (uptime.num_seconds() as u32).to_be(),
             unix_nsecs: 0,
