@@ -143,8 +143,13 @@
             <div class="col-sm-6">
                 <div class="card bg-light">
                     <div class="card-body">
-                        <h5 class="card-title"><i class='fa fa-arrow-down'></i> Top 10 Downloaders</h5>
-                        <div id="top10dl"></div>
+                        <h5 class="card-title">
+                            <i class='fa fa-arrow-down'></i> Top 10 Downloaders
+                            <button class="btn btn-small btn-success" href="/top10" onclick="showCircuits()">Circuits</button>
+                            <button class="btn btn-small btn-success" href="/top10" onclick="showFlows()">Flows</button>
+                        </h5>
+                        <div id="top10dl" style="display:block;"></div>
+                        <div id="top10flows" style="display: none;"></div>
                     </div>
                 </div>
             </div>
@@ -306,6 +311,52 @@
             });
         }
 
+        function updateTop10Flows() {
+            $.get("/api/flows/top/10/rate", data => {
+                let html = "<table class='table' style='font-size: 8pt'>";
+                html += "<thead>";
+                html += "<th>Protocol</th>";
+                html += "<th>Local IP</th>";
+                html += "<th>Remote IP</th>";
+                html += "<th>Ports</th>";
+                html += "<th>UL ⬆️</th>";
+                html += "<th>DL ⬇️</th>";
+                html += "<th>UL RTT</th>";
+                html += "<th>DL RTT</th>";
+                html += "<th>Remote ASN</th>";
+                html += "<th>Country</th>";
+                html += "</thead><tbody>";
+                for (var i = 0; i<data.length; i++) {
+                    //console.log(data[i]);
+                    html += "<tr>";
+                    html += "<td>" + data[i].ip_protocol + "</td>";
+                    html += "<td>" + data[i].local_ip + "</td>";
+                    html += "<td>" + data[i].remote_ip + "</td>";
+                    html += "<td>" + data[i].src_port + " / " + data[i].dst_port + "</td>";
+                    // TODO: Check scaling
+                    html += "<td>" + scaleNumber(data[i].rate_estimate_bps[0] * 8) + "</td>";
+                    html += "<td>" + scaleNumber(data[i].rate_estimate_bps[1] * 8) + "</td>";
+                    html += "<td>" + (data[i].last_rtt[0] / 1000000).toFixed(2) + "</td>";
+                    html += "<td>" + (data[i].last_rtt[1] / 1000000).toFixed(2) + "</td>";
+                    html += "<td>" + data[i].remote_asn_name + "</td>";
+                    html += "<td>" + data[i].remote_asn_country + "</td>";
+                    html += "</tr>";
+                }
+                html += "</tbody></table>";
+                $("#top10flows").html(html);
+            });
+        }
+
+        function showCircuits() {
+            $("#top10dl").show();
+            $("#top10flows").hide();
+        }
+
+        function showFlows() {
+            $("#top10dl").hide();
+            $("#top10flows").show();
+        }
+
         var rttGraph = new RttHistogram();
 
         function updateHistogram() {
@@ -329,6 +380,7 @@
                 updateHistogram();
                 updateWorst10();
                 updateTop10();
+                updateTop10Flows();
             }
 
             if (tickCount % 10 == 0) {
