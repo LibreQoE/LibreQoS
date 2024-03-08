@@ -196,4 +196,10 @@ pub struct FlowbeeData {
   pub tos: u8,
   /// Raw TCP flags
   pub flags: u8,
+  /// Remote ASN
+  pub remote_asn: u32,
+  /// Remote ASN Name
+  pub remote_asn_name: String,
+  /// Remote ASN Country
+  pub remote_asn_country: String,
 }

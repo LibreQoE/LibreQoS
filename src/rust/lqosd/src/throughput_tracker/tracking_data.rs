@@ -1,6 +1,6 @@
 use std::{sync::atomic::AtomicU64, time::Duration};
 use crate::{shaped_devices_tracker::{SHAPED_DEVICES, NETWORK_JSON}, stats::{HIGH_WATERMARK_DOWN, HIGH_WATERMARK_UP}};
-use super::{flow_data::ALL_FLOWS, throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
+use super::{flow_data::{lookup_asn_id, AsnId, ALL_FLOWS}, throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
 use dashmap::DashMap;
 use lqos_bus::TcHandle;
 use lqos_sys::{flowbee_data::{FlowbeeData, FlowbeeKey}, iterate_flows, throughput_for_each};
@@ -203,18 +203,20 @@ impl ThroughputTracker {
         } else {
           // We have a valid flow, so it needs to be tracked
           if let Some(mut this_flow) = ALL_FLOWS.get_mut(&key) {
-            this_flow.last_seen = data.last_seen;
-            this_flow.bytes_sent = data.bytes_sent;
-            this_flow.packets_sent = data.packets_sent;
-            this_flow.rate_estimate_bps = data.rate_estimate_bps;
-            this_flow.retries = data.retries;
-            this_flow.last_rtt = data.last_rtt;
-            this_flow.end_status = data.end_status;
-            this_flow.tos = data.tos;
-            this_flow.flags = data.flags;  
+            this_flow.0.last_seen = data.last_seen;
+            this_flow.0.bytes_sent = data.bytes_sent;
+            this_flow.0.packets_sent = data.packets_sent;
+            this_flow.0.rate_estimate_bps = data.rate_estimate_bps;
+            this_flow.0.retries = data.retries;
+            this_flow.0.last_rtt = data.last_rtt;
+            this_flow.0.end_status = data.end_status;
+            this_flow.0.tos = data.tos;
+            this_flow.0.flags = data.flags;  
           } else {
             // Insert it into the map
-            ALL_FLOWS.insert(key.clone(), data.clone());
+            let asn = lookup_asn_id(key.remote_ip.as_ip()).unwrap_or(0);
+
+            ALL_FLOWS.insert(key.clone(), (data.clone(), AsnId(asn)));
             // TODO: Submit it for analysis
           }
 

@@ -98,4 +98,8 @@ impl AsnTable {
             }
         }).map(|idx| self.asn_table[idx].clone()).ok()
     }
+
+    pub fn find_asn_by_id(&self, asn: u32) -> Option<Ip2AsnRow> {
+        self.asn_table.iter().find(|row| row.asn == asn).map(|row| row.clone())
+    }
 }

@@ -18,7 +18,7 @@ use tokio::{
     time::{Duration, Instant},
 };
 
-use self::flow_data::ALL_FLOWS;
+use self::flow_data::{get_asn_name_and_country, AsnId, ALL_FLOWS};
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
@@ -486,20 +486,25 @@ pub fn all_unknown_ips() -> BusResponse {
   /// For debugging: dump all active flows!
   pub fn dump_active_flows() -> BusResponse {
     let result: Vec<lqos_bus::FlowbeeData> = ALL_FLOWS.iter().map(|row| {
+      let (remote_asn_name, remote_asn_country) = get_asn_name_and_country(row.value().1.0);
+
       lqos_bus::FlowbeeData {
         remote_ip: row.key().remote_ip.as_ip().to_string(),
         local_ip: row.key().local_ip.as_ip().to_string(),
         src_port: row.key().src_port,
         dst_port: row.key().dst_port,
         ip_protocol: FlowbeeProtocol::from(row.key().ip_protocol),
-        bytes_sent: row.value().bytes_sent,
-        packets_sent: row.value().packets_sent,
-        rate_estimate_bps: row.value().rate_estimate_bps,
-        retries: row.value().retries,
-        last_rtt: row.value().last_rtt,
-        end_status: row.value().end_status,
-        tos: row.value().tos,
-        flags: row.value().flags,
+        bytes_sent: row.value().0.bytes_sent,
+        packets_sent: row.value().0.packets_sent,
+        rate_estimate_bps: row.value().0.rate_estimate_bps,
+        retries: row.value().0.retries,
+        last_rtt: row.value().0.last_rtt,
+        end_status: row.value().0.end_status,
+        tos: row.value().0.tos,
+        flags: row.value().0.flags,
+        remote_asn: row.value().1.0,
+        remote_asn_name,
+        remote_asn_country,
       }
     }).collect();
 
@@ -513,7 +518,7 @@ pub fn all_unknown_ips() -> BusResponse {
 
   /// Top Flows Report
   pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
-    let mut table: Vec<(FlowbeeKey, FlowbeeData)> = ALL_FLOWS
+    let mut table: Vec<(FlowbeeKey, (FlowbeeData, AsnId))> = ALL_FLOWS
       .iter()
       .map(|row| (
         row.key().clone(),
@@ -524,36 +529,36 @@ pub fn all_unknown_ips() -> BusResponse {
     match flow_type {
       TopFlowType::RateEstimate => {
         table.sort_by(|a, b| {
-          let a_total = a.1.rate_estimate_bps[0] + a.1.rate_estimate_bps[1];
-          let b_total = b.1.rate_estimate_bps[0] + b.1.rate_estimate_bps[1];
+          let a_total = a.1.0.rate_estimate_bps[0] + a.1.0.rate_estimate_bps[1];
+          let b_total = b.1.0.rate_estimate_bps[0] + b.1.0.rate_estimate_bps[1];
           b_total.cmp(&a_total)
         });
       }
       TopFlowType::Bytes => {
         table.sort_by(|a, b| {
-          let a_total = a.1.bytes_sent[0] + a.1.bytes_sent[1];
-          let b_total = b.1.bytes_sent[0] + b.1.bytes_sent[1];
+          let a_total = a.1.0.bytes_sent[0] + a.1.0.bytes_sent[1];
+          let b_total = b.1.0.bytes_sent[0] + b.1.0.bytes_sent[1];
           b_total.cmp(&a_total)
         });
       }
       TopFlowType::Packets => {
         table.sort_by(|a, b| {
-          let a_total = a.1.packets_sent[0] + a.1.packets_sent[1];
-          let b_total = b.1.packets_sent[0] + b.1.packets_sent[1];
+          let a_total = a.1.0.packets_sent[0] + a.1.0.packets_sent[1];
+          let b_total = b.1.0.packets_sent[0] + b.1.0.packets_sent[1];
           b_total.cmp(&a_total)
         });
       }
       TopFlowType::Drops => {
         table.sort_by(|a, b| {
-          let a_total = a.1.retries[0] + a.1.retries[1];
-          let b_total = b.1.retries[0] + b.1.retries[1];
+          let a_total = a.1.0.retries[0] + a.1.0.retries[1];
+          let b_total = b.1.0.retries[0] + b.1.0.retries[1];
           b_total.cmp(&a_total)
         });
       }
       TopFlowType::RoundTripTime => {
         table.sort_by(|a, b| {
-          let a_total = a.1.last_rtt[0] + a.1.last_rtt[1];
-          let b_total = b.1.last_rtt[0] + b.1.last_rtt[1];
+          let a_total = a.1.0.last_rtt[0] + a.1.0.last_rtt[1];
+          let b_total = b.1.0.last_rtt[0] + b.1.0.last_rtt[1];
           b_total.cmp(&a_total)
         });
       }
@@ -563,20 +568,24 @@ pub fn all_unknown_ips() -> BusResponse {
       .iter()
       .take(n as usize)
       .map(|(ip, flow)| {
+        let (remote_asn_name, remote_asn_country) = get_asn_name_and_country(flow.1.0);
         lqos_bus::FlowbeeData {
           remote_ip: ip.remote_ip.as_ip().to_string(),
           local_ip: ip.local_ip.as_ip().to_string(),
           src_port: ip.src_port,
           dst_port: ip.dst_port,
           ip_protocol: FlowbeeProtocol::from(ip.ip_protocol),
-          bytes_sent: flow.bytes_sent,
-          packets_sent: flow.packets_sent,
-          rate_estimate_bps: flow.rate_estimate_bps,
-          retries: flow.retries,
-          last_rtt: flow.last_rtt,
-          end_status: flow.end_status,
-          tos: flow.tos,
-          flags: flow.flags,
+          bytes_sent: flow.0.bytes_sent,
+          packets_sent: flow.0.packets_sent,
+          rate_estimate_bps: flow.0.rate_estimate_bps,
+          retries: flow.0.retries,
+          last_rtt: flow.0.last_rtt,
+          end_status: flow.0.end_status,
+          tos: flow.0.tos,
+          flags: flow.0.flags,
+          remote_asn: flow.1.0,
+          remote_asn_name,
+          remote_asn_country,
         }
       })
       .collect();

@@ -5,5 +5,8 @@ use dashmap::DashMap;
 use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
 use once_cell::sync::Lazy;
 
-pub static ALL_FLOWS: Lazy<DashMap<FlowbeeKey, FlowbeeData>> = Lazy::new(|| DashMap::new());
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct AsnId(pub u32);
+
+pub static ALL_FLOWS: Lazy<DashMap<FlowbeeKey, (FlowbeeData, AsnId)>> = Lazy::new(|| DashMap::new());
 

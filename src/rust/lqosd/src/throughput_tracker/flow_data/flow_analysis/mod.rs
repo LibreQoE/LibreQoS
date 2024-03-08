@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::{net::IpAddr, sync::Mutex};
 use once_cell::sync::Lazy;
 
 use self::asn::AsnTable;
@@ -40,4 +40,38 @@ pub fn setup_flow_analysis() -> anyhow::Result<()> {
         anyhow::bail!("Failed to lock ASN table");
     }
     Ok(())
+}
+
+pub fn lookup_asn_id(ip: IpAddr) -> Option<u32> {
+    let table_lock = ANALYSIS.asn_table.lock();
+    if table_lock.is_err() {
+        return None;
+    }
+    let table = table_lock.unwrap();
+    if table.is_none() {
+        return None;
+    }
+    let table = table.as_ref().unwrap();
+    if let Some(asn) = table.find_asn(ip) {
+        Some(asn.asn)
+    } else {
+        None
+    }
+}
+
+pub fn get_asn_name_and_country(asn: u32) -> (String, String) {
+    let table_lock = ANALYSIS.asn_table.lock();
+    if table_lock.is_err() {
+        return ("".to_string(), "".to_string());
+    }
+    let table = table_lock.unwrap();
+    if table.is_none() {
+        return ("".to_string(), "".to_string());
+    }
+    let table = table.as_ref().unwrap();
+    if let Some(row) = table.find_asn_by_id(asn) {
+        (row.owners.clone(), row.country.clone())
+    } else {
+        ("".to_string(), "".to_string())
+    }
 }
