@@ -1,16 +1,20 @@
 use std::{net::IpAddr, sync::Mutex};
+use lqos_sys::flowbee_data::FlowbeeKey;
 use once_cell::sync::Lazy;
-
 use self::asn::AsnTable;
 mod asn;
+mod protocol;
+pub use protocol::FlowProtocol;
 
-static ANALYSIS: Lazy<FlowAnalysis> = Lazy::new(|| FlowAnalysis::new());
+use super::AsnId;
 
-pub struct FlowAnalysis {
+static ANALYSIS: Lazy<FlowAnalysisSystem> = Lazy::new(|| FlowAnalysisSystem::new());
+
+pub struct FlowAnalysisSystem {
     asn_table: Mutex<Option<asn::AsnTable>>,
 }
 
-impl FlowAnalysis {
+impl FlowAnalysisSystem {
     pub fn new() -> Self {
         // Periodically update the ASN table
         std::thread::spawn(|| {
@@ -41,6 +45,24 @@ pub fn setup_flow_analysis() -> anyhow::Result<()> {
     }
     Ok(())
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct FlowAnalysis {
+    pub asn_id: AsnId,
+    pub protocol_analysis: FlowProtocol,
+}
+
+impl FlowAnalysis {
+    pub fn new(key: &FlowbeeKey) -> Self {
+        let asn_id = lookup_asn_id(key.remote_ip.as_ip());
+        let protocol_analysis = FlowProtocol::new(key);
+        Self {
+            asn_id: AsnId(asn_id.unwrap_or(0)),
+            protocol_analysis,
+        }
+    }
+}
+
 
 pub fn lookup_asn_id(ip: IpAddr) -> Option<u32> {
     let table_lock = ANALYSIS.asn_table.lock();

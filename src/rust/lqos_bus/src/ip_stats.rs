@@ -202,4 +202,6 @@ pub struct FlowbeeData {
   pub remote_asn_name: String,
   /// Remote ASN Country
   pub remote_asn_country: String,
+  /// Analysis
+  pub analysis: String,
 }

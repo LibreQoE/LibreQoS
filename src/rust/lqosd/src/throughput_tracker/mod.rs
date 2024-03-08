@@ -18,7 +18,7 @@ use tokio::{
     time::{Duration, Instant},
 };
 
-use self::flow_data::{get_asn_name_and_country, AsnId, ALL_FLOWS};
+use self::flow_data::{get_asn_name_and_country, AsnId, FlowAnalysis, ALL_FLOWS};
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
@@ -486,7 +486,7 @@ pub fn all_unknown_ips() -> BusResponse {
   /// For debugging: dump all active flows!
   pub fn dump_active_flows() -> BusResponse {
     let result: Vec<lqos_bus::FlowbeeData> = ALL_FLOWS.iter().map(|row| {
-      let (remote_asn_name, remote_asn_country) = get_asn_name_and_country(row.value().1.0);
+      let (remote_asn_name, remote_asn_country) = get_asn_name_and_country(row.value().1.asn_id.0);
 
       lqos_bus::FlowbeeData {
         remote_ip: row.key().remote_ip.as_ip().to_string(),
@@ -502,9 +502,10 @@ pub fn all_unknown_ips() -> BusResponse {
         end_status: row.value().0.end_status,
         tos: row.value().0.tos,
         flags: row.value().0.flags,
-        remote_asn: row.value().1.0,
+        remote_asn: row.value().1.asn_id.0,
         remote_asn_name,
         remote_asn_country,
+        analysis: row.value().1.protocol_analysis.to_string(),
       }
     }).collect();
 
@@ -518,7 +519,7 @@ pub fn all_unknown_ips() -> BusResponse {
 
   /// Top Flows Report
   pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
-    let mut table: Vec<(FlowbeeKey, (FlowbeeData, AsnId))> = ALL_FLOWS
+    let mut table: Vec<(FlowbeeKey, (FlowbeeData, FlowAnalysis))> = ALL_FLOWS
       .iter()
       .map(|row| (
         row.key().clone(),
@@ -568,7 +569,7 @@ pub fn all_unknown_ips() -> BusResponse {
       .iter()
       .take(n as usize)
       .map(|(ip, flow)| {
-        let (remote_asn_name, remote_asn_country) = get_asn_name_and_country(flow.1.0);
+        let (remote_asn_name, remote_asn_country) = get_asn_name_and_country(flow.1.asn_id.0);
         lqos_bus::FlowbeeData {
           remote_ip: ip.remote_ip.as_ip().to_string(),
           local_ip: ip.local_ip.as_ip().to_string(),
@@ -583,9 +584,10 @@ pub fn all_unknown_ips() -> BusResponse {
           end_status: flow.0.end_status,
           tos: flow.0.tos,
           flags: flow.0.flags,
-          remote_asn: flow.1.0,
+          remote_asn: flow.1.asn_id.0,
           remote_asn_name,
           remote_asn_country,
+          analysis: flow.1.protocol_analysis.to_string(),
         }
       })
       .collect();

@@ -1,6 +1,6 @@
 use std::{sync::atomic::AtomicU64, time::Duration};
 use crate::{shaped_devices_tracker::{SHAPED_DEVICES, NETWORK_JSON}, stats::{HIGH_WATERMARK_DOWN, HIGH_WATERMARK_UP}};
-use super::{flow_data::{lookup_asn_id, AsnId, ALL_FLOWS}, throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
+use super::{flow_data::{lookup_asn_id, AsnId, FlowAnalysis, ALL_FLOWS}, throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
 use dashmap::DashMap;
 use lqos_bus::TcHandle;
 use lqos_sys::{flowbee_data::{FlowbeeData, FlowbeeKey}, iterate_flows, throughput_for_each};
@@ -214,9 +214,9 @@ impl ThroughputTracker {
             this_flow.0.flags = data.flags;  
           } else {
             // Insert it into the map
-            let asn = lookup_asn_id(key.remote_ip.as_ip()).unwrap_or(0);
+            let flow_analysis = FlowAnalysis::new(&key);
 
-            ALL_FLOWS.insert(key.clone(), (data.clone(), AsnId(asn)));
+            ALL_FLOWS.insert(key.clone(), (data.clone(), flow_analysis));
             // TODO: Submit it for analysis
           }
 
