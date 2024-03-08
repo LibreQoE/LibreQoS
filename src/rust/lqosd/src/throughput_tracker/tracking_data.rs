@@ -183,60 +183,67 @@ impl ThroughputTracker {
       // Track the expired keys
       let mut expired_keys = Vec::new();
 
-      if let Ok(mut flow_lock) = ALL_FLOWS.try_lock() {
-        flow_lock.clear(); // Remove all previous values
         
-        // Track through all the flows
-        iterate_flows(&mut |key, data| {
+      // Track through all the flows
+      iterate_flows(&mut |key, data| {
 
-          if data.end_status == 2 {
-            // The flow has been handled already and should be ignored
-            return;
+        if data.end_status == 2 {
+          // The flow has been handled already and should be ignored
+          return;
+        }
+
+        if data.last_seen < expire {
+          // This flow has expired. Add it to the list to be cleaned
+          expired_keys.push(key.clone());
+
+          // Send it off to netperf for analysis if we are supporting doing so.
+          if netflow_enabled {
+            let _ = sender.send((key.clone(), data.clone()));
           }
+        } else {
+          // We have a valid flow, so it needs to be tracked
+          let mut this_flow = ALL_FLOWS.entry(key.clone()).or_insert(data.clone());
+          this_flow.last_seen = data.last_seen;
+          this_flow.bytes_sent = data.bytes_sent;
+          this_flow.packets_sent = data.packets_sent;
+          this_flow.rate_estimate_bps = data.rate_estimate_bps;
+          this_flow.retries = data.retries;
+          this_flow.last_rtt = data.last_rtt;
+          this_flow.end_status = data.end_status;
+          this_flow.tos = data.tos;
+          this_flow.flags = data.flags;
 
-          if data.last_seen < expire {
-            // This flow has expired. Add it to the list to be cleaned
-            expired_keys.push(key.clone());
-
-            // Send it off to netperf for analysis if we are supporting doing so.
-            if netflow_enabled {
-              let _ = sender.send((key.clone(), data.clone()));
-            }
-          } else {
-            // We have a valid flow, so it needs to be tracked
-            flow_lock.push((key.clone(), data.clone()));
-
-            // TCP - we have RTT data? 6 is TCP
-            if key.ip_protocol == 6 && (data.last_rtt[0] != 0 || data.last_rtt[1] != 0) {
-              if let Some(mut tracker) = self.raw_data.get_mut(&key.local_ip) {
-                // Shift left
-                for i in 1..60 {
-                  tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
-                }
-                tracker.recent_rtt_data[0] = u32::max(
-                  (data.last_rtt[0] / 10000) as u32,
-                  (data.last_rtt[1] / 10000) as u32,
-                );
-                tracker.last_fresh_rtt_data_cycle = self_cycle;
-                if let Some(parents) = &tracker.network_json_parents {
-                  let net_json = NETWORK_JSON.write().unwrap();
-                  if let Some(rtt) = tracker.median_latency() {
-                    net_json.add_rtt_cycle(parents, rtt);
-                  }
+          // TCP - we have RTT data? 6 is TCP
+          if key.ip_protocol == 6 && (data.last_rtt[0] != 0 || data.last_rtt[1] != 0) {
+            if let Some(mut tracker) = self.raw_data.get_mut(&key.local_ip) {
+              // Shift left
+              for i in 1..60 {
+                tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
+              }
+              tracker.recent_rtt_data[0] = u32::max(
+                (data.last_rtt[0] / 10000) as u32,
+                (data.last_rtt[1] / 10000) as u32,
+              );
+              tracker.last_fresh_rtt_data_cycle = self_cycle;
+              if let Some(parents) = &tracker.network_json_parents {
+                let net_json = NETWORK_JSON.write().unwrap();
+                if let Some(rtt) = tracker.median_latency() {
+                  net_json.add_rtt_cycle(parents, rtt);
                 }
               }
             }
           }
-        }); // End flow iterator
-
-        if !expired_keys.is_empty() {
-          let ret = lqos_sys::end_flows(&mut expired_keys);
-          if let Err(e) = ret {
-            log::warn!("Failed to end flows: {:?}", e);
-          }
         }
-      } else {
-        log::warn!("Failed to lock ALL_FLOWS");
+      }); // End flow iterator
+
+      if !expired_keys.is_empty() {
+        let ret = lqos_sys::end_flows(&mut expired_keys);
+        if let Err(e) = ret {
+          log::warn!("Failed to end flows: {:?}", e);
+        }
+        for key in expired_keys {
+          ALL_FLOWS.remove(&key);
+        }
       }
     }
   }

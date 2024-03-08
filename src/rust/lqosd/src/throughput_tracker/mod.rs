@@ -485,41 +485,41 @@ pub fn all_unknown_ips() -> BusResponse {
 
   /// For debugging: dump all active flows!
   pub fn dump_active_flows() -> BusResponse {
-    let lock = ALL_FLOWS.lock().unwrap();
-    let mut result = Vec::with_capacity(lock.len());
-
-    for (ip, flow) in lock.iter() {
-      result.push(lqos_bus::FlowbeeData {
-        remote_ip: ip.remote_ip.as_ip().to_string(),
-        local_ip: ip.local_ip.as_ip().to_string(),
-        src_port: ip.src_port,
-        dst_port: ip.dst_port,
-        ip_protocol: FlowbeeProtocol::from(ip.ip_protocol),
-        bytes_sent: flow.bytes_sent,
-        packets_sent: flow.packets_sent,
-        rate_estimate_bps: flow.rate_estimate_bps,
-        retries: flow.retries,
-        last_rtt: flow.last_rtt,
-        end_status: flow.end_status,
-        tos: flow.tos,
-        flags: flow.flags,
-      });
-    }
+    let result: Vec<lqos_bus::FlowbeeData> = ALL_FLOWS.iter().map(|row| {
+      lqos_bus::FlowbeeData {
+        remote_ip: row.key().remote_ip.as_ip().to_string(),
+        local_ip: row.key().local_ip.as_ip().to_string(),
+        src_port: row.key().src_port,
+        dst_port: row.key().dst_port,
+        ip_protocol: FlowbeeProtocol::from(row.key().ip_protocol),
+        bytes_sent: row.value().bytes_sent,
+        packets_sent: row.value().packets_sent,
+        rate_estimate_bps: row.value().rate_estimate_bps,
+        retries: row.value().retries,
+        last_rtt: row.value().last_rtt,
+        end_status: row.value().end_status,
+        tos: row.value().tos,
+        flags: row.value().flags,
+      }
+    }).collect();
 
     BusResponse::AllActiveFlows(result)
   }
 
   /// Count active flows
   pub fn count_active_flows() -> BusResponse {
-    let lock = ALL_FLOWS.lock().unwrap();
-    BusResponse::CountActiveFlows(lock.len() as u64)
+    BusResponse::CountActiveFlows(ALL_FLOWS.len() as u64)
   }
 
   /// Top Flows Report
   pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
-    let lock = ALL_FLOWS.lock().unwrap();
-    let mut table = lock.clone();
-
+    let mut table: Vec<(FlowbeeKey, FlowbeeData)> = ALL_FLOWS
+      .iter()
+      .map(|row| (
+        row.key().clone(),
+        row.value().clone(),
+      ))
+      .collect();
 
     match flow_type {
       TopFlowType::RateEstimate => {
