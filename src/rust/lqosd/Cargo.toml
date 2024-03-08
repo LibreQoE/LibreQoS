@@ -30,6 +30,9 @@ dashmap = "5"
 num-traits = "0.2"
 thiserror = "1"
 itertools = "0.12.1"
+csv = "1"
+reqwest = { version = "0.11.24", features = ["blocking"] }
+flate2 = "1.0"
 
 # Support JemAlloc on supported platforms
 [target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]

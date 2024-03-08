@@ -4,6 +4,7 @@
 mod flow_tracker;
 mod netflow5;
 mod netflow9;
+mod flow_analysis;
 
 use crate::throughput_tracker::flow_data::{netflow5::Netflow5, netflow9::Netflow9};
 pub(crate) use flow_tracker::ALL_FLOWS;
@@ -12,6 +13,7 @@ use std::sync::{
     mpsc::{channel, Sender},
     Arc,
 };
+pub(crate) use flow_analysis::setup_flow_analysis;
 
 trait FlowbeeRecipient {
     fn enqueue(&self, key: FlowbeeKey, data: FlowbeeData);

@@ -202,16 +202,21 @@ impl ThroughputTracker {
           }
         } else {
           // We have a valid flow, so it needs to be tracked
-          let mut this_flow = ALL_FLOWS.entry(key.clone()).or_insert(data.clone());
-          this_flow.last_seen = data.last_seen;
-          this_flow.bytes_sent = data.bytes_sent;
-          this_flow.packets_sent = data.packets_sent;
-          this_flow.rate_estimate_bps = data.rate_estimate_bps;
-          this_flow.retries = data.retries;
-          this_flow.last_rtt = data.last_rtt;
-          this_flow.end_status = data.end_status;
-          this_flow.tos = data.tos;
-          this_flow.flags = data.flags;
+          if let Some(mut this_flow) = ALL_FLOWS.get_mut(&key) {
+            this_flow.last_seen = data.last_seen;
+            this_flow.bytes_sent = data.bytes_sent;
+            this_flow.packets_sent = data.packets_sent;
+            this_flow.rate_estimate_bps = data.rate_estimate_bps;
+            this_flow.retries = data.retries;
+            this_flow.last_rtt = data.last_rtt;
+            this_flow.end_status = data.end_status;
+            this_flow.tos = data.tos;
+            this_flow.flags = data.flags;  
+          } else {
+            // Insert it into the map
+            ALL_FLOWS.insert(key.clone(), data.clone());
+            // TODO: Submit it for analysis
+          }
 
           // TCP - we have RTT data? 6 is TCP
           if key.ip_protocol == 6 && (data.last_rtt[0] != 0 || data.last_rtt[1] != 0) {

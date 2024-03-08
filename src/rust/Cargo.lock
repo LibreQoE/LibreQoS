@@ -1738,8 +1738,10 @@ name = "lqosd"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "csv",
  "dashmap",
  "env_logger",
+ "flate2",
  "itertools 0.12.1",
  "jemallocator",
  "log",
@@ -1753,6 +1755,7 @@ dependencies = [
  "nix",
  "num-traits",
  "once_cell",
+ "reqwest",
  "serde",
  "serde_json",
  "signal-hook",
