@@ -5,8 +5,9 @@ use self::asn::AsnTable;
 mod asn;
 mod protocol;
 pub use protocol::FlowProtocol;
-
 use super::AsnId;
+mod finished_flows;
+pub use finished_flows::FinishedFlowAnalysis;
 
 static ANALYSIS: Lazy<FlowAnalysisSystem> = Lazy::new(|| FlowAnalysisSystem::new());
 

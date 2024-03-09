@@ -6,7 +6,7 @@ mod netflow5;
 mod netflow9;
 mod flow_analysis;
 
-use crate::throughput_tracker::flow_data::{netflow5::Netflow5, netflow9::Netflow9};
+use crate::throughput_tracker::flow_data::{flow_analysis::FinishedFlowAnalysis, netflow5::Netflow5, netflow9::Netflow9};
 pub(crate) use flow_tracker::{ALL_FLOWS, AsnId};
 use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
 use std::sync::{
@@ -17,12 +17,12 @@ pub(crate) use flow_analysis::{setup_flow_analysis, lookup_asn_id, get_asn_name_
 
 
 trait FlowbeeRecipient {
-    fn enqueue(&self, key: FlowbeeKey, data: FlowbeeData);
+    fn enqueue(&self, key: FlowbeeKey, data: FlowbeeData, analysis: FlowAnalysis);
 }
 
 // Creates the netflow tracker and returns the sender
-pub fn setup_netflow_tracker() -> Sender<(FlowbeeKey, FlowbeeData)> {
-    let (tx, rx) = channel::<(FlowbeeKey, FlowbeeData)>();
+pub fn setup_netflow_tracker() -> Sender<(FlowbeeKey, (FlowbeeData, FlowAnalysis))> {
+    let (tx, rx) = channel::<(FlowbeeKey, (FlowbeeData, FlowAnalysis))>();
     let config = lqos_config::load_config().unwrap();
 
     std::thread::spawn(move || {
@@ -30,6 +30,8 @@ pub fn setup_netflow_tracker() -> Sender<(FlowbeeKey, FlowbeeData)> {
 
         // Build the endpoints list
         let mut endpoints: Vec<Arc<dyn FlowbeeRecipient>> = Vec::new();
+        endpoints.push(FinishedFlowAnalysis::new());
+
         if let Some(flow_config) = config.flows {
             if let (Some(ip), Some(port), Some(version)) = (
                 flow_config.netflow_ip,
@@ -53,12 +55,13 @@ pub fn setup_netflow_tracker() -> Sender<(FlowbeeKey, FlowbeeData)> {
                 }
             }
         }
+        log::info!("Flow Endpoints: {}", endpoints.len());
 
         // Send to all endpoints upon receipt
-        while let Ok((key, value)) = rx.recv() {
+        while let Ok((key, (value, analysis))) = rx.recv() {
             endpoints.iter_mut().for_each(|f| {
-                log::debug!("Enqueueing flow data for {key:?}");
-                f.enqueue(key.clone(), value.clone());
+                //log::debug!("Enqueueing flow data for {key:?}");
+                f.enqueue(key.clone(), value.clone(), analysis.clone());
             });
         }
         log::info!("Network flow tracker back-end has stopped")

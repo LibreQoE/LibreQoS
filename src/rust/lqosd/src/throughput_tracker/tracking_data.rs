@@ -172,7 +172,7 @@ impl ThroughputTracker {
     &self, 
     timeout_seconds: u64,
     netflow_enabled: bool,
-    sender: std::sync::mpsc::Sender<(FlowbeeKey, FlowbeeData)>,
+    sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeData, FlowAnalysis))>,
   ) {
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
 
@@ -182,7 +182,6 @@ impl ThroughputTracker {
 
       // Track the expired keys
       let mut expired_keys = Vec::new();
-
         
       // Track through all the flows
       iterate_flows(&mut |key, data| {
@@ -194,12 +193,7 @@ impl ThroughputTracker {
 
         if data.last_seen < expire {
           // This flow has expired. Add it to the list to be cleaned
-          expired_keys.push(key.clone());
-
-          // Send it off to netperf for analysis if we are supporting doing so.
-          if netflow_enabled {
-            let _ = sender.send((key.clone(), data.clone()));
-          }
+          expired_keys.push(key.clone());          
         } else {
           // We have a valid flow, so it needs to be tracked
           if let Some(mut this_flow) = ALL_FLOWS.get_mut(&key) {
@@ -217,7 +211,6 @@ impl ThroughputTracker {
             let flow_analysis = FlowAnalysis::new(&key);
 
             ALL_FLOWS.insert(key.clone(), (data.clone(), flow_analysis));
-            // TODO: Submit it for analysis
           }
 
           // TCP - we have RTT data? 6 is TCP
@@ -249,7 +242,14 @@ impl ThroughputTracker {
           log::warn!("Failed to end flows: {:?}", e);
         }
         for key in expired_keys {
-          ALL_FLOWS.remove(&key);
+          // Send it off to netperf for analysis if we are supporting doing so.
+          if netflow_enabled {
+            if let Some(d) = ALL_FLOWS.get(&key) {
+              let _ = sender.send((key.clone(), (d.0.clone(), d.1.clone())));
+            }
+          }
+
+          //ALL_FLOWS.remove(&key);
         }
       }
     }

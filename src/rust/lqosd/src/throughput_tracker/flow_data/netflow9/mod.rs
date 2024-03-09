@@ -5,7 +5,7 @@ use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
 use std::{net::UdpSocket, sync::{atomic::AtomicU32, Arc, Mutex}};
 
 use self::protocol::to_netflow_9;
-use super::FlowbeeRecipient;
+use super::{FlowAnalysis, FlowbeeRecipient};
 mod protocol;
 
 pub(crate) struct Netflow9 {
@@ -66,7 +66,7 @@ impl Netflow9 {
 }
 
 impl FlowbeeRecipient for Netflow9 {
-    fn enqueue(&self, key: FlowbeeKey, data: FlowbeeData) {
+    fn enqueue(&self, key: FlowbeeKey, data: FlowbeeData, _analysis: FlowAnalysis) {
         let mut lock = self.send_queue.lock().unwrap();
         lock.push((key, data));
     }

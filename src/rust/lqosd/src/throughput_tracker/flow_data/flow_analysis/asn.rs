@@ -55,13 +55,15 @@ impl AsnTable {
     fn build_asn_table() -> anyhow::Result<Vec<Ip2AsnRow>> {
         let file_path = Self::file_path();
     
-        let mut retries = 0;
-        while retries < 3 {
-            if file_path.exists() {
-                break;
+        if !file_path.exists() {
+            let mut retries = 0;
+            while retries < 3 {
+                if file_path.exists() {
+                    break;
+                }
+                Self::download()?;
+                retries += 1;
             }
-            Self::download()?;
-            retries += 1;
         }
 
         if !file_path.exists() {

@@ -1,7 +1,7 @@
 //! Support for the Netflow 5 protocol
 //! Mostly taken from: https://netflow.caligare.com/netflow_v5.htm
 mod protocol;
-use super::FlowbeeRecipient;
+use super::{FlowAnalysis, FlowbeeRecipient};
 use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
 pub(crate) use protocol::*;
 use std::{
@@ -83,7 +83,7 @@ impl Netflow5 {
 }
 
 impl FlowbeeRecipient for Netflow5 {
-    fn enqueue(&self, key: FlowbeeKey, data: FlowbeeData) {
+    fn enqueue(&self, key: FlowbeeKey, data: FlowbeeData, _analysis: FlowAnalysis) {
         let mut lock = self.send_queue.lock().unwrap();
         lock.push((key, data));
     }
