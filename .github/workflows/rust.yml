@@ -7,10 +7,8 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-    runs-on:
-        - self-hosted
-        - ${{ matrix.os }}
-
+    runs-on: [ self-hosted, "${{ matrix.os }}" ]
+    
     steps:
     - uses: actions/checkout@v2
     - name: Install dependencies
