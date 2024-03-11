@@ -134,6 +134,7 @@ pub enum BusRequest {
   GetLqosStats,
 
   /// Tell me flow stats for a given IP address
+  #[deprecated(note = "Heimdall flows are being migrated to flows 2")]
   GetFlowStats(String),
 
   /// Tell Heimdall to hyper-focus on an IP address for a bit
@@ -167,6 +168,9 @@ pub enum BusRequest {
     /// The number of flows to return
     n: u32 
   },
+
+  /// Flows by IP Address
+  FlowsByIp(String),
 }
 
 /// Defines the type of "top" flow being requested

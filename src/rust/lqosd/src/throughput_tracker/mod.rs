@@ -2,6 +2,8 @@ pub mod flow_data;
 mod heimdall_data;
 mod throughput_entry;
 mod tracking_data;
+use std::net::IpAddr;
+
 use crate::{
     long_term_stats::get_network_tree,
     shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES, STATS_NEEDS_NEW_SHAPED_DEVICES},
@@ -613,4 +615,42 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
         .collect();
 
     BusResponse::TopFlows(result)
+}
+
+/// Flows by IP
+pub fn flows_by_ip(ip: &str) -> BusResponse {
+    if let Ok(ip) = ip.parse::<IpAddr>() {
+        let ip = XdpIpAddress::from_ip(ip);
+        let lock = ALL_FLOWS.lock().unwrap();
+        let matching_flows: Vec<_> = lock
+            .iter()
+            .filter(|(key, _)| key.local_ip == ip)
+            .map(|(key, row)| {
+                let (remote_asn_name, remote_asn_country) = get_asn_name_and_country(row.1.asn_id.0);
+    
+                lqos_bus::FlowbeeData {
+                    remote_ip: key.remote_ip.as_ip().to_string(),
+                    local_ip: key.local_ip.as_ip().to_string(),
+                    src_port: key.src_port,
+                    dst_port: key.dst_port,
+                    ip_protocol: FlowbeeProtocol::from(key.ip_protocol),
+                    bytes_sent: row.0.bytes_sent,
+                    packets_sent: row.0.packets_sent,
+                    rate_estimate_bps: row.0.rate_estimate_bps,
+                    retries: row.0.retries,
+                    last_rtt: row.0.last_rtt,
+                    end_status: row.0.end_status,
+                    tos: row.0.tos,
+                    flags: row.0.flags,
+                    remote_asn: row.1.asn_id.0,
+                    remote_asn_name,
+                    remote_asn_country,
+                    analysis: row.1.protocol_analysis.to_string(),
+                }
+            })
+            .collect();
+
+        return BusResponse::FlowsByIp(matching_flows);
+    }
+    BusResponse::Ack
 }

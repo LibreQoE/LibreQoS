@@ -333,8 +333,8 @@
                     html += "<td>" + data[i].local_ip + "</td>";
                     html += "<td>" + data[i].remote_ip + "</td>";
                     // TODO: Check scaling
-                    html += "<td>" + scaleNumber(data[i].rate_estimate_bps[0] * 8) + "</td>";
-                    html += "<td>" + scaleNumber(data[i].rate_estimate_bps[1] * 8) + "</td>";
+                    html += "<td>" + scaleNumber(data[i].rate_estimate_bps[0]) + "</td>";
+                    html += "<td>" + scaleNumber(data[i].rate_estimate_bps[1]) + "</td>";
                     html += "<td>" + (data[i].last_rtt[0] / 1000000).toFixed(2) + "</td>";
                     html += "<td>" + (data[i].last_rtt[1] / 1000000).toFixed(2) + "</td>";
                     html += "<td>" + data[i].retries[0] + "/" + data[i].retries[1] + "</td>";

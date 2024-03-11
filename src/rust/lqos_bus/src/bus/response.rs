@@ -92,6 +92,7 @@ pub enum BusResponse {
   },
 
   /// Flow Data
+  #[deprecated(note = "Being replaced by FlowbeeData")]
   FlowData(Vec<(FlowTransport, Option<FlowTransport>)>),
 
   /// The index of the new packet collection session
@@ -125,4 +126,7 @@ pub enum BusResponse {
 
   /// Top Flopws
   TopFlows(Vec<FlowbeeData>),
+
+  /// Flows by IP
+  FlowsByIp(Vec<FlowbeeData>),
 }

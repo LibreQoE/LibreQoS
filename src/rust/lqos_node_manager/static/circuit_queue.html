@@ -215,10 +215,6 @@
                         <div class="card bg-light">
                             <div class="card-body">
                                 <h5 class="card-title"><i class="fa fa-bar-chart"></i> Flows (Last 30 Seconds)</h5>
-                                <p class="alert alert-warning" role="alert">
-                                    <i class="fa fa-warning"></i> Gathering packet data can cause high CPU load during
-                                    the capture window.
-                                </p>
                                 <div id="packetButtons"></div>
                                 <div id="flowList"></div>
                             </div>
@@ -779,10 +775,35 @@
             }
             ip_list = ip_list.substring(0, ip_list.length - 1);
             if (ip_list == "") return;
-            msgPackGet("/api/flows/" + ip_list, (data) => {
+            $.get("/api/flows/" + ip_list, (data) => {
+            //msgPackGet("/api/flows/" + ip_list, (data) => {
                 //console.log(data);
                 let html = "<table class='table table-striped'>";
+                
                 html += "<thead>";
+                html += "<th>Connection</th>";
+                html += "<th>Bytes</th>";
+                html += "<th>Packets</th>";
+                html += "<th>TCP Retries</th>";
+                html += "<th>TCP RTT</th>";
+                html += "<th>ASN</th>";
+                html += "<th>ASN Country</th>";
+                html += "</thead>";
+                html += "<tbody>";
+                for (var i=0; i<data.length; i++) {
+                    html += "<tr>";
+                    html += "<td>" + data[i].analysis + "</td>";
+                    html += "<td>" + scaleNumber(data[i].bytes_sent[0]) + " / " + scaleNumber(data[i].bytes_sent[1]) + "</td>";
+                    html += "<td>" + scaleNumber(data[i].packets_sent[0]) + " / " + scaleNumber(data[i].packets_sent[1]) + "</td>";
+                    html += "<td>" + data[i].retries[0] + " / " + data[i].retries[1] + "</td>";
+                    html += "<td>" + (data[i].last_rtt[0] / 1000000).toFixed(2) + " / " + (data[i].last_rtt[1] / 1000000).toFixed(2) + "</td>";
+                    html += "<td>(" + data[i].remote_asn + ") " + data[i].remote_asn_name + "</td>";
+                    html += "<td>" + data[i].remote_asn_country + "</td>";
+                    html += "</tr>";
+                }
+                html += "</tbody>";
+
+                /*html += "<thead>";
                 html += "<th>Protocol</th>";
                 html += "<th>Src</th>";
                 html += "<th>Src Port</th>";
@@ -837,6 +858,7 @@
                     html += "</tr>";
                 }
                 html += "</tbody></table>";
+                */
                 $("#flowList").html(html);
             })
         }

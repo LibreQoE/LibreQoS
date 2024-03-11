@@ -158,7 +158,7 @@ static __always_inline void update_flow_rates(
     if (dissector->now > data->next_count_time[rate_index]) {
         // Calculate the rate estimate
         __u64 bits = (data->bytes_sent[rate_index] - data->next_count_bytes[rate_index])*8;
-        __u64 time = (dissector->now - data->last_count_time[rate_index]) / 10000000; // 1 Second
+        __u64 time = (dissector->now - data->last_count_time[rate_index]) / SECOND_IN_NANOS; // 1 Second
         data->rate_estimate_bps[rate_index] = (bits/time); // bits per second
         data->next_count_time[rate_index] = dissector->now + SECOND_IN_NANOS;
         data->next_count_bytes[rate_index] = data->bytes_sent[rate_index];
