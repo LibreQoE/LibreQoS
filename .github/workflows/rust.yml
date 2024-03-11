@@ -12,7 +12,6 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Install dependencies
-      run: apt-get update; apt-get install --no-install-recommends python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname r` libbpf-dev
       if: matrix.os == 'ubuntu-latest'
     - name: Build
       run: pushd src/rust; cargo build --verbose --all; popd
