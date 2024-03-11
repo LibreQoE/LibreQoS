@@ -1,6 +1,6 @@
 use std::{sync::atomic::AtomicU64, time::Duration};
 use crate::{shaped_devices_tracker::{SHAPED_DEVICES, NETWORK_JSON}, stats::{HIGH_WATERMARK_DOWN, HIGH_WATERMARK_UP}};
-use super::{flow_data::{lookup_asn_id, AsnId, FlowAnalysis, ALL_FLOWS}, throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
+use super::{flow_data::{FlowAnalysis, ALL_FLOWS}, throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
 use dashmap::DashMap;
 use lqos_bus::TcHandle;
 use lqos_sys::{flowbee_data::{FlowbeeData, FlowbeeKey}, iterate_flows, throughput_for_each};
@@ -195,8 +195,9 @@ impl ThroughputTracker {
           // This flow has expired. Add it to the list to be cleaned
           expired_keys.push(key.clone());          
         } else {
+          let mut lock = ALL_FLOWS.lock().unwrap();
           // We have a valid flow, so it needs to be tracked
-          if let Some(mut this_flow) = ALL_FLOWS.get_mut(&key) {
+          if let Some(this_flow) = lock.get_mut(&key) {
             this_flow.0.last_seen = data.last_seen;
             this_flow.0.bytes_sent = data.bytes_sent;
             this_flow.0.packets_sent = data.packets_sent;
@@ -210,7 +211,7 @@ impl ThroughputTracker {
             // Insert it into the map
             let flow_analysis = FlowAnalysis::new(&key);
 
-            ALL_FLOWS.insert(key.clone(), (data.clone(), flow_analysis));
+            lock.insert(key.clone(), (data.clone(), flow_analysis));
           }
 
           // TCP - we have RTT data? 6 is TCP
@@ -241,15 +242,16 @@ impl ThroughputTracker {
         if let Err(e) = ret {
           log::warn!("Failed to end flows: {:?}", e);
         }
+        let mut lock = ALL_FLOWS.lock().unwrap();
         for key in expired_keys {
           // Send it off to netperf for analysis if we are supporting doing so.
           if netflow_enabled {
-            if let Some(d) = ALL_FLOWS.get(&key) {
+            if let Some(d) = lock.get(&key) {
               let _ = sender.send((key.clone(), (d.0.clone(), d.1.clone())));
             }
           }
 
-          //ALL_FLOWS.remove(&key);
+          lock.remove(&key);
         }
       }
     }
