@@ -97,7 +97,7 @@ static __always_inline struct flow_data_t new_flow_data(
         // to minimize rounding errors.
         .next_count_time = { dissector->now + SECOND_IN_NANOS, dissector->now + SECOND_IN_NANOS },
         .last_count_time = { dissector->now, dissector->now },
-        .next_count_bytes = { dissector->skb_len, dissector->skb_len },
+        .next_count_bytes = { 0, 0 }, // Should be packet size, that isn't working?
         .rate_estimate_bps = { 0, 0 },
         .last_sequence = { 0, 0 },
         .last_ack = { 0, 0 },
