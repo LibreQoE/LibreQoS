@@ -221,10 +221,7 @@ impl ThroughputTracker {
               for i in 1..60 {
                 tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
               }
-              tracker.recent_rtt_data[0] = u32::max(
-                (data.last_rtt[0] / 10000) as u32,
-                (data.last_rtt[1] / 10000) as u32,
-              );
+              tracker.recent_rtt_data[0] = (data.last_rtt[0] / 10000) as u32;
               tracker.last_fresh_rtt_data_cycle = self_cycle;
               if let Some(parents) = &tracker.network_json_parents {
                 let net_json = NETWORK_JSON.write().unwrap();
