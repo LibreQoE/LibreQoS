@@ -86,19 +86,17 @@ struct
 
 // Construct an empty flow_data_t structure, using default values.
 static __always_inline struct flow_data_t new_flow_data(
-    // The current time in nanoseconds, from bpf_ktime_get_boot_ns
-    __u64 now,
     // The packet dissector from the previous step
     struct dissector_t *dissector
 ) {
     struct flow_data_t data = {
-        .start_time = now,
+        .start_time = dissector->now,
         .bytes_sent = { 0, 0 },
         .packets_sent = { 0, 0 },
         // Track flow rates at an MS scale rather than per-second
         // to minimize rounding errors.
-        .next_count_time = { now + SECOND_IN_NANOS, now + SECOND_IN_NANOS },
-        .last_count_time = { now, now },
+        .next_count_time = { dissector->now + SECOND_IN_NANOS, dissector->now + SECOND_IN_NANOS },
+        .last_count_time = { dissector->now, dissector->now },
         .next_count_bytes = { dissector->skb_len, dissector->skb_len },
         .rate_estimate_bps = { 0, 0 },
         .last_sequence = { 0, 0 },
@@ -148,25 +146,23 @@ static __always_inline void update_flow_rates(
     // The rate index (0 = to internet, 1 = to local network)
     u_int8_t rate_index,
     // The flow data structure to update
-    struct flow_data_t *data,
-    // The current time in nanoseconds, from bpf_ktime_get_boot_ns
-    __u64 now
+    struct flow_data_t *data
 ) {
-    data->last_seen = now;
+    data->last_seen = dissector->now;
     data->end_status = 0; // Reset the end status
 
     // Update bytes and packets sent
     data->bytes_sent[rate_index] += dissector->skb_len;
     data->packets_sent[rate_index]++;
 
-    if (now > data->next_count_time[rate_index]) {
+    if (dissector->now > data->next_count_time[rate_index]) {
         // Calculate the rate estimate
         __u64 bits = (data->bytes_sent[rate_index] - data->next_count_bytes[rate_index])*8;
-        __u64 time = (now - data->last_count_time[rate_index]) / 10000000; // 1 Second
+        __u64 time = (dissector->now - data->last_count_time[rate_index]) / 10000000; // 1 Second
         data->rate_estimate_bps[rate_index] = (bits/time); // bits per second
-        data->next_count_time[rate_index] = now + SECOND_IN_NANOS;
+        data->next_count_time[rate_index] = dissector->now + SECOND_IN_NANOS;
         data->next_count_bytes[rate_index] = data->bytes_sent[rate_index];
-        data->last_count_time[rate_index] = now;
+        data->last_count_time[rate_index] = dissector->now;
         //bpf_debug("[FLOWS] Rate Estimate: %llu", data->rate_estimate_bps[rate_index]);
     }
 }
@@ -176,14 +172,13 @@ static __always_inline void process_icmp(
     struct dissector_t *dissector,
     u_int8_t direction,
     u_int8_t rate_index,
-    u_int8_t other_rate_index,
-    u_int64_t now
+    u_int8_t other_rate_index
 ) {
     struct flow_key_t key = build_flow_key(dissector, direction);
     struct flow_data_t *data = bpf_map_lookup_elem(&flowbee, &key);
     if (data == NULL) {
         // There isn't a flow, so we need to make one
-        struct flow_data_t new_data = new_flow_data(now, dissector);
+        struct flow_data_t new_data = new_flow_data(dissector);
         if (bpf_map_update_elem(&flowbee, &key, &new_data, BPF_ANY) != 0) {
             bpf_debug("[FLOWS] Failed to add new flow to map");
             return;
@@ -191,7 +186,7 @@ static __always_inline void process_icmp(
         data = bpf_map_lookup_elem(&flowbee, &key);
         if (data == NULL) return;
     }
-    update_flow_rates(dissector, rate_index, data, now);
+    update_flow_rates(dissector, rate_index, data);
 }
 
 // Handle Per-Flow UDP Analysis
@@ -199,14 +194,13 @@ static __always_inline void process_udp(
     struct dissector_t *dissector,
     u_int8_t direction,
     u_int8_t rate_index,
-    u_int8_t other_rate_index,
-    u_int64_t now
+    u_int8_t other_rate_index
 ) {
     struct flow_key_t key = build_flow_key(dissector, direction);
     struct flow_data_t *data = bpf_map_lookup_elem(&flowbee, &key);
     if (data == NULL) {
         // There isn't a flow, so we need to make one
-        struct flow_data_t new_data = new_flow_data(now, dissector);
+        struct flow_data_t new_data = new_flow_data(dissector);
         if (bpf_map_update_elem(&flowbee, &key, &new_data, BPF_ANY) != 0) {
             bpf_debug("[FLOWS] Failed to add new flow to map");
             return;
@@ -214,7 +208,7 @@ static __always_inline void process_udp(
         data = bpf_map_lookup_elem(&flowbee, &key);
         if (data == NULL) return;
     }
-    update_flow_rates(dissector, rate_index, data, now);
+    update_flow_rates(dissector, rate_index, data);
 }
 
 // Store the most recent sequence and ack numbers, and detect retransmissions.
@@ -249,8 +243,7 @@ static __always_inline void process_tcp(
     struct dissector_t *dissector,
     u_int8_t direction,
     u_int8_t rate_index,
-    u_int8_t other_rate_index,
-    u_int64_t now
+    u_int8_t other_rate_index
 ) {
     // SYN packet indicating the start of a conversation. We are explicitly ignoring
     // SYN-ACK packets, we just want to catch the opening of a new connection.
@@ -262,7 +255,7 @@ static __always_inline void process_tcp(
         bpf_debug("[FLOWS] New TCP Connection Detected (%u)", direction);
         #endif
         struct flow_key_t key = build_flow_key(dissector, direction);
-        struct flow_data_t data = new_flow_data(now, dissector);
+        struct flow_data_t data = new_flow_data(dissector);
         data.tos = dissector->tos;
         data.ip_flags = 0; // Obtain these
         if (bpf_map_update_elem(&flowbee, &key, &data, BPF_ANY) != 0) {
@@ -281,7 +274,7 @@ static __always_inline void process_tcp(
     }
 
     // Update the flow data with the current packet's information
-    update_flow_rates(dissector, rate_index, data, now);
+    update_flow_rates(dissector, rate_index, data);
 
     // Sequence and Acknowledgement numbers
     detect_retries(dissector, rate_index, data);
@@ -294,12 +287,12 @@ static __always_inline void process_tcp(
         if (tsval != data->tsval[rate_index] && tsecr != data->tsecr[rate_index]) {
 
             if (tsecr == data->tsval[other_rate_index]) {
-                __u64 elapsed = now - data->ts_change_time[other_rate_index];
+                __u64 elapsed = dissector->now - data->ts_change_time[other_rate_index];
                 data->last_rtt[rate_index] = elapsed;
                 //bpf_debug("[FLOWS][%d] RTT: %llu", direction, elapsed);
             }
 
-            data->ts_change_time[rate_index] = now;
+            data->ts_change_time[rate_index] = dissector->now;
             data->tsval[rate_index] = tsval;
             data->tsecr[rate_index] = tsecr;
         }
@@ -319,8 +312,6 @@ static __always_inline void track_flows(
     struct dissector_t *dissector, // The packet dissector from the previous step
     u_int8_t direction // The direction of the packet (1 = to internet, 2 = to local network)
 ) {
-    __u64 now = bpf_ktime_get_boot_ns();
-
     u_int8_t rate_index;
     u_int8_t other_rate_index;
     if (direction == TO_INTERNET) {
@@ -334,9 +325,9 @@ static __always_inline void track_flows(
     // Pass to the appropriate protocol handler
     switch (dissector->ip_protocol)
     {
-        case IPPROTO_TCP: process_tcp(dissector, direction, rate_index, other_rate_index, now); break;
-        case IPPROTO_UDP: process_udp(dissector, direction, rate_index, other_rate_index, now); break;
-        case IPPROTO_ICMP: process_icmp(dissector, direction, rate_index, other_rate_index, now); break;
+        case IPPROTO_TCP: process_tcp(dissector, direction, rate_index, other_rate_index); break;
+        case IPPROTO_UDP: process_udp(dissector, direction, rate_index, other_rate_index); break;
+        case IPPROTO_ICMP: process_icmp(dissector, direction, rate_index, other_rate_index); break;
         default: {
             #ifdef VERBOSE
             bpf_debug("[FLOWS] Unsupported protocol: %d", dissector->ip_protocol);

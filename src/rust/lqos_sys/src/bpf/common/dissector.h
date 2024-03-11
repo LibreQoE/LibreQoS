@@ -54,6 +54,7 @@ struct dissector_t
     __u32 tsecr;
     __u32 sequence;
     __u32 ack_seq;
+    __u64 now;
 };
 
 // Representation of the VLAN header type.
@@ -118,6 +119,7 @@ static __always_inline bool dissector_new(
     dissector->tos = 0;
     dissector->sequence = 0;
     dissector->ack_seq = 0;
+    dissector->now = bpf_ktime_get_boot_ns();
 
     // Check that there's room for an ethernet header
     if SKB_OVERFLOW (dissector->start, dissector->end, ethhdr)

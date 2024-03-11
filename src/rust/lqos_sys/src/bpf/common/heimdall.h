@@ -137,7 +137,7 @@ static __always_inline void update_heimdall(struct dissector_t *dissector, __u32
         struct heimdall_data *counter = (struct heimdall_data *)bpf_map_lookup_elem(&heimdall, &key);
         if (counter)
         {
-            counter->last_seen = bpf_ktime_get_boot_ns();
+            counter->last_seen = dissector->now;
             counter->packets += 1;
             counter->bytes += size;
             if (dissector->tos != 0)
@@ -148,7 +148,7 @@ static __always_inline void update_heimdall(struct dissector_t *dissector, __u32
         else
         {
             struct heimdall_data counter = {0};
-            counter.last_seen = bpf_ktime_get_boot_ns();
+            counter.last_seen = dissector->now;
             counter.bytes = size;
             counter.packets = 1;
             counter.tos = dissector->tos;
@@ -160,7 +160,7 @@ static __always_inline void update_heimdall(struct dissector_t *dissector, __u32
         }
     } else if (mode == 2) {
         struct heimdall_event event = {0};
-        event.timetamp = bpf_ktime_get_boot_ns();
+        event.timetamp = dissector->now;
         event.src = dissector->src_ip;
         event.dst = dissector->dst_ip;
         event.src_port = dissector->src_port;
