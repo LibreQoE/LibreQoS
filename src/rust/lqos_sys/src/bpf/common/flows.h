@@ -280,13 +280,16 @@ static __always_inline void process_tcp(
     detect_retries(dissector, rate_index, data);
 
     // Timestamps to calculate RTT
-    u_int32_t tsval = dissector->tsval;
-    u_int32_t tsecr = dissector->tsecr;
-    if (tsval != 0) {
+        u_int32_t tsval = dissector->tsval;
+        u_int32_t tsecr = dissector->tsecr;
+        if (tsval != 0) {
         //bpf_debug("[FLOWS][%d] TSVAL: %u, TSECR: %u", direction, tsval, tsecr);
         if (tsval != data->tsval[rate_index] && tsecr != data->tsecr[rate_index]) {
 
-            if (tsecr == data->tsval[other_rate_index]) {
+            if (
+                tsecr == data->tsval[other_rate_index] &&
+                data->rate_estimate_bps[rate_index] > 4096
+            ) {
                 __u64 elapsed = dissector->now - data->ts_change_time[other_rate_index];
                 data->last_rtt[rate_index] = elapsed;
                 //bpf_debug("[FLOWS][%d] RTT: %llu", direction, elapsed);
