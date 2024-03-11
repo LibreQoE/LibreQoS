@@ -444,34 +444,6 @@ int throughput_reader(struct bpf_iter__bpf_map_elem *ctx)
 }
 
 SEC("iter/bpf_map_elem")
-int heimdall_reader(struct bpf_iter__bpf_map_elem *ctx) {
-    // The sequence file
-    struct seq_file *seq = ctx->meta->seq;
-    void *counter = ctx->value;
-    struct heimdall_key *ip = ctx->key;
-    __u32 num_cpus = NUM_CPUS;
-
-    if (ctx->meta->seq_num == 0) {
-        bpf_seq_write(seq, &num_cpus, sizeof(__u32));
-        bpf_seq_write(seq, &num_cpus, sizeof(__u32)); // Repeat for padding
-    }
-
-    // Bail on end
-    if (counter == NULL || ip == NULL) {
-        return 0;
-    }
-
-    bpf_seq_write(seq, ip, sizeof(struct heimdall_key));
-    for (__u32 i=0; i<NUM_CPUS; i++) {
-        struct heimdall_data * content = counter+(i*sizeof(struct heimdall_data));
-        bpf_seq_write(seq, content, sizeof(struct heimdall_data));
-    }
-
-    //BPF_SEQ_PRINTF(seq, "%d %d\n", counter->download_bytes, counter->upload_bytes);
-    return 0;
-}
-
-SEC("iter/bpf_map_elem")
 int flow_reader(struct bpf_iter__bpf_map_elem *ctx)
 {
     // The sequence file

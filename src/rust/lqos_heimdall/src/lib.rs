@@ -7,8 +7,6 @@ mod config;
 pub mod perf_interface;
 pub mod stats;
 pub use config::{HeimdalConfig, HeimdallMode};
-mod flows;
-pub use flows::{expire_heimdall_flows, get_flow_stats};
 mod timeline;
 pub use timeline::{n_second_packet_dump, n_second_pcap, hyperfocus_on_target};
 mod pcap;
@@ -16,16 +14,13 @@ mod watchlist;
 use lqos_utils::fdtimer::periodic;
 pub use watchlist::{heimdall_expire, heimdall_watch_ip, set_heimdall_mode};
 
-use crate::flows::read_flows;
+use crate::timeline::expire_timeline;
 
 /// How long should Heimdall keep watching a flow after being requested
 /// to do so? Setting this to a long period increases CPU load after the
 /// client has stopped looking. Too short a delay will lead to missed
 /// collections if the client hasn't maintained the 1s request cadence.
 const EXPIRE_WATCHES_SECS: u64 = 5;
-
-/// How long should Heimdall retain flow summary data?
-const FLOW_EXPIRE_SECS: u64 = 10;
 
 /// How long should Heimdall retain packet timeline data?
 const TIMELINE_EXPIRE_SECS: u64 = 10;
@@ -48,9 +43,8 @@ pub async fn start_heimdall() {
 
   std::thread::spawn(move || {
     periodic(interval_ms, "Heimdall Packet Watcher", &mut || {
-      read_flows();
-      expire_heimdall_flows();
       heimdall_expire();
+      expire_timeline();
     });
   });
 }

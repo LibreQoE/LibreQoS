@@ -1,7 +1,7 @@
 use crate::auth_guard::AuthGuard;
 use crate::cache_control::NoCache;
 use crate::tracker::{SHAPED_DEVICES, lookup_dns};
-use lqos_bus::{bus_request, BusRequest, BusResponse, FlowTransport, FlowbeeData, PacketHeader, QueueStoreTransit};
+use lqos_bus::{bus_request, BusRequest, BusResponse, FlowbeeData, PacketHeader, QueueStoreTransit};
 use rocket::fs::NamedFile;
 use rocket::http::Status;
 use rocket::response::content::RawJson;

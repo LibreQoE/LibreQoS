@@ -1,5 +1,4 @@
 pub mod flow_data;
-mod heimdall_data;
 mod throughput_entry;
 mod tracking_data;
 use std::net::IpAddr;
@@ -10,7 +9,6 @@ use crate::{
     stats::TIME_TO_POLL_HOSTS,
     throughput_tracker::tracking_data::ThroughputTracker,
 };
-pub use heimdall_data::get_flow_stats;
 use log::{info, warn};
 use lqos_bus::{BusResponse, FlowbeeProtocol, IpStats, TcHandle, TopFlowType, XdpPpingResult};
 use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};

@@ -20,7 +20,6 @@ mod linux;
 mod bpf_iterator;
 /// Data shared between eBPF and Heimdall that needs local access
 /// for map control.
-pub mod heimdall_data;
 pub mod flowbee_data;
 
 pub use ip_mapping::{
@@ -30,4 +29,4 @@ pub use kernel_wrapper::LibreQoSKernels;
 pub use linux::num_possible_cpus;
 pub use lqos_kernel::max_tracked_ips;
 pub use throughput::{throughput_for_each, HostCounter};
-pub use bpf_iterator::{iterate_heimdall, iterate_flows, end_flows};
+pub use bpf_iterator::{iterate_flows, end_flows};

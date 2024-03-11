@@ -332,6 +332,7 @@ if (hdr->cwr) flags |= 128;
 
             target = params.id;
             $.get("/api/packet_dump/" + params.id, (data) => {
+                console.log(data);
                 data.sort((a,b) => a.timestamp - b.timestamp);
 
                 // Find the minimum timestamp

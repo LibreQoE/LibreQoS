@@ -133,10 +133,6 @@ pub enum BusRequest {
   /// Obtain the lqosd statistics
   GetLqosStats,
 
-  /// Tell me flow stats for a given IP address
-  #[deprecated(note = "Heimdall flows are being migrated to flows 2")]
-  GetFlowStats(String),
-
   /// Tell Heimdall to hyper-focus on an IP address for a bit
   GatherPacketData(String),
 

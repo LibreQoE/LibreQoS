@@ -67,41 +67,6 @@ pub struct XdpPpingResult {
   pub samples: u32,
 }
 
-/// Defines an IP protocol for display in the flow
-/// tracking (Heimdall) system.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub enum FlowProto {
-  /// A TCP flow
-  TCP, 
-  /// A UDP flow
-  UDP, 
-  /// An ICMP flow
-  ICMP
-}
-
-/// Defines the display data for a flow in Heimdall.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct FlowTransport {
-  /// The Source IP address
-  pub src: String,
-  /// The Destination IP address
-  pub dst: String,
-  /// The flow protocol (see `FlowProto`)
-  pub proto: FlowProto,
-  /// The source port, which is overridden to ICMP code on ICMP flows.
-  pub src_port: u16,
-  /// The destination port, which isn't useful at all on ICMP flows.
-  pub dst_port: u16,
-  /// The number of bytes since we started tracking this flow.
-  pub bytes: u64,
-  /// The number of packets since we started tracking this flow.
-  pub packets: u64,
-  /// Detected DSCP code if any
-  pub dscp: u8,
-  /// Detected ECN bit status (0-3)
-  pub ecn: u8,
-}
-
 /// Extract the 6-bit DSCP and 2-bit ECN code from a TOS field
 /// in an IP header.
 pub fn tos_parser(tos: u8) -> (u8, u8) {

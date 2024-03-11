@@ -1,6 +1,6 @@
 use super::QueueStoreTransit;
 use crate::{
-  ip_stats::{FlowbeeData, PacketHeader}, FlowTransport, IpMapping, IpStats, XdpPpingResult,
+  ip_stats::{FlowbeeData, PacketHeader}, IpMapping, IpStats, XdpPpingResult,
 };
 use lts_client::transport_data::{StatsTotals, StatsHost, StatsTreeNode};
 use serde::{Deserialize, Serialize};
@@ -90,10 +90,6 @@ pub enum BusResponse {
     /// Number of flows tracked
     tracked_flows: u64,
   },
-
-  /// Flow Data
-  #[deprecated(note = "Being replaced by FlowbeeData")]
-  FlowData(Vec<(FlowTransport, Option<FlowTransport>)>),
 
   /// The index of the new packet collection session
   PacketCollectionSession {
