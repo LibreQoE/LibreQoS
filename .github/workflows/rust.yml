@@ -11,8 +11,6 @@ jobs:
     
     steps:
     - uses: actions/checkout@v2
-    - name: Install dependencies
-      if: matrix.os == 'ubuntu-latest'
     - name: Build
       run: pushd src/rust; cargo build --verbose --all; popd
     - name: Run tests
