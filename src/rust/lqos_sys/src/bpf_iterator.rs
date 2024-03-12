@@ -252,7 +252,8 @@ pub fn end_flows(flows: &mut [FlowbeeKey]) -> anyhow::Result<()> {
   let mut map = BpfMap::<FlowbeeKey, FlowbeeData>::from_path("/sys/fs/bpf/flowbee")?;
 
   for flow in flows {
-    map.delete(flow)?;
+    let mut empty = FlowbeeData::default();
+    map.insert_or_update(flow, &mut empty)?;
   }
 
   Ok(())

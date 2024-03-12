@@ -171,7 +171,7 @@ impl ThroughputTracker {
   pub(crate) fn apply_flow_data(
     &self, 
     timeout_seconds: u64,
-    netflow_enabled: bool,
+    _netflow_enabled: bool,
     sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeData, FlowAnalysis))>,
   ) {
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
@@ -188,16 +188,10 @@ impl ThroughputTracker {
 
         if data.end_status == 3 {
           // The flow has been handled already and should be ignored.
-          // This shouldn't happen in our deletion logic. If it DID happen,
-          // we'll take this opportunity to clean it up.
+          // DO NOT process it again.          
+        } else  if data.last_seen < expire {
+          // This flow has expired but not been handled yet. Add it to the list to be cleaned.
           expired_keys.push(key.clone());
-          ALL_FLOWS.lock().unwrap().remove(&key);
-          return;
-        }
-
-        if data.last_seen < expire {
-          // This flow has expired. Add it to the list to be cleaned
-          expired_keys.push(key.clone());          
         } else {
           let mut lock = ALL_FLOWS.lock().unwrap();
           // We have a valid flow, so it needs to be tracked
@@ -214,12 +208,11 @@ impl ThroughputTracker {
           } else {
             // Insert it into the map
             let flow_analysis = FlowAnalysis::new(&key);
-
             lock.insert(key.clone(), (data.clone(), flow_analysis));
           }
 
           // TCP - we have RTT data? 6 is TCP
-          if key.ip_protocol == 6 && data.last_rtt[0] != 0 {
+          if key.ip_protocol == 6 && data.last_rtt[0] != 0 && data.end_status == 0 {
             if let Some(mut tracker) = self.raw_data.get_mut(&key.local_ip) {
               // Shift left
               for i in 1..60 {
@@ -234,31 +227,36 @@ impl ThroughputTracker {
                 }
               }
             }
-          }
 
-          if data.end_status != 0 {
-            // The flow has ended. We need to remove it from the map.
-            expired_keys.push(key.clone());
+            if data.end_status != 0 {
+              // The flow has ended. We need to remove it from the map.
+              expired_keys.push(key.clone());
+            }
           }
         }
       }); // End flow iterator
 
       if !expired_keys.is_empty() {
-        let ret = lqos_sys::end_flows(&mut expired_keys);
-        if let Err(e) = ret {
-          log::warn!("Failed to end flows: {:?}", e);
-        }
         let mut lock = ALL_FLOWS.lock().unwrap();
-        for key in expired_keys {
+        for key in expired_keys.iter() {
           // Send it off to netperf for analysis if we are supporting doing so.
-          if netflow_enabled {
-            if let Some(d) = lock.get(&key) {
-              let _ = sender.send((key.clone(), (d.0.clone(), d.1.clone())));
-            }
+          if let Some(d) = lock.get(&key) {
+            let _ = sender.send((key.clone(), (d.0.clone(), d.1.clone())));
           }
           // Remove the flow from circulation
           lock.remove(&key);
         }
+
+        let ret = lqos_sys::end_flows(&mut expired_keys);
+        if let Err(e) = ret {
+          log::warn!("Failed to end flows: {:?}", e);
+        }
+      }
+
+      // Cleaning run
+      {
+        let mut lock = ALL_FLOWS.lock().unwrap();
+        lock.retain(|_k,v| v.0.last_seen >= expire);
       }
     }
   }
