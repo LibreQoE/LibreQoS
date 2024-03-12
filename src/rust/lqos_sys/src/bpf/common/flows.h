@@ -11,7 +11,7 @@
 #define SECOND_IN_NANOS 1000000000
 #define TWO_SECONDS_IN_NANOS 2000000000
 #define MS_IN_NANOS_T10 10000000
-#define ONE_MBPS_IN_BYTES_PER_SECOND 125000
+#define HALF_MBPS_IN_BYTES_PER_SECOND 62500
 //#define TIMESTAMP_INTERVAL_NANOS 10000000
 
 // Some helpers to make understanding direction easier
@@ -290,7 +290,8 @@ static __always_inline void process_tcp(
 
             if (
                 tsecr == data->tsval[other_rate_index] &&
-                data->rate_estimate_bps[rate_index] > ONE_MBPS_IN_BYTES_PER_SECOND
+                (data->rate_estimate_bps[rate_index] > HALF_MBPS_IN_BYTES_PER_SECOND ||
+                data->rate_estimate_bps[other_rate_index] > HALF_MBPS_IN_BYTES_PER_SECOND )
             ) {
                 __u64 elapsed = dissector->now - data->ts_change_time[other_rate_index];
                 if (elapsed < TWO_SECONDS_IN_NANOS) {
