@@ -167,6 +167,9 @@ pub enum BusRequest {
 
   /// Flows by IP Address
   FlowsByIp(String),
+
+  /// Current Endpoints by Country
+  CurrentEndpointsByCountry,
 }
 
 /// Defines the type of "top" flow being requested

@@ -114,6 +114,7 @@ fn rocket() -> _ {
         flow_monitor::all_flows_debug_dump,
         flow_monitor::count_flows,
         flow_monitor::top_5_flows,
+        flow_monitor::flows_by_country,
       ],
     );
 

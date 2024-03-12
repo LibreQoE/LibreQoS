@@ -4,7 +4,7 @@ use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
 use once_cell::sync::Lazy;
 use std::sync::{Arc, Mutex};
 
-struct TimeBuffer {
+pub struct TimeBuffer {
     buffer: Mutex<Vec<TimeEntry>>,
 }
 
@@ -34,7 +34,7 @@ impl TimeBuffer {
         buffer.push(entry);
     }
 
-    fn country_summary(&self) -> Vec<(String, [u64; 2], [f32; 2])> {
+    pub fn country_summary(&self) -> Vec<(String, [u64; 2], [f32; 2])> {
         let buffer = self.buffer.lock().unwrap();
         let mut my_buffer = buffer
             .iter()
@@ -114,7 +114,7 @@ impl TimeBuffer {
     }
 }
 
-static RECENT_FLOWS: Lazy<TimeBuffer> = Lazy::new(|| TimeBuffer::new());
+pub static RECENT_FLOWS: Lazy<TimeBuffer> = Lazy::new(|| TimeBuffer::new());
 
 pub struct FinishedFlowAnalysis {}
 

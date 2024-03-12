@@ -652,3 +652,9 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
     }
     BusResponse::Ack
 }
+
+/// Current endpoints by country
+pub fn current_endpoints_by_country() -> BusResponse {
+    let summary = flow_data::RECENT_FLOWS.country_summary();
+    BusResponse::CurrentEndpointsByCountry(summary)
+}

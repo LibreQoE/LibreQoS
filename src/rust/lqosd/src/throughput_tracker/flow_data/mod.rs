@@ -13,7 +13,7 @@ use std::sync::{
     mpsc::{channel, Sender},
     Arc,
 };
-pub(crate) use flow_analysis::{setup_flow_analysis, get_asn_name_and_country, FlowAnalysis};
+pub(crate) use flow_analysis::{setup_flow_analysis, get_asn_name_and_country, FlowAnalysis, RECENT_FLOWS};
 
 
 trait FlowbeeRecipient {

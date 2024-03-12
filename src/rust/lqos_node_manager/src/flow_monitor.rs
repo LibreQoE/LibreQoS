@@ -46,3 +46,15 @@ pub async fn top_5_flows(top_n: u32, flow_type: String) -> NoCache<Json<Vec<Flow
 
   NoCache::new(Json(result))
 }
+
+#[get("/api/flows/by_country")]
+pub async fn flows_by_country() -> NoCache<Json<Vec<(String, [u64; 2], [f32; 2])>>> {
+  let responses =
+    bus_request(vec![BusRequest::CurrentEndpointsByCountry]).await.unwrap();
+  let result = match &responses[0] {
+    BusResponse::CurrentEndpointsByCountry(country_summary) => country_summary.to_owned(),
+    _ => Vec::new(),
+  };
+
+  NoCache::new(Json(result))
+}
