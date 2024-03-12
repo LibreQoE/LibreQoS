@@ -171,7 +171,7 @@ impl ThroughputTracker {
   pub(crate) fn apply_flow_data(
     &self, 
     timeout_seconds: u64,
-    _netflow_enabled: bool,
+    netflow_enabled: bool,
     sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeData, FlowAnalysis))>,
   ) {
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
@@ -189,7 +189,7 @@ impl ThroughputTracker {
         if data.end_status == 3 {
           // The flow has been handled already and should be ignored.
           // DO NOT process it again.          
-        } else if data.last_seen < expire && data.end_status == 0 {
+        } else if data.last_seen < expire {
           // This flow has expired but not been handled yet. Add it to the list to be cleaned.
           expired_keys.push(key.clone());
         } else {
@@ -241,7 +241,9 @@ impl ThroughputTracker {
         for key in expired_keys.iter() {
           // Send it off to netperf for analysis if we are supporting doing so.
           if let Some(d) = lock.get(&key) {
-            let _ = sender.send((key.clone(), (d.0.clone(), d.1.clone())));
+            if netflow_enabled {
+              let _ = sender.send((key.clone(), (d.0.clone(), d.1.clone())));
+            }
           }
           // Remove the flow from circulation
           lock.remove(&key);
