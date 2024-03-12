@@ -187,7 +187,11 @@ impl ThroughputTracker {
       iterate_flows(&mut |key, data| {
 
         if data.end_status == 2 {
-          // The flow has been handled already and should be ignored
+          // The flow has been handled already and should be ignored.
+          // This shouldn't happen in our deletion logic. If it DID happen,
+          // we'll take this opportunity to clean it up.
+          expired_keys.push(key.clone());
+          ALL_FLOWS.lock().unwrap().remove(&key);
           return;
         }
 
@@ -221,7 +225,7 @@ impl ThroughputTracker {
               for i in 1..60 {
                 tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
               }
-              tracker.recent_rtt_data[0] = (data.last_rtt[0] / 10000) as u32;
+              tracker.recent_rtt_data[0] = (data.last_rtt[1] / 10000) as u32;
               tracker.last_fresh_rtt_data_cycle = self_cycle;
               if let Some(parents) = &tracker.network_json_parents {
                 let net_json = NETWORK_JSON.write().unwrap();
@@ -246,6 +250,8 @@ impl ThroughputTracker {
             if let Some(d) = lock.get(&key) {
               let _ = sender.send((key.clone(), (d.0.clone(), d.1.clone())));
             }
+            // Remove the flow from circulation
+            lock.remove(&key);
           }
 
           lock.remove(&key);
