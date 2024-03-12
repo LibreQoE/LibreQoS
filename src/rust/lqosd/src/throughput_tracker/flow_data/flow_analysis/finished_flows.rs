@@ -107,8 +107,8 @@ impl TimeBuffer {
 
         country_summary.push((last_country, total_bytes, rtt));
 
-        // Sort by bytes descending
-        country_summary.sort_by(|a, b| b.1[0].cmp(&a.1[0]));
+        // Sort by bytes downloaded descending
+        country_summary.sort_by(|a, b| b.1[1].cmp(&a.1[1]));
 
         country_summary
     }
