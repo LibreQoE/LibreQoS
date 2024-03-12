@@ -1738,10 +1738,13 @@ name = "lqosd"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bincode",
  "csv",
  "dashmap",
  "env_logger",
  "flate2",
+ "ip_network",
+ "ip_network_table",
  "itertools 0.12.1",
  "jemallocator",
  "log",

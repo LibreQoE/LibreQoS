@@ -505,7 +505,7 @@ pub fn dump_active_flows() -> BusResponse {
     let result: Vec<lqos_bus::FlowbeeData> = lock
         .iter()
         .map(|(key, row)| {
-            let (remote_asn_name, remote_asn_country) = get_asn_name_and_country(row.1.asn_id.0);
+            let (remote_asn_name, remote_asn_country) = get_asn_name_and_country(key.remote_ip.as_ip());
 
             lqos_bus::FlowbeeData {
                 remote_ip: key.remote_ip.as_ip().to_string(),
@@ -589,7 +589,7 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
         .iter()
         .take(n as usize)
         .map(|(ip, flow)| {
-            let (remote_asn_name, remote_asn_country) = get_asn_name_and_country(flow.1.asn_id.0);
+            let (remote_asn_name, remote_asn_country) = get_asn_name_and_country(ip.remote_ip.as_ip());
             lqos_bus::FlowbeeData {
                 remote_ip: ip.remote_ip.as_ip().to_string(),
                 local_ip: ip.local_ip.as_ip().to_string(),
@@ -624,7 +624,7 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
             .iter()
             .filter(|(key, _)| key.local_ip == ip)
             .map(|(key, row)| {
-                let (remote_asn_name, remote_asn_country) = get_asn_name_and_country(row.1.asn_id.0);
+                let (remote_asn_name, remote_asn_country) = get_asn_name_and_country(key.remote_ip.as_ip());
     
                 lqos_bus::FlowbeeData {
                     remote_ip: key.remote_ip.as_ip().to_string(),

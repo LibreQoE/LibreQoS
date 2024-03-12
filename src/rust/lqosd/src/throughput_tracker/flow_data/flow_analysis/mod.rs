@@ -1,7 +1,6 @@
 use std::{net::IpAddr, sync::Mutex};
 use lqos_sys::flowbee_data::FlowbeeKey;
 use once_cell::sync::Lazy;
-use self::asn::AsnTable;
 mod asn;
 mod protocol;
 pub use protocol::FlowProtocol;
@@ -12,7 +11,7 @@ pub use finished_flows::FinishedFlowAnalysis;
 static ANALYSIS: Lazy<FlowAnalysisSystem> = Lazy::new(|| FlowAnalysisSystem::new());
 
 pub struct FlowAnalysisSystem {
-    asn_table: Mutex<Option<asn::AsnTable>>,
+    asn_table: Mutex<Option<asn::GeoTable>>,
 }
 
 impl FlowAnalysisSystem {
@@ -20,7 +19,7 @@ impl FlowAnalysisSystem {
         // Periodically update the ASN table
         std::thread::spawn(|| {
             loop {
-                let result = AsnTable::new();
+                let result = asn::GeoTable::load();
                 match result {
                     Ok(table) => {
                         ANALYSIS.asn_table.lock().unwrap().replace(table);
@@ -66,35 +65,19 @@ impl FlowAnalysis {
 
 
 pub fn lookup_asn_id(ip: IpAddr) -> Option<u32> {
-    let table_lock = ANALYSIS.asn_table.lock();
-    if table_lock.is_err() {
-        return None;
+    if let Ok(table_lock) = ANALYSIS.asn_table.lock() {
+        if let Some(table) = table_lock.as_ref() {
+            return table.find_asn(ip);
+        }
     }
-    let table = table_lock.unwrap();
-    if table.is_none() {
-        return None;
-    }
-    let table = table.as_ref().unwrap();
-    if let Some(asn) = table.find_asn(ip) {
-        Some(asn.asn)
-    } else {
-        None
-    }
+    None
 }
 
-pub fn get_asn_name_and_country(asn: u32) -> (String, String) {
-    let table_lock = ANALYSIS.asn_table.lock();
-    if table_lock.is_err() {
-        return ("".to_string(), "".to_string());
+pub fn get_asn_name_and_country(ip: IpAddr) -> (String, String) {
+    if let Ok(table_lock) = ANALYSIS.asn_table.lock() {
+        if let Some(table) = table_lock.as_ref() {
+            return table.find_owners_by_ip(ip);
+        }
     }
-    let table = table_lock.unwrap();
-    if table.is_none() {
-        return ("".to_string(), "".to_string());
-    }
-    let table = table.as_ref().unwrap();
-    if let Some(row) = table.find_asn_by_id(asn) {
-        (row.owners.clone(), row.country.clone())
-    } else {
-        ("".to_string(), "".to_string())
-    }
+    (String::new(), String::new())
 }

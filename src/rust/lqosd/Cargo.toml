@@ -33,6 +33,9 @@ itertools = "0.12.1"
 csv = "1"
 reqwest = { version = "0.11.24", features = ["blocking"] }
 flate2 = "1.0"
+bincode = "1"
+ip_network_table = "0"
+ip_network = "0"
 
 # Support JemAlloc on supported platforms
 [target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]
