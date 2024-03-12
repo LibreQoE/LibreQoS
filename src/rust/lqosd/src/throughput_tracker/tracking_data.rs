@@ -186,7 +186,7 @@ impl ThroughputTracker {
       // Track through all the flows
       iterate_flows(&mut |key, data| {
 
-        if data.end_status == 2 {
+        if data.end_status == 3 {
           // The flow has been handled already and should be ignored.
           // This shouldn't happen in our deletion logic. If it DID happen,
           // we'll take this opportunity to clean it up.
@@ -219,7 +219,7 @@ impl ThroughputTracker {
           }
 
           // TCP - we have RTT data? 6 is TCP
-          if key.ip_protocol == 6 && (data.last_rtt[0] != 0 || data.last_rtt[1] != 0) {
+          if key.ip_protocol == 6 && data.last_rtt[0] != 0 {
             if let Some(mut tracker) = self.raw_data.get_mut(&key.local_ip) {
               // Shift left
               for i in 1..60 {
@@ -234,6 +234,11 @@ impl ThroughputTracker {
                 }
               }
             }
+          }
+
+          if data.end_status != 0 {
+            // The flow has ended. We need to remove it from the map.
+            expired_keys.push(key.clone());
           }
         }
       }); // End flow iterator
@@ -250,10 +255,8 @@ impl ThroughputTracker {
             if let Some(d) = lock.get(&key) {
               let _ = sender.send((key.clone(), (d.0.clone(), d.1.clone())));
             }
-            // Remove the flow from circulation
-            lock.remove(&key);
           }
-
+          // Remove the flow from circulation
           lock.remove(&key);
         }
       }
