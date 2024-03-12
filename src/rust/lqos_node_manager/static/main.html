@@ -361,7 +361,7 @@
                 html += "<th>DL RTT</th>";
                 html += "</thead></tbody>";
                 let i = 0;
-                while (i < data.length) {
+                while (i < data.length && i < 10) {
                     html += "<tr>";
                     html += "<td>" + data[i][0] + "</td>";
                     html += "<td>" + scaleNumber(data[i][1][0]) + "</td>";
