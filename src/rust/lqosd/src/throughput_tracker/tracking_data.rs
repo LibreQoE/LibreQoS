@@ -189,7 +189,7 @@ impl ThroughputTracker {
         if data.end_status == 3 {
           // The flow has been handled already and should be ignored.
           // DO NOT process it again.          
-        } else  if data.last_seen < expire {
+        } else if data.last_seen < expire && data.end_status == 0 {
           // This flow has expired but not been handled yet. Add it to the list to be cleaned.
           expired_keys.push(key.clone());
         } else {
