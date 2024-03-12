@@ -182,6 +182,8 @@ impl ThroughputTracker {
 
       // Track the expired keys
       let mut expired_keys = Vec::new();
+
+      let mut lock = ALL_FLOWS.lock().unwrap();
         
       // Track through all the flows
       iterate_flows(&mut |key, data| {
@@ -193,7 +195,6 @@ impl ThroughputTracker {
           // This flow has expired but not been handled yet. Add it to the list to be cleaned.
           expired_keys.push(key.clone());
         } else {
-          let mut lock = ALL_FLOWS.lock().unwrap();
           // We have a valid flow, so it needs to be tracked
           if let Some(this_flow) = lock.get_mut(&key) {
             this_flow.0.last_seen = data.last_seen;
@@ -237,7 +238,6 @@ impl ThroughputTracker {
       }); // End flow iterator
 
       if !expired_keys.is_empty() {
-        let mut lock = ALL_FLOWS.lock().unwrap();
         for key in expired_keys.iter() {
           // Send it off to netperf for analysis if we are supporting doing so.
           if let Some(d) = lock.get(&key) {
@@ -256,10 +256,7 @@ impl ThroughputTracker {
       }
 
       // Cleaning run
-      {
-        let mut lock = ALL_FLOWS.lock().unwrap();
-        lock.retain(|_k,v| v.0.last_seen >= expire);
-      }
+      lock.retain(|_k,v| v.0.last_seen >= expire);
     }
   }
 
