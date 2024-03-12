@@ -141,7 +141,5 @@ impl FlowbeeRecipient for FinishedFlowAnalysis {
                 .as_secs(),
             data: (key, data, analysis),
         });
-
-        println!("{:?}", RECENT_FLOWS.country_summary());
     }
 }
