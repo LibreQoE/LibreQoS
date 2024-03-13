@@ -324,7 +324,7 @@
                 html += "<th>DL ⬇️</th>";
                 html += "<th>UL RTT</th>";
                 html += "<th>DL RTT</th>";
-                html += "<th>TCP Retries</th>";
+                html += "<th>TCP Retransmits</th>";
                 html += "<th>Remote ASN</th>";
                 html += "<th>Country</th>";
                 html += "</thead><tbody>";
@@ -339,7 +339,7 @@
                     html += "<td>" + scaleNumber(data[i].rate_estimate_bps[1]) + "</td>";
                     html += "<td>" + (data[i].last_rtt[0] / 1000000).toFixed(2) + "</td>";
                     html += "<td>" + (data[i].last_rtt[1] / 1000000).toFixed(2) + "</td>";
-                    html += "<td>" + data[i].retries[0] + "/" + data[i].retries[1] + "</td>";
+                    html += "<td>" + data[i].tcp_retransmits[0] + "/" + data[i].tcp_retransmits[1] + "</td>";
                     html += "<td>" + data[i].remote_asn_name + "</td>";
                     html += "<td>" + data[i].remote_asn_country + "</td>";
                     html += "</tr>";

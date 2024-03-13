@@ -55,8 +55,8 @@ struct flow_data_t {
     __u32 last_sequence[2];
     // Acknowledgement number of the last packet
     __u32 last_ack[2];
-    // Retry Counters
-    __u32 retries[2];
+    // Retransmit Counters (Also catches duplicates and out-of-order packets)
+    __u32 tcp_retransmits[2];
     // Timestamp values
     __u32 tsval[2];
     __u32 tsecr[2];
@@ -103,7 +103,7 @@ static __always_inline struct flow_data_t new_flow_data(
         .rate_estimate_bps = { 0, 0 },
         .last_sequence = { 0, 0 },
         .last_ack = { 0, 0 },
-        .retries = { 0, 0 },
+        .tcp_retransmits = { 0, 0 },
         .tsval = { 0, 0 },
         .tsecr = { 0, 0 },
         .ts_change_time = { 0, 0 },
@@ -232,7 +232,7 @@ static __always_inline void detect_retries(
         ) 
     ) {
         // This is a retransmission
-        data->retries[rate_index]++;
+        data->tcp_retransmits[rate_index]++;
     }
 
     // Store the sequence and ack numbers for the next packet

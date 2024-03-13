@@ -150,8 +150,8 @@ pub struct FlowbeeData {
   pub packets_sent: [u64; 2],
   /// Rate estimate
   pub rate_estimate_bps: [u64; 2],
-  /// Retry Counters
-  pub retries: [u32; 2],
+  /// TCP Retransmission count (also counts duplicates)
+  pub tcp_retransmits: [u32; 2],
   /// Most recent RTT
   pub last_rtt: [u64; 2],
   /// Has the connection ended?

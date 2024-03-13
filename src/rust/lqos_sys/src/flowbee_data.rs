@@ -47,8 +47,8 @@ pub struct FlowbeeData {
   pub last_sequence: [u32; 2],
   /// Acknowledgement number of the last packet
   pub last_ack: [u32; 2],
-  /// Retry Counters
-  pub retries: [u32; 2],
+  /// TCP Retransmission count (also counts duplicates)
+  pub tcp_retransmits: [u32; 2],
   /// Timestamp values
   pub tsval: [u32; 2],
   /// Timestamp echo values

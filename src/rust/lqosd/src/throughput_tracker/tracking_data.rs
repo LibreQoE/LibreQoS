@@ -201,7 +201,7 @@ impl ThroughputTracker {
             this_flow.0.bytes_sent = data.bytes_sent;
             this_flow.0.packets_sent = data.packets_sent;
             this_flow.0.rate_estimate_bps = data.rate_estimate_bps;
-            this_flow.0.retries = data.retries;
+            this_flow.0.tcp_retransmits = data.tcp_retransmits;
             this_flow.0.last_rtt = data.last_rtt;
             this_flow.0.end_status = data.end_status;
             this_flow.0.tos = data.tos;

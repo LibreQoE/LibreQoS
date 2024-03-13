@@ -516,7 +516,7 @@ pub fn dump_active_flows() -> BusResponse {
                 bytes_sent: row.0.bytes_sent,
                 packets_sent: row.0.packets_sent,
                 rate_estimate_bps: row.0.rate_estimate_bps,
-                retries: row.0.retries,
+                tcp_retransmits: row.0.tcp_retransmits,
                 last_rtt: row.0.last_rtt,
                 end_status: row.0.end_status,
                 tos: row.0.tos,
@@ -571,8 +571,8 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
         }
         TopFlowType::Drops => {
             table.sort_by(|a, b| {
-                let a_total = a.1 .0.retries[0] + a.1 .0.retries[1];
-                let b_total = b.1 .0.retries[0] + b.1 .0.retries[1];
+                let a_total = a.1 .0.tcp_retransmits[0] + a.1 .0.tcp_retransmits[1];
+                let b_total = b.1 .0.tcp_retransmits[0] + b.1 .0.tcp_retransmits[1];
                 b_total.cmp(&a_total)
             });
         }
@@ -599,7 +599,7 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
                 bytes_sent: flow.0.bytes_sent,
                 packets_sent: flow.0.packets_sent,
                 rate_estimate_bps: flow.0.rate_estimate_bps,
-                retries: flow.0.retries,
+                tcp_retransmits: flow.0.tcp_retransmits,
                 last_rtt: flow.0.last_rtt,
                 end_status: flow.0.end_status,
                 tos: flow.0.tos,
@@ -635,7 +635,7 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
                     bytes_sent: row.0.bytes_sent,
                     packets_sent: row.0.packets_sent,
                     rate_estimate_bps: row.0.rate_estimate_bps,
-                    retries: row.0.retries,
+                    tcp_retransmits: row.0.tcp_retransmits,
                     last_rtt: row.0.last_rtt,
                     end_status: row.0.end_status,
                     tos: row.0.tos,
