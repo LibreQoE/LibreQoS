@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+
+
+    <script type="text/javascript" src="https://fastly.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+    <script type="text/javascript" src="https://fastly.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+
+    <script type="text/javascript"
+        src="https://fastly.jsdelivr.net/npm/echarts@5.5.0/dist/extension/dataTool.min.js"></script>
+    <script type="text/javascript" src="https://fastly.jsdelivr.net/npm/echarts-gl@2/dist/echarts-gl.min.js"></script>
+    <script type="text/javascript"
+        src="https://fastly.jsdelivr.net/npm/echarts-stat@latest/dist/ecStat.min.js"></script>
+    <script type="text/javascript" src="https://fastly.jsdelivr.net/npm/echarts@4.9.0/map/js/china.js"></script>
+    <script type="text/javascript" src="https://fastly.jsdelivr.net/npm/echarts@4.9.0/map/js/world.js"></script>
+
+</head>
+
+<body style="background: black">
+    <div id="chart" style="width:100%; height: 700px; background: black;">
+
+        <script>
+            var chartDom;
+            var myChart;
+            var option;
+            var routes = [];
+
+            function init() {
+                chartDom = document.getElementById('chart');
+                myChart = echarts.init(chartDom);
+                option;
+                myChart.showLoading();
+
+                $.get("/api/flows/lat_lon", (data) => {
+                    for (var i=0; i<data.length; i++) {
+                        data[i] = [
+                            [data[i][1], data[i][0]],
+                            [-92.328636, 38.951561]
+                        ];
+                    }
+                    routes = data;
+                    console.log(routes);
+                    myChart.hideLoading();
+                    myChart.setOption({
+                        geo3D: {
+                            map: 'world',
+                            shading: 'realistic',
+                            silent: true,
+                            environment: '#333',
+                            realisticMaterial: {
+                                roughness: 0.8,
+                                metalness: 0
+                            },
+                            postEffect: {
+                                enable: true
+                            },
+                            groundPlane: {
+                                show: false
+                            },
+                            light: {
+                                main: {
+                                    intensity: 1,
+                                    alpha: 30
+                                },
+                                ambient: {
+                                    intensity: 0
+                                }
+                            },
+                            viewControl: {
+                                distance: 70,
+                                alpha: 89,
+                                panMouseButton: 'left',
+                                rotateMouseButton: 'right'
+                            },
+                            itemStyle: {
+                                color: '#000'
+                            },
+                            regionHeight: 0.5
+                        },
+                        series: [
+                            {
+                                type: 'lines3D',
+                                coordinateSystem: 'geo3D',
+                                effect: {
+                                    show: true,
+                                    trailWidth: 1,
+                                    trailOpacity: 0.5,
+                                    trailLength: 0.2,
+                                    constantSpeed: 5
+                                },
+                                blendMode: 'lighter',
+                                lineStyle: {
+                                    width: 0.2,
+                                    opacity: 0.05
+                                },
+                                data: routes
+                            }
+                        ]
+                    });
+
+                    option && myChart.setOption(option);
+                });
+            }
+
+            $(document).ready(function () {
+                init()
+            });
+        </script>
+
+</html>
