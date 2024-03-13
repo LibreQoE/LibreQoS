@@ -232,6 +232,7 @@ fn handle_bus_requests(
       BusRequest::TopFlows { n, flow_type } => throughput_tracker::top_flows(*n, *flow_type),
       BusRequest::FlowsByIp(ip) => throughput_tracker::flows_by_ip(ip),
       BusRequest::CurrentEndpointsByCountry => throughput_tracker::current_endpoints_by_country(),
+      BusRequest::CurrentEndpointLatLon => throughput_tracker::current_lat_lon(),
     });
   }
 }

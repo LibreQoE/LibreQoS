@@ -128,4 +128,7 @@ pub enum BusResponse {
 
   /// Current endpoints by country
   CurrentEndpointsByCountry(Vec<(String, [u64; 2], [f32; 2])>),
+
+  /// Current Lat/Lon of endpoints
+  CurrentLatLon(Vec<(f64, f64)>),
 }

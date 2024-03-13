@@ -1,8 +1,8 @@
-use super::{get_asn_name_and_country, FlowAnalysis};
+use super::{get_asn_lat_lon, get_asn_name_and_country, FlowAnalysis};
 use crate::throughput_tracker::flow_data::FlowbeeRecipient;
 use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
 use once_cell::sync::Lazy;
-use std::sync::{Arc, Mutex};
+use std::{alloc::LayoutError, sync::{Arc, Mutex}};
 
 pub struct TimeBuffer {
     buffer: Mutex<Vec<TimeEntry>>,
@@ -32,6 +32,27 @@ impl TimeBuffer {
     fn push(&self, entry: TimeEntry) {
         let mut buffer = self.buffer.lock().unwrap();
         buffer.push(entry);
+    }
+
+    pub fn lat_lon_endpoints(&self) -> Vec<(f64, f64)> {
+        let buffer = self.buffer.lock().unwrap();
+        let mut my_buffer = buffer
+            .iter()
+            .map(|v| {
+                let (key, _data, _analysis) = &v.data;
+                let (lat, lon) = get_asn_lat_lon(key.remote_ip.as_ip());
+                (lat, lon)
+            })
+            .filter(|(lat, lon)| *lat != 0.0 && *lon != 0.0)
+            .collect::<Vec<(f64, f64)>>();
+
+        // Sort by lat/lon
+        my_buffer.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+        // Depuplicate
+        my_buffer.dedup();
+
+        my_buffer
     }
 
     pub fn country_summary(&self) -> Vec<(String, [u64; 2], [f32; 2])> {

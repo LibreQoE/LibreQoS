@@ -136,6 +136,21 @@ impl GeoTable {
 
         (owners, country)
     }
+
+    pub fn find_lat_lon_by_ip(&self, ip: IpAddr) -> (f64, f64) {
+        log::debug!("Looking up ASN for IP: {:?}", ip);
+        let ip = match ip {
+            IpAddr::V4(ip) => ip.to_ipv6_mapped(),
+            IpAddr::V6(ip) => ip,
+        };
+
+        if let Some(matched) = self.geo_trie.longest_match(ip) {
+            log::debug!("Matched Geo: {:?}", matched.1.city_and_country);
+            return (matched.1.latitude, matched.1.longitude);
+        }
+
+        (0.0, 0.0)
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////

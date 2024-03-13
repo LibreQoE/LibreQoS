@@ -658,3 +658,9 @@ pub fn current_endpoints_by_country() -> BusResponse {
     let summary = flow_data::RECENT_FLOWS.country_summary();
     BusResponse::CurrentEndpointsByCountry(summary)
 }
+
+/// Current endpoint lat/lon
+pub fn current_lat_lon() -> BusResponse {
+    let summary = flow_data::RECENT_FLOWS.lat_lon_endpoints();
+    BusResponse::CurrentLatLon(summary)
+}

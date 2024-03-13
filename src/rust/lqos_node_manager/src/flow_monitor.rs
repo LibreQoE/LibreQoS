@@ -58,3 +58,15 @@ pub async fn flows_by_country() -> NoCache<Json<Vec<(String, [u64; 2], [f32; 2])
 
   NoCache::new(Json(result))
 }
+
+#[get("/api/flows/lat_lon")]
+pub async fn flows_lat_lon() -> NoCache<Json<Vec<(f64, f64)>>> {
+  let responses =
+    bus_request(vec![BusRequest::CurrentEndpointLatLon]).await.unwrap();
+  let result = match &responses[0] {
+    BusResponse::CurrentLatLon(lat_lon) => lat_lon.to_owned(),
+    _ => Vec::new(),
+  };
+
+  NoCache::new(Json(result))
+}

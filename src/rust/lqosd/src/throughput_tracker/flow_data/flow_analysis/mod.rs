@@ -82,3 +82,12 @@ pub fn get_asn_name_and_country(ip: IpAddr) -> (String, String) {
     }
     (String::new(), String::new())
 }
+
+pub fn get_asn_lat_lon(ip: IpAddr) -> (f64, f64) {
+    if let Ok(table_lock) = ANALYSIS.asn_table.lock() {
+        if let Some(table) = table_lock.as_ref() {
+            return table.find_lat_lon_by_ip(ip);
+        }
+    }
+    (0.0, 0.0)
+}

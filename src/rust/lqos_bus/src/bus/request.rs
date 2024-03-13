@@ -170,6 +170,9 @@ pub enum BusRequest {
 
   /// Current Endpoints by Country
   CurrentEndpointsByCountry,
+
+  /// Lat/Lon of Endpoints
+  CurrentEndpointLatLon,
 }
 
 /// Defines the type of "top" flow being requested

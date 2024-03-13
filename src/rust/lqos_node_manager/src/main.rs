@@ -44,6 +44,7 @@ fn rocket() -> _ {
         static_pages::shaped_devices_add_page,
         static_pages::unknown_devices_page,
         static_pages::circuit_queue,
+        static_pages::pretty_map_graph,
         config_control::config_page,
         network_tree::tree_page,
         static_pages::ip_dump,
@@ -115,6 +116,7 @@ fn rocket() -> _ {
         flow_monitor::count_flows,
         flow_monitor::top_5_flows,
         flow_monitor::flows_by_country,
+        flow_monitor::flows_lat_lon,
       ],
     );
 
