@@ -284,14 +284,15 @@ static __always_inline void process_tcp(
     detect_retries(dissector, rate_index, data);
 
     // Timestamps to calculate RTT
-        u_int32_t tsval = dissector->tsval;
-        u_int32_t tsecr = dissector->tsecr;
-        if (tsval != 0) {
+    // Removed to save stack space
+        //u_int32_t tsval = dissector->tsval;
+        //u_int32_t tsecr = dissector->tsecr;
+        if (dissector->tsval != 0) {
         //bpf_debug("[FLOWS][%d] TSVAL: %u, TSECR: %u", direction, tsval, tsecr);
-        if (tsval != data->tsval[rate_index] && tsecr != data->tsecr[rate_index]) {
+        if (dissector->tsval != data->tsval[rate_index] && dissector->tsecr != data->tsecr[rate_index]) {
 
             if (
-                tsecr == data->tsval[other_rate_index] &&
+                dissector->tsecr == data->tsval[other_rate_index] &&
                 (data->rate_estimate_bps[rate_index] > 0 ||
                 data->rate_estimate_bps[other_rate_index] > 0 )
             ) {
@@ -303,8 +304,8 @@ static __always_inline void process_tcp(
             }
 
             data->ts_change_time[rate_index] = dissector->now;
-            data->tsval[rate_index] = tsval;
-            data->tsecr[rate_index] = tsecr;
+            data->tsval[rate_index] = dissector->tsval;
+            data->tsecr[rate_index] = dissector->tsecr;
         }
     }
 
