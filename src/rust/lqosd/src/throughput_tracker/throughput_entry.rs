@@ -34,7 +34,7 @@ impl ThroughputEntry {
       .recent_rtt_data
       .iter()
       .filter(|n| **n != 0)
-      .map(|n| *n as f32 / 100.0)
+      .map(|n| *n as f32)
       .collect();
     if shifted.len() < 5 {
       return None;

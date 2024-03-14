@@ -10,8 +10,9 @@
 
 #define SECOND_IN_NANOS 1000000000
 #define TWO_SECONDS_IN_NANOS 2000000000
-#define MS_IN_NANOS_T10 10000000
+#define MS_IN_NANOS_T10 1000
 #define HALF_MBPS_IN_BYTES_PER_SECOND 62500
+#define RTT_RING_SIZE 4
 //#define TIMESTAMP_INTERVAL_NANOS 10000000
 
 // Some helpers to make understanding direction easier
@@ -56,14 +57,16 @@ struct flow_data_t {
     // Acknowledgement number of the last packet
     __u32 last_ack[2];
     // Retransmit Counters (Also catches duplicates and out-of-order packets)
-    __u32 tcp_retransmits[2];
+    __u16 tcp_retransmits[2];
     // Timestamp values
     __u32 tsval[2];
     __u32 tsecr[2];
     // When did the timestamp change?
     __u64 ts_change_time[2];
-    // Most recent RTT
-    __u64 last_rtt[2];
+    // RTT Ringbuffer index
+    __u8 rtt_index[2];
+    // RTT Ringbuffer
+    __u16 rtt_ringbuffer[2][RTT_RING_SIZE];
     // Has the connection ended?
     // 0 = Alive, 1 = FIN, 2 = RST
     __u8 end_status;
@@ -107,7 +110,8 @@ static __always_inline struct flow_data_t new_flow_data(
         .tsval = { 0, 0 },
         .tsecr = { 0, 0 },
         .ts_change_time = { 0, 0 },
-        .last_rtt = { 0, 0 },
+        .rtt_index = { 0, 0 },
+        .rtt_ringbuffer = { { 0, 0, 0, 0 }, { 0, 0, 0, 0 } },
         .end_status = 0,
         .tos = 0,
         .ip_flags = 0,
@@ -284,10 +288,7 @@ static __always_inline void process_tcp(
     detect_retries(dissector, rate_index, data);
 
     // Timestamps to calculate RTT
-    // Removed to save stack space
-        //u_int32_t tsval = dissector->tsval;
-        //u_int32_t tsecr = dissector->tsecr;
-        if (dissector->tsval != 0) {
+    if (dissector->tsval != 0) {
         //bpf_debug("[FLOWS][%d] TSVAL: %u, TSECR: %u", direction, tsval, tsecr);
         if (dissector->tsval != data->tsval[rate_index] && dissector->tsecr != data->tsecr[rate_index]) {
 
@@ -297,8 +298,14 @@ static __always_inline void process_tcp(
                 data->rate_estimate_bps[other_rate_index] > 0 )
             ) {
                 __u64 elapsed = dissector->now - data->ts_change_time[other_rate_index];
-                if (elapsed < TWO_SECONDS_IN_NANOS) {
-                    data->last_rtt[rate_index] = elapsed;
+                __u16 rtt_in_ms10 = elapsed / MS_IN_NANOS_T10;
+
+                if (elapsed < TWO_SECONDS_IN_NANOS && rtt_in_ms10 > 0 && rtt_in_ms10 < 2000) {
+                    //bpf_debug("[FLOWS][%d] RTT: %u", direction, rtt_in_ms10);
+                    __u8 entry = data->rtt_index[rate_index];
+                    if (entry < RTT_RING_SIZE)
+                    data->rtt_ringbuffer[rate_index][entry] = rtt_in_ms10;
+                    data->rtt_index[rate_index] = (entry + 1) % RTT_RING_SIZE;
                 }
                 //bpf_debug("[FLOWS][%d] RTT: %llu", direction, elapsed);
             }

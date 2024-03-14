@@ -202,7 +202,8 @@ impl ThroughputTracker {
             this_flow.0.packets_sent = data.packets_sent;
             this_flow.0.rate_estimate_bps = data.rate_estimate_bps;
             this_flow.0.tcp_retransmits = data.tcp_retransmits;
-            this_flow.0.last_rtt = data.last_rtt;
+            this_flow.0.rtt_index = data.rtt_index;
+            this_flow.0.rtt_ringbuffer = data.rtt_ringbuffer;
             this_flow.0.end_status = data.end_status;
             this_flow.0.tos = data.tos;
             this_flow.0.flags = data.flags;  
@@ -213,25 +214,30 @@ impl ThroughputTracker {
           }
 
           // TCP - we have RTT data? 6 is TCP
-          if key.ip_protocol == 6 && data.last_rtt[0] != 0 && data.end_status == 0 {
+          if key.ip_protocol == 6 && data.end_status == 0 {
             if let Some(mut tracker) = self.raw_data.get_mut(&key.local_ip) {
-              // Shift left
-              for i in 1..60 {
-                tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
-              }
-              tracker.recent_rtt_data[0] = (data.last_rtt[1] / 10000) as u32;
-              tracker.last_fresh_rtt_data_cycle = self_cycle;
-              if let Some(parents) = &tracker.network_json_parents {
-                let net_json = NETWORK_JSON.write().unwrap();
-                if let Some(rtt) = tracker.median_latency() {
-                  net_json.add_rtt_cycle(parents, rtt);
+              for rtt in data.median_pair().iter() {
+                if *rtt > 0.0 {
+                  println!("RTT: {rtt:?}");
+                  // Shift left
+                  for i in 1..60 {
+                    tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
+                  }
+                  tracker.recent_rtt_data[0] = *rtt as u32;
+                  tracker.last_fresh_rtt_data_cycle = self_cycle;
+                  if let Some(parents) = &tracker.network_json_parents {
+                    let net_json = NETWORK_JSON.write().unwrap();
+                    if let Some(rtt) = tracker.median_latency() {
+                      net_json.add_rtt_cycle(parents, rtt);
+                    }
+                  }
                 }
               }
-            }
 
-            if data.end_status != 0 {
-              // The flow has ended. We need to remove it from the map.
-              expired_keys.push(key.clone());
+              if data.end_status != 0 {
+                // The flow has ended. We need to remove it from the map.
+                expired_keys.push(key.clone());
+              }
             }
           }
         }

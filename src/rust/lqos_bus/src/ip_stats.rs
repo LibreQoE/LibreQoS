@@ -151,9 +151,11 @@ pub struct FlowbeeData {
   /// Rate estimate
   pub rate_estimate_bps: [u32; 2],
   /// TCP Retransmission count (also counts duplicates)
-  pub tcp_retransmits: [u32; 2],
-  /// Most recent RTT
-  pub last_rtt: [u64; 2],
+  pub tcp_retransmits: [u16; 2],
+  /// RTT Ringbuffer index
+  pub rtt_index: [u8; 2],
+  /// RTT Ringbuffers
+  pub rtt_ringbuffer: [[u16; 4]; 2],
   /// Has the connection ended?
   /// 0 = Alive, 1 = FIN, 2 = RST
   pub end_status: u8,
