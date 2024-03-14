@@ -2,7 +2,7 @@ use super::{get_asn_lat_lon, get_asn_name_and_country, FlowAnalysis};
 use crate::throughput_tracker::flow_data::FlowbeeRecipient;
 use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
 use once_cell::sync::Lazy;
-use std::{alloc::LayoutError, sync::{Arc, Mutex}};
+use std::sync::{Arc, Mutex};
 
 pub struct TimeBuffer {
     buffer: Mutex<Vec<TimeEntry>>,
