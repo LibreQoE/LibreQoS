@@ -271,7 +271,9 @@ static __always_inline void process_tcp(
     struct flow_data_t *data = bpf_map_lookup_elem(&flowbee, &key);
     if (data == NULL) {
         // If it isn't a flow we're tracking, bail out now
+        #ifdef VERBOSE
         bpf_debug("Bailing");
+        #endif
         return;
     }
 
