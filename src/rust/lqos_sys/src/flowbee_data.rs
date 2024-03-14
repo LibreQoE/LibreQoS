@@ -42,7 +42,7 @@ pub struct FlowbeeData {
   /// Bytes at the next rate estimate
   pub next_count_bytes: [u64; 2],
   /// Rate estimate
-  pub rate_estimate_bps: [u64; 2],
+  pub rate_estimate_bps: [u32; 2],
   /// Sequence number of the last packet
   pub last_sequence: [u32; 2],
   /// Acknowledgement number of the last packet

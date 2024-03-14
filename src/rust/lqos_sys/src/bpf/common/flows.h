@@ -50,7 +50,7 @@ struct flow_data_t {
     // Bytes at the next rate estimate
     __u64 next_count_bytes[2];
     // Rate estimate
-    __u64 rate_estimate_bps[2];
+    __u32 rate_estimate_bps[2];
     // Sequence number of the last packet
     __u32 last_sequence[2];
     // Acknowledgement number of the last packet
@@ -292,8 +292,8 @@ static __always_inline void process_tcp(
 
             if (
                 tsecr == data->tsval[other_rate_index] &&
-                (data->rate_estimate_bps[rate_index] > HALF_MBPS_IN_BYTES_PER_SECOND ||
-                data->rate_estimate_bps[other_rate_index] > HALF_MBPS_IN_BYTES_PER_SECOND )
+                (data->rate_estimate_bps[rate_index] > 0 ||
+                data->rate_estimate_bps[other_rate_index] > 0 )
             ) {
                 __u64 elapsed = dissector->now - data->ts_change_time[other_rate_index];
                 if (elapsed < TWO_SECONDS_IN_NANOS) {
