@@ -208,7 +208,8 @@ impl ThroughputTracker {
             this_flow.0.end_status = data.end_status;
             this_flow.0.tos = data.tos;
             this_flow.0.flags = data.flags;
-            this_flow.0.rtt = rtt_samples.get(&key).copied().unwrap_or(RttData::from_nanos(0)).clone();
+            let rtt = rtt_samples.get(&key).copied().unwrap_or([RttData::from_nanos(0); 2]);
+            this_flow.0.rtt = rtt;
           } else {
             // Insert it into the map
             let flow_analysis = FlowAnalysis::new(&key);
@@ -219,17 +220,19 @@ impl ThroughputTracker {
           if key.ip_protocol == 6 && data.end_status == 0 {
             if let Some(mut tracker) = self.raw_data.get_mut(&key.local_ip) {
               if let Some(rtt) = rtt_samples.get(&key) {
-                if rtt.as_nanos() > 0 {
-                  // Shift left
-                  for i in 1..60 {
-                    tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
-                  }
-                  tracker.recent_rtt_data[0] = rtt.as_millis_times_100() as u32;
-                  tracker.last_fresh_rtt_data_cycle = self_cycle;
-                  if let Some(parents) = &tracker.network_json_parents {
-                    let net_json = NETWORK_JSON.write().unwrap();
-                    if let Some(rtt) = tracker.median_latency() {
-                      net_json.add_rtt_cycle(parents, rtt);
+                for i in 0..2 {
+                  if rtt[i].as_nanos() > 0 {
+                    // Shift left
+                    for i in 1..60 {
+                      tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
+                    }
+                    tracker.recent_rtt_data[0] = rtt[i].as_millis_times_100() as u32;
+                    tracker.last_fresh_rtt_data_cycle = self_cycle;
+                    if let Some(parents) = &tracker.network_json_parents {
+                      let net_json = NETWORK_JSON.write().unwrap();
+                      if let Some(rtt) = tracker.median_latency() {
+                        net_json.add_rtt_cycle(parents, rtt);
+                      }
                     }
                   }
                 }

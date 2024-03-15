@@ -165,7 +165,7 @@ pub struct FlowbeeSummaryData {
     /// Raw TCP flags
     pub flags: u8,
     /// Recent RTT median
-    pub rtt_nanos: u64,
+    pub rtt_nanos: [u64; 2],
     /// Remote ASN
     pub remote_asn: u32,
     /// Remote ASN Name

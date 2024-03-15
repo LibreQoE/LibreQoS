@@ -527,7 +527,7 @@ pub fn dump_active_flows() -> BusResponse {
                 analysis: row.1.protocol_analysis.to_string(),
                 last_seen: row.0.last_seen,
                 start_time: row.0.start_time,
-                rtt_nanos: row.0.rtt.as_nanos(),
+                rtt_nanos: [row.0.rtt[0].as_nanos(), row.0.rtt[1].as_nanos()],
             }
         })
         .collect();
@@ -613,7 +613,7 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
                 analysis: flow.1.protocol_analysis.to_string(),
                 last_seen: flow.0.last_seen,
                 start_time: flow.0.start_time,
-                rtt_nanos: flow.0.rtt.as_nanos(),
+                rtt_nanos: [flow.0.rtt[0].as_nanos(), flow.0.rtt[1].as_nanos()],
             }
         })
         .collect();
@@ -652,7 +652,7 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
                     analysis: row.1.protocol_analysis.to_string(),
                     last_seen: row.0.last_seen,
                     start_time: row.0.start_time,
-                    rtt_nanos: row.0.rtt.as_nanos(),
+                    rtt_nanos: [row.0.rtt[0].as_nanos(), row.0.rtt[1].as_nanos()],
                 }
             })
             .collect();

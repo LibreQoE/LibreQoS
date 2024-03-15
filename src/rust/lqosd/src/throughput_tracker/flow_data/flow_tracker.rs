@@ -38,7 +38,7 @@ pub struct FlowbeeLocalData {
     /// Raw TCP flags
     pub flags: u8,
     /// Recent RTT median
-    pub rtt: RttData,
+    pub rtt: [RttData; 2],
 }
 
 impl From<&FlowbeeData> for FlowbeeLocalData {
@@ -53,7 +53,7 @@ impl From<&FlowbeeData> for FlowbeeLocalData {
             end_status: data.end_status,
             tos: data.tos,
             flags: data.flags,
-            rtt: RttData::from_nanos(0),
+            rtt: [RttData::from_nanos(0); 2],
         }
     }
 }

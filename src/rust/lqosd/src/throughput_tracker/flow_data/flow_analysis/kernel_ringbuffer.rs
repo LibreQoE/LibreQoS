@@ -50,8 +50,8 @@ impl RttBuffer {
         self.last_seen = last_seen;
     }
 
-    fn median(&self) -> RttData {
-        let mut sorted = self.buffer[0].iter().filter(|x| x.as_nanos() > 0).collect::<Vec<_>>();
+    fn median(&self, direction: usize) -> RttData {
+        let mut sorted = self.buffer[direction].iter().filter(|x| x.as_nanos() > 0).collect::<Vec<_>>();
         if sorted.is_empty() {
             return RttData::from_nanos(0);
         }
@@ -131,10 +131,10 @@ pub fn expire_rtt_flows() {
     }
 }
 
-pub fn flowbee_rtt_map() -> FxHashMap<FlowbeeKey, RttData> {
+pub fn flowbee_rtt_map() -> FxHashMap<FlowbeeKey, [RttData; 2]> {
     let lock = FLOW_RTT.lock().unwrap();
     lock.iter()
-        .map(|(k, v)| (k.clone(), v.median()))
+        .map(|(k, v)| (k.clone(), [v.median(0), v.median(1)]))
         .collect()
 }
 
