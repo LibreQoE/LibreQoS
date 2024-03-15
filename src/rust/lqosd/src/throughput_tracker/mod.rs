@@ -364,8 +364,8 @@ pub fn xdp_pping_compat() -> BusResponse {
                 let mut valid_samples: Vec<u32> = data
                     .recent_rtt_data
                     .iter()
-                    .filter(|d| **d > 0)
-                    .copied()
+                    .filter(|d| d.as_millis_times_100() > 0.0)
+                    .map(|d| d.as_millis_times_100() as u32)
                     .collect();
                 let samples = valid_samples.len() as u32;
                 if samples > 0 {
@@ -405,15 +405,15 @@ pub fn rtt_histogram() -> BusResponse {
         .iter()
         .filter(|d| retire_check(reader_cycle, d.most_recent_cycle))
     {
-        let valid_samples: Vec<u32> = data
+        let valid_samples: Vec<f64> = data
             .recent_rtt_data
             .iter()
-            .filter(|d| **d > 0)
-            .copied()
+            .filter(|d| d.as_millis() > 0.0)
+            .map(|d| d.as_millis())
             .collect();
         let samples = valid_samples.len() as u32;
         if samples > 0 {
-            let median = valid_samples[valid_samples.len() / 2] as f32 / 10.0;
+            let median = valid_samples[valid_samples.len() / 2] as f32;
             let median = f32::min(200.0, median);
             let column = median as usize;
             result[usize::min(column, 19)] += 1;

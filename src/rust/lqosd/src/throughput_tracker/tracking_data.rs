@@ -49,7 +49,7 @@ impl ThroughputTracker {
       if self_cycle > RETIRE_AFTER_SECONDS
         && v.last_fresh_rtt_data_cycle < self_cycle - RETIRE_AFTER_SECONDS
       {
-        v.recent_rtt_data = [0; 60];
+        v.recent_rtt_data = [RttData::from_nanos(0); 60];
       }
     });
   }
@@ -150,7 +150,7 @@ impl ThroughputTracker {
           bytes_per_second: (0, 0),
           packets_per_second: (0, 0),
           tc_handle: TcHandle::zero(),
-          recent_rtt_data: [0; 60],
+          recent_rtt_data: [RttData::from_nanos(0); 60],
           last_fresh_rtt_data_cycle: 0,
           last_seen: 0,
         };
@@ -226,7 +226,7 @@ impl ThroughputTracker {
                     for i in 1..60 {
                       tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
                     }
-                    tracker.recent_rtt_data[0] = rtt[i].as_millis() as u32;
+                    tracker.recent_rtt_data[0] = rtt[i];
                     tracker.last_fresh_rtt_data_cycle = self_cycle;
                     if let Some(parents) = &tracker.network_json_parents {
                       let net_json = NETWORK_JSON.write().unwrap();
