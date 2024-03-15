@@ -36,6 +36,7 @@ flate2 = "1.0"
 bincode = "1"
 ip_network_table = "0"
 ip_network = "0"
+zerocopy = {version = "0.6.1", features = [ "simd" ] }
 
 # Support JemAlloc on supported platforms
 [target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]

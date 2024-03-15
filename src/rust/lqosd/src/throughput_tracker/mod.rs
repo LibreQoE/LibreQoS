@@ -517,8 +517,6 @@ pub fn dump_active_flows() -> BusResponse {
                 packets_sent: row.0.packets_sent,
                 rate_estimate_bps: row.0.rate_estimate_bps,
                 tcp_retransmits: row.0.tcp_retransmits,
-                rtt_index: row.0.rtt_index,
-                rtt_ringbuffer: row.0.rtt_ringbuffer,
                 end_status: row.0.end_status,
                 tos: row.0.tos,
                 flags: row.0.flags,
@@ -579,10 +577,8 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
         }
         TopFlowType::RoundTripTime => {
             table.sort_by(|a, b| {
-                let a_rtt = a.1.0.median_pair();
-                let b_rtt = b.1.0.median_pair();
-                let a_total = a_rtt[0] + a_rtt[1];
-                let b_total = b_rtt[0] + b_rtt[1];
+                let a_total = 0.0;
+                let b_total = 0.0;
                 b_total.partial_cmp(&a_total).unwrap()
             });
         }
@@ -603,8 +599,6 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
                 packets_sent: flow.0.packets_sent,
                 rate_estimate_bps: flow.0.rate_estimate_bps,
                 tcp_retransmits: flow.0.tcp_retransmits,
-                rtt_index: flow.0.rtt_index,
-                rtt_ringbuffer: flow.0.rtt_ringbuffer,
                 end_status: flow.0.end_status,
                 tos: flow.0.tos,
                 flags: flow.0.flags,
@@ -640,8 +634,6 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
                     packets_sent: row.0.packets_sent,
                     rate_estimate_bps: row.0.rate_estimate_bps,
                     tcp_retransmits: row.0.tcp_retransmits,
-                    rtt_index: row.0.rtt_index,
-                    rtt_ringbuffer: row.0.rtt_ringbuffer,
                     end_status: row.0.end_status,
                     tos: row.0.tos,
                     flags: row.0.flags,

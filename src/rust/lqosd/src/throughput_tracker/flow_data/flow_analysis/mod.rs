@@ -8,6 +8,8 @@ use super::AsnId;
 mod finished_flows;
 pub use finished_flows::FinishedFlowAnalysis;
 pub use finished_flows::RECENT_FLOWS;
+mod kernel_ringbuffer;
+pub use kernel_ringbuffer::*;
 
 static ANALYSIS: Lazy<FlowAnalysisSystem> = Lazy::new(|| FlowAnalysisSystem::new());
 

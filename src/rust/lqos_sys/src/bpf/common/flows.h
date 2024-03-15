@@ -63,10 +63,6 @@ struct flow_data_t {
     __u32 tsecr[2];
     // When did the timestamp change?
     __u64 ts_change_time[2];
-    // RTT Ringbuffer index
-    __u8 rtt_index[2];
-    // RTT Ringbuffer
-    __u16 rtt_ringbuffer[2][RTT_RING_SIZE];
     // Has the connection ended?
     // 0 = Alive, 1 = FIN, 2 = RST
     __u8 end_status;
@@ -89,6 +85,19 @@ struct
     __uint(pinning, LIBBPF_PIN_BY_NAME);
 } flowbee SEC(".maps");
 
+// Ringbuffer to userspace for recording RTT events
+struct {
+	__uint(type, BPF_MAP_TYPE_RINGBUF);
+	__uint(max_entries, 256 * 1024 /* 256 KB */);
+} flowbee_events SEC(".maps");
+
+// Event structure we send for events.
+struct flowbee_event {
+    struct flow_key_t key;
+    __u64 round_trip_time;
+    __u32 effective_direction;
+};
+
 // Construct an empty flow_data_t structure, using default values.
 static __always_inline struct flow_data_t new_flow_data(
     // The packet dissector from the previous step
@@ -110,8 +119,6 @@ static __always_inline struct flow_data_t new_flow_data(
         .tsval = { 0, 0 },
         .tsecr = { 0, 0 },
         .ts_change_time = { 0, 0 },
-        .rtt_index = { 0, 0 },
-        .rtt_ringbuffer = { { 0, 0, 0, 0 }, { 0, 0, 0, 0 } },
         .end_status = 0,
         .tos = 0,
         .ip_flags = 0,
@@ -297,6 +304,13 @@ static __always_inline void process_tcp(
                 (data->rate_estimate_bps[rate_index] > 0 ||
                 data->rate_estimate_bps[other_rate_index] > 0 )
             ) {
+                struct flowbee_event event = {
+                    .key = key,
+                    .round_trip_time = dissector->now - data->ts_change_time[other_rate_index],
+                    .effective_direction = direction
+                };
+                bpf_ringbuf_output(&flowbee_events, &event, sizeof(event), 0);
+                /*
                 __u64 elapsed = dissector->now - data->ts_change_time[other_rate_index];
                 __u16 rtt_in_ms10 = elapsed / MS_IN_NANOS_T10;
 
@@ -308,6 +322,7 @@ static __always_inline void process_tcp(
                     data->rtt_index[rate_index] = (entry + 1) % RTT_RING_SIZE;
                 }
                 //bpf_debug("[FLOWS][%d] RTT: %llu", direction, elapsed);
+                */
             }
 
             data->ts_change_time[rate_index] = dissector->now;

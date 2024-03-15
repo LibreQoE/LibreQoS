@@ -202,8 +202,6 @@ impl ThroughputTracker {
             this_flow.0.packets_sent = data.packets_sent;
             this_flow.0.rate_estimate_bps = data.rate_estimate_bps;
             this_flow.0.tcp_retransmits = data.tcp_retransmits;
-            this_flow.0.rtt_index = data.rtt_index;
-            this_flow.0.rtt_ringbuffer = data.rtt_ringbuffer;
             this_flow.0.end_status = data.end_status;
             this_flow.0.tos = data.tos;
             this_flow.0.flags = data.flags;  
@@ -216,7 +214,7 @@ impl ThroughputTracker {
           // TCP - we have RTT data? 6 is TCP
           if key.ip_protocol == 6 && data.end_status == 0 {
             if let Some(mut tracker) = self.raw_data.get_mut(&key.local_ip) {
-              for rtt in data.median_pair().iter() {
+              /*for rtt in data.median_pair().iter() {
                 if *rtt > 0.0 {
                   println!("RTT: {rtt:?}");
                   // Shift left
@@ -232,7 +230,7 @@ impl ThroughputTracker {
                     }
                   }
                 }
-              }
+              }*/
 
               if data.end_status != 0 {
                 // The flow has ended. We need to remove it from the map.

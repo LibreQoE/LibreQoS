@@ -55,10 +55,6 @@ pub struct FlowbeeData {
   pub tsecr: [u32; 2],
   /// When did the timestamp change?
   pub ts_change_time: [u64; 2],
-  /// RTT Ringbuffer index
-  pub rtt_index: [u8; 2],
-  /// RTT Ringbuffers
-  pub rtt_ringbuffer: [[u16; 4]; 2],
   /// Has the connection ended?
   /// 0 = Alive, 1 = FIN, 2 = RST
   pub end_status: u8,
@@ -68,31 +64,4 @@ pub struct FlowbeeData {
   pub flags: u8,
   /// Padding.
   pub padding: u8,
-}
-
-impl FlowbeeData {
-  fn median_rtt(buffer: &[u16; 4]) -> f32 {
-    let mut sorted = buffer
-      .iter()
-      .filter(|n| **n != 0)
-      .collect::<Vec<&u16>>();
-    if sorted.is_empty() {
-      return 0.0;
-    }
-    sorted.sort();
-    let mid = sorted.len() / 2;
-    if sorted.len() % 2 == 0 {
-      (sorted[mid - 1] + sorted[mid]) as f32 / 2.0
-    } else {
-      *sorted[mid] as f32
-    }
-  }
-
-  /// Get the median RTT for both directions.
-  pub fn median_pair(&self) -> [f32; 2] {
-    [
-      Self::median_rtt(&self.rtt_ringbuffer[0]),
-      Self::median_rtt(&self.rtt_ringbuffer[1]),
-    ]
-  }
 }

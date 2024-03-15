@@ -12,7 +12,7 @@ mod long_term_stats;
 use std::net::IpAddr;
 use crate::{
   file_lock::FileLock,
-  ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow}, throughput_tracker::flow_data::setup_netflow_tracker,
+  ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow}, throughput_tracker::flow_data::{flowbee_handle_events, setup_netflow_tracker},
 };
 use anyhow::Result;
 use log::{info, warn};
@@ -65,9 +65,15 @@ async fn main() -> Result<()> {
       config.stick_vlans().1 as u16,
       config.stick_vlans().0 as u16,
       Some(heimdall_handle_events),
+      Some(flowbee_handle_events),
     )?
   } else {
-    LibreQoSKernels::new(&config.internet_interface(), &config.isp_interface(), Some(heimdall_handle_events))?
+    LibreQoSKernels::new(
+      &config.internet_interface(), 
+      &config.isp_interface(), 
+      Some(heimdall_handle_events), 
+      Some(flowbee_handle_events)
+    )?
   };
 
   // Spawn tracking sub-systems

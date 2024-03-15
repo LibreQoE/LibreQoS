@@ -62,7 +62,7 @@ impl TimeBuffer {
             .map(|v| {
                 let (key, data, _analysis) = &v.data;
                 let (_name, country) = get_asn_name_and_country(key.remote_ip.as_ip());
-                let rtt = data.median_pair();
+                let rtt = [0.0, 0.0];
                 (country, data.bytes_sent, rtt)
             })
             .collect::<Vec<(String, [u64; 2], [f32; 2])>>();
