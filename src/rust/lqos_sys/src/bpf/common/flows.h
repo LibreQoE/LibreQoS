@@ -306,11 +306,10 @@ static __always_inline void process_tcp(
             ) {
                 __u64 elapsed = dissector->now - data->ts_change_time[other_rate_index];
                 if (elapsed < TWO_SECONDS_IN_NANOS) {
-                    struct flowbee_event event = {
-                        .key = key,
-                        .round_trip_time = elapsed,
-                        .effective_direction = rate_index
-                    };
+                    struct flowbee_event event = { 0 };
+                    event.key = key;
+                    event.round_trip_time = elapsed;
+                    event.effective_direction = rate_index;
                     bpf_ringbuf_output(&flowbee_events, &event, sizeof(event), 0);
                 }
             }
