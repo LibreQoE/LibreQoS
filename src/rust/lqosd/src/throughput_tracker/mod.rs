@@ -413,9 +413,9 @@ pub fn rtt_histogram() -> BusResponse {
             .collect();
         let samples = valid_samples.len() as u32;
         if samples > 0 {
-            let median = valid_samples[valid_samples.len() / 2] as f32 / 100.0;
+            let median = valid_samples[valid_samples.len() / 2] as f32 / 10.0;
             let median = f32::min(200.0, median);
-            let column = (median / 10.0) as usize;
+            let column = median as usize;
             result[usize::min(column, 19)] += 1;
         }
     }
