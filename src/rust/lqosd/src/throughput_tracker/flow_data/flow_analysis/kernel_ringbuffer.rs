@@ -137,3 +137,7 @@ pub fn flowbee_rtt_map() -> FxHashMap<FlowbeeKey, RttData> {
         .map(|(k, v)| (k.clone(), v.median()))
         .collect()
 }
+
+pub fn get_rtt_events_per_second() -> u64 {
+    EVENTS_PER_SECOND.swap(0, std::sync::atomic::Ordering::Relaxed)
+}

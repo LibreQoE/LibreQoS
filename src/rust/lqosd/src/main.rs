@@ -29,6 +29,7 @@ use signal_hook::{
   iterator::Signals,
 };
 use stats::{BUS_REQUESTS, TIME_TO_POLL_HOSTS, HIGH_WATERMARK_DOWN, HIGH_WATERMARK_UP, FLOWS_TRACKED};
+use throughput_tracker::flow_data::get_rtt_events_per_second;
 use tokio::join;
 mod stats;
 
@@ -200,6 +201,7 @@ fn handle_bus_requests(
             HIGH_WATERMARK_UP.load(std::sync::atomic::Ordering::Relaxed),
           ),
           tracked_flows: FLOWS_TRACKED.load(std::sync::atomic::Ordering::Relaxed),
+          rtt_events_per_second: get_rtt_events_per_second(),
         }
       }
       BusRequest::GetPacketHeaderDump(id) => {

@@ -89,6 +89,8 @@ pub enum BusResponse {
     high_watermark: (u64, u64),
     /// Number of flows tracked
     tracked_flows: u64,
+    /// RTT events per second
+    rtt_events_per_second: u64,
   },
 
   /// The index of the new packet collection session
