@@ -165,7 +165,7 @@ function updateHostCounts() {
     });*/
     // LTS Check
     $.get("/api/stats_check", (data) => {
-        console.log(data);
+        //console.log(data);
         let template = "<a class='nav-link' href='$URL$'><i class='fa fa-dashboard'></i> $TEXT$</a>";
         switch (data.action) {
             case "Disabled": {
