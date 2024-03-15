@@ -1,9 +1,9 @@
-use lqos_bus::{bus_request, BusRequest, BusResponse, FlowbeeData};
+use lqos_bus::{bus_request, BusRequest, BusResponse, FlowbeeSummaryData};
 use rocket::serde::json::Json;
 use crate::cache_control::NoCache;
 
 #[get("/api/flows/dump_all")]
-pub async fn all_flows_debug_dump() -> NoCache<Json<Vec<FlowbeeData>>> {
+pub async fn all_flows_debug_dump() -> NoCache<Json<Vec<FlowbeeSummaryData>>> {
   let responses =
     bus_request(vec![BusRequest::DumpActiveFlows]).await.unwrap();
   let result = match &responses[0] {
@@ -27,7 +27,7 @@ pub async fn count_flows() -> NoCache<Json<u64>> {
 }
 
 #[get("/api/flows/top/<top_n>/<flow_type>")]
-pub async fn top_5_flows(top_n: u32, flow_type: String) -> NoCache<Json<Vec<FlowbeeData>>> {
+pub async fn top_5_flows(top_n: u32, flow_type: String) -> NoCache<Json<Vec<FlowbeeSummaryData>>> {
   let flow_type = match flow_type.as_str() {
     "rate" => lqos_bus::TopFlowType::RateEstimate,
     "bytes" => lqos_bus::TopFlowType::Bytes,

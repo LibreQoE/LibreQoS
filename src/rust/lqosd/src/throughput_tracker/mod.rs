@@ -3,6 +3,7 @@ mod throughput_entry;
 mod tracking_data;
 use std::net::IpAddr;
 
+use self::flow_data::{get_asn_name_and_country, FlowAnalysis, FlowbeeLocalData, ALL_FLOWS};
 use crate::{
     long_term_stats::get_network_tree,
     shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES, STATS_NEEDS_NEW_SHAPED_DEVICES},
@@ -11,7 +12,7 @@ use crate::{
 };
 use log::{info, warn};
 use lqos_bus::{BusResponse, FlowbeeProtocol, IpStats, TcHandle, TopFlowType, XdpPpingResult};
-use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
+use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 use lts_client::collector::{HostSummary, StatsUpdateMessage, ThroughputSummary};
 use once_cell::sync::Lazy;
@@ -19,7 +20,6 @@ use tokio::{
     sync::mpsc::Sender,
     time::{Duration, Instant},
 };
-use self::flow_data::{get_asn_name_and_country, FlowAnalysis, ALL_FLOWS};
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
@@ -34,7 +34,7 @@ pub static THROUGHPUT_TRACKER: Lazy<ThroughputTracker> = Lazy::new(ThroughputTra
 ///   collection thread that there is fresh data.
 pub async fn spawn_throughput_monitor(
     long_term_stats_tx: Sender<StatsUpdateMessage>,
-    netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeData, FlowAnalysis))>,
+    netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
 ) {
     info!("Starting the bandwidth monitor thread.");
     let interval_ms = 1000; // 1 second
@@ -49,7 +49,7 @@ pub async fn spawn_throughput_monitor(
 async fn throughput_task(
     interval_ms: u64,
     long_term_stats_tx: Sender<StatsUpdateMessage>,
-    netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeData, FlowAnalysis))>,
+    netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
 ) {
     // Obtain the flow timeout from the config, default to 30 seconds
     let timeout_seconds = if let Ok(config) = lqos_config::load_config() {
@@ -502,12 +502,13 @@ pub fn all_unknown_ips() -> BusResponse {
 /// For debugging: dump all active flows!
 pub fn dump_active_flows() -> BusResponse {
     let lock = ALL_FLOWS.lock().unwrap();
-    let result: Vec<lqos_bus::FlowbeeData> = lock
+    let result: Vec<lqos_bus::FlowbeeSummaryData> = lock
         .iter()
         .map(|(key, row)| {
-            let (remote_asn_name, remote_asn_country) = get_asn_name_and_country(key.remote_ip.as_ip());
+            let (remote_asn_name, remote_asn_country) =
+                get_asn_name_and_country(key.remote_ip.as_ip());
 
-            lqos_bus::FlowbeeData {
+            lqos_bus::FlowbeeSummaryData {
                 remote_ip: key.remote_ip.as_ip().to_string(),
                 local_ip: key.local_ip.as_ip().to_string(),
                 src_port: key.src_port,
@@ -524,6 +525,9 @@ pub fn dump_active_flows() -> BusResponse {
                 remote_asn_name,
                 remote_asn_country,
                 analysis: row.1.protocol_analysis.to_string(),
+                last_seen: row.0.last_seen,
+                start_time: row.0.start_time,
+                rtt_nanos: row.0.rtt.as_nanos(),
             }
         })
         .collect();
@@ -540,7 +544,7 @@ pub fn count_active_flows() -> BusResponse {
 /// Top Flows Report
 pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
     let lock = ALL_FLOWS.lock().unwrap();
-    let mut table: Vec<(FlowbeeKey, (FlowbeeData, FlowAnalysis))> = lock
+    let mut table: Vec<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))> = lock
         .iter()
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
@@ -577,9 +581,9 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
         }
         TopFlowType::RoundTripTime => {
             table.sort_by(|a, b| {
-                let a_total = 0.0;
-                let b_total = 0.0;
-                b_total.partial_cmp(&a_total).unwrap()
+                let a_total = a.1 .0.rtt;
+                let b_total = b.1 .0.rtt;
+                a_total.cmp(&b_total)
             });
         }
     }
@@ -588,8 +592,9 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
         .iter()
         .take(n as usize)
         .map(|(ip, flow)| {
-            let (remote_asn_name, remote_asn_country) = get_asn_name_and_country(ip.remote_ip.as_ip());
-            lqos_bus::FlowbeeData {
+            let (remote_asn_name, remote_asn_country) =
+                get_asn_name_and_country(ip.remote_ip.as_ip());
+            lqos_bus::FlowbeeSummaryData {
                 remote_ip: ip.remote_ip.as_ip().to_string(),
                 local_ip: ip.local_ip.as_ip().to_string(),
                 src_port: ip.src_port,
@@ -606,6 +611,9 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
                 remote_asn_name,
                 remote_asn_country,
                 analysis: flow.1.protocol_analysis.to_string(),
+                last_seen: flow.0.last_seen,
+                start_time: flow.0.start_time,
+                rtt_nanos: flow.0.rtt.as_nanos(),
             }
         })
         .collect();
@@ -622,9 +630,10 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
             .iter()
             .filter(|(key, _)| key.local_ip == ip)
             .map(|(key, row)| {
-                let (remote_asn_name, remote_asn_country) = get_asn_name_and_country(key.remote_ip.as_ip());
-    
-                lqos_bus::FlowbeeData {
+                let (remote_asn_name, remote_asn_country) =
+                    get_asn_name_and_country(key.remote_ip.as_ip());
+
+                lqos_bus::FlowbeeSummaryData {
                     remote_ip: key.remote_ip.as_ip().to_string(),
                     local_ip: key.local_ip.as_ip().to_string(),
                     src_port: key.src_port,
@@ -641,6 +650,9 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
                     remote_asn_name,
                     remote_asn_country,
                     analysis: row.1.protocol_analysis.to_string(),
+                    last_seen: row.0.last_seen,
+                    start_time: row.0.start_time,
+                    rtt_nanos: row.0.rtt.as_nanos(),
                 }
             })
             .collect();

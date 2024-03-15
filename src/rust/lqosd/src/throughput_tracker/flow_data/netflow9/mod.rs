@@ -1,18 +1,18 @@
 use crate::throughput_tracker::flow_data::netflow9::protocol::{
     header::Netflow9Header, template_ipv4::template_data_ipv4, template_ipv6::template_data_ipv6,
 };
-use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
+use lqos_sys::flowbee_data::FlowbeeKey;
 use std::{net::UdpSocket, sync::{atomic::AtomicU32, Arc, Mutex}};
 
 use self::protocol::to_netflow_9;
-use super::{FlowAnalysis, FlowbeeRecipient};
+use super::{FlowAnalysis, FlowbeeLocalData, FlowbeeRecipient};
 mod protocol;
 
 pub(crate) struct Netflow9 {
     socket: UdpSocket,
     sequence: AtomicU32,
     target: String,
-    send_queue: Mutex<Vec<(FlowbeeKey, FlowbeeData)>>,
+    send_queue: Mutex<Vec<(FlowbeeKey, FlowbeeLocalData)>>,
 }
 
 impl Netflow9 {
@@ -66,7 +66,7 @@ impl Netflow9 {
 }
 
 impl FlowbeeRecipient for Netflow9 {
-    fn enqueue(&self, key: FlowbeeKey, data: FlowbeeData, _analysis: FlowAnalysis) {
+    fn enqueue(&self, key: FlowbeeKey, data: FlowbeeLocalData, _analysis: FlowAnalysis) {
         let mut lock = self.send_queue.lock().unwrap();
         lock.push((key, data));
     }

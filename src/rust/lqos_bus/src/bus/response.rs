@@ -1,6 +1,6 @@
 use super::QueueStoreTransit;
 use crate::{
-  ip_stats::{FlowbeeData, PacketHeader}, IpMapping, IpStats, XdpPpingResult,
+  ip_stats::{FlowbeeSummaryData, PacketHeader}, IpMapping, IpStats, XdpPpingResult,
 };
 use lts_client::transport_data::{StatsTotals, StatsHost, StatsTreeNode};
 use serde::{Deserialize, Serialize};
@@ -115,16 +115,16 @@ pub enum BusResponse {
   LongTermTree(Vec<StatsTreeNode>),
 
   /// All Active Flows (Not Recommended - Debug Use)
-  AllActiveFlows(Vec<FlowbeeData>),
+  AllActiveFlows(Vec<FlowbeeSummaryData>),
 
   /// Count active flows
   CountActiveFlows(u64),
 
   /// Top Flopws
-  TopFlows(Vec<FlowbeeData>),
+  TopFlows(Vec<FlowbeeSummaryData>),
 
   /// Flows by IP
-  FlowsByIp(Vec<FlowbeeData>),
+  FlowsByIp(Vec<FlowbeeSummaryData>),
 
   /// Current endpoints by country
   CurrentEndpointsByCountry(Vec<(String, [u64; 2], [f32; 2])>),

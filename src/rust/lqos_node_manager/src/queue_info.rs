@@ -1,7 +1,7 @@
 use crate::auth_guard::AuthGuard;
 use crate::cache_control::NoCache;
 use crate::tracker::{SHAPED_DEVICES, lookup_dns};
-use lqos_bus::{bus_request, BusRequest, BusResponse, FlowbeeData, PacketHeader, QueueStoreTransit};
+use lqos_bus::{bus_request, BusRequest, BusResponse, FlowbeeSummaryData, PacketHeader, QueueStoreTransit};
 use rocket::fs::NamedFile;
 use rocket::http::Status;
 use rocket::response::content::RawJson;
@@ -107,7 +107,7 @@ pub async fn raw_queue_by_circuit(
 }
 
 #[get("/api/flows/<ip_list>")]
-pub async fn flow_stats(ip_list: String, _auth: AuthGuard) -> NoCache<Json<Vec<FlowbeeData>>> {
+pub async fn flow_stats(ip_list: String, _auth: AuthGuard) -> NoCache<Json<Vec<FlowbeeSummaryData>>> {
   let mut result = Vec::new();
   let request: Vec<BusRequest> = ip_list.split(',').map(|ip| BusRequest::FlowsByIp(ip.to_string())).collect();
   let responses = bus_request(request).await.unwrap();

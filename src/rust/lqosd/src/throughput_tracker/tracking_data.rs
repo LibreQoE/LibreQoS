@@ -1,9 +1,9 @@
 use std::{sync::atomic::AtomicU64, time::Duration};
-use crate::{shaped_devices_tracker::{SHAPED_DEVICES, NETWORK_JSON}, stats::{HIGH_WATERMARK_DOWN, HIGH_WATERMARK_UP}};
-use super::{flow_data::{FlowAnalysis, ALL_FLOWS}, throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
+use crate::{shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES}, stats::{HIGH_WATERMARK_DOWN, HIGH_WATERMARK_UP}, throughput_tracker::flow_data::{expire_rtt_flows, flowbee_rtt_map}};
+use super::{flow_data::{get_flowbee_event_count_and_reset, FlowAnalysis, FlowbeeLocalData, RttData, ALL_FLOWS}, throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
 use dashmap::DashMap;
 use lqos_bus::TcHandle;
-use lqos_sys::{flowbee_data::{FlowbeeData, FlowbeeKey}, iterate_flows, throughput_for_each};
+use lqos_sys::{flowbee_data::FlowbeeKey, iterate_flows, throughput_for_each};
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 
 pub struct ThroughputTracker {
@@ -172,18 +172,21 @@ impl ThroughputTracker {
     &self, 
     timeout_seconds: u64,
     _netflow_enabled: bool,
-    sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeData, FlowAnalysis))>,
+    sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
   ) {
+    //log::debug!("Flowbee events this second: {}", get_flowbee_event_count_and_reset());
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
 
     if let Ok(now) = time_since_boot() {
+      let rtt_samples = flowbee_rtt_map();
+      get_flowbee_event_count_and_reset();
       let since_boot = Duration::from(now);
       let expire = (since_boot - Duration::from_secs(timeout_seconds)).as_nanos() as u64;
 
       // Track the expired keys
       let mut expired_keys = Vec::new();
 
-      let mut lock = ALL_FLOWS.lock().unwrap();
+      let mut all_flows_lock = ALL_FLOWS.lock().unwrap();
         
       // Track through all the flows
       iterate_flows(&mut |key, data| {
@@ -196,7 +199,7 @@ impl ThroughputTracker {
           expired_keys.push(key.clone());
         } else {
           // We have a valid flow, so it needs to be tracked
-          if let Some(this_flow) = lock.get_mut(&key) {
+          if let Some(this_flow) = all_flows_lock.get_mut(&key) {
             this_flow.0.last_seen = data.last_seen;
             this_flow.0.bytes_sent = data.bytes_sent;
             this_flow.0.packets_sent = data.packets_sent;
@@ -204,24 +207,24 @@ impl ThroughputTracker {
             this_flow.0.tcp_retransmits = data.tcp_retransmits;
             this_flow.0.end_status = data.end_status;
             this_flow.0.tos = data.tos;
-            this_flow.0.flags = data.flags;  
+            this_flow.0.flags = data.flags;
+            this_flow.0.rtt = rtt_samples.get(&key).copied().unwrap_or(RttData::from_nanos(0)).clone();
           } else {
             // Insert it into the map
             let flow_analysis = FlowAnalysis::new(&key);
-            lock.insert(key.clone(), (data.clone(), flow_analysis));
+            all_flows_lock.insert(key.clone(), (data.into(), flow_analysis));
           }
 
           // TCP - we have RTT data? 6 is TCP
           if key.ip_protocol == 6 && data.end_status == 0 {
             if let Some(mut tracker) = self.raw_data.get_mut(&key.local_ip) {
-              /*for rtt in data.median_pair().iter() {
-                if *rtt > 0.0 {
-                  println!("RTT: {rtt:?}");
+              if let Some(rtt) = rtt_samples.get(&key) {
+                if rtt.as_nanos() > 0 {
                   // Shift left
                   for i in 1..60 {
                     tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
                   }
-                  tracker.recent_rtt_data[0] = *rtt as u32;
+                  tracker.recent_rtt_data[0] = rtt.as_millis_times_100() as u32;
                   tracker.last_fresh_rtt_data_cycle = self_cycle;
                   if let Some(parents) = &tracker.network_json_parents {
                     let net_json = NETWORK_JSON.write().unwrap();
@@ -230,7 +233,7 @@ impl ThroughputTracker {
                     }
                   }
                 }
-              }*/
+              }
 
               if data.end_status != 0 {
                 // The flow has ended. We need to remove it from the map.
@@ -244,11 +247,11 @@ impl ThroughputTracker {
       if !expired_keys.is_empty() {
         for key in expired_keys.iter() {
           // Send it off to netperf for analysis if we are supporting doing so.
-          if let Some(d) = lock.get(&key) {
+          if let Some(d) = all_flows_lock.get(&key) {
             let _ = sender.send((key.clone(), (d.0.clone(), d.1.clone())));
           }
           // Remove the flow from circulation
-          lock.remove(&key);
+          all_flows_lock.remove(&key);
         }
 
         let ret = lqos_sys::end_flows(&mut expired_keys);
@@ -258,7 +261,8 @@ impl ThroughputTracker {
       }
 
       // Cleaning run
-      lock.retain(|_k,v| v.0.last_seen >= expire);
+      all_flows_lock.retain(|_k,v| v.0.last_seen >= expire);
+      expire_rtt_flows();
     }
   }
 

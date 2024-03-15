@@ -1,9 +1,9 @@
 use std::net::IpAddr;
-
-use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
+use lqos_sys::flowbee_data::FlowbeeKey;
+use crate::throughput_tracker::flow_data::FlowbeeLocalData;
 use super::field_types::*;
 
-pub(crate) fn encode_fields_from_template(template: &[(u16, u16)], direction: usize, key: &FlowbeeKey, data: &FlowbeeData) -> anyhow::Result<Vec<u8>> {
+pub(crate) fn encode_fields_from_template(template: &[(u16, u16)], direction: usize, key: &FlowbeeKey, data: &FlowbeeLocalData) -> anyhow::Result<Vec<u8>> {
     let src_port = if direction == 0 { key.src_port } else { key.dst_port };
     let dst_port = if direction == 0 { key.dst_port } else { key.src_port };
 

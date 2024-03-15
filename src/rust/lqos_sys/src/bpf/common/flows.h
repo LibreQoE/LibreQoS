@@ -304,25 +304,15 @@ static __always_inline void process_tcp(
                 (data->rate_estimate_bps[rate_index] > 0 ||
                 data->rate_estimate_bps[other_rate_index] > 0 )
             ) {
-                struct flowbee_event event = {
-                    .key = key,
-                    .round_trip_time = dissector->now - data->ts_change_time[other_rate_index],
-                    .effective_direction = direction
-                };
-                bpf_ringbuf_output(&flowbee_events, &event, sizeof(event), 0);
-                /*
                 __u64 elapsed = dissector->now - data->ts_change_time[other_rate_index];
-                __u16 rtt_in_ms10 = elapsed / MS_IN_NANOS_T10;
-
-                if (elapsed < TWO_SECONDS_IN_NANOS && rtt_in_ms10 > 0 && rtt_in_ms10 < 2000) {
-                    //bpf_debug("[FLOWS][%d] RTT: %u", direction, rtt_in_ms10);
-                    __u8 entry = data->rtt_index[rate_index];
-                    if (entry < RTT_RING_SIZE)
-                    data->rtt_ringbuffer[rate_index][entry] = rtt_in_ms10;
-                    data->rtt_index[rate_index] = (entry + 1) % RTT_RING_SIZE;
+                if (elapsed < TWO_SECONDS_IN_NANOS) {
+                    struct flowbee_event event = {
+                        .key = key,
+                        .round_trip_time = elapsed,
+                        .effective_direction = rate_index
+                    };
+                    bpf_ringbuf_output(&flowbee_events, &event, sizeof(event), 0);
                 }
-                //bpf_debug("[FLOWS][%d] RTT: %llu", direction, elapsed);
-                */
             }
 
             data->ts_change_time[rate_index] = dissector->now;

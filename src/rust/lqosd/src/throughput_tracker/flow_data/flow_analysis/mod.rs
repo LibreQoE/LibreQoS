@@ -10,6 +10,8 @@ pub use finished_flows::FinishedFlowAnalysis;
 pub use finished_flows::RECENT_FLOWS;
 mod kernel_ringbuffer;
 pub use kernel_ringbuffer::*;
+mod rtt_types;
+pub use rtt_types::RttData;
 
 static ANALYSIS: Lazy<FlowAnalysisSystem> = Lazy::new(|| FlowAnalysisSystem::new());
 

@@ -1,6 +1,6 @@
 use super::{get_asn_lat_lon, get_asn_name_and_country, FlowAnalysis};
-use crate::throughput_tracker::flow_data::FlowbeeRecipient;
-use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
+use crate::throughput_tracker::flow_data::{FlowbeeLocalData, FlowbeeRecipient};
+use lqos_sys::flowbee_data::FlowbeeKey;
 use once_cell::sync::Lazy;
 use std::sync::{Arc, Mutex};
 
@@ -10,7 +10,7 @@ pub struct TimeBuffer {
 
 struct TimeEntry {
     time: u64,
-    data: (FlowbeeKey, FlowbeeData, FlowAnalysis),
+    data: (FlowbeeKey, FlowbeeLocalData, FlowAnalysis),
 }
 
 impl TimeBuffer {
@@ -150,7 +150,7 @@ impl FinishedFlowAnalysis {
 }
 
 impl FlowbeeRecipient for FinishedFlowAnalysis {
-    fn enqueue(&self, key: FlowbeeKey, data: FlowbeeData, analysis: FlowAnalysis) {
+    fn enqueue(&self, key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
         log::info!("Finished flow analysis");
         RECENT_FLOWS.push(TimeEntry {
             time: std::time::SystemTime::now()

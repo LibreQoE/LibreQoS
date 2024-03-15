@@ -1,9 +1,11 @@
 //! Protocol definitions for Netflow v9 Data.
 //! Mostly derived from https://netflow.caligare.com/netflow_v9.htm
 
-use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
+use lqos_sys::flowbee_data::FlowbeeKey;
 mod field_types;
 use field_types::*;
+
+use crate::throughput_tracker::flow_data::FlowbeeLocalData;
 pub(crate) mod field_encoder;
 pub(crate) mod header;
 pub(crate) mod template_ipv4;
@@ -16,7 +18,7 @@ fn add_field(bytes: &mut Vec<u8>, field_type: u16, field_length: u16) {
 
 pub(crate) fn to_netflow_9(
     key: &FlowbeeKey,
-    data: &FlowbeeData,
+    data: &FlowbeeLocalData,
 ) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
     if key.local_ip.is_v4() && key.remote_ip.is_v4() {
         // Return IPv4 records
@@ -29,7 +31,7 @@ pub(crate) fn to_netflow_9(
     }
 }
 
-fn ipv4_record(key: &FlowbeeKey, data: &FlowbeeData, direction: usize) -> anyhow::Result<Vec<u8>> {
+fn ipv4_record(key: &FlowbeeKey, data: &FlowbeeLocalData, direction: usize) -> anyhow::Result<Vec<u8>> {
     let field_bytes = field_encoder::encode_fields_from_template(
         &template_ipv4::FIELDS_IPV4,
         direction,
@@ -63,7 +65,7 @@ fn ipv4_record(key: &FlowbeeKey, data: &FlowbeeData, direction: usize) -> anyhow
     Ok(bytes)
 }
 
-fn ipv6_record(key: &FlowbeeKey, data: &FlowbeeData, direction: usize) -> anyhow::Result<Vec<u8>> {
+fn ipv6_record(key: &FlowbeeKey, data: &FlowbeeLocalData, direction: usize) -> anyhow::Result<Vec<u8>> {
     let field_bytes = field_encoder::encode_fields_from_template(
         &template_ipv6::FIELDS_IPV6,
         direction,

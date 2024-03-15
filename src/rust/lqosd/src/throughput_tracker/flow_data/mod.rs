@@ -7,22 +7,25 @@ mod netflow9;
 mod flow_analysis;
 
 use crate::throughput_tracker::flow_data::{flow_analysis::FinishedFlowAnalysis, netflow5::Netflow5, netflow9::Netflow9};
-pub(crate) use flow_tracker::{ALL_FLOWS, AsnId};
-use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
+pub(crate) use flow_tracker::{ALL_FLOWS, AsnId, FlowbeeLocalData};
+use lqos_sys::flowbee_data::FlowbeeKey;
 use std::sync::{
     mpsc::{channel, Sender},
     Arc,
 };
-pub(crate) use flow_analysis::{setup_flow_analysis, get_asn_name_and_country, FlowAnalysis, RECENT_FLOWS, flowbee_handle_events};
+pub(crate) use flow_analysis::{setup_flow_analysis, get_asn_name_and_country, 
+    FlowAnalysis, RECENT_FLOWS, flowbee_handle_events, get_flowbee_event_count_and_reset,
+    expire_rtt_flows, flowbee_rtt_map, RttData,
+};
 
 
 trait FlowbeeRecipient {
-    fn enqueue(&self, key: FlowbeeKey, data: FlowbeeData, analysis: FlowAnalysis);
+    fn enqueue(&self, key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis);
 }
 
 // Creates the netflow tracker and returns the sender
-pub fn setup_netflow_tracker() -> Sender<(FlowbeeKey, (FlowbeeData, FlowAnalysis))> {
-    let (tx, rx) = channel::<(FlowbeeKey, (FlowbeeData, FlowAnalysis))>();
+pub fn setup_netflow_tracker() -> Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))> {
+    let (tx, rx) = channel::<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>();
     let config = lqos_config::load_config().unwrap();
 
     std::thread::spawn(move || {

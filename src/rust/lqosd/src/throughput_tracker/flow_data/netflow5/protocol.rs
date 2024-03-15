@@ -1,9 +1,11 @@
 //! Definitions for the actual netflow 5 protocol
 
 use std::net::IpAddr;
-use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
+use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::unix_time::time_since_boot;
 use nix::sys::time::TimeValLike;
+
+use crate::throughput_tracker::flow_data::FlowbeeLocalData;
 
 /// Standard Netflow 5 header
 #[repr(C)]
@@ -64,7 +66,7 @@ pub(crate) struct Netflow5Record {
 }
 
 /// Convert a Flowbee key and data to a pair of Netflow 5 records
-pub(crate) fn to_netflow_5(key: &FlowbeeKey, data: &FlowbeeData) -> anyhow::Result<(Netflow5Record, Netflow5Record)> {
+pub(crate) fn to_netflow_5(key: &FlowbeeKey, data: &FlowbeeLocalData) -> anyhow::Result<(Netflow5Record, Netflow5Record)> {
     // TODO: Detect overflow
     let local = key.local_ip.as_ip();
     let remote = key.remote_ip.as_ip();
