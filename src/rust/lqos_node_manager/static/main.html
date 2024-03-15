@@ -313,19 +313,6 @@
             });
         }
 
-        function parse_rtts(data, idx) {
-            let n = [];
-            for (let i=0; i<data.rtt_ringbuffer[idx].length; i++) {
-                n.push(data.rtt_ringbuffer[idx][i]);
-            }
-            if (n.length == 0) {
-                return 0.0;
-            }
-            n.sort();
-            // Median
-            return n[Math.floor(n.length / 2)];
-        }
-
         function updateTop10Flows() {
             $.get("/api/flows/top/10/rate", data => {
                 let html = "<table class='table' style='font-size: 8pt'>";
@@ -342,7 +329,7 @@
                 html += "<th>Country</th>";
                 html += "</thead><tbody>";
                 for (var i = 0; i<data.length; i++) {
-                    //console.log(data[i]);
+                    console.log(data[i]);
                     html += "<tr>";
                     html += "<td>" + data[i].analysis + "</td>";
                     html += "<td>" + data[i].local_ip + "</td>";
@@ -350,10 +337,8 @@
                     // TODO: Check scaling
                     html += "<td>" + scaleNumber(data[i].rate_estimate_bps[0]) + "</td>";
                     html += "<td>" + scaleNumber(data[i].rate_estimate_bps[1]) + "</td>";
-                    html += "<td>" + parse_rtts(data[i], 0).toFixed(2) + "</td>";
-                    html += "<td>" + parse_rtts(data[i], 1).toFixed(2) + "</td>";
-                    //html += "<td>" + (data[i].last_rtt[0] / 1000000).toFixed(2) + "</td>";
-                    //html += "<td>" + (data[i].last_rtt[1] / 1000000).toFixed(2) + "</td>";
+                    html += "<td>" + scaleNanos(data[i].rtt_nanos[0]) + "</td>";
+                    html += "<td>" + scaleNanos(data[i].rtt_nanos[1]) + "</td>";
                     html += "<td>" + data[i].tcp_retransmits[0] + "/" + data[i].tcp_retransmits[1] + "</td>";
                     html += "<td>" + data[i].remote_asn_name + "</td>";
                     html += "<td>" + data[i].remote_asn_country + "</td>";

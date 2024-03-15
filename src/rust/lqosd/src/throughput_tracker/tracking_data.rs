@@ -226,7 +226,7 @@ impl ThroughputTracker {
                     for i in 1..60 {
                       tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
                     }
-                    tracker.recent_rtt_data[0] = rtt[i].as_millis_times_100() as u32;
+                    tracker.recent_rtt_data[0] = rtt[i].as_millis() as u32;
                     tracker.last_fresh_rtt_data_cycle = self_cycle;
                     if let Some(parents) = &tracker.network_json_parents {
                       let net_json = NETWORK_JSON.write().unwrap();

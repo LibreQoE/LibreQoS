@@ -810,7 +810,7 @@
                     html += "<td>" + scaleNumber(data[i].bytes_sent[0]) + " / " + scaleNumber(data[i].bytes_sent[1]) + "</td>";
                     html += "<td>" + scaleNumber(data[i].packets_sent[0]) + " / " + scaleNumber(data[i].packets_sent[1]) + "</td>";
                     html += "<td>" + data[i].tcp_retransmits[0] + " / " + data[i].tcp_retransmits[1] + "</td>";
-                    html += "<td>" + parse_rtts(data[i], 0).toFixed(2) + " / " + parse_rtts(data[i], 1).toFixed(2) + "</td>";
+                    html += "<td>" + scaleNanos(data[i].rtt_nanos[0]) + " / " + scaleNanos(data[i].rtt_nanos[1]) + "</td>";
                     html += "<td>(" + data[i].remote_asn + ") " + data[i].remote_asn_name + "</td>";
                     html += "<td>" + data[i].remote_asn_country + "</td>";
                     html += "</tr>";

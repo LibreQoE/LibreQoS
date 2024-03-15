@@ -272,6 +272,18 @@ function scaleNumber(n) {
     return n;
 }
 
+function scaleNanos(n) {
+    if (n == 0) return "";
+    if (n > 1000000000) {
+        return (n / 1000000000).toFixed(2) + "s";
+    } else if (n > 1000000) {
+        return (n / 1000000).toFixed(2) + "ms";
+    } else if (n > 1000) {
+        return (n / 1000).toFixed(2) + "µs";
+    }
+    return n + "ns";
+}
+
 const reloadModal = `
 <div class='modal fade' id='reloadModal' tabindex='-1' aria-labelledby='reloadModalLabel' aria-hidden='true'>
     <div class='modal-dialog modal-fullscreen'>
