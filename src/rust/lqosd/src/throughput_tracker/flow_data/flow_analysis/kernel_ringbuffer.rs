@@ -21,6 +21,7 @@ struct RttBuffer {
     index: usize,
     buffer: [[RttData; BUFFER_SIZE]; 2],
     last_seen: u64,
+    has_new_data: [bool; 2],
 }
 
 impl RttBuffer {
@@ -34,12 +35,14 @@ impl RttBuffer {
                 index: 1,
                 buffer: [empty, filled],
                 last_seen,
+                has_new_data: [false, true],
             }
         } else {
             Self {
                 index: 0,
                 buffer: [filled, empty],
                 last_seen,
+                has_new_data: [true, false],
             }
         }
     }
@@ -48,9 +51,14 @@ impl RttBuffer {
         self.buffer[direction as usize][self.index] = RttData::from_nanos(reading);
         self.index = (self.index + 1) % BUFFER_SIZE;
         self.last_seen = last_seen;
+        self.has_new_data[direction as usize] = true;
     }
 
-    fn median(&self, direction: usize) -> RttData {
+    fn median_new_data(&self, direction: usize) -> RttData {
+        if !self.has_new_data[direction] {
+            // Reject with no new data
+            return RttData::from_nanos(0);
+        }
         let mut sorted = self.buffer[direction].iter().filter(|x| x.as_nanos() > 0).collect::<Vec<_>>();
         if sorted.is_empty() {
             return RttData::from_nanos(0);
@@ -132,10 +140,17 @@ pub fn expire_rtt_flows() {
 }
 
 pub fn flowbee_rtt_map() -> FxHashMap<FlowbeeKey, [RttData; 2]> {
-    let lock = FLOW_RTT.lock().unwrap();
-    lock.iter()
-        .map(|(k, v)| (k.clone(), [v.median(0), v.median(1)]))
-        .collect()
+    let mut lock = FLOW_RTT.lock().unwrap();
+    let result = lock.iter()
+        .map(|(k, v)| (k.clone(), [v.median_new_data(0), v.median_new_data(1)]))
+        .collect();
+
+    // Clear all fresh data labeling
+    lock.iter_mut().for_each(|(_, v)| {
+        v.has_new_data = [false, false];
+    });
+
+    result
 }
 
 pub fn get_rtt_events_per_second() -> u64 {

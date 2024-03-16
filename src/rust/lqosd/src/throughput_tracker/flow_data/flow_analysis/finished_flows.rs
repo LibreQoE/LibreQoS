@@ -151,7 +151,7 @@ impl FinishedFlowAnalysis {
 
 impl FlowbeeRecipient for FinishedFlowAnalysis {
     fn enqueue(&self, key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
-        log::info!("Finished flow analysis");
+        log::debug!("Finished flow analysis");
         RECENT_FLOWS.push(TimeEntry {
             time: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
