@@ -71,8 +71,8 @@ def buildFlatGraph():
 					continue
 				if uisp_suspended_strategy() == "slow":
 					print("WARNING: Site " + name + " is suspended")
-					download = 1
-					upload = 1
+					download = 2
+					upload = 2
 			if site['identification']['status'] == "disconnected":
 				print("WARNING: Site " + name + " is disconnected")
 
@@ -484,8 +484,8 @@ def buildFullGraph():
 						continue
 					if uispSuspendedStrategy == "slow":
 						print("WARNING: Site " + name + " is suspended")
-						download = 1
-						upload = 1
+						download = 2
+						upload = 2
 
 				if site['identification']['status'] == "disconnected":
 					print("WARNING: Site " + name + " is disconnected")
