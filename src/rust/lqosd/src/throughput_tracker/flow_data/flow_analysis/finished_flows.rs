@@ -102,7 +102,12 @@ impl TimeBuffer {
                         total_rtt[1] = (total_rtt[1] / rtt_count[1] as f64) as f64;
                     }
 
-                    country_summary.push((last_country, total_bytes, total_rtt));
+                    let rtt = [
+                        total_rtt[0] as f32,
+                        total_rtt[1] as f32,
+                    ];
+
+                    country_summary.push((last_country, total_bytes, rtt));
                 }
 
                 last_country = country.to_string();
