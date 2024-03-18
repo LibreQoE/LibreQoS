@@ -215,10 +215,10 @@ impl ThroughputTracker {
             this_flow.0.tos = data.tos;
             this_flow.0.flags = data.flags;
             if let Some([up, down]) = rtt_samples.get(&key) {
-              if this_flow.0.rtt[0].as_nanos() != 0 {
+              if up.as_nanos() != 0 {
                 this_flow.0.rtt[0] = *up;              
               }
-              if this_flow.0.rtt[1].as_nanos() != 0 {
+              if down.as_nanos() != 0 {
                 this_flow.0.rtt[1] = *down;
               }
             }
