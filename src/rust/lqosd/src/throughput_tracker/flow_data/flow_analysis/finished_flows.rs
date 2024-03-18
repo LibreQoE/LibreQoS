@@ -80,21 +80,6 @@ impl TimeBuffer {
             if last_country != country {
                 if !last_country.is_empty() {
                     // Store the country
-                    let rtt = [
-                        if total_rtt[0] > 0.0 {
-                            rtt_count[0] += 1;
-                            (total_rtt[0] / rtt_count[0] as f64) as f32
-                        } else {
-                            0.0
-                        },
-                        if total_rtt[1] > 0.0 {
-                            rtt_count[1] += 1;
-                            (total_rtt[1] / rtt_count[1] as f64) as f32
-                        } else {
-                            0.0
-                        },
-                    ];
-
                     if rtt_count[0] > 0 {
                         total_rtt[0] = (total_rtt[0] / rtt_count[0] as f64) as f64;
                     }
@@ -117,10 +102,14 @@ impl TimeBuffer {
             }
             total_bytes[0] += bytes[0];
             total_bytes[1] += bytes[1];
-            total_rtt[0] += rtt[0] as f64;
-            total_rtt[1] += rtt[1] as f64;
-            rtt_count[0] += 1;
-            rtt_count[1] += 1;
+            if rtt[0] > 0.0 {
+                total_rtt[0] += rtt[0] as f64;
+                rtt_count[0] += 1;
+            }
+            if rtt[1] > 0.0 {
+                total_rtt[1] += rtt[1] as f64;
+                rtt_count[1] += 1;
+            }
         }
 
         // Store the last country
