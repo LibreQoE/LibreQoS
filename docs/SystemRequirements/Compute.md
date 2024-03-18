@@ -40,8 +40,8 @@ So for example, an ISP delivering 1Gbps service plans with 10Gbps aggregate thro
 | 100           | 4 GB          |
 | 1,000         | 8 GB          |
 | 5,000         | 16 GB         |
-| 10,000*       | 18 GB         |
-| 50,000*       | 24 GB         |
+| 10,000        | 32 GB         |
+| 50,000*       | 64 GB         |
 
 (* Estimated)
 
