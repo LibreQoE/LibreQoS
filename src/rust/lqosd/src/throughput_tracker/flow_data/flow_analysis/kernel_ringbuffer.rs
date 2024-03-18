@@ -99,6 +99,9 @@ pub unsafe extern "C" fn flowbee_handle_events(
 
         if let Ok(now) = time_since_boot() {
             let since_boot = Duration::from(now);
+            if incoming.rtt == 0 {
+                return 0;
+            }
             let mut lock = FLOW_RTT.lock().unwrap();
             if let Some(entry) = lock.get_mut(&incoming.key) {
                 entry.push(

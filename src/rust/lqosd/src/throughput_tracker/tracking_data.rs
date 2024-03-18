@@ -267,16 +267,19 @@ impl ThroughputTracker {
           rtts.sort();
           let median = rtts[rtts.len() / 2];
           if let Some(mut tracker) = self.raw_data.get_mut(&local_ip) {
-            // Shift left
-            for i in 1..60 {
-              tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
-            }
-            tracker.recent_rtt_data[0] = *median;
-            tracker.last_fresh_rtt_data_cycle = self_cycle;
-            if let Some(parents) = &tracker.network_json_parents {
-              let net_json = NETWORK_JSON.write().unwrap();
-              if let Some(rtt) = tracker.median_latency() {
-                net_json.add_rtt_cycle(parents, rtt);
+            // Only apply if the flow has achieved 1 Mbps or more
+            if tracker.bytes_per_second.0 + tracker.bytes_per_second.1 > 125000 {
+              // Shift left
+              for i in 1..60 {
+                tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
+              }
+              tracker.recent_rtt_data[0] = *median;
+              tracker.last_fresh_rtt_data_cycle = self_cycle;
+              if let Some(parents) = &tracker.network_json_parents {
+                let net_json = NETWORK_JSON.write().unwrap();
+                if let Some(rtt) = tracker.median_latency() {
+                  net_json.add_rtt_cycle(parents, rtt);
+                }
               }
             }
           }
