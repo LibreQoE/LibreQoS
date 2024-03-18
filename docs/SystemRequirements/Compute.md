@@ -1,5 +1,6 @@
 ## System Requirements
 ### VM or physical server
+* Using a dedicated phyiscal server for LibreQoS is highly recommended.
 * For VMs, NIC passthrough is required for optimal throughput and latency (XDP vs generic XDP). Using Virtio / bridging is much slower than NIC passthrough. Virtio / bridging should not be used for large amounts of traffic.
 
 ### CPU
