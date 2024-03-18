@@ -14,21 +14,20 @@ Single-thread CPU performance will determine the max throughput of a single HTB 
 | 250 Mbps            | 1250                     |
 | 500 Mbps            | 1500                     |
 | 1 Gbps              | 2000                     |
-| 3 Gbps              | 3000                     |
-| 10 Gbps             | 4000                     |
+| 2.5 Gbps            | 3000                     |
+| 5 Gbps              | 4000                     |
 
-Below is a table of approximate aggregate throughput capacity, assuming a a CPU with a [single thread](https://www.cpubenchmark.net/singleThread.html#server-thread) performance of 2700 or greater:
+Below is a table of approximate aggregate throughput capacity, assuming a a CPU with a [single thread](https://www.cpubenchmark.net/singleThread.html#server-thread) performance of 2700 / 4000:
 
-| Aggregate Throughput    | CPU Cores     |
-| ------------------------| ------------- |
-| 500 Mbps                | 2             |
-| 1 Gbps                  | 4             |
-| 5 Gbps                  | 6             |
-| 10 Gbps                 | 8             |
-| 20 Gbps                 | 16            |
-| 50 Gbps                 | 32            |
-| 100 Gbps *              | 64            |
-(* Estimated)
+| Aggregate Throughput    | CPU Cores Needed (>2700 single-thread) | CPU Cores Needed (>4000 single-thread) |
+| ------------------------| -------------------------------------- | -------------------------------------- |
+| 500 Mbps                | 2                                      | 2                                      |
+| 1 Gbps                  | 4                                      | 2                                      |
+| 5 Gbps                  | 6                                      | 4                                      |
+| 10 Gbps                 | 8                                      | 6                                      |
+| 20 Gbps                 | 16                                     | 8                                      |
+| 50 Gbps                 | 32                                     | 16                                     |
+| 100 Gbps                | 64                                     | 32                                     |
 
 So for example, an ISP delivering 1Gbps service plans with 10Gbps aggregate throughput would choose a CPU with a 2500+ single-thread score and 8 cores, such as the Intel Xeon E-2388G @ 3.20GHz.
 
@@ -50,7 +49,7 @@ So for example, an ISP delivering 1Gbps service plans with 10Gbps aggregate thro
 It is most cost-effective to buy a used server with specifications matching your unique requirements, as laid out in the System Requirements section above.
 For those who do not have the time to do that, here are some off-the-shelf options to consider:
 
-|   Aggregate   | 100Mbps Plans |  1Gbps Plans  |  4Gbps Plans  |
+|   Aggregate   | 100Mbps Plans |  1Gbps Plans  |  2Gbps Plans  |
 | ------------- | ------------- | ------------- | ------------- |
 | 1 Gbps Total  |       A       |               |               |
 | 10 Gbps Total |    B or C     |    B or C     |       C       |
