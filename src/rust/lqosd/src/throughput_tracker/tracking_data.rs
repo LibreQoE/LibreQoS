@@ -214,8 +214,14 @@ impl ThroughputTracker {
             this_flow.0.end_status = data.end_status;
             this_flow.0.tos = data.tos;
             this_flow.0.flags = data.flags;
-            let rtt = rtt_samples.get(&key).copied().unwrap_or([RttData::from_nanos(0); 2]);
-            this_flow.0.rtt = rtt;
+            if let Some([up, down]) = rtt_samples.get(&key) {
+              if this_flow.0.rtt[0].as_nanos() != 0 {
+                this_flow.0.rtt[0] = *up;              
+              }
+              if this_flow.0.rtt[1].as_nanos() != 0 {
+                this_flow.0.rtt[1] = *down;
+              }
+            }
           } else {
             // Insert it into the map
             let flow_analysis = FlowAnalysis::new(&key);
