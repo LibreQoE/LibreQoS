@@ -117,6 +117,7 @@ fn rocket() -> _ {
         flow_monitor::top_5_flows,
         flow_monitor::flows_by_country,
         flow_monitor::flows_lat_lon,
+        flow_monitor::flows_ether_protocol,
       ],
     );
 

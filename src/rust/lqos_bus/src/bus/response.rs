@@ -133,4 +133,20 @@ pub enum BusResponse {
 
   /// Current Lat/Lon of endpoints
   CurrentLatLon(Vec<(f64, f64)>),
+
+  /// Summary of Ether Protocol
+  EtherProtocols{
+    /// Number of IPv4 Bytes
+    v4_bytes: [u64; 2],
+    /// Number of IPv6 Bytes
+    v6_bytes: [u64; 2],
+    /// Number of IPv4 Packets
+    v4_packets: [u64; 2],
+    /// Number of IPv6 Packets
+    v6_packets: [u64; 2],
+    /// Number of IPv4 Flows
+    v4_rtt: [u64; 2],
+    /// Number of IPv6 Flows
+    v6_rtt: [u64; 2],
+  }
 }

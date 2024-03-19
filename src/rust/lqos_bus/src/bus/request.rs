@@ -173,6 +173,9 @@ pub enum BusRequest {
 
   /// Lat/Lon of Endpoints
   CurrentEndpointLatLon,
+
+  /// Ether Protocol Summary
+  EtherProtocolSummary,
 }
 
 /// Defines the type of "top" flow being requested

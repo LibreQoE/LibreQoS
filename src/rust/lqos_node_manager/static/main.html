@@ -148,10 +148,14 @@
                             <button class="btn btn-small btn-success" href="/top10" onclick="showCircuits()">Circuits</button>
                             <button class="btn btn-small btn-success" href="/top10" onclick="showFlows()">Flows</button>
                             <button class="btn btn-small btn-success" href="/top10" onclick="showEndpoints()">Geo Endpoints</button>
+                            <button class="btn btn-small btn-success" href="/top10" onclick="showProtocols()">Protocols</button>
+                            <button class="btn btn-small btn-success" href="/top10" onclick="showEthertypes()">Ethertypes</button>
                         </h5>
                         <div id="top10dl" style="display:block;"></div>
                         <div id="top10flows" style="display: none;"></div>
                         <div id="top10ep" style="display: none;"></div>
+                        <div id="top10eth" style="display: none;"></div>
+                        <div id="top10pro" style="display: none;"></div>
                     </div>
                 </div>
             </div>
@@ -329,7 +333,7 @@
                 html += "<th>Country</th>";
                 html += "</thead><tbody>";
                 for (var i = 0; i<data.length; i++) {
-                    console.log(data[i]);
+                    //console.log(data[i]);
                     html += "<tr>";
                     html += "<td>" + data[i].analysis + "</td>";
                     html += "<td>" + data[i].local_ip + "</td>";
@@ -376,12 +380,48 @@
             });
         }
 
+        function updateTop10Ethertypes() {
+            $.get("/api/flows/ether_protocol", data => {
+                let html = "<table class='table' style='font-size: 8pt'>";
+                html += "<thead>";
+                html += "<th>Protocol</th>";
+                html += "<th>UL ⬆️</th>";
+                html += "<th>DL ⬇️</th>";
+                html += "<th>UL RTT</th>";
+                html += "<th>DL RTT</th>";
+                html += "</thead></tbody>";
+                let row = data.EtherProtocols;
+                html += "<tr>";
+                html += "<td>IPv4</td>";
+                html += "<td>" + scaleNumber(row.v4_bytes[0]) + "</td>";
+                html += "<td>" + scaleNumber(row.v4_bytes[1]) + "</td>";
+                html += "<td>" + scaleNanos(row.v4_rtt[0]) + "</td>";
+                html += "<td>" + scaleNanos(row.v4_rtt[1]) + "</td>";
+                html += "</tr>";
+
+                html += "<tr>";
+                html += "<td>IPv6</td>";
+                html += "<td>" + scaleNumber(row.v6_bytes[0]) + "</td>";
+                html += "<td>" + scaleNumber(row.v6_bytes[1]) + "</td>";
+                html += "<td>" + scaleNanos(row.v6_rtt[0]) + "</td>";
+                html += "<td>" + scaleNanos(row.v6_rtt[1]) + "</td>";
+                html += "</tr>";
+
+                html += "</tbody></table>";
+                $("#top10eth").html(html);
+            });
+        }
+
+        function updateTop10Protocols() {}
+
         let top10view = "circuits";
 
         function showCircuits() {
             $("#top10dl").show();
             $("#top10flows").hide();
             $("#top10ep").hide();
+            $("#top10eth").hide();
+            $("#top10pro").hide();
             top10view = "circuits";
         }
 
@@ -389,6 +429,8 @@
             $("#top10dl").hide();
             $("#top10flows").show();
             $("#top10ep").hide();
+            $("#top10eth").hide();
+            $("#top10pro").hide();
             top10view = "flows";
         }
 
@@ -396,7 +438,27 @@
             $("#top10dl").hide();
             $("#top10flows").hide();
             $("#top10ep").show();
+            $("#top10eth").hide();
+            $("#top10pro").hide();
             top10view = "endpoints";
+        }
+
+        function showProtocols() {
+            $("#top10dl").hide();
+            $("#top10flows").hide();
+            $("#top10ep").hide();
+            $("#top10eth").hide();
+            $("#top10pro").show();
+            top10view = "protocols";
+        }
+
+        function showEthertypes() {
+            $("#top10dl").hide();
+            $("#top10flows").hide();
+            $("#top10ep").hide();
+            $("#top10eth").show();
+            $("#top10pro").hide();
+            top10view = "ethertypes";
         }
 
         var rttGraph = new RttHistogram();
@@ -425,8 +487,12 @@
                     updateTop10();
                 } else if (top10view == "flows") {
                     updateTop10Flows();
-                } else {
+                } else if (top10view == "endpoints") {
                     updateTop10Endpoints();
+                } else if (top10view == "protocols") {
+                    updateTop10Protocols();
+                } else if (top10view == "ethertypes") {
+                    updateTop10Ethertypes();
                 }
             }
 

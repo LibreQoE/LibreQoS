@@ -1,5 +1,6 @@
 use super::{get_asn_lat_lon, get_asn_name_and_country, FlowAnalysis};
 use crate::throughput_tracker::flow_data::{FlowbeeLocalData, FlowbeeRecipient};
+use lqos_bus::BusResponse;
 use lqos_sys::flowbee_data::FlowbeeKey;
 use once_cell::sync::Lazy;
 use std::sync::{Arc, Mutex};
@@ -135,6 +136,81 @@ impl TimeBuffer {
         country_summary.sort_by(|a, b| b.1[1].cmp(&a.1[1]));
 
         country_summary
+    }
+
+    fn median(slice: &[u64]) -> u64 {
+        if slice.is_empty() {
+            return 0;
+        }
+        let mut slice = slice.to_vec();
+        slice.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let mid = slice.len() / 2;
+        if slice.len() % 2 == 0 {
+            (slice[mid] + slice[mid - 1]) / 2
+        } else {
+            slice[mid]
+        }
+    }
+
+    pub fn ether_protocol_summary(&self) -> BusResponse {
+        let buffer = self.buffer.lock().unwrap();
+
+        let mut v4_bytes_sent = [0,0];
+        let mut v4_packets_sent = [0,0];
+        let mut v6_bytes_sent = [0,0];
+        let mut v6_packets_sent = [0,0];
+        let mut v4_rtt = [Vec::new(), Vec::new()];
+        let mut v6_rtt = [Vec::new(), Vec::new()];
+
+        buffer
+            .iter()
+            .for_each(|v| {
+                let (key, data, _analysis) = &v.data;
+                if key.local_ip.is_v4() {
+                    // It's V4
+                    v4_bytes_sent[0] += data.bytes_sent[0];
+                    v4_bytes_sent[1] += data.bytes_sent[1];
+                    v4_packets_sent[0] += data.packets_sent[0];
+                    v4_packets_sent[1] += data.packets_sent[1];
+                    if data.rtt[0].as_nanos() > 0 {
+                        v4_rtt[0].push(data.rtt[0].as_nanos());
+                    }
+                    if data.rtt[1].as_nanos() > 0 {
+                        v4_rtt[1].push(data.rtt[1].as_nanos());
+                    }
+                } else {
+                    // It's V6
+                    v6_bytes_sent[0] += data.bytes_sent[0];
+                    v6_bytes_sent[1] += data.bytes_sent[1];
+                    v6_packets_sent[0] += data.packets_sent[0];
+                    v6_packets_sent[1] += data.packets_sent[1];
+                    if data.rtt[0].as_nanos() > 0 {
+                        v6_rtt[0].push(data.rtt[0].as_nanos());
+                    }
+                    if data.rtt[1].as_nanos() > 0 {
+                        v6_rtt[1].push(data.rtt[1].as_nanos());
+                    }
+
+                }
+            });
+        
+        let v4_rtt = [
+            Self::median(&v4_rtt[0]),
+            Self::median(&v4_rtt[1]),
+        ];
+        let v6_rtt = [
+            Self::median(&v6_rtt[0]),
+            Self::median(&v6_rtt[1]),
+        ];
+
+        BusResponse::EtherProtocols {
+            v4_bytes: v4_bytes_sent,
+            v6_bytes: v6_bytes_sent,
+            v4_packets: v4_packets_sent,
+            v6_packets: v6_packets_sent,
+            v4_rtt,
+            v6_rtt,
+        }
     }
 }
 

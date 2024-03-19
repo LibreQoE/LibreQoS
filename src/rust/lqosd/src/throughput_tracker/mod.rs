@@ -673,3 +673,8 @@ pub fn current_lat_lon() -> BusResponse {
     let summary = flow_data::RECENT_FLOWS.lat_lon_endpoints();
     BusResponse::CurrentLatLon(summary)
 }
+
+/// Ether Protocol Summary
+pub fn ether_protocol_summary() -> BusResponse {
+    flow_data::RECENT_FLOWS.ether_protocol_summary()
+}

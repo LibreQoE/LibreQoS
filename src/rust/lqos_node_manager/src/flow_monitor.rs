@@ -70,3 +70,12 @@ pub async fn flows_lat_lon() -> NoCache<Json<Vec<(f64, f64)>>> {
 
   NoCache::new(Json(result))
 }
+
+#[get("/api/flows/ether_protocol")]
+pub async fn flows_ether_protocol() -> NoCache<Json<BusResponse>> {
+  let responses =
+    bus_request(vec![BusRequest::EtherProtocolSummary]).await.unwrap();
+  let result = responses[0].to_owned();
+
+  NoCache::new(Json(result))
+}
