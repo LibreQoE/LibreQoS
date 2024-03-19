@@ -30,6 +30,14 @@ pub enum BusRequest {
     end: u32,
   },
 
+  /// Retrieves the TopN hosts with the worst Retransmits, sorted by Retransmits descending.
+  GetWorstRetransmits {
+    /// First row to retrieve (usually 0 unless you are paging)
+    start: u32,
+    /// Last row to retrieve (10 for top-10 starting at 0)
+    end: u32,
+  },
+
   /// Retrieves the TopN hosts with the best RTT, sorted by RTT descending.
   GetBestRtt {
     /// First row to retrieve (usually 0 unless you are paging)

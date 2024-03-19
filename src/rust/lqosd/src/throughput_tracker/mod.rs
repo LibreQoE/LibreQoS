@@ -307,6 +307,62 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
     BusResponse::WorstRtt(result)
 }
 
+pub fn worst_n_retransmits(start: u32, end: u32) -> BusResponse {
+    let mut full_list: Vec<TopList> = {
+        let tp_cycle = THROUGHPUT_TRACKER
+            .cycle
+            .load(std::sync::atomic::Ordering::Relaxed);
+        THROUGHPUT_TRACKER
+            .raw_data
+            .iter()
+            .filter(|v| !v.key().as_ip().is_loopback())
+            .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
+            .filter(|te| te.median_latency().is_some())
+            .map(|te| {
+                (
+                    *te.key(),
+                    te.bytes_per_second,
+                    te.packets_per_second,
+                    te.median_latency().unwrap_or(0.0),
+                    te.tc_handle,
+                    te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
+                    te.tcp_retransmits,
+                )
+            })
+            .collect()
+    };
+    full_list.sort_by(|a, b| {
+        let total_a = a.6 .0 + a.6 .1;
+        let total_b = b.6 .0 + b.6 .1;
+        total_b.cmp(&total_a)
+    });
+    let result = full_list
+        .iter()
+        .skip(start as usize)
+        .take((end as usize) - (start as usize))
+        .map(
+            |(
+                ip,
+                (bytes_dn, bytes_up),
+                (packets_dn, packets_up),
+                median_rtt,
+                tc_handle,
+                circuit_id,
+                tcp_retransmits,
+            )| IpStats {
+                ip_address: ip.as_ip().to_string(),
+                circuit_id: circuit_id.clone(),
+                bits_per_second: (bytes_dn * 8, bytes_up * 8),
+                packets_per_second: (*packets_dn, *packets_up),
+                median_tcp_rtt: *median_rtt,
+                tc_handle: *tc_handle,
+                tcp_retransmits: *tcp_retransmits,
+            },
+        )
+        .collect();
+    BusResponse::WorstRetransmits(result)
+}
+
 pub fn best_n(start: u32, end: u32) -> BusResponse {
     let mut full_list: Vec<TopList> = {
         let tp_cycle = THROUGHPUT_TRACKER

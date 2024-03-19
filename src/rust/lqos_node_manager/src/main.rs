@@ -59,6 +59,7 @@ fn rocket() -> _ {
         tracker::ram_usage,
         tracker::top_10_downloaders,
         tracker::worst_10_rtt,
+        tracker::worst_10_tcp,
         tracker::rtt_histogram,
         tracker::host_counts,
         shaped_devices::all_shaped_devices,

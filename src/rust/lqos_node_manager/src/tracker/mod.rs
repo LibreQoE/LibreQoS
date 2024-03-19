@@ -133,6 +133,21 @@ pub async fn worst_10_rtt(_auth: AuthGuard) -> NoCache<MsgPack<Vec<IpStatsWithPl
   NoCache::new(MsgPack(Vec::new()))
 }
 
+#[get("/api/worst_10_tcp")]
+pub async fn worst_10_tcp(_auth: AuthGuard) -> NoCache<MsgPack<Vec<IpStatsWithPlan>>> {
+  if let Ok(messages) = bus_request(vec![BusRequest::GetWorstRetransmits { start: 0, end: 10 }]).await
+  {
+    for msg in messages {
+      if let BusResponse::WorstRetransmits(stats) = msg {
+        let result = stats.iter().map(|tt| tt.into()).collect();
+        return NoCache::new(MsgPack(result));
+      }
+    }
+  }
+
+  NoCache::new(MsgPack(Vec::new()))
+}
+
 #[get("/api/rtt_histogram")]
 pub async fn rtt_histogram(_auth: AuthGuard) -> NoCache<MsgPack<Vec<u32>>> {
   if let Ok(messages) = bus_request(vec![BusRequest::RttHistogram]).await

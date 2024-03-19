@@ -43,6 +43,9 @@ pub enum BusResponse {
   /// Provides the worst N RTT scores, sorted in descending order.
   WorstRtt(Vec<IpStats>),
 
+  /// Provides the worst N Retransmit scores, sorted in descending order.
+  WorstRetransmits(Vec<IpStats>),
+
   /// Provides the best N RTT scores, sorted in descending order.
   BestRtt(Vec<IpStats>),
 

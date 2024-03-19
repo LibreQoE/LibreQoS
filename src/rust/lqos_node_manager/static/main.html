@@ -164,8 +164,12 @@
             <div class="col-sm-6">
                 <div class="card bg-light">
                     <div class="card-body">
-                        <h5 class="card-title"><i class='fa fa-exclamation'></i> Worst 10 RTT</h5>
+                        <h5 class="card-title"><i class='fa fa-exclamation'></i> Worst 10
+                            <button id="btnworstRtt" class="btn btn-small btn-success" href="/top10" onclick="showWorstRtt()">RTT</button>
+                            <button id="btnworstTcp" class="btn btn-small btn-primary" href="/top10" onclick="showWorstTcp()">TCP Retransmits</button>
+                        </h5>
                         <div id="worstRtt"></div>
+                        <div id="worstTcp" style="display: none;"></div>
                     </div>
                 </div>
             </div>
@@ -319,6 +323,13 @@
             });
         }
 
+        function updateWorstTcp() {
+            msgPackGet("/api/worst_10_tcp", (tt) => {
+                //console.log(tt);
+                updateNTable('#worstTcp', tt);
+            });
+        }
+
         function updateTop10Flows() {
             $.get("/api/flows/top/10/rate", data => {
                 let html = "<table class='table table-striped' style='font-size: 8pt'>";
@@ -436,6 +447,29 @@
         }
 
         let top10view = "circuits";
+        let worst10view = "rtt";
+
+        function changeBottom10(visible) {
+            const bottom10 = ["worstRtt", "worstTcp"];
+            for (let i=0; i<bottom10.length; i++) {
+                $("#" + bottom10[i]).hide();
+                $("#btn" + bottom10[i]).removeClass("btn-success");
+                $("#btn" + bottom10[i]).addClass("btn-primary");
+            }
+            $("#" + visible).show();
+            $("#btn" + visible).removeClass("btn-primary");
+            $("#btn" + visible).addClass("btn-success");
+        }
+
+        function showWorstRtt() {
+            changeBottom10("worstRtt");
+            worst10view = "rtt";
+        }
+
+        function showWorstTcp() {
+            changeBottom10("worstTcp");
+            worst10view = "tcp";
+        }
 
         function changeTop10(visible) {
             const top10 = ["top10dl", "top10flows", "top10ep", "top10eth", "top10pro"];
@@ -495,7 +529,11 @@
 
             if (tickCount % 5 == 0) {
                 updateHistogram();
-                updateWorst10();
+                if (worst10view == "rtt") {
+                    updateWorst10();
+                } else if (worst10view == "tcp") {
+                    updateWorstTcp();
+                }
                 if (top10view == "circuits") {
                     updateTop10();
                 } else if (top10view == "flows") {

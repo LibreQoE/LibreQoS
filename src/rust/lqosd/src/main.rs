@@ -151,6 +151,9 @@ fn handle_bus_requests(
       BusRequest::GetWorstRtt { start, end } => {
         throughput_tracker::worst_n(*start, *end)
       }
+      BusRequest::GetWorstRetransmits { start, end } => {
+        throughput_tracker::worst_n_retransmits(*start, *end)
+      }
       BusRequest::GetBestRtt { start, end } => {
         throughput_tracker::best_n(*start, *end)
       }
