@@ -233,28 +233,15 @@ impl ThroughputTracker {
               if let Some(rtt) = rtt_samples.get(&key) {
                 // Add the RTT data to the per-circuit tracker
                 if let Some(tracker) = rtt_circuit_tracker.get_mut(&key.local_ip) {
-                  tracker[0].push(rtt[0]);
-                  tracker[1].push(rtt[1]);
-                } else {
+                  if rtt[0].as_nanos() > 0 {
+                    tracker[0].push(rtt[0]);
+                  }
+                  if rtt[1].as_nanos() > 0 {
+                    tracker[1].push(rtt[1]);
+                  }
+                } else if rtt[0].as_nanos() > 0 || rtt[1].as_nanos() > 0 {
                   rtt_circuit_tracker.insert(key.local_ip, [vec![rtt[0]], vec![rtt[1]]]);
                 }
-
-                /*for i in 0..2 {
-                  if rtt[i].as_nanos() > 0 {
-                    // Shift left
-                    for i in 1..60 {
-                      tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
-                    }
-                    tracker.recent_rtt_data[0] = rtt[i];
-                    tracker.last_fresh_rtt_data_cycle = self_cycle;
-                    if let Some(parents) = &tracker.network_json_parents {
-                      let net_json = NETWORK_JSON.write().unwrap();
-                      if let Some(rtt) = tracker.median_latency() {
-                        net_json.add_rtt_cycle(parents, rtt);
-                      }
-                    }
-                  }
-                }*/
               }
 
               if data.end_status != 0 {
