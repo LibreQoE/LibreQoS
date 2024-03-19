@@ -22,6 +22,7 @@ pub struct IpStatsWithPlan {
   pub tc_handle: TcHandle,
   pub circuit_id: String,
   pub plan: (u32, u32),
+  pub tcp_retransmits: (u64, u64),
 }
 
 impl From<&IpStats> for IpStatsWithPlan {
@@ -34,6 +35,7 @@ impl From<&IpStats> for IpStatsWithPlan {
       tc_handle: i.tc_handle,
       circuit_id: i.circuit_id.clone(),
       plan: (0, 0),
+      tcp_retransmits: i.tcp_retransmits,
     };
 
     if !result.circuit_id.is_empty() {

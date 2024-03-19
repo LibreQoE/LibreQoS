@@ -24,6 +24,9 @@ pub struct IpStats {
 
     /// Associated TC traffic control handle.
     pub tc_handle: TcHandle,
+
+    /// TCP Retransmits for this host at the current time.
+    pub tcp_retransmits: (u64, u64),
 }
 
 /// Represents an IP Mapping in the XDP IP to TC/CPU mapping system.

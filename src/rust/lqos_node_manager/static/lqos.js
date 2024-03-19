@@ -34,6 +34,7 @@ const IpStats = {
     "tc_handle": 4,
     "circuit_id": 5,
     "plan": 6,
+    "tcp_retransmits": 7,
 }
 
 const FlowTrans = {

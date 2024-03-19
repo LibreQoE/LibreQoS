@@ -202,7 +202,7 @@ fn retire_check(cycle: u64, recent_cycle: u64) -> bool {
     cycle < recent_cycle + RETIRE_AFTER_SECONDS
 }
 
-type TopList = (XdpIpAddress, (u64, u64), (u64, u64), f32, TcHandle, String);
+type TopList = (XdpIpAddress, (u64, u64), (u64, u64), f32, TcHandle, String, (u64, u64));
 
 pub fn top_n(start: u32, end: u32) -> BusResponse {
     let mut full_list: Vec<TopList> = {
@@ -222,6 +222,7 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
                     te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
+                    te.tcp_retransmits,
                 )
             })
             .collect()
@@ -239,6 +240,7 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
                 median_rtt,
                 tc_handle,
                 circuit_id,
+                tcp_retransmits,      
             )| IpStats {
                 ip_address: ip.as_ip().to_string(),
                 circuit_id: circuit_id.clone(),
@@ -246,6 +248,7 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
                 packets_per_second: (*packets_dn, *packets_up),
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
+                tcp_retransmits: *tcp_retransmits,
             },
         )
         .collect();
@@ -271,6 +274,7 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
                     te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
+                    te.tcp_retransmits,
                 )
             })
             .collect()
@@ -288,6 +292,7 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
                 median_rtt,
                 tc_handle,
                 circuit_id,
+                tcp_retransmits,
             )| IpStats {
                 ip_address: ip.as_ip().to_string(),
                 circuit_id: circuit_id.clone(),
@@ -295,6 +300,7 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
                 packets_per_second: (*packets_dn, *packets_up),
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
+                tcp_retransmits: *tcp_retransmits,
             },
         )
         .collect();
@@ -320,6 +326,7 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
                     te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
+                    te.tcp_retransmits,
                 )
             })
             .collect()
@@ -338,6 +345,7 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
                 median_rtt,
                 tc_handle,
                 circuit_id,
+                tcp_retransmits,
             )| IpStats {
                 ip_address: ip.as_ip().to_string(),
                 circuit_id: circuit_id.clone(),
@@ -345,6 +353,7 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
                 packets_per_second: (*packets_dn, *packets_up),
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
+                tcp_retransmits: *tcp_retransmits,
             },
         )
         .collect();
@@ -493,6 +502,7 @@ pub fn all_unknown_ips() -> BusResponse {
                 packets_per_second: (*packets_dn, *packets_up),
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
+                tcp_retransmits: (0, 0),
             },
         )
         .collect();

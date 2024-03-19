@@ -17,6 +17,8 @@ pub(crate) struct ThroughputEntry {
   pub(crate) recent_rtt_data: [RttData; 60],
   pub(crate) last_fresh_rtt_data_cycle: u64,
   pub(crate) last_seen: u64, // Last seen in kernel time since boot
+  pub(crate) tcp_retransmits: (u64, u64),
+  pub(crate) last_tcp_retransmits: (u64, u64),
 }
 
 impl ThroughputEntry {

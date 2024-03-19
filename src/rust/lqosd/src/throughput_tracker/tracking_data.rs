@@ -154,6 +154,8 @@ impl ThroughputTracker {
           recent_rtt_data: [RttData::from_nanos(0); 60],
           last_fresh_rtt_data_cycle: 0,
           last_seen: 0,
+          tcp_retransmits: (0, 0),
+          last_tcp_retransmits: (0, 0),
         };
         for c in counts {
           entry.bytes.0 += c.download_bytes;
@@ -188,6 +190,9 @@ impl ThroughputTracker {
       // every flow; the idea is to combine them into a single entry for the circuit. This
       // should limit outliers.
       let mut rtt_circuit_tracker: FxHashMap<XdpIpAddress, [Vec<RttData>; 2]> = FxHashMap::default();
+
+      // Tracker for TCP retries. We're storing these per second.
+      let mut tcp_retries: FxHashMap<XdpIpAddress, [u64; 2]> = FxHashMap::default();
 
       // Track the expired keys
       let mut expired_keys = Vec::new();
@@ -244,6 +249,14 @@ impl ThroughputTracker {
                 }
               }
 
+              // TCP Retries
+              if let Some(retries) = tcp_retries.get_mut(&key.local_ip) {
+                retries[0] += data.tcp_retransmits[0] as u64;
+                retries[1] += data.tcp_retransmits[1] as u64;
+              } else {
+                tcp_retries.insert(key.local_ip, [data.tcp_retransmits[0] as u64, data.tcp_retransmits[1] as u64]);
+              }
+
               if data.end_status != 0 {
                 // The flow has ended. We need to remove it from the map.
                 expired_keys.push(key.clone());
@@ -276,6 +289,21 @@ impl ThroughputTracker {
               }
             }
           }
+        }
+      }
+
+      // Merge in the TCP retries
+      // Reset all entries in the tracker to 0
+      for mut circuit in self.raw_data.iter_mut() {
+        circuit.tcp_retransmits = (0, 0);
+      }
+      // Apply the new ones
+      for (local_ip, retries) in tcp_retries {
+        if let Some(mut tracker) = self.raw_data.get_mut(&local_ip) {
+          tracker.tcp_retransmits.0 = retries[0].saturating_sub(tracker.last_tcp_retransmits.0);
+          tracker.tcp_retransmits.1 = retries[1].saturating_sub(tracker.last_tcp_retransmits.1);
+          tracker.last_tcp_retransmits.0 = retries[0];
+          tracker.last_tcp_retransmits.1 = retries[1];
         }
       }
 
