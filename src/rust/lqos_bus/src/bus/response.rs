@@ -148,5 +148,8 @@ pub enum BusResponse {
     v4_rtt: [u64; 2],
     /// Number of IPv6 Flows
     v6_rtt: [u64; 2],
-  }
+  },
+  
+  /// Summary of IP Protocols
+  IpProtocols(Vec<(String, (u64, u64))>),
 }

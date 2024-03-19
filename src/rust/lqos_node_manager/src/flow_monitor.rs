@@ -79,3 +79,15 @@ pub async fn flows_ether_protocol() -> NoCache<Json<BusResponse>> {
 
   NoCache::new(Json(result))
 }
+
+#[get("/api/flows/ip_protocol")]
+pub async fn flows_ip_protocol() -> NoCache<Json<Vec<(String, (u64, u64))>>> {
+  let responses =
+    bus_request(vec![BusRequest::IpProtocolSummary]).await.unwrap();
+  let result = match &responses[0] {
+    BusResponse::IpProtocols(ip_protocols) => ip_protocols.to_owned(),
+    _ => Vec::new(),
+  };
+
+  NoCache::new(Json(result))
+}

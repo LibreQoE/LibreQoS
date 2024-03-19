@@ -242,6 +242,7 @@ fn handle_bus_requests(
       BusRequest::CurrentEndpointsByCountry => throughput_tracker::current_endpoints_by_country(),
       BusRequest::CurrentEndpointLatLon => throughput_tracker::current_lat_lon(),
       BusRequest::EtherProtocolSummary => throughput_tracker::ether_protocol_summary(),
+      BusRequest::IpProtocolSummary => throughput_tracker::ip_protocol_summary(),
     });
   }
 }

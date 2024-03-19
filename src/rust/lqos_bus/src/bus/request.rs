@@ -176,6 +176,9 @@ pub enum BusRequest {
 
   /// Ether Protocol Summary
   EtherProtocolSummary,
+
+  /// IP Protocol Summary
+  IpProtocolSummary,
 }
 
 /// Defines the type of "top" flow being requested

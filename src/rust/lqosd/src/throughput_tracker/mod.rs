@@ -678,3 +678,10 @@ pub fn current_lat_lon() -> BusResponse {
 pub fn ether_protocol_summary() -> BusResponse {
     flow_data::RECENT_FLOWS.ether_protocol_summary()
 }
+
+/// IP Protocol Summary
+pub fn ip_protocol_summary() -> BusResponse {
+    BusResponse::IpProtocols(
+        flow_data::RECENT_FLOWS.ip_protocol_summary()
+    )
+}

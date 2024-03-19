@@ -1,5 +1,6 @@
 use super::{get_asn_lat_lon, get_asn_name_and_country, FlowAnalysis};
 use crate::throughput_tracker::flow_data::{FlowbeeLocalData, FlowbeeRecipient};
+use fxhash::FxHashMap;
 use lqos_bus::BusResponse;
 use lqos_sys::flowbee_data::FlowbeeKey;
 use once_cell::sync::Lazy;
@@ -211,6 +212,28 @@ impl TimeBuffer {
             v4_rtt,
             v6_rtt,
         }
+    }
+
+    pub fn ip_protocol_summary(&self) -> Vec<(String, (u64, u64))> {
+        let buffer = self.buffer.lock().unwrap();
+
+        let mut results = FxHashMap::default();
+
+        buffer
+            .iter()
+            .for_each(|v| {
+                let (_key, data, analysis) = &v.data;
+                let proto = analysis.protocol_analysis.to_string();
+                let entry = results.entry(proto).or_insert((0, 0));
+                entry.0 += data.bytes_sent[0];
+                entry.1 += data.bytes_sent[1];
+            });
+
+        let mut results = results.into_iter().collect::<Vec<(String, (u64, u64))>>();
+        results.sort_by(|a, b| b.2.cmp(&a.2));
+        // Keep only the top 10
+        results.truncate(10);
+        results
     }
 }
 
