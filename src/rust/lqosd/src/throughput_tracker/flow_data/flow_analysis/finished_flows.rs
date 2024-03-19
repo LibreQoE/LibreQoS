@@ -230,7 +230,7 @@ impl TimeBuffer {
             });
 
         let mut results = results.into_iter().collect::<Vec<(String, (u64, u64))>>();
-        results.sort_by(|a, b| b.2.cmp(&a.2));
+        results.sort_by(|a, b| b.1.1.cmp(&a.1.1));
         // Keep only the top 10
         results.truncate(10);
         results
