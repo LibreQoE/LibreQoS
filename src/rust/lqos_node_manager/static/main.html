@@ -145,11 +145,11 @@
                     <div class="card-body">
                         <h5 class="card-title">
                             <i class='fa fa-arrow-down'></i> Top 10 Downloaders
-                            <button class="btn btn-small btn-success" href="/top10" onclick="showCircuits()">Circuits</button>
-                            <button class="btn btn-small btn-success" href="/top10" onclick="showFlows()">Flows</button>
-                            <button class="btn btn-small btn-success" href="/top10" onclick="showEndpoints()">Geo Endpoints</button>
-                            <button class="btn btn-small btn-success" href="/top10" onclick="showProtocols()">Protocols</button>
-                            <button class="btn btn-small btn-success" href="/top10" onclick="showEthertypes()">Ethertypes</button>
+                            <button id="btntop10dl" class="btn btn-small btn-success" href="/top10" onclick="showCircuits()">Circuits</button>
+                            <button id="btntop10flows" class="btn btn-small btn-primary" href="/top10" onclick="showFlows()">Flows</button>
+                            <button id="btntop10ep" class="btn btn-small btn-primary" href="/top10" onclick="showEndpoints()">Geo Endpoints</button>
+                            <button id="btntop10pro" class="btn btn-small btn-primary" href="/top10" onclick="showProtocols()">Protocols</button>
+                            <button id="btntop10eth" class="btn btn-small btn-primary" href="/top10" onclick="showEthertypes()">Ethertypes</button>
                         </h5>
                         <div id="top10dl" style="display:block;"></div>
                         <div id="top10flows" style="display: none;"></div>
@@ -435,48 +435,40 @@
 
         let top10view = "circuits";
 
+        function changeTop10(visible) {
+            const top10 = ["top10dl", "top10flows", "top10ep", "top10eth", "top10pro"];
+            for (let i=0; i<top10.length; i++) {
+                $("#" + top10[i]).hide();
+                $("#btn" + top10[i]).removeClass("btn-success");
+                $("#btn" + top10[i]).addClass("btn-primary");
+            }
+            $("#" + visible).show();
+            $("#btn" + visible).removeClass("btn-primary");
+            $("#btn" + visible).addClass("btn-success");
+        }
+
         function showCircuits() {
-            $("#top10dl").show();
-            $("#top10flows").hide();
-            $("#top10ep").hide();
-            $("#top10eth").hide();
-            $("#top10pro").hide();
+            changeTop10("top10dl");
             top10view = "circuits";
         }
 
         function showFlows() {
-            $("#top10dl").hide();
-            $("#top10flows").show();
-            $("#top10ep").hide();
-            $("#top10eth").hide();
-            $("#top10pro").hide();
+            changeTop10("top10flows");
             top10view = "flows";
         }
 
         function showEndpoints() {
-            $("#top10dl").hide();
-            $("#top10flows").hide();
-            $("#top10ep").show();
-            $("#top10eth").hide();
-            $("#top10pro").hide();
+            changeTop10("top10ep");
             top10view = "endpoints";
         }
 
         function showProtocols() {
-            $("#top10dl").hide();
-            $("#top10flows").hide();
-            $("#top10ep").hide();
-            $("#top10eth").hide();
-            $("#top10pro").show();
+            changeTop10("top10pro");
             top10view = "protocols";
         }
 
         function showEthertypes() {
-            $("#top10dl").hide();
-            $("#top10flows").hide();
-            $("#top10ep").hide();
-            $("#top10eth").show();
-            $("#top10pro").hide();
+            changeTop10("top10eth");
             top10view = "ethertypes";
         }
 
