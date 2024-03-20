@@ -5,29 +5,38 @@
 //! It's designed to be the manager from which specific UI
 //! components are managed.
 
+use crate::{bus::BusCommand, widgets::*};
+use lqos_bus::BusClient;
 use ratatui::prelude::*;
 use std::io::Stdout;
-use crate::widgets::*;
+use tokio::sync::mpsc::Sender;
 
 pub struct TopUi {
     show_cpus: bool,
     show_throughput_sparkline: bool,
+    main_widget: MainWidget,
 }
 
 impl TopUi {
     /// Create a new TopUi instance. This will initialize the UI framework.
     pub fn new() -> Self {
-        TopUi { 
+        TopUi {
             show_cpus: true,
             show_throughput_sparkline: true,
+            main_widget: MainWidget::Hosts,
         }
     }
 
-    pub fn handle_keypress(&mut self, key: char) {
+    pub fn handle_keypress(&mut self, key: char, commander: Sender<BusCommand>) {
         // Handle Mode Switches
         match key {
             'c' => self.show_cpus = !self.show_cpus,
-            'n' => self.show_throughput_sparkline = !self.show_throughput_sparkline,
+            'n' => {
+                self.show_throughput_sparkline = !self.show_throughput_sparkline;
+                commander.send(BusCommand::CollectTotalThroughput(
+                    self.show_throughput_sparkline,
+                ));
+            }
             _ => {}
         }
     }
@@ -48,7 +57,7 @@ impl TopUi {
         let cpu_region = if self.show_cpus {
             constraints.push(Constraint::Length(1));
             next_region += 1;
-            next_region-1
+            next_region - 1
         } else {
             next_region
         };
@@ -56,7 +65,7 @@ impl TopUi {
         let network_spark_region = if self.show_throughput_sparkline {
             constraints.push(Constraint::Length(10));
             next_region += 1;
-            next_region-1
+            next_region - 1
         } else {
             next_region
         };
@@ -67,10 +76,7 @@ impl TopUi {
         }
         constraints.push(Constraint::Fill(1));
 
-        let main_layout = Layout::new(
-            Direction::Vertical, 
-            constraints
-        ).split(frame.size());
+        let main_layout = Layout::new(Direction::Vertical, constraints).split(frame.size());
 
         // Add Widgets
         if self.show_cpus {
@@ -81,5 +87,8 @@ impl TopUi {
             let render = nspark.render();
             frame.render_widget(render, main_layout[network_spark_region]);
         }
+
+        // And finally the main panel
+        frame.render_widget(self.main_widget.render(), main_layout[next_region]);
     }
 }

@@ -1,10 +1,10 @@
 //! Handles the communication loop with lqosd.
 
-use std::sync::atomic::Ordering;
-use lqos_bus::{BusClient, BusRequest, BusResponse};
-use anyhow::{bail, Result};
-use tokio::sync::mpsc::{Receiver, Sender};
 use crate::ui_base::SHOULD_EXIT;
+use anyhow::{bail, Result};
+use lqos_bus::{BusClient, BusRequest, BusResponse};
+use std::sync::atomic::Ordering;
+use tokio::sync::mpsc::{Receiver, Sender};
 pub mod cpu_ram;
 pub mod throughput;
 
@@ -22,7 +22,7 @@ pub async fn bus_loop() -> Sender<BusCommand> {
     let (tx, rx) = tokio::sync::mpsc::channel::<BusCommand>(100);
 
     tokio::spawn(cpu_ram::gather_sysinfo());
-    tokio::spawn(main_loop_wrapper(rx));    
+    tokio::spawn(main_loop_wrapper(rx));
 
     tx
 }
@@ -57,7 +57,7 @@ async fn main_loop(mut rx: Receiver<BusCommand>) -> Result<()> {
                 }
             }
         }
-        
+
         // Perform actual bus collection
         let mut commands: Vec<BusRequest> = Vec::new();
 
@@ -68,7 +68,7 @@ async fn main_loop(mut rx: Receiver<BusCommand>) -> Result<()> {
         // Send the requests and process replies
         for response in bus_client.request(commands).await? {
             match response {
-                BusResponse::CurrentThroughput{..} => throughput::throughput(&response).await,
+                BusResponse::CurrentThroughput { .. } => throughput::throughput(&response).await,
                 _ => {}
             }
         }

@@ -10,7 +10,10 @@ use crossterm::{
     ExecutableCommand,
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
-use std::{io::stdout, sync::atomic::{AtomicBool, Ordering}};
+use std::{
+    io::stdout,
+    sync::atomic::{AtomicBool, Ordering},
+};
 use tokio::{sync::mpsc::Sender, task::yield_now};
 
 pub static SHOULD_EXIT: AtomicBool = AtomicBool::new(false);
@@ -66,7 +69,7 @@ impl UiBase {
                                     _ => None,
                                 };
                                 if let Some(c) = char {
-                                    self.ui.handle_keypress(c);
+                                    self.ui.handle_keypress(c, self.bus_commander.clone());
                                 }
                             }
                         }

@@ -1,10 +1,12 @@
-use std::sync::Mutex;
 use lqos_bus::BusResponse;
 use once_cell::sync::Lazy;
+use std::sync::Mutex;
 
-pub static THROUGHPUT_RING: Lazy<Mutex<ThroughputRingbuffer>> = Lazy::new(|| Mutex::new(ThroughputRingbuffer::default()));
+pub static THROUGHPUT_RING: Lazy<Mutex<ThroughputRingbuffer>> =
+    Lazy::new(|| Mutex::new(ThroughputRingbuffer::default()));
 const RINGBUFFER_SIZE: usize = 80;
-pub static CURRENT_THROUGHPUT: Lazy<Mutex<CurrentThroughput>> = Lazy::new(|| Mutex::new(CurrentThroughput::default()));
+pub static CURRENT_THROUGHPUT: Lazy<Mutex<CurrentThroughput>> =
+    Lazy::new(|| Mutex::new(CurrentThroughput::default()));
 
 #[derive(Default, Copy, Clone)]
 pub struct CurrentThroughput {
@@ -109,6 +111,6 @@ pub async fn throughput(response: &BusResponse) {
         let mut current = CURRENT_THROUGHPUT.lock().unwrap();
         current.bits_per_second = *bits_per_second;
         current.packets_per_second = *packets_per_second;
-        current.shaped_bits_per_second = *shaped_bits_per_second;        
+        current.shaped_bits_per_second = *shaped_bits_per_second;
     }
 }

@@ -1,6 +1,6 @@
-mod ui_base;
-mod top_level_ui;
 mod bus;
+mod top_level_ui;
+mod ui_base;
 use anyhow::Result;
 use ui_base::UiBase;
 pub mod widgets;
@@ -12,7 +12,7 @@ async fn main() -> Result<()> {
     let bus_commander = bus::bus_loop().await;
 
     // Initialize the UI
-    let mut ui = UiBase::new(bus_commander.clone())?;   
+    let mut ui = UiBase::new(bus_commander.clone())?;
     ui.event_loop().await?;
 
     // Return OK
