@@ -7,6 +7,7 @@ use std::sync::atomic::Ordering;
 pub mod cpu_ram;
 pub mod throughput;
 pub mod top_hosts;
+pub mod top_flows;
 
 /// The main loop for the bus.
 /// Spawns a separate task to handle the bus communication.
@@ -27,6 +28,7 @@ async fn main_loop() -> Result<()> {
     // Collection Settings
     let collect_total_throughput = true;
     let collect_top_downloaders = true;
+    let collect_top_flows = true;
 
     let mut bus_client = BusClient::new().await?;
     if !bus_client.is_connected() {
@@ -43,12 +45,16 @@ async fn main_loop() -> Result<()> {
         if collect_top_downloaders {
             commands.push(BusRequest::GetTopNDownloaders { start: 0, end: 100 });
         }
+        if collect_top_flows {
+            commands.push(BusRequest::TopFlows { flow_type: lqos_bus::TopFlowType::Bytes, n: 100 });
+        }
 
         // Send the requests and process replies
         for response in bus_client.request(commands).await? {
             match response {
                 BusResponse::CurrentThroughput { .. } => throughput::throughput(&response).await,
                 BusResponse::TopDownloaders { .. } => top_hosts::top_n(&response).await,
+                BusResponse::TopFlows(..) => top_flows::top_flows(&response).await,
                 _ => {}
             }
         }

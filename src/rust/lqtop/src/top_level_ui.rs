@@ -30,6 +30,8 @@ impl TopUi {
         match key {
             'c' => self.show_cpus = !self.show_cpus,
             'n' => self.show_throughput_sparkline = !self.show_throughput_sparkline,
+            'h' => self.main_widget = MainWidget::Hosts,
+            'f' => self.main_widget = MainWidget::Flows,
             _ => {}
         }
     }
@@ -82,6 +84,9 @@ impl TopUi {
         match self.main_widget {
             MainWidget::Hosts => {
                 frame.render_widget(top_hosts::hosts(), main_layout[final_region]);
+            }
+            MainWidget::Flows => {
+                frame.render_widget(top_flows::flows(), main_layout[final_region]);
             }
         }
     }
