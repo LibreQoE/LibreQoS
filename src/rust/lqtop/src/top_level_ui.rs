@@ -6,7 +6,6 @@
 //! components are managed.
 
 use crate::{bus::BusCommand, widgets::*};
-use lqos_bus::BusClient;
 use ratatui::prelude::*;
 use std::io::Stdout;
 use tokio::sync::mpsc::Sender;
@@ -33,9 +32,9 @@ impl TopUi {
             'c' => self.show_cpus = !self.show_cpus,
             'n' => {
                 self.show_throughput_sparkline = !self.show_throughput_sparkline;
-                commander.send(BusCommand::CollectTotalThroughput(
+                commander.blocking_send(BusCommand::CollectTotalThroughput(
                     self.show_throughput_sparkline,
-                ));
+                )).unwrap();
             }
             _ => {}
         }
