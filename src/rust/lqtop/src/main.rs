@@ -5,15 +5,17 @@ use anyhow::Result;
 use ui_base::UiBase;
 pub mod widgets;
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    // Spawn the bus as an async background task and retrieve
-    // the command sender.
-    let bus_commander = bus::bus_loop().await;
+fn main() -> Result<()> {
+    // Create a tokio runtime in a single thread
+    std::thread::spawn(|| {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async { bus::bus_loop().await });
+    });
+
 
     // Initialize the UI
-    let mut ui = UiBase::new(bus_commander.clone())?;
-    ui.event_loop().await?;
+    let mut ui = UiBase::new()?;
+    ui.event_loop()?;
 
     // Return OK
     Ok(())

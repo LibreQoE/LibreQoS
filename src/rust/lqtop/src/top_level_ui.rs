@@ -5,10 +5,9 @@
 //! It's designed to be the manager from which specific UI
 //! components are managed.
 
-use crate::{bus::BusCommand, widgets::*};
+use crate::widgets::*;
 use ratatui::prelude::*;
 use std::io::Stdout;
-use tokio::sync::mpsc::Sender;
 
 pub struct TopUi {
     show_cpus: bool,
@@ -26,16 +25,11 @@ impl TopUi {
         }
     }
 
-    pub fn handle_keypress(&mut self, key: char, commander: Sender<BusCommand>) {
+    pub fn handle_keypress(&mut self, key: char) {
         // Handle Mode Switches
         match key {
             'c' => self.show_cpus = !self.show_cpus,
-            'n' => {
-                self.show_throughput_sparkline = !self.show_throughput_sparkline;
-                commander.blocking_send(BusCommand::CollectTotalThroughput(
-                    self.show_throughput_sparkline,
-                )).unwrap();
-            }
+            'n' => self.show_throughput_sparkline = !self.show_throughput_sparkline,
             _ => {}
         }
     }
@@ -69,10 +63,7 @@ impl TopUi {
             next_region
         };
 
-        // With a minimum of 1 row, we can now build the layout
-        if constraints.is_empty() {
-            constraints.push(Constraint::Min(1));
-        }
+        let final_region = constraints.len();
         constraints.push(Constraint::Fill(1));
 
         let main_layout = Layout::new(Direction::Vertical, constraints).split(frame.size());
@@ -88,6 +79,10 @@ impl TopUi {
         }
 
         // And finally the main panel
-        frame.render_widget(self.main_widget.render(), main_layout[next_region]);
+        match self.main_widget {
+            MainWidget::Hosts => {
+                frame.render_widget(top_hosts::hosts(), main_layout[final_region]);
+            }
+        }
     }
 }
