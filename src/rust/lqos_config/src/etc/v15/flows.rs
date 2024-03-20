@@ -11,6 +11,7 @@ pub struct FlowConfig {
     pub netflow_port: Option<u16>,
     pub netflow_ip: Option<String>,
     pub netflow_version: Option<u8>,
+    pub do_not_track_subnets: Option<Vec<String>>,
 }
 
 impl Default for FlowConfig {
@@ -21,6 +22,7 @@ impl Default for FlowConfig {
             netflow_port: None,
             netflow_ip: None,
             netflow_version: None,
+            do_not_track_subnets: None,
         }
     }
 }
