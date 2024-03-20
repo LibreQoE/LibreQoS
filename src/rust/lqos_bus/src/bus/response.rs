@@ -135,7 +135,7 @@ pub enum BusResponse {
   CurrentEndpointsByCountry(Vec<(String, [u64; 2], [f32; 2])>),
 
   /// Current Lat/Lon of endpoints
-  CurrentLatLon(Vec<(f64, f64)>),
+  CurrentLatLon(Vec<(f64, f64, String, u64, f32)>),
 
   /// Summary of Ether Protocol
   EtherProtocols{

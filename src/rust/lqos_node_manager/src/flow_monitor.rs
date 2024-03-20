@@ -60,7 +60,7 @@ pub async fn flows_by_country() -> NoCache<Json<Vec<(String, [u64; 2], [f32; 2])
 }
 
 #[get("/api/flows/lat_lon")]
-pub async fn flows_lat_lon() -> NoCache<Json<Vec<(f64, f64)>>> {
+pub async fn flows_lat_lon() -> NoCache<Json<Vec<(f64, f64, String, u64, f32)>>> {
   let responses =
     bus_request(vec![BusRequest::CurrentEndpointLatLon]).await.unwrap();
   let result = match &responses[0] {

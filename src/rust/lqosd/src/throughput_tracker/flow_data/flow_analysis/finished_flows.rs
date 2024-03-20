@@ -36,17 +36,18 @@ impl TimeBuffer {
         buffer.push(entry);
     }
 
-    pub fn lat_lon_endpoints(&self) -> Vec<(f64, f64)> {
+    pub fn lat_lon_endpoints(&self) -> Vec<(f64, f64, String, u64, f32)> {
         let buffer = self.buffer.lock().unwrap();
         let mut my_buffer = buffer
             .iter()
             .map(|v| {
-                let (key, _data, _analysis) = &v.data;
+                let (key, data, _analysis) = &v.data;
                 let (lat, lon) = get_asn_lat_lon(key.remote_ip.as_ip());
-                (lat, lon)
+                let (_name, country) = get_asn_name_and_country(key.remote_ip.as_ip());
+                (lat, lon, country, data.bytes_sent[1], data.rtt[1].as_nanos() as f32)
             })
-            .filter(|(lat, lon)| *lat != 0.0 && *lon != 0.0)
-            .collect::<Vec<(f64, f64)>>();
+            .filter(|(lat, lon, ..)| *lat != 0.0 && *lon != 0.0)
+            .collect::<Vec<(f64, f64, String, u64, f32)>>();
 
         // Sort by lat/lon
         my_buffer.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
