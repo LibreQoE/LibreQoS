@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use lqos_sys::{rtt_for_each, throughput_for_each};
+use lqos_sys::{iterate_flows, throughput_for_each};
 
 fn main() {
   println!("LibreQoS Map Performance Tool");
@@ -8,7 +8,7 @@ fn main() {
   // Test the RTT map
   let mut rtt_count = 0;
   let now = Instant::now();
-  rtt_for_each(&mut |_rtt, _tracker| {
+  iterate_flows(&mut |_rtt, _tracker| {
     rtt_count += 1;
   });
   let elapsed = now.elapsed();

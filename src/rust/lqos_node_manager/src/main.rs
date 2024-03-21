@@ -12,6 +12,7 @@ mod config_control;
 mod network_tree;
 mod queue_info;
 mod toasts;
+mod flow_monitor;
 
 // Use JemAllocator only on supported platforms
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -43,6 +44,7 @@ fn rocket() -> _ {
         static_pages::shaped_devices_add_page,
         static_pages::unknown_devices_page,
         static_pages::circuit_queue,
+        static_pages::pretty_map_graph,
         config_control::config_page,
         network_tree::tree_page,
         static_pages::ip_dump,
@@ -57,6 +59,7 @@ fn rocket() -> _ {
         tracker::ram_usage,
         tracker::top_10_downloaders,
         tracker::worst_10_rtt,
+        tracker::worst_10_tcp,
         tracker::rtt_histogram,
         tracker::host_counts,
         shaped_devices::all_shaped_devices,
@@ -109,6 +112,14 @@ fn rocket() -> _ {
         // Front page toast checks
         toasts::version_check,
         toasts::stats_check,
+        // Flowbee System
+        flow_monitor::all_flows_debug_dump,
+        flow_monitor::count_flows,
+        flow_monitor::top_5_flows,
+        flow_monitor::flows_by_country,
+        flow_monitor::flows_lat_lon,
+        flow_monitor::flows_ether_protocol,
+        flow_monitor::flows_ip_protocol,
       ],
     );
 

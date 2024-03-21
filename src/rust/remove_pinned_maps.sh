@@ -13,3 +13,4 @@ rm -v /sys/fs/bpf/bifrost_vlan_map
 rm -v /sys/fs/bpf/heimdall
 rm -v /sys/fs/bpf/heimdall_config
 rm -v /sys/fs/bpf/heimdall_watching
+rm -v /sys/fs/bpf/flowbee

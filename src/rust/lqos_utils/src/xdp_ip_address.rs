@@ -42,7 +42,8 @@ impl XdpIpAddress {
     result
   }
 
-  fn is_v4(&self) -> bool {
+  /// Checks if the `XdpIpAddress` is an IPv4 address
+  pub fn is_v4(&self) -> bool {
     self.0[0] == 0xFF
       && self.0[1] == 0xFF
       && self.0[2] == 0xFF

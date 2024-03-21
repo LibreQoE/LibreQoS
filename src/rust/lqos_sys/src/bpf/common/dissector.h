@@ -52,6 +52,9 @@ struct dissector_t
     __u16 window;
     __u32 tsval;
     __u32 tsecr;
+    __u32 sequence;
+    __u32 ack_seq;
+    __u64 now;
 };
 
 // Representation of the VLAN header type.
@@ -114,6 +117,9 @@ static __always_inline bool dissector_new(
     dissector->src_port = 0;
     dissector->dst_port = 0;
     dissector->tos = 0;
+    dissector->sequence = 0;
+    dissector->ack_seq = 0;
+    dissector->now = bpf_ktime_get_boot_ns();
 
     // Check that there's room for an ethernet header
     if SKB_OVERFLOW (dissector->start, dissector->end, ethhdr)
@@ -278,11 +284,11 @@ static __always_inline bool dissector_find_l3_offset(
 
 static __always_inline struct tcphdr *get_tcp_header(struct dissector_t *dissector)
 {
-    if (dissector->eth_type == ETH_P_IP)
+    if (dissector->eth_type == ETH_P_IP && dissector->ip_header.iph->protocol == IPPROTO_TCP)
     {
         return (struct tcphdr *)((char *)dissector->ip_header.iph + (dissector->ip_header.iph->ihl * 4));
     }
-    else if (dissector->eth_type == ETH_P_IPV6)
+    else if (dissector->eth_type == ETH_P_IPV6 && dissector->ip_header.ip6h->nexthdr == IPPROTO_TCP)
     {
         return (struct tcphdr *)(dissector->ip_header.ip6h + 1);
     }
@@ -315,6 +321,17 @@ static __always_inline struct icmphdr *get_icmp_header(struct dissector_t *disse
     return NULL;
 }
 
+#define DIS_TCP_FIN 1
+#define DIS_TCP_SYN 2
+#define DIS_TCP_RST 4
+#define DIS_TCP_PSH 8
+#define DIS_TCP_ACK 16
+#define DIS_TCP_URG 32
+#define DIS_TCP_ECE 64
+#define DIS_TCP_CWR 128
+
+#define BITCHECK(flag) (dissector->tcp_flags & flag)
+
 static __always_inline void snoop(struct dissector_t *dissector)
 {
     switch (dissector->ip_protocol)
@@ -331,17 +348,19 @@ static __always_inline void snoop(struct dissector_t *dissector)
             dissector->src_port = hdr->source;
             dissector->dst_port = hdr->dest;
             __u8 flags = 0;
-            if (hdr->fin) flags |= 1;
-            if (hdr->syn) flags |= 2;
-            if (hdr->rst) flags |= 4;
-            if (hdr->psh) flags |= 8;
-            if (hdr->ack) flags |= 16;
-            if (hdr->urg) flags |= 32;
-            if (hdr->ece) flags |= 64;
-            if (hdr->cwr) flags |= 128;
+            if (hdr->fin) flags |= DIS_TCP_FIN;
+            if (hdr->syn) flags |= DIS_TCP_SYN;
+            if (hdr->rst) flags |= DIS_TCP_RST;
+            if (hdr->psh) flags |= DIS_TCP_PSH;
+            if (hdr->ack) flags |= DIS_TCP_ACK;
+            if (hdr->urg) flags |= DIS_TCP_URG;
+            if (hdr->ece) flags |= DIS_TCP_ECE;
+            if (hdr->cwr) flags |= DIS_TCP_CWR;
 
             dissector->tcp_flags = flags;
             dissector->window = hdr->window;
+            dissector->sequence = hdr->seq;
+            dissector->ack_seq = hdr->ack_seq;
 
             parse_tcp_ts(hdr, dissector->end, &dissector->tsval, &dissector->tsecr);
         }
@@ -399,6 +418,7 @@ static __always_inline bool dissector_find_ip_header(
         dissector->ip_protocol = dissector->ip_header.iph->protocol;
         dissector->tos = dissector->ip_header.iph->tos;
         snoop(dissector);
+
         return true;
     }
     break;
@@ -416,7 +436,7 @@ static __always_inline bool dissector_find_ip_header(
         encode_ipv6(&dissector->ip_header.ip6h->saddr, &dissector->src_ip);
         encode_ipv6(&dissector->ip_header.ip6h->daddr, &dissector->dst_ip);
         dissector->ip_protocol = dissector->ip_header.ip6h->nexthdr;
-        dissector->ip_header.ip6h->flow_lbl[0]; // Is this right?
+        dissector->tos = dissector->ip_header.ip6h->flow_lbl[0]; // Is this right?
         snoop(dissector);
         return true;
     }

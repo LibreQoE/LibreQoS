@@ -66,17 +66,19 @@ pub struct LqosStats {
   pub time_to_poll_hosts_us: u64,
   pub high_watermark: (u64, u64),
   pub tracked_flows: u64,
+  pub rtt_events_per_second: u64,
 }
 
 #[get("/api/stats")]
 pub async fn stats() -> NoCache<Json<LqosStats>> {
   for msg in bus_request(vec![BusRequest::GetLqosStats]).await.unwrap() {
-    if let BusResponse::LqosdStats { bus_requests, time_to_poll_hosts, high_watermark, tracked_flows } = msg {
+    if let BusResponse::LqosdStats { bus_requests, time_to_poll_hosts, high_watermark, tracked_flows, rtt_events_per_second } = msg {
       return NoCache::new(Json(LqosStats {
         bus_requests_since_start: bus_requests,
         time_to_poll_hosts_us: time_to_poll_hosts,
         high_watermark,
         tracked_flows,
+        rtt_events_per_second,
       }));
     }
   }

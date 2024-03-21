@@ -15,13 +15,12 @@ mod cpu_map;
 mod ip_mapping;
 mod kernel_wrapper;
 mod lqos_kernel;
-mod tcp_rtt;
 mod throughput;
 mod linux;
 mod bpf_iterator;
 /// Data shared between eBPF and Heimdall that needs local access
 /// for map control.
-pub mod heimdall_data;
+pub mod flowbee_data;
 
 pub use ip_mapping::{
   add_ip_to_tc, clear_ips_from_tc, del_ip_from_tc, list_mapped_ips,
@@ -29,6 +28,5 @@ pub use ip_mapping::{
 pub use kernel_wrapper::LibreQoSKernels;
 pub use linux::num_possible_cpus;
 pub use lqos_kernel::max_tracked_ips;
-pub use tcp_rtt::{rtt_for_each, RttTrackingEntry};
 pub use throughput::{throughput_for_each, HostCounter};
-pub use bpf_iterator::iterate_heimdall;
+pub use bpf_iterator::{iterate_flows, end_flows};

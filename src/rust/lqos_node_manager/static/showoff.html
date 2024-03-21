@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+
+    <script src="/vendor/plotly-2.16.1.min.js"></script>
+    <script src="/vendor/jquery.min.js"></script>
+
+</head>
+
+<body style="background: black; font-family: Arial, Helvetica, sans-serif; height: 100%; margin: 0;">
+    <p style="font-size: 20pt; text-align: center; color: #dddddd" id="heading"></p>
+    <p style="font-size: 12pt; text-align: center; color: #dddddd">    
+        <a href="#" onclick="init()">Refresh</a>
+    </p>
+    <div id="chart" style="width:100vw; height: 100bh; background: black;">
+    </div>
+
+        <script>
+            var option;
+            var routes = [];
+
+            function lerpColor(color1, color2, weight) {
+                var r = Math.round(color1[0] + (color2[0] - color1[0]) * weight);
+                var g = Math.round(color1[1] + (color2[1] - color1[1]) * weight);
+                var b = Math.round(color1[2] + (color2[2] - color1[2]) * weight);
+                return `rgb(${r}, ${g}, ${b})`;
+            }
+
+            function getColorForWeight(weight) {
+                // Define our colors as [R, G, B]
+                const green = [0, 128, 0];
+                const orange = [255, 165, 0];
+                const red = [255, 0, 0];
+
+                if (weight <= 0.5) {
+                    // Scale weight to be from 0 to 1 for the green to orange transition
+                    const adjustedWeight = weight * 2;
+                    return lerpColor(green, orange, adjustedWeight);
+                } else {
+                    // Scale weight to be from 0 to 1 for the orange to red transition
+                    const adjustedWeight = (weight - 0.5) * 2;
+                    return lerpColor(orange, red, adjustedWeight);
+                }
+            }
+
+            function init() {
+                $.get("/api/flows/lat_lon", (worldData) => {
+                    let condensed = {};
+                    let totalBytes = 0;
+                    for (let i = 0; i < worldData.length; i++) {
+                        let label = worldData[i][2];
+                        if (label in condensed) {
+                            condensed[label][3] += worldData[i][3]; // Bytes
+                            totalBytes += worldData[i][3];
+                            if (worldData[i][4] != 0) {
+                                condensed[label][4].push(worldData[i][4]); // RTT
+                            }
+                        } else {
+                            condensed[label] = worldData[i];
+                            worldData[i][4] = [worldData[i][4]];
+                            totalBytes += worldData[i][3];
+                        }
+                    }
+
+                    let entries = [];
+                    for (const [key, value] of Object.entries(condensed)) {
+                        value[3] = value[3] / totalBytes;
+                        entries.push(value);
+                    }
+
+                    $("#heading").text("World Data. Now tracking " + worldData.length + " flows and " + entries.length + " locations.");
+
+                    var data = [{
+                        type: 'scattergeo',
+                        //locationmode: 'world',
+                        lat: [],
+                        lon: [],
+                        hoverinfo: 'text',
+                        text: [],
+                        marker: {
+                            size: [],
+                            color: [],
+                            line: {
+                                color: [],
+                                width: 2
+                            },
+                        }
+                    }];
+
+                    for (let i = 0; i < entries.length; i++) {
+                        var flow = entries[i];
+                        if (flow[4].length != 0) {
+                            var lat = flow[0];
+                            var lon = flow[1];
+                            var text = flow[2];
+
+                            var bytes = flow[3] * 20;
+                            if (bytes < 5) bytes = 5;
+
+                            let middle = flow[4].length -1;
+                            var rtt = flow[4][middle] / 1000000;
+                            rtt = rtt / 200;
+                            if (rtt > 1) rtt = 1;
+                            var color = getColorForWeight(rtt);
+                            data[0].lat.push(lat);
+                            data[0].lon.push(lon);
+                            data[0].text.push(text);
+                            data[0].marker.size.push(bytes);
+                            data[0].marker.line.color.push(color);
+                            data[0].marker.color.push(color);
+                        }
+                    }
+
+                    var layout = {
+                        autosize: true,
+                        margin: {
+                            l: 0,
+                            r: 0,
+                            b: 0,
+                            t: 0,
+                            pad: 0
+                        },
+                        paper_bgcolor: 'black',
+                        geo: {
+                            scope: 'world',
+                            projection: {
+                                type: 'natural earth'
+                            },
+                            showland: true,
+                            showocean: true,
+                            showlakes: true,
+                            showrivers: true,
+                            showcountries: true,
+                            landcolor: 'rgb(217, 217, 217)',
+                            subunitwidth: 1,
+                            countrywidth: 1,
+                            subunitcolor: 'rgb(255,255,255)',
+                            countrycolor: 'rgb(255,255,255)',
+                            framecolor: 'black',
+                            bgcolor: 'black',
+                        },
+                    };
+
+                    Plotly.newPlot('chart', data, layout, { responsive: true, displayModeBar: false });
+                });
+            }
+
+            $(document).ready(function () {
+                init()
+            });
+        </script>
+
+</html>

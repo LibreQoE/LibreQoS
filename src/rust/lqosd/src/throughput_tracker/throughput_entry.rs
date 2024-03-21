@@ -1,4 +1,5 @@
 use lqos_bus::TcHandle;
+use super::flow_data::RttData;
 
 #[derive(Debug)]
 pub(crate) struct ThroughputEntry {
@@ -13,9 +14,11 @@ pub(crate) struct ThroughputEntry {
   pub(crate) bytes_per_second: (u64, u64),
   pub(crate) packets_per_second: (u64, u64),
   pub(crate) tc_handle: TcHandle,
-  pub(crate) recent_rtt_data: [u32; 60],
+  pub(crate) recent_rtt_data: [RttData; 60],
   pub(crate) last_fresh_rtt_data_cycle: u64,
   pub(crate) last_seen: u64, // Last seen in kernel time since boot
+  pub(crate) tcp_retransmits: (u64, u64),
+  pub(crate) last_tcp_retransmits: (u64, u64),
 }
 
 impl ThroughputEntry {
@@ -33,8 +36,8 @@ impl ThroughputEntry {
     let mut shifted: Vec<f32> = self
       .recent_rtt_data
       .iter()
-      .filter(|n| **n != 0)
-      .map(|n| *n as f32 / 100.0)
+      .filter(|n| n.as_nanos() != 0)
+      .map(|n| n.as_millis() as f32)
       .collect();
     if shifted.len() < 5 {
       return None;

@@ -29,6 +29,15 @@ sysinfo = "0"
 dashmap = "5"
 num-traits = "0.2"
 thiserror = "1"
+itertools = "0.12.1"
+csv = "1"
+reqwest = { version = "0.11.24", features = ["blocking"] }
+flate2 = "1.0"
+bincode = "1"
+ip_network_table = "0"
+ip_network = "0"
+zerocopy = {version = "0.6.1", features = [ "simd" ] }
+fxhash = "0.2.1"
 
 # Support JemAlloc on supported platforms
 [target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]

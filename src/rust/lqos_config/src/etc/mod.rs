@@ -45,7 +45,6 @@ pub fn load_config() -> Result<Config, LibreQoSConfigError> {
         *lock = Some(config_result.unwrap());
     }
 
-    log::info!("Returning cached config");
     Ok(lock.as_ref().unwrap().clone())
 }
 

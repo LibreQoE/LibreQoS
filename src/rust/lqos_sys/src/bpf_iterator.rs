@@ -1,6 +1,5 @@
 use crate::{
-  kernel_wrapper::BPF_SKELETON, lqos_kernel::bpf, HostCounter,
-  RttTrackingEntry, heimdall_data::{HeimdallKey, HeimdallData},
+  bpf_map::BpfMap, flowbee_data::{FlowbeeData, FlowbeeKey}, kernel_wrapper::BPF_SKELETON, lqos_kernel::bpf, HostCounter
 };
 use lqos_utils::XdpIpAddress;
 use once_cell::sync::Lazy;
@@ -149,7 +148,17 @@ where
           let (_head, values, _tail) =
             unsafe { &value_slice.align_to::<VALUE>() };
 
-          callback(&key[0], &values[0]);
+          if !key.is_empty() && !values.is_empty() {
+            callback(&key[0], &values[0]);
+          } else {
+            log::error!("Empty key or value found in iterator");
+            if key.is_empty() {
+              log::error!("Empty key");
+            }
+            if values.is_empty() {
+              log::error!("Empty value");
+            }
+          }
 
           index += Self::KEY_SIZE + Self::VALUE_SIZE;
         }
@@ -183,12 +192,8 @@ static mut MAP_TRAFFIC: Lazy<
   Option<BpfMapIterator<XdpIpAddress, HostCounter>>,
 > = Lazy::new(|| None);
 
-static mut RTT_TRACKER: Lazy<
-  Option<BpfMapIterator<XdpIpAddress, RttTrackingEntry>>,
-> = Lazy::new(|| None);
-
-static mut HEIMDALL_TRACKER: Lazy<
-  Option<BpfMapIterator<HeimdallKey, HeimdallData>>,
+static mut FLOWBEE_TRACKER: Lazy<
+  Option<BpfMapIterator<FlowbeeKey, FlowbeeData>>,
 > = Lazy::new(|| None);
 
 pub unsafe fn iterate_throughput(
@@ -214,51 +219,41 @@ pub unsafe fn iterate_throughput(
   }
 }
 
-pub unsafe fn iterate_rtt(
-  callback: &mut dyn FnMut(&XdpIpAddress, &RttTrackingEntry),
-) {
-  if RTT_TRACKER.is_none() {
-    let lock = BPF_SKELETON.lock().unwrap();
-    if let Some(skeleton) = lock.as_ref() {
-      let skeleton = skeleton.get_ptr();
-      if let Ok(iter) = unsafe {
-        BpfMapIterator::new(
-          (*skeleton).progs.rtt_reader,
-          (*skeleton).maps.rtt_tracker,
-        )
-      } {
-        *RTT_TRACKER = Some(iter);
-      }
-    }
-  }
-
-  if let Some(iter) = RTT_TRACKER.as_mut() {
-    let _ = iter.for_each(callback);
-  }
-}
-
-/// Iterate through the heimdall map and call the callback for each entry.
-pub fn iterate_heimdall(
-  callback: &mut dyn FnMut(&HeimdallKey, &[HeimdallData]),
+/// Iterate through the Flows 2 system tracker, retrieving all flows
+pub fn iterate_flows(
+  callback: &mut dyn FnMut(&FlowbeeKey, &FlowbeeData)
 ) {
   unsafe {
-    if HEIMDALL_TRACKER.is_none() {
+    if FLOWBEE_TRACKER.is_none() {
       let lock = BPF_SKELETON.lock().unwrap();
       if let Some(skeleton) = lock.as_ref() {
         let skeleton = skeleton.get_ptr();
         if let Ok(iter) = {
           BpfMapIterator::new(
-            (*skeleton).progs.heimdall_reader,
-            (*skeleton).maps.heimdall,
+            (*skeleton).progs.flow_reader,
+            (*skeleton).maps.flowbee,
           )
         } {
-          *HEIMDALL_TRACKER = Some(iter);
+          *FLOWBEE_TRACKER = Some(iter);
         }
       }
     }
-
-    if let Some(iter) = HEIMDALL_TRACKER.as_mut() {
-      let _ = iter.for_each_per_cpu(callback);
+  
+    if let Some(iter) = FLOWBEE_TRACKER.as_mut() {
+      let _ = iter.for_each(callback);
     }
   }
+}
+
+/// Adjust flows to have status 2 - already processed
+///
+// Arguments: the list of flow keys to expire
+pub fn end_flows(flows: &mut [FlowbeeKey]) -> anyhow::Result<()> {
+  let mut map = BpfMap::<FlowbeeKey, FlowbeeData>::from_path("/sys/fs/bpf/flowbee")?;
+
+  for flow in flows {
+    map.delete(flow)?;
+  }
+
+  Ok(())
 }

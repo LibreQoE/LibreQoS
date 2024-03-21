@@ -99,7 +99,8 @@ unsafe fn open_kernel() -> Result<*mut bpf::lqos_kern> {
 unsafe fn load_kernel(skeleton: *mut bpf::lqos_kern) -> Result<()> {
   let error = bpf::lqos_kern_load(skeleton);
   if error != 0 {
-    Err(Error::msg("Unable to load the XDP/TC kernel"))
+    let error = format!("Unable to load the XDP/TC kernel ({error})");
+    Err(Error::msg(error))
   } else {
     Ok(())
   }
@@ -116,6 +117,7 @@ pub fn attach_xdp_and_tc_to_interface(
   interface_name: &str,
   direction: InterfaceDirection,
   heimdall_event_handler: bpf::ring_buffer_sample_fn,
+  flowbee_event_handler: bpf::ring_buffer_sample_fn,
 ) -> Result<*mut lqos_kern> {
   check_root()?;
   // Check the interface is valid
@@ -181,6 +183,28 @@ pub fn attach_xdp_and_tc_to_interface(
     return Err(anyhow::Error::msg("Failed to create Heimdall event buffer"));
   }
   let handle = PerfBufferHandle(heimdall_perf_buffer);
+  std::thread::spawn(|| poll_perf_events(handle));
+
+  // Find and attach the Flowbee handler
+  let flowbee_events_name = CString::new("flowbee_events").unwrap();
+  let flowbee_events_map = unsafe { bpf::bpf_object__find_map_by_name((*skeleton).obj, flowbee_events_name.as_ptr()) };
+  let flowbee_events_fd = unsafe { bpf::bpf_map__fd(flowbee_events_map) };
+  if flowbee_events_fd < 0 {
+    log::error!("Unable to load Flowbee Events FD");
+    return Err(anyhow::Error::msg("Unable to load Flowbee Events FD"));
+  }
+  let opts: *const bpf::ring_buffer_opts = std::ptr::null();
+  let flowbee_perf_buffer = unsafe {
+    bpf::ring_buffer__new(
+      flowbee_events_fd, 
+      flowbee_event_handler, 
+      opts as *mut c_void, opts)
+  };
+  if unsafe { bpf::libbpf_get_error(flowbee_perf_buffer as *mut c_void) != 0 } {
+    log::error!("Failed to create Flowbee event buffer");
+    return Err(anyhow::Error::msg("Failed to create Flowbee event buffer"));
+  }
+  let handle = PerfBufferHandle(flowbee_perf_buffer);
   std::thread::spawn(|| poll_perf_events(handle));
 
   // Remove any previous entry

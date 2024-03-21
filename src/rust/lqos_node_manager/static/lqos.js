@@ -34,6 +34,7 @@ const IpStats = {
     "tc_handle": 4,
     "circuit_id": 5,
     "plan": 6,
+    "tcp_retransmits": 7,
 }
 
 const FlowTrans = {
@@ -165,7 +166,7 @@ function updateHostCounts() {
     });*/
     // LTS Check
     $.get("/api/stats_check", (data) => {
-        console.log(data);
+        //console.log(data);
         let template = "<a class='nav-link' href='$URL$'><i class='fa fa-dashboard'></i> $TEXT$</a>";
         switch (data.action) {
             case "Disabled": {
@@ -270,6 +271,18 @@ function scaleNumber(n) {
         return (n / 1000).toFixed(2) + "K";
     }
     return n;
+}
+
+function scaleNanos(n) {
+    if (n == 0) return "";
+    if (n > 1000000000) {
+        return (n / 1000000000).toFixed(2) + "s";
+    } else if (n > 1000000) {
+        return (n / 1000000).toFixed(2) + "ms";
+    } else if (n > 1000) {
+        return (n / 1000).toFixed(2) + "µs";
+    }
+    return n + "ns";
 }
 
 const reloadModal = `

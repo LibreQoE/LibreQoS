@@ -1,6 +1,6 @@
 use super::QueueStoreTransit;
 use crate::{
-  ip_stats::PacketHeader, FlowTransport, IpMapping, IpStats, XdpPpingResult,
+  ip_stats::{FlowbeeSummaryData, PacketHeader}, IpMapping, IpStats, XdpPpingResult,
 };
 use lts_client::transport_data::{StatsTotals, StatsHost, StatsTreeNode};
 use serde::{Deserialize, Serialize};
@@ -42,6 +42,9 @@ pub enum BusResponse {
 
   /// Provides the worst N RTT scores, sorted in descending order.
   WorstRtt(Vec<IpStats>),
+
+  /// Provides the worst N Retransmit scores, sorted in descending order.
+  WorstRetransmits(Vec<IpStats>),
 
   /// Provides the best N RTT scores, sorted in descending order.
   BestRtt(Vec<IpStats>),
@@ -89,10 +92,9 @@ pub enum BusResponse {
     high_watermark: (u64, u64),
     /// Number of flows tracked
     tracked_flows: u64,
+    /// RTT events per second
+    rtt_events_per_second: u64,
   },
-
-  /// Flow Data
-  FlowData(Vec<(FlowTransport, Option<FlowTransport>)>),
 
   /// The index of the new packet collection session
   PacketCollectionSession {
@@ -116,4 +118,41 @@ pub enum BusResponse {
 
   /// Long-term stats tree
   LongTermTree(Vec<StatsTreeNode>),
+
+  /// All Active Flows (Not Recommended - Debug Use)
+  AllActiveFlows(Vec<FlowbeeSummaryData>),
+
+  /// Count active flows
+  CountActiveFlows(u64),
+
+  /// Top Flopws
+  TopFlows(Vec<FlowbeeSummaryData>),
+
+  /// Flows by IP
+  FlowsByIp(Vec<FlowbeeSummaryData>),
+
+  /// Current endpoints by country
+  CurrentEndpointsByCountry(Vec<(String, [u64; 2], [f32; 2])>),
+
+  /// Current Lat/Lon of endpoints
+  CurrentLatLon(Vec<(f64, f64, String, u64, f32)>),
+
+  /// Summary of Ether Protocol
+  EtherProtocols{
+    /// Number of IPv4 Bytes
+    v4_bytes: [u64; 2],
+    /// Number of IPv6 Bytes
+    v6_bytes: [u64; 2],
+    /// Number of IPv4 Packets
+    v4_packets: [u64; 2],
+    /// Number of IPv6 Packets
+    v6_packets: [u64; 2],
+    /// Number of IPv4 Flows
+    v4_rtt: [u64; 2],
+    /// Number of IPv6 Flows
+    v6_rtt: [u64; 2],
+  },
+  
+  /// Summary of IP Protocols
+  IpProtocols(Vec<(String, (u64, u64))>),
 }
