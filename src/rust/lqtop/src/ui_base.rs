@@ -2,7 +2,7 @@
 //! Upon starting the program, it performs basic initialization.
 //! It tracks "drop", so when the program exits, it can perform cleanup.
 
-use crate::top_level_ui::TopUi;
+use crate::{bus::BusMessage, top_level_ui::TopUi};
 use anyhow::Result;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
@@ -10,6 +10,7 @@ use crossterm::{
     ExecutableCommand,
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
+use tokio::sync::mpsc::Sender;
 use std::{
     io::stdout,
     sync::atomic::{AtomicBool, Ordering},
@@ -23,7 +24,7 @@ pub struct UiBase {
 
 impl UiBase {
     /// Create a new UiBase instance. This will initialize the UI framework.
-    pub fn new() -> Result<Self> {
+    pub fn new(tx: Sender<BusMessage>) -> Result<Self> {
         // Crossterm mode setup
         enable_raw_mode()?;
         stdout().execute(EnterAlternateScreen)?;
@@ -45,7 +46,7 @@ impl UiBase {
 
         // Return
         Ok(UiBase {
-            ui: TopUi::new(),
+            ui: TopUi::new(tx.clone()),
         })
     }
 

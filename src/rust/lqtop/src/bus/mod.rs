@@ -3,30 +3,36 @@
 use crate::ui_base::SHOULD_EXIT;
 use anyhow::{bail, Result};
 use lqos_bus::{BusClient, BusRequest, BusResponse};
+use tokio::sync::mpsc::Receiver;
 use std::sync::atomic::Ordering;
 pub mod cpu_ram;
-pub mod throughput;
 pub mod top_hosts;
 pub mod top_flows;
 
-/// The main loop for the bus.
-/// Spawns a separate task to handle the bus communication.
-pub async fn bus_loop() {
-    tokio::spawn(cpu_ram::gather_sysinfo());
-    main_loop_wrapper().await;
+/// Communications with the bus via channels
+pub enum BusMessage {
+    EnableTotalThroughput(std::sync::mpsc::Sender<BusResponse>),
+    DisableTotalThroughput,
 }
 
-async fn main_loop_wrapper() {
-    let loop_result = main_loop().await;
+/// The main loop for the bus.
+/// Spawns a separate task to handle the bus communication.
+pub async fn bus_loop(rx: Receiver<BusMessage>) {
+    tokio::spawn(cpu_ram::gather_sysinfo());
+    main_loop_wrapper(rx).await;
+}
+
+async fn main_loop_wrapper(rx: Receiver<BusMessage>) {
+    let loop_result = main_loop(rx).await;
     if let Err(e) = loop_result {
-        eprintln!("Error in main loop: {}", e);
         SHOULD_EXIT.store(true, Ordering::Relaxed);
+        panic!("Error in main loop: {}", e);
     }
 }
 
-async fn main_loop() -> Result<()> {
+async fn main_loop(mut rx: Receiver<BusMessage>) -> Result<()> {
     // Collection Settings
-    let collect_total_throughput = true;
+    let mut collect_total_throughput = None;
     let collect_top_downloaders = true;
     let collect_top_flows = true;
 
@@ -36,10 +42,22 @@ async fn main_loop() -> Result<()> {
     }
 
     loop {
+        // See if there are any messages
+        while let Ok(msg) = rx.try_recv() {
+            match msg {
+                BusMessage::EnableTotalThroughput(tx) => {
+                    collect_total_throughput = Some(tx);
+                }
+                BusMessage::DisableTotalThroughput => {
+                    collect_total_throughput = None;
+                }
+            }
+        }
+
         // Perform actual bus collection
         let mut commands: Vec<BusRequest> = Vec::new();
 
-        if collect_total_throughput {
+        if collect_total_throughput.is_some() {
             commands.push(BusRequest::GetCurrentThroughput);
         }
         if collect_top_downloaders {
@@ -52,7 +70,11 @@ async fn main_loop() -> Result<()> {
         // Send the requests and process replies
         for response in bus_client.request(commands).await? {
             match response {
-                BusResponse::CurrentThroughput { .. } => throughput::throughput(&response).await,
+                BusResponse::CurrentThroughput { .. } => {
+                    if let Some(tx) = &collect_total_throughput {
+                        tx.send(response).unwrap(); // Ignoring the error, it's ok if the channel closed
+                    }
+                }
                 BusResponse::TopDownloaders { .. } => top_hosts::top_n(&response).await,
                 BusResponse::TopFlows(..) => top_flows::top_flows(&response).await,
                 _ => {}
