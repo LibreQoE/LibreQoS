@@ -10,22 +10,26 @@ use ratatui::prelude::*;
 use tokio::sync::mpsc::Sender;
 use std::io::Stdout;
 
+use self::top_flows::TopFlows;
+
 pub struct TopUi {
     show_cpus: bool,
     show_throughput_sparkline: bool,
-    _bus_sender: Sender<BusMessage>,
+    bus_sender: Sender<BusMessage>,
     sparkline: NetworkSparkline,
-    main_widget: MainWidget,
+    main_widget: Box<dyn TopWidget>,
 }
 
 impl TopUi {
     /// Create a new TopUi instance. This will initialize the UI framework.
     pub fn new(bus_sender: Sender<BusMessage>) -> Self {
+        let mut main_widget = Box::new(TopFlows::new(bus_sender.clone()));
+        main_widget.enable();
         TopUi {
             show_cpus: true,
             show_throughput_sparkline: false,
-            main_widget: MainWidget::Hosts,
-            _bus_sender: bus_sender.clone(),
+            main_widget,
+            bus_sender: bus_sender.clone(),
             sparkline: NetworkSparkline::new(bus_sender.clone()),
         }
     }
@@ -42,8 +46,12 @@ impl TopUi {
                     self.sparkline.disable();
                 }
             }
-            'h' => self.main_widget = MainWidget::Hosts,
-            'f' => self.main_widget = MainWidget::Flows,
+            //'h' => self.main_widget = MainWidget::Hosts,
+            'f' => {
+                self.main_widget.disable();
+                self.main_widget = Box::new(TopFlows::new(self.bus_sender.clone()));
+                self.main_widget.enable();
+            }
             _ => {}
         }
     }
@@ -93,13 +101,17 @@ impl TopUi {
         }
 
         // And finally the main panel
-        match self.main_widget {
+        self.main_widget.set_size(main_layout[final_region]);
+        self.main_widget.tick();
+        self.main_widget.render_to_frame(frame);
+
+        /*match self.main_widget {
             MainWidget::Hosts => {
                 frame.render_widget(top_hosts::hosts(), main_layout[final_region]);
             }
             MainWidget::Flows => {
                 frame.render_widget(top_flows::flows(), main_layout[final_region]);
             }
-        }
+        }*/
     }
 }
