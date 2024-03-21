@@ -10,7 +10,7 @@ use ratatui::prelude::*;
 use tokio::sync::mpsc::Sender;
 use std::io::Stdout;
 
-use self::top_flows::TopFlows;
+use self::{top_flows::TopFlows, top_hosts::TopHosts};
 
 pub struct TopUi {
     show_cpus: bool,
@@ -23,7 +23,7 @@ pub struct TopUi {
 impl TopUi {
     /// Create a new TopUi instance. This will initialize the UI framework.
     pub fn new(bus_sender: Sender<BusMessage>) -> Self {
-        let mut main_widget = Box::new(TopFlows::new(bus_sender.clone()));
+        let mut main_widget = Box::new(TopHosts::new(bus_sender.clone()));
         main_widget.enable();
         TopUi {
             show_cpus: true,
@@ -46,7 +46,11 @@ impl TopUi {
                     self.sparkline.disable();
                 }
             }
-            //'h' => self.main_widget = MainWidget::Hosts,
+            'h' => {
+                self.main_widget.disable();
+                self.main_widget = Box::new(TopHosts::new(self.bus_sender.clone()));
+                self.main_widget.enable();
+            }
             'f' => {
                 self.main_widget.disable();
                 self.main_widget = Box::new(TopFlows::new(self.bus_sender.clone()));

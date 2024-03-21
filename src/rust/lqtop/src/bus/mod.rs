@@ -6,7 +6,6 @@ use lqos_bus::{BusClient, BusRequest, BusResponse};
 use tokio::sync::mpsc::Receiver;
 use std::sync::atomic::Ordering;
 pub mod cpu_ram;
-pub mod top_hosts;
 
 /// Communications with the bus via channels
 pub enum BusMessage {
@@ -14,6 +13,8 @@ pub enum BusMessage {
     DisableTotalThroughput,
     EnableTopFlows(std::sync::mpsc::Sender<BusResponse>),
     DisableTopFlows,
+    EnableTopHosts(std::sync::mpsc::Sender<BusResponse>),
+    DisableTopHosts,
 }
 
 /// The main loop for the bus.
@@ -34,7 +35,7 @@ async fn main_loop_wrapper(rx: Receiver<BusMessage>) {
 async fn main_loop(mut rx: Receiver<BusMessage>) -> Result<()> {
     // Collection Settings
     let mut collect_total_throughput = None;
-    let collect_top_downloaders = true;
+    let mut collect_top_downloaders = None;
     let mut collect_top_flows = None;
 
     let mut bus_client = BusClient::new().await?;
@@ -58,6 +59,12 @@ async fn main_loop(mut rx: Receiver<BusMessage>) -> Result<()> {
                 BusMessage::DisableTopFlows => {
                     collect_top_flows = None;
                 }
+                BusMessage::EnableTopHosts(tx) => {
+                    collect_top_downloaders = Some(tx);
+                }
+                BusMessage::DisableTopHosts => {
+                    collect_top_downloaders = None;
+                }
             }
         }
 
@@ -67,7 +74,7 @@ async fn main_loop(mut rx: Receiver<BusMessage>) -> Result<()> {
         if collect_total_throughput.is_some() {
             commands.push(BusRequest::GetCurrentThroughput);
         }
-        if collect_top_downloaders {
+        if collect_top_downloaders.is_some() {
             commands.push(BusRequest::GetTopNDownloaders { start: 0, end: 100 });
         }
         if collect_top_flows.is_some() {
@@ -82,7 +89,11 @@ async fn main_loop(mut rx: Receiver<BusMessage>) -> Result<()> {
                         let _ = tx.send(response); // Ignoring the error, it's ok if the channel closed
                     }
                 }
-                BusResponse::TopDownloaders { .. } => top_hosts::top_n(&response).await,
+                BusResponse::TopDownloaders { .. } => {
+                    if let Some(tx) = &collect_top_downloaders {
+                        let _ = tx.send(response); // Ignoring the error, it's ok if the channel closed
+                    }
+                }
                 BusResponse::TopFlows(..) => {
                     if let Some(tx) = &collect_top_flows {
                         let _ = tx.send(response); // Ignoring the error, it's ok if the channel closed
