@@ -1,4 +1,5 @@
 mod stats_ringbuffer;
+mod table_helper;
 mod cpu;
 pub use cpu::cpu_display;
 mod network_sparkline;
