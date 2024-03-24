@@ -66,10 +66,10 @@ def buildFlatGraph():
 				download = int(round(site['qos']['downloadSpeed']/1000000))
 				upload = int(round(site['qos']['uploadSpeed']/1000000))
 			if site['identification'] is not None and site['identification']['suspended'] is not None and site['identification']['suspended'] == True:
-				if uisp_suspended_strategy() == "ignore":
+				if uispSuspendedStrategy == "ignore":
 					print("WARNING: Site " + name + " is suspended")
 					continue
-				if uisp_suspended_strategy() == "slow":
+				if uispSuspendedStrategy == "slow":
 					print("WARNING: Site " + name + " is suspended")
 					download = 1
 					upload = 1
