@@ -65,6 +65,16 @@ def buildFlatGraph():
 			if (site['qos']['downloadSpeed']) and (site['qos']['uploadSpeed']):
 				download = int(round(site['qos']['downloadSpeed']/1000000))
 				upload = int(round(site['qos']['uploadSpeed']/1000000))
+			if site['identification'] is not None and site['identification']['suspended'] is not None and site['identification']['suspended'] == True:
+				if uisp_suspended_strategy() == "ignore":
+					print("WARNING: Site " + name + " is suspended")
+					continue
+				if uisp_suspended_strategy() == "slow":
+					print("WARNING: Site " + name + " is suspended")
+					download = 1
+					upload = 1
+			if site['identification']['status'] == "disconnected":
+				print("WARNING: Site " + name + " is disconnected")
 
 			node = NetworkNode(id=id, displayName=name, type=NodeType.client, download=download, upload=upload, address=address, customerName=customerName)
 			net.addRawNode(node)
