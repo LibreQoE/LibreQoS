@@ -32,6 +32,7 @@ use stats::{BUS_REQUESTS, TIME_TO_POLL_HOSTS, HIGH_WATERMARK_DOWN, HIGH_WATERMAR
 use throughput_tracker::flow_data::get_rtt_events_per_second;
 use tokio::join;
 mod stats;
+mod preflight_checks;
 
 // Use JemAllocator only on supported platforms
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -56,7 +57,15 @@ async fn main() -> Result<()> {
   }
 
   info!("LibreQoS Daemon Starting");
+  
+  // Run preflight checks
+  preflight_checks::preflight_checks()?;
+
+  // Load config
   let config = lqos_config::load_config()?;
+
+  
+  // Apply Tunings
   tuning::tune_lqosd_from_config_file()?;
 
   // Start the XDP/TC kernels
