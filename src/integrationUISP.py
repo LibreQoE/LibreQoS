@@ -320,53 +320,54 @@ def loadRoutingOverrides():
 
 def findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite, foundAirFibersBySite):
 	nodeOffPtMP = {}
-	for site in siteList:
-		id = site['id']
-		name = site['name']
-		if id != rootSite['id']:
-			
-			if id not in foundAirFibersBySite:
-				trueParent = findInSiteListById(siteList, id)['parent']
-				#parent = findInSiteListById(siteList, id)['parent']
-				isTrueSite = False
-				for siteItem in sites:
-					if siteItem['identification']['id'] == id:
-						if siteItem['identification']['type'] == 'site':
-							isTrueSite = True
-				if isTrueSite:
-					if site['parent'] is not None:
-						parent = site['parent']
-						# Check how many links connect site to parent
-						# If only one link conencts them, we can then consdier if it's a node off PtMP
-						howManyLinksToParent = 0
-						for link in dataLinks:
-							if (link['to']['site'] is not None) and (link['to']['site']['identification'] is not None):
-								if ('identification' in link['to']['site']) and (link['to']['site']['identification'] is not None) and link['from'] is not None and link['from']['site'] is not None and link['from']['site']['identification'] is not None:
-									if link['from']['site']['identification']['id'] == trueParent:
-										if link['to']['site']['identification']['id'] == id:
-											howManyLinksToParent += 1
-						if howManyLinksToParent == 1:
+	if usePtMPasParent:
+		for site in siteList:
+			id = site['id']
+			name = site['name']
+			if id != rootSite['id']:
+				
+				if id not in foundAirFibersBySite:
+					trueParent = findInSiteListById(siteList, id)['parent']
+					#parent = findInSiteListById(siteList, id)['parent']
+					isTrueSite = False
+					for siteItem in sites:
+						if siteItem['identification']['id'] == id:
+							if siteItem['identification']['type'] == 'site':
+								isTrueSite = True
+					if isTrueSite:
+						if site['parent'] is not None:
+							parent = site['parent']
+							# Check how many links connect site to parent
+							# If only one link conencts them, we can then consdier if it's a node off PtMP
+							howManyLinksToParent = 0
 							for link in dataLinks:
 								if (link['to']['site'] is not None) and (link['to']['site']['identification'] is not None):
 									if ('identification' in link['to']['site']) and (link['to']['site']['identification'] is not None) and link['from'] is not None and link['from']['site'] is not None and link['from']['site']['identification'] is not None:
-										# Respect parent defined by topology and overrides
 										if link['from']['site']['identification']['id'] == trueParent:
 											if link['to']['site']['identification']['id'] == id:
-												if (link['from']['device']['overview']['wirelessMode'] == 'ap-ptmp') or (link['from']['device']['overview']['wirelessMode'] == 'ap'):
-													if 'overview' in link['to']['device']:
-														if ('downlinkCapacity' in link['to']['device']['overview']) and ('uplinkCapacity' in link['to']['device']['overview']):
-															if (link['to']['device']['overview']['downlinkCapacity'] is not None) and (link['to']['device']['overview']['uplinkCapacity'] is not None): 
-																apID = link['from']['device']['identification']['id']
-																# Capacity of the PtMP client radio feeding the PoP will be used as the site bandwidth limit
-																download = int(round(link['to']['device']['overview']['downlinkCapacity']/1000000))
-																upload = int(round(link['to']['device']['overview']['uplinkCapacity']/1000000))
-																nodeOffPtMP[id] = {'download': download,
-																			'upload': upload,
-																			parent: apID
-																			}
-																if usePtMPasParent:
-																	site['parent'] = apID
-																	print('Site ' + name + ' will use PtMP AP ' + link['from']['device']['identification']['name'] + ' as parent from site ' + link['from']['site']['identification']['name'])
+												howManyLinksToParent += 1
+							if howManyLinksToParent == 1:
+								for link in dataLinks:
+									if (link['to']['site'] is not None) and (link['to']['site']['identification'] is not None):
+										if ('identification' in link['to']['site']) and (link['to']['site']['identification'] is not None) and link['from'] is not None and link['from']['site'] is not None and link['from']['site']['identification'] is not None:
+											# Respect parent defined by topology and overrides
+											if link['from']['site']['identification']['id'] == trueParent:
+												if link['to']['site']['identification']['id'] == id:
+													if (link['from']['device']['overview']['wirelessMode'] == 'ap-ptmp') or (link['from']['device']['overview']['wirelessMode'] == 'ap'):
+														if 'overview' in link['to']['device']:
+															if ('downlinkCapacity' in link['to']['device']['overview']) and ('uplinkCapacity' in link['to']['device']['overview']):
+																if (link['to']['device']['overview']['downlinkCapacity'] is not None) and (link['to']['device']['overview']['uplinkCapacity'] is not None): 
+																	apID = link['from']['device']['identification']['id']
+																	# Capacity of the PtMP client radio feeding the PoP will be used as the site bandwidth limit
+																	download = int(round(link['to']['device']['overview']['downlinkCapacity']/1000000))
+																	upload = int(round(link['to']['device']['overview']['uplinkCapacity']/1000000))
+																	nodeOffPtMP[id] = {'download': download,
+																				'upload': upload,
+																				parent: apID
+																				}
+																	if usePtMPasParent:
+																		site['parent'] = apID
+																		print('Site ' + name + ' will use PtMP AP ' + link['from']['device']['identification']['name'] + ' as parent from site ' + link['from']['site']['identification']['name'])
 	return siteList, nodeOffPtMP
 
 def handleMultipleInternetNodes(sites, dataLinks, uispSite):
