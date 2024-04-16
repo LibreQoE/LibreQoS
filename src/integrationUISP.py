@@ -365,7 +365,6 @@ def findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite, foundAirFiber
 																			parent: apID
 																			}
 																if usePtMPasParent:
-																	site['parent'] = apID
 																	print('Site ' + name + ' will use PtMP AP ' + link['from']['device']['identification']['name'] + ' as parent from site ' + link['from']['site']['identification']['name'])
 	return siteList, nodeOffPtMP
 
