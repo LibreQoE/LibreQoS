@@ -343,7 +343,8 @@ def findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite, foundAirFiber
 																			'upload': upload,
 																			parent: apID
 																			}
-																if use_ptmp_as_parent:
+																if use_ptmp_as_parent():
+																	site['parent'] = apID
 																	print('Site ' + name + ' will use PtMP AP ' + link['from']['device']['identification']['name'] + ' as parent from site ' + link['from']['site']['identification']['name'])
 	return siteList, nodeOffPtMP
 
