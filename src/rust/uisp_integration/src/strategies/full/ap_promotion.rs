@@ -1,4 +1,5 @@
-use crate::uisp_types::{UispSite, UispSiteType};
+use crate::uisp_types::{UispDevice, UispSite, UispSiteType};
+use lqos_config::Config;
 use std::collections::HashSet;
 use tracing::info;
 use uisp::{DataLink, Device, Site};
@@ -8,6 +9,8 @@ pub fn promote_access_points(
     devices_raw: &[Device],
     data_links_raw: &[DataLink],
     sites_raw: &[Site],
+    devices: &[UispDevice],
+    config: &Config,
 ) {
     let mut all_links = Vec::new();
     sites.iter().for_each(|s| {
@@ -28,14 +31,22 @@ pub fn promote_access_points(
                 sites[parent_site_id].name
             );
         }*/
+
+        let mut max_up_mbps = config.queues.generated_pn_upload_mbps;
+        let mut max_down_mbps = config.queues.generated_pn_download_mbps;
+        if let Some(ap) = devices.iter().find(|d| d.id == link.device_id) {
+            max_up_mbps = ap.upload;
+            max_down_mbps = ap.download;
+        }
+
         let mut new_site = UispSite {
             id: link.device_id,
             name: link.device_name,
             site_type: UispSiteType::AccessPoint,
             uisp_parent_id: None,
             parent_indices: HashSet::new(),
-            max_up_mbps: 0, // TODO: I need to read this from the device capacity
-            max_down_mbps: 0,
+            max_up_mbps,
+            max_down_mbps,
             ..Default::default()
         };
         new_site.parent_indices.insert(parent_site_id);

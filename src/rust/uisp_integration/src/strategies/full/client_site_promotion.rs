@@ -46,7 +46,9 @@ pub fn promote_clients_with_children(
             suspended: sites[child_site].suspended,
             ..Default::default()
         };
-        new_site.device_indices.extend_from_slice(&sites[child_site].device_indices);
+        new_site
+            .device_indices
+            .extend_from_slice(&sites[child_site].device_indices);
         sites[child_site].device_indices.clear();
         sites.push(new_site);
     }
