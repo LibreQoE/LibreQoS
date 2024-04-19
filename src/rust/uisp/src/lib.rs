@@ -11,9 +11,9 @@ use lqos_config::Config;
 // UISP data link definitions
 use self::rest::nms_request_get_vec;
 use anyhow::Result;
-pub use data_link::DataLink;
+pub use data_link::*;
 pub use device::Device;
-pub use site::Site;
+pub use site::{Site, SiteId, Description};
 
 /// Loads a complete list of all sites from UISP
 pub async fn load_all_sites(config: Config) -> Result<Vec<Site>> {
