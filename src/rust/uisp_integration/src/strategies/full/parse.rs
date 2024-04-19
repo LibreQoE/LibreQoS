@@ -12,16 +12,18 @@ pub fn parse_uisp_datasets(
     let (mut sites, data_links, devices) = (
         parse_sites(sites_raw, config),
         parse_data_links(data_links_raw, devices_raw),
-        parse_devices(devices_raw),
+        parse_devices(devices_raw, config),
     );
 
     // Assign devices to sites
     for site in sites.iter_mut() {
-        devices.iter().enumerate().filter(|(_, device)|
-           device.site_id == site.id
-        ).for_each(|(idx, _)| {
-            site.device_indices.push(idx);
-        });
+        devices
+            .iter()
+            .enumerate()
+            .filter(|(_, device)| device.site_id == site.id)
+            .for_each(|(idx, _)| {
+                site.device_indices.push(idx);
+            });
     }
 
     (sites, data_links, devices)
@@ -49,10 +51,10 @@ fn parse_data_links(data_links_raw: &[DataLink], devices_raw: &[Device]) -> Vec<
     data_links
 }
 
-fn parse_devices(devices_raw: &[Device]) -> Vec<UispDevice> {
+fn parse_devices(devices_raw: &[Device], config: &Config) -> Vec<UispDevice> {
     let mut devices: Vec<UispDevice> = devices_raw
         .iter()
-        .map(|d| UispDevice::from_uisp(d))
+        .map(|d| UispDevice::from_uisp(d, config))
         .collect();
     info!("{} devices have been sucessfully parsed", devices.len());
     devices
