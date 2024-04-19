@@ -20,6 +20,14 @@ impl Site {
         None
     }
 
+    pub fn name_or_blank(&self) -> String {
+        if let Some(name) = self.name() {
+            name
+        } else {
+            "".to_string()
+        }
+    }
+
     pub fn address(&self) -> Option<String> {
         if let Some(desc) = &self.description {
             if let Some(address) = &desc.address {
@@ -82,6 +90,14 @@ impl Site {
             up = default_upload_mbps;
         }
         (down, up)
+    }
+
+    pub fn is_suspended(&self) -> bool {
+        if let Some(site_id) = &self.identification {
+            site_id.suspended
+        } else {
+            false
+        }
     }
 }
 
