@@ -3614,6 +3614,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "csv",
+ "ip_network",
+ "ip_network_table",
  "lqos_config",
  "reqwest 0.12.3",
  "serde",

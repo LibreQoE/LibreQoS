@@ -9,6 +9,7 @@ mod utils;
 mod bandwidth_overrides;
 mod routes_override;
 mod network_json;
+mod shaped_devices_writer;
 
 use crate::errors::UispIntegrationError;
 use crate::strategies::full::ap_promotion::promote_access_points;
@@ -23,11 +24,13 @@ use crate::uisp_types::UispSite;
 use lqos_config::Config;
 use crate::strategies::full::bandwidth_overrides::get_site_bandwidth_overrides;
 pub use bandwidth_overrides::BandwidthOverrides;
+use crate::ip_ranges::IpRanges;
 use crate::strategies::full::network_json::write_network_file;
 use crate::strategies::full::routes_override::get_route_overrides;
+use crate::strategies::full::shaped_devices_writer::write_shaped_devices;
 
 /// Attempt to construct a full hierarchy topology for the UISP network.
-pub async fn build_full_network(config: Config) -> Result<(), UispIntegrationError> {
+pub async fn build_full_network(config: Config, ip_ranges: IpRanges) -> Result<(), UispIntegrationError> {
     // Load any bandwidth overrides
     let bandwidth_overrides = get_site_bandwidth_overrides(&config)?;
 
@@ -37,7 +40,7 @@ pub async fn build_full_network(config: Config) -> Result<(), UispIntegrationErr
     // Obtain the UISP data and transform it into easier to work with types
     let (sites_raw, devices_raw, data_links_raw) = load_uisp_data(config.clone()).await?;
     let (mut sites, data_links, devices) =
-        parse_uisp_datasets(&sites_raw, &data_links_raw, &devices_raw, &config, &bandwidth_overrides);
+        parse_uisp_datasets(&sites_raw, &data_links_raw, &devices_raw, &config, &bandwidth_overrides, &ip_ranges);
 
     // Check root sites
     let root_site = find_root_site(&config, &mut sites, &data_links)?;
@@ -73,6 +76,9 @@ pub async fn build_full_network(config: Config) -> Result<(), UispIntegrationErr
 
         // Output a network.json
         write_network_file(&config, &sites, root_idx)?;
+
+        // Write ShapedDevices.csv
+        write_shaped_devices(&config, &sites, root_idx, &devices)?;
     }
 
 
