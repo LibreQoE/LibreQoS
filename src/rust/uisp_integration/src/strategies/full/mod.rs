@@ -1,36 +1,39 @@
 mod ap_promotion;
+mod bandwidth_overrides;
 mod client_site_promotion;
+mod network_json;
 mod parse;
 mod root_site;
+mod routes_override;
+mod shaped_devices_writer;
 mod squash_single_entry_aps;
 mod tree_walk;
 mod uisp_fetch;
 mod utils;
-mod bandwidth_overrides;
-mod routes_override;
-mod network_json;
-mod shaped_devices_writer;
 
 use crate::errors::UispIntegrationError;
+use crate::ip_ranges::IpRanges;
 use crate::strategies::full::ap_promotion::promote_access_points;
+use crate::strategies::full::bandwidth_overrides::get_site_bandwidth_overrides;
 use crate::strategies::full::client_site_promotion::promote_clients_with_children;
+use crate::strategies::full::network_json::write_network_file;
 use crate::strategies::full::parse::parse_uisp_datasets;
 use crate::strategies::full::root_site::{find_root_site, set_root_site};
+use crate::strategies::full::routes_override::get_route_overrides;
+use crate::strategies::full::shaped_devices_writer::write_shaped_devices;
 use crate::strategies::full::squash_single_entry_aps::squash_single_aps;
 use crate::strategies::full::tree_walk::walk_tree_for_routing;
 use crate::strategies::full::uisp_fetch::load_uisp_data;
 use crate::strategies::full::utils::{print_sites, warn_of_no_parents};
 use crate::uisp_types::UispSite;
-use lqos_config::Config;
-use crate::strategies::full::bandwidth_overrides::get_site_bandwidth_overrides;
 pub use bandwidth_overrides::BandwidthOverrides;
-use crate::ip_ranges::IpRanges;
-use crate::strategies::full::network_json::write_network_file;
-use crate::strategies::full::routes_override::get_route_overrides;
-use crate::strategies::full::shaped_devices_writer::write_shaped_devices;
+use lqos_config::Config;
 
 /// Attempt to construct a full hierarchy topology for the UISP network.
-pub async fn build_full_network(config: Config, ip_ranges: IpRanges) -> Result<(), UispIntegrationError> {
+pub async fn build_full_network(
+    config: Config,
+    ip_ranges: IpRanges,
+) -> Result<(), UispIntegrationError> {
     // Load any bandwidth overrides
     let bandwidth_overrides = get_site_bandwidth_overrides(&config)?;
 
@@ -39,8 +42,14 @@ pub async fn build_full_network(config: Config, ip_ranges: IpRanges) -> Result<(
 
     // Obtain the UISP data and transform it into easier to work with types
     let (sites_raw, devices_raw, data_links_raw) = load_uisp_data(config.clone()).await?;
-    let (mut sites, data_links, devices) =
-        parse_uisp_datasets(&sites_raw, &data_links_raw, &devices_raw, &config, &bandwidth_overrides, &ip_ranges);
+    let (mut sites, data_links, devices) = parse_uisp_datasets(
+        &sites_raw,
+        &data_links_raw,
+        &devices_raw,
+        &config,
+        &bandwidth_overrides,
+        &ip_ranges,
+    );
 
     // Check root sites
     let root_site = find_root_site(&config, &mut sites, &data_links)?;
@@ -80,7 +89,6 @@ pub async fn build_full_network(config: Config, ip_ranges: IpRanges) -> Result<(
         // Write ShapedDevices.csv
         write_shaped_devices(&config, &sites, root_idx, &devices)?;
     }
-
 
     Ok(())
 }

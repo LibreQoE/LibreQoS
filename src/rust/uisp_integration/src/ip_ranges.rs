@@ -1,9 +1,9 @@
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use crate::errors::UispIntegrationError;
 use ip_network::IpNetwork;
 use ip_network_table::IpNetworkTable;
-use tracing::info;
 use lqos_config::Config;
-use crate::errors::UispIntegrationError;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use tracing::info;
 
 pub struct IpRanges {
     allowed: IpNetworkTable<bool>,
@@ -45,11 +45,13 @@ impl IpRanges {
                 ignored.insert(ip, true);
             }
         }
-        info!("{} allowed IP ranges, {} ignored IP ranges", allowed.len().0, ignored.len().0);
+        info!(
+            "{} allowed IP ranges, {} ignored IP ranges",
+            allowed.len().0,
+            ignored.len().0
+        );
 
-        Ok(Self {
-            allowed, ignored
-        })
+        Ok(Self { allowed, ignored })
     }
 
     pub fn is_permitted(&self, ip: IpAddr, subnet: u8) -> bool {
@@ -57,7 +59,7 @@ impl IpRanges {
             if let Some(deny) = self.ignored.longest_match(ip) {
                 return false;
             }
-            return true
+            return true;
         }
         false
     }

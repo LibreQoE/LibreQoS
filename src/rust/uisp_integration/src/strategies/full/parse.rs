@@ -1,9 +1,9 @@
+use crate::ip_ranges::IpRanges;
+use crate::strategies::full::bandwidth_overrides::BandwidthOverrides;
 use crate::uisp_types::{UispDataLink, UispDevice, UispSite};
 use lqos_config::Config;
 use tracing::info;
 use uisp::{DataLink, Device, Site};
-use crate::ip_ranges::IpRanges;
-use crate::strategies::full::bandwidth_overrides::BandwidthOverrides;
 
 pub fn parse_uisp_datasets(
     sites_raw: &[Site],
@@ -33,7 +33,11 @@ pub fn parse_uisp_datasets(
     (sites, data_links, devices)
 }
 
-fn parse_sites(sites_raw: &[Site], config: &Config, bandwidth_overrides: &BandwidthOverrides) -> Vec<UispSite> {
+fn parse_sites(
+    sites_raw: &[Site],
+    config: &Config,
+    bandwidth_overrides: &BandwidthOverrides,
+) -> Vec<UispSite> {
     let mut sites: Vec<UispSite> = sites_raw
         .iter()
         .map(|s| UispSite::from_uisp(s, &config, bandwidth_overrides))

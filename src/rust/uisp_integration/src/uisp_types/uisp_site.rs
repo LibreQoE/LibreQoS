@@ -1,10 +1,10 @@
+use crate::strategies::BandwidthOverrides;
 use crate::uisp_types::uisp_site_type::UispSiteType;
 use crate::uisp_types::DetectedAccessPoint;
 use lqos_config::Config;
 use std::collections::HashSet;
 use tracing::warn;
 use uisp::{DataLink, Device, Site};
-use crate::strategies::BandwidthOverrides;
 
 /// Shortened/flattened version of the UISP Site type.
 #[derive(Debug)]
@@ -41,7 +41,11 @@ impl Default for UispSite {
 }
 
 impl UispSite {
-    pub fn from_uisp(value: &Site, config: &Config, bandwidth_overrides: &BandwidthOverrides) -> Self {
+    pub fn from_uisp(
+        value: &Site,
+        config: &Config,
+        bandwidth_overrides: &BandwidthOverrides,
+    ) -> Self {
         let mut uisp_parent_id = None;
 
         if let Some(id) = &value.identification {
@@ -80,7 +84,7 @@ impl UispSite {
             }
         }
 
-        if let Some((up,down)) = bandwidth_overrides.get(&value.name_or_blank()) {
+        if let Some((up, down)) = bandwidth_overrides.get(&value.name_or_blank()) {
             // Apply the overrides
             max_down_mbps = *down as u32;
             max_up_mbps = *up as u32;
@@ -145,8 +149,9 @@ impl UispSite {
                                     if from_site.identification.id != self.id {
                                         // We have a data link from this device that goes to
                                         // another site.
-                                        if let Some(remote_site) =
-                                            sites.iter().find(|s| s.id == from_site.identification.id)
+                                        if let Some(remote_site) = sites
+                                            .iter()
+                                            .find(|s| s.id == from_site.identification.id)
                                         {
                                             potential_ap.child_sites.push(remote_site.id.clone());
                                         }

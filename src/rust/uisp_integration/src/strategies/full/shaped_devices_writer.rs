@@ -1,9 +1,9 @@
-use std::path::Path;
-use serde::Serialize;
-use tracing::{error, info};
-use lqos_config::Config;
 use crate::errors::UispIntegrationError;
 use crate::uisp_types::{UispDevice, UispSite, UispSiteType};
+use lqos_config::Config;
+use serde::Serialize;
+use std::path::Path;
+use tracing::{error, info};
 
 #[derive(Serialize, Debug)]
 struct ShapedDevice {
@@ -22,7 +22,12 @@ struct ShapedDevice {
     pub comment: String,
 }
 
-pub fn write_shaped_devices(config: &Config, sites: &[UispSite], root_idx: usize, devices: &[UispDevice]) -> Result<(), UispIntegrationError> {
+pub fn write_shaped_devices(
+    config: &Config,
+    sites: &[UispSite],
+    root_idx: usize,
+    devices: &[UispDevice],
+) -> Result<(), UispIntegrationError> {
     let file_path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
     let mut shaped_devices = Vec::new();
 
@@ -48,7 +53,14 @@ pub fn write_shaped_devices(config: &Config, sites: &[UispSite], root_idx: usize
     Ok(())
 }
 
-fn traverse(sites: &[UispSite], idx: usize, depth: u32, devices: &[UispDevice], shaped_devices: &mut Vec<ShapedDevice>, config: &Config) {
+fn traverse(
+    sites: &[UispSite],
+    idx: usize,
+    depth: u32,
+    devices: &[UispDevice],
+    shaped_devices: &mut Vec<ShapedDevice>,
+    config: &Config,
+) {
     if !sites[idx].device_indices.is_empty() {
         // We have devices!
         if sites[idx].site_type == UispSiteType::Client {
@@ -56,10 +68,18 @@ fn traverse(sites: &[UispSite], idx: usize, depth: u32, devices: &[UispDevice], 
             for device in sites[idx].device_indices.iter() {
                 let device = &devices[*device];
                 if device.has_address() {
-                    let download_max = (sites[idx].max_down_mbps as f32 * config.uisp_integration.bandwidth_overhead_factor) as u64;
-                    let upload_max = (sites[idx].max_up_mbps as f32 * config.uisp_integration.bandwidth_overhead_factor) as u64;
-                    let download_min = (download_max as f32 * config.uisp_integration.commit_bandwidth_multiplier) as u64;
-                    let upload_min = (upload_max as f32 * config.uisp_integration.commit_bandwidth_multiplier) as u64;
+                    let download_max = (sites[idx].max_down_mbps as f32
+                        * config.uisp_integration.bandwidth_overhead_factor)
+                        as u64;
+                    let upload_max = (sites[idx].max_up_mbps as f32
+                        * config.uisp_integration.bandwidth_overhead_factor)
+                        as u64;
+                    let download_min = (download_max as f32
+                        * config.uisp_integration.commit_bandwidth_multiplier)
+                        as u64;
+                    let upload_min = (upload_max as f32
+                        * config.uisp_integration.commit_bandwidth_multiplier)
+                        as u64;
                     let sd = ShapedDevice {
                         circuit_id: sites[idx].id.clone(),
                         circuit_name: sites[idx].name.clone(),
@@ -83,10 +103,18 @@ fn traverse(sites: &[UispSite], idx: usize, depth: u32, devices: &[UispDevice], 
             for device in sites[idx].device_indices.iter() {
                 let device = &devices[*device];
                 if device.has_address() {
-                    let download_max = (sites[idx].max_down_mbps as f32 * config.uisp_integration.bandwidth_overhead_factor) as u64;
-                    let upload_max = (sites[idx].max_up_mbps as f32 * config.uisp_integration.bandwidth_overhead_factor) as u64;
-                    let download_min = (download_max as f32 * config.uisp_integration.commit_bandwidth_multiplier) as u64;
-                    let upload_min = (upload_max as f32 * config.uisp_integration.commit_bandwidth_multiplier) as u64;
+                    let download_max = (sites[idx].max_down_mbps as f32
+                        * config.uisp_integration.bandwidth_overhead_factor)
+                        as u64;
+                    let upload_max = (sites[idx].max_up_mbps as f32
+                        * config.uisp_integration.bandwidth_overhead_factor)
+                        as u64;
+                    let download_min = (download_max as f32
+                        * config.uisp_integration.commit_bandwidth_multiplier)
+                        as u64;
+                    let upload_min = (upload_max as f32
+                        * config.uisp_integration.commit_bandwidth_multiplier)
+                        as u64;
                     let sd = ShapedDevice {
                         circuit_id: format!("{}-inf", sites[idx].id),
                         circuit_name: format!("{} Infrastructure", sites[idx].name),
@@ -112,7 +140,7 @@ fn traverse(sites: &[UispSite], idx: usize, depth: u32, devices: &[UispDevice], 
         for (child_idx, child) in sites.iter().enumerate() {
             if let Some(parent_idx) = child.selected_parent {
                 if parent_idx == idx {
-                    traverse(sites, child_idx, depth+1, devices, shaped_devices, config);
+                    traverse(sites, child_idx, depth + 1, devices, shaped_devices, config);
                 }
             }
         }

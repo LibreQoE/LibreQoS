@@ -1,18 +1,20 @@
+use crate::errors::UispIntegrationError;
+use csv::ReaderBuilder;
+use lqos_config::Config;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
-use csv::ReaderBuilder;
 use tracing::{error, info};
-use serde::{Deserialize, Serialize};
-use lqos_config::Config;
-use crate::errors::UispIntegrationError;
 
 pub type BandwidthOverrides = HashMap<String, (f32, f32)>;
 
 /// Attempts to load integrationUISPbandwidths.csv to use for
 /// bandwidth overrides. Returns an empty set if not found.
-pub fn get_site_bandwidth_overrides(config: &Config) -> Result<BandwidthOverrides, UispIntegrationError> {
+pub fn get_site_bandwidth_overrides(
+    config: &Config,
+) -> Result<BandwidthOverrides, UispIntegrationError> {
     info!("Looking for integrationUISPbandwidths.csv");
-    let file_path  = Path::new(&config.lqos_directory).join("integrationUISPbandwidths.csv");
+    let file_path = Path::new(&config.lqos_directory).join("integrationUISPbandwidths.csv");
     if file_path.exists() {
         let reader = ReaderBuilder::new()
             .comment(Some(b'#'))
@@ -29,7 +31,7 @@ pub fn get_site_bandwidth_overrides(config: &Config) -> Result<BandwidthOverride
             if let Ok(result) = result {
                 overrides.insert(
                     result.parent_node,
-                    (result.download_mbps, result.upload_mbps)
+                    (result.download_mbps, result.upload_mbps),
                 );
             }
         }
