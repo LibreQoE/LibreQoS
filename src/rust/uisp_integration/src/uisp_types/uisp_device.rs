@@ -21,7 +21,6 @@ impl UispDevice {
         let mut download = config.queues.generated_pn_download_mbps;
         let mut upload = config.queues.generated_pn_upload_mbps;
         if let Some(overview) = &device.overview {
-            println!("{:?}", overview);
             if let Some(dl) = overview.downlinkCapacity {
                 download = dl as u32 / 1000000;
             }

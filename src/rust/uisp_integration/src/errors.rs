@@ -14,4 +14,6 @@ pub enum UispIntegrationError {
     NoRootSite,
     #[error("Unknown Site Type")]
     UnknownSiteType,
+    #[error("CSV Error")]
+    CsvError,
 }

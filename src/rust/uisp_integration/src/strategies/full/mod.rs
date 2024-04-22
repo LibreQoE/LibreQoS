@@ -6,6 +6,7 @@ mod squash_single_entry_aps;
 mod tree_walk;
 mod uisp_fetch;
 mod utils;
+mod bandwidth_overrides;
 
 use crate::errors::UispIntegrationError;
 use crate::strategies::full::ap_promotion::promote_access_points;
@@ -18,13 +19,18 @@ use crate::strategies::full::uisp_fetch::load_uisp_data;
 use crate::strategies::full::utils::{print_sites, warn_of_no_parents};
 use crate::uisp_types::UispSite;
 use lqos_config::Config;
+use crate::strategies::full::bandwidth_overrides::get_site_bandwidth_overrides;
+pub use bandwidth_overrides::BandwidthOverrides;
 
 /// Attempt to construct a full hierarchy topology for the UISP network.
 pub async fn build_full_network(config: Config) -> Result<(), UispIntegrationError> {
+    // Load any bandwidth overrides
+    let bandwidth_overrides = get_site_bandwidth_overrides()?;
+
     // Obtain the UISP data and transform it into easier to work with types
     let (sites_raw, devices_raw, data_links_raw) = load_uisp_data(config.clone()).await?;
     let (mut sites, data_links, devices) =
-        parse_uisp_datasets(&sites_raw, &data_links_raw, &devices_raw, &config);
+        parse_uisp_datasets(&sites_raw, &data_links_raw, &devices_raw, &config, &bandwidth_overrides);
 
     // Check root sites
     let root_site = find_root_site(&config, &mut sites, &data_links)?;

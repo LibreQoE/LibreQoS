@@ -4,6 +4,7 @@ mod full;
 use crate::errors::UispIntegrationError;
 use lqos_config::Config;
 use tracing::{error, info};
+pub use full::BandwidthOverrides;
 
 pub async fn build_with_strategy(config: Config) -> Result<(), UispIntegrationError> {
     // Select a Strategy
