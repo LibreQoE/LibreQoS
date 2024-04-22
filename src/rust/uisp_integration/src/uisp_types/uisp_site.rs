@@ -50,6 +50,11 @@ impl UispSite {
                     uisp_parent_id = Some(pid.clone());
                 }
             }
+            if let Some(status) = &id.status {
+                if status == "disconnected" {
+                    warn!("Site {:?} is disconnected.", id.name);
+                }
+            }
         }
 
         let (mut max_down_mbps, mut max_up_mbps) = value.qos(
