@@ -8,6 +8,7 @@ mod uisp_fetch;
 mod utils;
 mod bandwidth_overrides;
 mod routes_override;
+mod network_json;
 
 use crate::errors::UispIntegrationError;
 use crate::strategies::full::ap_promotion::promote_access_points;
@@ -22,6 +23,7 @@ use crate::uisp_types::UispSite;
 use lqos_config::Config;
 use crate::strategies::full::bandwidth_overrides::get_site_bandwidth_overrides;
 pub use bandwidth_overrides::BandwidthOverrides;
+use crate::strategies::full::network_json::write_network_file;
 use crate::strategies::full::routes_override::get_route_overrides;
 
 /// Attempt to construct a full hierarchy topology for the UISP network.
@@ -68,7 +70,11 @@ pub async fn build_full_network(config: Config) -> Result<(), UispIntegrationErr
     // Print Sites
     if let Some(root_idx) = sites.iter().position(|s| s.name == root_site) {
         print_sites(&sites, root_idx);
+
+        // Output a network.json
+        write_network_file(&config, &sites, root_idx)?;
     }
+
 
     Ok(())
 }
