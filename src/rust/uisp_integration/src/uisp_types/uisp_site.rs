@@ -4,6 +4,7 @@ use lqos_config::Config;
 use std::collections::HashSet;
 use tracing::warn;
 use uisp::{DataLink, Device, Site};
+use crate::strategies::BandwidthOverrides;
 
 /// Shortened/flattened version of the UISP Site type.
 #[derive(Debug)]
@@ -40,7 +41,7 @@ impl Default for UispSite {
 }
 
 impl UispSite {
-    pub fn from_uisp(value: &Site, config: &Config) -> Self {
+    pub fn from_uisp(value: &Site, config: &Config, bandwidth_overrides: &BandwidthOverrides) -> Self {
         let mut uisp_parent_id = None;
 
         if let Some(id) = &value.identification {
@@ -72,6 +73,12 @@ impl UispSite {
                     value.name_or_blank()
                 ),
             }
+        }
+
+        if let Some((up,down)) = bandwidth_overrides.get(&value.name_or_blank()) {
+            // Apply the overrides
+            max_down_mbps = *down as u32;
+            max_up_mbps = *up as u32;
         }
 
         Self {
@@ -112,6 +119,23 @@ impl UispSite {
                         // The "I'm the FROM device case"
                         if let Some(from_device) = &dl.from.device {
                             if from_device.identification.id == potential_ap_id {
+                                if let Some(to_site) = &dl.to.site {
+                                    if to_site.identification.id != self.id {
+                                        // We have a data link from this device that goes to
+                                        // another site.
+                                        if let Some(remote_site) =
+                                            sites.iter().find(|s| s.id == to_site.identification.id)
+                                        {
+                                            potential_ap.child_sites.push(remote_site.id.clone());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // The "I'm the TO the device case"
+                        if let Some(to_device) = &dl.to.device {
+                            if to_device.identification.id == potential_ap_id {
                                 if let Some(to_site) = &dl.to.site {
                                     if to_site.identification.id != self.id {
                                         // We have a data link from this device that goes to

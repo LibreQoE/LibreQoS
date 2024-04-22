@@ -2,15 +2,17 @@ use crate::uisp_types::{UispDataLink, UispDevice, UispSite};
 use lqos_config::Config;
 use tracing::info;
 use uisp::{DataLink, Device, Site};
+use crate::strategies::full::bandwidth_overrides::BandwidthOverrides;
 
 pub fn parse_uisp_datasets(
     sites_raw: &[Site],
     data_links_raw: &[DataLink],
     devices_raw: &[Device],
     config: &Config,
+    bandwidth_overrides: &BandwidthOverrides,
 ) -> (Vec<UispSite>, Vec<UispDataLink>, Vec<UispDevice>) {
     let (mut sites, data_links, devices) = (
-        parse_sites(sites_raw, config),
+        parse_sites(sites_raw, config, bandwidth_overrides),
         parse_data_links(data_links_raw, devices_raw),
         parse_devices(devices_raw, config),
     );
@@ -29,10 +31,10 @@ pub fn parse_uisp_datasets(
     (sites, data_links, devices)
 }
 
-fn parse_sites(sites_raw: &[Site], config: &Config) -> Vec<UispSite> {
+fn parse_sites(sites_raw: &[Site], config: &Config, bandwidth_overrides: &BandwidthOverrides) -> Vec<UispSite> {
     let mut sites: Vec<UispSite> = sites_raw
         .iter()
-        .map(|s| UispSite::from_uisp(s, &config))
+        .map(|s| UispSite::from_uisp(s, &config, bandwidth_overrides))
         .collect();
     info!("{} sites have been successfully parsed", sites.len());
     sites
