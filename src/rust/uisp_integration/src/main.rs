@@ -5,11 +5,13 @@
 mod errors;
 mod strategies;
 pub mod uisp_types;
+pub mod ip_ranges;
 
 use crate::errors::UispIntegrationError;
 use lqos_config::Config;
 use tokio::time::Instant;
 use tracing::{error, info};
+use crate::ip_ranges::IpRanges;
 
 /// Start the tracing/logging system
 fn init_tracing() {
@@ -47,8 +49,11 @@ async fn main() -> Result<(), UispIntegrationError> {
     // Check that we're allowed to run
     check_enabled_status(&config)?;
 
+    // Build our allowed/excluded IP ranges
+    let ip_ranges = IpRanges::new(&config)?;
+
     // Select a strategy and go from there
-    strategies::build_with_strategy(config).await?;
+    strategies::build_with_strategy(config, ip_ranges).await?;
 
     // Print timings
     let elapsed = now.elapsed();
