@@ -3,15 +3,15 @@
 //! faster in Rust.
 
 mod errors;
+pub mod ip_ranges;
 mod strategies;
 pub mod uisp_types;
-pub mod ip_ranges;
 
 use crate::errors::UispIntegrationError;
+use crate::ip_ranges::IpRanges;
 use lqos_config::Config;
 use tokio::time::Instant;
 use tracing::{error, info};
-use crate::ip_ranges::IpRanges;
 
 /// Start the tracing/logging system
 fn init_tracing() {

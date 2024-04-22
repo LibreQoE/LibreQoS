@@ -1,9 +1,9 @@
-use std::path::Path;
-use csv::ReaderBuilder;
-use serde::Deserialize;
-use tracing::{error, info};
-use lqos_config::Config;
 use crate::errors::UispIntegrationError;
+use csv::ReaderBuilder;
+use lqos_config::Config;
+use serde::Deserialize;
+use std::path::Path;
+use tracing::{error, info};
 
 #[derive(Deserialize, Debug)]
 pub struct RouteOverride {

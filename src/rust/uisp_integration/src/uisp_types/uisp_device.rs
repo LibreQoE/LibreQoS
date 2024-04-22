@@ -1,8 +1,8 @@
+use crate::ip_ranges::IpRanges;
+use lqos_config::Config;
 use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr};
-use lqos_config::Config;
 use uisp::Device;
-use crate::ip_ranges::IpRanges;
 
 /// Trimmed UISP device for easy use
 pub struct UispDevice {
@@ -111,7 +111,7 @@ impl UispDevice {
         for ip in self.ipv4.iter() {
             result += &format!("{}, ", &ip);
         }
-        result.truncate(result.len()-2);
+        result.truncate(result.len() - 2);
         let result = format!("[{result}]");
         result
     }
@@ -131,7 +131,7 @@ impl UispDevice {
         for ip in self.ipv6.iter() {
             result += &format!("{}, ", &ip);
         }
-        result.truncate(result.len()-2);
+        result.truncate(result.len() - 2);
         let result = format!("[{result}]");
         result
     }

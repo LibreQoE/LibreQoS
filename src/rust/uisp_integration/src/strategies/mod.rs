@@ -2,12 +2,15 @@ mod flat;
 mod full;
 
 use crate::errors::UispIntegrationError;
+use crate::ip_ranges::IpRanges;
+pub use full::BandwidthOverrides;
 use lqos_config::Config;
 use tracing::{error, info};
-pub use full::BandwidthOverrides;
-use crate::ip_ranges::IpRanges;
 
-pub async fn build_with_strategy(config: Config, ip_ranges: IpRanges) -> Result<(), UispIntegrationError> {
+pub async fn build_with_strategy(
+    config: Config,
+    ip_ranges: IpRanges,
+) -> Result<(), UispIntegrationError> {
     // Select a Strategy
     match config.uisp_integration.strategy.to_lowercase().as_str() {
         "flat" => {

@@ -43,7 +43,10 @@ fn walk_node(
         if sites[i].parent_indices.contains(&idx) {
             let from = sites[i].name.clone();
             let to = sites[idx].name.clone();
-            if let Some(route_override) = overrides.iter().find(|o| o.from_site == from && o.to_site == to) {
+            if let Some(route_override) = overrides
+                .iter()
+                .find(|o| o.from_site == from && o.to_site == to)
+            {
                 sites[i].route_weights.push((idx, route_override.cost));
             } else {
                 sites[i].route_weights.push((idx, weight));
