@@ -7,6 +7,7 @@ mod tree_walk;
 mod uisp_fetch;
 mod utils;
 mod bandwidth_overrides;
+mod routes_override;
 
 use crate::errors::UispIntegrationError;
 use crate::strategies::full::ap_promotion::promote_access_points;
@@ -21,11 +22,15 @@ use crate::uisp_types::UispSite;
 use lqos_config::Config;
 use crate::strategies::full::bandwidth_overrides::get_site_bandwidth_overrides;
 pub use bandwidth_overrides::BandwidthOverrides;
+use crate::strategies::full::routes_override::get_route_overrides;
 
 /// Attempt to construct a full hierarchy topology for the UISP network.
 pub async fn build_full_network(config: Config) -> Result<(), UispIntegrationError> {
     // Load any bandwidth overrides
-    let bandwidth_overrides = get_site_bandwidth_overrides()?;
+    let bandwidth_overrides = get_site_bandwidth_overrides(&config)?;
+
+    // Load any routing overrrides
+    let routing_overrides = get_route_overrides(&config)?;
 
     // Obtain the UISP data and transform it into easier to work with types
     let (sites_raw, devices_raw, data_links_raw) = load_uisp_data(config.clone()).await?;
@@ -55,7 +60,7 @@ pub async fn build_full_network(config: Config) -> Result<(), UispIntegrationErr
     squash_single_aps(&mut sites)?;
 
     // Build Path Weights
-    walk_tree_for_routing(&mut sites, &root_site)?;
+    walk_tree_for_routing(&mut sites, &root_site, &routing_overrides)?;
 
     // Issue No Parent Warnings
     warn_of_no_parents(&sites, &devices_raw);
@@ -66,22 +71,4 @@ pub async fn build_full_network(config: Config) -> Result<(), UispIntegrationErr
     }
 
     Ok(())
-}
-
-fn walk_node(
-    idx: usize,
-    weight: u32,
-    sites: &mut Vec<UispSite>,
-    visited: &mut std::collections::HashSet<usize>,
-) {
-    if visited.contains(&idx) {
-        return;
-    }
-    visited.insert(idx);
-    for i in 0..sites.len() {
-        if sites[i].parent_indices.contains(&idx) {
-            sites[i].route_weights.push((idx, weight));
-            walk_node(i, weight + 10, sites, visited);
-        }
-    }
 }
