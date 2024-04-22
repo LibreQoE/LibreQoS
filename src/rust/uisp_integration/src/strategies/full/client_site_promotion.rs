@@ -19,7 +19,7 @@ pub fn promote_clients_with_children(
                 .iter()
                 .filter(|c| c.parent_indices.contains(&idx))
                 .count();
-            if child_count > 0 {
+            if child_count > 1 {
                 client_sites_with_children.push(idx);
             }
         });
