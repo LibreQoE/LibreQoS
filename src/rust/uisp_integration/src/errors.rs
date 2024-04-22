@@ -16,4 +16,6 @@ pub enum UispIntegrationError {
     UnknownSiteType,
     #[error("CSV Error")]
     CsvError,
+    #[error("Unable to write network.json")]
+    WriteNetJson,
 }
