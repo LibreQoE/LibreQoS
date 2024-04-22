@@ -136,12 +136,12 @@ impl UispSite {
                         // The "I'm the TO the device case"
                         if let Some(to_device) = &dl.to.device {
                             if to_device.identification.id == potential_ap_id {
-                                if let Some(to_site) = &dl.to.site {
-                                    if to_site.identification.id != self.id {
+                                if let Some(from_site) = &dl.from.site {
+                                    if from_site.identification.id != self.id {
                                         // We have a data link from this device that goes to
                                         // another site.
                                         if let Some(remote_site) =
-                                            sites.iter().find(|s| s.id == to_site.identification.id)
+                                            sites.iter().find(|s| s.id == from_site.identification.id)
                                         {
                                             potential_ap.child_sites.push(remote_site.id.clone());
                                         }
