@@ -85,7 +85,7 @@ fn traverse(
                         circuit_name: sites[idx].name.clone(),
                         device_id: device.id.clone(),
                         device_name: device.name.clone(),
-                        parent_node: sites[idx].name.clone(),
+                        parent_node: sites[sites[idx].selected_parent.unwrap()].name.clone(),
                         mac: device.mac.clone(),
                         ipv4: device.ipv4_list(),
                         ipv6: device.ipv6_list(),
