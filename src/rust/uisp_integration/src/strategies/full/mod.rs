@@ -25,7 +25,7 @@ use crate::strategies::full::squash_single_entry_aps::squash_single_aps;
 use crate::strategies::full::tree_walk::walk_tree_for_routing;
 use crate::strategies::full::uisp_fetch::load_uisp_data;
 use crate::strategies::full::utils::{print_sites, warn_of_no_parents};
-use crate::uisp_types::UispSite;
+use crate::uisp_types::{UispSite, UispSiteType};
 pub use bandwidth_overrides::BandwidthOverrides;
 use lqos_config::Config;
 
@@ -56,6 +56,24 @@ pub async fn build_full_network(
 
     // Set the site root
     set_root_site(&mut sites, &root_site)?;
+
+    // Create a new "_Infrastructure" node for the parent, since we can't link to the top
+    // level very easily
+    if let Some(root_idx) = sites.iter().position(|s| s.name == root_site) {
+        sites.push(UispSite {
+            id: format!("{}_Infrastructure", sites[root_idx].name.clone()),
+            name: format!("{}_Infrastructure", sites[root_idx].name.clone()),
+            site_type: UispSiteType::Site,
+            uisp_parent_id: None,
+            parent_indices: Default::default(),
+            max_down_mbps: sites[root_idx].max_down_mbps,
+            max_up_mbps: sites[root_idx].max_down_mbps,
+            suspended: false,
+            device_indices: vec![],
+            route_weights: vec![],
+            selected_parent: Some(root_idx),
+        });
+    }
 
     // Search for devices that provide links elsewhere
     promote_access_points(
