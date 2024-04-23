@@ -112,7 +112,7 @@ impl UispDevice {
             result += &format!("{}, ", &ip);
         }
         result.truncate(result.len() - 2);
-        let result = format!("[{result}]");
+        let result = format!("{result}");
         result
     }
 
