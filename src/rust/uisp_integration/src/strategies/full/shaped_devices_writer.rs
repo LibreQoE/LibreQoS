@@ -32,7 +32,7 @@ pub fn write_shaped_devices(
     let mut shaped_devices = Vec::new();
 
     // Traverse
-    traverse(sites, root_idx, 0, devices, &mut shaped_devices, config);
+    traverse(sites, root_idx, 0, devices, &mut shaped_devices, config, root_idx);
 
     // Write the CSV
     let mut writer = csv::WriterBuilder::new()
@@ -60,6 +60,7 @@ fn traverse(
     devices: &[UispDevice],
     shaped_devices: &mut Vec<ShapedDevice>,
     config: &Config,
+    root_idx: usize,
 ) {
     if !sites[idx].device_indices.is_empty() {
         // We have devices!
@@ -102,6 +103,11 @@ fn traverse(
             // It's an infrastructure node
             for device in sites[idx].device_indices.iter() {
                 let device = &devices[*device];
+                let parent_node = if idx != root_idx {
+                    sites[idx].name.clone()
+                } else {
+                    format!("{}_Infrastructure", sites[idx].name.clone())
+                };
                 if device.has_address() {
                     let download_max = (sites[idx].max_down_mbps as f32
                         * config.uisp_integration.bandwidth_overhead_factor)
@@ -120,7 +126,7 @@ fn traverse(
                         circuit_name: format!("{} Infrastructure", sites[idx].name),
                         device_id: device.id.clone(),
                         device_name: device.name.clone(),
-                        parent_node: sites[idx].name.clone(),
+                        parent_node,
                         mac: device.mac.clone(),
                         ipv4: device.ipv4_list(),
                         ipv6: device.ipv6_list(),
@@ -136,11 +142,11 @@ fn traverse(
         }
     }
 
-    if depth < 8 {
+    if depth < 10 {
         for (child_idx, child) in sites.iter().enumerate() {
             if let Some(parent_idx) = child.selected_parent {
                 if parent_idx == idx {
-                    traverse(sites, child_idx, depth + 1, devices, shaped_devices, config);
+                    traverse(sites, child_idx, depth + 1, devices, shaped_devices, config, root_idx);
                 }
             }
         }
