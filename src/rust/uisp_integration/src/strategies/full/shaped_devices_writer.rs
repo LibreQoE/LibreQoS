@@ -16,8 +16,8 @@ struct ShapedDevice {
     pub ipv4: String,
     pub ipv6: String,
     pub download_min: u64,
-    pub download_max: u64,
     pub upload_min: u64,
+    pub download_max: u64,
     pub upload_max: u64,
     pub comment: String,
 }
