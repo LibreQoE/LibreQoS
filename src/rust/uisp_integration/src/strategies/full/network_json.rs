@@ -18,13 +18,15 @@ pub fn write_network_file(
 
     // Write the network JSON file
     let root = traverse_sites(sites, root_idx, 0)?;
-    let json = serde_json::to_string_pretty(&root).unwrap();
-    write(network_path, &json).map_err(|e| {
-        error!("Unable to write network.json");
-        error!("{e:?}");
-        UispIntegrationError::WriteNetJson
-    })?;
-    info!("Written network.json");
+    if let Some(children) = root.get("children") {
+        let json = serde_json::to_string_pretty(&children).unwrap();
+        write(network_path, &json).map_err(|e| {
+            error!("Unable to write network.json");
+            error!("{e:?}");
+            UispIntegrationError::WriteNetJson
+        })?;
+        info!("Written network.json");
+    }
 
     Ok(())
 }
@@ -48,7 +50,7 @@ fn traverse_sites(
         _ => "site",
     };
 
-    if depth < 2 {
+    if depth < 10 {
         let mut children = serde_json::Map::new();
         for (child_id, child) in sites.iter().enumerate() {
             if let Some(parent) = child.selected_parent {
