@@ -77,10 +77,10 @@ pub async fn build_flat_network(
                                 mac: device.identification.mac.clone().unwrap_or("".to_string()),
                                 ipv4: dev.ipv4_list(),
                                 ipv6: dev.ipv6_list(),
-                                download_min,
-                                download_max: download_max as u64,
-                                upload_min,
-                                upload_max: upload_max as u64,
+                                download_min: u64::max(2, download_min),
+                                download_max: u64::max(3, download_max as u64),
+                                upload_min: u64::max(2, upload_min),
+                                upload_max: u64::max(3, upload_max as u64),
                                 comment: "".to_string(),
                             };
                             shaped_devices.push(sd);
