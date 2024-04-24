@@ -130,10 +130,10 @@ fn traverse(
                         mac: device.mac.clone(),
                         ipv4: device.ipv4_list(),
                         ipv6: device.ipv6_list(),
-                        download_min,
-                        download_max,
-                        upload_min,
-                        upload_max,
+                        download_min: u64::max(2, download_min),
+                        download_max: u64::max(3, download_max),
+                        upload_min: u64::max(2, upload_min),
+                        upload_max: u64::max(3, upload_max),
                         comment: "Infrastructure Entry".to_string(),
                     };
                     shaped_devices.push(sd);
