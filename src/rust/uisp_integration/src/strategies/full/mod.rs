@@ -10,6 +10,7 @@ mod squash_single_entry_aps;
 mod tree_walk;
 mod uisp_fetch;
 mod utils;
+mod zero_capacity_sites;
 
 use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
@@ -28,6 +29,7 @@ use crate::strategies::full::utils::{print_sites, warn_of_no_parents};
 use crate::uisp_types::{UispSite, UispSiteType};
 pub use bandwidth_overrides::BandwidthOverrides;
 use lqos_config::Config;
+use crate::strategies::full::zero_capacity_sites::correct_zero_capacity_sites;
 
 /// Attempt to construct a full hierarchy topology for the UISP network.
 pub async fn build_full_network(
@@ -93,6 +95,9 @@ pub async fn build_full_network(
 
     // Build Path Weights
     walk_tree_for_routing(&mut sites, &root_site, &routing_overrides)?;
+
+    // Correct any sites with zero capacity
+    correct_zero_capacity_sites(&mut sites, &config);
 
     // Issue No Parent Warnings
     warn_of_no_parents(&sites, &devices_raw);
