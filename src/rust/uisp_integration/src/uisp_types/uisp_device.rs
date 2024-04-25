@@ -76,11 +76,19 @@ impl UispDevice {
             ip_ranges.is_permitted(addr, subnet)
         });
 
+        // Handle any "exception CPE" entries
+        let mut site_id = device.get_site_id().unwrap_or("".to_string());
+        for exception in config.uisp_integration.exception_cpes.iter() {
+            if exception.cpe == device.get_name().unwrap() {
+                site_id = exception.parent.clone();
+            }
+        }
+
         Self {
             id: device.get_id(),
             name: device.get_name().unwrap(),
             mac,
-            site_id: device.get_site_id().unwrap_or("".to_string()),
+            site_id,
             upload,
             download,
             ipv4,
