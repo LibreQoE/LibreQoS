@@ -533,22 +533,22 @@
         let nics = null;
         let lqosd_config = null;
 
-        const bindings = [
-            { field: "bindVersion", path: ".version", data: "string", editable: false },
-            { field: "bindPath", path: ".lqos_directory", data: "string", editable: true },
-            { field: "bindNodeId", path: ".node_id", data: "string", editable: true },
-            { field: "bindNodeName", path: ".node_name", data: "string", editable: true },
-            { field: "bindPacketCaptureTime", path: ".packet_capture_time", data: "integer", editable: true },
-            { field: "bindQueueCheckPeriodMs", path: ".queue_check_period_ms", data: "integer", editable: true },
-            { field: "bindSendAnonymous", path: ".usage_stats.send_anonymous", data: "bool", editable: true },
-            { field: "bindAnonymousServer", path: ".usage_stats.anonymous_server", data: "string", editable: true },
-            { field: "bindStopIrqBalance", path: ".tuning.stop_irq_balance", data: "bool", editable: true },
-            { field: "bindNetdevBudgetUs", path: ".tuning.netdev_budget_usecs", data: "integer", editable: true },
-            { field: "bindNetdevBudgetPackets", path: ".tuning.netdev_budget_packets", data: "integer", editable: true },
-            { field: "bindRxUs", path: ".tuning.rx_usecs", data: "integer", editable: true },
-            { field: "bindTxUs", path: ".tuning.tx_usecs", data: "integer", editable: true },
-            { field: "bindDisableRxVlan", path: ".tuning.disable_rxvlan", data: "bool", editable: true },
-            { field: "bindDisableTxVlan", path: ".tuning.disable_txvlan", data: "bool", editable: true },
+    const bindings = [
+        { field: "bindVersion", path: ".version", data: "string", editable: false },
+        { field: "bindPath", path: ".lqos_directory", data: "string", editable: true },
+        { field: "bindNodeId", path: ".node_id", data: "string", editable: true },
+        { field: "bindNodeName", path: ".node_name", data: "string", editable: true },
+        { field: "bindPacketCaptureTime", path: ".packet_capture_time", data: "integer", editable: true },
+        { field: "bindQueueCheckPeriodMs", path: ".queue_check_period_ms", data: "integer", editable: true },
+        { field: "bindSendAnonymous", path: ".usage_stats.send_anonymous", data: "bool", editable: true },
+        { field: "bindAnonymousServer", path: ".usage_stats.anonymous_server", data: "string", editable: true },
+        { field: "bindStopIrqBalance", path: ".tuning.stop_irq_balance", data: "bool", editable: true },
+        { field: "bindNetdevBudgetUs", path: ".tuning.netdev_budget_usecs", data: "integer", editable: true },
+        { field: "bindNetdevBudgetPackets", path: ".tuning.netdev_budget_packets", data: "integer", editable: true },
+        { field: "bindRxUs", path: ".tuning.rx_usecs", data: "integer", editable: true },
+        { field: "bindTxUs", path: ".tuning.tx_usecs", data: "integer", editable: true },
+        { field: "bindDisableRxVlan", path: ".tuning.disable_rxvlan", data: "bool", editable: true },
+        { field: "bindDisableTxVlan", path: ".tuning.disable_txvlan", data: "bool", editable: true },
             // bindDisableOffload is special - do it later
             // bridge/stick is special - do it later
             { field: "bindSqm", path: ".queues.default_sqm", data: "select-premade", editable: true },
