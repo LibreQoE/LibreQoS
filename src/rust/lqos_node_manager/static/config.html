@@ -227,11 +227,11 @@
                 </tr>
                 <tr>
                     <td><label for="bindBridgeToInternet">Network Interface Facing the Internet: </label></td>
-                    <td><input type="text" id="bindBridgeToInternet" /></td>
+                    <td><select id="bindBridgeToInternet"></select></td>
                 </tr>
                 <tr>
                     <td><label for="bindBridgeToNetwork">Network Interface Facing Your Network: </label></td>
-                    <td><input type="text" id="bindBridgeToNetwork" /></td>
+                    <td><select id="bindBridgeToNetwork"></select></td>
                 </tr>
             </table>
             </div>
@@ -241,7 +241,7 @@
             <table class="table">
                 <tr>
                     <td><label for="bindSingleInterfaceNic">Network Interface: </label></td>
-                    <td><input type="text" id="bindSingleInterfaceNic" /></td>
+                    <td><select id="bindSingleInterfaceNic"></select></td>
                 </tr>
                 <tr>
                     <td><label for="bindSingleInterfaceInternetVlan">Internet VLAN: </label></td>
@@ -762,7 +762,6 @@
                     let value_location = "lqosd_config" + entry.path;
                     let value = eval(value_location);
                     let controlId = "#" + entry.field;
-                    console.log("Updating: #" + controlId);
                     if (entry.data === "bool") {
                         $(controlId).prop('checked', value);
                     } else if (entry.data === "selector-premade") {
@@ -785,6 +784,9 @@
                         }
                         expanded = expanded.trimEnd();
                         $(controlId).val(expanded);
+                    } else if (entry.data === "interface") {
+                        console.log("NIC: " + entry.field);
+                        fillNicList(entry.field, value);
                     } else {
                         $(controlId).val(value);
                     }
@@ -803,8 +805,8 @@
                 to_network: "",
             };
             $("#bindUseXdpBridge").prop('checked', true);
-            $("#bindBridgeToInternet").val("");
-            $("#bindBridgeToNetwork").val("");
+            fillNicList("bindBridgeToInternet", nics[0][0]);
+            fillNicList("bindBridgeToNetwork", nics[0][0]);
         }
 
         function setStickMode() {
@@ -816,7 +818,7 @@
                 internet_vlan: 2,
                 network_vlan: 3,
             };
-            $("#bindSingleInterfaceNic").val("");
+            fillNicList("bindSingleInterfaceNic", nics[0][0]);
             $("#bindSingleInterfaceInternetVlan").val('2');
             $("#bindSingleInterfaceNetworklan").val('3');
         }
@@ -837,11 +839,11 @@
                 }
                 $.get("/api/config", (data) => {
                     lqosd_config = data;
-                    console.log(lqosd_config);
-                    doBindings();
                     console.log("Bindings Done");
                     $.get("/api/list_nics", (data) => {
                         nics = data;
+                        console.log(lqosd_config);
+                        doBindings();
 
                         // User management
                         if (is_admin) {
