@@ -44,7 +44,6 @@ impl UispSite {
     pub fn from_uisp(
         value: &Site,
         config: &Config,
-        bandwidth_overrides: &BandwidthOverrides,
     ) -> Self {
         let mut uisp_parent_id = None;
 
@@ -82,12 +81,6 @@ impl UispSite {
                     value.name_or_blank()
                 ),
             }
-        }
-
-        if let Some((up, down)) = bandwidth_overrides.get(&value.name_or_blank()) {
-            // Apply the overrides
-            max_down_mbps = *down as u32;
-            max_up_mbps = *up as u32;
         }
 
         Self {

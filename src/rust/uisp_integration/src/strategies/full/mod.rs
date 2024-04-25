@@ -15,7 +15,7 @@ mod zero_capacity_sites;
 use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
 use crate::strategies::full::ap_promotion::promote_access_points;
-use crate::strategies::full::bandwidth_overrides::get_site_bandwidth_overrides;
+use crate::strategies::full::bandwidth_overrides::{apply_bandwidth_overrides, get_site_bandwidth_overrides};
 use crate::strategies::full::client_site_promotion::promote_clients_with_children;
 use crate::strategies::full::network_json::write_network_file;
 use crate::strategies::full::parse::parse_uisp_datasets;
@@ -49,7 +49,6 @@ pub async fn build_full_network(
         &data_links_raw,
         &devices_raw,
         &config,
-        &bandwidth_overrides,
         &ip_ranges,
     );
 
@@ -95,6 +94,9 @@ pub async fn build_full_network(
 
     // Build Path Weights
     walk_tree_for_routing(&mut sites, &root_site, &routing_overrides)?;
+
+    // Apply bandwidth overrides
+    apply_bandwidth_overrides(&mut sites, &bandwidth_overrides);
 
     // Correct any sites with zero capacity
     correct_zero_capacity_sites(&mut sites, &config);

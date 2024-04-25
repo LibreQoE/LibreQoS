@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 use tracing::{error, info};
+use crate::uisp_types::UispSite;
 
 pub type BandwidthOverrides = HashMap<String, (f32, f32)>;
 
@@ -27,14 +28,28 @@ pub fn get_site_bandwidth_overrides(
         }
         let mut reader = reader.unwrap();
         let mut overrides = HashMap::new();
-        for result in reader.deserialize::<IntegrationBandwidthRow>() {
+        for (line, result) in reader.records().enumerate() {
             if let Ok(result) = result {
-                overrides.insert(
-                    result.parent_node,
-                    (result.download_mbps, result.upload_mbps),
-                );
+                if result.len() != 3 {
+                    error!("Wrong number of records on line {line}");
+                    continue;
+                }
+                let parent_node = result[0].to_string();
+                if let Ok(d) = &result[1].parse::<f32>() {
+                    if let Ok(u) = &result[2].parse::<f32>() {
+                        overrides.insert(parent_node, (*d, *u));
+                    } else {
+                        error!("Cannot parse {} as float on line {line}", &result[2]);
+                    }
+                } else {
+                    error!("Cannot parse {} as float on line {line}", &result[1]);
+                }
+            } else {
+                error!("Error reading integrationUISPbandwidths.csv line");
+                error!("{result:?}");
             }
         }
+
         info!("Loaded {} bandwidth overrides", overrides.len());
         return Ok(overrides);
     }
@@ -43,12 +58,13 @@ pub fn get_site_bandwidth_overrides(
     Ok(HashMap::new())
 }
 
-#[derive(Serialize, Deserialize)]
-struct IntegrationBandwidthRow {
-    #[serde(rename = "ParentNode")]
-    pub parent_node: String,
-    #[serde(rename = "Download Mbs")]
-    pub download_mbps: f32,
-    #[serde(rename = "Upload Mbps")]
-    pub upload_mbps: f32,
+pub fn apply_bandwidth_overrides(sites: &mut Vec<UispSite>, bandwidth_overrides: &BandwidthOverrides) {
+    for site in sites.iter_mut() {
+        if let Some((up, down)) = bandwidth_overrides.get(&site.name) {
+            tracing::info!("Bandwidth override for {} applied", &site.name);
+            // Apply the overrides
+            site.max_down_mbps = *down as u32;
+            site.max_up_mbps = *up as u32;
+        }
+    }
 }

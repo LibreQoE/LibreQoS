@@ -10,11 +10,10 @@ pub fn parse_uisp_datasets(
     data_links_raw: &[DataLink],
     devices_raw: &[Device],
     config: &Config,
-    bandwidth_overrides: &BandwidthOverrides,
     ip_ranges: &IpRanges,
 ) -> (Vec<UispSite>, Vec<UispDataLink>, Vec<UispDevice>) {
     let (mut sites, data_links, devices) = (
-        parse_sites(sites_raw, config, bandwidth_overrides),
+        parse_sites(sites_raw, config),
         parse_data_links(data_links_raw, devices_raw),
         parse_devices(devices_raw, config, ip_ranges),
     );
@@ -36,11 +35,10 @@ pub fn parse_uisp_datasets(
 fn parse_sites(
     sites_raw: &[Site],
     config: &Config,
-    bandwidth_overrides: &BandwidthOverrides,
 ) -> Vec<UispSite> {
     let mut sites: Vec<UispSite> = sites_raw
         .iter()
-        .map(|s| UispSite::from_uisp(s, &config, bandwidth_overrides))
+        .map(|s| UispSite::from_uisp(s, &config))
         .collect();
     info!("{} sites have been successfully parsed", sites.len());
     sites
