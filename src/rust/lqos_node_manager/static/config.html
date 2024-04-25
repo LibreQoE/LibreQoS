@@ -140,11 +140,11 @@
                 </tr>
                 <tr>
                     <td><label for="bindPacketCaptureTime">Packet Capture Time: </label></td>
-                    <td><input type="text" id="bindPacketCaptureTime" style="width: 500px" /></td>
+                    <td><input type="number" min="1" max="300" id="bindPacketCaptureTime" /></td>
                 </tr>
                 <tr>
                     <td><label for="bindQueueCheckPeriodMs">Queue Check Period (ms): </label></td>
-                    <td><input type="text" id="bindQueueCheckPeriodMs" style="width: 500px" /></td>
+                    <td><input type="number" min="10" max="5000" id="bindQueueCheckPeriodMs" /></td>
                 </tr>
             </table>
         </div>
@@ -176,19 +176,19 @@
                 </tr>
                 <tr>
                     <td><label for="bindNetdevBudgetUs">Netdev Budget (usecs): </label></td>
-                    <td><input type="text" id="bindNetdevBudgetUs" style="width: 500px" /></td>
+                    <td><input type="number" id="bindNetdevBudgetUs" /></td>
                 </tr>
                 <tr>
                     <td><label for="bindNetdevBudgetPackets">Netdev Budget (packets): </label></td>
-                    <td><input type="text" id="bindNetdevBudgetPackets" style="width: 500px" /></td>
+                    <td><input type="number" id="bindNetdevBudgetPackets" /></td>
                 </tr>
                 <tr>
                     <td><label for="bindRxUs">Rx Period (usecs): </label></td>
-                    <td><input type="text" id="bindRxUs" style="width: 500px" /></td>
+                    <td><input type="number" id="bindRxUs" /></td>
                 </tr>
                 <tr>
                     <td><label for="bindTxUs">Tx Period (usecs): </label></td>
-                    <td><input type="text" id="bindTxUs" style="width: 500px" /></td>
+                    <td><input type="number" id="bindTxUs" /></td>
                 </tr>
                 <tr>
                     <td><label for="bindDisableRxVlan">Disable RxVlan Offload: </label></td>
@@ -200,7 +200,7 @@
                 </tr>
                 <tr>
                     <td><label for="bindDisableOffload">Offloads to Disable: </label></td>
-                    <td><input type="text" id="bindDisableOffload" /></td>
+                    <td><input type="text" id="bindDisableOffload" style="width: 500px" /></td>
                 </tr>
             </table>
         </div>
@@ -208,6 +208,51 @@
         <!-- Bridge/On-a-Stick tab -->
         <div class="tab-pane fade" id="v-pills-bridge" role="tabpanel" aria-labelledby="v-pills-bridge-tab">
             <h2><i class="fa fa-chain"></i>  Bridge Settings</h2>
+
+            <h3>Connection Mode: </h3>
+            <input type="radio" name="bridgeMode" value="bridge" id="radioBridge" onclick="setBridgeMode();">
+            <label for="radioBridge">Bridge Mode</label>
+            <br />
+            <input type="radio" name="bridgeMode" value="onatick" id="radioOnAStick" onclick="setStickMode();">
+            <label for="radioOnAStick">Single-Interface Mode</label>
+            <br />
+            <hr />
+
+            <div id="bridgeMode">
+            <h3>Bridge Mode</h3>
+            <table class="table">
+                <tr>
+                    <td><label for="bindUseXdpBridge">Use XDP Enhanced Bridge: </label></td>
+                    <td><input type="checkbox" id="bindUseXdpBridge" /></td>
+                </tr>
+                <tr>
+                    <td><label for="bindBridgeToInternet">Network Interface Facing the Internet: </label></td>
+                    <td><input type="text" id="bindBridgeToInternet" /></td>
+                </tr>
+                <tr>
+                    <td><label for="bindBridgeToNetwork">Network Interface Facing Your Network: </label></td>
+                    <td><input type="text" id="bindBridgeToNetwork" /></td>
+                </tr>
+            </table>
+            </div>
+
+            <div id="OnAStickMode">
+            <h3>Single-Interface ("On a Stick") Mode</h3>
+            <table class="table">
+                <tr>
+                    <td><label for="bindSingleInterfaceNic">Network Interface: </label></td>
+                    <td><input type="text" id="bindSingleInterfaceNic" /></td>
+                </tr>
+                <tr>
+                    <td><label for="bindSingleInterfaceInternetVlan">Internet VLAN: </label></td>
+                    <td><input type="number" min="1" max="65535" id="bindSingleInterfaceInternetVlan" /></td>
+                </tr>
+                <tr>
+                    <td><label for="bindSingleInterfaceNetworklan">Network VLAN: </label></td>
+                    <td><input type="number" min="1" max="65535" id="bindSingleInterfaceNetworklan" /></td>
+                </tr>
+            </table>
+            </div>
         </div>
 
         <!-- Queues Tab -->
@@ -230,19 +275,19 @@
                 </tr>
                 <tr>
                     <td><label for="bindUplinkMbps">Uplink Bandwidth (Mbps): </label></td>
-                    <td><input type="text" id="bindUplinkMbps" /></td>
+                    <td><input type="number" id="bindUplinkMbps" /></td>
                 </tr>
                 <tr>
                     <td><label for="bindDownlinkMbps">Downlink Bandwidth (Mbps): </label></td>
-                    <td><input type="text" id="bindDownlinkMbps" /></td>
+                    <td><input type="number" id="bindDownlinkMbps" /></td>
                 </tr>
                 <tr>
                     <td><label for="bindGeneratedDownlinkMbps">Generated PN Download Bandwidth (Mbps): </label></td>
-                    <td><input type="text" id="bindGeneratedDownlinkMbps" /></td>
+                    <td><input type="number" id="bindGeneratedDownlinkMbps" /></td>
                 </tr>
                 <tr>
                     <td><label for="bindGeneratedUplinkMbps">Generated PN Upload Bandwidth (Mbps): </label></td>
-                    <td><input type="text" id="bindGeneratedUplinkMbps" /></td>
+                    <td><input type="number" id="bindGeneratedUplinkMbps" /></td>
                 </tr>
                 <tr>
                     <td><label for="bindDryRun">Dry Run (Don't Make Queues): </label></td>
@@ -258,7 +303,7 @@
                 </tr>
                 <tr>
                     <td><label for="bindQueuesAvailableOverride">Queues Available Override: </label></td>
-                    <td><input type="text" id="bindQueuesAvailableOverride" /></td>
+                    <td><input type="number" id="bindQueuesAvailableOverride" /></td>
                 </tr>
             </table>
         </div>
@@ -273,15 +318,15 @@
                 </tr>
                 <tr>
                     <td><label for="bindLtsCollation">Collation Period (seconds): </label></td>
-                    <td><input type="text" id="bindLtsCollation" /></td>
+                    <td><input type="number" id="bindLtsCollation" /></td>
                 </tr>
                 <tr>
                     <td><label for="bindLtsLicense">License Key: </label></td>
-                    <td><input type="text" id="bindLtsLicense" /></td>
+                    <td><input type="text" id="bindLtsLicense" style="width: 500px" /></td>
                 </tr>
                 <tr>
                     <td><label for="bindLtsUispInterval">UISP Reporting Interval (Seconds): </label></td>
-                    <td><input type="text" id="bindLtsUispInterval" /></td>
+                    <td><input type="number" id="bindLtsUispInterval" /></td>
                 </tr>
             </table>
         </div>
@@ -289,7 +334,22 @@
         <!-- IP Ranges Stats Tab -->
         <div class="tab-pane fade" id="v-pills-iprange" role="tabpanel" aria-labelledby="v-pills-iprange-tab">
             <h2><i class="fa fa-address-card"></i>  IP Ranges Settings</h2>
-            ...
+            <table>
+                <tr>
+                    <td><label for="bindIgnoreRanges">IP Subnets to Ignore</label></td>
+                    <td>
+                        <em>Enter one IP range per Line</em><br />
+                        <textarea id="bindIgnoreRanges" rows="10" cols="40"></textarea>
+                    </td>
+                </tr>
+                <tr>
+                    <td><label for="bindAllowRanges">IP Ranges to Allow</label></td>
+                    <td>
+                        <em>Enter one IP range per Line</em><br />
+                        <textarea id="bindAllowRanges" rows="10" cols="40"></textarea>
+                    </td>
+                </tr>
+            </table>
         </div>
 
         <!-- Flows Tab -->
@@ -298,7 +358,7 @@
             <table class="table">
                 <tr>
                     <td><label for="bindFlowsTimeout">Flow Timeout (Seconds): </label></td>
-                    <td><input type="text" id="bindFlowsTimeout" /></td>
+                    <td><input type="number" id="bindFlowsTimeout" /></td>
                 </tr>
                 <tr>
                     <td><label for="bindEnableNetflow">Enable Netflow Collection: </label></td>
@@ -306,7 +366,7 @@
                 </tr>
                 <tr>
                     <td><label for="bindFlowsPort">Netflow Port Number: </label></td>
-                    <td><input type="text" id="bindFlowsPort" /></td>
+                    <td><input type="number" id="bindFlowsPort" /></td>
                 </tr>
                 <tr>
                     <td><label for="bindFlowsTarget">Send Netflow to IP: </label></td>
@@ -338,7 +398,7 @@
                 </tr>
                 <tr>
                     <td><label for="bindQueueRefreshInterval">Queue Refresh Interval (Minutes): </label></td>
-                    <td><input type="text" id="bindQueueRefreshInterval" /></td>
+                    <td><input type="number" id="bindQueueRefreshInterval" /></td>
                 </tr>
             </table>
         </div>
@@ -425,6 +485,14 @@
                     <td><input type="text" id="bindUispCommitMultiplier" /></td>
                 </tr>
                 <tr>
+                    <td><label for="bindUispExcludeSites">Exclude Sites: </label></td>
+                    <td><input type="text" id="bindUispExcludeSites" /></td>
+                </tr>
+                <tr>
+                    <td><label for="bindUispExceptionCpes">Exception CPEs: </label></td>
+                    <td><input type="text" id="bindUispExceptionCpes" /></td>
+                </tr>
+                <tr>
                     <td><label for="bindUispUsePtmpAsParent">Use PTMP As Parent: </label></td>
                     <td><input type="checkbox" id="bindUispUsePtmpAsParent" /></td>
                 </tr>
@@ -469,6 +537,18 @@
                 <tr>
                     <td><label for="bindSonarSnmp">Sonar SNMP Community: </label></td>
                     <td><input type="text" id="bindSonarSnmp" /></td>
+                </tr>
+                <tr>
+                    <td><label for="bindSonarAirmax">Sonar Airmax Model IDs: </label></td>
+                    <td><input type="text" id="bindSonarAirmax" /></td>
+                </tr>
+                <tr>
+                    <td><label for="bindSonarLtu">Sonar LTU Model IDs: </label></td>
+                    <td><input type="text" id="bindSonarLtu" /></td>
+                </tr>
+                <tr>
+                    <td><label for="bindSonarActive">Sonar Active Status IDs: </label></td>
+                    <td><input type="text" id="bindSonarActive" /></td>
                 </tr>
             </table>
         </div>
@@ -534,14 +614,19 @@
         let lqosd_config = null;
 
     const bindings = [
+        // General
         { field: "bindVersion", path: ".version", data: "string", editable: false },
         { field: "bindPath", path: ".lqos_directory", data: "string", editable: true },
         { field: "bindNodeId", path: ".node_id", data: "string", editable: true },
         { field: "bindNodeName", path: ".node_name", data: "string", editable: true },
         { field: "bindPacketCaptureTime", path: ".packet_capture_time", data: "integer", editable: true },
         { field: "bindQueueCheckPeriodMs", path: ".queue_check_period_ms", data: "integer", editable: true },
+
+        // Anonymous Usage
         { field: "bindSendAnonymous", path: ".usage_stats.send_anonymous", data: "bool", editable: true },
         { field: "bindAnonymousServer", path: ".usage_stats.anonymous_server", data: "string", editable: true },
+
+        // Tuning
         { field: "bindStopIrqBalance", path: ".tuning.stop_irq_balance", data: "bool", editable: true },
         { field: "bindNetdevBudgetUs", path: ".tuning.netdev_budget_usecs", data: "integer", editable: true },
         { field: "bindNetdevBudgetPackets", path: ".tuning.netdev_budget_packets", data: "integer", editable: true },
@@ -549,82 +634,191 @@
         { field: "bindTxUs", path: ".tuning.tx_usecs", data: "integer", editable: true },
         { field: "bindDisableRxVlan", path: ".tuning.disable_rxvlan", data: "bool", editable: true },
         { field: "bindDisableTxVlan", path: ".tuning.disable_txvlan", data: "bool", editable: true },
-            // bindDisableOffload is special - do it later
-            // bridge/stick is special - do it later
-            { field: "bindSqm", path: ".queues.default_sqm", data: "select-premade", editable: true },
-            { field: "bindMonitorMode", path: ".queues.monitor_only", data: "bool", editable: true },
-            { field: "bindUplinkMbps", path: ".queues.uplink_bandwidth_mbps", data: "integer", editable: true },
-            { field: "bindDownlinkMbps", path: ".queues.downlink_bandwidth_mbps", data: "integer", editable: true },
-            { field: "bindGeneratedDownlinkMbps", path: ".queues.generated_pn_download_mbps", data: "integer", editable: true },
-            { field: "bindGeneratedUplinkMbps", path: ".queues.generated_pn_upload_mbps", data: "integer", editable: true },
-            { field: "bindDryRun", path: ".queues.dry_run", data: "bool", editable: true },
-            { field: "bindSudo", path: ".queues.sudo", data: "bool", editable: true },
-            { field: "bindBinpack", path: ".queues.use_binpacking", data: "bool", editable: true },
-            { field: "bindQueuesAvailableOverride", path: ".queues.queues_available_override", data: "integer", editable: true },
-            { field: "bindEnableLTS", path: ".long_term_stats.gather_stats", data: "bool", editable: true },
-            { field: "bindLtsCollation", path: ".long_term_stats.collation_period_seconds", data: "integer", editable: true },
-            { field: "bindLtsLicense", path: ".long_term_stats.license_key", data: "string", editable: true },
-            { field: "bindLtsUispInterval", path: ".long_term_stats.uisp_reporting_interval_seconds", data: "integer", editable: true },
-            // IP Ranges will require help
-            // Flow tracking settings are optional
-            { field: "bindFlowsTimeout", path: ".flows.flow_timeout_seconds", data: "integer", editable: true },
-            { field: "bindEnableNetflow", path: ".flows.netflow_enabled", data: "bool", editable: true },
-            { field: "bindFlowsPort", path: ".flows.netflow_port", data: "integer", editable: true },
-            { field: "bindFlowsTarget", path: ".flows.netflow_ip", data: "string", editable: true },
-            { field: "bindFlowsVersion", path: ".flows.netflow_ip", data: "select-premade", editable: true },
+        { field: "bindDisableOffload", path: ".tuning.disable_offload", data: "array_of_strings", editable: true },
 
-            { field: "bindCircuitNameAsAddress", path: ".integration_common.circuit_name_as_address", data: "bool", editable: true },
-            { field: "bindOverwriteNetJson", path: ".integration_common.always_overwrite_network_json", data: "bool", editable: true },
-            { field: "bindQueueRefreshInterval", path: ".integration_common.queue_refresh_interval_mins", data: "integer", editable: true },
-            { field: "bindSplynxEnable", path: ".spylnx_integration.enable_spylnx", data: "bool", editable: true },
-            { field: "bindSplynxApiKey", path: ".spylnx_integration.api_key", data: "string", editable: true },
-            { field: "bindSplynxApiSecret", path: ".spylnx_integration.api_secret", data: "string", editable: true },
-            { field: "bindSplynxApiUrl", path: ".spylnx_integration.url", data: "string", editable: true },
-            { field: "bindUispEnable", path: ".uisp_integration.enable_uisp", data: "bool", editable: true },
-            { field: "bindUispToken", path: ".uisp_integration.token", data: "string", editable: true },
-            { field: "bindUispUrl", path: ".uisp_integration.url", data: "string", editable: true },
-            { field: "bindUispSite", path: ".uisp_integration.site", data: "string", editable: true },
-            { field: "bindUispStrategy", path: ".uisp_integration.strategy", data: "select-premade", editable: true },
-            { field: "bindUispSuspended", path: ".uisp_integration.suspended_strategy", data: "select-premade", editable: true },
-            { field: "bindUispAirmaxCapacity", path: ".uisp_integration.airmax_capacity", data: "float", editable: true },
-            { field: "bindUispLtuCapacity", path: ".uisp_integration.ltu_capacity", data: "float", editable: true },
-            { field: "bindUispIpv6Mikrotik", path: ".uisp_integration.ipv6_with_mikrotik", data: "bool", editable: true },
-            { field: "bindUispOverheadFactor", path: ".uisp_integration.bandwidth_overhead_factor", data: "float", editable: true },
-            { field: "bindUispCommitMultiplier", path: ".uisp_integration.commit_bandwidth_multiplier", data: "float", editable: true },
-            // Exclude Sites is handled specially
-            // Exception CPEs is handled specially
-            { field: "bindUispUsePtmpAsParent", path: ".uisp_integration.use_ptmp_as_parent", data: "bool", editable: true },
-            { field: "bindPowercodeEnable", path: ".powercode_integration.enable_powercode", data: "bool", editable: true },
-            { field: "bindPowercodeKey", path: ".powercode_integration.powercode_api_key", data: "string", editable: true },
-            { field: "bindPowercodeUrl", path: ".powercode_integration.powercode_api_url", data: "string", editable: true },
-            { field: "bindSonarEnable", path: ".sonar_integration.enable_sonar", data: "bool", editable: true },
-            { field: "bindSonarApiKey", path: ".sonar_integration.sonar_api_key", data: "string", editable: true },
-            { field: "bindSonarApiUrl", path: ".sonar_integration.sonar_api_url", data: "string", editable: true },
-            { field: "bindSonarSnmp", path: ".sonar_integration.snmp_community", data: "string", editable: true },
-            // Model IDs have to be handled specially
-            { field: "bindInfluxEnable", path: ".influxdb.enable_influxdb", data: "bool", editable: true },
-            { field: "bindInfluxUrl", path: ".influxdb.url", data: "string", editable: true },
-            { field: "bindInfluxOrg", path: ".influxdb.org", data: "string", editable: true },
-            { field: "bindInfluxBucket", path: ".influxdb.bucket", data: "string", editable: true },
-            { field: "bindInfluxToken", path: ".influxdb.token", data: "string", editable: true },
+        // Bridge/Stick
+        { conditional: true, condition: "if_exists", path: ".bridge", showDiv: "bridgeMode", hideDiv: "OnAStickMode" },
+            { field: "bindUseXdpBridge", path: ".bridge.use_xdp_bridge", data: "bool", editable: true },
+            { field: "bindBridgeToInternet", path: ".bridge.to_internet", data: "interface", editable: true },
+            { field: "bindBridgeToNetwork", path: ".bridge.to_network", data: "interface", editable: true },
+        { end_conditional: true },
+        { conditional: true, condition: "if_exists", path: ".single_interface", showDiv: "OnAStickMode", hideDiv: "bridgeMode" },
+            { field: "bindSingleInterfaceNic", path: ".single_interface.interface", data: "interface", editable: true },
+            { field: "bindSingleInterfaceInternetVlan", path: ".single_interface.internet_vlan", data: "integer", editable: true },
+            { field: "bindSingleInterfaceNetworklan", path: ".single_interface.network_vlan", data: "integer", editable: true },
+        { end_conditional: true },
+
+        // Queues
+        { field: "bindSqm", path: ".queues.default_sqm", data: "select-premade", editable: true },
+        { field: "bindMonitorMode", path: ".queues.monitor_only", data: "bool", editable: true },
+        { field: "bindUplinkMbps", path: ".queues.uplink_bandwidth_mbps", data: "integer", editable: true },
+        { field: "bindDownlinkMbps", path: ".queues.downlink_bandwidth_mbps", data: "integer", editable: true },
+        { field: "bindGeneratedDownlinkMbps", path: ".queues.generated_pn_download_mbps", data: "integer", editable: true },
+        { field: "bindGeneratedUplinkMbps", path: ".queues.generated_pn_upload_mbps", data: "integer", editable: true },
+        { field: "bindDryRun", path: ".queues.dry_run", data: "bool", editable: true },
+        { field: "bindSudo", path: ".queues.sudo", data: "bool", editable: true },
+        { field: "bindBinpack", path: ".queues.use_binpacking", data: "bool", editable: true },
+        { field: "bindQueuesAvailableOverride", path: ".queues.override_available_queues", data: "integer", editable: true },
+
+        // LTS
+        { field: "bindEnableLTS", path: ".long_term_stats.gather_stats", data: "bool", editable: true },
+        { field: "bindLtsCollation", path: ".long_term_stats.collation_period_seconds", data: "integer", editable: true },
+        { field: "bindLtsLicense", path: ".long_term_stats.license_key", data: "string", editable: true },
+        { field: "bindLtsUispInterval", path: ".long_term_stats.uisp_reporting_interval_seconds", data: "integer", editable: true },
+
+        // IP Ranges
+        { field: "bindIgnoreRanges", path: ".ip_ranges.ignore_subnets", data: "ip_array", editable: true },
+        { field: "bindAllowRanges", path: ".ip_ranges.allow_subnets", data: "ip_array", editable: true },
+
+        // Flow tracking
+        { field: "bindFlowsTimeout", path: ".flows.flow_timeout_seconds", data: "integer", editable: true },
+        { field: "bindEnableNetflow", path: ".flows.netflow_enabled", data: "bool", editable: true },
+        { field: "bindFlowsPort", path: ".flows.netflow_port", data: "integer", editable: true },
+        { field: "bindFlowsTarget", path: ".flows.netflow_ip", data: "string", editable: true },
+        { field: "bindFlowsVersion", path: ".flows.netflow_ip", data: "select-premade", editable: true },
+
+        // Integration Common
+        { field: "bindCircuitNameAsAddress", path: ".integration_common.circuit_name_as_address", data: "bool", editable: true },
+        { field: "bindOverwriteNetJson", path: ".integration_common.always_overwrite_network_json", data: "bool", editable: true },
+        { field: "bindQueueRefreshInterval", path: ".integration_common.queue_refresh_interval_mins", data: "integer", editable: true },
+
+        // Splynx
+        { field: "bindSplynxEnable", path: ".spylnx_integration.enable_spylnx", data: "bool", editable: true },
+        { field: "bindSplynxApiKey", path: ".spylnx_integration.api_key", data: "string", editable: true },
+        { field: "bindSplynxApiSecret", path: ".spylnx_integration.api_secret", data: "string", editable: true },
+        { field: "bindSplynxApiUrl", path: ".spylnx_integration.url", data: "string", editable: true },
+
+        // UISP
+        { field: "bindUispEnable", path: ".uisp_integration.enable_uisp", data: "bool", editable: true },
+        { field: "bindUispToken", path: ".uisp_integration.token", data: "string", editable: true },
+        { field: "bindUispUrl", path: ".uisp_integration.url", data: "string", editable: true },
+        { field: "bindUispSite", path: ".uisp_integration.site", data: "string", editable: true },
+        { field: "bindUispStrategy", path: ".uisp_integration.strategy", data: "select-premade", editable: true },
+        { field: "bindUispSuspended", path: ".uisp_integration.suspended_strategy", data: "select-premade", editable: true },
+        { field: "bindUispAirmaxCapacity", path: ".uisp_integration.airmax_capacity", data: "float", editable: true },
+        { field: "bindUispLtuCapacity", path: ".uisp_integration.ltu_capacity", data: "float", editable: true },
+        { field: "bindUispIpv6Mikrotik", path: ".uisp_integration.ipv6_with_mikrotik", data: "bool", editable: true },
+        { field: "bindUispOverheadFactor", path: ".uisp_integration.bandwidth_overhead_factor", data: "float", editable: true },
+        { field: "bindUispCommitMultiplier", path: ".uisp_integration.commit_bandwidth_multiplier", data: "float", editable: true },
+        { field: "bindUispExcludeSites", path: ".uisp_integration.exclude_sites", data: "array_of_strings", editable: true },
+        { field: "bindUispExceptionCpes", path: ".uisp_integration.exception_cpes", data: "array_of_strings", editable: true },
+        { field: "bindUispUsePtmpAsParent", path: ".uisp_integration.use_ptmp_as_parent", data: "bool", editable: true },
+
+        // Powercode
+        { field: "bindPowercodeEnable", path: ".powercode_integration.enable_powercode", data: "bool", editable: true },
+        { field: "bindPowercodeKey", path: ".powercode_integration.powercode_api_key", data: "string", editable: true },
+        { field: "bindPowercodeUrl", path: ".powercode_integration.powercode_api_url", data: "string", editable: true },
+
+        // Sonar
+        { field: "bindSonarEnable", path: ".sonar_integration.enable_sonar", data: "bool", editable: true },
+        { field: "bindSonarApiKey", path: ".sonar_integration.sonar_api_key", data: "string", editable: true },
+        { field: "bindSonarApiUrl", path: ".sonar_integration.sonar_api_url", data: "string", editable: true },
+        { field: "bindSonarSnmp", path: ".sonar_integration.snmp_community", data: "string", editable: true },
+        { field: "bindSonarAirmax", path: ".sonar_integration.airmax_model_ids", data: "array_of_strings", editable: true },
+        { field: "bindSonarLtu", path: ".sonar_integration.ltu_model_ids", data: "array_of_strings", editable: true },
+        { field: "bindSonarActive", path: ".sonar_integration.active_status_ids", data: "array_of_strings", editable: true },
+
+        // Influx
+        { field: "bindInfluxEnable", path: ".influxdb.enable_influxdb", data: "bool", editable: true },
+        { field: "bindInfluxUrl", path: ".influxdb.url", data: "string", editable: true },
+        { field: "bindInfluxOrg", path: ".influxdb.org", data: "string", editable: true },
+        { field: "bindInfluxBucket", path: ".influxdb.bucket", data: "string", editable: true },
+        { field: "bindInfluxToken", path: ".influxdb.token", data: "string", editable: true },
 
         ];
 
         function doBindings() {
+            let active = true;
+
             for (var i=0; i<bindings.length; ++i) {
                 let entry = bindings[i];
-                let value_location = "lqosd_config" + entry.path;
-                let value = eval(value_location);
-                let controlId = "#" + entry.field;
-                if (entry.data === "bool") {
-                    $(controlId).prop('checked', value);
-                } else if (entry.data === "selector-premade") {
-                    $(controlId + " select").val(value);
+
+                if (entry.conditional != null) {
+                    console.log("Conditional encountered");
+                    if (entry.condition === "if_exists") {
+                        let val = "lqosd_config" + entry.path;
+                        if (eval(val) != null) {
+                            console.log("Conditional fired");
+                            active = true;
+                            if (entry.showDiv != null) {
+                                $("#" + entry.showDiv).show();
+                            }
+                            if (entry.hideDiv != null) {
+                                $("#" + entry.hideDiv).hide();
+                            }
+                        } else {
+                            console.log("Conditional did not fire")
+                            active = false;
+                        }
+                    }
+                } else if (entry.end_conditional != null) {
+                    console.log("Conditional ended");
+                    active = true;
                 } else {
-                    $(controlId).val(value);
+                    if (!active) {
+                        console.log("Skipping " + entry.path);
+                        continue;
+                    }
+                    let value_location = "lqosd_config" + entry.path;
+                    let value = eval(value_location);
+                    let controlId = "#" + entry.field;
+                    console.log("Updating: #" + controlId);
+                    if (entry.data === "bool") {
+                        $(controlId).prop('checked', value);
+                    } else if (entry.data === "selector-premade") {
+                        $(controlId + " select").val(value);
+                    } else if (entry.data === "array_of_strings") {
+                        let expanded = "";
+                        let length = eval("lqosd_config" + entry.path + ".length");
+                        for (let j = 0; j < length; j++) {
+                            let v = eval("lqosd_config" + entry.path + "[" + j + "]");
+                            expanded += v + " ";
+                        }
+                        expanded = expanded.trimEnd();
+                        $(controlId).val(expanded);
+                    } else if (entry.data === "ip_array") {
+                        let expanded = "";
+                        let length = eval("lqosd_config" + entry.path + ".length");
+                        for (let j = 0; j < length; j++) {
+                            let v = eval("lqosd_config" + entry.path + "[" + j + "]");
+                            expanded += v + "\n";
+                        }
+                        expanded = expanded.trimEnd();
+                        $(controlId).val(expanded);
+                    } else {
+                        $(controlId).val(value);
+                    }
+                    $(controlId).prop('readonly', !entry.editable);
                 }
-                $(controlId).prop('readonly', !entry.editable);
             }
+        }
+
+        function setBridgeMode() {
+            $("#bridgeMode").show();
+            $("#OnAStickMode").hide();
+            lqosd_config.single_interface = null;
+            lqosd_config.bridge = {
+                use_xdp_bridge: true,
+                to_internet: "",
+                to_network: "",
+            };
+            $("#bindUseXdpBridge").prop('checked', true);
+            $("#bindBridgeToInternet").val("");
+            $("#bindBridgeToNetwork").val("");
+        }
+
+        function setStickMode() {
+            $("#bridgeMode").hide();
+            $("#OnAStickMode").show();
+            lqosd_config.bridge = null;
+            lqosd_config.single_interface = {
+                interface: "",
+                internet_vlan: 2,
+                network_vlan: 3,
+            };
+            $("#bindSingleInterfaceNic").val("");
+            $("#bindSingleInterfaceInternetVlan").val('2');
+            $("#bindSingleInterfaceNetworklan").val('3');
         }
 
         function start() {
