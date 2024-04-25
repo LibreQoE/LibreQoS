@@ -35,9 +35,9 @@ pub fn get_site_bandwidth_overrides(
                     continue;
                 }
                 let parent_node = result[0].to_string();
-                if let Ok(d) = &result[1].parse::<f32>() {
-                    if let Ok(u) = &result[2].parse::<f32>() {
-                        overrides.insert(parent_node, (*d, *u));
+                if let Some(d) = numeric_string_to_f32(&result[1]) {
+                    if let Some(u) = numeric_string_to_f32(&result[2]) {
+                        overrides.insert(parent_node, (d, u));
                     } else {
                         error!("Cannot parse {} as float on line {line}", &result[2]);
                     }
@@ -56,6 +56,17 @@ pub fn get_site_bandwidth_overrides(
 
     info!("No bandwidth overrides loaded.");
     Ok(HashMap::new())
+}
+
+fn numeric_string_to_f32(text: &str) -> Option<f32> {
+    if let Ok(n) = text.parse::<f32>() {
+        Some(n)
+    } else if let Ok(n) = text.parse::<i64>() {
+        Some(n as f32)
+    } else {
+        error!("Unable to parse {text} as a numeric");
+        None
+    }
 }
 
 pub fn apply_bandwidth_overrides(sites: &mut Vec<UispSite>, bandwidth_overrides: &BandwidthOverrides) {
