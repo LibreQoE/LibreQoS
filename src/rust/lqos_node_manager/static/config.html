@@ -583,13 +583,14 @@
         <!-- Network Layout/JSON Tab -->
         <div class="tab-pane fade" id="v-pills-netjson" role="tabpanel" aria-labelledby="v-pills-netjson-tab">
             <h2><i class="fa fa-map"></i>  Network.Json - Network Layout</h2>
-            ...
+            <div id="netjson"></div>
         </div>
 
         <!-- ShapedDevices.csv Tab -->
         <div class="tab-pane fade" id="v-pills-shapeddevs" role="tabpanel" aria-labelledby="v-pills-shapeddevs-tab">
             <h2><i class="fa table"></i>  Shaped Devices</h2>
-            ...
+            <p>All Shaped Devices. Note that if you have an integration enabled, this will be overwritten periodically.</p>
+            <div id="shapedDeviceTable"></div>
         </div>
 
         <div class="tab-pane fade" id="v-pills-users" role="tabpanel" aria-labelledby="v-pills-users-tab">
@@ -612,6 +613,8 @@
     <script>
         let nics = null;
         let lqosd_config = null;
+        let shaped_devices = null;
+        let network_json = null;
 
     const bindings = [
         // General
@@ -849,9 +852,135 @@
                         if (is_admin) {
                             userManager();
                         }
+
+                        $.get("/api/network_json", (njs) => {
+                            network_json = njs;
+                            $.get("/api/all_shaped_devices", (data) => {
+                                shaped_devices = data;
+                                shapedDevices(data);
+                                RenderNetworkJson();
+                            });
+                        });
                     });
                 });
             });
+        }
+
+        function iterateNetJson(level, depth) {
+            let html = "<div style='margin-left: " + depth * 30 + "px;'>";
+            for (const [key, value] of Object.entries(level)) {
+                html += "<div>";
+                html += "<strong>" + key + "</strong><br />";
+                html += "Download: <input type='number' value='" + value.downloadBandwidthMbps + "'></input><br />";
+                html += "Upload: <input type='number' value='" + value.uploadBandwidthMbps + "'></input><br />";
+                let num_children = 0;
+                for (let i=0; i<shaped_devices.length; i++) {
+                    if (shaped_devices[i].parent_node === key) {
+                        num_children++;
+                    }
+                }
+                html += "<em>Associated Devices: " + num_children + "</em><br />";
+                //console.log(`${key}: ${value}`);
+                //console.log("Children", value.children);
+                if (value.children != null) {
+                    html += iterateNetJson(value.children, depth + 1);
+                }
+                html += "</div>";
+            }
+            html += "</div>";
+            return html;
+        }
+
+        function RenderNetworkJson() {
+            let html = "";
+            html += iterateNetJson(network_json, 0);
+            $("#netjson").html(html);
+        }
+
+        function makeSheetBox(value, small=false) {
+            let html = "";
+            if (!small) {
+                html = "<td style='padding: 0px'><input type=\"text\" value=\"" + value + "\"></input></td>"
+            } else {
+                html = "<td style='padding: 0px'><input type=\"text\" value=\"" + value + "\" style='font-size: 8pt;'></input></td>"
+            }
+            return html;
+        }
+
+        function makeSheetNumberBox(value) {
+            let html = "<td style='padding: 0px'><input type=\"number\" value=\"" + value + "\" style='width: 100px; font-size: 8pt;'></input></td>"
+            return html;
+        }
+
+        function separatedIpArray(value) {
+            let html = "<td style='padding: 0px'>";
+            let val = "";
+            for (i = 0; i<value.length; i++) {
+                val += value[i][0];
+                val += "/";
+                val += value[i][1];
+                val += ", ";
+            }
+            if (val.length > 0) {
+                val = val.substring(0, val.length-2);
+            }
+            html += "<input type='text' style='font-size: 8pt; width: 100px;' value='" + val + "'></input>";
+            html += "</td>";
+            return html;
+        }
+
+        function nodeDropDown(selectedNode) {
+            let html = "<td style='padding: 0px'>";
+            html += "<select style='font-size: 8pt; width: 150px;'>";
+
+            function iterate(data, level) {
+                let html = "";
+                for (const [key, value] of Object.entries(data)) {
+                    html += "<option value='" + key + "'";
+                    if (key === selectedNode) html += " selected";
+                    html += ">";
+                    for (let i=0; i<level; i++) html += "-";
+                    html += key;
+                    html += "</option>";
+
+                    if (value.children != null)
+                        html += iterate(value.children, level+1);
+                }
+                return html;
+            }
+            html += iterate(network_json, 0);
+
+            html += "</select>";
+            html += "</td>";
+            return html;
+        }
+
+        function shapedDevices() {
+            let html = "<table style='height: 500px; overflow: scroll; border-collapse: collapse; width: 100%; padding: 0px'>";
+            html += "<thead style='position: sticky; top: 0; height: 50px; background: #ddd'>";
+            html += "<tr style='font-size: 9pt;'><th>Circuit ID</th><th>Circuit Name</th><th>Device ID</th><th>Device Name</th><th>Parent Node</th><th>MAC</th><th>IPv4</th><th>IPv6</th><th>Download Min</th><th>Upload Min</th><th>Download Max</th><th>Upload Max</th><th>Comment</th></tr>";
+            html += "</thead>>";
+            for (var i=0; i<shaped_devices.length; i++) {
+                let row = shaped_devices[i];
+                html += "<tr>";
+                html += makeSheetBox(row.circuit_id, true);
+                html += makeSheetBox(row.circuit_name, true);
+                html += makeSheetBox(row.device_id, true);
+                html += makeSheetBox(row.device_name, true);
+                html += nodeDropDown(row.parent_node, true);
+                html += makeSheetBox(row.mac, true);
+                html += separatedIpArray(row.ipv4);
+                html += separatedIpArray(row.ipv6);
+                html += makeSheetNumberBox(row.download_min_mbps);
+                html += makeSheetNumberBox(row.upload_min_mbps);
+                html += makeSheetNumberBox(row.download_max_mbps);
+                html += makeSheetNumberBox(row.upload_max_mbps);
+                html += makeSheetBox(row.comment, true);
+
+                html += "</tr>";
+            }
+            html += "</tbody></table>";
+            $("#shapedDeviceTable").html(html);
         }
 
         function userManager() {
@@ -865,7 +994,7 @@
             for (i=0; i<nics.length; i++) {
                 html += "<option value=\"";
                 html += nics[i][0] + "\"";
-                if (nics[i][0] == selected) {
+                if (nics[i][0] === selected) {
                     html += " selected";
                 }
                 html += ">" + nics[i][0] + " - " + nics[i][1] + " - " + nics[i][2] + "</option>";
