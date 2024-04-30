@@ -3,7 +3,6 @@ mod full;
 
 use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
-pub use full::BandwidthOverrides;
 use lqos_config::Config;
 use tracing::{error, info};
 
