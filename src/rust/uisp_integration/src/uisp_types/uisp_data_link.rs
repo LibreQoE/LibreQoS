@@ -15,7 +15,7 @@ impl UispDataLink {
         let mut from_site_id = String::new();
         let mut to_site_id = String::new();
         let mut to_site_name = String::new();
-        let mut from_site_name = String::new();
+        let from_site_name = String::new();
 
         // Obvious Site Links
         if let Some(from_site) = &value.from.site {

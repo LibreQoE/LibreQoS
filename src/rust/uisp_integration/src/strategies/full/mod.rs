@@ -30,7 +30,6 @@ use crate::strategies::full::uisp_fetch::load_uisp_data;
 use crate::strategies::full::utils::{print_sites, warn_of_no_parents_and_promote};
 use crate::strategies::full::zero_capacity_sites::correct_zero_capacity_sites;
 use crate::uisp_types::{UispSite, UispSiteType};
-pub use bandwidth_overrides::BandwidthOverrides;
 use lqos_config::Config;
 
 /// Attempt to construct a full hierarchy topology for the UISP network.
