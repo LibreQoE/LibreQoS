@@ -1,5 +1,4 @@
 use crate::ip_ranges::IpRanges;
-use crate::strategies::full::bandwidth_overrides::BandwidthOverrides;
 use crate::uisp_types::{UispDataLink, UispDevice, UispSite};
 use lqos_config::Config;
 use tracing::info;
@@ -14,7 +13,7 @@ pub fn parse_uisp_datasets(
 ) -> (Vec<UispSite>, Vec<UispDataLink>, Vec<UispDevice>) {
     let (mut sites, data_links, devices) = (
         parse_sites(sites_raw, config),
-        parse_data_links(data_links_raw, devices_raw),
+        parse_data_links(data_links_raw),
         parse_devices(devices_raw, config, ip_ranges),
     );
 
@@ -36,19 +35,18 @@ fn parse_sites(
     sites_raw: &[Site],
     config: &Config,
 ) -> Vec<UispSite> {
-    let mut sites: Vec<UispSite> = sites_raw
+    let sites: Vec<UispSite> = sites_raw
         .iter()
-        .map(|s| UispSite::from_uisp(s, &config))
+        .map(|s| UispSite::from_uisp(s, config))
         .collect();
     info!("{} sites have been successfully parsed", sites.len());
     sites
 }
 
-fn parse_data_links(data_links_raw: &[DataLink], devices_raw: &[Device]) -> Vec<UispDataLink> {
-    let mut data_links: Vec<UispDataLink> = data_links_raw
+fn parse_data_links(data_links_raw: &[DataLink]) -> Vec<UispDataLink> {
+    let data_links: Vec<UispDataLink> = data_links_raw
         .iter()
-        .map(|l| UispDataLink::from_uisp(l, &devices_raw))
-        .flatten()
+        .filter_map(UispDataLink::from_uisp)
         .collect();
     info!(
         "{} data-links have been successfully parsed",
@@ -58,7 +56,7 @@ fn parse_data_links(data_links_raw: &[DataLink], devices_raw: &[Device]) -> Vec<
 }
 
 fn parse_devices(devices_raw: &[Device], config: &Config, ip_ranges: &IpRanges) -> Vec<UispDevice> {
-    let mut devices: Vec<UispDevice> = devices_raw
+    let devices: Vec<UispDevice> = devices_raw
         .iter()
         .map(|d| UispDevice::from_uisp(d, config, ip_ranges))
         .collect();

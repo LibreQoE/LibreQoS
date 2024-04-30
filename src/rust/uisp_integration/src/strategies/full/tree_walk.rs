@@ -9,7 +9,7 @@ pub fn walk_tree_for_routing(
 ) -> Result<(), UispIntegrationError> {
     if let Some(root_idx) = sites.iter().position(|s| s.name == root_site) {
         let mut visited = std::collections::HashSet::new();
-        let mut current_node = root_idx;
+        let current_node = root_idx;
         walk_node(current_node, 10, sites, &mut visited, overrides);
     } else {
         tracing::error!("Unable to build a path-weights graph because I can't find the root node");

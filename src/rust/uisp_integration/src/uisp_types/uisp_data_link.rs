@@ -1,4 +1,4 @@
-use uisp::{DataLink, Device};
+use uisp::DataLink;
 
 /// Shortened/Flattened version of the UISP DataLink type.
 pub struct UispDataLink {
@@ -11,7 +11,7 @@ pub struct UispDataLink {
 }
 
 impl UispDataLink {
-    pub fn from_uisp(value: &DataLink, devices: &[Device]) -> Option<Self> {
+    pub fn from_uisp(value: &DataLink) -> Option<Self> {
         let mut from_site_id = String::new();
         let mut to_site_id = String::new();
         let mut to_site_name = String::new();

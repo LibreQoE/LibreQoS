@@ -44,7 +44,7 @@ pub async fn build_full_network(
 
     // Obtain the UISP data and transform it into easier to work with types
     let (sites_raw, devices_raw, data_links_raw) = load_uisp_data(config.clone()).await?;
-    let (mut sites, data_links, mut devices) = parse_uisp_datasets(
+    let (mut sites, data_links, devices) = parse_uisp_datasets(
         &sites_raw,
         &data_links_raw,
         &devices_raw,

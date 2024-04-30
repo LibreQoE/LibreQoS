@@ -26,10 +26,8 @@ pub fn get_route_overrides(config: &Config) -> Result<Vec<RouteOverride>, UispIn
         }
         let mut reader = reader.unwrap();
         let mut overrides = Vec::new();
-        for result in reader.deserialize::<RouteOverride>() {
-            if let Ok(result) = result {
-                overrides.push(result);
-            }
+        for result in reader.deserialize::<RouteOverride>().flatten() {
+            overrides.push(result);
         }
         info!("Loaded {} route overrides", overrides.len());
         Ok(overrides)

@@ -19,7 +19,7 @@ impl IpRanges {
 
         for allowed_ip in config.ip_ranges.allow_subnets.iter() {
             let split: Vec<_> = allowed_ip.split('/').collect();
-            if (split[0].contains(':')) {
+            if split[0].contains(':') {
                 // It's IPv6
                 let ip_network: Ipv6Addr = split[0].parse().unwrap();
                 let ip = IpNetwork::new(ip_network, split[1].parse().unwrap()).unwrap();
@@ -33,7 +33,7 @@ impl IpRanges {
         }
         for excluded_ip in config.ip_ranges.ignore_subnets.iter() {
             let split: Vec<_> = excluded_ip.split('/').collect();
-            if (split[0].contains(':')) {
+            if split[0].contains(':') {
                 // It's IPv6
                 let ip_network: Ipv6Addr = split[0].parse().unwrap();
                 let ip = IpNetwork::new(ip_network, split[1].parse().unwrap()).unwrap();
@@ -54,9 +54,9 @@ impl IpRanges {
         Ok(Self { allowed, ignored })
     }
 
-    pub fn is_permitted(&self, ip: IpAddr, subnet: u8) -> bool {
-        if let Some(allow) = self.allowed.longest_match(ip) {
-            if let Some(deny) = self.ignored.longest_match(ip) {
+    pub fn is_permitted(&self, ip: IpAddr) -> bool {
+        if let Some(_allow) = self.allowed.longest_match(ip) {
+            if let Some(_deny) = self.ignored.longest_match(ip) {
                 return false;
             }
             return true;

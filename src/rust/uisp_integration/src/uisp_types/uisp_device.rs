@@ -1,7 +1,7 @@
 use crate::ip_ranges::IpRanges;
 use lqos_config::Config;
 use std::collections::HashSet;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::IpAddr;
 use uisp::Device;
 
 /// Trimmed UISP device for easy use
@@ -65,15 +65,15 @@ impl UispDevice {
         // Remove IP addresses that are disallowed
         ipv4.retain(|ip| {
             let split: Vec<_> = ip.split('/').collect();
-            let subnet: u8 = split[1].parse().unwrap();
+            //let subnet: u8 = split[1].parse().unwrap();
             let addr: IpAddr = split[0].parse().unwrap();
-            ip_ranges.is_permitted(addr, subnet)
+            ip_ranges.is_permitted(addr)
         });
         ipv6.retain(|ip| {
             let split: Vec<_> = ip.split('/').collect();
-            let subnet: u8 = split[1].parse().unwrap();
+            //let subnet: u8 = split[1].parse().unwrap();
             let addr: IpAddr = split[0].parse().unwrap();
-            ip_ranges.is_permitted(addr, subnet)
+            ip_ranges.is_permitted(addr)
         });
 
         // Handle any "exception CPE" entries
@@ -97,11 +97,7 @@ impl UispDevice {
     }
 
     pub fn has_address(&self) -> bool {
-        if self.ipv4.is_empty() && self.ipv6.is_empty() {
-            false
-        } else {
-            true
-        }
+        !(self.ipv4.is_empty() && self.ipv6.is_empty())
     }
 
     pub fn ipv4_list(&self) -> String {
@@ -120,8 +116,7 @@ impl UispDevice {
             result += &format!("{}, ", &ip);
         }
         result.truncate(result.len() - 2);
-        let result = format!("{result}");
-        result
+        result.to_string()
     }
 
     pub fn ipv6_list(&self) -> String {
