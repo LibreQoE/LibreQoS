@@ -1,6 +1,15 @@
 use crate::errors::UispIntegrationError;
 use crate::uisp_types::{UispSite, UispSiteType};
 
+/// Squashes single entry access points
+/// 
+/// This function will squash access points that have only one child site.
+/// 
+/// # Arguments
+/// * `sites` - The list of sites to modify
+/// 
+/// # Returns
+/// * An `Ok` if the operation was successful
 pub fn squash_single_aps(sites: &mut [UispSite]) -> Result<(), UispIntegrationError> {
     let mut squashable = Vec::new();
     for (idx, site) in sites.iter().enumerate() {

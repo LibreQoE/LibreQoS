@@ -2,6 +2,8 @@
 //! be ported back to Python, with Rust support structures - but I'll iterate
 //! faster in Rust.
 
+#[warn(missing_docs)]
+
 mod errors;
 pub mod ip_ranges;
 mod strategies;

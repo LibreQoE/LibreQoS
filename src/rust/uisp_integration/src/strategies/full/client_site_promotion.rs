@@ -3,6 +3,15 @@ use crate::uisp_types::{UispSite, UispSiteType};
 use std::collections::HashSet;
 use tracing::info;
 
+/// Promotes client sites with multiple child sites to a new site type.
+/// This is useful for sites that have multiple child sites, but are currently represented as a single site.
+/// 
+/// # Arguments
+/// * `sites` - The list of sites to modify
+/// 
+/// # Returns
+/// * An `Ok` if the operation was successful
+/// * An `Err` if the operation failed
 pub fn promote_clients_with_children(
     sites: &mut Vec<UispSite>,
 ) -> Result<(), UispIntegrationError> {

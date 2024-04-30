@@ -5,12 +5,16 @@ use lqos_config::Config;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use tracing::info;
 
+/// Represents a set of IP ranges that are allowed or ignored.
 pub struct IpRanges {
+    /// The allowed IP ranges
     allowed: IpNetworkTable<bool>,
+    /// The ignored IP ranges
     ignored: IpNetworkTable<bool>,
 }
 
 impl IpRanges {
+    /// Creates a new IpRanges from a configuration.
     pub fn new(config: &Config) -> Result<Self, UispIntegrationError> {
         info!("Building allowed/excluded IP range lookups from configuration file");
 
@@ -54,6 +58,7 @@ impl IpRanges {
         Ok(Self { allowed, ignored })
     }
 
+    /// Checks if an IP address is permitted.
     pub fn is_permitted(&self, ip: IpAddr) -> bool {
         if let Some(_allow) = self.allowed.longest_match(ip) {
             if let Some(_deny) = self.ignored.longest_match(ip) {

@@ -40,6 +40,7 @@ impl Default for UispSite {
 }
 
 impl UispSite {
+    /// Converts a UISP Site into a UispSite.
     pub fn from_uisp(value: &Site, config: &Config) -> Self {
         let mut uisp_parent_id = None;
 

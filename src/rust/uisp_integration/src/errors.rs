@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+/// Error types for UISP Integration
 #[derive(Error, Debug, PartialEq)]
 pub enum UispIntegrationError {
     #[error("Unable to load configuration")]

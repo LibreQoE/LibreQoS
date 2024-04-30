@@ -5,6 +5,16 @@ use std::fs::write;
 use std::path::Path;
 use tracing::{error, info};
 
+/// Writes the network.json file for UISP
+/// 
+/// # Arguments
+/// * `config` - The configuration
+/// * `sites` - The list of sites
+/// * `root_idx` - The index of the root site
+/// 
+/// # Returns
+/// * An `Ok` if the operation was successful
+/// * An `Err` if the operation failed
 pub fn write_network_file(
     config: &Config,
     sites: &[UispSite],

@@ -7,6 +7,7 @@ use std::fs;
 use std::path::Path;
 use tracing::{error, info};
 
+/// Represents a shaped device in the ShapedDevices.csv file.
 #[derive(Serialize, Debug)]
 struct ShapedDevice {
     pub circuit_id: String,
@@ -24,6 +25,11 @@ struct ShapedDevice {
     pub comment: String,
 }
 
+/// Builds a flat network for UISP
+/// 
+/// # Arguments
+/// * `config` - The configuration
+/// * `ip_ranges` - The IP ranges to use for the network
 pub async fn build_flat_network(
     config: Config,
     ip_ranges: IpRanges,

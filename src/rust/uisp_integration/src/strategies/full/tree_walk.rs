@@ -2,6 +2,14 @@ use crate::errors::UispIntegrationError;
 use crate::strategies::full::routes_override::RouteOverride;
 use crate::uisp_types::{UispSite, UispSiteType};
 
+/// Walks the tree to determine the best route for each site
+/// 
+/// This function will walk the tree to determine the best route for each site.
+/// 
+/// # Arguments
+/// * `sites` - The list of sites
+/// * `root_site` - The name of the root site
+/// * `overrides` - The list of route overrides
 pub fn walk_tree_for_routing(
     sites: &mut Vec<UispSite>,
     root_site: &str,

@@ -65,6 +65,12 @@ fn handle_multiple_internet_connected_sites(
     Ok(root_site_name)
 }
 
+/// Sets the root site in the site list.
+/// If there are multiple root sites, it will return an error.
+/// 
+/// # Arguments
+/// * `sites` - The list of sites
+/// * `root_site` - The name of the root site
 pub fn set_root_site(sites: &mut [UispSite], root_site: &str) -> Result<(), UispIntegrationError> {
     if let Some(root) = sites.iter_mut().find(|s| s.name == root_site) {
         root.site_type = UispSiteType::Root;

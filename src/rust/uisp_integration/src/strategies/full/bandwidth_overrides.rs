@@ -10,6 +10,26 @@ pub type BandwidthOverrides = HashMap<String, (f32, f32)>;
 
 /// Attempts to load integrationUISPbandwidths.csv to use for
 /// bandwidth overrides. Returns an empty set if not found.
+/// Returns an error if the file is found but cannot be read.
+/// 
+/// The file should be a CSV with the following columns:
+/// 
+/// | Parent Node | Down | Up |
+/// |-------------|------|----|
+/// | Site1       | 100  | 10 |
+/// | Site2       | 200  | 20 |
+/// 
+/// The Parent Node should match the name of the site in UISP.
+/// The Down and Up columns should be the desired bandwidth in Mbps.
+/// 
+/// If the file is found, the overrides will be applied to the sites
+/// in the `UispSite` array by the `apply_bandwidth_overrides` function.
+/// 
+/// # Arguments
+/// * `config` - The configuration
+/// 
+/// # Returns
+/// * A `BandwidthOverrides` map of site names to bandwidth overrides
 pub fn get_site_bandwidth_overrides(
     config: &Config,
 ) -> Result<BandwidthOverrides, UispIntegrationError> {
@@ -69,6 +89,11 @@ fn numeric_string_to_f32(text: &str) -> Option<f32> {
     }
 }
 
+/// Applies the bandwidth overrides to the sites in the array.
+/// 
+/// # Arguments
+/// * `sites` - The list of sites to modify
+/// * `bandwidth_overrides` - The bandwidth overrides to apply
 pub fn apply_bandwidth_overrides(sites: &mut [UispSite], bandwidth_overrides: &BandwidthOverrides) {
     for site in sites.iter_mut() {
         if let Some((up, down)) = bandwidth_overrides.get(&site.name) {
@@ -80,5 +105,28 @@ pub fn apply_bandwidth_overrides(sites: &mut [UispSite], bandwidth_overrides: &B
                 &site.name, site.max_down_mbps, site.max_up_mbps
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_numeric_string_to_f32_valid_float() {
+        let result = numeric_string_to_f32("3.14");
+        assert_eq!(result, Some(3.14));
+    }
+
+    #[test]
+    fn test_numeric_string_to_f32_valid_integer() {
+        let result = numeric_string_to_f32("42");
+        assert_eq!(result, Some(42.0));
+    }
+
+    #[test]
+    fn test_numeric_string_to_f32_invalid_string() {
+        let result = numeric_string_to_f32("abc");
+        assert_eq!(result, None);
     }
 }

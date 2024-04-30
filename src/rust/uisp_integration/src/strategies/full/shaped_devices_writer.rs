@@ -5,6 +5,7 @@ use serde::Serialize;
 use std::path::Path;
 use tracing::{error, info};
 
+/// Represents a shaped device in the ShapedDevices.csv file.
 #[derive(Serialize, Debug)]
 struct ShapedDevice {
     pub circuit_id: String,
@@ -22,6 +23,13 @@ struct ShapedDevice {
     pub comment: String,
 }
 
+/// Writes the ShapedDevices.csv file for UISP
+/// 
+/// # Arguments
+/// * `config` - The configuration
+/// * `sites` - The list of sites
+/// * `root_idx` - The index of the root site
+/// * `devices` - The list of devices
 pub fn write_shaped_devices(
     config: &Config,
     sites: &[UispSite],
