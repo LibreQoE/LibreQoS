@@ -25,7 +25,7 @@ use crate::strategies::full::shaped_devices_writer::write_shaped_devices;
 use crate::strategies::full::squash_single_entry_aps::squash_single_aps;
 use crate::strategies::full::tree_walk::walk_tree_for_routing;
 use crate::strategies::full::uisp_fetch::load_uisp_data;
-use crate::strategies::full::utils::{print_sites, warn_of_no_parents};
+use crate::strategies::full::utils::{print_sites, warn_of_no_parents_and_promote};
 use crate::uisp_types::{UispSite, UispSiteType};
 pub use bandwidth_overrides::BandwidthOverrides;
 use lqos_config::Config;
@@ -101,11 +101,13 @@ pub async fn build_full_network(
     // Correct any sites with zero capacity
     correct_zero_capacity_sites(&mut sites, &config);
 
-    // Issue No Parent Warnings
-    warn_of_no_parents(&sites, &devices_raw);
+
 
     // Print Sites
     if let Some(root_idx) = sites.iter().position(|s| s.name == root_site) {
+        // Issue No Parent Warnings
+        warn_of_no_parents_and_promote(&mut sites, &devices_raw, root_idx, &config);
+
         print_sites(&sites, root_idx);
 
         // Output a network.json
