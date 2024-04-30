@@ -37,6 +37,7 @@ pub fn get_site_bandwidth_overrides(
                 let parent_node = result[0].to_string();
                 if let Some(d) = numeric_string_to_f32(&result[1]) {
                     if let Some(u) = numeric_string_to_f32(&result[2]) {
+                        tracing::info!("Using bandiwdth override: {}, {}/{}", parent_node, d, u);
                         overrides.insert(parent_node, (d, u));
                     } else {
                         error!("Cannot parse {} as float on line {line}", &result[2]);
@@ -72,10 +73,10 @@ fn numeric_string_to_f32(text: &str) -> Option<f32> {
 pub fn apply_bandwidth_overrides(sites: &mut Vec<UispSite>, bandwidth_overrides: &BandwidthOverrides) {
     for site in sites.iter_mut() {
         if let Some((up, down)) = bandwidth_overrides.get(&site.name) {
-            tracing::info!("Bandwidth override for {} applied", &site.name);
             // Apply the overrides
             site.max_down_mbps = *down as u32;
             site.max_up_mbps = *up as u32;
+            tracing::info!("Bandwidth override for {} applied ({} / {})", &site.name, site.max_down_mbps, site.max_up_mbps);
         }
     }
 }
