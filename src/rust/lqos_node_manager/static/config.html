@@ -57,7 +57,7 @@
                         <h5 class="card-title"><i class="fa fa-users"></i> Configuration</h5>
 
 <div class="col-sm-8 mx-auto" class="pad4 mbot4" id="controls">
-    <a href="#" class="btn btn-primary" id="btnSaveIspConfig"><i class="fa fa-save"></i> Save ispConfig.py</a>
+    <a href="#" class="btn btn-primary" id="btnSaveIspConfig"><i class="fa fa-save"></i> Save Configuration</a>
 </div>
 
 <div class="d-flex align-items-start">
@@ -826,6 +826,19 @@
             $("#bindSingleInterfaceNetworklan").val('3');
         }
 
+        function validateConfig() {
+            for (var i=0; i<bindings.length; ++i) {
+                let entry = bindings[i];
+                let controlId = entry.field;
+                if (entry.path != null) {
+                    let path = "lqosd_config" + entry.path;
+                    let currentValue = $("#" + controlId).val();
+                    let storedVAlue = eval(path);
+                    console.log(currentValue, storedVAlue);
+                }
+            }
+        }
+
         function start() {
             display();
             colorReloadButton();
@@ -837,7 +850,7 @@
                 } else {
                     // Handle Saving ispConfig.py
                     $("#btnSaveIspConfig").on('click', (data) => {
-                        // TODO
+                        validateConfig();
                     });
                 }
                 $.get("/api/config", (data) => {
