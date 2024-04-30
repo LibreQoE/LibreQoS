@@ -28,6 +28,7 @@ impl Display for UispSiteType {
 }
 
 impl UispSiteType {
+    /// Converts a UISP site record into a UispSiteType
     pub fn from_uisp_record(site: &Site) -> Result<Self, UispIntegrationError> {
         if let Some(id) = &site.identification {
             if let Some(t) = &id.site_type {

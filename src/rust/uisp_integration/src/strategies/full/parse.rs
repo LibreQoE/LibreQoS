@@ -4,6 +4,17 @@ use lqos_config::Config;
 use tracing::info;
 use uisp::{DataLink, Device, Site};
 
+/// Parses the UISP datasets into a more usable format.
+/// 
+/// # Arguments
+/// * `sites_raw` - The raw site data
+/// * `data_links_raw` - The raw data link data
+/// * `devices_raw` - The raw device data
+/// * `config` - The configuration
+/// * `ip_ranges` - The IP ranges to use for the network
+/// 
+/// # Returns
+/// * A tuple containing the parsed sites, data links, and devices
 pub fn parse_uisp_datasets(
     sites_raw: &[Site],
     data_links_raw: &[DataLink],

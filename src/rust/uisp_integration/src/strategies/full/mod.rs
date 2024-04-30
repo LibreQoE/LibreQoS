@@ -33,6 +33,16 @@ use crate::uisp_types::{UispSite, UispSiteType};
 use lqos_config::Config;
 
 /// Attempt to construct a full hierarchy topology for the UISP network.
+/// This function will load the UISP data, parse it into a more usable format,
+/// and then attempt to build a full network topology.
+/// 
+/// # Arguments
+/// * `config` - The configuration
+/// * `ip_ranges` - The IP ranges to use for the network
+/// 
+/// # Returns
+/// * An `Ok` if the operation was successful
+/// * An `Err` if the operation failed
 pub async fn build_full_network(
     config: Config,
     ip_ranges: IpRanges,

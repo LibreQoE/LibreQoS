@@ -6,6 +6,7 @@ use crate::ip_ranges::IpRanges;
 use lqos_config::Config;
 use tracing::{error, info};
 
+/// Builds the network using the selected strategy.
 pub async fn build_with_strategy(
     config: Config,
     ip_ranges: IpRanges,

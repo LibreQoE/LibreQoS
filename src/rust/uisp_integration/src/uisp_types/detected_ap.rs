@@ -1,3 +1,4 @@
+/// Detected Access Point
 #[derive(Debug)]
 pub struct DetectedAccessPoint {
     pub site_id: String,

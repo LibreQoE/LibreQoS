@@ -4,6 +4,16 @@ use std::collections::HashSet;
 use tracing::info;
 use uisp::{DataLink, Device, Site};
 
+/// Finds access points that are connected to other sites and promotes them to their own site.
+/// This is useful for sites that have multiple APs, but are currently represented as a single site.
+/// 
+/// # Arguments
+/// * `sites` - The list of sites to modify
+/// * `devices_raw` - The list of devices
+/// * `data_links_raw` - The list of data links
+/// * `sites_raw` - The list of sites
+/// * `devices` - The list of devices with their speeds
+/// * `config` - The configuration
 pub fn promote_access_points(
     sites: &mut Vec<UispSite>,
     devices_raw: &[Device],

@@ -17,6 +17,12 @@ pub struct UispDevice {
 }
 
 impl UispDevice {
+    /// Creates a new UispDevice from a UISP device
+    /// 
+    /// # Arguments
+    /// * `device` - The device to convert
+    /// * `config` - The configuration
+    /// * `ip_ranges` - The IP ranges to use for the network
     pub fn from_uisp(device: &Device, config: &Config, ip_ranges: &IpRanges) -> Self {
         let mut ipv4 = HashSet::new();
         let mut ipv6 = HashSet::new();

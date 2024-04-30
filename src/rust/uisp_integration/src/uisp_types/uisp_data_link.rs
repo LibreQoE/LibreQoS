@@ -11,6 +11,10 @@ pub struct UispDataLink {
 }
 
 impl UispDataLink {
+    /// Converts a UISP DataLink into a UispDataLink.
+    /// 
+    /// # Arguments
+    /// * `value` - The UISP DataLink to convert
     pub fn from_uisp(value: &DataLink) -> Option<Self> {
         let mut from_site_id = String::new();
         let mut to_site_id = String::new();
