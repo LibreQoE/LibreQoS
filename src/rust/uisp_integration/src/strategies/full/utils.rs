@@ -1,6 +1,6 @@
 use crate::uisp_types::{UispSite, UispSiteType};
-use tracing::warn;
 use lqos_config::Config;
+use tracing::warn;
 use uisp::Device;
 
 /// Counts how many devices are present at a siteId. It's a simple
@@ -46,7 +46,12 @@ fn iterate_child_sites(sites: &[UispSite], parent: usize, indent: usize) {
         });
 }
 
-pub fn warn_of_no_parents_and_promote(sites: &mut Vec<UispSite>, devices_raw: &[Device], root_idx: usize, config: &Config) {
+pub fn warn_of_no_parents_and_promote(
+    sites: &mut Vec<UispSite>,
+    devices_raw: &[Device],
+    root_idx: usize,
+    config: &Config,
+) {
     let mut orphans = Vec::new();
 
     sites
@@ -78,7 +83,11 @@ pub fn warn_of_no_parents_and_promote(sites: &mut Vec<UispSite>, devices_raw: &[
         sites.push(orphanage);
 
         for orphan_id in orphans {
-            if let Some((_, site)) = sites.iter_mut().enumerate().find(|(idx, s)| *idx != root_idx && s.id == orphan_id) {
+            if let Some((_, site)) = sites
+                .iter_mut()
+                .enumerate()
+                .find(|(idx, s)| *idx != root_idx && s.id == orphan_id)
+            {
                 site.selected_parent = Some(orgphanage_id);
             }
         }

@@ -15,7 +15,9 @@ mod zero_capacity_sites;
 use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
 use crate::strategies::full::ap_promotion::promote_access_points;
-use crate::strategies::full::bandwidth_overrides::{apply_bandwidth_overrides, get_site_bandwidth_overrides};
+use crate::strategies::full::bandwidth_overrides::{
+    apply_bandwidth_overrides, get_site_bandwidth_overrides,
+};
 use crate::strategies::full::client_site_promotion::promote_clients_with_children;
 use crate::strategies::full::network_json::write_network_file;
 use crate::strategies::full::parse::parse_uisp_datasets;
@@ -26,10 +28,10 @@ use crate::strategies::full::squash_single_entry_aps::squash_single_aps;
 use crate::strategies::full::tree_walk::walk_tree_for_routing;
 use crate::strategies::full::uisp_fetch::load_uisp_data;
 use crate::strategies::full::utils::{print_sites, warn_of_no_parents_and_promote};
+use crate::strategies::full::zero_capacity_sites::correct_zero_capacity_sites;
 use crate::uisp_types::{UispSite, UispSiteType};
 pub use bandwidth_overrides::BandwidthOverrides;
 use lqos_config::Config;
-use crate::strategies::full::zero_capacity_sites::correct_zero_capacity_sites;
 
 /// Attempt to construct a full hierarchy topology for the UISP network.
 pub async fn build_full_network(
@@ -100,8 +102,6 @@ pub async fn build_full_network(
 
     // Correct any sites with zero capacity
     correct_zero_capacity_sites(&mut sites, &config);
-
-
 
     // Print Sites
     if let Some(root_idx) = sites.iter().position(|s| s.name == root_site) {

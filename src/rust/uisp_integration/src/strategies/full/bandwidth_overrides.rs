@@ -1,10 +1,10 @@
 use crate::errors::UispIntegrationError;
+use crate::uisp_types::UispSite;
 use csv::ReaderBuilder;
 use lqos_config::Config;
 use std::collections::HashMap;
 use std::path::Path;
 use tracing::{error, info};
-use crate::uisp_types::UispSite;
 
 pub type BandwidthOverrides = HashMap<String, (f32, f32)>;
 
@@ -75,7 +75,10 @@ pub fn apply_bandwidth_overrides(sites: &mut [UispSite], bandwidth_overrides: &B
             // Apply the overrides
             site.max_down_mbps = *down as u32;
             site.max_up_mbps = *up as u32;
-            info!("Bandwidth override for {} applied ({} / {})", &site.name, site.max_down_mbps, site.max_up_mbps);
+            info!(
+                "Bandwidth override for {} applied ({} / {})",
+                &site.name, site.max_down_mbps, site.max_up_mbps
+            );
         }
     }
 }

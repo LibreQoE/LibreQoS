@@ -32,7 +32,15 @@ pub fn write_shaped_devices(
     let mut shaped_devices = Vec::new();
 
     // Traverse
-    traverse(sites, root_idx, 0, devices, &mut shaped_devices, config, root_idx);
+    traverse(
+        sites,
+        root_idx,
+        0,
+        devices,
+        &mut shaped_devices,
+        config,
+        root_idx,
+    );
 
     // Write the CSV
     let mut writer = csv::WriterBuilder::new()
@@ -146,7 +154,15 @@ fn traverse(
         for (child_idx, child) in sites.iter().enumerate() {
             if let Some(parent_idx) = child.selected_parent {
                 if parent_idx == idx {
-                    traverse(sites, child_idx, depth + 1, devices, shaped_devices, config, root_idx);
+                    traverse(
+                        sites,
+                        child_idx,
+                        depth + 1,
+                        devices,
+                        shaped_devices,
+                        config,
+                        root_idx,
+                    );
                 }
             }
         }

@@ -40,10 +40,7 @@ impl Default for UispSite {
 }
 
 impl UispSite {
-    pub fn from_uisp(
-        value: &Site,
-        config: &Config,
-    ) -> Self {
+    pub fn from_uisp(value: &Site, config: &Config) -> Self {
         let mut uisp_parent_id = None;
 
         if let Some(id) = &value.identification {
