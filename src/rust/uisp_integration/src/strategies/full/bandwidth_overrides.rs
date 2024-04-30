@@ -114,8 +114,8 @@ mod test {
 
     #[test]
     fn test_numeric_string_to_f32_valid_float() {
-        let result = numeric_string_to_f32("3.14");
-        assert_eq!(result, Some(3.14));
+        let result = numeric_string_to_f32("3.2");
+        assert_eq!(result, Some(3.2));
     }
 
     #[test]
@@ -128,5 +128,71 @@ mod test {
     fn test_numeric_string_to_f32_invalid_string() {
         let result = numeric_string_to_f32("abc");
         assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_apply_bandwidth_overrides_existing_site() {
+        let mut sites = vec![
+            UispSite {
+                name: "SiteA".to_string(),
+                max_down_mbps: 100,
+                max_up_mbps: 100,
+                ..Default::default()
+            }
+        ];
+        let mut overrides = BandwidthOverrides::new();
+        overrides.insert("SiteA".to_string(), (150., 200.));
+
+        apply_bandwidth_overrides(&mut sites, &overrides);
+
+        assert_eq!(sites[0].max_down_mbps, 200);
+        assert_eq!(sites[0].max_up_mbps, 150);
+    }
+
+    #[test]
+    fn test_apply_bandwidth_overrides_non_existing_site() {
+        let mut sites = vec![
+            UispSite {
+                name: "SiteB".to_string(),
+                max_down_mbps: 100,
+                max_up_mbps: 100,
+                ..Default::default()
+            }
+        ];
+        let overrides = BandwidthOverrides::new(); // No override added
+
+        apply_bandwidth_overrides(&mut sites, &overrides);
+
+        // Ensure no changes are made
+        assert_eq!(sites[0].max_down_mbps, 100);
+        assert_eq!(sites[0].max_up_mbps, 100);
+    }
+
+    #[test]
+    fn test_apply_bandwidth_overrides_multiple_sites() {
+        let mut sites = vec![
+            UispSite {
+                name: "SiteC".to_string(),
+                max_down_mbps: 300,
+                max_up_mbps: 300,
+                ..Default::default()
+            },
+            UispSite {
+                name: "SiteD".to_string(),
+                max_down_mbps: 400,
+                max_up_mbps: 400,
+                ..Default::default()
+            }
+        ];
+        let mut overrides = BandwidthOverrides::new();
+        overrides.insert("SiteC".to_string(), (350., 450.));
+
+        apply_bandwidth_overrides(&mut sites, &overrides);
+
+        assert_eq!(sites[0].max_down_mbps, 450);
+        assert_eq!(sites[0].max_up_mbps, 350);
+        // SiteD should not change
+        assert_eq!(sites[1].max_down_mbps, 400);
+        assert_eq!(sites[1].max_up_mbps, 400);
     }
 }
