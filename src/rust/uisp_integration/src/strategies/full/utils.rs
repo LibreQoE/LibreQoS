@@ -1,5 +1,6 @@
-use crate::uisp_types::UispSite;
+use crate::uisp_types::{UispSite, UispSiteType};
 use tracing::warn;
+use lqos_config::Config;
 use uisp::Device;
 
 /// Counts how many devices are present at a siteId. It's a simple
@@ -45,13 +46,41 @@ fn iterate_child_sites(sites: &[UispSite], parent: usize, indent: usize) {
         });
 }
 
-pub fn warn_of_no_parents(sites: &[UispSite], devices_raw: &[Device]) {
+pub fn warn_of_no_parents_and_promote(sites: &mut Vec<UispSite>, devices_raw: &[Device], root_idx: usize, config: &Config) {
+    let mut orphans = Vec::new();
+
     sites
         .iter()
-        .filter(|s| s.parent_indices.is_empty())
+        .filter(|s| s.selected_parent.is_none())
         .for_each(|s| {
-            if count_devices_in_site(&s.id, &devices_raw) > 0 {
+            if count_devices_in_site(&s.id, devices_raw) > 0 {
                 warn!("Site: {} has no parents", s.name);
+                orphans.push(s.id.clone());
             }
         });
+
+    // If we have orphans, promote them to be parented off of a special branch
+    if !orphans.is_empty() {
+        let orgphanage_id = sites.len();
+        let orphanage = UispSite {
+            id: "orphans".to_string(),
+            name: "Orphaned Nodes".to_string(),
+            site_type: UispSiteType::Site,
+            uisp_parent_id: None,
+            parent_indices: Default::default(),
+            max_down_mbps: config.queues.downlink_bandwidth_mbps,
+            max_up_mbps: config.queues.uplink_bandwidth_mbps,
+            suspended: false,
+            device_indices: vec![],
+            route_weights: vec![],
+            selected_parent: Some(root_idx),
+        };
+        sites.push(orphanage);
+
+        for orphan_id in orphans {
+            if let Some((_, site)) = sites.iter_mut().enumerate().find(|(idx, s)| *idx != root_idx && s.id == orphan_id) {
+                site.selected_parent = Some(orgphanage_id);
+            }
+        }
+    }
 }
