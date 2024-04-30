@@ -31,10 +31,7 @@ pub fn parse_uisp_datasets(
     (sites, data_links, devices)
 }
 
-fn parse_sites(
-    sites_raw: &[Site],
-    config: &Config,
-) -> Vec<UispSite> {
+fn parse_sites(sites_raw: &[Site], config: &Config) -> Vec<UispSite> {
     let sites: Vec<UispSite> = sites_raw
         .iter()
         .map(|s| UispSite::from_uisp(s, config))

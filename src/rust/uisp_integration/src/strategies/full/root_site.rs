@@ -39,12 +39,9 @@ fn handle_multiple_internet_connected_sites(
     let mut root_site_name = String::new();
     let mut candidates = Vec::new();
 
-    data_links
-        .iter()
-        .filter(|l| !l.can_delete)
-        .for_each(|l| {
-            candidates.push(l.from_site_name.clone());
-        });
+    data_links.iter().filter(|l| !l.can_delete).for_each(|l| {
+        candidates.push(l.from_site_name.clone());
+    });
 
     if candidates.is_empty() {
         error!("Unable to find a root site in the sites/data-links.");
@@ -188,8 +185,6 @@ mod test {
         ];
         let result = find_root_site(&cfg, &mut sites, &data_links);
         assert!(result.is_ok());
-        assert!(sites
-            .iter()
-            .any(|s| s.name == "INSERTED_INTERNET"));
+        assert!(sites.iter().any(|s| s.name == "INSERTED_INTERNET"));
     }
 }

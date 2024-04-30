@@ -1,11 +1,11 @@
-use std::fs;
-use std::path::Path;
-use serde::Serialize;
 use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
-use lqos_config::Config;
-use tracing::{error, info};
 use crate::uisp_types::UispDevice;
+use lqos_config::Config;
+use serde::Serialize;
+use std::fs;
+use std::path::Path;
+use tracing::{error, info};
 
 #[derive(Serialize, Debug)]
 struct ShapedDevice {
@@ -29,27 +29,26 @@ pub async fn build_flat_network(
     ip_ranges: IpRanges,
 ) -> Result<(), UispIntegrationError> {
     // Load the devices from UISP
-    let devices = uisp::load_all_devices_with_interfaces(config.clone()).await
+    let devices = uisp::load_all_devices_with_interfaces(config.clone())
+        .await
         .map_err(|e| {
             error!("Unable to load device list from UISP");
             error!("{e:?}");
             UispIntegrationError::UispConnectError
         })?;
-    let sites = uisp::load_all_sites(config.clone()).await
-        .map_err(|e| {
-            error!("Unable to load device list from UISP");
-            error!("{e:?}");
-            UispIntegrationError::UispConnectError
-        })?;
+    let sites = uisp::load_all_sites(config.clone()).await.map_err(|e| {
+        error!("Unable to load device list from UISP");
+        error!("{e:?}");
+        UispIntegrationError::UispConnectError
+    })?;
 
     // Create a {} network.json
     let net_json_path = Path::new(&config.lqos_directory).join("network.json");
-    fs::write(net_json_path, "{}\n")
-        .map_err(|e| {
-            error!("Unable to access network.json");
-            error!("{e:?}");
-            UispIntegrationError::WriteNetJson
-        })?;
+    fs::write(net_json_path, "{}\n").map_err(|e| {
+        error!("Unable to access network.json");
+        error!("{e:?}");
+        UispIntegrationError::WriteNetJson
+    })?;
 
     // Simple Shaped Devices File
     let mut shaped_devices = Vec::new();
@@ -57,7 +56,10 @@ pub async fn build_flat_network(
         if let Some(site_id) = &site.identification {
             if let Some(site_type) = &site_id.site_type {
                 if site_type == "endpoint" {
-                    let (download_max, upload_max) = site.qos(config.queues.generated_pn_download_mbps, config.queues.generated_pn_upload_mbps);
+                    let (download_max, upload_max) = site.qos(
+                        config.queues.generated_pn_download_mbps,
+                        config.queues.generated_pn_upload_mbps,
+                    );
                     let download_min = (download_max as f32
                         * config.uisp_integration.commit_bandwidth_multiplier)
                         as u64;

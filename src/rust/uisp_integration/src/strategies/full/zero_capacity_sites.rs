@@ -1,8 +1,8 @@
-use lqos_config::Config;
 use crate::uisp_types::UispSite;
+use lqos_config::Config;
 
 pub fn correct_zero_capacity_sites(sites: &mut [UispSite], config: &Config) {
-    for i in 0 .. sites.len() {
+    for i in 0..sites.len() {
         if sites[i].max_down_mbps == 0 {
             if let Some(parent_idx) = sites[i].selected_parent {
                 sites[i].max_down_mbps = sites[parent_idx].max_down_mbps;
