@@ -21,7 +21,7 @@ pub fn find_root_site(
     } else {
         info!("Using root UISP site from /etc/lqos.conf: {root_site_name}");
 
-        if sites.iter().find(|s| s.name == root_site_name).is_none() {
+        if !sites.iter().any(|s| s.name == root_site_name) {
             error!("Site {root_site_name} (from /etc/lqos.conf) not found in the UISP sites list");
             return Err(UispIntegrationError::NoRootSite);
         } else {
@@ -41,7 +41,7 @@ fn handle_multiple_internet_connected_sites(
 
     data_links
         .iter()
-        .filter(|l| l.can_delete == false)
+        .filter(|l| !l.can_delete)
         .for_each(|l| {
             candidates.push(l.from_site_name.clone());
         });
@@ -88,11 +88,6 @@ pub fn set_root_site(sites: &mut [UispSite], root_site: &str) -> Result<(), Uisp
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::init_tracing;
-    use uisp::{
-        DataLinkDevice, DataLinkDeviceIdentification, DataLinkFrom, DataLinkSite, DataLinkTo,
-        Description, SiteId,
-    };
 
     #[test]
     fn test_known_root() {
@@ -140,7 +135,7 @@ mod test {
             site_type: UispSiteType::Site,
             ..Default::default()
         }];
-        let mut data_links = vec![UispDataLink {
+        let data_links = vec![UispDataLink {
             id: "".to_string(),
             from_site_id: "TEST".to_string(),
             from_site_name: "TEST".to_string(),
@@ -195,7 +190,6 @@ mod test {
         assert!(result.is_ok());
         assert!(sites
             .iter()
-            .find(|s| s.name == "INSERTED_INTERNET")
-            .is_some());
+            .any(|s| s.name == "INSERTED_INTERNET"));
     }
 }

@@ -14,7 +14,7 @@ pub fn promote_clients_with_children(
         .iter()
         .enumerate()
         .filter(|(_, s)| s.site_type == UispSiteType::Client)
-        .for_each(|(idx, s)| {
+        .for_each(|(idx, _s)| {
             let child_count = sites
                 .iter()
                 .filter(|c| c.parent_indices.contains(&idx))
@@ -32,7 +32,6 @@ pub fn promote_clients_with_children(
         let old_id = sites[child_site].id.clone();
         sites[child_site].id = format!("GEN-{}", sites[child_site].id);
         sites[child_site].suspended = false;
-        let new_id = sites.len();
         let mut parent_indices = HashSet::new();
         parent_indices.insert(child_site);
         let mut new_site = UispSite {

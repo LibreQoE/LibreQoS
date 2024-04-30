@@ -20,7 +20,7 @@ pub fn write_network_file(
     let root = traverse_sites(sites, root_idx, 0)?;
     if let Some(children) = root.get("children") {
         let json = serde_json::to_string_pretty(&children).unwrap();
-        write(network_path, &json).map_err(|e| {
+        write(network_path, json).map_err(|e| {
             error!("Unable to write network.json");
             error!("{e:?}");
             UispIntegrationError::WriteNetJson
@@ -45,10 +45,6 @@ fn traverse_sites(
         "uploadBandwidthMbps".to_string(),
         serde_json::Value::Number(sites[idx].max_down_mbps.into()),
     );
-    let t = match sites[idx].site_type {
-        UispSiteType::AccessPoint => "ap",
-        _ => "site",
-    };
 
     if depth < 10 {
         let mut children = serde_json::Map::new();
@@ -71,8 +67,5 @@ fn traverse_sites(
 }
 
 fn should_traverse(t: &UispSiteType) -> bool {
-    match t {
-        UispSiteType::Client => false,
-        _ => true,
-    }
+    !matches!(t, UispSiteType::Client)
 }

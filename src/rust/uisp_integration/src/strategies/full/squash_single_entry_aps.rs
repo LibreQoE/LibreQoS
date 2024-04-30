@@ -1,7 +1,7 @@
 use crate::errors::UispIntegrationError;
 use crate::uisp_types::{UispSite, UispSiteType};
 
-pub fn squash_single_aps(sites: &mut Vec<UispSite>) -> Result<(), UispIntegrationError> {
+pub fn squash_single_aps(sites: &mut [UispSite]) -> Result<(), UispIntegrationError> {
     let mut squashable = Vec::new();
     for (idx, site) in sites.iter().enumerate() {
         if site.site_type == UispSiteType::AccessPoint {
@@ -20,7 +20,7 @@ pub fn squash_single_aps(sites: &mut Vec<UispSite>) -> Result<(), UispIntegratio
         sites[squash_idx].name += " (SQUASHED)";
         let up = sites[squash_idx].max_up_mbps;
         let down = sites[squash_idx].max_down_mbps;
-        let new_parent = *sites[squash_idx].parent_indices.iter().nth(0).unwrap();
+        let new_parent = *sites[squash_idx].parent_indices.iter().next().unwrap();
         sites.iter_mut().for_each(|s| {
             if s.parent_indices.contains(&squash_idx) {
                 s.parent_indices.remove(&squash_idx);
