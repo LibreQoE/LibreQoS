@@ -930,11 +930,52 @@
             };
         }
 
+        function getFinalValue(target) {
+            let selector = "#" + target.field;
+            switch (target.data) {
+                case "bool": return $(selector).is(":checked");
+                case "string": return $(selector).val();
+                case "integer": return parseInt($(selector).val());
+                case "float": return parseFloat($(selector).val());
+                case "array_of_strings": return $(selector).val().split(' ');
+                case "interface": return $(selector).val();
+                case "select-premade": return $(selector).val();
+                case "ip_array": return $(selector).val().split('\n');
+                default: console.log("Not handled: " + target);
+            }
+        }
+
+        function updateSavedConfig(changes) {
+            for (let i=0; i<changes.length; i++) {
+                let target = bindings[changes[i]];
+
+                let parts = target.path.split(".");
+                if (parts.length === 2) {
+                    // It's a top-level entry so we have to write to the master variable
+                    lqosd_config[parts[1]] = getFinalValue(target);
+                }
+
+                let configTarget = lqosd_config;
+                for (let j=1; j<parts.length-1; j++) {
+                    configTarget = configTarget[parts[j]];
+
+                    // Note: we're doing a stupid dance here because of JS's pass-by-value for
+                    // a field value, when any sane language would just let me use a reference.
+                    // Stopping at the pre-value level and then referencing its' child forces
+                    // JS to pass by reference and do what we want!
+                    if (j === parts.length-2) {
+                        configTarget[parts[j+1]] = getFinalValue(target);
+                    }
+                }
+            }
+        }
+
         function saveConfig() {
             let validationResult = validateConfig();
             if (!validationResult.valid) return;
 
-            // Save it here
+            updateSavedConfig(validationResult.changes);
+            console.log(lqosd_config);
         }
 
         function start() {
