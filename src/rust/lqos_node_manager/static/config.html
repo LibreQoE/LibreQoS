@@ -590,6 +590,10 @@
         <div class="tab-pane fade" id="v-pills-shapeddevs" role="tabpanel" aria-labelledby="v-pills-shapeddevs-tab">
             <h2><i class="fa table"></i>  Shaped Devices</h2>
             <p>All Shaped Devices. Note that if you have an integration enabled, this will be overwritten periodically.</p>
+            <button type="button" class="btn btn-sm btn-success" onclick="newSdRow()"><i class="fa fa-plus"></i> Add Row</button>
+
+            <button type="button" class="btn btn-sm btn-primary" onclick="saveSd()"><i class="fa fa-save"></i> Save ShapedDevices.csv</button>
+
             <div id="shapedDeviceTable"></div>
         </div>
 
@@ -1060,22 +1064,26 @@
             $("#netjson").html(html);
         }
 
-        function makeSheetBox(value, small=false) {
+        function rowPrefix(rowId, boxId) {
+            return "sdr_" + rowId + "_" + boxId;
+        }
+
+        function makeSheetBox(rowId, boxId, value, small=false) {
             let html = "";
             if (!small) {
-                html = "<td style='padding: 0px'><input type=\"text\" value=\"" + value + "\"></input></td>"
+                html = "<td style='padding: 0px'><input id='" + rowPrefix(rowId, boxId) + "' type=\"text\" value=\"" + value + "\"></input></td>"
             } else {
-                html = "<td style='padding: 0px'><input type=\"text\" value=\"" + value + "\" style='font-size: 8pt;'></input></td>"
+                html = "<td style='padding: 0px'><input id='" + rowPrefix(rowId, boxId) + "' type=\"text\" value=\"" + value + "\" style='font-size: 8pt;'></input></td>"
             }
             return html;
         }
 
-        function makeSheetNumberBox(value) {
-            let html = "<td style='padding: 0px'><input type=\"number\" value=\"" + value + "\" style='width: 100px; font-size: 8pt;'></input></td>"
+        function makeSheetNumberBox(rowId, boxId, value) {
+            let html = "<td style='padding: 0px'><input id='" + rowPrefix(rowId, boxId) + "' type=\"number\" value=\"" + value + "\" style='width: 100px; font-size: 8pt;'></input></td>"
             return html;
         }
 
-        function separatedIpArray(value) {
+        function separatedIpArray(rowId, boxId, value) {
             let html = "<td style='padding: 0px'>";
             let val = "";
             for (i = 0; i<value.length; i++) {
@@ -1087,14 +1095,14 @@
             if (val.length > 0) {
                 val = val.substring(0, val.length-2);
             }
-            html += "<input type='text' style='font-size: 8pt; width: 100px;' value='" + val + "'></input>";
+            html += "<input id='" + rowPrefix(rowId, boxId) + "' type='text' style='font-size: 8pt; width: 100px;' value='" + val + "'></input>";
             html += "</td>";
             return html;
         }
 
-        function nodeDropDown(selectedNode) {
+        function nodeDropDown(rowId, boxId, selectedNode) {
             let html = "<td style='padding: 0px'>";
-            html += "<select style='font-size: 8pt; width: 150px;'>";
+            html += "<select id='" + rowPrefix(rowId, boxId) + "' style='font-size: 8pt; width: 150px;'>";
 
             function iterate(data, level) {
                 let html = "";
@@ -1118,27 +1126,233 @@
             return html;
         }
 
+        function validNodeList() {
+            let nodes = [];
+
+            function iterate(data, level) {
+                for (const [key, value] of Object.entries(data)) {
+                    nodes.push(key);
+                    if (value.children != null)
+                        iterate(value.children, level+1);
+                }
+            }
+
+            iterate(network_json, 0);
+
+            return nodes;
+        }
+
+        function newSdRow() {
+            shaped_devices.unshift({
+                circuit_id: "new_circuit",
+                circuit_name: "new circuit",
+                device_id: "new_device",
+                device_name: "new device",
+                mac: "",
+                ipv4: "",
+                ipv6: "",
+                download_min_mbps: 100,
+                upload_min_mbps: 100,
+                download_max_mbps: 100,
+                upload_max_mbps: 100,
+                comment: "",
+            });
+            shapedDevices();
+        }
+
+        function deleteSdRow(id) {
+            shaped_devices.splice(id, 1);
+            shapedDevices();
+        }
+
+        function validateSd() {
+            let valid = true;
+            let errors = [];
+            $(".invalid").removeClass("invalid");
+            let validNodes = validNodeList();
+
+            for (let i=0; i<shaped_devices.length; i++) {
+                // Check that circuit ID is good
+                let controlId = "#" + rowPrefix(i, "circuit_id");
+                let circuit_id = $(controlId).val();
+                if (circuit_id.length === 0) {
+                    valid = false;
+                    errors.push("Circuits must have a Circuit ID");
+                    $(controlId).addClass("invalid");
+                }
+
+                // Check that the Circuit Name is good
+                controlId = "#" + rowPrefix(i, "circuit_name");
+                let circuit_name = $(controlId).val();
+                if (circuit_name.length === 0) {
+                    valid = false;
+                    errors.push("Circuits must have a Circuit Name");
+                    $(controlId).addClass("invalid");
+                }
+
+                // Check that the Device ID is good
+                controlId = "#" + rowPrefix(i, "device_id");
+                let device_id = $(controlId).val();
+                if (device_id.length === 0) {
+                    valid = false;
+                    errors.push("Circuits must have a Device ID");
+                    $(controlId).addClass("invalid");
+                }
+                for (let j=0; j<shaped_devices.length; j++) {
+                    if (i !== j) {
+                        if (shaped_devices[j].device_id === device_id) {
+                            valid = false;
+                            errors.push("Devices with duplicate ID [" + device_id + "] detected");
+                            $(controlId).addClass("invalid");
+                            $("#" + rowPrefix(j, "device_id")).addClass("invalid");
+                        }
+                    }
+                }
+
+                // Check that the Device Name is good
+                controlId = "#" + rowPrefix(i, "device_name");
+                let device_name = $(controlId).val();
+                if (device_name.length === 0) {
+                    valid = false;
+                    errors.push("Circuits must have a Device Name");
+                    $(controlId).addClass("invalid");
+                }
+
+                // Check the parent node
+                controlId = "#" + rowPrefix(i, "parent_node");
+                let parent_node = $(controlId).val();
+                if (validNodes.length === 0) {
+                    // Flat
+                    if (parent_node.length > 0) {
+                        valid = false;
+                        errors.push("You have a flat network, so you can't specify a parent node.");
+                        $(controlId).addClass("invalid");
+                    }
+                } else {
+                    // Hierarchy - so we need to know if it exists
+                    if (validNodes.indexOf(parent_node) === -1) {
+                        valid = false;
+                        errors.push("Parent node: " + parent_node + " does not exist");
+                        $(controlId).addClass("invalid");
+                    }
+                }
+
+                // We can ignore the MAC address
+
+                // IPv4
+                controlId = "#" + rowPrefix(i, "ipv4");
+                let ipv4 = $(controlId).val();
+
+                // IPv6
+                controlId = "#" + rowPrefix(i, "ipv6");
+                let ipv6 = $(controlId).val();
+
+                // Combined - must be an address between them
+                if (ipv4.length === 0 && ipv6.length === 0) {
+                    valid = false;
+                    errors.push("You must specify either an IPv4 or IPv6 (or both) address");
+                    $(controlId).addClass("invalid");
+                    $("#" + rowPrefix(i, "ipv4")).addClass("invalid");
+                }
+
+                // Download Min
+                controlId = "#" + rowPrefix(i, "download_min_mbps");
+                let download_min = $(controlId).val();
+                download_min = parseInt(download_min);
+                if (isNaN(download_min)) {
+                    valid = false;
+                    errors.push("Download min is not a valid number");
+                    $(controlId).addClass("invalid");
+                } else if (download_min < 1) {
+                    valid = false;
+                    errors.push("Download min must be 1 or more");
+                    $(controlId).addClass("invalid");
+                }
+
+                // Upload Min
+                controlId = "#" + rowPrefix(i, "upload_min_mbps");
+                let upload_min = $(controlId).val();
+                upload_min = parseInt(upload_min);
+                if (isNaN(upload_min)) {
+                    valid = false;
+                    errors.push("Upload min is not a valid number");
+                    $(controlId).addClass("invalid");
+                } else if (upload_min < 1) {
+                    valid = false;
+                    errors.push("Upload min must be 1 or more");
+                    $(controlId).addClass("invalid");
+                }
+
+                // Download Max
+                controlId = "#" + rowPrefix(i, "download_max_mbps");
+                let download_max = $(controlId).val();
+                upload_min = parseInt(download_max);
+                if (isNaN(download_max)) {
+                    valid = false;
+                    errors.push("Download Max is not a valid number");
+                    $(controlId).addClass("invalid");
+                } else if (download_max < 1) {
+                    valid = false;
+                    errors.push("Download Max must be 1 or more");
+                    $(controlId).addClass("invalid");
+                }
+
+                // Upload Max
+                controlId = "#" + rowPrefix(i, "upload_max_mbps");
+                let upload_max = $(controlId).val();
+                upload_min = parseInt(upload_max);
+                if (isNaN(upload_max)) {
+                    valid = false;
+                    errors.push("Upload Max is not a valid number");
+                    $(controlId).addClass("invalid");
+                } else if (upload_max < 1) {
+                    valid = false;
+                    errors.push("Upload Max must be 1 or more");
+                    $(controlId).addClass("invalid");
+                }
+            }
+
+            if (!valid) {
+                let errorMessage = "Invalid ShapedDevices Entries:\n";
+                for (let i=0; i<errors.length; i++) {
+                    errorMessage += errors[i] + "\n";
+                }
+                alert(errorMessage);
+            }
+
+            return {
+                valid: valid,
+                errors: errors
+            };
+        }
+
+        function saveSd() {
+            console.log("Save Clicked");
+            let isValid = validateSd().valid;
+        }
+
         function shapedDevices() {
             let html = "<table style='height: 500px; overflow: scroll; border-collapse: collapse; width: 100%; padding: 0px'>";
             html += "<thead style='position: sticky; top: 0; height: 50px; background: #ddd'>";
-            html += "<tr style='font-size: 9pt;'><th>Circuit ID</th><th>Circuit Name</th><th>Device ID</th><th>Device Name</th><th>Parent Node</th><th>MAC</th><th>IPv4</th><th>IPv6</th><th>Download Min</th><th>Upload Min</th><th>Download Max</th><th>Upload Max</th><th>Comment</th></tr>";
-            html += "</thead>>";
+            html += "<tr style='font-size: 9pt;'><th>Circuit ID</th><th>Circuit Name</th><th>Device ID</th><th>Device Name</th><th>Parent Node</th><th>MAC</th><th>IPv4</th><th>IPv6</th><th>Download Min</th><th>Upload Min</th><th>Download Max</th><th>Upload Max</th><th>Comment</th><th></th></th></tr>";
+            html += "</thead>";
             for (var i=0; i<shaped_devices.length; i++) {
                 let row = shaped_devices[i];
                 html += "<tr>";
-                html += makeSheetBox(row.circuit_id, true);
-                html += makeSheetBox(row.circuit_name, true);
-                html += makeSheetBox(row.device_id, true);
-                html += makeSheetBox(row.device_name, true);
-                html += nodeDropDown(row.parent_node, true);
-                html += makeSheetBox(row.mac, true);
-                html += separatedIpArray(row.ipv4);
-                html += separatedIpArray(row.ipv6);
-                html += makeSheetNumberBox(row.download_min_mbps);
-                html += makeSheetNumberBox(row.upload_min_mbps);
-                html += makeSheetNumberBox(row.download_max_mbps);
-                html += makeSheetNumberBox(row.upload_max_mbps);
-                html += makeSheetBox(row.comment, true);
+                html += makeSheetBox(i, "circuit_id", row.circuit_id, true);
+                html += makeSheetBox(i, "circuit_name", row.circuit_name, true);
+                html += makeSheetBox(i, "device_id", row.device_id, true);
+                html += makeSheetBox(i, "device_name", row.device_name, true);
+                html += nodeDropDown(i, "parent_node", row.parent_node, true);
+                html += makeSheetBox(i, "mac", row.mac, true);
+                html += separatedIpArray(i, "ipv4", row.ipv4);
+                html += separatedIpArray(i, "ipv6", row.ipv6);
+                html += makeSheetNumberBox(i, "download_min_mbps", row.download_min_mbps);
+                html += makeSheetNumberBox(i, "upload_min_mbps", row.upload_min_mbps);
+                html += makeSheetNumberBox(i, "download_max_mbps", row.download_max_mbps);
+                html += makeSheetNumberBox(i, "upload_max_mbps", row.upload_max_mbps);
+                html += makeSheetBox(i, "comment", row.comment, true);
+                html += "<td><button class='btn btn-sm btn-warning' type='button' onclick='deleteSdRow(" + i + ")'><i class='fa fa-trash'></i></button></td>";
 
                 html += "</tr>";
             }
