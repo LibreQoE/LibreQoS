@@ -8,7 +8,7 @@ use sha2::Digest;
 use uuid::Uuid;
 
 /// Top-level configuration file for LibreQoS.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Config {
     /// Version number for the configuration file.
     /// This will be set to "1.5". Versioning will make

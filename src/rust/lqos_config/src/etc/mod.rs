@@ -1,6 +1,8 @@
 //! Manages the `/etc/lqos.conf` file.
 
 mod etclqos_migration;
+
+use std::path::Path;
 use self::migration::migrate_if_needed;
 pub use self::v15::Config;
 pub use etclqos_migration::*;
@@ -70,6 +72,38 @@ pub fn enable_long_term_stats(license_key: String) -> Result<(), LibreQoSConfigE
     Ok(())
 }
 
+/// Update the configuration on disk
+pub fn update_config(new_config: &Config) -> Result<(), LibreQoSConfigError> {
+    log::info!("Updating stored configuration");
+    let mut lock = CONFIG.lock().unwrap();
+    *lock = Some(new_config.clone());
+
+    // Does the configuration exist?
+    let config_path = Path::new("/etc/lqos.conf");
+    if config_path.exists() {
+        let backup_path = Path::new("/etc/lqos.conf.webbackup");
+        std::fs::copy(config_path, backup_path)
+            .map_err(|e| {
+                log::error!("Unable to create backup configuration: {e:?}");
+                LibreQoSConfigError::CannotCopy
+            })?;
+    }
+    
+    // Serialize the new one
+    let serialized = toml::to_string_pretty(new_config)
+        .map_err(|e| {
+            log::error!("Unable to serialize new configuration to TOML: {e:?}");
+            LibreQoSConfigError::SerializeError
+        })?;
+    std::fs::write(config_path, serialized)
+        .map_err(|e| {
+            log::error!("Unable to write new configuration: {e:?}");
+            LibreQoSConfigError::CannotWrite
+        })?;
+
+    Ok(())
+}
+
 #[derive(Debug, Error)]
 pub enum LibreQoSConfigError {
     #[error("Unable to read /etc/lqos.conf. See other errors for details.")]
@@ -90,4 +124,6 @@ pub enum LibreQoSConfigError {
     CannotWrite,
     #[error("Unable to read IP")]
     CannotReadIP,
+    #[error("Unable to serialize config")]
+    SerializeError,
 }

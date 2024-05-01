@@ -1,6 +1,6 @@
 use serde::{Serialize, Deserialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct UispIntegration {
     pub enable_uisp: bool,
     pub token: String,
@@ -18,7 +18,7 @@ pub struct UispIntegration {
     pub use_ptmp_as_parent: bool,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ExceptionCpe {
     pub cpe: String,
     pub parent: String,

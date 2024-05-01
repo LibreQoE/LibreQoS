@@ -1,5 +1,6 @@
 use crate::{auth_guard::AuthGuard, cache_control::NoCache};
 use default_net::get_interfaces;
+use reqwest::StatusCode;
 use lqos_bus::{bus_request, BusRequest, BusResponse};
 use lqos_config::{Tunables, Config};
 use rocket::{fs::NamedFile, serde::{json::Json, Serialize}};
@@ -37,6 +38,17 @@ pub async fn get_current_lqosd_config(
   let config = lqos_config::load_config().unwrap();
   println!("{config:#?}");
   NoCache::new(Json(config))
+}
+
+#[post("/api/update_config", data = "<data>")]
+pub async fn update_lqosd_config(
+  data: Json<Config>
+) -> String {
+  let config: Config = (*data).clone();
+  bus_request(vec![BusRequest::UpdateLqosdConfig(Box::new(config))])
+      .await
+      .unwrap();
+  "Ok".to_string()
 }
 
 #[post("/api/lqos_tuning/<period>", data = "<tuning>")]

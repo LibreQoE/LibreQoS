@@ -975,7 +975,18 @@
             if (!validationResult.valid) return;
 
             updateSavedConfig(validationResult.changes);
-            console.log(lqosd_config);
+            $.ajax({
+                type: "POST",
+                url: "/api/update_config",
+                data: JSON.stringify(lqosd_config),
+                success: (data) => {
+                    if (data === "Ok") {
+                        alert("Configuration saved");
+                    } else {
+                        alert("Configuration not saved: " + data);
+                    }
+                }
+            })
         }
 
         function start() {
