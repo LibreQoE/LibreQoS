@@ -619,15 +619,15 @@
     const bindings = [
         // General
         { field: "bindVersion", path: ".version", data: "string", editable: false },
-        { field: "bindPath", path: ".lqos_directory", data: "string", editable: true },
-        { field: "bindNodeId", path: ".node_id", data: "string", editable: true },
-        { field: "bindNodeName", path: ".node_name", data: "string", editable: true },
-        { field: "bindPacketCaptureTime", path: ".packet_capture_time", data: "integer", editable: true },
-        { field: "bindQueueCheckPeriodMs", path: ".queue_check_period_ms", data: "integer", editable: true },
+        { field: "bindPath", path: ".lqos_directory", data: "string", editable: true, required: true },
+        { field: "bindNodeId", path: ".node_id", data: "string", editable: true, required: true },
+        { field: "bindNodeName", path: ".node_name", data: "string", editable: true, required: true },
+        { field: "bindPacketCaptureTime", path: ".packet_capture_time", data: "integer", editable: true, min: 1, max: 300 },
+        { field: "bindQueueCheckPeriodMs", path: ".queue_check_period_ms", data: "integer", editable: true, min: 100, max: 100000 },
 
         // Anonymous Usage
         { field: "bindSendAnonymous", path: ".usage_stats.send_anonymous", data: "bool", editable: true },
-        { field: "bindAnonymousServer", path: ".usage_stats.anonymous_server", data: "string", editable: true },
+        { field: "bindAnonymousServer", path: ".usage_stats.anonymous_server", data: "string", editable: true, required: true },
 
         // Tuning
         { field: "bindStopIrqBalance", path: ".tuning.stop_irq_balance", data: "bool", editable: true },
@@ -826,17 +826,115 @@
             $("#bindSingleInterfaceNetworklan").val('3');
         }
 
-        function validateConfig() {
-            for (var i=0; i<bindings.length; ++i) {
+        function detectChanges() {
+            let changes = [];
+            for (let i=0; i<bindings.length; ++i) {
                 let entry = bindings[i];
                 let controlId = entry.field;
+                if (entry.path === ".bridge" || entry.path === ".single_interface") continue;
                 if (entry.path != null) {
                     let path = "lqosd_config" + entry.path;
                     let currentValue = $("#" + controlId).val();
-                    let storedVAlue = eval(path);
-                    console.log(currentValue, storedVAlue);
+                    // TODO: Bridge/Stick special case
+                    if (entry.data === "bool") {
+                        currentValue = $("#" + controlId).is(':checked');
+                    } else if (entry.data === "array_of_strings") {
+                        currentValue = currentValue.replace('\n', '').split(' ');
+                    } else if (entry.data === "ip_array") {
+                        currentValue = currentValue.split('\n');
+                    }
+                    try {
+                        let storedValue = eval(path);
+                        if (entry.data === "string" || entry.data === "integer") {
+                            if (storedValue === null && currentValue === "")
+                                currentValue = null;
+                        }
+                        //console.log(path, currentValue, storedValue);
+                        if (String(currentValue) !== String(storedValue)) {
+                            console.log("Change detected!");
+                            console.log(entry.path, " has changed. ", storedValue, '=>', currentValue);
+                            changes.push(i);
+                        }
+                    } catch {
+                        //console.log(path + 'ignored');
+                    }
                 }
             }
+            return changes;
+        }
+
+        function validateConfig() {
+            console.log("Starting validator");
+            $(".invalid").removeClass("invalid");
+            let changes = detectChanges();
+            if (changes.length === 0) {
+                console.log("Nothing changed!");
+                alert("No configuration changes were made.");
+                return {
+                    valid: false,
+                    changes: [],
+                };
+            }
+
+            let valid = true;
+            let errors = [];
+            for (let i=0; i<changes.length; i++) {
+                let target = bindings[changes[i]];
+                if (target.data === "string") {
+                    let newValue = $("#" + target.field).val();
+                    if (target.required != null && target.required === true) {
+                        if (newValue.length === 0) {
+                            valid = false;
+                            errors.push(target.path + " is required.");
+                            $("#" + target.field).addClass("invalid");
+                        }
+                    }
+                } else if (target.data === "integer" || target.data === "float") {
+                    let newValue = $("#" + target.field).val();
+                    newValue = parseInt(newValue);
+                    if (isNaN(newValue)) {
+                        valid = false;
+                        errors.push(target.path + " must be an integer number.");
+                        $("#" + target.field).addClass("invalid");
+                    } else {
+                        if (target.min != null) {
+                            if (newValue < target.min) {
+                                valid = false;
+                                errors.push(target.path + " must be between " + target.min + " and " + target.max + ".");
+                                $("#" + target.field).addClass("invalid");
+                            }
+                        }
+                        if (target.max != null) {
+                            if (newValue > target.max) {
+                                valid = false;
+                                errors.push(target.path + " must be between " + target.min + " and " + target.max + ".");
+                                $("#" + target.field).addClass("invalid");
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!valid) {
+                let errorMessage = "";
+                for (let i=0; i<errors.length; i++) {
+                    errorMessage += errors[i] + "\n";
+                }
+                alert("Validation errors\n" + errorMessage);
+            }
+
+            console.log("Ending Validator");
+            return {
+                valid: valid,
+                changes: changes,
+            };
+        }
+
+        function saveConfig() {
+            let validationResult = validateConfig();
+            if (!validationResult.valid) return;
+
+            // Save it here
         }
 
         function start() {
@@ -850,7 +948,7 @@
                 } else {
                     // Handle Saving ispConfig.py
                     $("#btnSaveIspConfig").on('click', (data) => {
-                        validateConfig();
+                        saveConfig();
                     });
                 }
                 $.get("/api/config", (data) => {
