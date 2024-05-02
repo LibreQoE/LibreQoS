@@ -583,6 +583,20 @@
         <!-- Network Layout/JSON Tab -->
         <div class="tab-pane fade" id="v-pills-netjson" role="tabpanel" aria-labelledby="v-pills-netjson-tab">
             <h2><i class="fa fa-map"></i>  Network.Json - Network Layout</h2>
+
+            <h3>Network Adjustment Options</h3>
+            <div>
+                <button type="button" class="btn btn-danger" onclick="flattenNetwork()"><i class="fa fa-warning"></i> Flatten Network</button>
+            </div>
+            <div style="margin-top: 8px;">
+                <strong>Add Node to Root</strong>
+                <input type="text" value="" placeholder="New Node Name" id="njsNewNodeName" /> <br />
+                <input type="number" min="1" max="100000" placeholder="Max Download" id="njsNewNodeDown" /> <br />
+                <input type="number" min="1" max="100000" placeholder="Max Upload" id="njsNewNodeUp" /> <br />
+                <button type="button" class="btn btn-primary" onclick="addNetworkNode()"><i class="fa fa-plus"></i> Add Node to Root </button>
+            </div>
+
+            <hr />
             <div id="netjson"></div>
         </div>
 
@@ -1034,10 +1048,15 @@
         }
 
         function iterateNetJson(level, depth) {
-            let html = "<div style='margin-left: " + depth * 30 + "px;'>";
+            let html = "<div style='margin-left: " + depth * 30 + "px; margin-top: 4px;'>";
             for (const [key, value] of Object.entries(level)) {
                 html += "<div>";
-                html += "<strong>" + key + "</strong><br />";
+                html += "<strong>" + key + "</strong>";
+                if (depth > 0) {
+                    html += "  <button class='btn btn-sm btn-secondary' onclick='promoteNode(\"" + key + "\") '><i class='fa fa-arrow-left'></i> Promote</button>";
+                    html += "  <button class='btn btn-sm btn-secondary' onclick='renameNode(\"" + key + "\") '><i class='fa fa-pencil'></i> Rename</button>";
+                }
+                html += "<br />";
                 html += "Download: <input type='number' value='" + value.downloadBandwidthMbps + "'></input><br />";
                 html += "Upload: <input type='number' value='" + value.uploadBandwidthMbps + "'></input><br />";
                 let num_children = 0;
@@ -1062,6 +1081,87 @@
             let html = "";
             html += iterateNetJson(network_json, 0);
             $("#netjson").html(html);
+        }
+
+        function flattenNetwork() {
+            if (confirm("Are you sure you wish to flatten your network? All topology will be removed, giving a flat network. All Shaped Devices will be reparented to the single node.")) {
+                network_json = {};
+                RenderNetworkJson();
+                for (let i=0; i<shaped_devices.length; i++) {
+                    shaped_devices[i].parent_node = "";
+                }
+                shapedDevices();
+            }
+        }
+
+        function addNetworkNode() {
+            let newName = $("#njsNewNodeName").val();
+            let newDown = parseInt($("#njsNewNodeDown").val());
+            let newUp = parseInt($("#njsNewNodeUp").val());
+            if (newName.length > 0 && newDown > 1 && newUp > 1) {
+                network_json[newName] = {
+                    downloadBandwidthMbps: newDown,
+                    uploadBandwidthMbps: newUp,
+                    children: {}
+                }
+            }
+            RenderNetworkJson();
+        }
+
+        function promoteNode(nodeId) {
+            console.log("Promoting ", nodeId);
+            let previousParent = null;
+
+            function iterate(tree, depth) {
+                for (const [key, value] of Object.entries(tree)) {
+                    console.log(key);
+                    if (key === nodeId) {
+                        console.log(key);
+                        let tmp = value;
+                        delete tree[nodeId];
+                        previousParent[nodeId] = tmp;
+                    }
+
+                    if (value.children != null) {
+                        previousParent = tree;
+                        iterate(value.children, depth+1);
+                    }
+                }
+            }
+
+            iterate(network_json);
+            RenderNetworkJson();
+        }
+
+        function renameNode(nodeId) {
+            let newName = prompt("New node name?");
+            console.log(newName);
+
+            function iterate(tree, depth) {
+                for (const [key, value] of Object.entries(tree)) {
+                    console.log(key);
+                    if (key === nodeId) {
+                        console.log(key);
+                        let tmp = value;
+                        delete tree[nodeId];
+                        tree[newName] = tmp;
+                    }
+
+                    if (value.children != null) {
+                        iterate(value.children, depth+1);
+                    }
+                }
+            }
+
+            iterate(network_json);
+
+            for (let i=0; i<shaped_devices.length; i++) {
+                let sd = shaped_devices[i];
+                if (sd.parent_node === nodeId) sd.parent_node = newName;
+            }
+
+            RenderNetworkJson();
+            shapedDevices();
         }
 
         function rowPrefix(rowId, boxId) {
@@ -1287,6 +1387,7 @@
                 // Check the parent node
                 controlId = "#" + rowPrefix(i, "parent_node");
                 let parent_node = $(controlId).val();
+                if (parent_node == null) parent_node = "";
                 if (validNodes.length === 0) {
                     // Flat
                     if (parent_node.length > 0) {
@@ -1465,6 +1566,9 @@
         function saveSd() {
             console.log("Save Clicked");
             let isValid = validateSd().valid;
+            if (isValid) {
+                // TODO: Save the darned thing
+            }
         }
 
         function shapedDevices() {
