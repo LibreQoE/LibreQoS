@@ -1058,8 +1058,8 @@
                 html += "  <button class='btn btn-sm btn-secondary' onclick='renameNode(\"" + key + "\") '><i class='fa fa-pencil'></i> Rename</button>";
                 html += "  <button class='btn btn-sm btn-warning' onclick='deleteNode(\"" + key + "\") '><i class='fa fa-trash'></i> Delete</button>";
                 html += "<br />";
-                html += "Download: <input type='number' value='" + value.downloadBandwidthMbps + "'></input><br />";
-                html += "Upload: <input type='number' value='" + value.uploadBandwidthMbps + "'></input><br />";
+                html += "Download: " + value.downloadBandwidthMbps + " Mbps <button type='button' class='btn btn-sm btn-secondary' onclick='nodeSpeedChange(\"" + key + "\", \"d\")'><i class='fa fa-pencil'></i></button><br />";
+                html += "Upload: " + value.uploadBandwidthMbps + " Mbps <button type='button' class='btn btn-sm btn-secondary' onclick='nodeSpeedChange(\"" + key + "\", \"u\")'><i class='fa fa-pencil'></i></button><br />";
                 let num_children = 0;
                 for (let i=0; i<shaped_devices.length; i++) {
                     if (shaped_devices[i].parent_node === key) {
@@ -1125,6 +1125,40 @@
 
                     if (value.children != null) {
                         previousParent = tree;
+                        iterate(value.children, depth+1);
+                    }
+                }
+            }
+
+            iterate(network_json);
+            RenderNetworkJson();
+        }
+
+        function nodeSpeedChange(nodeId, direction) {
+            let newVal = prompt("New download value in Mbps");
+            newVal = parseInt(newVal);
+            if (isNaN(newVal)) {
+                alert("That's not an integer!");
+                return;
+            }
+            if (newVal < 1) {
+                alert("New value must be greater than 1");
+                return;
+            }
+
+            // Find and set
+            function iterate(tree, depth) {
+                for (const [key, value] of Object.entries(tree)) {
+                    console.log(key);
+                    if (key === nodeId) {
+                        switch (direction) {
+                            case 'd' : value.downloadBandwidthMbps = newVal; break;
+                            case 'u' : value.uploadBandwidthMbps = newVal; break;
+                            default: console.log("Oopsie - unknown direction");
+                        }
+                    }
+
+                    if (value.children != null) {
                         iterate(value.children, depth+1);
                     }
                 }
