@@ -96,7 +96,7 @@ fn numeric_string_to_f32(text: &str) -> Option<f32> {
 /// * `bandwidth_overrides` - The bandwidth overrides to apply
 pub fn apply_bandwidth_overrides(sites: &mut [UispSite], bandwidth_overrides: &BandwidthOverrides) {
     for site in sites.iter_mut() {
-        if let Some((up, down)) = bandwidth_overrides.get(&site.name) {
+        if let Some((down, up)) = bandwidth_overrides.get(&site.name) {
             // Apply the overrides
             site.max_down_mbps = *down as u32;
             site.max_up_mbps = *up as u32;
