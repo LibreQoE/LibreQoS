@@ -53,7 +53,7 @@ fn traverse_sites(
     );
     entry.insert(
         "uploadBandwidthMbps".to_string(),
-        serde_json::Value::Number(sites[idx].max_down_mbps.into()),
+        serde_json::Value::Number(sites[idx].max_up_mbps.into()),
     );
 
     if depth < 10 {
