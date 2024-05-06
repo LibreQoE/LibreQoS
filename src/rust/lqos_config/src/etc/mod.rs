@@ -43,8 +43,15 @@ pub fn load_config() -> Result<Config, LibreQoSConfigError> {
                 config_result
             )));
         }
+        let mut final_config = config_result.unwrap(); // We know it's good at this point
+        
+        // Check for environment variable overrides
+        if let Ok(lqos_dir) = std::env::var("LQOS_DIRECTORY") {
+            final_config.lqos_directory = lqos_dir;
+        }
+        
         log::info!("Set cached version of config file");
-        *lock = Some(config_result.unwrap());
+        *lock = Some(final_config);
     }
 
     Ok(lock.as_ref().unwrap().clone())
