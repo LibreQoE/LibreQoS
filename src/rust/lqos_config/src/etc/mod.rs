@@ -19,17 +19,23 @@ static CONFIG: Mutex<Option<Config>> = Mutex::new(None);
 
 /// Load the configuration from `/etc/lqos.conf`.
 pub fn load_config() -> Result<Config, LibreQoSConfigError> {
+    let mut config_location = "/etc/lqos.conf".to_string();
+    if let Ok(lqos_config) = std::env::var("LQOS_CONFIG") {
+        config_location = lqos_config;
+        log::info!("Overriding lqos.conf location from environment variable.");
+    }
+    
     let mut lock = CONFIG.lock().unwrap();
     if lock.is_none() {
-        log::info!("Loading configuration file /etc/lqos.conf");
+        log::info!("Loading configuration file {config_location}");
         migrate_if_needed().map_err(|e| {
             log::error!("Unable to migrate configuration: {:?}", e);
             LibreQoSConfigError::FileNotFoud
         })?;
 
-        let file_result = std::fs::read_to_string("/etc/lqos.conf");
+        let file_result = std::fs::read_to_string(&config_location);
         if file_result.is_err() {
-            log::error!("Unable to open /etc/lqos.conf");
+            log::error!("Unable to open {config_location}");
             return Err(LibreQoSConfigError::FileNotFoud);
         }
         let raw = file_result.unwrap();
