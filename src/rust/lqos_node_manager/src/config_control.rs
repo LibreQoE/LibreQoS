@@ -2,8 +2,10 @@ use crate::{auth_guard::AuthGuard, cache_control::NoCache};
 use default_net::get_interfaces;
 use reqwest::StatusCode;
 use lqos_bus::{bus_request, BusRequest, BusResponse};
-use lqos_config::{Tunables, Config};
-use rocket::{fs::NamedFile, serde::{json::Json, Serialize}};
+use lqos_config::{Tunables, Config, ShapedDevice};
+use rocket::{fs::NamedFile, serde::{json::Json, Serialize, Deserialize}};
+use rocket::serde::json::Value;
+use crate::tracker::SHAPED_DEVICES;
 
 // Note that NoCache can be replaced with a cache option
 // once the design work is complete.
@@ -48,6 +50,42 @@ pub async fn update_lqosd_config(
   bus_request(vec![BusRequest::UpdateLqosdConfig(Box::new(config))])
       .await
       .unwrap();
+  "Ok".to_string()
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(crate = "rocket::serde")]
+pub struct NetworkAndDevices {
+  shaped_devices: Vec<ShapedDevice>,
+  network_json: Value,
+}
+
+#[post("/api/update_network_and_devices", data = "<data>")]
+pub async fn update_network_and_devices(
+  data: Json<NetworkAndDevices>
+) -> String {
+  let config = lqos_config::load_config().unwrap();
+
+  // Save network.json
+  let serialized_string = rocket::serde::json::to_pretty_string(&data.network_json).unwrap();
+  let net_json_path = std::path::Path::new(&config.lqos_directory).join("network.json");
+  let net_json_backup_path = std::path::Path::new(&config.lqos_directory).join("network.json.backup");
+  if net_json_path.exists() {
+    // Make a backup
+    std::fs::copy(&net_json_path, net_json_backup_path).unwrap();
+  }
+  std::fs::write(net_json_path, serialized_string).unwrap();
+
+  // Save the Shaped Devices
+  let sd_path = std::path::Path::new(&config.lqos_directory).join("ShapedDevices.csv");
+  let sd_backup_path = std::path::Path::new(&config.lqos_directory).join("ShapedDevices.csv.backup");
+  if sd_path.exists() {
+    std::fs::copy(&sd_path, sd_backup_path).unwrap();
+  }
+  let mut lock = SHAPED_DEVICES.write().unwrap();
+  lock.replace_with_new_data(data.shaped_devices.clone());
+  lock.write_csv(&format!("{}/ShapedDevices.csv", config.lqos_directory)).unwrap();
+
   "Ok".to_string()
 }
 

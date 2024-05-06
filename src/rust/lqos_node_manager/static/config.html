@@ -58,6 +58,7 @@
 
 <div class="col-sm-8 mx-auto" class="pad4 mbot4" id="controls">
     <a href="#" class="btn btn-primary" id="btnSaveIspConfig"><i class="fa fa-save"></i> Save Configuration</a>
+    <button type="button" class="btn btn-primary" onclick="saveNetAndDevices()"><i class="fa fa-save"></i> Save network.json and ShapedDevices.csv</button>
 </div>
 
 <div class="d-flex align-items-start">
@@ -605,8 +606,6 @@
             <h2><i class="fa table"></i>  Shaped Devices</h2>
             <p>All Shaped Devices. Note that if you have an integration enabled, this will be overwritten periodically.</p>
             <button type="button" class="btn btn-sm btn-success" onclick="newSdRow()"><i class="fa fa-plus"></i> Add Row</button>
-
-            <button type="button" class="btn btn-sm btn-primary" onclick="saveSd()"><i class="fa fa-save"></i> Save ShapedDevices.csv</button>
 
             <div id="shapedDeviceTable"></div>
         </div>
@@ -1665,12 +1664,30 @@
             };
         }
 
-        function saveSd() {
-            console.log("Save Clicked");
+        function saveNetAndDevices() {
             let isValid = validateSd().valid;
-            if (isValid) {
-                // TODO: Save the darned thing
+            if (!isValid) {
+                alert("Validation errors in ShapedDevices. Not Saving");
+                return;
             }
+
+            // Submit both for saving
+            let submission = {
+                shaped_devices: shaped_devices,
+                network_json: network_json,
+            }
+            $.ajax({
+                type: "POST",
+                url: "/api/update_network_and_devices",
+                data: JSON.stringify(submission),
+                success: (data) => {
+                    if (data === "Ok") {
+                        alert("Configuration saved");
+                    } else {
+                        alert("Configuration not saved: " + data);
+                    }
+                }
+            })
         }
 
         function shapedDevices() {
