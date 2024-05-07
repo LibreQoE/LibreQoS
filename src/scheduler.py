@@ -1,9 +1,9 @@
 import time
 import datetime
 from LibreQoS import refreshShapers, refreshShapersUpdateOnly
-#from graphInfluxDB import refreshBandwidthGraphs, refreshLatencyGraphs
+from graphInfluxDB import refreshBandwidthGraphs, refreshLatencyGraphs
 from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue_refresh_interval_mins, \
-	automatic_import_powercode, automatic_import_sonar
+	automatic_import_powercode, automatic_import_sonar, influx_db_enabled
 if automatic_import_uisp():
 	from integrationUISP import importFromUISP
 if automatic_import_splynx():
@@ -39,15 +39,15 @@ def importFromCRM():
 		except:
 			print("Failed to import from Sonar")
 
-#def graphHandler():
-#	try:
-#		refreshBandwidthGraphs()
-#	except:
-#		print("Failed to update bandwidth graphs")
-#	try:
-#		refreshLatencyGraphs()
-#	except:
-#		print("Failed to update latency graphs")
+def graphHandler():
+	try:
+		refreshBandwidthGraphs()
+	except:
+		print("Failed to update bandwidth graphs")
+	try:
+		refreshLatencyGraphs()
+	except:
+		print("Failed to update latency graphs")
 
 def importAndShapeFullReload():
 	importFromCRM()
@@ -62,7 +62,7 @@ if __name__ == '__main__':
 
 	ads.add_job(importAndShapePartialReload, 'interval', minutes=queue_refresh_interval_mins(), max_instances=1)
 
-	#if influxDBEnabled:
-	#	ads.add_job(graphHandler, 'interval', seconds=10, max_instances=1)
+	if influx_db_enabled():
+		ads.add_job(graphHandler, 'interval', seconds=10, max_instances=1)
 
 	ads.start()
