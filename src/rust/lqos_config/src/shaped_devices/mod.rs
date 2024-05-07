@@ -110,6 +110,12 @@ impl ConfigShapedDevices {
     Ok(Self { devices, trie })
   }
 
+  /// Replace the current shaped devices list with a new one
+  pub fn replace_with_new_data(&mut self, devices: Vec<ShapedDevice>) {
+    self.devices = devices;
+    self.trie = ConfigShapedDevices::make_trie(&self.devices);
+  }
+
   fn make_trie(
     devices: &[ShapedDevice],
   ) -> ip_network_table::IpNetworkTable<usize> {

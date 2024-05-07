@@ -178,6 +178,13 @@ fn handle_bus_requests(
         lqos_bus::BusResponse::Ack
       }
       BusRequest::UpdateLqosDTuning(..) => tuning::tune_lqosd_from_bus(req),
+      BusRequest::UpdateLqosdConfig(config) => {
+        let result = lqos_config::update_config(config);
+        if result.is_err() {
+          log::error!("Error updating config: {:?}", result);
+        }
+        BusResponse::Ack
+      },
       #[cfg(feature = "equinix_tests")]
       BusRequest::RequestLqosEquinixTest => lqos_daht_test::lqos_daht_test(),
       BusRequest::ValidateShapedDevicesCsv => {

@@ -6,6 +6,7 @@ use rocket::{
   fs::NamedFile,
   serde::{json::Json, Serialize, msgpack::MsgPack},
 };
+use rocket::serde::json::Value;
 
 use crate::{cache_control::NoCache, tracker::SHAPED_DEVICES};
 
@@ -128,4 +129,18 @@ pub async fn funnel_for_queue(
     }
   }
   NoCache::new(MsgPack(result))
+}
+
+#[get("/api/network_json")]
+pub async fn get_network_json() -> NoCache<Json<Value>> {
+  if let Ok(config) = lqos_config::load_config() {
+    let path = std::path::Path::new(&config.lqos_directory).join("network.json");
+    if path.exists() {
+      let raw = std::fs::read_to_string(path).unwrap();
+      let json: Value = rocket::serde::json::from_str(&raw).unwrap();
+      return NoCache::new(Json(json));
+    }
+  }
+
+  NoCache::new(Json(Value::String("Not done yet".to_string())))
 }

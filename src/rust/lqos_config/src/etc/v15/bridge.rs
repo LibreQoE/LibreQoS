@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Represents a two-interface bridge configuration.
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct BridgeConfig {
     /// Use the XDP-accelerated bridge?
     pub use_xdp_bridge: bool,
@@ -27,7 +27,7 @@ impl Default for BridgeConfig {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct SingleInterfaceConfig {
     /// The name of the interface
     pub interface: String,
