@@ -1,7 +1,7 @@
-# Updating 1.4 To Latest Version
+# Updating 1.5 To Latest Version
 
 ```{warning}
-If you use the XDP bridge, traffic will stop passing through the bridge during the update (XDP bridge is only operating while lqosd runs).
+If you use the XDP bridge, traffic will briefly stop passing through the bridge when lqosd restarts (XDP bridge is only operating while lqosd runs).
 ```
 
 ## If you installed with Git
