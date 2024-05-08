@@ -1,6 +1,5 @@
 use crate::{auth_guard::AuthGuard, cache_control::NoCache};
 use default_net::get_interfaces;
-use reqwest::StatusCode;
 use lqos_bus::{bus_request, BusRequest, BusResponse};
 use lqos_config::{Tunables, Config, ShapedDevice};
 use rocket::{fs::NamedFile, serde::{json::Json, Serialize, Deserialize}};
