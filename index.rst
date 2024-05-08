@@ -17,6 +17,8 @@ Welcome to the LibreQoS documentation!
    :caption: Read me first!
 
    docs/Quickstart/networkdesignassumptions
+   docs/SystemRequirements/Compute
+   docs/SystemRequirements/Networking
 
 .. toctree::
    :maxdepth: 1
@@ -26,31 +28,39 @@ Welcome to the LibreQoS documentation!
 
 .. toctree::
    :maxdepth: 1
-   :caption: Quickstart:
+   :caption: v1.4:
 
-   docs/SystemRequirements/Compute
-   docs/SystemRequirements/Networking
-   docs/Quickstart/quickstart-prereq
-   docs/Quickstart/quickstart-libreqos-1.4
-   docs/Quickstart/configuration
-   docs/Quickstart/services-and-run
-   docs/Quickstart/share
+   docs/v1.4/Quickstart/quickstart-prereq
+   docs/v1.4/Quickstart/quickstart-libreqos-1.4
+   docs/v1.4/Quickstart/configuration
+   docs/v1.4/Quickstart/services-and-run
+   docs/v1.4/Quickstart/share
 
-.. toctree::
-   ::maxdepth: 1
-   :caption: Updates:
+   docs/v1.4/Updates/update
 
-   docs/Updates/update
+   docs/v1.4/TechnicalDocs/complex-install
+   docs/v1.4/TechnicalDocs/troubleshooting
+   docs/v1.4/TechnicalDocs/integrations
+   docs/v1.4/TechnicalDocs/extras
+   docs/v1.4/TechnicalDocs/performance-tuning
 
 .. toctree::
    :maxdepth: 1
-   :caption: Technical Documentation:
+   :caption: v1.5:
 
-   docs/TechnicalDocs/complex-install
-   docs/TechnicalDocs/troubleshooting
-   docs/TechnicalDocs/integrations
-   docs/TechnicalDocs/extras
-   docs/TechnicalDocs/performance-tuning
+   docs/v1.5/Quickstart/quickstart-prereq
+   docs/v1.5/Quickstart/quickstart-libreqos-1.4
+   docs/v1.5/Quickstart/configuration
+   docs/v1.5/Quickstart/services-and-run
+   docs/v1.5/Quickstart/share
+
+   docs/v1.5/Updates/update
+
+   docs/v1.5/TechnicalDocs/complex-install
+   docs/v1.5/TechnicalDocs/troubleshooting
+   docs/v1.5/TechnicalDocs/integrations
+   docs/v1.5/TechnicalDocs/extras
+   docs/v1.5/TechnicalDocs/performance-tuning
 
 .. toctree::
    :maxdepth: 1
