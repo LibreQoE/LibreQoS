@@ -1664,6 +1664,17 @@
             };
         }
 
+        function ipAddressesToTuple(ip) {
+            if (ip.length === 0) return [];
+            let ips = ip.replace(' ', '').split(',');
+            for (let i=0; i<ips.length; i++) {
+                let this_ip = ips[i].trim();
+                let parts = this_ip.split('/');
+                ips[i] = [ parts[0], parseInt(parts[1]) ];
+            }
+            return ips;
+        }
+
         function saveNetAndDevices() {
             let isValid = validateSd().valid;
             if (!isValid) {
@@ -1671,7 +1682,26 @@
                 return;
             }
 
+            // Update the Shaped Devices to match the onscreen list
+            for (let i=0; i<shaped_devices.length; i++) {
+                let row = shaped_devices[i];
+                row.circuit_id = $("#" + rowPrefix(i, "circuit_id")).val();
+                row.circuit_name = $("#" + rowPrefix(i, "circuit_name")).val();
+                row.device_id = $("#" + rowPrefix(i, "device_id")).val();
+                row.device_name = $("#" + rowPrefix(i, "device_name")).val();
+                row.parent_node = $("#" + rowPrefix(i, "parent_node")).val();
+                row.mac = $("#" + rowPrefix(i, "mac")).val();
+                row.ipv4 = ipAddressesToTuple($("#" + rowPrefix(i, "ipv4")).val());
+                row.ipv6 = ipAddressesToTuple($("#" + rowPrefix(i, "ipv6")).val());
+                row.download_min_mbps = parseInt($("#" + rowPrefix(i, "download_min_mbps")).val());
+                row.upload_min_mbps = parseInt($("#" + rowPrefix(i, "upload_min_mbps")).val());
+                row.download_max_mbps = parseInt($("#" + rowPrefix(i, "download_max_mbps")).val());
+                row.upload_max_mbps = parseInt($("#" + rowPrefix(i, "upload_max_mbps")).val());
+                row.comment = $("#" + rowPrefix(i, "comment")).val();
+            }
+
             // Submit both for saving
+            console.log(network_json);
             let submission = {
                 shaped_devices: shaped_devices,
                 network_json: network_json,

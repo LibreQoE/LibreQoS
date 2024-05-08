@@ -113,6 +113,7 @@ impl ConfigShapedDevices {
   /// Replace the current shaped devices list with a new one
   pub fn replace_with_new_data(&mut self, devices: Vec<ShapedDevice>) {
     self.devices = devices;
+    log::info!("{:?}", self.devices);
     self.trie = ConfigShapedDevices::make_trie(&self.devices);
   }
 
@@ -162,6 +163,7 @@ impl ConfigShapedDevices {
       error!("Unable to write ShapedDevices.csv. Permissions?");
       return Err(ShapedDevicesError::WriteFail);
     }
+    //println!("Would write to file: {}", csv);
     Ok(())
   }
 }
