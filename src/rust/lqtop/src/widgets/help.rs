@@ -18,5 +18,6 @@ pub fn help_display() -> impl Widget {
     keyhelp('n', "Network", &mut span_buf);
     keyhelp('h', "Hosts", &mut span_buf);
     keyhelp('f', "Flows", &mut span_buf);
+    keyhelp('l', "Latency Histogram", &mut span_buf);
     Block::new().borders(Borders::NONE).title(span_buf)
 }

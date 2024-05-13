@@ -15,6 +15,8 @@ pub enum BusMessage {
     DisableTopFlows,
     EnableTopHosts(std::sync::mpsc::Sender<BusResponse>),
     DisableTopHosts,
+    EnableLatencyHistogram(std::sync::mpsc::Sender<BusResponse>),
+    DisableLatencyHistogram,
 }
 
 /// The main loop for the bus.
@@ -37,6 +39,7 @@ async fn main_loop(mut rx: Receiver<BusMessage>) -> Result<()> {
     let mut collect_total_throughput = None;
     let mut collect_top_downloaders = None;
     let mut collect_top_flows = None;
+    let mut collect_latency_histogram = None;
 
     let mut bus_client = BusClient::new().await?;
     if !bus_client.is_connected() {
@@ -65,6 +68,12 @@ async fn main_loop(mut rx: Receiver<BusMessage>) -> Result<()> {
                 BusMessage::DisableTopHosts => {
                     collect_top_downloaders = None;
                 }
+                BusMessage::EnableLatencyHistogram(tx) => {
+                    collect_latency_histogram = Some(tx);
+                }
+                BusMessage::DisableLatencyHistogram => {
+                    collect_latency_histogram = None;
+                }
             }
         }
 
@@ -79,6 +88,9 @@ async fn main_loop(mut rx: Receiver<BusMessage>) -> Result<()> {
         }
         if collect_top_flows.is_some() {
             commands.push(BusRequest::TopFlows { flow_type: lqos_bus::TopFlowType::Bytes, n: 100 });
+        }
+        if collect_latency_histogram.is_some() {
+            commands.push(BusRequest::RttHistogram);
         }
 
         // Send the requests and process replies
@@ -96,6 +108,11 @@ async fn main_loop(mut rx: Receiver<BusMessage>) -> Result<()> {
                 }
                 BusResponse::TopFlows(..) => {
                     if let Some(tx) = &collect_top_flows {
+                        let _ = tx.send(response); // Ignoring the error, it's ok if the channel closed
+                    }
+                }
+                BusResponse::RttHistogram(..) => {
+                    if let Some(tx) = &collect_latency_histogram {
                         let _ = tx.send(response); // Ignoring the error, it's ok if the channel closed
                     }
                 }

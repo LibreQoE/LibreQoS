@@ -8,6 +8,7 @@ use ratatui::{layout::Rect, Frame};
 pub mod top_hosts;
 pub mod top_flows;
 pub mod help;
+pub mod latency_histogram;
 
 pub enum MainWidget {
     Hosts,

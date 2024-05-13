@@ -10,6 +10,7 @@ use ratatui::prelude::*;
 use tokio::sync::mpsc::Sender;
 use std::io::Stdout;
 use crate::widgets::help::help_display;
+use crate::widgets::latency_histogram::LatencyHistogram;
 
 use self::{top_flows::TopFlows, top_hosts::TopHosts};
 
@@ -55,6 +56,11 @@ impl TopUi {
             'f' => {
                 self.main_widget.disable();
                 self.main_widget = Box::new(TopFlows::new(self.bus_sender.clone()));
+                self.main_widget.enable();
+            }
+            'l' => {
+                self.main_widget.disable();
+                self.main_widget = Box::new(LatencyHistogram::new(self.bus_sender.clone()));
                 self.main_widget.enable();
             }
             _ => {}
