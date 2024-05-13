@@ -7,6 +7,7 @@ pub use network_sparkline::*;
 use ratatui::{layout::Rect, Frame};
 pub mod top_hosts;
 pub mod top_flows;
+pub mod help;
 
 pub enum MainWidget {
     Hosts,

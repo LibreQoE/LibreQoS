@@ -9,6 +9,7 @@ use crate::{bus::BusMessage, widgets::*};
 use ratatui::prelude::*;
 use tokio::sync::mpsc::Sender;
 use std::io::Stdout;
+use crate::widgets::help::help_display;
 
 use self::{top_flows::TopFlows, top_hosts::TopHosts};
 
@@ -73,6 +74,12 @@ impl TopUi {
         let mut next_region = 0;
 
         // Build the layout regions
+        let help_region = {
+            constraints.push(Constraint::Length(1));
+            next_region += 1;
+            next_region - 1
+        };
+        
         let cpu_region = if self.show_cpus {
             constraints.push(Constraint::Length(1));
             next_region += 1;
@@ -95,6 +102,7 @@ impl TopUi {
         let main_layout = Layout::new(Direction::Vertical, constraints).split(frame.size());
 
         // Add Widgets
+        frame.render_widget(help_display(), main_layout[help_region]);
         if self.show_cpus {
             frame.render_widget(cpu_display(), main_layout[cpu_region]);
         }
