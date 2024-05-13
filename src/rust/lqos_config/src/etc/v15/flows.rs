@@ -4,7 +4,7 @@
 
 use serde::{Serialize, Deserialize};
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct FlowConfig {
     pub flow_timeout_seconds: u64,
     pub netflow_enabled: bool,

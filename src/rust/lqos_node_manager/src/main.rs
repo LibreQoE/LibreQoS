@@ -86,7 +86,9 @@ fn rocket() -> _ {
         //config_control::get_current_python_config,
         config_control::get_current_lqosd_config,
         //config_control::update_python_config,
+        config_control::update_network_and_devices,
         config_control::update_lqos_tuning,
+        config_control::update_lqosd_config,
         auth_guard::create_first_user,
         auth_guard::login,
         auth_guard::admin_check,
@@ -97,6 +99,7 @@ fn rocket() -> _ {
         network_tree::network_tree_summary,
         network_tree::node_names,
         network_tree::funnel_for_queue,
+        network_tree::get_network_json,
         config_control::stats,
         // Supporting files
         static_pages::bootsrap_css,

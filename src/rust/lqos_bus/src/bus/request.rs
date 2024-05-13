@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 /// One or more `BusRequest` objects must be included in a `BusSession`
 /// request. Each `BusRequest` represents a single request for action
 /// or data.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum BusRequest {
   /// A generic "is it alive?" test. Returns an `Ack`.
   Ping,
@@ -112,6 +112,9 @@ pub enum BusRequest {
 
   /// Requests a real-time adjustment of the `lqosd` tuning settings
   UpdateLqosDTuning(u64, Tunables),
+
+  /// Requests that the configuration be updated
+  UpdateLqosdConfig(Box<lqos_config::Config>),
 
   /// Request that we start watching a circuit's queue
   WatchQueue(String),
