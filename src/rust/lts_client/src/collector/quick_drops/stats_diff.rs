@@ -90,7 +90,11 @@ impl CakeTracker {
             up.retain(|u| u.drops > 0 || u.marks > 0);
             down.retain(|d| d.drops > 0 || d.marks > 0);
 
-            Some((up, down))
+            if up.is_empty() && down.is_empty() {
+                None
+            } else {
+                Some((up, down))
+            }
         }
     }
 }
