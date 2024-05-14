@@ -6,8 +6,10 @@ use self::min_max::{MinMaxAvgPair, MinMaxAvg};
 pub(crate) use session_buffer::{StatsSession, SESSION_BUFFER};
 use lqos_utils::unix_time::unix_now;
 use tokio::sync::mpsc::Sender;
-use std::{collections::HashMap, net::IpAddr};
+use std::{collections::HashMap, net::IpAddr, sync::atomic::AtomicU64};
 use super::{HostSummary, NetworkTreeEntry};
+
+static QUEUE_STATS_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) async fn collate_stats(comm_tx: Sender<SenderChannelMessage>) {
     let timestamp = unix_now().unwrap_or(0);
@@ -116,7 +118,12 @@ pub(crate) async fn collate_stats(comm_tx: Sender<SenderChannelMessage>) {
     let (cpu, ram) = system_stats::get_cpu_ram().await;
 
     // Obtain queue stats
-    let cake_stats = super::update_cake_stats().await;
+    let last_cake = QUEUE_STATS_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let cake_stats = if last_cake % 10 == 0 {
+        super::update_cake_stats().await
+    } else {
+        None
+    };
 
 
     // Add to the submissions queue
