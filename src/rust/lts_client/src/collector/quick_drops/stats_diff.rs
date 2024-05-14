@@ -1,7 +1,7 @@
-use lqos_config::load_config;
-use tokio::sync::Mutex;
-use once_cell::sync::Lazy;
 use super::CakeStats;
+use lqos_config::load_config;
+use once_cell::sync::Lazy;
+use tokio::sync::Mutex;
 
 static CAKE_TRACKER: Lazy<Mutex<CakeTracker>> = Lazy::new(|| Mutex::new(CakeTracker::new()));
 
@@ -35,10 +35,7 @@ impl CakeTracker {
             } else {
                 let out_reader = super::AsyncQueueReader::new(outbound);
                 let in_reader = super::AsyncQueueReader::new(inbound);
-                let (up, down) = tokio::join!(
-                    out_reader.run(),
-                    in_reader.run(),
-                );
+                let (up, down) = tokio::join!(out_reader.run(), in_reader.run(),);
                 if let (Ok(Some(up)), Ok(Some(down))) = (up, down) {
                     return self.read_up_down(up, down);
                 }
@@ -47,7 +44,11 @@ impl CakeTracker {
         None
     }
 
-    fn read_up_down(&mut self, up: Vec<CakeStats>, down: Vec<CakeStats>) -> Option<(Vec<CakeStats>, Vec<CakeStats>)> {
+    fn read_up_down(
+        &mut self,
+        mut up: Vec<CakeStats>,
+        mut down: Vec<CakeStats>,
+    ) -> Option<(Vec<CakeStats>, Vec<CakeStats>)> {
         if self.prev.is_none() {
             self.prev = Some((up, down));
             None
@@ -55,13 +56,27 @@ impl CakeTracker {
             // Delta time
             if let Some((down, up)) = &mut self.current {
                 down.iter_mut().for_each(|d| {
-                    if let Some(prev) = self.prev.as_ref().unwrap().0.iter().find(|p| p.circuit_id == d.circuit_id) {
+                    if let Some(prev) = self
+                        .prev
+                        .as_ref()
+                        .unwrap()
+                        .0
+                        .iter()
+                        .find(|p| p.circuit_id == d.circuit_id)
+                    {
                         d.drops = d.drops.saturating_sub(prev.drops);
                         d.marks = d.marks.saturating_sub(prev.marks);
                     }
                 });
                 up.iter_mut().for_each(|d| {
-                    if let Some(prev) = self.prev.as_ref().unwrap().1.iter().find(|p| p.circuit_id == d.circuit_id) {
+                    if let Some(prev) = self
+                        .prev
+                        .as_ref()
+                        .unwrap()
+                        .1
+                        .iter()
+                        .find(|p| p.circuit_id == d.circuit_id)
+                    {
                         d.drops = d.drops.saturating_sub(prev.drops);
                         d.marks = d.marks.saturating_sub(prev.marks);
                     }
@@ -70,6 +85,10 @@ impl CakeTracker {
 
             // Advance the previous
             self.prev = self.current.take();
+
+            // Remove all zeroes
+            up.retain(|u| u.drops > 0 || u.marks > 0);
+            down.retain(|d| d.drops > 0 || d.marks > 0);
 
             Some((up, down))
         }

@@ -93,8 +93,15 @@ impl AsyncQueueReader {
                                         if let Some(serde_json::Value::Number(drops)) = map.get("drops") {
                                             stats.drops = drops.as_u64().unwrap_or(0);
                                         }
-                                        if let Some(serde_json::Value::Number(marks)) = map.get("ecn_mark") {
-                                            stats.marks = marks.as_u64().unwrap_or(0);
+                                        if let Some(serde_json::Value::Array(tins)) = map.get("tins") {
+                                            stats.marks = 0;
+                                            for tin in tins.iter() {
+                                                if let Some(tin) = tin.as_object() {
+                                                    if let Some(serde_json::Value::Number(marks)) = tin.get("ecn_mark") {
+                                                        stats.marks += marks.as_u64().unwrap_or(0);
+                                                    }
+                                                }
+                                            }
                                         }
                                         result.push(stats);
                                     }
