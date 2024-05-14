@@ -123,6 +123,9 @@ async fn main() -> Result<()> {
       }
     }
   });
+  
+  // Start the in-process webserver
+  lqos_node_manager2::launch_node_manager().await;
 
   // Create the socket server
   let server = UnixSocketServer::new().expect("Unable to spawn server");
