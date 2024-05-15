@@ -78,6 +78,16 @@ src/bin/lqusers
 src/bin/Rocket.toml
 src/bin/lqos_map_perf
 
+# Ignore the TypeScript/NPM stuff
+src/rust/lqos_node_manager2/site_build/node_modules
+src/rust/lqos_node_manager2/site_build/package-lock.json
+src/rust/lqos_node_manager2/site_build/output
+src/rust/lqos_node_manager2/static/app.js
+src/rust/lqos_node_manager2/static/app.js.map
+src/rust/lqos_node_manager2/static/style.css
+src/rust/lqos_node_manager2/static/style.css.map
+src/rust/lqos_node_manager2/static/index.html
+
 # Ignore project folders for some IDEs
 .idea/
 __pycache__

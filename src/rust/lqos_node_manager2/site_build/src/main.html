@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en" data-bs-theme="auto">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+    <title>LibreQoS Node Manager</title>
+    <link rel="shortcut icon" href="#" />
+    <link rel="icon" href="/favicon.png">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-rbsA2VBKQhggwzxH7pPCaAqO46MgnOM80zW1RWuH61DGLwZJEdK2Kadq2F9CUG65" crossorigin="anonymous">
+    <link href="style.css" rel="stylesheet" type="text/css">
+    <script src="https://kit.fontawesome.com/4c979e6ebb.js" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="wrapper"><!-- Page Wrapper -->
+    <!-- Sidebar -->
+    <ul class="navbar-nav bg-gradient-primary sidebar sidebar-dark">
+        <a class="sidebar-brand d-flex align-items-center justify-content-center" href="template_wip.html">
+            <div class="sidebar-brand-icon">
+                <img src="tinylogo.svg" alt="LibreQoS SVG Logo" width="75" height="75">
+            </div>
+        </a>
+        <li class="nav-item my-3">
+            <a class="nav-link active">
+                <i class="fa fa-dashboard nav-icon"></i><br />Dashboard
+            </a>
+        </li>
+        <hr class="sidebar-divider my-0">
+        <li class="nav-item">
+            <a class="nav-link">
+                <i class="fa fa-tree nav-icon"></i><br />Tree
+            </a>
+        </li>
+        <hr class="sidebar-divider my-0">
+        <li class="nav-item">
+            <a class="nav-link">
+                <i class="fa fa-wifi nav-icon"></i><br />Devices
+            </a>
+        </li>
+        <hr class="sidebar-divider my-0">
+        <li class="nav-item">
+            <a class="nav-link">
+                <i class="fa fa-line-chart nav-icon"></i><br />Statistics
+            </a>
+        </li>
+        <hr class="sidebar-divider my-0">
+        <li class="nav-item">
+            <a class="nav-link">
+                <i class="fa fa-gears nav-icon"></i><br />Config
+            </a>
+        </li>
+    </ul>
+    <!-- End Sidebar -->
+
+    <!-- Content Wrapper -->
+    <div id="content-wrapper" class="d-flex flex-column">
+        <!-- Main Content -->
+        <div id="content">
+
+            <nav class="navbar navbar-expand navbar-light mb-4 static-top shadow">
+                <!-- Search -->
+                <form class="d-none d-sm-inline-block form-inline mr-auto ml-md-3 my-2 my-md-0 mw-100 navbar-search">
+                    <div class="input-group">
+                        <input class="form-control bg-light border-0 small" type="text" placeholder="Search for anything..." aria-label="Search">
+                        <div class="input-group-append">
+                            <button class="btn btn-primary" type="button">
+                                <i class="fas fa-search fa-sm"></i>
+                            </button>
+                        </div>
+                    </div>
+                </form>
+
+                <!-- Items -->
+                <ul class="navbar-nav ml-auto">
+                    <li class="nav-item mx-1 text-dark btn btn-sm btn-primary">
+                        <i class="fa fa-recycle"></i> Reload LibreQoS
+                    </li>
+                    <li class="nav-item mx-1 text-dark btn btn-sm">
+                        <i class="fa fa-user"></i> Herbert
+                    </li>
+                    <li class="nav-item mx-1 text-dark btn btn-sm">
+                        <i class="fa fa-plug" id="connStatus"></i>
+                    </li>
+                </ul>
+            </nav>
+
+            <div class="container-fluid" id="mainContent">
+            </div> <!-- End Fluid Container -->
+        </div> <!-- End Content -->
+    </div> <!-- End Content Wrapper -->
+</div>
+
+<!-- Launch the app -->
+<script type="module" src="/app.js"></script>
+</body>
+</html>

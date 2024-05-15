@@ -33,7 +33,7 @@ body {
     text-align: center;
     min-height: 200px;
     min-width: 125px;
-    border-radius: 0 10px 10px 0;
+    border-radius: 0 0 10px 0;
 }
 .nav-icon {
     font-size: 2rem;

@@ -1,0 +1,97 @@
+use axum::extract::WebSocketUpgrade;
+use axum::extract::ws::{Message, WebSocket};
+use axum::response::IntoResponse;
+use serde_json::json;
+use tokio::sync::mpsc::Sender;
+use lqos_bus::{bus_request, BusRequest, BusResponse};
+
+pub async fn ws_handler(
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
+    log::info!("WS Upgrade Called");
+    ws.on_upgrade(handle_socket)
+}
+
+async fn handle_socket(mut socket: WebSocket) {
+    log::info!("WebSocket Connected");
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Message>(10);
+    loop {
+        tokio::select! {
+            msg = socket.recv() => {
+                match msg {
+                    Some(Ok(msg)) => {
+                        tokio::spawn(
+                            handle_socket_message(msg, tx.clone())
+                        );
+                    }
+                    Some(Err(e)) => {
+                        log::error!("Error receiving message: {:?}", e);
+                        //break;
+                    }
+                    None => {
+                        log::info!("WebSocket Disconnected");
+                        break;
+                    }
+                }
+            },
+            msg = rx.recv() => {
+                match msg {
+                    Some(msg) => {
+                        socket.send(msg).await.unwrap();
+                    }
+                    None => {
+                        log::info!("WebSocket Disconnected");
+                        break;
+                    }
+                }
+            },
+        }
+    }
+}
+
+async fn handle_socket_message(msg: Message, tx: Sender<Message>) {
+    if let Ok(raw) = msg.to_text() {
+        log::info!("Got a message");
+        let msg = serde_json::from_str::<serde_json::Value>(raw);
+        if let Ok(serde_json::Value::Object(msg)) = msg {
+            let verb = msg.get("type").unwrap().as_str().unwrap();
+            match verb {
+                "hello" => {
+                    log::info!("Received initial hello message");
+                    handle_hello(tx.clone()).await
+                }
+                "flowcount" => flow_counter(tx.clone()).await,
+                _ => {
+                    log::warn!("Unknown WSS verb requested: {verb}");
+                }
+            }
+        } else {
+            log::warn!("Unable to decode incoming WSS data: {raw}");
+        }
+    }
+}
+
+async fn handle_hello(tx: Sender<Message>) {
+    let response = json!(
+        { "type" : "Ack" }
+    );
+    tx.send(Message::Text(response.to_string())).await.unwrap();
+}
+
+async fn flow_counter(tx: Sender<Message>) {
+    let responses =
+        bus_request(vec![BusRequest::CountActiveFlows]).await.unwrap();
+    let result = match &responses[0] {
+        BusResponse::CountActiveFlows(count) => *count,
+        _ => 0,
+    };
+
+    let response = json!(
+        {
+            "type" : "FlowCount",
+            "count" : result
+        }
+    );
+    tx.send(Message::Text(response.to_string())).await.unwrap();
+}
