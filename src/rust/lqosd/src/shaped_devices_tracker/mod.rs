@@ -4,8 +4,10 @@ use lqos_bus::BusResponse;
 use lqos_config::{ConfigShapedDevices, NetworkJsonTransport};
 use lqos_utils::file_watcher::FileWatcher;
 use once_cell::sync::Lazy;
-use std::sync::{RwLock, atomic::AtomicBool};
+use std::sync::{RwLock, atomic::AtomicBool, OnceLock};
 use tokio::task::spawn_blocking;
+use lqos_node_manager2::ChangeAnnouncement;
+
 mod netjson;
 pub use netjson::*;
 
@@ -18,6 +20,10 @@ fn load_shaped_devices() {
     let shaped_devices = ConfigShapedDevices::load();
     if let Ok(new_file) = shaped_devices {
         info!("ShapedDevices.csv loaded");
+        if let Some(announce) = ANNOUNCE.get() {
+            //log::info!("Announced Shaped Devices Length");
+            let _ = announce.blocking_send(ChangeAnnouncement::ShapedDeviceCount(new_file.devices.len()));
+        }
         *SHAPED_DEVICES.write().unwrap() = new_file;
         crate::throughput_tracker::THROUGHPUT_TRACKER.refresh_circuit_ids();
         STATS_NEEDS_NEW_SHAPED_DEVICES.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -27,7 +33,10 @@ fn load_shaped_devices() {
     }
 }
 
-pub async fn shaped_devices_watcher() {
+static ANNOUNCE: OnceLock<tokio::sync::mpsc::Sender<ChangeAnnouncement>> = OnceLock::new();
+
+pub async fn shaped_devices_watcher(node_tracker: tokio::sync::mpsc::Sender<ChangeAnnouncement>) {
+    let _ = ANNOUNCE.set(node_tracker.clone());
     spawn_blocking(|| {
         info!("Watching for ShapedDevices.csv changes");
         let _ = watch_for_shaped_devices_changing();

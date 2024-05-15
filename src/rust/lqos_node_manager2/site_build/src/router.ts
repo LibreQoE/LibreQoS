@@ -1,5 +1,6 @@
 import {Page} from "./page";
 import {PageFactory} from "./routes";
+import {requestShapedDeviceCount} from "./requests";
 
 export class SiteRouter {
     curentPage: Page | undefined;
@@ -47,14 +48,34 @@ export class SiteRouter {
     }
 
     onMessage(event: any) {
+        if (globalResponses(event)) return;
+
         if (this.curentPage) {
             this.curentPage.onmessage(event);
         }
     }
 
     onTick() {
+        globalTickRequests();
         if (this.curentPage) {
             this.curentPage.ontick();
         }
     }
+}
+
+function globalTickRequests() {
+    requestShapedDeviceCount();
+}
+
+function globalResponses(event: any): boolean {
+    switch (event.type) {
+        case "ShapedDeviceCount": {
+            let target = document.getElementById("shapedDeviceCounter");
+            if (target) {
+                target.innerHTML = event.count;
+            }
+            return true;
+        } break;
+    }
+    return false;
 }

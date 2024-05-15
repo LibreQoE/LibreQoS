@@ -4,6 +4,7 @@ use super::{flow_data::{get_flowbee_event_count_and_reset, FlowAnalysis, Flowbee
 use dashmap::DashMap;
 use fxhash::FxHashMap;
 use lqos_bus::TcHandle;
+use lqos_node_manager2::ChangeAnnouncement;
 use lqos_sys::{flowbee_data::FlowbeeKey, iterate_flows, throughput_for_each};
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 
@@ -176,6 +177,7 @@ impl ThroughputTracker {
     timeout_seconds: u64,
     _netflow_enabled: bool,
     sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
+    node_tracker: tokio::sync::mpsc::Sender<ChangeAnnouncement>,
   ) {
     //log::debug!("Flowbee events this second: {}", get_flowbee_event_count_and_reset());
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
@@ -327,6 +329,9 @@ impl ThroughputTracker {
       // Cleaning run
       all_flows_lock.retain(|_k,v| v.0.last_seen >= expire);
       expire_rtt_flows();
+
+      // Update the webserver
+      let _ = node_tracker.blocking_send(ChangeAnnouncement::FlowCount(all_flows_lock.len()));
     }
   }
 

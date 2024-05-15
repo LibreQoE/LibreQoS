@@ -4,6 +4,7 @@ use axum::response::IntoResponse;
 use serde_json::json;
 use tokio::sync::mpsc::Sender;
 use lqos_bus::{bus_request, BusRequest, BusResponse};
+use std::sync::atomic::Ordering::Relaxed;
 
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
@@ -52,7 +53,6 @@ async fn handle_socket(mut socket: WebSocket) {
 
 async fn handle_socket_message(msg: Message, tx: Sender<Message>) {
     if let Ok(raw) = msg.to_text() {
-        log::info!("Got a message");
         let msg = serde_json::from_str::<serde_json::Value>(raw);
         if let Ok(serde_json::Value::Object(msg)) = msg {
             let verb = msg.get("type").unwrap().as_str().unwrap();
@@ -62,6 +62,7 @@ async fn handle_socket_message(msg: Message, tx: Sender<Message>) {
                     handle_hello(tx.clone()).await
                 }
                 "flowcount" => flow_counter(tx.clone()).await,
+                "shapeddevicecount" => shaped_device_counter(tx.clone()).await,
                 _ => {
                     log::warn!("Unknown WSS verb requested: {verb}");
                 }
@@ -80,17 +81,20 @@ async fn handle_hello(tx: Sender<Message>) {
 }
 
 async fn flow_counter(tx: Sender<Message>) {
-    let responses =
-        bus_request(vec![BusRequest::CountActiveFlows]).await.unwrap();
-    let result = match &responses[0] {
-        BusResponse::CountActiveFlows(count) => *count,
-        _ => 0,
-    };
-
     let response = json!(
         {
             "type" : "FlowCount",
-            "count" : result
+            "count" : crate::FLOW_COUNT.load(Relaxed)
+        }
+    );
+    tx.send(Message::Text(response.to_string())).await.unwrap();
+}
+
+async fn shaped_device_counter(tx: Sender<Message>) {
+    let response = json!(
+        {
+            "type" : "ShapedDeviceCount",
+            "count" : crate::SHAPED_DEVICE_COUNT.load(Relaxed)
         }
     );
     tx.send(Message::Text(response.to_string())).await.unwrap();

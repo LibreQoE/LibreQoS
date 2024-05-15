@@ -1814,6 +1814,7 @@ dependencies = [
  "axum 0.7.5",
  "log",
  "lqos_bus",
+ "lqos_config",
  "serde_json",
  "tokio",
  "tower-http",

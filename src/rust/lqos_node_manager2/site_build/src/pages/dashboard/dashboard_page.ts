@@ -1,5 +1,6 @@
 import html from './dashboard.html';
 import {Page} from "../../page";
+import {requestFlowCount} from "../../requests";
 
 export class DashboardPage extends Page {
     constructor() {
@@ -12,26 +13,21 @@ export class DashboardPage extends Page {
     }
 
     onmessage(event: any): void {
-        if (event.type === "FlowCount") {
-            let target = document.getElementById("flowCounter");
-            if (target) {
-                target.innerHTML = event.count;
-            }
+        switch (event.type) {
+            case "FlowCount": {
+                let target = document.getElementById("flowCounter");
+                if (target) {
+                    target.innerHTML = event.count;
+                }
+            } break;
         }
     }
 
     ontick(): void {
-        console.log("Dash Tick");
         requestFlowCount();
     }
 
     anchor(): string {
         return "dashboard";
     }
-}
-
-function requestFlowCount() {
-    window.bus.send({
-        "type" : "flowcount"
-    })
 }

@@ -20,6 +20,7 @@ use tokio::{
     sync::mpsc::Sender,
     time::{Duration, Instant},
 };
+use lqos_node_manager2::ChangeAnnouncement;
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
@@ -35,6 +36,7 @@ pub static THROUGHPUT_TRACKER: Lazy<ThroughputTracker> = Lazy::new(ThroughputTra
 pub async fn spawn_throughput_monitor(
     long_term_stats_tx: Sender<StatsUpdateMessage>,
     netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
+    node_tracker: tokio::sync::mpsc::Sender<ChangeAnnouncement>,
 ) {
     info!("Starting the bandwidth monitor thread.");
     let interval_ms = 1000; // 1 second
@@ -43,6 +45,7 @@ pub async fn spawn_throughput_monitor(
         interval_ms,
         long_term_stats_tx,
         netflow_sender,
+        node_tracker,
     ));
 }
 
@@ -50,6 +53,7 @@ async fn throughput_task(
     interval_ms: u64,
     long_term_stats_tx: Sender<StatsUpdateMessage>,
     netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
+    node_tracker: tokio::sync::mpsc::Sender<ChangeAnnouncement>,
 ) {
     // Obtain the flow timeout from the config, default to 30 seconds
     let timeout_seconds = if let Ok(config) = lqos_config::load_config() {
@@ -79,6 +83,8 @@ async fn throughput_task(
         // Perform the stats collection in a blocking thread, ensuring that
         // the tokio runtime is not blocked.
         let my_netflow_sender = netflow_sender.clone();
+        let my_node_tracker = node_tracker.clone();
+
         if let Err(e) = tokio::task::spawn_blocking(move || {
             {
                 let net_json = NETWORK_JSON.read().unwrap();
@@ -90,6 +96,7 @@ async fn throughput_task(
                 timeout_seconds,
                 netflow_enabled,
                 my_netflow_sender.clone(),
+                my_node_tracker.clone(),
             );
             THROUGHPUT_TRACKER.update_totals();
             THROUGHPUT_TRACKER.next_cycle();

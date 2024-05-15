@@ -1,16 +1,29 @@
 use axum::{Router, routing::get};
 use tokio::spawn;
+use tokio::sync::mpsc::Sender;
 use tower_http::services::{ServeDir, ServeFile};
-
 use crate::websocket::ws_handler;
+use tracker::*;
 
 mod websocket;
+mod tracker;
 
-pub async fn launch_node_manager() {
-    spawn(run());
+#[derive(Clone, Debug)]
+pub enum ChangeAnnouncement {
+    FlowCount(usize),
+    ShapedDeviceCount(usize),
 }
 
-async fn run() {
+pub async fn run() -> Sender<ChangeAnnouncement> {
+    let (tx,rx) = tokio::sync::mpsc::channel::<ChangeAnnouncement>(100);
+
+    // Announcement handler
+    tokio::spawn(tracker::track_changes(rx));
+    tokio::spawn(webserver());
+    
+    tx
+}
+async fn webserver() {
     // Static file handler
     let serve_dir = ServeDir::new("../lqos_node_manager2/static")
         .not_found_service(ServeFile::new("../lqos_node_manager2/static/index.html"));

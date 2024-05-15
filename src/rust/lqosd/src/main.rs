@@ -78,16 +78,17 @@ async fn main() -> Result<()> {
   };
 
   // Spawn tracking sub-systems
+  let node_manager_tx = lqos_node_manager2::run().await;
   let long_term_stats_tx = start_long_term_stats().await;
   let flow_tx = setup_netflow_tracker();
   let _ = throughput_tracker::flow_data::setup_flow_analysis();
   join!(
     start_heimdall(),
     spawn_queue_structure_monitor(),
-    shaped_devices_tracker::shaped_devices_watcher(),
+    shaped_devices_tracker::shaped_devices_watcher(node_manager_tx.clone()),
     shaped_devices_tracker::network_json_watcher(),
     anonymous_usage::start_anonymous_usage(),
-    throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone(), flow_tx),
+    throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone(), flow_tx, node_manager_tx.clone()),
   );
   spawn_queue_monitor();
 
@@ -123,9 +124,6 @@ async fn main() -> Result<()> {
       }
     }
   });
-  
-  // Start the in-process webserver
-  lqos_node_manager2::launch_node_manager().await;
 
   // Create the socket server
   let server = UnixSocketServer::new().expect("Unable to spawn server");

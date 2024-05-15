@@ -10,4 +10,5 @@ log = "0"
 tower-http = { version = "0.5.2", features = ["fs"] }
 serde_json = "1.0.115"
 lqos_bus = { path = "../lqos_bus" }
+lqos_config = { path = "../lqos_config" }
 
