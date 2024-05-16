@@ -65,6 +65,7 @@ async fn handle_socket_message(msg: Message, tx: Sender<Message>) {
                 "shapeddevicecount" => shaped_device_counter(tx.clone()).await,
                 "throughput" => throughput_counter(tx.clone()).await,
                 "throughputFull" => throughput_full(tx.clone()).await,
+                "rttHisto" => rtt_histo(tx.clone()).await,
                 _ => {
                     log::warn!("Unknown WSS verb requested: {verb}");
                 }
@@ -115,7 +116,6 @@ async fn throughput_counter(tx: Sender<Message>) {
 }
 
 async fn throughput_full(tx: Sender<Message>) {
-
     let ring_buffer = {
         let lock = crate::tracker::THROUGHPUT_RING_BUFFER.lock().unwrap();
         lock.fetch()
@@ -127,4 +127,21 @@ async fn throughput_full(tx: Sender<Message>) {
         }
     );
     tx.send(Message::Text(response.to_string())).await.unwrap();
+}
+
+async fn rtt_histo(tx: Sender<Message>) {
+    if let Ok(messages) = bus_request(vec![BusRequest::RttHistogram]).await
+    {
+        for msg in messages {
+            if let BusResponse::RttHistogram(stats) = msg {
+                let response = json!(
+                  {
+                      "type" : "RttHisto",
+                      "entries" : stats,
+                  }  
+                );
+                tx.send(Message::Text(response.to_string())).await.unwrap();
+            }
+        }
+    }
 }

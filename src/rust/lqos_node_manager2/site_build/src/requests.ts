@@ -21,3 +21,9 @@ export function requestFullThroughput() {
         "type" : "throughputFull"
     })
 }
+
+export function requestRttHisto() {
+    window.bus.send({
+        "type" : "rttHisto"
+    })
+}

@@ -1,18 +1,21 @@
 import html from './dashboard.html';
 import {Page} from "../../page";
-import {requestFlowCount, requestFullThroughput, requestThroughput} from "../../requests";
+import {requestFlowCount, requestFullThroughput, requestRttHisto, requestThroughput} from "../../requests";
 import {scaleNumber} from "../../scaling";
 import {ThroughputEntry, ThroughputGraph} from "../../charts/throughput_graph";
 import * as echarts from 'echarts';
+import {RttHistogram} from "../../charts/rtt_histo";
 
 export class DashboardPage extends Page {
     deferredDone: boolean;
     throughputChart: ThroughputGraph | undefined;
+    rttHisto: RttHistogram | undefined;
 
     constructor() {
         super();
         this.deferredDone = false;
         this.throughputChart = undefined;
+        this.rttHisto = undefined;
         this.fillContent(html);
     }
 
@@ -20,10 +23,12 @@ export class DashboardPage extends Page {
         requestFlowCount();
         requestThroughput();
         requestFullThroughput();
+        requestRttHisto();
 
         // This is a fake await for after the HTML has loaded
         window.setTimeout(() => {
             this.throughputChart = new ThroughputGraph('throughputs');
+            this.rttHisto = new RttHistogram('rttHisto');
             this.deferredDone = true;
         }, 1);
     }
@@ -55,13 +60,19 @@ export class DashboardPage extends Page {
                 if (this.deferredDone) {
                     this.throughputChart.startingBuffer(event.entries as ThroughputEntry[]);
                 }
-            }
+            } break;
+            case "RttHisto": {
+                if (this.deferredDone) {
+                    this.rttHisto.onMessage(event.entries as number[]);
+                }
+            } break;
         }
     }
 
     ontick(): void {
         requestFlowCount();
         requestThroughput();
+        requestRttHisto();
     }
 
     anchor(): string {

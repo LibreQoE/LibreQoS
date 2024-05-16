@@ -30,7 +30,9 @@ export class Bus {
     }
 
     sendString(msg: string) {
-        ws.send(msg);
+        if (this.connected) {
+            ws.send(msg);
+        }
     }
 
     updateConnected() {
