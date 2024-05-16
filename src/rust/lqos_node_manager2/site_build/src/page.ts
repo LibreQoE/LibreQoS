@@ -12,4 +12,6 @@ export abstract class Page {
             console.log("Could not find mainContent");
         }
     }
+
+    replaceGraphs(): void {}
 }

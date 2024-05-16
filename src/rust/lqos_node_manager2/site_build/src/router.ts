@@ -22,12 +22,6 @@ export class SiteRouter {
         }, 1000);
     }
 
-    ontick() {
-        if (this.curentPage) {
-            this.curentPage.ontick();
-        }
-    }
-
     goto(page: String) {
         page = page.replace('#', '');
         let split = page.split(':');
@@ -59,6 +53,12 @@ export class SiteRouter {
         globalTickRequests();
         if (this.curentPage) {
             this.curentPage.ontick();
+        }
+    }
+
+    onThemeSwitch() {
+        if (this.curentPage) {
+            this.curentPage.replaceGraphs();
         }
     }
 }

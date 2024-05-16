@@ -29,6 +29,19 @@ export function InitDayNightMode() {
                 document.documentElement.setAttribute('data-bs-theme', "light");
                 localStorage.setItem('theme', 'light');
             }
+
+            if (window.router) {
+                window.router.onThemeSwitch();
+            }
         });
     });
+}
+
+export function currentThemeForChart(): string {
+    const currentTheme = localStorage.getItem('theme');
+    if (currentTheme == "dark") {
+        return "dark";
+    } else {
+        return "light";
+    }
 }

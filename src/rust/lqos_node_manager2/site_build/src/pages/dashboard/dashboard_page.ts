@@ -2,18 +2,18 @@ import html from './dashboard.html';
 import {Page} from "../../page";
 import {requestFlowCount, requestThroughput} from "../../requests";
 import {scaleNumber} from "../../scaling";
+import {ThroughputEntry, ThroughputGraph} from "../../charts/throughput_graph";
 import * as echarts from 'echarts';
 
 export class DashboardPage extends Page {
-    throughputBuffer: ThroughputRingBuffer;
-    myChart: echarts.ECharts;
-    chartMade: boolean;
+    deferredDone: boolean;
+    throughputChart: ThroughputGraph | undefined;
 
     constructor() {
         super();
+        this.deferredDone = false;
+        this.throughputChart = undefined;
         this.fillContent(html);
-        this.throughputBuffer = new ThroughputRingBuffer();
-        this.chartMade = false;
     }
 
     wireup() {
@@ -22,9 +22,8 @@ export class DashboardPage extends Page {
 
         // This is a fake await for after the HTML has loaded
         window.setTimeout(() => {
-            let div = document.getElementById("throughputs") as HTMLDivElement;
-            this.myChart = echarts.init(div);
-            this.myChart.showLoading();
+            this.throughputChart = new ThroughputGraph('throughputs');
+            this.deferredDone = true;
         }, 1);
     }
 
@@ -47,8 +46,9 @@ export class DashboardPage extends Page {
                     target.innerHTML = scaleNumber(event.bps[0]) + " / " + scaleNumber(event.bps[1])
                 }
 
-                this.throughputBuffer.push(event);
-                this.doThroughputChart();
+                if (this.deferredDone) {
+                    this.throughputChart.onMessage(event as ThroughputEntry);
+                }
             } break;
         }
     }
@@ -62,116 +62,9 @@ export class DashboardPage extends Page {
         return "dashboard";
     }
 
-    doThroughputChart(): void {
-        if (!this.myChart) return;
-        if (!this.chartMade) {
-            this.chartMade = true;
-            this.myChart.hideLoading();
-        }
-
-        let rawData = this.throughputBuffer.getSeries();
-
-        let option = {
-            xAxis: {
-                type: 'category',
-                data: rawData[0],
-            },
-            yAxis: {
-                type: 'value'
-            },
-            series: [
-                {
-                    data: rawData[1],
-                    type: 'line',
-                    name: "BPS",
-                },
-                {
-                    data: rawData[2],
-                    type: 'line',
-                    name: "BPSU",
-                },
-                {
-                    data: rawData[3],
-                    type: 'line',
-                    name: "Shaped",
-                },
-                {
-                    data: rawData[4],
-                    type: 'line',
-                    name: "ShapedU",
-                }
-            ],
-            grid: {
-                left: 0,
-                top: 0,
-                right: 0,
-                bottom: 0
-            }
-        };
-        option && this.myChart.setOption(option);
-    }
-}
-
-const MAX_ENTRIES: number = 300;
-
-class ThroughputRingBuffer {
-    entries: any[];
-    head: number;
-
-    constructor() {
-        this.entries = [];
-        for (let i=0; i<MAX_ENTRIES; i++) {
-            this.entries.push({
-                bps: [0, 0],
-                shaped: [0, 0],
-            })
-        }
-        this.head = 0;
-    }
-
-    push(event: any): void {
-        this.entries[this.head].bps[0] = event.bps[0];
-        this.entries[this.head].bps[1] = event.bps[1];
-        this.entries[this.head].shaped[0] = event.shaped[0];
-        this.entries[this.head].shaped[1] = event.shaped[1];
-        this.head += 1;
-        if (this.head > MAX_ENTRIES) {
-            this.head = 0;
-        }
-    }
-
-    getSeries(): number[][] {
-        let result = [];
-
-        let xAxis = [];
-        let bpsDown = [];
-        let bpsUp = []
-        let shapedDown = [];
-        let shapedUp = []
-        let count = 0;
-
-        for (let i=this.head; i<MAX_ENTRIES; i++) {
-            xAxis.push(count);
-            count++;
-            bpsDown.push(this.entries[i].bps[0]);
-            bpsUp.push(this.entries[i].bps[1]);
-            shapedDown.push(0 - this.entries[i].shaped[0]);
-            shapedUp.push(0 - this.entries[i].shaped[1]);
-        }
-        for (let i=0; i<this.head; i++) {
-            xAxis.push(count);
-            count++;
-            bpsDown.push(this.entries[i].bps[0]);
-            bpsUp.push(this.entries[i].bps[1]);
-            shapedDown.push(0 - this.entries[i].shaped[0]);
-            shapedUp.push(0 - this.entries[i].shaped[1]);
-        }
-        result.push(xAxis);
-        result.push(bpsDown);
-        result.push(bpsUp);
-        result.push(shapedDown);
-        result.push(shapedUp);
-
-        return result;
+    replaceGraphs() {
+        super.replaceGraphs();
+        echarts.dispose(this.throughputChart.myChart);
+        this.throughputChart = new ThroughputGraph('throughputs');
     }
 }
