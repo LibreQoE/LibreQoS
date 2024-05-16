@@ -73,7 +73,7 @@ export class ThroughputGraph {
         let rawData = this.getSeries();
         let option = {
             theme: currentThemeForChart(),
-            animationDuration: 300,
+            animation: false, // No animations, please!
             legend: {
                 orient: "horizontal",
                 right: 10,
