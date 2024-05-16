@@ -2,6 +2,7 @@ pub mod flow_data;
 mod throughput_entry;
 mod tracking_data;
 use std::net::IpAddr;
+use std::sync::atomic::Ordering::Relaxed;
 
 use self::flow_data::{get_asn_name_and_country, FlowAnalysis, FlowbeeLocalData, ALL_FLOWS};
 use crate::{
@@ -100,6 +101,11 @@ async fn throughput_task(
             );
             THROUGHPUT_TRACKER.update_totals();
             THROUGHPUT_TRACKER.next_cycle();
+            let _ = my_node_tracker.blocking_send(ChangeAnnouncement::ThroughputUpdate{
+                bytes_per_second: (THROUGHPUT_TRACKER.bytes_per_second.0.load(Relaxed), THROUGHPUT_TRACKER.bytes_per_second.1.load(Relaxed)),
+                shaped_bytes_per_second: (THROUGHPUT_TRACKER.shaped_bytes_per_second.0.load(Relaxed), THROUGHPUT_TRACKER.shaped_bytes_per_second.1.load(Relaxed)),
+                packets_per_second: (THROUGHPUT_TRACKER.packets_per_second.0.load(Relaxed), THROUGHPUT_TRACKER.packets_per_second.1.load(Relaxed)),
+            });
             let duration_ms = start.elapsed().as_micros();
             TIME_TO_POLL_HOSTS.store(duration_ms as u64, std::sync::atomic::Ordering::Relaxed);
         })

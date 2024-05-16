@@ -12,6 +12,11 @@ mod tracker;
 pub enum ChangeAnnouncement {
     FlowCount(usize),
     ShapedDeviceCount(usize),
+    ThroughputUpdate{
+        bytes_per_second: (u64, u64),
+        shaped_bytes_per_second: (u64, u64),
+        packets_per_second: (u64, u64),
+    }
 }
 
 pub async fn run() -> Sender<ChangeAnnouncement> {

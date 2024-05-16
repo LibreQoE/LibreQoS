@@ -63,6 +63,7 @@ async fn handle_socket_message(msg: Message, tx: Sender<Message>) {
                 }
                 "flowcount" => flow_counter(tx.clone()).await,
                 "shapeddevicecount" => shaped_device_counter(tx.clone()).await,
+                "throughput" => throughput_counter(tx.clone()).await,
                 _ => {
                     log::warn!("Unknown WSS verb requested: {verb}");
                 }
@@ -95,6 +96,18 @@ async fn shaped_device_counter(tx: Sender<Message>) {
         {
             "type" : "ShapedDeviceCount",
             "count" : crate::SHAPED_DEVICE_COUNT.load(Relaxed)
+        }
+    );
+    tx.send(Message::Text(response.to_string())).await.unwrap();
+}
+
+async fn throughput_counter(tx: Sender<Message>) {
+    let response = json!(
+        {
+            "type" : "Throughput",
+            "bps" : [ crate::TOTAL_BITS_PER_SECOND.0.load(Relaxed), crate::TOTAL_BITS_PER_SECOND.1.load(Relaxed) ],
+            "shaped" : [ crate::SHAPED_BITS_PER_SECOND.0.load(Relaxed), crate::SHAPED_BITS_PER_SECOND.1.load(Relaxed) ],
+            "pps" : [ crate::PACKETS_PER_SECOND.0.load(Relaxed), crate::PACKETS_PER_SECOND.1.load(Relaxed) ],
         }
     );
     tx.send(Message::Text(response.to_string())).await.unwrap();

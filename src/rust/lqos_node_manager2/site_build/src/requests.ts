@@ -9,3 +9,9 @@ export function requestShapedDeviceCount() {
         "type" : "shapeddevicecount"
     })
 }
+
+export function requestThroughput() {
+    window.bus.send({
+        "type" : "throughput"
+    })
+}
