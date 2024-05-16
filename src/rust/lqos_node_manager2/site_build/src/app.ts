@@ -1,5 +1,6 @@
 import { SiteRouter } from './router'
 import {Bus} from "./bus";
+import {InitDayNightMode} from "./darkmode";
 
 declare global {
     interface Window {
@@ -8,6 +9,7 @@ declare global {
     }
 }
 
+InitDayNightMode();
 window.bus = new Bus();
 window.router = new SiteRouter();
 window.router.initialRoute();
