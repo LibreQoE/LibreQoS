@@ -34,6 +34,13 @@ export class ThroughputGraph {
         this.plotGraph();
     }
 
+    startingBuffer(events: ThroughputEntry[]) {
+        this.ringBuffer.clear();
+        for (let i=0; i<events.length; i++) {
+            this.ringBuffer.push(events[i]);
+        }
+    }
+
     getSeries(): number[][] {
         let result = [];
         let xAxis: number[] = [];
@@ -136,7 +143,7 @@ export class ThroughputGraph {
                 left: 50,
                 top: 0,
                 right: 0,
-                bottom: 2,
+                bottom: 0,
             }
         };
         option && this.myChart.setOption(option);

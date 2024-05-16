@@ -15,3 +15,9 @@ export function requestThroughput() {
         "type" : "throughput"
     })
 }
+
+export function requestFullThroughput() {
+    window.bus.send({
+        "type" : "throughputFull"
+    })
+}

@@ -1,6 +1,6 @@
 import html from './dashboard.html';
 import {Page} from "../../page";
-import {requestFlowCount, requestThroughput} from "../../requests";
+import {requestFlowCount, requestFullThroughput, requestThroughput} from "../../requests";
 import {scaleNumber} from "../../scaling";
 import {ThroughputEntry, ThroughputGraph} from "../../charts/throughput_graph";
 import * as echarts from 'echarts';
@@ -19,6 +19,7 @@ export class DashboardPage extends Page {
     wireup() {
         requestFlowCount();
         requestThroughput();
+        requestFullThroughput();
 
         // This is a fake await for after the HTML has loaded
         window.setTimeout(() => {
@@ -50,6 +51,11 @@ export class DashboardPage extends Page {
                     this.throughputChart.onMessage(event as ThroughputEntry);
                 }
             } break;
+            case "ThroughputFull": {
+                if (this.deferredDone) {
+                    this.throughputChart.startingBuffer(event.entries as ThroughputEntry[]);
+                }
+            }
         }
     }
 
@@ -66,5 +72,6 @@ export class DashboardPage extends Page {
         super.replaceGraphs();
         echarts.dispose(this.throughputChart.myChart);
         this.throughputChart = new ThroughputGraph('throughputs');
+        requestFullThroughput();
     }
 }

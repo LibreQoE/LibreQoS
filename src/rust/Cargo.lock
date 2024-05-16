@@ -1815,6 +1815,8 @@ dependencies = [
  "log",
  "lqos_bus",
  "lqos_config",
+ "once_cell",
+ "serde",
  "serde_json",
  "tokio",
  "tower-http",

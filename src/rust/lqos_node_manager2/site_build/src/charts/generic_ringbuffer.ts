@@ -2,14 +2,12 @@ export class GenericRingBuffer<EntryType> {
     entries: EntryType[];
     head: number;
     size: number;
+    defaultValue: EntryType;
 
     constructor(size: number, defaultValue: EntryType) {
+        this.defaultValue = defaultValue;
         this.size = size;
-        this.entries = [];
-        for (let i=0; i<this.size; i++) {
-            this.entries.push(defaultValue);
-        }
-        this.head = 0;
+        this.clear();
     }
 
     push(item: EntryType): void {
@@ -27,5 +25,13 @@ export class GenericRingBuffer<EntryType> {
         for (let i=0; i<this.head; i++) {
             functor(this.entries[i]);
         }
+    }
+
+    clear() {
+        this.entries = [];
+        for (let i=0; i<this.size; i++) {
+            this.entries.push(this.defaultValue);
+        }
+        this.head = 0;
     }
 }

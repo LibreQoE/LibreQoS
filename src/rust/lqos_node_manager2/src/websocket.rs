@@ -64,6 +64,7 @@ async fn handle_socket_message(msg: Message, tx: Sender<Message>) {
                 "flowcount" => flow_counter(tx.clone()).await,
                 "shapeddevicecount" => shaped_device_counter(tx.clone()).await,
                 "throughput" => throughput_counter(tx.clone()).await,
+                "throughputFull" => throughput_full(tx.clone()).await,
                 _ => {
                     log::warn!("Unknown WSS verb requested: {verb}");
                 }
@@ -108,6 +109,21 @@ async fn throughput_counter(tx: Sender<Message>) {
             "bps" : [ crate::TOTAL_BITS_PER_SECOND.0.load(Relaxed), crate::TOTAL_BITS_PER_SECOND.1.load(Relaxed) ],
             "shaped" : [ crate::SHAPED_BITS_PER_SECOND.0.load(Relaxed), crate::SHAPED_BITS_PER_SECOND.1.load(Relaxed) ],
             "pps" : [ crate::PACKETS_PER_SECOND.0.load(Relaxed), crate::PACKETS_PER_SECOND.1.load(Relaxed) ],
+        }
+    );
+    tx.send(Message::Text(response.to_string())).await.unwrap();
+}
+
+async fn throughput_full(tx: Sender<Message>) {
+
+    let ring_buffer = {
+        let lock = crate::tracker::THROUGHPUT_RING_BUFFER.lock().unwrap();
+        lock.fetch()
+    };
+    let response = json!(
+        {
+            "type" : "ThroughputFull",
+            "entries" : ring_buffer,
         }
     );
     tx.send(Message::Text(response.to_string())).await.unwrap();
