@@ -5,7 +5,7 @@ import {
     requestFullThroughput,
     requestNetworkTreeSummary,
     requestRttHisto,
-    requestThroughput
+    requestThroughput, requestTop10Downloaders
 } from "../../requests";
 import {scaleNumber} from "../../scaling";
 import {ThroughputEntry, ThroughputGraph} from "../../charts/throughput_graph";
@@ -32,6 +32,7 @@ export class DashboardPage extends Page {
         requestFullThroughput();
         requestRttHisto();
         requestNetworkTreeSummary();
+        requestTop10Downloaders();
 
         // This is a fake await for after the HTML has loaded
         window.setTimeout(() => {
@@ -81,6 +82,9 @@ export class DashboardPage extends Page {
                 }
                 this.networkTreeSummary(entries);
             } break;
+            case "Top10Downloaders": {
+                this.top10Downloaders(event.entries as IpStatsWithPlan[])
+            } break;
         }
     }
 
@@ -89,6 +93,7 @@ export class DashboardPage extends Page {
         requestThroughput();
         requestRttHisto();
         requestNetworkTreeSummary();
+        requestTop10Downloaders();
     }
 
     anchor(): string {
@@ -149,6 +154,45 @@ export class DashboardPage extends Page {
         html += "</tbody></table>";
         div.innerHTML = html;
     }
+
+    top10Downloaders(events: IpStatsWithPlan[]) {
+        let div = document.getElementById("topN") as HTMLDivElement;
+
+        let html = "<table class='table table-striped table-sm table-tiny'>";
+
+        html += "<thead><th>Circuit</th><th>Throughput</th><th>RTT</th><th>TCP Re-xmit</th><th>Plan</th></thead><tbody>";
+        for (let i=0; i<events.length; i++) {
+            let row = events[i];
+            html += "<tr>";
+            html += "<td>" + row.ip_address + "</td>"
+
+            if (row.plan.length === 2 && row.plan[0] != 0 && row.plan[1] != 0) {
+                let capacity_down_percent = row.bits_per_second[0] / (row.plan[0] * 10000); // It's in mb?
+                let capacity_up_percent = row.bits_per_second[1] / (row.plan[1] * 10000);
+                let capacity_percent = Math.max(capacity_down_percent, capacity_up_percent);
+                let capacity_color = "";
+                if (capacity_percent < 0.5) {
+                    capacity_color = "green";
+                } else if (capacity_percent < 0.75) {
+                    capacity_color = "orange";
+                } else {
+                    capacity_color = "red";
+                }
+                html += "<td><span style='color: " + capacity_color + "'>⬤</span> " + scaleNumber(row.bits_per_second[0], 1) + " / " + scaleNumber(row.bits_per_second[1], 1) + "</td>";
+            } else {
+                html += "<td><span style='color: darkgray'>○</span> " + scaleNumber(row.bits_per_second[0], 1) + " / " + scaleNumber(row.bits_per_second[1], 1) + "</td>";
+            }
+
+            html += "<td>" + rtt_display(row.median_tcp_rtt) + "</td>";
+            html += "<td>" + row.tcp_retransmits[0] + " / " + row.tcp_retransmits[1] + "</td>";
+            html += "<td>" + row.plan[0] / row.plan[1] + "</td>";
+            html += "</tr>";
+        }
+
+        html += "</tbody></table>";
+
+        div.innerHTML = html;
+    }
 }
 
 class NetworkTreeEntry {
@@ -159,4 +203,15 @@ class NetworkTreeEntry {
     parents: number[];
     rtts: number[];
     type: string | null;
+}
+
+class IpStatsWithPlan {
+    bits_per_second: number[];
+    circuit_id: string;
+    ip_address: string;
+    median_tcp_rtt: number;
+    packets_per_second: number[];
+    plan: number[];
+    tc_handle: number;
+    tcp_retransmits: number[];
 }

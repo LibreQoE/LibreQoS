@@ -33,3 +33,9 @@ export function requestNetworkTreeSummary() {
         "type" : "networkTreeSummary"
     })
 }
+
+export function requestTop10Downloaders() {
+    window.bus.send({
+        "type" : "top10Downloaders"
+    })
+}

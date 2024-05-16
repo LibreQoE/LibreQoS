@@ -1815,6 +1815,7 @@ dependencies = [
  "log",
  "lqos_bus",
  "lqos_config",
+ "lqos_utils",
  "once_cell",
  "serde",
  "serde_json",

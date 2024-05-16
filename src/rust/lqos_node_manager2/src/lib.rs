@@ -23,6 +23,7 @@ pub async fn run() -> Sender<ChangeAnnouncement> {
     let (tx,rx) = tokio::sync::mpsc::channel::<ChangeAnnouncement>(100);
 
     // Announcement handler
+    std::thread::spawn(|| watch_for_shaped_devices_changing());
     tokio::spawn(tracker::track_changes(rx));
     tokio::spawn(webserver());
     
