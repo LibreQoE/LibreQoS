@@ -52,10 +52,10 @@ export class ThroughputGraph {
         let counter = 0;
         this.ringBuffer.for_each((e) => {
             xAxis.push(counter);
-            bpsUp.push(0 - e.bps[0]);
-            bpsDown.push(e.bps[1]);
-            shapedUp.push(0 - e.shaped[0]);
-            shapedDown.push(e.shaped[1]);
+            bpsUp.push(0 - e.bps[1]);
+            bpsDown.push(e.bps[0]);
+            shapedUp.push(0 - e.shaped[1]);
+            shapedDown.push(e.shaped[0]);
             counter++;
         });
 
