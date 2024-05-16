@@ -66,6 +66,7 @@ async fn handle_socket_message(msg: Message, tx: Sender<Message>) {
                 "throughput" => throughput_counter(tx.clone()).await,
                 "throughputFull" => throughput_full(tx.clone()).await,
                 "rttHisto" => rtt_histo(tx.clone()).await,
+                "networkTreeSummary" => network_tree_summary(tx.clone()).await,
                 _ => {
                     log::warn!("Unknown WSS verb requested: {verb}");
                 }
@@ -138,10 +139,26 @@ async fn rtt_histo(tx: Sender<Message>) {
                   {
                       "type" : "RttHisto",
                       "entries" : stats,
-                  }  
+                  }
                 );
                 tx.send(Message::Text(response.to_string())).await.unwrap();
             }
         }
     }
+}
+
+async fn network_tree_summary(tx: Sender<Message>) {
+    let responses =
+        bus_request(vec![BusRequest::TopMapQueues(4)]).await.unwrap();
+    let result = match &responses[0] {
+        BusResponse::NetworkMap(nodes) => nodes.to_owned(),
+        _ => Vec::new(),
+    };
+    let response = json!(
+                  {
+                      "type" : "NetworkTreeSummary",
+                      "entries" : result,
+                  }
+                );
+    tx.send(Message::Text(response.to_string())).await.unwrap();
 }

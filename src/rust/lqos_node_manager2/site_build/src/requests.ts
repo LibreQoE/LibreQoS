@@ -27,3 +27,9 @@ export function requestRttHisto() {
         "type" : "rttHisto"
     })
 }
+
+export function requestNetworkTreeSummary() {
+    window.bus.send({
+        "type" : "networkTreeSummary"
+    })
+}

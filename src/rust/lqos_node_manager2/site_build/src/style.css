@@ -187,3 +187,6 @@ body.dark-mode {
 .text-gray-300 {
     color: #dddfeb !important;
 }
+.table-tiny {
+    font-size: 8pt;
+}
