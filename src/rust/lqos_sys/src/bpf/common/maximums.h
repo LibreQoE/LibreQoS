@@ -16,4 +16,8 @@
 #define MAX_PACKETS MAX_FLOWS
 
 // Hot Cache Size
-#define HOT_CACHE_SIZE 512
+#define HOT_CACHE_SIZE 32768
+
+// Hot Cache Negative Hit Flag
+// If you have 4294967294 CPUs, I love you.
+#define NEGATIVE_HIT 4294967294

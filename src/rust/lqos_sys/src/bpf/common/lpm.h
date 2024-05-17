@@ -99,6 +99,11 @@ static __always_inline struct ip_hash_info * setup_lookup_key_and_tc_cpu(
         &lookup_key->address
     );
     if (ip_info) {
+        // Is it a negative hit?
+        if (ip_info->cpu == NEGATIVE_HIT) {
+            return NULL;
+        }
+
         // We got a cache hit, so return
         return ip_info;
     }
@@ -116,6 +121,19 @@ static __always_inline struct ip_hash_info * setup_lookup_key_and_tc_cpu(
             &ip_to_cpu_and_tc_hotcache,
             &lookup_key->address,
             ip_info,
+            BPF_NOEXIST
+        );
+    } else {
+        // Store a negative result. This is designed to alleviate the pain
+        // of repeatedly hitting queries for IPs that ARE NOT shaped.
+        struct ip_hash_info negative_hit = {
+            .cpu = NEGATIVE_HIT,
+            .tc_handle = NEGATIVE_HIT
+        };
+        bpf_map_update_elem(
+            &ip_to_cpu_and_tc_hotcache,
+            &lookup_key->address,
+            &negative_hit,
             BPF_NOEXIST
         );
     }

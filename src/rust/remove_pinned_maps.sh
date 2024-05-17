@@ -14,3 +14,5 @@ rm -v /sys/fs/bpf/heimdall
 rm -v /sys/fs/bpf/heimdall_config
 rm -v /sys/fs/bpf/heimdall_watching
 rm -v /sys/fs/bpf/flowbee
+rm -v /sys/fs/bpf/ip_to_cpu_and_tc_hotcache
+
