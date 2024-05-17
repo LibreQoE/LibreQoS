@@ -9,7 +9,6 @@
 #include <linux/ip.h>
 #include <linux/ipv6.h>
 #include "maximums.h"
-#include "debug.h"
 #include "dissector.h"
 
 // Data structure used for map_ip_hash
@@ -23,6 +22,22 @@ struct ip_hash_key {
 	__u32 prefixlen; // Length of the prefix to match
 	struct in6_addr address; // An IPv6 address. IPv4 uses the last 32 bits.
 };
+
+// Hot cache for recent IP lookups, an attempt
+// at a speed improvement predicated on the idea
+// that LPM isn't the fastest
+// The cache is optional. define USE_HOTCACHE
+// to enable it.
+#define USE_HOTCACHE 1
+
+#ifdef USE_HOTCACHE
+struct {
+	__uint(type, BPF_MAP_TYPE_LRU_HASH);
+	__uint(max_entries, HOT_CACHE_SIZE);
+	__type(key, struct in6_addr);
+	__type(value, struct ip_hash_info);
+} ip_to_cpu_and_tc_hotcache SEC(".maps");
+#endif
 
 // Map describing IP to CPU/TC mappings
 struct {
@@ -71,13 +86,39 @@ static __always_inline struct ip_hash_info * setup_lookup_key_and_tc_cpu(
     struct dissector_t * dissector
 ) 
 {
+    struct ip_hash_info * ip_info;
+
     lookup_key->prefixlen = 128;
     lookup_key->address = (direction == 1) ? dissector->dst_ip : 
         dissector->src_ip;
-    struct ip_hash_info * ip_info = bpf_map_lookup_elem(
+
+    #ifdef USE_HOTCACHE
+    // Try a hot cache search
+    ip_info = bpf_map_lookup_elem(
+        &ip_to_cpu_and_tc_hotcache,
+        &lookup_key->address
+    );
+    if (ip_info) {
+        // We got a cache hit, so return
+        return ip_info;
+    }
+    #endif
+
+    ip_info = bpf_map_lookup_elem(
         &map_ip_to_cpu_and_tc, 
         lookup_key
     );
+    #ifdef USE_HOTCACHE
+    if (ip_info) {
+        // We found it, so add it to the cache
+        bpf_map_update_elem(
+            &ip_to_cpu_and_tc_hotcache,
+            &lookup_key->address,
+            ip_info,
+            BPF_NOEXIST
+        );
+    }
+    #endif
     return ip_info;
 }
 
@@ -104,9 +145,10 @@ static __always_inline struct ip_hash_info * tc_setup_lookup_key_and_tc_cpu(
     lookup_key->prefixlen = 128;
 	// Direction is reversed because we are operating on egress
     if (direction < 3) {
-        lookup_key->address = (direction == 1) ? dissector->src_ip : 
+        lookup_key->address = (direction == 1) ? dissector->src_ip :
             dissector->dst_ip;
         *out_effective_direction = direction;
+
         struct ip_hash_info * ip_info = bpf_map_lookup_elem(
             &map_ip_to_cpu_and_tc, 
             lookup_key

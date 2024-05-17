@@ -14,3 +14,6 @@
 
 // Maximum number of packet pairs to track per flow.
 #define MAX_PACKETS MAX_FLOWS
+
+// Hot Cache Size
+#define HOT_CACHE_SIZE 512
