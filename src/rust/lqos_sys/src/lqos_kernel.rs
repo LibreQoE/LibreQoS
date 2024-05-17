@@ -37,6 +37,13 @@ pub fn check_root() -> Result<()> {
   }
 }
 
+/// Converts an interface name to an interface index.
+/// This is a wrapper around the `if_nametoindex` function.
+/// Returns an error if the interface does not exist.
+/// # Arguments
+/// * `interface_name` - The name of the interface to convert
+/// # Returns
+/// * The index of the interface
 pub fn interface_name_to_index(interface_name: &str) -> Result<u32> {
   let if_name = CString::new(interface_name)?;
   let index = unsafe { if_nametoindex(if_name.as_ptr()) };
