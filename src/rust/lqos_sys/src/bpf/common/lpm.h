@@ -89,8 +89,7 @@ static __always_inline struct ip_hash_info * setup_lookup_key_and_tc_cpu(
 {
     struct ip_hash_info * ip_info;
 
-    lookup_key->prefixlen = 128;
-    lookup_key->address = (direction == 1) ? dissector->dst_ip : 
+    lookup_key->address = (direction == 1) ? dissector->dst_ip :
         dissector->src_ip;
 
     #ifdef USE_HOTCACHE
@@ -105,6 +104,7 @@ static __always_inline struct ip_hash_info * setup_lookup_key_and_tc_cpu(
     }
     #endif
 
+    lookup_key->prefixlen = 128;
     ip_info = bpf_map_lookup_elem(
         &map_ip_to_cpu_and_tc, 
         lookup_key
