@@ -40,9 +40,8 @@ body.dark-mode {
 .sidebar {
     color: white;
     text-align: center;
-    min-height: 200px;
-    min-width: 125px;
-    border-radius: 0 0 10px 0;
+    border-radius: 0 0 2px 0;
+    padding-right: 0.25em;
 }
 .nav-icon {
     font-size: 2rem;
