@@ -42,7 +42,7 @@ export class RttHistogram {
             grid: {
                 left: 50,
                 top: 20,
-                right: 0,
+                right: 5,
                 bottom: 50,
             }
         };
