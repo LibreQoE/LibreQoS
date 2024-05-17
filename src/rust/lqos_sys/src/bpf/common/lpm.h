@@ -36,6 +36,7 @@ struct {
 	__uint(max_entries, HOT_CACHE_SIZE);
 	__type(key, struct in6_addr);
 	__type(value, struct ip_hash_info);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
 } ip_to_cpu_and_tc_hotcache SEC(".maps");
 #endif
 
