@@ -69,7 +69,6 @@ pub async fn version_check() -> Json<String> {
 pub enum StatsCheckResponse {
     DoNothing,
     NotSetup,
-    Disabled,
     GoodToGo,
 }
 
@@ -90,7 +89,7 @@ pub async fn stats_check() -> Json<StatsCheckAction> {
     if let Ok(cfg) = load_config() {
         if !cfg.long_term_stats.gather_stats {
             response = StatsCheckAction {
-                action: StatsCheckResponse::Disabled,
+                action: StatsCheckResponse::NotSetup,
                 node_id: cfg.node_id.to_string(),
             };
         } else {
