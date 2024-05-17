@@ -21,6 +21,7 @@
 #include "common/flows.h"
 
 //#define VERBOSE 1
+//#define TRACING 1
 
 /* Theory of operation:
 1. (Packet arrives at interface)
@@ -60,7 +61,6 @@ __be16 isp_vlan = 0;
 #define round_up(x, y) ((((x) - 1) | __round_mask(x, y)) + 1)
 #define ctx_ptr(ctx, mem) (void *)(unsigned long)ctx->mem
 
-
 // Structure for passing metadata from XDP to TC
 struct metadata_pass_t {
     __u32 tc_handle; // The encoded TC handle
@@ -70,6 +70,9 @@ struct metadata_pass_t {
 SEC("xdp")
 int xdp_prog(struct xdp_md *ctx)
 {
+#ifdef TRACING
+    __u64 started = bpf_ktime_get_ns();
+#endif
 #ifdef VERBOSE
     bpf_debug("XDP-RDR");
 #endif
@@ -106,6 +109,7 @@ int xdp_prog(struct xdp_md *ctx)
     // If the dissector is unable to figure out what's going on, bail
     // out.
     if (!dissector_new(ctx, &dissector)) return XDP_PASS;
+
     // Note that this step rewrites the VLAN tag if redirection
     // is requested.
     if (!dissector_find_l3_offset(&dissector, vlan_redirect)) return XDP_PASS;
@@ -115,6 +119,7 @@ int xdp_prog(struct xdp_md *ctx)
         internet_vlan, 
         &dissector
     );
+
 #ifdef VERBOSE
     bpf_debug("(XDP) Effective direction: %d", effective_direction);
 #endif
@@ -208,6 +213,14 @@ int xdp_prog(struct xdp_md *ctx)
 #ifdef VERBOSE
         bpf_debug("(XDP) Redirect result: %u", redirect_result);
 #endif
+
+#ifdef TRACING
+{
+    __u64 now = bpf_ktime_get_ns();
+    bpf_debug("(XDP) Exit time: %u", now - started);
+}
+#endif
+
         return redirect_result;
     }
 	return XDP_PASS;
@@ -217,6 +230,9 @@ int xdp_prog(struct xdp_md *ctx)
 SEC("tc")
 int tc_iphash_to_cpu(struct __sk_buff *skb)
 {
+#ifdef TRACING
+    __u64 started = bpf_ktime_get_ns();
+#endif
 #ifdef VERBOSE
     bpf_debug("TC-MAP");
 #endif
@@ -271,6 +287,12 @@ int tc_iphash_to_cpu(struct __sk_buff *skb)
                 // We can short-circuit the redirect and bypass the second
                 // LPM lookup! Yay!
                 skb->priority = meta->tc_handle;
+                #ifdef TRACING
+                {
+                    __u64 now = bpf_ktime_get_ns();
+                    bpf_debug("(TC) Exit time: %u", now - started);
+                }
+                #endif
                 return TC_ACT_OK;
             }
         }
@@ -310,12 +332,24 @@ int tc_iphash_to_cpu(struct __sk_buff *skb)
         bpf_debug("(TC) Mapped to TC handle %x", ip_info->tc_handle);
 #endif
         skb->priority = ip_info->tc_handle;
+        #ifdef TRACING
+        {
+            __u64 now = bpf_ktime_get_ns();
+            bpf_debug("(TC) Exit time: %u", now - started);
+        }
+        #endif
         return TC_ACT_OK;
     } else {
         // We didn't find anything
 #ifdef VERBOSE
         bpf_debug("(TC) didn't map anything");
 #endif
+        #ifdef TRACING
+        {
+            __u64 now = bpf_ktime_get_ns();
+            bpf_debug("(TC) Exit time: %u", now - started);
+        }
+        #endif
         return TC_ACT_OK;
     }
 
