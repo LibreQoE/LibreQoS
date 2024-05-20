@@ -50,6 +50,10 @@ pub fn load_config() -> Result<Config, LibreQoSConfigError> {
     Ok(lock.as_ref().unwrap().clone())
 }
 
+/// Helper function that disables the XDP bridge in the LIVE, CACHED
+/// configuration --- it does NOT save the changes to disk. This is
+/// intended for use when the XDP bridge is disabled by pre-flight
+/// because of a Linux bridge.
 pub fn disable_xdp_bridge() -> Result<(), LibreQoSConfigError> {
     let mut config = load_config()?;
     let mut lock = CONFIG.lock().unwrap();

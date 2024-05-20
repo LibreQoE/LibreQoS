@@ -117,7 +117,7 @@ fn check_bridge_status(config: &Config, interfaces: &[IpLinkInterface]) -> Resul
         if bridge.use_xdp_bridge {
             for bridge_if in interfaces
                 .iter()
-                .filter(|bridge_if| bridge_if.link_type == "ether") 
+                .filter(|bridge_if| bridge_if.link_type == "ether" && bridge_if.operstate == "UP") 
             {
                 // We found a bridge. Check member interfaces to check that it does NOT include any XDP
                 // bridge members.
