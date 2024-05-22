@@ -73,7 +73,7 @@ pub struct ThroughputPerSecond {
 pub async fn current_throughput(
   _auth: AuthGuard,
 ) -> NoCache<MsgPack<ThroughputPerSecond>> {
-  let result = THROUGHPUT_BUFFER.read().await.current();
+  let result = THROUGHPUT_BUFFER.current();
   NoCache::new(MsgPack(result))
 }
 
@@ -81,7 +81,7 @@ pub async fn current_throughput(
 pub async fn throughput_ring_buffer(
   _auth: AuthGuard,
 ) -> NoCache<MsgPack<(usize, Vec<ThroughputPerSecond>)>> {
-  let result = THROUGHPUT_BUFFER.read().await.copy();
+  let result = THROUGHPUT_BUFFER.copy();
   NoCache::new(MsgPack(result))
 }
 
