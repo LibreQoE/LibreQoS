@@ -26,7 +26,7 @@ impl Default for LongTermStats {
     fn default() -> Self {
         Self {
             gather_stats: true,
-            collation_period_seconds: 10,
+            collation_period_seconds: 60,
             license_key: None,
             uisp_reporting_interval_seconds: Some(300),
         }
