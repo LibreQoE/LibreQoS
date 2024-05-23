@@ -25,10 +25,10 @@ pub struct LongTermStats {
 impl Default for LongTermStats {
     fn default() -> Self {
         Self {
-            gather_stats: false,
+            gather_stats: true,
             collation_period_seconds: 10,
             license_key: None,
-            uisp_reporting_interval_seconds: None,
+            uisp_reporting_interval_seconds: Some(300),
         }
     }
 }
