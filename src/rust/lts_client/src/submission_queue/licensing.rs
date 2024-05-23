@@ -49,7 +49,7 @@ async fn check_license(unix_time: u64) -> LicenseState {
         // The config file is good. Is LTS enabled?
         // If it isn't, we need to try very gently to see if a pending
         // request has been submitted.
-        if cfg.long_term_stats.gather_stats {
+        if cfg.long_term_stats.gather_stats && cfg.long_term_stats.license_key.is_some() {
             if let Some(key) = cfg.long_term_stats.license_key {
                 if key == MISERLY_NO_KEY {
                     log::warn!("You are using the self-hosting license key. We'd be happy to sell you a real one.");
