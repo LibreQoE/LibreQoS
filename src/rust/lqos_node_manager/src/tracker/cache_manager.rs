@@ -122,9 +122,9 @@ pub async fn update_total_throughput_buffer() {
   loop {
     let now = Instant::now();
     THROUGHPUT_BUFFER.tick().await;
-    let wait_time = Duration::from_secs(1) - now.elapsed();
-    if wait_time.as_micros() > 0 {
-      rocket::tokio::time::sleep(Duration::from_secs(1)).await;
+    let elapsed = now.elapsed();
+    if elapsed < Duration::from_secs(1) {
+      rocket::tokio::time::sleep(Duration::from_secs(1) - elapsed).await;
     }
   }
 }
