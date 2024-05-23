@@ -135,6 +135,7 @@
         }
 
         function start() {
+            setTitle();
             colorReloadButton();
             updateHostCounts();
             $.get("/api/shaped_devices_count", (count) => {

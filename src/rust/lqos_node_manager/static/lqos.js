@@ -497,3 +497,10 @@ function ipToHostname(ip) {
     })
     return ip;
 }
+
+function setTitle() {
+    $.get("/api/node_name", (name) => {
+        // Set the window title
+        document.title = name + " - LibreQoS Node Manager";
+    })
+}
