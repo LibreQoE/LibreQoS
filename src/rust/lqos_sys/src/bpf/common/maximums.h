@@ -14,3 +14,10 @@
 
 // Maximum number of packet pairs to track per flow.
 #define MAX_PACKETS MAX_FLOWS
+
+// Hot Cache Size
+#define HOT_CACHE_SIZE 32768
+
+// Hot Cache Negative Hit Flag
+// If you have 4294967294 CPUs, I love you.
+#define NEGATIVE_HIT 4294967294

@@ -359,7 +359,14 @@ class MultiRingBuffer {
             {x: x, y:this.data['shaped'].sortedY[1], name: 'Shaped Upload', type: 'scatter', fill: 'tozeroy', marker: {color: 'rgb(124,252,0)'}},
         ];
         if (this.plotted == null) {
-            Plotly.newPlot(graph, graphData, { margin: { l:0,r:0,b:0,t:0,pad:4 }, yaxis: { automargin: true, title: "Traffic (bits)" }, xaxis: {automargin: true, title: "Time since now (seconds)"} }, { responsive: true });
+            Plotly.newPlot(
+                graph, 
+                graphData, 
+                { 
+                    margin: { l:0,r:0,b:0,t:0,pad:4 }, 
+                    yaxis: { automargin: true, title: "Traffic (bits)", exponentformat: "SI" }, 
+                    xaxis: {automargin: true, title: "Time since now (seconds)"} 
+                }, { responsive: true });
             this.plotted = true;
         } else {
             Plotly.redraw(graph, graphData);
