@@ -6,6 +6,15 @@ use rocket::{fs::NamedFile, serde::{json::Json, Serialize, Deserialize}};
 use rocket::serde::json::Value;
 use crate::tracker::SHAPED_DEVICES;
 
+#[get("/api/node_name")]
+pub async fn get_node_name() -> Json<String> {
+  if let Ok(config) = lqos_config::load_config() {
+    Json(config.node_name)
+  } else {
+    Json("No Name Provided".to_string())  
+  }
+}
+
 // Note that NoCache can be replaced with a cache option
 // once the design work is complete.
 #[get("/config")]
