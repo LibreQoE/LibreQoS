@@ -104,6 +104,24 @@ pub fn update_config(new_config: &Config) -> Result<(), LibreQoSConfigError> {
     Ok(())
 }
 
+/// Helper function that disables the XDP bridge in the LIVE, CACHED
+/// configuration --- it does NOT save the changes to disk. This is
+/// intended for use when the XDP bridge is disabled by pre-flight
+/// because of a Linux bridge.
+pub fn disable_xdp_bridge() -> Result<(), LibreQoSConfigError> {
+    let mut config = load_config()?;
+    let mut lock = CONFIG.lock().unwrap();
+
+    if let Some(bridge) = &mut config.bridge {
+        bridge.use_xdp_bridge = false;
+    }
+
+    // Write the lock
+    *lock = Some(config);
+
+    Ok(())
+}
+
 #[derive(Debug, Error)]
 pub enum LibreQoSConfigError {
     #[error("Unable to read /etc/lqos.conf. See other errors for details.")]
@@ -127,3 +145,4 @@ pub enum LibreQoSConfigError {
     #[error("Unable to serialize config")]
     SerializeError,
 }
+
