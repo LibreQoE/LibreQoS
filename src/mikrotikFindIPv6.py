@@ -71,7 +71,7 @@ def pullMikrotikIPv6(CsvPath):
 			except:
 				print('Failed to find associated IPv4 for ' + ipv6)
 	
-	return json.dump(ipv4ToIPv6)
+	return json.dumps(ipv4ToIPv6)
 
 def pullMikrotikIPv6_Mock(CsvPath):
 	return "{\n\"172.29.200.2\": \"2602:fdca:800:1500::/56\"\n}"
