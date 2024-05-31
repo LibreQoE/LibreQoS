@@ -58,6 +58,7 @@ pub async fn build_flat_network(
 
     // Simple Shaped Devices File
     let mut shaped_devices = Vec::new();
+    let ipv4_to_v6 = Vec::new();
     for site in sites.iter() {
         if let Some(site_id) = &site.identification {
             if let Some(site_type) = &site_id.site_type {
@@ -73,7 +74,7 @@ pub async fn build_flat_network(
                         * config.uisp_integration.commit_bandwidth_multiplier)
                         as u64;
                     for device in devices.iter() {
-                        let dev = UispDevice::from_uisp(device, &config, &ip_ranges);
+                        let dev = UispDevice::from_uisp(device, &config, &ip_ranges, &ipv4_to_v6);
                         if dev.site_id == site.id {
                             // We're an endpoint in the right sight. We're getting there
                             let sd = ShapedDevice {

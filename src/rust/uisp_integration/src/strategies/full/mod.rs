@@ -11,6 +11,7 @@ mod tree_walk;
 mod uisp_fetch;
 mod utils;
 mod zero_capacity_sites;
+mod mikrotik;
 
 use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
@@ -55,12 +56,19 @@ pub async fn build_full_network(
 
     // Obtain the UISP data and transform it into easier to work with types
     let (sites_raw, devices_raw, data_links_raw) = load_uisp_data(config.clone()).await?;
+
+    // If Mikrotik is enabled, we need to fetch the Mikrotik data
+    let ipv4_to_v6 = mikrotik::mikrotik_data(&config).await.unwrap_or_else(|_| Vec::new());
+    //println!("{:?}", ipv4_to_v6);
+
+    // Parse the UISP data into a more usable format
     let (mut sites, data_links, devices) = parse_uisp_datasets(
         &sites_raw,
         &data_links_raw,
         &devices_raw,
         &config,
         &ip_ranges,
+        ipv4_to_v6
     );
 
     // Check root sites

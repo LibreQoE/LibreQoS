@@ -1,5 +1,5 @@
 use crate::ip_ranges::IpRanges;
-use crate::uisp_types::{UispDataLink, UispDevice, UispSite};
+use crate::uisp_types::{Ipv4ToIpv6, UispDataLink, UispDevice, UispSite};
 use lqos_config::Config;
 use tracing::info;
 use uisp::{DataLink, Device, Site};
@@ -21,11 +21,12 @@ pub fn parse_uisp_datasets(
     devices_raw: &[Device],
     config: &Config,
     ip_ranges: &IpRanges,
+    ipv4_to_v6: Vec<Ipv4ToIpv6>,
 ) -> (Vec<UispSite>, Vec<UispDataLink>, Vec<UispDevice>) {
     let (mut sites, data_links, devices) = (
         parse_sites(sites_raw, config),
         parse_data_links(data_links_raw),
-        parse_devices(devices_raw, config, ip_ranges),
+        parse_devices(devices_raw, config, ip_ranges, ipv4_to_v6),
     );
 
     // Assign devices to sites
@@ -63,10 +64,10 @@ fn parse_data_links(data_links_raw: &[DataLink]) -> Vec<UispDataLink> {
     data_links
 }
 
-fn parse_devices(devices_raw: &[Device], config: &Config, ip_ranges: &IpRanges) -> Vec<UispDevice> {
+fn parse_devices(devices_raw: &[Device], config: &Config, ip_ranges: &IpRanges, ipv4_to_v6: Vec<Ipv4ToIpv6>) -> Vec<UispDevice> {
     let devices: Vec<UispDevice> = devices_raw
         .iter()
-        .map(|d| UispDevice::from_uisp(d, config, ip_ranges))
+        .map(|d| UispDevice::from_uisp(d, config, ip_ranges, &ipv4_to_v6))
         .collect();
     info!("{} devices have been sucessfully parsed", devices.len());
     devices
