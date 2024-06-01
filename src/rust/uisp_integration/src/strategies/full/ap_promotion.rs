@@ -48,6 +48,11 @@ pub fn promote_access_points(
             max_up_mbps = ap.upload;
             max_down_mbps = ap.download;
         }
+        // If the parent is a client, use the client's speeds
+        if sites[parent_site_id].site_type == UispSiteType::Client {
+            max_up_mbps = sites[parent_site_id].max_up_mbps;
+            max_down_mbps = sites[parent_site_id].max_down_mbps;
+        }
 
         let mut new_site = UispSite {
             id: link.device_id,
