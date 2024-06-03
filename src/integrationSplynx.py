@@ -57,7 +57,7 @@ def combineAddress(json):
 	# Combines address fields into a single string
 	# The API docs seem to indicate that there isn't a "state" field?
 	if json["street_1"]=="" and json["city"]=="" and json["zip_code"]=="":
-		return json["id"] + "/" + json["name"]
+		return str(json["id"]) + "/" + json["name"]
 	else:
 		return json["street_1"] + " " + json["city"] + " " + json["zip_code"]
 
