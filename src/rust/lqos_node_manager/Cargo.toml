@@ -9,8 +9,8 @@ default = ["equinix_tests"]
 equinix_tests = []
 
 [dependencies]
-rocket = { version = "0.5.0-rc.2", features = [ "json", "msgpack", "uuid" ] }
-rocket_async_compression = "0.2.0"
+rocket = { version = "0.5.1", features = [ "json", "msgpack", "uuid" ] }
+rocket_async_compression = "0.6.0"
 lqos_bus = { path = "../lqos_bus" }
 lqos_config = { path = "../lqos_config" }
 lqos_utils = { path = "../lqos_utils" }
