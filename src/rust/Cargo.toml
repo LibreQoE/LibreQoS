@@ -31,4 +31,5 @@ members = [
     "lts_client", # Shared data and client-side code for long-term stats
     "lqos_map_perf", # A CLI tool for testing eBPF map performance
     "uisp", # REST support for the UISP API
+    "lqos_support_tool", # A Helper tool to make it easier to request/receive support
 ]
