@@ -19,6 +19,7 @@ pub fn promote_clients_with_children(
 
     let mut client_sites_with_children = Vec::new();
 
+    // Iterate sites and find Client types with >1 child
     sites
         .iter()
         .enumerate()
@@ -52,6 +53,7 @@ pub fn promote_clients_with_children(
             max_down_mbps: sites[child_site].max_down_mbps,
             max_up_mbps: sites[child_site].max_up_mbps,
             suspended: sites[child_site].suspended,
+            selected_parent: Some(child_site),
             ..Default::default()
         };
         new_site

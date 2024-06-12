@@ -42,7 +42,7 @@ pub fn promote_access_points(
             );
         }*/
 
-        let mut max_up_mbps = config.queues.generated_pn_upload_mbps;
+        /*let mut max_up_mbps = config.queues.generated_pn_upload_mbps;
         let mut max_down_mbps = config.queues.generated_pn_download_mbps;
         if let Some(ap) = devices.iter().find(|d| d.id == link.device_id) {
             max_up_mbps = ap.upload;
@@ -50,9 +50,12 @@ pub fn promote_access_points(
         }
         // If the parent is a client, use the client's speeds
         if sites[parent_site_id].site_type == UispSiteType::Client {
+            println!("Setting speed to client speed: {} = {}/{} -> {}/{}", link.device_name, max_up_mbps, max_down_mbps, sites[parent_site_id].max_up_mbps, sites[parent_site_id].max_down_mbps);
             max_up_mbps = sites[parent_site_id].max_up_mbps;
             max_down_mbps = sites[parent_site_id].max_down_mbps;
-        }
+        }*/
+        let max_up_mbps = u32::min(config.queues.generated_pn_upload_mbps, sites[parent_site_id].max_up_mbps);
+        let max_down_mbps = u32::min(config.queues.generated_pn_download_mbps, sites[parent_site_id].max_down_mbps);
 
         let mut new_site = UispSite {
             id: link.device_id,
