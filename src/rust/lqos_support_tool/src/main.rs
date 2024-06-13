@@ -42,6 +42,12 @@ fn summarize(filename: &str) {
     } else {
         let bytes = std::fs::read(&path).unwrap();
         if let Ok(decoded) = SupportDump::from_bytes(&bytes) {
+            println!("{:50} {:10} {}", "Sanity Check", "Success?", "Comment");
+            for entry in decoded.sanity_checks.results.iter() {
+                println!("{:50} {:10} {}", entry.name, entry.success, entry.comments);
+            }
+            println!();
+
             println!("{:40} {:10} : {:40?}", "ENTRY", "SIZE", "FILENAME");
             for entry in decoded.entries.iter() {
                 println!("{:40} {:10} : {:40?}", entry.name, entry.contents.len(), entry.filename);

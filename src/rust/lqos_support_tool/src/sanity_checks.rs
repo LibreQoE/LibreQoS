@@ -2,13 +2,15 @@ mod config_sane;
 mod interfaces;
 mod queues;
 mod bridge;
+mod net_json;
+mod shaped_devices;
 
 use serde::{Deserialize, Serialize};
 use crate::console::{error, success};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SanityChecks {
-    results: Vec<SanityCheck>,
+    pub results: Vec<SanityCheck>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -29,12 +31,18 @@ pub fn run_sanity_checks() -> anyhow::Result<SanityChecks> {
     queues::sanity_check_queues(&mut results);
     bridge::check_interface_status(&mut results);
     bridge::check_bridge(&mut results);
+    net_json::check_net_json_exists(&mut results);
+    net_json::can_we_load_net_json(&mut results);
+    net_json::can_we_parse_net_json(&mut results);
+    shaped_devices::shaped_devices_exists(&mut results);
+    shaped_devices::can_we_read_shaped_devices(&mut results);
+    shaped_devices::parent_check(&mut results);
 
     // Did any fail?
     let mut any_errors = false;
     for s in results.iter() {
         if s.success {
-            success(&s.name);
+            success(&format!("{} {}", s.name, s.comments));
         } else {
             error(&format!("{}: {}", s.name, s.comments));
             any_errors = true;
