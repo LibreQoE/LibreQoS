@@ -21,6 +21,8 @@ enum Commands {
     Sanity,
     /// Gather Support Info and Save it to /tmp
     Gather,
+    /// Gather Support Info and Send it to the LibreQoS Team. Note that LTS users and donors get priority, we don't guarantee that we'll help anyone else. Please make sure you've tried Zulip first ( https://chat.libreqos.io/ )
+    Submit,
     /// Summarize the contents of a support dump
     Summarize {
         /// The filename to read
@@ -160,6 +162,19 @@ fn expand(filename: &str, target: &str) {
     println!("Expanded data written to {}", target);
 }
 
+fn submit() {
+    // Get header
+    let name = get_name();
+    let lts_key = get_lts_key();
+    let comments = get_comments();
+
+    // Get the data
+    let dump = gather_all_support_info(&name, &comments, &lts_key).unwrap();
+
+    // Send it
+    lqos_support_tool::submit_to_network(dump);
+}
+
 fn main() {
      let cli = Cli::parse();
 
@@ -168,6 +183,7 @@ fn main() {
         Some(Commands::Gather) => gather_dump(),
         Some(Commands::Summarize { filename }) => summarize(&filename),
         Some(Commands::Expand { filename, target }) => expand(&filename, &target),
+        Some(Commands::Submit) => submit(),
         _ => {}
     }
 }
