@@ -4,6 +4,8 @@
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 use clap::{Parser, Subcommand};
+use colored::Colorize;
+use lqos_config::load_config;
 use lqos_support_tool::{gather_all_support_info, run_sanity_checks, SupportDump};
 
 #[derive(Parser)]
@@ -33,8 +35,47 @@ enum Commands {
     }
 }
 
+fn read_line() -> String {
+    use std::io::{stdin,stdout,Write};
+    let mut s = String::new();
+    stdin().read_line(&mut s).expect("Did not enter a correct string");
+    s.trim().to_string()
+}
+
+fn get_lts_key() -> String {
+    if let Ok(cfg) = load_config() {
+        if let Some(key) = cfg.long_term_stats.license_key {
+            return key.clone();
+        }
+    }
+
+    println!();
+    println!("{}", "No LTS Key Found!".bright_red());
+    println!("We prioritize helping Long-Term Stats Subscribers and Donors.");
+    println!("Please enter your LTS key (from your email), or ENTER for none:");
+    return read_line();
+}
+
+fn get_name() -> String {
+    let mut candidate = String::new();
+    while candidate.is_empty() {
+        println!("Please enter your name, email address and Zulip handle in a single line (ENTER when done).");
+        candidate = read_line();
+    }
+    candidate
+}
+
+fn get_comments() -> String {
+    println!("Anything you'd like to tell us about? (Comments)");
+    read_line()
+}
+
 fn gather_dump() {
-    let dump = gather_all_support_info().unwrap();
+    let name = get_name();
+    let lts_key = get_lts_key();
+    let comments = get_comments();
+
+    let dump = gather_all_support_info(&name, &comments, &lts_key).unwrap();
     let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
     let filename = format!("/tmp/libreqos_{}.support", timestamp);
     let path = Path::new(&filename);
@@ -49,6 +90,10 @@ fn summarize(filename: &str) {
     } else {
         let bytes = std::fs::read(&path).unwrap();
         if let Ok(decoded) = SupportDump::from_bytes(&bytes) {
+            println!("Sent by: {}", decoded.sender);
+            println!("Comments: {}", decoded.comment);
+            println!("LTS Key: {}", decoded.lts_key);
+
             println!("{:50} {:10} {}", "Sanity Check", "Success?", "Comment");
             for entry in decoded.sanity_checks.results.iter() {
                 println!("{:50} {:10} {}", entry.name, entry.success, entry.comments);
@@ -91,6 +136,11 @@ fn expand(filename: &str, target: &str) {
     // Load the data
     let bytes = std::fs::read(&in_path).unwrap();
     if let Ok(decoded) = SupportDump::from_bytes(&bytes) {
+        // Save the header
+        let header = format!("From: {}\nComment: {}\nLTS Key: {}\n", decoded.sender, decoded.comment, decoded.lts_key);
+        let header_path = out_path.join("header.txt");
+        std::fs::write(header_path, header.as_bytes()).unwrap();
+
         // Save the sanity check results
         let mut sanity = String::new();
         for check in decoded.sanity_checks.results.iter() {

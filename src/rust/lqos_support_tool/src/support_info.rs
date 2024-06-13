@@ -19,6 +19,9 @@ pub trait SupportInfo {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SupportDump {
+    pub sender: String,
+    pub comment: String,
+    pub lts_key: String,
     pub sanity_checks: SanityChecks,
     pub entries: Vec<DumpEntry>
 }
@@ -44,7 +47,7 @@ impl SupportDump {
     }
 }
 
-pub fn gather_all_support_info() -> anyhow::Result<SupportDump> {
+pub fn gather_all_support_info(sender: &str, comments: &str, lts_key: &str) -> anyhow::Result<SupportDump> {
     let sanity_checks = run_sanity_checks()?;
 
     let mut data_targets: Vec<Box<dyn SupportInfo>> = vec![
@@ -72,6 +75,9 @@ pub fn gather_all_support_info() -> anyhow::Result<SupportDump> {
     }
 
     let mut dump = SupportDump {
+        sender: sender.to_string(),
+        comment: comments.to_string(),
+        lts_key: lts_key.to_string(),
         sanity_checks,
         entries: Vec::new(),
     };
