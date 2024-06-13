@@ -24,6 +24,13 @@ enum Commands {
         /// The filename to read
         filename: String
     },
+    /// Expand all submitted data from a support dump into a given directory
+    Expand {
+        /// The filename to read from
+        filename: String,
+        /// The target directory
+        target: String,
+    }
 }
 
 fn gather_dump() {
@@ -64,6 +71,45 @@ fn sanity_checks() {
     }
 }
 
+fn expand(filename: &str, target: &str) {
+    // Check inputs
+    let in_path = Path::new(filename);
+    if !in_path.exists() {
+        println!("{} not found", filename);
+        return;
+    }
+    let out_path = Path::new(target);
+    if !out_path.exists() {
+        println!("{} not found", target);
+        return;
+    }
+    if !out_path.is_dir() {
+        println!("{} is not a directory", target);
+        return;
+    }
+
+    // Load the data
+    let bytes = std::fs::read(&in_path).unwrap();
+    if let Ok(decoded) = SupportDump::from_bytes(&bytes) {
+        // Save the sanity check results
+        let mut sanity = String::new();
+        for check in decoded.sanity_checks.results.iter() {
+            sanity += &format!("{} - Success? {}: {}\n", check.name, check.success, check.comments);
+        }
+        let sanity_path = out_path.join("sanity_checks.txt");
+        std::fs::write(sanity_path, sanity.as_bytes()).unwrap();
+
+        // Save the files
+        for (idx, dump) in decoded.entries.iter().enumerate() {
+            let trimmed = dump.name.trim().replace(' ', "").to_lowercase().replace('(', "").replace(')', "");
+            let dump_path = out_path.join(&format!("{idx:0>2}_{}", trimmed));
+            std::fs::write(dump_path, dump.contents.as_bytes()).unwrap();
+        }
+    }
+
+    println!("Expanded data written to {}", target);
+}
+
 fn main() {
      let cli = Cli::parse();
 
@@ -71,6 +117,7 @@ fn main() {
         Some(Commands::Sanity) => sanity_checks(),
         Some(Commands::Gather) => gather_dump(),
         Some(Commands::Summarize { filename }) => summarize(&filename),
+        Some(Commands::Expand { filename, target }) => expand(&filename, &target),
         _ => {}
     }
 }
