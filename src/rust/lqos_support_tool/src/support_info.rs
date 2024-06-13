@@ -9,6 +9,7 @@ mod systemctl_service_single;
 mod lqos_config;
 mod task_journal;
 mod service_config;
+mod ip_addr;
 
 pub trait SupportInfo {
     fn get_string(&self) -> String;
@@ -53,6 +54,7 @@ pub fn gather_all_support_info(sender: &str, comments: &str, lts_key: &str) -> a
     let mut data_targets: Vec<Box<dyn SupportInfo>> = vec![
         lqos_config::LqosConfig::boxed(),
         ip_link::IpLink::boxed(),
+        ip_addr::IpAddr::boxed(),
         systemctl_services::SystemCtlServices::boxed(),
         systemctl_service_single::SystemCtlService::boxed("lqosd"),
         systemctl_service_single::SystemCtlService::boxed("lqos_node_manager"),
