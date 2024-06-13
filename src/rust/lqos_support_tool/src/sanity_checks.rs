@@ -1,6 +1,7 @@
 mod config_sane;
 mod interfaces;
 mod queues;
+mod bridge;
 
 use serde::{Deserialize, Serialize};
 use crate::console::{error, success};
@@ -26,6 +27,8 @@ pub fn run_sanity_checks() -> anyhow::Result<SanityChecks> {
     config_sane::can_load_config(&mut results);
     interfaces::interfaces_exist(&mut results);
     queues::sanity_check_queues(&mut results);
+    bridge::check_interface_status(&mut results);
+    bridge::check_bridge(&mut results);
 
     // Did any fail?
     let mut any_errors = false;
