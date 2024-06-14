@@ -46,7 +46,7 @@ impl GeoTable {
     fn download() -> anyhow::Result<()> {
         log::info!("Downloading ASN-IP Table");
         let file_path = Self::file_path();
-        let url = "https://bfnightly.bracketproductions.com/geo.bin";
+        let url = "https://stats.libreqos.io/geo.bin";
         let response = reqwest::blocking::get(url)?;
         let content = response.bytes()?;
         let bytes = &content[0..];
