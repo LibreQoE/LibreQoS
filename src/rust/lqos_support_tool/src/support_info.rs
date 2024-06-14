@@ -10,6 +10,8 @@ mod lqos_config;
 mod task_journal;
 mod service_config;
 mod ip_addr;
+mod kernel_info;
+mod distro_name;
 
 pub trait SupportInfo {
     fn get_string(&self) -> String;
@@ -18,7 +20,7 @@ pub trait SupportInfo {
     fn gather(&mut self) -> anyhow::Result<()>;
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct SupportDump {
     pub sender: String,
     pub comment: String,
@@ -27,7 +29,7 @@ pub struct SupportDump {
     pub entries: Vec<DumpEntry>
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct DumpEntry {
     pub name: String,
     pub filename: Option<String>,
@@ -55,6 +57,8 @@ pub fn gather_all_support_info(sender: &str, comments: &str, lts_key: &str) -> a
         lqos_config::LqosConfig::boxed(),
         ip_link::IpLink::boxed(),
         ip_addr::IpAddr::boxed(),
+        kernel_info::KernelInfo::boxed(),
+        distro_name::DistroName::boxed(),
         systemctl_services::SystemCtlServices::boxed(),
         systemctl_service_single::SystemCtlService::boxed("lqosd"),
         systemctl_service_single::SystemCtlService::boxed("lqos_node_manager"),
@@ -108,9 +112,10 @@ mod tests {
                 DumpEntry {
                     name: "Test".to_string(),
                     filename: None,
-                    contents: "BLAH".to_string(),
+                    contents: "BLAH".to_string(),                    
                 }
-            ]
+            ],
+            ..Default::default()
         };
         let bytes = original.serialize_and_compress().unwrap();
         let restored = SupportDump::from_bytes(&bytes).unwrap();

@@ -8,7 +8,7 @@ mod shaped_devices;
 use serde::{Deserialize, Serialize};
 use crate::console::{error, success};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct SanityChecks {
     pub results: Vec<SanityCheck>,
 }
