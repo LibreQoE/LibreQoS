@@ -60,6 +60,7 @@ impl IpRanges {
 
     /// Checks if an IP address is permitted.
     pub fn is_permitted(&self, ip: IpAddr) -> bool {
+        //println!("Checking: {:?}", ip);
         if let Some(_allow) = self.allowed.longest_match(ip) {
             if let Some(_deny) = self.ignored.longest_match(ip) {
                 return false;
