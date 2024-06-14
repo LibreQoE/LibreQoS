@@ -9,6 +9,7 @@ pub use support_info::gather_all_support_info;
 pub use support_info::SupportDump;
 pub use sanity_checks::run_sanity_checks;
 use crate::console::{error, success};
+pub use sanity_checks::SanityChecks;
 
 const REMOTE_SYSTEM: &str = "stats.libreqos.io:9200";
 

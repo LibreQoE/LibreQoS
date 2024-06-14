@@ -1716,6 +1716,7 @@ dependencies = [
  "jemallocator",
  "lqos_bus",
  "lqos_config",
+ "lqos_support_tool",
  "lqos_utils",
  "nix 0.28.0",
  "once_cell",
