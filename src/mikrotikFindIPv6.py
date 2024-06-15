@@ -2,10 +2,15 @@
 import routeros_api
 import csv
 
-def pullMikrotikIPv6():
+def pullMikrotikIPv6(CsvPath):
+	import routeros_api
+	import csv
+	import json
+
+	print("Reading from " + CsvPath)
 	ipv4ToIPv6 = {}
 	routerList = []
-	with open('mikrotikDHCPRouterList.csv') as csv_file:
+	with open(CsvPath) as csv_file:
 			csv_reader = csv.reader(csv_file, delimiter=',')
 			next(csv_reader)
 			for row in csv_reader:
@@ -65,7 +70,12 @@ def pullMikrotikIPv6():
 				ipv4ToIPv6[ipv4] = ipv6
 			except:
 				print('Failed to find associated IPv4 for ' + ipv6)
-	return ipv4ToIPv6
+	
+	return json.dumps(ipv4ToIPv6)
+
+def pullMikrotikIPv6_Mock(CsvPath):
+	return "{\n\"172.29.200.2\": \"2602:fdca:800:1500::/56\"\n}"
 
 if __name__ == '__main__':
-	print(pullMikrotikIPv6())
+	print("Mikrotik IPv6 Finder")
+	#print(pullMikrotikIPv6())
