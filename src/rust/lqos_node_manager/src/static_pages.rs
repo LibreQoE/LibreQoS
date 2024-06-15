@@ -83,6 +83,14 @@ pub async fn pretty_map_graph<'a>(
   NoCache::new(NamedFile::open("static/showoff.html").await.ok())
 }
 
+// Help me obi-wan, you're our only hope
+#[get("/help")]
+pub async fn help_page<'a>(
+  _auth: AuthGuard,
+) -> NoCache<Option<NamedFile>> {
+  NoCache::new(NamedFile::open("static/help.html").await.ok())
+}
+
 #[get("/vendor/bootstrap.min.css")]
 pub async fn bootsrap_css<'a>() -> LongCache<Option<NamedFile>> {
   LongCache::new(NamedFile::open("static/vendor/bootstrap.min.css").await.ok())

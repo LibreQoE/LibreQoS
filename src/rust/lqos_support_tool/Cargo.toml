@@ -1,0 +1,17 @@
+[package]
+name = "lqos_support_tool"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.86"
+clap = { version = "4.5.7", features = ["derive"] }
+colored = "2.1.0"
+lqos_config = { path = "../lqos_config" }
+serde = { version = "1.0", features = ["derive"] }
+serde_cbor = "0" # For RFC8949/7409 format C binary objects
+miniz_oxide = "0.7.1"
+log = "0.4.21" # For compression
+libc = "0.2.155"
+nix = "0.29.0"
+serde_json = "1.0.117"
