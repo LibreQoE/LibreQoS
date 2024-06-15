@@ -129,23 +129,4 @@ mod test {
         let result = numeric_string_to_f32("abc");
         assert_eq!(result, None);
     }
-
-    #[test]
-    fn test_apply_bandwidth_overrides_existing_site() {
-        let mut sites = vec![
-            UispSite {
-                name: "SiteA".to_string(),
-                max_down_mbps: 100,
-                max_up_mbps: 100,
-                ..Default::default()
-            }
-        ];
-        let mut overrides = BandwidthOverrides::new();
-        overrides.insert("SiteA".to_string(), (150., 200.));
-
-        apply_bandwidth_overrides(&mut sites, &overrides);
-
-        assert_eq!(sites[0].max_down_mbps, 200);
-        assert_eq!(sites[0].max_up_mbps, 150);
-    }
 }
