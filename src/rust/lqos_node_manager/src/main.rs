@@ -13,6 +13,7 @@ mod network_tree;
 mod queue_info;
 mod toasts;
 mod flow_monitor;
+mod support;
 
 // Use JemAllocator only on supported platforms
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -45,6 +46,7 @@ fn rocket() -> _ {
         static_pages::unknown_devices_page,
         static_pages::circuit_queue,
         static_pages::pretty_map_graph,
+        static_pages::help_page,
         config_control::config_page,
         network_tree::tree_page,
         static_pages::ip_dump,
@@ -124,6 +126,10 @@ fn rocket() -> _ {
         flow_monitor::flows_lat_lon,
         flow_monitor::flows_ether_protocol,
         flow_monitor::flows_ip_protocol,
+        // Suport System
+        support::run_sanity_check,
+        support::gather_support_data,
+        support::submit_support_data,
       ],
     );
 

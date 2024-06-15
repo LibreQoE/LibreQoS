@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="/vendor/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/vendor/solid.min.css">
+    <link rel="stylesheet" href="/lqos.css">
+    <link rel="icon" href="/favicon.png">
+    <title>LibreQoS - Local Node Manager</title>
+    <script src="/lqos.js"></script>
+    <script src="/vendor/plotly-2.16.1.min.js"></script>
+    <script src="/vendor/jquery.min.js"></script><script src="/vendor/msgpack.min.js"></script>
+    <script defer src="/vendor/bootstrap.bundle.min.js"></script>
+</head>
+
+<body class="bg-secondary">
+<!-- Navigation -->
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="/"><img src="/vendor/tinylogo.svg" alt="LibreQoS SVG Logo" width="25"
+                                              height="25" />&nbsp;LibreQoS</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+                data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false"
+                aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarSupportedContent">
+            <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                <li class="nav-item">
+                    <a class="nav-link" href="/tree?parent=0"><i class="fa fa-tree"></i> Tree</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/shaped"><i class="fa fa-users"></i> Shaped Devices <span
+                            id="shapedCount" class="badge badge-pill badge-success green-badge">?</span></a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/unknown"><i class="fa fa-address-card"></i> Unknown IPs <span
+                            id="unshapedCount" class="badge badge-warning orange-badge">?</span></a>
+                </li>
+            </ul>
+        </div>
+
+        <ul class="navbar-nav ms-auto">
+            <li class="nav-item" id="currentLogin"></li>
+            <li class="nav-item" id="statsLink"></li>
+            <li class="nav-item ms-auto">
+                <a class="nav-link" href="/config"><i class="fa fa-gear"></i> Configuration</a>
+            </li>
+            <li class="nav-item ms-auto">
+                <a class="nav-link" href="/help"><i class="fa fa-question-circle"></i> Help</a>
+            </li>
+            <li>
+                <a class="nav-link btn btn-small" href="#" id="btnReload"><i class="fa fa-refresh"></i> Reload
+                    LibreQoS</a>
+            </li>
+        </ul>
+    </div>
+</nav>
+
+<div id="container" class="pad4">
+
+    <div class="row">
+        <div class="col-4">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h5 class="card-title"><i class="fa fa-question-circle"></i> Help & Support</h5>
+
+                    <p class="alert-warning">
+                        <i class="fa fa-info-circle"></i>
+                        Priority support is given to Long-Term Stats subscribers and donors. Other support is
+                        best effort, with volunteers trying to help as best we can.
+                    </p>
+                    <p>
+                        <a href="https://github.com/sponsors/LibreQoE/" class="btn btn-primary">
+                            <i class="fa fa-money"></i> Support LibreQoS Today
+                        </a>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-4">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h5 class="card-title"><i class="fa fa-book"></i> Documentation</h5>
+                    <p>The documentation is a great place to start!</p>
+                    <a href="https://libreqos.readthedocs.io/en/latest/" class="btn btn-primary"><i class="fa fa-book"></i> Read The LibreQoS Documentation</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-4">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h5 class="card-title"><i class="fa fa-user-circle"></i> Chat</h5>
+                    <p>
+                        Connect with other LibreQoS users, and the LibreQoS team on our Zulip Chat System. <br />
+                        <a class="btn btn-primary" href="https://chat.libreqos.io/"><i class="fa fa-user-circle"></i> Zulip chat system</a>.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row" style="margin-top: 10px;">
+        <div class="col-4">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h5 class="card-title"><i class="fa fa-wrench"></i> Tools</h5>
+                    <p style="border: 1px solid #eee">
+                        <strong>Sanity check</strong> reads your configuration and looks for common issues. This should be
+                        your first step when troubleshooting the system.<br />
+                        <button id="btnSanity" class="btn btn-primary" onclick="sanity()"><i class="fa fa-info"></i> Sanity Check Your Installation</button>
+                    </p>
+                    <p style="border: 1px solid #eee">
+                        <strong>Download</strong> support data to a local file. You can send this to LibreQoS via the
+                        chat or email (as part of an ongoing support discussion).<br />
+                        <button id="btnDownload" class="btn btn-secondary" data-bs-toggle="modal" data-bs-target="#downloadDump"><i class="fa fa-download"></i> Download Support Dump</button>
+                    </p>
+                    <p style="border: 1px solid #eee">
+                        <strong>Submit</strong> support data directly to LibreQoS. Please contact us when you do this,
+                        with detailed information about the problems you are experiencing. Repeatedly hitting this
+                        button will get you slower - or no - service!<br />
+                        <button id="btnSubmit" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#submitDump"><i class="fa fa-send"></i> Send Support Dump</button>
+                    </p>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<footer>&copy; 2022-2023, LibreQoE LLC</footer>
+
+<div class="modal" tabindex="-1" id="sanityModal">
+    <div class="modal-dialog modal-fullscreen">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Configuration Check Results</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" style="overflow: auto;">
+                <p id="configCheck"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal" tabindex="-1" id="downloadDump">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Information To Add to the Support Dump</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" style="overflow: auto;">
+                <div class="row">
+                    <div class="col">
+                        <label for="gatherName" class="form-label">Your Name</label>
+                        <input type="text" id="gatherName" class="form-control" />
+                    </div>
+                    <div class="col">
+                        <label for="gatherEmail" class="form-label">Your Email Address</label>
+                        <input type="text" id="gatherEmail" class="form-control" />
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col">
+                        <label for="gatherComments" class="form-label">Comments</label>
+                        <input type="text" id="gatherComments" class="form-control" />
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" onclick="gather()"><i class="fa fa-download"></i> Generate and Download</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal" tabindex="-1" id="submitDump">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Information To Add to the Support Dump</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" style="overflow: auto;">
+                <p class="alert-warning"><i class="fa fa-warning"></i> Your support dump will contain unredated data about your customers, and lots
+                of information about your server. By submitting, you are acknowledging that LibreQoS bear no liability for this data.
+                LibreQoS will take all reasonable measures to protect your data, and will not share it.</p>
+                <div class="row">
+                    <div class="col">
+                        <label for="submitName" class="form-label">Your Name</label>
+                        <input type="text" id="submitName" class="form-control" />
+                    </div>
+                    <div class="col">
+                        <label for="submitEmail" class="form-label">Your Email Address</label>
+                        <input type="text" id="submitEmail" class="form-control" />
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col">
+                        <label for="submitComments" class="form-label">Comments</label>
+                        <input type="text" id="submitComments" class="form-control" />
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" onclick="submit()"><i class="fa fa-send"></i> Submit Support Data to LibreQoS</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function start() {
+        setTitle();
+        colorReloadButton();
+        updateHostCounts();
+    }
+
+    function gather() {
+        let details = {
+            name: $("#gatherName").val() + ", " + $("#gatherEmail").val(),
+            comment: $("#gatherComments").val()
+        };
+        console.log(details);
+
+        if (details.name === ", " || details.name.indexOf("@")<1) {
+            alert("Please enter a name and email address. If you share this, it'll be handy to know who sent it!");
+            return;
+        }
+
+        $.ajax({
+            type: "POST",
+            url: "/api/gatherSupport",
+            data: JSON.stringify(details),
+            xhrFields: {
+                responseType: 'blob' // to avoid binary data being mangled on charset conversion
+            },
+            success: function(blob, result, xhr) {
+                var filename = "libreqos.support";
+
+                // use HTML5 a[download] attribute to specify filename
+                var downloadUrl = URL.createObjectURL(blob);
+                var a = document.createElement("a");
+                // safari doesn't support this yet
+                if (typeof a.download === 'undefined') {
+                    window.location.href = downloadUrl;
+                } else {
+                    a.href = downloadUrl;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                }
+            }
+        })
+    }
+
+    function submit() {
+        let details = {
+            name: $("#submitName").val() + ", " + $("#submitEmail").val(),
+            comment: $("#submitComments").val()
+        };
+        console.log(details);
+
+        if (details.name === ", " || details.name.indexOf("@")<1) {
+            alert("Please enter a name and email address. If you share this, it'll be handy to know who sent it!");
+            return;
+        }
+
+        $.ajax({
+            type: "POST",
+            url: "/api/submitSupport",
+            data: JSON.stringify(details),
+            success: function(result) {
+                console.log(result);
+                alert(result);
+            }
+        })
+    }
+
+    function sanity() {
+        $.get("/api/sanity", (data) => {
+            console.log(data);
+            let html = "<table class='table'><thead><th>Check</th><th>Success?</th><th>Comment</th></thead><tbody>";
+            for (let i=0; i<data.results.length; i++) {
+                let row = data.results[i];
+                html += "<tr>";
+                html += "<td>" + row.name + "</td>";
+                if (row.success) {
+                    html += "<td style='color: green'><i class='fa fa-check'></i>";
+                } else {
+                    html += "<td style='color: red'><i class='fa fa-warning'></i>";
+                }
+                html += "<td>" + row.comments + "</td>";
+                html += "</tr>";
+            }
+            html += "</tbody>";
+            $("#configCheck").html(html);
+
+            // Show the modal
+            const myModal = new bootstrap.Modal(document.getElementById('sanityModal'), { focus: true });
+            myModal.show();
+        })
+    }
+
+    $(document).ready(start);
+</script>
+
+</body>
+
+</html>

@@ -32,4 +32,5 @@ members = [
     "lqos_map_perf", # A CLI tool for testing eBPF map performance
     "uisp", # REST support for the UISP API
     "uisp_integration", # UISP Integration in Rust
+    "lqos_support_tool", # A Helper tool to make it easier to request/receive support
 ]
