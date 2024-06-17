@@ -90,6 +90,7 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_wrapped(wrap_pyfunction!(influx_db_url))?;
   m.add_wrapped(wrap_pyfunction!(get_weights))?;
   m.add_wrapped(wrap_pyfunction!(get_tree_weights))?;
+  m.add_wrapped(wrap_pyfunction!(get_libreqos_directory))?;
 
   Ok(())
 }
@@ -661,4 +662,10 @@ pub fn get_tree_weights() -> PyResult<Vec<device_weights::NetworkNodeWeight>> {
             Err(PyOSError::new_err(e.to_string()))
         }
     }
+}
+
+#[pyfunction]
+pub fn get_libreqos_directory() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  Ok(config.lqos_directory)
 }

@@ -2,10 +2,9 @@ import time
 import datetime
 from LibreQoS import refreshShapers, refreshShapersUpdateOnly
 from graphInfluxDB import refreshBandwidthGraphs, refreshLatencyGraphs
+import subprocess
 from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue_refresh_interval_mins, \
-	automatic_import_powercode, automatic_import_sonar, influx_db_enabled
-if automatic_import_uisp():
-	from integrationUISP import importFromUISP
+	automatic_import_powercode, automatic_import_sonar, influx_db_enabled, get_libreqos_directory
 if automatic_import_splynx():
 	from integrationSplynx import importFromSplynx
 if automatic_import_powercode():
@@ -20,7 +19,9 @@ ads = BlockingScheduler(executors={'default': ThreadPoolExecutor(1)})
 def importFromCRM():
 	if automatic_import_uisp():
 		try:
-			importFromUISP()
+			# Call bin/uisp_integration
+			path = get_libreqos_directory() + "/bin/uisp_integration"
+			subprocess.run([path])
 		except:
 			print("Failed to import from UISP")
 	elif automatic_import_splynx():
