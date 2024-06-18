@@ -111,6 +111,10 @@ pub async fn build_full_network(
     // Do Link Squashing
     squash_single_aps(&mut sites)?;
 
+    if let Some(c) = sites.iter().find(|s| s.name == "CALVIN") {
+        println!("Stage SQUASH: {}/{}", c.max_down_mbps, c.max_up_mbps);
+    }
+
     // Build Path Weights
     walk_tree_for_routing(&mut sites, &root_site, &routing_overrides)?;
 
