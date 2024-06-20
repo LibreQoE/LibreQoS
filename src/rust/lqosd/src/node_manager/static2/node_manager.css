@@ -16,14 +16,18 @@ body.dark-mode {
 }
 
 .sidebar {
-    width: 180px;
     background-color: rgb(6, 7, 59);
     color: #eee;
-    font-size: 8pt;
 }
 .sidebar .nav-link {
     color: #eee;
 }
 .sidebar .nav-item :hover {
     background-color: #201ad9;
+}
+.navbar-toggler {
+    color: #eee;
+}
+.navbar-search {
+    width: 150px;
 }

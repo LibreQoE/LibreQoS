@@ -1,1 +1,25 @@
-Hello
+<div class="row">
+    <div class="col-4">
+        <div id="blah">
+    </div>
+    <div class="col-4">
+        Counts
+    </div>
+</div>
+
+<script>
+    function onMessage(msg) {
+        switch (msg.event) {
+            case "join": {
+                $("#blah").text("Waiting");
+            } break;
+            case "throughput": {
+                $("#blah").text(msg.data.bps[0]);
+            } break;
+        }
+    }
+
+    $(document).ready(() => {
+        subscribeWS(["throughput"], onMessage);
+    })
+</script>
