@@ -16,9 +16,10 @@ body.dark-mode {
 }
 
 .sidebar {
-    width: 200px;
+    width: 180px;
     background-color: rgb(6, 7, 59);
     color: #eee;
+    font-size: 8pt;
 }
 .sidebar .nav-link {
     color: #eee;
