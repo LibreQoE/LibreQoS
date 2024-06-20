@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="auto">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LibreQoS Node Manager</title>
+    <link href="vendor/bootstrap.min.css" rel="stylesheet">
+    <script src="vendor/jquery-3.7.1.min.js"></script>
+    <script src="vendor/echarts.min.js"></script>
+    <script src="vendor/4c979e6ebb.js"></script>
+    <link href="./node_manager.css" rel="stylesheet">
+    <script src="lqos.js"></script>
+</head>
+<body>
+<div id="wrapper"> <!-- Whole Page Wrapper -->
+
+    <!-- Sidebar -->
+    <nav class="navbar navbar-expand-lg d-flex flex-column flex-shrink-0 sidebar">
+        <div class="container-fluid">
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarSupportedContent">
+                <ul class="navbar-nav flex-column">
+                    <!-- Logo -->
+                    <li class="nav-item">
+                        <a class="nav-link">
+                            <img src="tinylogo.svg" alt="LibreQoS SVG Logo" width="48" height="48">
+                        </a>
+                    </li>
+                    <!-- Search -->
+                    <li>
+                        <form class="d-none d-sm-inline-block form-inline mr-auto ml-md-3 my-2 my-md-0 mw-100 navbar-search">
+                            <div class="input-group">
+                                <input class="form-control border-0 small" type="text" placeholder="Search..." aria-label="Search">
+                                <div class="input-group-append">
+                                    <button class="btn btn-primary" type="button">
+                                        <i class="fas fa-search fa-sm"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </li>
+                    <!-- Dashboard -->
+                    <li class="nav-item">
+                        <a class="nav-link">
+                            <i class="fa fa-dashboard nav-icon"></i> Dashboard
+                        </a>
+                    </li>
+                    <!-- Tree -->
+                    <li class="nav-item">
+                        <a class="nav-link">
+                            <i class="fa fa-tree nav-icon"></i> Tree
+                        </a>
+                    </li>
+                    <!-- Statistics -->
+                    <li class="nav-item">
+                        <a class="nav-link">
+                            <i class="fa fa-line-chart nav-icon"></i> Statistics
+                        </a>
+                    </li>
+                    <!-- Statistics -->
+                    <li class="nav-item">
+                        <a class="nav-link">
+                            <i class="fa fa-gears nav-icon"></i> Configuration
+                        </a>
+                    </li>
+                    <hr />
+                    <!-- Reload Button -->
+                    <li class="nav-item">
+                        <a class="nav-link">
+                            <i class="fa fa-recycle"></i> Reload LibreQoS
+                        </a>
+                    </li>
+                    <hr />
+                    <!-- Dark mode switch -->
+                    <li class="nav-item">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="darkModeSwitch">
+                            <label class="form-check-label" for="darkModeSwitch"><i class="fa fa-moon-o"></i> Day/Night</label>
+                        </div>
+                    </li>
+                    <hr />
+                    <!-- User Info -->
+                    <li class="nav-item">
+                        <a class="nav-link">
+                            <i class="fa fa-user"></i> Herbert
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Content Wrapper -->
+    <div id="content-wrapper" class="d-flex flex-column">
+        <!-- Main Content -->
+
+        <div id="content" class="container-fluid">
+            %%BODY%%
+        </div> <!-- End Main Content -->
+    </div> <!-- End Content Wrapper -->
+
+</div> <!-- End Wrapper -->
+
+<footer class="justify-content-center">
+    &copy; Copyright 2022-2024, LibreQoE LLC
+</footer>
+
+    <script src="vendor/bootstrap.bundle.min.js"></script>
+    <script>
+        pageInit();
+    </script>
+</body>
+</html>

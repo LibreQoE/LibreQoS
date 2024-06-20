@@ -33,6 +33,7 @@ use throughput_tracker::flow_data::get_rtt_events_per_second;
 use tokio::join;
 mod stats;
 mod preflight_checks;
+mod node_manager;
 
 // Use JemAllocator only on supported platforms
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -135,6 +136,13 @@ async fn main() -> Result<()> {
 
   // Create the socket server
   let server = UnixSocketServer::new().expect("Unable to spawn server");
+
+  // Webserver starting point
+  tokio::spawn(async {
+    if let Err(e) = node_manager::spawn_webserver().await {
+      log::error!("Node Manager Failed: {e:?}");
+    }
+  });
 
   // Main bus listen loop
   server.listen(handle_bus_requests).await?;
