@@ -31,3 +31,18 @@ body.dark-mode {
 .navbar-search {
     width: 150px;
 }
+
+.dashbox {
+    border: 1px solid #ccc;
+    padding: 0px;
+    margin: 2px;
+}
+.dashbox .dashbox-title {
+    font-size: 10pt;
+    background-color: rgb(6, 7, 59);
+    color: white;
+    text-align: center;
+    margin: 0px;
+    font-variant: small-caps;
+    font-weight: bold;
+}

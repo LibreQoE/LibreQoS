@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use axum::{extract::{ws::{Message, WebSocket}, WebSocketUpgrade}, response::IntoResponse, routing::get, Extension, Router};
+use lqos_config::{load_config, Config};
 use serde::Deserialize;
 use serde_json::json;
 use tokio::sync::{mpsc::Sender, Mutex};
@@ -40,6 +41,14 @@ async fn channel_ticker(channels: Arc<PubSub>) {
                 THROUGHPUT_TRACKER.shaped_bits_per_second(),
             )
         };
+        let max = if let Ok(config) = load_config() {
+            (
+                config.queues.uplink_bandwidth_mbps,
+                config.queues.downlink_bandwidth_mbps,
+            )
+        } else {
+            (0,0)
+        };
         let bps = json!(
         {
             "event" : "throughput",
@@ -47,6 +56,7 @@ async fn channel_ticker(channels: Arc<PubSub>) {
                 "bps": bits_per_second,
                 "pps": packets_per_second,
                 "shaped_bps": shaped_bits_per_second,
+                "max": max,
             }
         }
         ).to_string();

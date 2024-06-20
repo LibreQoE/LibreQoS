@@ -1,20 +1,27 @@
 <div class="row">
-    <div class="col-4">
-        <div id="blah">
+    <div class="col-4 dashbox">
+        <h5 class="dashbox-title">Throughput Bits/Second</h5>
+        <div id="tpBits" style="width: 100%; height: 250px">
+        </div>
     </div>
-    <div class="col-4">
+    <div class="col-4 dashbox">
         Counts
     </div>
 </div>
 
 <script>
+    tpbits = null;
+
     function onMessage(msg) {
         switch (msg.event) {
             case "join": {
-                $("#blah").text("Waiting");
+                if (msg.channel == "throughput") {
+                    tpbits = new DashboardGauge("tpBits");
+                }
             } break;
             case "throughput": {
-                $("#blah").text(msg.data.bps[0]);
+                tpbits.chart.hideLoading();
+                tpbits.update(msg.data.bps[0], msg.data.bps[1], msg.data.max[0], msg.data.max[1]);
             } break;
         }
     }
