@@ -1,6 +1,6 @@
-import {subscribeWS} from "./ws";
-import {BitsPerSecondGauge} from "./graphs/bits_gauge.js";
-import {PacketsBar} from "./graphs/packets_bar";
+import {subscribeWS} from "./pubsub/ws";
+import {BitsPerSecondGauge} from "./graphs/bits_gauge";
+import {PacketsPerSecondBar} from "./graphs/packets_bar";
 
 let tpbits = null;
 let tppackets = null;
@@ -10,7 +10,7 @@ function onMessage(msg) {
         case "join": {
             if (msg.channel === "throughput") {
                 tpbits = new BitsPerSecondGauge("tpBits");
-                tppackets = new PacketsBar("tpPackets");
+                tppackets = new PacketsPerSecondBar("tpPackets");
             }
         }
             break;

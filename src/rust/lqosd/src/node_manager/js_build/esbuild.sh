@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 scripts=( index.js template.js )
 for script in "${scripts[@]}"
 do
