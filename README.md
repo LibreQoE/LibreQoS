@@ -30,9 +30,10 @@ Please support the continued development of LibreQoS by sponsoring us via [GitHu
 Our Zulip chat server is available at [https://chat.libreqos.io/join/fvu3cerayyaumo377xwvpev6/](https://chat.libreqos.io/join/fvu3cerayyaumo377xwvpev6/).
 
 ## LibreQoS Social
+- https://www.youtube.com/@LibreQoS
+- https://www.linkedin.com/company/libreqos/
 - https://www.facebook.com/libreqos
 - https://twitter.com/libreqos
-- https://www.linkedin.com/company/libreqos/
 - https://fosstodon.org/@LibreQoS/
 
 ## Long-Term Stats (LTS)
