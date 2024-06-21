@@ -18,13 +18,13 @@ else
     echo "bpftool found."
 fi
 
-if ! bpftool help &> /dev/null
+if ! esbuild --help &> /dev/null
 then
     echo "esbuild is not installed."
     echo "Let's try to install it"
     sudo apt-get install esbuild
 else
-    echo "bpftool found."
+    echo "esbuild found."
 fi
 
 if ! pkg-config --help &> /dev/null
@@ -88,6 +88,7 @@ popd > /dev/null
 
 # Copy the node manager's static web content
 cp -R rust/lqos_node_manager/static/* bin/static
+mkdir -p bin/static2/vendor
 pushd rust/lqosd > /dev/null
 ./copy_files.sh
 popd > /dev/null

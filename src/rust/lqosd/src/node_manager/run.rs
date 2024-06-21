@@ -17,7 +17,7 @@ pub async fn spawn_webserver() -> Result<()>  {
         .nest("/vendor", vendor_route()?) // Serve /vendor as purely static
         .nest("/", static_routes()?);
 
-    info!("Webserver listening on :: port 9123");
+    info!("Webserver listening on :: port 9223");
     axum::serve(listener, router).await?;
     Ok(())
 }
