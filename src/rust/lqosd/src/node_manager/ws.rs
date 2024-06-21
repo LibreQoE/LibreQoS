@@ -1,11 +1,12 @@
 use std::sync::Arc;
 use axum::{extract::{ws::{Message, WebSocket}, WebSocketUpgrade}, response::IntoResponse, routing::get, Extension, Router};
-use lqos_config::{load_config, Config};
+use lqos_config::load_config;
 use serde::Deserialize;
 use serde_json::json;
 use tokio::sync::{mpsc::Sender, Mutex};
+use lqos_bus::BusResponse;
 
-use crate::throughput_tracker::THROUGHPUT_TRACKER;
+use crate::throughput_tracker::{rtt_histogram, THROUGHPUT_TRACKER};
 
 pub fn websocket_router() -> Router {
     let channels = PubSub::new();
@@ -18,12 +19,14 @@ pub fn websocket_router() -> Router {
 #[derive(PartialEq, Clone, Copy, Debug)]
 enum Channel {
     Throughput,
+    Rtt,
 }
 
 impl Channel {
     fn as_str(&self) -> &'static str {
         match self {
             Channel::Throughput => "throughput",
+            Channel::Rtt => "rtt",
         }
     }
 }
@@ -61,6 +64,18 @@ async fn channel_ticker(channels: Arc<PubSub>) {
         }
         ).to_string();
         channels.send_and_clean(Channel::Throughput, bps).await;
+
+        // RTT Histogram
+        let histo = rtt_histogram();
+        if let BusResponse::RttHistogram(data) = &histo {
+                let rtt_histo = json!(
+                    {
+                        "event": "histogram",
+                        "data": data,
+                    }
+            ).to_string();
+            channels.send_and_clean(Channel::Rtt, rtt_histo).await;
+        }
     }
 }
 
@@ -90,6 +105,7 @@ impl PubSub {
     pub async fn subscribe(&self, channel: String, tx: Sender<String>) {
         match channel.as_str() {
             "throughput" => self.do_subscribe(Channel::Throughput, tx).await,
+            "rtt" => self.do_subscribe(Channel::Rtt, tx).await,
             _ => log::warn!("Unknown channel: {}", channel),
         }
     }

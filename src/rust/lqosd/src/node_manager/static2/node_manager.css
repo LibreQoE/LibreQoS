@@ -35,7 +35,7 @@ body.dark-mode {
 .dashbox {
     border: 1px solid #ccc;
     padding: 0px;
-    margin: 2px;
+    margin: 0px;
 }
 .dashbox .dashbox-title {
     font-size: 10pt;

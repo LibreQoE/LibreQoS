@@ -54,11 +54,17 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
                     name: 'unshaped0',
                     data: [],
                     type: 'line',
+                    lineStyle: {
+                        color: 'orange',
+                    }
                 },
                 {
                     name: 'unshaped1',
                     data: [],
                     type: 'line',
+                    lineStyle: {
+                        color: 'orange',
+                    }
                 },
             ],
             tooltip: {

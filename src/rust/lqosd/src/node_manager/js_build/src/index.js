@@ -3,11 +3,13 @@ import {BitsPerSecondGauge} from "./graphs/bits_gauge";
 import {PacketsPerSecondBar} from "./graphs/packets_bar";
 import {ShapedUnshapedPie} from "./graphs/shaped_unshaped_pie";
 import {ThroughputRingBufferGraph} from "./graphs/throughput_ring_graph";
+import {RttHistogram} from "./graphs/rtt_histo";
 
 let tpBits = null;
 let tpPackets = null;
 let tpShaped = null;
 let tpRing = null;
+let rttHisto = null;
 
 function onMessage(msg) {
     switch (msg.event) {
@@ -17,6 +19,8 @@ function onMessage(msg) {
                 tpPackets = new PacketsPerSecondBar("tpPackets");
                 tpShaped = new ShapedUnshapedPie("tpShaped");
                 tpRing = new ThroughputRingBufferGraph("tpRing");
+            } else if (msg.channel === "rtt") {
+                rttHisto = new RttHistogram("rttHisto");
             }
         }
             break;
@@ -27,7 +31,11 @@ function onMessage(msg) {
             tpRing.update(msg.data.shaped_bps, msg.data.bps);
         }
             break;
+        case "histogram": {
+            rttHisto.update(msg.data);
+        }
+            break;
     }
 }
 
-subscribeWS(["throughput"], onMessage);
+subscribeWS(["throughput", "rtt"], onMessage);
