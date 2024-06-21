@@ -121,3 +121,4 @@ src/network.pdf
 src/ShapedDevices.csv.good
 .gitignore
 src/rust/lqosd/lts_keys.bin
+src/rust/lqosd/src/node_manager/js_build/out
