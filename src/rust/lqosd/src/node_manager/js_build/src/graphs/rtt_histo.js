@@ -6,7 +6,10 @@ export class RttHistogram extends DashboardGraph {
         let d = [];
         let axis = [];
         for (let i=0; i<20; i++) {
-            d.push(i);
+            d.push({
+                value: i,
+                itemStyle: {color: lerpGreenToRedViaOrange(20-i, 20)},
+            });
             axis.push(i.toString());
         }
         this.option = {
@@ -19,7 +22,7 @@ export class RttHistogram extends DashboardGraph {
             },
             series: {
                 data: d,
-                type: 'bar'
+                type: 'bar',
             }
         };
         this.option && this.chart.setOption(this.option);
@@ -27,7 +30,23 @@ export class RttHistogram extends DashboardGraph {
 
     update(rtt) {
         this.chart.hideLoading();
-        this.option.series.data = rtt;
+        for (let i=0; i<20; i++) {
+            this.option.series.data[i].value = rtt[i];
+        }
         this.chart.setOption(this.option);
     }
+}
+
+function lerpGreenToRedViaOrange(value, max) {
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    if (value < max / 2) {
+        r = 255;
+        g = Math.floor(255 * value / (max / 2));
+    } else {
+        r = Math.floor(255 * (max - value) / (max / 2));
+        g = 255;
+    }
+    return `rgb(${r}, ${g}, ${b})`;
 }
