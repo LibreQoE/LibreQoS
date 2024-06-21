@@ -18,6 +18,15 @@ else
     echo "bpftool found."
 fi
 
+if ! bpftool help &> /dev/null
+then
+    echo "esbuild is not installed."
+    echo "Let's try to install it"
+    sudo apt-get install esbuild
+else
+    echo "bpftool found."
+fi
+
 if ! pkg-config --help &> /dev/null
 then
     echo "pkg-config is not installed."
@@ -79,6 +88,9 @@ popd > /dev/null
 
 # Copy the node manager's static web content
 cp -R rust/lqos_node_manager/static/* bin/static
+pushd rust/lqosd > /dev/null
+./copy_files.sh
+popd > /dev/null
 
 # Copy Rocket.toml to tell the node manager where to listen
 cp rust/lqos_node_manager/Rocket.toml bin/

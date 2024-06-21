@@ -8,7 +8,8 @@ use crate::node_manager::{static_pages::{static_routes, vendor_route}, ws::webso
 /// This is designed to be run as an independent Tokio future,
 /// with tokio::spawn unless you want it to block execution.
 pub async fn spawn_webserver() -> Result<()>  {
-    let listener = TcpListener::bind(":::9123").await?;
+    // TODO: port change is temporary
+    let listener = TcpListener::bind(":::9223").await?;
 
     // Construct the router from parts
     let router = Router::new()
