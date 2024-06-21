@@ -1,13 +1,15 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {scaleNumber} from "../scaling";
 
+const RING_SIZE = 60 * 5; // 5 Minutes
+
 export class ThroughputRingBufferGraph extends DashboardGraph {
     constructor(id) {
         super(id);
-        this.ringbuffer = new RingBuffer(600);
+        this.ringbuffer = new RingBuffer(RING_SIZE);
 
         let xaxis = [];
-        for (let i=0; i<600; i++) {
+        for (let i=0; i<RING_SIZE; i++) {
             xaxis.push(i);
         }
 
