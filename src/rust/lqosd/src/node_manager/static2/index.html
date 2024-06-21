@@ -1,27 +1,31 @@
 <div class="row">
-    <div class="col-4 dashbox">
+    <div class="col-3 dashbox">
         <h5 class="dashbox-title">Throughput Bits/Second</h5>
-        <div id="tpBits" style="width: 100%; height: 250px">
+        <div id="tpBits" class="dashgraph">
         </div>
     </div>
-    <div class="col-4 dashbox">
-        Counts
+    <div class="col-3 dashbox">
+        <h5 class="dashbox-title">Throughput Packets/Second</h5>
+        <div id="tpPackets" class="dashgraph">
+        </div>
     </div>
 </div>
 
 <script>
     tpbits = null;
+    tppackets = null;
 
     function onMessage(msg) {
         switch (msg.event) {
             case "join": {
-                if (msg.channel == "throughput") {
+                if (msg.channel === "throughput") {
                     tpbits = new DashboardGauge("tpBits");
+                    tppackets = new PacketsBar("tpPackets");
                 }
             } break;
             case "throughput": {
-                tpbits.chart.hideLoading();
                 tpbits.update(msg.data.bps[0], msg.data.bps[1], msg.data.max[0], msg.data.max[1]);
+                tppackets.update(msg.data.pps[0], msg.data.pps[1]);
             } break;
         }
     }

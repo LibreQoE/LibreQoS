@@ -71,12 +71,19 @@ function InitDayNightMode() {
     });
 }
 
-class DashboardGauge {
+class DashboardGraph {
     constructor(id) {
         this.id = id;
         this.dom = document.getElementById(id);
         this.chart = echarts.init(this.dom);
         this.chart.showLoading();
+        this.option = {};
+    }
+}
+
+class DashboardGauge extends DashboardGraph {
+    constructor(id) {
+        super(id);
         this.option = {
             series: [
               {
@@ -149,6 +156,7 @@ class DashboardGauge {
     }
 
     update(value1, value2, max1, max2) {
+        this.chart.hideLoading();
         this.option.series[0].data[0].value = value1;
         this.option.series[0].data[1].value = value2;
         this.option.series[0].min = 0;
@@ -157,13 +165,44 @@ class DashboardGauge {
     }
 }
 
+class PacketsBar extends DashboardGraph {
+    constructor(id) {
+        super(id);
+        this.option = {
+            xAxis: {
+                type: 'value',
+                axisLabel: {
+                    formatter: (value) => { return scaleNumber(value, 0); }
+                }
+            },
+            yAxis: {
+                type: 'category',
+                data: ['Up', 'Down'],
+            },
+            series: [
+                {
+                    type: 'bar',
+                    data: [0, 0]
+                }
+            ]
+        }
+        this.option && this.chart.setOption(this.option);
+    }
+
+    update(up, down) {
+        this.chart.hideLoading();
+        this.option.series[0].data = [up, down];
+        this.chart.setOption(this.option);
+    }
+}
+
 function scaleNumber(n, fixed=2) {
-    if (n > 1000000000000-1) {
+    if (n > 1000000000000) {
         return (n / 1000000000000).toFixed(fixed) + "T";
-    } else if (n > 1000000000-1) {
+    } else if (n > 1000000000) {
         return (n / 1000000000).toFixed(fixed) + "G";
     } else if (n > 1000000) {
-        return (n / 1000000-1).toFixed(fixed) + "M";
+        return (n / 1000000).toFixed(fixed) + "M";
     } else if (n > 1000) {
         return (n / 1000).toFixed(fixed) + "K";
     }
