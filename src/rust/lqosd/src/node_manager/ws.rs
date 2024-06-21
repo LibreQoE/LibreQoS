@@ -7,6 +7,7 @@ use tokio::sync::{mpsc::Sender, Mutex};
 use lqos_bus::BusResponse;
 
 use crate::throughput_tracker::{rtt_histogram, THROUGHPUT_TRACKER};
+use crate::throughput_tracker::flow_data::ALL_FLOWS;
 
 pub fn websocket_router() -> Router {
     let channels = PubSub::new();
@@ -20,6 +21,7 @@ pub fn websocket_router() -> Router {
 enum Channel {
     Throughput,
     Rtt,
+    Flows,
 }
 
 impl Channel {
@@ -27,6 +29,7 @@ impl Channel {
         match self {
             Channel::Throughput => "throughput",
             Channel::Rtt => "rtt",
+            Channel::Flows => "flows",
         }
     }
 }
@@ -76,6 +79,19 @@ async fn channel_ticker(channels: Arc<PubSub>) {
             ).to_string();
             channels.send_and_clean(Channel::Rtt, rtt_histo).await;
         }
+
+        // Flows
+        let active_flows = {
+            let lock = ALL_FLOWS.lock().unwrap();
+            lock.len() as u64
+        };
+        let active_flows = json!(
+            {
+                "event": "flows",
+                "data": active_flows,
+            }
+        ).to_string();
+        channels.send_and_clean(Channel::Flows, active_flows).await;
     }
 }
 
@@ -106,6 +122,7 @@ impl PubSub {
         match channel.as_str() {
             "throughput" => self.do_subscribe(Channel::Throughput, tx).await,
             "rtt" => self.do_subscribe(Channel::Rtt, tx).await,
+            "flows" => self.do_subscribe(Channel::Flows, tx).await,
             _ => log::warn!("Unknown channel: {}", channel),
         }
     }
