@@ -34,15 +34,15 @@ body.dark-mode {
 
 .dashbox {
     border: 1px solid #ccc;
-    padding: 0px;
-    margin: 0px;
+    padding: 0;
+    margin: 0;
 }
 .dashbox .dashbox-title {
     font-size: 10pt;
     background-color: rgb(6, 7, 59);
     color: white;
     text-align: center;
-    margin: 0px;
+    margin: 0;
     font-variant: small-caps;
     font-weight: bold;
 }
