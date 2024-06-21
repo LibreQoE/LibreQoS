@@ -9,29 +9,11 @@
         <div id="tpPackets" class="dashgraph">
         </div>
     </div>
+    <div class="col-3 dashbox">
+        <h5 class="dashbox-title">Shaped/Unshaped Traffic</h5>
+        <div id="tpShaped" class="dashgraph">
+        </div>
+    </div>
 </div>
 
 <script src="index.js"></script>
-<script>
-    // tpbits = null;
-    // tppackets = null;
-    //
-    // function onMessage(msg) {
-    //     switch (msg.event) {
-    //         case "join": {
-    //             if (msg.channel === "throughput") {
-    //                 tpbits = new DashboardGauge("tpBits");
-    //                 tppackets = new PacketsBar("tpPackets");
-    //             }
-    //         } break;
-    //         case "throughput": {
-    //             tpbits.update(msg.data.bps[0], msg.data.bps[1], msg.data.max[0], msg.data.max[1]);
-    //             tppackets.update(msg.data.pps[0], msg.data.pps[1]);
-    //         } break;
-    //     }
-    // }
-    //
-    // $(document).ready(() => {
-    //     subscribeWS(["throughput"], onMessage);
-    // })
-</script>
