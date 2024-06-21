@@ -1,16 +1,7 @@
-import {scaleNumber} from "./scaling";
+import {DashboardGraph} from "./dashboard_graph";
+import {scaleNumber} from "../scaling";
 
-export class DashboardGraph {
-    constructor(id) {
-        this.id = id;
-        this.dom = document.getElementById(id);
-        this.chart = echarts.init(this.dom);
-        this.chart.showLoading();
-        this.option = {};
-    }
-}
-
-export class DashboardGauge extends DashboardGraph {
+export class BitsPerSecondGauge extends DashboardGraph {
     constructor(id) {
         super(id);
         this.option = {
@@ -90,37 +81,6 @@ export class DashboardGauge extends DashboardGraph {
         this.option.series[0].data[1].value = value2;
         this.option.series[0].min = 0;
         this.option.series[0].max = Math.max(max1, max2) * 1000000; // Convert to bits
-        this.chart.setOption(this.option);
-    }
-}
-
-export class PacketsBar extends DashboardGraph {
-    constructor(id) {
-        super(id);
-        this.option = {
-            xAxis: {
-                type: 'value',
-                axisLabel: {
-                    formatter: (value) => { return scaleNumber(value, 0); }
-                }
-            },
-            yAxis: {
-                type: 'category',
-                data: ['Up', 'Down'],
-            },
-            series: [
-                {
-                    type: 'bar',
-                    data: [0, 0]
-                }
-            ]
-        }
-        this.option && this.chart.setOption(this.option);
-    }
-
-    update(up, down) {
-        this.chart.hideLoading();
-        this.option.series[0].data = [up, down];
         this.chart.setOption(this.option);
     }
 }
