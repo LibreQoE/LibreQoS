@@ -39,7 +39,7 @@ function onMessage(msg) {
             break;
         case "histogram": {
             rttHisto.update(msg.data);
-        }
+        } break;
         case "flows": {
             tpFlows.update(msg.data);
         }

@@ -20,11 +20,6 @@ export class FlowCountGraph extends DashboardGraph {
             },
             yAxis: {
                 type: 'value',
-                axisLabel: {
-                    formatter: (val) => {
-                        return scaleNumber(Math.abs(val));
-                    },
-                }
             },
             series: {
                 name: 'flows',
@@ -34,6 +29,7 @@ export class FlowCountGraph extends DashboardGraph {
             tooltip: {
                 trigger: 'item',
             },
+            animation: false,
         }
         this.option && this.chart.setOption(this.option);
     }
