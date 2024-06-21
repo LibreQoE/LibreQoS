@@ -27,7 +27,9 @@ function onMessage(msg) {
         case "throughput": {
             tpBits.update(msg.data.bps[0], msg.data.bps[1], msg.data.max[0], msg.data.max[1]);
             tpPackets.update(msg.data.pps[0], msg.data.pps[1]);
-            tpShaped.update(msg.data.shaped_bps[0] + msg.data.shaped_bps[1], msg.data.bps[0] + msg.data.bps[1]);
+            let shaped = msg.data.shaped_bps[0] + msg.data.shaped_bps[1];
+            let unshaped = msg.data.bps[0] + msg.data.bps[1];
+            tpShaped.update(shaped, shaped - unshaped);
             tpRing.update(msg.data.shaped_bps, msg.data.bps);
         }
             break;
