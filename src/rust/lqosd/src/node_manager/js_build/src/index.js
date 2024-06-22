@@ -5,6 +5,7 @@ import {ShapedUnshapedPie} from "./graphs/shaped_unshaped_pie";
 import {ThroughputRingBufferGraph} from "./graphs/throughput_ring_graph";
 import {RttHistogram} from "./graphs/rtt_histo";
 import {FlowCountGraph} from "./graphs/flows_graph";
+import {Dashboard} from "./dashlets/dashboard";
 
 let tpBits = null;
 let tpPackets = null;
@@ -12,6 +13,7 @@ let tpShaped = null;
 let tpRing = null;
 let rttHisto = null;
 let tpFlows = null;
+const dashboard = new Dashboard("dashboard");
 
 function onMessage(msg) {
     switch (msg.event) {
@@ -47,4 +49,5 @@ function onMessage(msg) {
     }
 }
 
-subscribeWS(["throughput", "rtt", "flows"], onMessage);
+dashboard.build();
+//subscribeWS(["throughput", "rtt", "flows"], onMessage);
