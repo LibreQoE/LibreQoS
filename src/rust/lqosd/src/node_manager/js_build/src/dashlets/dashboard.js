@@ -173,6 +173,9 @@ export class Dashboard {
         addItem.type = "button";
         addItem.classList.add("btn", "btn-success");
         addItem.innerText = "Add to Dashboard";
+        addItem.onclick = () => {
+            alert("not implemented yet");
+        };
         content.appendChild(addItem);
 
         this.parentDiv.appendChild(darken);
