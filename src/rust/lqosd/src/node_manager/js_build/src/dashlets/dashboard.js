@@ -40,6 +40,7 @@ export class Dashboard {
         for (let i=0; i<this.dashletIdentities.length; i++) {
             let widget = this.#factory(i);
             if (widget == null) continue; // Skip build
+            widget.size = this.dashletIdentities[i].size;
             this.dashlets.push(widget);
         }
 

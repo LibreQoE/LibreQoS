@@ -4,7 +4,6 @@ import {RttHistogram} from "../graphs/rtt_histo";
 export class RttHistoDash extends BaseDashlet{
     constructor(slot) {
         super(slot);
-        this.size = 6;
     }
 
     title() {

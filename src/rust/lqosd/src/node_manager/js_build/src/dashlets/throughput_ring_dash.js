@@ -4,7 +4,6 @@ import {ThroughputRingBufferGraph} from "../graphs/throughput_ring_graph";
 export class ThroughputRingDash extends BaseDashlet{
     constructor(slot) {
         super(slot);
-        this.size = 6;
     }
 
     title() {
