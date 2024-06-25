@@ -5,7 +5,8 @@ import {ShapedUnshapedDash} from "./shaped_unshaped_dash";
 import {TrackedFlowsCount} from "./tracked_flow_count_dash";
 import {ThroughputRingDash} from "./throughput_ring_dash";
 import {RttHistoDash} from "./rtt_histo_dash";
-
+import {darkBackground, modalContent} from "../helpers/our_modals";
+import {heading5Icon, theading} from "../helpers/builders";
 
 export class Dashboard {
     // Takes the name of the parent div to start building the dashboard
@@ -100,40 +101,121 @@ export class Dashboard {
     }
 
     editMode() {
-        let darken = document.createElement("div");
-        darken.id = "editDark";
-        darken.style.zIndex = 200;
-        darken.style.position = "absolute";
-        darken.style.top = "0px";
-        darken.style.bottom = "0px";
-        darken.style.left = "0px";
-        darken.style.right = "0px";
-        darken.style.background = "rgba(1, 1, 1, 0.75)";
+        let darken = darkBackground("darkEdit");
+        let content = modalContent("darkEdit");
 
-        let content = document.createElement("div");
-        content.style.zIndex = 210;
-        content.style.position = "absolute";
-        content.style.top = "25px";
-        content.style.bottom = "25px";
-        content.style.left = "25px";
-        content.style.right = "25px";
-        content.style.background = "#eee";
-        content.style.padding = "10px";
+        content.appendChild(this.#buildDashletList());
+        content.appendChild(this.#buildMenu());
+        content.appendChild(this.#buildAddButton());
+
         darken.appendChild(content);
+        this.parentDiv.appendChild(darken);
+    }
 
-        // Close Button
-        let close = document.createElement("button");
-        close.classList.add("btn", "btn-primary");
-        close.innerText = "Close";
-        close.type = "button";
-        close.onclick = () => { darken.remove() };
-        close.style.marginBottom = "4px";
-        content.appendChild(close);
+    #replaceDashletList() {
+        let newList = this.#buildDashletList();
+        let target = document.getElementById("dashletList");
+        target.replaceChildren(newList);
+    }
 
+    clickUp(i) {
+        let toMove = this.dashletIdentities[i];
+        let toReplace = this.dashletIdentities[i-1];
+        this.dashletIdentities[i-1] = toMove;
+        this.dashletIdentities[i] = toReplace;
+
+        this.#replaceDashletList();
+    }
+
+    clickDown(i) {
+        let toMove = this.dashletIdentities[i];
+        let toReplace = this.dashletIdentities[i+1];
+        this.dashletIdentities[i+1] = toMove;
+        this.dashletIdentities[i] = toReplace;
+
+        this.#replaceDashletList();
+    }
+
+    clickTrash(i) {
+        this.dashletIdentities.splice(i, 1);
+        this.#replaceDashletList();
+    }
+
+    #buildDashletList() {
         let dashletList = document.createElement("div");
-        let html = "<h5><i class=\"fa fa-dashboard nav-icon\"></i> Dashboard Items</h5>";
+        dashletList.id = "dashletList";
+
+        dashletList.appendChild(heading5Icon("dashboard", "Dashboard Items"));
+        dashletList.appendChild(document.createElement("hr"));
+
+        let table = document.createElement("table");
+        table.classList.add("table");
+        let thead = document.createElement("thead");
+        thead.appendChild(theading("Item"));
+        thead.appendChild(theading(""));
+        thead.appendChild(theading(""));
+        thead.appendChild(theading(""));
+        thead.appendChild(theading(""));
+        table.appendChild(thead);
+        for (let i=0; i<this.dashletIdentities.length; i++) {
+            let d = this.dashletIdentities[i];
+            let tr = document.createElement("tr");
+
+            let name = document.createElement("td");
+            name.innerText = d.name;
+            tr.appendChild(name);
+
+            let up = document.createElement("td");
+            if (i > 0) {
+                let upBtn = document.createElement("button");
+                upBtn.type = "button";
+                upBtn.classList.add("btn", "btn-sm", "btn-info");
+                upBtn.innerHTML = "<i class='fa fa-arrow-up'></i>";
+                let myI = i;
+                upBtn.onclick = () => {
+                    this.clickUp(myI);
+                };
+                up.appendChild(upBtn);
+            }
+            tr.appendChild(up);
+
+            let down = document.createElement("td");
+            if (i < this.dashletIdentities.length - 1) {
+                let downBtn = document.createElement("button");
+                downBtn.type = "button";
+                downBtn.classList.add("btn", "btn-sm", "btn-info");
+                downBtn.innerHTML = "<i class='fa fa-arrow-down'></i>";
+                let myI = i;
+                downBtn.onclick = () => {
+                    this.clickDown(myI);
+                };
+                down.appendChild(downBtn);
+            }
+            tr.appendChild(down);
+
+            // TODO: Resize buttons
+
+            let trash = document.createElement("td");
+            let trashBtn = document.createElement("button");
+            trashBtn.type = "button";
+            trashBtn.classList.add("btn", "btn-sm", "btn-warn");
+            trashBtn.innerHTML = "<i class='fa fa-trash'></i>";
+            let myI = i;
+            trashBtn.onclick = () => {
+                this.clickTrash(myI);
+            };
+            trash.appendChild(trashBtn);
+            tr.appendChild(trash);
+
+            table.appendChild(tr);
+        }
+        dashletList.appendChild(table);
+
+        /*let html = "<h5><i class=\"fa fa-dashboard nav-icon\"></i> Dashboard Items</h5>";
+        html += "<hr />";
         html += "<table><tbody>";
         for (let i=0; i<this.dashletIdentities.length; i++) {
+            let self = this;
             html += "<tr>";
             html += "<td>" + this.dashletIdentities[i].name + "</td>";
             html += "<td style='width: 20px'>" + this.dashletIdentities[i].size + "</td>";
@@ -153,10 +235,11 @@ export class Dashboard {
             html += "</tr>";
         }
         html += "</tbody></table>";
-        dashletList.innerHTML = html;
-        content.appendChild(dashletList);
+        dashletList.innerHTML = html;*/
+        return dashletList;
+    }
 
-        // Menu
+    #buildMenu() {
         let menu = document.createElement("div");
         html = "<h5>Add Item</h5><select>";
         for (let i=0; i<DashletMenu.length; i++) {
@@ -166,9 +249,10 @@ export class Dashboard {
         }
         html += "</select>";
         menu.innerHTML = html;
-        content.appendChild(menu);
+        return menu;
+    }
 
-        // Add Button
+    #buildAddButton() {
         let addItem = document.createElement("button");
         addItem.type = "button";
         addItem.classList.add("btn", "btn-success");
@@ -176,9 +260,7 @@ export class Dashboard {
         addItem.onclick = () => {
             alert("not implemented yet");
         };
-        content.appendChild(addItem);
-
-        this.parentDiv.appendChild(darken);
+        return addItem;
     }
 }
 
