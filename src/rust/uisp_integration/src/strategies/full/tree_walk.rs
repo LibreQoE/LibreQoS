@@ -53,9 +53,10 @@ fn walk_node(
             let to = sites[idx].name.clone();
             if let Some(route_override) = overrides
                 .iter()
-                .find(|o| o.from_site == from && o.to_site == to)
+                .find(|o| (o.from_site == from && o.to_site == to) || (o.from_site == to && o.to_site == from))
             {
                 sites[i].route_weights.push((idx, route_override.cost));
+                tracing::info!("Applied route override {} - {}", route_override.from_site, route_override.to_site);
             } else {
                 sites[i].route_weights.push((idx, weight));
             }
