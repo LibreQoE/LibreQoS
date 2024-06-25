@@ -42,6 +42,7 @@ pub fn get_route_overrides(config: &Config) -> Result<Vec<RouteOverride>, UispIn
     let file_path = Path::new(&config.lqos_directory).join("integrationUISProutes.csv");
     if file_path.exists() {
         let reader = ReaderBuilder::new()
+            .has_headers(false)
             .comment(Some(b'#'))
             .trim(csv::Trim::All)
             .from_path(file_path);
@@ -52,9 +53,28 @@ pub fn get_route_overrides(config: &Config) -> Result<Vec<RouteOverride>, UispIn
         }
         let mut reader = reader.unwrap();
         let mut overrides = Vec::new();
-        for result in reader.deserialize::<RouteOverride>().flatten() {
-            overrides.push(result);
+
+        for rec in reader.records() {
+            if let Ok(line) = rec {
+                if line.len() == 3 {
+                    println!("{line:?}");
+                    // We got a line
+                    if let Ok(cost) = &line[2].parse::<u32>() {
+                        overrides.push(RouteOverride {
+                            from_site: line[0].to_string(),
+                            to_site: line[1].to_string(),
+                            cost: *cost,
+                        });
+                    } else {
+                        error!("{line:?} is not a valid integer for cost");
+                    }
+                }
+            } else {
+                error!("Unable to read route overrides CSV");
+                error!("{rec:?}");
+            }
         }
+
         info!("Loaded {} route overrides", overrides.len());
         Ok(overrides)
     } else {
