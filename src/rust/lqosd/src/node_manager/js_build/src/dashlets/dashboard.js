@@ -16,8 +16,8 @@ export class Dashboard {
         if (this.parentDiv === null) {
             console.log("Dashboard parent not found");
         }
-        let layout = new Layout();
-        this.dashletIdentities = layout.dashlets;
+        this.layout = new Layout();
+        this.dashletIdentities = this.layout.dashlets;
         this.dashlets = [];
         this.channels = [];
         this.#editButton();
@@ -135,8 +135,8 @@ export class Dashboard {
         col1.appendChild(this.#buildDashletList());
 
         let options = document.createElement("div");
-        options.appendChild(heading5Icon("gear", "Options"))
         options.appendChild(document.createElement("hr"));
+        options.appendChild(heading5Icon("gear", "Options"))
         let nuke = document.createElement("button");
         nuke.type = "button";
         nuke.classList.add("btn", "btn-danger");
@@ -156,6 +156,10 @@ export class Dashboard {
         let col2 = document.createElement("div");
         col2.classList.add("col-6");
         col2.appendChild(this.#buildMenu());
+
+        col2.appendChild(document.createElement("hr"));
+        col2.appendChild(heading5Icon("save", "Save"));
+        col2.appendChild(document.createElement("hr"));
 
         row.appendChild(col1);
         row.appendChild(col2);
@@ -177,8 +181,11 @@ export class Dashboard {
         let target = document.getElementById("dashletList");
         target.replaceChildren(newList);
 
-        // Cleanup
+        // Apply
         this.build();
+
+        // Persist
+        this.layout.save(this.dashletIdentities);
     }
 
     clickUp(i) {
@@ -382,7 +389,18 @@ export class Dashboard {
 // Serializable POD for dashboard layout
 class Layout {
     constructor() {
-        this.dashlets = DashletMenu;
+        let template = localStorage.getItem("dashboardLayout");
+        if (template !== null) {
+            this.dashlets = JSON.parse(template);
+        } else {
+            this.dashlets = DashletMenu;
+        }
+    }
+
+    save(dashletIdentities) {
+        this.dashlets = dashletIdentities;
+        let template = JSON.stringify(dashletIdentities);
+        localStorage.setItem("dashboardLayout", template);
     }
 }
 
