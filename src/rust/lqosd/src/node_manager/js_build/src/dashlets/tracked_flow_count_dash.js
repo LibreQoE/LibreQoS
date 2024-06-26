@@ -7,7 +7,7 @@ export class TrackedFlowsCount extends BaseDashlet{
     }
 
     subscribeTo() {
-        return [ "flows" ];
+        return [ "flowCount" ];
     }
 
     buildContainer() {
@@ -22,7 +22,7 @@ export class TrackedFlowsCount extends BaseDashlet{
     }
 
     onMessage(msg) {
-        if (msg.event === "flows") {
+        if (msg.event === "flowCount") {
             this.graph.update(msg.data);
         }
     }

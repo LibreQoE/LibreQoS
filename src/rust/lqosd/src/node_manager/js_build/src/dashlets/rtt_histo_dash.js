@@ -11,7 +11,7 @@ export class RttHistoDash extends BaseDashlet{
     }
 
     subscribeTo() {
-        return [ "rtt" ];
+        return [ "rttHistogram" ];
     }
 
     buildContainer() {
@@ -26,7 +26,7 @@ export class RttHistoDash extends BaseDashlet{
     }
 
     onMessage(msg) {
-        if (msg.event === "histogram") {
+        if (msg.event === "rttHistogram") {
             this.graph.update(msg.data);
         }
     }
