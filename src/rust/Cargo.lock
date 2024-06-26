@@ -2054,6 +2054,7 @@ dependencies = [
  "serde",
  "serde_json",
  "signal-hook",
+ "strum",
  "sysinfo",
  "thiserror",
  "tokio",

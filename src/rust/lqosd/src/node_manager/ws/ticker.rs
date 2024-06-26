@@ -20,6 +20,7 @@ pub(super) async fn channel_ticker(channels: Arc<PubSub>) {
             rtt_histogram::rtt_histo(channels.clone()),
             flow_counter::flow_count(channels.clone()),
             top_10::top_10_downloaders(channels.clone()),
+            top_10::worst_10_downloaders(channels.clone()),
         );
     }
 }

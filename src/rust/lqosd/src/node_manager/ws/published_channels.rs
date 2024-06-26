@@ -1,4 +1,6 @@
-#[derive(PartialEq, Clone, Copy, Debug)]
+use strum::EnumIter;
+
+#[derive(PartialEq, Clone, Copy, Debug, EnumIter)]
 pub enum PublishedChannels {
     /// Provides a 1-second tick notification to the client
     Cadence,
@@ -6,6 +8,7 @@ pub enum PublishedChannels {
     RttHistogram,
     FlowCount,
     Top10Downloaders,
+    Worst10Downloaders,
 }
 
 impl PublishedChannels {
@@ -16,6 +19,7 @@ impl PublishedChannels {
             Self::FlowCount => "flowCount",
             Self::Cadence => "cadence",
             Self::Top10Downloaders => "top10downloaders",
+            Self::Worst10Downloaders => "worst10downloaders",
         }
     }
 
@@ -26,6 +30,7 @@ impl PublishedChannels {
             "flowCount" => Some(Self::FlowCount),
             "cadence" => Some(Self::Cadence),
             "top10downloaders" => Some(Self::Top10Downloaders),
+            "worst10downloaders" => Some(Self::Worst10Downloaders),
             _ => None,
         }
     }

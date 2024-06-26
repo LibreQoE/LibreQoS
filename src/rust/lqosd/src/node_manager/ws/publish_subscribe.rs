@@ -6,6 +6,7 @@ mod publisher_channel;
 mod subscriber;
 
 use std::sync::Arc;
+use strum::IntoEnumIterator;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use crate::node_manager::ws::publish_subscribe::publisher_channel::PublisherChannel;
@@ -25,12 +26,20 @@ impl PubSub {
     /// Constructs a new PubSub interface with a default set of
     /// channels.
     pub(super) fn new() -> Arc<Self> {
+        let mut channels = Vec::new();
+        for c in PublishedChannels::iter() {
+            channels.push(
+                PublisherChannel::new(c)
+            );
+        }
+
         let channels = vec![
             PublisherChannel::new(PublishedChannels::Throughput),
             PublisherChannel::new(PublishedChannels::RttHistogram),
             PublisherChannel::new(PublishedChannels::FlowCount),
             PublisherChannel::new(PublishedChannels::Cadence),
             PublisherChannel::new(PublishedChannels::Top10Downloaders),
+            PublisherChannel::new(PublishedChannels::Worst10Downloaders),
         ];
 
         let result = Self {
@@ -46,9 +55,11 @@ impl PubSub {
         let mut channels = self.channels.lock().await;
         if let Some(channel) = channels.iter_mut().find(|c| c.channel_type == channel) {
             channel.subscribe(sender).await;
+        } else {
+            log::warn!("Tried to subscribe to channel {:?}, which doesn't exist", channel);
         }
     }
-    
+
     /// Checks that a channel has anyone listening for it. If it doesn't,
     /// there's no point in using CPU to process it!
     pub(super) async fn is_channel_alive(&self, channel: PublishedChannels) -> bool {
@@ -59,7 +70,7 @@ impl PubSub {
             false
         }
     }
-    
+
     pub(super) async fn send(&self, channel: PublishedChannels, message: String) {
         let mut channels = self.channels.lock().await;
         if let Some(channel) = channels.iter_mut().find(|c| c.channel_type == channel) {
