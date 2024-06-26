@@ -3,6 +3,7 @@ use log::info;
 use tokio::net::TcpListener;
 use anyhow::Result;
 use crate::node_manager::{static_pages::{static_routes, vendor_route}, ws::websocket_router};
+use crate::node_manager::localApi::local_api;
 
 /// Launches the Axum webserver to take over node manager duties.
 /// This is designed to be run as an independent Tokio future,
@@ -15,7 +16,8 @@ pub async fn spawn_webserver() -> Result<()>  {
     let router = Router::new()
         .nest("/", websocket_router())
         .nest("/vendor", vendor_route()?) // Serve /vendor as purely static
-        .nest("/", static_routes()?);
+        .nest("/", static_routes()?)
+        .nest("/local-api", local_api());
 
     info!("Webserver listening on :: port 9223");
     axum::serve(listener, router).await?;

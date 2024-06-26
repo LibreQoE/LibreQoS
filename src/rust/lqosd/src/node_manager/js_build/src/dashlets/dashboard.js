@@ -157,9 +157,98 @@ export class Dashboard {
         col2.classList.add("col-6");
         col2.appendChild(this.#buildMenu());
 
+        // Themes from the server
+        col2.appendChild(document.createElement("hr"));
+        col2.appendChild(heading5Icon("cloud", "Saved Dashboard Layouts"))
+        let remoteList = document.createElement("select");
+        remoteList.id = "remoteThemes";
+        let remoteBtn = document.createElement("button");
+        remoteBtn.classList.add("btn", "btn-success");
+        remoteBtn.style.marginLeft = "5px";
+        remoteBtn.innerHTML = "<i class='fa fa-load'></i> Load Theme From Server";
+        remoteBtn.id = "remoteLoadBtn";
+        remoteBtn.onclick = () => {
+            let layoutName = {
+                theme: $('#remoteThemes').find(":selected").val().toString()
+            }
+            $.ajax({
+                type: "POST",
+                url: "/local-api/dashletGet",
+                data: JSON.stringify(layoutName),
+                contentType: 'application/json',
+                success: (data) => {
+                    this.dashletIdentities = data;
+                    this.#replaceDashletList();
+                }
+            });
+        }
+
+        let delBtn = document.createElement("button");
+        delBtn.classList.add("btn", "btn-danger");
+        delBtn.innerHTML = "<i class='fa fa-trash'></i> Delete Remote Theme";
+        delBtn.style.marginLeft = "4px";
+        delBtn.onclick = () => {
+            let layoutName = $('#remoteThemes').find(":selected").val();
+            if (confirm("Are you sure you wish to delete " + layoutName)) {
+                let layoutNameObj = {
+                    theme: layoutName.toString()
+                }
+                $.ajax({
+                    type: "POST",
+                    url: "/local-api/dashletDelete",
+                    data: JSON.stringify(layoutNameObj),
+                    contentType: 'application/json',
+                    success: (data) => {
+                        $.get("/local-api/dashletThemes", (data) => {
+                            this.fillServerLayoutList(data);
+                        });
+                    }
+                });
+            }
+        }
+        col2.appendChild(remoteList);
+        col2.appendChild(remoteBtn);
+        col2.appendChild(delBtn);
+
+        $.get("/local-api/dashletThemes", (data) => {
+            this.fillServerLayoutList(data);
+        });
+
+        // Save theme to the server
         col2.appendChild(document.createElement("hr"));
         col2.appendChild(heading5Icon("save", "Save"));
-        col2.appendChild(document.createElement("hr"));
+        let lbl = document.createElement("label");
+        lbl.htmlFor = "saveDashName";
+        let saveDashName = document.createElement("input");
+        saveDashName.id = "saveDashName";
+        saveDashName.type = "text";
+        let saveBtn = document.createElement("button");
+        saveBtn.type = "button";
+        saveBtn.classList.add("btn", "btn-success");
+        saveBtn.innerHTML = "<i class='fa fa-save'></i> Save to Server";
+        saveBtn.style.marginLeft = "4px";
+        saveBtn.onclick = () => {
+            let name = $("#saveDashName").val();
+            if (name.length < 1) return;
+            let request = {
+                name: name,
+                entries: this.dashletIdentities
+            }
+            $.ajax({
+                type: "POST",
+                url: "/local-api/dashletSave",
+                data: JSON.stringify(request),
+                contentType : 'application/json',
+                success: (data) => {
+                    $.get("/local-api/dashletThemes", (data) => {
+                        this.fillServerLayoutList(data);
+                    });
+                }
+            })
+        }
+        col2.appendChild(lbl);
+        col2.appendChild(saveDashName);
+        col2.appendChild(saveBtn);
 
         row.appendChild(col1);
         row.appendChild(col2);
@@ -167,6 +256,28 @@ export class Dashboard {
 
         darken.appendChild(content);
         document.body.appendChild(darken);
+    }
+
+    fillServerLayoutList(data) {
+        let parent = document.getElementById("remoteThemes");
+        while (parent.children.length > 0) {
+            parent.removeChild(parent.lastChild);
+        }
+        for (let i=0; i<data.length; i++) {
+            let e = document.createElement("option");
+            e.innerText = data[i];
+            e.value = data[i];
+            parent.appendChild(e);
+        }
+        if (data.length === 0) {
+            let e = document.createElement("option");
+            e.innerText = "No Layouts Saved";
+            e.value = "No Layouts Saved";
+            parent.appendChild(e);
+            $("#remoteLoadBtn").prop('disabled', true);
+        } else {
+            $("#remoteLoadBtn").prop('disabled', false);
+        }
     }
 
     #clearRenderedDashboard() {
