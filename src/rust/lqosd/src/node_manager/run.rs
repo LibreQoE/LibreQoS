@@ -3,7 +3,7 @@ use log::info;
 use tokio::net::TcpListener;
 use anyhow::Result;
 use crate::node_manager::{static_pages::{static_routes, vendor_route}, ws::websocket_router};
-use crate::node_manager::localApi::local_api;
+use crate::node_manager::local_api::local_api;
 
 /// Launches the Axum webserver to take over node manager duties.
 /// This is designed to be run as an independent Tokio future,
