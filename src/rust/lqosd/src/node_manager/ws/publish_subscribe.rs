@@ -30,6 +30,7 @@ impl PubSub {
             PublisherChannel::new(PublishedChannels::RttHistogram),
             PublisherChannel::new(PublishedChannels::FlowCount),
             PublisherChannel::new(PublishedChannels::Cadence),
+            PublisherChannel::new(PublishedChannels::Top10Downloaders),
         ];
 
         let result = Self {

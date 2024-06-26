@@ -4,6 +4,7 @@ import {ShapedUnshapedDash} from "./shaped_unshaped_dash";
 import {TrackedFlowsCount} from "./tracked_flow_count_dash";
 import {ThroughputRingDash} from "./throughput_ring_dash";
 import {RttHistoDash} from "./rtt_histo_dash";
+import {Top10Downloaders} from "./top10_downloaders";
 
 export const DashletMenu = [
     { name: "Throughput Bits/Second", tag: "throughputBps", size: 3 },
@@ -12,6 +13,7 @@ export const DashletMenu = [
     { name: "Tracked Flows Counter", tag: "trackedFlowsCount", size: 3 },
     { name: "Last 5 Minutes Throughput", tag: "throughputRing", size: 6 },
     { name: "Round-Trip Time Histogram", tag: "rttHistogram", size: 6 },
+    { name: "Top 10 Downloaders", tag: "top10downloaders", size: 6 },
 ];
 
 export function widgetFactory(widgetName, count) {
@@ -23,6 +25,7 @@ export function widgetFactory(widgetName, count) {
         case "trackedFlowsCount": widget = new TrackedFlowsCount(count); break;
         case "throughputRing":  widget = new ThroughputRingDash(count); break;
         case "rttHistogram":    widget = new RttHistoDash(count); break;
+        case "top10downloaders":widget = new Top10Downloaders(count); break;
         default: {
             console.log("I don't know how to construct a widget of type [" + widgetName + "]");
             return null;

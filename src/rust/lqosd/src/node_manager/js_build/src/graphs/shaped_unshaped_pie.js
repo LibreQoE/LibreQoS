@@ -1,5 +1,5 @@
 import {DashboardGraph} from "./dashboard_graph";
-import {scaleNumber} from "../scaling";
+import {scaleNumber} from "../helpers/scaling";
 
 export class ShapedUnshapedPie extends DashboardGraph {
     constructor(id) {

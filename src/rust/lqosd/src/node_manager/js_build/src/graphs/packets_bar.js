@@ -1,5 +1,5 @@
 import {DashboardGraph} from "./dashboard_graph";
-import {scaleNumber} from "../scaling";
+import {scaleNumber} from "../helpers/scaling";
 
 export class PacketsPerSecondBar extends DashboardGraph {
     constructor(id) {
