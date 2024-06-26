@@ -146,9 +146,11 @@ export class Dashboard {
 
         let filler = document.createElement("button");
         filler.type = "button";
-        filler.classList.add("btn", "btn-danger");
+        filler.classList.add("btn", "btn-warning");
         filler.innerHTML = "<i class='fa fa-plus-square'></i> One of Everything";
         filler.onclick = () => { this.addAll(); };
+        filler.style.marginLeft = "5px";
+        options.appendChild(filler);
         col1.appendChild(options);
 
         let col2 = document.createElement("div");
@@ -335,6 +337,7 @@ export class Dashboard {
         menu.appendChild(document.createElement("hr"));
 
         let list = document.createElement("select");
+        list.id = "newWidgetList";
         list.size = DashletMenu.length;
         list.style.width = "100%";
         list.classList.add("listBox");
@@ -352,6 +355,20 @@ export class Dashboard {
         let btn = document.createElement("button");
         btn.classList.add("btn", "btn-secondary");
         btn.innerHTML = "<i class='fa fa-plus'></i> Add Widget";
+        btn.onclick = () => {
+            let widgetId = $('#newWidgetList').find(":selected").val();
+            if (widgetId === null || widgetId === undefined || widgetId === "") return;
+            let didSomething = false;
+            DashletMenu.forEach((d) => {
+                if (d.tag === widgetId) {
+                    this.dashletIdentities.push(d);
+                    didSomething = true;
+                }
+            });
+            if (didSomething) {
+                this.#replaceDashletList();
+            }
+        }
         right.appendChild(btn);
 
         row.appendChild(left);
