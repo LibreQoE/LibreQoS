@@ -179,6 +179,7 @@ export class Dashboard {
                 success: (data) => {
                     this.dashletIdentities = data;
                     this.#replaceDashletList();
+                    alert("Layout Loaded");
                 }
             });
         }
@@ -200,6 +201,7 @@ export class Dashboard {
                     contentType: 'application/json',
                     success: (data) => {
                         $.get("/local-api/dashletThemes", (data) => {
+                            alert("Layout deleted: " + layoutName);
                             this.fillServerLayoutList(data);
                         });
                     }
@@ -242,6 +244,7 @@ export class Dashboard {
                 success: (data) => {
                     $.get("/local-api/dashletThemes", (data) => {
                         this.fillServerLayoutList(data);
+                        alert("Layout Saved");
                     });
                 }
             })
