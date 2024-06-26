@@ -176,7 +176,7 @@ export class Dashboard {
                     url: "/local-api/dashletDelete",
                     data: JSON.stringify(layoutNameObj),
                     contentType: 'application/json',
-                    success: (data) => {
+                    success: () => {
                         $.get("/local-api/dashletThemes", (data) => {
                             alert("Layout deleted: " + layoutName);
                             this.fillServerLayoutList(data);
@@ -218,7 +218,7 @@ export class Dashboard {
                 url: "/local-api/dashletSave",
                 data: JSON.stringify(request),
                 contentType : 'application/json',
-                success: (data) => {
+                success: () => {
                     $.get("/local-api/dashletThemes", (data) => {
                         this.fillServerLayoutList(data);
                         alert("Layout Saved");
