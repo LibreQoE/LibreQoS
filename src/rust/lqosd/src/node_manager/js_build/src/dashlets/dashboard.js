@@ -1,4 +1,4 @@
-import {subscribeWS} from "../pubsub/ws";
+import {subscribeWS, resetWS} from "../pubsub/ws";
 import {ThroughputBpsDash} from "./throughput_bps_dash";
 import {ThroughputPpsDash} from "./throughput_pps_dash";
 import {ShapedUnshapedDash} from "./shaped_unshaped_dash";
@@ -20,8 +20,10 @@ export class Dashboard {
         this.dashletIdentities = layout.dashlets;
         this.dashlets = [];
         this.channels = [];
+        this.#editButton();
+    }
 
-        // Build the edit button
+    #editButton() {
         let editDiv = document.createElement("div");
         editDiv.id = this.divName + "_edit";
         editDiv.style.position = "fixed";
@@ -37,27 +39,47 @@ export class Dashboard {
     }
 
     build() {
-        // Get the widget order, filtering invalid
+        this.#filterWidgetList();
+        let childDivs = this.#buildWidgetChildDivs();
+        this.#clearRenderedDashboard();
+        childDivs.forEach((d) => { this.parentDiv.appendChild(d) });
+        this.#buildChannelList();
+        this.#webSocketSubscription();
+    }
+
+    #filterWidgetList() {
+        this.dashlets = [];
         for (let i=0; i<this.dashletIdentities.length; i++) {
             let widget = this.#factory(i);
             if (widget == null) continue; // Skip build
             widget.size = this.dashletIdentities[i].size;
             this.dashlets.push(widget);
         }
+    }
 
-        // Build the widgets and get the channel list
+    #buildWidgetChildDivs() {
+        let childDivs = [];
         for (let i=0; i<this.dashlets.length; i++) {
             let div = this.dashlets[i].buildContainer();
+            childDivs.push(div);
+        }
+        return childDivs;
+    }
+
+    #buildChannelList() {
+        this.channels = [];
+        for (let i=0; i<this.dashlets.length; i++) {
             let channels = this.dashlets[i].subscribeTo();
             for (let j=0; j<channels.length; j++) {
                 if (!this.#alreadySubscribed(channels[j])) {
                     this.channels.push(channels[j]);
                 }
             }
-            this.parentDiv.appendChild(div);
         }
+    }
 
-        // Start subscribing to appropriate channels
+    #webSocketSubscription() {
+        resetWS();
         subscribeWS(this.channels, (msg) => {
             if (msg.event === "join") {
                 // The DOM will be present now, setup events
@@ -104,18 +126,57 @@ export class Dashboard {
         let darken = darkBackground("darkEdit");
         let content = modalContent("darkEdit");
 
-        content.appendChild(this.#buildDashletList());
-        content.appendChild(this.#buildMenu());
-        content.appendChild(this.#buildAddButton());
+        // Add Items Group
+        let row = document.createElement("div");
+        row.classList.add("row");
+
+        let col1 = document.createElement("div");
+        col1.classList.add("col-6");
+        col1.appendChild(this.#buildDashletList());
+
+        let options = document.createElement("div");
+        options.appendChild(heading5Icon("gear", "Options"))
+        options.appendChild(document.createElement("hr"));
+        let nuke = document.createElement("button");
+        nuke.type = "button";
+        nuke.classList.add("btn", "btn-danger");
+        nuke.innerHTML = "<i class='fa fa-trash'></i> Remove All Items";
+        nuke.onclick = () => { this.removeAll(); };
+        options.appendChild(nuke);
+
+        let filler = document.createElement("button");
+        filler.type = "button";
+        filler.classList.add("btn", "btn-danger");
+        filler.innerHTML = "<i class='fa fa-plus-square'></i> One of Everything";
+        filler.onclick = () => { this.addAll(); };
+        col1.appendChild(options);
+
+        let col2 = document.createElement("div");
+        col2.classList.add("col-6");
+        col2.appendChild(this.#buildMenu());
+
+        row.appendChild(col1);
+        row.appendChild(col2);
+        content.appendChild(row);
 
         darken.appendChild(content);
-        this.parentDiv.appendChild(darken);
+        document.body.appendChild(darken);
+    }
+
+    #clearRenderedDashboard() {
+        while (this.parentDiv.children.length > 1) {
+            this.parentDiv.removeChild(this.parentDiv.lastChild);
+        }
     }
 
     #replaceDashletList() {
+        resetWS();
         let newList = this.#buildDashletList();
         let target = document.getElementById("dashletList");
         target.replaceChildren(newList);
+
+        // Cleanup
+        this.build();
     }
 
     clickUp(i) {
@@ -141,6 +202,30 @@ export class Dashboard {
         this.#replaceDashletList();
     }
 
+    zoomIn(i) {
+        if (this.dashletIdentities[i].size < 12) {
+            this.dashletIdentities[i].size += 1;
+        }
+        this.#replaceDashletList();
+    }
+
+    zoomOut(i) {
+        if (this.dashletIdentities[i].size > 1) {
+            this.dashletIdentities[i].size -= 1;
+        }
+        this.#replaceDashletList();
+    }
+
+    removeAll() {
+        this.dashletIdentities = [];
+        this.#replaceDashletList();
+    }
+
+    addAll() {
+        this.dashletIdentities = DashletMenu;
+        this.#replaceDashletList();
+    }
+
     #buildDashletList() {
         let dashletList = document.createElement("div");
         dashletList.id = "dashletList";
@@ -152,6 +237,9 @@ export class Dashboard {
         table.classList.add("table");
         let thead = document.createElement("thead");
         thead.appendChild(theading("Item"));
+        thead.appendChild(theading("Size"));
+        thead.appendChild(theading(""));
+        thead.appendChild(theading(""));
         thead.appendChild(theading(""));
         thead.appendChild(theading(""));
         thead.appendChild(theading(""));
@@ -164,6 +252,10 @@ export class Dashboard {
             let name = document.createElement("td");
             name.innerText = d.name;
             tr.appendChild(name);
+
+            let size = document.createElement("td");
+            size.innerText = d.size;
+            tr.appendChild(size);
 
             let up = document.createElement("td");
             if (i > 0) {
@@ -193,12 +285,30 @@ export class Dashboard {
             }
             tr.appendChild(down);
 
-            // TODO: Resize buttons
+            let bigger = document.createElement("td");
+            let biggerBtn = document.createElement("button");
+            biggerBtn.type = "button";
+            biggerBtn.classList.add("btn", "btn-sm", "btn-info");
+            biggerBtn.innerHTML = "<i class='fa fa-plus-circle'></i>";
+            let biggerI = i;
+            biggerBtn.onclick = () => { this.zoomIn(biggerI) }
+            bigger.appendChild(biggerBtn);
+            tr.appendChild(bigger);
+
+            let smaller = document.createElement("td");
+            let smallerBtn = document.createElement("button");
+            smallerBtn.type = "button";
+            smallerBtn.classList.add("btn", "btn-sm", "btn-info");
+            smallerBtn.innerHTML = "<i class='fa fa-minus-circle'></i>";
+            let smallerI = i;
+            smallerBtn.onclick = () => { this.zoomOut(smallerI) }
+            smaller.appendChild(smallerBtn);
+            tr.appendChild(smaller);
 
             let trash = document.createElement("td");
             let trashBtn = document.createElement("button");
             trashBtn.type = "button";
-            trashBtn.classList.add("btn", "btn-sm", "btn-warn");
+            trashBtn.classList.add("btn", "btn-sm", "btn-warning");
             trashBtn.innerHTML = "<i class='fa fa-trash'></i>";
             let myI = i;
             trashBtn.onclick = () => {
@@ -211,56 +321,44 @@ export class Dashboard {
         }
         dashletList.appendChild(table);
 
-        /*let html = "<h5><i class=\"fa fa-dashboard nav-icon\"></i> Dashboard Items</h5>";
-        html += "<hr />";
-        html += "<table><tbody>";
-        for (let i=0; i<this.dashletIdentities.length; i++) {
-            let self = this;
-            html += "<tr>";
-            html += "<td>" + this.dashletIdentities[i].name + "</td>";
-            html += "<td style='width: 20px'>" + this.dashletIdentities[i].size + "</td>";
-            if (i > 0) {
-                html += "<td style='width: 20px'><button type='button' class='btn btn-sm btn-info'><i class='fa fa-arrow-up'></i></button></td>";
-            } else {
-                html += "<td style='width: 20px'></td>";
-            }
-            if (i < this.dashletIdentities.length - 1) {
-                html += "<td style='width: 20px'><button type='button' class='btn btn-sm btn-info'><i class='fa fa-arrow-down'></i></button></td>";
-            } else {
-                html += "<td style='width: 20px'></td>";
-            }
-            html += "<td style='width: 20px'><button type='button' class='btn btn-sm btn-warn'><i class='fa fa-plus-circle'></i></button></td>";
-            html += "<td style='width: 20px'><button type='button' class='btn btn-sm btn-warn'><i class='fa fa-minus-circle'></i></button></td>";
-            html += "<td style='width: 20px'><button type='button' class='btn btn-sm btn-warn'><i class='fa fa-trash'></i></button></td>";
-            html += "</tr>";
-        }
-        html += "</tbody></table>";
-        dashletList.innerHTML = html;*/
         return dashletList;
     }
 
     #buildMenu() {
-        let menu = document.createElement("div");
-        html = "<h5>Add Item</h5><select>";
-        for (let i=0; i<DashletMenu.length; i++) {
-            html += "<option value='" + DashletMenu[i].tag + "'>";
-            html += DashletMenu[i].name;
-            html += "</option>";
-        }
-        html += "</select>";
-        menu.innerHTML = html;
-        return menu;
-    }
+        let row = document.createElement("div");
+        row.classList.add("row");
+        let left = document.createElement("div");
+        left.classList.add("col-6");
 
-    #buildAddButton() {
-        let addItem = document.createElement("button");
-        addItem.type = "button";
-        addItem.classList.add("btn", "btn-success");
-        addItem.innerText = "Add to Dashboard";
-        addItem.onclick = () => {
-            alert("not implemented yet");
-        };
-        return addItem;
+        let menu = document.createElement("div");
+        menu.appendChild(heading5Icon("plus", "Add Dashboard Item"));
+        menu.appendChild(document.createElement("hr"));
+
+        let list = document.createElement("select");
+        list.size = DashletMenu.length;
+        list.style.width = "100%";
+        list.classList.add("listBox");
+        DashletMenu.forEach((d) => {
+            let entry = document.createElement("option");
+            entry.value = d.tag;
+            entry.innerText = d.name;
+            entry.classList.add("listItem");
+            list.appendChild(entry);
+        });
+        left.appendChild(list);
+
+        let right = document.createElement("div");
+        right.classList.add("col-6");
+        let btn = document.createElement("button");
+        btn.classList.add("btn", "btn-secondary");
+        btn.innerHTML = "<i class='fa fa-plus'></i> Add Widget";
+        right.appendChild(btn);
+
+        row.appendChild(left);
+        row.appendChild(right);
+        menu.appendChild(row);
+
+        return menu;
     }
 }
 

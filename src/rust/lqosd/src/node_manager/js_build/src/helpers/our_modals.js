@@ -21,8 +21,8 @@ export function modalContent(closeTargetId) {
     content.style.bottom = "10%";
     content.style.left = "10%";
     content.style.right = "10%";
-    content.style.maxWidth = "500px";
-    content.style.maxHeight = "500px";
+    //content.style.maxWidth = "500px";
+    //content.style.maxHeight = "500px";
     content.style.background = "#eee";
     content.style.padding = "10px";
     content.appendChild(closeButton(closeTargetId));

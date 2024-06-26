@@ -23,3 +23,7 @@ export function subscribeWS(channels, handler) {
         handler(msg);
     };
 }
+
+export function resetWS() {
+    ws = null;
+}
