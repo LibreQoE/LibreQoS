@@ -9,6 +9,10 @@ pub enum PublishedChannels {
     FlowCount,
     TopDownloads,
     WorstRTT,
+    WorstRetransmits,
     TopFlowsBytes,
     TopFlowsRate,
+    EndpointsByCountry,
+    EtherProtocols,
+    IpProtocols,
 }

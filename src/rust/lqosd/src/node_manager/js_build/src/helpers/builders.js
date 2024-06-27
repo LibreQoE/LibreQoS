@@ -9,3 +9,9 @@ export function theading(text) {
     th.innerText = text;
     return th;
 }
+
+export function simpleRow(text) {
+    let td = document.createElement("td");
+    td.innerText = text;
+    return td;
+}

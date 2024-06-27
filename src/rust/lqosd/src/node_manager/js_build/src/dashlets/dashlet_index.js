@@ -8,6 +8,10 @@ import {Top10Downloaders} from "./top10_downloaders";
 import {Worst10Downloaders} from "./worst10_downloaders";
 import {Top10FlowsBytes} from "./top10flows_bytes";
 import {Top10FlowsRate} from "./top10flows_rate";
+import {Top10EndpointsByCountry} from "./endpoints_by_country";
+import {EtherProtocols} from "./ether_protocols";
+import {IpProtocols} from "./ip_protocols";
+import {Worst10Retransmits} from "./worst10_retransmits";
 
 export const DashletMenu = [
     { name: "Throughput Bits/Second", tag: "throughputBps", size: 3 },
@@ -18,8 +22,12 @@ export const DashletMenu = [
     { name: "Round-Trip Time Histogram", tag: "rttHistogram", size: 6 },
     { name: "Top 10 Downloaders", tag: "top10downloaders", size: 6 },
     { name: "Worst 10 Round-Trip Time", tag: "worst10downloaders", size: 6 },
+    { name: "Worst 10 Retransmits", tag: "worst10retransmits", size: 6 },
     { name: "Top 10 Flows (total bytes)", tag: "top10flowsBytes", size: 6 },
     { name: "Top 10 Flows (rate)", tag: "top10flowsRate", size: 6 },
+    { name: "Top 10 Endpoints by Country", tag: "top10endpointsCountry", size: 6 },
+    { name: "Ether Protocols", tag: "etherProtocols", size: 6 },
+    { name: "IP Protocols", tag: "ipProtocols", size: 6 },
 ];
 
 export function widgetFactory(widgetName, count) {
@@ -33,8 +41,12 @@ export function widgetFactory(widgetName, count) {
         case "rttHistogram":    widget = new RttHistoDash(count); break;
         case "top10downloaders":widget = new Top10Downloaders(count); break;
         case "worst10downloaders":widget = new Worst10Downloaders(count); break;
+        case "worst10retransmits":widget = new Worst10Retransmits(count); break;
         case "top10flowsBytes"  : widget = new Top10FlowsBytes(count); break;
         case "top10flowsRate"   : widget = new Top10FlowsRate(count); break;
+        case "top10endpointsCountry"   : widget = new Top10EndpointsByCountry(count); break;
+        case "etherProtocols"   : widget = new EtherProtocols(count); break;
+        case "ipProtocols"      : widget = new IpProtocols(count); break;
         default: {
             console.log("I don't know how to construct a widget of type [" + widgetName + "]");
             return null;

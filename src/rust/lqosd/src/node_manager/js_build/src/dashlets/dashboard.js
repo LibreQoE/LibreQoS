@@ -439,6 +439,7 @@ export class Dashboard {
         list.size = DashletMenu.length;
         list.style.width = "100%";
         list.classList.add("listBox");
+        list.size = 10;
         DashletMenu.forEach((d) => {
             let entry = document.createElement("option");
             entry.value = d.tag;
