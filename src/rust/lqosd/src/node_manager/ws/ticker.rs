@@ -23,6 +23,7 @@ pub(super) async fn channel_ticker(channels: Arc<PubSub>) {
             top_10::top_10_downloaders(channels.clone()),
             top_10::worst_10_downloaders(channels.clone()),
             top_flows::top_flows_bytes(channels.clone()),
+            top_flows::top_flows_rate(channels.clone()),
         );
     }
 }

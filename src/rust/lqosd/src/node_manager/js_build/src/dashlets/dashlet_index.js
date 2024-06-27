@@ -7,6 +7,7 @@ import {RttHistoDash} from "./rtt_histo_dash";
 import {Top10Downloaders} from "./top10_downloaders";
 import {Worst10Downloaders} from "./worst10_downloaders";
 import {Top10FlowsBytes} from "./top10flows_bytes";
+import {Top10FlowsRate} from "./top10flows_rate";
 
 export const DashletMenu = [
     { name: "Throughput Bits/Second", tag: "throughputBps", size: 3 },
@@ -18,6 +19,7 @@ export const DashletMenu = [
     { name: "Top 10 Downloaders", tag: "top10downloaders", size: 6 },
     { name: "Worst 10 Round-Trip Time", tag: "worst10downloaders", size: 6 },
     { name: "Top 10 Flows (total bytes)", tag: "top10flowsBytes", size: 6 },
+    { name: "Top 10 Flows (rate)", tag: "top10flowsRate", size: 6 },
 ];
 
 export function widgetFactory(widgetName, count) {
@@ -32,6 +34,7 @@ export function widgetFactory(widgetName, count) {
         case "top10downloaders":widget = new Top10Downloaders(count); break;
         case "worst10downloaders":widget = new Worst10Downloaders(count); break;
         case "top10flowsBytes"  : widget = new Top10FlowsBytes(count); break;
+        case "top10flowsRate"   : widget = new Top10FlowsRate(count); break;
         default: {
             console.log("I don't know how to construct a widget of type [" + widgetName + "]");
             return null;

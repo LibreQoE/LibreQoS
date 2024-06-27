@@ -23,3 +23,19 @@ pub async fn top_flows_bytes(channels: Arc<PubSub>) {
         channels.send(PublishedChannels::TopFlowsBytes, message).await;
     }
 }
+
+pub async fn top_flows_rate(channels: Arc<PubSub>) {
+    if !channels.is_channel_alive(PublishedChannels::TopFlowsBytes).await {
+        return;
+    }
+
+    if let BusResponse::TopFlows(flows) = throughput_tracker::top_flows(10, TopFlowType::RateEstimate) {
+        let message = json!(
+            {
+                "event": "topFlowsRate",
+                "data": flows,
+            }
+        ).to_string();
+        channels.send(PublishedChannels::TopFlowsBytes, message).await;
+    }
+}

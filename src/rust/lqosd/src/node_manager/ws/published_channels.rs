@@ -10,6 +10,7 @@ pub enum PublishedChannels {
     Top10Downloaders,
     Worst10Downloaders,
     TopFlowsBytes,
+    TopFlowsRate,
 }
 
 impl PublishedChannels {
@@ -22,6 +23,7 @@ impl PublishedChannels {
             Self::Top10Downloaders => "top10downloaders",
             Self::Worst10Downloaders => "worst10downloaders",
             Self::TopFlowsBytes => "topFlowsBytes",
+            Self::TopFlowsRate => "topFlowsRate",
         }
     }
 
@@ -34,6 +36,7 @@ impl PublishedChannels {
             "top10downloaders" => Some(Self::Top10Downloaders),
             "worst10downloaders" => Some(Self::Worst10Downloaders),
             "topFlowsBytes" => Some(Self::TopFlowsBytes),
+            "topFlowsRate" => Some(Self::TopFlowsRate),
             _ => None,
         }
     }
