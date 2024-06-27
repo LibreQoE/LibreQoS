@@ -14,6 +14,7 @@ import {IpProtocols} from "./ip_protocols";
 import {Worst10Retransmits} from "./worst10_retransmits";
 import {CpuDash} from "./cpu_dash";
 import {RamDash} from "./ram_dash";
+import {TopTreeSummary} from "./top_tree_summary";
 
 export const DashletMenu = [
     { name: "Throughput Bits/Second", tag: "throughputBps", size: 3 },
@@ -32,6 +33,7 @@ export const DashletMenu = [
     { name: "IP Protocols", tag: "ipProtocols", size: 6 },
     { name: "CPU Utilization", tag: "cpu", size: 6 },
     { name: "RAM Utilization", tag: "ram", size: 6 },
+    { name: "Network Tree Summary", tag: "treeSummary", size: 6 },
 ];
 
 export function widgetFactory(widgetName, count) {
@@ -53,6 +55,7 @@ export function widgetFactory(widgetName, count) {
         case "ipProtocols"      : widget = new IpProtocols(count); break;
         case "cpu"              : widget = new CpuDash(count); break;
         case "ram"              : widget = new RamDash(count); break;
+        case "treeSummary"      : widget = new TopTreeSummary(count); break;
         default: {
             console.log("I don't know how to construct a widget of type [" + widgetName + "]");
             return null;

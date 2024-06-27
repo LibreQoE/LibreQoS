@@ -17,4 +17,5 @@ pub enum PublishedChannels {
     IpProtocols,
     Cpu,
     Ram,
+    TreeSummary,
 }
