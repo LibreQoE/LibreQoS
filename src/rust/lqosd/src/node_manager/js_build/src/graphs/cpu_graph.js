@@ -1,7 +1,7 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {lerpGreenToRedViaOrange} from "../helpers/scaling";
 
-export class RttHistogram extends DashboardGraph {
+export class CpuHistogram extends DashboardGraph {
     constructor(id) {
         super(id);
         let d = [];
@@ -20,6 +20,8 @@ export class RttHistogram extends DashboardGraph {
             },
             yAxis: {
                 type: 'value',
+                min: 0,
+                max: 100,
             },
             series: {
                 data: d,
@@ -29,10 +31,14 @@ export class RttHistogram extends DashboardGraph {
         this.option && this.chart.setOption(this.option);
     }
 
-    update(rtt) {
+    update(cpu) {
         this.chart.hideLoading();
-        for (let i=0; i<20; i++) {
-            this.option.series.data[i].value = rtt[i];
+        this.option.series.data = [];
+        for (let i=0; i<cpu.length; i++) {
+            this.option.series.data.push({
+                value: cpu[i],
+                itemStyle: {color: lerpGreenToRedViaOrange(100-cpu[i], 100)},
+            });
         }
         this.chart.setOption(this.option);
     }

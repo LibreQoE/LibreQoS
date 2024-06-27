@@ -13,6 +13,7 @@ use crate::node_manager::ws::ticker::channel_ticker;
 pub fn websocket_router() -> Router {
     let channels = PubSub::new();
     tokio::spawn(channel_ticker(channels.clone()));
+    tokio::spawn(ticker::system_info::cache::update_cache());
     Router::new()
         .route("/ws", get(ws_handler))
         .layer(Extension(channels))

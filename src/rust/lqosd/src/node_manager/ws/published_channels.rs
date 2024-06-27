@@ -15,4 +15,6 @@ pub enum PublishedChannels {
     EndpointsByCountry,
     EtherProtocols,
     IpProtocols,
+    Cpu,
+    Ram,
 }
