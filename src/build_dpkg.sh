@@ -78,6 +78,18 @@ echo "/bin/systemctl start lqosd" >> postinst
 echo "/bin/systemctl start lqos_node_manager" >> postinst
 echo "/bin/systemctl start lqos_scheduler" >> postinst
 echo "popd" >> postinst
+# Attempting to fixup versioning issues with libpython.
+# This requires that you already have LibreQoS installed.
+LINKED_PYTHON=$(ldd /opt/libreqos/src/bin/lqosd | grep libpython | sed -e '/^[^\t]/ d' | sed -e 's/\t//' | sed -e 's/.*=..//' | sed -e 's/ (0.*)//')
+echo "if ! test -f $LINKED_PYTHON; then" >> postinst
+echo "  if test -f /lib/x86_64-linux-gnu/libpython3.12.so.1.0; then" >> postinst
+echo "    ln -s $LINKED_PYTHON /lib/x86_64-linux-gnu/libpython3.10.so.1.0" >> postinst
+echo "  fi" >> postinst
+echo "  if test -f /lib/x86_64-linux-gnu/libpython3.11.so.1.0; then" >> postinst
+echo "    ln -s $LINKED_PYTHON /lib/x86_64-linux-gnu/libpython3.10.so.1.0" >> postinst
+echo "  fi" >> postinst
+echo "fi" >> postinst
+# End of symlink insanity
 chmod a+x postinst
 
 # Uninstall Script
