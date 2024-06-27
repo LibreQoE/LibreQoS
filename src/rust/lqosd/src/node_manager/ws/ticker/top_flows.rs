@@ -16,7 +16,7 @@ pub async fn top_flows_bytes(channels: Arc<PubSub>) {
     if let BusResponse::TopFlows(flows) = throughput_tracker::top_flows(10, TopFlowType::Bytes) {
         let message = json!(
             {
-                "event": "topFlowsBytes",
+                "event": PublishedChannels::TopFlowsBytes.to_string(),
                 "data": flows,
             }
         ).to_string();
@@ -25,17 +25,17 @@ pub async fn top_flows_bytes(channels: Arc<PubSub>) {
 }
 
 pub async fn top_flows_rate(channels: Arc<PubSub>) {
-    if !channels.is_channel_alive(PublishedChannels::TopFlowsBytes).await {
+    if !channels.is_channel_alive(PublishedChannels::TopFlowsRate).await {
         return;
     }
 
     if let BusResponse::TopFlows(flows) = throughput_tracker::top_flows(10, TopFlowType::RateEstimate) {
         let message = json!(
             {
-                "event": "topFlowsRate",
+                "event": PublishedChannels::TopFlowsRate.to_string(),
                 "data": flows,
             }
         ).to_string();
-        channels.send(PublishedChannels::TopFlowsBytes, message).await;
+        channels.send(PublishedChannels::TopFlowsRate, message).await;
     }
 }

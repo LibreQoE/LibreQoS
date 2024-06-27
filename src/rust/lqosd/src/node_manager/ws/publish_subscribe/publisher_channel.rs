@@ -28,7 +28,7 @@ impl PublisherChannel {
         let welcome = json!(
             {
                 "event" : "join",
-                "channel" : self.channel_type.as_str(),
+                "channel" : self.channel_type.to_string(),
             }
         ).to_string();
         let _ = sender.send(welcome).await;

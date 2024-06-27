@@ -2,6 +2,7 @@ mod publish_subscribe;
 mod published_channels;
 mod ticker;
 
+use std::str::FromStr;
 use std::sync::Arc;
 use axum::{extract::{ws::{Message, WebSocket}, WebSocketUpgrade}, response::IntoResponse, routing::get, Extension, Router};
 use serde::Deserialize;

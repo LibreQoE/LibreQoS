@@ -10,7 +10,7 @@ pub async fn cadence(channels: Arc<PubSub>) {
 
     let message = json!(
         {
-            "event": "tick"
+            "event": PublishedChannels::Cadence.to_string(),
         }
     ).to_string();
     channels.send(PublishedChannels::Cadence, message).await;

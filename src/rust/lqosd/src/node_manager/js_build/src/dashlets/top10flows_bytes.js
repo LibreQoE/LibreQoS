@@ -12,7 +12,7 @@ export class Top10FlowsBytes extends BaseDashlet {
     }
 
     subscribeTo() {
-        return [ "topFlowsBytes" ];
+        return [ "TopFlowsBytes" ];
     }
 
     buildContainer() {
@@ -27,7 +27,7 @@ export class Top10FlowsBytes extends BaseDashlet {
     }
 
     onMessage(msg) {
-        if (msg.event === "topFlowsBytes") {
+        if (msg.event === "TopFlowsBytes") {
             let target = document.getElementById(this.id);
 
             let t = document.createElement("table");

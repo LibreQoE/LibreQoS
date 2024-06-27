@@ -13,7 +13,7 @@ export class Worst10Downloaders extends BaseDashlet {
     }
 
     subscribeTo() {
-        return [ "worst10downloaders" ];
+        return [ "WorstRTT" ];
     }
 
     buildContainer() {
@@ -28,7 +28,7 @@ export class Worst10Downloaders extends BaseDashlet {
     }
 
     onMessage(msg) {
-        if (msg.event === "worst10downloaders") {
+        if (msg.event === "WorstRTT") {
             let target = document.getElementById(this.id);
 
             let t = document.createElement("table");

@@ -13,7 +13,7 @@ export class Top10Downloaders extends BaseDashlet {
     }
 
     subscribeTo() {
-        return [ "top10downloaders" ];
+        return [ "TopDownloads" ];
     }
 
     buildContainer() {
@@ -28,7 +28,7 @@ export class Top10Downloaders extends BaseDashlet {
     }
 
     onMessage(msg) {
-        if (msg.event === "top10downloaders") {
+        if (msg.event === "TopDownloads") {
             let target = document.getElementById(this.id);
 
             let t = document.createElement("table");

@@ -7,7 +7,7 @@ use crate::node_manager::ws::ticker::ipstats_conversion::IpStatsWithPlan;
 use crate::throughput_tracker::{top_n, worst_n};
 
 pub async fn top_10_downloaders(channels: Arc<PubSub>) {
-    if !channels.is_channel_alive(PublishedChannels::Top10Downloaders).await {
+    if !channels.is_channel_alive(PublishedChannels::TopDownloads).await {
         return;
     }
 
@@ -19,16 +19,16 @@ pub async fn top_10_downloaders(channels: Arc<PubSub>) {
 
         let message = json!(
         {
-            "event": "top10downloaders",
+            "event": PublishedChannels::TopDownloads.to_string(),
             "data": result
         }
     ).to_string();
-        channels.send(PublishedChannels::Top10Downloaders, message).await;
+        channels.send(PublishedChannels::TopDownloads, message).await;
     }
 }
 
 pub async fn worst_10_downloaders(channels: Arc<PubSub>) {
-    if !channels.is_channel_alive(PublishedChannels::Worst10Downloaders).await {
+    if !channels.is_channel_alive(PublishedChannels::WorstRTT).await {
         return;
     }
 
@@ -40,10 +40,10 @@ pub async fn worst_10_downloaders(channels: Arc<PubSub>) {
 
         let message = json!(
         {
-            "event": "worst10downloaders",
+            "event": PublishedChannels::WorstRTT.to_string(),
             "data": result
         }
     ).to_string();
-        channels.send(PublishedChannels::Worst10Downloaders, message).await;
+        channels.send(PublishedChannels::WorstRTT, message).await;
     }
 }

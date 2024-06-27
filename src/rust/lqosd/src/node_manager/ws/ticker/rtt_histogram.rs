@@ -14,7 +14,7 @@ pub async fn rtt_histo(channels: Arc<PubSub>) {
     if let BusResponse::RttHistogram(data) = &histo {
         let rtt_histo = json!(
                     {
-                        "event": "rttHistogram",
+                        "event": PublishedChannels::RttHistogram.to_string(),
                         "data": data,
                     }
             ).to_string();

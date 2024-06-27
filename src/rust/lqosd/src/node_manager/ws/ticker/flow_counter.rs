@@ -15,7 +15,7 @@ pub async fn flow_count(channels: Arc<PubSub>) {
     };
     let active_flows = json!(
             {
-                "event": "flowCount",
+                "event": PublishedChannels::FlowCount.to_string(),
                 "data": active_flows,
             }
         ).to_string();

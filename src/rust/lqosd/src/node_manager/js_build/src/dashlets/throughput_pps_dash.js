@@ -7,7 +7,7 @@ export class ThroughputPpsDash extends BaseDashlet{
     }
 
     subscribeTo() {
-        return [ "throughput" ];
+        return [ "Throughput" ];
     }
 
     buildContainer() {
@@ -22,7 +22,7 @@ export class ThroughputPpsDash extends BaseDashlet{
     }
 
     onMessage(msg) {
-        if (msg.event === "throughput") {
+        if (msg.event === "Throughput") {
             this.graph.update(msg.data.pps[0], msg.data.pps[1]);
         }
     }

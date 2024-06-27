@@ -27,7 +27,7 @@ pub async fn throughput(channels: Arc<PubSub>) {
     };
     let bps = json!(
         {
-            "event" : "throughput",
+            "event" : PublishedChannels::Throughput.to_string(),
             "data": {
                 "bps": bits_per_second,
                 "pps": packets_per_second,

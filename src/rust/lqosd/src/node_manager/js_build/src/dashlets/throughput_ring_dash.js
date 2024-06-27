@@ -11,7 +11,7 @@ export class ThroughputRingDash extends BaseDashlet{
     }
 
     subscribeTo() {
-        return [ "throughput" ];
+        return [ "Throughput" ];
     }
 
     buildContainer() {
@@ -26,7 +26,7 @@ export class ThroughputRingDash extends BaseDashlet{
     }
 
     onMessage(msg) {
-        if (msg.event === "throughput") {
+        if (msg.event === "Throughput") {
             let shaped = msg.data.shaped_bps[0] + msg.data.shaped_bps[1];
             let unshaped = msg.data.bps[0] + msg.data.bps[1];
             this.graph.update(msg.data.shaped_bps, msg.data.bps);

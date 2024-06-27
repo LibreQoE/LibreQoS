@@ -7,7 +7,7 @@ export class ThroughputBpsDash extends BaseDashlet{
     }
 
     subscribeTo() {
-        return [ "throughput" ];
+        return [ "Throughput" ];
     }
 
     buildContainer() {
@@ -22,7 +22,7 @@ export class ThroughputBpsDash extends BaseDashlet{
     }
 
     onMessage(msg) {
-        if (msg.event === "throughput") {
+        if (msg.event === "Throughput") {
             this.graph.update(msg.data.bps[0], msg.data.bps[1], msg.data.max[0], msg.data.max[1]);
         }
     }
