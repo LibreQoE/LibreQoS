@@ -6,7 +6,7 @@ import {ThroughputRingDash} from "./throughput_ring_dash";
 import {RttHistoDash} from "./rtt_histo_dash";
 import {Top10Downloaders} from "./top10_downloaders";
 import {Worst10Downloaders} from "./worst10_downloaders";
-import {Top10FlowsBytes} from "./top10flows";
+import {Top10FlowsBytes} from "./top10flows_bytes";
 
 export const DashletMenu = [
     { name: "Throughput Bits/Second", tag: "throughputBps", size: 3 },
