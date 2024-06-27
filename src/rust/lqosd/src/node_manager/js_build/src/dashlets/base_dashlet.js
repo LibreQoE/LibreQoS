@@ -8,18 +8,18 @@ export class BaseDashlet {
 
     sizeClasses() {
         switch (this.size) {
-            case 1: return ["col-1"];
-            case 2: return ["col-2"];
-            case 3: return ["col-3"];
-            case 4: return ["col-4"];
-            case 5: return ["col-5"];
-            case 6: return ["col-6"];
-            case 7: return ["col-7"];
-            case 8: return ["col-8"];
-            case 9: return ["col-9"];
-            case 10: return ["col-10"];
-            case 11: return ["col-11"];
-            case 12: return ["col-12"];
+            case 1: return  ["col-xs-12", "col-sm-12", "col-md-6", "col-lg-3", "col-xl-1", "col-xxl-1"];
+            case 2: return  ["col-xs-12", "col-sm-12", "col-md-6", "col-lg-3", "col-xl-2", "col-xxl-2"];
+            case 3: return  ["col-xs-12", "col-sm-12", "col-md-6", "col-lg-3", "col-xl-3", "col-xxl-3"];
+            case 4: return  ["col-xs-12", "col-sm-12", "col-md-6", "col-lg-6", "col-xl-4", "col-xxl-4"];
+            case 5: return  ["col-xs-12", "col-sm-12", "col-md-6", "col-lg-6", "col-xl-5", "col-xxl-5"];
+            case 6: return  ["col-xs-12", "col-sm-12", "col-md-6", "col-lg-6", "col-xl-6", "col-xxl-6"];
+            case 7: return  ["col-xs-12", "col-sm-12", "col-md-12", "col-lg-12", "col-xl-7", "col-xxl-7"];
+            case 8: return  ["col-xs-12", "col-sm-12", "col-md-12", "col-lg-12", "col-xl-8", "col-xxl-8"];
+            case 9: return  ["col-xs-12", "col-sm-12", "col-md-12", "col-lg-12", "col-xl-9", "col-xxl-9"];
+            case 10: return ["col-xs-12", "col-sm-12", "col-md-12", "col-lg-12", "col-xl-10", "col-xxl-10"];
+            case 11: return ["col-xs-12", "col-sm-12", "col-md-12", "col-lg-12", "col-xl-11", "col-xxl-11"];
+            case 12: return ["col-xs-12", "col-sm-12", "col-md-12", "col-lg-12", "col-xl-12", "col-xxl-12"];
             default: return ["col-3"];
         }
     }
