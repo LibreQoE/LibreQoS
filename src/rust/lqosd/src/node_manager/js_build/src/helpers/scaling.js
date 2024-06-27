@@ -11,6 +11,18 @@ export function scaleNumber(n, fixed=2) {
     return n;
 }
 
+export function scaleNanos(n) {
+    if (n == 0) return "";
+    if (n > 1000000000) {
+        return (n / 1000000000).toFixed(2) + "s";
+    } else if (n > 1000000) {
+        return (n / 1000000).toFixed(2) + "ms";
+    } else if (n > 1000) {
+        return (n / 1000).toFixed(2) + "µs";
+    }
+    return n + "ns";
+}
+
 export function colorRamp(n) {
     if (n <= 100) {
         return "#aaffaa";

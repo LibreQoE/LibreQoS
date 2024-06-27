@@ -33,15 +33,6 @@ impl PubSub {
             );
         }
 
-        let channels = vec![
-            PublisherChannel::new(PublishedChannels::Throughput),
-            PublisherChannel::new(PublishedChannels::RttHistogram),
-            PublisherChannel::new(PublishedChannels::FlowCount),
-            PublisherChannel::new(PublishedChannels::Cadence),
-            PublisherChannel::new(PublishedChannels::Top10Downloaders),
-            PublisherChannel::new(PublishedChannels::Worst10Downloaders),
-        ];
-
         let result = Self {
             channels: Mutex::new(channels),
         };
