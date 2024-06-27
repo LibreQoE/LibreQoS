@@ -15,3 +15,11 @@ export function simpleRow(text) {
     td.innerText = text;
     return td;
 }
+
+export function clearDashDiv(id) {
+    let limit = 1;
+    if (id.includes("___")) limit = 0;
+    while (target.children.length > limit) {
+        target.removeChild(target.lastChild);
+    }
+}

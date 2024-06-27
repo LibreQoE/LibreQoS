@@ -15,6 +15,7 @@ import {Worst10Retransmits} from "./worst10_retransmits";
 import {CpuDash} from "./cpu_dash";
 import {RamDash} from "./ram_dash";
 import {TopTreeSummary} from "./top_tree_summary";
+import {CombinedTopDashlet} from "./combined_top_dash";
 
 export const DashletMenu = [
     { name: "Throughput Bits/Second", tag: "throughputBps", size: 3 },
@@ -31,9 +32,10 @@ export const DashletMenu = [
     { name: "Top 10 Endpoints by Country", tag: "top10endpointsCountry", size: 6 },
     { name: "Ether Protocols", tag: "etherProtocols", size: 6 },
     { name: "IP Protocols", tag: "ipProtocols", size: 6 },
-    { name: "CPU Utilization", tag: "cpu", size: 6 },
-    { name: "RAM Utilization", tag: "ram", size: 6 },
+    { name: "CPU Utilization", tag: "cpu", size: 3 },
+    { name: "RAM Utilization", tag: "ram", size: 3 },
     { name: "Network Tree Summary", tag: "treeSummary", size: 6 },
+    { name: "Combined Top 10 Box", tag: "combinedTop10", size: 3 },
 ];
 
 export function widgetFactory(widgetName, count) {
@@ -56,6 +58,7 @@ export function widgetFactory(widgetName, count) {
         case "cpu"              : widget = new CpuDash(count); break;
         case "ram"              : widget = new RamDash(count); break;
         case "treeSummary"      : widget = new TopTreeSummary(count); break;
+        case "combinedTop10"    : widget = new CombinedTopDashlet(count); break;
         default: {
             console.log("I don't know how to construct a widget of type [" + widgetName + "]");
             return null;

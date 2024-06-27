@@ -1,6 +1,6 @@
 import {BaseDashlet} from "./base_dashlet";
 import {RttHistogram} from "../graphs/rtt_histo";
-import {theading} from "../helpers/builders";
+import {clearDashDiv, theading} from "../helpers/builders";
 import {scaleNumber, rttCircleSpan} from "../helpers/scaling";
 
 export class Top10Downloaders extends BaseDashlet {
@@ -81,9 +81,7 @@ export class Top10Downloaders extends BaseDashlet {
             t.appendChild(tbody);
 
             // Display it
-            while (target.children.length > 1) {
-                target.removeChild(target.lastChild);
-            }
+            clearDashDiv(this.id);
             target.appendChild(t);
         }
     }
