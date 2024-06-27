@@ -54,3 +54,24 @@ body.dark-mode {
 .tiny {
     font-size: 8pt;
 }
+
+.darkenBackground {
+    z-index: 200;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 10px;
+    background: rgba(1, 1, 1, 0.75);
+}
+.myModal {
+    z-index: 210;
+    position: absolute;
+    top: 10%;
+    bottom: 10%;
+    left: 10%;
+    right: 10%;
+    padding: 10px;
+    background: var(--bs-body-bg);
+}
