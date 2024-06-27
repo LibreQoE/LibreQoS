@@ -109,6 +109,7 @@ export class Dashboard {
 
         let col1 = document.createElement("div");
         col1.classList.add("col-6");
+        col1.style.minWidth = "300px";
         col1.appendChild(this.#buildDashletList());
 
         let options = document.createElement("div");
@@ -132,6 +133,7 @@ export class Dashboard {
 
         let col2 = document.createElement("div");
         col2.classList.add("col-6");
+        col2.style.minWidth = "300px";
         col2.appendChild(this.#buildMenu());
 
         // Themes from the server
@@ -329,6 +331,8 @@ export class Dashboard {
     #buildDashletList() {
         let dashletList = document.createElement("div");
         dashletList.id = "dashletList";
+        dashletList.style.maxHeight = "450px";
+        dashletList.style.overflowY = "auto";
 
         dashletList.appendChild(heading5Icon("dashboard", "Dashboard Items"));
         dashletList.appendChild(document.createElement("hr"));
@@ -439,7 +443,7 @@ export class Dashboard {
         list.size = DashletMenu.length;
         list.style.width = "100%";
         list.classList.add("listBox");
-        list.size = 10;
+        list.size = 8;
         DashletMenu.forEach((d) => {
             let entry = document.createElement("option");
             entry.value = d.tag;

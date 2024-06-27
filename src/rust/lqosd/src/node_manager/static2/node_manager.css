@@ -74,4 +74,7 @@ body.dark-mode {
     right: 10%;
     padding: 10px;
     background: var(--bs-body-bg);
+    overflow: scroll;
+    min-width: 500px;
+    min-height: 500px;
 }
