@@ -16,6 +16,7 @@ import {CpuDash} from "./cpu_dash";
 import {RamDash} from "./ram_dash";
 import {TopTreeSummary} from "./top_tree_summary";
 import {CombinedTopDashlet} from "./combined_top_dash";
+import {RttHisto3dDash} from "./rtt_histo3d_dash";
 
 export const DashletMenu = [
     { name: "Throughput Bits/Second", tag: "throughputBps", size: 3 },
@@ -24,6 +25,7 @@ export const DashletMenu = [
     { name: "Tracked Flows Counter", tag: "trackedFlowsCount", size: 3 },
     { name: "Last 5 Minutes Throughput", tag: "throughputRing", size: 6 },
     { name: "Round-Trip Time Histogram", tag: "rttHistogram", size: 6 },
+    { name: "Round-Trip Time Histogram 3D", tag: "rttHistogram3D", size: 6 },
     { name: "Top 10 Downloaders", tag: "top10downloaders", size: 6 },
     { name: "Worst 10 Round-Trip Time", tag: "worst10downloaders", size: 6 },
     { name: "Worst 10 Retransmits", tag: "worst10retransmits", size: 6 },
@@ -47,6 +49,7 @@ export function widgetFactory(widgetName, count) {
         case "trackedFlowsCount": widget = new TrackedFlowsCount(count); break;
         case "throughputRing":  widget = new ThroughputRingDash(count); break;
         case "rttHistogram":    widget = new RttHistoDash(count); break;
+        case "rttHistogram3D":    widget = new RttHisto3dDash(count); break;
         case "top10downloaders":widget = new Top10Downloaders(count); break;
         case "worst10downloaders":widget = new Worst10Downloaders(count); break;
         case "worst10retransmits":widget = new Worst10Retransmits(count); break;
