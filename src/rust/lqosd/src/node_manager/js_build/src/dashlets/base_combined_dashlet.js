@@ -4,9 +4,11 @@ export class BaseCombinedDashlet extends BaseDashlet {
     constructor(slotNumber, dashlets) {
         super(slotNumber)
 
+        this.selectedIndex = 0;
         this.dashlets = dashlets;
         this.titles = [];
         this.subsciptions = [];
+        this.divIds = [];
         dashlets.forEach((dash) => {
             this.titles.push(dash.title());
             this.subsciptions.push(dash.subscribeTo());
@@ -42,10 +44,21 @@ export class BaseCombinedDashlet extends BaseDashlet {
         let ul = document.createElement("ul");
         ul.classList.add("dropdown-menu");
 
+        let i =0;
         this.titles.forEach((t) => {
             let li1 = document.createElement("li");
-            li1.innerHTML = "<a class='dropdown-item'>" + t + "</a>";
+            let link = document.createElement("a");
+            link.classList.add("dropdown-item");
+            link.innerText = t;
+            let myI = i;
+            link.onclick = () => {
+                this.divIds.forEach((id) => { $("#" + id).hide() });
+                let divId = this.divIds[myI];
+                $("#" + divId).show();
+            }
+            li1.appendChild(link);
             ul.appendChild(li1);
+            i++;
         })
 
         dd.appendChild(ul);
@@ -60,9 +73,11 @@ export class BaseCombinedDashlet extends BaseDashlet {
     buildContainer() {
         let containers = [];
         let i = 0;
+        this.divIds = [];
         this.dashlets.forEach((d) => {
             d.size = 12;
             d.id = this.id + "___" + i;
+            this.divIds.push(this.id + "___" + i);
             let container = document.createElement("div");
             container.id = d.id;
             containers.push(container);
@@ -74,7 +89,9 @@ export class BaseCombinedDashlet extends BaseDashlet {
         let row = document.createElement("div");
         row.classList.add("row");
         containers.forEach((c) => {
-            c.style.backgroundColor = "rgba(1, 0, 0, 1)";
+            if (i > 0) {
+                c.style.display = "none";
+            }
             row.appendChild(c);
             i++;
         });

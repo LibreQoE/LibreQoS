@@ -1,5 +1,5 @@
 import {BaseDashlet} from "./base_dashlet";
-import {theading} from "../helpers/builders";
+import {clearDashDiv, theading} from "../helpers/builders";
 import {scaleNumber, scaleNanos} from "../helpers/scaling";
 
 export class Top10EndpointsByCountry extends BaseDashlet {
@@ -70,9 +70,7 @@ export class Top10EndpointsByCountry extends BaseDashlet {
             t.appendChild(tbody);
 
             // Display it
-            while (target.children.length > 1) {
-                target.removeChild(target.lastChild);
-            }
+            clearDashDiv(this.id, target);
             target.appendChild(t);
         }
     }

@@ -16,7 +16,7 @@ export function simpleRow(text) {
     return td;
 }
 
-export function clearDashDiv(id) {
+export function clearDashDiv(id, target) {
     let limit = 1;
     if (id.includes("___")) limit = 0;
     while (target.children.length > limit) {

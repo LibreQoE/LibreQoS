@@ -1,5 +1,5 @@
 import {BaseDashlet} from "./base_dashlet";
-import {simpleRow, theading} from "../helpers/builders";
+import {clearDashDiv, simpleRow, theading} from "../helpers/builders";
 import {scaleNumber, scaleNanos} from "../helpers/scaling";
 
 export class TopTreeSummary extends BaseDashlet {
@@ -52,9 +52,7 @@ export class TopTreeSummary extends BaseDashlet {
             t.appendChild(tbody);
 
             // Display it
-            while (target.children.length > 1) {
-                target.removeChild(target.lastChild);
-            }
+            clearDashDiv(this.id, target);
             target.appendChild(t);
         }
     }

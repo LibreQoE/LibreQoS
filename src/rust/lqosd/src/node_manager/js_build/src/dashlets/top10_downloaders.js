@@ -81,7 +81,7 @@ export class Top10Downloaders extends BaseDashlet {
             t.appendChild(tbody);
 
             // Display it
-            clearDashDiv(this.id);
+            clearDashDiv(this.id, target);
             target.appendChild(t);
         }
     }
