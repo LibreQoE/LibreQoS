@@ -18,6 +18,16 @@ else
     echo "bpftool found."
 fi
 
+if ! make -v &> /dev/null
+then
+    echo "make is not installed."
+    echo "Let's try to install it"
+    sudo apt install make
+else
+    echo "make found."
+fi
+
+
 if ! pkg-config --help &> /dev/null
 then
     echo "pkg-config is not installed."
