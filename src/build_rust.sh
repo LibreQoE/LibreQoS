@@ -9,42 +9,7 @@
 # Don't forget to setup `/etc/lqos.conf`
 
 # Check Pre-Requisites
-if ! bpftool help &> /dev/null
-then
-    echo "bpftool is not installed."
-    echo "Let's try to install it"
-    sudo apt install linux-tools-common linux-tools-`uname -r`
-else
-    echo "bpftool found."
-fi
-
-if ! make -v &> /dev/null
-then
-    echo "make is not installed."
-    echo "Let's try to install it"
-    sudo apt install make
-else
-    echo "make found."
-fi
-
-
-if ! pkg-config --help &> /dev/null
-then
-    echo "pkg-config is not installed."
-    echo "Let's try to install it"
-    sudo apt install pkg-config
-else
-    echo "pkg-config found."
-fi
-
-if ! clang -v &> /dev/null
-then
-    echo "LLVM/clang is not installed."
-    echo "Let's try to install it"
-    sudo apt install llvm libelf-dev gcc gcc-multilib libbpf-dev libssl-dev
-else
-    echo "LLVM/clang found."
-fi
+sudo apt install python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname -r` libbpf-dev libssl-dev
 
 if ! rustup -V &> /dev/null
 then
