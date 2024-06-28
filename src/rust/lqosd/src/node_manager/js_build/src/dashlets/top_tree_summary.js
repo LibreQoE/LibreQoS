@@ -28,7 +28,6 @@ export class TopTreeSummary extends BaseDashlet {
 
     onMessage(msg) {
         if (msg.event === "TreeSummary") {
-            console.log(msg.data);
             let target = document.getElementById(this.id);
 
             let t = document.createElement("table");

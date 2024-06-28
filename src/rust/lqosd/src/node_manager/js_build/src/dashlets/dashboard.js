@@ -7,6 +7,7 @@ export class Dashboard {
     // Takes the name of the parent div to start building the dashboard
     constructor(divName) {
         this.divName = divName;
+        this.editingDashboard = false;
         this.parentDiv = document.getElementById(divName);
         if (this.parentDiv === null) {
             console.log("Dashboard parent not found");
@@ -26,9 +27,13 @@ export class Dashboard {
         editDiv.style.top = "5px";
         editDiv.style.width = "40px";
         editDiv.style.zIndex = "100";
-        editDiv.innerHTML = "<button type='button' class='btn btn-secondary btn-sm'><i class='fa fa-pencil'></i></button>";
+        editDiv.innerHTML = "<button type='button' class='btn btn-primary btn-sm'><i class='fa fa-pencil'></i></button>";
         editDiv.onclick = () => {
-            this.editMode();
+            if (this.editingDashboard) {
+                this.closeEditMode();
+            } else {
+                this.editMode();
+            }
         };
         this.parentDiv.appendChild(editDiv);
     }
@@ -36,6 +41,8 @@ export class Dashboard {
     build() {
         this.#filterWidgetList();
         let childDivs = this.#buildWidgetChildDivs();
+        this.childIds = [];
+        childDivs.forEach((d) => { this.childIds.push(d.id); });
         this.#clearRenderedDashboard();
         childDivs.forEach((d) => { this.parentDiv.appendChild(d) });
         this.#buildChannelList();
@@ -100,6 +107,199 @@ export class Dashboard {
     }
 
     editMode() {
+        // Insert a Temporary Div to hold edit options
+        let editDiv = document.createElement("div");
+        editDiv.classList.add("col-12");
+        editDiv.id = "dashboardEditingDiv";
+        editDiv.style.height = "100px";
+        editDiv.style.backgroundColor = "#007700";
+        editDiv.style.padding = "10px";
+        editDiv.style.borderRadius = "5px";
+        let toasts = document.getElementById("toasts");
+        this.editingDashboard = true;
+
+        // Add the editing elements
+        let row = document.createElement("div");
+        row.classList.add("row");
+
+        let c1 = document.createElement("div");
+        c1.classList.add("col-3");
+        c1.appendChild(heading5Icon("gear", "Dashboard Options"));
+        let nuke = document.createElement("button");
+        nuke.type = "button";
+        nuke.classList.add("btn", "btn-sm", "btn-danger");
+        nuke.innerHTML = "<i class='fa fa-trash'></i> Remove All Items";
+        nuke.onclick = () => { this.removeAll(); };
+        c1.appendChild(nuke);
+        let filler = document.createElement("button");
+        filler.type = "button";
+        filler.classList.add("btn", "btn-sm", "btn-warning");
+        filler.innerHTML = "<i class='fa fa-plus-square'></i> One of Everything";
+        filler.onclick = () => { this.addAll(); };
+        filler.style.marginLeft = "5px";
+        c1.appendChild(filler);
+
+        let c2 = document.createElement("div");
+        c2.classList.add("col-3");
+        c2.appendChild(heading5Icon("plus", "Add Dashlet"));
+        let list = document.createElement("div");
+        list.classList.add("dropdown");
+        let listBtn = document.createElement("button");
+        listBtn.type = "button";
+        listBtn.classList.add("btn", "btn-secondary", "dropdown-toggle");
+        listBtn.setAttribute("data-bs-toggle", "dropdown");
+        listBtn.innerHTML = "<i class='fa fa-plus'></i> Add Widget";
+        list.appendChild(listBtn);
+        let listUl = document.createElement("ul");
+        listUl.classList.add("dropdown-menu");
+        DashletMenu.forEach((d) => {
+            let entry = document.createElement("li");
+            let item = document.createElement("a");
+            item.classList.add("dropdown-item");
+            item.innerText = d.name;
+            let myTag = d.tag;
+            item.onclick = () => {
+                let didSomething = false;
+                DashletMenu.forEach((d) => {
+                    if (d.tag === myTag) {
+                        this.dashletIdentities.push(d);
+                        didSomething = true;
+                    }
+                });
+                if (didSomething) {
+                    this.#replaceDashletList();
+                }
+            };
+            entry.appendChild(item);
+            listUl.appendChild(entry);
+        });
+        list.appendChild(listUl);
+        c2.appendChild(list);
+
+        let c3 = document.createElement("div");
+        c3.classList.add("col-3");
+        c3.appendChild(heading5Icon("save", "Save Layout"))
+
+        let c4 = document.createElement("div");
+        c4.classList.add("col-3");
+        c4.appendChild(heading5Icon("cloud", "Load Layout"))
+
+        row.appendChild(c1);
+        row.appendChild(c2);
+        row.appendChild(c3);
+        row.appendChild(c4);
+        editDiv.appendChild(row);
+
+        // Decorate all the dashboard elements with controls
+        for (let i=0; i<this.childIds.length; i++) {
+            let dashDiv = document.getElementById(this.childIds[i]);
+            if (dashDiv != null) {
+                let clientRect = dashDiv.getBoundingClientRect();
+                let clientLeft = (clientRect.left + 4) + "px";
+                let clientRight = (clientRect.right - 34) + "px";
+                let clientTop = (clientRect.top + 100) + "px";
+                let clientBottom = (clientRect.bottom + 100) + "px";
+                let clientMiddleY = (((clientRect.bottom - clientRect.top) / 2) + clientRect.top + 100 - 10) + "px";
+                let clientMiddleX = (((clientRect.right - clientRect.left) / 2) + clientRect.left - 10) + "px";
+
+                // Left Navigation Arrow
+                if (i > 0) {
+                    let myI = i;
+                    editDiv.appendChild(this.#dashEditButton(
+                        clientLeft,
+                        clientMiddleY,
+                        "arrow-circle-left",
+                        "warning",
+                        () => {
+                            this.clickUp(myI);
+                        }
+                    ));
+                }
+
+                // Right Navigation Arrow
+                if (i < this.childIds.length-1) {
+                    let myI = i;
+                    editDiv.appendChild(this.#dashEditButton(
+                        clientRight,
+                        clientMiddleY,
+                        "arrow-circle-right",
+                        "warning",
+                        () => {
+                            this.clickDown(myI);
+                        }
+                    ));
+                }
+
+                // Trash Button
+                let myI = i;
+                editDiv.appendChild(this.#dashEditButton(
+                    clientMiddleX,
+                    clientMiddleY,
+                    "trash",
+                    "danger",
+                    () => {
+                        this.clickTrash(myI);
+                    }
+                ));
+
+                // Expand Button
+                let myI2 = i;
+                editDiv.appendChild(this.#dashEditButton(
+                    clientLeft,
+                    clientTop,
+                    "plus-circle",
+                    "secondary",
+                    () => {
+                        this.zoomIn(myI2);
+                    }
+                ));
+
+                // Contract Button
+                let myI3 = i;
+                editDiv.appendChild(this.#dashEditButton(
+                    (clientRect.left + 40) + "px",
+                    clientTop,
+                    "minus-circle",
+                    "secondary",
+                    () => {
+                        this.zoomOut(myI3);
+                    }
+                ));
+            } else {
+                console.log("Warning: NULL div found in dashlet list");
+            }
+        }
+
+        toasts.appendChild(editDiv);
+    }
+
+    #dashEditButton(left, top, iconSuffix, style, closure) {
+        let div = document.createElement("div");
+        div.style.position = "absolute";
+        div.style.width = "20px";
+        div.style.zIndex = "200";
+        div.style.height = "20px";
+        div.style.top = top;
+        div.style.left = left;
+        div.classList.add("dashEditButton");
+        let button = document.createElement("button");
+        button.type = "button";
+        button.classList.add("btn", "btn-sm", "btn-" + style);
+        button.innerHTML = "<i class='fa fa-" + iconSuffix +"'></i>";
+        button.onclick = closure;
+        div.appendChild(button);
+        return div;
+    }
+
+    closeEditMode() {
+        let editor = document.getElementById("dashboardEditingDiv");
+        if (editor != null) {
+            editor.remove();
+        }
+        this.editingDashboard = false;
+    }
+
+    editModeOld() {
         let darken = darkBackground("darkEdit");
         let content = modalContent("darkEdit");
 
@@ -270,9 +470,6 @@ export class Dashboard {
 
     #replaceDashletList() {
         resetWS();
-        let newList = this.#buildDashletList();
-        let target = document.getElementById("dashletList");
-        target.replaceChildren(newList);
 
         // Apply
         this.build();
