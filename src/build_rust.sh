@@ -13,7 +13,7 @@ if ! bpftool help &> /dev/null
 then
     echo "bpftool is not installed."
     echo "Let's try to install it"
-    sudo apt-get install linux-tools-common linux-tools-`uname -r`
+    sudo apt install linux-tools-common linux-tools-`uname -r`
 else
     echo "bpftool found."
 fi
@@ -22,7 +22,7 @@ if ! pkg-config --help &> /dev/null
 then
     echo "pkg-config is not installed."
     echo "Let's try to install it"
-    sudo apt-get install pkg-config
+    sudo apt install pkg-config
 else
     echo "pkg-config found."
 fi
@@ -31,7 +31,7 @@ if ! clang -v &> /dev/null
 then
     echo "LLVM/clang is not installed."
     echo "Let's try to install it"
-    sudo apt-get install llvm libelf-dev gcc gcc-multilib libbpf-dev
+    sudo apt install llvm libelf-dev gcc gcc-multilib libbpf-dev
 else
     echo "LLVM/clang found."
 fi
