@@ -10,24 +10,16 @@ export class RttHistogram3D extends DashboardGraph {
         for (let i=0; i<300; i++) timeAxis.push(i.toString());
 
         let catAxis = [];
-        for (let i=0; i<20; i++) catAxis.push(i.toString());
+        for (let i=0; i<20; i++) catAxis.push({
+            value: i.toString(),
+            itemStyle: {color: lerpGreenToRedViaOrange(20-i, 20)},
+        }
+        );
 
-        /*let data = [];
-        for (let z=0; z<300; z++) {
-            for (let x=0; x<20; x++) {
-                data.push([ x, z, 1 ]);
-            }
-        }*/
         let data = this.ring.series();
 
         this.option = {
             tooltip: {},
-            visualMap: {
-                max: 20,
-                inRange: {
-                    color: ['#313695', '#4575b4', '#74add1', '#abd9e9', '#e0f3f8', '#ffffbf', '#fee090', '#fdae61', '#f46d43', '#d73027', '#a50026']
-                }
-            },
             xAxis3D: {
                 type: 'category',
                 data: catAxis
@@ -54,7 +46,7 @@ export class RttHistogram3D extends DashboardGraph {
             series: [{
                 type: 'bar3D',
                 data: data,
-                shading: 'color',
+                shading: 'lambert',
                 label: {
                     show: false
                 },
@@ -98,14 +90,22 @@ class RingBuffer {
         for (let i=0; i<this.head; i++) {
             for (let j=0; j<20; j++) {
                 let val = this.data[i][j];
-                data.push([j, counter, val]);
+                let toPush = {
+                    value: [j, counter, val],
+                    itemStyle: {color: lerpGreenToRedViaOrange(20-j, 20)},
+                };
+                data.push(toPush);
             }
             counter++;
         }
         for (let i=this.head; i<this.size; i++) {
             for (let j=0; j<20; j++) {
                 let val = this.data[i][j];
-                data.push([j, counter, val]);
+                let toPush = {
+                    value: [j, counter, val],
+                    itemStyle: {color: lerpGreenToRedViaOrange(20-j, 20)},
+                };
+                data.push(toPush);
             }
             counter++;
         }
