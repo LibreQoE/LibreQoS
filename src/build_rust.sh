@@ -36,6 +36,18 @@ else
     echo "LLVM/clang found."
 fi
 
+if ! rustup -V &> /dev/null
+then
+    echo "rustup is not installed."
+    echo "Visit https://rustup.rs and install Rust from there"
+    echo "Usually, you can copy the following and follow the on-screen instructions."
+    echo "Please don't install Rust as root."
+    echo "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+    exit 1
+else
+    echo "rustup found."
+fi
+
 # To enable heavy debug mode (slow)
 #BUILD_FLAGS=""
 #TARGET=debug
