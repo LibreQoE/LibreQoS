@@ -31,7 +31,7 @@ if ! clang -v &> /dev/null
 then
     echo "LLVM/clang is not installed."
     echo "Let's try to install it"
-    sudo apt install llvm libelf-dev gcc gcc-multilib libbpf-dev
+    sudo apt install llvm libelf-dev gcc gcc-multilib libbpf-dev libssl-dev
 else
     echo "LLVM/clang found."
 fi
