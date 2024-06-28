@@ -17,6 +17,14 @@ export class Dashboard {
         this.dashlets = [];
         this.channels = [];
         this.#editButton();
+        if (localStorage.getItem("forceEditMode")) {
+            localStorage.removeItem("forceEditMode");
+            requestAnimationFrame(() => {
+                setTimeout(() => {
+                    this.editMode();
+                })
+            });
+        }
     }
 
     #editButton() {
@@ -203,6 +211,7 @@ export class Dashboard {
                 data: JSON.stringify(request),
                 contentType : 'application/json',
                 success: () => {
+                    localStorage.setItem("forceEditMode", "true");
                     window.location.reload();
                 }
             })
@@ -244,6 +253,7 @@ export class Dashboard {
                         success: (data) => {
                             this.dashletIdentities = data;
                             this.layout.save(this.dashletIdentities);
+                            localStorage.setItem("forceEditMode", "true");
                             window.location.reload();
                         }
                     });
@@ -587,32 +597,41 @@ export class Dashboard {
 
     clickTrash(i) {
         this.dashletIdentities.splice(i, 1);
-        this.#replaceDashletList();
+        this.layout.save(this.dashletIdentities);
+        localStorage.setItem("forceEditMode", "true");
+        window.location.reload();
     }
 
     zoomIn(i) {
+        console.log(i);
         if (this.dashletIdentities[i].size < 12) {
             this.dashletIdentities[i].size += 1;
         }
-        this.#replaceDashletList();
+        this.layout.save(this.dashletIdentities);
+        localStorage.setItem("forceEditMode", "true");
+        window.location.reload();
     }
 
     zoomOut(i) {
         if (this.dashletIdentities[i].size > 1) {
             this.dashletIdentities[i].size -= 1;
         }
-        this.#replaceDashletList();
+        this.layout.save(this.dashletIdentities);
+        localStorage.setItem("forceEditMode", "true");
+        window.location.reload();
     }
 
     removeAll() {
         this.dashletIdentities = [];
         this.layout.save(this.dashletIdentities);
+        localStorage.setItem("forceEditMode", "true");
         window.location.reload();
     }
 
     addAll() {
         this.dashletIdentities = DashletMenu;
         this.layout.save(this.dashletIdentities);
+        localStorage.setItem("forceEditMode", "true");
         window.location.reload();
     }
 
