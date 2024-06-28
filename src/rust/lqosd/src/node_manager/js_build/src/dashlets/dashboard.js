@@ -111,10 +111,10 @@ export class Dashboard {
         let editDiv = document.createElement("div");
         editDiv.classList.add("col-12");
         editDiv.id = "dashboardEditingDiv";
-        editDiv.style.height = "100px";
-        editDiv.style.backgroundColor = "#007700";
         editDiv.style.padding = "10px";
         editDiv.style.borderRadius = "5px";
+        editDiv.style.marginLeft = "0";
+        editDiv.style.backgroundColor = "#ddddff";
         let toasts = document.getElementById("toasts");
         this.editingDashboard = true;
 
@@ -144,9 +144,10 @@ export class Dashboard {
         c2.appendChild(heading5Icon("plus", "Add Dashlet"));
         let list = document.createElement("div");
         list.classList.add("dropdown");
+        list.id = "dropdown-widgets";
         let listBtn = document.createElement("button");
         listBtn.type = "button";
-        listBtn.classList.add("btn", "btn-secondary", "dropdown-toggle");
+        listBtn.classList.add("btn", "btn-primary", "dropdown-toggle");
         listBtn.setAttribute("data-bs-toggle", "dropdown");
         listBtn.innerHTML = "<i class='fa fa-plus'></i> Add Widget";
         list.appendChild(listBtn);
@@ -178,11 +179,79 @@ export class Dashboard {
 
         let c3 = document.createElement("div");
         c3.classList.add("col-3");
-        c3.appendChild(heading5Icon("save", "Save Layout"))
+        c3.appendChild(heading5Icon("save", "Save Layout"));
+        let lbl = document.createElement("label");
+        lbl.htmlFor = "saveDashName";
+        let saveDashName = document.createElement("input");
+        saveDashName.id = "saveDashName";
+        saveDashName.type = "text";
+        let saveBtn = document.createElement("button");
+        saveBtn.type = "button";
+        saveBtn.classList.add("btn", "btn-success");
+        saveBtn.innerHTML = "<i class='fa fa-save'></i> Save to Server";
+        saveBtn.style.marginLeft = "4px";
+        saveBtn.onclick = () => {
+            let name = $("#saveDashName").val();
+            if (name.length < 1) return;
+            let request = {
+                name: name,
+                entries: this.dashletIdentities
+            }
+            $.ajax({
+                type: "POST",
+                url: "/local-api/dashletSave",
+                data: JSON.stringify(request),
+                contentType : 'application/json',
+                success: () => {
+                    window.location.reload();
+                }
+            })
+        }
+        c3.appendChild(lbl);
+        c3.appendChild(saveDashName);
+        c3.appendChild(saveBtn);
 
         let c4 = document.createElement("div");
         c4.classList.add("col-3");
         c4.appendChild(heading5Icon("cloud", "Load Layout"))
+        let listRemote = document.createElement("div");
+        listRemote.classList.add("dropdown");
+        let listBtnRemote = document.createElement("button");
+        listBtnRemote.type = "button";
+        listBtnRemote.classList.add("btn", "btn-secondary", "dropdown-toggle");
+        listBtnRemote.setAttribute("data-bs-toggle", "dropdown");
+        listBtnRemote.innerHTML = "<i class='fa fa-cloud'></i> Load Layout";
+        listRemote.appendChild(listBtnRemote);
+        let listUlRemote = document.createElement("ul");
+        listUlRemote.classList.add("dropdown-menu");
+        listUlRemote.id = "remoteDashletList";
+        listRemote.appendChild(listUlRemote);
+        c4.appendChild(listRemote);
+        $.get("/local-api/dashletThemes", (data) => {
+            let parent = document.getElementById("remoteDashletList");
+            data.forEach((d) => {
+                let li = document.createElement("li");
+                let link = document.createElement("a");
+                link.innerText = d;
+                let filename = d;
+                link.onclick = () => {
+                    console.log("Loading " + d);
+                    $.ajax({
+                        type: "POST",
+                        url: "/local-api/dashletGet",
+                        data: JSON.stringify({ theme: filename}),
+                        contentType: 'application/json',
+                        success: (data) => {
+                            this.dashletIdentities = data;
+                            this.layout.save(this.dashletIdentities);
+                            window.location.reload();
+                        }
+                    });
+                }
+                li.appendChild(link);
+                parent.appendChild(li);
+            });
+        });
 
         row.appendChild(c1);
         row.appendChild(c2);
@@ -190,16 +259,58 @@ export class Dashboard {
         row.appendChild(c4);
         editDiv.appendChild(row);
 
-        // Decorate all the dashboard elements with controls
+
+        // Decorate all the dashboard elements with controls after a refresh period
+        requestAnimationFrame(() => {
+            setTimeout(() => { this.#updateEditDecorations() });
+        });
+
+        toasts.appendChild(editDiv);
+    }
+
+    #dashEditButton(left, top, iconSuffix, style, closure) {
+        let div = document.createElement("div");
+        div.style.position = "absolute";
+        div.style.width = "20px";
+        div.style.zIndex = "200";
+        div.style.height = "20px";
+        div.style.top = top;
+        div.style.left = left;
+        div.classList.add("dashEditButton");
+        let button = document.createElement("button");
+        button.type = "button";
+        button.classList.add("btn", "btn-sm", "btn-" + style);
+        button.innerHTML = "<i class='fa fa-" + iconSuffix +"'></i>";
+        button.onclick = closure;
+        div.appendChild(button);
+        return div;
+    }
+
+    closeEditMode() {
+        let editor = document.getElementById("dashboardEditingDiv");
+        if (editor != null) {
+            editor.remove();
+        }
+        this.editingDashboard = false;
+    }
+
+    #updateEditDecorations() {
+        let oldEditDiv = document.getElementById("divEditorElements");
+        if (oldEditDiv !== null) editDiv.remove();
+
+        let editDivParent = document.getElementById("dashboardEditingDiv");
+        let editDiv = document.createElement("div");
+        editDiv.id = "divEditorElements";
+
         for (let i=0; i<this.childIds.length; i++) {
             let dashDiv = document.getElementById(this.childIds[i]);
             if (dashDiv != null) {
                 let clientRect = dashDiv.getBoundingClientRect();
                 let clientLeft = (clientRect.left + 4) + "px";
                 let clientRight = (clientRect.right - 34) + "px";
-                let clientTop = (clientRect.top + 100) + "px";
-                let clientBottom = (clientRect.bottom + 100) + "px";
-                let clientMiddleY = (((clientRect.bottom - clientRect.top) / 2) + clientRect.top + 100 - 10) + "px";
+                let clientTop = (clientRect.top) + "px";
+                let clientBottom = (clientRect.bottom) + "px";
+                let clientMiddleY = (((clientRect.bottom - clientRect.top) / 2) + clientRect.top - 10) + "px";
                 let clientMiddleX = (((clientRect.right - clientRect.left) / 2) + clientRect.left - 10) + "px";
 
                 // Left Navigation Arrow
@@ -270,33 +381,7 @@ export class Dashboard {
             }
         }
 
-        toasts.appendChild(editDiv);
-    }
-
-    #dashEditButton(left, top, iconSuffix, style, closure) {
-        let div = document.createElement("div");
-        div.style.position = "absolute";
-        div.style.width = "20px";
-        div.style.zIndex = "200";
-        div.style.height = "20px";
-        div.style.top = top;
-        div.style.left = left;
-        div.classList.add("dashEditButton");
-        let button = document.createElement("button");
-        button.type = "button";
-        button.classList.add("btn", "btn-sm", "btn-" + style);
-        button.innerHTML = "<i class='fa fa-" + iconSuffix +"'></i>";
-        button.onclick = closure;
-        div.appendChild(button);
-        return div;
-    }
-
-    closeEditMode() {
-        let editor = document.getElementById("dashboardEditingDiv");
-        if (editor != null) {
-            editor.remove();
-        }
-        this.editingDashboard = false;
+        editDivParent.appendChild(editDiv);
     }
 
     editModeOld() {
@@ -473,6 +558,10 @@ export class Dashboard {
 
         // Apply
         this.build();
+        let self = this;
+        requestAnimationFrame(() => {
+            setTimeout(() => { self.#updateEditDecorations() });
+        });
 
         // Persist
         this.layout.save(this.dashletIdentities);
@@ -517,12 +606,14 @@ export class Dashboard {
 
     removeAll() {
         this.dashletIdentities = [];
-        this.#replaceDashletList();
+        this.layout.save(this.dashletIdentities);
+        window.location.reload();
     }
 
     addAll() {
         this.dashletIdentities = DashletMenu;
-        this.#replaceDashletList();
+        this.layout.save(this.dashletIdentities);
+        window.location.reload();
     }
 
     #buildDashletList() {
