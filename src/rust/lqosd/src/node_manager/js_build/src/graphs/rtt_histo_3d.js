@@ -39,8 +39,11 @@ export class RttHistogram3D extends DashboardGraph {
                         intensity: 1.2
                     },
                     ambient: {
-                        intensity: 0.3
+                        intensity: 0.2
                     }
+                },
+                viewControl: {
+                    autoRotate: true,
                 }
             },
             series: [{
@@ -57,6 +60,7 @@ export class RttHistogram3D extends DashboardGraph {
 
     update(rtt) {
         this.chart.hideLoading();
+        //for (let i=0; i<20; i++) rtt[i] += 20-i;
         this.ring.push(rtt);
         this.option.series[0].data = this.ring.series();
         this.chart.setOption(this.option);
