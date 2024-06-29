@@ -22,14 +22,17 @@ export class RttHistogram3D extends DashboardGraph {
             tooltip: {},
             xAxis3D: {
                 type: 'category',
-                data: catAxis
+                data: catAxis,
+                name: "RTT"
             },
             yAxis3D: {
                 type: 'category',
-                data: timeAxis
+                data: timeAxis,
+                name: "Time"
             },
             zAxis3D: {
-                type: 'value'
+                type: 'value',
+                name: "Samples"
             },
             grid3D: {
                 boxWidth: 100,
