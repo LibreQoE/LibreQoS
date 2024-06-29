@@ -11,15 +11,17 @@ export class RttHistogram extends DashboardGraph {
                 value: i,
                 itemStyle: {color: lerpGreenToRedViaOrange(20-i, 20)},
             });
-            axis.push(i.toString());
+            axis.push((i*10).toString());
         }
         this.option = {
             xAxis: {
                 type: 'category',
                 data: axis,
+                name: "RTT"
             },
             yAxis: {
                 type: 'value',
+                name: "Samples"
             },
             series: {
                 data: d,
