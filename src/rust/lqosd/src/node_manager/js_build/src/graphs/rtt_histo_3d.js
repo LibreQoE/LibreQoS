@@ -11,7 +11,7 @@ export class RttHistogram3D extends DashboardGraph {
 
         let catAxis = [];
         for (let i=0; i<20; i++) catAxis.push({
-            value: i.toString(),
+            value: (i*10).toString(),
             itemStyle: {color: lerpGreenToRedViaOrange(20-i, 20)},
         }
         );
@@ -39,15 +39,26 @@ export class RttHistogram3D extends DashboardGraph {
                 boxDepth: 100,
                 light: {
                     main: {
-                        intensity: 1.2
+                        intensity: 1.4
                     },
                     ambient: {
-                        intensity: 0.2
+                        intensity: 0.2,
+                    },
+                },
+                postEffect: {
+                    enable: true,
+                    SSAO: {
+                        enable: true,
+                        intensity: 4,
+                    },
+                    FXAA: {
+                        enable: true,
                     }
                 },
                 viewControl: {
                     autoRotate: true,
-                }
+                },
+
             },
             series: [{
                 type: 'bar3D',
@@ -63,7 +74,7 @@ export class RttHistogram3D extends DashboardGraph {
 
     update(rtt) {
         this.chart.hideLoading();
-        //for (let i=0; i<20; i++) rtt[i] += 20-i;
+        for (let i=0; i<20; i++) rtt[i] += 20-i;
         this.ring.push(rtt);
         this.option.series[0].data = this.ring.series();
         this.chart.setOption(this.option);
