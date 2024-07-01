@@ -12,8 +12,8 @@ pub struct ThroughputTracker {
   pub(crate) cycle: AtomicU64,
   pub(crate) raw_data: DashMap<XdpIpAddress, ThroughputEntry>,
   pub(crate) bytes_per_second: AtomicDownUp,
-  pub(crate) packets_per_second: (AtomicU64, AtomicU64),
-  pub(crate) shaped_bytes_per_second: (AtomicU64, AtomicU64),
+  pub(crate) packets_per_second: AtomicDownUp,
+  pub(crate) shaped_bytes_per_second: AtomicDownUp,
 }
 
 impl ThroughputTracker {
@@ -25,8 +25,8 @@ impl ThroughputTracker {
       cycle: AtomicU64::new(RETIRE_AFTER_SECONDS),
       raw_data: DashMap::with_capacity(lqos_sys::max_tracked_ips()),
       bytes_per_second: AtomicDownUp::zeroed(),
-      packets_per_second: (AtomicU64::new(0), AtomicU64::new(0)),
-      shaped_bytes_per_second: (AtomicU64::new(0), AtomicU64::new(0)),
+      packets_per_second: AtomicDownUp::zeroed(),
+      shaped_bytes_per_second: AtomicDownUp::zeroed(),
     }
   }
 
@@ -353,8 +353,8 @@ impl ThroughputTracker {
   pub(crate) fn update_totals(&self) {
     let current_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
     self.bytes_per_second.set_to_zero();
-    Self::set_atomic_tuple_to_zero(&self.packets_per_second);
-    Self::set_atomic_tuple_to_zero(&self.shaped_bytes_per_second);
+    self.packets_per_second.set_to_zero();
+    self.shaped_bytes_per_second.set_to_zero();
     self
       .raw_data
       .iter()
@@ -373,9 +373,9 @@ impl ThroughputTracker {
       })
       .for_each(|(bytes_down, bytes_up, packets_down, packets_up, shaped)| {
         self.bytes_per_second.checked_add_tuple((bytes_down, bytes_up));
-        Self::add_atomic_tuple(&self.packets_per_second, (packets_down, packets_up));
+        self.packets_per_second.checked_add_tuple((packets_down, packets_up));
         if shaped {
-          Self::add_atomic_tuple(&self.shaped_bytes_per_second, (bytes_down, bytes_up));
+          self.shaped_bytes_per_second.checked_add_tuple((bytes_down, bytes_up));
         }
       });
 
@@ -406,13 +406,16 @@ impl ThroughputTracker {
   }
 
   pub(crate) fn shaped_bits_per_second(&self) -> (u64, u64) {
-    (self.shaped_bytes_per_second.0.load(std::sync::atomic::Ordering::Relaxed) * 8, self.shaped_bytes_per_second.1.load(std::sync::atomic::Ordering::Relaxed) * 8)
+    (
+      self.shaped_bytes_per_second.get_down() * 8, 
+      self.shaped_bytes_per_second.get_up() * 8
+    )
   }
 
   pub(crate) fn packets_per_second(&self) -> (u64, u64) {
     (
-      self.packets_per_second.0.load(std::sync::atomic::Ordering::Relaxed),
-      self.packets_per_second.1.load(std::sync::atomic::Ordering::Relaxed),
+      self.packets_per_second.get_down(),
+      self.packets_per_second.get_up(),
     )
   }
 

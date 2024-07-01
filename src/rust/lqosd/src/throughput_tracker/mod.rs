@@ -131,13 +131,9 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>)
     // Gather Global Stats
     let packets_per_second = (
         THROUGHPUT_TRACKER
-            .packets_per_second
-            .0
-            .load(std::sync::atomic::Ordering::Relaxed),
+            .packets_per_second.get_down(),
         THROUGHPUT_TRACKER
-            .packets_per_second
-            .1
-            .load(std::sync::atomic::Ordering::Relaxed),
+            .packets_per_second.get_up(),
     );
     let bits_per_second = THROUGHPUT_TRACKER.bits_per_second();
     let shaped_bits_per_second = THROUGHPUT_TRACKER.shaped_bits_per_second();
