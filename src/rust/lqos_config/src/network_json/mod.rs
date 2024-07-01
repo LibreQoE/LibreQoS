@@ -7,6 +7,7 @@ use std::{
   path::{Path, PathBuf}, sync::atomic::AtomicU64,
 };
 use thiserror::Error;
+use lqos_utils::units::AtomicDownUp;
 
 /// Describes a node in the network map tree.
 #[derive(Debug)]
@@ -18,7 +19,7 @@ pub struct NetworkJsonNode {
   pub max_throughput: (u32, u32), // In mbps
 
   /// Current throughput (in bytes/second) at this node
-  pub current_throughput: (AtomicU64, AtomicU64), // In bytes
+  pub current_throughput: AtomicDownUp, // In bytes
 
   /// Approximate RTTs reported for this level of the tree.
   /// It's never going to be as statistically accurate as the actual
@@ -44,8 +45,8 @@ impl NetworkJsonNode {
       name: self.name.clone(),
       max_throughput: self.max_throughput,
       current_throughput: (
-        self.current_throughput.0.load(std::sync::atomic::Ordering::Relaxed),
-        self.current_throughput.1.load(std::sync::atomic::Ordering::Relaxed),
+        self.current_throughput.get_down(),
+        self.current_throughput.get_up(),
       ),
       rtts: self.rtts.iter().map(|n| *n as f32 / 100.0).collect(),
       parents: self.parents.clone(),
@@ -123,7 +124,7 @@ impl NetworkJson {
     let mut nodes = vec![NetworkJsonNode {
       name: "Root".to_string(),
       max_throughput: (0, 0),
-      current_throughput: (AtomicU64::new(0), AtomicU64::new(0)),
+      current_throughput: AtomicDownUp::zeroed(),
       parents: Vec::new(),
       immediate_parent: None,
       rtts: DashSet::new(),
@@ -199,8 +200,7 @@ impl NetworkJson {
   /// access.
   pub fn zero_throughput_and_rtt(&self) {
     self.nodes.iter().for_each(|n| {
-      n.current_throughput.0.store(0, std::sync::atomic::Ordering::Relaxed);
-      n.current_throughput.1.store(0, std::sync::atomic::Ordering::Relaxed);
+      n.current_throughput.set_to_zero();
       n.rtts.clear();
     });
   }
@@ -216,8 +216,7 @@ impl NetworkJson {
     for idx in targets {
       // Safety first: use "get" to ensure that the node exists
       if let Some(node) = self.nodes.get(*idx) {
-        node.current_throughput.0.fetch_add(bytes.0, std::sync::atomic::Ordering::Relaxed);
-        node.current_throughput.1.fetch_add(bytes.1, std::sync::atomic::Ordering::Relaxed);
+        node.current_throughput.checked_add_tuple(bytes);
       } else {
         warn!("No network tree entry for index {idx}");
       }
@@ -271,7 +270,7 @@ fn recurse_node(
       json_to_u32(json.get("downloadBandwidthMbps")),
       json_to_u32(json.get("uploadBandwidthMbps")),
     ),
-    current_throughput: (AtomicU64::new(0), AtomicU64::new(0)),
+    current_throughput: AtomicDownUp::zeroed(),
     name: name.to_string(),
     immediate_parent: Some(immediate_parent),
     rtts: DashSet::new(),

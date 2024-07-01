@@ -38,8 +38,8 @@ impl From<&NetworkJsonNode> for NetworkTreeEntry {
             parents: value.parents.clone(),
             immediate_parent: value.immediate_parent,
             current_throughput: (
-                value.current_throughput.0.load(std::sync::atomic::Ordering::Relaxed) as u32,
-                value.current_throughput.1.load(std::sync::atomic::Ordering::Relaxed) as u32,
+                value.current_throughput.get_down() as u32,
+                value.current_throughput.get_up() as u32,
             ),
             node_type: value.node_type.clone(),
             rtts: (min as u16, max as u16, avg as u16),
