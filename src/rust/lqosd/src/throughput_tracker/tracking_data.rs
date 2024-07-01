@@ -1,5 +1,5 @@
 use std::{sync::atomic::AtomicU64, time::Duration};
-use crate::{shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES}, stats::{HIGH_WATERMARK_DOWN, HIGH_WATERMARK_UP}, throughput_tracker::flow_data::{expire_rtt_flows, flowbee_rtt_map}};
+use crate::{shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES}, stats::HIGH_WATERMARK, throughput_tracker::flow_data::{expire_rtt_flows, flowbee_rtt_map}};
 use super::{flow_data::{get_flowbee_event_count_and_reset, FlowAnalysis, FlowbeeLocalData, RttData, ALL_FLOWS}, throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
 use dashmap::DashMap;
 use fxhash::FxHashMap;
@@ -382,14 +382,14 @@ impl ThroughputTracker {
       let current = self.bits_per_second();
       if current.0 < 100000000000  && current.1 < 100000000000 {
         let prev_max = (
-          HIGH_WATERMARK_DOWN.load(std::sync::atomic::Ordering::Relaxed),
-          HIGH_WATERMARK_UP.load(std::sync::atomic::Ordering::Relaxed),
+          HIGH_WATERMARK.get_down(),
+          HIGH_WATERMARK.get_up(),
         );
         if current.0 > prev_max.0 {
-          HIGH_WATERMARK_DOWN.store(current.0, std::sync::atomic::Ordering::Relaxed);
+          HIGH_WATERMARK.set_down(current.0);
         }
         if current.1 > prev_max.1 {
-          HIGH_WATERMARK_UP.store(current.1, std::sync::atomic::Ordering::Relaxed);
+          HIGH_WATERMARK.set_up(current.1);
         }
       }
   }

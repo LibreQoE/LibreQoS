@@ -28,7 +28,7 @@ use signal_hook::{
   consts::{SIGHUP, SIGINT, SIGTERM},
   iterator::Signals,
 };
-use stats::{BUS_REQUESTS, TIME_TO_POLL_HOSTS, HIGH_WATERMARK_DOWN, HIGH_WATERMARK_UP, FLOWS_TRACKED};
+use stats::{BUS_REQUESTS, TIME_TO_POLL_HOSTS, HIGH_WATERMARK, FLOWS_TRACKED};
 use throughput_tracker::flow_data::get_rtt_events_per_second;
 use tokio::join;
 mod stats;
@@ -224,8 +224,8 @@ fn handle_bus_requests(
           bus_requests: BUS_REQUESTS.load(std::sync::atomic::Ordering::Relaxed),
           time_to_poll_hosts: TIME_TO_POLL_HOSTS.load(std::sync::atomic::Ordering::Relaxed),
           high_watermark: (
-            HIGH_WATERMARK_DOWN.load(std::sync::atomic::Ordering::Relaxed),
-            HIGH_WATERMARK_UP.load(std::sync::atomic::Ordering::Relaxed),
+            HIGH_WATERMARK.get_down(),
+            HIGH_WATERMARK.get_up(),
           ),
           tracked_flows: FLOWS_TRACKED.load(std::sync::atomic::Ordering::Relaxed),
           rtt_events_per_second: get_rtt_events_per_second(),

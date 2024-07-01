@@ -38,4 +38,12 @@ impl AtomicDownUp {
     pub fn get_up(&self) -> u64 {
         self.up.load(Relaxed)
     }
+    
+    pub fn set_down(&self, n: u64) {
+        self.down.store(n, Relaxed);
+    }
+
+    pub fn set_up(&self, n: u64) {
+        self.up.store(n, Relaxed);
+    }
 }
