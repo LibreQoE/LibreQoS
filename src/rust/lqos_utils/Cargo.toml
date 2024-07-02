@@ -12,3 +12,4 @@ notify = { version = "5.0.0", default-features = false } # Not using crossbeam b
 thiserror = "1"
 byteorder = "1.4"
 zerocopy = { version = "0.6.1", features = ["simd"] }
+num-traits = "0.2.19"

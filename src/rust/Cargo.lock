@@ -2019,6 +2019,7 @@ dependencies = [
  "log",
  "nix 0.29.0",
  "notify",
+ "num-traits",
  "serde",
  "thiserror",
  "zerocopy 0.6.6",

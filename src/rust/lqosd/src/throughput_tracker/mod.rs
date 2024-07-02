@@ -20,6 +20,7 @@ use tokio::{
     sync::mpsc::Sender,
     time::{Duration, Instant},
 };
+use lqos_utils::units::DownUpOrder;
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
@@ -144,7 +145,7 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>)
         .map(|host| HostSummary {
             ip: host.key().as_ip(),
             circuit_id: host.circuit_id.clone(),
-            bits_per_second: (host.bytes_per_second.0 * 8, host.bytes_per_second.1 * 8),
+            bits_per_second: (host.bytes_per_second.down * 8, host.bytes_per_second.up * 8),
             median_rtt: host.median_latency().unwrap_or(0.0),
         })
         .collect();
@@ -187,8 +188,7 @@ pub fn host_counters() -> BusResponse {
     let mut result = Vec::new();
     THROUGHPUT_TRACKER.raw_data.iter().for_each(|v| {
         let ip = v.key().as_ip();
-        let (down, up) = v.bytes_per_second;
-        result.push((ip, down, up));
+        result.push((ip, v.bytes_per_second.down, v.bytes_per_second.up));
     });
     BusResponse::HostCounters(result)
 }
@@ -198,7 +198,7 @@ fn retire_check(cycle: u64, recent_cycle: u64) -> bool {
     cycle < recent_cycle + RETIRE_AFTER_SECONDS
 }
 
-type TopList = (XdpIpAddress, (u64, u64), (u64, u64), f32, TcHandle, String, (u64, u64));
+type TopList = (XdpIpAddress, DownUpOrder<u64>,DownUpOrder<u64>, f32, TcHandle, String, (u64, u64));
 
 pub fn top_n(start: u32, end: u32) -> BusResponse {
     let mut full_list: Vec<TopList> = {
@@ -223,7 +223,7 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
             })
             .collect()
     };
-    full_list.sort_by(|a, b| b.1 .0.cmp(&a.1 .0));
+    full_list.sort_by(|a, b| b.1.down.cmp(&a.1.down));
     let result = full_list
         .iter()
         .skip(start as usize)
@@ -231,8 +231,8 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
         .map(
             |(
                 ip,
-                (bytes_dn, bytes_up),
-                (packets_dn, packets_up),
+                bytes,
+                packets,
                 median_rtt,
                 tc_handle,
                 circuit_id,
@@ -240,8 +240,8 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
             )| IpStats {
                 ip_address: ip.as_ip().to_string(),
                 circuit_id: circuit_id.clone(),
-                bits_per_second: (bytes_dn * 8, bytes_up * 8),
-                packets_per_second: (*packets_dn, *packets_up),
+                bits_per_second: (bytes.down * 8, bytes.up * 8),
+                packets_per_second: (packets.down, packets.up),
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
                 tcp_retransmits: *tcp_retransmits,
@@ -283,8 +283,8 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
         .map(
             |(
                 ip,
-                (bytes_dn, bytes_up),
-                (packets_dn, packets_up),
+                bytes,
+                packets,
                 median_rtt,
                 tc_handle,
                 circuit_id,
@@ -292,8 +292,8 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
             )| IpStats {
                 ip_address: ip.as_ip().to_string(),
                 circuit_id: circuit_id.clone(),
-                bits_per_second: (bytes_dn * 8, bytes_up * 8),
-                packets_per_second: (*packets_dn, *packets_up),
+                bits_per_second: (bytes.down * 8, bytes.up * 8),
+                packets_per_second: (packets.down, packets.up),
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
                 tcp_retransmits: *tcp_retransmits,
@@ -339,8 +339,8 @@ pub fn worst_n_retransmits(start: u32, end: u32) -> BusResponse {
         .map(
             |(
                 ip,
-                (bytes_dn, bytes_up),
-                (packets_dn, packets_up),
+                bytes,
+                packets,
                 median_rtt,
                 tc_handle,
                 circuit_id,
@@ -348,8 +348,8 @@ pub fn worst_n_retransmits(start: u32, end: u32) -> BusResponse {
             )| IpStats {
                 ip_address: ip.as_ip().to_string(),
                 circuit_id: circuit_id.clone(),
-                bits_per_second: (bytes_dn * 8, bytes_up * 8),
-                packets_per_second: (*packets_dn, *packets_up),
+                bits_per_second: (bytes.down * 8, bytes.up * 8),
+                packets_per_second: (packets.down, packets.up),
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
                 tcp_retransmits: *tcp_retransmits,
@@ -392,8 +392,8 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
         .map(
             |(
                 ip,
-                (bytes_dn, bytes_up),
-                (packets_dn, packets_up),
+                bytes,
+                packets,
                 median_rtt,
                 tc_handle,
                 circuit_id,
@@ -401,8 +401,8 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
             )| IpStats {
                 ip_address: ip.as_ip().to_string(),
                 circuit_id: circuit_id.clone(),
-                bits_per_second: (bytes_dn * 8, bytes_up * 8),
-                packets_per_second: (*packets_dn, *packets_up),
+                bits_per_second: (bytes.down * 8, bytes.up * 8),
+                packets_per_second: (packets.down, packets.up),
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
                 tcp_retransmits: *tcp_retransmits,
@@ -503,7 +503,7 @@ pub fn host_counts() -> BusResponse {
     BusResponse::HostCounts((total, shaped))
 }
 
-type FullList = (XdpIpAddress, (u64, u64), (u64, u64), f32, TcHandle, u64);
+type FullList = (XdpIpAddress, DownUpOrder<u64>, DownUpOrder<u64>, f32, TcHandle, u64);
 
 pub fn all_unknown_ips() -> BusResponse {
     let boot_time = time_since_boot();
@@ -542,16 +542,16 @@ pub fn all_unknown_ips() -> BusResponse {
         .map(
             |(
                 ip,
-                (bytes_dn, bytes_up),
-                (packets_dn, packets_up),
+                bytes,
+                packets,
                 median_rtt,
                 tc_handle,
                 _last_seen,
             )| IpStats {
                 ip_address: ip.as_ip().to_string(),
                 circuit_id: String::new(),
-                bits_per_second: (bytes_dn * 8, bytes_up * 8),
-                packets_per_second: (*packets_dn, *packets_up),
+                bits_per_second: (bytes.down * 8, bytes.up * 8),
+                packets_per_second: (packets.down, packets.up),
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
                 tcp_retransmits: (0, 0),

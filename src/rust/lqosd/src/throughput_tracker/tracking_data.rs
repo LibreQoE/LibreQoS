@@ -6,7 +6,7 @@ use fxhash::FxHashMap;
 use lqos_bus::TcHandle;
 use lqos_sys::{flowbee_data::FlowbeeKey, iterate_flows, throughput_for_each};
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
-use lqos_utils::units::AtomicDownUp;
+use lqos_utils::units::{AtomicDownUp, DownUpOrder};
 
 pub struct ThroughputTracker {
   pub(crate) cycle: AtomicU64,
@@ -35,14 +35,8 @@ impl ThroughputTracker {
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
     self.raw_data.iter_mut().for_each(|mut v| {
       if v.first_cycle < self_cycle {
-        v.bytes_per_second.0 =
-          u64::checked_sub(v.bytes.0, v.prev_bytes.0).unwrap_or(0);
-        v.bytes_per_second.1 =
-          u64::checked_sub(v.bytes.1, v.prev_bytes.1).unwrap_or(0);
-        v.packets_per_second.0 =
-          u64::checked_sub(v.packets.0, v.prev_packets.0).unwrap_or(0);
-        v.packets_per_second.1 =
-          u64::checked_sub(v.packets.1, v.prev_packets.1).unwrap_or(0);
+        v.bytes_per_second = v.bytes.checked_sub_or_zero(v.prev_bytes);
+        v.packets_per_second = v.packets.checked_sub_or_zero(v.prev_packets);
       }
       v.prev_bytes = v.bytes;
       v.prev_packets = v.packets;
@@ -110,13 +104,11 @@ impl ThroughputTracker {
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
     throughput_for_each(&mut |xdp_ip, counts| {
       if let Some(mut entry) = raw_data.get_mut(xdp_ip) {
-        entry.bytes = (0, 0);
-        entry.packets = (0, 0);
+        entry.bytes = DownUpOrder::zeroed();
+        entry.packets = DownUpOrder::zeroed();
         for c in counts {
-          entry.bytes.0 += c.download_bytes;
-          entry.bytes.1 += c.upload_bytes;
-          entry.packets.0 += c.download_packets;
-          entry.packets.1 += c.upload_packets;
+          entry.bytes.checked_add_direct(c.download_bytes, c.upload_bytes);
+          entry.packets.checked_add_direct(c.download_packets, c.upload_packets);
           if c.tc_handle != 0 {
             entry.tc_handle = TcHandle::from_u32(c.tc_handle);
           }
@@ -132,8 +124,8 @@ impl ThroughputTracker {
             net_json.add_throughput_cycle(
               parents,
               (
-                entry.bytes.0.saturating_sub(entry.prev_bytes.0),
-                entry.bytes.1.saturating_sub(entry.prev_bytes.1),
+                entry.bytes.down.saturating_sub(entry.prev_bytes.down),
+                entry.bytes.up.saturating_sub(entry.prev_bytes.up),
               ),
             );
           }
@@ -145,12 +137,12 @@ impl ThroughputTracker {
           network_json_parents: Self::lookup_network_parents(circuit_id),
           first_cycle: self_cycle,
           most_recent_cycle: 0,
-          bytes: (0, 0),
-          packets: (0, 0),
-          prev_bytes: (0, 0),
-          prev_packets: (0, 0),
-          bytes_per_second: (0, 0),
-          packets_per_second: (0, 0),
+          bytes: DownUpOrder::zeroed(),
+          packets: DownUpOrder::zeroed(),
+          prev_bytes: DownUpOrder::zeroed(),
+          prev_packets: DownUpOrder::zeroed(),
+          bytes_per_second: DownUpOrder::zeroed(),
+          packets_per_second: DownUpOrder::zeroed(),
           tc_handle: TcHandle::zero(),
           recent_rtt_data: [RttData::from_nanos(0); 60],
           last_fresh_rtt_data_cycle: 0,
@@ -159,10 +151,8 @@ impl ThroughputTracker {
           last_tcp_retransmits: (0, 0),
         };
         for c in counts {
-          entry.bytes.0 += c.download_bytes;
-          entry.bytes.1 += c.upload_bytes;
-          entry.packets.0 += c.download_packets;
-          entry.packets.1 += c.upload_packets;
+          entry.bytes.checked_add_direct(c.download_bytes, c.upload_bytes);
+          entry.packets.checked_add_direct(c.download_packets, c.upload_packets);
           if c.tc_handle != 0 {
             entry.tc_handle = TcHandle::from_u32(c.tc_handle);
           }
@@ -275,7 +265,7 @@ impl ThroughputTracker {
           let median = rtts[rtts.len() / 2];
           if let Some(mut tracker) = self.raw_data.get_mut(&local_ip) {
             // Only apply if the flow has achieved 1 Mbps or more
-            if tracker.bytes_per_second.0 + tracker.bytes_per_second.1 > 125000 {
+            if tracker.bytes_per_second.sum_exceeds(125_000) {
               // Shift left
               for i in 1..60 {
                 tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
@@ -345,10 +335,10 @@ impl ThroughputTracker {
       )
       .map(|v| {
         (
-          v.bytes.0.saturating_sub(v.prev_bytes.0),
-          v.bytes.1.saturating_sub(v.prev_bytes.1),
-          v.packets.0.saturating_sub(v.prev_packets.0),
-          v.packets.1.saturating_sub(v.prev_packets.1),
+          v.bytes.down.saturating_sub(v.prev_bytes.down),
+          v.bytes.up.saturating_sub(v.prev_bytes.up),
+          v.packets.down.saturating_sub(v.prev_packets.down),
+          v.packets.up.saturating_sub(v.prev_packets.up),
           v.tc_handle.as_u32() > 0,
         )
       })
