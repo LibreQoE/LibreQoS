@@ -29,13 +29,13 @@ impl From<&IpStats> for IpStatsWithPlan {
   fn from(i: &IpStats) -> Self {
     let mut result = Self {
       ip_address: i.ip_address.clone(),
-      bits_per_second: i.bits_per_second,
-      packets_per_second: i.packets_per_second,
+      bits_per_second: (i.bits_per_second.down, i.bits_per_second.up),
+      packets_per_second: (i.packets_per_second.down, i.packets_per_second.up),
       median_tcp_rtt: i.median_tcp_rtt,
       tc_handle: i.tc_handle,
       circuit_id: i.circuit_id.clone(),
       plan: (0, 0),
-      tcp_retransmits: i.tcp_retransmits,
+      tcp_retransmits: (i.tcp_retransmits.down, i.tcp_retransmits.up),
     };
 
     if !result.circuit_id.is_empty() {

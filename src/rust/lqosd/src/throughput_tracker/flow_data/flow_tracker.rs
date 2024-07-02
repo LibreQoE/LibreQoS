@@ -5,6 +5,7 @@ use super::{flow_analysis::FlowAnalysis, RttData};
 use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
 use once_cell::sync::Lazy;
 use std::{collections::HashMap, sync::Mutex};
+use lqos_utils::units::DownUpOrder;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AsnId(pub u32);
@@ -23,13 +24,13 @@ pub struct FlowbeeLocalData {
     /// Time (nanos) when the connection was last seen
     pub last_seen: u64,
     /// Bytes transmitted
-    pub bytes_sent: [u64; 2],
+    pub bytes_sent: DownUpOrder<u64>,
     /// Packets transmitted
-    pub packets_sent: [u64; 2],
+    pub packets_sent: DownUpOrder<u64>,
     /// Rate estimate
-    pub rate_estimate_bps: [u32; 2],
+    pub rate_estimate_bps: DownUpOrder<u32>,
     /// TCP Retransmission count (also counts duplicates)
-    pub tcp_retransmits: [u16; 2],
+    pub tcp_retransmits: DownUpOrder<u16>,
     /// Has the connection ended?
     /// 0 = Alive, 1 = FIN, 2 = RST
     pub end_status: u8,

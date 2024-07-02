@@ -55,6 +55,10 @@ pub async fn flows_by_country() -> NoCache<Json<Vec<(String, [u64; 2], [f32; 2])
     BusResponse::CurrentEndpointsByCountry(country_summary) => country_summary.to_owned(),
     _ => Vec::new(),
   };
+  let result = result
+      .into_iter()
+      .map(|(name, bytes, rtt)| (name, [bytes.down, bytes.up], rtt) )
+      .collect();
 
   NoCache::new(Json(result))
 }

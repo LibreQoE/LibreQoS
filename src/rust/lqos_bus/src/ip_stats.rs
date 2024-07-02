@@ -1,5 +1,6 @@
 use crate::TcHandle;
 use serde::{Deserialize, Serialize};
+use lqos_utils::units::DownUpOrder;
 
 /// Transmission representation of IP statistics associated
 /// with a host.
@@ -11,13 +12,12 @@ pub struct IpStats {
     /// The host's mapped circuit ID
     pub circuit_id: String,
 
-    /// The current bits-per-second passing through this host. Tuple
-    /// 0 is download, tuple 1 is upload.
-    pub bits_per_second: (u64, u64),
+    /// The current bits-per-second passing through this host.
+    pub bits_per_second: DownUpOrder<u64>,
 
     /// The current packets-per-second passing through this host. Tuple
     /// 0 is download, tuple 1 is upload.
-    pub packets_per_second: (u64, u64),
+    pub packets_per_second: DownUpOrder<u64>,
 
     /// Median TCP round-trip-time for this host at the current time.
     pub median_tcp_rtt: f32,
@@ -26,7 +26,7 @@ pub struct IpStats {
     pub tc_handle: TcHandle,
 
     /// TCP Retransmits for this host at the current time.
-    pub tcp_retransmits: (u64, u64),
+    pub tcp_retransmits: DownUpOrder<u64>,
 }
 
 /// Represents an IP Mapping in the XDP IP to TC/CPU mapping system.
@@ -153,13 +153,13 @@ pub struct FlowbeeSummaryData {
     /// Time (nanos) when the connection was last seen
     pub last_seen: u64,
     /// Bytes transmitted
-    pub bytes_sent: [u64; 2],
+    pub bytes_sent: DownUpOrder<u64>,
     /// Packets transmitted
-    pub packets_sent: [u64; 2],
+    pub packets_sent: DownUpOrder<u64>,
     /// Rate estimate
-    pub rate_estimate_bps: [u32; 2],
+    pub rate_estimate_bps: DownUpOrder<u32>,
     /// TCP Retransmission count (also counts duplicates)
-    pub tcp_retransmits: [u16; 2],
+    pub tcp_retransmits: DownUpOrder<u16>,
     /// Has the connection ended?
     /// 0 = Alive, 1 = FIN, 2 = RST
     pub end_status: u8,
@@ -168,7 +168,7 @@ pub struct FlowbeeSummaryData {
     /// Raw TCP flags
     pub flags: u8,
     /// Recent RTT median
-    pub rtt_nanos: [u64; 2],
+    pub rtt_nanos: DownUpOrder<u64>,
     /// Remote ASN
     pub remote_asn: u32,
     /// Remote ASN Name

@@ -1,9 +1,11 @@
+use serde::{Deserialize, Serialize};
+use zerocopy::FromBytes;
 use crate::units::UpDownOrder;
 
 /// Provides strong download/upload separation for
 /// stored statistics to eliminate confusion.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, FromBytes, Default)]
 pub struct DownUpOrder<T> {
     pub down: T,
     pub up: T,
@@ -11,10 +13,19 @@ pub struct DownUpOrder<T> {
 
 impl <T> DownUpOrder<T>
 where T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedSub
-    + num_traits::CheckedAdd + num_traits::SaturatingSub
+    + num_traits::CheckedAdd + num_traits::SaturatingSub + num_traits::SaturatingMul
+    + num_traits::FromPrimitive
 {
     pub fn new(down: T, up: T) -> Self {
         Self { down, up }
+    }
+    
+    pub fn dir(&self, direction: usize) -> T {
+        if direction == 0 {
+            self.down
+        } else {
+            self.up
+        }
     }
 
     pub fn zeroed() -> Self {
@@ -24,7 +35,7 @@ where T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedSub
     pub fn both_less_than(&self, limit: T) -> bool {
         self.down < limit && self.up < limit
     }
-    
+
     pub fn sum_exceeds(&self, limit: T) -> bool {
         self.down + self.up > limit
     }
@@ -39,14 +50,21 @@ where T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedSub
         self.down = self.down.checked_add(&rhs.down).unwrap_or(T::zero());
         self.up = self.up.checked_add(&rhs.up).unwrap_or(T::zero());
     }
-    
+
     pub fn checked_add_direct(&mut self, down: T, up: T) {
         self.down = self.down.checked_add(&down).unwrap_or(T::zero());
         self.up = self.up.checked_add(&up).unwrap_or(T::zero());
     }
-    
+
     pub fn sum(&self) -> T {
         self.down + self.up
+    }
+
+    pub fn to_bits_from_bytes(&self) -> DownUpOrder<T> {
+        DownUpOrder {
+            down: self.down.saturating_mul(&T::from_u32(8).unwrap()),
+            up: self.up.saturating_mul(&T::from_u32(8).unwrap()),
+        }
     }
 }
 

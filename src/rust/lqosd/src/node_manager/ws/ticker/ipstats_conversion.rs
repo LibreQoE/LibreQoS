@@ -1,17 +1,18 @@
 use serde::{Deserialize, Serialize};
 use lqos_bus::{IpStats, TcHandle};
+use lqos_utils::units::DownUpOrder;
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct IpStatsWithPlan {
     pub ip_address: String,
-    pub bits_per_second: (u64, u64),
-    pub packets_per_second: (u64, u64),
+    pub bits_per_second: DownUpOrder<u64>,
+    pub packets_per_second: DownUpOrder<u64>,
     pub median_tcp_rtt: f32,
     pub tc_handle: TcHandle,
     pub circuit_id: String,
-    pub plan: (u32, u32),
-    pub tcp_retransmits: (u64, u64),
+    pub plan: DownUpOrder<u32>,
+    pub tcp_retransmits: DownUpOrder<u64>,
 }
 
 impl From<&IpStats> for IpStatsWithPlan {
@@ -23,7 +24,7 @@ impl From<&IpStats> for IpStatsWithPlan {
             median_tcp_rtt: i.median_tcp_rtt,
             tc_handle: i.tc_handle,
             circuit_id: i.circuit_id.clone(),
-            plan: (0, 0),
+            plan: DownUpOrder::zeroed(),
             tcp_retransmits: i.tcp_retransmits,
         };
 
@@ -41,7 +42,7 @@ impl From<&IpStats> for IpStatsWithPlan {
                     &circuit.circuit_name
                 };
                 result.ip_address = format!("{} ({})", name, result.ip_address);
-                result.plan = (circuit.download_max_mbps, circuit.upload_max_mbps);
+                result.plan = DownUpOrder::new(circuit.download_max_mbps, circuit.upload_max_mbps);
             }
         }
 

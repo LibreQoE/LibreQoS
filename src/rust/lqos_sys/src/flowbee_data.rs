@@ -2,6 +2,7 @@
 
 use lqos_utils::XdpIpAddress;
 use zerocopy::FromBytes;
+use lqos_utils::units::DownUpOrder;
 
 /// Representation of the eBPF `flow_key_t` type.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, FromBytes)]
@@ -32,29 +33,29 @@ pub struct FlowbeeData {
     /// Time (nanos) when the connection was last seen
     pub last_seen: u64,
     /// Bytes transmitted
-    pub bytes_sent: [u64; 2],
+    pub bytes_sent: DownUpOrder<u64>,
     /// Packets transmitted
-    pub packets_sent: [u64; 2],
+    pub packets_sent: DownUpOrder<u64>,
     /// Clock for the next rate estimate
-    pub next_count_time: [u64; 2],
+    pub next_count_time: DownUpOrder<u64>,
     /// Clock for the previous rate estimate
-    pub last_count_time: [u64; 2],
+    pub last_count_time: DownUpOrder<u64>,
     /// Bytes at the next rate estimate
-    pub next_count_bytes: [u64; 2],
+    pub next_count_bytes: DownUpOrder<u64>,
     /// Rate estimate
-    pub rate_estimate_bps: [u32; 2],
+    pub rate_estimate_bps: DownUpOrder<u32>,
     /// Sequence number of the last packet
-    pub last_sequence: [u32; 2],
+    pub last_sequence: DownUpOrder<u32>,
     /// Acknowledgement number of the last packet
-    pub last_ack: [u32; 2],
+    pub last_ack: DownUpOrder<u32>,
     /// TCP Retransmission count (also counts duplicates)
-    pub tcp_retransmits: [u16; 2],
+    pub tcp_retransmits: DownUpOrder<u16>,
     /// Timestamp values
-    pub tsval: [u32; 2],
+    pub tsval: DownUpOrder<u32>,
     /// Timestamp echo values
-    pub tsecr: [u32; 2],
+    pub tsecr: DownUpOrder<u32>,
     /// When did the timestamp change?
-    pub ts_change_time: [u64; 2],
+    pub ts_change_time: DownUpOrder<u64>,
     /// Has the connection ended?
     /// 0 = Alive, 1 = FIN, 2 = RST
     pub end_status: u8,

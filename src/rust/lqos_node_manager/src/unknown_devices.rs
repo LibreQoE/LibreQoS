@@ -62,7 +62,7 @@ pub async fn unknown_devices_csv(_auth: AuthGuard) -> NoCache<String> {
   let reader = unknown_devices().await;
 
   for unknown in reader.iter() {
-    result += &format!("{},{},{}\n", unknown.ip_address, unknown.bits_per_second.0, unknown.bits_per_second.1);
+    result += &format!("{},{},{}\n", unknown.ip_address, unknown.bits_per_second.down, unknown.bits_per_second.up);
   }
   NoCache::new(result)
 }

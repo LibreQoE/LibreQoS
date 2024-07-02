@@ -240,11 +240,11 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
             )| IpStats {
                 ip_address: ip.as_ip().to_string(),
                 circuit_id: circuit_id.clone(),
-                bits_per_second: (bytes.down * 8, bytes.up * 8),
-                packets_per_second: (packets.down, packets.up),
+                bits_per_second: bytes.to_bits_from_bytes(),
+                packets_per_second: *packets,
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
-                tcp_retransmits: (tcp_retransmits.down, tcp_retransmits.up),
+                tcp_retransmits: *tcp_retransmits,
             },
         )
         .collect();
@@ -292,11 +292,11 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
             )| IpStats {
                 ip_address: ip.as_ip().to_string(),
                 circuit_id: circuit_id.clone(),
-                bits_per_second: (bytes.down * 8, bytes.up * 8),
-                packets_per_second: (packets.down, packets.up),
+                bits_per_second: bytes.to_bits_from_bytes(),
+                packets_per_second: *packets,
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
-                tcp_retransmits: (tcp_retransmits.down, tcp_retransmits.up),
+                tcp_retransmits: *tcp_retransmits,
             },
         )
         .collect();
@@ -348,11 +348,11 @@ pub fn worst_n_retransmits(start: u32, end: u32) -> BusResponse {
             )| IpStats {
                 ip_address: ip.as_ip().to_string(),
                 circuit_id: circuit_id.clone(),
-                bits_per_second: (bytes.down * 8, bytes.up * 8),
-                packets_per_second: (packets.down, packets.up),
+                bits_per_second: bytes.to_bits_from_bytes(),
+                packets_per_second: *packets,
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
-                tcp_retransmits: (tcp_retransmits.down, tcp_retransmits.up),
+                tcp_retransmits: *tcp_retransmits,
             },
         )
         .collect();
@@ -401,11 +401,11 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
             )| IpStats {
                 ip_address: ip.as_ip().to_string(),
                 circuit_id: circuit_id.clone(),
-                bits_per_second: (bytes.down * 8, bytes.up * 8),
-                packets_per_second: (packets.down, packets.up),
+                bits_per_second: bytes.to_bits_from_bytes(),
+                packets_per_second: *packets,
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
-                tcp_retransmits: (tcp_retransmits.down, tcp_retransmits.up),
+                tcp_retransmits: *tcp_retransmits,
             },
         )
         .collect();
@@ -550,11 +550,11 @@ pub fn all_unknown_ips() -> BusResponse {
             )| IpStats {
                 ip_address: ip.as_ip().to_string(),
                 circuit_id: String::new(),
-                bits_per_second: (bytes.down * 8, bytes.up * 8),
-                packets_per_second: (packets.down, packets.up),
+                bits_per_second: bytes.to_bits_from_bytes(),
+                packets_per_second: *packets,
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
-                tcp_retransmits: (0, 0),
+                tcp_retransmits: DownUpOrder::zeroed(),
             },
         )
         .collect();
@@ -589,7 +589,7 @@ pub fn dump_active_flows() -> BusResponse {
                 analysis: row.1.protocol_analysis.to_string(),
                 last_seen: row.0.last_seen,
                 start_time: row.0.start_time,
-                rtt_nanos: [row.0.rtt[0].as_nanos(), row.0.rtt[1].as_nanos()],
+                rtt_nanos: DownUpOrder::new(row.0.rtt[0].as_nanos(), row.0.rtt[1].as_nanos()),
             }
         })
         .collect();
@@ -615,29 +615,29 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
     match flow_type {
         TopFlowType::RateEstimate => {
             table.sort_by(|a, b| {
-                let a_total = a.1 .0.rate_estimate_bps[0] + a.1 .0.rate_estimate_bps[1];
-                let b_total = b.1 .0.rate_estimate_bps[0] + b.1 .0.rate_estimate_bps[1];
+                let a_total = a.1 .0.rate_estimate_bps.sum();
+                let b_total = b.1 .0.rate_estimate_bps.sum();
                 b_total.cmp(&a_total)
             });
         }
         TopFlowType::Bytes => {
             table.sort_by(|a, b| {
-                let a_total = a.1 .0.bytes_sent[0] + a.1 .0.bytes_sent[1];
-                let b_total = b.1 .0.bytes_sent[0] + b.1 .0.bytes_sent[1];
+                let a_total = a.1 .0.bytes_sent.sum();
+                let b_total = b.1 .0.bytes_sent.sum();
                 b_total.cmp(&a_total)
             });
         }
         TopFlowType::Packets => {
             table.sort_by(|a, b| {
-                let a_total = a.1 .0.packets_sent[0] + a.1 .0.packets_sent[1];
-                let b_total = b.1 .0.packets_sent[0] + b.1 .0.packets_sent[1];
+                let a_total = a.1 .0.packets_sent.sum();
+                let b_total = b.1 .0.packets_sent.sum();
                 b_total.cmp(&a_total)
             });
         }
         TopFlowType::Drops => {
             table.sort_by(|a, b| {
-                let a_total = a.1 .0.tcp_retransmits[0] + a.1 .0.tcp_retransmits[1];
-                let b_total = b.1 .0.tcp_retransmits[0] + b.1 .0.tcp_retransmits[1];
+                let a_total = a.1 .0.tcp_retransmits.sum();
+                let b_total = b.1 .0.tcp_retransmits.sum();
                 b_total.cmp(&a_total)
             });
         }
@@ -675,7 +675,7 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
                 analysis: flow.1.protocol_analysis.to_string(),
                 last_seen: flow.0.last_seen,
                 start_time: flow.0.start_time,
-                rtt_nanos: [flow.0.rtt[0].as_nanos(), flow.0.rtt[1].as_nanos()],
+                rtt_nanos: DownUpOrder::new(flow.0.rtt[0].as_nanos(), flow.0.rtt[1].as_nanos()),
             }
         })
         .collect();
@@ -714,7 +714,7 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
                     analysis: row.1.protocol_analysis.to_string(),
                     last_seen: row.0.last_seen,
                     start_time: row.0.start_time,
-                    rtt_nanos: [row.0.rtt[0].as_nanos(), row.0.rtt[1].as_nanos()],
+                    rtt_nanos: DownUpOrder::new(row.0.rtt[0].as_nanos(), row.0.rtt[1].as_nanos()),
                 }
             })
             .collect();

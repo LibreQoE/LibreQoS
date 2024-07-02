@@ -183,7 +183,7 @@ impl ThroughputTracker {
       let mut rtt_circuit_tracker: FxHashMap<XdpIpAddress, [Vec<RttData>; 2]> = FxHashMap::default();
 
       // Tracker for TCP retries. We're storing these per second.
-      let mut tcp_retries: FxHashMap<XdpIpAddress, [u64; 2]> = FxHashMap::default();
+      let mut tcp_retries: FxHashMap<XdpIpAddress, DownUpOrder<u64>> = FxHashMap::default();
 
       // Track the expired keys
       let mut expired_keys = Vec::new();
@@ -242,10 +242,12 @@ impl ThroughputTracker {
 
               // TCP Retries
               if let Some(retries) = tcp_retries.get_mut(&key.local_ip) {
-                retries[0] += data.tcp_retransmits[0] as u64;
-                retries[1] += data.tcp_retransmits[1] as u64;
+                retries.down += data.tcp_retransmits.down as u64;
+                retries.up += data.tcp_retransmits.up as u64;
               } else {
-                tcp_retries.insert(key.local_ip, [data.tcp_retransmits[0] as u64, data.tcp_retransmits[1] as u64]);
+                tcp_retries.insert(key.local_ip,
+                 DownUpOrder::new(data.tcp_retransmits.down as u64, data.tcp_retransmits.up as u64)
+                );
               }
 
               if data.end_status != 0 {
@@ -291,10 +293,10 @@ impl ThroughputTracker {
       // Apply the new ones
       for (local_ip, retries) in tcp_retries {
         if let Some(mut tracker) = self.raw_data.get_mut(&local_ip) {
-          tracker.tcp_retransmits.down = retries[0].saturating_sub(tracker.last_tcp_retransmits.down);
-          tracker.tcp_retransmits.up = retries[1].saturating_sub(tracker.last_tcp_retransmits.up);
-          tracker.last_tcp_retransmits.down = retries[0];
-          tracker.last_tcp_retransmits.up = retries[1];
+          tracker.tcp_retransmits.down = retries.down.saturating_sub(tracker.last_tcp_retransmits.down);
+          tracker.tcp_retransmits.up = retries.up.saturating_sub(tracker.last_tcp_retransmits.up);
+          tracker.last_tcp_retransmits.down = retries.down;
+          tracker.last_tcp_retransmits.up = retries.up;
         }
       }
 

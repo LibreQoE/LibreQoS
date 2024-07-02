@@ -5,6 +5,7 @@ use lqos_bus::BusResponse;
 use lqos_sys::flowbee_data::FlowbeeKey;
 use once_cell::sync::Lazy;
 use std::sync::{Arc, Mutex};
+use lqos_utils::units::DownUpOrder;
 
 pub struct TimeBuffer {
     buffer: Mutex<Vec<TimeEntry>>,
@@ -44,7 +45,7 @@ impl TimeBuffer {
                 let (key, data, _analysis) = &v.data;
                 let (lat, lon) = get_asn_lat_lon(key.remote_ip.as_ip());
                 let (_name, country) = get_asn_name_and_country(key.remote_ip.as_ip());
-                (lat, lon, country, data.bytes_sent[1], data.rtt[1].as_nanos() as f32)
+                (lat, lon, country, data.bytes_sent.up, data.rtt[1].as_nanos() as f32)
             })
             .filter(|(lat, lon, ..)| *lat != 0.0 && *lon != 0.0)
             .collect::<Vec<(f64, f64, String, u64, f32)>>();
@@ -58,7 +59,7 @@ impl TimeBuffer {
         my_buffer
     }
 
-    pub fn country_summary(&self) -> Vec<(String, [u64; 2], [f32; 2])> {
+    pub fn country_summary(&self) -> Vec<(String, DownUpOrder<u64>, [f32; 2])> {
         let buffer = self.buffer.lock().unwrap();
         let mut my_buffer = buffer
             .iter()
@@ -71,7 +72,7 @@ impl TimeBuffer {
                 ];
                 (country, data.bytes_sent, rtt)
             })
-            .collect::<Vec<(String, [u64; 2], [f32; 2])>>();
+            .collect::<Vec<(String, DownUpOrder<u64>, [f32; 2])>>();
 
         // Sort by country
         my_buffer.sort_by(|a, b| a.0.cmp(&b.0));
@@ -79,7 +80,7 @@ impl TimeBuffer {
         // Summarize by country
         let mut country_summary = Vec::new();
         let mut last_country = String::new();
-        let mut total_bytes = [0, 0];
+        let mut total_bytes = DownUpOrder::zeroed();
         let mut total_rtt = [0.0f64, 0.0f64];
         let mut rtt_count = [0, 0];
         for (country, bytes, rtt) in my_buffer {
@@ -102,12 +103,11 @@ impl TimeBuffer {
                 }
 
                 last_country = country.to_string();
-                total_bytes = [0, 0];
+                total_bytes = DownUpOrder::zeroed();
                 total_rtt = [0.0, 0.0];
                 rtt_count = [0, 0];
             }
-            total_bytes[0] += bytes[0];
-            total_bytes[1] += bytes[1];
+            total_bytes.checked_add(bytes);
             if rtt[0] > 0.0 {
                 total_rtt[0] += rtt[0] as f64;
                 rtt_count[0] += 1;
@@ -135,7 +135,7 @@ impl TimeBuffer {
         country_summary.push((last_country, total_bytes, rtt));
 
         // Sort by bytes downloaded descending
-        country_summary.sort_by(|a, b| b.1[1].cmp(&a.1[1]));
+        country_summary.sort_by(|a, b| b.1.up.cmp(&a.1.up));
 
         country_summary
     }
@@ -170,10 +170,10 @@ impl TimeBuffer {
                 let (key, data, _analysis) = &v.data;
                 if key.local_ip.is_v4() {
                     // It's V4
-                    v4_bytes_sent[0] += data.bytes_sent[0];
-                    v4_bytes_sent[1] += data.bytes_sent[1];
-                    v4_packets_sent[0] += data.packets_sent[0];
-                    v4_packets_sent[1] += data.packets_sent[1];
+                    v4_bytes_sent[0] += data.bytes_sent.down;
+                    v4_bytes_sent[1] += data.bytes_sent.up;
+                    v4_packets_sent[0] += data.packets_sent.down;
+                    v4_packets_sent[1] += data.packets_sent.up;
                     if data.rtt[0].as_nanos() > 0 {
                         v4_rtt[0].push(data.rtt[0].as_nanos());
                     }
@@ -182,10 +182,10 @@ impl TimeBuffer {
                     }
                 } else {
                     // It's V6
-                    v6_bytes_sent[0] += data.bytes_sent[0];
-                    v6_bytes_sent[1] += data.bytes_sent[1];
-                    v6_packets_sent[0] += data.packets_sent[0];
-                    v6_packets_sent[1] += data.packets_sent[1];
+                    v6_bytes_sent[0] += data.bytes_sent.down;
+                    v6_bytes_sent[1] += data.bytes_sent.up;
+                    v6_packets_sent[0] += data.packets_sent.down;
+                    v6_packets_sent[1] += data.packets_sent.up;
                     if data.rtt[0].as_nanos() > 0 {
                         v6_rtt[0].push(data.rtt[0].as_nanos());
                     }
@@ -226,8 +226,8 @@ impl TimeBuffer {
                 let (_key, data, analysis) = &v.data;
                 let proto = analysis.protocol_analysis.to_string();
                 let entry = results.entry(proto).or_insert((0, 0));
-                entry.0 += data.bytes_sent[0];
-                entry.1 += data.bytes_sent[1];
+                entry.0 += data.bytes_sent.down;
+                entry.1 += data.bytes_sent.up;
             });
 
         let mut results = results.into_iter().collect::<Vec<(String, (u64, u64))>>();
