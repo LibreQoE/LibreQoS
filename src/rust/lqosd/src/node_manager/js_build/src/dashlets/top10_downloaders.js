@@ -2,6 +2,7 @@ import {BaseDashlet} from "./base_dashlet";
 import {RttHistogram} from "../graphs/rtt_histo";
 import {clearDashDiv, theading} from "../helpers/builders";
 import {scaleNumber, rttCircleSpan} from "../helpers/scaling";
+import {redactCell} from "../helpers/redact";
 
 export class Top10Downloaders extends BaseDashlet {
     constructor(slot) {
@@ -54,6 +55,7 @@ export class Top10Downloaders extends BaseDashlet {
 
                 let ip = document.createElement("td");
                 ip.innerText = r.ip_address;
+                redactCell(ip);
                 row.append(ip);
 
                 let dl = document.createElement("td");

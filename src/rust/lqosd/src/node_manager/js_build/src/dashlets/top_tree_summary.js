@@ -1,6 +1,7 @@
 import {BaseDashlet} from "./base_dashlet";
 import {clearDashDiv, simpleRow, theading} from "../helpers/builders";
 import {scaleNumber, scaleNanos} from "../helpers/scaling";
+import {redactCell} from "../helpers/redact";
 
 export class TopTreeSummary extends BaseDashlet {
     constructor(slot) {
@@ -42,7 +43,9 @@ export class TopTreeSummary extends BaseDashlet {
             let tbody = document.createElement("tbody");
             msg.data.forEach((r) => {
                 let row = document.createElement("tr");
-                row.appendChild(simpleRow(r[1].name));
+                let name = simpleRow(r[1].name);
+                redactCell(name);
+                row.appendChild(simpleRow(name));
                 row.appendChild(simpleRow(scaleNumber(r[1].current_throughput[0])));
                 row.appendChild(simpleRow(scaleNumber(r[1].current_throughput[1])));
                 t.appendChild(row);
