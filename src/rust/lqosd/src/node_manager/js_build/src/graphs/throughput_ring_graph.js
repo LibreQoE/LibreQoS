@@ -14,6 +14,30 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
         }
 
         this.option = {
+            legend: {
+                orient: "horizontal",
+                right: 10,
+                top: "bottom",
+                selectMode: false,
+                data: [
+                    {
+                        name: "Shaped Traffic",
+                        icon: 'circle',
+                        itemStyle: {
+                            color: "green"
+                        }
+                    }, {
+                        name: "Unshaped Traffic",
+                        icon: 'circle',
+                        itemStyle: {
+                            color: "orange"
+                        }
+                    }
+                ],
+                textStyle: {
+                    color: '#aaa'
+                },
+            },
             xAxis: {
                 type: 'category',
                 data: xaxis,
@@ -34,24 +58,27 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
                     stack: 'shaped',
                     lineStyle: {
                         opacity: 0,
+                        color: 'green',
                     },
                     symbol: 'none',
                     areaStyle: {
                         color: 'green'
-                    }
+                    },
                 },
                 {
-                    name: 'shaped1',
+                    name: 'Shaped Traffic',
                     data: [],
                     type: 'line',
                     stack: 'shaped',
                     lineStyle: {
                         opacity: 0,
+                        color: 'green',
                     },
                     symbol: 'none',
                     areaStyle: {
                         color: 'green'
                     }
+
                 },
                 {
                     name: 'unshaped0',
@@ -59,15 +86,17 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
                     type: 'line',
                     lineStyle: {
                         color: 'orange',
-                    }
+                    },
+                    symbol: 'none',
                 },
                 {
-                    name: 'unshaped1',
+                    name: 'Unshaped Traffic',
                     data: [],
                     type: 'line',
                     lineStyle: {
                         color: 'orange',
-                    }
+                    },
+                    symbol: 'none',
                 },
             ],
             tooltip: {
