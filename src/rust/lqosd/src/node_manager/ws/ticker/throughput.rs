@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use serde_json::json;
 use lqos_config::load_config;
+use lqos_utils::units::DownUpOrder;
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
@@ -18,12 +19,12 @@ pub async fn throughput(channels: Arc<PubSub>) {
         )
     };
     let max = if let Ok(config) = load_config() {
-        (
+        DownUpOrder::new(
             config.queues.uplink_bandwidth_mbps,
             config.queues.downlink_bandwidth_mbps,
         )
     } else {
-        (0,0)
+        DownUpOrder::zeroed()
     };
     let bps = json!(
         {

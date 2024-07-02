@@ -132,14 +132,14 @@ export class BitsPerSecondGauge extends DashboardGraph {
         this.option && this.chart.setOption(this.option);
     }
 
-    update(value1, value2, max1, max2) {
+    update(download, upload, max_down, max_up) {
         this.chart.hideLoading();
-        this.option.series[0].data[0].value = value1;
-        this.option.series[1].data[0].value = value2;
+        this.option.series[0].data[0].value = download;
+        this.option.series[1].data[0].value = upload;
         this.option.series[0].min = 0;
-        this.option.series[0].max = max1 * 1000000; // Convert to bits
+        this.option.series[0].max = max_down * 1000000; // Convert to bits
         this.option.series[1].min = 0;
-        this.option.series[1].max = max2 * 1000000; // Convert to bits
+        this.option.series[1].max = max_up * 1000000; // Convert to bits
         this.chart.setOption(this.option);
     }
 }

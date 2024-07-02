@@ -100,10 +100,10 @@ class RingBuffer {
     }
 
     push(shaped, unshaped) {
-        this.data[this.head][0] = 0.0 - shaped[0];
-        this.data[this.head][1] = shaped[1];
-        this.data[this.head][2] = 0.0 - unshaped[0];
-        this.data[this.head][3] = unshaped[1];
+        this.data[this.head][0] = shaped.down;
+        this.data[this.head][1] = 0.0 - shaped.up;
+        this.data[this.head][2] = unshaped.down;
+        this.data[this.head][3] = 0.0 - unshaped.up;
         this.head += 1;
         this.head %= this.size;
     }

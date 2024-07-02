@@ -23,7 +23,7 @@ export class ThroughputBpsDash extends BaseDashlet{
 
     onMessage(msg) {
         if (msg.event === "Throughput") {
-            this.graph.update(msg.data.bps[0], msg.data.bps[1], msg.data.max[0], msg.data.max[1]);
+            this.graph.update(msg.data.bps.down, msg.data.bps.up, msg.data.max.down, msg.data.max.up);
         }
     }
 }
