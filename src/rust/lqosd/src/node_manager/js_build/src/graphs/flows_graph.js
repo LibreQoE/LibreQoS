@@ -22,7 +22,7 @@ export class FlowCountGraph extends DashboardGraph {
                 type: 'value',
                 axisLabel: {
                     formatter: (val) => {
-                        return scaleNumber(Math.abs(val));
+                        return scaleNumber(Math.abs(val), 0);
                     },
                 }
             },
