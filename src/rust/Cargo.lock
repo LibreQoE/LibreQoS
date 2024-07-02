@@ -1869,6 +1869,7 @@ dependencies = [
  "ip_network",
  "ip_network_table",
  "log",
+ "lqos_utils",
  "once_cell",
  "pyo3",
  "serde",

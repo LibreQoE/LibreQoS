@@ -331,25 +331,6 @@ impl ThroughputTracker {
     }
   }
 
-  #[inline(always)]
-  fn set_atomic_tuple_to_zero(tuple: &(AtomicU64, AtomicU64)) {
-    tuple.0.store(0, std::sync::atomic::Ordering::Relaxed);
-    tuple.1.store(0, std::sync::atomic::Ordering::Relaxed);
-  }
-
-  #[inline(always)]
-  fn add_atomic_tuple(tuple: &(AtomicU64, AtomicU64), n: (u64, u64)) {
-    let n0 = tuple.0.load(std::sync::atomic::Ordering::Relaxed);
-    if let Some(n) = n0.checked_add(n.0) {
-      tuple.0.store(n, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    let n1 = tuple.1.load(std::sync::atomic::Ordering::Relaxed);
-    if let Some(n) = n1.checked_add(n.1) {
-      tuple.1.store(n, std::sync::atomic::Ordering::Relaxed);
-    }
-  }
-
   pub(crate) fn update_totals(&self) {
     let current_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
     self.bytes_per_second.set_to_zero();
