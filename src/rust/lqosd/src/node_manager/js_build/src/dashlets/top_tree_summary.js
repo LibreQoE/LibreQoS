@@ -43,8 +43,8 @@ export class TopTreeSummary extends BaseDashlet {
             msg.data.forEach((r) => {
                 let row = document.createElement("tr");
                 row.appendChild(simpleRow(r[1].name));
-                row.appendChild(simpleRow(scaleNumber(r[1].current_throughput.down)));
-                row.appendChild(simpleRow(scaleNumber(r[1].current_throughput.up)));
+                row.appendChild(simpleRow(scaleNumber(r[1].current_throughput[0])));
+                row.appendChild(simpleRow(scaleNumber(r[1].current_throughput[1])));
                 t.appendChild(row);
             });
 

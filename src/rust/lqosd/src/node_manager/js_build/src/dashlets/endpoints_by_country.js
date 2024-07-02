@@ -58,11 +58,11 @@ export class Top10EndpointsByCountry extends BaseDashlet {
                 row.appendChild(dlu);
 
                 let rttd = document.createElement("td");
-                rttd.innerText = scaleNanos(r[2].down);
+                rttd.innerText = scaleNanos(r[2][0]);
                 row.appendChild(rttd);
 
                 let rttu = document.createElement("td");
-                rttu.innerText = scaleNanos(r[2].up);
+                rttu.innerText = scaleNanos(r[2][1]);
                 row.appendChild(rttu);
 
                 t.appendChild(row);
