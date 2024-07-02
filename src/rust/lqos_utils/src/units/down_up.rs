@@ -44,6 +44,10 @@ where T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedSub
         self.down = self.down.checked_add(&down).unwrap_or(T::zero());
         self.up = self.up.checked_add(&up).unwrap_or(T::zero());
     }
+    
+    pub fn sum(&self) -> T {
+        self.down + self.up
+    }
 }
 
 impl <T> Into<UpDownOrder<T>> for DownUpOrder<T> {

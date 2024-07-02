@@ -198,7 +198,7 @@ fn retire_check(cycle: u64, recent_cycle: u64) -> bool {
     cycle < recent_cycle + RETIRE_AFTER_SECONDS
 }
 
-type TopList = (XdpIpAddress, DownUpOrder<u64>,DownUpOrder<u64>, f32, TcHandle, String, (u64, u64));
+type TopList = (XdpIpAddress, DownUpOrder<u64>,DownUpOrder<u64>, f32, TcHandle, String, DownUpOrder<u64>);
 
 pub fn top_n(start: u32, end: u32) -> BusResponse {
     let mut full_list: Vec<TopList> = {
@@ -244,7 +244,7 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
                 packets_per_second: (packets.down, packets.up),
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
-                tcp_retransmits: *tcp_retransmits,
+                tcp_retransmits: (tcp_retransmits.down, tcp_retransmits.up),
             },
         )
         .collect();
@@ -296,7 +296,7 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
                 packets_per_second: (packets.down, packets.up),
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
-                tcp_retransmits: *tcp_retransmits,
+                tcp_retransmits: (tcp_retransmits.down, tcp_retransmits.up),
             },
         )
         .collect();
@@ -328,8 +328,8 @@ pub fn worst_n_retransmits(start: u32, end: u32) -> BusResponse {
             .collect()
     };
     full_list.sort_by(|a, b| {
-        let total_a = a.6 .0 + a.6 .1;
-        let total_b = b.6 .0 + b.6 .1;
+        let total_a = a.6.sum();
+        let total_b = b.6.sum();
         total_b.cmp(&total_a)
     });
     let result = full_list
@@ -352,7 +352,7 @@ pub fn worst_n_retransmits(start: u32, end: u32) -> BusResponse {
                 packets_per_second: (packets.down, packets.up),
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
-                tcp_retransmits: *tcp_retransmits,
+                tcp_retransmits: (tcp_retransmits.down, tcp_retransmits.up),
             },
         )
         .collect();
@@ -405,7 +405,7 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
                 packets_per_second: (packets.down, packets.up),
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
-                tcp_retransmits: *tcp_retransmits,
+                tcp_retransmits: (tcp_retransmits.down, tcp_retransmits.up),
             },
         )
         .collect();
