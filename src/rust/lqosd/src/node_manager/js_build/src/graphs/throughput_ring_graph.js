@@ -36,6 +36,9 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
                         opacity: 0,
                     },
                     symbol: 'none',
+                    areaStyle: {
+                        color: 'green'
+                    }
                 },
                 {
                     name: 'shaped1',
@@ -100,8 +103,8 @@ class RingBuffer {
     }
 
     push(shaped, unshaped) {
-        this.data[this.head][0] = shaped.down;
-        this.data[this.head][1] = 0.0 - shaped.up;
+        this.data[this.head][1] = shaped.down;
+        this.data[this.head][0] = 0.0 - shaped.up;
         this.data[this.head][2] = unshaped.down;
         this.data[this.head][3] = 0.0 - unshaped.up;
         this.head += 1;
