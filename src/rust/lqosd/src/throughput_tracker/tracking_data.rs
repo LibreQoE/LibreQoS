@@ -148,7 +148,7 @@ impl ThroughputTracker {
           last_fresh_rtt_data_cycle: 0,
           last_seen: 0,
           tcp_retransmits: DownUpOrder::zeroed(),
-          last_tcp_retransmits: DownUpOrder::zeroed(),
+          prev_tcp_retransmits: DownUpOrder::zeroed(),
         };
         for c in counts {
           entry.bytes.checked_add_direct(c.download_bytes, c.upload_bytes);
@@ -293,10 +293,10 @@ impl ThroughputTracker {
       // Apply the new ones
       for (local_ip, retries) in tcp_retries {
         if let Some(mut tracker) = self.raw_data.get_mut(&local_ip) {
-          tracker.tcp_retransmits.down = retries.down.saturating_sub(tracker.last_tcp_retransmits.down);
-          tracker.tcp_retransmits.up = retries.up.saturating_sub(tracker.last_tcp_retransmits.up);
-          tracker.last_tcp_retransmits.down = retries.down;
-          tracker.last_tcp_retransmits.up = retries.up;
+          tracker.tcp_retransmits.down = retries.down.saturating_sub(tracker.prev_tcp_retransmits.down);
+          tracker.tcp_retransmits.up = retries.up.saturating_sub(tracker.prev_tcp_retransmits.up);
+          tracker.prev_tcp_retransmits.down = retries.down;
+          tracker.prev_tcp_retransmits.up = retries.up;
         }
       }
 
