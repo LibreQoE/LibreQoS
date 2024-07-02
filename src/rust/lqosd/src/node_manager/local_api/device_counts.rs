@@ -1,7 +1,7 @@
 use std::net::IpAddr;
 use axum::Json;
 use serde::Serialize;
-use lqos_bus::{bus_request, BusRequest, BusResponse, IpStats};
+use lqos_bus::{BusResponse, IpStats};
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
 
 #[derive(Serialize)]
