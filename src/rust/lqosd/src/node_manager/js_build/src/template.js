@@ -37,4 +37,13 @@ function initDayNightMode() {
     });
 }
 
+function getDeviceCounts() {
+    $.get("/local-api/deviceCount", (data) => {
+        console.log(data);
+        $("#shapedDeviceCount").text(data.shaped_devices);
+        $("#unknownIpCount").text(data.unknown_ips);
+    })
+}
+
 initDayNightMode();
+getDeviceCounts();
