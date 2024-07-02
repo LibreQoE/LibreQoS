@@ -64,27 +64,27 @@ export class Top10FlowsBytes extends BaseDashlet {
                 row.appendChild(remoteIp);
 
                 let dl = document.createElement("td");
-                dl.innerText = scaleNumber(r.rate_estimate_bps[0]);
+                dl.innerText = scaleNumber(r.rate_estimate_bps.down);
                 row.appendChild(dl);
 
                 let ul = document.createElement("td");
-                ul.innerText = scaleNumber(r.rate_estimate_bps[1]);
+                ul.innerText = scaleNumber(r.rate_estimate_bps.up);
                 row.appendChild(ul);
 
                 let total = document.createElement("td");
-                total.innerText = scaleNumber(r.bytes_sent[0]) + " / " + scaleNumber(r.bytes_sent[1]);
+                total.innerText = scaleNumber(r.bytes_sent.down) + " / " + scaleNumber(r.bytes_sent.up);
                 row.appendChild(total);
 
                 let rttD = document.createElement("td");
-                rttD.innerText = scaleNanos(r.rtt_nanos[0]);
+                rttD.innerText = scaleNanos(r.rtt_nanos.down);
                 row.appendChild(rttD);
 
                 let rttU = document.createElement("td");
-                rttU.innerText = scaleNanos(r.rtt_nanos[1]);
+                rttU.innerText = scaleNanos(r.rtt_nanos.up);
                 row.appendChild(rttU);
 
                 let tcp = document.createElement("td");
-                tcp.innerText = r.tcp_retransmits[0] + " / " + r.tcp_retransmits[1];
+                tcp.innerText = r.tcp_retransmits.down + " / " + r.tcp_retransmits.up;
                 row.appendChild(tcp);
 
                 let asn = document.createElement("td");

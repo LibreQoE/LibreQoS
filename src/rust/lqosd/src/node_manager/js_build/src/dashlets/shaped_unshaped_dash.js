@@ -23,8 +23,8 @@ export class ShapedUnshapedDash extends BaseDashlet{
 
     onMessage(msg) {
         if (msg.event === "Throughput") {
-            let shaped = msg.data.shaped_bps[0] + msg.data.shaped_bps[1];
-            let unshaped = msg.data.bps[0] + msg.data.bps[1];
+            let shaped = msg.data.shaped_bps.down + msg.data.shaped_bps.up;
+            let unshaped = msg.data.bps.down + msg.data.bps.up;
             this.graph.update(shaped, unshaped);
         }
     }

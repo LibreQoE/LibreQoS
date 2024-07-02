@@ -46,22 +46,22 @@ export class EtherProtocols extends BaseDashlet {
             let tbody = document.createElement("tbody");
             let row = document.createElement("tr");
             row.appendChild(simpleRow("IPv4"));
-            row.appendChild(simpleRow(scaleNumber(msg.data.v4_bytes[0])));
-            row.appendChild(simpleRow(scaleNumber(msg.data.v4_bytes[1])));
-            row.appendChild(simpleRow(scaleNumber(msg.data.v4_packets[0])));
-            row.appendChild(simpleRow(scaleNumber(msg.data.v4_packets[1])));
-            row.appendChild(simpleRow(scaleNanos(msg.data.v4_rtt[0])));
-            row.appendChild(simpleRow(scaleNanos(msg.data.v4_rtt[1])));
+            row.appendChild(simpleRow(scaleNumber(msg.data.v4_bytes.down)));
+            row.appendChild(simpleRow(scaleNumber(msg.data.v4_bytes.up)));
+            row.appendChild(simpleRow(scaleNumber(msg.data.v4_packets.down)));
+            row.appendChild(simpleRow(scaleNumber(msg.data.v4_packets.up)));
+            row.appendChild(simpleRow(scaleNanos(msg.data.v4_rtt.down)));
+            row.appendChild(simpleRow(scaleNanos(msg.data.v4_rtt.up)));
             t.appendChild(row);
 
             row = document.createElement("tr");
             row.appendChild(simpleRow("IPv6"));
-            row.appendChild(simpleRow(scaleNumber(msg.data.v6_bytes[0])));
-            row.appendChild(simpleRow(scaleNumber(msg.data.v6_bytes[1])));
-            row.appendChild(simpleRow(scaleNumber(msg.data.v6_packets[0])));
-            row.appendChild(simpleRow(scaleNumber(msg.data.v6_packets[1])));
-            row.appendChild(simpleRow(scaleNanos(msg.data.v6_rtt[0])));
-            row.appendChild(simpleRow(scaleNanos(msg.data.v6_rtt[1])));
+            row.appendChild(simpleRow(scaleNumber(msg.data.v6_bytes.down)));
+            row.appendChild(simpleRow(scaleNumber(msg.data.v6_bytes.up)));
+            row.appendChild(simpleRow(scaleNumber(msg.data.v6_packets.down)));
+            row.appendChild(simpleRow(scaleNumber(msg.data.v6_packets.up)));
+            row.appendChild(simpleRow(scaleNanos(msg.data.v6_rtt.down)));
+            row.appendChild(simpleRow(scaleNanos(msg.data.v6_rtt.up)));
             t.appendChild(row);
 
             t.appendChild(tbody);

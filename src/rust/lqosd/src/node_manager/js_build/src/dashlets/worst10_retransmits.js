@@ -57,11 +57,11 @@ export class Worst10Retransmits extends BaseDashlet {
                 row.append(ip);
 
                 let dl = document.createElement("td");
-                dl.innerText = scaleNumber(r.bits_per_second[0]);
+                dl.innerText = scaleNumber(r.bits_per_second.down);
                 row.append(dl);
 
                 let ul = document.createElement("td");
-                ul.innerText = scaleNumber(r.bits_per_second[1]);
+                ul.innerText = scaleNumber(r.bits_per_second.up);
                 row.append(ul);
 
                 let rtt = document.createElement("td");
@@ -69,11 +69,11 @@ export class Worst10Retransmits extends BaseDashlet {
                 row.append(rtt);
 
                 let tcp_xmit = document.createElement("td");
-                tcp_xmit.innerText = r.tcp_retransmits[0] + " / " + r.tcp_retransmits[1];
+                tcp_xmit.innerText = r.tcp_retransmits.down + " / " + r.tcp_retransmits.up;
                 row.append(tcp_xmit);
 
                 let shaped = document.createElement("td");
-                shaped.innerText = r.plan[0] + " / " + r.plan[1];
+                shaped.innerText = r.plan.down + " / " + r.plan.up;
                 row.append(shaped);
 
                 t.appendChild(row);

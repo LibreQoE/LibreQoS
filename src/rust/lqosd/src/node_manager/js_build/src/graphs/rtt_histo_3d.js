@@ -74,7 +74,8 @@ export class RttHistogram3D extends DashboardGraph {
 
     update(rtt) {
         this.chart.hideLoading();
-        for (let i=0; i<20; i++) rtt[i] += 20-i;
+        // Uncomment this for test data
+        //for (let i=0; i<20; i++) rtt[i] += 20-i;
         this.ring.push(rtt);
         this.option.series[0].data = this.ring.series();
         this.chart.setOption(this.option);
