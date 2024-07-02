@@ -20,6 +20,11 @@ export class FlowCountGraph extends DashboardGraph {
             },
             yAxis: {
                 type: 'value',
+                axisLabel: {
+                    formatter: (val) => {
+                        return scaleNumber(Math.abs(val));
+                    },
+                }
             },
             series: {
                 name: 'flows',
