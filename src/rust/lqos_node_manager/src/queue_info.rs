@@ -71,14 +71,14 @@ pub async fn current_circuit_throughput(
   {
     if let BusResponse::HostCounters(hosts) = msg {
       let devices = SHAPED_DEVICES.read().unwrap();
-      for (ip, down, up) in hosts.iter() {
+      for (ip, bytes) in hosts.iter() {
         let lookup = match ip {
           IpAddr::V4(ip) => ip.to_ipv6_mapped(),
           IpAddr::V6(ip) => *ip,
         };
         if let Some(c) = devices.trie.longest_match(lookup) {
           if devices.devices[*c.1].circuit_id == circuit_id {
-            result.push((ip.to_string(), *down, *up));
+            result.push((ip.to_string(), bytes.down, bytes.up));
           }
         }
       }

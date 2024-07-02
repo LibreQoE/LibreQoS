@@ -353,16 +353,16 @@ impl ThroughputTracker {
       });
 
       let current = self.bits_per_second();
-      if current.0 < 100000000000  && current.1 < 100000000000 {
+      if current.both_less_than(100000000000) {
         let prev_max = (
           HIGH_WATERMARK.get_down(),
           HIGH_WATERMARK.get_up(),
         );
-        if current.0 > prev_max.0 {
-          HIGH_WATERMARK.set_down(current.0);
+        if current.down > prev_max.0 {
+          HIGH_WATERMARK.set_down(current.down);
         }
-        if current.1 > prev_max.1 {
-          HIGH_WATERMARK.set_up(current.1);
+        if current.up > prev_max.1 {
+          HIGH_WATERMARK.set_up(current.up);
         }
       }
   }
@@ -371,25 +371,16 @@ impl ThroughputTracker {
     self.cycle.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
   }
 
-  pub(crate) fn bits_per_second(&self) -> (u64, u64) {
-    (
-      self.bytes_per_second.get_down() * 8,
-      self.bytes_per_second.get_up() * 8,
-    )
+  pub(crate) fn bits_per_second(&self) -> DownUpOrder<u64> {
+    self.bytes_per_second.as_down_up().to_bits_from_bytes()
   }
 
-  pub(crate) fn shaped_bits_per_second(&self) -> (u64, u64) {
-    (
-      self.shaped_bytes_per_second.get_down() * 8, 
-      self.shaped_bytes_per_second.get_up() * 8
-    )
+  pub(crate) fn shaped_bits_per_second(&self) -> DownUpOrder<u64> {
+    self.shaped_bytes_per_second.as_down_up().to_bits_from_bytes()
   }
 
-  pub(crate) fn packets_per_second(&self) -> (u64, u64) {
-    (
-      self.packets_per_second.get_down(),
-      self.packets_per_second.get_up(),
-    )
+  pub(crate) fn packets_per_second(&self) -> DownUpOrder<u64> {
+    self.packets_per_second.as_down_up()
   }
 
   #[allow(dead_code)]

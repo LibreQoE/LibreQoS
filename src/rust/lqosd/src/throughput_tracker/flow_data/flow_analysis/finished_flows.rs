@@ -157,10 +157,10 @@ impl TimeBuffer {
     pub fn ether_protocol_summary(&self) -> BusResponse {
         let buffer = self.buffer.lock().unwrap();
 
-        let mut v4_bytes_sent = [0,0];
-        let mut v4_packets_sent = [0,0];
-        let mut v6_bytes_sent = [0,0];
-        let mut v6_packets_sent = [0,0];
+        let mut v4_bytes_sent = DownUpOrder::zeroed();
+        let mut v4_packets_sent = DownUpOrder::zeroed();
+        let mut v6_bytes_sent = DownUpOrder::zeroed();
+        let mut v6_packets_sent = DownUpOrder::zeroed();
         let mut v4_rtt = [Vec::new(), Vec::new()];
         let mut v6_rtt = [Vec::new(), Vec::new()];
 
@@ -170,10 +170,8 @@ impl TimeBuffer {
                 let (key, data, _analysis) = &v.data;
                 if key.local_ip.is_v4() {
                     // It's V4
-                    v4_bytes_sent[0] += data.bytes_sent.down;
-                    v4_bytes_sent[1] += data.bytes_sent.up;
-                    v4_packets_sent[0] += data.packets_sent.down;
-                    v4_packets_sent[1] += data.packets_sent.up;
+                    v4_bytes_sent.checked_add(data.bytes_sent);
+                    v4_packets_sent.checked_add(data.packets_sent);
                     if data.rtt[0].as_nanos() > 0 {
                         v4_rtt[0].push(data.rtt[0].as_nanos());
                     }
@@ -182,10 +180,8 @@ impl TimeBuffer {
                     }
                 } else {
                     // It's V6
-                    v6_bytes_sent[0] += data.bytes_sent.down;
-                    v6_bytes_sent[1] += data.bytes_sent.up;
-                    v6_packets_sent[0] += data.packets_sent.down;
-                    v6_packets_sent[1] += data.packets_sent.up;
+                    v6_bytes_sent.checked_add(data.bytes_sent);
+                    v6_packets_sent.checked_add(data.packets_sent);
                     if data.rtt[0].as_nanos() > 0 {
                         v6_rtt[0].push(data.rtt[0].as_nanos());
                     }
@@ -196,14 +192,14 @@ impl TimeBuffer {
                 }
             });
         
-        let v4_rtt = [
+        let v4_rtt = DownUpOrder::new(
             Self::median(&v4_rtt[0]),
             Self::median(&v4_rtt[1]),
-        ];
-        let v6_rtt = [
+        );
+        let v6_rtt = DownUpOrder::new(
             Self::median(&v6_rtt[0]),
             Self::median(&v6_rtt[1]),
-        ];
+        );
 
         BusResponse::EtherProtocols {
             v4_bytes: v4_bytes_sent,
@@ -215,7 +211,7 @@ impl TimeBuffer {
         }
     }
 
-    pub fn ip_protocol_summary(&self) -> Vec<(String, (u64, u64))> {
+    pub fn ip_protocol_summary(&self) -> Vec<(String, DownUpOrder<u64>)> {
         let buffer = self.buffer.lock().unwrap();
 
         let mut results = FxHashMap::default();
@@ -225,13 +221,12 @@ impl TimeBuffer {
             .for_each(|v| {
                 let (_key, data, analysis) = &v.data;
                 let proto = analysis.protocol_analysis.to_string();
-                let entry = results.entry(proto).or_insert((0, 0));
-                entry.0 += data.bytes_sent.down;
-                entry.1 += data.bytes_sent.up;
+                let entry = results.entry(proto).or_insert(DownUpOrder::zeroed());
+                entry.checked_add(data.bytes_sent);
             });
 
-        let mut results = results.into_iter().collect::<Vec<(String, (u64, u64))>>();
-        results.sort_by(|a, b| b.1.1.cmp(&a.1.1));
+        let mut results = results.into_iter().collect::<Vec<(String, DownUpOrder<u64>)>>();
+        results.sort_by(|a, b| b.1.up.cmp(&a.1.up));
         // Keep only the top 10
         results.truncate(10);
         results

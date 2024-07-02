@@ -1,5 +1,6 @@
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::Relaxed;
+use crate::units::DownUpOrder;
 
 #[derive(Debug)]
 pub struct AtomicDownUp {
@@ -46,5 +47,12 @@ impl AtomicDownUp {
 
     pub fn set_up(&self, n: u64) {
         self.up.store(n, Relaxed);
+    }
+    
+    pub fn as_down_up(&self) -> DownUpOrder<u64> {
+        DownUpOrder::new(
+            self.get_down(),
+            self.get_up()
+        )
     }
 }

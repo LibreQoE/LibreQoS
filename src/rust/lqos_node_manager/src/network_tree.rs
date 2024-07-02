@@ -62,7 +62,7 @@ pub async fn tree_clients(
   {
     let devices = SHAPED_DEVICES.read().unwrap();
     if let BusResponse::HostCounters(hosts) = msg {
-      for (ip, down, up) in hosts.iter() {
+      for (ip, bytes) in hosts.iter() {
         let lookup = match ip {
           IpAddr::V4(ip) => ip.to_ipv6_mapped(),
           IpAddr::V6(ip) => *ip,
@@ -72,7 +72,7 @@ pub async fn tree_clients(
             result.push(CircuitThroughput {
               id: devices.devices[*c.1].circuit_id.clone(),
               name: devices.devices[*c.1].circuit_name.clone(),
-              traffic: (*down, *up),
+              traffic: (bytes.down, bytes.up),
               limit: (
                 devices.devices[*c.1].download_max_mbps as u64,
                 devices.devices[*c.1].upload_max_mbps as u64,

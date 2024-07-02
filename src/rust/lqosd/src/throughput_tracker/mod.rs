@@ -152,8 +152,8 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>)
 
     let summary = Box::new((
         ThroughputSummary {
-            bits_per_second,
-            shaped_bits_per_second,
+            bits_per_second: (bits_per_second.down, bits_per_second.up),
+            shaped_bits_per_second: (shaped_bits_per_second.down, shaped_bits_per_second.up),
             packets_per_second,
             hosts,
         },
@@ -188,7 +188,7 @@ pub fn host_counters() -> BusResponse {
     let mut result = Vec::new();
     THROUGHPUT_TRACKER.raw_data.iter().for_each(|v| {
         let ip = v.key().as_ip();
-        result.push((ip, v.bytes_per_second.down, v.bytes_per_second.up));
+        result.push((ip, v.bytes_per_second));
     });
     BusResponse::HostCounters(result)
 }

@@ -223,10 +223,7 @@ fn handle_bus_requests(
         BusResponse::LqosdStats { 
           bus_requests: BUS_REQUESTS.load(std::sync::atomic::Ordering::Relaxed),
           time_to_poll_hosts: TIME_TO_POLL_HOSTS.load(std::sync::atomic::Ordering::Relaxed),
-          high_watermark: (
-            HIGH_WATERMARK.get_down(),
-            HIGH_WATERMARK.get_up(),
-          ),
+          high_watermark: HIGH_WATERMARK.as_down_up(),
           tracked_flows: FLOWS_TRACKED.load(std::sync::atomic::Ordering::Relaxed),
           rtt_events_per_second: get_rtt_events_per_second(),
         }

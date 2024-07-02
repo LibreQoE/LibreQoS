@@ -92,6 +92,10 @@ pub async fn flows_ip_protocol() -> NoCache<Json<Vec<(String, (u64, u64))>>> {
     BusResponse::IpProtocols(ip_protocols) => ip_protocols.to_owned(),
     _ => Vec::new(),
   };
+  let result = result.
+      into_iter()
+      .map(|(name, bytes)| (name, (bytes.down, bytes.up)))
+      .collect();
 
   NoCache::new(Json(result))
 }

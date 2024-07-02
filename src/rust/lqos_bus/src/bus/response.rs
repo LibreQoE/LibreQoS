@@ -25,18 +25,18 @@ pub enum BusResponse {
   /// Current throughput for the overall system.
   CurrentThroughput {
     /// In bps
-    bits_per_second: (u64, u64),
+    bits_per_second: DownUpOrder<u64>,
 
     /// In pps
-    packets_per_second: (u64, u64),
+    packets_per_second: DownUpOrder<u64>,
 
     /// How much of the response has been subject to the shaper?
-    shaped_bits_per_second: (u64, u64),
+    shaped_bits_per_second: DownUpOrder<u64>,
   },
 
   /// Provides a list of ALL mapped hosts traffic counters,
   /// listing the IP Address and upload/download in a tuple.
-  HostCounters(Vec<(IpAddr, u64, u64)>),
+  HostCounters(Vec<(IpAddr, DownUpOrder<u64>)>),
 
   /// Provides the Top N downloaders IP stats.
   TopDownloaders(Vec<IpStats>),
@@ -90,7 +90,7 @@ pub enum BusResponse {
     /// Us to poll hosts
     time_to_poll_hosts: u64,
     /// High traffic watermark
-    high_watermark: (u64, u64),
+    high_watermark: DownUpOrder<u64>,
     /// Number of flows tracked
     tracked_flows: u64,
     /// RTT events per second
@@ -141,19 +141,19 @@ pub enum BusResponse {
   /// Summary of Ether Protocol
   EtherProtocols{
     /// Number of IPv4 Bytes
-    v4_bytes: [u64; 2],
+    v4_bytes: DownUpOrder<u64>,
     /// Number of IPv6 Bytes
-    v6_bytes: [u64; 2],
+    v6_bytes: DownUpOrder<u64>,
     /// Number of IPv4 Packets
-    v4_packets: [u64; 2],
+    v4_packets: DownUpOrder<u64>,
     /// Number of IPv6 Packets
-    v6_packets: [u64; 2],
+    v6_packets: DownUpOrder<u64>,
     /// Number of IPv4 Flows
-    v4_rtt: [u64; 2],
+    v4_rtt: DownUpOrder<u64>,
     /// Number of IPv6 Flows
-    v6_rtt: [u64; 2],
+    v6_rtt: DownUpOrder<u64>,
   },
   
   /// Summary of IP Protocols
-  IpProtocols(Vec<(String, (u64, u64))>),
+  IpProtocols(Vec<(String, DownUpOrder<u64>)>),
 }

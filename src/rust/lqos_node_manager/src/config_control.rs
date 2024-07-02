@@ -135,7 +135,7 @@ pub async fn stats() -> NoCache<Json<LqosStats>> {
       return NoCache::new(Json(LqosStats {
         bus_requests_since_start: bus_requests,
         time_to_poll_hosts_us: time_to_poll_hosts,
-        high_watermark,
+        high_watermark: (high_watermark.down, high_watermark.up),
         tracked_flows,
         rtt_events_per_second,
       }));

@@ -45,9 +45,9 @@ impl TotalThroughput {
         {
           let mut lock = self.inner.lock().unwrap();
           let head = lock.head;
-          lock.data[head].bits_per_second = bits_per_second;
-          lock.data[head].packets_per_second = packets_per_second;
-          lock.data[head].shaped_bits_per_second = shaped_bits_per_second;
+          lock.data[head].bits_per_second = (bits_per_second.down, bits_per_second.up);
+          lock.data[head].packets_per_second = (packets_per_second.down, packets_per_second.up);
+          lock.data[head].shaped_bits_per_second = (shaped_bits_per_second.down, shaped_bits_per_second.up);
           lock.prev_head = lock.head;
           lock.head += 1;
           lock.head %= 300;
