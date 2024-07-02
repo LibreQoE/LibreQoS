@@ -31,7 +31,7 @@ export class ShapedUnshapedPie extends DashboardGraph {
     update(shaped, unshaped) {
         this.chart.hideLoading();
         this.option.series[0].data[0].value = shaped;
-        this.option.series[0].data[1].value = unshaped;
+        this.option.series[0].data[1].value = unshaped - shaped;
         this.chart.setOption(this.option);
     }
 }
