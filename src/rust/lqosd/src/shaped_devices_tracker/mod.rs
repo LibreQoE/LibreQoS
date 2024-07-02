@@ -83,9 +83,12 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
         // Summarize everything after n_queues
         if nodes.len() > n_queues {
             let mut other_bw = (0, 0);
+            let mut other_xmit = (0, 0);
             nodes.drain(n_queues..).for_each(|n| {
                 other_bw.0 += n.1.current_throughput.0;
                 other_bw.1 += n.1.current_throughput.1;
+                other_xmit.0 += n.1.current_retransmits.0;
+                other_xmit.1 += n.1.current_retransmits.1;
             });
 
             nodes.push((
@@ -94,6 +97,7 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
                     name: "Others".into(),
                     max_throughput: (0, 0),
                     current_throughput: other_bw,
+                    current_retransmits: other_xmit,
                     rtts: Vec::new(),
                     parents: Vec::new(),
                     immediate_parent: None,

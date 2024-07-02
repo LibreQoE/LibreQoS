@@ -32,6 +32,18 @@ impl AtomicDownUp {
             self.up.store(n, std::sync::atomic::Ordering::Relaxed);
         }
     }
+    
+    pub fn checked_add(&self, n: DownUpOrder<u64>) {
+        let n0 = self.down.load(std::sync::atomic::Ordering::Relaxed);
+        if let Some(n) = n0.checked_add(n.down) {
+            self.down.store(n, std::sync::atomic::Ordering::Relaxed);
+        }
+
+        let n1 = self.up.load(std::sync::atomic::Ordering::Relaxed);
+        if let Some(n) = n1.checked_add(n.up) {
+            self.up.store(n, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
 
     pub fn get_down(&self) -> u64 {
         self.down.load(Relaxed)

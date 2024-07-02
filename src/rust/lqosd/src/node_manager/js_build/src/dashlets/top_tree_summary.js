@@ -37,6 +37,7 @@ export class TopTreeSummary extends BaseDashlet {
             th.appendChild(theading("Branch"));
             th.appendChild(theading("DL ⬇️"));
             th.appendChild(theading("UL ⬆️"));
+            th.appendChild(theading("TCP Re-xmit"));
             t.appendChild(th);
 
             let tbody = document.createElement("tbody");
@@ -45,6 +46,7 @@ export class TopTreeSummary extends BaseDashlet {
                 row.appendChild(simpleRow(r[1].name));
                 row.appendChild(simpleRow(scaleNumber(r[1].current_throughput[0] * 8)));
                 row.appendChild(simpleRow(scaleNumber(r[1].current_throughput[1] * 8)));
+                row.appendChild(simpleRow(r[1].current_retransmits[0] + " / " + r[1].current_retransmits[1]))
                 t.appendChild(row);
             });
 

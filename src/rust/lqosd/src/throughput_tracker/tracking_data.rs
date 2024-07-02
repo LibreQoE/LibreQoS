@@ -297,6 +297,14 @@ impl ThroughputTracker {
           tracker.tcp_retransmits.up = retries.up.saturating_sub(tracker.prev_tcp_retransmits.up);
           tracker.prev_tcp_retransmits.down = retries.down;
           tracker.prev_tcp_retransmits.up = retries.up;
+
+          // Send it upstream
+          if let Some(parents) = &tracker.network_json_parents {
+            let net_json = NETWORK_JSON.write().unwrap();
+            // Send it upstream
+            println!("{:?}", tracker.tcp_retransmits);
+            net_json.add_retransmit_cycle(parents, tracker.tcp_retransmits);
+          }
         }
       }
 

@@ -7,7 +7,7 @@ use std::{
   path::{Path, PathBuf}, sync::atomic::AtomicU64,
 };
 use thiserror::Error;
-use lqos_utils::units::AtomicDownUp;
+use lqos_utils::units::{AtomicDownUp, DownUpOrder};
 
 /// Describes a node in the network map tree.
 #[derive(Debug)]
@@ -20,6 +20,9 @@ pub struct NetworkJsonNode {
 
   /// Current throughput (in bytes/second) at this node
   pub current_throughput: AtomicDownUp, // In bytes
+  
+  /// Current TCP Retransmits
+  pub current_tcp_retransmits: AtomicDownUp, // In retries
 
   /// Approximate RTTs reported for this level of the tree.
   /// It's never going to be as statistically accurate as the actual
@@ -48,6 +51,10 @@ impl NetworkJsonNode {
         self.current_throughput.get_down(),
         self.current_throughput.get_up(),
       ),
+      current_retransmits: (
+        self.current_tcp_retransmits.get_down(),
+        self.current_tcp_retransmits.get_up(),
+      ),
       rtts: self.rtts.iter().map(|n| *n as f32 / 100.0).collect(),
       parents: self.parents.clone(),
       immediate_parent: self.immediate_parent,
@@ -67,6 +74,8 @@ pub struct NetworkJsonTransport {
   pub max_throughput: (u32, u32),
   /// Current node throughput
   pub current_throughput: (u64, u64),
+  /// Current count of TCP retransmits
+  pub current_retransmits: (u64, u64),
   /// Set of RTT data
   pub rtts: Vec<f32>,
   /// Node indices of parents
@@ -125,6 +134,7 @@ impl NetworkJson {
       name: "Root".to_string(),
       max_throughput: (0, 0),
       current_throughput: AtomicDownUp::zeroed(),
+      current_tcp_retransmits: AtomicDownUp::zeroed(),
       parents: Vec::new(),
       immediate_parent: None,
       rtts: DashSet::new(),
@@ -201,6 +211,7 @@ impl NetworkJson {
   pub fn zero_throughput_and_rtt(&self) {
     self.nodes.iter().for_each(|n| {
       n.current_throughput.set_to_zero();
+      n.current_tcp_retransmits.set_to_zero();
       n.rtts.clear();
     });
   }
@@ -230,6 +241,17 @@ impl NetworkJson {
       // Safety first: use "get" to ensure that the node exists
       if let Some(node) = self.nodes.get(*idx) {
         node.rtts.insert((rtt * 100.0) as u16);
+      } else {
+        warn!("No network tree entry for index {idx}");
+      }
+    }
+  }
+
+  pub fn add_retransmit_cycle(&self, targets: &[usize], tcp_retransmits: DownUpOrder<u64>) {
+    for idx in targets {
+      // Safety first; use "get" to ensure that the node exists
+      if let Some(node) = self.nodes.get(*idx) {
+        node.current_tcp_retransmits.checked_add(tcp_retransmits);
       } else {
         warn!("No network tree entry for index {idx}");
       }
@@ -271,6 +293,7 @@ fn recurse_node(
       json_to_u32(json.get("uploadBandwidthMbps")),
     ),
     current_throughput: AtomicDownUp::zeroed(),
+    current_tcp_retransmits: AtomicDownUp::zeroed(),
     name: name.to_string(),
     immediate_parent: Some(immediate_parent),
     rtts: DashSet::new(),
