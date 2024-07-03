@@ -1,10 +1,45 @@
 use crate::{deserialize_tc_tree, queue_types::QueueType};
-use log::error;
+use log::{error, info};
 use lqos_bus::TcHandle;
 use std::process::Command;
 use thiserror::Error;
 
 const TC: &str = "/sbin/tc";
+
+pub fn read_all_queues_from_interface(
+  interface: &str
+) -> Result<Vec<QueueType>, QueueReaderError> {
+  let command_output = Command::new(TC)
+      .args([
+        "-s",
+        "-j",
+        "qdisc",
+        "show",
+        "dev",
+        interface,
+      ])
+      .output()
+      .map_err(|e| {
+        info!("Failed to poll TC for queues: {interface}");
+        info!("{:?}", e);
+        QueueReaderError::CommandError
+      })?;
+
+  let raw_json = String::from_utf8(command_output.stdout)
+      .map_err(|e| {
+        info!("Failed to convert byte stream to UTF-8 string");
+        info!("{:?}", e);
+        QueueReaderError::Utf8Error
+      })?;
+  let result = deserialize_tc_tree(&raw_json)
+      .map_err(|e| {
+        info!("Failed to deserialize TC tree result.");
+        info!("{:?}", e);
+        QueueReaderError::Deserialization
+      })?;
+
+  Ok(result)
+}
 
 pub fn read_named_queue_from_interface(
   interface: &str,
