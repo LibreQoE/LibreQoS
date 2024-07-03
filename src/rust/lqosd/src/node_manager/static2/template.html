@@ -102,9 +102,15 @@
                     <hr />
                     <!-- User Info -->
                     <li class="nav-item">
-                        <a class="nav-link">
-                            <i class="fa fa-user"></i> Herbert
-                        </a>
+                        <div class="dropdown">
+                            <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="fa fa-user-circle"></i> <span id="username">%%USERNAME%%</span>
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li><a class="dropdown-item" href="#" id="btnLogout">Logout</a></li>
+                            </ul>
+
+                        </div>
                     </li>
                 </ul>
             </div>

@@ -39,6 +39,7 @@ ip_network = "0"
 zerocopy = {version = "0.6.1", features = [ "simd" ] }
 fxhash = "0.2.1"
 axum = { version = "0.7.5", features = ["ws"] }
+axum-extra = {  version = "0.9.3", features = ["cookie", "cookie-private"] }
 tower-http = { version = "0.5.2", features = ["fs"] }
 strum = {  version = "0.26.3", features = ["derive"] }
 

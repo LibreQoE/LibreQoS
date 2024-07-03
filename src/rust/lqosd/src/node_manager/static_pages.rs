@@ -3,6 +3,7 @@ use axum::Router;
 use tower_http::services::{ServeDir, ServeFile};
 use lqos_config::load_config;
 use anyhow::{bail, Result};
+use crate::node_manager::auth::auth_layer;
 use crate::node_manager::template::apply_templates;
 
 pub(super) fn vendor_route() -> Result<Router> {
@@ -46,6 +47,7 @@ pub(super) fn static_routes() -> Result<Router> {
         router = router.route_service(&format!("/{page}"), ServeFile::new(path));
     }
     router = router
+        .route_layer(axum::middleware::from_fn(auth_layer))
         .route_layer(axum::middleware::from_fn(apply_templates));
 
     Ok(router)
