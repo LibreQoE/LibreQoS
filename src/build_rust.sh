@@ -9,31 +9,18 @@
 # Don't forget to setup `/etc/lqos.conf`
 
 # Check Pre-Requisites
-if ! bpftool help &> /dev/null
-then
-    echo "bpftool is not installed."
-    echo "Let's try to install it"
-    sudo apt-get install linux-tools-common linux-tools-`uname -r`
-else
-    echo "bpftool found."
-fi
+sudo apt install python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname -r` libbpf-dev libssl-dev
 
-if ! pkg-config --help &> /dev/null
+if ! rustup -V &> /dev/null
 then
-    echo "pkg-config is not installed."
-    echo "Let's try to install it"
-    sudo apt-get install pkg-config
+    echo "rustup is not installed."
+    echo "Visit https://rustup.rs and install Rust from there"
+    echo "Usually, you can copy the following and follow the on-screen instructions."
+    echo "Please don't install Rust as root."
+    echo "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+    exit 1
 else
-    echo "pkg-config found."
-fi
-
-if ! clang -v &> /dev/null
-then
-    echo "LLVM/clang is not installed."
-    echo "Let's try to install it"
-    sudo apt-get install llvm libelf-dev gcc gcc-multilib libbpf-dev
-else
-    echo "LLVM/clang found."
+    echo "rustup found."
 fi
 
 # To enable heavy debug mode (slow)
