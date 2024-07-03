@@ -14,7 +14,7 @@ pub async fn spawn_webserver() -> Result<()>  {
 
     // Construct the router from parts
     let router = Router::new()
-        .nest("/", websocket_router())
+        .nest("/websocket/", websocket_router())
         .nest("/vendor", vendor_route()?) // Serve /vendor as purely static
         .nest("/", static_routes()?)
         .nest("/local-api", local_api());

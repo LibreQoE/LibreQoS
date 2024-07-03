@@ -6,7 +6,7 @@ export function subscribeWS(channels, handler) {
         ws.close();
     }
 
-    ws = new WebSocket('ws://' + window.location.host + '/ws');
+    ws = new WebSocket('ws://' + window.location.host + '/websocket/ws');
     ws.onopen = () => {
         for (let i=0; i<channels.length; i++) {
             ws.send("{ \"channel\" : \"" + channels[i] + "\"}");
