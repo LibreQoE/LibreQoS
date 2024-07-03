@@ -39,7 +39,7 @@ function initDayNightMode() {
 
 function getDeviceCounts() {
     $.get("/local-api/deviceCount", (data) => {
-        console.log(data);
+        //console.log(data);
         $("#shapedDeviceCount").text(data.shaped_devices);
         $("#unknownIpCount").text(data.unknown_ips);
     })
@@ -47,7 +47,7 @@ function getDeviceCounts() {
 
 function initLogout() {
     $("#btnLogout").on('click', () => {
-        console.log("Logout");
+        //console.log("Logout");
         const cookies = document.cookie.split(";");
 
         for (let i = 0; i < cookies.length; i++) {

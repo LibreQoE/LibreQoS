@@ -23,3 +23,9 @@ export function clearDashDiv(id, target) {
         target.removeChild(target.lastChild);
     }
 }
+
+export function clearDiv(target) {
+    while (target.children.length > 0) {
+        target.removeChild(target.lastChild);
+    }
+}
