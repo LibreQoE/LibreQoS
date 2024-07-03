@@ -124,12 +124,28 @@ function fillTable() {
     target.appendChild(pages);
 }
 
+function countCircuits() {
+    let entries = {};
+    shapedDevices.forEach((d) => {
+        if (!entries.hasOwnProperty(d.circuit_id)) {
+            entries[d.circuit_id] = 1;
+        }
+    })
+    let count = 0;
+    for (const i in entries) {
+        count++;
+    }
+    return count;
+}
+
 function loadDevices() {
     $.get("/local-api/devicesAll", (data) => {
         //console.log(data);
         shapedDevices = data;
         displayDevices = data;
         fillTable();
+        $("#count").text(shapedDevices.length + " devices");
+        $("#countCircuit").text(countCircuits() + " circuits");
     })
 }
 
