@@ -24,24 +24,29 @@ pub(super) fn vendor_route() -> Result<Router> {
 
 pub(super) fn static_routes() -> Result<Router> {
     let config = load_config()?;
-    let static_path = Path::new(&config.lqos_directory)
-        .join("bin")
-        .join("static2");
-
-    let index = Path::new(&config.lqos_directory)
-        .join("bin")
-        .join("static2")
-        .join("index.html");
-
-    if !static_path.exists() {
-        bail!("Static path not found for webserver (vin/static2/");
+    
+    // Add HTML pages to serve directly to this list, otherwise
+    // they won't have template + authentication applied to them.
+    let html_pages = [
+        "index.html"
+    ];
+    
+    // Iterate through pages and construct the router
+    let mut router = Router::new();
+    for page in html_pages.iter() {
+        let path = Path::new(&config.lqos_directory)
+            .join("bin")
+            .join("static2")
+            .join(page);
+        
+        if !path.exists() {
+            bail!("Missing webpage: {page}");
+        }
+        
+        router = router.route_service(&format!("/{page}"), ServeFile::new(path));
     }
-
-    let router = Router::new()
-        .nest_service("/index.html", ServeFile::new(index.clone()))
-        .nest_service("/", ServeDir::new(static_path))
+    router = router
         .route_layer(axum::middleware::from_fn(apply_templates));
-
 
     Ok(router)
 }
