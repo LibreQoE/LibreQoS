@@ -25,13 +25,13 @@ pub(super) fn vendor_route() -> Result<Router> {
 
 pub(super) fn static_routes() -> Result<Router> {
     let config = load_config()?;
-    
+
     // Add HTML pages to serve directly to this list, otherwise
     // they won't have template + authentication applied to them.
     let html_pages = [
-        "index.html"
+        "index.html", "shaped_devices.html"
     ];
-    
+
     // Iterate through pages and construct the router
     let mut router = Router::new();
     for page in html_pages.iter() {
@@ -39,11 +39,11 @@ pub(super) fn static_routes() -> Result<Router> {
             .join("bin")
             .join("static2")
             .join(page);
-        
+
         if !path.exists() {
             bail!("Missing webpage: {page}");
         }
-        
+
         router = router.route_service(&format!("/{page}"), ServeFile::new(path));
     }
     router = router

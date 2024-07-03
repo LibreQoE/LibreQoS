@@ -1,6 +1,7 @@
 mod dashboard_themes;
 mod version_check;
 mod device_counts;
+mod shaped_device_api;
 
 use axum::Router;
 use axum::routing::{get, post};
@@ -13,4 +14,5 @@ pub fn local_api() -> Router {
         .route("/dashletGet", post(dashboard_themes::get_theme))
         .route("/versionCheck", get(version_check::version_check))
         .route("/deviceCount", get(device_counts::count_users))
+        .route("/devicesAll", get(shaped_device_api::all_shaped_devices))
 }
