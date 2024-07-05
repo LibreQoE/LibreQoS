@@ -61,8 +61,8 @@ echo "#!/bin/bash" >> postinst
 echo "# Install Python Dependencies" >> postinst
 echo "pushd /opt/libreqos" >> postinst
 # - Setup Python dependencies as a post-install task
-echo "python3 -m pip install -r src/requirements.txt" >> postinst
-echo "sudo python3 -m pip install -r src/requirements.txt" >> postinst
+echo "python3 -m pip install --break-system-packages -r src/requirements.txt" >> postinst
+echo "sudo python3 -m pip install --break-system-packages -r src/requirements.txt" >> postinst
 # - Run lqsetup
 echo "/opt/libreqos/src/bin/lqos_setup" >> postinst
 # - Setup the services
