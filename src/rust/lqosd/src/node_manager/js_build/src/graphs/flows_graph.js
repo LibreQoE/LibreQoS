@@ -30,6 +30,10 @@ export class FlowCountGraph extends DashboardGraph {
                 name: 'flows',
                 data: [],
                 type: 'line',
+                lineStyle: {
+                    color: 'orange',
+                },
+                symbol: 'none',
             },
             tooltip: {
                 trigger: 'item',

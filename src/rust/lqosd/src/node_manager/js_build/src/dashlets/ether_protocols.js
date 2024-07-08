@@ -11,6 +11,10 @@ export class EtherProtocols extends BaseDashlet {
         return "Ethernet Protocols";
     }
 
+    tooltip() {
+        return "<h5>Ethernet Protocols</h5><p>Bytes and packets transferred over IPv4 and IPv6, and the round-trip time for each.  This data is gathered from recently completed flows, and may be a little behind realtime.</p>";
+    }
+
     subscribeTo() {
         return [ "EtherProtocols" ];
     }

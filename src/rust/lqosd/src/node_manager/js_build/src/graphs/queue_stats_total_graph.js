@@ -56,24 +56,28 @@ export class QueueStatsTotalGraph extends DashboardGraph {
                     data: [],
                     type: 'line',
                     lineStyle: { color: "green" },
+                    symbol: 'none',
                 },
                 {
                     name: 'ECN Marks Up',
                     data: [],
                     type: 'line',
                     lineStyle: { color: "green" },
+                    symbol: 'none',
                 },
                 {
                     name: 'Cake Drops',
                     data: [],
                     type: 'line',
                     lineStyle: { color: "orange" },
+                    symbol: 'none',
                 },
                 {
                     name: 'Cake Drops Up',
                     data: [],
                     type: 'line',
                     lineStyle: { color: "orange" },
+                    symbol: 'none',
                 },
             ],
             tooltip: {

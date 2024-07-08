@@ -11,6 +11,10 @@ export class Top10EndpointsByCountry extends BaseDashlet {
         return "Endpoints by Country";
     }
 
+    tooltip() {
+        return "<h5>Endpoints by Country</h5><p>Top 10 endpoints by country/region, ordered by download speed. This data is gathered from recently completed flows, and may be a little behind realtime.</p>";
+    }
+
     subscribeTo() {
         return [ "EndpointsByCountry" ];
     }

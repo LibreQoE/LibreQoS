@@ -13,12 +13,12 @@ export class PacketsPerSecondBar extends DashboardGraph {
             },
             yAxis: {
                 type: 'category',
-                data: ['Up', 'Down'],
+                data: ['UP', 'DN'],
             },
             series: [
                 {
                     type: 'bar',
-                    data: [0, 0]
+                    data: [0, 0],
                 }
             ]
         }
@@ -27,7 +27,10 @@ export class PacketsPerSecondBar extends DashboardGraph {
 
     update(down, up) {
         this.chart.hideLoading();
-        this.option.series[0].data = [up, down];
+        this.option.series[0].data = [
+            { value: up, itemStyle: { color: 'orange' } },
+            { value: down, itemStyle: { color: 'green' } }
+        ];
         this.chart.setOption(this.option);
     }
 }

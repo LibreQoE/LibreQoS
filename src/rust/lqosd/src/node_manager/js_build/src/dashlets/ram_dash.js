@@ -11,6 +11,10 @@ export class RamDash extends BaseDashlet{
         return "RAM Utilization";
     }
 
+    tooltip() {
+        return "<h5>RAM Utilization</h5><p>Percentage of RAM used and free. This includes both LibreQoS and anything else running on the server.</p>";
+    }
+
     subscribeTo() {
         return [ "Ram" ];
     }

@@ -11,6 +11,10 @@ export class TopTreeSummary extends BaseDashlet {
         return "Network Tree";
     }
 
+    tooltip() {
+        return "<h5>Network Tree</h5><p>Summary of the top-level network tree, including branch name, download and upload rates, TCP retransmits, Cake marks, and Cake drops.</p>";
+    }
+
     subscribeTo() {
         return [ "TreeSummary" ];
     }

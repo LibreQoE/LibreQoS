@@ -13,6 +13,10 @@ export class Top10Downloaders extends BaseDashlet {
         return "Top 10 Downloaders";
     }
 
+    tooltip() {
+        return "<h5>Top 10 Downloaders</h5><p>Top 10 Downloaders by bits per second, including IP address, download and upload rates, round-trip time, TCP retransmits, and shaping plan.</p>";
+    }
+
     subscribeTo() {
         return [ "TopDownloads" ];
     }

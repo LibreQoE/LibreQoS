@@ -28,6 +28,10 @@ export class BaseDashlet {
         return "Someone forgot to set a title";
     }
 
+    tooltip() {
+        return null;
+    }
+
     subscribeTo() {
         return [];
     }
@@ -41,6 +45,12 @@ export class BaseDashlet {
             this.setup(msg);
         }
         this.setupDone = true;
+
+        // Tooltips everywhere!
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl)
+        })
     }
 
     setup() {}
@@ -68,6 +78,22 @@ export class BaseDashlet {
         let title = document.createElement("h5");
         title.classList.add("dashbox-title");
         title.innerText = this.title();
+
+        let tt = this.tooltip();
+        if (tt !== null) {
+            let tooltip = document.createElement("span");
+            tooltip.style.marginLeft = "5px";
+            let button = document.createElement("a");
+            //button.type = "button";
+            //button.classList.add("btn", "btn-sm", "btn-info");
+            button.title = tt;
+            button.setAttribute("data-bs-toggle", "tooltip");
+            button.setAttribute("data-bs-placement", "top");
+            button.setAttribute("data-bs-html", "true");
+            button.innerHTML = "<i class='fas fa-info-circle'></i>";
+            tooltip.appendChild(button);
+            title.appendChild(tooltip);
+        }
 
         div.appendChild(title);
 

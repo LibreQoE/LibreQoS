@@ -11,6 +11,10 @@ export class Top10FlowsRate extends BaseDashlet {
         return "Top 10 Flows (by rate)";
     }
 
+    tooltip() {
+        return "<h5>Top 10 Flows (by rate)</h5><p>Top 10 Flows by rate, including protocol, local and remote IP addresses, download and upload rates, total bytes, round-trip time, TCP retransmits, remote ASN, and country.</p>";
+    }
+
     subscribeTo() {
         return [ "TopFlowsRate" ];
     }

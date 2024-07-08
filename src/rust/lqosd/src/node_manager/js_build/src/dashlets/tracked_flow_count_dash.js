@@ -6,6 +6,10 @@ export class TrackedFlowsCount extends BaseDashlet{
         return "Tracked Flows";
     }
 
+    tooltip() {
+        return "<h5>Tracked Flows</h5><p>Number of flows tracked by LibreQoS. Flows are either a TCP connection, or a UDP/ICMP connection with matching endpoints and port/request type numbers.</p>";
+    }
+
     subscribeTo() {
         return [ "FlowCount" ];
     }

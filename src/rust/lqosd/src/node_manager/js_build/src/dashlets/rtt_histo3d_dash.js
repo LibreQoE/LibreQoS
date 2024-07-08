@@ -10,6 +10,10 @@ export class RttHisto3dDash extends BaseDashlet{
         return "Round-Trip Time Histogram 3D";
     }
 
+    tooltip() {
+        return "<h5>Round-Trip Time Histogram 3D</h5><p>Round-Trip Time Histogram, expanded to include time as a third dimension. This can be helpful for seeing how your performance is changing over time.</p>";
+    }
+
     subscribeTo() {
         return [ "RttHistogram" ];
     }

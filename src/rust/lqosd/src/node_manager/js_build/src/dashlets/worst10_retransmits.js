@@ -13,6 +13,10 @@ export class Worst10Retransmits extends BaseDashlet {
         return "Worst 10 TCP Re-transmits";
     }
 
+    tooltip() {
+        return "<h5>Worst 10 TCP Re-transmits</h5><p>Worst 10 Downloaders by TCP retransmits, including IP address, download and upload rates, round-trip time, TCP retransmits, and shaping plan.</p>";
+    }
+
     subscribeTo() {
         return [ "WorstRetransmits" ];
     }

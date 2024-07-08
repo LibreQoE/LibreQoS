@@ -6,6 +6,10 @@ export class ThroughputBpsDash extends BaseDashlet{
         return "Throughput Bits/Second";
     }
 
+    tooltip() {
+        return "<h5>Throughput Bits/Second</h5><p>Shows the current throughput in bits per second. Traffic is divided between upload (from the ISP) and download (to the ISP) traffic.</p>";
+    }
+
     subscribeTo() {
         return [ "Throughput" ];
     }

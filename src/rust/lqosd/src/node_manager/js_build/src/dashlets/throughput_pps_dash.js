@@ -6,6 +6,10 @@ export class ThroughputPpsDash extends BaseDashlet{
         return "Throughput Packets/Second";
     }
 
+    tooltip() {
+        return "<h5>Throughput Packets/Second</h5><p>Shows the current throughput in packets per second. Traffic is divided between upload (from the ISP) and download (to the ISP) traffic.</p>";
+    }
+
     subscribeTo() {
         return [ "Throughput" ];
     }

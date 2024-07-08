@@ -10,6 +10,10 @@ export class RttHistoDash extends BaseDashlet{
         return "Round-Trip Time Histogram";
     }
 
+    tooltip() {
+        return "<h5>Round-Trip Time Histogram</h5><p>Round-Trip Time Histogram, showing the distribution of round-trip times for packets in real-time.</p>";
+    }
+
     subscribeTo() {
         return [ "RttHistogram" ];
     }

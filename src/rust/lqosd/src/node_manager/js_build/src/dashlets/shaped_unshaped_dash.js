@@ -6,6 +6,10 @@ export class ShapedUnshapedDash extends BaseDashlet{
         return "Shaped/Unshaped Traffic";
     }
 
+    tooltip() {
+        return "<h5>Shaped/Unshaped Traffic</h5><p>Shows the amount of traffic that is shaped and unshaped. Shaped traffic is limited by the configured bandwidth limits, while unshaped traffic is not.</p>";
+    }
+
     subscribeTo() {
         return [ "Throughput" ];
     }

@@ -10,6 +10,10 @@ export class ThroughputRingDash extends BaseDashlet{
         return "Last 5 Minutes Throughput";
     }
 
+    tooltip() {
+        return "<h5>Last 5 Minutes Throughput</h5><p>Shaped (AQM controlled and limited) and Unshaped (not found in your Shaped Devices file) traffic over the last five minutes.</p>"
+    }
+
     subscribeTo() {
         return [ "Throughput" ];
     }

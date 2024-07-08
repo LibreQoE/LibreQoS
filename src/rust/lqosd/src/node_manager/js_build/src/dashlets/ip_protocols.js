@@ -11,6 +11,10 @@ export class IpProtocols extends BaseDashlet {
         return "IP Protocols";
     }
 
+    tooltip() {
+        return "<h5>IP Protocols</h5><p>Bytes transferred over TCP/UDP/ICMP and port numbers, matched to common services when possible. This data is gathered from recently completed flows, and may be a little behind realtime.</p>";
+    }
+
     subscribeTo() {
         return [ "IpProtocols" ];
     }

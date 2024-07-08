@@ -13,6 +13,10 @@ export class Worst10Downloaders extends BaseDashlet {
         return "Worst 10 Round-Trip Time";
     }
 
+    tooltip() {
+        return "<h5>Worst 10 Round-Trip Time</h5><p>Worst 10 Downloaders by round-trip time, including IP address, download and upload rates, round-trip time, TCP retransmits, and shaping plan.</p>";
+    }
+
     subscribeTo() {
         return [ "WorstRTT" ];
     }

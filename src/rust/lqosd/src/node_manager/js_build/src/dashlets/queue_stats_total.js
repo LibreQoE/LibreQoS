@@ -12,6 +12,10 @@ export class QueueStatsTotalDash extends BaseDashlet {
         return "Cake Stats (Total)";
     }
 
+    tooltip() {
+        return "<h5>Cake Stats (Total)</h5><p>Total number of fair queueing interventions per second. ECN Marks label packets as having possible congestion, signalling the flow to slow down. Drops discard selected packets to \"pace\" the queue for efficient, fair, low-latency throughput.</p>";
+    }
+
     subscribeTo() {
         return [ "QueueStatsTotal" ];
     }

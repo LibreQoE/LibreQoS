@@ -10,6 +10,10 @@ export class CpuDash extends BaseDashlet{
         return "CPU Utilization";
     }
 
+    tooltip() {
+        return "<h5>CPU Utilization</h5><p>Percentage of CPU time spent on user processes, system processes, and idle time. This includes both LibreQoS and anything else running on the server.</p>";
+    }
+
     subscribeTo() {
         return [ "Cpu" ];
     }
