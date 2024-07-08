@@ -1,0 +1,29 @@
+<div class="row">
+    <div class="col-4">
+        <h5><i class="fa fa-tree"></i> Network Tree (<span id="nodeName"></span>)</h5>
+        <table class="table">
+            <tr>
+                <td style="font-weight: bold;">Limits:</td>
+                <td class="small"><span id="parentLimits"></span></td>
+                <td></td>
+            </tr>
+            <tr>
+                <td style="font-weight: bold;">Throughput:</td>
+                <td><span id="parentTpD"></span></td>
+                <td><span id="parentTpU"></span></td>
+            </tr>
+            <tr>
+                <td style="font-weight: bold;">RTT:</td>
+                <td><span id="parentRttD"></span></td>
+                <td><span id="parentRttU"></span></td>
+            </tr>
+        </table>
+    </div>
+</div>
+<div class="row">
+    <div class="col-12" id="tree">
+        <p><i class="fa fa-spin fa-spinner"></i> Loading, Please Wait</p>
+    </div>
+</div>
+
+<script src="tree.js"></script>

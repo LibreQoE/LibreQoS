@@ -29,7 +29,7 @@ pub(super) fn static_routes() -> Result<Router> {
     // Add HTML pages to serve directly to this list, otherwise
     // they won't have template + authentication applied to them.
     let html_pages = [
-        "index.html", "shaped_devices.html"
+        "index.html", "shaped_devices.html", "tree.html"
     ];
 
     // Iterate through pages and construct the router

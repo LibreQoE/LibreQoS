@@ -80,3 +80,21 @@ body.dark-mode {
 }
 .dashEditButton { }
 .redactable { }
+.small { font-size: 8pt; }
+
+/* Funky tricks for the tree view */
+.overlayThroughputWrapper {
+    position: relative;
+    width: 100%;
+    height: auto;
+    text-align: center;
+}
+.overlayThroughputNumber {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1.2em;
+    color: white;
+    text-shadow: 2px 2px 4px #000000;
+}

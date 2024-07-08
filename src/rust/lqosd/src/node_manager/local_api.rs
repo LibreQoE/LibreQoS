@@ -2,6 +2,7 @@ mod dashboard_themes;
 mod version_check;
 mod device_counts;
 mod shaped_device_api;
+mod network_tree;
 
 use axum::Router;
 use axum::routing::{get, post};
@@ -15,4 +16,5 @@ pub fn local_api() -> Router {
         .route("/versionCheck", get(version_check::version_check))
         .route("/deviceCount", get(device_counts::count_users))
         .route("/devicesAll", get(shaped_device_api::all_shaped_devices))
+        .route("/networkTree/:parent", get(network_tree::get_network_tree))
 }

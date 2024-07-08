@@ -53,3 +53,52 @@ export function lerpGreenToRedViaOrange(value, max) {
     }
     return `rgb(${r}, ${g}, ${b})`;
 }
+
+export function formatThroughput(throughput, limitInMbps) {
+    let limitBits = limitInMbps * 1000 * 1000;
+    let percent = 0;
+    if (limitBits > 0) {
+        percent = (throughput / limitBits) * 100;
+    }
+    let blob = "<span class='overlayThroughputWrapper'>";
+    blob += "<span class='overlayThroughputBar'>";
+    for (let i=0; i<100; i+=10) {
+        let color = lerpGreenToRedViaOrange(100-i, 100);
+        if (percent < i) {
+            blob += "░";
+        } else {
+            blob += "<span style='color: " + color + "'>█</span>";
+        }
+    }
+    blob += "</span>";
+
+    blob += "<span class='overlayThroughputNumber' style='color: white; font-weight: bold;'>" + scaleNumber(throughput * 8, 1) + "bps</span>";
+    blob += "</span>";
+    return blob;
+}
+
+export function formatRtt(rtt) {
+    if (rtt === undefined) {
+        return "-";
+    }
+    const limit = 200;
+    let percent = 0;
+    if (limit > 0) {
+        percent = (rtt / limit) * 100;
+    }
+    let blob = "<span class='overlayThroughputWrapper'>";
+    blob += "<span class='overlayThroughputBar'>";
+    for (let i=0; i<100; i+=10) {
+        let color = lerpGreenToRedViaOrange(100-i, 100);
+        if (percent < i) {
+            blob += "░";
+        } else {
+            blob += "<span style='color: " + color + "'>█</span>";
+        }
+    }
+    blob += "</span>";
+
+    blob += "<span class='overlayThroughputNumber' style='color: white; font-weight: bold;'>" + parseFloat(rtt).toFixed(0) + " ms</span>";
+    blob += "</span>";
+    return blob;
+}

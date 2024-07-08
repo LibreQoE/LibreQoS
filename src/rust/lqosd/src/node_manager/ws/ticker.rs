@@ -9,6 +9,7 @@ mod flow_endpoints;
 pub mod system_info;
 mod tree_summary;
 mod queue_stats_total;
+mod network_tree;
 
 use std::sync::Arc;
 use crate::node_manager::ws::publish_subscribe::PubSub;
@@ -36,6 +37,7 @@ pub(super) async fn channel_ticker(channels: Arc<PubSub>) {
             system_info::ram_info(channels.clone()),
             tree_summary::tree_summary(channels.clone()),
             queue_stats_total::queue_stats_totals(channels.clone()),
+            network_tree::network_tree(channels.clone()),
         );
     }
 }
