@@ -55,6 +55,7 @@ function getInitialTree() {
 }
 
 function fillHeader(node) {
+    //console.log("Header");
     $("#nodeName").text(node.name);
     let limit = "";
     if (node.max_throughput[0] === 0) {
@@ -71,7 +72,7 @@ function fillHeader(node) {
     $("#parentLimits").text(limit);
     $("#parentTpD").html(formatThroughput(node.current_throughput[0] * 8, node.max_throughput[0]));
     $("#parentTpU").html(formatThroughput(node.current_throughput[1] * 8, node.max_throughput[1]));
-    console.log(node);
+    //console.log(node);
     $("#parentRttD").html(formatRtt(node.rtts[0]));
     $("#parentRttU").html(formatRtt(node.rtts[1]));
 }
