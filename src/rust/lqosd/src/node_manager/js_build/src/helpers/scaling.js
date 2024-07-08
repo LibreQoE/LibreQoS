@@ -72,7 +72,7 @@ export function formatThroughput(throughput, limitInMbps) {
     }
     blob += "</span>";
 
-    blob += "<span class='overlayThroughputNumber' style='color: white; font-weight: bold;'>" + scaleNumber(throughput * 8, 1) + "bps</span>";
+    blob += "<span class='overlayThroughputNumber' style='color: white; font-weight: bold;'>" + scaleNumber(throughput, 1) + "bps</span>";
     blob += "</span>";
     return blob;
 }
