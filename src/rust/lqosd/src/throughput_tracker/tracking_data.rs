@@ -179,7 +179,7 @@ impl ThroughputTracker {
         if let Some(parents) = &entry.network_json_parents {
           let net_json = NETWORK_JSON.read().unwrap();
           // Send it upstream
-          net_json.add_queue_cycle(parents, drops, marks);
+          net_json.add_queue_cycle(parents, marks, drops);
         }
       }
     });

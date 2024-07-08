@@ -171,7 +171,7 @@ fn all_queue_reader() {
         (download, upload)
       };
 
-      println!("{}", download.len() + upload.len());
+      //println!("{}", download.len() + upload.len());
       ALL_QUEUE_SUMMARY.ingest_batch(download, upload);
     } else {
       log::warn!("(TC monitor) Unable to read configuration");
@@ -180,7 +180,7 @@ fn all_queue_reader() {
     log::warn!("(TC monitor) Not reading queues due to structure not yet ready");
   }
   let elapsed = start.elapsed();
-  log::warn!("(TC monitor) Completed in {:.5} seconds", elapsed.as_secs_f32());
+  log::debug!("(TC monitor) Completed in {:.5} seconds", elapsed.as_secs_f32());
 }
 
 /// Spawns a thread that periodically reads the queue statistics from

@@ -9,14 +9,14 @@ pub static TOTAL_QUEUE_STATS: TotalQueueStats = TotalQueueStats::new();
 
 pub struct TotalQueueStats {
     pub drops: AtomicDownUp,
-    pub mark: AtomicDownUp,
+    pub marks: AtomicDownUp,
 }
 
 impl TotalQueueStats {
     pub const fn new() -> Self {
         Self {
             drops: AtomicDownUp::zeroed(),
-            mark: AtomicDownUp::zeroed(),
+            marks: AtomicDownUp::zeroed(),
         }
     }
 }
@@ -31,7 +31,7 @@ pub struct QueueData {
 
 fn zero_total_queue_stats() {
     TOTAL_QUEUE_STATS.drops.set_to_zero();
-    TOTAL_QUEUE_STATS.mark.set_to_zero();
+    TOTAL_QUEUE_STATS.marks.set_to_zero();
 }
 
 #[derive(Debug)]
@@ -133,7 +133,7 @@ impl AllQueueData {
 
         TOTAL_QUEUE_STATS.drops.set_down(drops.down);
         TOTAL_QUEUE_STATS.drops.set_up(drops.up);
-        TOTAL_QUEUE_STATS.mark.set_down(marks.down);
-        TOTAL_QUEUE_STATS.mark.set_up(marks.up);
+        TOTAL_QUEUE_STATS.marks.set_down(marks.down);
+        TOTAL_QUEUE_STATS.marks.set_up(marks.up);
     }
 }

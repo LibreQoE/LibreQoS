@@ -17,6 +17,7 @@ import {RamDash} from "./ram_dash";
 import {TopTreeSummary} from "./top_tree_summary";
 import {CombinedTopDashlet} from "./combined_top_dash";
 import {RttHisto3dDash} from "./rtt_histo3d_dash";
+import {QueueStatsTotalDash} from "./queue_stats_total";
 
 export const DashletMenu = [
     { name: "Throughput Bits/Second", tag: "throughputBps", size: 3 },
@@ -38,6 +39,7 @@ export const DashletMenu = [
     { name: "RAM Utilization", tag: "ram", size: 3 },
     { name: "Network Tree Summary", tag: "treeSummary", size: 6 },
     { name: "Combined Top 10 Box", tag: "combinedTop10", size: 3 },
+    { name: "Total Cake Stats", tag: "totalCakeStats", size: 3 },
 ];
 
 export function widgetFactory(widgetName, count) {
@@ -62,6 +64,7 @@ export function widgetFactory(widgetName, count) {
         case "ram"              : widget = new RamDash(count); break;
         case "treeSummary"      : widget = new TopTreeSummary(count); break;
         case "combinedTop10"    : widget = new CombinedTopDashlet(count); break;
+        case "totalCakeStats"   : widget = new QueueStatsTotalDash(count); break;
         default: {
             console.log("I don't know how to construct a widget of type [" + widgetName + "]");
             return null;

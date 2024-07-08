@@ -18,4 +18,5 @@ pub enum PublishedChannels {
     Cpu,
     Ram,
     TreeSummary,
+    QueueStatsTotal,
 }
