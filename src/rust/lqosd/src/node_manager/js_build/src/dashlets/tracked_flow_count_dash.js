@@ -7,7 +7,7 @@ export class TrackedFlowsCount extends BaseDashlet{
     }
 
     tooltip() {
-        return "<h5>Tracked Flows</h5><p>Number of flows tracked by LibreQoS. Flows are either a TCP connection, or a UDP/ICMP connection with matching endpoints and port/request type numbers.</p>";
+        return "<h5>Tracked Flows</h5><p>Number of flows tracked by LibreQoS. Flows are either a TCP connection, or a UDP/ICMP connection with matching endpoints and port/request type numbers. Completed flows are flows that have finished transmitting data, and have been submitted to netflow and the flow analysis system.</p>";
     }
 
     subscribeTo() {
@@ -27,7 +27,7 @@ export class TrackedFlowsCount extends BaseDashlet{
 
     onMessage(msg) {
         if (msg.event === "FlowCount") {
-            this.graph.update(msg.data);
+            this.graph.update(msg.active, msg.recent);
         }
     }
 }

@@ -23,6 +23,11 @@ impl TimeBuffer {
         }
     }
 
+    pub fn len(&self) -> usize {
+        let buffer = self.buffer.lock().unwrap();
+        buffer.len()
+    }
+
     fn expire_over_five_minutes(&self) {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

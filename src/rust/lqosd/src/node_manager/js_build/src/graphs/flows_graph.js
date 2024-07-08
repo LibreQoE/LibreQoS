@@ -14,6 +14,30 @@ export class FlowCountGraph extends DashboardGraph {
         }
 
         this.option = {
+            legend: {
+                orient: "horizontal",
+                right: 10,
+                top: "bottom",
+                selectMode: false,
+                data: [
+                    {
+                        name: "Active/Tracked",
+                        icon: 'circle',
+                        itemStyle: {
+                            color: "green"
+                        }
+                    }, {
+                        name: "Recently Completed",
+                        icon: 'circle',
+                        itemStyle: {
+                            color: "orange"
+                        }
+                    }
+                ],
+                textStyle: {
+                    color: '#aaa'
+                },
+            },
             xAxis: {
                 type: 'category',
                 data: xaxis,
@@ -26,15 +50,26 @@ export class FlowCountGraph extends DashboardGraph {
                     },
                 }
             },
-            series: {
-                name: 'flows',
-                data: [],
-                type: 'line',
-                lineStyle: {
-                    color: 'orange',
+            series: [
+                {
+                    name: 'Active/Tracked',
+                    data: [],
+                    type: 'line',
+                    lineStyle: {
+                        color: 'green',
+                    },
+                    symbol: 'none',
                 },
-                symbol: 'none',
-            },
+                {
+                    name: 'Recently Completed',
+                    data: [],
+                    type: 'line',
+                    lineStyle: {
+                        color: 'orange',
+                    },
+                    symbol: 'none',
+                },
+            ],
             tooltip: {
                 trigger: 'item',
             },
@@ -43,11 +78,14 @@ export class FlowCountGraph extends DashboardGraph {
         this.option && this.chart.setOption(this.option);
     }
 
-    update(shaped, unshaped) {
+    update(recent, completed) {
         this.chart.hideLoading();
-        this.ringbuffer.push(shaped, unshaped);
+        this.ringbuffer.push(recent, completed);
 
-        this.option.series.data = this.ringbuffer.series();
+        let series = this.ringbuffer.series();
+        for (let i=0; i<2; i++) {
+            this.option.series[i].data = series[i];
+        }
 
         this.chart.setOption(this.option);
     }
@@ -58,25 +96,27 @@ class RingBuffer {
         this.size = size;
         let data = [];
         for (let i=0; i<size; i++) {
-            data.push(0);
+            data.push([0, 0]);
         }
         this.head = 0;
         this.data = data;
     }
 
-    push(flows) {
-        this.data[this.head] = flows;
+    push(recent, completed) {
+        this.data[this.head] = [recent, completed];
         this.head += 1;
         this.head %= this.size;
     }
 
     series() {
-        let result = [];
+        let result = [[], []];
         for (let i=this.head; i<this.size; i++) {
-            result.push(this.data[i]);
+            result[0].push(this.data[i][0]);
+            result[1].push(this.data[i][1]);
         }
         for (let i=0; i<this.head; i++) {
-            result.push(this.data[i]);
+            result[0].push(this.data[i][0]);
+            result[1].push(this.data[i][1]);
         }
         return result;
     }
