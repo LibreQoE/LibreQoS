@@ -5,7 +5,7 @@ use crate::units::UpDownOrder;
 /// Provides strong download/upload separation for
 /// stored statistics to eliminate confusion.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, FromBytes, Default)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, FromBytes, Default, Ord, PartialOrd)]
 pub struct DownUpOrder<T> {
     pub down: T,
     pub up: T,

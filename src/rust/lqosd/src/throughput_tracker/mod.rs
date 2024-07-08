@@ -92,6 +92,7 @@ async fn throughput_task(
                 netflow_enabled,
                 my_netflow_sender.clone(),
             );
+            THROUGHPUT_TRACKER.apply_queue_stats();
             THROUGHPUT_TRACKER.update_totals();
             THROUGHPUT_TRACKER.next_cycle();
             let duration_ms = start.elapsed().as_micros();

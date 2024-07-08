@@ -4,6 +4,7 @@ use super::{flow_data::{get_flowbee_event_count_and_reset, FlowAnalysis, Flowbee
 use dashmap::DashMap;
 use fxhash::FxHashMap;
 use lqos_bus::TcHandle;
+use lqos_queue_tracker::ALL_QUEUE_SUMMARY;
 use lqos_sys::{flowbee_data::FlowbeeKey, iterate_flows, throughput_for_each};
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 use lqos_utils::units::{AtomicDownUp, DownUpOrder};
@@ -158,6 +159,27 @@ impl ThroughputTracker {
           }
         }
         raw_data.insert(*xdp_ip, entry);
+      }
+    });
+  }
+
+  pub(crate) fn apply_queue_stats(&self) {
+    // Iterate through the queue data and find the matching circuit_id
+    ALL_QUEUE_SUMMARY.iterate_queues(|circuit_id, drops, marks| {
+      println!("Found marks or drops!");
+      if let Some(entry) = self.raw_data.iter().find(|v| {
+        match v.circuit_id {
+          Some(ref id) => id == circuit_id,
+          None => false,
+        }
+      }) {
+        // Find the net_json parents
+        println!("Found a matching circuit");
+        if let Some(parents) = &entry.network_json_parents {
+          let net_json = NETWORK_JSON.read().unwrap();
+          // Send it upstream
+          net_json.add_queue_cycle(parents, drops, marks);
+        }
       }
     });
   }

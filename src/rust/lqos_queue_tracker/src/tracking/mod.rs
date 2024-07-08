@@ -86,8 +86,8 @@ fn track_queues() {
 
 struct TrackedQueue {
   circuit_id: String,
-  drops: u32,
-  marks: u32,
+  drops: u64,
+  marks: u64,
 }
 
 fn connect_queues_to_circuit(structure: &[QueueNode], queues: &[QueueType]) -> Vec<TrackedQueue> {
@@ -102,8 +102,8 @@ fn connect_queues_to_circuit(structure: &[QueueNode], queues: &[QueueType]) -> V
               if (cake.drops > 0 || marks > 0) {
                 return Some(TrackedQueue {
                   circuit_id: circuit_id.clone(),
-                  drops: cake.drops,
-                  marks,
+                  drops: cake.drops as u64,
+                  marks: marks as u64,
                 })
               }
             }
@@ -126,8 +126,8 @@ fn connect_queues_to_circuit_up(structure: &[QueueNode], queues: &[QueueType]) -
               if (cake.drops > 0 || marks > 0) {
                 return Some(TrackedQueue {
                   circuit_id: circuit_id.clone(),
-                  drops: cake.drops,
-                  marks,
+                  drops: cake.drops as u64,
+                  marks: marks as u64,
                 })
               }
             }

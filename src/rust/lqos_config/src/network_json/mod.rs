@@ -24,6 +24,12 @@ pub struct NetworkJsonNode {
   /// Current TCP Retransmits
   pub current_tcp_retransmits: AtomicDownUp, // In retries
 
+  /// Current Cake Marks
+  pub current_marks: AtomicDownUp,
+
+  /// Current Cake Drops
+  pub current_drops: AtomicDownUp,
+
   /// Approximate RTTs reported for this level of the tree.
   /// It's never going to be as statistically accurate as the actual
   /// numbers, being based on medians.
@@ -55,6 +61,14 @@ impl NetworkJsonNode {
         self.current_tcp_retransmits.get_down(),
         self.current_tcp_retransmits.get_up(),
       ),
+      current_marks: (
+          self.current_marks.get_down(),
+          self.current_marks.get_up(),
+      ),
+      current_drops: (
+          self.current_drops.get_down(),
+          self.current_drops.get_up(),
+      ),
       rtts: self.rtts.iter().map(|n| *n as f32 / 100.0).collect(),
       parents: self.parents.clone(),
       immediate_parent: self.immediate_parent,
@@ -76,6 +90,10 @@ pub struct NetworkJsonTransport {
   pub current_throughput: (u64, u64),
   /// Current count of TCP retransmits
   pub current_retransmits: (u64, u64),
+  /// Cake marks
+  pub current_marks: (u64, u64),
+  /// Cake drops
+  pub current_drops: (u64, u64),
   /// Set of RTT data
   pub rtts: Vec<f32>,
   /// Node indices of parents
@@ -135,6 +153,8 @@ impl NetworkJson {
       max_throughput: (0, 0),
       current_throughput: AtomicDownUp::zeroed(),
       current_tcp_retransmits: AtomicDownUp::zeroed(),
+      current_drops: AtomicDownUp::zeroed(),
+      current_marks: AtomicDownUp::zeroed(),
       parents: Vec::new(),
       immediate_parent: None,
       rtts: DashSet::new(),
@@ -213,6 +233,8 @@ impl NetworkJson {
       n.current_throughput.set_to_zero();
       n.current_tcp_retransmits.set_to_zero();
       n.rtts.clear();
+      n.current_drops.set_to_zero();
+      n.current_marks.set_to_zero();
     });
   }
 
@@ -257,6 +279,18 @@ impl NetworkJson {
       }
     }
   }
+
+  pub fn add_queue_cycle(&self, targets: &[usize], marks: &DownUpOrder<u64>, drops: &DownUpOrder<u64>) {
+    for idx in targets {
+      // Safety first; use "get" to ensure that the node exists
+      if let Some(node) = self.nodes.get(*idx) {
+        node.current_marks.checked_add(*marks);
+        node.current_drops.checked_add(*drops);
+      } else {
+        warn!("No network tree entry for index {idx}");
+      }
+    }
+  }
 }
 
 fn json_to_u32(val: Option<&Value>) -> u32 {
@@ -294,6 +328,8 @@ fn recurse_node(
     ),
     current_throughput: AtomicDownUp::zeroed(),
     current_tcp_retransmits: AtomicDownUp::zeroed(),
+    current_drops: AtomicDownUp::zeroed(),
+    current_marks: AtomicDownUp::zeroed(),
     name: name.to_string(),
     immediate_parent: Some(immediate_parent),
     rtts: DashSet::new(),
