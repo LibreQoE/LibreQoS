@@ -1,23 +1,42 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 use once_cell::sync::Lazy;
-use lqos_utils::units::DownUpOrder;
+use lqos_utils::units::{AtomicDownUp, DownUpOrder};
 use crate::tracking::TrackedQueue;
 
 pub static ALL_QUEUE_SUMMARY: Lazy<AllQueueData> = Lazy::new(|| AllQueueData::new());
+pub static TOTAL_QUEUE_STATS: TotalQueueStats = TotalQueueStats::new();
+
+pub struct TotalQueueStats {
+    pub drops: AtomicDownUp,
+    pub mark: AtomicDownUp,
+}
+
+impl TotalQueueStats {
+    pub const fn new() -> Self {
+        Self {
+            drops: AtomicDownUp::zeroed(),
+            mark: AtomicDownUp::zeroed(),
+        }
+    }
+}
 
 #[derive(Debug)]
-
 pub struct QueueData {
     pub drops: DownUpOrder<u64>,
     pub marks: DownUpOrder<u64>,
-    pub prev_drops: DownUpOrder<u64>,
-    pub prev_marks: DownUpOrder<u64>,
+    pub prev_drops: Option<DownUpOrder<u64>>,
+    pub prev_marks: Option<DownUpOrder<u64>>,
+}
+
+fn zero_total_queue_stats() {
+    TOTAL_QUEUE_STATS.drops.set_to_zero();
+    TOTAL_QUEUE_STATS.mark.set_to_zero();
 }
 
 #[derive(Debug)]
 pub struct AllQueueData {
-    data: Mutex<HashMap<String, QueueData>>
+    data: Mutex<HashMap<String, QueueData>>,
 }
 
 impl AllQueueData {
@@ -34,9 +53,9 @@ impl AllQueueData {
         let mut lock = self.data.lock().unwrap();
 
         // Roll through moving current to previous
-        for (_,q) in lock.iter_mut() {
-            q.prev_drops = q.drops;
-            q.prev_marks = q.marks;
+        for (_, q) in lock.iter_mut() {
+            q.prev_drops = Some(q.drops);
+            q.prev_marks = Some(q.marks);
             q.drops = DownUpOrder::zeroed();
             q.marks = DownUpOrder::zeroed();
         }
@@ -52,12 +71,11 @@ impl AllQueueData {
                 let mut new_record = QueueData {
                     drops: Default::default(),
                     marks: Default::default(),
-                    prev_drops: Default::default(),
-                    prev_marks: Default::default(),
+                    prev_drops: None,
+                    prev_marks: None,
                 };
                 new_record.drops.down = dl.drops;
                 new_record.marks.down = dl.marks;
-                println!("Inserting for circuit_id: {}", dl.circuit_id);
                 lock.insert(dl.circuit_id.clone(), new_record);
             }
         }
@@ -78,24 +96,44 @@ impl AllQueueData {
                 };
                 new_record.drops.up = ul.drops;
                 new_record.marks.up = ul.marks;
-                println!("Inserting for circuit_id: {}", ul.circuit_id);
                 lock.insert(ul.circuit_id.clone(), new_record);
             }
         }
-
-        //println!("{:?}", lock);
     }
 
     pub fn iterate_queues(&self, f: impl Fn(&str, &DownUpOrder<u64>, &DownUpOrder<u64>)) {
         let lock = self.data.lock().unwrap();
         for (circuit_id, q) in lock.iter() {
-            println!("Checking for change in {}", circuit_id);
-            if q.drops > q.prev_drops || q.marks > q.prev_marks {
-                println!("Change detected");
-                let drops = q.drops.checked_sub_or_zero(q.prev_drops);
-                let marks = q.marks.checked_sub_or_zero(q.prev_marks);
-                f(circuit_id, &drops, &marks);
+            if let Some(prev_drops) = q.prev_drops {
+                if let Some(prev_marks) = q.prev_marks {
+                    if q.drops > prev_drops || q.marks > prev_marks {
+                        let drops = q.drops.checked_sub_or_zero(prev_drops);
+                        let marks = q.marks.checked_sub_or_zero(prev_marks);
+                        f(circuit_id, &drops, &marks);
+                    }
+                }
             }
         }
+    }
+
+    pub fn calculate_total_queue_stats(&self) {
+        zero_total_queue_stats();
+        let lock = self.data.lock().unwrap();
+
+        let mut drops = DownUpOrder::zeroed();
+        let mut marks = DownUpOrder::zeroed();
+
+        lock
+            .iter()
+            .filter(|(_, q)| q.prev_drops.is_some() && q.prev_marks.is_some())
+            .for_each(|(_, q)| {
+                drops += q.drops.checked_sub_or_zero(q.prev_drops.unwrap());
+                marks += q.marks.checked_sub_or_zero(q.prev_marks.unwrap());
+            });
+
+        TOTAL_QUEUE_STATS.drops.set_down(drops.down);
+        TOTAL_QUEUE_STATS.drops.set_up(drops.up);
+        TOTAL_QUEUE_STATS.mark.set_down(marks.down);
+        TOTAL_QUEUE_STATS.mark.set_up(marks.up);
     }
 }

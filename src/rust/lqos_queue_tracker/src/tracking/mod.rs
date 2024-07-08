@@ -10,7 +10,7 @@ use lqos_utils::fdtimer::periodic;
 mod reader;
 mod watched_queues;
 mod all_queue_data;
-pub use all_queue_data::ALL_QUEUE_SUMMARY;
+pub use all_queue_data::*;
 
 use self::watched_queues::expire_watched_queues;
 use watched_queues::WATCHED_QUEUES;

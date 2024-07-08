@@ -164,9 +164,11 @@ impl ThroughputTracker {
   }
 
   pub(crate) fn apply_queue_stats(&self) {
+    // Apply totals
+    ALL_QUEUE_SUMMARY.calculate_total_queue_stats();
+
     // Iterate through the queue data and find the matching circuit_id
     ALL_QUEUE_SUMMARY.iterate_queues(|circuit_id, drops, marks| {
-      println!("Found marks or drops!");
       if let Some(entry) = self.raw_data.iter().find(|v| {
         match v.circuit_id {
           Some(ref id) => id == circuit_id,
@@ -174,7 +176,6 @@ impl ThroughputTracker {
         }
       }) {
         // Find the net_json parents
-        println!("Found a matching circuit");
         if let Some(parents) = &entry.network_json_parents {
           let net_json = NETWORK_JSON.read().unwrap();
           // Send it upstream
@@ -323,8 +324,6 @@ impl ThroughputTracker {
           // Send it upstream
           if let Some(parents) = &tracker.network_json_parents {
             let net_json = NETWORK_JSON.write().unwrap();
-            // Send it upstream
-            println!("{:?}", tracker.tcp_retransmits);
             net_json.add_retransmit_cycle(parents, tracker.tcp_retransmits);
           }
         }

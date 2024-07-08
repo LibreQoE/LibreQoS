@@ -1,3 +1,4 @@
+use std::ops::AddAssign;
 use serde::{Deserialize, Serialize};
 use zerocopy::FromBytes;
 use crate::units::UpDownOrder;
@@ -74,6 +75,15 @@ impl <T> Into<UpDownOrder<T>> for DownUpOrder<T> {
             up: self.down,
             down: self.up
         }
+    }
+}
+
+impl <T> AddAssign for DownUpOrder<T>
+where T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedAdd
+{
+    fn add_assign(&mut self, rhs: Self) {
+        self.down = self.down.checked_add(&rhs.down).unwrap_or(T::zero());
+        self.up = self.up.checked_add(&rhs.up).unwrap_or(T::zero());
     }
 }
 
