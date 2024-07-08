@@ -34,25 +34,7 @@ function getInitialTree() {
             let node = tree[i][1];
 
             if (nodeId === parent) {
-                $("#nodeName").text(node.name);
-                let limit = "";
-                if (node.max_throughput[0] === 0) {
-                    limit = "Unlimited";
-                } else {
-                    limit = scaleNumber(node.max_throughput[0] * 1000 * 1000, 0);
-                }
-                limit += " / ";
-                if (node.max_throughput[1] === 0) {
-                    limit += "Unlimited";
-                } else {
-                    limit += scaleNumber(node.max_throughput[1] * 1000 * 1000, 0);
-                }
-                $("#parentLimits").text(limit);
-                $("#parentTpD").html(formatThroughput(node.current_throughput[0] * 8, node.max_throughput[0]));
-                $("#parentTpU").html(formatThroughput(node.current_throughput[1] * 8, node.max_throughput[1]));
-                console.log(node);
-                $("#parentRttD").html(formatRtt(node.rtts[0]));
-                $("#parentRttU").html(formatRtt(node.rtts[1]));
+                fillHeader(node)
             }
 
             if (node.immediate_parent !== null && node.immediate_parent === parent) {
@@ -70,6 +52,28 @@ function getInitialTree() {
 
         subscribeWS(["NetworkTree"], onMessage);
     });
+}
+
+function fillHeader(node) {
+    $("#nodeName").text(node.name);
+    let limit = "";
+    if (node.max_throughput[0] === 0) {
+        limit = "Unlimited";
+    } else {
+        limit = scaleNumber(node.max_throughput[0] * 1000 * 1000, 0);
+    }
+    limit += " / ";
+    if (node.max_throughput[1] === 0) {
+        limit += "Unlimited";
+    } else {
+        limit += scaleNumber(node.max_throughput[1] * 1000 * 1000, 0);
+    }
+    $("#parentLimits").text(limit);
+    $("#parentTpD").html(formatThroughput(node.current_throughput[0] * 8, node.max_throughput[0]));
+    $("#parentTpU").html(formatThroughput(node.current_throughput[1] * 8, node.max_throughput[1]));
+    console.log(node);
+    $("#parentRttD").html(formatRtt(node.rtts[0]));
+    $("#parentRttU").html(formatRtt(node.rtts[1]));
 }
 
 function iterateChildren(idx, tBody, depth) {
@@ -210,6 +214,10 @@ function onMessage(msg) {
         msg.data.forEach((n) => {
             let nodeId = n[0];
             let node = n[1];
+
+            if (nodeId === parent) {
+                fillHeader(node);
+            }
 
             let col = document.getElementById("down-" + nodeId);
             if (col !== null) {
