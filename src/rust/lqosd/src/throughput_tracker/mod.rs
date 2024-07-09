@@ -83,20 +83,26 @@ async fn throughput_task(
         // the tokio runtime is not blocked.
         let my_netflow_sender = netflow_sender.clone();
         if let Err(e) = tokio::task::spawn_blocking(move || {
-            {
-                let net_json = NETWORK_JSON.read().unwrap();
-                net_json.zero_throughput_and_rtt();
-            } // Scope to end the lock
+            let mut net_json_calc = {
+                let read = NETWORK_JSON.read().unwrap();
+                read.begin_update_cycle()
+            };
+            net_json_calc.zero_throughput_and_rtt();
             THROUGHPUT_TRACKER.copy_previous_and_reset_rtt();
-            THROUGHPUT_TRACKER.apply_new_throughput_counters();
+            THROUGHPUT_TRACKER.apply_new_throughput_counters(&mut net_json_calc);
             THROUGHPUT_TRACKER.apply_flow_data(
                 timeout_seconds,
                 netflow_enabled,
                 my_netflow_sender.clone(),
+                &mut net_json_calc,
             );
-            THROUGHPUT_TRACKER.apply_queue_stats();
+            THROUGHPUT_TRACKER.apply_queue_stats(&mut net_json_calc);
             THROUGHPUT_TRACKER.update_totals();
             THROUGHPUT_TRACKER.next_cycle();
+            {
+                let mut write = NETWORK_JSON.write().unwrap();
+                write.finish_update_cycle(net_json_calc);
+            }
             let duration_ms = start.elapsed().as_micros();
             TIME_TO_POLL_HOSTS.store(duration_ms as u64, std::sync::atomic::Ordering::Relaxed);
         })

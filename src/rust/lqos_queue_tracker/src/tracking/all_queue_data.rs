@@ -101,7 +101,7 @@ impl AllQueueData {
         }
     }
 
-    pub fn iterate_queues(&self, f: impl Fn(&str, &DownUpOrder<u64>, &DownUpOrder<u64>)) {
+    pub fn iterate_queues(&self, mut f: impl FnMut(&str, &DownUpOrder<u64>, &DownUpOrder<u64>)) {
         let lock = self.data.lock().unwrap();
         for (circuit_id, q) in lock.iter() {
             if let Some(prev_drops) = q.prev_drops {

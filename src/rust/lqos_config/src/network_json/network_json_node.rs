@@ -1,9 +1,9 @@
 use dashmap::DashSet;
-use lqos_utils::units::AtomicDownUp;
+use lqos_utils::units::{AtomicDownUp, DownUpOrder};
 use crate::NetworkJsonTransport;
 
 /// Describes a node in the network map tree.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct NetworkJsonNode {
     /// The node name, as it appears in `network.json`
     pub name: String,
@@ -12,16 +12,16 @@ pub struct NetworkJsonNode {
     pub max_throughput: (u32, u32), // In mbps
 
     /// Current throughput (in bytes/second) at this node
-    pub current_throughput: AtomicDownUp, // In bytes
+    pub current_throughput: DownUpOrder<u64>, // In bytes
 
     /// Current TCP Retransmits
-    pub current_tcp_retransmits: AtomicDownUp, // In retries
+    pub current_tcp_retransmits: DownUpOrder<u64>, // In retries
 
     /// Current Cake Marks
-    pub current_marks: AtomicDownUp,
+    pub current_marks: DownUpOrder<u64>,
 
     /// Current Cake Drops
-    pub current_drops: AtomicDownUp,
+    pub current_drops: DownUpOrder<u64>,
 
     /// Approximate RTTs reported for this level of the tree.
     /// It's never going to be as statistically accurate as the actual

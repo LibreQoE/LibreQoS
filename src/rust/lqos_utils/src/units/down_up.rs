@@ -57,6 +57,11 @@ where T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedSub
         self.up = self.up.checked_add(&up).unwrap_or(T::zero());
     }
 
+    pub fn checked_add_tuple(&mut self, (down, up): (T, T)) {
+        self.down = self.down.checked_add(&down).unwrap_or(T::zero());
+        self.up = self.up.checked_add(&up).unwrap_or(T::zero());
+    }
+
     pub fn sum(&self) -> T {
         self.down + self.up
     }
@@ -66,6 +71,19 @@ where T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedSub
             down: self.down.saturating_mul(&T::from_u32(8).unwrap()),
             up: self.up.saturating_mul(&T::from_u32(8).unwrap()),
         }
+    }
+
+    pub fn get_down(&self) -> T {
+        self.down
+    }
+
+    pub fn get_up(&self) -> T {
+        self.up
+    }
+
+    pub fn set_to_zero(&mut self) {
+        self.down = T::zero();
+        self.up = T::zero();
     }
 }
 

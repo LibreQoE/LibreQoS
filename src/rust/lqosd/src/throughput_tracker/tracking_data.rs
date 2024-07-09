@@ -4,6 +4,7 @@ use super::{flow_data::{get_flowbee_event_count_and_reset, FlowAnalysis, Flowbee
 use dashmap::DashMap;
 use fxhash::FxHashMap;
 use lqos_bus::TcHandle;
+use lqos_config::NetworkJsonCounting;
 use lqos_queue_tracker::ALL_QUEUE_SUMMARY;
 use lqos_sys::{flowbee_data::FlowbeeKey, iterate_flows, throughput_for_each};
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
@@ -100,6 +101,7 @@ impl ThroughputTracker {
 
   pub(crate) fn apply_new_throughput_counters(
     &self,
+    net_json_calc: &mut NetworkJsonCounting,
   ) {
     let raw_data = &self.raw_data;
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
@@ -121,8 +123,7 @@ impl ThroughputTracker {
           entry.most_recent_cycle = self_cycle;
 
           if let Some(parents) = &entry.network_json_parents {
-            let net_json = NETWORK_JSON.read().unwrap();
-            net_json.add_throughput_cycle(
+            net_json_calc.add_throughput_cycle(
               parents,
               (
                 entry.bytes.down.saturating_sub(entry.prev_bytes.down),
@@ -163,7 +164,7 @@ impl ThroughputTracker {
     });
   }
 
-  pub(crate) fn apply_queue_stats(&self) {
+  pub(crate) fn apply_queue_stats(&self, net_json_calc: &mut NetworkJsonCounting) {
     // Apply totals
     ALL_QUEUE_SUMMARY.calculate_total_queue_stats();
 
@@ -177,9 +178,8 @@ impl ThroughputTracker {
       }) {
         // Find the net_json parents
         if let Some(parents) = &entry.network_json_parents {
-          let net_json = NETWORK_JSON.read().unwrap();
           // Send it upstream
-          net_json.add_queue_cycle(parents, marks, drops);
+          net_json_calc.add_queue_cycle(parents, marks, drops);
         }
       }
     });
@@ -190,6 +190,7 @@ impl ThroughputTracker {
     timeout_seconds: u64,
     _netflow_enabled: bool,
     sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
+    net_json_calc: &mut NetworkJsonCounting,
   ) {
     //log::debug!("Flowbee events this second: {}", get_flowbee_event_count_and_reset());
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
@@ -298,9 +299,8 @@ impl ThroughputTracker {
               tracker.recent_rtt_data[0] = *median;
               tracker.last_fresh_rtt_data_cycle = self_cycle;
               if let Some(parents) = &tracker.network_json_parents {
-                let net_json = NETWORK_JSON.write().unwrap();
                 if let Some(rtt) = tracker.median_latency() {
-                  net_json.add_rtt_cycle(parents, rtt);
+                  net_json_calc.add_rtt_cycle(parents, rtt);
                 }
               }
             }
@@ -323,8 +323,7 @@ impl ThroughputTracker {
 
           // Send it upstream
           if let Some(parents) = &tracker.network_json_parents {
-            let net_json = NETWORK_JSON.write().unwrap();
-            net_json.add_retransmit_cycle(parents, tracker.tcp_retransmits);
+            net_json_calc.add_retransmit_cycle(parents, tracker.tcp_retransmits);
           }
         }
       }
@@ -398,8 +397,6 @@ impl ThroughputTracker {
 
   pub(crate) fn next_cycle(&self) {
     self.cycle.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let lock = NETWORK_JSON.read().unwrap();
-    lock.cycle_complete();
   }
 
   pub(crate) fn bits_per_second(&self) -> DownUpOrder<u64> {
