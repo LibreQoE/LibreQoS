@@ -166,8 +166,11 @@ fn write_combined_config(
   std::fs::write("/etc/lqos.conf", raw).unwrap();
 }
 
+const VERSION: &str = include_str!("../../../VERSION_STRING");
+
 fn main() {
-  println!("{:^80}", "LibreQoS 1.4 Setup Assistant".yellow().on_blue());
+  let greeting = format!("LibreQoS {VERSION} Setup Assistant");
+  println!("{:^80}", greeting.yellow().on_blue());
   println!();
   let interfaces = get_available_interfaces();
   let mut if_internet: Option<String> = None;

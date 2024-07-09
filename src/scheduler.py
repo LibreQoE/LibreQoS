@@ -13,6 +13,7 @@ if automatic_import_sonar():
 	from integrationSonar import importFromSonar
 from apscheduler.schedulers.background import BlockingScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
+import os.path
 
 ads = BlockingScheduler(executors={'default': ThreadPoolExecutor(1)})
 
@@ -39,6 +40,12 @@ def importFromCRM():
 			importFromSonar()
 		except:
 			print("Failed to import from Sonar")
+
+	# Post-CRM Hooks
+	path = get_libreqos_directory() + "/bin/post_integration_hook.sh"
+	binPath = get_libreqos_directory() + "/bin"
+	if os.path.isfile(path):
+        	subprocess.Popen(path, cwd=binPath)
 
 def graphHandler():
 	try:

@@ -10,7 +10,7 @@ then
     BUILD_DATE=""
 fi
 PACKAGE=libreqos
-VERSION=1.5.$BUILD_DATE
+VERSION=`cat ./VERSION_STRING`.$BUILD_DATE
 PKGVERSION=$PACKAGE
 PKGVERSION+="_"
 PKGVERSION+=$VERSION
@@ -20,7 +20,7 @@ DEBIAN_DIR=$DPKG_DIR/DEBIAN
 LQOS_DIR=$DPKG_DIR/opt/libreqos/src
 ETC_DIR=$DPKG_DIR/etc
 MOTD_DIR=$DPKG_DIR/etc/update-motd.d
-LQOS_FILES="graphInfluxDB.py influxDBdashboardTemplate.json integrationCommon.py integrationPowercode.py integrationRestHttp.py integrationSonar.py integrationSplynx.py integrationUISP.py integrationSonar.py LibreQoS.py lqos.example lqTools.py mikrotikFindIPv6.py network.example.json pythonCheck.py README.md scheduler.py ShapedDevices.example.csv lqos.example"
+LQOS_FILES="graphInfluxDB.py influxDBdashboardTemplate.json integrationCommon.py integrationPowercode.py integrationRestHttp.py integrationSonar.py integrationSplynx.py integrationUISP.py integrationSonar.py LibreQoS.py lqos.example lqTools.py mikrotikFindIPv6.py network.example.json pythonCheck.py README.md scheduler.py ShapedDevices.example.csv lqos.example ../requirements.txt"
 LQOS_BIN_FILES="lqos_scheduler.service.example lqosd.service.example lqos_node_manager.service.example"
 RUSTPROGS="lqosd lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqos_node_manager lqusers lqos_setup lqos_map_perf uisp_integration lqos_support_tool"
 
@@ -61,11 +61,8 @@ echo "#!/bin/bash" >> postinst
 echo "# Install Python Dependencies" >> postinst
 echo "pushd /opt/libreqos" >> postinst
 # - Setup Python dependencies as a post-install task
-while requirement= read -r line
-do
-    echo "python3 -m pip install $line" >> postinst
-    echo "sudo python3 -m pip install $line" >> postinst
-done < ../../../../requirements.txt
+echo "python3 -m pip install --break-system-packages -r src/requirements.txt" >> postinst
+echo "sudo python3 -m pip install --break-system-packages -r src/requirements.txt" >> postinst
 # - Run lqsetup
 echo "/opt/libreqos/src/bin/lqos_setup" >> postinst
 # - Setup the services
@@ -78,6 +75,18 @@ echo "/bin/systemctl start lqosd" >> postinst
 echo "/bin/systemctl start lqos_node_manager" >> postinst
 echo "/bin/systemctl start lqos_scheduler" >> postinst
 echo "popd" >> postinst
+# Attempting to fixup versioning issues with libpython.
+# This requires that you already have LibreQoS installed.
+LINKED_PYTHON=$(ldd /opt/libreqos/src/bin/lqosd | grep libpython | sed -e '/^[^\t]/ d' | sed -e 's/\t//' | sed -e 's/.*=..//' | sed -e 's/ (0.*)//')
+echo "if ! test -f $LINKED_PYTHON; then" >> postinst
+echo "  if test -f /lib/x86_64-linux-gnu/libpython3.12.so.1.0; then" >> postinst
+echo "    ln -s /lib/x86_64-linux-gnu/libpython3.12.so.1.0 $LINKED_PYTHON" >> postinst
+echo "  fi" >> postinst
+echo "  if test -f /lib/x86_64-linux-gnu/libpython3.11.so.1.0; then" >> postinst
+echo "    ln -s /lib/x86_64-linux-gnu/libpython3.11.so.1.0 $LINKED_PYTHON" >> postinst
+echo "  fi" >> postinst
+echo "fi" >> postinst
+# End of symlink insanity
 chmod a+x postinst
 
 # Uninstall Script
