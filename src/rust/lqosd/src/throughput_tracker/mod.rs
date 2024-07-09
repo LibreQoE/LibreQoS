@@ -73,6 +73,8 @@ async fn throughput_task(
         false
     };
 
+    let mut ticker = tokio::time::interval(Duration::from_millis(interval_ms));
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         let start = Instant::now();
 
@@ -102,13 +104,7 @@ async fn throughput_task(
         }
         tokio::spawn(submit_throughput_stats(long_term_stats_tx.clone()));
 
-        let elapsed = start.elapsed();
-        if elapsed.as_secs_f32() < 1.0 {
-            let sleep_duration = Duration::from_millis(interval_ms) - start.elapsed();
-            tokio::time::sleep(sleep_duration).await;
-        } else {
-            log::error!("Throughput monitor thread is running behind. It took {elapsed} to poll the network.", elapsed=elapsed.as_secs_f32());
-        }
+        ticker.tick().await;
     }
 }
 
