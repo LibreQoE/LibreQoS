@@ -6,6 +6,8 @@ use std::{
   fs,
   path::{Path, PathBuf}, sync::atomic::AtomicU64,
 };
+use std::sync::atomic::AtomicU32;
+use std::sync::atomic::Ordering::SeqCst;
 use thiserror::Error;
 use lqos_utils::units::{AtomicDownUp, DownUpOrder};
 
@@ -112,7 +114,14 @@ pub struct NetworkJsonTransport {
 pub struct NetworkJson {
   /// Nodes that make up the tree, flattened and referenced by index number.
   /// TODO: We should add a primary key to nodes in network.json.
-  pub nodes: Vec<NetworkJsonNode>,
+  ///
+  /// Note that `nodes` is *private* now. This is intentional - direct
+  /// modification via this module is permitted, but external access was
+  /// running into timing issues and reading data mid-update. The locking
+  /// setup makes it hard to performantly lock the whole structure - so we
+  /// have a messy "busy" compromise.
+  nodes: Vec<NetworkJsonNode>,
+  busy: AtomicU32,
 }
 
 impl Default for NetworkJson {
@@ -124,7 +133,7 @@ impl Default for NetworkJson {
 impl NetworkJson {
   /// Generates an empty network.json
   pub fn new() -> Self {
-    Self { nodes: Vec::new() }
+    Self { nodes: Vec::new(), busy: AtomicU32::new(0) }
   }
 
   /// The path to the current `network.json` file, determined
@@ -179,7 +188,7 @@ impl NetworkJson {
       }
     }
 
-    Ok(Self { nodes })
+    Ok(Self { nodes, busy: AtomicU32::new(0) })
   }
 
   /// Find the index of a circuit_id
@@ -225,10 +234,21 @@ impl NetworkJson {
       .map(|node| node.parents.clone())
   }
 
+  /// Obtains a reference to nodes once we're sure that
+  /// doing so will provide valid data.
+  pub fn get_nodes_when_ready(&self) -> &Vec<NetworkJsonNode> {
+    //log::warn!("Awaiting the network tree");
+    atomic_wait::wait(&self.busy, 1);
+    //log::warn!("Acquired");
+    &self.nodes
+  }
+
   /// Sets all current throughput values to zero
   /// Note that due to interior mutability, this does not require mutable
   /// access.
   pub fn zero_throughput_and_rtt(&self) {
+    //log::warn!("Locking network tree for throughput cycle");
+    self.busy.store(1, SeqCst);
     self.nodes.iter().for_each(|n| {
       n.current_throughput.set_to_zero();
       n.current_tcp_retransmits.set_to_zero();
@@ -236,6 +256,12 @@ impl NetworkJson {
       n.current_drops.set_to_zero();
       n.current_marks.set_to_zero();
     });
+  }
+
+  pub fn cycle_complete(&self) {
+    //log::warn!("Unlocking network tree");
+    self.busy.store(0, SeqCst);
+    atomic_wait::wake_all(&self.busy);
   }
 
   /// Add throughput numbers to node entries. Note that this does *not* require

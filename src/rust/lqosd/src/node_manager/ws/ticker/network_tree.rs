@@ -14,7 +14,7 @@ pub async fn network_tree(channels: Arc<PubSub>) {
     let data: Vec<(usize, NetworkJsonTransport)> = spawn_blocking(|| {
         let net_json = NETWORK_JSON.read().unwrap();
         net_json
-            .nodes
+            .get_nodes_when_ready()
             .iter()
             .enumerate()
             .map(|(i, n) | (i, n.clone_to_transit()))

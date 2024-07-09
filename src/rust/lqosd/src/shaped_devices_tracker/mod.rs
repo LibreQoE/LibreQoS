@@ -123,7 +123,7 @@ pub fn map_node_names(nodes: &[usize]) -> BusResponse {
     let mut result = Vec::new();
     let reader = NETWORK_JSON.read().unwrap();
     nodes.iter().for_each(|id| {
-        if let Some(node) = reader.nodes.get(*id) {
+        if let Some(node) = reader.get_nodes_when_ready().get(*id) {
             result.push((*id, node.name.clone()));
         }
     });
@@ -135,8 +135,8 @@ pub fn get_funnel(circuit_id: &str) -> BusResponse {
     if let Some(index) = reader.get_index_for_name(circuit_id) {
         // Reverse the scanning order and skip the last entry (the parent)
         let mut result = Vec::new();
-        for idx in reader.nodes[index].parents.iter().rev().skip(1) {
-            result.push((*idx, reader.nodes[*idx].clone_to_transit()));
+        for idx in reader.get_nodes_when_ready()[index].parents.iter().rev().skip(1) {
+            result.push((*idx, reader.get_nodes_when_ready()[*idx].clone_to_transit()));
         }
         return BusResponse::NetworkMap(result);
     }

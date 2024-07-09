@@ -139,7 +139,7 @@ fn recurse_weights(
     node_index: usize,
 ) -> Result<i64> {
     let mut weight = 0;
-    let n = &network.nodes[node_index];
+    let n = &network.get_nodes_when_ready()[node_index];
     //println!("     Tower: {}", n.name);
 
     device_list
@@ -152,7 +152,7 @@ fn recurse_weights(
         });
     //println!("     Weight: {}", weight);
 
-    for (i, n) in network.nodes
+    for (i, n) in network.get_nodes_when_ready()
         .iter()
         .enumerate()
         .filter(|(_i, n)| n.immediate_parent == Some(node_index)) 
@@ -177,13 +177,13 @@ pub(crate) fn calculate_tree_weights() -> Result<Vec<NetworkNodeWeight>> {
     let device_list = ConfigShapedDevices::load()?.devices;
     let device_weights = get_weights_rust()?;
     let network = lqos_config::NetworkJson::load()?;
-    let root_index = network.nodes.iter().position(|n| n.immediate_parent.is_none()).unwrap();
+    let root_index = network.get_nodes_when_ready().iter().position(|n| n.immediate_parent.is_none()).unwrap();
     let mut result = Vec::new();
     //println!("Root index is: {}", root_index);
 
     // Find all network nodes one off the top
     network
-        .nodes
+        .get_nodes_when_ready()
         .iter()
         .enumerate()
         .filter(|(_,n)| n.immediate_parent.is_some() && n.immediate_parent.unwrap() == root_index)
