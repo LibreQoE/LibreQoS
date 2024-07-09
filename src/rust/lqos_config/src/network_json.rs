@@ -30,7 +30,6 @@ pub struct NetworkJson {
     /// setup makes it hard to performantly lock the whole structure - so we
     /// have a messy "busy" compromise.
     nodes: Vec<NetworkJsonNode>,
-    busy: AtomicU32,
 }
 
 impl Default for NetworkJson {
@@ -42,7 +41,7 @@ impl Default for NetworkJson {
 impl NetworkJson {
     /// Generates an empty network.json
     pub fn new() -> Self {
-        Self { nodes: Vec::new(), busy: AtomicU32::new(0) }
+        Self { nodes: Vec::new() }
     }
 
     /// The path to the current `network.json` file, determined
@@ -97,7 +96,7 @@ impl NetworkJson {
             }
         }
 
-        Ok(Self { nodes, busy: AtomicU32::new(0) })
+        Ok(Self { nodes })
     }
 
     /// Find the index of a circuit_id
@@ -157,7 +156,6 @@ impl NetworkJson {
     /// access.
     pub fn zero_throughput_and_rtt(&self) {
         //log::warn!("Locking network tree for throughput cycle");
-        self.busy.store(1, SeqCst);
         self.nodes.iter().for_each(|n| {
             n.current_throughput.set_to_zero();
             n.current_tcp_retransmits.set_to_zero();
@@ -168,9 +166,6 @@ impl NetworkJson {
     }
 
     pub fn cycle_complete(&self) {
-        //log::warn!("Unlocking network tree");
-        self.busy.store(0, SeqCst);
-        atomic_wait::wake_all(&self.busy);
     }
 
     /// Add throughput numbers to node entries. Note that this does *not* require
