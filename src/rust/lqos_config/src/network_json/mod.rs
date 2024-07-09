@@ -238,7 +238,7 @@ impl NetworkJson {
   /// doing so will provide valid data.
   pub fn get_nodes_when_ready(&self) -> &Vec<NetworkJsonNode> {
     //log::warn!("Awaiting the network tree");
-    atomic_wait::wait(&self.busy, 1);
+    //atomic_wait::wait(&self.busy, 1);
     //log::warn!("Acquired");
     &self.nodes
   }
