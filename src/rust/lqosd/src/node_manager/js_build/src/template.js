@@ -60,6 +60,16 @@ function initLogout() {
     });
 }
 
+function titleAndLts() {
+    $.get("/local-api/ltsCheck", (data) => {
+        // Set the title
+        if (data.node_name !== null) {
+            document.title = data.node_name + " - LibreQoS Node Manager";
+        }
+    });
+}
+
 initLogout();
 initDayNightMode();
 getDeviceCounts();
+titleAndLts();
