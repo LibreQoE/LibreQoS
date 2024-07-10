@@ -5,6 +5,7 @@ mod shaped_device_api;
 mod network_tree;
 mod support;
 mod lts;
+mod search;
 
 use axum::Router;
 use axum::routing::{get, post};
@@ -23,4 +24,5 @@ pub fn local_api() -> Router {
         .route("/gatherSupport", post(support::gather_support_data))
         .route("/submitSupport", post(support::submit_support_data))
         .route("/ltsCheck", get(lts::stats_check))
+        .route("/search", post(search::search))
 }

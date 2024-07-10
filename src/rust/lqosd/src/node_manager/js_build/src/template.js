@@ -1,3 +1,5 @@
+import {clearDiv} from "./helpers/builders";
+
 function initDayNightMode() {
     const currentTheme = localStorage.getItem('theme');
     if (currentTheme === 'dark') {
@@ -80,7 +82,61 @@ function titleAndLts() {
     });
 }
 
+function doSearch(search) {
+    if (search.length > 2) {
+        $.ajax({
+            type: "POST",
+            url: "/local-api/search",
+            data: JSON.stringify({term: search}),
+            contentType: 'application/json',
+            success: (data) => {
+                let searchResults = document.getElementById("searchResults");
+                searchResults.style.visibility = "visible";
+                let list = document.createElement("table");
+                list.classList.add("table", "table-striped");
+                let tbody = document.createElement("tbody");
+                data.forEach((item) => {
+                    let r = document.createElement("tr");
+                    let c = document.createElement("td");
+
+                    if (item.Circuit !== undefined) {
+                        c.innerHTML = "<i class='fa fa-user'></i> " + item.Circuit.name;
+                    } else if (item.Device !== undefined) {
+                        c.innerHTML = "<i class='fa fa-computer'></i> " + item.Device.name;
+                    } else if (item.Site !== undefined) {
+                        c.innerHTML = "<a class='nav-link' href='/tree.html?parent=" + item.Site.idx + "'><i class='fa fa-building'></i> " + item.Site.name + "</a>";
+                    } else {
+                        console.log(item);
+                        c.innerText = item;
+                    }
+                    r.appendChild(c);
+                    tbody.appendChild(r);
+                });
+                clearDiv(searchResults);
+                list.appendChild(tbody);
+                searchResults.appendChild(list);
+            },
+        })
+    } else {
+        // Close the search panel
+        let searchResults = document.getElementById("searchResults");
+        searchResults.style.visibility = "hidden";
+    }
+}
+
+function setupSearch() {
+    $("#btnSearch").on('click', () => {
+        const search = $("#txtSearch").val();
+        doSearch(search);
+    });
+    $("#txtSearch").on('keyup', () => {
+        const search = $("#txtSearch").val();
+        doSearch(search);
+    });
+}
+
 initLogout();
 initDayNightMode();
 getDeviceCounts();
 titleAndLts();
+setupSearch();
