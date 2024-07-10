@@ -4,6 +4,8 @@ import {subscribeWS} from "./pubsub/ws";
 
 var tree = null;
 var parent = 0;
+var maxDepth = 1;
+var subscribed = false;
 
 // This runs first and builds the initial structure on the page
 function getInitialTree() {
@@ -40,7 +42,9 @@ function getInitialTree() {
             if (node.immediate_parent !== null && node.immediate_parent === parent) {
                 let row = buildRow(i);
                 tbody.appendChild(row);
-                iterateChildren(i, tbody, 1);
+                if (maxDepth > 1) {
+                    iterateChildren(i, tbody, 1);
+                }
             }
         }
         treeTable.appendChild(tbody);
@@ -50,7 +54,10 @@ function getInitialTree() {
         clearDiv(target)
         target.appendChild(treeTable);
 
-        subscribeWS(["NetworkTree"], onMessage);
+        if (!subscribed) {
+            subscribeWS(["NetworkTree"], onMessage);
+            subscribed = true;
+        }
     });
 }
 
@@ -83,7 +90,9 @@ function iterateChildren(idx, tBody, depth) {
         if (node.immediate_parent !== null && node.immediate_parent === tree[idx][0]) {
             let row = buildRow(i, depth);
             tBody.appendChild(row);
-            iterateChildren(i, tBody, depth+1);
+            if (depth < maxDepth-1) {
+                iterateChildren(i, tBody, depth + 1);
+            }
         }
     }
 }
@@ -297,5 +306,16 @@ if (params.parent !== null) {
 } else {
     parent = 0;
 }
+
+if (localStorage.getItem("treeMaxDepth") !== null) {
+    maxDepth = parseInt(localStorage.getItem("treeMaxDepth"));
+    $("#maxDepth").val(maxDepth);
+}
+
+$("#maxDepth").on("change", function() {
+    maxDepth = parseInt($(this).val());
+    localStorage.setItem("treeMaxDepth", maxDepth);
+    getInitialTree();
+});
 
 getInitialTree();
