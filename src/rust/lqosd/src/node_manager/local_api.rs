@@ -4,6 +4,7 @@ mod device_counts;
 mod shaped_device_api;
 mod network_tree;
 mod support;
+mod lts;
 
 use axum::Router;
 use axum::routing::{get, post};
@@ -21,4 +22,5 @@ pub fn local_api() -> Router {
         .route("/sanity", get(support::run_sanity_check))
         .route("/gatherSupport", post(support::gather_support_data))
         .route("/submitSupport", post(support::submit_support_data))
+        .route("/ltsCheck", get(lts::stats_check))
 }
