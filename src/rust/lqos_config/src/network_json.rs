@@ -157,7 +157,9 @@ impl NetworkJson {
     /// have been made to the clone, and the clone is then copied back
     /// into the main structure.
     pub fn finish_update_cycle(&mut self, counting: NetworkJsonCounting) {
-        self.nodes = counting.nodes;
+        if !counting.nodes.is_empty() {
+            self.nodes = counting.nodes;
+        }
     }
 }
 
