@@ -1,0 +1,157 @@
+<div class="row">
+    <div class="col-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title"><i class="fa fa-question-circle"></i> Help & Support</h5>
+
+                <p class="alert-warning">
+                    <i class="fa fa-info-circle"></i>
+                    Priority support is given to Long-Term Stats subscribers and donors. Other support is
+                    best effort, with volunteers trying to help as best we can.
+                </p>
+                <p>
+                    <a href="https://github.com/sponsors/LibreQoE/" class="btn btn-primary">
+                        <i class="fa fa-money"></i> Support LibreQoS Today
+                    </a>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title"><i class="fa fa-book"></i> Documentation</h5>
+                <p>The documentation is a great place to start!</p>
+                <a href="https://libreqos.readthedocs.io/en/latest/" class="btn btn-primary"><i class="fa fa-book"></i> Read The LibreQoS Documentation</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title"><i class="fa fa-user-circle"></i> Chat</h5>
+                <p>
+                    Connect with other LibreQoS users, and the LibreQoS team on our Zulip Chat System. <br />
+                    <a class="btn btn-primary" href="https://chat.libreqos.io/"><i class="fa fa-user-circle"></i> Zulip chat system</a>.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row" style="margin-top: 10px;">
+    <div class="col-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title"><i class="fa fa-wrench"></i> Tools</h5>
+                <p style="border: 1px solid #eee">
+                    <strong>Sanity check</strong> reads your configuration and looks for common issues. This should be
+                    your first step when troubleshooting the system.<br />
+                    <button id="btnSanity" class="btn btn-primary"><i class="fa fa-info"></i> Sanity Check Your Installation</button>
+                </p>
+                <p style="border: 1px solid #eee">
+                    <strong>Download</strong> support data to a local file. You can send this to LibreQoS via the
+                    chat or email (as part of an ongoing support discussion).<br />
+                    <button id="btnDownload" class="btn btn-secondary" data-bs-toggle="modal" data-bs-target="#downloadDump"><i class="fa fa-download"></i> Download Support Dump</button>
+                </p>
+                <p style="border: 1px solid #eee">
+                    <strong>Submit</strong> support data directly to LibreQoS. Please contact us when you do this,
+                    with detailed information about the problems you are experiencing. Repeatedly hitting this
+                    button will get you slower - or no - service!<br />
+                    <button id="btnSubmit" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#submitDump"><i class="fa fa-send"></i> Send Support Dump</button>
+                </p>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal" tabindex="-1" id="sanityModal">
+    <div class="modal-dialog modal-fullscreen">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Configuration Check Results</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" style="overflow: auto;">
+                <p id="configCheck"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal" tabindex="-1" id="downloadDump">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Information To Add to the Support Dump</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" style="overflow: auto;">
+                <div class="row">
+                    <div class="col">
+                        <label for="gatherName" class="form-label">Your Name</label>
+                        <input type="text" id="gatherName" class="form-control" />
+                    </div>
+                    <div class="col">
+                        <label for="gatherEmail" class="form-label">Your Email Address</label>
+                        <input type="text" id="gatherEmail" class="form-control" />
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col">
+                        <label for="gatherComments" class="form-label">Comments</label>
+                        <input type="text" id="gatherComments" class="form-control" />
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="btnGather" type="button" class="btn btn-primary"><i class="fa fa-download"></i> Generate and Download</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal" tabindex="-1" id="submitDump">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Information To Add to the Support Dump</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" style="overflow: auto;">
+                <p class="alert-warning"><i class="fa fa-warning"></i> Your support dump will contain unredated data about your customers, and lots
+                    of information about your server. By submitting, you are acknowledging that LibreQoS bear no liability for this data.
+                    LibreQoS will take all reasonable measures to protect your data, and will not share it.</p>
+                <div class="row">
+                    <div class="col">
+                        <label for="submitName" class="form-label">Your Name</label>
+                        <input type="text" id="submitName" class="form-control" />
+                    </div>
+                    <div class="col">
+                        <label for="submitEmail" class="form-label">Your Email Address</label>
+                        <input type="text" id="submitEmail" class="form-control" />
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col">
+                        <label for="submitComments" class="form-label">Comments</label>
+                        <input type="text" id="submitComments" class="form-control" />
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="btnClickSub" type="button" class="btn btn-primary"><i class="fa fa-send"></i> Submit Support Data to LibreQoS</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="help.js"></script>

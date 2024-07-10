@@ -2129,6 +2129,7 @@ dependencies = [
  "lqos_config",
  "lqos_heimdall",
  "lqos_queue_tracker",
+ "lqos_support_tool",
  "lqos_sys",
  "lqos_utils",
  "lts_client",

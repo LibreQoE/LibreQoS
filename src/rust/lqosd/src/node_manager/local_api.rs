@@ -3,6 +3,7 @@ mod version_check;
 mod device_counts;
 mod shaped_device_api;
 mod network_tree;
+mod support;
 
 use axum::Router;
 use axum::routing::{get, post};
@@ -17,4 +18,7 @@ pub fn local_api() -> Router {
         .route("/deviceCount", get(device_counts::count_users))
         .route("/devicesAll", get(shaped_device_api::all_shaped_devices))
         .route("/networkTree/:parent", get(network_tree::get_network_tree))
+        .route("/sanity", get(support::run_sanity_check))
+        .route("/gatherSupport", post(support::gather_support_data))
+        .route("/submitSupport", post(support::submit_support_data))
 }
