@@ -10,7 +10,7 @@ pub async fn tree_summary(channels: Arc<PubSub>) {
         return;
     }
 
-    if let BusResponse::NetworkMap(nodes) = shaped_devices_tracker::get_top_n_root_queues(10) {
+    if let BusResponse::NetworkMap(nodes) = shaped_devices_tracker::get_top_n_root_queues(7) {
 
         let message = json!(
             {

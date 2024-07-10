@@ -1,3 +1,5 @@
+import {enableTooltips} from "../helpers/builders";
+
 export class BaseDashlet {
     constructor(slotNumber) {
         this.slotNumber = slotNumber;
@@ -45,12 +47,7 @@ export class BaseDashlet {
             this.setup(msg);
         }
         this.setupDone = true;
-
-        // Tooltips everywhere!
-        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
-        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-            return new bootstrap.Tooltip(tooltipTriggerEl)
-        })
+        enableTooltips();
     }
 
     setup() {}

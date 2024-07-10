@@ -94,7 +94,15 @@ body.dark-mode {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    font-size: 1.2em;
+    font-size: 1.0em;
     color: white;
     text-shadow: 2px 2px 4px #000000;
+}
+.retransmits {
+    font-size: 1.0em;
+    text-shadow: 2px 2px 4px #000000;
+    color: white;
+}
+.mytable tr td span {
+    background: none;
 }

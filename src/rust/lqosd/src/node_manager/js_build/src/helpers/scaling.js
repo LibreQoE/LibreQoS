@@ -102,3 +102,28 @@ export function formatRtt(rtt) {
     blob += "</span>";
     return blob;
 }
+
+export function formatRetransmit(retransmits) {
+    let percent = Math.min(100, retransmits) / 100;
+    let color = lerpColor([0, 255, 0], [255, 0, 0], percent);
+    let html = "<span class='retransmits' style='color: " + color + "'>";
+    html += retransmits;
+    html += "</span>";
+    return html;
+}
+
+export function formatCakeStat(n) {
+    let percent = Math.min(100, n) / 100;
+    let color = lerpColor([128, 128, 0], [255, 255, 255], percent);
+    let html = "<span class='retransmits' style='color: " + color + "'>";
+    html += n;
+    html += "</span>";
+    return html;
+}
+
+export function lerpColor(color1, color2, weight) {
+    var r = Math.round(color1[0] + (color2[0] - color1[0]) * weight);
+    var g = Math.round(color1[1] + (color2[1] - color1[1]) * weight);
+    var b = Math.round(color1[2] + (color2[2] - color1[2]) * weight);
+    return `rgb(${r}, ${g}, ${b})`;
+}
