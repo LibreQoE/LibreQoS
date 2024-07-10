@@ -11,14 +11,16 @@ export function scaleNumber(n, fixed=2) {
     return n;
 }
 
-export function scaleNanos(n) {
-    if (n == 0) return "";
-    if (n > 1000000000) {
-        return (n / 1000000000).toFixed(2) + "s";
+export function scaleNanos(n, precision=2) {
+    if (n === 0) return "";
+    if (n > 60000000000) {
+        return (n / 60000000000).toFixed(precision) + "m";
+    }else if (n > 1000000000) {
+        return (n / 1000000000).toFixed(precision) + "s";
     } else if (n > 1000000) {
-        return (n / 1000000).toFixed(2) + "ms";
+        return (n / 1000000).toFixed(precision) + "ms";
     } else if (n > 1000) {
-        return (n / 1000).toFixed(2) + "µs";
+        return (n / 1000).toFixed(precision) + "µs";
     }
     return n + "ns";
 }

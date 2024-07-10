@@ -116,7 +116,7 @@ impl ThroughputTracker {
             entry.tc_handle = TcHandle::from_u32(c.tc_handle);
           }
           if c.last_seen != 0 {
-            entry.last_seen = c.last_seen;
+            entry.last_seen = u64::max(entry.last_seen, c.last_seen);
           }
         }
         if entry.packets != entry.prev_packets {

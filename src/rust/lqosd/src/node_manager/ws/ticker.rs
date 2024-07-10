@@ -61,6 +61,7 @@ async fn two_second_cadence(channels: Arc<PubSub>) {
         interval.tick().await; // Once per second
         let _ = join!(
             timeout(timeout_time, queue_stats_total::queue_stats_totals(channels.clone())),
+            timeout(timeout_time, network_tree::all_subscribers(channels.clone())),
         );
     }
 }

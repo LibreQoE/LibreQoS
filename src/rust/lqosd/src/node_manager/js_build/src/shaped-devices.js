@@ -1,4 +1,6 @@
-import {clearDiv, heading5Icon, simpleRow, theading} from "./helpers/builders";
+import {clearDiv, simpleRow, theading} from "./helpers/builders";
+import {subscribeWS} from "./pubsub/ws";
+import {formatRetransmit, formatRtt, formatThroughput, scaleNanos} from "./helpers/scaling";
 
 let shapedDevices = null;
 let displayDevices = null;
@@ -8,6 +10,9 @@ let searchTerm = "";
 
 function tableRow(device) {
     let tr = document.createElement("tr");
+    if (device.circuit_id !== "") {
+        tr.id = "row_" + device.circuit_id;
+    }
     tr.appendChild(simpleRow(device.circuit_name));
     tr.appendChild(simpleRow(device.device_name));
     tr.appendChild(simpleRow(device.download_max_mbps + " / " + device.upload_max_mbps));
@@ -22,6 +27,50 @@ function tableRow(device) {
     let ip = document.createElement("td");
     ip.innerHTML = ipList;
     tr.appendChild(ip);
+
+    let lastSeen = document.createElement("td");
+    if (device.circuit_id !== "") {
+        lastSeen.id = "lastSeen_" + device.circuit_id;
+    }
+    lastSeen.innerHTML = "-";
+    tr.appendChild(lastSeen);
+    let throughputDown = document.createElement("td");
+    if (device.circuit_id !== "") {
+        throughputDown.id = "throughputDown_" + device.circuit_id;
+    }
+    throughputDown.innerHTML = "-";
+    tr.appendChild(throughputDown);
+    let throughputUp = document.createElement("td");
+    if (device.circuit_id !== "") {
+        throughputUp.id = "throughputUp_" + device.circuit_id;
+    }
+    throughputUp.innerHTML = "-";
+    tr.appendChild(throughputUp);
+    let rttDown = document.createElement("td");
+    if (device.circuit_id !== "") {
+        rttDown.id = "rttDown_" + device.circuit_id;
+    }
+    rttDown.innerHTML = "-";
+    tr.appendChild(rttDown);
+    let rttUp = document.createElement("td");
+    if (device.circuit_id !== "") {
+        rttUp.id = "rttUp_" + device.circuit_id;
+    }
+    rttUp.innerHTML = "-";
+    tr.appendChild(rttUp);
+    let reXmitDown = document.createElement("td");
+    if (device.circuit_id !== "") {
+        reXmitDown.id = "reXmitDown_" + device.circuit_id;
+    }
+    reXmitDown.innerHTML = "-";
+    tr.appendChild(reXmitDown);
+    let reXmitUp = document.createElement("td");
+    if (device.circuit_id !== "") {
+        reXmitUp.id = "reXmitUp_" + device.circuit_id;
+    }
+    reXmitUp.innerHTML = "-";
+    tr.appendChild(reXmitUp);
+
     return tr;
 }
 
@@ -34,11 +83,15 @@ function make_table() {
     thead.appendChild(theading("Plan (Mbps)"));
     thead.appendChild(theading("Parent"));
     thead.appendChild(theading("IP"));
+    thead.appendChild(theading("Last Seen"));
+    thead.appendChild(theading("Throughput", 2));
+    thead.appendChild(theading("RTT", 2));
+    thead.appendChild(theading("Re-Xmit", 2));
     table.appendChild(thead);
     let tb = document.createElement("tbody");
     let start = page * devicesPerPage;
     let end = Math.min((page + 1) * devicesPerPage, displayDevices.length);
-    for (let i=start; i<end; i++) {
+    for (let i = start; i < end; i++) {
         tb.appendChild(tableRow(displayDevices[i]));
     }
     table.appendChild(tb);
@@ -64,7 +117,7 @@ function fillTable() {
     let table = make_table();
     let pages = document.createElement("div");
 
-    let numPages = (displayDevices.length / devicesPerPage)-2;
+    let numPages = (displayDevices.length / devicesPerPage) - 2;
 
     if (numPages > 1) {
         if (page > 0) {
@@ -150,3 +203,43 @@ function loadDevices() {
 }
 
 loadDevices();
+subscribeWS(["NetworkTreeClients"], (msg) => {
+    if (msg.event === "NetworkTreeClients") {
+        //console.log(msg);
+        msg.data.forEach((d) => {
+            let lastSeen = document.getElementById("lastSeen_" + d.circuit_id);
+            if (lastSeen !== null) {
+                let fiveMinutesInNanos = 300000000000;
+                if (d.last_seen_nanos > fiveMinutesInNanos) {
+                    lastSeen.innerText = "> 5 Minutes ago";
+                } else {
+                    lastSeen.innerText = scaleNanos(d.last_seen_nanos, 0) + " ago";
+                }
+            }
+            let throughputDown = document.getElementById("throughputDown_" + d.circuit_id);
+            if (throughputDown !== null) {
+                throughputDown.innerHTML = formatThroughput(d.bytes_per_second.down * 8, d.plan.down);
+            }
+            let throughputUp = document.getElementById("throughputUp_" + d.circuit_id);
+            if (throughputUp !== null) {
+                throughputUp.innerHTML = formatThroughput(d.bytes_per_second.up * 8, d.plan.up);
+            }
+            let rttDown = document.getElementById("rttDown_" + d.circuit_id);
+            if (rttDown !== null && d.median_latency != null) {
+                rttDown.innerHTML = formatRtt(d.median_latency.down);
+            }
+            let rttUp = document.getElementById("rttUp_" + d.circuit_id);
+            if (rttUp !== null && d.median_latency != null) {
+                rttUp.innerHTML = formatRtt(d.median_latency.up);
+            }
+            let reXmitDown = document.getElementById("reXmitDown_" + d.circuit_id);
+            if (reXmitDown !== null) {
+                reXmitDown.innerHTML = formatRetransmit(d.tcp_retransmits.down);
+            }
+            let reXmitUp = document.getElementById("reXmitUp_" + d.circuit_id);
+            if (reXmitUp !== null) {
+                reXmitUp.innerHTML = formatRetransmit(d.tcp_retransmits.up);
+            }
+        });
+    }
+});
