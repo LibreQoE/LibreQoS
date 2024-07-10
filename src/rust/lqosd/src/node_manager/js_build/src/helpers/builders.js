@@ -1,3 +1,5 @@
+import {scaleNanos} from "./scaling";
+
 export function heading5Icon(icon, text) {
     let h5 = document.createElement("h5");
     h5.innerHTML = "<i class='fa fa-" + icon + "'></i> " + text;
@@ -72,4 +74,29 @@ export function tooltipsNextFrame(id) {
             pendingTooltips = [];
         })
     });
+}
+
+export function clientTableHeader() {
+    let thead = document.createElement("thead");
+    thead.appendChild(theading("Circuit"));
+    thead.appendChild(theading("Device"));
+    thead.appendChild(theading("Plan (Mbps)"));
+    thead.appendChild(theading("Parent"));
+    thead.appendChild(theading("IP"));
+    thead.appendChild(theading("Last Seen"));
+    thead.appendChild(theading("Throughput", 2));
+    thead.appendChild(theading("RTT", 2));
+    thead.appendChild(theading("Re-Xmit", 2));
+    return thead;
+}
+
+export function formatLastSeen(n) {
+    let fiveMinutesInNanos = 300000000000;
+    let result = "-";
+    if (n > fiveMinutesInNanos) {
+        result = "> 5 Minutes ago";
+    } else {
+        result = scaleNanos(n, 0) + " ago";
+    }
+    return result;
 }

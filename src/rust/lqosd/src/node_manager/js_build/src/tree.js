@@ -1,4 +1,4 @@
-import {clearDiv, theading} from "./helpers/builders";
+import {clearDiv, clientTableHeader, formatLastSeen, simpleRow, simpleRowHtml, theading} from "./helpers/builders";
 import {
     formatCakeStat,
     formatRetransmit,
@@ -58,7 +58,7 @@ function getInitialTree() {
         target.appendChild(treeTable);
 
         if (!subscribed) {
-            subscribeWS(["NetworkTree"], onMessage);
+            subscribeWS(["NetworkTree", "NetworkTreeClients"], onMessage);
             subscribed = true;
         }
     });
@@ -221,82 +221,125 @@ function buildRow(i, depth=0) {
     return row;
 }
 
+function treeUpdate(msg) {
+    //console.log(msg);
+    msg.data.forEach((n) => {
+        let nodeId = n[0];
+        let node = n[1];
+
+        if (nodeId === parent) {
+            fillHeader(node);
+        }
+
+        let col = document.getElementById("down-" + nodeId);
+        if (col !== null) {
+            col.innerHTML = formatThroughput(node.current_throughput[0] * 8, node.max_throughput[0]);
+        }
+        col = document.getElementById("up-" + nodeId);
+        if (col !== null) {
+            col.innerHTML = formatThroughput(node.current_throughput[1] * 8, node.max_throughput[1]);
+        }
+        col = document.getElementById("rtt-down-" + nodeId);
+        if (col !== null) {
+            col.innerHTML = formatRtt(node.rtts[0]);
+        }
+        col = document.getElementById("rtt-up-" + nodeId);
+        if (col !== null) {
+            col.innerHTML = formatRtt(node.rtts[1]);
+        }
+        col = document.getElementById("re-xmit-down-" + nodeId);
+        if (col !== null) {
+            if (node.current_retransmits[0] !== undefined) {
+                col.textContent = node.current_retransmits[0];
+            } else {
+                col.textContent = "-";
+            }
+        }
+        col = document.getElementById("re-xmit-up-" + nodeId);
+        if (col !== null) {
+            if (node.current_retransmits[1] !== undefined) {
+                col.textContent = node.current_retransmits[1];
+            } else {
+                col.textContent = "-";
+            }
+        }
+        col = document.getElementById("ecn-down-" + nodeId);
+        if (col !== null) {
+            if (node.current_marks[0] !== undefined) {
+                col.textContent = node.current_marks[0];
+            } else {
+                col.textContent = "-";
+            }
+        }
+        col = document.getElementById("ecn-up-" + nodeId);
+        if (col !== null) {
+            if (node.current_marks[1] !== undefined) {
+                col.textContent = node.current_marks[1];
+            } else {
+                col.textContent = "-";
+            }
+        }
+        col = document.getElementById("drops-down-" + nodeId);
+        if (col !== null) {
+            if (node.current_drops[0] !== undefined) {
+                col.textContent = node.current_drops[0];
+            } else {
+                col.textContent = "-";
+            }
+        }
+        col = document.getElementById("drops-up-" + nodeId);
+        if (col !== null) {
+            if (node.current_drops[1] !== undefined) {
+                col.textContent = node.current_drops[1];
+            } else {
+                col.textContent = "-";
+            }
+        }
+    });
+}
+
+function clientsUpdate(msg) {
+    let myName = tree[parent][1].name;
+
+    let target = document.getElementById("clients");
+    let table = document.createElement("table");
+    table.classList.add("table", "table-striped", "table-bordered");
+    table.appendChild(clientTableHeader());
+    clearDiv(target);
+
+    msg.data.forEach((device) => {
+        if (device.parent_node === myName) {
+            let tr = document.createElement("tr");
+            tr.appendChild(simpleRow(device.circuit_name));
+            tr.appendChild(simpleRow(device.device_name));
+            tr.appendChild(simpleRow(device.plan.down + " / " + device.plan.up));
+            tr.appendChild(simpleRow(device.parent_node));
+            tr.appendChild(simpleRow(device.ip));
+            tr.appendChild(simpleRow(formatLastSeen(device.last_seen_nanos)));
+            tr.appendChild(simpleRowHtml(formatThroughput(device.bytes_per_second.down * 8, device.plan.down)));
+            tr.appendChild(simpleRowHtml(formatThroughput(device.bytes_per_second.up * 8, device.plan.up)));
+            if (device.median_latency !== null) {
+                tr.appendChild(simpleRowHtml(formatRtt(device.median_latency.down)));
+                tr.appendChild(simpleRowHtml(formatRtt(device.median_latency.up)));
+            } else {
+                tr.appendChild(simpleRow("-"));
+                tr.appendChild(simpleRow("-"));
+            }
+            tr.appendChild(simpleRowHtml(formatRetransmit(device.tcp_retransmits.down)));
+            tr.appendChild(simpleRowHtml(formatRetransmit(device.tcp_retransmits.up)));
+
+            // Add it
+            table.appendChild(tr);
+        }
+    })
+    target.appendChild(table);
+}
+
 function onMessage(msg) {
     if (msg.event === "NetworkTree") {
-        //console.log(msg);
-        msg.data.forEach((n) => {
-            let nodeId = n[0];
-            let node = n[1];
-
-            if (nodeId === parent) {
-                fillHeader(node);
-            }
-
-            let col = document.getElementById("down-" + nodeId);
-            if (col !== null) {
-                col.innerHTML = formatThroughput(node.current_throughput[0] * 8, node.max_throughput[0]);
-            }
-            col = document.getElementById("up-" + nodeId);
-            if (col !== null) {
-                col.innerHTML = formatThroughput(node.current_throughput[1] * 8, node.max_throughput[1]);
-            }
-            col = document.getElementById("rtt-down-" + nodeId);
-            if (col !== null) {
-                col.innerHTML = formatRtt(node.rtts[0]);
-            }
-            col = document.getElementById("rtt-up-" + nodeId);
-            if (col !== null) {
-                col.innerHTML = formatRtt(node.rtts[1]);
-            }
-            col = document.getElementById("re-xmit-down-" + nodeId);
-            if (col !== null) {
-                if (node.current_retransmits[0] !== undefined) {
-                    col.textContent = node.current_retransmits[0];
-                } else {
-                    col.textContent = "-";
-                }
-            }
-            col = document.getElementById("re-xmit-up-" + nodeId);
-            if (col !== null) {
-                if (node.current_retransmits[1] !== undefined) {
-                    col.textContent = node.current_retransmits[1];
-                } else {
-                    col.textContent = "-";
-                }
-            }
-            col = document.getElementById("ecn-down-" + nodeId);
-            if (col !== null) {
-                if (node.current_marks[0] !== undefined) {
-                    col.textContent = node.current_marks[0];
-                } else {
-                    col.textContent = "-";
-                }
-            }
-            col = document.getElementById("ecn-up-" + nodeId);
-            if (col !== null) {
-                if (node.current_marks[1] !== undefined) {
-                    col.textContent = node.current_marks[1];
-                } else {
-                    col.textContent = "-";
-                }
-            }
-            col = document.getElementById("drops-down-" + nodeId);
-            if (col !== null) {
-                if (node.current_drops[0] !== undefined) {
-                    col.textContent = node.current_drops[0];
-                } else {
-                    col.textContent = "-";
-                }
-            }
-            col = document.getElementById("drops-up-" + nodeId);
-            if (col !== null) {
-                if (node.current_drops[1] !== undefined) {
-                    col.textContent = node.current_drops[1];
-                } else {
-                    col.textContent = "-";
-                }
-            }
-        });
+        treeUpdate(msg);
+    } else if (msg.event === "NetworkTreeClients") {
+        clientsUpdate(msg);
     }
 }
 

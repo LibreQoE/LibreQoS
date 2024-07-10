@@ -1,4 +1,4 @@
-import {clearDiv, simpleRow, theading} from "./helpers/builders";
+import {clearDiv, clientTableHeader, formatLastSeen, simpleRow, theading} from "./helpers/builders";
 import {subscribeWS} from "./pubsub/ws";
 import {formatRetransmit, formatRtt, formatThroughput, scaleNanos} from "./helpers/scaling";
 
@@ -77,17 +77,7 @@ function tableRow(device) {
 function make_table() {
     let table = document.createElement("table");
     table.classList.add("table", "table-striped");
-    let thead = document.createElement("thead");
-    thead.appendChild(theading("Circuit"));
-    thead.appendChild(theading("Device"));
-    thead.appendChild(theading("Plan (Mbps)"));
-    thead.appendChild(theading("Parent"));
-    thead.appendChild(theading("IP"));
-    thead.appendChild(theading("Last Seen"));
-    thead.appendChild(theading("Throughput", 2));
-    thead.appendChild(theading("RTT", 2));
-    thead.appendChild(theading("Re-Xmit", 2));
-    table.appendChild(thead);
+    table.appendChild(clientTableHeader());
     let tb = document.createElement("tbody");
     let start = page * devicesPerPage;
     let end = Math.min((page + 1) * devicesPerPage, displayDevices.length);
@@ -209,12 +199,7 @@ subscribeWS(["NetworkTreeClients"], (msg) => {
         msg.data.forEach((d) => {
             let lastSeen = document.getElementById("lastSeen_" + d.circuit_id);
             if (lastSeen !== null) {
-                let fiveMinutesInNanos = 300000000000;
-                if (d.last_seen_nanos > fiveMinutesInNanos) {
-                    lastSeen.innerText = "> 5 Minutes ago";
-                } else {
-                    lastSeen.innerText = scaleNanos(d.last_seen_nanos, 0) + " ago";
-                }
+                lastSeen.innerText = formatLastSeen(d.last_seen_nanos);
             }
             let throughputDown = document.getElementById("throughputDown_" + d.circuit_id);
             if (throughputDown !== null) {
