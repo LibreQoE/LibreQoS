@@ -6,6 +6,7 @@ mod network_tree;
 mod support;
 mod lts;
 mod search;
+mod unknown_ips;
 
 use axum::Router;
 use axum::routing::{get, post};
@@ -25,4 +26,5 @@ pub fn local_api() -> Router {
         .route("/submitSupport", post(support::submit_support_data))
         .route("/ltsCheck", get(lts::stats_check))
         .route("/search", post(search::search))
+        .route("/unknownIps", get(unknown_ips::unknown_ips))
 }

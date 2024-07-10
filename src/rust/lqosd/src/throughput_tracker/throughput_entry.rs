@@ -40,7 +40,7 @@ impl ThroughputEntry {
       .filter(|n| n.as_nanos() != 0)
       .map(|n| n.as_millis() as f32)
       .collect();
-    if shifted.len() < 5 {
+    if shifted.len() < 2 {
       return None;
     }
     shifted.sort_by(|a, b| a.partial_cmp(b).unwrap());
