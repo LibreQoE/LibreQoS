@@ -1,7 +1,7 @@
 import {BaseDashlet} from "./base_dashlet";
 import {RttHistogram} from "../graphs/rtt_histo";
 import {clearDashDiv, theading} from "../helpers/builders";
-import {scaleNumber, rttCircleSpan} from "../helpers/scaling";
+import {scaleNumber, rttCircleSpan, formatRtt, formatThroughput} from "../helpers/scaling";
 import {redactCell} from "../helpers/redact";
 
 export class Worst10Retransmits extends BaseDashlet {
@@ -63,15 +63,15 @@ export class Worst10Retransmits extends BaseDashlet {
                 row.append(ip);
 
                 let dl = document.createElement("td");
-                dl.innerText = scaleNumber(r.bits_per_second.down);
+                dl.innerHTML = formatThroughput(r.bits_per_second.down, r.plan.down);
                 row.append(dl);
 
                 let ul = document.createElement("td");
-                ul.innerText = scaleNumber(r.bits_per_second.up);
+                ul.innerHTML = formatThroughput(r.bits_per_second.up, r.plan.up);
                 row.append(ul);
 
                 let rtt = document.createElement("td");
-                rtt.innerText = r.median_tcp_rtt.toFixed(2);
+                rtt.innerHTML = formatRtt(r.median_tcp_rtt);
                 row.append(rtt);
 
                 let tcp_xmit = document.createElement("td");
