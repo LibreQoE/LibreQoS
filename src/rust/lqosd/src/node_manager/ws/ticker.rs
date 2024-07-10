@@ -47,6 +47,8 @@ async fn one_second_cadence(channels: Arc<PubSub>) {
             timeout(timeout_time, flow_endpoints::endpoints_by_country(channels.clone())),
             timeout(timeout_time, flow_endpoints::ether_protocols(channels.clone())),
             timeout(timeout_time, flow_endpoints::ip_protocols(channels.clone())),
+            timeout(timeout_time, tree_summary::tree_summary(channels.clone())),
+            timeout(timeout_time, network_tree::network_tree(channels.clone())),
         );
     }
 }
@@ -58,7 +60,6 @@ async fn two_second_cadence(channels: Arc<PubSub>) {
     loop {
         interval.tick().await; // Once per second
         let _ = join!(
-            timeout(timeout_time, tree_summary::tree_summary(channels.clone())),
             timeout(timeout_time, queue_stats_total::queue_stats_totals(channels.clone())),
         );
     }
@@ -71,7 +72,6 @@ async fn five_second_cadence(channels: Arc<PubSub>) {
     loop {
         interval.tick().await; // Once per second
         let _ = join!(
-            timeout(timeout_time, network_tree::network_tree(channels.clone())),
             timeout(timeout_time, system_info::cpu_info(channels.clone())),
             timeout(timeout_time, system_info::ram_info(channels.clone())),
        );
