@@ -1,5 +1,12 @@
 import {clearDiv, theading} from "./helpers/builders";
-import {formatRtt, formatThroughput, lerpGreenToRedViaOrange, scaleNumber} from "./helpers/scaling";
+import {
+    formatCakeStat,
+    formatRetransmit,
+    formatRtt,
+    formatThroughput,
+    lerpGreenToRedViaOrange,
+    scaleNumber
+} from "./helpers/scaling";
 import {subscribeWS} from "./pubsub/ws";
 
 var tree = null;
@@ -20,14 +27,10 @@ function getInitialTree() {
         thead.appendChild(theading("Limit"));
         thead.appendChild(theading("⬇️"));
         thead.appendChild(theading("⬆️"));
-        thead.appendChild(theading("RTT ⬇️"));
-        thead.appendChild(theading("RTT ⬆️"));
-        thead.appendChild(theading("Re-xmit ⬇️"));
-        thead.appendChild(theading("Re-xmit ⬆️"));
-        thead.appendChild(theading("ECN ⬇️"));
-        thead.appendChild(theading("ECN ⬆️"));
-        thead.appendChild(theading("Drops ⬇️"));
-        thead.appendChild(theading("Drops ⬆️"));
+        thead.appendChild(theading("RTT", 2, "<h5>TCP Round-Trip Time</h5><p>Current median TCP round-trip time. Time taken for a full send-acknowledge round trip. Low numbers generally equate to a smoother user experience.</p>", "tts_retransmits"));
+        thead.appendChild(theading("Retr", 2, "<h5>TCP Retransmits</h5><p>Number of TCP retransmits in the last second.</p>", "tts_retransmits"));
+        thead.appendChild(theading("Marks", 2, "<h5>Cake Marks</h5><p>Number of times the Cake traffic manager has applied ECN marks to avoid congestion.</p>", "tts_marks"));
+        thead.appendChild(theading("Drops", 2, "<h5>Cake Drops</h5><p>Number of times the Cake traffic manager has dropped packets to avoid congestion.</p>", "tts_drops"));
 
         treeTable.appendChild(thead);
         let tbody = document.createElement("tbody");
@@ -164,7 +167,7 @@ function buildRow(i, depth=0) {
     col = document.createElement("td");
     col.id = "re-xmit-down-" + nodeId;
     if (node.current_retransmits[0] !== undefined) {
-        col.textContent = node.current_retransmits[0];
+        col.innerHTML = formatRetransmit(node.current_retransmits[0]);
     } else {
         col.textContent = "-";
     }
@@ -173,7 +176,7 @@ function buildRow(i, depth=0) {
     col = document.createElement("td");
     col.id = "re-xmit-up-" + nodeId;
     if (node.current_retransmits[1] !== undefined) {
-        col.textContent = node.current_retransmits[1];
+        col.innerHTML = formatRetransmit(node.current_retransmits[1]);
     } else {
         col.textContent = "-";
     }
@@ -182,7 +185,7 @@ function buildRow(i, depth=0) {
     col = document.createElement("td");
     col.id = "ecn-down-" + nodeId;
     if (node.current_marks[0] !== undefined) {
-        col.textContent = node.current_marks[0];
+        col.innerHTML = formatCakeStat(node.current_marks[0]);
     } else {
         col.textContent = "-";
     }
@@ -191,7 +194,7 @@ function buildRow(i, depth=0) {
     col = document.createElement("td");
     col.id = "ecn-up-" + nodeId;
     if (node.current_marks[1] !== undefined) {
-        col.textContent = node.current_marks[1];
+        col.innerHTML = formatCakeStat(node.current_marks[1]);
     } else {
         col.textContent = "-";
     }
@@ -200,7 +203,7 @@ function buildRow(i, depth=0) {
     col = document.createElement("td");
     col.id = "drops-down-" + nodeId;
     if (node.current_drops[0] !== undefined) {
-        col.textContent = node.current_drops[0];
+        col.innerHTML = formatCakeStat(node.current_drops[0]);
     } else {
         col.textContent = "-";
     }
@@ -209,7 +212,7 @@ function buildRow(i, depth=0) {
     col = document.createElement("td");
     col.id = "drops-up-" + nodeId;
     if (node.current_drops[1] !== undefined) {
-        col.textContent = node.current_drops[1];
+        col.innerHTML = formatCakeStat(node.current_drops[1]);
     } else {
         col.textContent = "-";
     }

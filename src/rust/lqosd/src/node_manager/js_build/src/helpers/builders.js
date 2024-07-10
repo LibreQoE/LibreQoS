@@ -6,6 +6,7 @@ export function heading5Icon(icon, text) {
 
 export function theading(text, colspan=0, tooltip="", id="") {
     let th = document.createElement("th");
+    th.classList.add("text-center");
     if (id !== "") th.id = id;
     if (colspan > 0) th.colSpan = colspan;
 
@@ -42,7 +43,7 @@ export function clearDashDiv(id, target) {
     }
 }
 
-export function clearDiv(target, targetLength=1) {
+export function clearDiv(target, targetLength=0) {
     while (target.children.length > targetLength) {
         target.removeChild(target.lastChild);
     }
