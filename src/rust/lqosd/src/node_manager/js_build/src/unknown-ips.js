@@ -1,7 +1,6 @@
 import {clearDiv, formatLastSeen, simpleRow, theading} from "./helpers/builders";
 import {scaleNumber} from "./helpers/scaling";
 
-console.log("Hello from unknown-ips.js!");
 $.get("/local-api/unknownIps", (data) => {
    let target = document.getElementById("unknown");
    let table = document.createElement("table");
