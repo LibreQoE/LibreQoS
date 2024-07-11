@@ -113,3 +113,4 @@ body.dark-mode {
     visibility: hidden;
     transform: translateX(5%);
 }
+.invalid { background-color: red }

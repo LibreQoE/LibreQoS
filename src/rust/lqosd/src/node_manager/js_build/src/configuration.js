@@ -1041,7 +1041,8 @@ function saveNetAndDevices() {
     }
     $.ajax({
         type: "POST",
-        url: "/api/update_network_and_devices",
+        url: "/local-api/updateNetworkAndDevices",
+        contentType:"application/json",
         data: JSON.stringify(submission),
         success: (data) => {
             if (data === "Ok") {
@@ -1149,6 +1150,9 @@ function start() {
             // Handle Saving ispConfig.py
             $("#btnSaveIspConfig").on('click', (data) => {
                 saveConfig();
+            });
+            $("#btnSaveNetDevices").on('click', (data) => {
+               saveNetAndDevices();
             });
         }
         $.get("/local-api/getConfig", (data) => {

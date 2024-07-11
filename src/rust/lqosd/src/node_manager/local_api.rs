@@ -38,5 +38,6 @@ pub fn local_api() -> Router {
         .route("/networkJson", get(config::network_json))
         .route("/allShapedDevices", get(config::all_shaped_devices))
         .route("/updateConfig", post(config::update_lqosd_config))
+        .route("/updateNetworkAndDevices", post(config::update_network_and_devices))
         .route_layer(axum::middleware::from_fn(auth_layer))
 }
