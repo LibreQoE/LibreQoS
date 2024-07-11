@@ -30,7 +30,7 @@ export class Dashboard {
     #editButton() {
         let editDiv = document.createElement("div");
         editDiv.id = this.divName + "_edit";
-        editDiv.style.position = "fixed";
+        editDiv.style.position = "absolute";
         editDiv.style.right = "5px";
         editDiv.style.top = "5px";
         editDiv.style.width = "40px";
