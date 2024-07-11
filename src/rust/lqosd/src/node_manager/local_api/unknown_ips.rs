@@ -1,4 +1,5 @@
 use std::time::Duration;
+use itertools::Itertools;
 use serde::Serialize;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::time_since_boot;
@@ -13,7 +14,9 @@ pub struct UnknownIp {
     current_bytes: DownUpOrder<u64>,
 }
 
-fn get_unknown_ips() -> Vec<UnknownIp> {
+pub fn get_unknown_ips() -> Vec<UnknownIp> {
+    const FIVE_MINUTES_IN_NANOS: u64 = 5 * 60 * 1_000_000_000;
+
     let now = Duration::from(time_since_boot().unwrap()).as_nanos() as u64;
     let sd_reader = SHAPED_DEVICES.read().unwrap();
     THROUGHPUT_TRACKER
@@ -33,6 +36,8 @@ fn get_unknown_ips() -> Vec<UnknownIp> {
                 current_bytes: d.bytes_per_second,
             }
         })
+        .filter(|u| u.last_seen_nanos <FIVE_MINUTES_IN_NANOS )
+        .sorted_by(|a, b| b.last_seen_nanos.cmp(&a.last_seen_nanos))
         .collect()
 }
 
