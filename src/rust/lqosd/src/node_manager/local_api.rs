@@ -7,9 +7,11 @@ mod support;
 mod lts;
 mod search;
 mod unknown_ips;
+mod reload_libreqos;
 
 use axum::Router;
 use axum::routing::{get, post};
+use crate::node_manager::auth::auth_layer;
 
 pub fn local_api() -> Router {
     Router::new()
@@ -28,4 +30,6 @@ pub fn local_api() -> Router {
         .route("/search", post(search::search))
         .route("/unknownIps", get(unknown_ips::unknown_ips))
         .route("/unknownIpsCsv", get(unknown_ips::unknown_ips_csv))
+        .route("/reloadLqos", get(reload_libreqos::reload_libreqos))
+        .route_layer(axum::middleware::from_fn(auth_layer))
 }

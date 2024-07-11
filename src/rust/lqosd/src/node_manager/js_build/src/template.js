@@ -135,8 +135,21 @@ function setupSearch() {
     });
 }
 
+function setupReload() {
+    let link = document.getElementById("lnkReloadLqos");
+    link.onclick = () => {
+        const myModal = new bootstrap.Modal(document.getElementById('reloadModal'), { focus: true });
+        myModal.show();
+        $("#reloadLibreResult").html("<i class='fa fa-spinner fa-spin'></i> Reloading LibreQoS...");
+        $.get("/local-api/reloadLqos", (result) => {
+            $("#reloadLibreResult").text(result);
+        });
+    }
+}
+
 initLogout();
 initDayNightMode();
 getDeviceCounts();
 titleAndLts();
 setupSearch();
+setupReload();
