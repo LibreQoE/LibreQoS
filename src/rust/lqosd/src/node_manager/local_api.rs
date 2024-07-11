@@ -9,6 +9,7 @@ mod search;
 mod unknown_ips;
 mod reload_libreqos;
 mod config;
+mod circuit;
 
 use axum::Router;
 use axum::routing::{get, post};
@@ -39,5 +40,6 @@ pub fn local_api() -> Router {
         .route("/allShapedDevices", get(config::all_shaped_devices))
         .route("/updateConfig", post(config::update_lqosd_config))
         .route("/updateNetworkAndDevices", post(config::update_network_and_devices))
+        .route("/circuitById", post(circuit::get_circuit_by_id))
         .route_layer(axum::middleware::from_fn(auth_layer))
 }

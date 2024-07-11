@@ -31,6 +31,7 @@ pub(super) fn static_routes() -> Result<Router> {
     let html_pages = [
         "index.html", "shaped_devices.html", "tree.html",
         "help.html", "unknown_ips.html", "configuration.html",
+        "circuit.html",
     ];
 
     // Iterate through pages and construct the router

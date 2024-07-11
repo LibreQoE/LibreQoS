@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-scripts=( index.js template.js login.js first-run.js shaped-devices.js tree.js help.js unknown-ips.js configuration.js )
+scripts=( index.js template.js login.js first-run.js shaped-devices.js tree.js help.js unknown-ips.js configuration.js circuit.js )
 for script in "${scripts[@]}"
 do
   echo "Building {$script}"
