@@ -1,7 +1,5 @@
-use std::net::IpAddr;
 use axum::Json;
 use serde::Serialize;
-use lqos_bus::{BusResponse, IpStats};
 use crate::node_manager::local_api::unknown_ips::get_unknown_ips;
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
 
