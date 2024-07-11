@@ -4,6 +4,7 @@ use lqos_config::{Config, ShapedDevice};
 use crate::node_manager::auth::LoginResult;
 use default_net::get_interfaces;
 use serde_json::Value;
+use lqos_bus::{bus_request, BusRequest};
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
 
 pub async fn admin_check(
@@ -60,4 +61,18 @@ pub async fn network_json()-> Json<Value> {
 
 pub async fn all_shaped_devices() -> Json<Vec<ShapedDevice>> {
     Json(SHAPED_DEVICES.read().unwrap().devices.clone())
+}
+
+pub async fn update_lqosd_config(
+    Extension(login): Extension<LoginResult>,
+    data: Json<Config>
+) -> String {
+    if login != LoginResult::Admin {
+        return "Unauthorized".to_string();
+    }
+    let config: Config = (*data).clone();
+    bus_request(vec![BusRequest::UpdateLqosdConfig(Box::new(config))])
+        .await
+        .unwrap();
+    "Ok".to_string()
 }

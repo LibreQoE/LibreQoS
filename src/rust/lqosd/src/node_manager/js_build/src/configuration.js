@@ -366,7 +366,8 @@ function saveConfig() {
     updateSavedConfig(validationResult.changes);
     $.ajax({
         type: "POST",
-        url: "/api/update_config",
+        url: "/local-api/updateConfig",
+        contentType:"application/json",
         data: JSON.stringify(lqosd_config),
         success: (data) => {
             if (data === "Ok") {
