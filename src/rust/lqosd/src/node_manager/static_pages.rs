@@ -30,7 +30,7 @@ pub(super) fn static_routes() -> Result<Router> {
     // they won't have template + authentication applied to them.
     let html_pages = [
         "index.html", "shaped_devices.html", "tree.html",
-        "help.html", "unknown_ips.html",
+        "help.html", "unknown_ips.html", "configuration.html",
     ];
 
     // Iterate through pages and construct the router

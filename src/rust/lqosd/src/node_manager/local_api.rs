@@ -8,6 +8,7 @@ mod lts;
 mod search;
 mod unknown_ips;
 mod reload_libreqos;
+mod config;
 
 use axum::Router;
 use axum::routing::{get, post};
@@ -31,5 +32,10 @@ pub fn local_api() -> Router {
         .route("/unknownIps", get(unknown_ips::unknown_ips))
         .route("/unknownIpsCsv", get(unknown_ips::unknown_ips_csv))
         .route("/reloadLqos", get(reload_libreqos::reload_libreqos))
+        .route("/adminCheck", get(config::admin_check))
+        .route("/getConfig", get(config::get_config))
+        .route("/listNics", get(config::list_nics))
+        .route("/networkJson", get(config::network_json))
+        .route("/allShapedDevices", get(config::all_shaped_devices))
         .route_layer(axum::middleware::from_fn(auth_layer))
 }

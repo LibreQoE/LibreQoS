@@ -28,7 +28,7 @@ pub async fn get_username(jar: &CookieJar) -> String {
     return "Anonymous".to_string();
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub enum LoginResult {
     Admin,
     ReadOnly,
