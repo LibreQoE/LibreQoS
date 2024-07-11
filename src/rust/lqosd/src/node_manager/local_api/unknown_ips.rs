@@ -44,3 +44,20 @@ pub fn get_unknown_ips() -> Vec<UnknownIp> {
 pub async fn unknown_ips() -> axum::Json<Vec<UnknownIp>> {
     axum::Json(get_unknown_ips())
 }
+
+pub async fn unknown_ips_csv() -> String {
+    let list = get_unknown_ips();
+
+    let mut csv = String::new();
+    csv.push_str("IP Address,Total Download (bytes),Total Upload (bytes)\n");
+    for unknown in list.into_iter() {
+        csv.push_str(&format!(
+            "{},{},{}\n",
+            unknown.ip,
+            unknown.total_bytes.down,
+            unknown.total_bytes.up
+        ));
+    }
+
+    csv
+}

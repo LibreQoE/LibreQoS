@@ -27,4 +27,5 @@ pub fn local_api() -> Router {
         .route("/ltsCheck", get(lts::stats_check))
         .route("/search", post(search::search))
         .route("/unknownIps", get(unknown_ips::unknown_ips))
+        .route("/unknownIpsCsv", get(unknown_ips::unknown_ips_csv))
 }

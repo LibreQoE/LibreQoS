@@ -1,6 +1,11 @@
 import {clearDiv, formatLastSeen, simpleRow, theading} from "./helpers/builders";
 import {scaleNumber} from "./helpers/scaling";
 
+let button = document.getElementById("btnCsv");
+button.onclick = () => {
+   window.location.href = "/local-api/unknownIpsCsv";
+};
+
 $.get("/local-api/unknownIps", (data) => {
    let target = document.getElementById("unknown");
    let table = document.createElement("table");
