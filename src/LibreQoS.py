@@ -952,8 +952,9 @@ def refreshShapers():
 		# Execute actual XDP-CPUMAP-TC filter commands
 		xdpFilterStartTime = datetime.now()
 		print("Executing XDP-CPUMAP-TC IP filter commands")
-		numXdpCommands = ipMapBatch.length();
+		numXdpCommands = ipMapBatch.length()
 		if enable_actual_shell_commands():
+			ipMapBatch.finish_ip_mappings()
 			ipMapBatch.submit()
 			#for command in xdpCPUmapCommands:
 			#	logging.info(command)

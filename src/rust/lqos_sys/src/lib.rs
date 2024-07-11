@@ -23,7 +23,7 @@ mod bpf_iterator;
 pub mod flowbee_data;
 
 pub use ip_mapping::{
-  add_ip_to_tc, clear_ips_from_tc, del_ip_from_tc, list_mapped_ips,
+  add_ip_to_tc, clear_ips_from_tc, del_ip_from_tc, list_mapped_ips, clear_hot_cache,
 };
 pub use kernel_wrapper::LibreQoSKernels;
 pub use linux::num_possible_cpus;
