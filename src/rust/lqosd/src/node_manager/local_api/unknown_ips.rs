@@ -37,7 +37,7 @@ pub fn get_unknown_ips() -> Vec<UnknownIp> {
             }
         })
         .filter(|u| u.last_seen_nanos <FIVE_MINUTES_IN_NANOS )
-        .sorted_by(|a, b| b.last_seen_nanos.cmp(&a.last_seen_nanos))
+        .sorted_by(|a, b| a.last_seen_nanos.cmp(&b.last_seen_nanos))
         .collect()
 }
 
