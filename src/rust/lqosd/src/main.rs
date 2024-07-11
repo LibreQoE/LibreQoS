@@ -38,6 +38,7 @@ mod node_manager;
 // Use JemAllocator only on supported platforms
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use jemallocator::Jemalloc;
+use crate::ip_mapping::clear_hot_cache;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[global_allocator]
@@ -177,6 +178,7 @@ fn handle_bus_requests(
       BusRequest::MapIpToFlow { ip_address, tc_handle, cpu, upload } => {
         map_ip_to_flow(ip_address, tc_handle, *cpu, *upload)
       }
+      BusRequest::ClearHotCache => clear_hot_cache(),
       BusRequest::DelIpFlow { ip_address, upload } => {
         del_ip_flow(ip_address, *upload)
       }

@@ -36,7 +36,8 @@ pub fn add_ip_to_tc(
   let mut value =
     IpHashData { cpu: ip_to_add.cpu, tc_handle: ip_to_add.handle() };
   bpf_map.insert_or_update(&mut key, &mut value)?;
-  clear_hot_cache()?;
+  // Removed because it should be cleared explicitly at the end of a batch operation
+  //clear_hot_cache()?;
   Ok(())
 }
 
@@ -97,7 +98,7 @@ pub fn list_mapped_ips() -> Result<Vec<(IpHashKey, IpHashData)>> {
 /// Clears the "hot cache", which should be done whenever you change the IP
 /// mappings - because otherwise cached data will keep going to the previous
 /// destinations.
-fn clear_hot_cache() -> Result<()> {
+pub fn clear_hot_cache() -> Result<()> {
   let mut bpf_map = BpfMap::<XdpIpAddress, IpHashData>::from_path("/sys/fs/bpf/ip_to_cpu_and_tc_hotcache")?;
   bpf_map.clear()?;
   Ok(())
