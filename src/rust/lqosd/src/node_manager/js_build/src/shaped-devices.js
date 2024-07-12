@@ -1,6 +1,6 @@
-import {clearDiv, clientTableHeader, formatLastSeen, simpleRow, theading} from "./helpers/builders";
+import {clearDiv, clientTableHeader, formatLastSeen, simpleRow} from "./helpers/builders";
 import {subscribeWS} from "./pubsub/ws";
-import {formatRetransmit, formatRtt, formatThroughput, scaleNanos} from "./helpers/scaling";
+import {formatRetransmit, formatRtt, formatThroughput} from "./helpers/scaling";
 
 let shapedDevices = null;
 let displayDevices = null;
