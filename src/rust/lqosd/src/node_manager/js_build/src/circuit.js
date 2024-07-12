@@ -240,7 +240,7 @@ function initialDevices(circuits) {
 
         // Graph for Throughput
         let throughputGraph = document.createElement("div");
-        throughputGraph.classList.add("col-4")
+        throughputGraph.classList.add("col-3")
         throughputGraph.id = "throughputGraph_" + circuit.device_id;
         throughputGraph.style.height = "250px";
         throughputGraph.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
@@ -249,12 +249,18 @@ function initialDevices(circuits) {
 
         // Graph for TCP Retransmits
         let tcpRetransmitsGraph = document.createElement("div");
-        tcpRetransmitsGraph.classList.add("col-4")
+        tcpRetransmitsGraph.classList.add("col-3")
         tcpRetransmitsGraph.id = "tcpRetransmitsGraph_" + circuit.device_id;
         tcpRetransmitsGraph.style.height = "250px";
         tcpRetransmitsGraph.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
         target.appendChild(tcpRetransmitsGraph);
         deviceGraphs[tcpRetransmitsGraph.id] = new CircuitRetransmitGraph(tcpRetransmitsGraph.id, circuit.device_name + " Retransmits");
+
+        // Tools Section
+        let tools = document.createElement("div");
+        tools.classList.add("col-3");
+        target.appendChild(tools);
+
     });
 }
 
