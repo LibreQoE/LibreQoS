@@ -152,8 +152,8 @@ function fillLiveDevices(devices) {
         }
 
         if (rttDown !== null) {
-            if (device.median_latency !== null && device.median_latency.down !== null) {
-                rttDown.innerHTML = formatRtt(device.median_latency.down);
+            if (device.median_latency !== null) {
+                rttDown.innerHTML = formatRtt(device.median_latency);
             }
         }
 
@@ -321,11 +321,8 @@ function initialDevices(circuits) {
         td.innerHTML = "<b>RTT</b>";
         tr6.appendChild(td);
         td = document.createElement("td");
+        td.colSpan = 2;
         td.id = "rttDown_" + circuit.device_id;
-        td.innerHTML = "Sampling...";
-        tr6.appendChild(td);
-        td = document.createElement("td");
-        td.id = "rttUp_" + circuit.device_id;
         td.innerHTML = "Sampling...";
         tr6.appendChild(td);
         tbody.appendChild(tr6);
