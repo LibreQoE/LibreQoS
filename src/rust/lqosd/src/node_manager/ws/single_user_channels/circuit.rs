@@ -1,7 +1,13 @@
 use std::time::Duration;
+use serde::Serialize;
 use tokio::time::MissedTickBehavior;
-use crate::node_manager::ws::ticker::all_circuits;
+use crate::node_manager::ws::ticker::{all_circuits, Circuit};
 
+#[derive(Serialize)]
+pub struct Devices {
+    pub circuit_id: String,
+    pub devices: Vec<Circuit>,
+}
 
 pub(super) async fn circuit_watcher(circuit: String, tx: tokio::sync::mpsc::Sender<String>) {
     let mut ticker = tokio::time::interval(Duration::from_secs(1));
@@ -21,7 +27,12 @@ pub(super) async fn circuit_watcher(circuit: String, tx: tokio::sync::mpsc::Send
             })
             .collect();
 
-        let message = serde_json::to_string(&devices_for_circuit).unwrap();
+        let result = Devices {
+            circuit_id: circuit.clone(),
+            devices: devices_for_circuit,
+        };
+
+        let message = serde_json::to_string(&result).unwrap();
         if let Err(_) = tx.send(message.to_string()).await {
             log::info!("Channel is gone");
             break;

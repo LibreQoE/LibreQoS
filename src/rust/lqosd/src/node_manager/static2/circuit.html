@@ -16,13 +16,23 @@
             </tr>
         </table>
     </div>
-    <div class="col-9">
-        Graph Goes Here
+    <div class="col-3">
+        <div id="bitsGauge" style="width: 100%; height: 200px;"></div>
+    </div>
+    <div class="col-3" id="throughputGraph">
+        <i class="fa fa-spinner fa-spin"></i> Loading...
+    </div>
+    <div class="col-3" id="rxmitGraph">
+        <i class="fa fa-spinner fa-spin"></i> Loading...
     </div>
 
+</div>
+
+<div class="row" id="devices">
     <div class="col-12">
-        Device Enumeration
+        <i class="fa fa-spinner fa-spin"></i> Loading Devices...
     </div>
 </div>
+
 
 <script src="circuit.js"></script>
