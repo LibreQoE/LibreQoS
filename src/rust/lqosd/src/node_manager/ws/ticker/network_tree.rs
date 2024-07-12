@@ -40,21 +40,21 @@ pub async fn network_tree(channels: Arc<PubSub>) {
 }
 
 #[derive(Serialize)]
-struct Circuit {
-    ip: IpAddr,
-    bytes_per_second: DownUpOrder<u64>,
-    median_latency: Option<f32>,
-    tcp_retransmits: DownUpOrder<u64>,
-    circuit_id: Option<String>,
-    device_id: Option<String>,
-    parent_node: Option<String>,
-    circuit_name: Option<String>,
-    device_name: Option<String>,
-    plan: DownUpOrder<u32>,
-    last_seen_nanos: u64,
+pub struct Circuit {
+    pub ip: IpAddr,
+    pub bytes_per_second: DownUpOrder<u64>,
+    pub median_latency: Option<f32>,
+    pub tcp_retransmits: DownUpOrder<u64>,
+    pub circuit_id: Option<String>,
+    pub device_id: Option<String>,
+    pub parent_node: Option<String>,
+    pub circuit_name: Option<String>,
+    pub device_name: Option<String>,
+    pub plan: DownUpOrder<u32>,
+    pub last_seen_nanos: u64,
 }
 
-fn all_circuits() -> Vec<Circuit> {
+pub fn all_circuits() -> Vec<Circuit> {
     if let Ok(kernel_now) = time_since_boot() {
         if let Ok(devices) = SHAPED_DEVICES.read() {
             THROUGHPUT_TRACKER.

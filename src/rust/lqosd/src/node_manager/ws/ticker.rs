@@ -18,6 +18,7 @@ pub mod system_info;
 mod tree_summary;
 mod queue_stats_total;
 mod network_tree;
+pub use network_tree::{Circuit, all_circuits};
 
 /// Runs a periodic tick to feed data to the node manager.
 pub(super) async fn channel_ticker(channels: Arc<PubSub>) {

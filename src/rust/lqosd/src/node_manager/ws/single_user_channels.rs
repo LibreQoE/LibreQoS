@@ -1,29 +1,23 @@
-mod publish_subscribe;
-mod published_channels;
-mod ticker;
-mod single_user_channels;
+mod circuit;
 
-use std::str::FromStr;
 use std::sync::Arc;
-use axum::{extract::{ws::{Message, WebSocket}, WebSocketUpgrade}, response::IntoResponse, routing::get, Extension, Router};
-use serde::Deserialize;
-use crate::node_manager::auth::auth_layer;
+use std::time::Duration;
+use axum::Extension;
+use axum::extract::WebSocketUpgrade;
+use axum::extract::ws::{Message, WebSocket};
+use axum::response::IntoResponse;
+use serde::{Deserialize, Serialize};
+use tokio::spawn;
+use tokio::time::MissedTickBehavior;
 use crate::node_manager::ws::publish_subscribe::PubSub;
-use crate::node_manager::ws::published_channels::PublishedChannels;
-use crate::node_manager::ws::ticker::channel_ticker;
+use crate::node_manager::ws::single_user_channels::circuit::circuit_watcher;
 
-pub fn websocket_router() -> Router {
-    let channels = PubSub::new();
-    tokio::spawn(channel_ticker(channels.clone()));
-    tokio::spawn(ticker::system_info::cache::update_cache());
-    Router::new()
-        .route("/private_ws", get(single_user_channels::private_channel_ws_handler))
-        .route("/ws", get(ws_handler))
-        .route_layer(axum::middleware::from_fn(auth_layer))
-        .layer(Extension(channels))
+#[derive(Serialize, Deserialize)]
+enum PrivateChannel {
+    CircuitWatcher { circuit: String },
 }
 
-async fn ws_handler(
+pub(super) async fn private_channel_ws_handler(
     ws: WebSocketUpgrade,
     Extension(channels): Extension<Arc<PubSub>>,
 ) -> impl IntoResponse {
@@ -34,11 +28,6 @@ async fn ws_handler(
     })
 }
 
-#[derive(Deserialize)]
-struct Subscribe {
-    channel: String,
-}
-
 async fn handle_socket(mut socket: WebSocket, channels: Arc<PubSub>) {
     log::info!("Websocket connected");
 
@@ -46,13 +35,22 @@ async fn handle_socket(mut socket: WebSocket, channels: Arc<PubSub>) {
     loop {
         tokio::select! {
             inbound = socket.recv() => {
-                // Received a websocket message
+                // Handle incoming message - select a private message source
                 match inbound {
                     Some(Ok(msg)) => {
-                        log::info!("Received message: {:?}", msg);
+                        log::info!("Received private message: {:?}", msg);
                         if let Ok(text) = msg.to_text() {
-                            if let Ok(sub) = serde_json::from_str::<Subscribe>(text) {
-                                channels.subscribe(PublishedChannels::from_str(&sub.channel).unwrap(), tx.clone()).await;
+                            if let Ok(sub) = serde_json::from_str::<PrivateChannel>(text) {
+                                match sub {
+                                    PrivateChannel::CircuitWatcher {circuit } => {
+                                        spawn(circuit_watcher(circuit, tx.clone()));
+                                    },
+                                }
+                            } else {
+                                log::warn!("Failed to parse private message: {:?}", text);
+                                let test = PrivateChannel::CircuitWatcher { circuit: "test".to_string() };
+                                let test = serde_json::to_string(&test).unwrap();
+                                println!("{test}");
                             }
                         }
                     }
@@ -78,5 +76,4 @@ async fn handle_socket(mut socket: WebSocket, channels: Arc<PubSub>) {
             }
         }
     }
-    log::info!("Websocket disconnected");
 }
