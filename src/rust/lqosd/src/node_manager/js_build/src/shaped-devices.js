@@ -13,8 +13,20 @@ function tableRow(device) {
     if (device.circuit_id !== "") {
         tr.id = "row_" + device.circuit_id;
     }
-    tr.appendChild(simpleRow(device.circuit_name));
-    tr.appendChild(simpleRow(device.device_name));
+    let link = document.createElement("a");
+    link.href = "circuit.html?id=" + device.circuit_id;
+    link.innerText = device.circuit_name;
+    let td = document.createElement("td");
+    td.appendChild(link);
+    tr.appendChild(td);
+
+    link = document.createElement("a");
+    link.href = "device.html?id=" + device.device_id;
+    link.innerText = device.device_name;
+    td = document.createElement("td");
+    td.appendChild(link);
+    tr.appendChild(td);
+
     tr.appendChild(simpleRow(device.download_max_mbps + " / " + device.upload_max_mbps));
     tr.appendChild(simpleRow(device.parent_node));
     let ipList = "";
