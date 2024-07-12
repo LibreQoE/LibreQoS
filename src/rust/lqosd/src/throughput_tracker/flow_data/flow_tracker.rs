@@ -5,9 +5,10 @@ use super::{flow_analysis::FlowAnalysis, RttData};
 use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
 use once_cell::sync::Lazy;
 use std::{collections::HashMap, sync::Mutex};
+use serde::Serialize;
 use lqos_utils::units::DownUpOrder;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub struct AsnId(pub u32);
 
 pub static ALL_FLOWS: Lazy<Mutex<HashMap<FlowbeeKey, (FlowbeeLocalData, FlowAnalysis)>>> =
@@ -17,7 +18,7 @@ pub static ALL_FLOWS: Lazy<Mutex<HashMap<FlowbeeKey, (FlowbeeLocalData, FlowAnal
 /// Condensed representation of the FlowbeeData type. This contains
 /// only the information we want to keep locally for analysis purposes,
 /// adds RTT data, and uses Rust-friendly typing.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct FlowbeeLocalData {
     /// Time (nanos) when the connection was established
     pub start_time: u64,

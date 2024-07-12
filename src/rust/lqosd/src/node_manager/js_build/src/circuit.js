@@ -15,6 +15,7 @@ const params = new Proxy(new URLSearchParams(window.location.search), {
 let circuit_id = decodeURI(params.id);
 let channelLink = null;
 let pinger = null;
+let flowChannel = null;
 let speedometer = null;
 let totalThroughput = null;
 let totalRetransmits = null;
@@ -95,6 +96,18 @@ function connectPingers(circuits) {
                     target.innerHTML = "<i class='fa fa-check text-success'></i> <span class='tiny'>" + loss + "% / " + scaleNanos(avg) + "</span>";
                 }
             }
+        }
+    });
+}
+
+function connectFlowChannel() {
+    channelLink = new DirectChannel({
+        FlowsByCircuit: {
+            circuit: circuit_id
+        }
+    }, (msg) => {
+        if (msg.devices !== null) {
+            console.log(msg);
         }
     });
 }
@@ -396,6 +409,7 @@ function loadInitial() {
 
             connectPrivateChannel();
             connectPingers(circuits);
+            connectFlowChannel();
         },
         error: () => {
             alert("Circuit with id " + circuit_id + " not found");
