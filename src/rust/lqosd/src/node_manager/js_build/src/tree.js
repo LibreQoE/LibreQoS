@@ -305,12 +305,18 @@ function clientsUpdate(msg) {
     let table = document.createElement("table");
     table.classList.add("table", "table-striped", "table-bordered");
     table.appendChild(clientTableHeader());
+    let tbody = document.createElement("tbody");
     clearDiv(target);
 
     msg.data.forEach((device) => {
         if (device.parent_node === myName) {
             let tr = document.createElement("tr");
-            tr.appendChild(simpleRow(device.circuit_name));
+            let linkTd = document.createElement("td");
+            let circuitLink = document.createElement("a");
+            circuitLink.href = "/circuit.html?id=" + device.circuit_id;
+            circuitLink.innerText = device.circuit_name;
+            linkTd.appendChild(circuitLink);
+            tr.appendChild(linkTd);
             tr.appendChild(simpleRow(device.device_name));
             tr.appendChild(simpleRow(device.plan.down + " / " + device.plan.up));
             tr.appendChild(simpleRow(device.parent_node));
@@ -329,9 +335,10 @@ function clientsUpdate(msg) {
             tr.appendChild(simpleRowHtml(formatRetransmit(device.tcp_retransmits.up)));
 
             // Add it
-            table.appendChild(tr);
+            tbody.appendChild(tr);
         }
-    })
+    });
+    table.appendChild(tbody);
     target.appendChild(table);
 }
 
