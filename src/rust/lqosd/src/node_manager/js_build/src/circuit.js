@@ -5,6 +5,7 @@ import {formatRetransmit, formatRtt, formatThroughput} from "./helpers/scaling";
 import {BitsPerSecondGauge} from "./graphs/bits_gauge";
 import {CircuitTotalGraph} from "./graphs/circuit_throughput_graph";
 import {CircuitRetransmitGraph} from "./graphs/circuit_retransmit_graph";
+import {scaleNanos} from "./helpers/scaling";
 
 const params = new Proxy(new URLSearchParams(window.location.search), {
     get: (searchParams, prop) => searchParams.get(prop),
@@ -12,10 +13,12 @@ const params = new Proxy(new URLSearchParams(window.location.search), {
 
 let circuit_id = decodeURI(params.id);
 let channelLink = null;
+let pinger = null;
 let speedometer = null;
 let totalThroughput = null;
 let totalRetransmits = null;
 let deviceGraphs = {};
+let devicePings = [];
 
 function connectPrivateChannel() {
     channelLink = new DirectChannel({
@@ -27,6 +30,65 @@ function connectPrivateChannel() {
             //console.log(msg.devices);
             fillLiveDevices(msg.devices);
             updateSpeedometer(msg.devices);
+        }
+    });
+}
+
+function connectPingers(circuits) {
+    let ipList = [];
+    circuits.forEach((circuit) => {
+        circuit.ipv4.forEach((ip) => {
+            ipList.push(ip[0]);
+        });
+        circuit.ipv6.forEach((ip) => {
+            ipList.push(ip[0]);
+        });
+    });
+
+    pinger = new DirectChannel({
+        PingMonitor: {
+            ips: ipList
+        }
+    },(msg) => {
+        //console.log(msg);
+        if (msg.ip != null && msg.ip !== "test") {
+            // Stats Updates
+            if (devicePings[msg.ip] === undefined) {
+                devicePings[msg.ip] = {
+                    count: 0,
+                    timeout: 0,
+                    success: 0,
+                    times: [],
+                }
+            }
+
+            devicePings[msg.ip].count++;
+            if (msg.result === "NoResponse") {
+                devicePings[msg.ip].timeout++;
+            } else {
+                devicePings[msg.ip].success++;
+                devicePings[msg.ip].times.push(msg.result.Ping.time_nanos);
+                if (devicePings[msg.ip].times.length > 300) {
+                    devicePings[msg.ip].times.shift();
+                }
+            }
+
+            // Visual Updates
+            let target = document.getElementById("ip_" + msg.ip);
+            if (target != null) {
+                let myPing = devicePings[msg.ip];
+                if (myPing.count === myPing.timeout) {
+                    target.innerHTML = "<i class='fa fa-ban text-danger'></i>";
+                } else {
+                    let loss = ((myPing.timeout / myPing.count) * 100).toFixed(2);
+                    let avg = 0;
+                    myPing.times.forEach((time) => {
+                        avg += time;
+                    });
+                    avg = avg / myPing.times.length;
+                    target.innerHTML = "<i class='fa fa-check text-success'></i> <span class='tiny'>" + loss + "% / " + scaleNanos(avg) + "</span>";
+                }
+            }
         }
     });
 }
@@ -152,12 +214,30 @@ function initialDevices(circuits) {
         tr3.appendChild(td);
         td = document.createElement("td");
         td.colSpan = 2;
-        let ipv4 = "";
+        let ipv4Table = document.createElement("table");
+        ipv4Table.classList.add("table", "table-sm");
+        let ipv4Body = document.createElement("tbody");
         circuit.ipv4.forEach((ip) => {
-            ipv4 += ip[0] + "/" + ip[1] + "<br>";
+            let tr = document.createElement("tr");
+            let label = document.createElement("td");
+            label.innerHTML = ip[0] + "/" + ip[1];
+            tr.appendChild(label);
+            let value = document.createElement("td");
+            value.id = "ip_" + ip[0];
+            value.innerText = "-";
+            tr.appendChild(value);
+            ipv4Body.appendChild(tr);
         });
-        if (ipv4 === "") ipv4 = "No IPv4 addresses assigned";
-        td.innerHTML = ipv4;
+        if (circuit.ipv4.length === 0) {
+            let tr = document.createElement("tr");
+            let label = document.createElement("td");
+            label.innerHTML = "No IPv4 addresses assigned";
+            tr.appendChild(label);
+            ipv4Body.appendChild(tr);
+        }
+        ipv4Table.appendChild(ipv4Body);
+        td.appendChild(ipv4Table);
+
         tr3.appendChild(td);
         tbody.appendChild(tr3);
 
@@ -168,12 +248,37 @@ function initialDevices(circuits) {
         tr4.appendChild(td);
         td = document.createElement("td");
         td.colSpan = 2;
-        let ipv6 = "";
+
+        let ipv6 = document.createElement("table");
+        ipv6.classList.add("table", "table-sm");
+        let ipv6Body = document.createElement("tbody");
+        circuit.ipv6.forEach((ip) => {
+            let tr = document.createElement("tr");
+            let label = document.createElement("td");
+            label.innerHTML = ip[0] + "/" + ip[1];
+            tr.appendChild(label);
+            let value = document.createElement("td");
+            value.id = "ip_" + ip[0];
+            value.innerText = "-";
+            tr.appendChild(value);
+            ipv6Body.appendChild(tr);
+        });
+        if (circuit.ipv6.length === 0) {
+            let tr = document.createElement("tr");
+            let label = document.createElement("td");
+            label.innerHTML = "No IPv6 addresses assigned";
+            tr.appendChild(label);
+            ipv6Body.appendChild(tr);
+        }
+        ipv6.appendChild(ipv6Body);
+        td.appendChild(ipv6);
+
+        /*let ipv6 = "";
         circuit.ipv6.forEach((ip) => {
             ipv6 += ip[0] + "/" + ip[1] + "<br>";
         });
         if (ipv6 === "") ipv6 = "No IPv6 addresses assigned";
-        td.innerHTML = ipv6;
+        td.innerHTML = ipv6;*/
         tr4.appendChild(td);
         tbody.appendChild(tr4);
 
@@ -271,7 +376,7 @@ function loadInitial() {
         data: JSON.stringify({ id: circuit_id }),
         contentType: 'application/json',
         success: (circuits) => {
-            console.log(circuits);
+            //console.log(circuits);
             let circuit = circuits[0];
             $("#circuitName").text(circuit.circuit_name);
             $("#parentNode").text(circuit.parent_node);
@@ -283,6 +388,7 @@ function loadInitial() {
             totalRetransmits = new CircuitRetransmitGraph("rxmitGraph", "Total Circuit Retransmits");
 
             connectPrivateChannel();
+            connectPingers(circuits);
         },
         error: () => {
             alert("Circuit with id " + circuit_id + " not found");

@@ -1,4 +1,5 @@
 mod circuit;
+mod ping_monitor;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,10 +12,12 @@ use tokio::spawn;
 use tokio::time::MissedTickBehavior;
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::single_user_channels::circuit::circuit_watcher;
+use crate::node_manager::ws::single_user_channels::ping_monitor::ping_monitor;
 
 #[derive(Serialize, Deserialize)]
 enum PrivateChannel {
     CircuitWatcher { circuit: String },
+    PingMonitor { ips: Vec<String> },
 }
 
 pub(super) async fn private_channel_ws_handler(
@@ -44,6 +47,9 @@ async fn handle_socket(mut socket: WebSocket, channels: Arc<PubSub>) {
                                 match sub {
                                     PrivateChannel::CircuitWatcher {circuit } => {
                                         spawn(circuit_watcher(circuit, tx.clone()));
+                                    },
+                                    PrivateChannel::PingMonitor { ips } => {
+                                        spawn(ping_monitor(ips, tx.clone()));
                                     },
                                 }
                             } else {
