@@ -17,7 +17,7 @@ use crate::node_manager::ws::single_user_channels::ping_monitor::ping_monitor;
 #[derive(Serialize, Deserialize)]
 enum PrivateChannel {
     CircuitWatcher { circuit: String },
-    PingMonitor { ips: Vec<String> },
+    PingMonitor { ips: Vec<(String, String)> },
 }
 
 pub(super) async fn private_channel_ws_handler(

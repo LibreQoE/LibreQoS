@@ -6,6 +6,7 @@ import {BitsPerSecondGauge} from "./graphs/bits_gauge";
 import {CircuitTotalGraph} from "./graphs/circuit_throughput_graph";
 import {CircuitRetransmitGraph} from "./graphs/circuit_retransmit_graph";
 import {scaleNanos} from "./helpers/scaling";
+import {DevicePingHistogram} from "./graphs/device_ping_graph";
 
 const params = new Proxy(new URLSearchParams(window.location.search), {
     get: (searchParams, prop) => searchParams.get(prop),
@@ -38,10 +39,10 @@ function connectPingers(circuits) {
     let ipList = [];
     circuits.forEach((circuit) => {
         circuit.ipv4.forEach((ip) => {
-            ipList.push(ip[0]);
+            ipList.push([ip[0], circuit.device_id]);
         });
         circuit.ipv6.forEach((ip) => {
-            ipList.push(ip[0]);
+            ipList.push([ip[0], circuit.device_id]);
         });
     });
 
@@ -70,6 +71,11 @@ function connectPingers(circuits) {
                 devicePings[msg.ip].times.push(msg.result.Ping.time_nanos);
                 if (devicePings[msg.ip].times.length > 300) {
                     devicePings[msg.ip].times.shift();
+                }
+                let graphId = "pingGraph_" + msg.result.Ping.label;
+                let graph = deviceGraphs[graphId];
+                if (graph !== undefined) {
+                    graph.update(msg.result.Ping.time_nanos);
                 }
             }
 
@@ -327,7 +333,7 @@ function initialDevices(circuits) {
         // Placeholder for TCP Retransmits
         let tr7 = document.createElement("tr");
         td = document.createElement("td");
-        td.innerHTML = "<b>TCP Retransmits</b>";
+        td.innerHTML = "<b>TCP Re-Xmits</b>";
         tr7.appendChild(td);
         td = document.createElement("td");
         td.id = "tcp_retransmitsDown_" + circuit.device_id;
@@ -361,10 +367,14 @@ function initialDevices(circuits) {
         target.appendChild(tcpRetransmitsGraph);
         deviceGraphs[tcpRetransmitsGraph.id] = new CircuitRetransmitGraph(tcpRetransmitsGraph.id, circuit.device_name + " Retransmits");
 
-        // Tools Section
-        let tools = document.createElement("div");
-        tools.classList.add("col-3");
-        target.appendChild(tools);
+        // Ping Graph Section
+        let pingGraph = document.createElement("div");
+        pingGraph.classList.add("col-3");
+        pingGraph.id = "pingGraph_" + circuit.device_id;
+        pingGraph.style.height = "250px";
+        pingGraph.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
+        target.appendChild(pingGraph);
+        deviceGraphs[pingGraph.id] = new DevicePingHistogram(pingGraph.id);
 
     });
 }
