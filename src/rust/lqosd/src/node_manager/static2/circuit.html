@@ -35,10 +35,14 @@
         </button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link" id="profile-tab" data-bs-toggle="tab" data-bs-target="#profile" type="button" role="tab" aria-controls="profile" aria-selected="false">More</button>
+        <button class="nav-link" id="sankey-tab" data-bs-toggle="tab" data-bs-target="#sankey" type="button" role="tab" aria-controls="profile" aria-selected="false">
+            Active Flows <span id="activeFlowCount" class="badge">0</span>
+        </button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link" id="contact-tab" data-bs-toggle="tab" data-bs-target="#contact" type="button" role="tab" aria-controls="contact" aria-selected="false">Even More</button>
+        <button class="nav-link" id="contact-tab" data-bs-toggle="tab" data-bs-target="#contact" type="button" role="tab" aria-controls="contact" aria-selected="false">
+            Even More
+        </button>
     </li>
 </ul>
 <div class="tab-content" id="myTabContent">
@@ -47,7 +51,7 @@
             <i class="fa fa-spinner fa-spin"></i> Loading Devices...
         </div>
     </div>
-    <div class="tab-pane fade" id="profile" role="tabpanel" aria-labelledby="profile-tab">
+    <div class="tab-pane fade" id="sankey" role="tabpanel" aria-labelledby="sankey-tab">
         <div class="row">
             <div class="col-12">
                 <div id="flowSankey" style="height: 500px; width: 1024px"></div>

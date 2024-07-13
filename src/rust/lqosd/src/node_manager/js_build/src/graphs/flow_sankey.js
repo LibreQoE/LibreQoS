@@ -28,8 +28,10 @@ export class FlowsSankey extends DashboardGraph {
         const one_second_in_nanos = 1000000000;
 
         // Iterate over each flow and accumulate traffic.
+        let flowCount = 0;
         flows.flows.forEach((flow) => {
             if (flow[0].last_seen_nanos > one_second_in_nanos) return;
+            flowCount++;
             let localDevice = flow[0].device_name;
             let proto = flow[0].protocol_name;
             let asn = "ASN: " + flow[2].asn_id;
@@ -130,51 +132,6 @@ export class FlowsSankey extends DashboardGraph {
         // console.log(links);
         this.chart.hideLoading();
         this.chart.setOption(this.option);
-
-
-        // // Make sets to avoid duplication
-        // let locals = new Set();
-        // let remotes = new Set();
-        // let asn = new Set();
-        //
-        // let data = [];
-        // let links = [];
-        // flows.flows.forEach((flow) => {
-        //     if (!locals.has(flow[0].local_ip)) {
-        //         locals.add(flow[0].local_ip);
-        //         data.push({
-        //             name: flow[0].local_ip,
-        //         });
-        //     }
-        //     if (!remotes.has(flow[0].remote_ip)) {
-        //         remotes.add(flow[0].remote_ip);
-        //         data.push({
-        //             name: flow[0].remote_ip,
-        //         });
-        //     }
-        //     links.push({
-        //         source: flow[0].local_ip,
-        //         target: "ASN " + flow[2].asn_id,
-        //         value: flow[1].rate_estimate_bps.down + flow[1].rate_estimate_bps.up,
-        //     });
-        //
-        //     if (!asn.has(flow[2].asn_id)) {
-        //         asn.add(flow[2].asn_id);
-        //         data.push({
-        //             name: "ASN " + flow[2].asn_id,
-        //         });
-        //         links.push({
-        //             source: "ASN " + flow[2].asn_id,
-        //             target: flow[0].remote_ip,
-        //             value: flow[1].rate_estimate_bps.down + flow[1].rate_estimate_bps.up,
-        //         });
-        //     }
-        // })
-        // this.option.series[0].data = data;
-        // this.option.series[0].links = links;
-        // console.log(data);
-        // console.log(links);
-        // this.chart.hideLoading();
-        // this.chart.setOption(this.option);
+        return flowCount;
     }
 }

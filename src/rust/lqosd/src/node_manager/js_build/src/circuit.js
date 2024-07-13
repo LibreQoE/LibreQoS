@@ -1,7 +1,7 @@
 // Obtain URL parameters
 import {DirectChannel} from "./pubsub/direct_channels";
 import {clearDiv, formatLastSeen} from "./helpers/builders";
-import {formatRetransmit, formatRtt, formatThroughput} from "./helpers/scaling";
+import {formatRetransmit, formatRtt, formatThroughput, lerpGreenToRedViaOrange} from "./helpers/scaling";
 import {BitsPerSecondGauge} from "./graphs/bits_gauge";
 import {CircuitTotalGraph} from "./graphs/circuit_throughput_graph";
 import {CircuitRetransmitGraph} from "./graphs/circuit_retransmit_graph";
@@ -89,13 +89,22 @@ function connectPingers(circuits) {
                 if (myPing.count === myPing.timeout) {
                     target.innerHTML = "<i class='fa fa-ban text-danger'></i>";
                 } else {
-                    let loss = ((myPing.timeout / myPing.count) * 100).toFixed(2);
+                    let loss = ((myPing.timeout / myPing.count) * 100);
+                    let lossStr = loss.toFixed(1);
                     let avg = 0;
                     myPing.times.forEach((time) => {
                         avg += time;
                     });
                     avg = avg / myPing.times.length;
-                    target.innerHTML = "<i class='fa fa-check text-success'></i> <span class='tiny'>" + loss + "% / " + scaleNanos(avg) + "</span>";
+                    let lossColor = "text-success";
+                    if (loss > 0 && loss < 10) {
+                        lossColor = "text-warning";
+                    } else if (loss >= 10) {
+                        lossColor = "text-danger";
+                    }
+                    let pingRamp = Math.min(avg / 200, 1);
+                    let pingColor = lerpGreenToRedViaOrange(pingRamp, 1);
+                    target.innerHTML = "<i class='fa fa-check text-success'></i> <span class='tiny'><span class='" + lossColor + "'>" + lossStr + "%</span> / <span style='color: " + pingColor + "'>" + scaleNanos(avg) + "</span></span>";
                 }
             }
         }
@@ -109,7 +118,8 @@ function connectFlowChannel() {
         }
     }, (msg) => {
         //console.log(msg);
-        flowSankey.update(msg);
+        let activeFlows = flowSankey.update(msg);
+        $("#activeFlowCount").text(activeFlows);
     });
 }
 
