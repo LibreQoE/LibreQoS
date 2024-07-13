@@ -7,6 +7,7 @@ import {CircuitTotalGraph} from "./graphs/circuit_throughput_graph";
 import {CircuitRetransmitGraph} from "./graphs/circuit_retransmit_graph";
 import {scaleNanos} from "./helpers/scaling";
 import {DevicePingHistogram} from "./graphs/device_ping_graph";
+import {FlowsSankey} from "./graphs/flow_sankey";
 
 const params = new Proxy(new URLSearchParams(window.location.search), {
     get: (searchParams, prop) => searchParams.get(prop),
@@ -21,6 +22,7 @@ let totalThroughput = null;
 let totalRetransmits = null;
 let deviceGraphs = {};
 let devicePings = [];
+let flowSankey = null;
 
 function connectPrivateChannel() {
     channelLink = new DirectChannel({
@@ -101,14 +103,13 @@ function connectPingers(circuits) {
 }
 
 function connectFlowChannel() {
-    channelLink = new DirectChannel({
+    flowChannel = new DirectChannel({
         FlowsByCircuit: {
             circuit: circuit_id
         }
     }, (msg) => {
-        if (msg.devices !== null) {
-            console.log(msg);
-        }
+        //console.log(msg);
+        flowSankey.update(msg);
     });
 }
 
@@ -406,6 +407,7 @@ function loadInitial() {
             speedometer = new BitsPerSecondGauge("bitsGauge");
             totalThroughput = new CircuitTotalGraph("throughputGraph", "Total Circuit Throughput");
             totalRetransmits = new CircuitRetransmitGraph("rxmitGraph", "Total Circuit Retransmits");
+            flowSankey = new FlowsSankey("flowSankey");
 
             connectPrivateChannel();
             connectPingers(circuits);

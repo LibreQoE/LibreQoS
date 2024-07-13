@@ -6,11 +6,11 @@ use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::unix_time::time_since_boot;
 use lqos_utils::XdpIpAddress;
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
-use crate::throughput_tracker::flow_data::{ALL_FLOWS, FlowAnalysis, FlowbeeLocalData};
+use crate::throughput_tracker::flow_data::{ALL_FLOWS, FlowAnalysis, FlowbeeLocalData, get_asn_name_and_country};
 
 const FIVE_MINUTES_AS_NANOS: u64 = 300 * 1_000_000_000;
 
-fn recent_flows_by_circuit(circuit_id: &str) -> Vec<(FlowbeeKey, FlowbeeLocalData, FlowAnalysis)> {
+fn recent_flows_by_circuit(circuit_id: &str) -> Vec<(FlowbeeKeyTransit, FlowbeeLocalData, FlowAnalysis)> {
     let device_reader = SHAPED_DEVICES.read().unwrap();
 
     if let Ok(now) = time_since_boot() {
@@ -18,12 +18,20 @@ fn recent_flows_by_circuit(circuit_id: &str) -> Vec<(FlowbeeKey, FlowbeeLocalDat
         let five_minutes_ago = now_as_nanos - FIVE_MINUTES_AS_NANOS;
 
         let all_flows = ALL_FLOWS.lock().unwrap();
-        let result: Vec<(FlowbeeKey, FlowbeeLocalData, FlowAnalysis)> = all_flows
+        let result: Vec<(FlowbeeKeyTransit, FlowbeeLocalData, FlowAnalysis)> = all_flows
             .iter()
-            .filter(|(key, (local, analysis))| {
-                local.last_seen > five_minutes_ago
-            })
-            .filter(|(key, (local, analysis))| {
+            .filter_map(|(key, (local, analysis))| {
+                // Don't show older flows
+                if local.last_seen < five_minutes_ago {
+                    return None;
+                }
+
+                // Don't show flows that don't belong to the circuit
+                let mut local_ip_str = String::new();
+                let mut remote_ip_str = String::new();
+                let mut device_name = String::new();
+                let mut asn_name = String::new();
+                let mut asn_country = String::new();
                 let local_ip = match key.local_ip.as_ip() {
                     IpAddr::V4(ip) => ip.to_ipv6_mapped(),
                     IpAddr::V6(ip) => ip,
@@ -32,10 +40,33 @@ fn recent_flows_by_circuit(circuit_id: &str) -> Vec<(FlowbeeKey, FlowbeeLocalDat
                     IpAddr::V4(ip) => ip.to_ipv6_mapped(),
                     IpAddr::V6(ip) => ip,
                 };
-                device_reader.trie.longest_match(local_ip).is_some() || device_reader.trie.longest_match(remote_ip).is_some()
-            })
-            .map(|(key, (local, analysis))| {
-                (key.clone(), local.clone(), analysis.clone())
+                if let Some(device) = device_reader.trie.longest_match(local_ip) {
+                    // The normal way around
+                    local_ip_str = key.local_ip.to_string();
+                    remote_ip_str = key.remote_ip.to_string();
+                    device_name = device_reader.devices[*device.1].device_name.clone();
+                    (asn_name, asn_country) = get_asn_name_and_country(key.remote_ip.as_ip());
+                } else if let Some(device) = device_reader.trie.longest_match(remote_ip) {
+                    // The reverse way around
+                    local_ip_str = key.remote_ip.to_string();
+                    remote_ip_str = key.local_ip.to_string();
+                    device_name = device_reader.devices[*device.1].device_name.clone();
+                    (asn_name, asn_country) = get_asn_name_and_country(key.local_ip.as_ip());
+                } else {
+                    return None;
+                }
+
+                Some((FlowbeeKeyTransit {
+                    remote_ip: remote_ip_str,
+                    local_ip: local_ip_str,
+                    src_port: key.src_port,
+                    dst_port: key.dst_port,
+                    ip_protocol: key.ip_protocol,
+                    device_name,
+                    asn_name,
+                    asn_country,
+                    protocol_name: analysis.protocol_analysis.to_string(),
+                }, local.clone(), analysis.clone()))
             })
             .collect();
         return result;
@@ -55,18 +86,14 @@ pub struct FlowbeeKeyTransit {
     pub dst_port: u16,
     /// IP protocol (see the Linux kernel!)
     pub ip_protocol: u8,
-}
-
-impl From<FlowbeeKey> for FlowbeeKeyTransit {
-    fn from(key: FlowbeeKey) -> Self {
-        FlowbeeKeyTransit {
-            remote_ip: key.remote_ip.as_ip().to_string(),
-            local_ip: key.local_ip.as_ip().to_string(),
-            src_port: key.src_port,
-            dst_port: key.dst_port,
-            ip_protocol: key.ip_protocol,
-        }
-    }
+    /// Device Name
+    pub device_name: String,
+    /// ASN Name
+    pub asn_name: String,
+    /// ASN Country
+    pub asn_country: String,
+    /// Protocol Name
+    pub protocol_name: String,
 }
 
 #[derive(Serialize)]
