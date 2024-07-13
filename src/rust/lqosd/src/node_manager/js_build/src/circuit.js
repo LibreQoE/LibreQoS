@@ -251,6 +251,7 @@ function initialDevices(circuits) {
             let tr = document.createElement("tr");
             let label = document.createElement("td");
             label.innerHTML = ip[0] + "/" + ip[1];
+            label.classList.add("small");
             tr.appendChild(label);
             let value = document.createElement("td");
             value.id = "ip_" + ip[0];
@@ -286,6 +287,7 @@ function initialDevices(circuits) {
             let tr = document.createElement("tr");
             let label = document.createElement("td");
             label.innerHTML = ip[0] + "/" + ip[1];
+            label.classList.add("small");
             tr.appendChild(label);
             let value = document.createElement("td");
             value.id = "ip_" + ip[0];
