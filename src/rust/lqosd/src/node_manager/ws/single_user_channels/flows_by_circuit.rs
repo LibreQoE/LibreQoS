@@ -74,6 +74,7 @@ fn recent_flows_by_circuit(circuit_id: &str) -> Vec<(FlowbeeKeyTransit, FlowbeeL
                     asn_name,
                     asn_country,
                     protocol_name: analysis.protocol_analysis.to_string(),
+                    last_seen_nanos: now_as_nanos.saturating_sub(local.last_seen),
                 }, local.clone(), analysis.clone()))
             })
             .collect();
@@ -102,6 +103,8 @@ pub struct FlowbeeKeyTransit {
     pub asn_country: String,
     /// Protocol Name
     pub protocol_name: String,
+    /// Last Seen Nanos
+    pub last_seen_nanos: u64,
 }
 
 #[derive(Serialize)]

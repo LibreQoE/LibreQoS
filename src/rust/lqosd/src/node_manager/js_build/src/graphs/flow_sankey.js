@@ -25,8 +25,11 @@ export class FlowsSankey extends DashboardGraph {
         let asns = {};
         let remoteDevices = {};
 
+        const one_second_in_nanos = 1000000000;
+
         // Iterate over each flow and accumulate traffic.
         flows.flows.forEach((flow) => {
+            if (flow[0].last_seen_nanos > one_second_in_nanos) return;
             let localDevice = flow[0].device_name;
             let proto = flow[0].protocol_name;
             let asn = "ASN: " + flow[2].asn_id;
