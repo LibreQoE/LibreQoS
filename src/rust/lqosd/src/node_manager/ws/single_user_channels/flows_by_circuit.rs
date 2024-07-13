@@ -44,13 +44,21 @@ fn recent_flows_by_circuit(circuit_id: &str) -> Vec<(FlowbeeKeyTransit, FlowbeeL
                     // The normal way around
                     local_ip_str = key.local_ip.to_string();
                     remote_ip_str = key.remote_ip.to_string();
-                    device_name = device_reader.devices[*device.1].device_name.clone();
+                    let device = &device_reader.devices[*device.1];
+                    if device.circuit_id != circuit_id {
+                        return None;
+                    }
+                    device_name = device.device_name.clone();
                     (asn_name, asn_country) = get_asn_name_and_country(key.remote_ip.as_ip());
                 } else if let Some(device) = device_reader.trie.longest_match(remote_ip) {
                     // The reverse way around
                     local_ip_str = key.remote_ip.to_string();
                     remote_ip_str = key.local_ip.to_string();
-                    device_name = device_reader.devices[*device.1].device_name.clone();
+                    let device = &device_reader.devices[*device.1];
+                    if device.circuit_id != circuit_id {
+                        return None;
+                    }
+                    device_name = device.device_name.clone();
                     (asn_name, asn_country) = get_asn_name_and_country(key.local_ip.as_ip());
                 } else {
                     return None;
