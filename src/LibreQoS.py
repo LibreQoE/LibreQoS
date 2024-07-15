@@ -840,10 +840,6 @@ def refreshShapers():
 				if not sqm.startswith("cake") or "rtt" in sqm:
 					return sqm()
 
-				# The rate is in Mbps, let's ask Cake to also handle the ceiling
-				# to help it auto-tune
-				sqm = sqm + " bandwidth " + str(rate) + "Mbit"
-
 				# If we are using cake, we need to fixup the rate
 				# Based on: 1 MTU is 1500 bytes, or 12,000 bits.
 				# At 1 Mbps, (1,000 bits per ms) transmitting an MTU takes 12ms. Add 3ms for overhead, and we get 15ms.
