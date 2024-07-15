@@ -1,8 +1,8 @@
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use serde::Serialize;
 
+use serde::Serialize;
 use serde_json::json;
 use tokio::task::spawn_blocking;
 
@@ -68,7 +68,7 @@ pub fn all_circuits() -> Vec<Circuit> {
                         //println!("since_boot: {:?}, last_seen: {:?}", since_boot, last_seen_nanos);
                         (since_boot - last_seen_nanos) as u64
                     } else {
-                      u64::MAX
+                        u64::MAX
                     };
 
                     // Map to circuit et al
@@ -119,13 +119,12 @@ pub async fn all_subscribers(channels: Arc<PubSub>) {
         return;
     }
 
-    if let Ok(devices) = spawn_blocking(all_circuits).await {
-        let message = json!(
+    let devices = all_circuits();
+    let message = json!(
         {
             "event": PublishedChannels::NetworkTreeClients.to_string(),
             "data": devices,
         }
         ).to_string();
-            channels.send(PublishedChannels::NetworkTreeClients, message).await;
-    }
+    channels.send(PublishedChannels::NetworkTreeClients, message).await;
 }
