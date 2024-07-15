@@ -8,9 +8,9 @@ license = "GPL-2.0-only"
 tokio = { version = "1.25.0", features = ["full"] }
 anyhow = { workspace = true }
 env_logger = "0"
-log = "0"
+log = { workspace = true }
 lqos_bus = { path = "../lqos_bus" }
-serde = { version = "1.0", features = ["derive"] }
-serde_cbor = "0" # For RFC8949/7409 format C binary objects
+serde = { workspace = true }
+serde_cbor = { workspace = true }
 sqlite = "0.30.4"
 axum = "0.6"

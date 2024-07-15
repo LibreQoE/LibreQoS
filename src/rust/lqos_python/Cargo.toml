@@ -9,14 +9,14 @@ name = "lqos_python"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = "0"
+pyo3 = {  workspace = true }
 lqos_bus = { path = "../lqos_bus" }
 lqos_utils = { path = "../lqos_utils" }
 lqos_config = { path = "../lqos_config" }
-tokio = { version = "1", features = [ "full" ] }
+tokio = { workspace = true }
 anyhow = { workspace = true }
-sysinfo = "0"
-nix = "0"
-reqwest = { version = "0.11.24", features = ["blocking"] }
-serde = { version = "1.0.196", features = ["derive"] }
+sysinfo = {  workspace = true }
+nix = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
 chrono = "0.4.33"

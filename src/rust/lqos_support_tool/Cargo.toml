@@ -5,13 +5,13 @@ edition = "2021"
 
 [dependencies]
 anyhow = { workspace = true }
-clap = { version = "4.5.7", features = ["derive"] }
-colored = "2.1.0"
+clap = { workspace = true }
+colored = {  workspace = true }
 lqos_config = { path = "../lqos_config" }
-serde = { version = "1.0", features = ["derive"] }
-serde_cbor = "0" # For RFC8949/7409 format C binary objects
-miniz_oxide = "0.7.1"
-log = "0.4.21" # For compression
+serde = { workspace = true }
+serde_cbor = { workspace = true }
+miniz_oxide = { workspace = true }
+log = { workspace = true }
 libc = "0.2.155"
-nix = "0.29.0"
-serde_json = "1.0.117"
+nix = {  workspace = true }
+serde_json = { workspace = true }
