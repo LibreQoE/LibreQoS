@@ -35,7 +35,7 @@ def quantum(rateInMbps):
 	rateInBytesPerSecond = rateInMbps * 125000
 	quantum = int(rateInBytesPerSecond / R2Q)
 	quantrumString = " quantum " + str(quantum)
-	print("Calculated quantum for " + str(rateInMbps) + " Mbps: " + str(quantum))
+	#print("Calculated quantum for " + str(rateInMbps) + " Mbps: " + str(quantum))
 	return quantrumString
 	#return " quantum 1522"
 
