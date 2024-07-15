@@ -8,7 +8,7 @@ license = "GPL-2.0-only"
 tokio = { version = "1", features = [ "full" ] }
 lqos_bus = { path = "../lqos_bus" }
 lqos_utils = { path = "../lqos_utils" }
-anyhow = "1"
+anyhow = { workspace = true }
 ratatui = "0.26.1"
 crossterm = "0.27.0"
 ctrlc = "3.4.4"

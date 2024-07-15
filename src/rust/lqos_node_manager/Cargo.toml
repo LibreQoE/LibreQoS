@@ -14,7 +14,7 @@ rocket_async_compression = "0.6.0"
 lqos_bus = { path = "../lqos_bus" }
 lqos_config = { path = "../lqos_config" }
 lqos_utils = { path = "../lqos_utils" }
-anyhow = "1"
+anyhow = { workspace = true }
 sysinfo = "0"
 default-net = "0"
 nix = "0"

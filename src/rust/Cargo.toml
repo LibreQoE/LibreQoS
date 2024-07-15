@@ -4,11 +4,9 @@ version = "0.1.0"
 edition = "2021"
 license = "GPL-2.0-only"
 
-[dependencies]
-
 [profile.release]
 strip = "debuginfo"
-lto = "fat"
+lto = "thin"
 
 [workspace]
 members = [
@@ -34,3 +32,8 @@ members = [
     "uisp_integration", # UISP Integration in Rust
     "lqos_support_tool", # A Helper tool to make it easier to request/receive support
 ]
+
+[dependencies]
+
+[workspace.dependencies]
+anyhow = "1"

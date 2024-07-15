@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.86"
+anyhow = { workspace = true }
 clap = { version = "4.5.7", features = ["derive"] }
 colored = "2.1.0"
 lqos_config = { path = "../lqos_config" }

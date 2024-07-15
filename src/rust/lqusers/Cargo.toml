@@ -7,4 +7,4 @@ license = "GPL-2.0-only"
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 lqos_config = { path = "../lqos_config" }
-anyhow = "1"
+anyhow = { workspace = true }

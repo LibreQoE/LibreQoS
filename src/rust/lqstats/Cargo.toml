@@ -6,5 +6,5 @@ license = "GPL-2.0-only"
 
 [dependencies]
 tokio = { version = "1", features = [ "full" ] }
-anyhow = "1"
+anyhow = { workspace = true }
 lqos_bus = { path = "../lqos_bus" }

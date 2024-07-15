@@ -13,4 +13,4 @@ log = "0"
 zerocopy = {version = "0.6.1", features = [ "simd" ] }
 once_cell = "1.17.1"
 dashmap = "5.4.0"
-anyhow = "1"
+anyhow = { workspace = true }
