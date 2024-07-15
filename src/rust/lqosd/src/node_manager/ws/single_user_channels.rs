@@ -59,10 +59,7 @@ async fn handle_socket(mut socket: WebSocket, channels: Arc<PubSub>) {
                                     },
                                 }
                             } else {
-                                log::warn!("Failed to parse private message: {:?}", text);
-                                let test = PrivateChannel::CircuitWatcher { circuit: "test".to_string() };
-                                let test = serde_json::to_string(&test).unwrap();
-                                println!("{test}");
+                                log::debug!("Failed to parse private message: {:?}", text);
                             }
                         }
                     }
