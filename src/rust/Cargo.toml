@@ -7,6 +7,11 @@ license = "GPL-2.0-only"
 [profile.release]
 strip = "debuginfo"
 lto = "thin"
+incremental = true
+
+[profile.release.build-override]
+opt-level = 3
+codegen-units = 16
 
 [workspace]
 members = [
