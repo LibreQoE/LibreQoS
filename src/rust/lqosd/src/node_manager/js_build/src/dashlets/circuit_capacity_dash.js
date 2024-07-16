@@ -35,6 +35,11 @@ export class CircuitCapacityDash extends BaseDashlet {
         if (msg.event === "CircuitCapacity") {
             let target = document.getElementById(this.id);
 
+            // Sort msg.data by capacity[0]
+            msg.data.sort((a, b) => {
+                return b.capacity[0] - a.capacity[0];
+            });
+
             let table = document.createElement("table");
             table.classList.add("table", "table-striped", "small");
             let thead = document.createElement("thead");
@@ -45,8 +50,12 @@ export class CircuitCapacityDash extends BaseDashlet {
             thead.appendChild(theading("RTT"));
             table.appendChild(thead);
             let tbody = document.createElement("tbody");
+            let count = 0;
             msg.data.forEach((c) => {
                 if (c.capacity[0] < 0.9 && c.capacity[1] < 0.9) {
+                    return;
+                }
+                if (count >= 7) {
                     return;
                 }
                 let row = document.createElement("tr");
@@ -64,6 +73,8 @@ export class CircuitCapacityDash extends BaseDashlet {
                 row.appendChild(simpleRow((c.capacity[1]*100).toFixed(0)));
                 row.appendChild(simpleRowHtml(formatRtt(c.rtt)));
                 tbody.appendChild(row);
+
+                count++;
             })
             table.appendChild(tbody);
 
