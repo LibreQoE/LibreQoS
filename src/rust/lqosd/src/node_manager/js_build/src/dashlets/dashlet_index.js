@@ -26,7 +26,6 @@ export const DashletMenu = [
     { name: "Tracked Flows Counter", tag: "trackedFlowsCount", size: 3 },
     { name: "Last 5 Minutes Throughput", tag: "throughputRing", size: 6 },
     { name: "Round-Trip Time Histogram", tag: "rttHistogram", size: 6 },
-    { name: "Round-Trip Time Histogram 3D", tag: "rttHistogram3D", size: 6 },
     { name: "Top 10 Downloaders", tag: "top10downloaders", size: 6 },
     { name: "Worst 10 Round-Trip Time", tag: "worst10downloaders", size: 6 },
     { name: "Worst 10 Retransmits", tag: "worst10retransmits", size: 6 },
@@ -40,6 +39,7 @@ export const DashletMenu = [
     { name: "Network Tree Summary", tag: "treeSummary", size: 6 },
     { name: "Combined Top 10 Box", tag: "combinedTop10", size: 3 },
     { name: "Total Cake Stats", tag: "totalCakeStats", size: 3 },
+    { name: "Round-Trip Time Histogram 3D", tag: "rttHistogram3D", size: 12 },
 ];
 
 export function widgetFactory(widgetName, count) {
