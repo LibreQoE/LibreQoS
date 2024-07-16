@@ -10,6 +10,7 @@ import {DevicePingHistogram} from "./graphs/device_ping_graph";
 import {FlowsSankey} from "./graphs/flow_sankey";
 import {subscribeWS} from "./pubsub/ws";
 import {CakeBacklog} from "./graphs/cake_backlog";
+import {CakeDelays} from "./graphs/cake_delays";
 
 const params = new Proxy(new URLSearchParams(window.location.search), {
     get: (searchParams, prop) => searchParams.get(prop),
@@ -558,6 +559,7 @@ function onTreeEvent(msg) {
 
 function subscribeToCake() {
     let backlogGraph = new CakeBacklog("cakeBacklog");
+    let delaysGraph = new CakeDelays("cakeDelays");
     channelLink = new DirectChannel({
         CakeWatcher: {
             circuit: circuit_id
@@ -569,6 +571,8 @@ function subscribeToCake() {
         $("#cakeQueueMemory").text(scaleNumber(msg.current_download.memory_used) + " / " + scaleNumber(msg.current_upload.memory_used));
         backlogGraph.update(msg);
         backlogGraph.chart.resize();
+        delaysGraph.update(msg);
+        delaysGraph.chart.resize();
     });
 }
 
