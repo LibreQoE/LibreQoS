@@ -16,7 +16,7 @@ var subscribed = false;
 
 // This runs first and builds the initial structure on the page
 function getInitialTree() {
-    $.get("/local-api/networkTree/0", (data) => {
+    $.get("/local-api/networkTree", (data) => {
         //console.log(data);
         tree = data;
 

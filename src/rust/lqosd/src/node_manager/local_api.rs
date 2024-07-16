@@ -24,7 +24,7 @@ pub fn local_api() -> Router {
         .route("/versionCheck", get(version_check::version_check))
         .route("/deviceCount", get(device_counts::count_users))
         .route("/devicesAll", get(shaped_device_api::all_shaped_devices))
-        .route("/networkTree/:parent", get(network_tree::get_network_tree))
+        .route("/networkTree", get(network_tree::get_network_tree))
         .route("/sanity", get(support::run_sanity_check))
         .route("/gatherSupport", post(support::gather_support_data))
         .route("/submitSupport", post(support::submit_support_data))
