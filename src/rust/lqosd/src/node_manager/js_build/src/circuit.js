@@ -11,6 +11,7 @@ import {FlowsSankey} from "./graphs/flow_sankey";
 import {subscribeWS} from "./pubsub/ws";
 import {CakeBacklog} from "./graphs/cake_backlog";
 import {CakeDelays} from "./graphs/cake_delays";
+import {CakeQueueLength} from "./graphs/cake_queue_length";
 
 const params = new Proxy(new URLSearchParams(window.location.search), {
     get: (searchParams, prop) => searchParams.get(prop),
@@ -560,6 +561,7 @@ function onTreeEvent(msg) {
 function subscribeToCake() {
     let backlogGraph = new CakeBacklog("cakeBacklog");
     let delaysGraph = new CakeDelays("cakeDelays");
+    let queueLength = new CakeQueueLength("cakeQueueLength");
     channelLink = new DirectChannel({
         CakeWatcher: {
             circuit: circuit_id
@@ -573,6 +575,8 @@ function subscribeToCake() {
         backlogGraph.chart.resize();
         delaysGraph.update(msg);
         delaysGraph.chart.resize();
+        queueLength.update(msg);
+        queueLength.chart.resize();
     });
 }
 
