@@ -66,6 +66,7 @@ impl WebUsers {
     Ok(filename)
   }
 
+  /// Is the list of users empty?
   pub fn is_empty(&self) -> bool {
     self.users.is_empty()
   }
