@@ -21,4 +21,6 @@ pub enum PublishedChannels {
     QueueStatsTotal,
     NetworkTree,
     NetworkTreeClients,
+    CircuitCapacity,
+    TreeCapacity,
 }

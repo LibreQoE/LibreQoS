@@ -14,6 +14,9 @@ pub mod system_info;
 mod tree_summary;
 mod queue_stats_total;
 mod network_tree;
+mod circuit_capacity;
+mod tree_capacity;
+
 pub use network_tree::{Circuit, all_circuits};
 
 /// Runs a periodic tick to feed data to the node manager.
@@ -45,6 +48,8 @@ async fn one_second_cadence(channels: Arc<PubSub>) {
             flow_endpoints::ip_protocols(channels.clone()),
             tree_summary::tree_summary(channels.clone()),
             network_tree::network_tree(channels.clone()),
+            circuit_capacity::circuit_capacity(channels.clone()),
+            tree_capacity::tree_capacity(channels.clone()),
         );
     }
 }
