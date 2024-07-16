@@ -40,8 +40,8 @@
         </button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link" id="contact-tab" data-bs-toggle="tab" data-bs-target="#contact" type="button" role="tab" aria-controls="contact" aria-selected="false">
-            Even More
+        <button class="nav-link" id="traffic-tab" data-bs-toggle="tab" data-bs-target="#traffic" type="button" role="tab" aria-controls="contact" aria-selected="false">
+            Network Traffic
         </button>
     </li>
 </ul>
@@ -58,7 +58,13 @@
             </div>
         </div>
     </div>
-    <div class="tab-pane fade" id="contact" role="tabpanel" aria-labelledby="contact-tab">...</div>
+    <div class="tab-pane fade" id="traffic" role="tabpanel" aria-labelledby="traffic-tab">
+        <div class="row">
+            <div class="col-12" id="allTraffic">
+                <i class="fa fa-spinner fa-spin"></i> Loading Traffic...
+            </div>
+        </div>
+    </div>
 </div>
 
 

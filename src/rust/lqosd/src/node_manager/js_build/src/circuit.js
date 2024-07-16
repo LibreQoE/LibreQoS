@@ -1,11 +1,11 @@
 // Obtain URL parameters
 import {DirectChannel} from "./pubsub/direct_channels";
-import {clearDiv, formatLastSeen} from "./helpers/builders";
+import {clearDiv, formatLastSeen, simpleRow, simpleRowHtml, theading} from "./helpers/builders";
 import {formatRetransmit, formatRtt, formatThroughput, lerpGreenToRedViaOrange} from "./helpers/scaling";
 import {BitsPerSecondGauge} from "./graphs/bits_gauge";
 import {CircuitTotalGraph} from "./graphs/circuit_throughput_graph";
 import {CircuitRetransmitGraph} from "./graphs/circuit_retransmit_graph";
-import {scaleNanos} from "./helpers/scaling";
+import {scaleNanos, scaleNumber} from "./helpers/scaling";
 import {DevicePingHistogram} from "./graphs/device_ping_graph";
 import {FlowsSankey} from "./graphs/flow_sankey";
 
@@ -14,6 +14,7 @@ const params = new Proxy(new URLSearchParams(window.location.search), {
 });
 
 let circuit_id = decodeURI(params.id);
+let plan = null;
 let channelLink = null;
 let pinger = null;
 let flowChannel = null;
@@ -120,7 +121,62 @@ function connectFlowChannel() {
         //console.log(msg);
         let activeFlows = flowSankey.update(msg);
         $("#activeFlowCount").text(activeFlows);
+        updateTrafficTab(msg);
     });
+}
+
+function updateTrafficTab(msg) {
+    let target = document.getElementById("allTraffic");
+
+    let table = document.createElement("table");
+    table.classList.add("table", "table-sm", "table-striped");
+    let thead = document.createElement("thead");
+    thead.appendChild(theading("Protocol"));
+    thead.appendChild(theading("Current Rate", 2));
+    thead.appendChild(theading("Total Bytes", 2));
+    thead.appendChild(theading("Total Packets", 2));
+    thead.appendChild(theading("TCP Retransmits", 2));
+    thead.appendChild(theading("RTT", 2));
+    thead.appendChild(theading("ASN"));
+    thead.appendChild(theading("Country"));
+    thead.appendChild(theading("Remote IP"));
+    table.appendChild(thead);
+    let tbody = document.createElement("tbody");
+    const one_second_in_nanos = 1000000000; // For display filtering
+
+    // Sort msg.flows by flows[0].rate_estimate_bps.down + flows[0].rate_estimate_bps.up descending
+    msg.flows.sort((a, b) => {
+        let aRate = a[1].rate_estimate_bps.down + a[1].rate_estimate_bps.up;
+        let bRate = b[1].rate_estimate_bps.down + b[1].rate_estimate_bps.up;
+        return bRate - aRate;
+    });
+
+    msg.flows.forEach((flow) => {
+        if (flow[0].last_seen_nanos > one_second_in_nanos) return;
+        let row = document.createElement("tr");
+        row.classList.add("small");
+        row.appendChild(simpleRow(flow[0].protocol_name));
+        row.appendChild(simpleRowHtml(formatThroughput(flow[1].rate_estimate_bps.down * 8, plan.down)));
+        row.appendChild(simpleRowHtml(formatThroughput(flow[1].rate_estimate_bps.up * 8, plan.up)));
+        row.appendChild(simpleRow(scaleNumber(flow[1].bytes_sent.down)));
+        row.appendChild(simpleRow(scaleNumber(flow[1].bytes_sent.up)));
+        row.appendChild(simpleRow(scaleNumber(flow[1].packets_sent.down)));
+        row.appendChild(simpleRow(scaleNumber(flow[1].packets_sent.up)));
+        row.appendChild(simpleRowHtml(formatRetransmit(flow[1].tcp_retransmits.down)));
+        row.appendChild(simpleRowHtml(formatRetransmit(flow[1].tcp_retransmits.up)));
+        row.appendChild(simpleRowHtml(formatRtt(flow[1].rtt[0])));
+        row.appendChild(simpleRowHtml(formatRtt(flow[1].rtt[1])));
+        row.appendChild(simpleRow(flow[0].asn_name));
+        row.appendChild(simpleRow(flow[0].asn_country));
+        row.appendChild(simpleRow(flow[0].remote_ip));
+
+        tbody.appendChild(row);
+    });
+
+    table.appendChild(tbody);
+
+    clearDiv(target);
+    target.appendChild(table);
 }
 
 function updateSpeedometer(devices) {
@@ -415,6 +471,10 @@ function loadInitial() {
             $("#parentNode").text(circuit.parent_node);
             $("#bwMax").text(circuit.download_max_mbps + " / " + circuit.upload_max_mbps + " Mbps");
             $("#bwMin").text(circuit.download_min_mbps + " / " + circuit.upload_min_mbps + " Mbps");
+            plan = {
+                down: circuit.download_max_mbps,
+                up: circuit.upload_max_mbps,
+            };
             initialDevices(circuits);
             speedometer = new BitsPerSecondGauge("bitsGauge");
             totalThroughput = new CircuitTotalGraph("throughputGraph", "Total Circuit Throughput");

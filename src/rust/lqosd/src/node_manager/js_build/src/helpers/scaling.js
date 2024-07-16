@@ -80,7 +80,7 @@ export function formatThroughput(throughput, limitInMbps) {
 }
 
 export function formatRtt(rtt) {
-    if (rtt === undefined) {
+    if (rtt === undefined || rtt === null || rtt.nanoseconds === 0) {
         return "-";
     }
     const limit = 200;
