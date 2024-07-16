@@ -18,6 +18,8 @@ import {TopTreeSummary} from "./top_tree_summary";
 import {CombinedTopDashlet} from "./combined_top_dash";
 import {RttHisto3dDash} from "./rtt_histo3d_dash";
 import {QueueStatsTotalDash} from "./queue_stats_total";
+import {TreeCapacityDash} from "./tree_capacity_dash";
+import {CircuitCapacityDash} from "./circuit_capacity_dash";
 
 export const DashletMenu = [
     { name: "Throughput Bits/Second", tag: "throughputBps", size: 3 },
@@ -40,6 +42,8 @@ export const DashletMenu = [
     { name: "Combined Top 10 Box", tag: "combinedTop10", size: 3 },
     { name: "Total Cake Stats", tag: "totalCakeStats", size: 3 },
     { name: "Round-Trip Time Histogram 3D", tag: "rttHistogram3D", size: 12 },
+    { name: "Circuits At Capacity", tag: "circuitCapacity", size: 6 },
+    { name: "Tree Nodes At Capacity", tag: "treeCapacity", size: 6 },
 ];
 
 export function widgetFactory(widgetName, count) {
@@ -65,6 +69,8 @@ export function widgetFactory(widgetName, count) {
         case "treeSummary"      : widget = new TopTreeSummary(count); break;
         case "combinedTop10"    : widget = new CombinedTopDashlet(count); break;
         case "totalCakeStats"   : widget = new QueueStatsTotalDash(count); break;
+        case "circuitCapacity"  : widget = new CircuitCapacityDash(count); break;
+        case "treeCapacity"     : widget = new TreeCapacityDash(count); break;
         default: {
             console.log("I don't know how to construct a widget of type [" + widgetName + "]");
             return null;

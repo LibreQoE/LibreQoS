@@ -33,13 +33,13 @@ pub async fn circuit_capacity(channels: Arc<PubSub>) {
     THROUGHPUT_TRACKER.raw_data.iter().for_each(|c| {
         if let Some(circuit_id) = &c.circuit_id {
             if let Some(accumulator) = circuits.get_mut(circuit_id) {
-                accumulator.bytes += c.bytes;
+                accumulator.bytes += c.bytes_per_second;
                 if let Some(latency) = c.median_latency() {
                     accumulator.median_rtt = latency;
                 }
             } else {
                 circuits.insert(circuit_id.clone(), CircuitAccumulator {
-                    bytes: c.bytes,
+                    bytes: c.bytes_per_second,
                     median_rtt: c.median_latency().unwrap_or(0.0),
                 });
             }
@@ -51,9 +51,9 @@ pub async fn circuit_capacity(channels: Arc<PubSub>) {
         let shaped_devices = SHAPED_DEVICES.read().unwrap();
         circuits.iter().filter_map(|(circuit_id, accumulator)| {
             if let Some(device) = shaped_devices.devices.iter().find(|sd| sd.circuit_id == *circuit_id) {
-                let down_mbps = accumulator.bytes.down as f64 * 8.0 / 1_000_000.0;
+                let down_mbps = (accumulator.bytes.down as f64 * 8.0) / 1_000_000.0;
                 let down = down_mbps / device.download_max_mbps as f64;
-                let up_mbps = accumulator.bytes.up as f64 * 8.0 / 1_000_000.0;
+                let up_mbps = (accumulator.bytes.up as f64 * 8.0) / 1_000_000.0;
                 let up = up_mbps / device.upload_max_mbps as f64;
 
                 Some(Capacity {
