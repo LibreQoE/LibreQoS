@@ -40,6 +40,7 @@ export class Top10Downloaders extends BaseDashlet {
             t.classList.add("table", "table-striped", "table-sm");
 
             let th = document.createElement("thead");
+            th.classList.add("small");
             th.appendChild(theading("IP Address/Circuit"));
             th.appendChild(theading("Plan"));
             th.appendChild(theading("DL ⬇️"));
