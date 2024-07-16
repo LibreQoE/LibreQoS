@@ -62,7 +62,7 @@ zerocopy = {version = "0.6.1", features = [ "simd" ] }
 sysinfo = "0"
 default-net = "0"
 reqwest = { version = "0", features = ["json", "blocking"] }
-pyo3 = "0"
+pyo3 = "0.20.3"
 colored = "2"
 miniz_oxide = "0.7"
 byteorder = "1"
