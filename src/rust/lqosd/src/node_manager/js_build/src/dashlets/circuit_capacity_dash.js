@@ -1,6 +1,6 @@
 import {BaseDashlet} from "./base_dashlet";
-import {clearDashDiv, simpleRow, simpleRowHtml, theading} from "../helpers/builders";
-import {scaleNumber, scaleNanos, formatRtt} from "../helpers/scaling";
+import {clearDashDiv, simpleRowHtml, theading} from "../helpers/builders";
+import {formatRtt, formatPercent} from "../helpers/scaling";
 import {redactCell} from "../helpers/redact";
 
 export class CircuitCapacityDash extends BaseDashlet {
@@ -69,8 +69,8 @@ export class CircuitCapacityDash extends BaseDashlet {
                 linkCol.appendChild(link);
                 row.appendChild(linkCol);
 
-                row.appendChild(simpleRow((c.capacity[0]*100).toFixed(0)));
-                row.appendChild(simpleRow((c.capacity[1]*100).toFixed(0)));
+                row.appendChild(simpleRowHtml(formatPercent(c.capacity[0]*100)));
+                row.appendChild(simpleRowHtml(formatPercent(c.capacity[1]*100)));
                 row.appendChild(simpleRowHtml(formatRtt(c.rtt)));
                 tbody.appendChild(row);
 

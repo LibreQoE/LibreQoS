@@ -1,6 +1,6 @@
 import {BaseDashlet} from "./base_dashlet";
 import {clearDashDiv, simpleRow, simpleRowHtml, theading} from "../helpers/builders";
-import {scaleNumber, scaleNanos, formatRtt} from "../helpers/scaling";
+import {formatRtt, formatPercent} from "../helpers/scaling";
 
 export class TreeCapacityDash extends BaseDashlet {
     constructor(slot) {
@@ -63,8 +63,8 @@ export class TreeCapacityDash extends BaseDashlet {
                 row.classList.add("small");
 
                 row.appendChild(simpleRow(node.name));
-                row.appendChild(simpleRow((down*100).toFixed(0)));
-                row.appendChild(simpleRow((up*100).toFixed(0)));
+                row.appendChild(simpleRowHtml(formatPercent(down*100)));
+                row.appendChild(simpleRowHtml(formatPercent(up*100)));
                 row.appendChild(simpleRowHtml(formatRtt(node.rtt)));
 
                 tbody.appendChild(row);

@@ -129,3 +129,8 @@ export function lerpColor(color1, color2, weight) {
     var b = Math.round(color1[2] + (color2[2] - color1[2]) * weight);
     return `rgb(${r}, ${g}, ${b})`;
 }
+
+export function formatPercent(percent, digits=0) {
+    let color = lerpGreenToRedViaOrange(percent, 100);
+    return "<span style='color: " + color + "'>" + percent.toFixed(digits) + "%</span>";
+}
