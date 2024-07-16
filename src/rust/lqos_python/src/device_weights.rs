@@ -152,7 +152,7 @@ fn recurse_weights(
         });
     //println!("     Weight: {}", weight);
 
-    for (i, n) in network.get_nodes_when_ready()
+    for (i, _n) in network.get_nodes_when_ready()
         .iter()
         .enumerate()
         .filter(|(_i, n)| n.immediate_parent == Some(node_index)) 

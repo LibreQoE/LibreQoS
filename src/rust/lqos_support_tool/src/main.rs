@@ -38,7 +38,7 @@ enum Commands {
 }
 
 fn read_line() -> String {
-    use std::io::{stdin,stdout,Write};
+    use std::io::stdin;
     let mut s = String::new();
     stdin().read_line(&mut s).expect("Did not enter a correct string");
     s.trim().to_string()
