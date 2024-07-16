@@ -12,6 +12,9 @@ import {subscribeWS} from "./pubsub/ws";
 import {CakeBacklog} from "./graphs/cake_backlog";
 import {CakeDelays} from "./graphs/cake_delays";
 import {CakeQueueLength} from "./graphs/cake_queue_length";
+import {CakeTraffic} from "./graphs/cake_traffic";
+import {CakeMarks} from "./graphs/cake_marks";
+import {CakeDrops} from "./graphs/cake_drops";
 
 const params = new Proxy(new URLSearchParams(window.location.search), {
     get: (searchParams, prop) => searchParams.get(prop),
@@ -562,6 +565,9 @@ function subscribeToCake() {
     let backlogGraph = new CakeBacklog("cakeBacklog");
     let delaysGraph = new CakeDelays("cakeDelays");
     let queueLength = new CakeQueueLength("cakeQueueLength");
+    let traffic = new CakeTraffic("cakeTraffic");
+    let marks = new CakeMarks("cakeMarks");
+    let drops = new CakeDrops("cakeDrops");
     channelLink = new DirectChannel({
         CakeWatcher: {
             circuit: circuit_id
@@ -577,6 +583,12 @@ function subscribeToCake() {
         delaysGraph.chart.resize();
         queueLength.update(msg);
         queueLength.chart.resize();
+        traffic.update(msg);
+        traffic.chart.resize();
+        marks.update(msg);
+        marks.chart.resize();
+        drops.update(msg);
+        drops.chart.resize();
     });
 }
 
