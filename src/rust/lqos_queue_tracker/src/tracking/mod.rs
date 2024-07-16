@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-use lqos_bus::TcHandle;
 use std::time::Instant;
 use crate::{
   circuit_to_queue::CIRCUIT_TO_QUEUE, interval::QUEUE_MONITOR_INTERVAL,
@@ -99,7 +97,7 @@ fn connect_queues_to_circuit(structure: &[QueueNode], queues: &[QueueType]) -> V
           if let Some (s) = structure.iter().find(|s| s.class_major == major as u32 && s.class_minor == minor as u32) {
             if let Some(circuit_id) = &s.circuit_id {
               let marks: u32 = cake.tins.iter().map(|tin| tin.ecn_marks).sum();
-              if (cake.drops > 0 || marks > 0) {
+              if cake.drops > 0 || marks > 0 {
                 return Some(TrackedQueue {
                   circuit_id: circuit_id.clone(),
                   drops: cake.drops as u64,
@@ -123,7 +121,7 @@ fn connect_queues_to_circuit_up(structure: &[QueueNode], queues: &[QueueType]) -
           if let Some (s) = structure.iter().find(|s| s.up_class_major == major as u32 && s.class_minor == minor as u32) {
             if let Some(circuit_id) = &s.circuit_id {
               let marks: u32 = cake.tins.iter().map(|tin| tin.ecn_marks).sum();
-              if (cake.drops > 0 || marks > 0) {
+              if cake.drops > 0 || marks > 0 {
                 return Some(TrackedQueue {
                   circuit_id: circuit_id.clone(),
                   drops: cake.drops as u64,
