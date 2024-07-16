@@ -36,12 +36,17 @@
     </li>
     <li class="nav-item" role="presentation">
         <button class="nav-link" id="sankey-tab" data-bs-toggle="tab" data-bs-target="#sankey" type="button" role="tab" aria-controls="profile" aria-selected="false">
-            Active Flows <span id="activeFlowCount" class="badge">0</span>
+            <i class="fa fa-map"></i> Active Flows <span id="activeFlowCount" class="badge">0</span>
         </button>
     </li>
     <li class="nav-item" role="presentation">
         <button class="nav-link" id="traffic-tab" data-bs-toggle="tab" data-bs-target="#traffic" type="button" role="tab" aria-controls="contact" aria-selected="false">
-            Network Traffic
+            <i class="fa fa-table"></i> Network Traffic
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="funnel-tab" data-bs-toggle="tab" data-bs-target="#funnel" type="button" role="tab" aria-controls="contact" aria-selected="false">
+            <i class="fa fa-tree"></i> Queue Tree
         </button>
     </li>
 </ul>
@@ -62,6 +67,13 @@
         <div class="row">
             <div class="col-12" id="allTraffic">
                 <i class="fa fa-spinner fa-spin"></i> Loading Traffic...
+            </div>
+        </div>
+    </div>
+    <div class="tab-pane fade" id="funnel" role="tabpanel" aria-labelledby="funnel-tab">
+        <div class="row">
+            <div class="col-12" id="theFunnel">
+                <i class="fa fa-spinner fa-spin"></i> Loading Queue Tree...
             </div>
         </div>
     </div>

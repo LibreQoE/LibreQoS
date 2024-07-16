@@ -8,6 +8,7 @@ import {CircuitRetransmitGraph} from "./graphs/circuit_retransmit_graph";
 import {scaleNanos, scaleNumber} from "./helpers/scaling";
 import {DevicePingHistogram} from "./graphs/device_ping_graph";
 import {FlowsSankey} from "./graphs/flow_sankey";
+import {subscribeWS} from "./pubsub/ws";
 
 const params = new Proxy(new URLSearchParams(window.location.search), {
     get: (searchParams, prop) => searchParams.get(prop),
@@ -24,6 +25,8 @@ let totalRetransmits = null;
 let deviceGraphs = {};
 let devicePings = [];
 let flowSankey = null;
+let funnelGraphs = {};
+let funnelParents = [];
 
 function connectPrivateChannel() {
     channelLink = new DirectChannel({
@@ -120,6 +123,7 @@ function connectFlowChannel() {
     }, (msg) => {
         //console.log(msg);
         let activeFlows = flowSankey.update(msg);
+        flowSankey.chart.resize();
         $("#activeFlowCount").text(activeFlows);
         updateTrafficTab(msg);
     });
@@ -458,6 +462,99 @@ function initialDevices(circuits) {
     });
 }
 
+function initialFunnel(parentNode) {
+    let target = document.getElementById("theFunnel");
+    $.get("/local-api/networkTree", (data) => {
+        let immediateParent = null;
+        data.forEach((node) => {
+            if (node[1].name === parentNode) {
+                immediateParent = node[1];
+            }
+        });
+
+        if (immediateParent === null) {
+            clearDiv(target);
+            target.appendChild(document.createTextNode("No parent node found"));
+            return;
+        }
+
+        let parentDiv = document.createElement("div");
+        immediateParent.parents.reverse().forEach((parent) => {
+            //console.log(data[parent]);
+            let row = document.createElement("div");
+            row.classList.add("row");
+
+            let col = document.createElement("div");
+            col.classList.add("col-12");
+            let heading = document.createElement("h5");
+            heading.innerHTML = "<i class='fa fa-sitemap'></i> " + data[parent][1].name;
+            col.appendChild(heading);
+            row.appendChild(col);
+            parentDiv.appendChild(row);
+
+            // Row for graphs
+            row = document.createElement("div");
+            row.classList.add("row");
+
+            let col_tp = document.createElement("div");
+            col_tp.classList.add("col-4");
+            col_tp.id = "funnel_tp_" + parent;
+            col_tp.style.height = "250px";
+            row.appendChild(col_tp);
+
+            let col_rxmit = document.createElement("div");
+            col_rxmit.classList.add("col-4");
+            col_rxmit.id = "funnel_rxmit_" + parent;
+            row.appendChild(col_rxmit);
+
+            let col_rtt = document.createElement("div");
+            col_rtt.classList.add("col-4");
+            col_rtt.id = "funnel_rtt_" + parent;
+            row.appendChild(col_rtt);
+
+            parentDiv.appendChild(row);
+        });
+        clearDiv(target);
+        target.appendChild(parentDiv);
+        // Ugly hack to defer until the DOM is updated
+        requestAnimationFrame(() => {setTimeout(() => {
+            immediateParent.parents.reverse().forEach((parent) => {
+                let tpGraph = new CircuitTotalGraph("funnel_tp_" + parent, data[parent][1].name + " Throughput");
+                let rxmitGraph = new CircuitRetransmitGraph("funnel_rxmit_" + parent, data[parent][1].name + " Retransmits");
+                let rttGraph = new DevicePingHistogram("funnel_rtt_" + parent);
+                funnelGraphs[parent] = {
+                    tp: tpGraph,
+                    rxmit: rxmitGraph,
+                    rtt: rttGraph,
+                };
+            });
+            funnelParents = immediateParent.parents;
+            subscribeWS(["NetworkTree"], onTreeEvent);
+        }, 0)});
+    });
+}
+
+function onTreeEvent(msg) {
+    //console.log(msg);
+    funnelParents.forEach((parent) => {
+        if (msg.event !== "NetworkTree") return;
+        let myMessage = msg.data[parent][1];
+        if (myMessage === undefined) return;
+        let tpGraph = funnelGraphs[parent].tp;
+        let rxmitGraph = funnelGraphs[parent].rxmit;
+        let rttGraph = funnelGraphs[parent].rtt;
+
+        tpGraph.update(myMessage.current_throughput.down, myMessage.current_throughput.up);
+        rxmitGraph.update(myMessage.current_retransmits.down, myMessage.current_retransmits.up);
+        myMessage.rtts.forEach((rtt) => {
+            rttGraph.update(rtt.nanoseconds);
+        });
+        tpGraph.chart.resize();
+        rxmitGraph.chart.resize();
+        rttGraph.chart.resize();
+    });
+}
+
 function loadInitial() {
     $.ajax({
         type: "POST",
@@ -484,6 +581,7 @@ function loadInitial() {
             connectPrivateChannel();
             connectPingers(circuits);
             connectFlowChannel();
+            initialFunnel(circuit.parent_node)
         },
         error: () => {
             alert("Circuit with id " + circuit_id + " not found");
