@@ -547,7 +547,7 @@ function onTreeEvent(msg) {
         tpGraph.update(myMessage.current_throughput.down, myMessage.current_throughput.up);
         rxmitGraph.update(myMessage.current_retransmits.down, myMessage.current_retransmits.up);
         myMessage.rtts.forEach((rtt) => {
-            rttGraph.update(rtt.nanoseconds);
+            rttGraph.update(rtt);
         });
         tpGraph.chart.resize();
         rxmitGraph.chart.resize();
