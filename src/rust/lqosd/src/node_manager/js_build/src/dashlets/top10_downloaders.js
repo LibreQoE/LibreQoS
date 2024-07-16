@@ -51,6 +51,7 @@ export class Top10Downloaders extends BaseDashlet {
             let tbody = document.createElement("tbody");
             msg.data.forEach((r) => {
                 let row = document.createElement("tr");
+                row.classList.add("small");
 
                 if (r.circuit_id !== "") {
                     let link = document.createElement("a");
