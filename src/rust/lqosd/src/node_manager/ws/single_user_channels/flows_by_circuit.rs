@@ -2,9 +2,7 @@ use std::net::IpAddr;
 use std::time::Duration;
 use serde::Serialize;
 use tokio::time::MissedTickBehavior;
-use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::unix_time::time_since_boot;
-use lqos_utils::XdpIpAddress;
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use crate::throughput_tracker::flow_data::{ALL_FLOWS, FlowAnalysis, FlowbeeLocalData, get_asn_name_and_country};
 
@@ -27,11 +25,11 @@ fn recent_flows_by_circuit(circuit_id: &str) -> Vec<(FlowbeeKeyTransit, FlowbeeL
                 }
 
                 // Don't show flows that don't belong to the circuit
-                let mut local_ip_str = String::new();
-                let mut remote_ip_str = String::new();
-                let mut device_name = String::new();
-                let mut asn_name = String::new();
-                let mut asn_country = String::new();
+                let local_ip_str ; // Using late binding
+                let remote_ip_str ;
+                let device_name ;
+                let asn_name ;
+                let asn_country ;
                 let local_ip = match key.local_ip.as_ip() {
                     IpAddr::V4(ip) => ip.to_ipv6_mapped(),
                     IpAddr::V6(ip) => ip,

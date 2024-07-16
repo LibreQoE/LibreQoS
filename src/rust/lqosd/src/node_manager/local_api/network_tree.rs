@@ -1,8 +1,6 @@
 use axum::extract::Path;
 use axum::Json;
-use lqos_bus::BusResponse;
 use lqos_config::NetworkJsonTransport;
-use crate::shaped_devices_tracker;
 use crate::shaped_devices_tracker::NETWORK_JSON;
 
 pub async fn get_network_tree(

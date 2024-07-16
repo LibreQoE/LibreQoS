@@ -82,7 +82,8 @@ fn track_queues() {
   expire_watched_queues();
 }
 
-struct TrackedQueue {
+/// Holds the CAKE marks/drops for a given queue/circuit.
+pub struct TrackedQueue {
   circuit_id: String,
   drops: u64,
   marks: u64,

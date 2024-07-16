@@ -4,7 +4,10 @@ use once_cell::sync::Lazy;
 use lqos_utils::units::{AtomicDownUp, DownUpOrder};
 use crate::tracking::TrackedQueue;
 
+/// Holds all of the CAKE queue summaries being tracked by the system.
 pub static ALL_QUEUE_SUMMARY: Lazy<AllQueueData> = Lazy::new(|| AllQueueData::new());
+
+/// Tracks the total number of drops and marks across all queues.
 pub static TOTAL_QUEUE_STATS: TotalQueueStats = TotalQueueStats::new();
 
 pub struct TotalQueueStats {

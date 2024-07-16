@@ -2,16 +2,11 @@ mod circuit;
 mod ping_monitor;
 mod flows_by_circuit;
 
-use std::sync::Arc;
-use std::time::Duration;
-use axum::Extension;
 use axum::extract::WebSocketUpgrade;
 use axum::extract::ws::{Message, WebSocket};
 use axum::response::IntoResponse;
 use serde::{Deserialize, Serialize};
 use tokio::spawn;
-use tokio::time::MissedTickBehavior;
-use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::single_user_channels::circuit::circuit_watcher;
 use crate::node_manager::ws::single_user_channels::flows_by_circuit::flows_by_circuit;
 use crate::node_manager::ws::single_user_channels::ping_monitor::ping_monitor;
@@ -25,16 +20,14 @@ enum PrivateChannel {
 
 pub(super) async fn private_channel_ws_handler(
     ws: WebSocketUpgrade,
-    Extension(channels): Extension<Arc<PubSub>>,
 ) -> impl IntoResponse {
     log::info!("WS Upgrade Called");
-    let channels = channels.clone();
     ws.on_upgrade(move |socket| async {
-        handle_socket(socket, channels).await;
+        handle_socket(socket).await;
     })
 }
 
-async fn handle_socket(mut socket: WebSocket, channels: Arc<PubSub>) {
+async fn handle_socket(mut socket: WebSocket) {
     log::info!("Websocket connected");
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(10);
