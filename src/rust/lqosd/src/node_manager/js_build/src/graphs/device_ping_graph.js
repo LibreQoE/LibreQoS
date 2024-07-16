@@ -42,5 +42,13 @@ export class DevicePingHistogram extends DashboardGraph {
         this.option.series.data[bucket].value += 1;
         this.chart.setOption(this.option);
     }
+
+    updateMs(ping_time_ms) {
+        this.chart.hideLoading();
+        let bucket = Math.floor(ping_time_ms / 10);
+        bucket = Math.min(bucket, 19);
+        this.option.series.data[bucket].value += 1;
+        this.chart.setOption(this.option);
+    }
 }
 

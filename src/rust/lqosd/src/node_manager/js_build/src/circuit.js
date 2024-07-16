@@ -544,10 +544,10 @@ function onTreeEvent(msg) {
         let rxmitGraph = funnelGraphs[parent].rxmit;
         let rttGraph = funnelGraphs[parent].rtt;
 
-        tpGraph.update(myMessage.current_throughput.down, myMessage.current_throughput.up);
-        rxmitGraph.update(myMessage.current_retransmits.down, myMessage.current_retransmits.up);
+        tpGraph.update(myMessage.current_throughput[0] * 8, myMessage.current_throughput[0] *8);
+        rxmitGraph.update(myMessage.current_retransmits[0], myMessage.current_retransmits[1]);
         myMessage.rtts.forEach((rtt) => {
-            rttGraph.update(rtt);
+            rttGraph.updateMs(rtt);
         });
         tpGraph.chart.resize();
         rxmitGraph.chart.resize();
