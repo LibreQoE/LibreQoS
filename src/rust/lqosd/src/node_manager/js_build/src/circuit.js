@@ -164,8 +164,8 @@ function updateTrafficTab(msg) {
         row.appendChild(simpleRow(scaleNumber(flow[1].packets_sent.up)));
         row.appendChild(simpleRowHtml(formatRetransmit(flow[1].tcp_retransmits.down)));
         row.appendChild(simpleRowHtml(formatRetransmit(flow[1].tcp_retransmits.up)));
-        row.appendChild(simpleRow(scaleNanos(flow[1].rtt[0])));
-        row.appendChild(simpleRow(scaleNanos(flow[1].rtt[1])));
+        row.appendChild(simpleRow(scaleNanos(flow[1].rtt[0].nanoseconds)));
+        row.appendChild(simpleRow(scaleNanos(flow[1].rtt[1].nanoseconds)));
         row.appendChild(simpleRow(flow[0].asn_name));
         row.appendChild(simpleRow(flow[0].asn_country));
         row.appendChild(simpleRow(flow[0].remote_ip));
