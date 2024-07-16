@@ -10,7 +10,6 @@ anyhow = { workspace = true }
 env_logger = "0"
 log = { workspace = true }
 lqos_bus = { path = "../lqos_bus" }
-serde = { workspace = true }
 serde_cbor = { workspace = true }
 sqlite = "0.30.4"
 axum = "0.6"

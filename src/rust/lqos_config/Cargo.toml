@@ -18,5 +18,4 @@ log = { workspace = true }
 dashmap = {  workspace = true }
 pyo3 = {  workspace = true }
 toml = {  workspace = true }
-once_cell = { workspace = true}
 lqos_utils = { path = "../lqos_utils" }

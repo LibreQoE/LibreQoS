@@ -28,8 +28,6 @@ log = { workspace = true }
 nix = {  workspace = true }
 sysinfo = {  workspace = true }
 dashmap = { workspace = true }
-num-traits = { workspace = true }
-thiserror = { workspace = true }
 itertools = "0.12.1"
 csv = { workspace = true }
 reqwest = { workspace = true }
