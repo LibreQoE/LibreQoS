@@ -9,6 +9,7 @@ import {scaleNanos, scaleNumber} from "./helpers/scaling";
 import {DevicePingHistogram} from "./graphs/device_ping_graph";
 import {FlowsSankey} from "./graphs/flow_sankey";
 import {subscribeWS} from "./pubsub/ws";
+import {CakeBacklog} from "./graphs/cake_backlog";
 
 const params = new Proxy(new URLSearchParams(window.location.search), {
     get: (searchParams, prop) => searchParams.get(prop),
@@ -555,6 +556,22 @@ function onTreeEvent(msg) {
     });
 }
 
+function subscribeToCake() {
+    let backlogGraph = new CakeBacklog("cakeBacklog");
+    channelLink = new DirectChannel({
+        CakeWatcher: {
+            circuit: circuit_id
+        }
+    }, (msg) => {
+        //console.log(msg);
+
+        // Cake Memory Usage
+        $("#cakeQueueMemory").text(scaleNumber(msg.current_download.memory_used) + " / " + scaleNumber(msg.current_upload.memory_used));
+        backlogGraph.update(msg);
+        backlogGraph.chart.resize();
+    });
+}
+
 function loadInitial() {
     $.ajax({
         type: "POST",
@@ -581,7 +598,8 @@ function loadInitial() {
             connectPrivateChannel();
             connectPingers(circuits);
             connectFlowChannel();
-            initialFunnel(circuit.parent_node)
+            initialFunnel(circuit.parent_node);
+            subscribeToCake();
         },
         error: () => {
             alert("Circuit with id " + circuit_id + " not found");

@@ -49,6 +49,11 @@
             <i class="fa fa-tree"></i> Queue Tree
         </button>
     </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="cake-tab" data-bs-toggle="tab" data-bs-target="#cake" type="button" role="tab" aria-controls="contact" aria-selected="false">
+            <i class="fa fa-birthday-cake"></i> CAKE Shaper Overview
+        </button>
+    </li>
 </ul>
 <div class="tab-content" id="myTabContent">
     <div class="tab-pane fade show active" id="devs" role="tabpanel" aria-labelledby="devs-tab">
@@ -74,6 +79,16 @@
         <div class="row">
             <div class="col-12" id="theFunnel">
                 <i class="fa fa-spinner fa-spin"></i> Loading Queue Tree...
+            </div>
+        </div>
+    </div>
+    <div class="tab-pane fade" id="cake" role="tabpanel" aria-labelledby="cake-tab">
+        <div class="row">
+            <div class="col-4">
+                <div id="cakeBacklog" style="height: 250px"></div>
+            </div>
+            <div class="col-3">
+                Queue Memory: <span id="cakeQueueMemory">?</span>
             </div>
         </div>
     </div>

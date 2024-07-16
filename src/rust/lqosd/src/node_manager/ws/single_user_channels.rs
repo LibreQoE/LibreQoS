@@ -1,12 +1,14 @@
 mod circuit;
 mod ping_monitor;
 mod flows_by_circuit;
+mod cake_watcher;
 
 use axum::extract::WebSocketUpgrade;
 use axum::extract::ws::{Message, WebSocket};
 use axum::response::IntoResponse;
 use serde::{Deserialize, Serialize};
 use tokio::spawn;
+use crate::node_manager::ws::single_user_channels::cake_watcher::cake_watcher;
 use crate::node_manager::ws::single_user_channels::circuit::circuit_watcher;
 use crate::node_manager::ws::single_user_channels::flows_by_circuit::flows_by_circuit;
 use crate::node_manager::ws::single_user_channels::ping_monitor::ping_monitor;
@@ -16,6 +18,7 @@ enum PrivateChannel {
     CircuitWatcher { circuit: String },
     PingMonitor { ips: Vec<(String, String)> },
     FlowsByCircuit { circuit: String },
+    CakeWatcher { circuit: String },
 }
 
 pub(super) async fn private_channel_ws_handler(
@@ -49,6 +52,9 @@ async fn handle_socket(mut socket: WebSocket) {
                                     },
                                     PrivateChannel::FlowsByCircuit { circuit } => {
                                         spawn(flows_by_circuit(circuit, tx.clone()));
+                                    },
+                                    PrivateChannel::CakeWatcher { circuit } => {
+                                        spawn(cake_watcher(circuit, tx.clone()));
                                     },
                                 }
                             } else {
