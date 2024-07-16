@@ -1,7 +1,7 @@
 //! Manages the `/etc/lqos.conf` file.
 use log::error;
 use serde::{Deserialize, Serialize};
-use toml_edit::{Document, value};
+use toml_edit::{DocumentMut, value};
 use std::{fs, path::Path};
 use thiserror::Error;
 
@@ -172,7 +172,7 @@ impl EtcLqos {
 
   pub(crate) fn load_from_string(raw: &str) -> Result<Self, EtcLqosError> {
     log::info!("Trying to load old TOML version from /etc/lqos.conf");
-    let document = raw.parse::<Document>();
+    let document = raw.parse::<DocumentMut>();
       match document {
         Err(e) => {
           error!("Unable to parse TOML from /etc/lqos.conf");
@@ -199,7 +199,7 @@ impl EtcLqos {
 
   /// Saves changes made to /etc/lqos.conf
   /// Copies current configuration into /etc/lqos.conf.backup first
-  pub fn save(&self, document: &mut Document) -> Result<(), EtcLqosError> {
+  pub fn save(&self, document: &mut DocumentMut) -> Result<(), EtcLqosError> {
     let cfg_path = Path::new("/etc/lqos.conf");
     let backup_path = Path::new("/etc/lqos.conf.backup");
     if let Err(e) = std::fs::copy(cfg_path, backup_path) {
@@ -223,7 +223,7 @@ impl EtcLqos {
 #[allow(dead_code)]
 pub fn enable_long_term_stats(license_key: String) {
   if let Ok(raw) = std::fs::read_to_string("/etc/lqos.conf") {
-    let document = raw.parse::<Document>();
+    let document = raw.parse::<DocumentMut>();
     match document {
       Err(e) => {
         error!("Unable to parse TOML from /etc/lqos.conf");
@@ -267,7 +267,7 @@ pub fn enable_long_term_stats(license_key: String) {
   }
 }
 
-fn check_config(cfg_doc: &mut Document, cfg: &mut EtcLqos) {
+fn check_config(cfg_doc: &mut DocumentMut, cfg: &mut EtcLqos) {
   use sha2::digest::Update;
   use sha2::Digest;
 
