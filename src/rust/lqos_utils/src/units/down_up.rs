@@ -1,14 +1,21 @@
+//! AtomicDownUp is a struct that contains two atomic u64 values, one for down and one for up.
+//! We frequently order things down and then up in kernel maps, keeping the ordering explicit
+//! helps reduce directional confusion/bugs.
+
 use std::ops::AddAssign;
 use serde::{Deserialize, Serialize};
 use zerocopy::FromBytes;
 use crate::units::UpDownOrder;
 
 /// Provides strong download/upload separation for
-/// stored statistics to eliminate confusion.
+/// stored statistics to eliminate confusion. This is a generic
+/// type: you can control the type stored inside.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, FromBytes, Default, Ord, PartialOrd)]
 pub struct DownUpOrder<T> {
+    /// The down value
     pub down: T,
+    /// The up value
     pub up: T,
 }
 
@@ -17,10 +24,19 @@ where T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedSub
     + num_traits::CheckedAdd + num_traits::SaturatingSub + num_traits::SaturatingMul
     + num_traits::FromPrimitive
 {
+    /// Create a new DownUpOrder with the given down and up values.
     pub fn new(down: T, up: T) -> Self {
         Self { down, up }
     }
     
+    /// In the C code, it's common to refer to a "direction" byte:
+    ///
+    /// * 0: down
+    /// * 1: up
+    /// * >1: error
+    ///
+    /// This is a helper function to translate that byte into the
+    /// appropriate value.
     pub fn dir(&self, direction: usize) -> T {
         if direction == 0 {
             self.down
@@ -29,43 +45,58 @@ where T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedSub
         }
     }
 
+    /// Return a new DownUpOrder with both down and up set to zero.
     pub fn zeroed() -> Self {
         Self { down: T::zero(), up: T::zero() }
     }
-    
+
+    /// Check if both down and up are less than the given limit.
+    /// Returns `true` if they are both less than the limit, `false` otherwise.
     pub fn both_less_than(&self, limit: T) -> bool {
         self.down < limit && self.up < limit
     }
 
+    /// Check if the sum of down and up exceeds the given limit.
     pub fn sum_exceeds(&self, limit: T) -> bool {
         self.down + self.up > limit
     }
     
+    /// Subtract the given DownUpOrder from this one, returning a new DownUpOrder.
+    /// If the result would be negative, it is clamped to zero.
     pub fn checked_sub_or_zero(&self, rhs: DownUpOrder<T>) -> DownUpOrder<T> {
         let down = T::checked_sub(&self.down, &rhs.down).unwrap_or(T::zero());
         let up = T::checked_sub(&self.up, &rhs.up).unwrap_or(T::zero());
         DownUpOrder { down, up }
     }
 
+    /// Add the given DownUpOrder to this one. If the result would overflow,
+    /// it is set to zero.
     pub fn checked_add(&mut self, rhs: DownUpOrder<T>) {
         self.down = self.down.checked_add(&rhs.down).unwrap_or(T::zero());
         self.up = self.up.checked_add(&rhs.up).unwrap_or(T::zero());
     }
 
+    /// Add the given down and up values to this DownUpOrder. If the result would overflow,
+    /// it is set to zero.
     pub fn checked_add_direct(&mut self, down: T, up: T) {
         self.down = self.down.checked_add(&down).unwrap_or(T::zero());
         self.up = self.up.checked_add(&up).unwrap_or(T::zero());
     }
 
+    /// Add the given tuple of down and up values to this DownUpOrder. If the result would overflow,
+    /// it is set to zero.
     pub fn checked_add_tuple(&mut self, (down, up): (T, T)) {
         self.down = self.down.checked_add(&down).unwrap_or(T::zero());
         self.up = self.up.checked_add(&up).unwrap_or(T::zero());
     }
 
+    /// Add the `down` and `up` values, giving a total.
     pub fn sum(&self) -> T {
         self.down + self.up
     }
 
+    /// Multiply the `down` and `up` values by 8, giving the total number of bits, assuming
+    /// that the previous value was bytes.
     pub fn to_bits_from_bytes(&self) -> DownUpOrder<T> {
         DownUpOrder {
             down: self.down.saturating_mul(&T::from_u32(8).unwrap()),
@@ -73,14 +104,17 @@ where T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedSub
         }
     }
 
+    /// Get the `down` value.
     pub fn get_down(&self) -> T {
         self.down
     }
 
+    /// Get the `up` value.
     pub fn get_up(&self) -> T {
         self.up
     }
 
+    /// Set both the `down` and `up` values to zero.
     pub fn set_to_zero(&mut self) {
         self.down = T::zero();
         self.up = T::zero();

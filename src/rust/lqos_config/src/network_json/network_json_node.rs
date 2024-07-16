@@ -1,5 +1,5 @@
 use dashmap::DashSet;
-use lqos_utils::units::{AtomicDownUp, DownUpOrder};
+use lqos_utils::units::DownUpOrder;
 use crate::NetworkJsonTransport;
 
 /// Describes a node in the network map tree.
