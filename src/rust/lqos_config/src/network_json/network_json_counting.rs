@@ -2,11 +2,19 @@ use log::warn;
 use lqos_utils::units::DownUpOrder;
 use crate::NetworkJsonNode;
 
+/// Type used while updating the network tree with new data.
+/// Rather than have a race condition while the updates are performed
+/// (and potentially new requests come in, and receive invalid data),
+/// we copy the network tree into this structure, and then update this
+/// structure. Once the updates are complete, we copy the data back
+/// into the main network tree.
 pub struct NetworkJsonCounting {
     pub(super) nodes: Vec<NetworkJsonNode>,
 }
 
 impl NetworkJsonCounting {
+    /// Starts an update cycle. This clones the nodes into
+    /// the `NetworkJsonCounting` structure - work will be performed on the clone.
     pub fn begin_update_cycle(nodes: Vec<NetworkJsonNode>) -> Self {
         Self { nodes }
     }
@@ -56,6 +64,7 @@ impl NetworkJsonCounting {
         }
     }
 
+    /// Record TCP Retransmits in the tree.
     pub fn add_retransmit_cycle(&mut self, targets: &[usize], tcp_retransmits: DownUpOrder<u64>) {
         for idx in targets {
             // Safety first; use "get" to ensure that the node exists
@@ -67,6 +76,7 @@ impl NetworkJsonCounting {
         }
     }
 
+    /// Adds a series of CAKE marks and drops to the tree structure.
     pub fn add_queue_cycle(&mut self, targets: &[usize], marks: &DownUpOrder<u64>, drops: &DownUpOrder<u64>) {
         for idx in targets {
             // Safety first; use "get" to ensure that the node exists
