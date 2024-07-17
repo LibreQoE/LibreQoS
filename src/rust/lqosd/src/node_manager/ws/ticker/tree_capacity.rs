@@ -7,6 +7,7 @@ use crate::shaped_devices_tracker::NETWORK_JSON;
 
 #[derive(Serialize)]
 struct NodeCapacity {
+    id: usize,
     name: String,
     down: f64,
     up: f64,
@@ -22,7 +23,7 @@ pub async fn tree_capacity(channels: Arc<PubSub>) {
 
     let capacities: Vec<_> = {
         if let Ok(reader) = NETWORK_JSON.read() {
-            reader.get_nodes_when_ready().iter().map(|node| {
+            reader.get_nodes_when_ready().iter().enumerate().map(|(id, node)| {
                 let node = node.clone_to_transit();
                 let down = node.current_throughput.0 as f64 * 8.0 / 1_000_000.0;
                 let up = node.current_throughput.1 as f64 * 8.0 / 1_000_000.0;
@@ -40,6 +41,7 @@ pub async fn tree_capacity(channels: Arc<PubSub>) {
                 };
 
                 NodeCapacity {
+                    id,
                     name: node.name.clone(),
                     down,
                     up,

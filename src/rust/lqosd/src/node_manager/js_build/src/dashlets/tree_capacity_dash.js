@@ -62,7 +62,14 @@ export class TreeCapacityDash extends BaseDashlet {
                 let row = document.createElement("tr");
                 row.classList.add("small");
 
-                row.appendChild(simpleRow(node.name));
+                let linkCol = document.createElement("td");
+                let link = document.createElement("a");
+                link.href = "/node.html?id=" + node.id;
+                link.innerText = node.name;
+                link.classList.add("tiny", "redactable");
+                linkCol.appendChild(link);
+
+                row.appendChild(linkCol());
                 row.appendChild(simpleRowHtml(formatPercent(down*100)));
                 row.appendChild(simpleRowHtml(formatPercent(up*100)));
                 row.appendChild(simpleRowHtml(formatRtt(node.rtt)));
