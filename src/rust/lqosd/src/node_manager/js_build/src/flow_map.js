@@ -1,4 +1,5 @@
 import { DashboardGraph } from "./graphs/dashboard_graph";
+import {lerpGreenToRedViaOrange} from "./helpers/scaling";
 
 class FlowMap extends DashboardGraph {
     constructor(id) {
@@ -68,7 +69,14 @@ function updateMap() {
     $.get("/local-api/flowMap", (data) => {
         let output = [];
         data.forEach((d) => {
-            output.push([d[1], d[0]]); // It wants lon/lat
+            let rtt = Math.min(200, d[4]);
+            let color = lerpGreenToRedViaOrange(200 - rtt, 200);
+            output.push({
+                value: [d[1], d[0]], // It wants lon/lat
+                itemStyle: {
+                    color: color,
+                }
+            });
         });
         map.update(output);
 

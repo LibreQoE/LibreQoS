@@ -50,7 +50,7 @@ impl TimeBuffer {
                 let (key, data, _analysis) = &v.data;
                 let (lat, lon) = get_asn_lat_lon(key.remote_ip.as_ip());
                 let (_name, country) = get_asn_name_and_country(key.remote_ip.as_ip());
-                (lat, lon, country, data.bytes_sent.up, data.rtt[1].as_nanos() as f32)
+                (lat, lon, country, data.bytes_sent.down, data.rtt[0].as_nanos() as f32)
             })
             .filter(|(lat, lon, ..)| *lat != 0.0 && *lon != 0.0)
             .collect::<Vec<(f64, f64, String, u64, f32)>>();
