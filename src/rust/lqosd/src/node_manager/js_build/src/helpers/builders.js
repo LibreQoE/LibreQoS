@@ -26,8 +26,11 @@ export function theading(text, colspan=0, tooltip="", id="") {
     return th;
 }
 
-export function simpleRow(text) {
+export function simpleRow(text, redact=false) {
     let td = document.createElement("td");
+    if (redact) {
+        td.classList.add("redactable");
+    }
     td.innerText = text;
     return td;
 }

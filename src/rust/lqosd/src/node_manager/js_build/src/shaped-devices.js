@@ -16,19 +16,21 @@ function tableRow(device) {
     let link = document.createElement("a");
     link.href = "circuit.html?id=" + device.circuit_id;
     link.innerText = device.circuit_name;
+    link.classList.add("redactable");
     let td = document.createElement("td");
     td.appendChild(link);
     tr.appendChild(td);
 
     link = document.createElement("a");
-    link.href = "device.html?id=" + device.device_id;
+    link.href = "circuit.html?id=" + device.circuit_id;
     link.innerText = device.device_name;
+    link.classList.add("redactable");
     td = document.createElement("td");
     td.appendChild(link);
     tr.appendChild(td);
 
     tr.appendChild(simpleRow(device.download_max_mbps + " / " + device.upload_max_mbps));
-    tr.appendChild(simpleRow(device.parent_node));
+    tr.appendChild(simpleRow(device.parent_node, true));
     let ipList = "";
     device.ipv4.forEach((ip) => {
         ipList += ip[0] + "/" + ip[1] + "<br />";
