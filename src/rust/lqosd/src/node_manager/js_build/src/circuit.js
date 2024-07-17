@@ -274,6 +274,7 @@ function initialDevices(circuits) {
         // Device Information Section
 
         let name = document.createElement("h5");
+        name.classList.add("redactable");
         name.innerHTML = "<i class='fa fa-computer'></i> " + circuit.device_name;
         d.appendChild(name);
 
@@ -287,6 +288,7 @@ function initialDevices(circuits) {
         td.innerHTML = "<b>MAC Address</b>";
         tr.appendChild(td);
         td = document.createElement("td");
+        td.classList.add("redactable");
         td.colSpan = 2;
         td.innerHTML = circuit.mac;
         tr.appendChild(td);
@@ -445,7 +447,7 @@ function initialDevices(circuits) {
         throughputGraph.style.height = "250px";
         throughputGraph.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
         target.appendChild(throughputGraph);
-        deviceGraphs[throughputGraph.id] = new CircuitTotalGraph(throughputGraph.id, circuit.device_name + " Throughput");
+        deviceGraphs[throughputGraph.id] = new CircuitTotalGraph(throughputGraph.id, "Throughput");
 
         // Graph for TCP Retransmits
         let tcpRetransmitsGraph = document.createElement("div");
@@ -454,7 +456,7 @@ function initialDevices(circuits) {
         tcpRetransmitsGraph.style.height = "250px";
         tcpRetransmitsGraph.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Loading...";
         target.appendChild(tcpRetransmitsGraph);
-        deviceGraphs[tcpRetransmitsGraph.id] = new CircuitRetransmitGraph(tcpRetransmitsGraph.id, circuit.device_name + " Retransmits");
+        deviceGraphs[tcpRetransmitsGraph.id] = new CircuitRetransmitGraph(tcpRetransmitsGraph.id, "Retransmits");
 
         // Ping Graph Section
         let pingGraph = document.createElement("div");
@@ -493,6 +495,7 @@ function initialFunnel(parentNode) {
             let col = document.createElement("div");
             col.classList.add("col-12");
             let heading = document.createElement("h5");
+            heading.classList.add("redactable");
             heading.innerHTML = "<i class='fa fa-sitemap'></i> " + data[parent][1].name;
             col.appendChild(heading);
             row.appendChild(col);
@@ -525,8 +528,8 @@ function initialFunnel(parentNode) {
         // Ugly hack to defer until the DOM is updated
         requestAnimationFrame(() => {setTimeout(() => {
             immediateParent.parents.reverse().forEach((parent) => {
-                let tpGraph = new CircuitTotalGraph("funnel_tp_" + parent, data[parent][1].name + " Throughput");
-                let rxmitGraph = new CircuitRetransmitGraph("funnel_rxmit_" + parent, data[parent][1].name + " Retransmits");
+                let tpGraph = new CircuitTotalGraph("funnel_tp_" + parent, "Throughput");
+                let rxmitGraph = new CircuitRetransmitGraph("funnel_rxmit_" + parent, "Retransmits");
                 let rttGraph = new DevicePingHistogram("funnel_rtt_" + parent);
                 funnelGraphs[parent] = {
                     tp: tpGraph,
