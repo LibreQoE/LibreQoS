@@ -62,6 +62,8 @@ impl PubSub {
         }
     }
 
+    /// Sends a message to everyone subscribed to a topic. If senders' channels
+    /// are dead, they are removed from the list.
     pub(super) async fn send(&self, channel: PublishedChannels, message: String) {
         let mut channels = self.channels.lock().await;
         if let Some(channel) = channels.iter_mut().find(|c| c.channel_type == channel) {
