@@ -63,11 +63,18 @@ class FlowMap extends DashboardGraph {
     }
 }
 
-let map = new FlowMap("flowMap");
-$.get("/local-api/flowMap", (data) => {
-    let output = [];
-    data.forEach((d) => {
-        output.push([d[1], d[0]]); // It wants lon/lat
+function updateMap() {
+    $.get("/local-api/flowMap", (data) => {
+        let output = [];
+        data.forEach((d) => {
+            output.push([d[1], d[0]]); // It wants lon/lat
+        });
+        map.update(output);
+
+        // Note that I'm NOT using a channel ticker here because of the amount of data
+        setTimeout(updateMap, 1000); // Keep on ticking!
     });
-    map.update(output);
-})
+}
+
+let map = new FlowMap("flowMap");
+updateMap()
