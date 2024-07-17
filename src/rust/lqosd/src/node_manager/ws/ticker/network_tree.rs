@@ -20,23 +20,26 @@ pub async fn network_tree(channels: Arc<PubSub>) {
         return;
     }
 
-    let data: Vec<(usize, NetworkJsonTransport)> = spawn_blocking(|| {
-        let net_json = NETWORK_JSON.read().unwrap();
-        net_json
-            .get_nodes_when_ready()
-            .iter()
-            .enumerate()
-            .map(|(i, n)| (i, n.clone_to_transit()))
-            .collect()
-    }).await.unwrap();
-
-    let message = json!(
+    if let Ok(data) = spawn_blocking(|| {
+        if let Ok(net_json) = NETWORK_JSON.read() {
+            net_json
+                .get_nodes_when_ready()
+                .iter()
+                .enumerate()
+                .map(|(i, n)| (i, n.clone_to_transit()))
+                .collect::<Vec<(usize, NetworkJsonTransport)>>()
+        } else {
+            Vec::new()
+        }
+    }).await {
+        let message = json!(
         {
             "event": PublishedChannels::NetworkTree.to_string(),
             "data": data,
         }
     ).to_string();
-    channels.send(PublishedChannels::NetworkTree, message).await;
+        channels.send(PublishedChannels::NetworkTree, message).await;
+    }
 }
 
 #[derive(Serialize)]

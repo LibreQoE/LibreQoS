@@ -21,33 +21,36 @@ pub async fn tree_capacity(channels: Arc<PubSub>) {
     }
 
     let capacities: Vec<_> = {
-        let reader = NETWORK_JSON.read().unwrap();
-        reader.get_nodes_when_ready().iter().map(|node| {
-            let node = node.clone_to_transit();
-            let down = node.current_throughput.0 as f64 * 8.0 / 1_000_000.0;
-            let up = node.current_throughput.1 as f64 * 8.0 / 1_000_000.0;
-            let max_down = node.max_throughput.0 as f64;
-            let max_up = node.max_throughput.1 as f64;
-            let median_rtt = if node.rtts.is_empty() {
-                0.0
-            } else {
-                let n = node.rtts.len() / 2;
-                if node.rtts.len() % 2 == 0 {
-                    (node.rtts[n - 1] + node.rtts[n]) / 2.0
+        if let Ok(reader) = NETWORK_JSON.read() {
+            reader.get_nodes_when_ready().iter().map(|node| {
+                let node = node.clone_to_transit();
+                let down = node.current_throughput.0 as f64 * 8.0 / 1_000_000.0;
+                let up = node.current_throughput.1 as f64 * 8.0 / 1_000_000.0;
+                let max_down = node.max_throughput.0 as f64;
+                let max_up = node.max_throughput.1 as f64;
+                let median_rtt = if node.rtts.is_empty() {
+                    0.0
                 } else {
-                    node.rtts[n]
-                }
-            };
+                    let n = node.rtts.len() / 2;
+                    if node.rtts.len() % 2 == 0 {
+                        (node.rtts[n - 1] + node.rtts[n]) / 2.0
+                    } else {
+                        node.rtts[n]
+                    }
+                };
 
-            NodeCapacity {
-                name: node.name.clone(),
-                down,
-                up,
-                max_down,
-                max_up,
-                median_rtt,
-            }
-        }).collect()
+                NodeCapacity {
+                    name: node.name.clone(),
+                    down,
+                    up,
+                    max_down,
+                    max_up,
+                    median_rtt,
+                }
+            }).collect()
+        } else {
+            Vec::new()
+        }
     };
 
     let message = json!(

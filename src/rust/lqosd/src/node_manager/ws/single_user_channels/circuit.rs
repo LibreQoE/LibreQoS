@@ -32,10 +32,11 @@ pub(super) async fn circuit_watcher(circuit: String, tx: tokio::sync::mpsc::Send
             devices: devices_for_circuit,
         };
 
-        let message = serde_json::to_string(&result).unwrap();
-        if let Err(_) = tx.send(message.to_string()).await {
-            log::info!("Channel is gone");
-            break;
+        if let Ok(message) = serde_json::to_string(&result) {
+            if let Err(_) = tx.send(message.to_string()).await {
+                log::info!("Channel is gone");
+                break;
+            }
         }
     }
 }

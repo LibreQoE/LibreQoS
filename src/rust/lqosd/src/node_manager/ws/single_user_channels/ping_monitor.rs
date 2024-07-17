@@ -24,8 +24,14 @@ pub(super) async fn ping_monitor(ip_addresses: Vec<(String, String)>, tx: tokio:
     loop {
         ticker.tick().await;
 
-        let client_v4 = Client::new(&Config::default()).unwrap();
-        let client_v6 = Client::new(&Config::builder().kind(ICMP::V6).build()).unwrap();
+        let client_v4 = Client::new(&Config::default());
+        let client_v6 = Client::new(&Config::builder().kind(ICMP::V6).build());
+        if client_v4.is_err() || client_v6.is_err() {
+            log::info!("Failed to create ping clients");
+            break;
+        }
+        let client_v4 = client_v4.unwrap();
+        let client_v6 = client_v6.unwrap();
 
         let mut tasks = Vec::new();
         for (ip, label) in ip_addresses.iter() {
@@ -42,7 +48,7 @@ pub(super) async fn ping_monitor(ip_addresses: Vec<(String, String)>, tx: tokio:
 
         // Use futures to join on all tasks
         for task in tasks {
-            task.await.unwrap();
+            let _ = task.await;
         }
 
         // Notify the channel that we're still here - this is really
@@ -51,10 +57,11 @@ pub(super) async fn ping_monitor(ip_addresses: Vec<(String, String)>, tx: tokio:
             ip: "test".to_string(),
             result: PingState::ChannelTest,
         };
-        let message = serde_json::to_string(&channel_test).unwrap();
-        if let Err(_) = tx.send(message.to_string()).await {
-            log::info!("Channel is gone");
-            break;
+        if let Ok(message) = serde_json::to_string(&channel_test) {
+            if let Err(_) = tx.send(message.to_string()).await {
+                log::debug!("Channel is gone");
+                break;
+            }
         }
     }
 }
@@ -64,9 +71,10 @@ async fn send_timeout(tx: tokio::sync::mpsc::Sender<String>, ip: String) {
         ip,
         result: PingState::NoResponse,
     };
-    let message = serde_json::to_string(&result).unwrap();
-    if let Err(_) = tx.send(message.to_string()).await {
-        log::info!("Channel is gone");
+    if let Ok(message) = serde_json::to_string(&result) {
+        if let Err(_) = tx.send(message.to_string()).await {
+            log::info!("Channel is gone");
+        }
     }
 }
 
@@ -78,9 +86,10 @@ async fn send_alive(tx: tokio::sync::mpsc::Sender<String>, ip: String, ping_time
             label,
         },
     };
-    let message = serde_json::to_string(&result).unwrap();
-    if let Err(_) = tx.send(message.to_string()).await {
-        log::info!("Channel is gone");
+    if let Ok(message) = serde_json::to_string(&result) {
+        if let Err(_) = tx.send(message.to_string()).await {
+            log::info!("Channel is gone");
+        }
     }
 }
 

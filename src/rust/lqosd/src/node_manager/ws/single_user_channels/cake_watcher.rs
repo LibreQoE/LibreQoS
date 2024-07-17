@@ -18,10 +18,11 @@ pub(super) async fn cake_watcher(circuit_id: String, tx: tokio::sync::mpsc::Send
 
         match get_raw_circuit_data(&circuit_id) {
             lqos_bus::BusResponse::RawQueueData(Some(msg)) => {
-                let json = serde_json::to_string(&QueueStoreTransit::from(*msg)).unwrap();
-                let send_result = tx.send(json.to_string()).await;
-                if send_result.is_err() {
-                    break;
+                if let Ok(json) = serde_json::to_string(&QueueStoreTransit::from(*msg)) {
+                    let send_result = tx.send(json.to_string()).await;
+                    if send_result.is_err() {
+                        break;
+                    }
                 }
             }
             _ => {}
