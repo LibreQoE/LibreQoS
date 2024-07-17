@@ -35,6 +35,7 @@ export class Dashboard {
         editDiv.style.top = "5px";
         editDiv.style.width = "40px";
         editDiv.style.zIndex = "100";
+        editDiv.style.opacity = 0.5;
         editDiv.innerHTML = "<button type='button' class='btn btn-primary btn-sm'><i class='fa fa-pencil'></i></button>";
         editDiv.onclick = () => {
             if (this.editingDashboard) {
