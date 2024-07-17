@@ -1,5 +1,6 @@
 import { DashboardGraph } from "./graphs/dashboard_graph";
 import {lerpGreenToRedViaOrange} from "./helpers/scaling";
+import {isRedacted} from "./helpers/redact";
 
 class AllTreeSankey extends DashboardGraph {
     constructor(id) {
@@ -30,6 +31,7 @@ let lastRtt = {};
 function start() {
     $.get("/local-api/networkTree", (data) => {
         //console.log(data);
+        let redact = isRedacted();
 
         let nodes = [];
         let links = [];
@@ -50,12 +52,15 @@ function start() {
             }
             let color = lerpGreenToRedViaOrange(200 - lastRtt[name], 200);
 
+            let label = {
+                fontSize: 6,
+                color: "#999"
+            };
+            if (redact) label.fontSize = 0;
+
             nodes.push({
                 name: data[i][1].name,
-                label: {
-                    fontSize: 6,
-                    color: "#999"
-                },
+                label: label,
                 itemStyle: {
                     color: color
                 }

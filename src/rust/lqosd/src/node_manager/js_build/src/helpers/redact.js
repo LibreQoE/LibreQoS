@@ -27,7 +27,7 @@ function cssRedact() {
     }
 }
 
-function isRedacted() {
+export function isRedacted() {
     let prefs = localStorage.getItem("redact");
     if (prefs === null) {
         localStorage.setItem("redact", "false");
