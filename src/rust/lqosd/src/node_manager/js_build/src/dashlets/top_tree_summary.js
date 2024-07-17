@@ -26,9 +26,10 @@ export class TopTreeSummary extends BaseDashlet {
 
         let t = document.createElement("table");
         t.id = this.id + "_table";
-        t.classList.add("table", "table-sm", "mytable");
+        t.classList.add("table", "table-sm", "mytable", "small");
 
         let th = document.createElement("thead");
+        th.classList.add('small');
         th.appendChild(theading("Branch"));
         th.appendChild(theading("DL ⬇️"));
         th.appendChild(theading("UL ⬆️"));
@@ -54,6 +55,7 @@ export class TopTreeSummary extends BaseDashlet {
 
             msg.data.forEach((r) => {
                 let row = document.createElement("tr");
+                row.classList.add("small");
                 let name = document.createElement("td");
                 name.innerText = r[1].name;
                 name.classList.add("tiny");
