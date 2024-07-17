@@ -1,4 +1,5 @@
 import { DashboardGraph } from "./graphs/dashboard_graph";
+import {lerpGreenToRedViaOrange} from "./helpers/scaling";
 
 class AllTreeSankey extends DashboardGraph {
     constructor(id) {
@@ -26,18 +27,24 @@ class AllTreeSankey extends DashboardGraph {
 
 function start() {
     $.get("/local-api/networkTree", (data) => {
-        console.log(data);
+        //console.log(data);
 
         let nodes = [];
         let links = [];
 
         for (let i=0; i<data.length; i++) {
+            let bytes = data[i][1].current_throughput[0];
+            let bytesAsMegabits = bytes / 1000000;
+            let maxBytes = data[i][1].max_throughput[0] / 8;
+            let percent = Math.min(100, (bytesAsMegabits / maxBytes) * 100);
+            let capacityColor = lerpGreenToRedViaOrange(100 - percent, 100);
+
             nodes.push({
                 name: data[i][1].name,
                 label: {
                     fontSize: 6,
                     color: "#999"
-                }
+                },
             });
 
             if (i > 1) {
@@ -45,7 +52,10 @@ function start() {
                 links.push({
                     source: data[immediateParent][1].name,
                     target: data[i][1].name,
-                    value: data[i][1].current_throughput[0] + data[i][1].current_throughput[1]
+                    value: data[i][1].current_throughput[0] + data[i][1].current_throughput[1],
+                    lineStyle: {
+                        color: capacityColor,
+                    }
                 });
             }
         }
