@@ -117,5 +117,11 @@ body.dark-mode {
     z-index: 1000;
     visibility: hidden;
     transform: translateX(5%);
+    max-height: 50%;
+    overflow: auto;
 }
 .invalid { background-color: red }
+.dropdown-menu-sized {
+    max-height: 200px;
+    overflow-y: auto;
+}

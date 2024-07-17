@@ -161,7 +161,7 @@ export class Dashboard {
         listBtn.innerHTML = "<i class='fa fa-plus'></i> Add Widget";
         list.appendChild(listBtn);
         let listUl = document.createElement("ul");
-        listUl.classList.add("dropdown-menu");
+        listUl.classList.add("dropdown-menu", "dropdown-menu-sized");
         DashletMenu.forEach((d) => {
             let entry = document.createElement("li");
             let item = document.createElement("a");
