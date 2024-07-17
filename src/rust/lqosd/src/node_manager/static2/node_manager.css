@@ -1,3 +1,6 @@
+:root {
+    --redact: none;
+}
 body {
     margin: 0;
     font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue","Noto Sans","Liberation Sans",Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji";
@@ -79,7 +82,9 @@ body.dark-mode {
     min-height: 500px;
 }
 .dashEditButton { }
-.redactable { }
+.redactable {
+    filter: var(--redact);
+}
 .small { font-size: 8pt; }
 
 /* Funky tricks for the tree view */

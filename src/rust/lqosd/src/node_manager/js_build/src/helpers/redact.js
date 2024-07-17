@@ -19,11 +19,11 @@ export function redactCell(cell) {
 
 function cssRedact() {
     if (isRedacted()) {
-        let css = css_getclass(".redactable");
-        css.style.filter = "blur(4px)";
+        let r = document.querySelector(':root');
+        r.style.setProperty('--redact', 'blur(4px)');
     } else {
-        let css = css_getclass(".redactable");
-        css.style.filter = "";
+        let r = document.querySelector(':root');
+        r.style.setProperty('--redact', 'none');
     }
 }
 
@@ -39,21 +39,4 @@ function isRedacted() {
     if (prefs === "true") {
         return true;
     }
-}
-
-function cssrules() {
-    var rules = {};
-    for (var i = 0; i < document.styleSheets.length; ++i) {
-        var cssRules = document.styleSheets[i].cssRules;
-        for (var j = 0; j < cssRules.length; ++j)
-            rules[cssRules[j].selectorText] = cssRules[j];
-    }
-    return rules;
-}
-
-function css_getclass(name) {
-    var rules = cssrules();
-    if (!rules.hasOwnProperty(name))
-        throw 'TODO: deal_with_notfound_case';
-    return rules[name];
 }
