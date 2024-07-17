@@ -5,7 +5,6 @@ use serde_json::json;
 use lqos_utils::units::DownUpOrder;
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
-use crate::node_manager::ws::published_channels::PublishedChannels::CircuitCapacity;
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
 
