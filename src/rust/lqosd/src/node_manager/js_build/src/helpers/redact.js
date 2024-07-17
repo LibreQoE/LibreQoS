@@ -18,6 +18,7 @@ export function redactCell(cell) {
 }
 
 function cssRedact() {
+    console.log("cssRedact called");
     if (isRedacted()) {
         let r = document.querySelector(':root');
         r.style.setProperty('--redact', 'blur(4px)');

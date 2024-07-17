@@ -114,14 +114,14 @@ function buildRow(i, depth=0) {
         nodeName += "─";
     }
     if (depth > 0) nodeName += " ";
-    nodeName += "<a href='/tree.html?parent=" + nodeId + "'>";
+    nodeName += "<a href='/tree.html?parent=" + nodeId + "' class='redactable'>";
     nodeName += node.name;
     nodeName += "</a>";
     if (node.type !== null) {
         nodeName += " (" + node.type + ")";
     }
     col.innerHTML = nodeName;
-    col.classList.add("small", "redactable");
+    col.classList.add("small");
     row.appendChild(col);
 
     col = document.createElement("td");

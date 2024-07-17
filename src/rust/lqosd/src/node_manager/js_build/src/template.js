@@ -1,4 +1,5 @@
 import {clearDiv} from "./helpers/builders";
+import {initRedact} from "./helpers/redact";
 
 function initDayNightMode() {
     const currentTheme = localStorage.getItem('theme');
@@ -149,6 +150,7 @@ function setupReload() {
 
 initLogout();
 initDayNightMode();
+initRedact();
 getDeviceCounts();
 titleAndLts();
 setupSearch();
