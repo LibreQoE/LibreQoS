@@ -1,4 +1,5 @@
-import {scaleNanos} from "./scaling";
+import {formatRetransmit, formatRtt, formatThroughput, scaleNanos} from "./scaling";
+import {redactCell} from "./redact";
 
 export function heading5Icon(icon, text) {
     let h5 = document.createElement("h5");
@@ -99,4 +100,61 @@ export function formatLastSeen(n) {
         result = scaleNanos(n, 0) + " ago";
     }
     return result;
+}
+
+export function topNTableHeader() {
+    let th = document.createElement("thead");
+    th.classList.add("small");
+    th.appendChild(theading("IP Address/Circuit"));
+    th.appendChild(theading("Plan"));
+    th.appendChild(theading("DL ⬇️"));
+    th.appendChild(theading("UL ⬆️"));
+    th.appendChild(theading("RTT (ms)"));
+    th.appendChild(theading("TCP Retransmits", 2));
+    return th;
+}
+
+export function topNTableRow(r) {
+    let row = document.createElement("tr");
+    row.classList.add("small");
+
+    if (r.circuit_id !== "") {
+        let link = document.createElement("a");
+        link.href = "circuit.html?id=" + encodeURI(r.circuit_id);
+        link.innerText = r.ip_address;
+        redactCell(link);
+        row.append(link);
+    } else {
+        let ip = document.createElement("td");
+        ip.innerText = r.ip_address;
+        redactCell(ip);
+        row.append(ip);
+    }
+
+    let shaped = document.createElement("td");
+    shaped.classList.add("tiny");
+    shaped.innerText = r.plan.down + " / " + r.plan.up;
+    row.append(shaped);
+
+    let dl = document.createElement("td");
+    dl.innerHTML = formatThroughput(r.bits_per_second.down, r.plan.down);
+    row.append(dl);
+
+    let ul = document.createElement("td");
+    ul.innerHTML = formatThroughput(r.bits_per_second.up, r.plan.up);
+    row.append(ul);
+
+    let rtt = document.createElement("td");
+    rtt.innerHTML = formatRtt(r.median_tcp_rtt);
+    row.append(rtt);
+
+    let tcp_xmit_down = document.createElement("td");
+    tcp_xmit_down.innerHTML = formatRetransmit(r.tcp_retransmits.down);
+    row.append(tcp_xmit_down);
+
+    let tcp_xmit_up = document.createElement("td");
+    tcp_xmit_up.innerHTML = formatRetransmit(r.tcp_retransmits.up);
+    row.append(tcp_xmit_up);
+
+    return row;
 }

@@ -1,6 +1,6 @@
 import {BaseDashlet} from "./base_dashlet";
 import {RttHistogram} from "../graphs/rtt_histo";
-import {clearDashDiv, theading} from "../helpers/builders";
+import {clearDashDiv, theading, topNTableHeader, topNTableRow} from "../helpers/builders";
 import {scaleNumber, rttCircleSpan, formatThroughput, formatRtt, formatRetransmit} from "../helpers/scaling";
 import {redactCell} from "../helpers/redact";
 
@@ -39,60 +39,11 @@ export class Top10Downloaders extends BaseDashlet {
             let t = document.createElement("table");
             t.classList.add("table", "table-striped", "table-sm");
 
-            let th = document.createElement("thead");
-            th.classList.add("small");
-            th.appendChild(theading("IP Address/Circuit"));
-            th.appendChild(theading("Plan"));
-            th.appendChild(theading("DL ⬇️"));
-            th.appendChild(theading("UL ⬆️"));
-            th.appendChild(theading("RTT (ms)"));
-            th.appendChild(theading("TCP Retransmits", 2));
-            t.appendChild(th);
+            t.appendChild(topNTableHeader());
 
             let tbody = document.createElement("tbody");
             msg.data.forEach((r) => {
-                let row = document.createElement("tr");
-                row.classList.add("small");
-
-                if (r.circuit_id !== "") {
-                    let link = document.createElement("a");
-                    link.href = "circuit.html?id=" + encodeURI(r.circuit_id);
-                    link.innerText = r.ip_address;
-                    redactCell(link);
-                    row.append(link);
-                } else {
-                    let ip = document.createElement("td");
-                    ip.innerText = r.ip_address;
-                    redactCell(ip);
-                    row.append(ip);
-                }
-
-                let shaped = document.createElement("td");
-                shaped.classList.add("tiny");
-                shaped.innerText = r.plan.down + " / " + r.plan.up;
-                row.append(shaped);
-
-                let dl = document.createElement("td");
-                dl.innerHTML = formatThroughput(r.bits_per_second.down, r.plan.down);
-                row.append(dl);
-
-                let ul = document.createElement("td");
-                ul.innerHTML = formatThroughput(r.bits_per_second.up, r.plan.up);
-                row.append(ul);
-
-                let rtt = document.createElement("td");
-                rtt.innerHTML = formatRtt(r.median_tcp_rtt);
-                row.append(rtt);
-
-                let tcp_xmit_down = document.createElement("td");
-                tcp_xmit_down.innerHTML = formatRetransmit(r.tcp_retransmits.down);
-                row.append(tcp_xmit_down);
-
-                let tcp_xmit_up = document.createElement("td");
-                tcp_xmit_up.innerHTML = formatRetransmit(r.tcp_retransmits.up);
-                row.append(tcp_xmit_up);
-
-                t.appendChild(row);
+                t.appendChild(topNTableRow(r));
             });
             t.appendChild(tbody);
 
