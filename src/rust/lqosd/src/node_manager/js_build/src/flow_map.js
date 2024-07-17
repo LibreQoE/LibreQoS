@@ -49,6 +49,7 @@ class FlowMap extends DashboardGraph {
                         width: 0.2,
                         opacity: 0.05
                     },
+                    symbolSize: 2,
                     data: data
                 }
             ]
