@@ -29,20 +29,20 @@ impl From<&IpStats> for IpStatsWithPlan {
         };
 
         if !result.circuit_id.is_empty() {
-            if let Some(circuit) = SHAPED_DEVICES
-                .read()
-                .unwrap()
-                .devices
-                .iter()
-                .find(|sd| sd.circuit_id == result.circuit_id)
-            {
-                let name = if circuit.circuit_name.len() > 20 {
-                    &circuit.circuit_name[0..20]
-                } else {
-                    &circuit.circuit_name
-                };
-                result.ip_address = format!("{} ({})", name, result.ip_address);
-                result.plan = DownUpOrder::new(circuit.download_max_mbps, circuit.upload_max_mbps);
+            if let Ok(shaped_devices_reader) = SHAPED_DEVICES.read() {
+                if let Some(circuit) = shaped_devices_reader
+                    .devices
+                    .iter()
+                    .find(|sd| sd.circuit_id == result.circuit_id)
+                {
+                    let name = if circuit.circuit_name.len() > 20 {
+                        &circuit.circuit_name[0..20]
+                    } else {
+                        &circuit.circuit_name
+                    };
+                    result.ip_address = format!("{} ({})", name, result.ip_address);
+                    result.plan = DownUpOrder::new(circuit.download_max_mbps, circuit.upload_max_mbps);
+                }
             }
         }
 
