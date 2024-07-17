@@ -1,6 +1,6 @@
 import {BaseDashlet} from "./base_dashlet";
 import {RttHistogram} from "../graphs/rtt_histo";
-import {clearDashDiv, theading, topNTableHeader, topNTableRow} from "../helpers/builders";
+import {clearDashDiv, theading, TopNTableFromMsgData, topNTableHeader, topNTableRow} from "../helpers/builders";
 import {scaleNumber, rttCircleSpan, formatThroughput, formatRtt, formatRetransmit} from "../helpers/scaling";
 import {redactCell} from "../helpers/redact";
 
@@ -36,16 +36,7 @@ export class Top10Downloaders extends BaseDashlet {
         if (msg.event === "TopDownloads") {
             let target = document.getElementById(this.id);
 
-            let t = document.createElement("table");
-            t.classList.add("table", "table-striped", "table-sm");
-
-            t.appendChild(topNTableHeader());
-
-            let tbody = document.createElement("tbody");
-            msg.data.forEach((r) => {
-                t.appendChild(topNTableRow(r));
-            });
-            t.appendChild(tbody);
+            let t = TopNTableFromMsgData(msg);
 
             // Display it
             clearDashDiv(this.id, target);

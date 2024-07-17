@@ -158,3 +158,17 @@ export function topNTableRow(r) {
 
     return row;
 }
+
+export function TopNTableFromMsgData(msg) {
+    let t = document.createElement("table");
+    t.classList.add("table", "table-striped", "table-sm");
+
+    t.appendChild(topNTableHeader());
+
+    let tbody = document.createElement("tbody");
+    msg.data.forEach((r) => {
+        t.appendChild(topNTableRow(r));
+    });
+    t.appendChild(tbody);
+    return t;
+}
