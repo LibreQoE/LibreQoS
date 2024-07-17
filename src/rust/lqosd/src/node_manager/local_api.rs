@@ -10,6 +10,7 @@ mod unknown_ips;
 mod reload_libreqos;
 mod config;
 mod circuit;
+mod packet_analysis;
 
 use axum::Router;
 use axum::routing::{get, post};
@@ -41,5 +42,7 @@ pub fn local_api() -> Router {
         .route("/updateConfig", post(config::update_lqosd_config))
         .route("/updateNetworkAndDevices", post(config::update_network_and_devices))
         .route("/circuitById", post(circuit::get_circuit_by_id))
+        .route("/requestAnalysis/:ip", get(packet_analysis::request_analysis))
+        .route("/pcapDump/:id", get(packet_analysis::pcap_dump))
         .route_layer(axum::middleware::from_fn(auth_layer))
 }

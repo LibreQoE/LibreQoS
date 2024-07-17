@@ -2069,6 +2069,7 @@ dependencies = [
  "lqos_sys",
  "lqos_utils",
  "lts_client",
+ "mime_guess",
  "nix 0.29.0",
  "once_cell",
  "rand",

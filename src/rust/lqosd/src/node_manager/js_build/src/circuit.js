@@ -48,7 +48,7 @@ function connectPrivateChannel() {
     });
 }
 
-function connectPingers(circuits) {
+function fullIpList(circuits) {
     let ipList = [];
     circuits.forEach((circuit) => {
         circuit.ipv4.forEach((ip) => {
@@ -58,6 +58,11 @@ function connectPingers(circuits) {
             ipList.push([ip[0], circuit.device_id]);
         });
     });
+    return ipList;
+}
+
+function connectPingers(circuits) {
+    let ipList = fullIpList(circuits);
 
     pinger = new DirectChannel({
         PingMonitor: {
@@ -595,6 +600,84 @@ function subscribeToCake() {
     });
 }
 
+function wireupAnalysis(circuits) {
+    let ipAddresses = fullIpList(circuits);
+    let list = document.createElement("div");
+    let listBtn = document.createElement("button");
+    listBtn.type = "button";
+    listBtn.id = "CaptureTopBtn";
+    listBtn.classList.add("btn", "btn-primary", "dropdown-toggle", "btn-sm");
+    listBtn.setAttribute("data-bs-toggle", "dropdown");
+    listBtn.innerHTML = "<i class='fa fa-search'></i> Packet Capture";
+    list.appendChild(listBtn);
+
+    let listUl = document.createElement("ul");
+    listUl.classList.add("dropdown-menu", "dropdown-menu-sized");
+    ipAddresses.forEach((ip) => {
+        let entry = document.createElement("li");
+        let item = document.createElement("a");
+        item.classList.add("dropdown-item");
+        item.innerHTML = "<i class='fa fa-search'></i> Capture packets from " + ip[0];
+        let address = ip[0]; // For closure capture
+        item.onclick = () => {
+            //console.log("Clicky " + address);
+            $.get("/local-api/requestAnalysis/" + encodeURI(address), (data) => {
+                //console.log(data);
+                if (data === "Fail") {
+                    alert("Packet capture is already active for another IP. Please try again when it is finished.")
+                    return;
+                }
+                let counter = parseInt(data.Ok.countdown)+1;
+                let sessionId = data.Ok.session_id;
+                let btn = document.getElementById("CaptureTopBtn");
+                btn.disabled = true;
+                btn.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Capturing Packets (" + counter + ")";
+                let interval = setInterval(() => {
+                    counter--;
+                    if (counter === -1) {
+                        clearInterval(interval);
+                        btn.disabled = false;
+                        btn.innerHTML = "<i class='fa fa-download'></i> Download Packet Capture for " + address;
+                        btn.classList.remove("btn-primary");
+                        btn.classList.add("btn-success");
+                        btn.onclick = () => {
+                            let url = "/local-api/pcapDump/" + sessionId;
+                            download(url, "capture.pcap");
+                            //console.log(url);
+
+                            // Restore the buttons
+                            $.ajax({
+                                type: "POST",
+                                url: "/local-api/circuitById",
+                                data: JSON.stringify({id: circuit_id}),
+                                contentType: 'application/json',
+                                success: (circuits) => {
+                                    wireupAnalysis(circuits);
+                                }
+                            });
+                        }
+                        return;
+                    }
+                    btn.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Capturing Packets (" + counter + ")";
+                }, 1000);
+            });
+        }
+        entry.appendChild(item);
+        listUl.appendChild(entry);
+    });
+    list.appendChild(listUl);
+    let parent = document.getElementById("captureButton");
+    clearDiv(parent);
+    parent.appendChild(list);
+}
+
+function download(dataurl, filename) {
+    const link = document.createElement("a");
+    link.href = dataurl;
+    link.download = filename;
+    link.click();
+}
+
 function loadInitial() {
     $.ajax({
         type: "POST",
@@ -623,6 +706,7 @@ function loadInitial() {
             connectFlowChannel();
             initialFunnel(circuit.parent_node);
             subscribeToCake();
+            wireupAnalysis(circuits);
         },
         error: () => {
             alert("Circuit with id " + circuit_id + " not found");

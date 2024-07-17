@@ -44,6 +44,7 @@ strum = {  version = "0.26.3", features = ["derive"] }
 default-net = {  workspace = true }
 surge-ping = "0.8.1"
 rand = "0.8.5"
+mime_guess = "2.0.4"
 
 # Support JemAlloc on supported platforms
 [target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]
