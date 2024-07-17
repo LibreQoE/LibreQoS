@@ -56,10 +56,15 @@ export class TopTreeSummary extends BaseDashlet {
             msg.data.forEach((r) => {
                 let row = document.createElement("tr");
                 row.classList.add("small");
-                let name = document.createElement("td");
-                name.innerText = r[1].name;
-                name.classList.add("tiny");
-                row.appendChild(name);
+
+                let nameCol = document.createElement("td");
+                let link = document.createElement("a");
+                link.href = "/tree.html?id=" + r[0];
+                link.innerText = r[1].name;
+                link.classList.add("tiny");
+                nameCol.appendChild(link);
+
+                row.appendChild(nameCol);
                 row.appendChild(simpleRowHtml(formatThroughput(r[1].current_throughput[0] * 8, r[1].max_throughput[0])));
                 row.appendChild(simpleRowHtml(formatThroughput(r[1].current_throughput[1] * 8, r[1].max_throughput[1])));
                 row.appendChild(simpleRowHtml(formatRetransmit(r[1].current_retransmits[0] )))
