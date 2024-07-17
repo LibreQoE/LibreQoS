@@ -66,7 +66,7 @@ function start() {
                 }
             });
 
-            if (i > 1) {
+            if (i > 0) {
                 let immediateParent = data[i][1].immediate_parent;
                 links.push({
                     source: data[immediateParent][1].name,
