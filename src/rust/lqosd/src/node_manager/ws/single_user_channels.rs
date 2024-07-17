@@ -62,24 +62,18 @@ async fn handle_socket(mut socket: WebSocket) {
                             }
                         }
                     }
-                    Some(Err(e)) => {
-                        log::warn!("Error receiving websocket message: {:?}", e);
-                        break;
-                    }
-                    None => {
-                        break;
-                    }
+                    Some(Err(_)) => break,
+                    None => break,
                 }
             }
             outbound = rx.recv() => {
                 match outbound {
                     Some(msg) => {
-                        socket.send(Message::Text(msg)).await.unwrap();
+                        if let Err(_) = socket.send(Message::Text(msg)).await {
+                            break;
+                        }
                     }
-                    None => {
-                        log::info!("WebSocket Disconnected");
-                        break;
-                    }
+                    None => break,
                 }
             }
         }
