@@ -25,6 +25,8 @@ class AllTreeSankey extends DashboardGraph {
     }
 }
 
+let lastRtt = {};
+
 function start() {
     $.get("/local-api/networkTree", (data) => {
         //console.log(data);
@@ -33,11 +35,20 @@ function start() {
         let links = [];
 
         for (let i=0; i<data.length; i++) {
+            let name = data[i][1].name;
             let bytes = data[i][1].current_throughput[0];
             let bytesAsMegabits = bytes / 1000000;
             let maxBytes = data[i][1].max_throughput[0] / 8;
             let percent = Math.min(100, (bytesAsMegabits / maxBytes) * 100);
             let capacityColor = lerpGreenToRedViaOrange(100 - percent, 100);
+
+
+            if (data[i][1].rtts.length > 0) {
+                lastRtt[name] = data[i][1].rtts[0];
+            } else {
+                lastRtt[name] = 0;
+            }
+            let color = lerpGreenToRedViaOrange(200 - lastRtt[name], 200);
 
             nodes.push({
                 name: data[i][1].name,
@@ -45,6 +56,9 @@ function start() {
                     fontSize: 6,
                     color: "#999"
                 },
+                itemStyle: {
+                    color: color
+                }
             });
 
             if (i > 1) {
