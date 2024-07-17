@@ -1,3 +1,16 @@
+//! Websocket handling for the node manager. This module provides a websocket router that can be mounted in the main application.
+//! There are two major types of websocket connection supported:
+//! * General websocket connections that allow for subscribing to multiple channels, using the `/ws` route.
+//! * Private websocket connections that allow for subscribing to a single channel, using the `/private_ws` route.
+//!
+//! General websocket connections are multi-user, and based on a time-based "ticker". They send out updates
+//! to all subscribers at a regular interval, sharing the latest information about the system.
+//!
+//! Private websocket connections are single-user, and are used for more specific information. They are used
+//! for things like monitoring a specific user, or for receiving updates about a specific user.
+//!
+//! Both types of websocket are authenticated using the auth layer.
+
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -15,6 +28,11 @@ mod published_channels;
 mod ticker;
 mod single_user_channels;
 
+/// Provides an Axum router for the websocket system. Exposes two routes:
+/// * /ws: A general websocket route that allows for subscribing to multiple channels
+/// * /private_ws: A private websocket route that allows for subscribing to a single channel
+///
+/// Returns a router that can be mounted in the main application.
 pub fn websocket_router() -> Router {
     let channels = PubSub::new();
     tokio::spawn(channel_ticker(channels.clone()));
