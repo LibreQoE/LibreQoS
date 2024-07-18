@@ -35,9 +35,10 @@ export class IpProtocols extends BaseDashlet {
             let target = document.getElementById(this.id);
 
             let t = document.createElement("table");
-            t.classList.add("table", "table-striped", "tiny");
+            t.classList.add("table", "table-sm", "small");
 
             let th = document.createElement("thead");
+            th.classList.add("small");
             th.appendChild(theading("Protocol"));
             th.appendChild(theading("DL ⬇️"));
             th.appendChild(theading("UL ⬆️"));
@@ -47,6 +48,7 @@ export class IpProtocols extends BaseDashlet {
 
             msg.data.forEach((r) => {
                 let row = document.createElement("tr");
+                row.classList.add("small");
 
                 row.appendChild(simpleRow(r[0]));
                 row.appendChild(simpleRow(scaleNumber(r[1].down)));
