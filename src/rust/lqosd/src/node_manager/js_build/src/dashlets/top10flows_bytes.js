@@ -86,7 +86,7 @@ export class Top10FlowsBytes extends BaseDashlet {
                 total.innerText = scaleNumber(r.bytes_sent.down) + " / " + scaleNumber(r.bytes_sent.up);
                 row.appendChild(total);
 
-                if (r.rtt_nanos.length > 0) {
+                if (r.rtt_nanos['down'] !== undefined) {
                     this.rttCache.set(r.remote_ip + r.analysis, r.rtt_nanos);
                 }
                 let rtt = this.rttCache.get(r.remote_ip + r.analysis);
