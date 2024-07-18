@@ -336,12 +336,13 @@ static __always_inline void track_flows(
 ) {
     u_int8_t rate_index;
     u_int8_t other_rate_index;
+    // Ensure that we get DownUp order in the lqosd map
     if (direction == TO_INTERNET) {
-        rate_index = 0;
-        other_rate_index = 1;
-    } else {
         rate_index = 1;
         other_rate_index = 0;
+    } else {
+        rate_index = 0;
+        other_rate_index = 1;
     }
 
     // Pass to the appropriate protocol handler
