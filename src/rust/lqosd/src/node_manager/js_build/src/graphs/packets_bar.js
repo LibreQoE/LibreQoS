@@ -5,6 +5,9 @@ export class PacketsPerSecondBar extends DashboardGraph {
     constructor(id) {
         super(id);
         this.option = {
+            grid: {
+                x: '15%',
+            },
             xAxis: {
                 type: 'value',
                 axisLabel: {

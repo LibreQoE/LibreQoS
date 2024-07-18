@@ -15,7 +15,7 @@ export class FlowCountGraph extends DashboardGraph {
 
         this.option = {
             grid: {
-                x: '10%',
+                x: '15%',
             },
             legend: {
                 orient: "horizontal",
