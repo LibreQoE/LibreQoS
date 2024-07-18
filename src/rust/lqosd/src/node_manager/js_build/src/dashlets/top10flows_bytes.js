@@ -75,15 +75,15 @@ export class Top10FlowsBytes extends BaseDashlet {
                 row.appendChild(proto);
 
                 let dl = document.createElement("td");
-                dl.innerText = scaleNumber(r.rate_estimate_bps.down);
+                dl.innerText = scaleNumber(r.rate_estimate_bps.down, 0);
                 row.appendChild(dl);
 
                 let ul = document.createElement("td");
-                ul.innerText = scaleNumber(r.rate_estimate_bps.up);
+                ul.innerText = scaleNumber(r.rate_estimate_bps.up, 0);
                 row.appendChild(ul);
 
                 let total = document.createElement("td");
-                total.innerText = scaleNumber(r.bytes_sent.down) + " / " + scaleNumber(r.bytes_sent.up);
+                total.innerText = scaleNumber(r.bytes_sent.down, 0) + " / " + scaleNumber(r.bytes_sent.up, 0);
                 row.appendChild(total);
 
                 if (r.rtt_nanos['down'] !== undefined) {
