@@ -140,7 +140,7 @@ impl TimeBuffer {
         country_summary.push((last_country, total_bytes, rtt));
 
         // Sort by bytes downloaded descending
-        country_summary.sort_by(|a, b| b.1.up.cmp(&a.1.up));
+        country_summary.sort_by(|a, b| b.1.down.cmp(&a.1.down));
 
         country_summary
     }
@@ -231,7 +231,7 @@ impl TimeBuffer {
             });
 
         let mut results = results.into_iter().collect::<Vec<(String, DownUpOrder<u64>)>>();
-        results.sort_by(|a, b| b.1.up.cmp(&a.1.up));
+        results.sort_by(|a, b| b.1.down.cmp(&a.1.down));
         // Keep only the top 10
         results.truncate(10);
         results
