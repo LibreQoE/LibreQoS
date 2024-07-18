@@ -1,6 +1,6 @@
 import {BaseDashlet} from "./base_dashlet";
 import {clearDashDiv, theading} from "../helpers/builders";
-import {scaleNumber, scaleNanos, formatRetransmit} from "../helpers/scaling";
+import {scaleNumber, formatRetransmit, rttNanosAsSpan} from "../helpers/scaling";
 import {RttCache} from "../helpers/rtt_cache";
 
 export class Top10FlowsBytes extends BaseDashlet {
@@ -98,11 +98,11 @@ export class Top10FlowsBytes extends BaseDashlet {
                 }
 
                 let rttD = document.createElement("td");
-                rttD.innerText = scaleNanos(rtt.down, 0);
+                rttD.innerHTML = rttNanosAsSpan(rtt.down);
                 row.appendChild(rttD);
 
                 let rttU = document.createElement("td");
-                rttU.innerText = scaleNanos(rtt.up, 0);
+                rttU.innerHTML = rttNanosAsSpan(rtt.up);
                 row.appendChild(rttU);
 
                 let tcp1 = document.createElement("td");

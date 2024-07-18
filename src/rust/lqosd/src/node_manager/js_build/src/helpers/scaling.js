@@ -134,3 +134,12 @@ export function formatPercent(percent, digits=0) {
     let color = lerpGreenToRedViaOrange(100-Math.min(100,percent), 100);
     return "<span style='color: " + color + "'>" + percent.toFixed(digits) + "%</span>";
 }
+
+export function rttNanosAsSpan(rttNanos, precision=0) {
+    let rttInMs = Math.min(200, rttNanos / 1000000);
+    let color = lerpGreenToRedViaOrange(200 - rttInMs, 200);
+    let html = "<span style='color: " + color + "'>";
+    html += scaleNanos(rttNanos, precision);
+    html += "</span>";
+    return html;
+}

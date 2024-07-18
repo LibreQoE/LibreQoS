@@ -1,6 +1,6 @@
 import {BaseDashlet} from "./base_dashlet";
 import {clearDashDiv, theading} from "../helpers/builders";
-import {scaleNumber, scaleNanos} from "../helpers/scaling";
+import {scaleNumber, scaleNanos, lerpGreenToRedViaOrange, rttNanosAsSpan} from "../helpers/scaling";
 
 export class Top10EndpointsByCountry extends BaseDashlet {
     constructor(slot) {
@@ -68,11 +68,11 @@ export class Top10EndpointsByCountry extends BaseDashlet {
                 row.appendChild(dlu);
 
                 let rttd = document.createElement("td");
-                rttd.innerText = scaleNanos(r[2][0]);
+                rttd.innerHTML = rttNanosAsSpan(r[2][0]);
                 row.appendChild(rttd);
 
                 let rttu = document.createElement("td");
-                rttu.innerText = scaleNanos(r[2][1]);
+                rttu.innerHTML = rttNanosAsSpan(r[2][1]);
                 row.appendChild(rttu);
 
                 t.appendChild(row);
