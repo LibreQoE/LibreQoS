@@ -1,5 +1,4 @@
-import {subscribeWS, resetWS} from "../pubsub/ws";
-import {darkBackground, modalContent} from "../helpers/our_modals";
+import {resetWS, subscribeWS} from "../pubsub/ws";
 import {heading5Icon, theading} from "../helpers/builders";
 import {DashletMenu, widgetFactory} from "./dashlet_index";
 
@@ -395,147 +394,6 @@ export class Dashboard {
         editDivParent.appendChild(editDiv);
     }
 
-    editModeOld() {
-        let darken = darkBackground("darkEdit");
-        let content = modalContent("darkEdit");
-
-        // Add Items Group
-        let row = document.createElement("div");
-        row.classList.add("row");
-
-        let col1 = document.createElement("div");
-        col1.classList.add("col-6");
-        col1.style.minWidth = "300px";
-        col1.appendChild(this.#buildDashletList());
-
-        let options = document.createElement("div");
-        options.appendChild(document.createElement("hr"));
-        options.appendChild(heading5Icon("gear", "Options"))
-        let nuke = document.createElement("button");
-        nuke.type = "button";
-        nuke.classList.add("btn", "btn-danger");
-        nuke.innerHTML = "<i class='fa fa-trash'></i> Remove All Items";
-        nuke.onclick = () => { this.removeAll(); };
-        options.appendChild(nuke);
-
-        let filler = document.createElement("button");
-        filler.type = "button";
-        filler.classList.add("btn", "btn-warning");
-        filler.innerHTML = "<i class='fa fa-plus-square'></i> One of Everything";
-        filler.onclick = () => { this.addAll(); };
-        filler.style.marginLeft = "5px";
-        options.appendChild(filler);
-        col1.appendChild(options);
-
-        let col2 = document.createElement("div");
-        col2.classList.add("col-6");
-        col2.style.minWidth = "300px";
-        col2.appendChild(this.#buildMenu());
-
-        // Themes from the server
-        col2.appendChild(document.createElement("hr"));
-        col2.appendChild(heading5Icon("cloud", "Saved Dashboard Layouts"))
-        let remoteList = document.createElement("select");
-        remoteList.id = "remoteThemes";
-        let remoteBtn = document.createElement("button");
-        remoteBtn.classList.add("btn", "btn-success");
-        remoteBtn.style.marginLeft = "5px";
-        remoteBtn.innerHTML = "<i class='fa fa-load'></i> Load Theme From Server";
-        remoteBtn.id = "remoteLoadBtn";
-        remoteBtn.onclick = () => {
-            let layoutName = {
-                theme: $('#remoteThemes').find(":selected").val().toString()
-            }
-            $.ajax({
-                type: "POST",
-                url: "/local-api/dashletGet",
-                data: JSON.stringify(layoutName),
-                contentType: 'application/json',
-                success: (data) => {
-                    this.dashletIdentities = data;
-                    this.#replaceDashletList();
-                    alert("Layout Loaded");
-                }
-            });
-        }
-
-        let delBtn = document.createElement("button");
-        delBtn.classList.add("btn", "btn-danger");
-        delBtn.innerHTML = "<i class='fa fa-trash'></i> Delete Remote Theme";
-        delBtn.style.marginLeft = "4px";
-        delBtn.onclick = () => {
-            let layoutName = $('#remoteThemes').find(":selected").val();
-            if (confirm("Are you sure you wish to delete " + layoutName)) {
-                let layoutNameObj = {
-                    theme: layoutName.toString()
-                }
-                $.ajax({
-                    type: "POST",
-                    url: "/local-api/dashletDelete",
-                    data: JSON.stringify(layoutNameObj),
-                    contentType: 'application/json',
-                    success: () => {
-                        $.get("/local-api/dashletThemes", (data) => {
-                            alert("Layout deleted: " + layoutName);
-                            this.fillServerLayoutList(data);
-                        });
-                    }
-                });
-            }
-        }
-        col2.appendChild(remoteList);
-        col2.appendChild(remoteBtn);
-        col2.appendChild(delBtn);
-
-        $.get("/local-api/dashletThemes", (data) => {
-            this.fillServerLayoutList(data);
-        });
-
-        // Save theme to the server
-        col2.appendChild(document.createElement("hr"));
-        col2.appendChild(heading5Icon("save", "Save"));
-        let lbl = document.createElement("label");
-        lbl.htmlFor = "saveDashName";
-        let saveDashName = document.createElement("input");
-        saveDashName.id = "saveDashName";
-        saveDashName.type = "text";
-        let saveBtn = document.createElement("button");
-        saveBtn.type = "button";
-        saveBtn.classList.add("btn", "btn-success");
-        saveBtn.innerHTML = "<i class='fa fa-save'></i> Save to Server";
-        saveBtn.style.marginLeft = "4px";
-        saveBtn.onclick = () => {
-            let name = $("#saveDashName").val();
-            if (name.length < 1) return;
-            let request = {
-                name: name,
-                entries: this.dashletIdentities
-            }
-            $.ajax({
-                type: "POST",
-                url: "/local-api/dashletSave",
-                data: JSON.stringify(request),
-                contentType : 'application/json',
-                success: () => {
-                    $.get("/local-api/dashletThemes", (data) => {
-                        this.fillServerLayoutList(data);
-                        alert("Layout Saved");
-                    });
-                }
-            })
-        }
-        col2.appendChild(lbl);
-        col2.appendChild(saveDashName);
-        col2.appendChild(saveBtn);
-
-        row.appendChild(col1);
-        row.appendChild(col2);
-        content.appendChild(row);
-
-        darken.appendChild(content);
-        document.body.appendChild(darken);
-    }
-
     fillServerLayoutList(data) {
         let parent = document.getElementById("remoteThemes");
         while (parent.children.length > 0) {
@@ -797,7 +655,7 @@ class Layout {
         if (template !== null) {
             this.dashlets = JSON.parse(template);
         } else {
-            this.dashlets = DashletMenu;
+            this.dashlets = JSON.parse(DASHBOARD_LIKE_V14);
         }
     }
 
@@ -807,3 +665,5 @@ class Layout {
         localStorage.setItem("dashboardLayout", template);
     }
 }
+
+const DASHBOARD_LIKE_V14 = "[{\"name\":\"Throughput Bits/Second\",\"tag\":\"throughputBps\",\"size\":3},{\"name\":\"Throughput Packets/Second\",\"tag\":\"throughputPps\",\"size\":3},{\"name\":\"Shaped/Unshaped Pie\",\"tag\":\"shapedUnshaped\",\"size\":3},{\"name\":\"Tracked Flows Counter\",\"tag\":\"trackedFlowsCount\",\"size\":3},{\"name\":\"Last 5 Minutes Throughput\",\"tag\":\"throughputRing\",\"size\":6},{\"name\":\"Round-Trip Time Histogram\",\"tag\":\"rttHistogram\",\"size\":6},{\"name\":\"Combined Top 10 Box\",\"tag\":\"combinedTop10\",\"size\":6},{\"name\":\"Network Tree Summary\",\"tag\":\"treeSummary\",\"size\":6}]";

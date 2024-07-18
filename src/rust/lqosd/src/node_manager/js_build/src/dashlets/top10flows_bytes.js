@@ -53,7 +53,7 @@ export class Top10FlowsBytes extends BaseDashlet {
 
             let tbody = document.createElement("tbody");
             msg.data.forEach((r) => {
-                console.log(r);
+                //console.log(r);
                 let row = document.createElement("tr");
                 row.classList.add("small");
 

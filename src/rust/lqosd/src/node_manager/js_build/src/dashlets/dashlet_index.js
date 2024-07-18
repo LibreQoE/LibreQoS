@@ -39,7 +39,7 @@ export const DashletMenu = [
     { name: "CPU Utilization", tag: "cpu", size: 3 },
     { name: "RAM Utilization", tag: "ram", size: 3 },
     { name: "Network Tree Summary", tag: "treeSummary", size: 6 },
-    { name: "Combined Top 10 Box", tag: "combinedTop10", size: 3 },
+    { name: "Combined Top 10 Box", tag: "combinedTop10", size: 6 },
     { name: "Total Cake Stats", tag: "totalCakeStats", size: 3 },
     { name: "Circuits At Capacity", tag: "circuitCapacity", size: 6 },
     { name: "Tree Nodes At Capacity", tag: "treeCapacity", size: 6 },
