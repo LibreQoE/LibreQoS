@@ -91,15 +91,15 @@ export class Top10FlowsBytes extends BaseDashlet {
                 }
                 let rtt = this.rttCache.get(r.remote_ip + r.analysis);
                 if (rtt === 0) {
-                    rtt = [0,0];
+                    rtt = { down: 0, up: 0 };
                 }
 
                 let rttD = document.createElement("td");
-                rttD.innerText = scaleNanos(rtt[0], 0);
+                rttD.innerText = scaleNanos(rtt.down, 0);
                 row.appendChild(rttD);
 
                 let rttU = document.createElement("td");
-                rttU.innerText = scaleNanos(rtt[1], 0);
+                rttU.innerText = scaleNanos(rtt.up, 0);
                 row.appendChild(rttU);
 
                 let tcp1 = document.createElement("td");
