@@ -177,4 +177,8 @@ pub struct FlowbeeSummaryData {
     pub remote_asn_country: String,
     /// Analysis
     pub analysis: String,
+    /// Circuit ID
+    pub circuit_id: String,
+    /// Circuit Name
+    pub circuit_name: String,
 }

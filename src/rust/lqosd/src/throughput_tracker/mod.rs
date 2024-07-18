@@ -229,7 +229,7 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
     full_list.sort_by(|a, b| b.1.down.cmp(&a.1.down));
     let result = full_list
         .iter()
-        .skip(start as usize)
+        //.skip(start as usize)
         .take((end as usize) - (start as usize))
         .map(
             |(
@@ -281,7 +281,7 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
     full_list.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap());
     let result = full_list
         .iter()
-        .skip(start as usize)
+        //.skip(start as usize)
         .take((end as usize) - (start as usize))
         .map(
             |(
@@ -337,7 +337,7 @@ pub fn worst_n_retransmits(start: u32, end: u32) -> BusResponse {
     });
     let result = full_list
         .iter()
-        .skip(start as usize)
+        //.skip(start as usize)
         .take((end as usize) - (start as usize))
         .map(
             |(
@@ -390,7 +390,7 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
     full_list.reverse();
     let result = full_list
         .iter()
-        .skip(start as usize)
+        //.skip(start as usize)
         .take((end as usize) - (start as usize))
         .map(
             |(
@@ -573,6 +573,8 @@ pub fn dump_active_flows() -> BusResponse {
             let (remote_asn_name, remote_asn_country) =
                 get_asn_name_and_country(key.remote_ip.as_ip());
 
+            let (circuit_id, circuit_name) = (String::new(), String::new());
+
             lqos_bus::FlowbeeSummaryData {
                 remote_ip: key.remote_ip.as_ip().to_string(),
                 local_ip: key.local_ip.as_ip().to_string(),
@@ -593,6 +595,8 @@ pub fn dump_active_flows() -> BusResponse {
                 last_seen: row.0.last_seen,
                 start_time: row.0.start_time,
                 rtt_nanos: DownUpOrder::new(row.0.rtt[0].as_nanos(), row.0.rtt[1].as_nanos()),
+                circuit_id,
+                circuit_name,
             }
         })
         .collect();
@@ -653,12 +657,17 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
         }
     }
 
+    let sd = SHAPED_DEVICES.read().unwrap();
+
     let result = table
         .iter()
         .take(n as usize)
         .map(|(ip, flow)| {
             let (remote_asn_name, remote_asn_country) =
                 get_asn_name_and_country(ip.remote_ip.as_ip());
+
+            let (circuit_id, circuit_name) = sd.get_circuit_id_and_name_from_ip(&ip.local_ip).unwrap_or((String::new(), String::new()));
+
             lqos_bus::FlowbeeSummaryData {
                 remote_ip: ip.remote_ip.as_ip().to_string(),
                 local_ip: ip.local_ip.as_ip().to_string(),
@@ -679,6 +688,8 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
                 last_seen: flow.0.last_seen,
                 start_time: flow.0.start_time,
                 rtt_nanos: DownUpOrder::new(flow.0.rtt[0].as_nanos(), flow.0.rtt[1].as_nanos()),
+                circuit_id,
+                circuit_name,
             }
         })
         .collect();
@@ -691,12 +702,15 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
     if let Ok(ip) = ip.parse::<IpAddr>() {
         let ip = XdpIpAddress::from_ip(ip);
         let lock = ALL_FLOWS.lock().unwrap();
+        let sd = SHAPED_DEVICES.read().unwrap();
         let matching_flows: Vec<_> = lock
             .iter()
             .filter(|(key, _)| key.local_ip == ip)
             .map(|(key, row)| {
                 let (remote_asn_name, remote_asn_country) =
                     get_asn_name_and_country(key.remote_ip.as_ip());
+
+                let (circuit_id, circuit_name) = sd.get_circuit_id_and_name_from_ip(&key.local_ip).unwrap_or((String::new(), String::new()));
 
                 lqos_bus::FlowbeeSummaryData {
                     remote_ip: key.remote_ip.as_ip().to_string(),
@@ -718,6 +732,8 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
                     last_seen: row.0.last_seen,
                     start_time: row.0.start_time,
                     rtt_nanos: DownUpOrder::new(row.0.rtt[0].as_nanos(), row.0.rtt[1].as_nanos()),
+                    circuit_id,
+                    circuit_name,
                 }
             })
             .collect();

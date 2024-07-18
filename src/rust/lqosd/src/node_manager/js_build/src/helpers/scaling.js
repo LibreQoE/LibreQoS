@@ -12,7 +12,7 @@ export function scaleNumber(n, fixed=2) {
 }
 
 export function scaleNanos(n, precision=2) {
-    if (n === 0) return "";
+    if (n === 0) return "-";
     if (n > 60000000000) {
         return (n / 60000000000).toFixed(precision) + "m";
     }else if (n > 1000000000) {
