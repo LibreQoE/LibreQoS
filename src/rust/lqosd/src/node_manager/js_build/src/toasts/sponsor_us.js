@@ -6,7 +6,7 @@ export function sponsorTag(parentId) {
             //console.log(data);
             if (data.action !== "GoodToGo") {
                 let div = document.createElement("div");
-                let random = Math.floor(Math.random() * 4) + 1;
+                let random = Math.floor(Math.random() * 5) + 1;
                 if (random === 1) {
                     let html = "We love working on LibreQoS to make the Internet better. If you love it too, please ";
                     html += sponsorBtn;
@@ -25,6 +25,11 @@ export function sponsorTag(parentId) {
                     div.innerHTML = html;
                 } else if (random === 4) {
                     let html = counts.shaped_devices + " devices on your network are using LibreQoS. If we're helping, please ";
+                    html += sponsorBtn;
+                    html += ". By the way, we'll stop asking if you sign up for LTS (Long-Term Stats).";
+                    div.innerHTML = html;
+                } else if (random === 5) {
+                    let html = "$150 will keep a developer in Ramen for a month! ";
                     html += sponsorBtn;
                     html += ". By the way, we'll stop asking if you sign up for LTS (Long-Term Stats).";
                     div.innerHTML = html;
