@@ -35,35 +35,14 @@ export class RttHistogram3D extends DashboardGraph {
                 name: "Samples"
             },
             grid3D: {
-                boxWidth: 100,
-                boxDepth: 100,
-                light: {
-                    main: {
-                        intensity: 1.4
-                    },
-                    ambient: {
-                        intensity: 0.2,
-                    },
-                },
-                postEffect: {
-                    enable: true,
-                    SSAO: {
-                        enable: true,
-                        intensity: 4,
-                    },
-                    FXAA: {
-                        enable: true,
-                    }
-                },
                 viewControl: {
                     autoRotate: true,
                 },
-
             },
             series: [{
                 type: 'bar3D',
                 data: data,
-                shading: 'lambert',
+                //shading: 'lambert',
                 label: {
                     show: false
                 },
