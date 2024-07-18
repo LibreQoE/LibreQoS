@@ -72,6 +72,9 @@ export class Top10FlowsBytes extends BaseDashlet {
 
                 let proto = document.createElement("td");
                 proto.innerText = r.analysis;
+                if (r.analysis.length > 6) {
+                    proto.classList.add("tiny");
+                }
                 row.appendChild(proto);
 
                 let dl = document.createElement("td");
@@ -114,7 +117,10 @@ export class Top10FlowsBytes extends BaseDashlet {
                 asn.innerText = r.remote_asn_name;
                 if (asn.innerText === "") {
                     asn.innerText = r.remote_ip;
-                    }
+                }
+                if (asn.innerText.length > 13) {
+                    asn.classList.add("tiny");
+                }
                 row.appendChild(asn);
 
                 t.appendChild(row);
