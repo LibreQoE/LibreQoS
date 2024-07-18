@@ -62,6 +62,7 @@ export class Top10FlowsBytes extends BaseDashlet {
                     let link = document.createElement("a");
                     link.href = "circuit.html?id=" + encodeURI(r.circuit_id);
                     link.innerText = r.circuit_name;
+                    link.classList.add("redactable");
                     circuit.appendChild(link);
                     row.appendChild(circuit);
                 } else {
