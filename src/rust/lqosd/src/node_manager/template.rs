@@ -10,6 +10,8 @@ use axum_extra::extract::CookieJar;
 use lqos_config::load_config;
 use crate::node_manager::auth::get_username;
 
+const VERSION_STRING: &str = include_str!("../../../../VERSION_STRING");
+
 pub async fn apply_templates(
     jar: CookieJar,
     req: Request<axum::body::Body>,
@@ -41,7 +43,8 @@ pub async fn apply_templates(
         let bytes = to_bytes(res_body, 1_000_000).await.unwrap();
         let byte_string = String::from_utf8_lossy(&bytes).to_string();
         let byte_string = template_text
-            .replace("%%BODY%%", &byte_string);
+            .replace("%%BODY%%", &byte_string)
+            .replace("%%VERSION%%", VERSION_STRING);
         if let Some(length) = res_parts.headers.get_mut("content-length") {
             *length = HeaderValue::from(byte_string.len());
         }
