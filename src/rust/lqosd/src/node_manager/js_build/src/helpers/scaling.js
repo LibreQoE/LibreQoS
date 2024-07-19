@@ -62,20 +62,9 @@ export function formatThroughput(throughput, limitInMbps) {
     if (limitBits > 0) {
         percent = (throughput / limitBits) * 100;
     }
-    let blob = "<span class='overlayThroughputWrapper'>";
-    blob += "<span class='overlayThroughputBar'>";
-    for (let i=0; i<100; i+=10) {
-        let color = lerpGreenToRedViaOrange(100-i, 100);
-        if (percent < i) {
-            blob += "░";
-        } else {
-            blob += "<span style='color: " + color + "'>█</span>";
-        }
-    }
-    blob += "</span>";
-
-    blob += "<span class='overlayThroughputNumber' style='color: white; font-weight: bold;'>" + scaleNumber(throughput, 1) + "bps</span>";
-    blob += "</span>";
+    let color = lerpGreenToRedViaOrange(100-percent, 100);
+    let blob = "<span style='color: " + color + "'>■</span>";
+    blob += "<span>" + scaleNumber(throughput, 1) + "bps</span>";
     return blob;
 }
 
@@ -88,30 +77,16 @@ export function formatRtt(rtt) {
     if (limit > 0) {
         percent = (rtt / limit) * 100;
     }
-    let blob = "<span class='overlayThroughputWrapper'>";
-    blob += "<span class='overlayThroughputBar'>";
-    for (let i=0; i<100; i+=10) {
-        let color = lerpGreenToRedViaOrange(100-i, 100);
-        if (percent < i) {
-            blob += "░";
-        } else {
-            blob += "<span style='color: " + color + "'>█</span>";
-        }
-    }
-    blob += "</span>";
-
-    blob += "<span class='overlayThroughputNumber' style='color: white; font-weight: bold;'>" + parseFloat(rtt).toFixed(0) + " ms</span>";
-    blob += "</span>";
+    let color = lerpGreenToRedViaOrange(100-percent, 100);
+    let blob = "<span style='color: " + color + "'>■</span>";
+    blob += "<span>" + parseFloat(rtt).toFixed(0) + "ms</span>";
     return blob;
 }
 
 export function formatRetransmit(retransmits) {
     let percent = Math.min(100, retransmits) / 100;
     let color = lerpColor([0, 255, 0], [255, 0, 0], percent);
-    let html = "<span class='retransmits' style='color: " + color + "'>";
-    html += retransmits;
-    html += "</span>";
-    return html;
+    return "<span color=" + color + ">■</span>" + retransmits + "</span>";
 }
 
 export function formatCakeStat(n) {

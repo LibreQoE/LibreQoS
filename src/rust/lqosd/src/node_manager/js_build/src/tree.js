@@ -4,7 +4,6 @@ import {
     formatRetransmit,
     formatRtt,
     formatThroughput,
-    lerpGreenToRedViaOrange,
     scaleNumber
 } from "./helpers/scaling";
 import {subscribeWS} from "./pubsub/ws";
@@ -250,7 +249,7 @@ function treeUpdate(msg) {
         col = document.getElementById("re-xmit-down-" + nodeId);
         if (col !== null) {
             if (node.current_retransmits[0] !== undefined) {
-                col.textContent = node.current_retransmits[0];
+                col.innerHTML = formatRetransmit(node.current_retransmits[0]);
             } else {
                 col.textContent = "-";
             }
@@ -258,7 +257,7 @@ function treeUpdate(msg) {
         col = document.getElementById("re-xmit-up-" + nodeId);
         if (col !== null) {
             if (node.current_retransmits[1] !== undefined) {
-                col.textContent = node.current_retransmits[1];
+                col.innerHTML = formatRetransmit(node.current_retransmits[1]);
             } else {
                 col.textContent = "-";
             }
