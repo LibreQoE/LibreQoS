@@ -82,62 +82,46 @@ impl TimeBuffer {
         // Sort by country
         my_buffer.sort_by(|a, b| a.0.cmp(&b.0));
 
-        // Summarize by country
-        let mut country_summary = Vec::new();
+        // Iterate through the buffer and summarize by country. We want to accumulate
+        // all the RTTs into a list, so we can take a MEDIAN.
         let mut last_country = String::new();
+        let mut country_summary = Vec::new();
+        let mut rtt_buffer = [Vec::new(), Vec::new()];
         let mut total_bytes = DownUpOrder::zeroed();
-        let mut total_rtt = [0.0f64, 0.0f64];
-        let mut rtt_count = [0, 0];
-        for (country, bytes, rtt) in my_buffer {
-            if last_country != country {
+        for (country, bytes, rtt) in my_buffer.iter() {
+            if last_country != *country {
+                last_country = country.clone();
+
+                // Store progress (but not the first one)
                 if !last_country.is_empty() {
-                    // Store the country
-                    if rtt_count[0] > 0 {
-                        total_rtt[0] = (total_rtt[0] / rtt_count[0] as f64) as f64;
-                    }
-                    if rtt_count[1] > 0 {
-                        total_rtt[1] = (total_rtt[1] / rtt_count[1] as f64) as f64;
-                    }
-
-                    let rtt = [
-                        total_rtt[0] as f32,
-                        total_rtt[1] as f32,
-                    ];
-
-                    country_summary.push((last_country, total_bytes, rtt));
+                    country_summary.push((
+                        last_country.to_string(),
+                        total_bytes.clone(),
+                        [
+                            Self::median_f32(&rtt_buffer[0]),
+                            Self::median_f32(&rtt_buffer[1]),
+                        ],
+                    )
+                    );
                 }
 
-                last_country = country.to_string();
+                // Clear accumulated stats
+                rtt_buffer[0].clear();
+                rtt_buffer[1].clear();
                 total_bytes = DownUpOrder::zeroed();
-                total_rtt = [0.0, 0.0];
-                rtt_count = [0, 0];
             }
-            total_bytes.checked_add(bytes);
+
+            // Accumulate RTTs
             if rtt[0] > 0.0 {
-                total_rtt[0] += rtt[0] as f64;
-                rtt_count[0] += 1;
+                rtt_buffer[0].push(rtt[0]);
             }
             if rtt[1] > 0.0 {
-                total_rtt[1] += rtt[1] as f64;
-                rtt_count[1] += 1;
+                rtt_buffer[1].push(rtt[1]);
             }
+
+            // Accumulate traffic
+            total_bytes.checked_add(*bytes);
         }
-
-        // Store the last country
-        let rtt = [
-            if total_rtt[0] > 0.0 {
-                (total_rtt[0] / rtt_count[0] as f64) as f32
-            } else {
-                0.0
-            },
-            if total_rtt[1] > 0.0 {
-                (total_rtt[1] / rtt_count[1] as f64) as f32
-            } else {
-                0.0
-            },
-        ];
-
-        country_summary.push((last_country, total_bytes, rtt));
 
         // Sort by bytes downloaded descending
         country_summary.sort_by(|a, b| b.1.down.cmp(&a.1.down));
@@ -154,6 +138,20 @@ impl TimeBuffer {
         let mid = slice.len() / 2;
         if slice.len() % 2 == 0 {
             (slice[mid] + slice[mid - 1]) / 2
+        } else {
+            slice[mid]
+        }
+    }
+
+    fn median_f32(slice: &[f32]) -> f32 {
+        if slice.is_empty() {
+            return 0.0;
+        }
+        let mut slice = slice.to_vec();
+        slice.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let mid = slice.len() / 2;
+        if slice.len() % 2 == 0 {
+            (slice[mid] + slice[mid - 1]) / 2.0
         } else {
             slice[mid]
         }
