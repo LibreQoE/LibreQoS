@@ -80,7 +80,15 @@ pub async fn auth_layer(
                 req.extensions_mut().insert(login_result);
                 Ok(next.run(req).await)
             }
-            LoginResult::Denied => Err(Html(BOUNCE)),
+            LoginResult::Denied => {
+                let users = WebUsers::load_or_create().unwrap();
+                if users.do_we_allow_anonymous() {
+                    req.extensions_mut().insert(LoginResult::ReadOnly);
+                    Ok(next.run(req).await)
+                } else {
+                    Err(Html(BOUNCE))
+                }
+            },
         };
     }
     Err(Html(BOUNCE))
