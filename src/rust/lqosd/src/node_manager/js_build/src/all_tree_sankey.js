@@ -5,6 +5,7 @@ import {isRedacted} from "./helpers/redact";
 var allNodes = [];
 let rootId = 0;
 let lastRtt = {};
+let paused = false;
 
 function idOfNode(name) {
     for (let i=0; i<allNodes.length; i++) {
@@ -53,6 +54,11 @@ class AllTreeSankey extends DashboardGraph {
 
 function start() {
     $.get("/local-api/networkTree", (data) => {
+        let cadence = parseInt($("#cadence").val());
+        if (paused) {
+            setTimeout(start, cadence * 1000);
+            return;
+        }
         allNodes = data;
         //console.log(data);
         let redact = isRedacted();
@@ -115,7 +121,7 @@ function start() {
         }
 
         graph.update(nodes, links);
-        setTimeout(start, 1000);
+        setTimeout(start, cadence * 1000);
     });
 }
 
@@ -142,5 +148,14 @@ function bindMaxDepth() {
 let maxDepth = getMaxDepth();
 bindMaxDepth();
 let graph = new AllTreeSankey("sankey");
+
+$("#btnPause").click(() => {
+    paused = !paused;
+    if (paused) {
+        $("#btnPause").html("<i class='fa fa-play'></i> Resume");
+    } else {
+        $("#btnPause").html("<i class='fa fa-pause'></i>Pause");
+    }
+});
 
 start();
