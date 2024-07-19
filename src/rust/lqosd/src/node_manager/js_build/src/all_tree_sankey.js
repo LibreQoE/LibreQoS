@@ -37,6 +37,10 @@ function start() {
         let links = [];
 
         for (let i=0; i<data.length; i++) {
+            let depth = data[i][1].parents.length;
+            if (depth > maxDepth) {
+                continue;
+            }
             let name = data[i][1].name;
             let bytes = data[i][1].current_throughput[0];
             let bytesAsMegabits = bytes / 1000000;
@@ -84,6 +88,28 @@ function start() {
     });
 }
 
+function getMaxDepth() {
+    let maxDepth = 10;
+    let storedDepth = localStorage.getItem("atsDepth");
+    if (storedDepth !== null) {
+        maxDepth = parseInt(storedDepth);
+    } else {
+        localStorage.setItem("atsDepth", maxDepth.toString());
+    }
+    return maxDepth;
+}
+
+function bindMaxDepth() {
+    let d = document.getElementById("maxDepth");
+    d.value = maxDepth;
+    d.onclick = () => {
+        maxDepth = parseInt(d.value);
+        localStorage.setItem("atsDepth", maxDepth.toString());
+    };
+}
+
+let maxDepth = getMaxDepth();
+bindMaxDepth();
 let graph = new AllTreeSankey("sankey");
 
 start();
