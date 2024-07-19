@@ -459,8 +459,8 @@ pub fn xdp_pping_compat() -> BusResponse {
     BusResponse::XdpPping(result)
 }
 
-pub fn rtt_histogram() -> BusResponse {
-    let mut result = vec![0; 20];
+pub fn rtt_histogram<const N: usize>() -> BusResponse {
+    let mut result = vec![0; N];
     let reader_cycle = THROUGHPUT_TRACKER
         .cycle
         .load(std::sync::atomic::Ordering::Relaxed);
@@ -478,9 +478,9 @@ pub fn rtt_histogram() -> BusResponse {
         let samples = valid_samples.len() as u32;
         if samples > 0 {
             let median = valid_samples[valid_samples.len() / 2] as f32 / 10.0;
-            let median = f32::min(200.0, median);
+            let median = f32::min(N as f32 * 10.0, median);
             let column = median as usize;
-            result[usize::min(column, 19)] += 1;
+            result[usize::min(column, N-1)] += 1;
         }
     }
 

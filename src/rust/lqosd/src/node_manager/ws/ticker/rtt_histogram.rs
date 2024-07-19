@@ -10,7 +10,7 @@ pub async fn rtt_histo(channels: Arc<PubSub>) {
         return;
     }
 
-    let histo = rtt_histogram();
+    let histo = rtt_histogram::<50>();
     if let BusResponse::RttHistogram(data) = &histo {
         let rtt_histo = json!(
                     {

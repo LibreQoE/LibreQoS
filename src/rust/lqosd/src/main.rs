@@ -185,7 +185,7 @@ fn handle_bus_requests(
       BusRequest::ClearIpFlow => clear_ip_flows(),
       BusRequest::ListIpFlow => list_mapped_ips(),
       BusRequest::XdpPping => throughput_tracker::xdp_pping_compat(),
-      BusRequest::RttHistogram => throughput_tracker::rtt_histogram(),
+      BusRequest::RttHistogram => throughput_tracker::rtt_histogram::<20>(),
       BusRequest::HostCounts => throughput_tracker::host_counts(),
       BusRequest::AllUnknownIps => throughput_tracker::all_unknown_ips(),
       BusRequest::ReloadLibreQoS => program_control::reload_libre_qos(),

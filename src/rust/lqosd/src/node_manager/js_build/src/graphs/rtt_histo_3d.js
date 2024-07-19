@@ -1,5 +1,6 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {lerpGreenToRedViaOrange} from "../helpers/scaling";
+import {N_ITEMS} from "./rtt_histo";
 
 export class RttHistogram3D extends DashboardGraph {
     constructor(id) {
@@ -10,9 +11,9 @@ export class RttHistogram3D extends DashboardGraph {
         for (let i=0; i<300; i++) timeAxis.push(i.toString());
 
         let catAxis = [];
-        for (let i=0; i<20; i++) catAxis.push({
+        for (let i=0; i<N_ITEMS; i++) catAxis.push({
             value: (i*10).toString(),
-            itemStyle: {color: lerpGreenToRedViaOrange(20-i, 20)},
+            itemStyle: {color: lerpGreenToRedViaOrange(N_ITEMS-i, N_ITEMS)},
         }
         );
 
@@ -67,7 +68,7 @@ class RingBuffer {
         let data = [];
         for (let i=0; i<size; i++) {
             let d = [];
-            for (let j=0; j<20; j++) {
+            for (let j=0; j<N_ITEMS; j++) {
                 d.push(0);
             }
             data.push(d);
@@ -86,22 +87,22 @@ class RingBuffer {
         let data = [];
         let counter = 0;
         for (let i=0; i<this.head; i++) {
-            for (let j=0; j<20; j++) {
+            for (let j=0; j<N_ITEMS; j++) {
                 let val = this.data[i][j];
                 let toPush = {
                     value: [j, counter, val],
-                    itemStyle: {color: lerpGreenToRedViaOrange(20-j, 20)},
+                    itemStyle: {color: lerpGreenToRedViaOrange(N_ITEMS-j, N_ITEMS)},
                 };
                 data.push(toPush);
             }
             counter++;
         }
         for (let i=this.head; i<this.size; i++) {
-            for (let j=0; j<20; j++) {
+            for (let j=0; j<N_ITEMS; j++) {
                 let val = this.data[i][j];
                 let toPush = {
                     value: [j, counter, val],
-                    itemStyle: {color: lerpGreenToRedViaOrange(20-j, 20)},
+                    itemStyle: {color: lerpGreenToRedViaOrange(N_ITEMS-j, N_ITEMS)},
                 };
                 data.push(toPush);
             }
