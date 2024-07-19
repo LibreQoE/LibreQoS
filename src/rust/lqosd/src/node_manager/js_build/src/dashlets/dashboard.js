@@ -144,7 +144,11 @@ export class Dashboard {
                     this.tickCounter++;
                     this.tickCounter %= this.cadence;
                     for (let i = 0; i < this.dashlets.length; i++) {
-                        if (this.tickCounter === 0 || !this.dashlets[i].canBeSlowedDown()) {
+                        if (this.dashlets[i].canBeSlowedDown()) {
+                            if (this.tickCounter === 0) {
+                                this.dashlets[i].onMessage(msg);
+                            }
+                        } else {
                             this.dashlets[i].onMessage(msg);
                         }
                     }
