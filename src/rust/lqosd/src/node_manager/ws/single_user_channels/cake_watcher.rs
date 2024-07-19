@@ -1,16 +1,11 @@
 use lqos_bus::QueueStoreTransit;
-use lqos_config::load_config;
 use lqos_queue_tracker::{add_watched_queue, get_raw_circuit_data, still_watching};
 
 pub(super) async fn cake_watcher(circuit_id: String, tx: tokio::sync::mpsc::Sender<String>) {
-    let interval_ms = if let Ok(config) = load_config() {
-        config.queue_check_period_ms
-    } else {
-        0
-    };
+    const INTERVAL_MS: u64 = 1000;
     add_watched_queue(&circuit_id);
 
-    let mut ticker = tokio::time::interval(tokio::time::Duration::from_millis(interval_ms));
+    let mut ticker = tokio::time::interval(tokio::time::Duration::from_millis(INTERVAL_MS));
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         ticker.tick().await;
