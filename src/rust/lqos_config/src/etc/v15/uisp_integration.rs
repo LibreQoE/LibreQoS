@@ -16,6 +16,12 @@ pub struct UispIntegration {
     pub commit_bandwidth_multiplier: f32,
     pub exception_cpes: Vec<ExceptionCpe>,
     pub use_ptmp_as_parent: bool,
+    #[serde(default = "default_ignore_calculated_capacity")]
+    pub ignore_calculated_capacity: bool,
+}
+
+fn default_ignore_calculated_capacity() -> bool {
+    false
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -41,6 +47,7 @@ impl Default for UispIntegration {
             commit_bandwidth_multiplier: 1.0,
             exception_cpes: vec![],
             use_ptmp_as_parent: false,
+            ignore_calculated_capacity: false,
         }
     }
 }

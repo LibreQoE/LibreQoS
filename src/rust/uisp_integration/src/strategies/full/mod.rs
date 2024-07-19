@@ -51,7 +51,7 @@ pub async fn build_full_network(
     // Load any bandwidth overrides
     let bandwidth_overrides = get_site_bandwidth_overrides(&config)?;
 
-    // Load any routing overrrides
+    // Load any routing overrides
     let routing_overrides = get_route_overrides(&config)?;
 
     // Obtain the UISP data and transform it into easier to work with types
@@ -110,10 +110,6 @@ pub async fn build_full_network(
 
     // Do Link Squashing
     squash_single_aps(&mut sites)?;
-
-    if let Some(c) = sites.iter().find(|s| s.name == "CALVIN") {
-        println!("Stage SQUASH: {}/{}", c.max_down_mbps, c.max_up_mbps);
-    }
 
     // Build Path Weights
     walk_tree_for_routing(&mut sites, &root_site, &routing_overrides)?;

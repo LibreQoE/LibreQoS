@@ -95,6 +95,7 @@ const bindings = [
     { field: "bindUispExcludeSites", path: ".uisp_integration.exclude_sites", data: "array_of_strings", editable: true },
     { field: "bindUispExceptionCpes", path: ".uisp_integration.exception_cpes", data: "array_of_strings", editable: true },
     { field: "bindUispUsePtmpAsParent", path: ".uisp_integration.use_ptmp_as_parent", data: "bool", editable: true },
+    { field: "bindUispIgnoreCalculatedCapacity", path:".uisp_integration.ignore_calculated_capacity", data: "bool", editable: true },
 
     // Powercode
     { field: "bindPowercodeEnable", path: ".powercode_integration.enable_powercode", data: "bool", editable: true },
