@@ -22,4 +22,8 @@ export class CombinedTopDashlet extends BaseCombinedDashlet {
     title() {
         return "Top-10 Downloaders";
     }
+
+    canBeSlowedDown() {
+        return true;
+    }
 }

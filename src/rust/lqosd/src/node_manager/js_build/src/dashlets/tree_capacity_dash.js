@@ -7,6 +7,10 @@ export class TreeCapacityDash extends BaseDashlet {
         super(slot);
     }
 
+    canBeSlowedDown() {
+        return true;
+    }
+
     title() {
         return "Tree Nodes At Capacity";
     }

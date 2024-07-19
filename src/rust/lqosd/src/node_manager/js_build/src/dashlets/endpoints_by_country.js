@@ -7,6 +7,10 @@ export class Top10EndpointsByCountry extends BaseDashlet {
         super(slot);
     }
 
+    canBeSlowedDown() {
+        return true;
+    }
+
     title() {
         return "Endpoints by Country";
     }

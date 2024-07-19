@@ -9,6 +9,10 @@ export class Worst10Downloaders extends BaseDashlet {
         super(slot);
     }
 
+    canBeSlowedDown() {
+        return true;
+    }
+
     title() {
         return "Worst 10 Round-Trip Time";
     }

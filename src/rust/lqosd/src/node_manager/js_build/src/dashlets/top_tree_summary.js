@@ -7,6 +7,10 @@ export class TopTreeSummary extends BaseDashlet {
         super(slot);
     }
 
+    canBeSlowedDown() {
+        return true;
+    }
+
     title() {
         return "Network Tree";
     }

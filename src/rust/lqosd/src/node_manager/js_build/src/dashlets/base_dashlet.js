@@ -8,6 +8,10 @@ export class BaseDashlet {
         this.setupDone = false;
     }
 
+    canBeSlowedDown() {
+        return false;
+    }
+
     sizeClasses() {
         switch (this.size) {
             case 1: return  ["col-xs-12", "col-sm-12", "col-md-6", "col-lg-3", "col-xl-1", "col-xxl-1"];

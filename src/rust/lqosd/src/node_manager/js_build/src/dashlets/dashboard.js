@@ -15,6 +15,17 @@ export class Dashboard {
         this.dashletIdentities = this.layout.dashlets;
         this.dashlets = [];
         this.channels = [];
+        this.paused = false;
+
+        let cadence = localStorage.getItem("dashCadence");
+        if (cadence === null) {
+            this.cadence = 1;
+            localStorage.setItem("dashCadence", this.cadence.toString());
+        } else {
+            this.cadence = parseInt(cadence);
+        }
+        this.tickCounter = 0;
+
         this.#editButton();
         if (localStorage.getItem("forceEditMode")) {
             localStorage.removeItem("forceEditMode");
@@ -29,13 +40,7 @@ export class Dashboard {
     #editButton() {
         let editDiv = document.createElement("div");
         editDiv.id = this.divName + "_edit";
-        editDiv.style.position = "absolute";
-        editDiv.style.right = "5px";
-        editDiv.style.top = "5px";
-        editDiv.style.width = "40px";
-        editDiv.style.zIndex = "100";
-        editDiv.style.opacity = 0.5;
-        editDiv.innerHTML = "<button type='button' class='btn btn-primary btn-sm'><i class='fa fa-pencil'></i></button>";
+        editDiv.innerHTML = "<button type='button' class='btn btn-primary btn-sm' style='width: 100%'><i class='fa fa-pencil'></i> Edit Dashboard</button>";
         editDiv.onclick = () => {
             if (this.editingDashboard) {
                 this.closeEditMode();
@@ -43,7 +48,44 @@ export class Dashboard {
                 this.editMode();
             }
         };
-        this.parentDiv.appendChild(editDiv);
+        let parent = document.getElementById("controls");
+
+        // Cadence Picker
+        let cadenceDiv = document.createElement("div");
+        cadenceDiv.id = this.divName + "_cadence";
+        let cadenceLabel = document.createElement("label");
+        cadenceLabel.htmlFor = "cadencePicker";
+        cadenceLabel.innerText = "Update Cadence (Seconds): ";
+        let cadencePicker = document.createElement("input");
+        cadencePicker.id = "cadencePicker";
+        cadencePicker.type = "number";
+        cadencePicker.min = "1";
+        cadencePicker.max = "60";
+        cadencePicker.value = this.cadence;
+        cadencePicker.onchange = () => {
+            this.cadence = parseInt(cadencePicker.value);
+            localStorage.setItem("dashCadence", this.cadence.toString());
+        }
+        cadenceDiv.appendChild(cadenceLabel);
+        cadenceDiv.appendChild(cadencePicker);
+
+        // Pause Button
+        let pauseDiv = document.createElement("div");
+        pauseDiv.id = this.divName + "_pause";
+        pauseDiv.innerHTML = "<button type='button' class='btn btn-warning btn-sm' style='width: 100%'><i class='fa fa-pause'></i> Pause Updates</button>";
+        pauseDiv.onclick = () => {
+            this.paused = !this.paused;
+            let target = document.getElementById(this.divName + "_pause");
+            if (this.paused) {
+                target.innerHTML = "<button type='button' class='btn btn-success btn-sm' style='width: 100%'><i class='fa fa-play'></i> Resume Updates</button>";
+            } else {
+                target.innerHTML = "<button type='button' class='btn btn-warning btn-sm' style='width: 100%'><i class='fa fa-pause'></i> Pause Updates</button>";
+            }
+        };
+
+        parent.appendChild(editDiv);
+        parent.appendChild(pauseDiv);
+        parent.appendChild(cadenceDiv);
     }
 
     build() {
@@ -98,8 +140,14 @@ export class Dashboard {
                 }
             } else {
                 // Propagate the message
-                for (let i=0; i<this.dashlets.length; i++) {
-                    this.dashlets[i].onMessage(msg);
+                if (!this.paused) {
+                    this.tickCounter++;
+                    this.tickCounter %= this.cadence;
+                    for (let i = 0; i < this.dashlets.length; i++) {
+                        if (this.tickCounter === 0 || !this.dashlets[i].canBeSlowedDown()) {
+                            this.dashlets[i].onMessage(msg);
+                        }
+                    }
                 }
             }
         });

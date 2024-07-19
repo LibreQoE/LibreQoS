@@ -28,6 +28,10 @@ export class Top10Downloaders extends BaseDashlet {
         return base;
     }
 
+    canBeSlowedDown() {
+        return true;
+    }
+
     setup() {
         super.setup();
     }

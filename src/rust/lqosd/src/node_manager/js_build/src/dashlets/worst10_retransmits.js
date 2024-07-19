@@ -9,6 +9,10 @@ export class Worst10Retransmits extends BaseDashlet {
         super(slot);
     }
 
+    canBeSlowedDown() {
+        return true;
+    }
+
     title() {
         return "Worst 10 TCP Re-transmits";
     }

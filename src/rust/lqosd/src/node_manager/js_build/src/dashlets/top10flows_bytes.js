@@ -9,6 +9,10 @@ export class Top10FlowsBytes extends BaseDashlet {
         this.rttCache = new RttCache();
     }
 
+    canBeSlowedDown() {
+        return true;
+    }
+
     title() {
         return "Top 10 Flows (by total bytes)";
     }

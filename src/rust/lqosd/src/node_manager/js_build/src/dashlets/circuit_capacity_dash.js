@@ -8,6 +8,10 @@ export class CircuitCapacityDash extends BaseDashlet {
         super(slot);
     }
 
+    canBeSlowedDown() {
+        return true;
+    }
+
     title() {
         return "Circuits At Capacity";
     }
