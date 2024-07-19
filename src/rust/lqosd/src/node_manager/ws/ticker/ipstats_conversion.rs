@@ -40,7 +40,7 @@ impl From<&IpStats> for IpStatsWithPlan {
                     } else {
                         &circuit.circuit_name
                     };
-                    result.ip_address = format!("{} ({})", name, result.ip_address);
+                    result.ip_address = format!("{}", name);
                     result.plan = DownUpOrder::new(circuit.download_max_mbps, circuit.upload_max_mbps);
                 }
             }
