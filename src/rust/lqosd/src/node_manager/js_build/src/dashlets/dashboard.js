@@ -38,9 +38,9 @@ export class Dashboard {
     }
 
     #editButton() {
-        let editDiv = document.createElement("div");
+        let editDiv = document.createElement("span");
         editDiv.id = this.divName + "_edit";
-        editDiv.innerHTML = "<button type='button' class='btn btn-primary btn-sm' style='width: 100%'><i class='fa fa-pencil'></i> Edit Dashboard</button>";
+        editDiv.innerHTML = "<button type='button' class='btn btn-primary btn-sm'><i class='fa fa-pencil'></i> Edit</button>";
         editDiv.onclick = () => {
             if (this.editingDashboard) {
                 this.closeEditMode();
@@ -70,16 +70,16 @@ export class Dashboard {
         cadenceDiv.appendChild(cadencePicker);
 
         // Pause Button
-        let pauseDiv = document.createElement("div");
+        let pauseDiv = document.createElement("span");
         pauseDiv.id = this.divName + "_pause";
-        pauseDiv.innerHTML = "<button type='button' class='btn btn-warning btn-sm' style='width: 100%'><i class='fa fa-pause'></i> Pause Updates</button>";
+        pauseDiv.innerHTML = "<button type='button' class='btn btn-warning btn-sm'><i class='fa fa-pause'></i> Pause</button>";
         pauseDiv.onclick = () => {
             this.paused = !this.paused;
             let target = document.getElementById(this.divName + "_pause");
             if (this.paused) {
-                target.innerHTML = "<button type='button' class='btn btn-success btn-sm' style='width: 100%'><i class='fa fa-play'></i> Resume Updates</button>";
+                target.innerHTML = "<button type='button' class='btn btn-success btn-sm'><i class='fa fa-play'></i> Resume</button>";
             } else {
-                target.innerHTML = "<button type='button' class='btn btn-warning btn-sm' style='width: 100%'><i class='fa fa-pause'></i> Pause Updates</button>";
+                target.innerHTML = "<button type='button' class='btn btn-warning btn-sm'><i class='fa fa-pause'></i> Pause</button>";
             }
         };
 
