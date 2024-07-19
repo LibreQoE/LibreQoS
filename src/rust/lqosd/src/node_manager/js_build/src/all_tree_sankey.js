@@ -2,6 +2,9 @@ import { DashboardGraph } from "./graphs/dashboard_graph";
 import {lerpGreenToRedViaOrange} from "./helpers/scaling";
 import {isRedacted} from "./helpers/redact";
 
+var allNodes = [];
+let rootId = 0;
+
 class AllTreeSankey extends DashboardGraph {
     constructor(id) {
         super(id);
@@ -16,6 +19,20 @@ class AllTreeSankey extends DashboardGraph {
         };
         this.option && this.chart.setOption(this.option);
         this.chart.hideLoading();
+        this.chart.on('click', (params) => {
+            //console.log(params.name);
+            let name = params.name;
+            // If it contains a >, it's a link
+            if (name.indexOf(" > ") === -1) {
+                for (let i=0; i<allNodes.length; i++) {
+                    if (allNodes[i][1].name === name) {
+                        rootId = i;
+                        break;
+                    }
+                }
+            }
+        });
+        $("#btnRoot").click(() => { rootId = 0; });
     }
 
     update(data, links) {
@@ -30,8 +47,10 @@ let lastRtt = {};
 
 function start() {
     $.get("/local-api/networkTree", (data) => {
+        allNodes = data;
         //console.log(data);
         let redact = isRedacted();
+        $("#rootNode").text(data[rootId][1].name);
 
         let nodes = [];
         let links = [];
@@ -39,6 +58,10 @@ function start() {
         for (let i=0; i<data.length; i++) {
             let depth = data[i][1].parents.length;
             if (depth > maxDepth) {
+                continue;
+            }
+            // If data[i][1].parents does not contain rootId, skip
+            if (!data[i][1].parents.includes(rootId)) {
                 continue;
             }
             let name = data[i][1].name;
