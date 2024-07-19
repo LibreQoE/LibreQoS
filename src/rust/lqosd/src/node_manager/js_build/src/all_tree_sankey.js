@@ -4,6 +4,16 @@ import {isRedacted} from "./helpers/redact";
 
 var allNodes = [];
 let rootId = 0;
+let lastRtt = {};
+
+function idOfNode(name) {
+    for (let i=0; i<allNodes.length; i++) {
+        if (allNodes[i][1].name === name) {
+            return i;
+        }
+    }
+    return 0;
+}
 
 class AllTreeSankey extends DashboardGraph {
     constructor(id) {
@@ -11,6 +21,7 @@ class AllTreeSankey extends DashboardGraph {
         this.option = {
             series: [
                 {
+                    nodeAlign: 'left',
                     type: 'sankey',
                     data: [],
                     links: []
@@ -24,12 +35,9 @@ class AllTreeSankey extends DashboardGraph {
             let name = params.name;
             // If it contains a >, it's a link
             if (name.indexOf(" > ") === -1) {
-                for (let i=0; i<allNodes.length; i++) {
-                    if (allNodes[i][1].name === name) {
-                        rootId = i;
-                        break;
-                    }
-                }
+                rootId = idOfNode(name);
+            } else {
+                rootId = idOfNode(params.data.source);
             }
         });
         $("#btnRoot").click(() => { rootId = 0; });
@@ -43,8 +51,6 @@ class AllTreeSankey extends DashboardGraph {
     }
 }
 
-let lastRtt = {};
-
 function start() {
     $.get("/local-api/networkTree", (data) => {
         allNodes = data;
@@ -55,13 +61,15 @@ function start() {
         let nodes = [];
         let links = [];
 
+        let startDepth = data[rootId][1].parents.length - 1;
+
         for (let i=0; i<data.length; i++) {
-            let depth = data[i][1].parents.length;
+            let depth = data[i][1].parents.length - startDepth;
             if (depth > maxDepth) {
                 continue;
             }
             // If data[i][1].parents does not contain rootId, skip
-            if (!data[i][1].parents.includes(rootId)) {
+            if (rootId !== 0 && !data[i][1].parents.includes(rootId)) {
                 continue;
             }
             let name = data[i][1].name;
