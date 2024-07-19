@@ -113,8 +113,6 @@ export function formatPercent(percent, digits=0) {
 export function rttNanosAsSpan(rttNanos, precision=0) {
     let rttInMs = Math.min(200, rttNanos / 1000000);
     let color = lerpGreenToRedViaOrange(200 - rttInMs, 200);
-    let html = "<span style='color: " + color + "'>";
-    html += scaleNanos(rttNanos, precision);
-    html += "</span>";
+    let html = "<span style='color: " + color + "'>■<span> " + scaleNanos(rttNanos, precision);
     return html;
 }
