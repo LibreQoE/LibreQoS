@@ -32,6 +32,7 @@ export class DevicePingHistogram extends DashboardGraph {
             }
         };
         this.option && this.chart.setOption(this.option);
+        this.chart.hideLoading();
     }
 
     update(ping_time_nanos) {
