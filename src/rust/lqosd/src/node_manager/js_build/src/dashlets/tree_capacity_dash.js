@@ -1,5 +1,5 @@
 import {BaseDashlet} from "./base_dashlet";
-import {clearDashDiv, simpleRow, simpleRowHtml, theading} from "../helpers/builders";
+import {clearDashDiv, simpleRowHtml, theading} from "../helpers/builders";
 import {formatRtt, formatPercent} from "../helpers/scaling";
 
 export class TreeCapacityDash extends BaseDashlet {
@@ -36,7 +36,7 @@ export class TreeCapacityDash extends BaseDashlet {
             let target = document.getElementById(this.id);
 
             let table = document.createElement("table");
-            table.classList.add("table", "table-striped", "small");
+            table.classList.add("dash-table", "table-sm", "small");
             let thead = document.createElement("thead");
             thead.classList.add("small");
             thead.appendChild(theading("Node"));

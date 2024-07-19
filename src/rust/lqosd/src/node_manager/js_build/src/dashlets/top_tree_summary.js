@@ -1,5 +1,5 @@
 import {BaseDashlet} from "./base_dashlet";
-import {clearDashDiv, clearDiv, simpleRowHtml, theading, tooltipsNextFrame} from "../helpers/builders";
+import {clearDiv, simpleRowHtml, theading} from "../helpers/builders";
 import {formatThroughput, formatRetransmit, formatCakeStat} from "../helpers/scaling";
 
 export class TopTreeSummary extends BaseDashlet {
@@ -26,7 +26,7 @@ export class TopTreeSummary extends BaseDashlet {
 
         let t = document.createElement("table");
         t.id = this.id + "_table";
-        t.classList.add("table", "table-sm", "mytable", "small");
+        t.classList.add("dash-table", "table-sm", "mytable", "small");
 
         let th = document.createElement("thead");
         th.classList.add('small');

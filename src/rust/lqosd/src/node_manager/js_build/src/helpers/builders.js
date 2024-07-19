@@ -164,7 +164,7 @@ export function topNTableRow(r) {
 
 export function TopNTableFromMsgData(msg) {
     let t = document.createElement("table");
-    t.classList.add("table", "table-striped", "table-sm");
+    t.classList.add("table-sm", "dash-table");
 
     t.appendChild(topNTableHeader());
 

@@ -1,6 +1,6 @@
 import {BaseDashlet} from "./base_dashlet";
 import {clearDashDiv, theading} from "../helpers/builders";
-import {scaleNumber, scaleNanos, lerpGreenToRedViaOrange, rttNanosAsSpan} from "../helpers/scaling";
+import {scaleNumber, rttNanosAsSpan} from "../helpers/scaling";
 
 export class Top10EndpointsByCountry extends BaseDashlet {
     constructor(slot) {
@@ -35,7 +35,7 @@ export class Top10EndpointsByCountry extends BaseDashlet {
             let target = document.getElementById(this.id);
 
             let t = document.createElement("table");
-            t.classList.add("table", "table-sm", "small");
+            t.classList.add("dash-table", "table-sm", "small");
 
             let th = document.createElement("thead");
             th.classList.add("small");

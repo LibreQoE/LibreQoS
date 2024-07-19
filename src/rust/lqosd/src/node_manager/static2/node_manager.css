@@ -125,3 +125,6 @@ body.dark-mode {
     max-height: 200px;
     overflow-y: auto;
 }
+.dash-table {
+    width: 100%;
+}

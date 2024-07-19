@@ -41,7 +41,7 @@ export class CircuitCapacityDash extends BaseDashlet {
             });
 
             let table = document.createElement("table");
-            table.classList.add("table", "table-striped", "small");
+            table.classList.add("dash-table", "table-sm", "small");
             let thead = document.createElement("thead");
             thead.classList.add("small");
             thead.appendChild(theading("Circuit"));
