@@ -90,7 +90,6 @@ impl TimeBuffer {
         let mut total_bytes = DownUpOrder::zeroed();
         for (country, bytes, rtt) in my_buffer.iter() {
             if last_country != *country {
-                last_country = country.clone();
 
                 // Store progress (but not the first one)
                 if !last_country.is_empty() {
@@ -121,6 +120,9 @@ impl TimeBuffer {
 
             // Accumulate traffic
             total_bytes.checked_add(*bytes);
+
+            // Next, please
+            last_country = country.clone();
         }
 
         // Sort by bytes downloaded descending
