@@ -12,6 +12,7 @@ mod config;
 mod circuit;
 mod packet_analysis;
 mod flow_map;
+mod warnings;
 
 use axum::Router;
 use axum::routing::{get, post};
@@ -46,5 +47,6 @@ pub fn local_api() -> Router {
         .route("/requestAnalysis/:ip", get(packet_analysis::request_analysis))
         .route("/pcapDump/:id", get(packet_analysis::pcap_dump))
         .route("/flowMap", get(flow_map::flow_lat_lon))
+        .route("/globalWarnings", get(warnings::get_global_warnings))
         .route_layer(axum::middleware::from_fn(auth_layer))
 }

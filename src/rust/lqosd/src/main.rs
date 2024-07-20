@@ -65,7 +65,6 @@ async fn main() -> Result<()> {
 
   // Load config
   let config = lqos_config::load_config()?;
-
   
   // Apply Tunings
   tuning::tune_lqosd_from_config_file()?;

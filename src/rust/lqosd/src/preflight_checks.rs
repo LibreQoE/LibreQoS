@@ -4,6 +4,7 @@ use anyhow::Result;
 use log::{error, info};
 use lqos_config::Config;
 use lqos_sys::interface_name_to_index;
+use crate::node_manager::{add_global_warning, WarningLevel};
 
 fn check_queues(interface: &str) -> Result<()> {
     let path = format!("/sys/class/net/{interface}/queues/");
@@ -135,8 +136,6 @@ fn check_bridge_status(config: &Config, interfaces: &[IpLinkInterface]) -> Resul
 
 /// Runs a series of preflight checks to ensure that the configuration is sane
 pub fn preflight_checks() -> Result<()> {
-    info!("Sanity checking configuration...");
-
     // Are we able to load the configuration?
     let config = lqos_config::load_config().map_err(|_| {
         error!("Failed to load configuration file - /etc/lqos.conf");
@@ -183,6 +182,7 @@ pub fn preflight_checks() -> Result<()> {
     };
 
     info!("Sanity checks passed");
+    add_global_warning(WarningLevel::Error, "XDP bridge is disabled due to the presence of a Linux bridge. Please fix your configuration.".to_string());
 
     Ok(())
 }
