@@ -1,6 +1,6 @@
 [Unit]
 After=network.service lqosd.service
-Requires=lqosd.service
+Requires=network.service lqosd.service
 
 [Service]
 WorkingDirectory=/opt/libreqos/src/bin

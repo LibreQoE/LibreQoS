@@ -1,9 +1,11 @@
 [Unit]
 After=network.service
+Requires=network.service
 
 [Service]
 WorkingDirectory=/opt/libreqos/src/bin
 ExecStart=/opt/libreqos/src/bin/lqosd
+ExecStartPost=/bin/sleep 10
 Restart=always
 #Turn on debuging for service
 #Environment=RUST_LOG=info
