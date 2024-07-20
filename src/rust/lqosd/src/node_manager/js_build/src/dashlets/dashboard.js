@@ -40,11 +40,15 @@ export class Dashboard {
     #editButton() {
         let editDiv = document.createElement("span");
         editDiv.id = this.divName + "_edit";
-        editDiv.innerHTML = "<button type='button' class='btn btn-primary btn-sm'><i class='fa fa-pencil'></i> Edit</button>";
+        editDiv.innerHTML = "<button type='button' class='btn btn-primary btn-sm' id='btnEditDash'><i class='fa fa-pencil'></i> Edit</button>";
         editDiv.onclick = () => {
             if (this.editingDashboard) {
+                let e = document.getElementById("btnEditDash");
+                e.innerHTML = "<i class='fa fa-pencil'></i> Edit";
                 this.closeEditMode();
             } else {
+                let e = document.getElementById("btnEditDash");
+                e.innerHTML = "<i class='fa fa-close'></i> Finish Edit";
                 this.editMode();
             }
         };
