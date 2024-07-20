@@ -1030,15 +1030,6 @@ def refreshShapers():
 		print("refreshShapers completed on " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
 
 def refreshShapersUpdateOnly():
-	
-	# Check that the host lqosd is running
-	if is_lqosd_alive():
-		print("lqosd is running")
-	else:
-		print("ERROR: lqosd is not running. Aborting")
-		os._exit(-1)
-	
-	
 	# Starting
 	print("refreshShapers starting at " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
 	
