@@ -95,6 +95,10 @@ if service_exists lqosd; then
     echo "lqosd is running as a service. Restarting it. You may need to enter your sudo password."
     sudo systemctl restart lqosd
 fi
+if service_exists lqos_scheduler; then
+    echo "lqos_scheduler is running as a service. Restarting it. You may need to enter your sudo password."
+    sudo systemctl restart lqos_scheduler
+fi
 if service_exists lqos_node_manager; then
     echo "lqos_node_manager is running as a service. Restarting it. You may need to enter your sudo password."
     sudo systemctl restart lqos_node_manager
