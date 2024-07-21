@@ -128,3 +128,6 @@ body.dark-mode {
 .dash-table {
     width: 100%;
 }
+.fa-centerline {
+    vertical-align: middle;
+}
