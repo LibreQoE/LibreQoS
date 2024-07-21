@@ -179,10 +179,10 @@ pub fn preflight_checks() -> Result<()> {
         log::warn!("Disabling XDP bridge");
         lqos_config::disable_xdp_bridge()?;
         log::warn!("XDP bridge disabled in ACTIVE config. Please fix the configuration file.");
+        add_global_warning(WarningLevel::Error, "XDP bridge is disabled due to the presence of a Linux bridge. Please fix your configuration.".to_string());
     };
 
     info!("Sanity checks passed");
-    add_global_warning(WarningLevel::Error, "XDP bridge is disabled due to the presence of a Linux bridge. Please fix your configuration.".to_string());
 
     Ok(())
 }
