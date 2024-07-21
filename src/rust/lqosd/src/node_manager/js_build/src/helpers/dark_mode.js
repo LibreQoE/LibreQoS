@@ -1,6 +1,5 @@
 export function initDayNightMode() {
-    const currentTheme = localStorage.getItem('theme');
-    if (currentTheme === 'dark') {
+    if (isDarkMode()) {
         const darkModeSwitch = document.getElementById('darkModeSwitch');
         darkModeSwitch.checked = true;
         document.body.classList.add('dark-mode');
@@ -35,5 +34,14 @@ export function initDayNightMode() {
 
 export function isDarkMode() {
     const currentTheme = localStorage.getItem('theme');
+    if (currentTheme === null) {
+        if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            localStorage.setItem('theme', 'dark');
+            return true;
+        } else {
+            localStorage.setItem('theme', 'light');
+            return false;
+        }
+    }
     return currentTheme === 'dark';
 }
