@@ -76,7 +76,7 @@ export class Dashboard {
         // Pause Button
         let pauseDiv = document.createElement("span");
         pauseDiv.id = this.divName + "_pause";
-        pauseDiv.innerHTML = "<button type='button' class='btn btn-warning btn-sm'><i class='fa fa-pause'></i> Pause</button>";
+        pauseDiv.innerHTML = "<button type='button' class='btn btn-warning btn-sm ms-2'><i class='fa fa-pause'></i> Pause</button>";
         pauseDiv.onclick = () => {
             this.paused = !this.paused;
             let target = document.getElementById(this.divName + "_pause");
