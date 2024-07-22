@@ -36,8 +36,10 @@ export class BaseCombinedDashlet extends BaseDashlet {
         let dd = document.createElement("span");
         dd.classList.add("dropdown");
 
-        let btn = document.createElement("button");
-        btn.classList.add("btn", "btn-secondary", "dropdown-toggle", "btn-sm");
+        let btn = document.createElement("span");
+        //btn.classList.add("btn", "btn-secondary", "btn-sm");
+        btn.innerHTML = " <i class='fa fa-chevron-down'></i>";
+        //btn.style.height = "15px";
         btn.setAttribute("data-bs-toggle", "dropdown");
         dd.appendChild(btn);
 
