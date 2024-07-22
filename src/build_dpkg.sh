@@ -120,10 +120,7 @@ done
 
 ####################################################
 # Build the Rust programs
-pushd rust > /dev/null
-cargo clean
-cargo build --all --release
-popd > /dev/null
+./build_rust.sh
 
 # Copy newly built Rust files
 # - The Python integration Library
