@@ -63,7 +63,7 @@ export function formatThroughput(throughput, limitInMbps) {
         percent = (throughput / limitBits) * 100;
     }
     let color = lerpGreenToRedViaOrange(100-percent, 100);
-    let blob = "<span style='color: " + color + "'>■</span>";
+    let blob = "<span class='muted' style='color: " + color + "'>■</span>";
     blob += "<span>" + scaleNumber(throughput, 1) + "bps</span>";
     return blob;
 }
@@ -78,7 +78,7 @@ export function formatRtt(rtt) {
         percent = (rtt / limit) * 100;
     }
     let color = lerpGreenToRedViaOrange(100-percent, 100);
-    let blob = "<span style='color: " + color + "'>■</span>";
+    let blob = "<span class='muted' style='color: " + color + "'>■</span>";
     blob += "<span>" + parseFloat(rtt).toFixed(0) + "ms</span>";
     return blob;
 }
@@ -86,13 +86,13 @@ export function formatRtt(rtt) {
 export function formatRetransmit(retransmits) {
     let percent = Math.min(100, retransmits) / 100;
     let color = lerpColor([0, 255, 0], [255, 0, 0], percent);
-    return "<span style='color: " + color + "'>■</span>" + retransmits + "</span>";
+    return "<span class='muted' style='color: " + color + "'>■</span>" + retransmits + "</span>";
 }
 
 export function formatCakeStat(n) {
     let percent = Math.min(100, n) / 100;
     let color = lerpColor([128, 128, 0], [255, 255, 255], percent);
-    let html = "<span class='retransmits' style='color: " + color + "'>";
+    let html = "<span class='muted' class='retransmits' style='color: " + color + "'>";
     html += n;
     html += "</span>";
     return html;
@@ -107,12 +107,12 @@ export function lerpColor(color1, color2, weight) {
 
 export function formatPercent(percent, digits=0) {
     let color = lerpGreenToRedViaOrange(100-Math.min(100,percent), 100);
-    return "<span style='color: " + color + "'>" + percent.toFixed(digits) + "%</span>";
+    return "<span class='muted' style='color: " + color + "'>" + percent.toFixed(digits) + "%</span>";
 }
 
 export function rttNanosAsSpan(rttNanos, precision=0) {
     let rttInMs = Math.min(200, rttNanos / 1000000);
     let color = lerpGreenToRedViaOrange(200 - rttInMs, 200);
-    let html = "<span style='color: " + color + "'>■</span> " + scaleNanos(rttNanos, precision);
+    let html = "<span class='muted' style='color: " + color + "'>■</span> " + scaleNanos(rttNanos, precision);
     return html;
 }

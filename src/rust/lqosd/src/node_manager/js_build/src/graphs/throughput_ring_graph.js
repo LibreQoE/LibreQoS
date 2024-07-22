@@ -24,13 +24,13 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
                         name: "Shaped Traffic",
                         icon: 'circle',
                         itemStyle: {
-                            color: "green"
+                            color: window.graphPalette[0]
                         }
                     }, {
                         name: "Unshaped Traffic",
                         icon: 'circle',
                         itemStyle: {
-                            color: "orange"
+                            color: window.graphPalette[1]
                         }
                     }
                 ],
@@ -58,11 +58,11 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
                     stack: 'shaped',
                     lineStyle: {
                         opacity: 0,
-                        color: 'green',
+                        color: window.graphPalette[0],
                     },
                     symbol: 'none',
                     areaStyle: {
-                        color: 'green'
+                        color: window.graphPalette[0]
                     },
                 },
                 {
@@ -72,11 +72,11 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
                     stack: 'shaped',
                     lineStyle: {
                         opacity: 0,
-                        color: 'green',
+                        color: window.graphPalette[0],
                     },
                     symbol: 'none',
                     areaStyle: {
-                        color: 'green'
+                        color: window.graphPalette[0]
                     }
 
                 },
@@ -85,7 +85,7 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
                     data: [],
                     type: 'line',
                     lineStyle: {
-                        color: 'orange',
+                        color: window.graphPalette[1],
                     },
                     symbol: 'none',
                 },
@@ -94,7 +94,7 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
                     data: [],
                     type: 'line',
                     lineStyle: {
-                        color: 'orange',
+                        color: window.graphPalette[1],
                     },
                     symbol: 'none',
                 },

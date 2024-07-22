@@ -24,13 +24,13 @@ export class QueueStatsTotalGraph extends DashboardGraph {
                         name: "ECN Marks",
                         icon: 'circle',
                         itemStyle: {
-                            color: "green"
+                            color: window.graphPalette[0]
                         }
                     }, {
                         name: "Cake Drops",
                         icon: 'circle',
                         itemStyle: {
-                            color: "orange"
+                            color: window.graphPalette[1]
                         }
                     }
                 ],
@@ -55,28 +55,28 @@ export class QueueStatsTotalGraph extends DashboardGraph {
                     name: 'ECN Marks',
                     data: [],
                     type: 'line',
-                    lineStyle: { color: "green" },
+                    lineStyle: { color: window.graphPalette[0] },
                     symbol: 'none',
                 },
                 {
                     name: 'ECN Marks Up',
                     data: [],
                     type: 'line',
-                    lineStyle: { color: "green" },
+                    lineStyle: { color: window.graphPalette[0] },
                     symbol: 'none',
                 },
                 {
                     name: 'Cake Drops',
                     data: [],
                     type: 'line',
-                    lineStyle: { color: "orange" },
+                    lineStyle: { color: window.graphPalette[1] },
                     symbol: 'none',
                 },
                 {
                     name: 'Cake Drops Up',
                     data: [],
                     type: 'line',
-                    lineStyle: { color: "orange" },
+                    lineStyle: { color: window.graphPalette[1] },
                     symbol: 'none',
                 },
             ],

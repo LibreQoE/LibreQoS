@@ -13,9 +13,6 @@ export class RamPie extends DashboardGraph {
                         { name: 'Free', value: 0 },
                         { name: 'Used', value: 0 }
                     ],
-                    color: [
-                        'green', 'orange'
-                    ],
                     label: {
                         color: '#aaa'
                     }
