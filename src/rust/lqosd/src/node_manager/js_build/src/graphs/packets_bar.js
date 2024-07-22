@@ -31,8 +31,8 @@ export class PacketsPerSecondBar extends DashboardGraph {
     update(down, up) {
         this.chart.hideLoading();
         this.option.series[0].data = [
-            { value: up, itemStyle: { color: 'orange' } },
-            { value: down, itemStyle: { color: 'green' } }
+            { value: up,  },
+            { value: down, }
         ];
         this.chart.setOption(this.option);
     }

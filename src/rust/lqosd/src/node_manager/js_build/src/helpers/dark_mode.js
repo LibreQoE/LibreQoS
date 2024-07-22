@@ -28,6 +28,17 @@ export function initDayNightMode() {
                 document.documentElement.setAttribute('data-bs-theme', "light");
                 localStorage.setItem('theme', 'light');
             }
+            if (window.graphList !== undefined) {
+                window.graphList.forEach((graph) => {
+                    graph.chart.dispose();
+                    if (darkModeSwitch.checked) {
+                        graph.chart = echarts.init(graph.dom, 'dark');
+                    } else {
+                        graph.chart = echarts.init(graph.dom, 'vintage');
+                    }
+                    graph.chart.setOption(graph.option);
+                });
+            }
         });
     });
 }

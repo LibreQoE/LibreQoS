@@ -13,12 +13,6 @@ export class ShapedUnshapedPie extends DashboardGraph {
                         { name: 'Shaped', value: 0 },
                         { name: 'Unshaped', value: 0 }
                     ],
-                    color: [
-                        'green', 'orange'
-                    ],
-                    label: {
-                        color: '#aaa'
-                    }
                 }
             ],
             tooltip: {

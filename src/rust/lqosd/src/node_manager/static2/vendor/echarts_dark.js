@@ -42,8 +42,8 @@
         return;
     }
     var contrastColor = '#B9B8CE';
-    //var backgroundColor = '#100C2A';
-    var backgroundColor = '#000';
+    var backgroundColor = 'rgba(0,0,0,0)';
+    //var backgroundColor = '#000';
     var axisCommon = function () {
         return {
             axisLine: {
@@ -84,7 +84,7 @@
         darkMode: true,
 
         color: colorPalette,
-        backgroundColor: backgroundColor,
+        //backgroundColor: backgroundColor,
         axisPointer: {
             lineStyle: {
                 color: '#817f91'

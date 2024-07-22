@@ -26,15 +26,9 @@ export class FlowCountGraph extends DashboardGraph {
                     {
                         name: "Active/Tracked",
                         icon: 'circle',
-                        itemStyle: {
-                            color: "green"
-                        }
                     }, {
                         name: "Recently Completed",
                         icon: 'circle',
-                        itemStyle: {
-                            color: "orange"
-                        }
                     }
                 ],
                 textStyle: {
@@ -58,18 +52,12 @@ export class FlowCountGraph extends DashboardGraph {
                     name: 'Active/Tracked',
                     data: [],
                     type: 'line',
-                    lineStyle: {
-                        color: 'green',
-                    },
                     symbol: 'none',
                 },
                 {
                     name: 'Recently Completed',
                     data: [],
                     type: 'line',
-                    lineStyle: {
-                        color: 'orange',
-                    },
                     symbol: 'none',
                 },
             ],
