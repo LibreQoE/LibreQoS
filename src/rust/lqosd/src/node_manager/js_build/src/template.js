@@ -35,7 +35,7 @@ function titleAndLts() {
         if (data.action !== "GoodToGo") {
             let element = document.getElementById("lnkStats");
             element.innerHTML = "<i class=\"fa fa-line-chart nav-icon\"></i> Statistics - Free Trial";
-            element.classList.add("bg-success");
+            element.classList.add("text-success");
             element.href = "https://stats.libreqos.io/trial1/" + encodeURI(data.node_id);
         } else {
             let element = document.getElementById("lnkStats");

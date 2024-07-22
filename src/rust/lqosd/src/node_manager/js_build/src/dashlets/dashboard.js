@@ -40,7 +40,7 @@ export class Dashboard {
     #editButton() {
         let editDiv = document.createElement("span");
         editDiv.id = this.divName + "_edit";
-        editDiv.innerHTML = "<button type='button' class='btn btn-primary btn-sm' id='btnEditDash'><i class='fa fa-pencil'></i> Edit</button>";
+        editDiv.innerHTML = "<button type='button' class='btn btn-secondary btn-sm' id='btnEditDash'><i class='fa fa-pencil'></i> Edit</button>";
         editDiv.onclick = () => {
             if (this.editingDashboard) {
                 let e = document.getElementById("btnEditDash");
@@ -76,14 +76,14 @@ export class Dashboard {
         // Pause Button
         let pauseDiv = document.createElement("span");
         pauseDiv.id = this.divName + "_pause";
-        pauseDiv.innerHTML = "<button type='button' class='btn btn-warning btn-sm ms-2'><i class='fa fa-pause'></i> Pause</button>";
+        pauseDiv.innerHTML = "<button type='button' class='btn btn-secondary btn-sm ms-2'><i class='fa fa-pause'></i> Pause</button>";
         pauseDiv.onclick = () => {
             this.paused = !this.paused;
             let target = document.getElementById(this.divName + "_pause");
             if (this.paused) {
-                target.innerHTML = "<button type='button' class='btn btn-success btn-sm'><i class='fa fa-play'></i> Resume</button>";
+                target.innerHTML = "<button type='button' class='btn btn-secondary btn-sm'><i class='fa fa-play'></i> Resume</button>";
             } else {
-                target.innerHTML = "<button type='button' class='btn btn-warning btn-sm'><i class='fa fa-pause'></i> Pause</button>";
+                target.innerHTML = "<button type='button' class='btn btn-secondary btn-sm'><i class='fa fa-pause'></i> Pause</button>";
             }
         };
 
