@@ -20,6 +20,7 @@ import {RttHisto3dDash} from "./rtt_histo3d_dash";
 import {QueueStatsTotalDash} from "./queue_stats_total";
 import {TreeCapacityDash} from "./tree_capacity_dash";
 import {CircuitCapacityDash} from "./circuit_capacity_dash";
+import {TopTreeSankey} from "./top_tree_sankey";
 
 export const DashletMenu = [
     { name: "Throughput Bits/Second", tag: "throughputBps", size: 3 },
@@ -43,6 +44,7 @@ export const DashletMenu = [
     { name: "Total Cake Stats", tag: "totalCakeStats", size: 3 },
     { name: "Circuits At Capacity", tag: "circuitCapacity", size: 6 },
     { name: "Tree Nodes At Capacity", tag: "treeCapacity", size: 6 },
+    { name: "Network Tree Sankey", tag: "networkTreeSankey", size: 6 },
     { name: "Round-Trip Time Histogram 3D", tag: "rttHistogram3D", size: 12 },
 ];
 
@@ -71,6 +73,7 @@ export function widgetFactory(widgetName, count) {
         case "totalCakeStats"   : widget = new QueueStatsTotalDash(count); break;
         case "circuitCapacity"  : widget = new CircuitCapacityDash(count); break;
         case "treeCapacity"     : widget = new TreeCapacityDash(count); break;
+        case "networkTreeSankey": widget = new TopTreeSankey(count); break;
         default: {
             console.log("I don't know how to construct a widget of type [" + widgetName + "]");
             return null;

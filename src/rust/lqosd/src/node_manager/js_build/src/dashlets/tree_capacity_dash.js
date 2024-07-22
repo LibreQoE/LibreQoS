@@ -73,7 +73,7 @@ export class TreeCapacityDash extends BaseDashlet {
                 link.classList.add("tiny", "redactable");
                 linkCol.appendChild(link);
 
-                row.appendChild(linkCol());
+                row.appendChild(linkCol);
                 row.appendChild(simpleRowHtml(formatPercent(down*100)));
                 row.appendChild(simpleRowHtml(formatPercent(up*100)));
                 row.appendChild(simpleRowHtml(formatRtt(node.rtt)));
