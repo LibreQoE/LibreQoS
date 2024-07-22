@@ -122,11 +122,13 @@ export function topNTableRow(r) {
     row.classList.add("small");
 
     if (r.circuit_id !== "") {
+        let td = document.createElement("td");
         let link = document.createElement("a");
         link.href = "circuit.html?id=" + encodeURI(r.circuit_id);
         link.innerText = r.ip_address;
         redactCell(link);
-        row.append(link);
+        td.append(link);
+        row.append(td);
     } else {
         let ip = document.createElement("td");
         ip.innerText = r.ip_address;
@@ -135,7 +137,6 @@ export function topNTableRow(r) {
     }
 
     let shaped = document.createElement("td");
-    shaped.classList.add("tiny");
     shaped.innerText = r.plan.down + " / " + r.plan.up;
     row.append(shaped);
 

@@ -65,7 +65,7 @@ export class TopTreeSummary extends BaseDashlet {
                 let link = document.createElement("a");
                 link.href = "/tree.html?id=" + r[0];
                 link.innerText = r[1].name;
-                link.classList.add("tiny", "redactable");
+                link.classList.add("redactable");
                 nameCol.appendChild(link);
 
                 row.appendChild(nameCol);

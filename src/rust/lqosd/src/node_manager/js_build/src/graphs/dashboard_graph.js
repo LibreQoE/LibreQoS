@@ -4,6 +4,7 @@ export class DashboardGraph {
     constructor(id) {
         this.id = id;
         this.dom = document.getElementById(id);
+        this.dom.classList.add("muted");
         if (isDarkMode()) {
             this.chart = echarts.init(this.dom, 'dark');
         } else {

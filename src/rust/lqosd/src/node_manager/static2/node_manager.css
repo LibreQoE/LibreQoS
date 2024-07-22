@@ -86,7 +86,10 @@ body {
 .redactable {
     filter: var(--redact);
 }
-.small { font-size: 8pt; }
+.small {
+    font-size: 9pt;
+    text-overflow: ellipsis;
+}
 
 /* Funky tricks for the tree view */
 .overlayThroughputWrapper {
@@ -132,4 +135,16 @@ body {
 }
 .fa-centerline {
     vertical-align: middle;
+}
+.dark-mode .muted {
+    filter: contrast(50%);
+}
+table thead {
+    color: var(--bs-secondary-color);
+}
+table tr td {
+    color: var(--bs-tertiary-color);
+}
+table tr td a {
+    color: var(--bs-secondary-color);
 }

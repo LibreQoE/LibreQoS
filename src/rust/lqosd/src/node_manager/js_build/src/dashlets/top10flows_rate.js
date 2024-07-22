@@ -77,9 +77,6 @@ export class Top10FlowsRate extends BaseDashlet {
 
                 let proto = document.createElement("td");
                 proto.innerText = r.analysis;
-                if (r.analysis.length > 6) {
-                    proto.classList.add("tiny");
-                }
                 row.appendChild(proto);
 
                 let dl = document.createElement("td");
