@@ -27,17 +27,34 @@ from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping,
 	run_shell_commands_as_sudo, generated_pn_download_mbps, generated_pn_upload_mbps, queues_available_override, \
 	on_a_stick, get_tree_weights, get_weights
 
+R2Q = 10
+#MAX_R2Q = 200_000
+MAX_R2Q = 60_000 # See https://lartc.vger.kernel.narkive.com/NKaH1ZNG/htb-quantum-of-class-100001-is-small-consider-r2q-change
+MIN_QUANTUM = 1522
+
+def calculateR2q(maxRateInMbps):
+	# So we've learned that r2q defaults to 10, and is used to calculate quantum. Quantum is rateInBytes/r2q by
+	# default. This default gives errors at high rates, and tc clamps the quantum to 200000. Setting a high quantum
+	# directly gives no errors. So we want to calculate r2q to default to 10, but not exceed 200000 for the highest
+	# specified rate (which will be the available bandwidth rate).
+	maxRateInBytesPerSecond = maxRateInMbps * 125000
+	r2q = 10
+	quantum = maxRateInBytesPerSecond / r2q
+	while quantum > MAX_R2Q:
+		r2q += 1
+		quantum = maxRateInBytesPerSecond / r2q
+	global R2Q
+	R2Q = r2q
+
 def quantum(rateInMbps):
 	# Attempt to calculate an appropriate quantum for an HTB queue, given
 	# that `mq` does not appear to carry a valid `r2q` value to individual
 	# root nodes.
-	R2Q = 10
 	rateInBytesPerSecond = rateInMbps * 125000
-	quantum = int(rateInBytesPerSecond / R2Q)
+	quantum = max(MIN_QUANTUM, int(rateInBytesPerSecond / R2Q))
+	#print("R2Q=" + str(R2Q) + ", quantum: " + str(quantum))
 	quantrumString = " quantum " + str(quantum)
-	#print("Calculated quantum for " + str(rateInMbps) + " Mbps: " + str(quantum))
 	return quantrumString
-	#return " quantum 1522"
 
 # Automatically account for TCP overhead of plans. For example a 100Mbps plan needs to be set to 109Mbps for the user to ever see that result on a speed test
 # Does not apply to nodes of any sort, just endpoint devices
@@ -793,6 +810,8 @@ def refreshShapers():
 		logging.info("# MQ Setup for " + thisInterface)
 		command = 'qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq'
 		linuxTCcommands.append(command)
+		maxBandwidth = max(upstream_bandwidth_capacity_upload_mbps(), upstream_bandwidth_capacity_download_mbps())
+		calculateR2q(maxBandwidth)
 		for queue in range(queuesAvailable):
 			command = 'qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2'
 			linuxTCcommands.append(command)
