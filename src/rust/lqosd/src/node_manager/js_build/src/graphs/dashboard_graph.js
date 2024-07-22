@@ -6,7 +6,6 @@ export class DashboardGraph {
         this.dom = document.getElementById(id);
         this.dom.classList.add("muted");
         if (isDarkMode()) {
-            this.chart = echarts.init(this.dom, 'dark');
             window.graphPalette = [
                 '#4992ff',
                 '#7cffb2',
@@ -18,8 +17,8 @@ export class DashboardGraph {
                 '#8d48e3',
                 '#dd79ff'
             ];
+            this.chart = echarts.init(this.dom, 'dark');
         } else {
-            this.chart = echarts.init(this.dom, 'vintage');
             window.graphPalette = [
                 '#d87c7c',
                 '#919e8b',
@@ -32,6 +31,7 @@ export class DashboardGraph {
                 '#724e58',
                 '#4b565b'
             ];
+            this.chart = echarts.init(this.dom, 'vintage');
         }
         this.chart.showLoading();
         this.option = {};

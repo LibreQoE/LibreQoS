@@ -24,21 +24,6 @@ export function initDayNightMode() {
                 document.documentElement.setAttribute('data-bs-theme', "dark");
                 localStorage.setItem('theme', 'dark');
                 window.graphPalette = [
-                    '#4992ff',
-                    '#7cffb2',
-                    '#fddd60',
-                    '#ff6e76',
-                    '#58d9f9',
-                    '#05c091',
-                    '#ff8a45',
-                    '#8d48e3',
-                    '#dd79ff'
-                ];
-            } else {
-                document.body.classList.remove('dark-mode');
-                document.documentElement.setAttribute('data-bs-theme', "light");
-                localStorage.setItem('theme', 'light');
-                window.graphPalette = [
                     '#d87c7c',
                     '#919e8b',
                     '#d7ab82',
@@ -49,6 +34,21 @@ export function initDayNightMode() {
                     '#cc7e63',
                     '#724e58',
                     '#4b565b'
+                ];
+            } else {
+                document.body.classList.remove('dark-mode');
+                document.documentElement.setAttribute('data-bs-theme', "light");
+                localStorage.setItem('theme', 'light');
+                window.graphPalette = [
+                    '#4992ff',
+                    '#7cffb2',
+                    '#fddd60',
+                    '#ff6e76',
+                    '#58d9f9',
+                    '#05c091',
+                    '#ff8a45',
+                    '#8d48e3',
+                    '#dd79ff'
                 ];
             }
             if (window.graphList !== undefined) {
