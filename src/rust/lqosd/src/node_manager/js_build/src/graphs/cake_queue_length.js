@@ -27,7 +27,7 @@ export class CakeQueueLength extends DashboardGraph {
                         name: "Queue Length",
                         icon: 'circle',
                         itemStyle: {
-                            color: "orange"
+                            color: window.graphPalette[0]
                         }
                     }
                 ]
@@ -43,20 +43,24 @@ export class CakeQueueLength extends DashboardGraph {
                 {
                     name: 'Queue Length',
                     data: [],
-                    type: 'line',
+                    type: 'scatter',
                     lineStyle: {
-                        color: 'orange',
+                        color: window.graphPalette[0]
                     },
-                    symbol: 'none',
+                    symbol: 'circle',
+                    symbolSize: 2,
+                    itemStyle: window.graphPalette[0]
                 },
                 {
                     name: 'Queue Length Up',
                     data: [],
-                    type: 'line',
+                    type: 'scatter',
                     lineStyle: {
-                        color: 'orange',
+                        color: window.graphPalette[0]
                     },
-                    symbol: 'none',
+                    symbol: 'circle',
+                    symbolSize: 2,
+                    itemStyle: window.graphPalette[0]
                 },
             ],
             tooltip: {

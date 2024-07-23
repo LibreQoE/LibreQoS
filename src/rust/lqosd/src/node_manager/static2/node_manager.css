@@ -90,6 +90,12 @@ body {
     font-size: 9pt;
     text-overflow: ellipsis;
 }
+h5 {
+    color: var(--bs-secondary-text-emphasis)
+}
+.table>:not(caption)>*>* {
+    color: var(--bs-secondary-color);
+}
 
 /* Funky tricks for the tree view */
 .overlayThroughputWrapper {

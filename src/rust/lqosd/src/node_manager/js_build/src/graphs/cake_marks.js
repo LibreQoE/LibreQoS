@@ -27,25 +27,25 @@ export class CakeMarks extends DashboardGraph {
                         name: "Bulk",
                         icon: 'circle',
                         itemStyle: {
-                            color: "gray"
+                            color: window.graphPalette[0]
                         }
                     }, {
                         name: "Best Effort",
                         icon: 'circle',
                         itemStyle: {
-                            color: "green"
+                            color: window.graphPalette[1]
                         }
                     }, {
                         name: "RT Video",
                         icon: 'circle',
                         itemStyle: {
-                            color: "orange"
+                            color: window.graphPalette[2]
                         }
                     }, {
                         name: "Voice",
                         icon: 'circle',
                         itemStyle: {
-                            color: "yellow"
+                            color: window.graphPalette[3]
                         }
                     }
                 ]
@@ -69,6 +69,7 @@ export class CakeMarks extends DashboardGraph {
                     type: 'scatter',
                     symbol: 'circle',
                     symbolSize: 2,
+                    itemStyle: { color: window.graphPalette[0] }
                 },
                 {
                     name: 'Best Effort',
@@ -76,6 +77,7 @@ export class CakeMarks extends DashboardGraph {
                     type: 'scatter',
                     symbol: 'circle',
                     symbolSize: 2,
+                    itemStyle: { color: window.graphPalette[1] }
                 },
                 {
                     name: 'RT Video',
@@ -83,6 +85,7 @@ export class CakeMarks extends DashboardGraph {
                     type: 'scatter',
                     symbol: 'circle',
                     symbolSize: 2,
+                    itemStyle: { color: window.graphPalette[2] }
                 },
                 {
                     name: 'Voice',
@@ -90,6 +93,7 @@ export class CakeMarks extends DashboardGraph {
                     type: 'scatter',
                     symbol: 'circle',
                     symbolSize: 2,
+                    itemStyle: { color: window.graphPalette[3] }
                 },
                 {
                     name: 'Bulk Up',
@@ -97,6 +101,7 @@ export class CakeMarks extends DashboardGraph {
                     type: 'scatter',
                     symbol: 'circle',
                     symbolSize: 2,
+                    itemStyle: { color: window.graphPalette[0] },
                 },
                 {
                     name: 'Best Effort Up',
@@ -104,6 +109,7 @@ export class CakeMarks extends DashboardGraph {
                     type: 'scatter',
                     symbol: 'circle',
                     symbolSize: 2,
+                    itemStyle: { color: window.graphPalette[1] }
                 },
                 {
                     name: 'RT Video Up',
@@ -111,6 +117,7 @@ export class CakeMarks extends DashboardGraph {
                     type: 'scatter',
                     symbol: 'circle',
                     symbolSize: 2,
+                    itemStyle: { color: window.graphPalette[2] }
                 },
                 {
                     name: 'RT Voice Up',
@@ -118,6 +125,7 @@ export class CakeMarks extends DashboardGraph {
                     type: 'scatter',
                     symbol: 'circle',
                     symbolSize: 2,
+                    itemStyle: { color: window.graphPalette[3] }
                 },
             ],
             tooltip: {

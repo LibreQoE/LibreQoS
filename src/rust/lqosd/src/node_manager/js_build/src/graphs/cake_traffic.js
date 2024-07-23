@@ -27,25 +27,25 @@ export class CakeTraffic extends DashboardGraph {
                         name: "Bulk",
                         icon: 'circle',
                         itemStyle: {
-                            color: "gray"
+                            color: window.graphPalette[0]
                         }
                     }, {
                         name: "Best Effort",
                         icon: 'circle',
                         itemStyle: {
-                            color: "green"
+                            color: window.graphPalette[1]
                         }
                     }, {
                         name: "RT Video",
                         icon: 'circle',
                         itemStyle: {
-                            color: "orange"
+                            color: window.graphPalette[2]
                         }
                     }, {
                         name: "Voice",
                         icon: 'circle',
                         itemStyle: {
-                            color: "yellow"
+                            color: window.graphPalette[3]
                         }
                     }
                 ]
@@ -66,74 +66,90 @@ export class CakeTraffic extends DashboardGraph {
                 {
                     name: 'Bulk',
                     data: [],
-                    type: 'line',
+                    type: 'scatter',
                     lineStyle: {
-                        color: 'gray',
+                        color: window.graphPalette[0],
                     },
-                    symbol: 'none',
+                    symbol: 'circle',
+                    symbolSize: 2,
+                    itemStyle: { color: window.graphPalette[0] }
                 },
                 {
                     name: 'Best Effort',
                     data: [],
-                    type: 'line',
+                    type: 'scatter',
                     lineStyle: {
-                        color: 'green',
+                        color: window.graphPalette[1]
                     },
-                    symbol: 'none',
+                    symbol: 'circle',
+                    symbolSize: 2,
+                    itemStyle: { color: window.graphPalette[1] }
                 },
                 {
                     name: 'RT Video',
                     data: [],
-                    type: 'line',
+                    type: 'scatter',
                     lineStyle: {
-                        color: 'orange',
+                        color: window.graphPalette[2]
                     },
-                    symbol: 'none',
+                    symbol: 'circle',
+                    symbolSize: 2,
+                    itemStyle: { color: window.graphPalette[2] }
                 },
                 {
                     name: 'Voice',
                     data: [],
-                    type: 'line',
+                    type: 'scatter',
                     lineStyle: {
-                        color: 'yellow',
+                        color: window.graphPalette[3]
                     },
-                    symbol: 'none',
+                    symbol: 'circle',
+                    symbolSize: 2,
+                    itemStyle: { color: window.graphPalette[3] }
                 },
                 {
                     name: 'Bulk Up',
                     data: [],
-                    type: 'line',
+                    type: 'scatter',
                     lineStyle: {
-                        color: 'gray',
+                        color: window.graphPalette[0],
                     },
-                    symbol: 'none',
+                    symbol: 'circle',
+                    symbolSize: 2,
+                    itemStyle: { color: window.graphPalette[0] }
                 },
                 {
                     name: 'Best Effort Up',
                     data: [],
-                    type: 'line',
+                    type: 'scatter',
                     lineStyle: {
-                        color: 'green',
+                        color: window.graphPalette[1]
                     },
-                    symbol: 'none',
+                    symbol: 'circle',
+                    symbolSize: 2,
+                    itemStyle: { color: window.graphPalette[1] }
                 },
                 {
                     name: 'RT Video Up',
                     data: [],
-                    type: 'line',
+                    type: 'scatter',
                     lineStyle: {
-                        color: 'orange',
+                        color: window.graphPalette[2]
                     },
-                    symbol: 'none',
+                    symbol: 'circle',
+                    symbolSize: 2,
+                    itemStyle: { color: window.graphPalette[2] }
                 },
                 {
                     name: 'RT Voice Up',
                     data: [],
-                    type: 'line',
+                    type: 'scatter',
                     lineStyle: {
-                        color: 'yellow',
+                        color: window.graphPalette[3]
                     },
-                    symbol: 'none',
+                    symbol: 'circle',
+                    symbolSize: 2,
+                    itemStyle: { color: window.graphPalette[3] }
                 },
             ],
             tooltip: {

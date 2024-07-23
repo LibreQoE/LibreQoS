@@ -29,13 +29,13 @@ export class CircuitRetransmitGraph extends DashboardGraph {
                         name: "Download",
                         icon: 'circle',
                         itemStyle: {
-                            color: "green"
+                            color: window.graphPalette[0]
                         }
                     }, {
                         name: "Upload",
                         icon: 'circle',
                         itemStyle: {
-                            color: "orange"
+                            color: window.graphPalette[1]
                         }
                     }
                 ],
@@ -61,7 +61,7 @@ export class CircuitRetransmitGraph extends DashboardGraph {
                     data: [],
                     type: 'line',
                     lineStyle: {
-                        color: 'green',
+                        color: window.graphPalette[0]
                     },
                     symbol: 'none',
                 },
@@ -70,7 +70,7 @@ export class CircuitRetransmitGraph extends DashboardGraph {
                     data: [],
                     type: 'line',
                     lineStyle: {
-                        color: 'green',
+                        color: window.graphPalette[1]
                     },
                     symbol: 'none',
                 },
