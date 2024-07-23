@@ -37,7 +37,7 @@ ip_network_table = {  workspace = true }
 ip_network = { workspace = true }
 zerocopy = { workspace = true }
 fxhash = "0.2.1"
-axum = { version = "0.7.5", features = ["ws"] }
+axum = { version = "0.7.5", features = ["ws", "http2"] }
 axum-extra = {  version = "0.9.3", features = ["cookie", "cookie-private"] }
 tower-http = { version = "0.5.2", features = ["fs"] }
 strum = {  version = "0.26.3", features = ["derive"] }
