@@ -68,19 +68,15 @@ def shellReturn(command):
 	return returnableString
 
 def checkIfFirstRunSinceBoot():
-	if os.path.isfile("lastRun.txt"):
+	systemRunningSince = datetime.fromtimestamp(psutil.boot_time())
+	if !os.path.isfile("lastRun.txt") or systemRunningSince < lastRun:
 		with open("lastRun.txt", 'r') as file:
 			lastRun = datetime.strptime(file.read(), "%d-%b-%Y (%H:%M:%S.%f)")
-		systemRunningSince = datetime.fromtimestamp(psutil.boot_time())
-		if systemRunningSince > lastRun:
 			print("First time run since system boot.")
 			return True
-		else:
-			print("Not first time run since system boot.")
-			return False
 	else:
-		print("First time run since system boot.")
-		return True
+		print("Not first time run since system boot.")
+		return False
 	
 def clearPriorSettings(interfaceA, interfaceB):
 	if enable_actual_shell_commands():
