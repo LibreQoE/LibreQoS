@@ -15,12 +15,23 @@ struct AsnEncoded {
 
 #[allow(dead_code)]
 #[derive(Deserialize, Debug)]
-struct GeoIpLocation {
-    network: IpAddr,
-    prefix: u8,
-    latitude: f64,
-    longitude: f64,
-    city_and_country: String,
+pub struct GeoIpLocation {
+    pub network: IpAddr,
+    pub prefix: u8,
+    pub latitude: f64,
+    pub longitude: f64,
+    pub city: String,
+    pub country: String,
+    pub country_iso_code: String,
+}
+
+impl GeoIpLocation {
+    pub fn city_and_country(&self) -> String {
+        format!("{}, {}", self.city, self.country)
+            .trim_end_matches(',')
+            .trim()
+            .to_string()
+    }
 
 }
 
@@ -36,7 +47,7 @@ pub struct GeoTable {
 }
 
 impl GeoTable {
-    const FILENAME: &'static str = "geo.bin";
+    const FILENAME: &'static str = "geo2.bin";
 
     fn file_path() -> std::path::PathBuf {
         Path::new(&lqos_config::load_config().unwrap().lqos_directory)
@@ -46,7 +57,7 @@ impl GeoTable {
     fn download() -> anyhow::Result<()> {
         log::info!("Downloading ASN-IP Table");
         let file_path = Self::file_path();
-        let url = "https://stats.libreqos.io/geo.bin";
+        let url = "https://stats.libreqos.io/geo2.bin";
         let response = reqwest::blocking::get(url)?;
         let content = response.bytes()?;
         let bytes = &content[0..];
@@ -130,8 +141,8 @@ impl GeoTable {
             owners = matched.1.organization.clone();
         }
         if let Some(matched) = self.geo_trie.longest_match(ip) {
-            log::debug!("Matched Geo: {:?}", matched.1.city_and_country);
-            country = matched.1.city_and_country.clone();
+            log::debug!("Matched Geo: {:?}", matched.1.city_and_country());
+            country = matched.1.city_and_country();
         }
 
         (owners, country)
@@ -145,7 +156,7 @@ impl GeoTable {
         };
 
         if let Some(matched) = self.geo_trie.longest_match(ip) {
-            log::debug!("Matched Geo: {:?}", matched.1.city_and_country);
+            log::debug!("Matched Geo: {:?}", matched.1.city_and_country());
             return (matched.1.latitude, matched.1.longitude);
         }
 
