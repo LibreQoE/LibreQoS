@@ -60,6 +60,7 @@ export function initDayNightMode() {
                         graph.chart = echarts.init(graph.dom, 'vintage');
                     }
                     graph.chart.setOption(graph.option);
+                    graph.onThemeChange();
                 });
             }
         });

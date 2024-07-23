@@ -71,6 +71,16 @@ export class CakeQueueLength extends DashboardGraph {
         this.option && this.chart.setOption(this.option);
     }
 
+    onThemeChange() {
+        super.onThemeChange();
+        this.option.legend.data[0].itemStyle.color = window.graphPalette[0];
+        this.option.series[0].lineStyle.color = window.graphPalette[0];
+        this.option.series[0].itemStyle = window.graphPalette[0];
+        this.option.series[1].lineStyle.color = window.graphPalette[0];
+        this.option.series[1].itemStyle = window.graphPalette
+        this.chart.setOption(this.option);
+    }
+
     update(msg) {
         this.chart.hideLoading();
 

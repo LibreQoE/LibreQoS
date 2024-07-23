@@ -136,6 +136,23 @@ export class CakeDrops extends DashboardGraph {
         this.option && this.chart.setOption(this.option);
     }
 
+    onThemeChange() {
+        super.onThemeChange();
+        this.option.legend.data[0].itemStyle.color = window.graphPalette[0];
+        this.option.legend.data[1].itemStyle.color = window.graphPalette[1];
+        this.option.legend.data[2].itemStyle.color = window.graphPalette[2];
+        this.option.legend.data[3].itemStyle.color = window.graphPalette[3];
+        this.option.series[0].itemStyle.color = window.graphPalette[0];
+        this.option.series[1].itemStyle.color = window.graphPalette[1];
+        this.option.series[2].itemStyle.color = window.graphPalette[2];
+        this.option.series[3].itemStyle.color = window.graphPalette[3];
+        this.option.series[4].itemStyle.color = window.graphPalette[0];
+        this.option.series[5].itemStyle.color = window.graphPalette[1];
+        this.option.series[6].itemStyle.color = window.graphPalette[2];
+        this.option.series[7].itemStyle.color = window.graphPalette[3];
+        this.chart.setOption(this.option);
+    }
+
     update(msg) {
         this.chart.hideLoading();
 

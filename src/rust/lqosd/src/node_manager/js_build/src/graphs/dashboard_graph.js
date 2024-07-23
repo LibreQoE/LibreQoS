@@ -43,4 +43,8 @@ export class DashboardGraph {
             window.graphList.push(this);
         }
     }
+
+    onThemeChange() {
+        // Override this if you have to
+    }
 }

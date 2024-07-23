@@ -82,6 +82,15 @@ export class CircuitTotalGraph extends DashboardGraph {
         this.option && this.chart.setOption(this.option);
     }
 
+    onThemeChange() {
+        super.onThemeChange();
+        this.option.legend.data[0].itemStyle.color = window.graphPalette[0];
+        this.option.legend.data[1].itemStyle.color = window.graphPalette[1];
+        this.option.series[0].lineStyle.color = window.graphPalette[0];
+        this.option.series[1].lineStyle.color = window.graphPalette[1];
+        this.chart.setOption(this.option);
+    }
+
     update(download, upload) {
         this.chart.hideLoading();
         this.ringbuffer.push(download, upload);

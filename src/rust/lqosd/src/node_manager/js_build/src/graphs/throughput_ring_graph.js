@@ -106,6 +106,20 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
         this.option && this.chart.setOption(this.option);
     }
 
+    onThemeChange() {
+        super.onThemeChange();
+        this.option.legend.data[0].itemStyle.color = window.graphPalette[0];
+        this.option.legend.data[1].itemStyle.color = window.graphPalette[1];
+        this.option.series[0].lineStyle.color = window.graphPalette[0];
+        this.option.series[0].areaStyle.color = window.graphPalette[0];
+        this.option.series[1].lineStyle.color = window.graphPalette[0];
+        this.option.series[1].areaStyle.color = window.graphPalette[0];
+        this.option.series[2].lineStyle.color = window.graphPalette[1];
+        this.option.series[3].lineStyle.color = window.graphPalette[1];
+
+        this.chart.setOption(this.option);
+    }
+
     update(shaped, unshaped) {
         this.chart.hideLoading();
         this.ringbuffer.push(shaped, unshaped);
