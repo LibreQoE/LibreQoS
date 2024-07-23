@@ -1,20 +1,20 @@
 use lqos_config::load_config;
-use tokio::sync::Mutex;
-use once_cell::sync::Lazy;
 use super::CakeStats;
 
-static CAKE_TRACKER: Lazy<Mutex<CakeTracker>> = Lazy::new(|| Mutex::new(CakeTracker::new()));
+//static CAKE_TRACKER: Lazy<Mutex<CakeTracker>> = Lazy::new(|| Mutex::new(CakeTracker::new()));
 
-pub(crate) async fn update_cake_stats() -> Option<(Vec<CakeStats>, Vec<CakeStats>)> {
-    let mut tracker = CAKE_TRACKER.lock().await;
-    tracker.update().await
-}
+// pub(crate) async fn update_cake_stats() -> Option<(Vec<CakeStats>, Vec<CakeStats>)> {
+//     let mut tracker = CAKE_TRACKER.lock().await;
+//     tracker.update().await
+// }
 
+#[allow(dead_code)]
 pub(crate) struct CakeTracker {
     prev: Option<(Vec<CakeStats>, Vec<CakeStats>)>,
     current: Option<(Vec<CakeStats>, Vec<CakeStats>)>,
 }
 
+#[allow(dead_code)]
 impl CakeTracker {
     pub(crate) fn new() -> Self {
         Self {

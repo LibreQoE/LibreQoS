@@ -3,6 +3,7 @@
 use std::sync::Mutex;
 use serde::Serialize;
 
+#[allow(dead_code)]
 #[derive(Serialize, Copy, Clone)]
 pub enum WarningLevel {
     Info,
