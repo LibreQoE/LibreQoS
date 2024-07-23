@@ -62,8 +62,8 @@ export class Top10EndpointsByCountry extends BaseDashlet {
 
                 let flag = document.createElement("td");
                 if (r[3] !== null && r[3] !== "") {
-                    let flag = r[3].toLowerCase();
-                    flag.innerHTML = "<img alt='Flag: " + flag + "' src='flags/" + flag + ".svg' style='width: 20px; height: 20px;'>";
+                    let flagName = r[3].toLowerCase();
+                    flag.innerHTML = "<img alt='Flag: " + flagName + "' src='flags/" + flagName + ".svg' style='width: 20px; height: 20px;'>";
                 } else {
                     flag.innerText = "️";
                 }
