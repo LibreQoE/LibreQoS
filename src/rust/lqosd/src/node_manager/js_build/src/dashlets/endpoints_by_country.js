@@ -43,6 +43,7 @@ export class Top10EndpointsByCountry extends BaseDashlet {
 
             let th = document.createElement("thead");
             th.classList.add("small");
+            th.appendChild(theading(""));
             th.appendChild(theading("Country"));
             th.appendChild(theading("DL ⬇️"));
             th.appendChild(theading("UL ⬆️"));
@@ -58,6 +59,15 @@ export class Top10EndpointsByCountry extends BaseDashlet {
                 }
                 let row = document.createElement("tr");
                 row.classList.add("small");
+
+                let flag = document.createElement("td");
+                if (r[3] !== null && r[3] !== "") {
+                    let flag = r[3].toLowerCase();
+                    flag.innerHTML = "<img alt='Flag: " + flag + "' src='flags/" + flag + ".svg' style='width: 20px; height: 20px;'>";
+                } else {
+                    flag.innerText = "️";
+                }
+                row.appendChild(flag);
 
                 let country = document.createElement("td");
                 country.innerText = r[0];

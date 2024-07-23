@@ -46,7 +46,8 @@ fn recent_flows_by_circuit(circuit_id: &str) -> Vec<(FlowbeeKeyTransit, FlowbeeL
                                 return None;
                             }
                             device_name = device.device_name.clone();
-                            (asn_name, asn_country) = get_asn_name_and_country(key.remote_ip.as_ip());
+                            let geo = get_asn_name_and_country(key.remote_ip.as_ip());
+                            (asn_name, asn_country) = (geo.name, geo.country);
                         } else if let Some(device) = device_reader.trie.longest_match(remote_ip) {
                             // The reverse way around
                             local_ip_str = key.remote_ip.to_string();
@@ -56,7 +57,8 @@ fn recent_flows_by_circuit(circuit_id: &str) -> Vec<(FlowbeeKeyTransit, FlowbeeL
                                 return None;
                             }
                             device_name = device.device_name.clone();
-                            (asn_name, asn_country) = get_asn_name_and_country(key.local_ip.as_ip());
+                            let geo = get_asn_name_and_country(key.local_ip.as_ip());
+                            (asn_name, asn_country) = (geo.name, geo.country);
                         } else {
                             return None;
                         }

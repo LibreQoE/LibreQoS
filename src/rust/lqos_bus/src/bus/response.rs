@@ -133,7 +133,7 @@ pub enum BusResponse {
   FlowsByIp(Vec<FlowbeeSummaryData>),
 
   /// Current endpoints by country
-  CurrentEndpointsByCountry(Vec<(String, DownUpOrder<u64>, [f32; 2])>),
+  CurrentEndpointsByCountry(Vec<(String, DownUpOrder<u64>, [f32; 2], String)>),
 
   /// Current Lat/Lon of endpoints
   CurrentLatLon(Vec<(f64, f64, String, u64, f32)>),

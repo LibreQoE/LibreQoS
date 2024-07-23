@@ -570,7 +570,7 @@ pub fn dump_active_flows() -> BusResponse {
     let result: Vec<lqos_bus::FlowbeeSummaryData> = lock
         .iter()
         .map(|(key, row)| {
-            let (remote_asn_name, remote_asn_country) =
+            let geo =
                 get_asn_name_and_country(key.remote_ip.as_ip());
 
             let (circuit_id, circuit_name) = (String::new(), String::new());
@@ -589,8 +589,8 @@ pub fn dump_active_flows() -> BusResponse {
                 tos: row.0.tos,
                 flags: row.0.flags,
                 remote_asn: row.1.asn_id.0,
-                remote_asn_name,
-                remote_asn_country,
+                remote_asn_name: geo.name,
+                remote_asn_country: geo.country,
                 analysis: row.1.protocol_analysis.to_string(),
                 last_seen: row.0.last_seen,
                 start_time: row.0.start_time,
@@ -663,7 +663,7 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
         .iter()
         .take(n as usize)
         .map(|(ip, flow)| {
-            let (remote_asn_name, remote_asn_country) =
+            let geo =
                 get_asn_name_and_country(ip.remote_ip.as_ip());
 
             let (circuit_id, circuit_name) = sd.get_circuit_id_and_name_from_ip(&ip.local_ip).unwrap_or((String::new(), String::new()));
@@ -682,8 +682,8 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
                 tos: flow.0.tos,
                 flags: flow.0.flags,
                 remote_asn: flow.1.asn_id.0,
-                remote_asn_name,
-                remote_asn_country,
+                remote_asn_name: geo.name,
+                remote_asn_country: geo.country,
                 analysis: flow.1.protocol_analysis.to_string(),
                 last_seen: flow.0.last_seen,
                 start_time: flow.0.start_time,
@@ -707,7 +707,7 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
             .iter()
             .filter(|(key, _)| key.local_ip == ip)
             .map(|(key, row)| {
-                let (remote_asn_name, remote_asn_country) =
+                let geo =
                     get_asn_name_and_country(key.remote_ip.as_ip());
 
                 let (circuit_id, circuit_name) = sd.get_circuit_id_and_name_from_ip(&key.local_ip).unwrap_or((String::new(), String::new()));
@@ -726,8 +726,8 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
                     tos: row.0.tos,
                     flags: row.0.flags,
                     remote_asn: row.1.asn_id.0,
-                    remote_asn_name,
-                    remote_asn_country,
+                    remote_asn_name: geo.name,
+                    remote_asn_country: geo.country,
                     analysis: row.1.protocol_analysis.to_string(),
                     last_seen: row.0.last_seen,
                     start_time: row.0.start_time,

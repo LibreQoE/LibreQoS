@@ -49,8 +49,8 @@ impl TimeBuffer {
             .map(|v| {
                 let (key, data, _analysis) = &v.data;
                 let (lat, lon) = get_asn_lat_lon(key.remote_ip.as_ip());
-                let (_name, country) = get_asn_name_and_country(key.remote_ip.as_ip());
-                (lat, lon, country, data.bytes_sent.down, data.rtt[0].as_nanos() as f32)
+                let geo = get_asn_name_and_country(key.remote_ip.as_ip());
+                (lat, lon, geo.country, data.bytes_sent.down, data.rtt[0].as_nanos() as f32)
             })
             .filter(|(lat, lon, ..)| *lat != 0.0 && *lon != 0.0)
             .collect::<Vec<(f64, f64, String, u64, f32)>>();
@@ -64,20 +64,20 @@ impl TimeBuffer {
         my_buffer
     }
 
-    pub fn country_summary(&self) -> Vec<(String, DownUpOrder<u64>, [f32; 2])> {
+    pub fn country_summary(&self) -> Vec<(String, DownUpOrder<u64>, [f32; 2], String)> {
         let buffer = self.buffer.lock().unwrap();
         let mut my_buffer = buffer
             .iter()
             .map(|v| {
                 let (key, data, _analysis) = &v.data;
-                let (_name, country) = get_asn_name_and_country(key.remote_ip.as_ip());
+                let geo = get_asn_name_and_country(key.remote_ip.as_ip());
                 let rtt = [
                     data.rtt[0].as_nanos() as f32,
                     data.rtt[1].as_nanos() as f32,
                 ];
-                (country, data.bytes_sent, rtt)
+                (geo.country, data.bytes_sent, rtt, geo.flag)
             })
-            .collect::<Vec<(String, DownUpOrder<u64>, [f32; 2])>>();
+            .collect::<Vec<(String, DownUpOrder<u64>, [f32; 2], String)>>();
 
         // Sort by country
         my_buffer.sort_by(|a, b| a.0.cmp(&b.0));
@@ -85,10 +85,11 @@ impl TimeBuffer {
         // Iterate through the buffer and summarize by country. We want to accumulate
         // all the RTTs into a list, so we can take a MEDIAN.
         let mut last_country = String::new();
+        let mut last_flag = String::new();
         let mut country_summary = Vec::new();
         let mut rtt_buffer = [Vec::new(), Vec::new()];
         let mut total_bytes = DownUpOrder::zeroed();
-        for (country, bytes, rtt) in my_buffer.iter() {
+        for (country, bytes, rtt, flag) in my_buffer.iter() {
             if last_country != *country {
 
                 // Store progress (but not the first one)
@@ -100,6 +101,7 @@ impl TimeBuffer {
                             Self::median_f32(&rtt_buffer[0]),
                             Self::median_f32(&rtt_buffer[1]),
                         ],
+                        last_flag.clone(),
                     )
                     );
                 }
@@ -123,6 +125,7 @@ impl TimeBuffer {
 
             // Next, please
             last_country = country.clone();
+            last_flag = flag.clone();
         }
 
         // Sort by bytes downloaded descending
