@@ -52,10 +52,10 @@ impl TopWidget for TopFlows {
                 flow.local_ip.to_string(),
                 flow.remote_ip.to_string(),
                 flow.analysis.to_string(),
-                scale_bits(flow.bytes_sent[0]),
-                scale_bits(flow.bytes_sent[1]),
-                format!("{}/{}", flow.tcp_retransmits[0], flow.tcp_retransmits[1]),
-                format!("{:.1}/{:.1}", flow.rtt_nanos[0] as f64 / 1000000., flow.tcp_retransmits[1] as f64 / 1000000.),
+                scale_bits(flow.bytes_sent.down),
+                scale_bits(flow.bytes_sent.up),
+                format!("{}/{}", flow.tcp_retransmits.down, flow.tcp_retransmits.up),
+                format!("{:.1}/{:.1}", flow.rtt_nanos.down as f64 / 1000000., flow.tcp_retransmits.up as f64 / 1000000.),
                 flow.remote_asn_name.to_string(),
             ]);
         }

@@ -1,6 +1,5 @@
-use super::{table_helper::TableHelper, TopWidget};
-use lqos_bus::{BusResponse, FlowbeeSummaryData};
-use lqos_utils::packet_scale::scale_bits;
+use super::TopWidget;
+use lqos_bus::BusResponse;
 use ratatui::prelude::*;
 
 pub struct LatencyHistogram {

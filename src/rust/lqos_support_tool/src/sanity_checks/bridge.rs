@@ -90,7 +90,6 @@ pub fn check_interface_status(results: &mut Vec<SanityCheck>) {
 #[derive(Debug)]
 struct IpLinkInterface {
     pub name: String,
-    pub index: u32,
     pub operational_state: String,
     pub link_type: String,
     pub master: Option<String>,
@@ -106,14 +105,12 @@ fn get_interfaces_from_ip_link() -> anyhow::Result<Vec<IpLinkInterface>> {
     let mut interfaces = Vec::new();
     for interface in output_json.as_array().unwrap() {
         let name = interface["ifname"].as_str().unwrap().to_string();
-        let index = interface["ifindex"].as_u64().unwrap() as u32;
         let operstate = interface["operstate"].as_str().unwrap().to_string();
         let link_type = interface["link_type"].as_str().unwrap().to_string();
         let master = interface["master"].as_str().map(|s| s.to_string());
 
         interfaces.push(IpLinkInterface {
             name,
-            index,
             operational_state: operstate,
             link_type,
             master,

@@ -66,6 +66,11 @@ impl WebUsers {
     Ok(filename)
   }
 
+  /// Is the list of users empty?
+  pub fn is_empty(&self) -> bool {
+    self.users.is_empty()
+  }
+
   fn save_to_disk(&self) -> Result<(), AuthenticationError> {
     let path = Self::path()?;
     let new_contents = toml_edit::ser::to_string(&self);

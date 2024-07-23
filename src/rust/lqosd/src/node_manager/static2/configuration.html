@@ -1,0 +1,612 @@
+<div class="row">
+    <div class="col-12">
+        <div class="row mb-2">
+            <div class="col-2">
+                <h5><i class="fa fa-users"></i> Configuration</h5>
+            </div>
+            <div class="col-10">
+                <a href="#" class="btn btn-sm btn-primary" id="btnSaveIspConfig"><i class="fa fa-save"></i> Save
+                    Configuration</a>
+                <button type="button" class="btn btn-sm btn-primary" id="btnSaveNetDevices"><i
+                        class="fa fa-save"></i> Save network.json and ShapedDevices.csv
+                </button>
+            </div>
+        </div>
+
+        <!-- Ported -->
+
+
+        <div class="d-flex align-items-start">
+            <div class="nav flex-column nav-pills me-3" id="v-pills-tab" role="tablist" aria-orientation="vertical">
+                <button class="nav-link active" id="v-pills-home-tab" data-bs-toggle="pill"
+                        data-bs-target="#v-pills-home" type="button" role="tab" aria-controls="v-pills-home"
+                        aria-selected="true"><i class="fa fa-server"></i> General
+                </button>
+                <button class="nav-link" id="v-pills-anon-tab" data-bs-toggle="pill" data-bs-target="#v-pills-anon"
+                        type="button" role="tab" aria-controls="v-pills-profile" aria-selected="false"><i
+                        class="fa fa-user-secret"></i> Anonymous Usage Stats
+                </button>
+                <button class="nav-link" id="v-pills-tuning-tab" data-bs-toggle="pill" data-bs-target="#v-pills-tuning"
+                        type="button" role="tab" aria-controls="v-pills-server" aria-selected="false"><i
+                        class="fa fa-warning"></i> Tuning
+                </button>
+                <button class="nav-link" id="v-pills-bridge-tab" data-bs-toggle="pill" data-bs-target="#v-pills-bridge"
+                        type="button" role="tab" aria-controls="v-pills-settings" aria-selected="false"><i
+                        class="fa fa-chain"></i> Bridge/On-a-Stick
+                </button>
+                <button class="nav-link" id="v-pills-queues-tab" data-bs-toggle="pill" data-bs-target="#v-pills-queues"
+                        type="button" role="tab" aria-controls="v-pills-settings" aria-selected="false"><i
+                        class="fa fa-car"></i> Queues
+                </button>
+                <button class="nav-link" id="v-pills-lts-tab" data-bs-toggle="pill" data-bs-target="#v-pills-lts"
+                        type="button" role="tab" aria-controls="v-pills-settings" aria-selected="false"><i
+                        class="fa fa-line-chart"></i> Long-Term Stats
+                </button>
+                <button class="nav-link" id="v-pills-iprange-tab" data-bs-toggle="pill"
+                        data-bs-target="#v-pills-iprange" type="button" role="tab" aria-controls="v-pills-settings"
+                        aria-selected="false"><i class="fa fa-address-card"></i> IP Ranges
+                </button>
+                <button class="nav-link" id="v-pills-flows-tab" data-bs-toggle="pill" data-bs-target="#v-pills-flows"
+                        type="button" role="tab" aria-controls="v-pills-settings" aria-selected="false"><i
+                        class="fa fa-arrow-circle-down"></i> Flow Tracking
+                </button>
+                <button class="nav-link" id="v-pills-icommon-tab" data-bs-toggle="pill"
+                        data-bs-target="#v-pills-icommon" type="button" role="tab" aria-controls="v-pills-settings"
+                        aria-selected="false"><i class="fa fa-link"></i> Integration - Common
+                </button>
+                <button class="nav-link" id="v-pills-spylnx-tab" data-bs-toggle="pill" data-bs-target="#v-pills-spylnx"
+                        type="button" role="tab" aria-controls="v-pills-settings" aria-selected="false"><i
+                        class="fa fa-link"></i> Spylnx
+                </button>
+                <button class="nav-link" id="v-pills-uisp-tab" data-bs-toggle="pill" data-bs-target="#v-pills-uisp"
+                        type="button" role="tab" aria-controls="v-pills-settings" aria-selected="false"><i
+                        class="fa fa-link"></i> UISP
+                </button>
+                <button class="nav-link" id="v-pills-powercode-tab" data-bs-toggle="pill"
+                        data-bs-target="#v-pills-powercode" type="button" role="tab" aria-controls="v-pills-settings"
+                        aria-selected="false"><i class="fa fa-link"></i> Powercode
+                </button>
+                <button class="nav-link" id="v-pills-sonar-tab" data-bs-toggle="pill" data-bs-target="#v-pills-sonar"
+                        type="button" role="tab" aria-controls="v-pills-settings" aria-selected="false"><i
+                        class="fa fa-link"></i> Sonar
+                </button>
+                <button class="nav-link" id="v-pills-influxdb-tab" data-bs-toggle="pill"
+                        data-bs-target="#v-pills-influxdb" type="button" role="tab" aria-controls="v-pills-settings"
+                        aria-selected="false"><i class="fa fa-link"></i> InfluxDB
+                </button>
+                <button class="nav-link" id="v-pills-netjson-tab" data-bs-toggle="pill"
+                        data-bs-target="#v-pills-netjson" type="button" role="tab" aria-controls="v-pills-settings"
+                        aria-selected="false"><i class="fa fa-map"></i> Network Layout
+                </button>
+                <button class="nav-link" id="v-pills-shapeddevs-tab" data-bs-toggle="pill"
+                        data-bs-target="#v-pills-shapeddevs" type="button" role="tab" aria-controls="v-pills-settings"
+                        aria-selected="false"><i class="fa fa-table"></i> Shaped Devices
+                </button>
+                <button class="nav-link" id="v-pills-users-tab" data-bs-toggle="pill" data-bs-target="#v-pills-users"
+                        type="button" role="tab" aria-controls="v-pills-settings" aria-selected="false"><i
+                        class="fa fa-users"></i> LibreQoS Users
+                </button>
+            </div>
+            <div class="tab-content" id="v-pills-tabContent">
+                <!-- General tab -->
+                <div class="tab-pane fade show active" id="v-pills-home" role="tabpanel"
+                     aria-labelledby="v-pills-home-tab">
+                    <h2><i class="fa fa-server"></i> General Settings</h2>
+                    <table class="table">
+                        <tr>
+                            <td><label for="bindVersion">Version: </label></td>
+                            <td><input type="text" id="bindVersion" style="background: #ddd"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindPath">Path to LibreQoS: </label></td>
+                            <td><input type="text" id="bindPath" style="width: 500px"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindNodeId">Node ID: </label></td>
+                            <td><input type="text" id="bindNodeId" style="width: 500px"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindNodeName">Node Name: </label></td>
+                            <td><input type="text" id="bindNodeName" style="width: 500px"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindPacketCaptureTime">Packet Capture Time: </label></td>
+                            <td><input type="number" min="1" max="300" id="bindPacketCaptureTime"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindQueueCheckPeriodMs">Queue Check Period (ms): </label></td>
+                            <td><input type="number" min="10" max="5000" id="bindQueueCheckPeriodMs"/></td>
+                        </tr>
+                    </table>
+                </div>
+
+                <!-- Anonymous Usage tab -->
+                <div class="tab-pane fade" id="v-pills-anon" role="tabpanel" aria-labelledby="v-pills-anon-tab">
+                    <h2><i class="fa fa-user-secret"></i>Anonymous Usage Statistics Settings</h2>
+
+                    <table class="table">
+                        <tr>
+                            <td><label for="bindSendAnonymous">Send Anonymous Stats: </label></td>
+                            <td><input type="checkbox" id="bindSendAnonymous"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindAnonymousServer">Anonymous Stats Server: </label></td>
+                            <td><input type="text" id="bindAnonymousServer" style="width: 500px"/></td>
+                        </tr>
+                    </table>
+                </div>
+
+                <!-- Tuning tab -->
+                <div class="tab-pane fade" id="v-pills-tuning" role="tabpanel" aria-labelledby="v-pills-tuning-tab">
+                    <h2><i class="fa fa-warning"></i> Tuning Settings</h2>
+
+                    <table class="table">
+                        <tr>
+                            <td><label for="bindStopIrqBalance">Stop IRQ Balancer: </label></td>
+                            <td><input type="checkbox" id="bindStopIrqBalance"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindNetdevBudgetUs">Netdev Budget (usecs): </label></td>
+                            <td><input type="number" id="bindNetdevBudgetUs"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindNetdevBudgetPackets">Netdev Budget (packets): </label></td>
+                            <td><input type="number" id="bindNetdevBudgetPackets"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindRxUs">Rx Period (usecs): </label></td>
+                            <td><input type="number" id="bindRxUs"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindTxUs">Tx Period (usecs): </label></td>
+                            <td><input type="number" id="bindTxUs"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindDisableRxVlan">Disable RxVlan Offload: </label></td>
+                            <td><input type="checkbox" id="bindDisableRxVlan"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindDisableTxVlan">Disable TxVlan Offload: </label></td>
+                            <td><input type="checkbox" id="bindDisableTxVlan"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindDisableOffload">Offloads to Disable: </label></td>
+                            <td><input type="text" id="bindDisableOffload" style="width: 500px"/></td>
+                        </tr>
+                    </table>
+                </div>
+
+                <!-- Bridge/On-a-Stick tab -->
+                <div class="tab-pane fade" id="v-pills-bridge" role="tabpanel" aria-labelledby="v-pills-bridge-tab">
+                    <h2><i class="fa fa-chain"></i> Bridge Settings</h2>
+
+                    <h3>Connection Mode: </h3>
+                    <input type="radio" name="bridgeMode" value="bridge" id="radioBridge" onclick="window.setBridgeMode();">
+                    <label for="radioBridge">Bridge Mode</label>
+                    <br/>
+                    <input type="radio" name="bridgeMode" value="onatick" id="radioOnAStick" onclick="window.setStickMode();">
+                    <label for="radioOnAStick">Single-Interface Mode</label>
+                    <br/>
+                    <hr/>
+
+                    <div id="bridgeMode">
+                        <h3>Bridge Mode</h3>
+                        <table class="table">
+                            <tr>
+                                <td><label for="bindUseXdpBridge">Use XDP Enhanced Bridge: </label></td>
+                                <td><input type="checkbox" id="bindUseXdpBridge"/></td>
+                            </tr>
+                            <tr>
+                                <td><label for="bindBridgeToInternet">Network Interface Facing the Internet: </label>
+                                </td>
+                                <td><select id="bindBridgeToInternet"></select></td>
+                            </tr>
+                            <tr>
+                                <td><label for="bindBridgeToNetwork">Network Interface Facing Your Network: </label>
+                                </td>
+                                <td><select id="bindBridgeToNetwork"></select></td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <div id="OnAStickMode">
+                        <h3>Single-Interface ("On a Stick") Mode</h3>
+                        <table class="table">
+                            <tr>
+                                <td><label for="bindSingleInterfaceNic">Network Interface: </label></td>
+                                <td><select id="bindSingleInterfaceNic"></select></td>
+                            </tr>
+                            <tr>
+                                <td><label for="bindSingleInterfaceInternetVlan">Internet VLAN: </label></td>
+                                <td><input type="number" min="1" max="65535" id="bindSingleInterfaceInternetVlan"/></td>
+                            </tr>
+                            <tr>
+                                <td><label for="bindSingleInterfaceNetworklan">Network VLAN: </label></td>
+                                <td><input type="number" min="1" max="65535" id="bindSingleInterfaceNetworklan"/></td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Queues Tab -->
+                <div class="tab-pane fade" id="v-pills-queues" role="tabpanel" aria-labelledby="v-pills-queues-tab">
+                    <h2><i class="fa car"></i> Queue Settings</h2>
+
+                    <table class="table">
+                        <tr>
+                            <td><label for="bindSqm">SQM Mode: </label></td>
+                            <td>
+                                <select id="bindSqm">
+                                    <option value="cake diffserv4">Cake with Diffserv4</option>
+                                    <option value="cake diffserv4 ack-filter">Cake with Diffserv4 + Duplicate ACK
+                                        Filtering
+                                    </option>
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindMonitorMode">Monitor Only Mode (No Shaping): </label></td>
+                            <td><input type="checkbox" id="bindMonitorMode"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindUplinkMbps">Uplink Bandwidth (Mbps): </label></td>
+                            <td><input type="number" id="bindUplinkMbps"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindDownlinkMbps">Downlink Bandwidth (Mbps): </label></td>
+                            <td><input type="number" id="bindDownlinkMbps"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindGeneratedDownlinkMbps">Generated PN Download Bandwidth (Mbps): </label>
+                            </td>
+                            <td><input type="number" id="bindGeneratedDownlinkMbps"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindGeneratedUplinkMbps">Generated PN Upload Bandwidth (Mbps): </label></td>
+                            <td><input type="number" id="bindGeneratedUplinkMbps"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindDryRun">Dry Run (Don't Make Queues): </label></td>
+                            <td><input type="checkbox" id="bindDryRun"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindSudo">Use Sudo: </label></td>
+                            <td><input type="checkbox" id="bindSudo"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindBinpack">Use Binpacking to equalize CPU usage: </label></td>
+                            <td><input type="checkbox" id="bindBinpack"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindQueuesAvailableOverride">Queues Available Override: </label></td>
+                            <td><input type="number" id="bindQueuesAvailableOverride"/></td>
+                        </tr>
+                    </table>
+                </div>
+
+                <!-- Long-Term Stats Tab -->
+                <div class="tab-pane fade" id="v-pills-lts" role="tabpanel" aria-labelledby="v-pills-lts-tab">
+                    <h2><i class="fa fa-line-chart"></i> Long-Term Stats Settings</h2>
+                    <table class="table">
+                        <tr>
+                            <td><label for="bindEnableLTS">Send Statistics to Long-Term Stats: </label></td>
+                            <td><input type="checkbox" id="bindEnableLTS"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindLtsCollation">Collation Period (seconds): </label></td>
+                            <td><input type="number" id="bindLtsCollation"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindLtsLicense">License Key: </label></td>
+                            <td><input type="text" id="bindLtsLicense" style="width: 500px"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindLtsUispInterval">UISP Reporting Interval (Seconds): </label></td>
+                            <td><input type="number" id="bindLtsUispInterval"/></td>
+                        </tr>
+                    </table>
+                </div>
+
+                <!-- IP Ranges Stats Tab -->
+                <div class="tab-pane fade" id="v-pills-iprange" role="tabpanel" aria-labelledby="v-pills-iprange-tab">
+                    <h2><i class="fa fa-address-card"></i> IP Ranges Settings</h2>
+                    <table>
+                        <tr>
+                            <td><label for="bindIgnoreRanges">IP Subnets to Ignore</label></td>
+                            <td>
+                                <em>Enter one IP range per Line</em><br/>
+                                <textarea id="bindIgnoreRanges" rows="10" cols="40"></textarea>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindAllowRanges">IP Ranges to Allow</label></td>
+                            <td>
+                                <em>Enter one IP range per Line</em><br/>
+                                <textarea id="bindAllowRanges" rows="10" cols="40"></textarea>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+
+                <!-- Flows Tab -->
+                <div class="tab-pane fade" id="v-pills-flows" role="tabpanel" aria-labelledby="v-pills-flow-tab">
+                    <h2><i class="fa fa-arrow-circle-down"></i> Flows Settings</h2>
+                    <table class="table">
+                        <tr>
+                            <td><label for="bindFlowsTimeout">Flow Timeout (Seconds): </label></td>
+                            <td><input type="number" id="bindFlowsTimeout"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindEnableNetflow">Enable Netflow Collection: </label></td>
+                            <td><input type="checkbox" id="bindEnableNetflow"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindFlowsPort">Netflow Port Number: </label></td>
+                            <td><input type="number" id="bindFlowsPort"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindFlowsTarget">Send Netflow to IP: </label></td>
+                            <td><input type="text" id="bindFlowsTarget"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindFlowsVersion">Netflow Version: </label></td>
+                            <td>
+                                <select id="bindFlowsVersion">
+                                    <option value="5">Netflow v5 - fast, but IPv4 only</option>
+                                    <option value="9">Netflow v6/IPFIX</option>
+                                </select>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+
+                <!-- Integration Common Tab -->
+                <div class="tab-pane fade" id="v-pills-icommon" role="tabpanel" aria-labelledby="v-pills-icommon-tab">
+                    <h2><i class="fa fa-link"></i> Common Integration Settings</h2>
+                    <table class="table">
+                        <tr>
+                            <td><label for="bindCircuitNameAsAddress">Use Circuit Name as Address: </label></td>
+                            <td><input type="checkbox" id="bindCircuitNameAsAddress"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindOverwriteNetJson">Always Overwrite Network.json: </label></td>
+                            <td><input type="checkbox" id="bindOverwriteNetJson"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindQueueRefreshInterval">Queue Refresh Interval (Minutes): </label></td>
+                            <td><input type="number" id="bindQueueRefreshInterval"/></td>
+                        </tr>
+                    </table>
+                </div>
+
+                <!-- Spylnx Tab -->
+                <div class="tab-pane fade" id="v-pills-spylnx" role="tabpanel" aria-labelledby="v-pills-spylnx-tab">
+                    <h2><i class="fa fa-link"></i> Spylnx Integration Settings</h2>
+                    <table class="table">
+                        <tr>
+                            <td><label for="bindSplynxEnable">Enable Spylnx Integration: </label></td>
+                            <td><input type="checkbox" id="bindSplynxEnable"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindSplynxApiKey">API Key: </label></td>
+                            <td><input type="text" id="bindSplynxApiKey"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindSplynxApiSecret">API Secret: </label></td>
+                            <td><input type="text" id="bindSplynxApiSecret"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindSplynxApiUrl">API URL: </label></td>
+                            <td><input type="text" id="bindSplynxApiUrl"/></td>
+                        </tr>
+                    </table>
+                </div>
+
+                <!-- UISP Tab -->
+                <div class="tab-pane fade" id="v-pills-uisp" role="tabpanel" aria-labelledby="v-pills-uisp-tab">
+                    <h2><i class="fa fa-link"></i> UISP Integration Settings</h2>
+                    <table class="table">
+                        <tr>
+                            <td><label for="bindUispEnable">Enable UISP Integration: </label></td>
+                            <td><input type="checkbox" id="bindUispEnable"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindUispToken">UISP Token: </label></td>
+                            <td><input type="text" id="bindUispToken"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindUispUrl">UISP URL: </label></td>
+                            <td><input type="text" id="bindUispUrl"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindUispSite">Root Site Name (for 'full' integrations): </label></td>
+                            <td><input type="text" id="bindUispSite"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindUispStrategy">Generation Strategy: </label></td>
+                            <td>
+                                <select id="bindUispStrategy">
+                                    <option value="flat">Flat: no topology</option>
+                                    <option value="full">Full: construct a full hierarchy</option>
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindUispSuspended">Suspended Customer Strategy: </label></td>
+                            <td>
+                                <select id="bindUispSuspended">
+                                    <option value="none">Do Nothing</option>
+                                    <option value="slow">Apply a Slow Speed</option>
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindUispAirmaxCapacity">Airmax Capacity Multiplier: </label></td>
+                            <td><input type="text" id="bindUispAirmaxCapacity"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindUispLtuCapacity">LTU Capacity Multiplier: </label></td>
+                            <td><input type="text" id="bindUispLtuCapacity"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindUispIpv6Mikrotik">Query Mikrotiks for IPv6 Information: </label></td>
+                            <td><input type="checkbox" id="bindUispIpv6Mikrotik"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindUispOverheadFactor">Bandwidth Overhead Factor: </label></td>
+                            <td><input type="text" id="bindUispOverheadFactor"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindUispCommitMultiplier">Commit Bandwidth Multiplier: </label></td>
+                            <td><input type="text" id="bindUispCommitMultiplier"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindUispExcludeSites">Exclude Sites: </label></td>
+                            <td><input type="text" id="bindUispExcludeSites"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindUispExceptionCpes">Exception CPEs: </label></td>
+                            <td><input type="text" id="bindUispExceptionCpes"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindUispUsePtmpAsParent">Use PTMP As Parent: </label></td>
+                            <td><input type="checkbox" id="bindUispUsePtmpAsParent"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindUispIgnoreCalculatedCapacity">Ignore Generated Capacity: </label></td>
+                            <td><input type="checkbox" id="bindUispIgnoreCalculatedCapacity"/></td>
+                        </tr>
+                    </table>
+                </div>
+
+                <!-- Powercode Tab -->
+                <div class="tab-pane fade" id="v-pills-powercode" role="tabpanel"
+                     aria-labelledby="v-pills-powercode-tab">
+                    <h2><i class="fa fa-link"></i> Powercode Integration Settings</h2>
+                    <table class="table">
+                        <tr>
+                            <td><label for="bindPowercodeEnable">Enable Powercode Integration: </label></td>
+                            <td><input type="checkbox" id="bindPowercodeEnable"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindPowercodeKey">Powercode API Key: </label></td>
+                            <td><input type="text" id="bindPowercodeKey"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindPowercodeUrl">Powercode API URL: </label></td>
+                            <td><input type="text" id="bindPowercodeUrl"/></td>
+                        </tr>
+                    </table>
+                </div>
+
+                <!-- Sonar Tab -->
+                <div class="tab-pane fade" id="v-pills-sonar" role="tabpanel" aria-labelledby="v-pills-sonar-tab">
+                    <h2><i class="fa fa-link"></i> Sonar Integration Settings</h2>
+                    <table class="table">
+                        <tr>
+                            <td><label for="bindSonarEnable">Enable Sonar Integration: </label></td>
+                            <td><input type="checkbox" id="bindSonarEnable"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindSonarApiKey">Sonar API Key: </label></td>
+                            <td><input type="text" id="bindSonarApiKey"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindSonarApiUrl">Sonar API URL: </label></td>
+                            <td><input type="text" id="bindSonarApiUrl"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindSonarSnmp">Sonar SNMP Community: </label></td>
+                            <td><input type="text" id="bindSonarSnmp"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindSonarAirmax">Sonar Airmax Model IDs: </label></td>
+                            <td><input type="text" id="bindSonarAirmax"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindSonarLtu">Sonar LTU Model IDs: </label></td>
+                            <td><input type="text" id="bindSonarLtu"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindSonarActive">Sonar Active Status IDs: </label></td>
+                            <td><input type="text" id="bindSonarActive"/></td>
+                        </tr>
+                    </table>
+                </div>
+
+                <!-- InfluxDB Tab -->
+                <div class="tab-pane fade" id="v-pills-influxdb" role="tabpanel" aria-labelledby="v-pills-influxdb-tab">
+                    <h2><i class="fa fa-link"></i> InfluxDB Integration Settings</h2>
+                    <table class="table">
+                        <tr>
+                            <td><label for="bindInfluxEnable">Enable InfluxDB Integration: </label></td>
+                            <td><input type="checkbox" id="bindInfluxEnable"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindInfluxUrl">InfluxDB URL: </label></td>
+                            <td><input type="text" id="bindInfluxUrl"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindInfluxOrg">InfluxDB Organization: </label></td>
+                            <td><input type="text" id="bindInfluxOrg"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindInfluxBucket">InfluxDB Bucket: </label></td>
+                            <td><input type="text" id="bindInfluxBucket"/></td>
+                        </tr>
+                        <tr>
+                            <td><label for="bindInfluxToken">InfluxDB Token: </label></td>
+                            <td><input type="text" id="bindInfluxToken"/></td>
+                        </tr>
+                    </table>
+                </div>
+
+                <!-- Network Layout/JSON Tab -->
+                <div class="tab-pane fade" id="v-pills-netjson" role="tabpanel" aria-labelledby="v-pills-netjson-tab">
+                    <h2><i class="fa fa-map"></i> Network.Json - Network Layout</h2>
+
+                    <h3>Network Adjustment Options</h3>
+                    <div>
+                        <button type="button" class="btn btn-danger" id="btnFlattenNetwork"><i
+                                class="fa fa-warning"></i> Flatten Network
+                        </button>
+                    </div>
+                    <div style="margin-top: 8px;">
+                        <strong>Add Node to Root</strong>
+                        <input type="text" value="" placeholder="New Node Name" id="njsNewNodeName"/> <br/>
+                        <input type="number" min="1" max="100000" placeholder="Max Download" id="njsNewNodeDown"/> <br/>
+                        <input type="number" min="1" max="100000" placeholder="Max Upload" id="njsNewNodeUp"/> <br/>
+                        <button type="button" class="btn btn-primary" id="btnAddNetworkNode"><i
+                                class="fa fa-plus"></i> Add Node to Root
+                        </button>
+                    </div>
+
+                    <hr/>
+                    <div id="netjson"></div>
+                </div>
+
+                <!-- ShapedDevices.csv Tab -->
+                <div class="tab-pane fade" id="v-pills-shapeddevs" role="tabpanel"
+                     aria-labelledby="v-pills-shapeddevs-tab">
+                    <h2><i class="fa table"></i> Shaped Devices</h2>
+                    <p>All Shaped Devices. Note that if you have an integration enabled, this will be overwritten
+                        periodically.</p>
+                    <button type="button" class="btn btn-sm btn-success" onclick="window.newSdRow()"><i class="fa fa-plus"></i>
+                        Add Row
+                    </button>
+
+                    <div id="shapedDeviceTable"></div>
+                </div>
+
+                <div class="tab-pane fade" id="v-pills-users" role="tabpanel" aria-labelledby="v-pills-users-tab">
+                    <h2><i class="fa fa-users"></i> LibreQos Web Interface Users</h2>
+                    <div id="userManager"></div>
+                </div>
+            </div>
+        </div>
+        <!-- End Ported -->
+
+    </div>
+</div>
+
+<script src="configuration.js"></script>

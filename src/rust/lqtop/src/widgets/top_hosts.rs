@@ -50,10 +50,10 @@ impl TopWidget for TopHosts {
         for host in self.stats.iter() {
             t.add_row([
                 host.ip_address.to_string(),
-                scale_bits(host.bits_per_second.0),
-                scale_bits(host.bits_per_second.1),
-                scale_packets(host.packets_per_second.0),
-                scale_packets(host.packets_per_second.1),
+                scale_bits(host.bits_per_second.down),
+                scale_bits(host.bits_per_second.up),
+                scale_packets(host.packets_per_second.down),
+                scale_packets(host.packets_per_second.up),
                 format!("{:.2} ms", host.median_tcp_rtt),
                 host.tc_handle.to_string(),
             ]);

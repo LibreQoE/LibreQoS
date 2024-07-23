@@ -1,5 +1,7 @@
 mod serializable;
 mod shaped_device;
+
+use std::net::IpAddr;
 use crate::SUPPORTED_CUSTOMERS;
 use csv::{QuoteStyle, ReaderBuilder, WriterBuilder};
 use log::error;
@@ -7,6 +9,7 @@ use serializable::SerializableShapedDevice;
 pub use shaped_device::ShapedDevice;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
+use lqos_utils::XdpIpAddress;
 
 /// Provides handling of the `ShapedDevices.csv` file that maps
 /// circuits to traffic shaping.
@@ -165,6 +168,21 @@ impl ConfigShapedDevices {
     }
     //println!("Would write to file: {}", csv);
     Ok(())
+  }
+
+  /// Helper function to search for an XdpIpAddress and return a circuit id and name
+  /// if they exist.
+  pub fn get_circuit_id_and_name_from_ip(&self, ip: &XdpIpAddress) -> Option<(String, String)> {
+    let lookup = match ip.as_ip() {
+      IpAddr::V4(ip) => ip.to_ipv6_mapped(),
+      IpAddr::V6(ip) => ip,
+    };
+    if let Some(c) = self.trie.longest_match(lookup) {
+      let device = &self.devices[*c.1];
+      return Some((device.circuit_id.clone(), device.circuit_name.clone()));
+    }
+
+    None
   }
 }
 

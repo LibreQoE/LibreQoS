@@ -5,8 +5,8 @@ edition = "2021"
 license = "GPL-2.0-only"
 
 [dependencies]
-clap = { version = "4", features = ["derive"] }
-tokio = { version = "1", features = [ "full" ] }
-anyhow = "1"
+clap = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
 lqos_bus = { path = "../lqos_bus" }
 lqos_utils = { path = "../lqos_utils" }

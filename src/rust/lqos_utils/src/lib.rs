@@ -19,6 +19,8 @@ mod string_table_enum;
 /// Utilities dealing with Unix Timestamps
 pub mod unix_time;
 mod xdp_ip_address;
+/// Helpers for units of measurement
+pub mod units;
 
 /// XDP compatible IP Address
 pub use xdp_ip_address::XdpIpAddress;

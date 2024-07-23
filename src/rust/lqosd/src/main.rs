@@ -28,11 +28,12 @@ use signal_hook::{
   consts::{SIGHUP, SIGINT, SIGTERM},
   iterator::Signals,
 };
-use stats::{BUS_REQUESTS, TIME_TO_POLL_HOSTS, HIGH_WATERMARK_DOWN, HIGH_WATERMARK_UP, FLOWS_TRACKED};
+use stats::{BUS_REQUESTS, TIME_TO_POLL_HOSTS, HIGH_WATERMARK, FLOWS_TRACKED};
 use throughput_tracker::flow_data::get_rtt_events_per_second;
 use tokio::join;
 mod stats;
 mod preflight_checks;
+mod node_manager;
 
 // Use JemAllocator only on supported platforms
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -64,7 +65,6 @@ async fn main() -> Result<()> {
 
   // Load config
   let config = lqos_config::load_config()?;
-
   
   // Apply Tunings
   tuning::tune_lqosd_from_config_file()?;
@@ -137,6 +137,13 @@ async fn main() -> Result<()> {
   // Create the socket server
   let server = UnixSocketServer::new().expect("Unable to spawn server");
 
+  // Webserver starting point
+  tokio::spawn(async {
+    if let Err(e) = node_manager::spawn_webserver().await {
+      log::error!("Node Manager Failed: {e:?}");
+    }
+  });
+
   // Main bus listen loop
   server.listen(handle_bus_requests).await?;
   Ok(())
@@ -177,7 +184,7 @@ fn handle_bus_requests(
       BusRequest::ClearIpFlow => clear_ip_flows(),
       BusRequest::ListIpFlow => list_mapped_ips(),
       BusRequest::XdpPping => throughput_tracker::xdp_pping_compat(),
-      BusRequest::RttHistogram => throughput_tracker::rtt_histogram(),
+      BusRequest::RttHistogram => throughput_tracker::rtt_histogram::<20>(),
       BusRequest::HostCounts => throughput_tracker::host_counts(),
       BusRequest::AllUnknownIps => throughput_tracker::all_unknown_ips(),
       BusRequest::ReloadLibreQoS => program_control::reload_libre_qos(),
@@ -217,10 +224,7 @@ fn handle_bus_requests(
         BusResponse::LqosdStats { 
           bus_requests: BUS_REQUESTS.load(std::sync::atomic::Ordering::Relaxed),
           time_to_poll_hosts: TIME_TO_POLL_HOSTS.load(std::sync::atomic::Ordering::Relaxed),
-          high_watermark: (
-            HIGH_WATERMARK_DOWN.load(std::sync::atomic::Ordering::Relaxed),
-            HIGH_WATERMARK_UP.load(std::sync::atomic::Ordering::Relaxed),
-          ),
+          high_watermark: HIGH_WATERMARK.as_down_up(),
           tracked_flows: FLOWS_TRACKED.load(std::sync::atomic::Ordering::Relaxed),
           rtt_events_per_second: get_rtt_events_per_second(),
         }

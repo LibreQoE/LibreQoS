@@ -15,12 +15,23 @@ struct AsnEncoded {
 
 #[allow(dead_code)]
 #[derive(Deserialize, Debug)]
-struct GeoIpLocation {
-    network: IpAddr,
-    prefix: u8,
-    latitude: f64,
-    longitude: f64,
-    city_and_country: String,
+pub struct GeoIpLocation {
+    pub network: IpAddr,
+    pub prefix: u8,
+    pub latitude: f64,
+    pub longitude: f64,
+    pub city: String,
+    pub country: String,
+    pub country_iso_code: String,
+}
+
+impl GeoIpLocation {
+    pub fn city_and_country(&self) -> String {
+        format!("{}, {}", self.city, self.country)
+            .trim_end_matches(',')
+            .trim()
+            .to_string()
+    }
 
 }
 
@@ -36,7 +47,7 @@ pub struct GeoTable {
 }
 
 impl GeoTable {
-    const FILENAME: &'static str = "geo.bin";
+    const FILENAME: &'static str = "geo2.bin";
 
     fn file_path() -> std::path::PathBuf {
         Path::new(&lqos_config::load_config().unwrap().lqos_directory)
@@ -46,7 +57,7 @@ impl GeoTable {
     fn download() -> anyhow::Result<()> {
         log::info!("Downloading ASN-IP Table");
         let file_path = Self::file_path();
-        let url = "https://stats.libreqos.io/geo.bin";
+        let url = "https://stats.libreqos.io/geo2.bin";
         let response = reqwest::blocking::get(url)?;
         let content = response.bytes()?;
         let bytes = &content[0..];
@@ -116,7 +127,7 @@ impl GeoTable {
         }
     }
 
-    pub fn find_owners_by_ip(&self, ip: IpAddr) -> (String, String) {
+    pub fn find_owners_by_ip(&self, ip: IpAddr) -> AsnNameCountryFlag{
         log::debug!("Looking up ASN for IP: {:?}", ip);
         let ip = match ip {
             IpAddr::V4(ip) => ip.to_ipv6_mapped(),
@@ -124,17 +135,23 @@ impl GeoTable {
         };
         let mut owners = String::new();
         let mut country = String::new();
+        let mut flag = String::new();
 
         if let Some(matched) = self.asn_trie.longest_match(ip) {
             log::debug!("Matched ASN: {:?}", matched.1.asn);
             owners = matched.1.organization.clone();
         }
         if let Some(matched) = self.geo_trie.longest_match(ip) {
-            log::debug!("Matched Geo: {:?}", matched.1.city_and_country);
-            country = matched.1.city_and_country.clone();
+            log::debug!("Matched Geo: {:?}", matched.1.city_and_country());
+            country = matched.1.city_and_country();
+            flag = matched.1.country_iso_code.clone();
         }
 
-        (owners, country)
+        AsnNameCountryFlag {
+            name: owners,
+            country,
+            flag,
+        }
     }
 
     pub fn find_lat_lon_by_ip(&self, ip: IpAddr) -> (f64, f64) {
@@ -145,7 +162,7 @@ impl GeoTable {
         };
 
         if let Some(matched) = self.geo_trie.longest_match(ip) {
-            log::debug!("Matched Geo: {:?}", matched.1.city_and_country);
+            log::debug!("Matched Geo: {:?}", matched.1.city_and_country());
             return (matched.1.latitude, matched.1.longitude);
         }
 
@@ -153,111 +170,9 @@ impl GeoTable {
     }
 }
 
-///////////////////////////////////////////////////////////////////////
-
-/*
-/// Structure to represent the on-disk structure for files
-/// from: https://iptoasn.com/
-/// Specifically: https://iptoasn.com/data/ip2asn-combined.tsv.gz
-#[derive(Deserialize, Debug, Clone)]
-pub struct Ip2AsnRow {
-    pub start_ip: IpAddr,
-    pub end_ip: IpAddr,
-    pub asn: u32,
+#[derive(Default)]
+pub struct AsnNameCountryFlag {
+    pub name: String,
     pub country: String,
-    pub owners: String,
+    pub flag: String,
 }
-
-pub struct AsnTable {
-    asn_table: Vec<Ip2AsnRow>,
-}
-
-impl AsnTable {
-    pub fn new() -> anyhow::Result<Self> {
-        if !Self::exists() {
-            Self::download()?;
-        }
-        let asn_table = Self::build_asn_table()?;
-        log::info!("Setup ASN Table with {} entries.", asn_table.len());
-        Ok(Self {
-            asn_table,
-        })
-    }
-
-    fn file_path() -> std::path::PathBuf {
-        Path::new(&lqos_config::load_config().unwrap().lqos_directory)
-            .join("ip2asn-combined.tsv")
-    }
-
-    fn download() -> anyhow::Result<()> {
-        log::info!("Downloading ASN-IP Table");
-        let file_path = Self::file_path();
-        let url = "https://iptoasn.com/data/ip2asn-combined.tsv.gz";
-        let response = reqwest::blocking::get(url)?;
-        let content = response.bytes()?;
-        let bytes = &content[0..];
-        let mut decompresser = flate2::read::GzDecoder::new(bytes);
-        let mut buf = Vec::new();
-        decompresser.read_to_end(&mut buf)?;
-        std::fs::write(file_path, buf)?;
-        Ok(())
-    }
-
-    fn exists() -> bool {
-        Self::file_path().exists()
-    }
-
-    fn build_asn_table() -> anyhow::Result<Vec<Ip2AsnRow>> {
-        let file_path = Self::file_path();
-    
-        if !file_path.exists() {
-            let mut retries = 0;
-            while retries < 3 {
-                if file_path.exists() {
-                    break;
-                }
-                Self::download()?;
-                retries += 1;
-            }
-        }
-
-        if !file_path.exists() {
-            anyhow::bail!("IP to ASN file not found: {:?}", file_path);
-        }
-        let in_file = std::fs::File::open(file_path)?;
-    
-        let mut rdr = csv::ReaderBuilder::new()
-            .has_headers(false)
-            .delimiter(b'\t')
-            .double_quote(false)
-            .escape(Some(b'\\'))
-            .flexible(true)
-            .comment(Some(b'#'))
-            .from_reader(in_file);
-        
-        let mut output = Vec::new();
-        for result in rdr.deserialize() {
-            let record: Ip2AsnRow = result?;
-            output.push(record);
-        }
-        output.sort_by(|a, b| a.start_ip.cmp(&b.start_ip));
-        Ok(output)
-    }
-
-    pub fn find_asn(&self, ip: IpAddr) -> Option<Ip2AsnRow> {
-        self.asn_table.binary_search_by(|probe| {
-            if ip < probe.start_ip {
-                std::cmp::Ordering::Greater
-            } else if ip > probe.end_ip {
-                std::cmp::Ordering::Less
-            } else {
-                std::cmp::Ordering::Equal
-            }
-        }).map(|idx| self.asn_table[idx].clone()).ok()
-    }
-
-    pub fn find_asn_by_id(&self, asn: u32) -> Option<Ip2AsnRow> {
-        self.asn_table.iter().find(|row| row.asn == asn).map(|row| row.clone())
-    }
-}
-*/

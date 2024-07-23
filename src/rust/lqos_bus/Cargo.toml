@@ -9,16 +9,16 @@ default = ["equinix_tests"]
 equinix_tests = []
 
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
-bincode = "1"
-thiserror = "1"
+serde = { workspace = true }
+bincode = { workspace = true }
+thiserror = { workspace = true }
 lqos_config = { path = "../lqos_config" }
 lqos_utils = { path = "../lqos_utils" }
 lts_client = { path = "../lts_client" }
-tokio = { version = "1", features = [ "full" ] }
-log = "0"
-nix = "0"
-serde_cbor = "0" # For RFC8949/7409 format C binary objects
+tokio = { workspace = true }
+log = { workspace = true }
+nix = { workspace = true }
+serde_cbor = { workspace = true }
 
 [dev-dependencies]
 criterion = { version = "0", features = [ "html_reports", "async_tokio"] }

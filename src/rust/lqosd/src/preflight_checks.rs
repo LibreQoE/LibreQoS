@@ -4,6 +4,7 @@ use anyhow::Result;
 use log::{error, info};
 use lqos_config::Config;
 use lqos_sys::interface_name_to_index;
+use crate::node_manager::{add_global_warning, WarningLevel};
 
 fn check_queues(interface: &str) -> Result<()> {
     let path = format!("/sys/class/net/{interface}/queues/");
@@ -46,7 +47,6 @@ fn check_queues(interface: &str) -> Result<()> {
 #[derive(Debug)]
 pub struct IpLinkInterface {
     pub name: String,
-    pub index: u32,
     pub operstate: String,
     pub link_type: String,
     pub master: Option<String>,
@@ -62,14 +62,12 @@ pub fn get_interfaces_from_ip_link() -> Result<Vec<IpLinkInterface>> {
     let mut interfaces = Vec::new();
     for interface in output_json.as_array().unwrap() {
         let name = interface["ifname"].as_str().unwrap().to_string();
-        let index = interface["ifindex"].as_u64().unwrap() as u32;
         let operstate = interface["operstate"].as_str().unwrap().to_string();
         let link_type = interface["link_type"].as_str().unwrap().to_string();
         let master = interface["master"].as_str().map(|s| s.to_string());
 
         interfaces.push(IpLinkInterface {
             name,
-            index,
             operstate,
             link_type,
             master,
@@ -138,8 +136,6 @@ fn check_bridge_status(config: &Config, interfaces: &[IpLinkInterface]) -> Resul
 
 /// Runs a series of preflight checks to ensure that the configuration is sane
 pub fn preflight_checks() -> Result<()> {
-    info!("Sanity checking configuration...");
-
     // Are we able to load the configuration?
     let config = lqos_config::load_config().map_err(|_| {
         error!("Failed to load configuration file - /etc/lqos.conf");
@@ -183,6 +179,7 @@ pub fn preflight_checks() -> Result<()> {
         log::warn!("Disabling XDP bridge");
         lqos_config::disable_xdp_bridge()?;
         log::warn!("XDP bridge disabled in ACTIVE config. Please fix the configuration file.");
+        add_global_warning(WarningLevel::Error, "XDP bridge is disabled due to the presence of a Linux bridge. Please fix your configuration.".to_string());
     };
 
     info!("Sanity checks passed");

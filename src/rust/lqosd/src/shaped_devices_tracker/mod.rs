@@ -83,9 +83,18 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
         // Summarize everything after n_queues
         if nodes.len() > n_queues {
             let mut other_bw = (0, 0);
+            let mut other_xmit = (0, 0);
+            let mut other_marks = (0, 0);
+            let mut other_drops = (0, 0);
             nodes.drain(n_queues..).for_each(|n| {
                 other_bw.0 += n.1.current_throughput.0;
                 other_bw.1 += n.1.current_throughput.1;
+                other_xmit.0 += n.1.current_retransmits.0;
+                other_xmit.1 += n.1.current_retransmits.1;
+                other_marks.0 += n.1.current_marks.0;
+                other_marks.1 += n.1.current_marks.1;
+                other_drops.0 += n.1.current_drops.0;
+                other_drops.1 += n.1.current_drops.1;
             });
 
             nodes.push((
@@ -94,6 +103,9 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
                     name: "Others".into(),
                     max_throughput: (0, 0),
                     current_throughput: other_bw,
+                    current_retransmits: other_xmit,
+                    current_marks: other_marks,
+                    current_drops: other_drops,
                     rtts: Vec::new(),
                     parents: Vec::new(),
                     immediate_parent: None,
@@ -111,7 +123,7 @@ pub fn map_node_names(nodes: &[usize]) -> BusResponse {
     let mut result = Vec::new();
     let reader = NETWORK_JSON.read().unwrap();
     nodes.iter().for_each(|id| {
-        if let Some(node) = reader.nodes.get(*id) {
+        if let Some(node) = reader.get_nodes_when_ready().get(*id) {
             result.push((*id, node.name.clone()));
         }
     });
@@ -123,8 +135,8 @@ pub fn get_funnel(circuit_id: &str) -> BusResponse {
     if let Some(index) = reader.get_index_for_name(circuit_id) {
         // Reverse the scanning order and skip the last entry (the parent)
         let mut result = Vec::new();
-        for idx in reader.nodes[index].parents.iter().rev().skip(1) {
-            result.push((*idx, reader.nodes[*idx].clone_to_transit()));
+        for idx in reader.get_nodes_when_ready()[index].parents.iter().rev().skip(1) {
+            result.push((*idx, reader.get_nodes_when_ready()[*idx].clone_to_transit()));
         }
         return BusResponse::NetworkMap(result);
     }

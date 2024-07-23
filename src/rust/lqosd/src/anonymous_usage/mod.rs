@@ -4,7 +4,7 @@ use std::{time::Duration, net::TcpStream, io::Write};
 use lqos_bus::anonymous::{AnonymousUsageV1, build_stats};
 use lqos_sys::num_possible_cpus;
 use sysinfo::System;
-use crate::{shaped_devices_tracker::{SHAPED_DEVICES, NETWORK_JSON}, stats::{HIGH_WATERMARK_DOWN, HIGH_WATERMARK_UP}};
+use crate::{shaped_devices_tracker::{SHAPED_DEVICES, NETWORK_JSON}, stats::HIGH_WATERMARK};
 
 const SLOW_START_SECS: u64 = 1;
 const INTERVAL_SECS: u64 = 60 * 60 * 24;
@@ -71,11 +71,11 @@ fn anonymous_usage_dump() -> anyhow::Result<()> {
 
     data.git_hash = env!("GIT_HASH").to_string();
     data.shaped_device_count = SHAPED_DEVICES.read().unwrap().devices.len();
-    data.net_json_len = NETWORK_JSON.read().unwrap().nodes.len();
+    data.net_json_len = NETWORK_JSON.read().unwrap().get_nodes_when_ready().len();
 
     data.high_watermark_bps = (
-        HIGH_WATERMARK_DOWN.load(std::sync::atomic::Ordering::Relaxed),
-        HIGH_WATERMARK_UP.load(std::sync::atomic::Ordering::Relaxed),
+        HIGH_WATERMARK.get_down(),
+        HIGH_WATERMARK.get_up(),
     );
 
 

@@ -4,6 +4,7 @@ use tokio::process::Command;
 pub use crate::collector::CakeStats;
 use super::queue_structure::{read_queueing_structure, QueueNode};
 
+#[allow(dead_code)]
 #[derive(Debug, Error)]
 pub(crate) enum AsyncQueueReaderMessage {
     #[error("Unable to figure out the current queue structure")]
@@ -16,10 +17,12 @@ pub(crate) enum AsyncQueueReaderMessage {
     JsonDecode,
 }
 
+#[allow(dead_code)]
 pub(crate) struct AsyncQueueReader {
     pub(crate) interface: String,
 }
 
+#[allow(dead_code)]
 impl AsyncQueueReader {
     pub(crate) fn new<S: ToString>(interface: S) -> Self {
         Self {

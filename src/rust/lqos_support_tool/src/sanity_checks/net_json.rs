@@ -28,7 +28,7 @@ pub fn can_we_load_net_json(results: &mut Vec<SanityCheck>) {
         if path.exists() {
             if let Ok(str) = std::fs::read_to_string(path) {
                 match serde_json::from_str::<Value>(&str) {
-                    Ok(json) => {
+                    Ok(_json) => {
                         results.push(SanityCheck{
                             name: "network.json is parseable JSON".to_string(),
                             success: true,
@@ -50,7 +50,7 @@ pub fn can_we_load_net_json(results: &mut Vec<SanityCheck>) {
 
 pub fn can_we_parse_net_json(results: &mut Vec<SanityCheck>) {
     match lqos_config::NetworkJson::load() {
-        Ok(json) => {
+        Ok(_json) => {
             results.push(SanityCheck{
                 name: "network.json is valid JSON".to_string(),
                 success: true,

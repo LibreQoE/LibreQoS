@@ -44,4 +44,12 @@ impl UispSiteType {
         }
         Err(UispIntegrationError::UnknownSiteType)
     }
+
+    /// Formats to match network.json type entries
+    pub fn as_network_json_string(&self) -> String {
+        match &self {
+            Self::AccessPoint => "AP".to_string(),
+            _ => "Site".to_string()
+        }
+    }
 }

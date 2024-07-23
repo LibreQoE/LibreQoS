@@ -7,7 +7,7 @@ mod retriever;
 mod stats_diff;
 pub(crate) use retriever::*;
 use serde::{Serialize, Deserialize};
-pub(crate) use stats_diff::*;
+//pub(crate) use stats_diff::*;
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CakeStats {

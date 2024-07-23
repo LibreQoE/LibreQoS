@@ -11,8 +11,8 @@ pub(crate) fn encode_fields_from_template(template: &[(u16, u16)], direction: us
     let mut result = Vec::with_capacity(total_size as usize);
     for (field_type, field_length) in template.iter() {
         match (*field_type, *field_length) {
-            IN_BYTES => encode_u64(data.bytes_sent[direction], &mut result),
-            IN_PKTS => encode_u64(data.packets_sent[direction], &mut result),
+            IN_BYTES => encode_u64(data.bytes_sent.dir(direction), &mut result),
+            IN_PKTS => encode_u64(data.packets_sent.dir(direction), &mut result),
             PROTOCOL => result.push(key.ip_protocol),
             L4_SRC_PORT => encode_u16(src_port, &mut result),
             L4_DST_PORT => encode_u16(dst_port, &mut result),
