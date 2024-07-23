@@ -87,10 +87,8 @@ def clearPriorSettings(interfaceA, interfaceB):
 		if 'mq' in shellReturn('tc qdisc show dev ' + interfaceA + ' root'):
 			print('MQ detected. Will delete and recreate mq qdisc.')
 			# Clear tc filter
-			if on_a_stick() == True:
-				shell('tc qdisc delete dev ' + interfaceA + ' root')
-			else:
-				shell('tc qdisc delete dev ' + interfaceA + ' root')
+			shell('tc qdisc delete dev ' + interfaceA + ' root')
+			if on_a_stick() == False:
 				shell('tc qdisc delete dev ' + interfaceB + ' root')
 		
 def tearDown(interfaceA, interfaceB):
