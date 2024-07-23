@@ -89,7 +89,7 @@ export class TopTreeSankey extends BaseDashlet {
 
             msg.data.forEach((r) => {
                 let label = {
-                    fontSize: 6,
+                    fontSize: 9,
                     color: "#999"
                 };
                 if (redact) label.fontSize = 0;
