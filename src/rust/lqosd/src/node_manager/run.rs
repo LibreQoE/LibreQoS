@@ -15,7 +15,7 @@ use crate::node_manager::local_api::local_api;
 /// with tokio::spawn unless you want it to block execution.
 pub async fn spawn_webserver() -> Result<()>  {
     // TODO: port change is temporary
-    let listener = TcpListener::bind(":::9223").await?;
+    let listener = TcpListener::bind(":::9123").await?;
 
     // Check that static content is available and setup the path
     let config = load_config()?;
