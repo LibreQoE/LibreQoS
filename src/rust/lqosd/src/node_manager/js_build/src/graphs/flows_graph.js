@@ -26,10 +26,7 @@ export class FlowCountGraph extends DashboardGraph {
                     {
                         name: "Active/Tracked",
                         icon: 'circle',
-                    }, {
-                        name: "Recently Completed",
-                        icon: 'circle',
-                    }
+                    },
                 ],
                 textStyle: {
                     color: '#aaa'
@@ -53,13 +50,7 @@ export class FlowCountGraph extends DashboardGraph {
                     data: [],
                     type: 'line',
                     symbol: 'none',
-                },
-                {
-                    name: 'Recently Completed',
-                    data: [],
-                    type: 'line',
-                    symbol: 'none',
-                },
+                }
             ],
             tooltip: {
                 trigger: 'item',
@@ -74,9 +65,7 @@ export class FlowCountGraph extends DashboardGraph {
         this.ringbuffer.push(recent, completed);
 
         let series = this.ringbuffer.series();
-        for (let i=0; i<2; i++) {
-            this.option.series[i].data = series[i];
-        }
+        this.option.series[0].data = series[0];
 
         this.chart.setOption(this.option);
     }
