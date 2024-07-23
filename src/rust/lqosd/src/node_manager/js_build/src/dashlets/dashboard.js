@@ -59,7 +59,7 @@ export class Dashboard {
         cadenceDiv.id = this.divName + "_cadence";
         let cadenceLabel = document.createElement("label");
         cadenceLabel.htmlFor = "cadencePicker";
-        cadenceLabel.innerText = "Update Cadence (Seconds): ";
+        cadenceLabel.innerText = "Refresh Rate (Seconds): ";
         let cadencePicker = document.createElement("input");
         cadencePicker.id = "cadencePicker";
         cadencePicker.type = "number";
