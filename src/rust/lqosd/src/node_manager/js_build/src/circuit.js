@@ -606,7 +606,7 @@ function wireupAnalysis(circuits) {
     let listBtn = document.createElement("button");
     listBtn.type = "button";
     listBtn.id = "CaptureTopBtn";
-    listBtn.classList.add("btn", "btn-primary", "dropdown-toggle", "btn-sm");
+    listBtn.classList.add("btn", "btn-secondary", "dropdown-toggle", "btn-sm");
     listBtn.setAttribute("data-bs-toggle", "dropdown");
     listBtn.innerHTML = "<i class='fa fa-search'></i> Packet Capture";
     list.appendChild(listBtn);
