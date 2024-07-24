@@ -638,7 +638,7 @@ function wireupAnalysis(circuits) {
                         clearInterval(interval);
                         btn.disabled = false;
                         btn.innerHTML = "<i class='fa fa-download'></i> Download Packet Capture for " + address;
-                        btn.classList.remove("btn-primary");
+                        btn.classList.remove("btn-secondary");
                         btn.classList.add("btn-success");
                         btn.onclick = () => {
                             let url = "/local-api/pcapDump/" + sessionId;
