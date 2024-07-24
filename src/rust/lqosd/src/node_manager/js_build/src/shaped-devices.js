@@ -152,12 +152,13 @@ function fillTable() {
     }
 
     let filter = document.createElement("div");
-    let label = document.createElement("label");
-    label.classList.add("text-secondary");
-    label.innerText = "Search";
-    label.htmlFor = "sdSearch";
+    //let label = document.createElement("label");
+    //label.classList.add("text-secondary");
+    //label.innerText = "Search";
+    //label.htmlFor = "sdSearch";
     let sdSearch = document.createElement("input");
     sdSearch.id = "sdSearch";
+    sdSearch.placeholder = "Search";
     sdSearch.value = searchTerm;
     sdSearch.onkeydown = (event) => {
         if (event.keyCode == 13) {
@@ -173,7 +174,7 @@ function fillTable() {
         searchTerm = $("#sdSearch").val();
         filterDevices();
     }
-    filter.appendChild(label);
+    //filter.appendChild(label);
     filter.appendChild(sdSearch);
     filter.appendChild(searchButton);
 
