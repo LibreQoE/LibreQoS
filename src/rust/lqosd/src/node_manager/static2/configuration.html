@@ -5,9 +5,9 @@
                 <h5><i class="fa fa-users"></i> Configuration</h5>
             </div>
             <div class="col-10">
-                <a href="#" class="btn btn-sm btn-primary" id="btnSaveIspConfig"><i class="fa fa-save"></i> Save
+                <a href="#" class="btn btn-sm btn-secondary" id="btnSaveIspConfig"><i class="fa fa-save"></i> Save
                     Configuration</a>
-                <button type="button" class="btn btn-sm btn-primary" id="btnSaveNetDevices"><i
+                <button type="button" class="btn btn-sm btn-secondary" id="btnSaveNetDevices"><i
                         class="fa fa-save"></i> Save network.json and ShapedDevices.csv
                 </button>
             </div>
@@ -566,19 +566,20 @@
                     <h2><i class="fa fa-map"></i> Network.Json - Network Layout</h2>
 
                     <h3>Network Adjustment Options</h3>
-                    <div>
-                        <button type="button" class="btn btn-danger" id="btnFlattenNetwork"><i
-                                class="fa fa-warning"></i> Flatten Network
-                        </button>
-                    </div>
-                    <div style="margin-top: 8px;">
-                        <strong>Add Node to Root</strong>
-                        <input type="text" value="" placeholder="New Node Name" id="njsNewNodeName"/> <br/>
-                        <input type="number" min="1" max="100000" placeholder="Max Download" id="njsNewNodeDown"/> <br/>
-                        <input type="number" min="1" max="100000" placeholder="Max Upload" id="njsNewNodeUp"/> <br/>
-                        <button type="button" class="btn btn-primary" id="btnAddNetworkNode"><i
-                                class="fa fa-plus"></i> Add Node to Root
-                        </button>
+                    <div class="row">
+                        <div class="col-3">
+                            <button type="button" class="btn btn-outline-danger" id="btnFlattenNetwork"><i
+                                    class="fa fa-warning"></i> Flatten Network
+                            </button>
+                        </div>
+                        <div style="margin-top: 8px;" class="col-3">
+                            <input type="text" value="" placeholder="New Node Name" id="njsNewNodeName"/> <br/>
+                            <input type="number" min="1" max="100000" placeholder="Max Download" id="njsNewNodeDown"/> <br/>
+                            <input type="number" min="1" max="100000" placeholder="Max Upload" id="njsNewNodeUp"/> <br/>
+                            <button type="button" class="btn btn-outline-success" id="btnAddNetworkNode"><i
+                                    class="fa fa-plus"></i> Add Node to Root
+                            </button>
+                        </div>
                     </div>
 
                     <hr/>
@@ -591,7 +592,7 @@
                     <h2><i class="fa table"></i> Shaped Devices</h2>
                     <p>All Shaped Devices. Note that if you have an integration enabled, this will be overwritten
                         periodically.</p>
-                    <button type="button" class="btn btn-sm btn-success" onclick="window.newSdRow()"><i class="fa fa-plus"></i>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="window.newSdRow()"><i class="fa fa-plus"></i>
                         Add Row
                     </button>
 

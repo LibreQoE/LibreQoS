@@ -386,13 +386,13 @@ function iterateNetJson(level, depth) {
         html += "<div>";
         html += "<strong>" + key + "</strong>";
         if (depth > 0) {
-            html += "  <button class='btn btn-sm btn-secondary' onclick='window.promoteNode(\"" + key + "\") '><i class='fa fa-arrow-left'></i> Promote</button>";
+            html += "  <button class='btn btn-sm btn-outline-secondary' onclick='window.promoteNode(\"" + key + "\") '><i class='fa fa-arrow-left'></i> Promote</button>";
         }
-        html += "  <button class='btn btn-sm btn-secondary' onclick='window.renameNode(\"" + key + "\") '><i class='fa fa-pencil'></i> Rename</button>";
-        html += "  <button class='btn btn-sm btn-warning' onclick='window.deleteNode(\"" + key + "\") '><i class='fa fa-trash'></i> Delete</button>";
+        html += "  <button class='btn btn-sm btn-outline-secondary' onclick='window.renameNode(\"" + key + "\") '><i class='fa fa-pencil'></i> Rename</button>";
+        html += "  <button class='btn btn-sm btn-outline-warning' onclick='window.deleteNode(\"" + key + "\") '><i class='fa fa-trash'></i> Delete</button>";
         html += "<br />";
-        html += "Download: " + value.downloadBandwidthMbps + " Mbps <button type='button' class='btn btn-sm btn-secondary' onclick='window.nodeSpeedChange(\"" + key + "\", \"d\")'><i class='fa fa-pencil'></i></button><br />";
-        html += "Upload: " + value.uploadBandwidthMbps + " Mbps <button type='button' class='btn btn-sm btn-secondary' onclick='window.nodeSpeedChange(\"" + key + "\", \"u\")'><i class='fa fa-pencil'></i></button><br />";
+        html += "Download: " + value.downloadBandwidthMbps + " Mbps <button type='button' class='btn btn-sm btn-outline-secondary' onclick='window.nodeSpeedChange(\"" + key + "\", \"d\")'><i class='fa fa-pencil'></i></button><br />";
+        html += "Upload: " + value.uploadBandwidthMbps + " Mbps <button type='button' class='btn btn-sm btn-outline-secondary' onclick='window.nodeSpeedChange(\"" + key + "\", \"u\")'><i class='fa fa-pencil'></i></button><br />";
         let num_children = 0;
         for (let i=0; i<shaped_devices.length; i++) {
             if (shaped_devices[i].parent_node === key) {
@@ -1076,7 +1076,7 @@ function shapedDevices() {
         html += makeSheetNumberBox(i, "download_max_mbps", row.download_max_mbps);
         html += makeSheetNumberBox(i, "upload_max_mbps", row.upload_max_mbps);
         html += makeSheetBox(i, "comment", row.comment, true);
-        html += "<td><button class='btn btn-sm btn-warning' type='button' onclick='window.deleteSdRow(" + i + ")'><i class='fa fa-trash'></i></button></td>";
+        html += "<td><button class='btn btn-sm btn-secondary' type='button' onclick='window.deleteSdRow(" + i + ")'><i class='fa fa-trash'></i></button></td>";
 
         html += "</tr>";
     }

@@ -90,6 +90,9 @@ body {
     font-size: 9pt;
     text-overflow: ellipsis;
 }
+h2 {
+    color: var(--bs-secondary-text-emphasis)
+}
 h5 {
     color: var(--bs-secondary-text-emphasis)
 }
