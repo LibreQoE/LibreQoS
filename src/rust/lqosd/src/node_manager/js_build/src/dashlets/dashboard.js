@@ -173,12 +173,11 @@ export class Dashboard {
     editMode() {
         // Insert a Temporary Div to hold edit options
         let editDiv = document.createElement("div");
-        editDiv.classList.add("col-12");
+        editDiv.classList.add("col-12", "bg-secondary-subtle", "mb-2");
         editDiv.id = "dashboardEditingDiv";
         editDiv.style.padding = "10px";
         editDiv.style.borderRadius = "5px";
         editDiv.style.marginLeft = "0";
-        editDiv.style.backgroundColor = "#ddddff";
         let toasts = document.getElementById("toasts");
         this.editingDashboard = true;
 
@@ -191,27 +190,27 @@ export class Dashboard {
         c1.appendChild(heading5Icon("gear", "Dashboard Options"));
         let nuke = document.createElement("button");
         nuke.type = "button";
-        nuke.classList.add("btn", "btn-sm", "btn-danger");
-        nuke.innerHTML = "<i class='fa fa-trash'></i> Remove All Items";
+        nuke.classList.add("btn", "btn-sm", "btn-secondary");
+        nuke.innerHTML = "<i class='fa fa-trash'></i> Remove All";
         nuke.onclick = () => { this.removeAll(); };
         c1.appendChild(nuke);
         let filler = document.createElement("button");
         filler.type = "button";
-        filler.classList.add("btn", "btn-sm", "btn-warning");
-        filler.innerHTML = "<i class='fa fa-plus-square'></i> One of Everything";
+        filler.classList.add("btn", "btn-sm", "btn-secondary");
+        filler.innerHTML = "<i class='fa fa-plus-square'></i> Add All";
         filler.onclick = () => { this.addAll(); };
         filler.style.marginLeft = "5px";
         c1.appendChild(filler);
 
         let c2 = document.createElement("div");
         c2.classList.add("col-3");
-        c2.appendChild(heading5Icon("plus", "Add Dashlet"));
+        c2.appendChild(heading5Icon("plus", "Add Dashboard Item"));
         let list = document.createElement("div");
         list.classList.add("dropdown");
         list.id = "dropdown-widgets";
         let listBtn = document.createElement("button");
         listBtn.type = "button";
-        listBtn.classList.add("btn", "btn-primary", "dropdown-toggle");
+        listBtn.classList.add("btn", "btn-secondary", "btn-sm", "dropdown-toggle");
         listBtn.setAttribute("data-bs-toggle", "dropdown");
         listBtn.innerHTML = "<i class='fa fa-plus'></i> Add Widget";
         list.appendChild(listBtn);
@@ -244,15 +243,22 @@ export class Dashboard {
         let c3 = document.createElement("div");
         c3.classList.add("col-3");
         c3.appendChild(heading5Icon("save", "Save Layout"));
+
+        let saveGroup = document.createElement("div");
+        saveGroup.classList.add("input-group");
+        let saveAppend = document.createElement("div");
+        saveAppend.classList.add("input-group-append");
+
         let lbl = document.createElement("label");
         lbl.htmlFor = "saveDashName";
         let saveDashName = document.createElement("input");
         saveDashName.id = "saveDashName";
         saveDashName.type = "text";
+        saveDashName.classList.add("form-control", "border-0", "small");
         let saveBtn = document.createElement("button");
         saveBtn.type = "button";
-        saveBtn.classList.add("btn", "btn-success");
-        saveBtn.innerHTML = "<i class='fa fa-save'></i> Save to Server";
+        saveBtn.classList.add("btn", "btn-secondary", "btn-sm");
+        saveBtn.innerHTML = "<i class='fa fa-save'></i>";
         saveBtn.style.marginLeft = "4px";
         saveBtn.onclick = () => {
             let name = $("#saveDashName").val();
@@ -272,9 +278,14 @@ export class Dashboard {
                 }
             })
         }
-        c3.appendChild(lbl);
-        c3.appendChild(saveDashName);
-        c3.appendChild(saveBtn);
+        saveGroup.appendChild(saveDashName);
+        saveAppend.appendChild(saveBtn);
+        saveGroup.appendChild(saveAppend);
+        c3.appendChild(saveGroup);
+
+        //c3.appendChild(lbl);
+        //c3.appendChild(saveDashName);
+        //c3.appendChild(saveBtn);
 
         let c4 = document.createElement("div");
         c4.classList.add("col-3");
@@ -283,7 +294,7 @@ export class Dashboard {
         listRemote.classList.add("dropdown");
         let listBtnRemote = document.createElement("button");
         listBtnRemote.type = "button";
-        listBtnRemote.classList.add("btn", "btn-secondary", "dropdown-toggle");
+        listBtnRemote.classList.add("btn", "btn-secondary", "dropdown-toggle", "btn-sm");
         listBtnRemote.setAttribute("data-bs-toggle", "dropdown");
         listBtnRemote.innerHTML = "<i class='fa fa-cloud'></i> Load Layout";
         listRemote.appendChild(listBtnRemote);
