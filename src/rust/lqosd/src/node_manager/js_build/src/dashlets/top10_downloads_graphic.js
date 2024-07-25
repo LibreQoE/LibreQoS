@@ -95,8 +95,8 @@ export class Top10DownloadersVisual extends BaseDashlet {
 
                 let rttColor = lerpGreenToRedViaOrange(200 - r.median_tcp_rtt, 200);
 
-                let percentRtt = Math.min(100, r.tcp_retransmits.down + r.tcp_retransmits.up) / 100;
-                let rxmitColor = lerpColor([0, 255, 0], [255, 0, 0], percent);
+                let percentRxmit = Math.min(100, r.tcp_retransmits.down + r.tcp_retransmits.up) / 100;
+                let rxmitColor = lerpColor([0, 255, 0], [255, 0, 0], percentRxmit);
 
                 nodes.push({
                     name: name,
