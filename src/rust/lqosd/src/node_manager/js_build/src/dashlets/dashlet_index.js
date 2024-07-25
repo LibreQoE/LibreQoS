@@ -22,6 +22,8 @@ import {TreeCapacityDash} from "./tree_capacity_dash";
 import {CircuitCapacityDash} from "./circuit_capacity_dash";
 import {TopTreeSankey} from "./top_tree_sankey";
 import {Top10DownloadersVisual} from "./top10_downloads_graphic";
+import {Worst10DownloadersVisual} from "./worst10_downloaders_graphic";
+import {Worst10RetransmitsVisual} from "./worst10_retransmits_graphic";
 
 export const DashletMenu = [
     { name: "Throughput Bits/Second", tag: "throughputBps", size: 3 },
@@ -33,7 +35,9 @@ export const DashletMenu = [
     { name: "Top 10 Downloaders", tag: "top10downloaders", size: 6 },
     { name: "Top 10 Downloaders (Visual)", tag: "top10downloadersV", size: 6 },
     { name: "Worst 10 Round-Trip Time", tag: "worst10downloaders", size: 6 },
+    { name: "Worst 10 Round-Trip Time (Visual)", tag: "worst10downloadersV", size: 6 },
     { name: "Worst 10 Retransmits", tag: "worst10retransmits", size: 6 },
+    { name: "Worst 10 Retransmits (Visual)", tag: "worst10retransmitsV", size: 6 },
     { name: "Top 10 Flows (total bytes)", tag: "top10flowsBytes", size: 6 },
     { name: "Top 10 Flows (rate)", tag: "top10flowsRate", size: 6 },
     { name: "Top 10 Endpoints by Country", tag: "top10endpointsCountry", size: 6 },
@@ -63,7 +67,9 @@ export function widgetFactory(widgetName, count) {
         case "top10downloaders":widget = new Top10Downloaders(count); break;
         case "top10downloadersV":widget = new Top10DownloadersVisual(count); break;
         case "worst10downloaders":widget = new Worst10Downloaders(count); break;
+        case "worst10downloadersV":widget = new Worst10DownloadersVisual(count); break;
         case "worst10retransmits":widget = new Worst10Retransmits(count); break;
+        case "worst10retransmitsV":widget = new Worst10RetransmitsVisual(count); break;
         case "top10flowsBytes"  : widget = new Top10FlowsBytes(count); break;
         case "top10flowsRate"   : widget = new Top10FlowsRate(count); break;
         case "top10endpointsCountry"   : widget = new Top10EndpointsByCountry(count); break;
