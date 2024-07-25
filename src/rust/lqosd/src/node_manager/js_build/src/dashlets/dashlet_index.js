@@ -21,6 +21,7 @@ import {QueueStatsTotalDash} from "./queue_stats_total";
 import {TreeCapacityDash} from "./tree_capacity_dash";
 import {CircuitCapacityDash} from "./circuit_capacity_dash";
 import {TopTreeSankey} from "./top_tree_sankey";
+import {Top10DownloadersVisual} from "./top10_downloads_graphic";
 
 export const DashletMenu = [
     { name: "Throughput Bits/Second", tag: "throughputBps", size: 3 },
@@ -30,6 +31,7 @@ export const DashletMenu = [
     { name: "Last 5 Minutes Throughput", tag: "throughputRing", size: 6 },
     { name: "Round-Trip Time Histogram", tag: "rttHistogram", size: 6 },
     { name: "Top 10 Downloaders", tag: "top10downloaders", size: 6 },
+    { name: "Top 10 Downloaders (Visual)", tag: "top10downloadersV", size: 6 },
     { name: "Worst 10 Round-Trip Time", tag: "worst10downloaders", size: 6 },
     { name: "Worst 10 Retransmits", tag: "worst10retransmits", size: 6 },
     { name: "Top 10 Flows (total bytes)", tag: "top10flowsBytes", size: 6 },
@@ -59,6 +61,7 @@ export function widgetFactory(widgetName, count) {
         case "rttHistogram":    widget = new RttHistoDash(count); break;
         case "rttHistogram3D":    widget = new RttHisto3dDash(count); break;
         case "top10downloaders":widget = new Top10Downloaders(count); break;
+        case "top10downloadersV":widget = new Top10DownloadersVisual(count); break;
         case "worst10downloaders":widget = new Worst10Downloaders(count); break;
         case "worst10retransmits":widget = new Worst10Retransmits(count); break;
         case "top10flowsBytes"  : widget = new Top10FlowsBytes(count); break;
