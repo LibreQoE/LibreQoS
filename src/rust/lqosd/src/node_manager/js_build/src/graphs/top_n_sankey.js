@@ -4,6 +4,7 @@ import {lerpColor, lerpGreenToRedViaOrange, scaleNumber} from "../helpers/scalin
 export class TopNSankey extends DashboardGraph {
     constructor(id) {
         super(id);
+        this.nodeMap = {};
         this.option = {
             series: [
                 {
@@ -22,6 +23,23 @@ export class TopNSankey extends DashboardGraph {
         this.option.series[0].links = links;
         this.chart.hideLoading();
         this.chart.setOption(this.option);
+
+        this.chart.on('click', (params) => {
+            let name = params.name;
+            // Trim to before " ("
+            name = name.substring(0, name.indexOf(" ("));
+            if (name.indexOf(" > ") === -1) {
+                if (this.nodeMap[name] !== undefined) {
+                    window.location.href = "/circuit.html?id=" + encodeURI(this.nodeMap[name]);
+                }
+            } else {
+                let actualName = params.data.target;
+                actualName = actualName.substring(0, actualName.indexOf(" ("));
+                if (this.nodeMap[actualName] !== undefined) {
+                    window.location.href = "/circuit.html?id=" + encodeURI(this.nodeMap[actualName]);
+                }
+            }
+        });
     }
 
     processMessage(msg) {
@@ -33,7 +51,10 @@ export class TopNSankey extends DashboardGraph {
             label: "Root",
         });
 
+        this.nodeMap = {};
         msg.data.forEach((r) => {
+            this.nodeMap[r.ip_address] = r.circuit_id;
+
             let label = {
                 fontSize: 9,
                 color: "#999"

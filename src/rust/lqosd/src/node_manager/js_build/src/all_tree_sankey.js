@@ -32,7 +32,8 @@ class AllTreeSankey extends DashboardGraph {
         this.option && this.chart.setOption(this.option);
         this.chart.hideLoading();
         this.chart.on('click', (params) => {
-            //console.log(params.name);
+            console.log(params.name);
+            console.log(this.nodeMap);
             let name = params.name;
             // If it contains a >, it's a link
             if (name.indexOf(" > ") === -1) {
