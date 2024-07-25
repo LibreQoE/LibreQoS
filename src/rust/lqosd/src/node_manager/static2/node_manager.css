@@ -157,3 +157,16 @@ table tr td {
 table tr td a {
     color: var(--bs-secondary-color);
 }
+
+/* For the config panel */
+
+.nav-pills .nav-link {
+    color: var(--bs-secondary-color);
+}
+.nav-pills .nav-link.active {
+    color: var(--bs-info);
+    font-weight: bold;
+}
+.nav-pills .nav-link.active {
+    background-color: var(--bs-tertiary-bg);
+}
