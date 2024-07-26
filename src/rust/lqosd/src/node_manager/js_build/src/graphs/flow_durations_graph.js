@@ -5,8 +5,7 @@ export class FlowDurationsGraph extends DashboardGraph {
         super(id);
         this.option = {
             xAxis: {
-                type: 'category',
-                data: [],
+                type: 'log',
                 name: "Seconds"
             },
             yAxis: {
@@ -15,7 +14,7 @@ export class FlowDurationsGraph extends DashboardGraph {
             },
             series: {
                 data: [],
-                type: 'bar',
+                type: 'scatter',
             }
         };
         this.option && this.chart.setOption(this.option);
