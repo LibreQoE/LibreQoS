@@ -236,7 +236,7 @@ impl ThroughputTracker {
 
             let change_since_last_time = data.bytes_sent.checked_sub_or_zero(this_flow.0.bytes_sent);
             this_flow.0.throughput_buffer.push(change_since_last_time);
-            println!("{change_since_last_time:?}");
+            //println!("{change_since_last_time:?}");
 
             this_flow.0.last_seen = data.last_seen;
             this_flow.0.bytes_sent = data.bytes_sent;
@@ -246,11 +246,6 @@ impl ThroughputTracker {
             this_flow.0.end_status = data.end_status;
             this_flow.0.tos = data.tos;
             this_flow.0.flags = data.flags;
-
-
-
-            //let prev_bytes = this_flow.0.throughput_buffer.last().unwrap_or(&zeroed);
-            //this_flow.0.throughput_buffer.push(data.bytes_sent.checked_sub_or_zero(*prev_bytes));
 
             if let Some([up, down]) = rtt_samples.get(&key) {
               if up.as_nanos() != 0 {

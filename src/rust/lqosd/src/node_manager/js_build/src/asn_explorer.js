@@ -1,17 +1,18 @@
 import {clearDiv} from "./helpers/builders";
 import {scaleNanos, scaleNumber} from "./helpers/scaling";
 
+//const API_URL = "local-api/";
+const API_URL = "local-api/";
+const LIST_URL = API_URL + "asnList";
+const FLOW_URL = API_URL + "flowTimeline/";
+
 let asnList = [];
 let asnData = [];
 let graphMinTime = Number.MAX_SAFE_INTEGER;
 let graphMaxTime = Number.MIN_SAFE_INTEGER;
 
-function unixTimeToDate(unixTime) {
-    return new Date(unixTime * 1000);
-}
-
 function asnDropdown() {
-    $.get("local-api/asnList", (data) => {
+    $.get(LIST_URL, (data) => {
         asnList = data;
 
         // Sort data by row.count, descending
@@ -45,6 +46,7 @@ function asnDropdown() {
 
         parentDiv.appendChild(dropdownList);
         let target = document.getElementById("asnList");
+        clearDiv(target);
         target.appendChild(parentDiv);
 
         /*if (data.length > 0) {
@@ -67,7 +69,7 @@ function selectAsn(asn) {
     heading.innerText = "ASN #" + asn.toFixed(0) + " (" + targetAsn.name + ")";
 
     // Get the flow data
-    $.get("local-api/flowTimeline/" + asn, (data) => {
+    $.get(FLOW_URL + asn, (data) => {
         // If data has more than 20 entries, only show the first 20 (temporary)
         if (data.length > 20) {
             data = data.slice(0, 20);

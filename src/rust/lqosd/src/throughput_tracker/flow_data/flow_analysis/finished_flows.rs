@@ -318,8 +318,9 @@ impl FinishedFlowAnalysis {
 }
 
 impl FlowbeeRecipient for FinishedFlowAnalysis {
-    fn enqueue(&self, key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
+    fn enqueue(&self, key: FlowbeeKey, mut data: FlowbeeLocalData, analysis: FlowAnalysis) {
         log::debug!("Finished flow analysis");
+        data.trim(); // Remove the trailing 30 seconds of zeroes
         RECENT_FLOWS.push(TimeEntry {
             time: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
