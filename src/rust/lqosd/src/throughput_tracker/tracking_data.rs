@@ -227,6 +227,13 @@ impl ThroughputTracker {
         } else {
           // We have a valid flow, so it needs to be tracked
           if let Some(this_flow) = all_flows_lock.get_mut(&key) {
+            // If retransmits have changed, add the time to the retry list
+            if data.tcp_retransmits.down != this_flow.0.tcp_retransmits.down {
+                this_flow.0.retry_times_down.push(data.last_seen);
+            }
+            if data.tcp_retransmits.up != this_flow.0.tcp_retransmits.up {
+              this_flow.0.retry_times_up.push(data.last_seen);
+            }
             this_flow.0.last_seen = data.last_seen;
             this_flow.0.bytes_sent = data.bytes_sent;
             this_flow.0.packets_sent = data.packets_sent;
