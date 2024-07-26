@@ -23,16 +23,13 @@ export class FlowDurationsGraph extends DashboardGraph {
     update(data) {
         this.chart.hideLoading();
 
-        let x = [];
-        let y = [];
+        let points = [];
 
         data.forEach((r) => {
-            x.push(r.duration);
-            y.push(r.count);
+            points.push([r.duration, r.count]);
         });
 
-        this.option.xAxis.data = x;
-        this.option.series.data = y;
+        this.option.series.data = points;
 
         this.chart.setOption(this.option);
     }
