@@ -6,11 +6,11 @@ export class FlowDurationsGraph extends DashboardGraph {
         this.option = {
             xAxis: {
                 name: "Seconds",
-                type: 'value',
+                type: 'log',
             },
             yAxis: {
                 name: "Samples",
-                type: 'value',
+                type: 'log',
             },
             series: {
                 data: [],
