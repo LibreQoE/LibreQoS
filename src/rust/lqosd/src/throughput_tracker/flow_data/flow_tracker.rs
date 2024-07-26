@@ -41,6 +41,8 @@ pub struct FlowbeeLocalData {
     pub flags: u8,
     /// Recent RTT median
     pub rtt: [RttData; 2],
+    /// Throughput Buffer
+    pub throughput_buffer: Vec<DownUpOrder<u64>>,
 }
 
 impl From<&FlowbeeData> for FlowbeeLocalData {
@@ -56,6 +58,7 @@ impl From<&FlowbeeData> for FlowbeeLocalData {
             tos: data.tos,
             flags: data.flags,
             rtt: [RttData::from_nanos(0); 2],
+            throughput_buffer: vec![ data.bytes_sent ],
         }
     }
 }

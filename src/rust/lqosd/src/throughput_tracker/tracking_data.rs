@@ -200,6 +200,7 @@ impl ThroughputTracker {
       get_flowbee_event_count_and_reset();
       let since_boot = Duration::from(now);
       let expire = (since_boot - Duration::from_secs(timeout_seconds)).as_nanos() as u64;
+      let zeroed = DownUpOrder::zeroed();
 
       // Tracker for per-circuit RTT data. We're losing some of the smoothness by sampling
       // every flow; the idea is to combine them into a single entry for the circuit. This
@@ -234,6 +235,8 @@ impl ThroughputTracker {
             this_flow.0.end_status = data.end_status;
             this_flow.0.tos = data.tos;
             this_flow.0.flags = data.flags;
+            let prev_bytes = this_flow.0.throughput_buffer.last().unwrap_or(&zeroed);
+            this_flow.0.throughput_buffer.push(data.bytes_sent.checked_sub_or_zero(*prev_bytes));
             if let Some([up, down]) = rtt_samples.get(&key) {
               if up.as_nanos() != 0 {
                 this_flow.0.rtt[0] = *up;              
