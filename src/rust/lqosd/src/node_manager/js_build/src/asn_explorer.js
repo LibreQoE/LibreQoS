@@ -127,11 +127,11 @@ function renderAsn(asn, data) {
         }
         ht += "</p>";
         headingCol.innerHTML = ht;
-        div.appendChild(headingCol);
+        //div.appendChild(headingCol);
 
         // Build a canvas div, we'll decorate this later
         let canvasCol = document.createElement("div");
-        canvasCol.classList.add("col-11");
+        canvasCol.classList.add("col-12");
         let canvas = document.createElement("canvas");
         canvas.id = "flowCanvas" + i;
         canvas.style.width = "100%";
@@ -171,24 +171,28 @@ function renderAsn(asn, data) {
     target.appendChild(heading);
 
     let nextButton = document.createElement("button");
-    nextButton.classList.add("btn", "btn-primary");
-    nextButton.innerText = "Next";
+    nextButton.classList.add("btn", "btn-secondary", "btn-sm", "ms-2");
+    nextButton.innerHTML = "<i class='fa fa-arrow-right'></i> Next";
     nextButton.onclick = () => {
         page++;
         if (page * itemsPerPage >= data.length) page = Math.floor(data.length / itemsPerPage);
         renderAsn(asn, data);
     };
-    target.appendChild(nextButton);
+
 
     let prevButton = document.createElement("button");
-    prevButton.classList.add("btn", "btn-primary");
-    prevButton.innerText = "Previous";
+    nextButton.classList.add("btn", "btn-secondary", "btn-sm", "me-2");
+    prevButton.innerHTML = "<i class='fa fa-arrow-left'></i> Previous";
     prevButton.onclick = () => {
         page--;
         if (page < 0) page = 0;
         renderAsn(asn, data);
     }
-    target.appendChild(prevButton);
+    let controlDiv = document.createElement("div");
+    controlDiv.classList.add("mb-2");
+    controlDiv.appendChild(prevButton);
+    controlDiv.appendChild(nextButton);
+    target.appendChild(controlDiv);
 
     target.appendChild(flowsDiv);
 
@@ -274,6 +278,7 @@ function drawTimeline() {
         ctx.stroke();
 
         x = timeToX(row.start, width);
+        ctx.moveTo(x, height/2);
         row.throughput.forEach((value, index) => {
             let upPercent = value.up / throughputUpMax;
             let y = (height/2) + (upPercent * (trimmedHeight / 2));
