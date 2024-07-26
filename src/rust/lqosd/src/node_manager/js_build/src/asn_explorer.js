@@ -10,6 +10,11 @@ let asnList = [];
 let asnData = [];
 let graphMinTime = Number.MAX_SAFE_INTEGER;
 let graphMaxTime = Number.MIN_SAFE_INTEGER;
+let throughputDownMax = 0;
+let throughputUpMax = 0;
+
+const itemsPerPage = 20;
+let page = 0;
 
 function asnDropdown() {
     $.get(LIST_URL, (data) => {
@@ -32,6 +37,10 @@ function asnDropdown() {
         parentDiv.appendChild(button);
         let dropdownList = document.createElement("ul");
         dropdownList.classList.add("dropdown-menu");
+
+        if (data.length === 0) {
+            data.push({asn: 0, name: "No data", count: 0});
+        }
 
         // Add items
         data.forEach((row) => {
@@ -56,6 +65,13 @@ function asnDropdown() {
 }
 
 function selectAsn(asn) {
+    $.get(FLOW_URL + asn, (data) => {
+        page = 0;
+        renderAsn(asn, data);
+    });
+}
+
+function renderAsn(asn, data) {
     let targetAsn = asnList.find((row) => row.asn === asn);
     if (targetAsn === undefined || targetAsn === null) {
         console.error("Could not find ASN: " + asn);
@@ -69,81 +85,117 @@ function selectAsn(asn) {
     heading.innerText = "ASN #" + asn.toFixed(0) + " (" + targetAsn.name + ")";
 
     // Get the flow data
-    $.get(FLOW_URL + asn, (data) => {
-        // If data has more than 20 entries, only show the first 20 (temporary)
-        if (data.length > 20) {
-            data = data.slice(0, 20);
+    asnData = data;
+
+    // Sort data by row.start, ascending
+    data.sort((a, b) => {
+        return a.start - b.start;
+    });
+
+    // Build the flows display
+    let flowsDiv = document.createElement("div");
+    let minTime = Number.MAX_SAFE_INTEGER;
+    let maxTime = Number.MIN_SAFE_INTEGER;
+    for (let i= page * itemsPerPage; i<(page+1) * itemsPerPage; i++) {
+        if (i >= data.length) break;
+        let row = data[i];
+
+        // Update min/max time
+        if (row.start < minTime) {
+            minTime = row.start;
         }
-        asnData = data;
+        if (row.end > maxTime) {
+            maxTime = row.end;
+        }
 
-        // Sort data by row.start, ascending
-        data.sort((a, b) => {
-            return a.start - b.start;
+        let div = document.createElement("div");
+        div.classList.add("row");
+
+        // Build the heading
+        let headingCol = document.createElement("div");
+        headingCol.classList.add("col-1");
+
+        let ht = "<p class='text-secondary small'>" + scaleNumber(row.total_bytes.down, 0) + " / " + scaleNumber(row.total_bytes.up);
+
+        if (row.rtt[0] !== undefined) {
+            ht += "<br /> RTT: " + scaleNanos(row.rtt[0].nanoseconds, 0);
+        } else {
+            ht += "<br /> RTT: -";
+        }
+        if (row.rtt[1] !== undefined) {
+            ht += " / " + scaleNanos(row.rtt[1].nanoseconds, 0);
+        }
+        ht += "</p>";
+        headingCol.innerHTML = ht;
+        div.appendChild(headingCol);
+
+        // Build a canvas div, we'll decorate this later
+        let canvasCol = document.createElement("div");
+        canvasCol.classList.add("col-11");
+        let canvas = document.createElement("canvas");
+        canvas.id = "flowCanvas" + i;
+        canvas.style.width = "100%";
+        canvas.style.height = "30px";
+        canvasCol.appendChild(canvas);
+        div.appendChild(canvasCol);
+
+        flowsDiv.appendChild(div);
+    }
+
+    // Store the global time range
+    graphMinTime = minTime;
+    graphMaxTime = maxTime;
+
+    // Calculate the max down and up for every item
+    let maxDown = 0;
+    let maxUp = 0;
+    data.forEach((row) => {
+        row.throughput.forEach((value) => {
+            if (value.down > maxDown) {
+                maxDown = value.down;
+            }
+            if (value.up > maxUp) {
+                maxUp = value.up;
+            }
         });
+    });
+    if (maxDown > throughputDownMax) {
+        throughputDownMax = maxDown;
+    }
+    if (maxUp > throughputUpMax) {
+        throughputUpMax = maxUp;
+    }
 
-        // Build the flows display
-        let flowsDiv = document.createElement("div");
-        let count = 0;
-        let minTime = Number.MAX_SAFE_INTEGER;
-        let maxTime = Number.MIN_SAFE_INTEGER;
-        data.forEach((row) => {
-            // Update min/max time
-            if (row.start < minTime) {
-                minTime = row.start;
-            }
-            if (row.end > maxTime) {
-                maxTime = row.end;
-            }
+    // Apply the data to the page
+    clearDiv(target);
+    target.appendChild(heading);
 
-            let div = document.createElement("div");
-            div.classList.add("row");
+    let nextButton = document.createElement("button");
+    nextButton.classList.add("btn", "btn-primary");
+    nextButton.innerText = "Next";
+    nextButton.onclick = () => {
+        page++;
+        if (page * itemsPerPage >= data.length) page = Math.floor(data.length / itemsPerPage);
+        renderAsn(asn, data);
+    };
+    target.appendChild(nextButton);
 
-            // Build the heading
-            let headingCol = document.createElement("div");
-            headingCol.classList.add("col-1");
+    let prevButton = document.createElement("button");
+    prevButton.classList.add("btn", "btn-primary");
+    prevButton.innerText = "Previous";
+    prevButton.onclick = () => {
+        page--;
+        if (page < 0) page = 0;
+        renderAsn(asn, data);
+    }
+    target.appendChild(prevButton);
 
-            let ht = "<p class='text-secondary small'>" + scaleNumber(row.total_bytes.down, 0) + " / " + scaleNumber(row.total_bytes.up);
+    target.appendChild(flowsDiv);
 
-            if (row.rtt[0] !== undefined) {
-                ht += "<br /> RTT: " + scaleNanos(row.rtt[0].nanoseconds, 0);
-            } else {
-                ht += "<br /> RTT: -";
-            }
-            if (row.rtt[1] !== undefined) {
-                ht += " / " + scaleNanos(row.rtt[1].nanoseconds, 0);
-            }
-            ht += "</p>";
-            headingCol.innerHTML = ht;
-            div.appendChild(headingCol);
-
-            // Build a canvas div, we'll decorate this later
-            let canvasCol = document.createElement("div");
-            canvasCol.classList.add("col-11");
-            let canvas = document.createElement("canvas");
-            canvas.id = "flowCanvas" + count;
-            canvas.style.width = "100%";
-            canvas.style.height = "30px";
-            canvasCol.appendChild(canvas);
-            div.appendChild(canvasCol);
-
-            flowsDiv.appendChild(div);
-            count++;
-        });
-
-        // Store the global time range
-        graphMinTime = minTime;
-        graphMaxTime = maxTime;
-
-        // Apply the data to the page
-        clearDiv(target);
-        target.appendChild(heading);
-        target.appendChild(flowsDiv);
-
-        // Wait for the page to render before drawing the graphs
-        requestAnimationFrame(() => {
-            setTimeout(() => {
-                drawTimeline();
-            });
+    // Wait for the page to render before drawing the graphs
+    requestAnimationFrame(() => {
+        setTimeout(() => {
+            drawTimeline();
         });
     });
 }
@@ -158,14 +210,16 @@ function drawTimeline() {
     var style = getComputedStyle(document.body)
     let regionBg = style.getPropertyValue('--bs-tertiary-bg');
     let lineColor = style.getPropertyValue('--bs-primary');
+    let axisColor = style.getPropertyValue('--bs-secondary');
 
-    for (let i=0; i<asnData.length; i++) {
+    for (let i=page * itemsPerPage; i<(page+1)*itemsPerPage; i++) {
         let row = asnData[i];
-        console.log(row);
+        //console.log(row);
         let canvasId = "flowCanvas" + i;
 
         // Get the canvas context
         let canvas = document.getElementById(canvasId);
+        if (canvas === null) break;
         const { width, height } = canvas.getBoundingClientRect();
         canvas.width = width;
         canvas.height = height;
@@ -192,17 +246,12 @@ function drawTimeline() {
             ctx.stroke();
         });
 
-        // Find the max of row.throughput.down and row.throughput.up
-        let maxThroughputDown = 0;
-        let maxThroughputUp = 0;
-        row.throughput.forEach((value) => {
-            if (value.down > maxThroughputDown) {
-                maxThroughputDown = value.down;
-            }
-            if (value.up > maxThroughputUp) {
-                maxThroughputUp = value.up;
-            }
-        });
+        // Draw a horizontal axis line the length of the canvas area at y/2
+        ctx.strokeStyle = axisColor;
+        ctx.beginPath();
+        ctx.moveTo(timeToX(row.start, width), height / 2);
+        ctx.lineTo(timeToX(row.end, width), height / 2);
+        ctx.stroke();
 
         // Draw a throughput down line. Y from y/2 to height, scaled to maxThroughputDown
         ctx.strokeStyle = lineColor;
@@ -213,15 +262,22 @@ function drawTimeline() {
         let endX = timeToX(row.end, width);
         let sampleWidth = (endX - startX) / numberOfSamples;
         let x = timeToX(row.start, width);
+        ctx.moveTo(x, height/2);
+        let trimmedHeight = height - 10;
         row.throughput.forEach((value, index) => {
-            let downPercent = value.down / maxThroughputDown;
-            let downHeight = downPercent * (height / 2);
-            let y = height - downHeight;
-            ctx.moveTo(x, y);
+            let downPercent = value.down / throughputDownMax;
+            let y = (height/2) - (downPercent * (trimmedHeight / 2));
+            ctx.lineTo(x, y);
 
-            let upPercent = value.up / maxThroughputUp;
-            let upHeight = upPercent * (height / 2);
-            ctx.lineTo(x, upHeight);
+            x += sampleWidth;
+        });
+        ctx.stroke();
+
+        x = timeToX(row.start, width);
+        row.throughput.forEach((value, index) => {
+            let upPercent = value.up / throughputUpMax;
+            let y = (height/2) + (upPercent * (trimmedHeight / 2));
+            ctx.lineTo(x, y);
 
             x += sampleWidth;
         });

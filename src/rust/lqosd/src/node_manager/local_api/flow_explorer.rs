@@ -47,11 +47,11 @@ pub async fn flow_timeline(Path(asn_id): Path<u32>) -> Json<Vec<FlowTimeline>> {
                 rtt: flow.1.rtt.clone(),
                 retransmit_times_down: flow.1.retry_times_down
                     .iter()
-                    .map(|t| boot_time + *t)
+                    .map(|t| boot_time + Duration::from_nanos(*t).as_secs())
                     .collect(),
                 retransmit_times_up: flow.1.retry_times_up
                     .iter()
-                    .map(|t| boot_time + *t)
+                    .map(|t| boot_time + Duration::from_nanos(*t).as_secs())
                     .collect(),
                 total_bytes: flow.1.bytes_sent.clone(),
             }
