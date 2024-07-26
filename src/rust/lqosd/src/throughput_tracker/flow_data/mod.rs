@@ -15,9 +15,8 @@ use std::sync::{
 };
 pub(crate) use flow_analysis::{setup_flow_analysis, get_asn_name_and_country, 
     FlowAnalysis, RECENT_FLOWS, flowbee_handle_events, get_flowbee_event_count_and_reset,
-    expire_rtt_flows, flowbee_rtt_map, RttData, get_rtt_events_per_second,
+    expire_rtt_flows, flowbee_rtt_map, RttData, get_rtt_events_per_second, AsnListEntry
 };
-
 
 trait FlowbeeRecipient {
     fn enqueue(&self, key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis);

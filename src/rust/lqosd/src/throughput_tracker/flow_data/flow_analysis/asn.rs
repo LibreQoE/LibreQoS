@@ -168,6 +168,15 @@ impl GeoTable {
 
         (0.0, 0.0)
     }
+
+    pub fn find_name_by_id(&self, id: u32) -> String {
+        for (_, entry) in self.asn_trie.iter() {
+            if entry.asn == id {
+                return entry.organization.clone();
+            }
+        }
+        "Unknown".to_string()
+    }
 }
 
 #[derive(Default)]

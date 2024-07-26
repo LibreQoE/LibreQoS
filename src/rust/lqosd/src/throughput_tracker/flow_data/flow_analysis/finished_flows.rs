@@ -1,4 +1,4 @@
-use super::{get_asn_lat_lon, get_asn_name_and_country, FlowAnalysis};
+use super::{get_asn_lat_lon, get_asn_name_and_country, FlowAnalysis, get_asn_name_by_id};
 use crate::throughput_tracker::flow_data::{FlowbeeLocalData, FlowbeeRecipient};
 use fxhash::FxHashMap;
 use lqos_bus::BusResponse;
@@ -14,6 +14,7 @@ pub struct TimeBuffer {
     buffer: Mutex<Vec<TimeEntry>>,
 }
 
+#[derive(Clone, Debug)]
 struct TimeEntry {
     time: u64,
     data: (FlowbeeKey, FlowbeeLocalData, FlowAnalysis),
@@ -23,6 +24,13 @@ struct TimeEntry {
 pub struct FlowDurationSummary {
     count: usize,
     duration: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AsnListEntry {
+    count: usize,
+    asn: u32,
+    name: String,
 }
 
 impl TimeBuffer {
@@ -259,6 +267,31 @@ impl TimeBuffer {
             .sorted()
             .dedup_with_count() // Now we're (count, duration in seconds)
             .map(|(count, duration)| FlowDurationSummary { count, duration })
+            .collect()
+    }
+
+    pub fn all_flows_for_asn(&self, id: u32) -> Vec<(FlowbeeKey, FlowbeeLocalData, FlowAnalysis)> {
+        let buffer = self.buffer.lock().unwrap();
+        buffer
+            .iter()
+            .filter(|flow| flow.data.2.asn_id.0 == id )
+            .map(|flow| flow.data.clone())
+            .collect()
+    }
+
+    /// Builds a list of all ASNs with recent data, and how many flows they have.
+    pub fn asn_list(&self) -> Vec<AsnListEntry> {
+        let buffer = self.buffer.lock().unwrap();
+        buffer
+            .iter()
+            .map(|flow| flow.data.2.asn_id.0)
+            .sorted()
+            .dedup_with_count()
+            .map(|(count, asn)| AsnListEntry {
+                count,
+                asn,
+                name: get_asn_name_by_id(asn),
+            })
             .collect()
     }
 }
