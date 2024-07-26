@@ -47,9 +47,9 @@ function asnDropdown() {
         let target = document.getElementById("asnList");
         target.appendChild(parentDiv);
 
-        if (data.length > 0) {
+        /*if (data.length > 0) {
             selectAsn(data[0].asn);
-        }
+        }*/
     });
 }
 
@@ -68,6 +68,10 @@ function selectAsn(asn) {
 
     // Get the flow data
     $.get("local-api/flowTimeline/" + asn, (data) => {
+        // If data has more than 20 entries, only show the first 20 (temporary)
+        if (data.length > 20) {
+            data = data.slice(0, 20);
+        }
         asnData = data;
 
         // Sort data by row.start, ascending
@@ -116,7 +120,7 @@ function selectAsn(asn) {
             let canvas = document.createElement("canvas");
             canvas.id = "flowCanvas" + count;
             canvas.style.width = "100%";
-            canvas.style.height = "50px";
+            canvas.style.height = "30px";
             canvasCol.appendChild(canvas);
             div.appendChild(canvasCol);
 
