@@ -159,6 +159,7 @@ function drawTimeline() {
 
     for (let i=0; i<asnData.length; i++) {
         let row = asnData[i];
+        console.log(row);
         let canvasId = "flowCanvas" + i;
 
         // Get the canvas context

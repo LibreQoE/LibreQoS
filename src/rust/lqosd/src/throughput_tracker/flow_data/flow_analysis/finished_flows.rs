@@ -284,6 +284,10 @@ impl TimeBuffer {
         let buffer = self.buffer.lock().unwrap();
         buffer
             .iter()
+            .filter(|flow| {
+                // Total flow time > 2 seconds
+                flow.data.1.last_seen - flow.data.1.start_time > 2_000_000_000
+            })
             .map(|flow| flow.data.2.asn_id.0)
             .sorted()
             .dedup_with_count()

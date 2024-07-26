@@ -32,6 +32,10 @@ pub async fn flow_timeline(Path(asn_id): Path<u32>) -> Json<Vec<FlowTimeline>> {
 
     let flows = all_flows_for_asn
         .iter()
+        .filter(|flow| {
+            // Total flow time > 2 seconds
+            flow.1.last_seen - flow.1.start_time > 2_000_000_000
+        })
         .map(|flow| {
 
             FlowTimeline {
