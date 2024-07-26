@@ -5,12 +5,12 @@ export class FlowDurationsGraph extends DashboardGraph {
         super(id);
         this.option = {
             xAxis: {
-                type: 'log',
-                name: "Seconds"
+                name: "Seconds",
+                type: 'value',
             },
             yAxis: {
+                name: "Samples",
                 type: 'value',
-                name: "Samples"
             },
             series: {
                 data: [],
