@@ -13,6 +13,7 @@ pub enum PublishedChannels {
     TopFlowsBytes,
     TopFlowsRate,
     EndpointsByCountry,
+    FlowDurations,
     EtherProtocols,
     IpProtocols,
     Cpu,

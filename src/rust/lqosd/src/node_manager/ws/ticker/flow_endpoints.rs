@@ -7,6 +7,7 @@ use lqos_bus::BusResponse;
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
 use crate::throughput_tracker;
+use crate::throughput_tracker::flow_data::RECENT_FLOWS;
 
 pub async fn endpoints_by_country(channels: Arc<PubSub>) {
     if !channels.is_channel_alive(PublishedChannels::EndpointsByCountry).await {
@@ -61,4 +62,19 @@ pub async fn ip_protocols(channels: Arc<PubSub>) {
     ).to_string();
         channels.send(PublishedChannels::IpProtocols, message).await;
     }
+}
+
+pub async fn flow_duration(channels: Arc<PubSub>) {
+    if !channels.is_channel_alive(PublishedChannels::FlowDurations).await {
+        return;
+    }
+
+    let data = RECENT_FLOWS.flow_duration_summary();
+    let message = json!(
+        {
+            "event": PublishedChannels::FlowDurations.to_string(),
+            "data": data,
+        }
+    ).to_string();
+    channels.send(PublishedChannels::FlowDurations, message).await;
 }

@@ -42,6 +42,7 @@ async fn one_second_cadence(channels: Arc<PubSub>) {
         let mc = channels.clone(); spawn(async move { flow_endpoints::endpoints_by_country(mc).await });
         let mc = channels.clone(); spawn(async move { flow_endpoints::ether_protocols(mc).await });
         let mc = channels.clone(); spawn(async move { flow_endpoints::ip_protocols(mc).await });
+        let mc = channels.clone(); spawn(async move { flow_endpoints::flow_duration(mc).await });
         let mc = channels.clone(); spawn(async move { tree_summary::tree_summary(mc).await });
         let mc = channels.clone(); spawn(async move { network_tree::network_tree(mc).await });
         let mc = channels.clone(); spawn(async move { circuit_capacity::circuit_capacity(mc).await });

@@ -24,6 +24,7 @@ import {TopTreeSankey} from "./top_tree_sankey";
 import {Top10DownloadersVisual} from "./top10_downloads_graphic";
 import {Worst10DownloadersVisual} from "./worst10_downloaders_graphic";
 import {Worst10RetransmitsVisual} from "./worst10_retransmits_graphic";
+import {FlowDurationDash} from "./flow_durations_dash";
 
 export const DashletMenu = [
     { name: "Throughput Bits/Second", tag: "throughputBps", size: 3 },
@@ -41,6 +42,7 @@ export const DashletMenu = [
     { name: "Top 10 Flows (total bytes)", tag: "top10flowsBytes", size: 6 },
     { name: "Top 10 Flows (rate)", tag: "top10flowsRate", size: 6 },
     { name: "Top 10 Endpoints by Country", tag: "top10endpointsCountry", size: 6 },
+    { name: "Flow Duration", tag: "flowDuration", size: 6 },
     { name: "Ether Protocols", tag: "etherProtocols", size: 6 },
     { name: "IP Protocols", tag: "ipProtocols", size: 6 },
     { name: "CPU Utilization", tag: "cpu", size: 3 },
@@ -75,6 +77,7 @@ export function widgetFactory(widgetName, count) {
         case "top10endpointsCountry"   : widget = new Top10EndpointsByCountry(count); break;
         case "etherProtocols"   : widget = new EtherProtocols(count); break;
         case "ipProtocols"      : widget = new IpProtocols(count); break;
+        case "flowDuration"     : widget = new FlowDurationDash(count); break;
         case "cpu"              : widget = new CpuDash(count); break;
         case "ram"              : widget = new RamDash(count); break;
         case "treeSummary"      : widget = new TopTreeSummary(count); break;

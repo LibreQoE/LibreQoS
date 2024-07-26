@@ -5,6 +5,9 @@ use lqos_bus::BusResponse;
 use lqos_sys::flowbee_data::FlowbeeKey;
 use once_cell::sync::Lazy;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use itertools::Itertools;
+use serde::Serialize;
 use lqos_utils::units::DownUpOrder;
 
 pub struct TimeBuffer {
@@ -14,6 +17,12 @@ pub struct TimeBuffer {
 struct TimeEntry {
     time: u64,
     data: (FlowbeeKey, FlowbeeLocalData, FlowAnalysis),
+}
+
+#[derive(Debug, Serialize)]
+pub struct FlowDurationSummary {
+    count: usize,
+    duration: u64,
 }
 
 impl TimeBuffer {
@@ -238,6 +247,19 @@ impl TimeBuffer {
         // Keep only the top 10
         results.truncate(10);
         results
+    }
+
+    pub fn flow_duration_summary(&self) -> Vec<FlowDurationSummary> {
+        let buffer = self.buffer.lock().unwrap();
+
+        buffer
+            .iter()
+            .map(|f| Duration::from_nanos(f.data.1.last_seen - f.data.1.start_time)) // Duration in nanoseconds
+            .map(|nanos| nanos.as_secs())
+            .sorted()
+            .dedup_with_count() // Now we're (count, duration in seconds)
+            .map(|(count, duration)| FlowDurationSummary { count, duration })
+            .collect()
     }
 }
 
