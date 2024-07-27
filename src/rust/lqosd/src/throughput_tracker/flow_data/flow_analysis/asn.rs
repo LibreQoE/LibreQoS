@@ -3,6 +3,7 @@
 
 
 use std::{io::Read, net::IpAddr, path::Path};
+use fxhash::FxHashMap;
 use serde::Deserialize;
 
 #[derive(Deserialize, Clone, Debug)]
@@ -44,6 +45,7 @@ struct Geobin {
 pub struct GeoTable {
     asn_trie: ip_network_table::IpNetworkTable<AsnEncoded>,
     geo_trie: ip_network_table::IpNetworkTable<GeoIpLocation>,
+    asn_lookup: FxHashMap<u32, String>,
 }
 
 impl GeoTable {
@@ -78,10 +80,13 @@ impl GeoTable {
         flate2::read::GzDecoder::new(file).read_to_end(&mut buffer)?;
         let geobin: Geobin = bincode::deserialize(&buffer)?;
 
-        // Build the ASN trie
+        // Build the ASN trie and ASN lookup map
+        let mut asn_lookup = FxHashMap::default();
+
         log::info!("Building ASN trie");
         let mut asn_trie = ip_network_table::IpNetworkTable::<AsnEncoded>::new();
         for entry in geobin.asn {
+            asn_lookup.insert(entry.asn, entry.organization.clone());
             let (ip, prefix) = match entry.network {
                 IpAddr::V4(ip) => (ip.to_ipv6_mapped(), entry.prefix+96 ),
                 IpAddr::V6(ip) => (ip, entry.prefix),
@@ -109,6 +114,7 @@ impl GeoTable {
         Ok(Self {
             asn_trie,
             geo_trie,
+            asn_lookup,
         })
     }
 
@@ -170,12 +176,7 @@ impl GeoTable {
     }
 
     pub fn find_name_by_id(&self, id: u32) -> String {
-        for (_, entry) in self.asn_trie.iter() {
-            if entry.asn == id {
-                return entry.organization.clone();
-            }
-        }
-        "Unknown".to_string()
+        self.asn_lookup.get(&id).cloned().unwrap_or_else(|| "Unknown".to_string())
     }
 }
 

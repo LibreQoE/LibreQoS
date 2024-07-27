@@ -281,14 +281,28 @@ impl TimeBuffer {
 
     /// Builds a list of all ASNs with recent data, and how many flows they have.
     pub fn asn_list(&self) -> Vec<AsnListEntry> {
-        let buffer = self.buffer.lock().unwrap();
-        buffer
-            .iter()
+        // 1: Clone: large operation, don't keep the buffer locked longer than we have to
+        let buffer = {
+            let buffer = self.buffer.lock().unwrap();
+            buffer.clone()
+        };
+
+        // Filter out short flows and reduce to the ASN ID# only
+        let mut buffer: Vec<_> = buffer
+            .into_iter()
             .filter(|flow| {
-                // Total flow time > 2 seconds
-                flow.data.1.last_seen - flow.data.1.start_time > 2_000_000_000
+                // Total flow time > 3 seconds
+                flow.data.1.last_seen - flow.data.1.start_time > 3_000_000_000
             })
             .map(|flow| flow.data.2.asn_id.0)
+            .collect();
+
+        // Sort the buffer
+        buffer.sort_unstable();
+
+        // Deduplicate and count, decorate with name
+        buffer
+            .into_iter()
             .sorted()
             .dedup_with_count()
             .map(|(count, asn)| AsnListEntry {
