@@ -188,6 +188,8 @@ function renderAsn(asn, data) {
             let clientLink = document.createElement("a");
             clientLink.href = "/circuit/" + encodeURI(row.circuit_id);
             clientLink.innerText = row.circuit_name;
+            clientLink.classList.add("redactable");
+            clientLink.style.textOverflow = "ellipsis";
             clientCol.appendChild(clientLink);
         } else {
             clientCol.innerText = row.circuit_name;
