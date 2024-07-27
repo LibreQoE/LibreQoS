@@ -4,6 +4,7 @@ use axum::Json;
 use serde::Serialize;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::{time_since_boot, unix_now};
+use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use crate::throughput_tracker::flow_data::{AsnListEntry, RECENT_FLOWS, RttData};
 
 pub async fn asn_list() -> Json<Vec<AsnListEntry>> {
@@ -21,6 +22,9 @@ pub struct FlowTimeline {
     retransmit_times_down: Vec<u64>,
     retransmit_times_up: Vec<u64>,
     total_bytes: DownUpOrder<u64>,
+    protocol: String,
+    circuit_id: String,
+    circuit_name: String,
 }
 
 pub async fn flow_timeline(Path(asn_id): Path<u32>) -> Json<Vec<FlowTimeline>> {
@@ -38,6 +42,14 @@ pub async fn flow_timeline(Path(asn_id): Path<u32>) -> Json<Vec<FlowTimeline>> {
         })
         .map(|flow| {
 
+            let (circuit_id, mut circuit_name) = {
+                let sd = SHAPED_DEVICES.read().unwrap();
+                sd.get_circuit_id_and_name_from_ip(&flow.0.local_ip).unwrap_or((String::new(), String::new()))
+            };
+            if circuit_name.is_empty() {
+                circuit_name = flow.0.local_ip.as_ip().to_string();
+            }
+
             FlowTimeline {
                 start: boot_time + Duration::from_nanos(flow.1.start_time).as_secs(),
                 end: boot_time + Duration::from_nanos(flow.1.last_seen).as_secs(),
@@ -54,6 +66,9 @@ pub async fn flow_timeline(Path(asn_id): Path<u32>) -> Json<Vec<FlowTimeline>> {
                     .map(|t| boot_time + Duration::from_nanos(*t).as_secs())
                     .collect(),
                 total_bytes: flow.1.bytes_sent.clone(),
+                protocol: flow.2.protocol_analysis.to_string(),
+                circuit_id,
+                circuit_name,
             }
         })
         .collect::<Vec<_>>();
