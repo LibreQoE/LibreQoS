@@ -98,7 +98,7 @@ function countryDropdown() {
         // Add items
         data.forEach((row) => {
             let li = document.createElement("li");
-            li.innerHTML = "<img alt='" + row.iso_code + "' src='flags/" + row.iso_code + ".svg' height=12 width=12 />" + row.name + " (" + row.count + ")";
+            li.innerHTML = "<img alt='" + row.iso_code + "' src='flags/" + row.iso_code.toLowerCase() + ".svg' height=12 width=12 />" + row.name + " (" + row.count + ")";
             li.classList.add("dropdown-item");
             li.onclick = () => {
                 selectCountry(row.iso_code);
