@@ -18,9 +18,11 @@ mod flow_explorer;
 use axum::Router;
 use axum::routing::{get, post};
 use crate::node_manager::auth::auth_layer;
+use tower_http::cors::CorsLayer;
 
 pub fn local_api() -> Router {
     Router::new()
+        .layer(CorsLayer::very_permissive())
         .route("/dashletThemes", get(dashboard_themes::list_themes))
         .route("/dashletSave", post(dashboard_themes::save_theme))
         .route("/dashletDelete", post(dashboard_themes::delete_theme))
