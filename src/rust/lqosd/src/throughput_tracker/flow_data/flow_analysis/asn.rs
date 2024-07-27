@@ -139,9 +139,9 @@ impl GeoTable {
             IpAddr::V4(ip) => ip.to_ipv6_mapped(),
             IpAddr::V6(ip) => ip,
         };
-        let mut owners = String::new();
-        let mut country = String::new();
-        let mut flag = String::new();
+        let mut owners = "Unknown".to_string();
+        let mut country = "Unknown".to_string();
+        let mut flag = "Unknown".to_string();
 
         if let Some(matched) = self.asn_trie.longest_match(ip) {
             log::debug!("Matched ASN: {:?}", matched.1.asn);

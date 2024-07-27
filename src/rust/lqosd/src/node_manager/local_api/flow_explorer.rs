@@ -2,13 +2,18 @@ use std::time::Duration;
 use axum::extract::Path;
 use axum::Json;
 use serde::Serialize;
+use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::{time_since_boot, unix_now};
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
-use crate::throughput_tracker::flow_data::{AsnListEntry, RECENT_FLOWS, RttData};
+use crate::throughput_tracker::flow_data::{AsnListEntry, AsnCountryListEntry, RECENT_FLOWS, RttData, FlowbeeLocalData, FlowAnalysis};
 
 pub async fn asn_list() -> Json<Vec<AsnListEntry>> {
     Json(RECENT_FLOWS.asn_list())
+}
+
+pub async fn country_list() -> Json<Vec<AsnCountryListEntry>> {
+    Json(RECENT_FLOWS.country_list())
 }
 
 #[derive(Serialize)]
@@ -34,14 +39,19 @@ pub async fn flow_timeline(Path(asn_id): Path<u32>) -> Json<Vec<FlowTimeline>> {
 
     let all_flows_for_asn = RECENT_FLOWS.all_flows_for_asn(asn_id);
 
-    let flows = all_flows_for_asn
+    let flows = all_flows_to_transport(boot_time, all_flows_for_asn);
+
+    Json(flows)
+}
+
+fn all_flows_to_transport(boot_time: u64, all_flows_for_asn: Vec<(FlowbeeKey, FlowbeeLocalData, FlowAnalysis)>) -> Vec<FlowTimeline> {
+    all_flows_for_asn
         .iter()
         .filter(|flow| {
             // Total flow time > 2 seconds
             flow.1.last_seen - flow.1.start_time > 2_000_000_000
         })
         .map(|flow| {
-
             let (circuit_id, mut circuit_name) = {
                 let sd = SHAPED_DEVICES.read().unwrap();
                 sd.get_circuit_id_and_name_from_ip(&flow.0.local_ip).unwrap_or((String::new(), String::new()))
@@ -71,7 +81,17 @@ pub async fn flow_timeline(Path(asn_id): Path<u32>) -> Json<Vec<FlowTimeline>> {
                 circuit_name,
             }
         })
-        .collect::<Vec<_>>();
+        .collect::<Vec<_>>()
+}
+
+pub async fn country_timeline(Path(iso_code): Path<String>) -> Json<Vec<FlowTimeline>> {
+    let time_since_boot = time_since_boot().unwrap();
+    let since_boot = Duration::from(time_since_boot);
+    let boot_time = unix_now().unwrap() - since_boot.as_secs();
+
+    let all_flows_for_asn = RECENT_FLOWS.all_flows_for_country(&iso_code);
+
+    let flows = all_flows_to_transport(boot_time, all_flows_for_asn);
 
     Json(flows)
 }

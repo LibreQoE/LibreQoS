@@ -7,12 +7,14 @@ const LIST_URL = API_URL + "asnList";
 const FLOW_URL = API_URL + "flowTimeline/";
 
 let asnList = [];
+let countryList = [];
 let asnData = [];
 let graphMinTime = Number.MAX_SAFE_INTEGER;
 let graphMaxTime = Number.MIN_SAFE_INTEGER;
 
 const itemsPerPage = 20;
 let page = 0;
+let renderMode = "asn";
 
 let sortBy = "start";
 let sortOptionsList = [
@@ -58,6 +60,7 @@ function asnDropdown() {
             li.classList.add("dropdown-item");
             li.onclick = () => {
                 selectAsn(row.asn);
+                renderMode = "asn";
             };
             dropdownList.appendChild(li);
         });
@@ -66,10 +69,48 @@ function asnDropdown() {
         let target = document.getElementById("asnList");
         clearDiv(target);
         target.appendChild(parentDiv);
+    });
+}
 
-        /*if (data.length > 0) {
-            selectAsn(data[0].asn);
-        }*/
+function countryDropdown() {
+    $.get(API_URL + "countryList", (data) => {
+        countryList = data;
+
+        // Sort data by row.count, descending
+        data.sort((a, b) => {
+            return b.count - a.count;
+        });
+        //console.log(data);
+
+        // Build the dropdown
+        let parentDiv = document.createElement("div");
+        parentDiv.classList.add("dropdown");
+        let button = document.createElement("button");
+        button.classList.add("btn", "btn-secondary", "dropdown-toggle");
+        button.type = "button";
+        button.innerHTML = "Select Country";
+        button.setAttribute("data-bs-toggle", "dropdown");
+        button.setAttribute("aria-expanded", "false");
+        parentDiv.appendChild(button);
+        let dropdownList = document.createElement("ul");
+        dropdownList.classList.add("dropdown-menu");
+
+        // Add items
+        data.forEach((row) => {
+            let li = document.createElement("li");
+            li.innerHTML = "<img alt='" + row.iso_code + "' src='flags/" + row.iso_code + ".svg' height=12 width=12 />" + row.name + " (" + row.count + ")";
+            li.classList.add("dropdown-item");
+            li.onclick = () => {
+                selectCountry(row.iso_code);
+                renderMode = "country";
+            };
+            dropdownList.appendChild(li);
+        });
+
+        parentDiv.appendChild(dropdownList);
+        let target = document.getElementById("countryList");
+        clearDiv(target);
+        target.appendChild(parentDiv);
     });
 }
 
@@ -80,18 +121,37 @@ function selectAsn(asn) {
     });
 }
 
+function selectCountry(country) {
+    let url = API_URL + "countryTimeline/" + country;
+    $.get(url, (data) => {
+        page = 0;
+        renderAsn(country, data);
+    });
+}
+
 function renderAsn(asn, data) {
-    let targetAsn = asnList.find((row) => row.asn === asn);
-    if (targetAsn === undefined || targetAsn === null) {
-        console.error("Could not find ASN: " + asn);
-        return;
+    let heading = document.createElement("h2");
+    if (renderMode === "asn") {
+        let targetAsn = asnList.find((row) => row.asn === asn);
+        if (targetAsn === undefined || targetAsn === null) {
+            console.error("Could not find ASN: " + asn);
+            return;
+        }
+
+        // Build the heading
+        heading.innerText = "ASN #" + asn.toFixed(0) + " (" + targetAsn.name + ")";
+    } else if (renderMode === "country") {
+        let targetCountry = countryList.find((row) => row.iso_code === asn);
+        if (targetCountry === undefined || targetCountry === null) {
+            console.error("Could not find country: " + asn);
+            return;
+        }
+
+        // Build the heading
+        heading.innerHTML = "<img alt='" + targetCountry.iso_code + "' src='flags/" + targetCountry.iso_code + ".svg' height=32 width=32 />" + targetCountry.name;
     }
 
     let target = document.getElementById("asnDetails");
-
-    // Build the heading
-    let heading = document.createElement("h2");
-    heading.innerText = "ASN #" + asn.toFixed(0) + " (" + targetAsn.name + ")";
 
     // Get the flow data
     asnData = data;
@@ -384,3 +444,4 @@ function drawTimeline() {
 }
 
 asnDropdown();
+countryDropdown();

@@ -14,7 +14,7 @@ mod kernel_ringbuffer;
 pub use kernel_ringbuffer::*;
 mod rtt_types;
 pub use rtt_types::RttData;
-pub use finished_flows::AsnListEntry;
+pub use finished_flows::{AsnListEntry, AsnCountryListEntry};
 use crate::throughput_tracker::flow_data::flow_analysis::asn::AsnNameCountryFlag;
 
 static ANALYSIS: Lazy<FlowAnalysisSystem> = Lazy::new(|| FlowAnalysisSystem::new());

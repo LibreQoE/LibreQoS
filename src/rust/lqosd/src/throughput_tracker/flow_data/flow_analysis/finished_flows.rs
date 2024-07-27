@@ -33,6 +33,13 @@ pub struct AsnListEntry {
     name: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct AsnCountryListEntry {
+    count: usize,
+    name: String,
+    iso_code: String,
+}
+
 impl TimeBuffer {
     fn new() -> Self {
         Self {
@@ -279,6 +286,18 @@ impl TimeBuffer {
             .collect()
     }
 
+    pub fn all_flows_for_country(&self, iso_code: &str) -> Vec<(FlowbeeKey, FlowbeeLocalData, FlowAnalysis)> {
+        let buffer = self.buffer.lock().unwrap();
+        buffer
+            .iter()
+            .filter(|flow| {
+                let country = get_asn_name_and_country(flow.data.0.remote_ip.as_ip());
+                country.flag == iso_code
+            })
+            .map(|flow| flow.data.clone())
+            .collect()
+    }
+
     /// Builds a list of all ASNs with recent data, and how many flows they have.
     pub fn asn_list(&self) -> Vec<AsnListEntry> {
         // 1: Clone: large operation, don't keep the buffer locked longer than we have to
@@ -309,6 +328,43 @@ impl TimeBuffer {
                 count,
                 asn,
                 name: get_asn_name_by_id(asn),
+            })
+            .collect()
+    }
+
+    /// Builds a list of ASNs by country with recent data, and how many flows they have.
+    pub fn country_list(&self) -> Vec<AsnCountryListEntry> {
+        // 1: Clone: large operation, don't keep the buffer locked longer than we have to
+        let buffer = {
+            let buffer = self.buffer.lock().unwrap();
+            buffer.clone()
+        };
+
+        // Filter out the short flows and get the country & flag
+        let mut buffer: Vec<(String, String)> = buffer
+            .into_iter()
+            .filter(|flow| {
+                // Total flow time > 3 seconds
+                flow.data.1.last_seen - flow.data.1.start_time > 3_000_000_000
+            })
+            .map(|flow| {
+                let country = get_asn_name_and_country(flow.data.0.remote_ip.as_ip());
+                (country.country, country.flag)
+            })
+            .collect();
+
+        // Sort the buffer
+        buffer.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+
+        // Deduplicate and count, decorate with name
+        buffer
+            .into_iter()
+            .sorted()
+            .dedup_with_count()
+            .map(|(count, asn)| AsnCountryListEntry {
+                count,
+                name: asn.0,
+                iso_code: asn.1,
             })
             .collect()
     }
