@@ -148,7 +148,7 @@ function renderAsn(asn, data) {
         }
 
         // Build the heading
-        heading.innerHTML = "<img alt='" + targetCountry.iso_code + "' src='flags/" + targetCountry.iso_code + ".svg' height=32 width=32 />" + targetCountry.name;
+        heading.innerHTML = "<img alt='" + targetCountry.iso_code + "' src='flags/" + targetCountry.iso_code.toLowerCase() + ".svg' height=32 width=32 />" + targetCountry.name;
     }
 
     let target = document.getElementById("asnDetails");
