@@ -14,6 +14,13 @@ let graphMaxTime = Number.MIN_SAFE_INTEGER;
 const itemsPerPage = 20;
 let page = 0;
 
+let sortBy = "start";
+let sortOptionsList = [
+    { tag: "start", label: "Start Time" },
+    { tag: "duration", label: "Duration" },
+    { tag: "bytes", label: "Bytes" },
+];
+
 function unixTimeToDate(unixTime) {
     return new Date(unixTime * 1000).toLocaleString();
 }
@@ -89,10 +96,24 @@ function renderAsn(asn, data) {
     // Get the flow data
     asnData = data;
 
-    // Sort data by row.start, ascending
-    data.sort((a, b) => {
-        return a.start - b.start;
-    });
+    // Sort by the selected sort key
+    switch (sortBy) {
+        case "start": {
+            data.sort((a, b) => {
+                return a.start - b.start;
+            });
+        } break;
+        case "duration": {
+            data.sort((a, b) => {
+                return b.duration_nanos - a.duration_nanos;
+            });
+        } break;
+        case "bytes": {
+            data.sort((a, b) => {
+                return (b.total_bytes.down + b.total_bytes.up) - (a.total_bytes.down + a.total_bytes.up);
+            });
+        }
+    }
 
     let div = document.createElement("div");
     div.classList.add("row");
@@ -140,7 +161,6 @@ function renderAsn(asn, data) {
     headerDiv.appendChild(headerTime1);
     let headerTime2 = document.createElement("div");
     headerTime2.classList.add("col-4", "text-secondary", "text-end");
-    console.log(maxTime);
     headerTime2.innerText = unixTimeToDate(maxTime);
     headerDiv.appendChild(headerTime2);
 
@@ -220,11 +240,35 @@ function renderAsn(asn, data) {
     paginator.innerText = "Page " + (page + 1) + " of " + Math.ceil(data.length / itemsPerPage);
     paginator.id = "paginator";
 
+    let sortOptions = document.createElement("span");
+    sortOptions.classList.add("text-secondary", "small", "ms-2", "me-2");
+    sortOptions.innerText = "Sort by: ";
+
+    let sortBox = document.createElement("select");
+    sortBox.classList.add("small");
+    sortBox.id = "sortBox";
+    sortOptionsList.forEach((option) => {
+        let opt = document.createElement("option");
+        opt.value = option.tag;
+        opt.innerText = option.label;
+        if (option.tag === sortBy) {
+            opt.selected = true;
+        }
+        sortBox.appendChild(opt);
+    });
+    sortBox.onchange = () => {
+        let sortBox = document.getElementById("sortBox");
+        sortBy = sortBox.value;
+        renderAsn(asn, data);
+    }
+
     let controlDiv = document.createElement("div");
     controlDiv.classList.add("mb-2");
     controlDiv.appendChild(prevButton);
     controlDiv.appendChild(paginator);
     controlDiv.appendChild(nextButton);
+    controlDiv.appendChild(sortOptions);
+    controlDiv.appendChild(sortBox);
     target.appendChild(controlDiv);
     target.appendChild(headerDiv);
 
