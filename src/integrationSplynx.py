@@ -164,10 +164,9 @@ def createShaper():
 		if router_id in sectorForRouter:
 			for sector in sectorForRouter[router_id]:
 				if sector['router_id'] == router_id:
-					download = 1000
-					upload = 1000
 					download = max(round(int(sector['speed_down']) / 1000), 2)
 					upload =  max(round(int(sector['speed_up']) / 1000), 2)
+					
 					sectorName = nameForRouterID[router_id] + "_" + sector['title']
 					if sectorName in siteBandwidth:
 						# Use the CSV bandwidth values
