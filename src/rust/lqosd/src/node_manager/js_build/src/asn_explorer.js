@@ -200,6 +200,9 @@ function renderAsn(asn, data) {
 
         // Build the heading
         heading.innerHTML = "<img alt='" + targetCountry.iso_code + "' src='flags/" + targetCountry.iso_code.toLowerCase() + ".svg' height=32 width=32 />" + targetCountry.name;
+    } else if (renderMode === "protocol") {
+        // Build the heading
+        heading.innerText = "Protocol: " + asn;
     }
 
     let target = document.getElementById("asnDetails");
