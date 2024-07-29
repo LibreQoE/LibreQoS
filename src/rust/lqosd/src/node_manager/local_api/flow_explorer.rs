@@ -6,7 +6,8 @@ use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::{time_since_boot, unix_now};
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
-use crate::throughput_tracker::flow_data::{AsnListEntry, AsnCountryListEntry, RECENT_FLOWS, RttData, FlowbeeLocalData, FlowAnalysis};
+use crate::throughput_tracker::flow_data::{AsnListEntry, AsnCountryListEntry, AsnProtocolListEntry,
+   RECENT_FLOWS, RttData, FlowbeeLocalData, FlowAnalysis};
 
 pub async fn asn_list() -> Json<Vec<AsnListEntry>> {
     Json(RECENT_FLOWS.asn_list())
@@ -14,6 +15,10 @@ pub async fn asn_list() -> Json<Vec<AsnListEntry>> {
 
 pub async fn country_list() -> Json<Vec<AsnCountryListEntry>> {
     Json(RECENT_FLOWS.country_list())
+}
+
+pub async fn protocol_list() -> Json<Vec<AsnProtocolListEntry>> {
+    Json(RECENT_FLOWS.protocol_list())
 }
 
 #[derive(Serialize)]
@@ -90,6 +95,19 @@ pub async fn country_timeline(Path(country_name): Path<String>) -> Json<Vec<Flow
     let boot_time = unix_now().unwrap() - since_boot.as_secs();
 
     let all_flows_for_asn = RECENT_FLOWS.all_flows_for_country(&country_name);
+
+    let flows = all_flows_to_transport(boot_time, all_flows_for_asn);
+
+    Json(flows)
+}
+
+pub async fn protocol_timeline(Path(protocol_name): Path<String>) -> Json<Vec<FlowTimeline>> {
+    let protocol_name = protocol_name.replace("_", "/");
+    let time_since_boot = time_since_boot().unwrap();
+    let since_boot = Duration::from(time_since_boot);
+    let boot_time = unix_now().unwrap() - since_boot.as_secs();
+
+    let all_flows_for_asn = RECENT_FLOWS.all_flows_for_protocol(&protocol_name);
 
     let flows = all_flows_to_transport(boot_time, all_flows_for_asn);
 

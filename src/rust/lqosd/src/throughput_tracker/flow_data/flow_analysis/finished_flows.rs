@@ -40,6 +40,12 @@ pub struct AsnCountryListEntry {
     iso_code: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct AsnProtocolListEntry {
+    count: usize,
+    protocol: String,
+}
+
 impl TimeBuffer {
     fn new() -> Self {
         Self {
@@ -298,6 +304,17 @@ impl TimeBuffer {
             .collect()
     }
 
+    pub fn all_flows_for_protocol(&self, protocol_name: &str) -> Vec<(FlowbeeKey, FlowbeeLocalData, FlowAnalysis)> {
+        let buffer = self.buffer.lock().unwrap();
+        buffer
+            .iter()
+            .filter(|flow| {
+                flow.data.2.protocol_analysis.to_string() == protocol_name
+            })
+            .map(|flow| flow.data.clone())
+            .collect()
+    }
+
     /// Builds a list of all ASNs with recent data, and how many flows they have.
     pub fn asn_list(&self) -> Vec<AsnListEntry> {
         // 1: Clone: large operation, don't keep the buffer locked longer than we have to
@@ -365,6 +382,41 @@ impl TimeBuffer {
                 count,
                 name: asn.0,
                 iso_code: asn.1,
+            })
+            .collect()
+    }
+
+    /// Builds a list of protocols with recent data, and how many flows they have.
+    pub fn protocol_list(&self) -> Vec<AsnProtocolListEntry> {
+        // 1: Clone: large operation, don't keep the buffer locked longer than we have to
+        let buffer = {
+            let buffer = self.buffer.lock().unwrap();
+            buffer.clone()
+        };
+
+        // Filter out the short flows and get the country & flag
+        let mut buffer: Vec<String> = buffer
+            .into_iter()
+            .filter(|flow| {
+                // Total flow time > 3 seconds
+                flow.data.1.last_seen - flow.data.1.start_time > 3_000_000_000
+            })
+            .map(|flow| {
+                flow.data.2.protocol_analysis.to_string()
+            })
+            .collect();
+
+        // Sort the buffer
+        buffer.sort_unstable_by(|a, b| a.cmp(&b));
+
+        // Deduplicate and count, decorate with name
+        buffer
+            .into_iter()
+            .sorted()
+            .dedup_with_count()
+            .map(|(count, protocol)| AsnProtocolListEntry {
+                count,
+                protocol,
             })
             .collect()
     }

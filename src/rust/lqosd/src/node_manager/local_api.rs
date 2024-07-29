@@ -53,7 +53,9 @@ pub fn local_api() -> Router {
         .route("/globalWarnings", get(warnings::get_global_warnings))
         .route("/asnList", get(flow_explorer::asn_list))
         .route("/countryList", get(flow_explorer::country_list))
+        .route("/protocolList", get(flow_explorer::protocol_list))
         .route("/flowTimeline/:asn_id", get(flow_explorer::flow_timeline))
         .route("/countryTimeline/:iso_code", get(flow_explorer::country_timeline))
+        .route("/protocolTimeline/:protocol", get(flow_explorer::protocol_timeline))
         .route_layer(axum::middleware::from_fn(auth_layer))
 }

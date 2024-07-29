@@ -8,6 +8,7 @@ const FLOW_URL = API_URL + "flowTimeline/";
 
 let asnList = [];
 let countryList = [];
+let protocolList = [];
 let asnData = [];
 let graphMinTime = Number.MAX_SAFE_INTEGER;
 let graphMaxTime = Number.MIN_SAFE_INTEGER;
@@ -40,7 +41,7 @@ function asnDropdown() {
         let parentDiv = document.createElement("div");
         parentDiv.classList.add("dropdown");
         let button = document.createElement("button");
-        button.classList.add("btn", "btn-secondary", "dropdown-toggle");
+        button.classList.add("btn", "btn-secondary", "dropdown-toggle", "btn-sm");
         button.type = "button";
         button.innerHTML = "Select ASN";
         button.setAttribute("data-bs-toggle", "dropdown");
@@ -86,7 +87,7 @@ function countryDropdown() {
         let parentDiv = document.createElement("div");
         parentDiv.classList.add("dropdown");
         let button = document.createElement("button");
-        button.classList.add("btn", "btn-secondary", "dropdown-toggle");
+        button.classList.add("btn", "btn-secondary", "dropdown-toggle", "btn-sm");
         button.type = "button";
         button.innerHTML = "Select Country";
         button.setAttribute("data-bs-toggle", "dropdown");
@@ -114,18 +115,68 @@ function countryDropdown() {
     });
 }
 
+function protocolDropdown() {
+    $.get(API_URL + "protocolList", (data) => {
+        protocolList = data;
+
+        // Sort data by row.count, descending
+        data.sort((a, b) => {
+            return b.count - a.count;
+        });
+        //console.log(data);
+
+        // Build the dropdown
+        let parentDiv = document.createElement("div");
+        parentDiv.classList.add("dropdown");
+        let button = document.createElement("button");
+        button.classList.add("btn", "btn-secondary", "dropdown-toggle", "btn-sm");
+        button.type = "button";
+        button.innerHTML = "Select Protocol";
+        button.setAttribute("data-bs-toggle", "dropdown");
+        button.setAttribute("aria-expanded", "false");
+        parentDiv.appendChild(button);
+        let dropdownList = document.createElement("ul");
+        dropdownList.classList.add("dropdown-menu");
+
+        // Add items
+        data.forEach((row) => {
+            let li = document.createElement("li");
+            li.innerHTML = row.protocol + " (" + row.count + ")";
+            li.classList.add("dropdown-item");
+            li.onclick = () => {
+                selectProtocol(row.protocol);
+                renderMode = "protocol";
+            };
+            dropdownList.appendChild(li);
+        });
+
+        parentDiv.appendChild(dropdownList);
+        let target = document.getElementById("protocolList");
+        clearDiv(target);
+        target.appendChild(parentDiv);
+    });
+}
+
 function selectAsn(asn) {
-    $.get(FLOW_URL + asn, (data) => {
+    $.get(FLOW_URL + encodeURI(asn), (data) => {
         page = 0;
         renderAsn(asn, data);
     });
 }
 
 function selectCountry(country) {
-    let url = API_URL + "countryTimeline/" + country;
+    let url = API_URL + "countryTimeline/" + encodeURI(country);
     $.get(url, (data) => {
         page = 0;
         renderAsn(country, data);
+    });
+}
+
+function selectProtocol(protocol) {
+    let url = API_URL + "protocolTimeline/" + encodeURI(protocol.replace('/', '_'));
+    $.get(url, (data) => {
+        page = 0;
+        renderAsn(protocol, data);
     });
 }
 
@@ -445,3 +496,4 @@ function drawTimeline() {
 
 asnDropdown();
 countryDropdown();
+protocolDropdown();
