@@ -192,7 +192,7 @@ function renderAsn(asn, data) {
         // Build the heading
         heading.innerText = "ASN #" + asn.toFixed(0) + " (" + targetAsn.name + ")";
     } else if (renderMode === "country") {
-        let targetCountry = countryList.find((row) => row.iso_code === asn);
+        let targetCountry = countryList.find((row) => row.name === asn);
         if (targetCountry === undefined || targetCountry === null) {
             console.error("Could not find country: " + asn);
             return;
