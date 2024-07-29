@@ -102,7 +102,7 @@ function countryDropdown() {
             li.innerHTML = "<img alt='" + row.iso_code + "' src='flags/" + row.iso_code.toLowerCase() + ".svg' height=12 width=12 />" + row.name + " (" + row.count + ")";
             li.classList.add("dropdown-item");
             li.onclick = () => {
-                selectCountry(row.flag);
+                selectCountry(row.iso_code);
                 renderMode = "country";
             };
             dropdownList.appendChild(li);
@@ -192,7 +192,7 @@ function renderAsn(asn, data) {
         // Build the heading
         heading.innerText = "ASN #" + asn.toFixed(0) + " (" + targetAsn.name + ")";
     } else if (renderMode === "country") {
-        let targetCountry = countryList.find((row) => row.flag === asn);
+        let targetCountry = countryList.find((row) => row.iso_code === asn);
         if (targetCountry === undefined || targetCountry === null) {
             console.error("Could not find country: " + asn);
             return;
