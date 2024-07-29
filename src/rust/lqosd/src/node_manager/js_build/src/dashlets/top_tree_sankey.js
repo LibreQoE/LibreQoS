@@ -1,6 +1,5 @@
 import {BaseDashlet} from "./base_dashlet";
-import {clearDiv, simpleRowHtml, theading} from "../helpers/builders";
-import {formatThroughput, formatRetransmit, formatCakeStat, lerpGreenToRedViaOrange} from "../helpers/scaling";
+import {lerpGreenToRedViaOrange} from "../helpers/scaling";
 import {DashboardGraph} from "../graphs/dashboard_graph";
 import {isRedacted} from "../helpers/redact";
 
@@ -92,7 +91,7 @@ export class TopTreeSankey extends BaseDashlet {
                     fontSize: 9,
                     color: "#999"
                 };
-                if (redact) label.fontSize = 0;
+                if (redact) label.backgroundColor = label.color;
 
                 let name = r[1].name;
                 let bytes = r[1].current_throughput[0];
