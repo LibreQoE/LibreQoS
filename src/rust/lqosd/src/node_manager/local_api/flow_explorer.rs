@@ -35,6 +35,7 @@ pub struct FlowTimeline {
     protocol: String,
     circuit_id: String,
     circuit_name: String,
+    remote_ip: String,
 }
 
 pub async fn flow_timeline(Path(asn_id): Path<u32>) -> Json<Vec<FlowTimeline>> {
@@ -84,6 +85,7 @@ fn all_flows_to_transport(boot_time: u64, all_flows_for_asn: Vec<(FlowbeeKey, Fl
                 protocol: flow.2.protocol_analysis.to_string(),
                 circuit_id,
                 circuit_name,
+                remote_ip: flow.0.remote_ip.as_ip().to_string(),
             }
         })
         .collect::<Vec<_>>()

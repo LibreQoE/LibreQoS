@@ -262,6 +262,10 @@ function renderAsn(asn, data) {
     headerClient.classList.add("col-1", "text-secondary");
     headerClient.innerText = "Client";
     headerDiv.appendChild(headerClient);
+    let headerRemote = document.createElement("div");
+    headerRemote.classList.add("col-1", "text-secondary");
+    headerRemote.innerText = "Remote";
+    headerDiv.appendChild(headerRemote);
     let headerProtocol = document.createElement("div");
     headerProtocol.classList.add("col-1", "text-secondary");
     headerProtocol.innerText = "Protocol";
@@ -271,7 +275,7 @@ function renderAsn(asn, data) {
     headerTime1.innerText = unixTimeToDate(minTime);
     headerDiv.appendChild(headerTime1);
     let headerTime2 = document.createElement("div");
-    headerTime2.classList.add("col-4", "text-secondary", "text-end");
+    headerTime2.classList.add("col-3", "text-secondary", "text-end");
     headerTime2.innerText = unixTimeToDate(maxTime);
     headerDiv.appendChild(headerTime2);
 
@@ -307,6 +311,11 @@ function renderAsn(asn, data) {
         }
         div.appendChild(clientCol);
 
+        let remoteCol = document.createElement("div");
+        remoteCol.classList.add("col-1", "text-secondary", "small");
+        remoteCol.innerText = row.remote_ip;
+        div.appendChild(remoteCol);
+
         let protocolCol = document.createElement("div");
         protocolCol.classList.add("col-1", "text-secondary", "small");
         protocolCol.innerText = row.protocol;
@@ -314,7 +323,7 @@ function renderAsn(asn, data) {
 
         // Build a canvas div, we'll decorate this later
         let canvasCol = document.createElement("div");
-        canvasCol.classList.add("col-8");
+        canvasCol.classList.add("col-7");
         let canvas = document.createElement("canvas");
         canvas.id = "flowCanvas" + i;
         canvas.style.width = "100%";
@@ -463,7 +472,6 @@ function drawTimeline() {
         // Draw a throughput down line. Y from y/2 to height, scaled to maxThroughputDown
         ctx.strokeStyle = lineColor;
         ctx.beginPath();
-        let duration = row.end - row.start;
         let numberOfSamples = row.throughput.length;
         let startX = timeToX(row.start, width);
         let endX = timeToX(row.end, width);
@@ -471,7 +479,7 @@ function drawTimeline() {
         let x = timeToX(row.start, width);
         ctx.moveTo(x, height/2);
         let trimmedHeight = height - 4;
-        row.throughput.forEach((value, index) => {
+        row.throughput.forEach((value) => {
             let downPercent = value.down / maxThroughputDown;
             let y = (height/2) - (downPercent * (trimmedHeight / 2));
             ctx.lineTo(x, y);
@@ -482,7 +490,7 @@ function drawTimeline() {
 
         x = timeToX(row.start, width);
         ctx.moveTo(x, height/2);
-        row.throughput.forEach((value, index) => {
+        row.throughput.forEach((value) => {
             let upPercent = value.up / maxThroughputUp;
             let y = (height/2) + (upPercent * (trimmedHeight / 2));
             ctx.lineTo(x, y);
