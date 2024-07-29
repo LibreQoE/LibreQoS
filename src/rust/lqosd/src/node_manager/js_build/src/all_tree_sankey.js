@@ -98,7 +98,7 @@ function start() {
                 fontSize: 6,
                 color: "#999"
             };
-            if (redact) label.fontSize = 0;
+            if (redact) label.backgroundColor = label.color;
 
             nodes.push({
                 name: data[i][1].name,

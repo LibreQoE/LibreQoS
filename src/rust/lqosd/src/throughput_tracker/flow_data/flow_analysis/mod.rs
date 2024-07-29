@@ -14,6 +14,7 @@ mod kernel_ringbuffer;
 pub use kernel_ringbuffer::*;
 mod rtt_types;
 pub use rtt_types::RttData;
+pub use finished_flows::{AsnListEntry, AsnCountryListEntry, AsnProtocolListEntry};
 use crate::throughput_tracker::flow_data::flow_analysis::asn::AsnNameCountryFlag;
 
 static ANALYSIS: Lazy<FlowAnalysisSystem> = Lazy::new(|| FlowAnalysisSystem::new());
@@ -97,4 +98,13 @@ pub fn get_asn_lat_lon(ip: IpAddr) -> (f64, f64) {
         }
     }
     (0.0, 0.0)
+}
+
+pub fn get_asn_name_by_id(id: u32) -> String {
+    if let Ok(table_lock) = ANALYSIS.asn_table.lock() {
+        if let Some(table) = table_lock.as_ref() {
+            return table.find_name_by_id(id);
+        }
+    }
+    "Unknown".to_string()
 }

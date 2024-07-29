@@ -1,4 +1,4 @@
-use super::{get_asn_lat_lon, get_asn_name_and_country, FlowAnalysis};
+use super::{get_asn_lat_lon, get_asn_name_and_country, FlowAnalysis, get_asn_name_by_id};
 use crate::throughput_tracker::flow_data::{FlowbeeLocalData, FlowbeeRecipient};
 use fxhash::FxHashMap;
 use lqos_bus::BusResponse;
@@ -14,6 +14,7 @@ pub struct TimeBuffer {
     buffer: Mutex<Vec<TimeEntry>>,
 }
 
+#[derive(Clone, Debug)]
 struct TimeEntry {
     time: u64,
     data: (FlowbeeKey, FlowbeeLocalData, FlowAnalysis),
@@ -23,6 +24,26 @@ struct TimeEntry {
 pub struct FlowDurationSummary {
     count: usize,
     duration: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AsnListEntry {
+    count: usize,
+    asn: u32,
+    name: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AsnCountryListEntry {
+    count: usize,
+    name: String,
+    iso_code: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AsnProtocolListEntry {
+    count: usize,
+    protocol: String,
 }
 
 impl TimeBuffer {
@@ -261,6 +282,144 @@ impl TimeBuffer {
             .map(|(count, duration)| FlowDurationSummary { count, duration })
             .collect()
     }
+
+    pub fn all_flows_for_asn(&self, id: u32) -> Vec<(FlowbeeKey, FlowbeeLocalData, FlowAnalysis)> {
+        let buffer = self.buffer.lock().unwrap();
+        buffer
+            .iter()
+            .filter(|flow| flow.data.2.asn_id.0 == id )
+            .map(|flow| flow.data.clone())
+            .collect()
+    }
+
+    pub fn all_flows_for_country(&self, iso_code: &str) -> Vec<(FlowbeeKey, FlowbeeLocalData, FlowAnalysis)> {
+        let buffer = self.buffer.lock().unwrap();
+        buffer
+            .iter()
+            .filter(|flow| {
+                let country = get_asn_name_and_country(flow.data.0.remote_ip.as_ip());
+                country.flag == iso_code
+            })
+            .map(|flow| flow.data.clone())
+            .collect()
+    }
+
+    pub fn all_flows_for_protocol(&self, protocol_name: &str) -> Vec<(FlowbeeKey, FlowbeeLocalData, FlowAnalysis)> {
+        let buffer = self.buffer.lock().unwrap();
+        buffer
+            .iter()
+            .filter(|flow| {
+                flow.data.2.protocol_analysis.to_string() == protocol_name
+            })
+            .map(|flow| flow.data.clone())
+            .collect()
+    }
+
+    /// Builds a list of all ASNs with recent data, and how many flows they have.
+    pub fn asn_list(&self) -> Vec<AsnListEntry> {
+        // 1: Clone: large operation, don't keep the buffer locked longer than we have to
+        let buffer = {
+            let buffer = self.buffer.lock().unwrap();
+            buffer.clone()
+        };
+
+        // Filter out short flows and reduce to the ASN ID# only
+        let mut buffer: Vec<_> = buffer
+            .into_iter()
+            .filter(|flow| {
+                // Total flow time > 3 seconds
+                flow.data.1.last_seen - flow.data.1.start_time > 3_000_000_000
+            })
+            .map(|flow| flow.data.2.asn_id.0)
+            .collect();
+
+        // Sort the buffer
+        buffer.sort_unstable();
+
+        // Deduplicate and count, decorate with name
+        buffer
+            .into_iter()
+            .sorted()
+            .dedup_with_count()
+            .map(|(count, asn)| AsnListEntry {
+                count,
+                asn,
+                name: get_asn_name_by_id(asn),
+            })
+            .collect()
+    }
+
+    /// Builds a list of ASNs by country with recent data, and how many flows they have.
+    pub fn country_list(&self) -> Vec<AsnCountryListEntry> {
+        // 1: Clone: large operation, don't keep the buffer locked longer than we have to
+        let buffer = {
+            let buffer = self.buffer.lock().unwrap();
+            buffer.clone()
+        };
+
+        // Filter out the short flows and get the country & flag
+        let mut buffer: Vec<(String, String)> = buffer
+            .into_iter()
+            .filter(|flow| {
+                // Total flow time > 3 seconds
+                flow.data.1.last_seen - flow.data.1.start_time > 3_000_000_000
+            })
+            .map(|flow| {
+                let country = get_asn_name_and_country(flow.data.0.remote_ip.as_ip());
+                (country.country, country.flag)
+            })
+            .collect();
+
+        // Sort the buffer
+        buffer.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+
+        // Deduplicate and count, decorate with name
+        buffer
+            .into_iter()
+            .sorted()
+            .dedup_with_count()
+            .map(|(count, asn)| AsnCountryListEntry {
+                count,
+                name: asn.0,
+                iso_code: asn.1,
+            })
+            .collect()
+    }
+
+    /// Builds a list of protocols with recent data, and how many flows they have.
+    pub fn protocol_list(&self) -> Vec<AsnProtocolListEntry> {
+        // 1: Clone: large operation, don't keep the buffer locked longer than we have to
+        let buffer = {
+            let buffer = self.buffer.lock().unwrap();
+            buffer.clone()
+        };
+
+        // Filter out the short flows and get the country & flag
+        let mut buffer: Vec<String> = buffer
+            .into_iter()
+            .filter(|flow| {
+                // Total flow time > 3 seconds
+                flow.data.1.last_seen - flow.data.1.start_time > 3_000_000_000
+            })
+            .map(|flow| {
+                flow.data.2.protocol_analysis.to_string()
+            })
+            .collect();
+
+        // Sort the buffer
+        buffer.sort_unstable_by(|a, b| a.cmp(&b));
+
+        // Deduplicate and count, decorate with name
+        buffer
+            .into_iter()
+            .sorted()
+            .dedup_with_count()
+            .map(|(count, protocol)| AsnProtocolListEntry {
+                count,
+                protocol,
+            })
+            .collect()
+    }
 }
 
 pub static RECENT_FLOWS: Lazy<TimeBuffer> = Lazy::new(|| TimeBuffer::new());
@@ -281,8 +440,9 @@ impl FinishedFlowAnalysis {
 }
 
 impl FlowbeeRecipient for FinishedFlowAnalysis {
-    fn enqueue(&self, key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
+    fn enqueue(&self, key: FlowbeeKey, mut data: FlowbeeLocalData, analysis: FlowAnalysis) {
         log::debug!("Finished flow analysis");
+        data.trim(); // Remove the trailing 30 seconds of zeroes
         RECENT_FLOWS.push(TimeEntry {
             time: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

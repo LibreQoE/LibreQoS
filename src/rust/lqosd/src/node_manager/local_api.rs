@@ -13,10 +13,12 @@ mod circuit;
 mod packet_analysis;
 mod flow_map;
 mod warnings;
+mod flow_explorer;
 
 use axum::Router;
 use axum::routing::{get, post};
 use crate::node_manager::auth::auth_layer;
+use tower_http::cors::CorsLayer;
 
 pub fn local_api() -> Router {
     Router::new()
@@ -48,5 +50,12 @@ pub fn local_api() -> Router {
         .route("/pcapDump/:id", get(packet_analysis::pcap_dump))
         .route("/flowMap", get(flow_map::flow_lat_lon))
         .route("/globalWarnings", get(warnings::get_global_warnings))
+        .route("/asnList", get(flow_explorer::asn_list))
+        .route("/countryList", get(flow_explorer::country_list))
+        .route("/protocolList", get(flow_explorer::protocol_list))
+        .route("/flowTimeline/:asn_id", get(flow_explorer::flow_timeline))
+        .route("/countryTimeline/:iso_code", get(flow_explorer::country_timeline))
+        .route("/protocolTimeline/:protocol", get(flow_explorer::protocol_timeline))
+        .layer(CorsLayer::very_permissive())
         .route_layer(axum::middleware::from_fn(auth_layer))
 }

@@ -1,5 +1,6 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {lerpColor, lerpGreenToRedViaOrange, scaleNumber} from "../helpers/scaling";
+import {isRedacted} from "../helpers/redact";
 
 export class TopNSankey extends DashboardGraph {
     constructor(id) {
@@ -59,6 +60,7 @@ export class TopNSankey extends DashboardGraph {
                 fontSize: 9,
                 color: "#999"
             };
+            if (isRedacted()) label.backgroundColor = label.color;
 
             let name = r.ip_address+ " (" + scaleNumber(r.bits_per_second.down, 0) + ", " + r.tcp_retransmits.down + "/" + r.tcp_retransmits.up + ")";
             let bytes = r.bits_per_second.down / 8;

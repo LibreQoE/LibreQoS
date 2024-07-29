@@ -41,6 +41,12 @@ pub struct FlowbeeLocalData {
     pub flags: u8,
     /// Recent RTT median
     pub rtt: [RttData; 2],
+    /// Throughput Buffer
+    pub throughput_buffer: Vec<DownUpOrder<u64>>,
+    /// When did the retries happen? In nanoseconds since kernel boot
+    pub retry_times_down: Vec<u64>,
+    /// When did the retries happen? In nanoseconds since kernel boot
+    pub retry_times_up: Vec<u64>,
 }
 
 impl From<&FlowbeeData> for FlowbeeLocalData {
@@ -56,6 +62,34 @@ impl From<&FlowbeeData> for FlowbeeLocalData {
             tos: data.tos,
             flags: data.flags,
             rtt: [RttData::from_nanos(0); 2],
+            throughput_buffer: vec![ data.bytes_sent ],
+            retry_times_down: Vec::new(),
+            retry_times_up: Vec::new(),
+        }
+    }
+}
+
+impl FlowbeeLocalData {
+    pub fn trim(&mut self) {
+        // Find the point at which the throughput buffer starts being all zeroes
+        let mut last_start: Option<usize> = None;
+        let mut in_zero_run = false;
+
+        for (i, &value) in self.throughput_buffer.iter().enumerate() {
+            if value.down == 0 && value.up == 0 {
+                if !in_zero_run {
+                    in_zero_run = true;
+                    last_start = Some(i);
+                }
+            } else {
+                in_zero_run = false;
+            }
+        }
+
+        if let Some(start_index) = last_start {
+            // There's a run of zeroes terminating the throughput buffer
+            // That means we need to truncate the buffer
+            self.throughput_buffer.truncate(start_index);
         }
     }
 }

@@ -226,6 +226,18 @@ impl ThroughputTracker {
         } else {
           // We have a valid flow, so it needs to be tracked
           if let Some(this_flow) = all_flows_lock.get_mut(&key) {
+            // If retransmits have changed, add the time to the retry list
+            if data.tcp_retransmits.down != this_flow.0.tcp_retransmits.down {
+              this_flow.0.retry_times_down.push(data.last_seen);
+            }
+            if data.tcp_retransmits.up != this_flow.0.tcp_retransmits.up {
+              this_flow.0.retry_times_up.push(data.last_seen);
+            }
+
+            let change_since_last_time = data.bytes_sent.checked_sub_or_zero(this_flow.0.bytes_sent);
+            this_flow.0.throughput_buffer.push(change_since_last_time);
+            //println!("{change_since_last_time:?}");
+
             this_flow.0.last_seen = data.last_seen;
             this_flow.0.bytes_sent = data.bytes_sent;
             this_flow.0.packets_sent = data.packets_sent;
@@ -234,6 +246,7 @@ impl ThroughputTracker {
             this_flow.0.end_status = data.end_status;
             this_flow.0.tos = data.tos;
             this_flow.0.flags = data.flags;
+
             if let Some([up, down]) = rtt_samples.get(&key) {
               if up.as_nanos() != 0 {
                 this_flow.0.rtt[0] = *up;              
