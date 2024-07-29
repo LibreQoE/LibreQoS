@@ -9,16 +9,18 @@ from requests.auth import HTTPBasicAuth
 if findIPv6usingMikrotik == True:
 	from mikrotikFindIPv6 import pullMikrotikIPv6  
 from integrationCommon import NetworkGraph, NetworkNode, NodeType
+import os
+import csv
 
 def buildHeaders():
-	credentials = splynx_api_key + ':' + splynx_api_secret
+	credentials = splynx_api_key() + ':' + splynx_api_secret()
 	credentials = base64.b64encode(credentials.encode()).decode()
 	return {'Authorization' : "Basic %s" % credentials}
 
 def spylnxRequest(target, headers):
 	# Sends a REST GET request to Spylnx and returns the
 	# result in JSON
-	url = splynx_api_url + "/api/2.0/" + target
+	url = splynx_api_url() + "/api/2.0/" + target
 	r = requests.get(url, headers=headers, timeout=120)
 	return r.json()
 
@@ -34,6 +36,20 @@ def getTariffs(headers):
 		downloadForTariffID[tariffID] = speed_download
 		uploadForTariffID[tariffID] = speed_upload
 	return (tariff, downloadForTariffID, uploadForTariffID)
+	
+def buildSiteBandwidths():
+	# Builds a dictionary of site bandwidths from the integrationSplynxBandwidths.csv file.
+	siteBandwidth = {}
+	if os.path.isfile("integrationSplynxBandwidths.csv"):
+		with open('integrationSplynxBandwidths.csv') as csv_file:
+			csv_reader = csv.reader(csv_file, delimiter=',')
+			next(csv_reader)
+			for row in csv_reader:
+				name, download, upload = row
+				download = int(float(download))
+				upload = int(float(upload))
+				siteBandwidth[name] = {"download": download, "upload": upload}
+	return siteBandwidth
 
 def getCustomers(headers):
 	data = spylnxRequest("admin/customers/customer", headers)
@@ -46,12 +62,34 @@ def getCustomers(headers):
 
 def getRouters(headers):
 	data = spylnxRequest("admin/networking/routers", headers)
+	routerIdList = []
 	ipForRouter = {}
+	nameForRouterID = {}
 	for router in data:
 		routerID = router['id']
+		if router['id'] not in routerIdList:
+			routerIdList.append(router['id'])
 		ipForRouter[routerID] = router['ip']
+		nameForRouterID[routerID] = router['title']
 	print("Router IPs found: " + str(len(ipForRouter)))
-	return ipForRouter
+	return (ipForRouter, nameForRouterID, routerIdList)
+
+def getSectors(headers):
+	data = spylnxRequest("admin/networking/routers-sectors", headers)
+	sectorForRouter = {}
+	for sector in data:
+		routerID = sector['router_id']
+		if routerID not in sectorForRouter:
+			newList = []
+			newList.append(sector)
+			sectorForRouter[routerID] = newList
+		else:
+			newList = sectorForRouter[routerID]
+			newList.append(sector)
+			sectorForRouter[routerID] = newList
+			
+	print("Router Sectors found: " + str(len(sectorForRouter)))
+	return sectorForRouter
 
 def combineAddress(json):
 	# Combines address fields into a single string
@@ -92,15 +130,78 @@ def createShaper():
 	headers = buildHeaders()
 	tariff, downloadForTariffID, uploadForTariffID = getTariffs(headers)
 	customers = getCustomers(headers)
-	ipForRouter = getRouters(headers)
+	ipForRouter, nameForRouterID, routerIdList = getRouters(headers)
+	sectorForRouter = getSectors(headers)
 	allServices = getAllServices(headers)
 	ipv4ByCustomerID, ipv6ByCustomerID = getAllIPs(headers)
+	siteBandwidth = buildSiteBandwidths()
 	
+	allParentNodes = {}
+	
+	parentNodeIDCounter = 30000
+	for router_id in routerIdList:
+		download = 1000
+		upload = 1000
+		router_name = ""
+		if router_id in nameForRouterID:
+			router_name = nameForRouterID[router_id]
+		else:
+			router_name = str(parentNodeIDCounter)
+		thisRouterID = parentNodeIDCounter
+		
+		if router_name in siteBandwidth:
+			# Use the CSV bandwidth values
+			download = siteBandwidth[router_name]["download"]
+			upload = siteBandwidth[router_name]["upload"]
+		
+		node = NetworkNode(id=parentNodeIDCounter, displayName=router_name, type=NodeType.site,
+		   parentId=None, download=download, upload=upload, address=None)
+		net.addRawNode(node)
+		allParentNodes[router_name] = thisRouterID
+		
+		parentNodeIDCounter += 1
+		if router_id in sectorForRouter:
+			for sector in sectorForRouter[router_id]:
+				if sector['router_id'] == router_id:
+					download = max(round(int(sector['speed_down']) / 1000), 2)
+					upload =  max(round(int(sector['speed_up']) / 1000), 2)
+					
+					sectorName = nameForRouterID[router_id] + "_" + sector['title']
+					if sectorName in siteBandwidth:
+						# Use the CSV bandwidth values
+						download = siteBandwidth[sectorName]["download"]
+						upload = siteBandwidth[sectorName]["upload"]
+					allParentNodes[sectorName] = parentNodeIDCounter
+					node = NetworkNode(id=parentNodeIDCounter, displayName=sectorName, type=NodeType.ap,
+						parentId=thisRouterID, download=download, upload=upload, address=None)
+					parentNodeIDCounter += 1
+					net.addRawNode(node)
+	
+	customerIDtoParentNodeID = {}
 	allServicesDict = {}
+	parentNodeIDCounter = 30000
 	for serviceItem in allServices:
 		if (serviceItem['status'] == 'active'):
 			if serviceItem["customer_id"] not in allServicesDict:
 				allServicesDict[serviceItem["customer_id"]] = []
+			sectorName = ""
+			download = 1000
+			upload = 1000
+			if serviceItem['router_id'] in sectorForRouter:
+				allSectors = sectorForRouter[serviceItem['router_id']]
+				for sector in allSectors:
+					if sector['id'] == serviceItem['sector_id']:
+						sectorName = sector['title']
+			routerName = ""
+			if serviceItem['router_id'] in nameForRouterID:
+				routerName = nameForRouterID[serviceItem['router_id']]
+			parentNodeName = routerName
+			if sectorName != "":
+				parentNodeName = parentNodeName + "_" + sectorName
+			
+			if serviceItem["customer_id"] not in customerIDtoParentNodeID:
+				if parentNodeName in allParentNodes:
+					customerIDtoParentNodeID[serviceItem["customer_id"]] = allParentNodes[parentNodeName]
 			temp = allServicesDict[serviceItem["customer_id"]]
 			temp.append(serviceItem)
 			allServicesDict[serviceItem["customer_id"]] = temp
@@ -115,9 +216,15 @@ def createShaper():
 				for service in servicesForCustomer:
 					combinedId = "c_" + str(customerJson["id"]) + "_s_" + str(service["id"])
 					tariff_id = service['tariff_id']
+					
+					parentID = None
+					if customerJson['id'] in customerIDtoParentNodeID:
+						parentID = customerIDtoParentNodeID[customerJson['id']]
+					
 					customer = NetworkNode(
 						type=NodeType.client,
 						id=combinedId,
+						parentId = parentID,
 						displayName=customerJson["name"],
 						address=combineAddress(customerJson),
 						customerName=customerJson["name"],
