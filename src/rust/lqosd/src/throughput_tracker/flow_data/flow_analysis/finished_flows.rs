@@ -292,13 +292,13 @@ impl TimeBuffer {
             .collect()
     }
 
-    pub fn all_flows_for_country(&self, country_name: &str) -> Vec<(FlowbeeKey, FlowbeeLocalData, FlowAnalysis)> {
+    pub fn all_flows_for_country(&self, iso_code: &str) -> Vec<(FlowbeeKey, FlowbeeLocalData, FlowAnalysis)> {
         let buffer = self.buffer.lock().unwrap();
         buffer
             .iter()
             .filter(|flow| {
                 let country = get_asn_name_and_country(flow.data.0.remote_ip.as_ip());
-                country.name == country_name
+                country.flag == iso_code
             })
             .map(|flow| flow.data.clone())
             .collect()

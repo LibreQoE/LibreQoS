@@ -91,12 +91,12 @@ fn all_flows_to_transport(boot_time: u64, all_flows_for_asn: Vec<(FlowbeeKey, Fl
         .collect::<Vec<_>>()
 }
 
-pub async fn country_timeline(Path(country_name): Path<String>) -> Json<Vec<FlowTimeline>> {
+pub async fn country_timeline(Path(iso_code): Path<String>) -> Json<Vec<FlowTimeline>> {
     let time_since_boot = time_since_boot().unwrap();
     let since_boot = Duration::from(time_since_boot);
     let boot_time = unix_now().unwrap() - since_boot.as_secs();
 
-    let all_flows_for_asn = RECENT_FLOWS.all_flows_for_country(&country_name);
+    let all_flows_for_asn = RECENT_FLOWS.all_flows_for_country(&iso_code);
 
     let flows = all_flows_to_transport(boot_time, all_flows_for_asn);
 
