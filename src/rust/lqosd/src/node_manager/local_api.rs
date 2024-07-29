@@ -22,7 +22,6 @@ use tower_http::cors::CorsLayer;
 
 pub fn local_api() -> Router {
     Router::new()
-        .layer(CorsLayer::very_permissive())
         .route("/dashletThemes", get(dashboard_themes::list_themes))
         .route("/dashletSave", post(dashboard_themes::save_theme))
         .route("/dashletDelete", post(dashboard_themes::delete_theme))
@@ -57,5 +56,6 @@ pub fn local_api() -> Router {
         .route("/flowTimeline/:asn_id", get(flow_explorer::flow_timeline))
         .route("/countryTimeline/:iso_code", get(flow_explorer::country_timeline))
         .route("/protocolTimeline/:protocol", get(flow_explorer::protocol_timeline))
+        .layer(CorsLayer::very_permissive())
         .route_layer(axum::middleware::from_fn(auth_layer))
 }
