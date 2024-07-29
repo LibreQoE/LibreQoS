@@ -17,12 +17,23 @@ pub use site::{Site, SiteId, Description};
 
 /// Loads a complete list of all sites from UISP
 pub async fn load_all_sites(config: Config) -> Result<Vec<Site>> {
-    Ok(nms_request_get_vec(
+    let mut raw_sites = nms_request_get_vec(
         "sites",
         &config.uisp_integration.token,
         &config.uisp_integration.url,
     )
-    .await?)
+    .await?;
+
+    // Do not load sites from the excluded sites list.
+    raw_sites.retain(|site: &Site|
+        if let Some(name) = &site.name() {
+            !config.uisp_integration.exclude_sites.contains(name)
+        } else {
+            true
+        }
+    );
+
+    Ok(raw_sites)
 }
 
 /// Load all devices from UISP that are authorized, and include their full interface definitions
