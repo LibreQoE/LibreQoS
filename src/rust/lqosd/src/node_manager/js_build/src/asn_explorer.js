@@ -101,7 +101,7 @@ function countryDropdown() {
             li.innerHTML = "<img alt='" + row.iso_code + "' src='flags/" + row.iso_code.toLowerCase() + ".svg' height=12 width=12 />" + row.name + " (" + row.count + ")";
             li.classList.add("dropdown-item");
             li.onclick = () => {
-                selectCountry(row.iso_code);
+                selectCountry(row.name);
                 renderMode = "country";
             };
             dropdownList.appendChild(li);
