@@ -60,6 +60,10 @@ def getCustomers(headers):
 	#	addressForCustomerID[customer['id']] = customer['street_1']
 	return data
 
+def getCustomersOnline(headers):
+	data = spylnxRequest("admin/customers/customers-online", headers)
+	return data
+	
 def getRouters(headers):
 	data = spylnxRequest("admin/networking/routers", headers)
 	routerIdList = []
@@ -130,78 +134,45 @@ def createShaper():
 	headers = buildHeaders()
 	tariff, downloadForTariffID, uploadForTariffID = getTariffs(headers)
 	customers = getCustomers(headers)
+	customersOnline = getCustomersOnline(headers)
 	ipForRouter, nameForRouterID, routerIdList = getRouters(headers)
 	sectorForRouter = getSectors(headers)
 	allServices = getAllServices(headers)
 	ipv4ByCustomerID, ipv6ByCustomerID = getAllIPs(headers)
 	siteBandwidth = buildSiteBandwidths()
 	
-	allParentNodes = {}
-	
+	#Go through all online customers, create Nodes
+	allParentNodes = []
+	custIDtoParentNode = {}
 	parentNodeIDCounter = 30000
-	for router_id in routerIdList:
+	for customer in customersOnline:
 		download = 1000
 		upload = 1000
-		router_name = ""
-		if router_id in nameForRouterID:
-			router_name = nameForRouterID[router_id]
-		else:
-			router_name = str(parentNodeIDCounter)
-		thisRouterID = parentNodeIDCounter
+		nodeName = customer['nas_id'] + "_" + customer['call_to'] + "_" + customer['port']
 		
-		if router_name in siteBandwidth:
-			# Use the CSV bandwidth values
-			download = siteBandwidth[router_name]["download"]
-			upload = siteBandwidth[router_name]["upload"]
-		
-		node = NetworkNode(id=parentNodeIDCounter, displayName=router_name, type=NodeType.site,
-		   parentId=None, download=download, upload=upload, address=None)
-		net.addRawNode(node)
-		allParentNodes[router_name] = thisRouterID
-		
-		parentNodeIDCounter += 1
-		if router_id in sectorForRouter:
-			for sector in sectorForRouter[router_id]:
-				if sector['router_id'] == router_id:
-					download = max(round(int(sector['speed_down']) / 1000), 2)
-					upload =  max(round(int(sector['speed_up']) / 1000), 2)
-					
-					sectorName = nameForRouterID[router_id] + "_" + sector['title']
-					if sectorName in siteBandwidth:
-						# Use the CSV bandwidth values
-						download = siteBandwidth[sectorName]["download"]
-						upload = siteBandwidth[sectorName]["upload"]
-					allParentNodes[sectorName] = parentNodeIDCounter
-					node = NetworkNode(id=parentNodeIDCounter, displayName=sectorName, type=NodeType.ap,
-						parentId=thisRouterID, download=download, upload=upload, address=None)
-					parentNodeIDCounter += 1
-					net.addRawNode(node)
+		if nodeName not in allParentNodes:
+			if nodeName in siteBandwidth:
+				# Use the CSV bandwidth values
+				download = siteBandwidth[nodeName]["download"]
+				upload = siteBandwidth[nodeName]["upload"]
+			
+			node = NetworkNode(id=parentNodeIDCounter, displayName=nodeName, type=NodeType.site,
+			   parentId=None, download=download, upload=upload, address=None)
+			net.addRawNode(node)
+			
+			pnEntry = {}
+			pnEntry['name'] = nodeName
+			pnEntry['id'] = parentNodeIDCounter
+			custIDtoParentNode[customer['customer_id']] = pnEntry
+			
+			parentNodeIDCounter += 1
 	
-	customerIDtoParentNodeID = {}
+	#customerIDtoParentNodeID = {}
 	allServicesDict = {}
-	parentNodeIDCounter = 30000
 	for serviceItem in allServices:
 		if (serviceItem['status'] == 'active'):
 			if serviceItem["customer_id"] not in allServicesDict:
 				allServicesDict[serviceItem["customer_id"]] = []
-			sectorName = ""
-			download = 1000
-			upload = 1000
-			if serviceItem['router_id'] in sectorForRouter:
-				allSectors = sectorForRouter[serviceItem['router_id']]
-				for sector in allSectors:
-					if sector['id'] == serviceItem['sector_id']:
-						sectorName = sector['title']
-			routerName = ""
-			if serviceItem['router_id'] in nameForRouterID:
-				routerName = nameForRouterID[serviceItem['router_id']]
-			parentNodeName = routerName
-			if sectorName != "":
-				parentNodeName = parentNodeName + "_" + sectorName
-			
-			if serviceItem["customer_id"] not in customerIDtoParentNodeID:
-				if parentNodeName in allParentNodes:
-					customerIDtoParentNodeID[serviceItem["customer_id"]] = allParentNodes[parentNodeName]
 			temp = allServicesDict[serviceItem["customer_id"]]
 			temp.append(serviceItem)
 			allServicesDict[serviceItem["customer_id"]] = temp
@@ -218,8 +189,8 @@ def createShaper():
 					tariff_id = service['tariff_id']
 					
 					parentID = None
-					if customerJson['id'] in customerIDtoParentNodeID:
-						parentID = customerIDtoParentNodeID[customerJson['id']]
+					if customerJson['id'] in custIDtoParentNode:
+						parentID = custIDtoParentNode[customerJson['id']]['id']
 					
 					customer = NetworkNode(
 						type=NodeType.client,
@@ -286,3 +257,4 @@ def importFromSplynx():
 
 if __name__ == '__main__':
 	importFromSplynx()
+
