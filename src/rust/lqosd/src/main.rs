@@ -34,6 +34,7 @@ use tokio::join;
 mod stats;
 mod preflight_checks;
 mod node_manager;
+mod lts2;
 
 // Use JemAllocator only on supported platforms
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -88,6 +89,7 @@ async fn main() -> Result<()> {
   };
 
   // Spawn tracking sub-systems
+  lts2::start_lts2().await;
   let long_term_stats_tx = start_long_term_stats().await;
   let flow_tx = setup_netflow_tracker();
   let _ = throughput_tracker::flow_data::setup_flow_analysis();

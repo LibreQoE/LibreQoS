@@ -1,0 +1,44 @@
+/*
+ * Copyright (c) 2024 LibreQoS
+ * All rights reserved.
+ */
+
+ syntax = "proto3";
+
+package lts2;
+
+message PingRequest {
+    int32 sequence = 1;
+}
+
+message PingResponse {
+    int32 ack = 1;
+}
+
+enum LicenseType {
+    FREE = 0;
+    TRIAL = 1;
+    SELF_HOSTED = 2;
+    API_ONLY = 3;
+    FULL = 4;
+    UNKNOWN = 5;
+}
+
+message LicenseCheckRequest {
+    string license_key = 1;
+}
+
+message LicenseCheckResponse {
+    bool valid = 1;
+    LicenseType license_type = 2;
+    string expires = 3;
+}
+
+// General node-to-LTS communication service
+service LTS2 {
+    // Ping the LTS to see if its alive
+    rpc Ping(PingRequest) returns (PingResponse);
+
+    // Check the validity of a license key
+    rpc LicenseCheck(LicenseCheckRequest) returns (LicenseCheckResponse);
+}
