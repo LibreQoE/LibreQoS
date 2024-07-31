@@ -17,7 +17,7 @@ lqos_utils = { path = "../lqos_utils" }
 lqos_heimdall = { path = "../lqos_heimdall" }
 lts_client = { path = "../lts_client" }
 lqos_support_tool = { path = "../lqos_support_tool" }
-tokio = { version = "1", features = [ "full", "parking_lot" ] }
+tokio = { version = "=1.39.1", features = [ "full", "parking_lot" ] }
 once_cell = { workspace = true}
 lqos_bus = { path = "../lqos_bus" }
 signal-hook = "0.3"
@@ -45,13 +45,9 @@ default-net = {  workspace = true }
 surge-ping = "0.8.1"
 rand = "0.8.5"
 mime_guess = "2.0.4"
-libloading = "0.8.4"
-tonic = { version = "0.12.1", features = ["tls", "tls-roots"] }
-prost = "0.13.1"
+libloading = "0.8.5"
 
 # Support JemAlloc on supported platforms
 [target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]
 jemallocator = {  workspace = true }
 
-[build-dependencies]
-tonic-build = { version = "0.12.1", features = ["prost"] }

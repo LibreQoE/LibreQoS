@@ -17,6 +17,8 @@ pub struct StatsCheckAction {
 }
 
 pub async fn stats_check() -> Json<StatsCheckAction> {
+    let (status, _) = crate::lts2::get_lts_status();
+    println!("{:?}", status);
     let mut response = StatsCheckAction {
         action: StatsCheckResponse::DoNothing,
         node_id: String::new(),
