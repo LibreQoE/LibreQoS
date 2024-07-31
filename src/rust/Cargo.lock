@@ -1919,6 +1919,7 @@ dependencies = [
  "ip_network_table",
  "itertools 0.12.1",
  "jemallocator",
+ "libloading",
  "log",
  "lqos_bus",
  "lqos_config",

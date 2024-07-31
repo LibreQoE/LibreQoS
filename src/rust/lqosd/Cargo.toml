@@ -45,6 +45,7 @@ default-net = {  workspace = true }
 surge-ping = "0.8.1"
 rand = "0.8.5"
 mime_guess = "2.0.4"
+libloading = "0.8.4"
 tonic = { version = "0.12.1", features = ["tls", "tls-roots"] }
 prost = "0.13.1"
 
