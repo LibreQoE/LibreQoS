@@ -32,7 +32,7 @@ pub(super) fn static_routes() -> Result<Router> {
         "index.html", "shaped_devices.html", "tree.html",
         "help.html", "unknown_ips.html", "configuration.html",
         "circuit.html", "flow_map.html", "all_tree_sankey.html",
-        "asn_explorer.html",
+        "asn_explorer.html", "lts_trial.html",
     ];
 
     // Iterate through pages and construct the router

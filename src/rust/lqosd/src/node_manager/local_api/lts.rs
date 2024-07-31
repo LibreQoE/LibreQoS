@@ -1,6 +1,7 @@
-use axum::Json;
+use axum::{Extension, Form, Json};
 use serde::Serialize;
 use lqos_config::load_config;
+use crate::lts2::{ControlSender, FreeTrialDetails};
 
 #[derive(Serialize)]
 pub enum StatsCheckResponse {
@@ -17,8 +18,8 @@ pub struct StatsCheckAction {
 }
 
 pub async fn stats_check() -> Json<StatsCheckAction> {
-    let (status, _) = crate::lts2::get_lts_status();
-    println!("{:?}", status);
+    let (status, trial_expiration) = crate::lts2::get_lts_status();
+    println!("{:?}, {trial_expiration:?}", status);
     let mut response = StatsCheckAction {
         action: StatsCheckResponse::DoNothing,
         node_id: String::new(),
@@ -43,4 +44,11 @@ pub async fn stats_check() -> Json<StatsCheckAction> {
     }
 
     Json(response)
+}
+
+pub async fn lts_trial_signup(
+    Extension(lts2): Extension<ControlSender>,
+    details: Form<FreeTrialDetails>,
+) {
+    lts2.send(crate::lts2::LtsCommand::RequestFreeTrial((*details).clone())).unwrap();
 }

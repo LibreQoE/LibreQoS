@@ -141,7 +141,7 @@ async fn main() -> Result<()> {
 
   // Webserver starting point
   tokio::spawn(async {
-    if let Err(e) = node_manager::spawn_webserver().await {
+    if let Err(e) = node_manager::spawn_webserver(lts2_control_channel).await {
       log::error!("Node Manager Failed: {e:?}");
     }
   });

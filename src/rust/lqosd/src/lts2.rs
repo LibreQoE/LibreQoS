@@ -9,8 +9,9 @@ use std::thread;
 use anyhow::Result;
 use log::warn;
 use lqos_config::load_config;
-use crate::lts2::lts_status::LtsStatus;
+pub use crate::lts2::lts_status::{LtsStatus};
 use crate::lts2::shared_types::{ControlReceiver, GetConfigFn, SendStatusFn};
+pub use shared_types::{ControlSender, FreeTrialDetails, LtsCommand};
 
 #[no_mangle]
 fn config_function(cfg: &mut shared_types::Lts2Config) {
@@ -18,6 +19,7 @@ fn config_function(cfg: &mut shared_types::Lts2Config) {
         cfg.path_to_certificate = config.long_term_stats.lts_root_pem;
         cfg.domain =  config.long_term_stats.lts_url;
         cfg.license_key = config.long_term_stats.license_key;
+        cfg.node_id = config.node_id;
     }
 }
 

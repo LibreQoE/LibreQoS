@@ -1,0 +1,77 @@
+<div class="row">
+    <div class="col-12 text-secondary" id="page1">
+        <h5>Introducing LibreQoS Long-Term Statistics</h5>
+        <p>There will be a marketing spiel, here.</p>
+        <button class="btn btn-secondary" id="btn1Forward">Next <i class="fa fa-arrow-right"></i></button>
+    </div>
+    <div class="col-12 text-secondary" id="page2">
+        <h5>Long-Term Statistics Packages</h5>
+        <p>We'll tell you about what you can sign up for here</p>
+        <button class="btn btn-secondary mb-2" id="btn2Backward"><i class="fa fa-arrow-left"></i> Back</button>
+        <button class="btn btn-outline-info mb-2" id="btn2GotIt">I have an account, add this shaper to it <i class="fa fa-arrow-right"></i></button>
+        <button class="btn btn-success mb-2" id="btn2Forward">Sign me up <i class="fa fa-arrow-right"></i></button>
+    </div>
+    <div class="col-12 text-secondary" id="alreadyGotIt">
+        <p>Instructions to add this node.</p>
+    </div>
+    <div class="col-12 text-secondary" id="signMeUp">
+        <h5>Sign up for a 30-day free trial</h5>
+        <p>We won't ask for billing data until you are up and running. You can cancel at any time prior to the
+        end of the trial---or it will self-cancel if you didn't give us billing information.</p>
+        <p>We do need a bit of information from you:</p>
+
+        <div class="row">
+            <div class="col-4">
+                <form method="post" action="local-api/ltsSignUp">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Name (Person)</label>
+                        <input type="text" class="form-control" id="name" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="email" class="form-label">Email - Your key will be sent to this address</label>
+                        <input type="email" class="form-control" id="email" name="email" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="business_name" class="form-label">Business Name</label>
+                        <input type="text" class="form-control" id="business_name" name="business_name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="address1" class="form-label">Address 1</label>
+                        <input type="text" class="form-control" id="address1" name="address1" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="address2" class="form-label">Address 2</label>
+                        <input type="text" class="form-control" id="address2" name="address2">
+                    </div>
+                    <div class="mb-3">
+                        <label for="city" class="form-label">City</label>
+                        <input type="text" class="form-control" id="city" name="city" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="state" class="form-label">State</label>
+                        <input type="text" class="form-control" id="state" name="state" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="zip" class="form-label">Zip</label>
+                        <input type="text" class="form-control" id="zip" name="zip" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="country" class="form-label">Country</label>
+                        <input type="text" class="form-control" id="country" name="country" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="phone" class="form-label">Phone</label>
+                        <input type="tel" class="form-control" id="phone" name="phone" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="website" class="form-label">Website</label>
+                        <input type="url" class="form-control" id="website" name="website">
+                    </div>
+                    <button type="submit" class="btn btn-primary"><i class="fa fa-area-chart"></i> Sign-Up for Long-Term Statistics Free Trial</button>
+                </form>
+            </div></div>
+
+    </div>
+</div>
+
+<script src="lts_trial.js"></script>

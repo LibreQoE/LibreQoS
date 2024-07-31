@@ -15,12 +15,13 @@ mod flow_map;
 mod warnings;
 mod flow_explorer;
 
-use axum::Router;
+use axum::{Extension, Router};
 use axum::routing::{get, post};
 use crate::node_manager::auth::auth_layer;
 use tower_http::cors::CorsLayer;
+use crate::lts2::ControlSender;
 
-pub fn local_api() -> Router {
+pub fn local_api(lts2_control_channel: ControlSender) -> Router {
     Router::new()
         .route("/dashletThemes", get(dashboard_themes::list_themes))
         .route("/dashletSave", post(dashboard_themes::save_theme))
@@ -56,6 +57,8 @@ pub fn local_api() -> Router {
         .route("/flowTimeline/:asn_id", get(flow_explorer::flow_timeline))
         .route("/countryTimeline/:iso_code", get(flow_explorer::country_timeline))
         .route("/protocolTimeline/:protocol", get(flow_explorer::protocol_timeline))
+        .route("/ltsSignUp", post(lts::lts_trial_signup))
+        .layer(Extension(lts2_control_channel)) // Add the LTS control channel as an extension
         .layer(CorsLayer::very_permissive())
         .route_layer(axum::middleware::from_fn(auth_layer))
 }
