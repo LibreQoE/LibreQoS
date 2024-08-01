@@ -132,10 +132,12 @@ for prog in $RUSTPROGS
 do
     cp rust/target/release/$prog $LQOS_DIR/bin
 done
+
 # Compile the website
 pushd rust/lqosd > /dev/null || exit
 ./copy_files.sh
 popd || exit
+cp bin/static2/* $LQOS_DIR/bin/static2
 
 ####################################################
 # Add Message of the Day
