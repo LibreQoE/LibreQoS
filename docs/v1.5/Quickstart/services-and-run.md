@@ -3,7 +3,7 @@
 lqosd
 
 - Manages actual XDP code. Build with Rust.
-- - Runs the GUI available at http://a.b.c.d:9123
+- Runs the GUI available at http://a.b.c.d:9123
 
 lqos_scheduler
 
