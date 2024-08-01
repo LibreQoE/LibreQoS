@@ -3,24 +3,19 @@
 lqosd
 
 - Manages actual XDP code. Build with Rust.
-
-lqos_node_manager
-
-- Runs the GUI available at http://a.b.c.d:9123
+- - Runs the GUI available at http://a.b.c.d:9123
 
 lqos_scheduler
 
 - lqos_scheduler handles statistics and performs continuous refreshes of LibreQoS' shapers, including pulling from any enabled CRM Integrations (UISP, Splynx).
 - On start: Run a full setup of queues
-- Every 10 seconds: Graph bandwidth and latency stats
 - Every 30 minutes: Update queues, pulling new configuration from CRM integration if enabled
 
 ## Run daemons with systemd
 
-You can setup `lqosd`, `lqos_node_manager`, and `lqos_scheduler` as systemd services.
+You can setup `lqosd`, and `lqos_scheduler` as systemd services.
 
 ```shell
-sudo cp /opt/libreqos/src/bin/lqos_node_manager.service.example /etc/systemd/system/lqos_node_manager.service
 sudo cp /opt/libreqos/src/bin/lqosd.service.example /etc/systemd/system/lqosd.service
 sudo cp /opt/libreqos/src/bin/lqos_scheduler.service.example /etc/systemd/system/lqos_scheduler.service
 ```
