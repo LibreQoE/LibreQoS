@@ -74,9 +74,12 @@ Note: The parent node name must match that used for clients in ShapedDevices.csv
 
 ## ShapedDevices.csv
 
-If you are using an integration, this file will be automatically generated. If you are not using an integration, you can manually edit the file.
+If you are using an integration, this file will be automatically generated. If you are not using an integration, you can manually edit the file using either the WebUI or by directly editing the ShapedDevices.csv file through the CLI.
 
-### Manual Editing
+### Manual Editing by WebUI
+Navigate to the LibreQoS WebUI (http://a.b.c.d:9123) and select Configuration > Shaped Devices.
+
+### Manual Editing by CLI
 
 - Modify the ShapedDevices.csv file using your preferred spreadsheet editor (LibreOffice Calc, Excel, etc), following the template file - ShapedDevices.example.csv
 - Circuit ID is required. Must be a string of some sort (int is fine, gets parsed as string). Must NOT include any number symbols (#). Every circuit needs a unique CircuitID - they cannot be reused. Here, circuit essentially means customer location. If a customer has multiple locations on different parts of your network, use a unique CircuitID for each of those locations.
