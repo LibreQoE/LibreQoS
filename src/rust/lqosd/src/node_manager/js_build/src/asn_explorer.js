@@ -304,7 +304,7 @@ function renderAsn(asn, data) {
         clientCol.classList.add("col-1", "text-secondary", "small");
         if (row.circuit_id !== "") {
             let clientLink = document.createElement("a");
-            clientLink.href = "/circuit/" + encodeURI(row.circuit_id);
+            clientLink.href = "/circuit.html?id=" + encodeURI(row.circuit_id);
             clientLink.innerText = row.circuit_name;
             clientLink.classList.add("redactable");
             clientLink.style.textOverflow = "ellipsis";
