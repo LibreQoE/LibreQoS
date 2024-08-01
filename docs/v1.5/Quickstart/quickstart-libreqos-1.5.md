@@ -1,8 +1,16 @@
-# Install LibreQoS 1.4
+# Install LibreQoS 1.5
 
-## Updating from v1.4
+## Download .DEB (Recommended Method)
 
-## Git Install
+Donwload the latest .deb from https://libreqos.io/#download .
+
+Unzip the .zip file and transfer the .deb to your LibreQoS box, installing with:
+```
+sudo dpkg -i libreqos_1.5-BETA1.202407112021-1_amd64.deb
+
+```
+
+## Git Install (For Developers - Not Recommended)
 
 [Complex Installation](../TechnicalDocs/git-install.md)
 
