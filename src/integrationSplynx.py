@@ -175,7 +175,7 @@ def createShaper():
     for customer in customersOnline:
         download = 1000
         upload = 1000
-        nodeName = customer['nas_id'] + "_" + customer['call_to'] + "_" + customer['port']
+        nodeName = str(customer['nas_id']) + "_" + str(customer['call_to']) + "_" + str(customer['port'])
         
         if nodeName not in allParentNodes:
             if nodeName in siteBandwidth:
