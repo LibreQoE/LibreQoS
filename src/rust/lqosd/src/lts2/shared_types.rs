@@ -23,10 +23,10 @@ pub struct Lts2Config {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum LtsCommand {
     Placeholder,
-    RequestFreeTrial(FreeTrialDetails),
+    RequestFreeTrial(FreeTrialDetails, tokio::sync::oneshot::Sender<String>),
 }
 
 

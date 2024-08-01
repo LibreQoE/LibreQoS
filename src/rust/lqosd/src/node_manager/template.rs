@@ -58,7 +58,7 @@ pub async fn apply_templates(
         let (lts_status, _) = get_lts_status();
         let mut trial_link = LTS_LINK_OFFER_TRIAL;
         match lts_status {
-            LtsStatus::Invalid => {}
+            LtsStatus::Invalid | LtsStatus::NotChecked => {}
             _ => {
                 // Link to it
                 trial_link = LTS_LINK_ACTIVE;

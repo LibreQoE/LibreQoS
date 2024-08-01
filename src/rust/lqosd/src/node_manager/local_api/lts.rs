@@ -1,5 +1,9 @@
 use axum::{Extension, Form, Json};
+use axum::response::Redirect;
+use log::{info, warn};
 use serde::Serialize;
+use tokio::sync::oneshot;
+use lqos_bus::{bus_request, BusRequest};
 use lqos_config::load_config;
 use crate::lts2::{ControlSender, FreeTrialDetails};
 
@@ -49,6 +53,23 @@ pub async fn stats_check() -> Json<StatsCheckAction> {
 pub async fn lts_trial_signup(
     Extension(lts2): Extension<ControlSender>,
     details: Form<FreeTrialDetails>,
-) {
-    lts2.send(crate::lts2::LtsCommand::RequestFreeTrial((*details).clone())).unwrap();
+) -> Redirect {
+    let (tx, rx) = oneshot::channel::<String>();
+    lts2.send(crate::lts2::LtsCommand::RequestFreeTrial(
+        (*details).clone(), tx)
+    ).unwrap();
+
+    let license_key = rx.await.unwrap();
+    info!("Received license key, enabling free trial: {}", license_key);
+    if license_key == "FAIL" {
+        warn!("Free trial request failed");
+        Redirect::temporary("../lts_trail_fail.html")
+    } else {
+        let mut cfg = load_config().unwrap();
+        cfg.long_term_stats.license_key = Some(license_key);
+        bus_request(vec![BusRequest::UpdateLqosdConfig(Box::new(cfg))])
+            .await
+            .unwrap();
+        Redirect::temporary("../lts_trial_success.html")
+    }
 }
