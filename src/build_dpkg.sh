@@ -5,7 +5,7 @@
 # This is all GPL2.
 
 BUILD_DATE=`date +%Y%m%d%H%M`
-if [ $1 = "--nostamp" ]
+if [[ "$1" == "--nostamp" ]]
 then
     BUILD_DATE=""
 fi
@@ -20,7 +20,7 @@ DEBIAN_DIR=$DPKG_DIR/DEBIAN
 LQOS_DIR=$DPKG_DIR/opt/libreqos/src
 ETC_DIR=$DPKG_DIR/etc
 MOTD_DIR=$DPKG_DIR/etc/update-motd.d
-LQOS_FILES="graphInfluxDB.py influxDBdashboardTemplate.json integrationCommon.py integrationPowercode.py integrationRestHttp.py integrationSonar.py integrationSplynx.py integrationUISP.py integrationSonar.py LibreQoS.py lqos.example lqTools.py mikrotikFindIPv6.py network.example.json pythonCheck.py README.md scheduler.py ShapedDevices.example.csv lqos.example ../requirements.txt"
+LQOS_FILES="graphInfluxDB.py influxDBdashboardTemplate.json integrationCommon.py integrationPowercode.py integrationRestHttp.py integrationSonar.py integrationSplynx.py integrationUISP.py LibreQoS.py lqos.example lqTools.py mikrotikFindIPv6.py network.example.json pythonCheck.py README.md scheduler.py ShapedDevices.example.csv ../requirements.txt"
 LQOS_BIN_FILES="lqos_scheduler.service.example lqosd.service.example"
 RUSTPROGS="lqosd lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqusers lqos_setup lqos_map_perf uisp_integration lqos_support_tool"
 
@@ -35,87 +35,90 @@ rm -rf dist
 # The Debian Packaging Bit
 
 # Create the basic directory structure
-mkdir -p $DEBIAN_DIR
-
 # Build the chroot directory structure
-mkdir -p $LQOS_DIR
-mkdir -p $LQOS_DIR/bin/static2
-mkdir -p $ETC_DIR
-mkdir -p $MOTD_DIR
+mkdir -p $DEBIAN_DIR $LQOS_DIR/bin/static2 $ETC_DIR $MOTD_DIR
 
 # Create the Debian control file
 pushd $DEBIAN_DIR > /dev/null || exit
-touch control
-echo "Package: $PACKAGE" >> control
-echo "Version: $VERSION" >> control
-echo "Architecture: amd64" >> control
-echo "Maintainer: Herbert Wolverson <herberticus@gmail.com>" >> control
-echo "Description: CAKE-based traffic shaping for ISPs" >> control
-echo "Depends: $APT_DEPENDENCIES" >> control
+cat << EOF > control
+Package: $PACKAGE
+Version: $VERSION
+Architecture: amd64
+Maintainer: Herbert Wolverson <herberticus@gmail.com>
+Description: CAKE-based traffic shaping for ISPs
+Depends: $APT_DEPENDENCIES
+EOF
 popd > /dev/null || exit
 
 # Create the post-installation file
 pushd $DEBIAN_DIR > /dev/null || exit
-touch postinst
-echo "#!/bin/bash" >> postinst
-echo "# Install Python Dependencies" >> postinst
-echo "pushd /opt/libreqos" >> postinst
-# - Setup Python dependencies as a post-install task
-echo "python3 -m pip install --break-system-packages -r src/requirements.txt" >> postinst
-echo "sudo python3 -m pip install --break-system-packages -r src/requirements.txt" >> postinst
-# - Run lqsetup
-echo "/opt/libreqos/src/bin/lqos_setup" >> postinst
-# - Setup the services
-echo "cp /opt/libreqos/src/bin/lqosd.service.example /etc/systemd/system/lqosd.service" >> postinst
-echo "cp /opt/libreqos/src/bin/lqos_scheduler.service.example /etc/systemd/system/lqos_scheduler.service" >> postinst
-echo "/bin/systemctl daemon-reload" >> postinst
-echo "/bin/systemctl stop lqos_node_manager" >> postinst # In case it's running from a previous release
-echo "/bin/systemctl disable lqos_node_manager" >> postinst # In case it's running from a previous release
-echo "/bin/systemctl enable lqosd lqos_scheduler" >> postinst
-echo "/bin/systemctl start lqosd" >> postinst
-echo "/bin/systemctl start lqos_scheduler" >> postinst
-echo "popd" >> postinst
-# Attempting to fixup versioning issues with libpython.
-# This requires that you already have LibreQoS installed.
-LINKED_PYTHON=$(ldd /opt/libreqos/src/bin/lqosd | grep libpython | sed -e '/^[^\t]/ d' | sed -e 's/\t//' | sed -e 's/.*=..//' | sed -e 's/ (0.*)//')
-echo "if ! test -f $LINKED_PYTHON; then" >> postinst
-echo "  if test -f /lib/x86_64-linux-gnu/libpython3.12.so.1.0; then" >> postinst
-echo "    ln -s /lib/x86_64-linux-gnu/libpython3.12.so.1.0 $LINKED_PYTHON" >> postinst
-echo "  fi" >> postinst
-echo "  if test -f /lib/x86_64-linux-gnu/libpython3.11.so.1.0; then" >> postinst
-echo "    ln -s /lib/x86_64-linux-gnu/libpython3.11.so.1.0 $LINKED_PYTHON" >> postinst
-echo "  fi" >> postinst
-echo "fi" >> postinst
-# End of symlink insanity
-chmod a+x postinst
 
-# Uninstall Script
-touch postrm
-echo "#!/bin/bash" >> postrm
-echo "/bin/systemctl stop lqosd" >> postrm
-echo "/bin/systemctl stop lqos_scheduler" >> postrm
-echo "/bin/systemctl disable lqosd lqos_scheduler" >> postrm
-chmod a+x postrm
+cat << 'EOF' > postinst
+#!/bin/bash
+# Install Python Dependencies
+pushd /opt/libreqos  > /dev/null || exit
+
+# - Setup Python dependencies as a post-install task
+python3 -m pip install --root-user-action=ignore --quiet --break-system-packages -r src/requirements.txt
+sudo python3 -m pip install --root-user-action=ignore --quiet --break-system-packages -r src/requirements.txt
+
+# - Run lqsetup
+/opt/libreqos/src/bin/lqos_setup
+
+# - Setup the services
+cp /opt/libreqos/src/bin/lqosd.service.example /etc/systemd/system/lqosd.service
+cp /opt/libreqos/src/bin/lqos_scheduler.service.example /etc/systemd/system/lqos_scheduler.service
+
+service_exists() {
+    local n=$1
+    if [[ $(systemctl list-units --all -t service --full --no-legend "$n.service" | sed 's/^\s*//g' | cut -f1 -d' ') == $n.service ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+if service_exists lqos_node_manager; then
+    /bin/systemctl stop lqos_node_manager # In case it's running from a previous release
+    /bin/systemctl disable lqos_node_manager # In case it's running from a previous release
+    rm -f /etc/systemd/system/lqosd_node_manager.service # In case it's running from a previous release
+fi
+
+/bin/systemctl daemon-reload
+/bin/systemctl enable lqosd lqos_scheduler
+/bin/systemctl start lqosd lqos_scheduler
 popd > /dev/null || exit
 
-# Create the cleanup file
-pushd $DEBIAN_DIR > /dev/null || exit
-touch postrm
-echo "#!/bin/bash" >> postrm
-chmod a+x postrm
+# Attempting to fixup versioning issues with libpython.
+# This requires that you already have LibreQoS installed.
+LINKED_PYTHON=\$(ldd /opt/libreqos/src/bin/lqosd | grep libpython | sed -e '/^[^\t]/ d' | sed -e 's/\t//' | sed -e 's/.*=..//' | sed -e 's/ (0.*)//')
+if ! test -f $LINKED_PYTHON; then
+    if test -f /lib/x86_64-linux-gnu/libpython3.12.so.1.0; then
+        ln -s /lib/x86_64-linux-gnu/libpython3.12.so.1.0 $LINKED_PYTHON
+    fi
+    if test -f /lib/x86_64-linux-gnu/libpython3.11.so.1.0; then
+        ln -s /lib/x86_64-linux-gnu/libpython3.11.so.1.0 $LINKED_PYTHON
+    fi
+fi
+EOF
+
+# Uninstall Script
+cat << EOF > postrm
+#!/bin/bash
+/bin/systemctl --no-block stop lqosd lqos_scheduler
+/bin/systemctl disable lqosd lqos_scheduler
+/bin/systemctl daemon-reload
+rm -f /etc/systemd/system/{lqosd,lqos_scheduler}.service
+EOF
+
+chmod a+x postrm postinst
 popd > /dev/null || exit
 
 # Copy files into the LibreQoS directory
-for file in $LQOS_FILES
-do
-    cp $file $LQOS_DIR
-done
+cp $LQOS_FILES $LQOS_DIR
 
 # Copy files into the LibreQoS/bin directory
-for file in $LQOS_BIN_FILES
-do
-    cp bin/$file $LQOS_DIR/bin
-done
+cp bin/*service.example $LQOS_DIR/bin
 
 ####################################################
 # Build the Rust programs
@@ -127,6 +130,7 @@ popd > /dev/null || exit
 # Copy newly built Rust files
 # - The Python integration Library
 cp rust/target/release/liblqos_python.so $LQOS_DIR
+
 # - The main executables
 for prog in $RUSTPROGS
 do
@@ -137,19 +141,18 @@ done
 pushd rust/lqosd > /dev/null || exit
 ./copy_files.sh
 popd || exit
-cp -r bin/static2/* $LQOS_DIR/bin/static2
 
 ####################################################
 # Add Message of the Day
 pushd $MOTD_DIR > /dev/null || exit
-echo "#!/bin/bash" > 99-libreqos
-echo "MY_IP=\'hostname -I | cut -d' ' -f1\'" >> 99-libreqos
-echo "echo \"\"" >> 99-libreqos
-echo "echo \"LibreQoS Traffic Shaper is installed on this machine.\"" >> 99-libreqos
-echo "echo \"Point a browser at http://\$MY_IP:9123/ to manage it.\"" >> 99-libreqos
-echo "echo \"\"" >> 99-libreqos
+cat << 'EOF' > 99-libreqos
+#!/bin/bash
+MY_IP=`hostname -I | cut -d' ' -f1`
+echo -e "\nLibreQoS Traffic Shaper is installed on this machine.
+\nPoint a browser at http://\$MY_IP:9123/ to manage it.\n"
+EOF
 chmod a+x 99-libreqos
-popd || exit
+popd > /dev/null || exit
 
 ####################################################
 # Assemble the package
