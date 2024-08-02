@@ -26,6 +26,7 @@ import {Worst10DownloadersVisual} from "./worst10_downloaders_graphic";
 import {Worst10RetransmitsVisual} from "./worst10_retransmits_graphic";
 import {FlowDurationDash} from "./flow_durations_dash";
 import {LtsShaperStatus} from "./ltsShaperStatus";
+import {LtsLast24Hours} from "./ltsLast24Hours";
 
 export const DashletMenu = [
     { name: "Throughput Bits/Second", tag: "throughputBps", size: 3 },
@@ -56,6 +57,7 @@ export const DashletMenu = [
     { name: "Network Tree Sankey", tag: "networkTreeSankey", size: 6 },
     { name: "Round-Trip Time Histogram 3D", tag: "rttHistogram3D", size: 12 },
     { name: "(LTS) Shaper Status", tag: "ltsShaperStatus", size: 3 },
+    { name: "(LTS) Last 24 Hours", tag: "ltsLast24", size: 3}
 ];
 
 export function widgetFactory(widgetName, count) {
@@ -89,6 +91,7 @@ export function widgetFactory(widgetName, count) {
         case "treeCapacity"     : widget = new TreeCapacityDash(count); break;
         case "networkTreeSankey": widget = new TopTreeSankey(count); break;
         case "ltsShaperStatus"  : widget = new LtsShaperStatus(count); break;
+        case "ltsLast24"        : widget = new LtsLast24Hours(count); break;
         default: {
             console.log("I don't know how to construct a widget of type [" + widgetName + "]");
             return null;

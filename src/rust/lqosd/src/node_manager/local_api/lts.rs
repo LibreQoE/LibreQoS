@@ -1,4 +1,5 @@
 mod shaper_status;
+mod last_24_hours;
 
 use axum::{Extension, Form, Json};
 use axum::response::Redirect;
@@ -9,6 +10,7 @@ use lqos_bus::{bus_request, BusRequest};
 use lqos_config::load_config;
 use crate::lts2::{ControlSender, FreeTrialDetails};
 pub use shaper_status::shaper_status_from_lts;
+pub use last_24_hours::*;
 
 #[derive(Serialize)]
 pub enum StatsCheckResponse {
