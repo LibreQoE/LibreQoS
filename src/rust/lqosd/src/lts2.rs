@@ -20,6 +20,7 @@ fn config_function(cfg: &mut shared_types::Lts2Config) {
         cfg.domain =  config.long_term_stats.lts_url;
         cfg.license_key = config.long_term_stats.license_key;
         cfg.node_id = config.node_id;
+        cfg.node_name = config.node_name;
     }
 }
 

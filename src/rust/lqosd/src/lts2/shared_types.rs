@@ -20,6 +20,8 @@ pub struct Lts2Config {
     pub license_key: Option<String>,
     /// The ID of the node
     pub node_id: String,
+    /// The node name
+    pub node_name: String,
 }
 
 #[repr(C)]
