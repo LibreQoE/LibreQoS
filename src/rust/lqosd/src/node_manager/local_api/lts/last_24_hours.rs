@@ -18,8 +18,9 @@ pub struct ThroughputData {
 
 pub async fn last_24_hours()-> Result<Json<Vec<ThroughputData>>, StatusCode> {
     let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let url = format!("https://{}/shaper_api/totalThroughput", config.long_term_stats.lts_url.unwrap_or("stats.libreqos.io".to_string()));
-    println!("URL: {}", url);
+    let seconds = 24 * 60 * 60;
+    let url = format!("https://{}/shaper_api/totalThroughput/{seconds}", config.long_term_stats.lts_url.unwrap_or("stats.libreqos.io".to_string()));
+    //println!("URL: {}", url);
 
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
