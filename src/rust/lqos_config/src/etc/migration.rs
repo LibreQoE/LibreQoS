@@ -6,7 +6,7 @@ use super::{
     EtcLqosError, EtcLqos,
 };
 use thiserror::Error;
-use toml_edit::Document;
+use toml_edit::DocumentMut;
 
 #[derive(Debug, Error)]
 pub enum MigrationError {
@@ -28,7 +28,7 @@ pub fn migrate_if_needed() -> Result<(), MigrationError> {
         std::fs::read_to_string("/etc/lqos.conf").map_err(|e| MigrationError::ReadError(e))?;
 
     let doc = raw
-        .parse::<Document>()
+        .parse::<DocumentMut>()
         .map_err(|e| MigrationError::ParseError(e))?;
     if let Some((_key, version)) = doc.get_key_value("version") {
         log::info!("Configuration file is at version {}", version.as_str().unwrap());

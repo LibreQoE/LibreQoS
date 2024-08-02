@@ -1,0 +1,172 @@
+:root {
+    --redact: none;
+}
+body {
+    margin: 0;
+    font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue","Noto Sans","Liberation Sans",Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji";
+    font-size: 1rem;
+    height: 100%;
+    box-sizing: border-box;
+    background-color: var(--bs-backdrop-bg);
+    color: var(--bs-primary);
+}
+#wrapper {
+    display: flex;
+}
+.lqos_logo {
+    filter: invert(100%);
+}
+.dark-mode .lqos_logo {
+    filter: none;
+}
+.sidebar {
+    background-color: var(--bs-tertiary-bg);
+    color: var(--bs-tertiary-color);
+}
+.sidebar .nav-link {
+    color: var(--bs-secondary);
+}
+.sidebar .nav-item :hover {
+    background-color: var(--bs-info-bg-subtle);
+}
+.navbar-toggler {
+    color: #eee;
+}
+.navbar-search {
+    width: 150px;
+}
+.menu-badge {
+    color: var(--bs-secondary-text-emphasis)
+}
+.dashbox {
+    border: 1px solid var(--bs-border-color);
+    padding: 0;
+    margin: 0;
+}
+.dashbox .dashbox-title {
+    font-size: 10pt;
+    background-color: var(--bs-tertiary-bg);
+    color: var(--bs-tertiary-color);
+    text-align: center;
+    margin: 0;
+    font-variant: small-caps;
+    font-weight: bold;
+}
+.dashgraph {
+    width: 100%;
+    height: 250px;
+}
+.tiny {
+    font-size: 6pt;
+}
+.darkenBackground {
+    z-index: 200;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 10px;
+    background: rgba(1, 1, 1, 0.75);
+}
+.myModal {
+    z-index: 210;
+    position: absolute;
+    top: 10%;
+    bottom: 10%;
+    left: 10%;
+    right: 10%;
+    padding: 10px;
+    background: var(--bs-body-bg);
+    overflow: scroll;
+    min-width: 500px;
+    min-height: 500px;
+}
+.dashEditButton { }
+.redactable {
+    filter: var(--redact);
+}
+.small {
+    font-size: 9pt;
+    text-overflow: ellipsis;
+}
+h2 {
+    color: var(--bs-secondary-text-emphasis)
+}
+h5 {
+    color: var(--bs-secondary-text-emphasis)
+}
+.table>:not(caption)>*>* {
+    color: var(--bs-secondary-color);
+}
+
+/* Funky tricks for the tree view */
+.overlayThroughputWrapper {
+    position: relative;
+    width: 100%;
+    height: auto;
+    text-align: center;
+}
+.overlayThroughputNumber {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1.0em;
+    color: white;
+    text-shadow: 2px 2px 4px #000000;
+}
+.retransmits {
+    font-size: 1.0em;
+    text-shadow: 2px 2px 4px #000000;
+    color: white;
+}
+.mytable tr td span {
+    background: none;
+}
+#searchResults {
+    background: var(--bs-body-bg);
+    position: fixed;
+    z-index: 1000;
+    visibility: hidden;
+    transform: translateX(5%);
+    max-height: 50%;
+    overflow: auto;
+    border: 2px solid var(--bs-border-color);
+}
+.invalid { background-color: red }
+.dropdown-menu-sized {
+    max-height: 200px;
+    overflow-y: auto;
+}
+.dash-table {
+    width: 100%;
+}
+.fa-centerline {
+    vertical-align: middle;
+}
+.dark-mode .muted {
+    filter: contrast(50%);
+}
+table thead {
+    color: var(--bs-secondary-color);
+}
+table tr td {
+    color: var(--bs-tertiary-color);
+}
+table tr td a {
+    color: var(--bs-secondary-color);
+}
+
+/* For the config panel */
+
+.nav-pills .nav-link {
+    color: var(--bs-secondary-color);
+}
+.nav-pills .nav-link.active {
+    color: var(--bs-info);
+    font-weight: bold;
+}
+.nav-pills .nav-link.active {
+    background-color: var(--bs-tertiary-bg);
+}

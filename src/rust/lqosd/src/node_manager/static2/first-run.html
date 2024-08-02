@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="auto">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LibreQoS Node Manager</title>
+    <link href="vendor/bootstrap.min.css" rel="stylesheet">
+    <script src="vendor/jquery-3.7.1.min.js"></script>
+    <script src="vendor/echarts.min.js"></script>
+    <script src="vendor/echarts-gl.min.js"></script>
+    <script src="vendor/4c979e6ebb.js"></script>
+    <link href="./node_manager.css" rel="stylesheet">
+</head>
+<body>
+
+<div id="container" class="pad4">
+    <div class="row">
+        <div class="col-sm-4"></div>
+        <div class="col-sm-4">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h5 class="card-title">First Login</h5>
+                    <p>
+                        No <em>lqusers.toml</em> file was found. This is probably the first time you've run
+                        the LibreQoS web system. If it isn't, then please check permissions on that file and
+                        use the "bin/lqusers" command to verify that your system is working.
+                    </p>
+                    <p class="alert alert-warning" role="alert">
+                        This site will use a cookie to store your identification. If that's not ok,
+                        please don't use the site.
+                    </p>
+                    <p>Let's create a new user, and set some parameters:</p>
+                    <table class="table">
+                        <tr>
+                            <td colspan="2">
+                                <input class="form-check-input" type="checkbox" value="" id="allowAnonymous">
+                                <label class="form-check-label" for="allowAnonymous">
+                                    Allow anonymous users to view (but not change) settings.
+                                </label>
+                            </td>
+                        </tr><tr>
+                        <td>
+                            Your Username
+                        </td>
+                        <td>
+                            <input type="text" id="username" />
+                        </td>
+                    </tr>
+                        <tr>
+                            <td>Your password</td>
+                            <td><input type="password" id="password" /></td>
+                        </tr>
+                    </table>
+                    <a class="btn btn-primary" id="btnCreateUser">Create User Account</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-4"></div>
+    </div>
+</div>
+
+<script src="first-run.js"></script>
+
+<footer class="justify-content-center">
+    &copy; Copyright 2022-2024, LibreQoE LLC
+</footer>
+
+<script src="vendor/bootstrap.bundle.min.js"></script>
+</body>
+</html>

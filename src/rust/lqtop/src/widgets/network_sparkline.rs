@@ -9,6 +9,7 @@ use ratatui::{
     widgets::*,
 };
 use std::sync::mpsc::{Receiver, Sender};
+use lqos_utils::units::DownUpOrder;
 
 pub struct NetworkSparkline {
     bus_link: tokio::sync::mpsc::Sender<crate::bus::BusMessage>,
@@ -67,32 +68,31 @@ impl TopWidget for NetworkSparkline {
         let bps_down: Vec<(f64, f64)> = raw_data
             .iter()
             .enumerate()
-            .map(|(i, &val)| (i as f64, val.bits_per_second.1 as f64))
+            .map(|(i, &val)| (i as f64, val.bits_per_second.up as f64))
             .collect();
 
         let bps_up: Vec<(f64, f64)> = raw_data
             .iter()
             .enumerate()
-            .map(|(i, &val)| (i as f64, val.bits_per_second.0 as f64))
+            .map(|(i, &val)| (i as f64, val.bits_per_second.down as f64))
             .collect();
 
         let shaped_down: Vec<(f64, f64)> = raw_data
             .iter()
             .enumerate()
-            .map(|(i, &val)| (i as f64, val.shaped_bits_per_second.1 as f64))
+            .map(|(i, &val)| (i as f64, val.shaped_bits_per_second.up as f64))
             .collect();
 
         let shaped_up: Vec<(f64, f64)> = raw_data
             .iter()
             .enumerate()
-            .map(|(i, &val)| (i as f64, val.shaped_bits_per_second.0 as f64))
+            .map(|(i, &val)| (i as f64, val.shaped_bits_per_second.down as f64))
             .collect();
 
-        let (up, down) = self.current_throughput.bits_per_second;
         let title = format!(
             " [Throughput (Down: {} Up: {})]",
-            scale_bits(up),
-            scale_bits(down)
+            scale_bits(self.current_throughput.bits_per_second.down),
+            scale_bits(self.current_throughput.bits_per_second.up)
         );
 
         let block = Block::default()
@@ -169,7 +169,7 @@ impl NetworkSparkline {
 
 #[derive(Default, Copy, Clone)]
 struct CurrentThroughput {
-    pub bits_per_second: (u64, u64),
-    pub _packets_per_second: (u64, u64),
-    pub shaped_bits_per_second: (u64, u64),
+    pub bits_per_second: DownUpOrder<u64>,
+    pub _packets_per_second: DownUpOrder<u64>,
+    pub shaped_bits_per_second: DownUpOrder<u64>,
 }

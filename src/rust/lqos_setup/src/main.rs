@@ -1,6 +1,5 @@
 use colored::Colorize;
 use default_net::{get_interfaces, interface::InterfaceType, Interface};
-use uuid::Uuid;
 use std::{fs, path::Path, process::Command};
 
 fn get_available_interfaces() -> Vec<Interface> {

@@ -1,6 +1,8 @@
 use std::{net::IpAddr, sync::Mutex};
 use lqos_sys::flowbee_data::FlowbeeKey;
 use once_cell::sync::Lazy;
+use serde::Serialize;
+
 mod asn;
 mod protocol;
 pub use protocol::FlowProtocol;
@@ -12,6 +14,8 @@ mod kernel_ringbuffer;
 pub use kernel_ringbuffer::*;
 mod rtt_types;
 pub use rtt_types::RttData;
+pub use finished_flows::{AsnListEntry, AsnCountryListEntry, AsnProtocolListEntry};
+use crate::throughput_tracker::flow_data::flow_analysis::asn::AsnNameCountryFlag;
 
 static ANALYSIS: Lazy<FlowAnalysisSystem> = Lazy::new(|| FlowAnalysisSystem::new());
 
@@ -51,7 +55,7 @@ pub fn setup_flow_analysis() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct FlowAnalysis {
     pub asn_id: AsnId,
     pub protocol_analysis: FlowProtocol,
@@ -78,13 +82,13 @@ pub fn lookup_asn_id(ip: IpAddr) -> Option<u32> {
     None
 }
 
-pub fn get_asn_name_and_country(ip: IpAddr) -> (String, String) {
+pub fn get_asn_name_and_country(ip: IpAddr) -> AsnNameCountryFlag {
     if let Ok(table_lock) = ANALYSIS.asn_table.lock() {
         if let Some(table) = table_lock.as_ref() {
             return table.find_owners_by_ip(ip);
         }
     }
-    (String::new(), String::new())
+    AsnNameCountryFlag::default()
 }
 
 pub fn get_asn_lat_lon(ip: IpAddr) -> (f64, f64) {
@@ -94,4 +98,13 @@ pub fn get_asn_lat_lon(ip: IpAddr) -> (f64, f64) {
         }
     }
     (0.0, 0.0)
+}
+
+pub fn get_asn_name_by_id(id: u32) -> String {
+    if let Ok(table_lock) = ANALYSIS.asn_table.lock() {
+        if let Some(table) = table_lock.as_ref() {
+            return table.find_name_by_id(id);
+        }
+    }
+    "Unknown".to_string()
 }

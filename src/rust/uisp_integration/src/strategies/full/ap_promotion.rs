@@ -44,9 +44,11 @@ pub fn promote_access_points(
 
         let mut max_up_mbps = config.queues.generated_pn_upload_mbps;
         let mut max_down_mbps = config.queues.generated_pn_download_mbps;
-        if let Some(ap) = devices.iter().find(|d| d.id == link.device_id) {
-            max_up_mbps = ap.upload;
-            max_down_mbps = ap.download;
+        if !config.uisp_integration.ignore_calculated_capacity {
+            if let Some(ap) = devices.iter().find(|d| d.id == link.device_id) {
+                max_up_mbps = ap.upload;
+                max_down_mbps = ap.download;
+            }
         }
         // If the parent is a client, use the client's speeds
         if sites[parent_site_id].site_type == UispSiteType::Client {

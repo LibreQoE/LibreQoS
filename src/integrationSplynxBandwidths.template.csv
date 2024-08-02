@@ -1,0 +1,4 @@
+ParentNode,Download Mbps,Upload Mbps
+1_service2_vlan100,950,950
+1_service2_vlan101,500,500
+1_service2_vlan102,750,750

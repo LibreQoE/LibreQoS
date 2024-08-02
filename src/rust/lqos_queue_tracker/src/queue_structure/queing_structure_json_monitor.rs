@@ -8,6 +8,7 @@ use lqos_utils::file_watcher::FileWatcher;
 use once_cell::sync::Lazy;
 use thiserror::Error;
 use tokio::task::spawn_blocking;
+use crate::tracking::ALL_QUEUE_SUMMARY;
 
 pub(crate) static QUEUE_STRUCTURE: Lazy<RwLock<QueueStructure>> =
   Lazy::new(|| RwLock::new(QueueStructure::new()));
@@ -27,6 +28,7 @@ impl QueueStructure {
   }
 
   fn update(&mut self) {
+    ALL_QUEUE_SUMMARY.clear();
     if let Ok(queues) = read_queueing_structure() {
       self.maybe_queues = Some(queues);
     } else {
@@ -49,7 +51,7 @@ fn update_queue_structure() {
 }
 
 /// Fires up a Linux file system watcher than notifies
-/// when `ShapedDevices.csv` changes, and triggers a reload.
+/// when `queuingStructure.json` changes, and triggers a reload.
 fn watch_for_queueing_structure_changing() -> Result<(), QueueWatcherError> {
   // Obtain the path to watch
   let watch_path = QueueNetwork::path();

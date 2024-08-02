@@ -6,6 +6,7 @@ use queue_network::QueueNetwork;
 use thiserror::Error;
 pub(crate) use queue_node::QueueNode;
 
+#[allow(dead_code)]
 pub(crate) fn read_queueing_structure(
 ) -> Result<Vec<QueueNode>, QueueStructureError> {
   // Note: the ? is allowed because the sub-types return a QueueStructureError and handle logging.

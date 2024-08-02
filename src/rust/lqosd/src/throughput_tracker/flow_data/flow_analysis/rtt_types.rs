@@ -5,7 +5,9 @@
 //! multipliers, divisors, etc. It is intended to become pervasive
 //! throughout the system.
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+use serde::Serialize;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct RttData {
     nanoseconds: u64,
 }

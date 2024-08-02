@@ -55,6 +55,10 @@ fn traverse_sites(
         "uploadBandwidthMbps".to_string(),
         serde_json::Value::Number(sites[idx].max_up_mbps.into()),
     );
+    entry.insert(
+        "type".to_string(),
+        serde_json::Value::String(sites[idx].site_type.as_network_json_string()),
+    );
 
     if depth < 10 {
         let mut children = serde_json::Map::new();
