@@ -1,3 +1,5 @@
+mod shaper_status;
+
 use axum::{Extension, Form, Json};
 use axum::response::Redirect;
 use log::{info, warn};
@@ -6,6 +8,7 @@ use tokio::sync::oneshot;
 use lqos_bus::{bus_request, BusRequest};
 use lqos_config::load_config;
 use crate::lts2::{ControlSender, FreeTrialDetails};
+pub use shaper_status::shaper_status_from_lts;
 
 #[derive(Serialize)]
 pub enum StatsCheckResponse {
