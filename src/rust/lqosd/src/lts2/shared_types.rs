@@ -27,10 +27,22 @@ pub struct Lts2Config {
 #[repr(C)]
 #[derive(Debug)]
 pub enum LtsCommand {
-    Placeholder,
     RequestFreeTrial(FreeTrialDetails, tokio::sync::oneshot::Sender<String>),
+    RequestConnectionToExistingAccount {
+        license_key: String,
+        node_id: String,
+        reply: tokio::sync::oneshot::Sender<String>,
+    },
+    TotalThroughput {
+        timestamp: u64,
+        download_bytes: u64,
+        upload_bytes: u64,
+        shaped_download_bytes: u64,
+        shaped_upload_bytes: u64,
+        packets_up: u64,
+        packets_down: u64,
+    }
 }
-
 
 #[repr(C)]
 #[derive(Debug, Clone, Deserialize)]

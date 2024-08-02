@@ -41,9 +41,9 @@ mod lts2;
 use jemallocator::Jemalloc;
 use crate::ip_mapping::clear_hot_cache;
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+/*#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[global_allocator]
-static GLOBAL: Jemalloc = Jemalloc;
+static GLOBAL: Jemalloc = Jemalloc;*/
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -99,7 +99,7 @@ async fn main() -> Result<()> {
     shaped_devices_tracker::shaped_devices_watcher(),
     shaped_devices_tracker::network_json_watcher(),
     anonymous_usage::start_anonymous_usage(),
-    throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone(), flow_tx),
+    throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone(), flow_tx, lts2_control_channel.clone()),
   );
   spawn_queue_monitor();
 

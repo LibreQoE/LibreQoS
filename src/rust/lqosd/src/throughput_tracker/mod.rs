@@ -21,6 +21,8 @@ use tokio::{
     time::{Duration, Instant},
 };
 use lqos_utils::units::DownUpOrder;
+use lqos_utils::unix_time::unix_now;
+use crate::lts2::{ControlSender, LtsCommand};
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
@@ -36,6 +38,7 @@ pub static THROUGHPUT_TRACKER: Lazy<ThroughputTracker> = Lazy::new(ThroughputTra
 pub async fn spawn_throughput_monitor(
     long_term_stats_tx: Sender<StatsUpdateMessage>,
     netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
+    lts2: ControlSender,
 ) {
     info!("Starting the bandwidth monitor thread.");
     let interval_ms = 1000; // 1 second
@@ -44,6 +47,7 @@ pub async fn spawn_throughput_monitor(
         interval_ms,
         long_term_stats_tx,
         netflow_sender,
+        lts2
     ));
 }
 
@@ -51,6 +55,7 @@ async fn throughput_task(
     interval_ms: u64,
     long_term_stats_tx: Sender<StatsUpdateMessage>,
     netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
+    lts2: ControlSender,
 ) {
     // Obtain the flow timeout from the config, default to 30 seconds
     let timeout_seconds = if let Ok(config) = lqos_config::load_config() {
@@ -110,13 +115,13 @@ async fn throughput_task(
         {
             log::error!("Error polling network. {e:?}");
         }
-        tokio::spawn(submit_throughput_stats(long_term_stats_tx.clone()));
+        tokio::spawn(submit_throughput_stats(long_term_stats_tx.clone(), lts2.clone()));
 
         ticker.tick().await;
     }
 }
 
-async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>) {
+async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>, lts2: ControlSender) {
     // If ShapedDevices has changed, notify the stats thread
     if let Ok(changed) = STATS_NEEDS_NEW_SHAPED_DEVICES.compare_exchange(
         true,
@@ -169,6 +174,21 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>)
         .await;
     if let Err(e) = result {
         warn!("Error sending message to stats collection system. {e:?}");
+    }
+    if let Ok(now) = unix_now() {
+        let bytes = THROUGHPUT_TRACKER.bytes_per_second.as_down_up();
+        let shaped_bytes = THROUGHPUT_TRACKER.shaped_bytes_per_second.as_down_up();
+        if let Err(e) = lts2.send(LtsCommand::TotalThroughput {
+            timestamp: now,
+            download_bytes: bytes.down,
+            upload_bytes: bytes.up,
+            shaped_download_bytes: shaped_bytes.down,
+            shaped_upload_bytes: shaped_bytes.up,
+            packets_down: packets_per_second.0,
+            packets_up: packets_per_second.1,
+        }) {
+            warn!("Error sending message to LTS2. {e:?}");
+        };
     }
 }
 
