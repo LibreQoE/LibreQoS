@@ -141,6 +141,7 @@ done
 pushd rust/lqosd > /dev/null || exit
 ./copy_files.sh
 popd || exit
+cp -r bin/static2/* $LQOS_DIR/bin/static2
 
 ####################################################
 # Add Message of the Day
