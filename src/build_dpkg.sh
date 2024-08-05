@@ -17,7 +17,7 @@ PKGVERSION+=$VERSION
 DPKG_DIR=dist/$PKGVERSION-1_amd64
 APT_DEPENDENCIES="python3-pip, nano, graphviz, curl"
 DEBIAN_DIR=$DPKG_DIR/DEBIAN
-LQOS_DIR=$DPKG_DIR/opt/libreqos/src
+LQOS_DIR=`pwd`/$DPKG_DIR/opt/libreqos/src
 ETC_DIR=$DPKG_DIR/etc
 MOTD_DIR=$DPKG_DIR/etc/update-motd.d
 LQOS_FILES="graphInfluxDB.py influxDBdashboardTemplate.json integrationCommon.py integrationPowercode.py integrationRestHttp.py integrationSonar.py integrationSplynx.py integrationUISP.py LibreQoS.py lqos.example lqTools.py mikrotikFindIPv6.py network.example.json pythonCheck.py README.md scheduler.py ShapedDevices.example.csv ../requirements.txt"
@@ -139,9 +139,8 @@ done
 
 # Compile the website
 pushd rust/lqosd > /dev/null || exit
-./copy_files.sh
+./copy_files.sh $LQOS_DIR/bin/static2
 popd || exit
-cp -r bin/static2/* $LQOS_DIR/bin/static2
 
 ####################################################
 # Add Message of the Day
