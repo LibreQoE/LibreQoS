@@ -41,7 +41,16 @@ pub enum LtsCommand {
         shaped_upload_bytes: u64,
         packets_up: u64,
         packets_down: u64,
-    }
+        max_rtt: Option<f32>,
+        min_rtt: Option<f32>,
+        median_rtt: Option<f32>,
+        tcp_retransmits_down: i32,
+        tcp_retransmits_up: i32,
+        cake_marks_down: i32,
+        cake_marks_up: i32,
+        cake_drops_down: i32,
+        cake_drops_up: i32,
+    },
 }
 
 #[repr(C)]

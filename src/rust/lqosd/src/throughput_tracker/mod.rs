@@ -186,6 +186,15 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>,
             shaped_upload_bytes: shaped_bytes.up,
             packets_down: packets_per_second.0,
             packets_up: packets_per_second.1,
+            min_rtt: None,
+            max_rtt: None,
+            median_rtt: None,
+            tcp_retransmits_down: 0,
+            tcp_retransmits_up: 0,
+            cake_marks_down: 0,
+            cake_marks_up: 0,
+            cake_drops_down: 0,
+            cake_drops:up: 0,
         }) {
             warn!("Error sending message to LTS2. {e:?}");
         };
