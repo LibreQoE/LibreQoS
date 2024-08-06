@@ -149,7 +149,7 @@ cat << 'EOF' > 99-libreqos
 #!/bin/bash
 MY_IP=`hostname -I | cut -d' ' -f1`
 echo -e "\nLibreQoS Traffic Shaper is installed on this machine.
-\nPoint a browser at http://\$MY_IP:9123/ to manage it.\n"
+\nPoint a browser at http://$MY_IP:9123/ to manage it.\n"
 EOF
 chmod a+x 99-libreqos
 popd > /dev/null || exit
