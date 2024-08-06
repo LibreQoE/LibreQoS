@@ -723,18 +723,14 @@ def refreshShapers():
 		command = 'qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq'
 		linuxTCcommands.append(command)
 		for queue in range(queuesAvailable):
-			command = 'qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2'
-			linuxTCcommands.append(command)
-			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityDownloadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityDownloadMbps) + 'mbit'
-			linuxTCcommands.append(command)
-			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + sqm
-			linuxTCcommands.append(command)
 			# Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
 			# Technically, that should not even happen. So don't expect much if any traffic in this default class.
-			# Only 1/4 of defaultClassCapacity is guaranteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
-			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(round((upstreamBandwidthCapacityDownloadMbps-1)/4)) + 'mbit ceil ' + str(upstreamBandwidthCapacityDownloadMbps-1) + 'mbit prio 5'
-			linuxTCcommands.append(command)
-			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + sqm
+			# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
+			command = 'qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2' + '\n' +
+				'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityDownloadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityDownloadMbps) + 'mbit' + '\n' +
+				'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + sqm + '\n' +
+				'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(round((upstreamBandwidthCapacityDownloadMbps-1)/4)) + 'mbit ceil ' + str(upstreamBandwidthCapacityDownloadMbps-1) + 'mbit prio 5' + '\n' +
+				'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + sqm + '\n'
 			linuxTCcommands.append(command)
 		
 		# Note the use of stickOffset, and not replacing the root queue if we're on a stick
@@ -744,20 +740,15 @@ def refreshShapers():
 			command = 'qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq'
 			linuxTCcommands.append(command)
 		for queue in range(queuesAvailable):
-			command = 'qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+stickOffset+1) + ' handle ' + hex(queue+stickOffset+1) + ': htb default 2'
-			linuxTCcommands.append(command)
-			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ': classid ' + hex(queue+stickOffset+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityUploadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps) + 'mbit'
-			linuxTCcommands.append(command)
-			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 ' + sqm
-			linuxTCcommands.append(command)
 			# Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
 			# Technically, that should not even happen. So don't expect much if any traffic in this default class.
 			# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
-			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 classid ' + hex(queue+stickOffset+1) + ':2 htb rate ' + str(round((upstreamBandwidthCapacityUploadMbps-1)/4)) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps-1) + 'mbit prio 5'
+			command = 'qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+stickOffset+1) + ' handle ' + hex(queue+stickOffset+1) + ': htb default 2' + '\n' + 
+				'class add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ': classid ' + hex(queue+stickOffset+1) + ':1 htb rate '+ str(upstreamBandwidthCapacityUploadMbps) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps) + 'mbit' + '\n' +
+				'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 ' + sqm + '\n' +
+				'class add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 classid ' + hex(queue+stickOffset+1) + ':2 htb rate ' + str(round((upstreamBandwidthCapacityUploadMbps-1)/4)) + 'mbit ceil ' + str(upstreamBandwidthCapacityUploadMbps-1) + 'mbit prio 5' +
+				'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':2 ' + sqm + '\n'
 			linuxTCcommands.append(command)
-			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':2 ' + sqm
-			linuxTCcommands.append(command)
-		
 		
 		# Parse network structure. For each tier, generate commands to create corresponding HTB and leaf classes. Prepare commands for execution later
 		# Define lists for hash filters
@@ -783,11 +774,10 @@ def refreshShapers():
 					case _: return sqm
 
 			for node in data:
-				command = 'class add dev ' + interfaceA + ' parent ' + data[node]['parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ str(data[node]['downloadBandwidthMbpsMin']) + 'mbit ceil '+ str(data[node]['downloadBandwidthMbps']) + 'mbit prio 3'
-				linuxTCcommands.append(command)
 				logging.info("Up ParentClassID: " + data[node]['up_parentClassID'])
 				logging.info("ClassMinor: " + data[node]['classMinor'])
-				command = 'class add dev ' + interfaceB + ' parent ' + data[node]['up_parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ str(data[node]['uploadBandwidthMbpsMin']) + 'mbit ceil '+ str(data[node]['uploadBandwidthMbps']) + 'mbit prio 3'
+				command = 'class add dev ' + interfaceA + ' parent ' + data[node]['parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ str(data[node]['downloadBandwidthMbpsMin']) + 'mbit ceil '+ str(data[node]['downloadBandwidthMbps']) + 'mbit prio 3' + '\n' +
+					'class add dev ' + interfaceB + ' parent ' + data[node]['up_parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ str(data[node]['uploadBandwidthMbpsMin']) + 'mbit ceil '+ str(data[node]['uploadBandwidthMbps']) + 'mbit prio 3'
 				linuxTCcommands.append(command)
 				if 'circuits' in data[node]:
 					for circuit in data[node]['circuits']:
