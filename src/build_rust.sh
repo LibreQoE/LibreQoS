@@ -12,11 +12,11 @@ sudo apt install python3-pip clang gcc gcc-multilib llvm libelf-dev git nano gra
 
 if ! rustup -V &> /dev/null
 then
-    echo "rustup is not installed."
-    echo "Visit https://rustup.rs and install Rust from there"
-    echo "Usually, you can copy the following and follow the on-screen instructions."
-    echo "Please don't install Rust as root."
-    echo "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+    echo -e "rustup is not installed.\
+      \nVisit https://rustup.rs and install Rust from there\
+      \nUsually, you can copy the following and follow the on-screen instructions.\
+      \nPlease don't install Rust as root.\
+      \ncurl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
     exit 1
 else
     echo "rustup found."
@@ -65,9 +65,9 @@ popd > /dev/null
 
 # Copy the node manager's static web content
 mkdir -p bin/static2/vendor
-pushd rust/lqosd > /dev/null
+pushd rust/lqosd > /dev/null || exit
 ./copy_files.sh
-popd > /dev/null
+popd > /dev/null || exit
 
 # Copy the Python library for LibreQoS.py et al.
 pushd rust/lqos_python > /dev/null
@@ -91,14 +91,17 @@ if service_exists lqos_node_manager; then
     sudo systemctl stop lqos_node_manager
     sudo systemctl disable lqos_node_manager
 fi
+
 if service_exists lqosd; then
     echo "lqosd is running as a service. Restarting it. You may need to enter your sudo password."
     sudo systemctl restart lqosd
 fi
+
 if service_exists lqos_scheduler; then
     echo "lqos_scheduler is running as a service. Restarting it. You may need to enter your sudo password."
     sudo systemctl restart lqos_scheduler
 fi
+
 
 echo "-----------------------------------------------------------------"
 echo "Don't forget to setup /etc/lqos.conf!"
