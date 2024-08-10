@@ -234,12 +234,6 @@ impl BatchedCommands {
     }
   }
 
-  pub fn finish_ip_mappings(&mut self) -> PyResult<()> {
-    let request = BusRequest::ClearHotCache;
-    self.batch.push(request);
-    Ok(())
-  }
-
   pub fn length(&self) -> PyResult<usize> {
     Ok(self.batch.len())
   }

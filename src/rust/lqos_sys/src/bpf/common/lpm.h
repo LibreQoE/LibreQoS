@@ -31,12 +31,19 @@ struct ip_hash_key {
 #define USE_HOTCACHE 1
 
 #ifdef USE_HOTCACHE
+
+#define HOT_CACHE_EXPIRY 1000000000 // 1 second
+
+struct hot_cache_data {
+    __u64 expires;
+    struct ip_hash_info info;
+};
+
 struct {
 	__uint(type, BPF_MAP_TYPE_LRU_HASH);
 	__uint(max_entries, HOT_CACHE_SIZE);
 	__type(key, struct in6_addr);
-	__type(value, struct ip_hash_info);
-	__uint(pinning, LIBBPF_PIN_BY_NAME);
+	__type(value, struct hot_cache_data);
 } ip_to_cpu_and_tc_hotcache SEC(".maps");
 #endif
 
@@ -45,7 +52,7 @@ struct {
 	__uint(type, BPF_MAP_TYPE_LPM_TRIE);
 	__uint(max_entries, IP_HASH_ENTRIES_MAX);
 	__type(key, struct ip_hash_key);
-	__type(value, struct ip_hash_info);
+	__type(value, struct hot_cache_data);
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
 	__uint(map_flags, BPF_F_NO_PREALLOC);
 } map_ip_to_cpu_and_tc SEC(".maps");
@@ -94,18 +101,19 @@ static __always_inline struct ip_hash_info * setup_lookup_key_and_tc_cpu(
 
     #ifdef USE_HOTCACHE
     // Try a hot cache search
-    ip_info = bpf_map_lookup_elem(
+    struct hot_cache_data * cached;
+    cached = bpf_map_lookup_elem(
         &ip_to_cpu_and_tc_hotcache,
         &lookup_key->address
     );
-    if (ip_info) {
+    if (cached && cached->expires < dissector->now) {
         // Is it a negative hit?
-        if (ip_info->cpu == NEGATIVE_HIT) {
+        if (cached->info.cpu == NEGATIVE_HIT) {
             return NULL;
         }
 
         // We got a cache hit, so return
-        return ip_info;
+        return &cached->info;
     }
     #endif
 
@@ -116,11 +124,15 @@ static __always_inline struct ip_hash_info * setup_lookup_key_and_tc_cpu(
     );
     #ifdef USE_HOTCACHE
     if (ip_info) {
+        struct hot_cache_data hot_data = {
+            .expires = dissector->now + HOT_CACHE_EXPIRY,
+            .info = *ip_info
+        };
         // We found it, so add it to the cache
         bpf_map_update_elem(
             &ip_to_cpu_and_tc_hotcache,
             &lookup_key->address,
-            ip_info,
+            &hot_data,
             BPF_NOEXIST
         );
     } else {

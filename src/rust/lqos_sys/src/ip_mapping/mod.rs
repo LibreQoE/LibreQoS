@@ -58,7 +58,6 @@ pub fn del_ip_from_tc(address: &str, upload: bool) -> Result<()> {
   let ip = XdpIpAddress::from_ip(ip);
   let mut key = IpHashKey { prefixlen: ip_to_add.prefix, address: ip.0 };
   bpf_map.delete(&mut key)?;
-  clear_hot_cache()?;
   Ok(())
 }
 
@@ -74,8 +73,6 @@ pub fn clear_ips_from_tc() -> Result<()> {
   )?;
   bpf_map.clear()?;
 
-  clear_hot_cache()?;
-  
   Ok(())
 }
 
@@ -93,13 +90,4 @@ pub fn list_mapped_ips() -> Result<Vec<(IpHashKey, IpHashData)>> {
   raw.extend_from_slice(&raw2);
 
   Ok(raw)
-}
-
-/// Clears the "hot cache", which should be done whenever you change the IP
-/// mappings - because otherwise cached data will keep going to the previous
-/// destinations.
-pub fn clear_hot_cache() -> Result<()> {
-  let mut bpf_map = BpfMap::<XdpIpAddress, IpHashData>::from_path("/sys/fs/bpf/ip_to_cpu_and_tc_hotcache")?;
-  bpf_map.clear()?;
-  Ok(())
 }

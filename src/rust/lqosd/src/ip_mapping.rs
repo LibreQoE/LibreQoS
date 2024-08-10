@@ -19,10 +19,6 @@ pub(crate) fn map_ip_to_flow(
   expect_ack(lqos_sys::add_ip_to_tc(ip_address, *tc_handle, cpu, upload))
 }
 
-pub(crate) fn clear_hot_cache() -> BusResponse {
-  expect_ack(lqos_sys::clear_hot_cache())
-}
-
 pub(crate) fn del_ip_flow(ip_address: &str, upload: bool) -> BusResponse {
   expect_ack(lqos_sys::del_ip_from_tc(ip_address, upload))
 }

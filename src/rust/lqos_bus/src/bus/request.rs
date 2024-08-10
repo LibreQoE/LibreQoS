@@ -70,11 +70,6 @@ pub enum BusRequest {
     upload: bool,
   },
 
-  /// After a batch of `MapIpToFlow` requests, this command will
-  /// clear the hot cache, forcing the XDP program to re-read the
-  /// mapping table.
-  ClearHotCache,
-
   /// Requests that the XDP program unmap an IP address/subnet from
   /// the traffic management system.
   DelIpFlow {
