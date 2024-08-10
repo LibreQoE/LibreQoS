@@ -194,7 +194,7 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>,
             cake_marks_down: 0,
             cake_marks_up: 0,
             cake_drops_down: 0,
-            cake_drops:up: 0,
+            cake_drops_up: 0,
         }) {
             warn!("Error sending message to LTS2. {e:?}");
         };
