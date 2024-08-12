@@ -47,10 +47,11 @@ body {
     font-size: 10pt;
     background-color: var(--bs-tertiary-bg);
     color: var(--bs-tertiary-color);
-    text-align: center;
+    text-align: left;
     margin: 0;
     font-variant: small-caps;
     font-weight: bold;
+    padding-left: 1em;
 }
 .dashgraph {
     width: 100%;

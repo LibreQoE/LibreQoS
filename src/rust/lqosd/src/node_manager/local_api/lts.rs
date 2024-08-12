@@ -1,5 +1,6 @@
 mod shaper_status;
 mod last_24_hours;
+mod rest_client;
 
 use axum::{Extension, Form, Json};
 use axum::response::Redirect;

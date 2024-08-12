@@ -1,10 +1,9 @@
 use axum::extract::Path;
 use axum::http::StatusCode;
 use axum::Json;
-use log::error;
 use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
 use lqos_config::load_config;
+use crate::node_manager::local_api::lts::rest_client::lts_query;
 
 #[derive(Serialize, Deserialize)]
 pub struct ThroughputData {
@@ -17,69 +16,48 @@ pub struct ThroughputData {
     median_up: i64,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct CakeData {
+    time: i64, // Unix timestamp
+    max_marks_down: i64,
+    max_marks_up: i64,
+    min_marks_down: i64,
+    min_marks_up: i64,
+    median_marks_down: i64,
+    median_marks_up: i64,
+    max_drops_down: i64,
+    max_drops_up: i64,
+    min_drops_down: i64,
+    min_drops_up: i64,
+    median_drops_down: i64,
+    median_drops_up: i64,
+}
+
 pub async fn last_24_hours()-> Result<Json<Vec<ThroughputData>>, StatusCode> {
     let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let seconds = 24 * 60 * 60;
     let url = format!("https://{}/shaper_api/totalThroughput/{seconds}", config.long_term_stats.lts_url.unwrap_or("stats.libreqos.io".to_string()));
-    //println!("URL: {}", url);
-
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
-        .build()
-        .map_err(|e| {
-            error!("Error building reqwest client: {:?}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-    let throughput = client
-        .get(&url)
-        .header("x-license-key", config.long_term_stats.license_key.unwrap_or("".to_string()))
-        .header("x-node-id", config.node_id.to_string())
-        .send()
-        .await
-        .map_err(|e| {
-            error!("Error getting throughput data: {:?}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .json::<Vec<ThroughputData>>()
-        .await
-        .map_err(|e| {
-            error!("Error parsing throughput data: {:?}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
+    let throughput = lts_query(&url).await?;
     Ok(Json(throughput))
 }
 
 pub async fn throughput_period(Path(seconds): Path<i32>)-> Result<Json<Vec<ThroughputData>>, StatusCode> {
     let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let url = format!("https://{}/shaper_api/totalThroughput/{seconds}", config.long_term_stats.lts_url.unwrap_or("stats.libreqos.io".to_string()));
-    //println!("URL: {}", url);
+    let throughput = lts_query(&url).await?;
+    Ok(Json(throughput))
+}
 
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
-        .build()
-        .map_err(|e| {
-            error!("Error building reqwest client: {:?}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+pub async fn retransmits_period(Path(seconds): Path<i32>)-> Result<Json<Vec<ThroughputData>>, StatusCode> {
+    let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let url = format!("https://{}/shaper_api/totalRetransmits/{seconds}", config.long_term_stats.lts_url.unwrap_or("stats.libreqos.io".to_string()));
+    let throughput = lts_query(&url).await?;
+    Ok(Json(throughput))
+}
 
-    let throughput = client
-        .get(&url)
-        .header("x-license-key", config.long_term_stats.license_key.unwrap_or("".to_string()))
-        .header("x-node-id", config.node_id.to_string())
-        .send()
-        .await
-        .map_err(|e| {
-            error!("Error getting throughput data: {:?}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .json::<Vec<ThroughputData>>()
-        .await
-        .map_err(|e| {
-            error!("Error parsing throughput data: {:?}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
+pub async fn cake_period(Path(seconds): Path<i32>)-> Result<Json<Vec<CakeData>>, StatusCode> {
+    let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let url = format!("https://{}/shaper_api/totalCake/{seconds}", config.long_term_stats.lts_url.unwrap_or("stats.libreqos.io".to_string()));
+    let throughput = lts_query(&url).await?;
     Ok(Json(throughput))
 }

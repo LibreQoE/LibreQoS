@@ -1,6 +1,7 @@
 import {BaseDashlet} from "./base_dashlet";
 import {ThroughputRingBufferGraph} from "../graphs/throughput_ring_graph";
 import {LtsThroughputPeriodGraph} from "../graphs/lts_throughput_period_graph";
+import {periodNameToSeconds} from "../helpers/time_periods";
 
 export class ThroughputRingDash extends BaseDashlet{
     constructor(slot) {
@@ -20,33 +21,6 @@ export class ThroughputRingDash extends BaseDashlet{
         return [ "Throughput" ];
     }
 
-    makePeriodBtn(name, target) {
-        let btn = document.createElement("button");
-        btn.classList.add("btn", "btn-sm", "btn-outline-primary", "tiny", "me-1");
-        btn.innerText = name;
-        btn.id = this.graphDivId() + "_btn_" + name;
-        btn.onclick = () => {
-            this.buttons.forEach((b) => {
-                b.classList.remove("active");
-                let targetName = "#" + b.id.replace("_btn", "");
-                if (targetName.lastIndexOf("Live") > 0) {
-                    targetName = "#" + this.graphDivId();
-                }
-                if (b === btn) {
-                    b.classList.add("active");
-                    $(targetName).show();
-                } else {
-                    $(targetName).hide();
-                }
-            });
-            this.graphs.forEach((g) => {
-                g.chart.resize();
-            });
-        }
-        this.buttons.push(btn);
-        return btn;
-    }
-
     buildContainer() {
         let base = super.buildContainer();
         let graphs = this.graphDiv();
@@ -56,13 +30,11 @@ export class ThroughputRingDash extends BaseDashlet{
         let controls = document.createElement("div");
         controls.classList.add("dashgraph-controls", "small");
 
-        this.buttons = [];
-        let btnLive = this.makePeriodBtn("Live", this.graphDivId());
+        let btnLive = this.makePeriodBtn("Live");
         btnLive.classList.add("active");
         controls.appendChild(btnLive);
 
         let targets = ["1h", "6h", "12h", "24h", "7d"];
-        this.graphDivs = [];
         targets.forEach((t) => {
             let graph = document.createElement("div");
             graph.id = this.graphDivId() + "_" + t;
@@ -70,7 +42,7 @@ export class ThroughputRingDash extends BaseDashlet{
             graph.style.display = "none";
             graph.innerHTML = window.hasLts ? "Loading..." : "<p class='text-secondary small'>You need an active Long-Term Stats account to view this data.</p>";
             this.graphDivs.push(graph);
-            controls.appendChild(this.makePeriodBtn(t, graph.id));
+            controls.appendChild(this.makePeriodBtn(t));
         });
 
         base.appendChild(controls);
@@ -84,30 +56,10 @@ export class ThroughputRingDash extends BaseDashlet{
     setup() {
         super.setup();
         this.graph = new ThroughputRingBufferGraph(this.graphDivId());
-        this.graphs = [];
         this.ltsLoaded = false;
         if (window.hasLts) {
             this.graphDivs.forEach((g) => {
-                let period = g.id.replace(this.graphDivId() + "_", "");
-                switch (period) { // Convert to seconds
-                    case "1h":
-                        period = 3600;
-                        break;
-                    case "6h":
-                        period = 21600;
-                        break;
-                    case "12h":
-                        period = 43200;
-                        break;
-                    case "24h":
-                        period = 86400;
-                        break;
-                    case "7d":
-                        period = 604800;
-                        break;
-                    default:
-                        console.log("Unknown period: " + period);
-                }
+                let period = periodNameToSeconds(g.id.replace(this.graphDivId() + "_", ""));
                 let graph = new LtsThroughputPeriodGraph(g.id, period);
                 this.graphs.push(graph);
             });

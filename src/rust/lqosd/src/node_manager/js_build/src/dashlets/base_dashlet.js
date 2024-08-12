@@ -6,6 +6,10 @@ export class BaseDashlet {
         this.id = "dash_" + slotNumber;
         this.size = 3;
         this.setupDone = false;
+        // For multi-period LTS support
+        this.buttons = [];
+        this.graphs = [];
+        this.graphDivs = [];
     }
 
     canBeSlowedDown() {
@@ -113,5 +117,32 @@ export class BaseDashlet {
 
     supportsZoom() {
         return false;
+    }
+
+    makePeriodBtn(name) {
+        let btn = document.createElement("button");
+        btn.classList.add("btn", "btn-sm", "btn-outline-primary", "tiny", "me-1");
+        btn.innerText = name;
+        btn.id = this.graphDivId() + "_btn_" + name;
+        btn.onclick = () => {
+            this.buttons.forEach((b) => {
+                b.classList.remove("active");
+                let targetName = "#" + b.id.replace("_btn", "");
+                if (targetName.lastIndexOf("Live") > 0) {
+                    targetName = "#" + this.graphDivId();
+                }
+                if (b === btn) {
+                    b.classList.add("active");
+                    $(targetName).show();
+                } else {
+                    $(targetName).hide();
+                }
+            });
+            this.graphs.forEach((g) => {
+                g.chart.resize();
+            });
+        }
+        this.buttons.push(btn);
+        return btn;
     }
 }
