@@ -118,14 +118,14 @@ export class LtsLast24Hours_graph extends DashboardGraph {
         this.option.series[5].data = [];
         for (let x=0; x<data.length; x++) {
             this.option.xAxis.data.push(x);
-            this.option.series[0].data.push(data[x].min_down);
-            this.option.series[1].data.push(data[x].max_down - data[x].min_down);
-            this.option.series[2].data.push(0.0 - data[x].max_up);
-            this.option.series[3].data.push(0.0 - (data[x].max_up - data[x].min_up));
+            this.option.series[0].data.push(data[x].min_down * 8);
+            this.option.series[1].data.push((data[x].max_down - data[x].min_down) * 8);
+            this.option.series[2].data.push((0.0 - data[x].max_up) * 8);
+            this.option.series[3].data.push((0.0 - (data[x].max_up - data[x].min_up)) * 8);
             //console.log(0.0 - data[x].min_up, 0.0 - data[x].max_up);
 
-            this.option.series[4].data.push(data[x].median_down);
-            this.option.series[5].data.push(0.0 - data[x].median_up);
+            this.option.series[4].data.push(data[x].median_down * 8);
+            this.option.series[5].data.push((0.0 - data[x].median_up) * 8);
         }
         this.chart.setOption(this.option);
     }
