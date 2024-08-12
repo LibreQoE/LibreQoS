@@ -36,29 +36,15 @@ impl AtomicDownUp {
     /// Add a tuple of u64 values to the down and up values. The addition
     /// is checked, and will not occur if it would result in an overflow.
     pub fn checked_add_tuple(&self, n: (u64, u64)) {
-        let n0 = self.down.load(std::sync::atomic::Ordering::Relaxed);
-        if let Some(n) = n0.checked_add(n.0) {
-            self.down.store(n, std::sync::atomic::Ordering::Relaxed);
-        }
-
-        let n1 = self.up.load(std::sync::atomic::Ordering::Relaxed);
-        if let Some(n) = n1.checked_add(n.1) {
-            self.up.store(n, std::sync::atomic::Ordering::Relaxed);
-        }
+        let _ = self.down.fetch_update(Relaxed, Relaxed, |x| x.checked_add(n.0));
+        let _ = self.up.fetch_update(Relaxed, Relaxed, |x| x.checked_add(n.1));
     }
 
     /// Add a DownUpOrder to the down and up values. The addition
     /// is checked, and will not occur if it would result in an overflow.
     pub fn checked_add(&self, n: DownUpOrder<u64>) {
-        let n0 = self.down.load(std::sync::atomic::Ordering::Relaxed);
-        if let Some(n) = n0.checked_add(n.down) {
-            self.down.store(n, std::sync::atomic::Ordering::Relaxed);
-        }
-
-        let n1 = self.up.load(std::sync::atomic::Ordering::Relaxed);
-        if let Some(n) = n1.checked_add(n.up) {
-            self.up.store(n, std::sync::atomic::Ordering::Relaxed);
-        }
+        let _ = self.down.fetch_update(Relaxed, Relaxed, |x| x.checked_add(n.down));
+        let _ = self.up.fetch_update(Relaxed, Relaxed, |x| x.checked_add(n.up));
     }
 
     /// Get the down value.

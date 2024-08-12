@@ -109,6 +109,7 @@ impl ThroughputTracker {
       if let Some(mut entry) = raw_data.get_mut(xdp_ip) {
         entry.bytes = DownUpOrder::zeroed();
         entry.packets = DownUpOrder::zeroed();
+        // Sum the per-CPU counters
         for c in counts {
           entry.bytes.checked_add_direct(c.download_bytes, c.upload_bytes);
           entry.packets.checked_add_direct(c.download_packets, c.upload_packets);
@@ -119,9 +120,13 @@ impl ThroughputTracker {
             entry.last_seen = u64::max(entry.last_seen, c.last_seen);
           }
         }
+
+        // If it has changed...
         if entry.packets != entry.prev_packets {
+          // Mark data as fresh
           entry.most_recent_cycle = self_cycle;
 
+          // Send the new total down the tree
           if let Some(parents) = &entry.network_json_parents {
             net_json_calc.add_throughput_cycle(
               parents,
