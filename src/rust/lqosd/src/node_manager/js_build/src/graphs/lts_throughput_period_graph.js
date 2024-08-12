@@ -9,6 +9,13 @@ export class LtsThroughputPeriodGraph extends DashboardGraph {
             xAxis: {
                 type: 'category',
                 data: [],
+                axisLabel: {
+                    formatter: function (val)
+                    {
+                        return new Date(parseInt(val) * 1000).toLocaleString();
+                    },
+                    hideOverlap: true
+                }
             },
             yAxis: {
                 type: 'value',
@@ -118,7 +125,7 @@ export class LtsThroughputPeriodGraph extends DashboardGraph {
         this.option.series[4].data = [];
         this.option.series[5].data = [];
         for (let x=0; x<data.length; x++) {
-            this.option.xAxis.data.push(x);
+            this.option.xAxis.data.push(data[x].time);
             this.option.series[0].data.push(data[x].min_down * 8);
             this.option.series[1].data.push((data[x].max_down - data[x].min_down) * 8);
             this.option.series[2].data.push((0.0 - data[x].max_up) * 8);

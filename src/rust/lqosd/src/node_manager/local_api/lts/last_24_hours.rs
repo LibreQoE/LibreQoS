@@ -8,7 +8,7 @@ use lqos_config::load_config;
 
 #[derive(Serialize, Deserialize)]
 pub struct ThroughputData {
-    time: OffsetDateTime,
+    time: i64, // Unix timestamp
     max_down: i64,
     max_up: i64,
     min_down: i64,
