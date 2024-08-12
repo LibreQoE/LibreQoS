@@ -170,3 +170,12 @@ table tr td a {
 .nav-pills .nav-link.active {
     background-color: var(--bs-tertiary-bg);
 }
+.dashlet-with-controls {
+    position: relative;
+}
+.dashgraph-controls {
+    position: absolute;
+    z-index: 100;
+    top: 0;
+    right: 0;
+}

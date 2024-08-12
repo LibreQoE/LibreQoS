@@ -14,11 +14,11 @@ impl LtsStatus {
     pub fn from_i32(value: i32) -> Self {
         match value {
             -1 => LtsStatus::NotChecked,
-            0 => LtsStatus::AlwaysFree,
-            1 => LtsStatus::FreeTrial,
-            2 => LtsStatus::SelfHosted,
-            3 => LtsStatus::ApiOnly,
-            4 => LtsStatus::Full,
+            1 => LtsStatus::AlwaysFree,
+            2 => LtsStatus::FreeTrial,
+            3 => LtsStatus::SelfHosted,
+            4 => LtsStatus::ApiOnly,
+            5 => LtsStatus::Full,
             _ => LtsStatus::Invalid,
         }
     }

@@ -52,6 +52,7 @@ pub async fn apply_templates(
     let template_text = template_text.replace("%%USERNAME%%", &username);
 
     let res = next.run(req).await;
+    let mut lts_script = "<script>window.hasLts = false;</script>";
 
     if apply_template {
         // Change the LTS part of the template
@@ -62,6 +63,7 @@ pub async fn apply_templates(
             _ => {
                 // Link to it
                 trial_link = LTS_LINK_ACTIVE;
+                lts_script = "<script>window.hasLts = true;</script>";
             }
         }
 
@@ -78,7 +80,8 @@ pub async fn apply_templates(
             .replace("%%BODY%%", &byte_string)
             .replace("%%VERSION%%", VERSION_STRING)
             .replace("%%TITLE%%", &title)
-            .replace("%%LTS_LINK%%", trial_link);
+            .replace("%%LTS_LINK%%", trial_link)
+            .replace("%%%LTS_SCRIPT%%%", lts_script);
         if let Some(length) = res_parts.headers.get_mut("content-length") {
             *length = HeaderValue::from(byte_string.len());
         }

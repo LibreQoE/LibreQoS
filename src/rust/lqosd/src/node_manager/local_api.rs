@@ -60,6 +60,7 @@ pub fn local_api(lts2_control_channel: ControlSender) -> Router {
         .route("/ltsSignUp", post(lts::lts_trial_signup))
         .route("/ltsShaperStatus", get(lts::shaper_status_from_lts))
         .route("/lts24", get(lts::last_24_hours))
+        .route("/ltsThroughput/:seconds", get(lts::throughput_period))
         .layer(Extension(lts2_control_channel)) // Add the LTS control channel as an extension
         .layer(CorsLayer::very_permissive())
         .route_layer(axum::middleware::from_fn(auth_layer))

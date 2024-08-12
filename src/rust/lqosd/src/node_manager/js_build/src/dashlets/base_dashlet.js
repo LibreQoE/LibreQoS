@@ -96,8 +96,22 @@ export class BaseDashlet {
             title.appendChild(tooltip);
         }
 
+        if (this.supportsZoom()) {
+            let zoom = document.createElement("span");
+            zoom.style.marginLeft = "5px";
+            let button = document.createElement("a");
+            button.title = "Zoom";
+            button.innerHTML = "<i class='fas fa-search-plus'></i>";
+            zoom.appendChild(button);
+            title.appendChild(zoom);
+        }
+
         div.appendChild(title);
 
         return div;
+    }
+
+    supportsZoom() {
+        return false;
     }
 }

@@ -20,6 +20,7 @@ use tokio::{
     sync::mpsc::Sender,
     time::{Duration, Instant},
 };
+use lqos_queue_tracker::TOTAL_QUEUE_STATS;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::unix_now;
 use crate::lts2::{ControlSender, LtsCommand};
@@ -178,6 +179,15 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>,
     if let Ok(now) = unix_now() {
         let bytes = THROUGHPUT_TRACKER.bytes_per_second.as_down_up();
         let shaped_bytes = THROUGHPUT_TRACKER.shaped_bytes_per_second.as_down_up();
+        let mut min_rtt = None;
+        let mut max_rtt = None;
+        let mut median_rtt = None;
+        if let Some(rtt_data) = min_max_median_rtt() {
+            min_rtt = Some(rtt_data.min);
+            max_rtt = Some(rtt_data.max);
+            median_rtt = Some(rtt_data.median);
+        }
+        let tcp_retransmits = min_max_median_tcp_retransmits();
         if let Err(e) = lts2.send(LtsCommand::TotalThroughput {
             timestamp: now,
             download_bytes: bytes.down,
@@ -186,15 +196,15 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>,
             shaped_upload_bytes: shaped_bytes.up,
             packets_down: packets_per_second.0,
             packets_up: packets_per_second.1,
-            min_rtt: None,
-            max_rtt: None,
-            median_rtt: None,
-            tcp_retransmits_down: 0,
-            tcp_retransmits_up: 0,
-            cake_marks_down: 0,
-            cake_marks_up: 0,
-            cake_drops_down: 0,
-            cake_drops_up: 0,
+            min_rtt,
+            max_rtt,
+            median_rtt,
+            tcp_retransmits_down: tcp_retransmits.down,
+            tcp_retransmits_up: tcp_retransmits.up,
+            cake_marks_down: TOTAL_QUEUE_STATS.marks.get_down() as i32,
+            cake_marks_up: TOTAL_QUEUE_STATS.marks.get_up() as i32,
+            cake_drops_down: TOTAL_QUEUE_STATS.drops.get_down() as i32,
+            cake_drops_up: TOTAL_QUEUE_STATS.drops.get_up() as i32,
         }) {
             warn!("Error sending message to LTS2. {e:?}");
         };
@@ -486,6 +496,74 @@ pub fn xdp_pping_compat() -> BusResponse {
         })
         .collect();
     BusResponse::XdpPping(result)
+}
+
+pub struct MinMaxMedianRtt {
+    pub min: f32,
+    pub max: f32,
+    pub median: f32,
+}
+
+pub fn min_max_median_rtt() -> Option<MinMaxMedianRtt> {
+    let reader_cycle = THROUGHPUT_TRACKER
+        .cycle
+        .load(std::sync::atomic::Ordering::Relaxed);
+
+    // Put all valid RTT samples into a big buffer
+    let mut samples: Vec<f32> = Vec::new();
+
+    THROUGHPUT_TRACKER
+        .raw_data
+        .iter()
+        .filter(|d| retire_check(reader_cycle, d.most_recent_cycle))
+        .for_each(|d| {
+            samples.extend(
+                d.recent_rtt_data
+                    .iter()
+                    .filter(|d| d.as_millis() > 0.0)
+                    .map(|d| d.as_millis() as f32)
+                    .collect::<Vec<f32>>()
+            );
+        });
+
+    if samples.is_empty() {
+        return None;
+    }
+
+    // Sort the buffer
+    samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+    let result = MinMaxMedianRtt {
+        min: samples[0] as f32,
+        max: samples[samples.len() - 1] as f32,
+        median: samples[samples.len() / 2] as f32,
+    };
+
+    Some(result)
+}
+
+pub struct TcpRetransmitTotal {
+    pub up: i32,
+    pub down: i32,
+}
+
+pub fn min_max_median_tcp_retransmits() -> TcpRetransmitTotal {
+    let reader_cycle = THROUGHPUT_TRACKER
+        .cycle
+        .load(std::sync::atomic::Ordering::Relaxed);
+
+    let mut total = TcpRetransmitTotal { up: 0, down: 0 };
+
+    THROUGHPUT_TRACKER
+        .raw_data
+        .iter()
+        .filter(|d| retire_check(reader_cycle, d.most_recent_cycle))
+        .for_each(|d| {
+            total.up += d.tcp_retransmits.up as i32;
+            total.down += d.tcp_retransmits.down as i32;
+        });
+
+    total
 }
 
 pub fn rtt_histogram<const N: usize>() -> BusResponse {

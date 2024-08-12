@@ -1,3 +1,4 @@
+use axum::extract::Path;
 use axum::http::StatusCode;
 use axum::Json;
 use log::error;
@@ -19,6 +20,39 @@ pub struct ThroughputData {
 pub async fn last_24_hours()-> Result<Json<Vec<ThroughputData>>, StatusCode> {
     let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let seconds = 24 * 60 * 60;
+    let url = format!("https://{}/shaper_api/totalThroughput/{seconds}", config.long_term_stats.lts_url.unwrap_or("stats.libreqos.io".to_string()));
+    //println!("URL: {}", url);
+
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .build()
+        .map_err(|e| {
+            error!("Error building reqwest client: {:?}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    let throughput = client
+        .get(&url)
+        .header("x-license-key", config.long_term_stats.license_key.unwrap_or("".to_string()))
+        .header("x-node-id", config.node_id.to_string())
+        .send()
+        .await
+        .map_err(|e| {
+            error!("Error getting throughput data: {:?}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .json::<Vec<ThroughputData>>()
+        .await
+        .map_err(|e| {
+            error!("Error parsing throughput data: {:?}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    Ok(Json(throughput))
+}
+
+pub async fn throughput_period(Path(seconds): Path<i32>)-> Result<Json<Vec<ThroughputData>>, StatusCode> {
+    let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let url = format!("https://{}/shaper_api/totalThroughput/{seconds}", config.long_term_stats.lts_url.unwrap_or("stats.libreqos.io".to_string()));
     //println!("URL: {}", url);
 

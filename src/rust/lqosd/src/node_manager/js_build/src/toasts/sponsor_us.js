@@ -1,7 +1,7 @@
 const sponsorBtn = "<a href=\"https://github.com/sponsors/LibreQoE/\" target='_blank' class='text-primary-emphasis'><i class=\"fa fa-heart\"></i> Sponsor Us on GitHub</a>";
 
 export function sponsorTag(parentId) {
-    $.get("/local-api/ltsCheck", (data) => {
+    if (!window.hasLts) {
         $.get("/local-api/deviceCount", (counts) => {
             //console.log(data);
             if (data.action !== "GoodToGo") {
@@ -39,5 +39,5 @@ export function sponsorTag(parentId) {
                 parent.appendChild(div);
             }
         });
-    });
+    };
 }
