@@ -16,6 +16,7 @@ use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 use lts_client::collector::{HostSummary, StatsUpdateMessage, ThroughputSummary};
 use once_cell::sync::Lazy;
+use serde::Serialize;
 use tokio::{
     sync::mpsc::Sender,
     time::{Duration, Instant},
@@ -542,6 +543,7 @@ pub fn min_max_median_rtt() -> Option<MinMaxMedianRtt> {
     Some(result)
 }
 
+#[derive(Serialize)]
 pub struct TcpRetransmitTotal {
     pub up: i32,
     pub down: i32,

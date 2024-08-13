@@ -16,6 +16,7 @@ mod queue_stats_total;
 mod network_tree;
 mod circuit_capacity;
 mod tree_capacity;
+mod retransmits;
 
 pub use network_tree::{Circuit, all_circuits};
 
@@ -47,6 +48,7 @@ async fn one_second_cadence(channels: Arc<PubSub>) {
         let mc = channels.clone(); spawn(async move { network_tree::network_tree(mc).await });
         let mc = channels.clone(); spawn(async move { circuit_capacity::circuit_capacity(mc).await });
         let mc = channels.clone(); spawn(async move { tree_capacity::tree_capacity(mc).await });
+        let mc = channels.clone(); spawn(async move { retransmits::tcp_retransmits(mc).await });
     }
 }
 

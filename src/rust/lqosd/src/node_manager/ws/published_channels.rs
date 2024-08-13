@@ -5,6 +5,7 @@ pub enum PublishedChannels {
     /// Provides a 1-second tick notification to the client
     Cadence,
     Throughput,
+    Retransmits,
     RttHistogram,
     FlowCount,
     TopDownloads,
