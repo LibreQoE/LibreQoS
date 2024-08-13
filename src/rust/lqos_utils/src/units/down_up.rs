@@ -119,6 +119,11 @@ where T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedSub
         self.down = T::zero();
         self.up = T::zero();
     }
+
+    /// Check if both down and up are zero.
+    pub fn not_zero(&self) -> bool {
+        self.down != T::zero() || self.up != T::zero()
+    }
 }
 
 impl <T> Into<UpDownOrder<T>> for DownUpOrder<T> {

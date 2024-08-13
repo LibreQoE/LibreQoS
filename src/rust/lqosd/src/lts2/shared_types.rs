@@ -55,6 +55,23 @@ pub enum LtsCommand {
         timestamp: u64,
         devices: Vec<u8>,
     },
+    CircuitThroughput {
+        timestamp: u64,
+        circuit_hash: i64,
+        download_bytes: u64,
+        upload_bytes: u64,
+    },
+    CircuitRetransmits {
+        timestamp: u64,
+        circuit_hash: i64,
+        tcp_retransmits_down: i32,
+        tcp_retransmits_up: i32,
+    },
+    CircuitRtt {
+        timestamp: u64,
+        circuit_hash: i64,
+        median_rtt: f32,
+    },
 }
 
 #[repr(C)]

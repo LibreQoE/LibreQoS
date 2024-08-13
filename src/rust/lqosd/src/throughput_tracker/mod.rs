@@ -265,6 +265,88 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>,
         }) {
             warn!("Error sending message to LTS2. {e:?}");
         };
+
+        // Send per-circuit stats to LTS2
+        // Start by combining the throughput data for each circuit as a whole
+        let mut circuit_throughput: FxHashMap<String, DownUpOrder<u64>> = FxHashMap::default();
+        let mut circuit_retransmits: FxHashMap<String, DownUpOrder<u64>> = FxHashMap::default();
+        let mut circuit_rtt: FxHashMap<String, Vec<f32>> = FxHashMap::default();
+
+        THROUGHPUT_TRACKER
+            .raw_data
+            .iter()
+            .filter(|h| h.circuit_id.is_some() && h.bytes_per_second.not_zero())
+            .for_each(|h| {
+                if let Some(c) = circuit_throughput.get_mut(h.circuit_id.as_ref().unwrap()) {
+                    *c += h.bytes_per_second;
+                } else {
+                    circuit_throughput.insert(h.circuit_id.as_ref().unwrap().clone(), h.bytes_per_second);
+                }
+            });
+
+        THROUGHPUT_TRACKER
+            .raw_data
+            .iter()
+            .filter(|h| h.circuit_id.is_some() && h.tcp_retransmits.not_zero())
+            .for_each(|h| {
+                if let Some(c) = circuit_retransmits.get_mut(h.circuit_id.as_ref().unwrap()) {
+                    *c += h.tcp_retransmits;
+                } else {
+                    circuit_retransmits.insert(h.circuit_id.as_ref().unwrap().clone(), h.tcp_retransmits);
+                }
+            });
+
+        THROUGHPUT_TRACKER
+            .raw_data
+            .iter()
+            .filter(|h| h.circuit_id.is_some() && h.median_latency().is_some())
+            .for_each(|h| {
+                if let Some(c) = circuit_rtt.get_mut(h.circuit_id.as_ref().unwrap()) {
+                    c.push(h.median_latency().unwrap());
+                } else {
+                    circuit_rtt.insert(h.circuit_id.as_ref().unwrap().clone(), vec![h.median_latency().unwrap()]);
+                }
+            });
+
+        // And now we send it
+        circuit_throughput
+            .into_iter()
+            .for_each(|(k,v)| {
+                let circuit_hash = hash_to_i64(&k);
+                if let Err(e) = lts2.send(LtsCommand::CircuitThroughput {
+                    timestamp: now,
+                    circuit_hash,
+                    download_bytes: v.down,
+                    upload_bytes: v.up,
+                }) {
+                    warn!("Error sending message to LTS2. {e:?}");
+                }
+            });
+        circuit_retransmits
+            .into_iter()
+            .for_each(|(k,v)| {
+                let circuit_hash = hash_to_i64(&k);
+                if let Err(e) = lts2.send(LtsCommand::CircuitRetransmits {
+                    timestamp: now,
+                    circuit_hash,
+                    tcp_retransmits_down: v.down as i32,
+                    tcp_retransmits_up: v.up as i32,
+                }) {
+                    warn!("Error sending message to LTS2. {e:?}");
+                }
+            });
+        circuit_rtt
+            .into_iter()
+            .for_each(|(k,v)| {
+                let circuit_hash = hash_to_i64(&k);
+                if let Err(e) = lts2.send(LtsCommand::CircuitRtt {
+                    timestamp: now,
+                    circuit_hash,
+                    median_rtt: v.iter().sum::<f32>() / v.len() as f32,
+                }) {
+                    warn!("Error sending message to LTS2. {e:?}");
+                }
+            });
     }
 }
 
