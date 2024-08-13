@@ -47,6 +47,7 @@ rand = "0.8.5"
 mime_guess = "2.0.4"
 libloading = "0.8.5"
 time = { version = "0.3.36", features = ["serde"] }
+serde_cbor = { workspace = true }
 
 # Support JemAlloc on supported platforms
 [target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]

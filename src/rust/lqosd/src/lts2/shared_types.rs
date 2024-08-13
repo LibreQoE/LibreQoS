@@ -1,7 +1,7 @@
 //! Keep this synchronized with the server-side version.
 #![allow(dead_code)]
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 pub type ControlSender = std::sync::mpsc::Sender<LtsCommand>;
 pub type ControlReceiver = std::sync::mpsc::Receiver<LtsCommand>;
@@ -51,6 +51,10 @@ pub enum LtsCommand {
         cake_drops_down: i32,
         cake_drops_up: i32,
     },
+    ShapedDevices {
+        timestamp: u64,
+        devices: Vec<u8>,
+    },
 }
 
 #[repr(C)]
@@ -67,4 +71,30 @@ pub struct FreeTrialDetails {
     pub country: String,
     pub phone: String,
     pub website: String,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Serialize)]
+pub struct Lts2Circuit {
+    pub circuit_id: String,
+    pub circuit_name: String,
+    pub circuit_hash: i64,
+    pub download_min_mbps: u32,
+    pub upload_min_mbps: u32,
+    pub download_max_mbps: u32,
+    pub upload_max_mbps: u32,
+    pub parent_node: i64,
+    pub devices: Vec<Lts2Device>,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Serialize)]
+pub struct Lts2Device {
+    pub device_id: String,
+    pub device_name: String,
+    pub device_hash: i64,
+    pub mac: String,
+    pub ipv4: Vec<([u8; 4], u8)>,
+    pub ipv6: Vec<([u8; 16], u8)>,
+    pub comment: String,
 }

@@ -1,8 +1,8 @@
 pub mod flow_data;
 mod throughput_entry;
 mod tracking_data;
-use std::net::IpAddr;
-
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use fxhash::FxHashMap;
 use self::flow_data::{get_asn_name_and_country, FlowAnalysis, FlowbeeLocalData, ALL_FLOWS};
 use crate::{
     long_term_stats::get_network_tree,
@@ -24,7 +24,7 @@ use tokio::{
 use lqos_queue_tracker::TOTAL_QUEUE_STATS;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::unix_now;
-use crate::lts2::{ControlSender, LtsCommand};
+use crate::lts2::{ControlSender, Lts2Circuit, Lts2Device, LtsCommand};
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
@@ -125,6 +125,7 @@ async fn throughput_task(
 
 async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>, lts2: ControlSender) {
     // If ShapedDevices has changed, notify the stats thread
+    let mut lts2_needs_shaped_devices = false;
     if let Ok(changed) = STATS_NEEDS_NEW_SHAPED_DEVICES.compare_exchange(
         true,
         false,
@@ -132,6 +133,7 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>,
         std::sync::atomic::Ordering::Relaxed,
     ) {
         if changed {
+            lts2_needs_shaped_devices = true; // Separated out because LTS1 will eventually go away
             let shaped_devices = SHAPED_DEVICES.read().unwrap().devices.clone();
             let _ = long_term_stats_tx
                 .send(StatsUpdateMessage::ShapedDevicesChanged(shaped_devices))
@@ -178,6 +180,60 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>,
         warn!("Error sending message to stats collection system. {e:?}");
     }
     if let Ok(now) = unix_now() {
+        // LTS2 Shaped Devices
+        if lts2_needs_shaped_devices {
+            let shaped_devices = SHAPED_DEVICES.read().unwrap().devices.clone();
+            let mut circuit_map: FxHashMap<String, Lts2Circuit> = FxHashMap::default();
+            for device in shaped_devices.into_iter() {
+                if let Some(circuit) = circuit_map.get_mut(&device.circuit_id) {
+                    circuit.devices.push(Lts2Device {
+                        device_hash: hash_to_i64(&device.device_id),
+                        device_id: device.device_id,
+                        device_name: device.device_name,
+                        mac: device.mac,
+                        ipv4: device.ipv4.into_iter().map(ip4_to_bytes).collect(),
+                        ipv6: device.ipv6.into_iter().map(ip6_to_bytes).collect(),
+                        comment: device.comment,
+                    })
+                } else {
+                    let circuit_hash = hash_to_i64(&device.circuit_id);
+                    circuit_map.insert(
+                        device.circuit_id.clone(),
+                        Lts2Circuit {
+                            circuit_id: device.circuit_id,
+                            circuit_name: device.circuit_name,
+                            circuit_hash,
+                            download_min_mbps: device.download_min_mbps,
+                            upload_min_mbps: device.upload_min_mbps,
+                            download_max_mbps: device.download_max_mbps,
+                            upload_max_mbps: device.upload_max_mbps,
+                            parent_node: hash_to_i64(&device.parent_node),
+                            devices: vec![Lts2Device {
+                                device_hash: hash_to_i64(&device.device_id),
+                                device_id: device.device_id,
+                                device_name: device.device_name,
+                                mac: device.mac,
+                                ipv4: device.ipv4.into_iter().map(ip4_to_bytes).collect(),
+                                ipv6: device.ipv6.into_iter().map(ip6_to_bytes).collect(),
+                                comment: device.comment,
+                            }],
+                        }
+                    );
+                }
+            }
+            let devices_as_vec: Vec<Lts2Circuit> = circuit_map.into_iter().map(|(_, v)| v).collect();
+            // Serialize via cbor
+            if let Ok(bytes) = serde_cbor::to_vec(&devices_as_vec) {
+                if let Err(e) = lts2.send(LtsCommand::ShapedDevices {
+                    timestamp: now,
+                    devices: bytes,
+                }) {
+                    warn!("Error sending message to LTS2. {e:?}");
+                }
+            }
+        }
+
+        // Send top-level throughput stats to LTS2
         let bytes = THROUGHPUT_TRACKER.bytes_per_second.as_down_up();
         let shaped_bytes = THROUGHPUT_TRACKER.shaped_bytes_per_second.as_down_up();
         let mut min_rtt = None;
@@ -210,6 +266,23 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>,
             warn!("Error sending message to LTS2. {e:?}");
         };
     }
+}
+
+fn hash_to_i64(text: &str) -> i64 {
+    use std::hash::{DefaultHasher, Hasher};
+    let mut hasher = DefaultHasher::new();
+    hasher.write(text.as_bytes());
+    hasher.finish() as i64
+}
+
+fn ip4_to_bytes(ip: (Ipv4Addr, u32)) -> ([u8; 4], u8) {
+    let bytes = ip.0.octets();
+    (bytes, ip.1 as u8)
+}
+
+fn ip6_to_bytes(ip: (Ipv6Addr, u32)) -> ([u8; 16], u8) {
+    let bytes = ip.0.octets();
+    (bytes, ip.1 as u8)
 }
 
 pub fn current_throughput() -> BusResponse {

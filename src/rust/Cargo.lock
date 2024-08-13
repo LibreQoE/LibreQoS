@@ -1879,6 +1879,7 @@ dependencies = [
  "rand",
  "reqwest",
  "serde",
+ "serde_cbor",
  "serde_json",
  "signal-hook",
  "strum",

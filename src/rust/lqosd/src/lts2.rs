@@ -11,7 +11,7 @@ use log::warn;
 use lqos_config::load_config;
 pub use crate::lts2::lts_status::{LtsStatus};
 use crate::lts2::shared_types::{ControlReceiver, GetConfigFn, SendStatusFn};
-pub use shared_types::{ControlSender, FreeTrialDetails, LtsCommand};
+pub use shared_types::{ControlSender, FreeTrialDetails, LtsCommand, Lts2Circuit, Lts2Device};
 
 #[no_mangle]
 fn config_function(cfg: &mut shared_types::Lts2Config) {
