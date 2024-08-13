@@ -30,8 +30,7 @@ There are two options for the bridge to pass data through your two interfaces:
 
 The regular Linux bridge is recommended for Nvidea/Mellanox NICs such as the ConnectX-5 series (which have superior bridge performance), and VM setups using virtualized NICs. The Bifrost Bridge is recommended for Intel NICs with XDP support, such as the X520 and X710.
 
-To use the Bifrost bridge, skip the regular Linux bridge section below, and be sure to enable Bifrost/XDP in lqos.conf a few sections below.
-
+To use the Bifrost bridge, skip the regular Linux bridge section below, and be sure to enable Bifrost/XDP in lqos.conf in the [Configuration](configuration.md) section.
 ### Adding a regular Linux bridge (if not using Bifrost XDP bridge)
 
 From the Ubuntu VM, create a linux interface bridge - br0 - with the two shaping interfaces.
