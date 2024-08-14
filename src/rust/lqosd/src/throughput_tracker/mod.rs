@@ -1,7 +1,10 @@
 pub mod flow_data;
 mod throughput_entry;
 mod tracking_data;
+
+use std::fs::read_to_string;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::path::Path;
 use fxhash::FxHashMap;
 use self::flow_data::{get_asn_name_and_country, FlowAnalysis, FlowbeeLocalData, ALL_FLOWS};
 use crate::{
@@ -16,11 +19,12 @@ use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 use lts_client::collector::{HostSummary, StatsUpdateMessage, ThroughputSummary};
 use once_cell::sync::Lazy;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::{
     sync::mpsc::Sender,
     time::{Duration, Instant},
 };
+use lqos_config::load_config;
 use lqos_queue_tracker::{ALL_QUEUE_SUMMARY, TOTAL_QUEUE_STATS};
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::unix_now;
@@ -182,6 +186,34 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>,
     if let Ok(now) = unix_now() {
         // LTS2 Shaped Devices
         if lts2_needs_shaped_devices {
+            // Send the topology tree
+            {
+                if let Ok(config) = load_config() {
+                    let filename = Path::new(&config.lqos_directory).join("network.json");
+                    if let Ok(raw_string) = read_to_string(filename) {
+                        match serde_json::from_str::<RawNetJs>(&raw_string) {
+                            Err(e) => {
+                                warn!("Unable to parse network.json. {e:?}");
+                            }
+                            Ok(json) => {
+                                let lts2_format: Vec<_> = json.iter().map(|(k,v)| v.to_lts2(&k)).collect();
+                                if let Ok(bytes) = serde_cbor::to_vec(&lts2_format) {
+                                    if let Err(e) = lts2.send(LtsCommand::NetworkTree {
+                                        timestamp: now,
+                                        tree: bytes,
+                                    }) {
+                                        warn!("Error sending message to LTS2. {e:?}");
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        warn!("Unable to read network.json");
+                    }
+                }
+            }
+
+            // Send the shaped devices
             let shaped_devices = SHAPED_DEVICES.read().unwrap().devices.clone();
             let mut circuit_map: FxHashMap<String, Lts2Circuit> = FxHashMap::default();
             for device in shaped_devices.into_iter() {
@@ -374,9 +406,66 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>,
             }
         });
 
-        // Network tree
-
         // Network tree stats
+        let tree = {
+            let reader = NETWORK_JSON.read().unwrap();
+            reader.get_nodes_when_ready().clone()
+        };
+        tree.iter().for_each(|node| {
+            let site_hash = hash_to_i64(&node.name);
+            if node.current_throughput.not_zero() {
+                if let Err(e) = lts2.send(LtsCommand::SiteThroughput {
+                    timestamp: now,
+                    site_hash,
+                    download_bytes: node.current_throughput.down,
+                    upload_bytes: node.current_throughput.up,
+                }) {
+                    warn!("Error sending message to LTS2. {e:?}");
+                }
+            }
+            if node.current_tcp_retransmits.not_zero() {
+                if let Err(e) = lts2.send(LtsCommand::SiteRetransmits {
+                    timestamp: now,
+                    site_hash,
+                    tcp_retransmits_down: node.current_tcp_retransmits.down as i32,
+                    tcp_retransmits_up: node.current_tcp_retransmits.up as i32,
+                }) {
+                    warn!("Error sending message to LTS2. {e:?}");
+                }
+            }
+            if node.current_drops.not_zero() {
+                if let Err(e) = lts2.send(LtsCommand::SiteCakeDrops {
+                    timestamp: now,
+                    site_hash,
+                    cake_drops_down: node.current_drops.get_down() as i32,
+                    cake_drops_up: node.current_drops.get_up() as i32,
+                }) {
+                    warn!("Error sending message to LTS2. {e:?}");
+                }
+            }
+            if node.current_marks.not_zero() {
+                if let Err(e) = lts2.send(LtsCommand::SiteCakeMarks {
+                    timestamp: now,
+                    site_hash,
+                    cake_marks_down: node.current_marks.get_down() as i32,
+                    cake_marks_up: node.current_marks.get_up() as i32,
+                }) {
+                    warn!("Error sending message to LTS2. {e:?}");
+                }
+            }
+            if !node.rtts.is_empty() {
+                let mut rtts: Vec<u16> = node.rtts.iter().map(|n| *n).collect();
+                rtts.sort();
+                let median = rtts[rtts.len() / 2];
+                if let Err(e) = lts2.send(LtsCommand::SiteRtt {
+                    timestamp: now,
+                    site_hash,
+                    median_rtt: median as f32 / 10.0,
+                }) {
+                    warn!("Error sending message to LTS2. {e:?}");
+                }
+            }
+        });
     }
 }
 
@@ -1059,4 +1148,48 @@ pub fn ip_protocol_summary() -> BusResponse {
     BusResponse::IpProtocols(
         flow_data::RECENT_FLOWS.ip_protocol_summary()
     )
+}
+
+type RawNetJs = std::collections::HashMap<String, RawNetJsBody>;
+
+#[derive(Deserialize, Debug)]
+struct RawNetJsBody {
+    #[serde(rename = "downloadBandwidthMbps")]
+    download_bandwidth_mbps: u32,
+    #[serde(rename = "uploadBandwidthMbps")]
+    upload_bandwidth_mbps: u32,
+    #[serde(rename = "type")]
+    site_type: Option<String>,
+    children: Option<RawNetJs>,
+}
+
+#[derive(Serialize, Debug)]
+struct Lts2NetJs {
+    name: String,
+    site_hash: i64,
+    site_type: Option<String>,
+    download_bandwidth_mbps: u32,
+    upload_bandwidth_mbps: u32,
+    children: Vec<Lts2NetJs>
+}
+
+impl RawNetJsBody {
+    fn to_lts2(&self, name: &str) -> Lts2NetJs {
+        let mut result = Lts2NetJs {
+            name: name.to_string(),
+            site_hash: hash_to_i64(name),
+            site_type: self.site_type.clone(),
+            download_bandwidth_mbps: self.download_bandwidth_mbps,
+            upload_bandwidth_mbps: self.upload_bandwidth_mbps,
+            children: vec![],
+        };
+
+        if let Some(children) = &self.children {
+            for (name, body) in children.iter() {
+                result.children.push(body.to_lts2(name));
+            }
+        }
+
+        result
+    }
 }

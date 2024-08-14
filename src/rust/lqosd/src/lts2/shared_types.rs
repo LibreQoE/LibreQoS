@@ -84,6 +84,39 @@ pub enum LtsCommand {
         cake_marks_down: i32,
         cake_marks_up: i32,
     },
+    NetworkTree {
+        timestamp: u64,
+        tree: Vec<u8>,
+    },
+    SiteThroughput {
+        timestamp: u64,
+        site_hash: i64,
+        download_bytes: u64,
+        upload_bytes: u64,
+    },
+    SiteRetransmits {
+        timestamp: u64,
+        site_hash: i64,
+        tcp_retransmits_down: i32,
+        tcp_retransmits_up: i32,
+    },
+    SiteCakeDrops {
+        timestamp: u64,
+        site_hash: i64,
+        cake_drops_down: i32,
+        cake_drops_up: i32,
+    },
+    SiteCakeMarks {
+        timestamp: u64,
+        site_hash: i64,
+        cake_marks_down: i32,
+        cake_marks_up: i32,
+    },
+    SiteRtt {
+        timestamp: u64,
+        site_hash: i64,
+        median_rtt: f32,
+    },
 }
 
 #[repr(C)]
