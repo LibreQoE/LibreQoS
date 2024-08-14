@@ -72,6 +72,18 @@ pub enum LtsCommand {
         circuit_hash: i64,
         median_rtt: f32,
     },
+    CircuitCakeDrops {
+        timestamp: u64,
+        circuit_hash: i64,
+        cake_drops_down: i32,
+        cake_drops_up: i32,
+    },
+    CircuitCakeMarks {
+        timestamp: u64,
+        circuit_hash: i64,
+        cake_marks_down: i32,
+        cake_marks_up: i32,
+    },
 }
 
 #[repr(C)]

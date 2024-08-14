@@ -21,7 +21,7 @@ use tokio::{
     sync::mpsc::Sender,
     time::{Duration, Instant},
 };
-use lqos_queue_tracker::TOTAL_QUEUE_STATS;
+use lqos_queue_tracker::{ALL_QUEUE_SUMMARY, TOTAL_QUEUE_STATS};
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::unix_now;
 use crate::lts2::{ControlSender, Lts2Circuit, Lts2Device, LtsCommand};
@@ -347,6 +347,36 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>,
                     warn!("Error sending message to LTS2. {e:?}");
                 }
             });
+
+        // Per host CAKE stats
+        ALL_QUEUE_SUMMARY.iterate_queues(|circuit_id, drops, marks| {
+            if drops.not_zero() {
+                let circuit_hash = hash_to_i64(&circuit_id);
+                if let Err(e) = lts2.send(LtsCommand::CircuitCakeDrops {
+                    timestamp: now,
+                    circuit_hash,
+                    cake_drops_down: drops.get_down() as i32,
+                    cake_drops_up: drops.get_up() as i32,
+                }) {
+                    warn!("Error sending message to LTS2. {e:?}");
+                }
+            }
+            if marks.not_zero() {
+                let circuit_hash = hash_to_i64(&circuit_id);
+                if let Err(e) = lts2.send(LtsCommand::CircuitCakeMarks {
+                    timestamp: now,
+                    circuit_hash,
+                    cake_marks_down: marks.get_down() as i32,
+                    cake_marks_up: marks.get_up() as i32,
+                }) {
+                    warn!("Error sending message to LTS2. {e:?}");
+                }
+            }
+        });
+
+        // Network tree
+
+        // Network tree stats
     }
 }
 
