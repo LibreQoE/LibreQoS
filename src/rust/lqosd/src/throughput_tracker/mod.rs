@@ -28,7 +28,7 @@ use lqos_config::load_config;
 use lqos_queue_tracker::{ALL_QUEUE_SUMMARY, TOTAL_QUEUE_STATS};
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::unix_now;
-use crate::lts2::{ControlSender, Lts2Circuit, Lts2Device, LtsCommand};
+use lts2_sys::shared_types::{CircuitCakeDrops, CircuitCakeMarks};
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
@@ -44,7 +44,6 @@ pub static THROUGHPUT_TRACKER: Lazy<ThroughputTracker> = Lazy::new(ThroughputTra
 pub async fn spawn_throughput_monitor(
     long_term_stats_tx: Sender<StatsUpdateMessage>,
     netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
-    lts2: ControlSender,
 ) {
     info!("Starting the bandwidth monitor thread.");
     let interval_ms = 1000; // 1 second
@@ -53,7 +52,6 @@ pub async fn spawn_throughput_monitor(
         interval_ms,
         long_term_stats_tx,
         netflow_sender,
-        lts2
     ));
 }
 
@@ -61,7 +59,6 @@ async fn throughput_task(
     interval_ms: u64,
     long_term_stats_tx: Sender<StatsUpdateMessage>,
     netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
-    lts2: ControlSender,
 ) {
     // Obtain the flow timeout from the config, default to 30 seconds
     let timeout_seconds = if let Ok(config) = lqos_config::load_config() {
@@ -121,13 +118,13 @@ async fn throughput_task(
         {
             log::error!("Error polling network. {e:?}");
         }
-        tokio::spawn(submit_throughput_stats(long_term_stats_tx.clone(), lts2.clone()));
+        tokio::spawn(submit_throughput_stats(long_term_stats_tx.clone()));
 
         ticker.tick().await;
     }
 }
 
-async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>, lts2: ControlSender) {
+async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>) {
     // If ShapedDevices has changed, notify the stats thread
     let mut lts2_needs_shaped_devices = false;
     if let Ok(changed) = STATS_NEEDS_NEW_SHAPED_DEVICES.compare_exchange(
@@ -177,6 +174,7 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>,
     ));
 
     // Send the stats
+    let _ = lts2_sys::update_config();
     let result = long_term_stats_tx
         .send(StatsUpdateMessage::ThroughputReady(summary))
         .await;
@@ -198,10 +196,7 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>,
                             Ok(json) => {
                                 let lts2_format: Vec<_> = json.iter().map(|(k,v)| v.to_lts2(&k)).collect();
                                 if let Ok(bytes) = serde_cbor::to_vec(&lts2_format) {
-                                    if let Err(e) = lts2.send(LtsCommand::NetworkTree {
-                                        timestamp: now,
-                                        tree: bytes,
-                                    }) {
+                                    if let Err(e) = lts2_sys::network_tree(now, &bytes) {
                                         warn!("Error sending message to LTS2. {e:?}");
                                     }
                                 }
@@ -256,11 +251,8 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>,
             let devices_as_vec: Vec<Lts2Circuit> = circuit_map.into_iter().map(|(_, v)| v).collect();
             // Serialize via cbor
             if let Ok(bytes) = serde_cbor::to_vec(&devices_as_vec) {
-                if let Err(e) = lts2.send(LtsCommand::ShapedDevices {
-                    timestamp: now,
-                    devices: bytes,
-                }) {
-                    warn!("Error sending message to LTS2. {e:?}");
+                if lts2_sys::shaped_devices(now, &bytes).is_err() {
+                    warn!("Error sending message to LTS2.");
                 }
             }
         }
@@ -277,26 +269,16 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>,
             median_rtt = Some(rtt_data.median);
         }
         let tcp_retransmits = min_max_median_tcp_retransmits();
-        if let Err(e) = lts2.send(LtsCommand::TotalThroughput {
-            timestamp: now,
-            download_bytes: bytes.down,
-            upload_bytes: bytes.up,
-            shaped_download_bytes: shaped_bytes.down,
-            shaped_upload_bytes: shaped_bytes.up,
-            packets_down: packets_per_second.0,
-            packets_up: packets_per_second.1,
-            min_rtt,
-            max_rtt,
-            median_rtt,
-            tcp_retransmits_down: tcp_retransmits.down,
-            tcp_retransmits_up: tcp_retransmits.up,
-            cake_marks_down: TOTAL_QUEUE_STATS.marks.get_down() as i32,
-            cake_marks_up: TOTAL_QUEUE_STATS.marks.get_up() as i32,
-            cake_drops_down: TOTAL_QUEUE_STATS.drops.get_down() as i32,
-            cake_drops_up: TOTAL_QUEUE_STATS.drops.get_up() as i32,
-        }) {
-            warn!("Error sending message to LTS2. {e:?}");
-        };
+        if lts2_sys::total_throughput(now,
+            bytes.down, bytes.up, shaped_bytes.down, shaped_bytes.up,
+            packets_per_second.0, packets_per_second.1,
+            min_rtt, max_rtt, median_rtt,
+            tcp_retransmits.down, tcp_retransmits.up,
+            TOTAL_QUEUE_STATS.marks.get_down() as i32, TOTAL_QUEUE_STATS.marks.get_up() as i32,
+            TOTAL_QUEUE_STATS.drops.get_down() as i32, TOTAL_QUEUE_STATS.drops.get_up() as i32,
+        ).is_err() {
+            warn!("Error sending message to LTS2.");
+        }
 
         // Send per-circuit stats to LTS2
         // Start by combining the throughput data for each circuit as a whole
@@ -341,131 +323,168 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>,
             });
 
         // And now we send it
-        circuit_throughput
+        let circuit_throughput_batch = circuit_throughput
             .into_iter()
-            .for_each(|(k,v)| {
+            .map(|(k,v)| {
                 let circuit_hash = hash_to_i64(&k);
-                if let Err(e) = lts2.send(LtsCommand::CircuitThroughput {
+                lts2_sys::shared_types::CircuitThroughput {
                     timestamp: now,
                     circuit_hash,
                     download_bytes: v.down,
                     upload_bytes: v.up,
-                }) {
-                    warn!("Error sending message to LTS2. {e:?}");
                 }
-            });
-        circuit_retransmits
+            })
+            .collect::<Vec<_>>();
+        if lts2_sys::circuit_throughput(&circuit_throughput_batch).is_err() {
+            warn!("Error sending message to LTS2.");
+        }
+
+        let circuit_retransmits_batch = circuit_retransmits
             .into_iter()
-            .for_each(|(k,v)| {
+            .map(|(k,v)| {
                 let circuit_hash = hash_to_i64(&k);
-                if let Err(e) = lts2.send(LtsCommand::CircuitRetransmits {
+                lts2_sys::shared_types::CircuitRetransmits {
                     timestamp: now,
                     circuit_hash,
                     tcp_retransmits_down: v.down as i32,
                     tcp_retransmits_up: v.up as i32,
-                }) {
-                    warn!("Error sending message to LTS2. {e:?}");
                 }
-            });
-        circuit_rtt
+            })
+            .collect::<Vec<_>>();
+        if lts2_sys::circuit_retransmits(&circuit_retransmits_batch).is_err() {
+            warn!("Error sending message to LTS2.");
+        }
+
+        let circuit_rtt_batch = circuit_rtt
             .into_iter()
-            .for_each(|(k,v)| {
+            .map(|(k,v)| {
                 let circuit_hash = hash_to_i64(&k);
-                if let Err(e) = lts2.send(LtsCommand::CircuitRtt {
+                lts2_sys::shared_types::CircuitRtt {
                     timestamp: now,
                     circuit_hash,
                     median_rtt: v.iter().sum::<f32>() / v.len() as f32,
-                }) {
-                    warn!("Error sending message to LTS2. {e:?}");
                 }
-            });
+            })
+            .collect::<Vec<_>>();
+        if lts2_sys::circuit_rtt(&circuit_rtt_batch).is_err() {
+            warn!("Error sending message to LTS2.");
+        }
 
         // Per host CAKE stats
+        let mut cake_drops: Vec<CircuitCakeDrops> = Vec::new();
+        let mut cake_marks: Vec<CircuitCakeMarks> = Vec::new();
         ALL_QUEUE_SUMMARY.iterate_queues(|circuit_id, drops, marks| {
             if drops.not_zero() {
                 let circuit_hash = hash_to_i64(&circuit_id);
-                if let Err(e) = lts2.send(LtsCommand::CircuitCakeDrops {
+                cake_drops.push(CircuitCakeDrops {
                     timestamp: now,
                     circuit_hash,
                     cake_drops_down: drops.get_down() as i32,
                     cake_drops_up: drops.get_up() as i32,
-                }) {
-                    warn!("Error sending message to LTS2. {e:?}");
-                }
+                });
             }
             if marks.not_zero() {
                 let circuit_hash = hash_to_i64(&circuit_id);
-                if let Err(e) = lts2.send(LtsCommand::CircuitCakeMarks {
+                cake_marks.push(CircuitCakeMarks {
                     timestamp: now,
                     circuit_hash,
                     cake_marks_down: marks.get_down() as i32,
                     cake_marks_up: marks.get_up() as i32,
-                }) {
-                    warn!("Error sending message to LTS2. {e:?}");
-                }
+                });
             }
         });
+        if !cake_drops.is_empty() {
+            if lts2_sys::circuit_cake_drops(&cake_drops).is_err() {
+                warn!("Error sending message to LTS2.");
+            }
+        }
+        if !cake_marks.is_empty() {
+            if lts2_sys::circuit_cake_marks(&cake_marks).is_err() {
+                warn!("Error sending message to LTS2.");
+            }
+        }
 
         // Network tree stats
         let tree = {
             let reader = NETWORK_JSON.read().unwrap();
             reader.get_nodes_when_ready().clone()
         };
+        let mut site_throughput: Vec<lts2_sys::shared_types::SiteThroughput> = Vec::new();
+        let mut site_retransmits: Vec<lts2_sys::shared_types::SiteRetransmits> = Vec::new();
+        let mut site_rtt: Vec<lts2_sys::shared_types::SiteRtt> = Vec::new();
+        let mut site_cake_drops: Vec<lts2_sys::shared_types::SiteCakeDrops> = Vec::new();
+        let mut site_cake_marks: Vec<lts2_sys::shared_types::SiteCakeMarks> = Vec::new();
         tree.iter().for_each(|node| {
             let site_hash = hash_to_i64(&node.name);
             if node.current_throughput.not_zero() {
-                if let Err(e) = lts2.send(LtsCommand::SiteThroughput {
+                site_throughput.push(lts2_sys::shared_types::SiteThroughput {
                     timestamp: now,
                     site_hash,
                     download_bytes: node.current_throughput.down,
                     upload_bytes: node.current_throughput.up,
-                }) {
-                    warn!("Error sending message to LTS2. {e:?}");
-                }
+                });
             }
             if node.current_tcp_retransmits.not_zero() {
-                if let Err(e) = lts2.send(LtsCommand::SiteRetransmits {
+                site_retransmits.push(lts2_sys::shared_types::SiteRetransmits {
                     timestamp: now,
                     site_hash,
                     tcp_retransmits_down: node.current_tcp_retransmits.down as i32,
                     tcp_retransmits_up: node.current_tcp_retransmits.up as i32,
-                }) {
-                    warn!("Error sending message to LTS2. {e:?}");
-                }
+                });
             }
             if node.current_drops.not_zero() {
-                if let Err(e) = lts2.send(LtsCommand::SiteCakeDrops {
+                site_cake_drops.push(lts2_sys::shared_types::SiteCakeDrops {
                     timestamp: now,
                     site_hash,
                     cake_drops_down: node.current_drops.get_down() as i32,
                     cake_drops_up: node.current_drops.get_up() as i32,
-                }) {
-                    warn!("Error sending message to LTS2. {e:?}");
-                }
+                });
             }
             if node.current_marks.not_zero() {
-                if let Err(e) = lts2.send(LtsCommand::SiteCakeMarks {
+                site_cake_marks.push(lts2_sys::shared_types::SiteCakeMarks {
                     timestamp: now,
                     site_hash,
                     cake_marks_down: node.current_marks.get_down() as i32,
                     cake_marks_up: node.current_marks.get_up() as i32,
-                }) {
-                    warn!("Error sending message to LTS2. {e:?}");
-                }
+                });
             }
             if !node.rtts.is_empty() {
                 let mut rtts: Vec<u16> = node.rtts.iter().map(|n| *n).collect();
                 rtts.sort();
                 let median = rtts[rtts.len() / 2];
-                if let Err(e) = lts2.send(LtsCommand::SiteRtt {
+
+                site_rtt.push(lts2_sys::shared_types::SiteRtt {
                     timestamp: now,
                     site_hash,
                     median_rtt: median as f32 / 10.0,
-                }) {
-                    warn!("Error sending message to LTS2. {e:?}");
-                }
+                });
             }
         });
+        if !site_throughput.is_empty() {
+            if lts2_sys::site_throughput(&site_throughput).is_err() {
+                warn!("Error sending message to LTS2.");
+            }
+        }
+        if !site_retransmits.is_empty() {
+            if lts2_sys::site_retransmits(&site_retransmits).is_err() {
+                warn!("Error sending message to LTS2.");
+            }
+        }
+        if !site_rtt.is_empty() {
+            if lts2_sys::site_rtt(&site_rtt).is_err() {
+                warn!("Error sending message to LTS2.");
+            }
+        }
+        if !site_cake_drops.is_empty() {
+            if lts2_sys::site_cake_drops(&site_cake_drops).is_err() {
+                warn!("Error sending message to LTS2.");
+            }
+        }
+        if !site_cake_marks.is_empty() {
+            if lts2_sys::site_cake_marks(&site_cake_marks).is_err() {
+                warn!("Error sending message to LTS2.");
+            }
+        }
     }
 }
 
@@ -1192,4 +1211,30 @@ impl RawNetJsBody {
 
         result
     }
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Serialize)]
+pub struct Lts2Circuit {
+    pub circuit_id: String,
+    pub circuit_name: String,
+    pub circuit_hash: i64,
+    pub download_min_mbps: u32,
+    pub upload_min_mbps: u32,
+    pub download_max_mbps: u32,
+    pub upload_max_mbps: u32,
+    pub parent_node: i64,
+    pub devices: Vec<Lts2Device>,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Serialize)]
+pub struct Lts2Device {
+    pub device_id: String,
+    pub device_name: String,
+    pub device_hash: i64,
+    pub mac: String,
+    pub ipv4: Vec<([u8; 4], u8)>,
+    pub ipv6: Vec<([u8; 16], u8)>,
+    pub comment: String,
 }

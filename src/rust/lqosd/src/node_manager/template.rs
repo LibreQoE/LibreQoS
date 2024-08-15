@@ -8,7 +8,7 @@ use axum::middleware::Next;
 use axum::response::IntoResponse;
 use axum_extra::extract::CookieJar;
 use lqos_config::load_config;
-use crate::lts2::{get_lts_status, LtsStatus};
+use lts2_sys::shared_types::LtsStatus;
 use crate::node_manager::auth::get_username;
 
 const VERSION_STRING: &str = include_str!("../../../../VERSION_STRING");
@@ -56,7 +56,7 @@ pub async fn apply_templates(
 
     if apply_template {
         // Change the LTS part of the template
-        let (lts_status, _) = get_lts_status();
+        let (lts_status, _) = lts2_sys::get_lts_license_status();
         let mut trial_link = LTS_LINK_OFFER_TRIAL;
         match lts_status {
             LtsStatus::Invalid | LtsStatus::NotChecked => {}

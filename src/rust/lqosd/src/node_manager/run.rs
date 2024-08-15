@@ -7,14 +7,13 @@ use axum::response::Redirect;
 use axum::routing::{get, post};
 use tower_http::services::ServeDir;
 use lqos_config::load_config;
-use crate::lts2::ControlSender;
 use crate::node_manager::{auth, static_pages::{static_routes, vendor_route}, ws::websocket_router};
 use crate::node_manager::local_api::local_api;
 
 /// Launches the Axum webserver to take over node manager duties.
 /// This is designed to be run as an independent Tokio future,
 /// with tokio::spawn unless you want it to block execution.
-pub async fn spawn_webserver(lts2_control_channel: ControlSender) -> Result<()>  {
+pub async fn spawn_webserver() -> Result<()>  {
     // TODO: port change is temporary
     let listener = TcpListener::bind(":::9123").await?;
 
@@ -36,7 +35,7 @@ pub async fn spawn_webserver(lts2_control_channel: ControlSender) -> Result<()> 
         .nest("/websocket/", websocket_router())
         .nest("/vendor", vendor_route()?) // Serve /vendor as purely static
         .nest("/", static_routes()?)
-        .nest("/local-api", local_api(lts2_control_channel))
+        .nest("/local-api", local_api())
         .fallback_service(ServeDir::new(static_path));
 
     info!("Webserver listening on :: port 9223");

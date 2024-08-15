@@ -2,16 +2,15 @@ mod shaper_status;
 mod last_24_hours;
 mod rest_client;
 
-use axum::{Extension, Form, Json};
+use axum::{Form, Json};
 use axum::response::Redirect;
 use log::{info, warn};
 use serde::Serialize;
-use tokio::sync::oneshot;
 use lqos_bus::{bus_request, BusRequest};
 use lqos_config::load_config;
-use crate::lts2::{ControlSender, FreeTrialDetails};
 pub use shaper_status::shaper_status_from_lts;
 pub use last_24_hours::*;
+use lts2_sys::shared_types::FreeTrialDetails;
 
 #[derive(Serialize)]
 pub enum StatsCheckResponse {
@@ -28,7 +27,7 @@ pub struct StatsCheckAction {
 }
 
 pub async fn stats_check() -> Json<StatsCheckAction> {
-    let (status, trial_expiration) = crate::lts2::get_lts_status();
+    let (status, trial_expiration) = lts2_sys::get_lts_license_status();
     println!("{:?}, {trial_expiration:?}", status);
     let mut response = StatsCheckAction {
         action: StatsCheckResponse::DoNothing,
@@ -57,15 +56,10 @@ pub async fn stats_check() -> Json<StatsCheckAction> {
 }
 
 pub async fn lts_trial_signup(
-    Extension(lts2): Extension<ControlSender>,
     details: Form<FreeTrialDetails>,
 ) -> Redirect {
-    let (tx, rx) = oneshot::channel::<String>();
-    lts2.send(crate::lts2::LtsCommand::RequestFreeTrial(
-        (*details).clone(), tx)
-    ).unwrap();
+    let license_key = lts2_sys::request_free_trial((*details).clone()).unwrap();
 
-    let license_key = rx.await.unwrap();
     info!("Received license key, enabling free trial: {}", license_key);
     if license_key == "FAIL" {
         warn!("Free trial request failed");

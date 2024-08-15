@@ -34,16 +34,15 @@ use tokio::join;
 mod stats;
 mod preflight_checks;
 mod node_manager;
-mod lts2;
 
 // Use JemAllocator only on supported platforms
-//#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-//use jemallocator::Jemalloc;
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+use jemallocator::Jemalloc;
 use crate::ip_mapping::clear_hot_cache;
 
-/*#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[global_allocator]
-static GLOBAL: Jemalloc = Jemalloc;*/
+static GLOBAL: Jemalloc = Jemalloc;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -89,7 +88,11 @@ async fn main() -> Result<()> {
   };
 
   // Spawn tracking sub-systems
-  let lts2_control_channel = lts2::start_lts2().await?;
+  if let Err(e) = lts2_sys::start_lts2() {
+    log::error!("Failed to start LTS2: {:?}", e);
+  } else {
+    log::info!("LTS2 client started successfully");
+  }
   let long_term_stats_tx = start_long_term_stats().await;
   let flow_tx = setup_netflow_tracker();
   let _ = throughput_tracker::flow_data::setup_flow_analysis();
@@ -99,7 +102,7 @@ async fn main() -> Result<()> {
     shaped_devices_tracker::shaped_devices_watcher(),
     shaped_devices_tracker::network_json_watcher(),
     anonymous_usage::start_anonymous_usage(),
-    throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone(), flow_tx, lts2_control_channel.clone()),
+    throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone(), flow_tx),
   );
   spawn_queue_monitor();
 
@@ -141,7 +144,7 @@ async fn main() -> Result<()> {
 
   // Webserver starting point
   tokio::spawn(async {
-    if let Err(e) = node_manager::spawn_webserver(lts2_control_channel).await {
+    if let Err(e) = node_manager::spawn_webserver().await {
       log::error!("Node Manager Failed: {e:?}");
     }
   });
