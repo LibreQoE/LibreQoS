@@ -78,8 +78,6 @@ async fn throughput_task(
         false
     };
 
-    let mut ticker = tokio::time::interval(Duration::from_secs(1));
-    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut last_submitted_to_lts: Option<Instant> = None;
     loop {
         let start = Instant::now();
@@ -120,7 +118,12 @@ async fn throughput_task(
         } else {
             let elapsed = last_submitted_to_lts.unwrap().elapsed();
             let elapsed_f32 = elapsed.as_secs_f32();
-            if elapsed_f32 > 0.98 && elapsed_f32 < 1.02 {
+            const TOLERANCE: f32 = 0.05;
+            const LOWER_BOUND: f32 = 1.0 - TOLERANCE;
+            const UPPER_BOUND: f32 = 1.0 + TOLERANCE;
+            let accuracy = f32::abs(elapsed_f32 - 1.0);
+            info!("Tick elapsed is {} seconds from target", accuracy);
+            if elapsed_f32 > LOWER_BOUND && elapsed_f32 < UPPER_BOUND {
                 tokio::spawn(submit_throughput_stats(long_term_stats_tx.clone()));
             } else {
                 warn!("LTS submission spacing is not 1 second - ignoring submission. Period is: {:.2}s", elapsed_f32);
@@ -128,7 +131,11 @@ async fn throughput_task(
         }
         last_submitted_to_lts = Some(Instant::now());
 
-        ticker.tick().await;
+        // Sleep until the next second
+        let elapsed_ms = start.elapsed().as_millis();
+        if elapsed_ms < 1000 {
+            tokio::time::sleep(Duration::from_millis(1000 - elapsed_ms as u64)).await;
+        }
     }
 }
 
