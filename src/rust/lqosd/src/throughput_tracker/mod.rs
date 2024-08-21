@@ -46,13 +46,13 @@ pub async fn spawn_throughput_monitor(
     netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
 ) {
     info!("Starting the bandwidth monitor thread.");
-    std::thread::spawn(move || throughput_task(
+    tokio::spawn(throughput_task(
         long_term_stats_tx,
         netflow_sender,
     ));
 }
 
-fn throughput_task(
+async fn throughput_task(
     long_term_stats_tx: Sender<StatsUpdateMessage>,
     netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
 ) {
@@ -78,6 +78,8 @@ fn throughput_task(
         false
     };
 
+    let mut ticker = tokio::time::interval(Duration::from_secs(1));
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut last_submitted_to_lts: Option<Instant> = None;
     loop {
         let start = Instant::now();
@@ -85,30 +87,34 @@ fn throughput_task(
         // Perform the stats collection in a blocking thread, ensuring that
         // the tokio runtime is not blocked.
         let my_netflow_sender = netflow_sender.clone();
-
-        // Used to be in a spawn_blocking
-        let mut net_json_calc = {
-            let read = NETWORK_JSON.read().unwrap();
-            read.begin_update_cycle()
-        };
-        net_json_calc.zero_throughput_and_rtt();
-        THROUGHPUT_TRACKER.copy_previous_and_reset_rtt();
-        THROUGHPUT_TRACKER.apply_new_throughput_counters(&mut net_json_calc);
-        THROUGHPUT_TRACKER.apply_flow_data(
-            timeout_seconds,
-            netflow_enabled,
-            my_netflow_sender.clone(),
-            &mut net_json_calc,
-        );
-        THROUGHPUT_TRACKER.apply_queue_stats(&mut net_json_calc);
-        THROUGHPUT_TRACKER.update_totals();
-        THROUGHPUT_TRACKER.next_cycle();
+        if let Err(e) = tokio::task::spawn_blocking(move || {
+            let mut net_json_calc = {
+                let read = NETWORK_JSON.read().unwrap();
+                read.begin_update_cycle()
+            };
+            net_json_calc.zero_throughput_and_rtt();
+            THROUGHPUT_TRACKER.copy_previous_and_reset_rtt();
+            THROUGHPUT_TRACKER.apply_new_throughput_counters(&mut net_json_calc);
+            THROUGHPUT_TRACKER.apply_flow_data(
+                timeout_seconds,
+                netflow_enabled,
+                my_netflow_sender.clone(),
+                &mut net_json_calc,
+            );
+            THROUGHPUT_TRACKER.apply_queue_stats(&mut net_json_calc);
+            THROUGHPUT_TRACKER.update_totals();
+            THROUGHPUT_TRACKER.next_cycle();
+            {
+                let mut write = NETWORK_JSON.write().unwrap();
+                write.finish_update_cycle(net_json_calc);
+            }
+            let duration_ms = start.elapsed().as_micros();
+            TIME_TO_POLL_HOSTS.store(duration_ms as u64, std::sync::atomic::Ordering::Relaxed);
+        })
+        .await
         {
-            let mut write = NETWORK_JSON.write().unwrap();
-            write.finish_update_cycle(net_json_calc);
+            log::error!("Error polling network. {e:?}");
         }
-        // End spawn_blocking
-
         if last_submitted_to_lts.is_none() {
             tokio::spawn(submit_throughput_stats(long_term_stats_tx.clone()));
         } else {
@@ -122,11 +128,7 @@ fn throughput_task(
         }
         last_submitted_to_lts = Some(Instant::now());
 
-        let duration_ms = start.elapsed().as_millis();
-        TIME_TO_POLL_HOSTS.store(duration_ms as u64, std::sync::atomic::Ordering::Relaxed);
-        if duration_ms < 1000 {
-            std::thread::sleep(Duration::from_millis(1000 - duration_ms as u64));
-        }
+        ticker.tick().await;
     }
 }
 
