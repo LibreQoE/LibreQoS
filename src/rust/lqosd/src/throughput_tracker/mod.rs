@@ -122,7 +122,7 @@ async fn throughput_task(
             if elapsed.as_secs() == 1 {
                 tokio::spawn(submit_throughput_stats(long_term_stats_tx.clone()));
             } else {
-                warn!("LTS submission spacing is not 1 second - ignoring submission.");
+                warn!("LTS submission spacing is not 1 second - ignoring submission. Period is: {:.2}s", elapsed.as_secs_f32());
             }
         }
         last_submitted_to_lts = Some(Instant::now());
