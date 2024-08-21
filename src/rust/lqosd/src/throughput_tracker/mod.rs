@@ -46,17 +46,13 @@ pub async fn spawn_throughput_monitor(
     netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
 ) {
     info!("Starting the bandwidth monitor thread.");
-    let interval_ms = 1000; // 1 second
-    info!("Bandwidth check period set to {interval_ms} ms.");
     tokio::spawn(throughput_task(
-        interval_ms,
         long_term_stats_tx,
         netflow_sender,
     ));
 }
 
 async fn throughput_task(
-    interval_ms: u64,
     long_term_stats_tx: Sender<StatsUpdateMessage>,
     netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
 ) {
@@ -82,8 +78,9 @@ async fn throughput_task(
         false
     };
 
-    let mut ticker = tokio::time::interval(Duration::from_millis(interval_ms));
+    let mut ticker = tokio::time::interval(Duration::from_secs(1));
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut last_submitted_to_lts: Option<Instant> = None;
     loop {
         let start = Instant::now();
 
@@ -118,7 +115,17 @@ async fn throughput_task(
         {
             log::error!("Error polling network. {e:?}");
         }
-        tokio::spawn(submit_throughput_stats(long_term_stats_tx.clone()));
+        if last_submitted_to_lts.is_none() {
+            tokio::spawn(submit_throughput_stats(long_term_stats_tx.clone()));
+        } else {
+            let elapsed = last_submitted_to_lts.unwrap().elapsed();
+            if elapsed.as_secs() == 1 {
+                tokio::spawn(submit_throughput_stats(long_term_stats_tx.clone()));
+            } else {
+                warn!("LTS submission spacing is not 1 second - ignoring submission.");
+            }
+        }
+        last_submitted_to_lts = Some(Instant::now());
 
         ticker.tick().await;
     }
