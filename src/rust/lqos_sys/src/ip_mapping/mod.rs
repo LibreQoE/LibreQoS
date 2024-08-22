@@ -100,6 +100,6 @@ pub fn list_mapped_ips() -> Result<Vec<(IpHashKey, IpHashData)>> {
 /// destinations.
 pub fn clear_hot_cache() -> Result<()> {
   let mut bpf_map = BpfMap::<XdpIpAddress, IpHashData>::from_path("/sys/fs/bpf/ip_to_cpu_and_tc_hotcache")?;
-  bpf_map.clear()?;
+  bpf_map.clear_bulk()?;
   Ok(())
 }
