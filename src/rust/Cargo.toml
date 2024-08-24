@@ -59,7 +59,7 @@ uuid = { version = "1", features = ["v4", "fast-rng" ] }
 dashmap = "5"
 toml = "0.8.8"
 zerocopy = {version = "0.6.1", features = [ "simd" ] }
-sysinfo = "0"
+sysinfo = "=0.30.13"
 default-net = "0"
 reqwest = { version = "0", features = ["json", "blocking"] }
 pyo3 = "0.20.3"
