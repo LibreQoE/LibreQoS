@@ -10,7 +10,11 @@ pub async fn flow_count(channels: Arc<PubSub>) {
     }
 
     let active_flows = {
-        ALL_FLOWS.len() as u64
+        if let Ok(lock) = ALL_FLOWS.lock() {
+            lock.len() as u64
+        } else {
+            0
+        }
     };
     let expired_flows = RECENT_FLOWS.len();
     let active_flows = json!(

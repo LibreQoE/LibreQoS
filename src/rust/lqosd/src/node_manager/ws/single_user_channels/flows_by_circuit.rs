@@ -1,10 +1,10 @@
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
-use crate::throughput_tracker::flow_data::{get_asn_name_and_country, FlowAnalysis, FlowbeeLocalData, ALL_FLOWS};
-use lqos_utils::unix_time::time_since_boot;
-use serde::Serialize;
 use std::net::IpAddr;
 use std::time::Duration;
+use serde::Serialize;
 use tokio::time::MissedTickBehavior;
+use lqos_utils::unix_time::time_since_boot;
+use crate::shaped_devices_tracker::SHAPED_DEVICES;
+use crate::throughput_tracker::flow_data::{ALL_FLOWS, FlowAnalysis, FlowbeeLocalData, get_asn_name_and_country};
 
 const FIVE_MINUTES_AS_NANOS: u64 = 300 * 1_000_000_000;
 
@@ -14,71 +14,71 @@ fn recent_flows_by_circuit(circuit_id: &str) -> Vec<(FlowbeeKeyTransit, FlowbeeL
             let now_as_nanos = Duration::from(now).as_nanos() as u64;
             let five_minutes_ago = now_as_nanos - FIVE_MINUTES_AS_NANOS;
 
-            let result: Vec<(FlowbeeKeyTransit, FlowbeeLocalData, FlowAnalysis)> = ALL_FLOWS
-                .iter()
-                .filter_map(|row| {
-                    let local = &row.0;
-                    let analysis = &row.1;
-                    // Don't show older flows
-                    if local.last_seen < five_minutes_ago {
-                        return None;
-                    }
-
-                    // Don't show flows that don't belong to the circuit
-                    let local_ip_str; // Using late binding
-                    let remote_ip_str;
-                    let device_name;
-                    let asn_name;
-                    let asn_country;
-                    let local_ip = match row.key().local_ip.as_ip() {
-                        IpAddr::V4(ip) => ip.to_ipv6_mapped(),
-                        IpAddr::V6(ip) => ip,
-                    };
-                    let remote_ip = match row.key().remote_ip.as_ip() {
-                        IpAddr::V4(ip) => ip.to_ipv6_mapped(),
-                        IpAddr::V6(ip) => ip,
-                    };
-                    if let Some(device) = device_reader.trie.longest_match(local_ip) {
-                        // The normal way around
-                        local_ip_str = row.key().local_ip.to_string();
-                        remote_ip_str = row.key().remote_ip.to_string();
-                        let device = &device_reader.devices[*device.1];
-                        if device.circuit_id != circuit_id {
+            if let Ok(all_flows) = ALL_FLOWS.lock() {
+                let result: Vec<(FlowbeeKeyTransit, FlowbeeLocalData, FlowAnalysis)> = all_flows
+                    .iter()
+                    .filter_map(|(key, (local, analysis))| {
+                        // Don't show older flows
+                        if local.last_seen < five_minutes_ago {
                             return None;
                         }
-                        device_name = device.device_name.clone();
-                        let geo = get_asn_name_and_country(row.key().remote_ip.as_ip());
-                        (asn_name, asn_country) = (geo.name, geo.country);
-                    } else if let Some(device) = device_reader.trie.longest_match(remote_ip) {
-                        // The reverse way around
-                        local_ip_str = row.key().remote_ip.to_string();
-                        remote_ip_str = row.key().local_ip.to_string();
-                        let device = &device_reader.devices[*device.1];
-                        if device.circuit_id != circuit_id {
+
+                        // Don't show flows that don't belong to the circuit
+                        let local_ip_str; // Using late binding
+                        let remote_ip_str;
+                        let device_name;
+                        let asn_name;
+                        let asn_country;
+                        let local_ip = match key.local_ip.as_ip() {
+                            IpAddr::V4(ip) => ip.to_ipv6_mapped(),
+                            IpAddr::V6(ip) => ip,
+                        };
+                        let remote_ip = match key.remote_ip.as_ip() {
+                            IpAddr::V4(ip) => ip.to_ipv6_mapped(),
+                            IpAddr::V6(ip) => ip,
+                        };
+                        if let Some(device) = device_reader.trie.longest_match(local_ip) {
+                            // The normal way around
+                            local_ip_str = key.local_ip.to_string();
+                            remote_ip_str = key.remote_ip.to_string();
+                            let device = &device_reader.devices[*device.1];
+                            if device.circuit_id != circuit_id {
+                                return None;
+                            }
+                            device_name = device.device_name.clone();
+                            let geo = get_asn_name_and_country(key.remote_ip.as_ip());
+                            (asn_name, asn_country) = (geo.name, geo.country);
+                        } else if let Some(device) = device_reader.trie.longest_match(remote_ip) {
+                            // The reverse way around
+                            local_ip_str = key.remote_ip.to_string();
+                            remote_ip_str = key.local_ip.to_string();
+                            let device = &device_reader.devices[*device.1];
+                            if device.circuit_id != circuit_id {
+                                return None;
+                            }
+                            device_name = device.device_name.clone();
+                            let geo = get_asn_name_and_country(key.local_ip.as_ip());
+                            (asn_name, asn_country) = (geo.name, geo.country);
+                        } else {
                             return None;
                         }
-                        device_name = device.device_name.clone();
-                        let geo = get_asn_name_and_country(row.key().local_ip.as_ip());
-                        (asn_name, asn_country) = (geo.name, geo.country);
-                    } else {
-                        return None;
-                    }
 
-                    Some((FlowbeeKeyTransit {
-                        remote_ip: remote_ip_str,
-                        local_ip: local_ip_str,
-                        src_port: row.key().src_port,
-                        dst_port: row.key().dst_port,
-                        ip_protocol: row.key().ip_protocol,
-                        device_name,
-                        asn_name,
-                        asn_country,
-                        protocol_name: analysis.protocol_analysis.to_string(),
-                        last_seen_nanos: now_as_nanos.saturating_sub(local.last_seen),
-                    }, local.clone(), analysis.clone()))
-                })
-                .collect();
-            return result;
+                        Some((FlowbeeKeyTransit {
+                            remote_ip: remote_ip_str,
+                            local_ip: local_ip_str,
+                            src_port: key.src_port,
+                            dst_port: key.dst_port,
+                            ip_protocol: key.ip_protocol,
+                            device_name,
+                            asn_name,
+                            asn_country,
+                            protocol_name: analysis.protocol_analysis.to_string(),
+                            last_seen_nanos: now_as_nanos.saturating_sub(local.last_seen),
+                        }, local.clone(), analysis.clone()))
+                    })
+                    .collect();
+                return result;
+            }
         }
     }
     Vec::new()

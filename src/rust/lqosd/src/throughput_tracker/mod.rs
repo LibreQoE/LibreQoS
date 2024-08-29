@@ -991,20 +991,21 @@ pub fn all_unknown_ips() -> BusResponse {
 
 /// For debugging: dump all active flows!
 pub fn dump_active_flows() -> BusResponse {
-    let result: Vec<lqos_bus::FlowbeeSummaryData> = ALL_FLOWS
+    let lock = ALL_FLOWS.lock().unwrap();
+    let result: Vec<lqos_bus::FlowbeeSummaryData> = lock
         .iter()
-        .map(|row| {
+        .map(|(key, row)| {
             let geo =
-                get_asn_name_and_country(row.key().remote_ip.as_ip());
+                get_asn_name_and_country(key.remote_ip.as_ip());
 
             let (circuit_id, circuit_name) = (String::new(), String::new());
 
             lqos_bus::FlowbeeSummaryData {
-                remote_ip: row.key().remote_ip.as_ip().to_string(),
-                local_ip: row.key().local_ip.as_ip().to_string(),
-                src_port: row.key().src_port,
-                dst_port: row.key().dst_port,
-                ip_protocol: FlowbeeProtocol::from(row.key().ip_protocol),
+                remote_ip: key.remote_ip.as_ip().to_string(),
+                local_ip: key.local_ip.as_ip().to_string(),
+                src_port: key.src_port,
+                dst_port: key.dst_port,
+                ip_protocol: FlowbeeProtocol::from(key.ip_protocol),
                 bytes_sent: row.0.bytes_sent,
                 packets_sent: row.0.packets_sent,
                 rate_estimate_bps: row.0.rate_estimate_bps,
@@ -1030,15 +1031,18 @@ pub fn dump_active_flows() -> BusResponse {
 
 /// Count active flows
 pub fn count_active_flows() -> BusResponse {
-    BusResponse::CountActiveFlows(ALL_FLOWS.len() as u64)
+    let lock = ALL_FLOWS.lock().unwrap();
+    BusResponse::CountActiveFlows(lock.len() as u64)
 }
 
 /// Top Flows Report
 pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
-    let mut table: Vec<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))> = ALL_FLOWS
+    let lock = ALL_FLOWS.lock().unwrap();
+    let mut table: Vec<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))> = lock
         .iter()
-        .map(|value| (value.key().clone(), value.clone()))
+        .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
+    std::mem::drop(lock); // Early lock release
 
     match flow_type {
         TopFlowType::RateEstimate => {
@@ -1122,22 +1126,23 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
 pub fn flows_by_ip(ip: &str) -> BusResponse {
     if let Ok(ip) = ip.parse::<IpAddr>() {
         let ip = XdpIpAddress::from_ip(ip);
+        let lock = ALL_FLOWS.lock().unwrap();
         let sd = SHAPED_DEVICES.read().unwrap();
-        let matching_flows: Vec<_> = ALL_FLOWS
+        let matching_flows: Vec<_> = lock
             .iter()
-            .filter(|row| row.key().local_ip == ip)
-            .map(|row| {
+            .filter(|(key, _)| key.local_ip == ip)
+            .map(|(key, row)| {
                 let geo =
-                    get_asn_name_and_country(row.key().remote_ip.as_ip());
+                    get_asn_name_and_country(key.remote_ip.as_ip());
 
-                let (circuit_id, circuit_name) = sd.get_circuit_id_and_name_from_ip(&row.key().local_ip).unwrap_or((String::new(), String::new()));
+                let (circuit_id, circuit_name) = sd.get_circuit_id_and_name_from_ip(&key.local_ip).unwrap_or((String::new(), String::new()));
 
                 lqos_bus::FlowbeeSummaryData {
-                    remote_ip: row.key().remote_ip.as_ip().to_string(),
-                    local_ip: row.key().local_ip.as_ip().to_string(),
-                    src_port: row.key().src_port,
-                    dst_port: row.key().dst_port,
-                    ip_protocol: FlowbeeProtocol::from(row.key().ip_protocol),
+                    remote_ip: key.remote_ip.as_ip().to_string(),
+                    local_ip: key.local_ip.as_ip().to_string(),
+                    src_port: key.src_port,
+                    dst_port: key.dst_port,
+                    ip_protocol: FlowbeeProtocol::from(key.ip_protocol),
                     bytes_sent: row.0.bytes_sent,
                     packets_sent: row.0.packets_sent,
                     rate_estimate_bps: row.0.rate_estimate_bps,
