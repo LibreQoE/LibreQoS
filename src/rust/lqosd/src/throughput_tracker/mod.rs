@@ -13,13 +13,14 @@ use crate::{
     stats::TIME_TO_POLL_HOSTS,
     throughput_tracker::tracking_data::ThroughputTracker,
 };
-use log::{info, warn};
+use log::{debug, info, warn};
 use lqos_bus::{BusResponse, FlowbeeProtocol, IpStats, TcHandle, TopFlowType, XdpPpingResult};
 use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 use lts_client::collector::{HostSummary, StatsUpdateMessage, ThroughputSummary};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use timerfd::{SetTimeFlags, TimerFd, TimerState};
 use tokio::{
     sync::mpsc::Sender,
     time::{Duration, Instant},
@@ -79,6 +80,13 @@ async fn throughput_task(
     };
 
     let mut last_submitted_to_lts: Option<Instant> = None;
+    let mut tfd = TimerFd::new().unwrap();
+    assert_eq!(tfd.get_state(), TimerState::Disarmed);
+    tfd.set_state(TimerState::Periodic{
+        current: Duration::new(1, 0),
+        interval: Duration::new(1, 0)}
+                  , SetTimeFlags::Default
+    );
     loop {
         let start = Instant::now();
 
@@ -118,11 +126,11 @@ async fn throughput_task(
         } else {
             let elapsed = last_submitted_to_lts.unwrap().elapsed();
             let elapsed_f32 = elapsed.as_secs_f32();
-            const TOLERANCE: f32 = 0.05;
+            const TOLERANCE: f32 = 0.10;
             const LOWER_BOUND: f32 = 1.0 - TOLERANCE;
             const UPPER_BOUND: f32 = 1.0 + TOLERANCE;
             let accuracy = f32::abs(elapsed_f32 - 1.0);
-            info!("Tick elapsed is {} seconds from target", accuracy);
+            debug!("Tick elapsed is {} seconds from target", accuracy);
             if elapsed_f32 > LOWER_BOUND && elapsed_f32 < UPPER_BOUND {
                 tokio::spawn(submit_throughput_stats(long_term_stats_tx.clone()));
             } else {
@@ -132,9 +140,9 @@ async fn throughput_task(
         last_submitted_to_lts = Some(Instant::now());
 
         // Sleep until the next second
-        let elapsed_ms = start.elapsed().as_millis();
-        if elapsed_ms < 1000 {
-            tokio::time::sleep(Duration::from_millis(1000 - elapsed_ms as u64)).await;
+        let missed_ticks = tfd.read();
+        if missed_ticks > 1 {
+            warn!("Missed {} ticks", missed_ticks - 1);
         }
     }
 }
