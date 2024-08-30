@@ -3,8 +3,6 @@ use crate::shared_types::{CircuitCakeDrops, CircuitCakeMarks, CircuitRetransmits
 
 extern "C" {
     pub(crate) fn spawn_lts2(
-        has_certificate: bool,
-        certificate_path: *const c_char,
         has_remote_host: bool,
         remote_host: *const c_char,
         license_key: *const c_char,
@@ -13,8 +11,6 @@ extern "C" {
     ) -> c_int;
 
     pub(crate) fn update_license_status(
-        has_certificate: bool,
-        certificate_path: *const c_char,
         has_remote_host: bool,
         remote_host: *const c_char,
         license_key: *const c_char,

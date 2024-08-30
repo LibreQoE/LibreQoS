@@ -24,12 +24,6 @@ pub struct LongTermStats {
   /// If set, then this URL will be used for connecting to a self-hosted or
   /// development LTS server. It will be decorated with https:// and :443
   pub lts_url: Option<String>,
-
-  /// Self-Hosted servers have self-signed certificates unless the host has
-  /// set up Let's Encrypt or some other certificate authority.  If this is
-  /// set, then the LTS client will load the file from this path and use it
-  /// to validate the server's certificate.
-  pub lts_root_pem: Option<String>,
 }
 
 impl Default for LongTermStats {
@@ -40,7 +34,6 @@ impl Default for LongTermStats {
             license_key: None,
             uisp_reporting_interval_seconds: Some(300),
             lts_url: None,
-            lts_root_pem: None,
         }
     }
 }

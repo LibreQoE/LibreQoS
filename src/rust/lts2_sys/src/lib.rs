@@ -13,8 +13,6 @@ pub fn start_lts2() -> Result<()> {
     let cfg = get_config()?;
     unsafe {
         external::spawn_lts2(
-            cfg.has_certificate,
-            cfg.certificate_path.as_ptr(),
             cfg.has_remote_host,
             cfg.remote_host.as_ptr(),
             cfg.license_key.as_ptr(),
@@ -30,8 +28,6 @@ pub fn update_config() -> Result<()> {
     let cfg = get_config()?;
     unsafe {
         if external::update_license_status(
-            cfg.has_certificate,
-            cfg.certificate_path.as_ptr(),
             cfg.has_remote_host,
             cfg.remote_host.as_ptr(),
             cfg.license_key.as_ptr(),
@@ -249,8 +245,6 @@ pub fn get_lts_license_status() -> (LtsStatus, i32) {
 }
 
 struct Lts2Config {
-    has_certificate: bool,
-    certificate_path: CString,
     has_remote_host: bool,
     remote_host: CString,
     license_key: CString,
@@ -266,27 +260,18 @@ fn get_config() -> anyhow::Result<Lts2Config> {
             String::new()
         };
 
-        let certificate_path = if let Some(ref path) = config.long_term_stats.lts_root_pem {
-            path.to_string()
-        } else {
-            String::new()
-        };
-
         let remote_host = if let Some(ref host) = config.long_term_stats.lts_url {
             host.to_string()
         } else {
             String::new()
         };
 
-        let certificate_path = std::ffi::CString::new(certificate_path).unwrap();
         let remote_host = std::ffi::CString::new(remote_host).unwrap();
         let license_key = std::ffi::CString::new(license_key).unwrap();
         let node_id = std::ffi::CString::new(config.node_id).unwrap();
         let node_name = std::ffi::CString::new(config.node_name).unwrap();
 
         Ok(Lts2Config {
-            has_certificate: config.long_term_stats.lts_root_pem.is_some(),
-            certificate_path,
             has_remote_host: config.long_term_stats.lts_url.is_some(),
             remote_host,
             license_key,
