@@ -1,4 +1,4 @@
-use log::warn;
+use log::{debug, warn};
 use lqos_utils::units::DownUpOrder;
 use crate::NetworkJsonNode;
 
@@ -46,7 +46,7 @@ impl NetworkJsonCounting {
             if let Some(node) = self.nodes.get_mut(*idx) {
                 node.current_throughput.checked_add_tuple(bytes);
             } else {
-                warn!("No network tree entry for index {idx}");
+                debug!("No network tree entry for index {idx}");
             }
         }
     }
@@ -59,7 +59,7 @@ impl NetworkJsonCounting {
             if let Some(node) = self.nodes.get(*idx) {
                 node.rtts.insert((rtt * 100.0) as u16);
             } else {
-                warn!("No network tree entry for index {idx}");
+                debug!("No network tree entry for index {idx}");
             }
         }
     }
@@ -71,7 +71,7 @@ impl NetworkJsonCounting {
             if let Some(node) = self.nodes.get_mut(*idx) {
                 node.current_tcp_retransmits.checked_add(tcp_retransmits);
             } else {
-                warn!("No network tree entry for index {idx}");
+                debug!("No network tree entry for index {idx}");
             }
         }
     }
@@ -84,7 +84,7 @@ impl NetworkJsonCounting {
                 node.current_marks.checked_add(*marks);
                 node.current_drops.checked_add(*drops);
             } else {
-                warn!("No network tree entry for index {idx}");
+                debug!("No network tree entry for index {idx}");
             }
         }
     }
