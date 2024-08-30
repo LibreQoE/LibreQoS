@@ -92,8 +92,9 @@ async fn throughput_task(
 
         // Perform the stats collection in a blocking thread, ensuring that
         // the tokio runtime is not blocked.
-        let my_netflow_sender = netflow_sender.clone();
-        if let Err(e) = tokio::task::spawn_blocking(move || {
+
+        // Formerly a "spawn blocking" blob
+        {
             let mut net_json_calc = {
                 let read = NETWORK_JSON.read().unwrap();
                 read.begin_update_cycle()
@@ -104,7 +105,7 @@ async fn throughput_task(
             THROUGHPUT_TRACKER.apply_flow_data(
                 timeout_seconds,
                 netflow_enabled,
-                my_netflow_sender.clone(),
+                netflow_sender.clone(),
                 &mut net_json_calc,
             );
             THROUGHPUT_TRACKER.apply_queue_stats(&mut net_json_calc);
@@ -116,11 +117,8 @@ async fn throughput_task(
             }
             let duration_ms = start.elapsed().as_micros();
             TIME_TO_POLL_HOSTS.store(duration_ms as u64, std::sync::atomic::Ordering::Relaxed);
-        })
-        .await
-        {
-            log::error!("Error polling network. {e:?}");
         }
+
         if last_submitted_to_lts.is_none() {
             tokio::spawn(submit_throughput_stats(long_term_stats_tx.clone()));
         } else {
