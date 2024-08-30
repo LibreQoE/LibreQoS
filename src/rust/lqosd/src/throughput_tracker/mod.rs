@@ -296,19 +296,19 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>) {
 
         // Send per-circuit stats to LTS2
         // Start by combining the throughput data for each circuit as a whole
-        let mut circuit_throughput: FxHashMap<String, DownUpOrder<u64>> = FxHashMap::default();
-        let mut circuit_retransmits: FxHashMap<String, DownUpOrder<u64>> = FxHashMap::default();
-        let mut circuit_rtt: FxHashMap<String, Vec<f32>> = FxHashMap::default();
+        let mut circuit_throughput: FxHashMap<i64, DownUpOrder<u64>> = FxHashMap::default();
+        let mut circuit_retransmits: FxHashMap<i64, DownUpOrder<u64>> = FxHashMap::default();
+        let mut circuit_rtt: FxHashMap<i64, Vec<f32>> = FxHashMap::default();
 
         THROUGHPUT_TRACKER
             .raw_data
             .iter()
             .filter(|h| h.circuit_id.is_some() && h.bytes_per_second.not_zero())
             .for_each(|h| {
-                if let Some(c) = circuit_throughput.get_mut(h.circuit_id.as_ref().unwrap()) {
+                if let Some(c) = circuit_throughput.get_mut(&h.circuit_hash.unwrap()) {
                     *c += h.bytes_per_second;
                 } else {
-                    circuit_throughput.insert(h.circuit_id.as_ref().unwrap().clone(), h.bytes_per_second);
+                    circuit_throughput.insert(h.circuit_hash.unwrap(), h.bytes_per_second);
                 }
             });
 
@@ -317,10 +317,10 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>) {
             .iter()
             .filter(|h| h.circuit_id.is_some() && h.tcp_retransmits.not_zero())
             .for_each(|h| {
-                if let Some(c) = circuit_retransmits.get_mut(h.circuit_id.as_ref().unwrap()) {
+                if let Some(c) = circuit_retransmits.get_mut(&h.circuit_hash.unwrap()) {
                     *c += h.tcp_retransmits;
                 } else {
-                    circuit_retransmits.insert(h.circuit_id.as_ref().unwrap().clone(), h.tcp_retransmits);
+                    circuit_retransmits.insert(h.circuit_hash.unwrap(), h.tcp_retransmits);
                 }
             });
 
@@ -329,10 +329,10 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>) {
             .iter()
             .filter(|h| h.circuit_id.is_some() && h.median_latency().is_some())
             .for_each(|h| {
-                if let Some(c) = circuit_rtt.get_mut(h.circuit_id.as_ref().unwrap()) {
+                if let Some(c) = circuit_rtt.get_mut(&h.circuit_hash.unwrap()) {
                     c.push(h.median_latency().unwrap());
                 } else {
-                    circuit_rtt.insert(h.circuit_id.as_ref().unwrap().clone(), vec![h.median_latency().unwrap()]);
+                    circuit_rtt.insert(h.circuit_hash.unwrap(), vec![h.median_latency().unwrap()]);
                 }
             });
 
@@ -340,10 +340,9 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>) {
         let circuit_throughput_batch = circuit_throughput
             .into_iter()
             .map(|(k,v)| {
-                let circuit_hash = hash_to_i64(&k);
                 lts2_sys::shared_types::CircuitThroughput {
                     timestamp: now,
-                    circuit_hash,
+                    circuit_hash: k,
                     download_bytes: v.down,
                     upload_bytes: v.up,
                 }
@@ -356,10 +355,9 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>) {
         let circuit_retransmits_batch = circuit_retransmits
             .into_iter()
             .map(|(k,v)| {
-                let circuit_hash = hash_to_i64(&k);
                 lts2_sys::shared_types::CircuitRetransmits {
                     timestamp: now,
-                    circuit_hash,
+                    circuit_hash: k,
                     tcp_retransmits_down: v.down as i32,
                     tcp_retransmits_up: v.up as i32,
                 }
@@ -372,10 +370,9 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>) {
         let circuit_rtt_batch = circuit_rtt
             .into_iter()
             .map(|(k,v)| {
-                let circuit_hash = hash_to_i64(&k);
                 lts2_sys::shared_types::CircuitRtt {
                     timestamp: now,
-                    circuit_hash,
+                    circuit_hash: k,
                     median_rtt: v.iter().sum::<f32>() / v.len() as f32,
                 }
             })

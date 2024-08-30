@@ -52,15 +52,17 @@ impl ThroughputTracker {
     });
   }
 
-  fn lookup_circuit_id(xdp_ip: &XdpIpAddress) -> Option<String> {
+  fn lookup_circuit_id(xdp_ip: &XdpIpAddress) -> (Option<String>, Option<i64>) {
     let mut circuit_id = None;
+    let mut circuit_hash = None;
     let lookup = xdp_ip.as_ipv6();
     let cfg = SHAPED_DEVICES.read().unwrap();
     if let Some((_, id)) = cfg.trie.longest_match(lookup) {
       circuit_id = Some(cfg.devices[*id].circuit_id.clone());
+      circuit_hash = Some(cfg.devices[*id].circuit_hash);
     }
     //println!("{lookup:?} Found circuit_id: {circuit_id:?}");
-    circuit_id
+    (circuit_id, circuit_hash)
   }
 
   pub(crate) fn get_node_name_for_circuit_id(
@@ -93,7 +95,9 @@ impl ThroughputTracker {
 
   pub(crate) fn refresh_circuit_ids(&self) {
     self.raw_data.iter_mut().for_each(|mut data| {
-      data.circuit_id = Self::lookup_circuit_id(data.key());
+      let (circuit_id, circuit_hash) = Self::lookup_circuit_id(data.key());
+      data.circuit_id = circuit_id;
+      data.circuit_hash = circuit_hash;
       data.network_json_parents =
         Self::lookup_network_parents(data.circuit_id.clone());
     });
@@ -138,9 +142,10 @@ impl ThroughputTracker {
           }
         }
       } else {
-        let circuit_id = Self::lookup_circuit_id(xdp_ip);
+        let (circuit_id, circuit_hash) = Self::lookup_circuit_id(xdp_ip);
         let mut entry = ThroughputEntry {
           circuit_id: circuit_id.clone(),
+          circuit_hash,
           network_json_parents: Self::lookup_network_parents(circuit_id),
           first_cycle: self_cycle,
           most_recent_cycle: 0,

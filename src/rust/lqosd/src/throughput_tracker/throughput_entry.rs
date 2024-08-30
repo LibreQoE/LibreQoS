@@ -5,6 +5,7 @@ use super::flow_data::RttData;
 #[derive(Debug)]
 pub(crate) struct ThroughputEntry {
   pub(crate) circuit_id: Option<String>,
+  pub(crate) circuit_hash: Option<i64>,
   pub(crate) network_json_parents: Option<Vec<usize>>,
   pub(crate) first_cycle: u64,
   pub(crate) most_recent_cycle: u64,
