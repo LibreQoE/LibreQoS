@@ -117,20 +117,11 @@ fn throughput_task(
         }
 
         if last_submitted_to_lts.is_none() {
-            submit_throughput_stats(long_term_stats_tx.clone());
+            submit_throughput_stats(long_term_stats_tx.clone(), 1.0);
         } else {
             let elapsed = last_submitted_to_lts.unwrap().elapsed();
-            let elapsed_f32 = elapsed.as_secs_f32();
-            const TOLERANCE: f32 = 0.10;
-            const LOWER_BOUND: f32 = 1.0 - TOLERANCE;
-            const UPPER_BOUND: f32 = 1.0 + TOLERANCE;
-            let accuracy = f32::abs(elapsed_f32 - 1.0);
-            debug!("Tick elapsed is {} seconds from target", accuracy);
-            if elapsed_f32 > LOWER_BOUND && elapsed_f32 < UPPER_BOUND {
-                submit_throughput_stats(long_term_stats_tx.clone());
-            } else {
-                warn!("LTS submission spacing is not 1 second - ignoring submission. Period is: {:.2}s", elapsed_f32);
-            }
+            let elapsed_f64 = elapsed.as_secs_f64();
+            submit_throughput_stats(long_term_stats_tx.clone(), elapsed_f64);
         }
         last_submitted_to_lts = Some(Instant::now());
 
@@ -142,7 +133,11 @@ fn throughput_task(
     }
 }
 
-fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>) {
+fn scale_u64_by_f64(value: u64, scale: f64) -> u64 {
+    (value as f64 * scale) as u64
+}
+
+fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>, scale: f64) {
     // If ShapedDevices has changed, notify the stats thread
     let mut lts2_needs_shaped_devices = false;
     if let Ok(changed) = STATS_NEEDS_NEW_SHAPED_DEVICES.compare_exchange(
@@ -195,6 +190,8 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>) {
     if let Err(e) = result {
         warn!("Error sending message to stats collection system. {e:?}");
     }
+
+    // LTS2 Block
     if let Ok(now) = unix_now() {
         // LTS2 Shaped Devices
         if lts2_needs_shaped_devices {
@@ -284,8 +281,8 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>) {
         }
         let tcp_retransmits = min_max_median_tcp_retransmits();
         if lts2_sys::total_throughput(now,
-            bytes.down, bytes.up, shaped_bytes.down, shaped_bytes.up,
-            packets_per_second.0, packets_per_second.1,
+            scale_u64_by_f64(bytes.down, scale), scale_u64_by_f64(bytes.up, scale), scale_u64_by_f64(shaped_bytes.down, scale), scale_u64_by_f64(shaped_bytes.up, scale),
+            scale_u64_by_f64(packets_per_second.0, scale), scale_u64_by_f64(packets_per_second.1, scale),
             min_rtt, max_rtt, median_rtt,
             tcp_retransmits.down, tcp_retransmits.up,
             TOTAL_QUEUE_STATS.marks.get_down() as i32, TOTAL_QUEUE_STATS.marks.get_up() as i32,
@@ -343,8 +340,8 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>) {
                 lts2_sys::shared_types::CircuitThroughput {
                     timestamp: now,
                     circuit_hash: k,
-                    download_bytes: v.down,
-                    upload_bytes: v.up,
+                    download_bytes: scale_u64_by_f64(v.down, scale),
+                    upload_bytes: scale_u64_by_f64(v.up, scale),
                 }
             })
             .collect::<Vec<_>>();
@@ -429,8 +426,8 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>) {
                 site_throughput.push(lts2_sys::shared_types::SiteThroughput {
                     timestamp: now,
                     site_hash,
-                    download_bytes: node.current_throughput.down,
-                    upload_bytes: node.current_throughput.up,
+                    download_bytes: scale_u64_by_f64(node.current_throughput.down, scale),
+                    upload_bytes: scale_u64_by_f64(node.current_throughput.up, scale),
                 });
             }
             if node.current_tcp_retransmits.not_zero() {
