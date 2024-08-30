@@ -90,9 +90,6 @@ fn throughput_task(
     loop {
         let start = Instant::now();
 
-        // Perform the stats collection in a blocking thread, ensuring that
-        // the tokio runtime is not blocked.
-
         // Formerly a "spawn blocking" blob
         {
             let mut net_json_calc = {
