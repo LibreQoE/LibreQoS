@@ -120,7 +120,7 @@ async fn throughput_task(
         }
 
         if last_submitted_to_lts.is_none() {
-            tokio::spawn(submit_throughput_stats(long_term_stats_tx.clone()));
+            submit_throughput_stats(long_term_stats_tx.clone()).await;
         } else {
             let elapsed = last_submitted_to_lts.unwrap().elapsed();
             let elapsed_f32 = elapsed.as_secs_f32();
