@@ -84,7 +84,7 @@ fn track_queues() {
 
 /// Holds the CAKE marks/drops for a given queue/circuit.
 pub struct TrackedQueue {
-  circuit_id: String,
+  circuit_hash: i64,
   drops: u64,
   marks: u64,
 }
@@ -96,11 +96,11 @@ fn connect_queues_to_circuit(structure: &[QueueNode], queues: &[QueueType]) -> V
         if let QueueType::Cake(cake) = q {
           let (major, minor) = cake.parent.get_major_minor();
           if let Some (s) = structure.iter().find(|s| s.class_major == major as u32 && s.class_minor == minor as u32) {
-            if let Some(circuit_id) = &s.circuit_id {
+            if let Some(circuit_hash) = &s.circuit_hash {
               let marks: u32 = cake.tins.iter().map(|tin| tin.ecn_marks).sum();
               if cake.drops > 0 || marks > 0 {
                 return Some(TrackedQueue {
-                  circuit_id: circuit_id.clone(),
+                  circuit_hash: *circuit_hash,
                   drops: cake.drops as u64,
                   marks: marks as u64,
                 })
@@ -120,11 +120,11 @@ fn connect_queues_to_circuit_up(structure: &[QueueNode], queues: &[QueueType]) -
         if let QueueType::Cake(cake) = q {
           let (major, minor) = cake.parent.get_major_minor();
           if let Some (s) = structure.iter().find(|s| s.up_class_major == major as u32 && s.class_minor == minor as u32) {
-            if let Some(circuit_id) = &s.circuit_id {
+            if let Some(circuit_hash) = &s.circuit_hash {
               let marks: u32 = cake.tins.iter().map(|tin| tin.ecn_marks).sum();
               if cake.drops > 0 || marks > 0 {
                 return Some(TrackedQueue {
-                  circuit_id: circuit_id.clone(),
+                  circuit_hash: *circuit_hash,
                   drops: cake.drops as u64,
                   marks: marks as u64,
                 })

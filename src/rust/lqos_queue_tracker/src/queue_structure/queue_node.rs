@@ -3,6 +3,7 @@ use log::error;
 use lqos_bus::TcHandle;
 use lqos_utils::hex_string::read_hex_string;
 use serde_json::Value;
+use lqos_utils::hash_to_i64;
 
 #[derive(Default, Clone, Debug)]
 pub struct QueueNode {
@@ -22,11 +23,14 @@ pub struct QueueNode {
   pub circuits: Vec<QueueNode>,
   pub circuit_id: Option<String>,
   pub circuit_name: Option<String>,
+  pub circuit_hash: Option<i64>,
   pub parent_node: Option<String>,
+  pub parent_hash: Option<i64>,
   pub devices: Vec<QueueNode>,
   pub comment: String,
   pub device_id: Option<String>,
   pub device_name: Option<String>,
+  pub device_hash: Option<i64>,
   pub mac: Option<String>,
   pub children: Vec<QueueNode>,
 }
@@ -157,18 +161,27 @@ impl QueueNode {
           }
           "circuitId" | "circuitID" => {
             grab_string_option!(result.circuit_id, key.as_str(), value);
+            if result.circuit_id.is_some() {
+              result.circuit_hash = Some(hash_to_i64(result.circuit_id.as_ref().unwrap()));
+            }
           }
           "circuitName" => {
             grab_string_option!(result.circuit_name, key.as_str(), value);
           }
           "parentNode" | "ParentNode" => {
             grab_string_option!(result.parent_node, key.as_str(), value);
+            if result.parent_node.is_some() {
+              result.parent_hash = Some(hash_to_i64(result.parent_node.as_ref().unwrap()));
+            }
           }
           "comment" => {
             grab_string!(result.comment, key.as_str(), value);
           }
           "deviceId" | "deviceID" => {
             grab_string_option!(result.device_id, key.as_str(), value);
+            if result.device_id.is_some() {
+              result.device_hash = Some(hash_to_i64(result.device_id.as_ref().unwrap()));
+            }
           }
           "deviceName" => {
             grab_string_option!(result.device_name, key.as_str(), value);

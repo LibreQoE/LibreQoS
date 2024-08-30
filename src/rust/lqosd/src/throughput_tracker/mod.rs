@@ -384,9 +384,8 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>) {
         // Per host CAKE stats
         let mut cake_drops: Vec<CircuitCakeDrops> = Vec::new();
         let mut cake_marks: Vec<CircuitCakeMarks> = Vec::new();
-        ALL_QUEUE_SUMMARY.iterate_queues(|circuit_id, drops, marks| {
+        ALL_QUEUE_SUMMARY.iterate_queues(|circuit_hash, drops, marks| {
             if drops.not_zero() {
-                let circuit_hash = hash_to_i64(&circuit_id);
                 cake_drops.push(CircuitCakeDrops {
                     timestamp: now,
                     circuit_hash,
@@ -395,7 +394,6 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>) {
                 });
             }
             if marks.not_zero() {
-                let circuit_hash = hash_to_i64(&circuit_id);
                 cake_marks.push(CircuitCakeMarks {
                     timestamp: now,
                     circuit_hash,

@@ -179,10 +179,10 @@ impl ThroughputTracker {
     ALL_QUEUE_SUMMARY.calculate_total_queue_stats();
 
     // Iterate through the queue data and find the matching circuit_id
-    ALL_QUEUE_SUMMARY.iterate_queues(|circuit_id, drops, marks| {
+    ALL_QUEUE_SUMMARY.iterate_queues(|circuit_hash, drops, marks| {
       if let Some(entry) = self.raw_data.iter().find(|v| {
-        match v.circuit_id {
-          Some(ref id) => id == circuit_id,
+        match v.circuit_hash {
+          Some(ref id) => *id == circuit_hash,
           None => false,
         }
       }) {
