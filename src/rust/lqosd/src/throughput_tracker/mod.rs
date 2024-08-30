@@ -16,7 +16,7 @@ use crate::{
 use log::{debug, info, warn};
 use lqos_bus::{BusResponse, FlowbeeProtocol, IpStats, TcHandle, TopFlowType, XdpPpingResult};
 use lqos_sys::flowbee_data::FlowbeeKey;
-use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
+use lqos_utils::{hash_to_i64, unix_time::time_since_boot, XdpIpAddress};
 use lts_client::collector::{HostSummary, StatsUpdateMessage, ThroughputSummary};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -228,7 +228,7 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>) {
             for device in shaped_devices.into_iter() {
                 if let Some(circuit) = circuit_map.get_mut(&device.circuit_id) {
                     circuit.devices.push(Lts2Device {
-                        device_hash: hash_to_i64(&device.device_id),
+                        device_hash: device.device_hash,
                         device_id: device.device_id,
                         device_name: device.device_name,
                         mac: device.mac,
@@ -237,7 +237,7 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>) {
                         comment: device.comment,
                     })
                 } else {
-                    let circuit_hash = hash_to_i64(&device.circuit_id);
+                    let circuit_hash = device.circuit_hash;
                     circuit_map.insert(
                         device.circuit_id.clone(),
                         Lts2Circuit {
@@ -248,9 +248,9 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>) {
                             upload_min_mbps: device.upload_min_mbps,
                             download_max_mbps: device.download_max_mbps,
                             upload_max_mbps: device.upload_max_mbps,
-                            parent_node: hash_to_i64(&device.parent_node),
+                            parent_node: device.parent_hash,
                             devices: vec![Lts2Device {
-                                device_hash: hash_to_i64(&device.device_id),
+                                device_hash: device.device_hash,
                                 device_id: device.device_id,
                                 device_name: device.device_name,
                                 mac: device.mac,
@@ -500,13 +500,6 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>) {
             }
         }
     }
-}
-
-fn hash_to_i64(text: &str) -> i64 {
-    use std::hash::{DefaultHasher, Hasher};
-    let mut hasher = DefaultHasher::new();
-    hasher.write(text.as_bytes());
-    hasher.finish() as i64
 }
 
 fn ip4_to_bytes(ip: (Ipv4Addr, u32)) -> ([u8; 4], u8) {
