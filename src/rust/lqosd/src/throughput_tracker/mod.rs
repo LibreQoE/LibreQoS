@@ -130,7 +130,7 @@ async fn throughput_task(
             let accuracy = f32::abs(elapsed_f32 - 1.0);
             debug!("Tick elapsed is {} seconds from target", accuracy);
             if elapsed_f32 > LOWER_BOUND && elapsed_f32 < UPPER_BOUND {
-                tokio::spawn(submit_throughput_stats(long_term_stats_tx.clone()));
+                submit_throughput_stats(long_term_stats_tx.clone()).await;
             } else {
                 warn!("LTS submission spacing is not 1 second - ignoring submission. Period is: {:.2}s", elapsed_f32);
             }
