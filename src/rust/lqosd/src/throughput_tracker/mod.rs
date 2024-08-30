@@ -42,18 +42,18 @@ pub static THROUGHPUT_TRACKER: Lazy<ThroughputTracker> = Lazy::new(ThroughputTra
 ///
 /// * `long_term_stats_tx` - an optional MPSC sender to notify the
 ///   collection thread that there is fresh data.
-pub async fn spawn_throughput_monitor(
+pub fn spawn_throughput_monitor(
     long_term_stats_tx: Sender<StatsUpdateMessage>,
     netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
 ) {
     info!("Starting the bandwidth monitor thread.");
-    tokio::spawn(throughput_task(
+    std::thread::spawn(|| {throughput_task(
         long_term_stats_tx,
         netflow_sender,
-    ));
+    )});
 }
 
-async fn throughput_task(
+fn throughput_task(
     long_term_stats_tx: Sender<StatsUpdateMessage>,
     netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
 ) {
@@ -120,7 +120,7 @@ async fn throughput_task(
         }
 
         if last_submitted_to_lts.is_none() {
-            submit_throughput_stats(long_term_stats_tx.clone()).await;
+            submit_throughput_stats(long_term_stats_tx.clone());
         } else {
             let elapsed = last_submitted_to_lts.unwrap().elapsed();
             let elapsed_f32 = elapsed.as_secs_f32();
@@ -130,7 +130,7 @@ async fn throughput_task(
             let accuracy = f32::abs(elapsed_f32 - 1.0);
             debug!("Tick elapsed is {} seconds from target", accuracy);
             if elapsed_f32 > LOWER_BOUND && elapsed_f32 < UPPER_BOUND {
-                submit_throughput_stats(long_term_stats_tx.clone()).await;
+                submit_throughput_stats(long_term_stats_tx.clone());
             } else {
                 warn!("LTS submission spacing is not 1 second - ignoring submission. Period is: {:.2}s", elapsed_f32);
             }
@@ -145,7 +145,7 @@ async fn throughput_task(
     }
 }
 
-async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>) {
+fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>) {
     // If ShapedDevices has changed, notify the stats thread
     let mut lts2_needs_shaped_devices = false;
     if let Ok(changed) = STATS_NEEDS_NEW_SHAPED_DEVICES.compare_exchange(
@@ -157,9 +157,7 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>)
         if changed {
             lts2_needs_shaped_devices = true; // Separated out because LTS1 will eventually go away
             let shaped_devices = SHAPED_DEVICES.read().unwrap().devices.clone();
-            let _ = long_term_stats_tx
-                .send(StatsUpdateMessage::ShapedDevicesChanged(shaped_devices))
-                .await;
+            let _ = long_term_stats_tx.blocking_send(StatsUpdateMessage::ShapedDevicesChanged(shaped_devices));
         }
     }
 
@@ -196,9 +194,7 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>)
 
     // Send the stats
     let _ = lts2_sys::update_config();
-    let result = long_term_stats_tx
-        .send(StatsUpdateMessage::ThroughputReady(summary))
-        .await;
+    let result = long_term_stats_tx.blocking_send(StatsUpdateMessage::ThroughputReady(summary));
     if let Err(e) = result {
         warn!("Error sending message to stats collection system. {e:?}");
     }
