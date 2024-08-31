@@ -244,6 +244,12 @@ pub fn get_lts_license_status() -> (LtsStatus, i32) {
     }
 }
 
+pub fn ingest_batch_complete() {
+    unsafe {
+        external::ingest_batch_complete();
+    }
+}
+
 struct Lts2Config {
     has_remote_host: bool,
     remote_host: CString,

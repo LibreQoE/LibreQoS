@@ -118,4 +118,5 @@ extern "C" {
 
     pub(crate) fn get_lts_license_status() -> i32;
     pub(crate) fn get_lts_license_trial_remaining() -> i32;
+    pub(crate) fn ingest_batch_complete();
 }

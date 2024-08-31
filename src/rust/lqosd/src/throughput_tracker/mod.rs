@@ -491,6 +491,8 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>, scale
                 warn!("Error sending message to LTS2.");
             }
         }
+        // Notify of completion, which triggers processing
+        lts2_sys::ingest_batch_complete();
     }
 }
 
