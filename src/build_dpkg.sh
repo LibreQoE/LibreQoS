@@ -59,8 +59,8 @@ cat << 'EOF' > postinst
 pushd /opt/libreqos  > /dev/null || exit
 
 # - Setup Python dependencies as a post-install task
-python3 -m pip install --root-user-action=ignore --quiet --break-system-packages -r src/requirements.txt
-sudo python3 -m pip install --root-user-action=ignore --quiet --break-system-packages -r src/requirements.txt
+python3 -m pip install --quiet --break-system-packages -r src/requirements.txt
+sudo python3 -m pip install --quiet --break-system-packages -r src/requirements.txt
 
 # - Run lqsetup
 /opt/libreqos/src/bin/lqos_setup
