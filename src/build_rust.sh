@@ -88,8 +88,7 @@ service_exists() {
 
 if service_exists lqos_node_manager; then
     echo "lqos_node_manager is running as a service. It's not needed anymore. Killing it."
-    sudo systemctl stop lqos_node_manager
-    sudo systemctl disable lqos_node_manager
+    sudo systemctl disable --now lqos_node_manager
 fi
 
 if service_exists lqosd; then
