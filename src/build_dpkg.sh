@@ -79,14 +79,12 @@ service_exists() {
 }
 
 if service_exists lqos_node_manager; then
-    /bin/systemctl stop lqos_node_manager # In case it's running from a previous release
-    /bin/systemctl disable lqos_node_manager # In case it's running from a previous release
+    /bin/systemctl disable --now lqos_node_manager # In case it's running from a previous release
     rm -f /etc/systemd/system/lqosd_node_manager.service # In case it's running from a previous release
 fi
 
 /bin/systemctl daemon-reload
-/bin/systemctl enable lqosd lqos_scheduler
-/bin/systemctl start lqosd lqos_scheduler
+/bin/systemctl enable --now lqosd lqos_scheduler
 popd > /dev/null || exit
 
 # Attempting to fixup versioning issues with libpython.
@@ -105,8 +103,7 @@ EOF
 # Uninstall Script
 cat << EOF > postrm
 #!/bin/bash
-/bin/systemctl --no-block stop lqosd lqos_scheduler
-/bin/systemctl disable lqosd lqos_scheduler
+/bin/systemctl disable --now lqosd lqos_scheduler
 /bin/systemctl daemon-reload
 rm -f /etc/systemd/system/{lqosd,lqos_scheduler}.service
 EOF
