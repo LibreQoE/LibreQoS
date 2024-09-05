@@ -3,7 +3,7 @@ use lqos_config::load_config;
 use lqos_utils::unix_time::unix_now;
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 #[derive(Default, Clone)]
 struct LicenseStatus {
@@ -45,7 +45,7 @@ pub(crate) async fn get_license_status() -> LicenseState {
 const MISERLY_NO_KEY: &str = "IDontSupportDevelopersAndShouldFeelBad";
 
 async fn check_license(unix_time: u64) -> LicenseState {
-    info!("Checking LTS stats license");
+    debug!("Checking LTS stats license");
     if let Ok(cfg) = load_config() {
         // The config file is good. Is LTS enabled?
         // If it isn't, we need to try very gently to see if a pending

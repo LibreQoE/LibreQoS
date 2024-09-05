@@ -7,7 +7,7 @@ pub async fn get_global_warnings() -> Json<Vec<(WarningLevel, String)>> {
 
     info!("Sanity checking configuration...");
 
-    if let Ok(support_sanity) = lqos_support_tool::run_sanity_checks() {
+    if let Ok(support_sanity) = lqos_support_tool::run_sanity_checks(false) {
         let found_warnings = support_sanity.results.iter().any(|c| !c.success);
         if found_warnings {
             warnings.push((WarningLevel::Error, "Support tool sanity checks failed. Please run the <a href='help.html'>support tool</a>.".to_string()));

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use lqos_config::NetworkJson;
 use lqos_utils::file_watcher::FileWatcher;
 use once_cell::sync::Lazy;
@@ -10,7 +10,7 @@ pub static NETWORK_JSON: Lazy<RwLock<NetworkJson>> =
 
 pub fn network_json_watcher() {
   std::thread::spawn(|| {
-      info!("Watching for network.kson changes");
+      debug!("Watching for network.kson changes");
       if let Err(e) = watch_for_network_json_changing() {
           error!("Error watching for network.json changes: {:?}", e);
       }

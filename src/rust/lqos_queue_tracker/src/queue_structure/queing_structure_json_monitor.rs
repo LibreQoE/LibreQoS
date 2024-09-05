@@ -3,7 +3,7 @@ use std::sync::RwLock;
 use crate::queue_structure::{
   queue_network::QueueNetwork, queue_node::QueueNode, read_queueing_structure,
 };
-use tracing::{error, info};
+use tracing::{debug, error, info};
 use lqos_utils::file_watcher::FileWatcher;
 use once_cell::sync::Lazy;
 use thiserror::Error;
@@ -47,7 +47,7 @@ pub fn spawn_queue_structure_monitor() {
 }
 
 fn update_queue_structure() {
-  info!("queueingStructure.json reloaded");
+  debug!("queueingStructure.json reloaded");
   QUEUE_STRUCTURE.write().unwrap().update();
 }
 

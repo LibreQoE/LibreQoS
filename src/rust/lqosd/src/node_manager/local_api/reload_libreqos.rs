@@ -9,7 +9,7 @@ pub async fn reload_libreqos(
     info!("Reloading LibreQoS");
     if let LoginResult::Admin = login {
         let result =spawn_blocking(|| lqos_config::load_libreqos()).await.unwrap();
-        println!("{:?}", result);
+        //println!("{:?}", result);
         result.unwrap_or_else(|_| "Unable to reload LibreQoS".to_string())
     } else {
         "You must be an admin to reload LibreQoS".to_string()

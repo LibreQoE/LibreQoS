@@ -8,7 +8,7 @@ pub use self::v15::Config;
 pub use etclqos_migration::*;
 use std::sync::Mutex;
 use thiserror::Error;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 mod migration;
 mod python_migration;
@@ -29,7 +29,7 @@ pub fn load_config() -> Result<Config, LibreQoSConfigError> {
     
     let mut lock = CONFIG.lock().unwrap();
     if lock.is_none() {
-        info!("Loading configuration file {config_location}");
+        debug!("Loading configuration file {config_location}");
         migrate_if_needed().map_err(|e| {
             error!("Unable to migrate configuration: {:?}", e);
             LibreQoSConfigError::FileNotFoud
@@ -57,8 +57,8 @@ pub fn load_config() -> Result<Config, LibreQoSConfigError> {
         if let Ok(lqos_dir) = std::env::var("LQOS_DIRECTORY") {
             final_config.lqos_directory = lqos_dir;
         }
-        
-        info!("Set cached version of config file");
+
+        debug!("Set cached version of config file");
         *lock = Some(final_config);
     }
 
@@ -89,7 +89,7 @@ pub fn enable_long_term_stats(license_key: String) -> Result<(), LibreQoSConfigE
 
 /// Update the configuration on disk
 pub fn update_config(new_config: &Config) -> Result<(), LibreQoSConfigError> {
-    info!("Updating stored configuration");
+    debug!("Updating stored configuration");
     let mut lock = CONFIG.lock().unwrap();
     *lock = Some(new_config.clone());
 

@@ -4,7 +4,7 @@ use surge_ping::{Client, Config, ICMP, IcmpPacket, PingIdentifier, PingSequence}
 use tokio::time::MissedTickBehavior;
 use rand::random;
 use serde::Serialize;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 #[derive(Serialize)]
 enum PingState {
@@ -43,7 +43,7 @@ pub(super) async fn ping_monitor(ip_addresses: Vec<(String, String)>, tx: tokio:
                 Ok(IpAddr::V6(addr)) => {
                     tasks.push(tokio::spawn(ping(client_v6.clone(), IpAddr::V6(addr), tx.clone(), label.clone())))
                 }
-                Err(e) => println!("{} parse to ipaddr error: {}", ip, e),
+                Err(e) => error!("{} parse to ipaddr error: {}", ip, e),
             }
         }
 

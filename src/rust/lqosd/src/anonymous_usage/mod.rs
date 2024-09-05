@@ -4,7 +4,7 @@ use std::{time::Duration, net::TcpStream, io::Write};
 use lqos_bus::anonymous::{AnonymousUsageV1, build_stats};
 use lqos_sys::num_possible_cpus;
 use sysinfo::System;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use crate::{shaped_devices_tracker::{SHAPED_DEVICES, NETWORK_JSON}, stats::HIGH_WATERMARK};
 
 const SLOW_START_SECS: u64 = 1;
@@ -105,5 +105,5 @@ fn send_stats(data: AnonymousUsageV1, server: &str) {
         warn!("Unable to send bytes to {server}");
         warn!("{e:?}");
     }
-    info!("Anonymous usage stats submitted");
+    debug!("Anonymous usage stats submitted");
 }

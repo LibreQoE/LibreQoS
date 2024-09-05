@@ -36,7 +36,7 @@ pub fn template_data_ipv4() -> Vec<u8> {
         add_field(&mut bytes, *field_type, *field_length);
     }
 
-    println!("Templatev4 Size {} = {}", bytes.len(), 8 + (FIELDS_IPV4.len() * 2));
+    //println!("Templatev4 Size {} = {}", bytes.len(), 8 + (FIELDS_IPV4.len() * 2));
 
     bytes
 }

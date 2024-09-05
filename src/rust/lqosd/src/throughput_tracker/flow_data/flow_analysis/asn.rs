@@ -58,7 +58,7 @@ impl GeoTable {
     }
 
     fn download() -> anyhow::Result<()> {
-        info!("Downloading ASN-IP Table");
+        debug!("Downloading ASN-IP Table");
         let file_path = Self::file_path();
         let url = "https://stats.libreqos.io/geo2.bin";
         let response = reqwest::blocking::get(url)?;
@@ -84,7 +84,7 @@ impl GeoTable {
         // Build the ASN trie and ASN lookup map
         let mut asn_lookup = FxHashMap::default();
 
-        info!("Building ASN trie");
+        debug!("Building ASN trie");
         let mut asn_trie = ip_network_table::IpNetworkTable::<AsnEncoded>::new();
         for entry in geobin.asn {
             asn_lookup.insert(entry.asn, entry.organization.clone());
@@ -98,7 +98,7 @@ impl GeoTable {
         }
 
         // Build the GeoIP trie
-        info!("Building GeoIP trie");
+        debug!("Building GeoIP trie");
         let mut geo_trie = ip_network_table::IpNetworkTable::<GeoIpLocation>::new();
         for entry in geobin.geo {
             let (ip, prefix) = match entry.network {
@@ -110,7 +110,7 @@ impl GeoTable {
             }
         }
 
-        info!("GeoTables loaded, {}-{} records.", asn_trie.len().1, geo_trie.len().1);
+        debug!("GeoTables loaded, {}-{} records.", asn_trie.len().1, geo_trie.len().1);
 
         Ok(Self {
             asn_trie,

@@ -10,7 +10,7 @@ use libbpf_sys::{
   XDP_FLAGS_DRV_MODE, XDP_FLAGS_HW_MODE, XDP_FLAGS_SKB_MODE,
   XDP_FLAGS_UPDATE_IF_NOEXIST,
 };
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use nix::libc::{geteuid, if_nametoindex};
 use std::{ffi::{CString, c_void}, process::Command};
 
@@ -55,7 +55,7 @@ pub fn interface_name_to_index(interface_name: &str) -> Result<u32> {
 }
 
 pub fn unload_xdp_from_interface(interface_name: &str) -> Result<()> {
-  info!("Unloading XDP/TC");
+  debug!("Unloading XDP/TC");
   check_root()?;
   let interface_index = interface_name_to_index(interface_name)?.try_into()?;
   unsafe {
@@ -240,11 +240,11 @@ pub fn attach_xdp_and_tc_to_interface(
     if let Some(bridge) = &etc.bridge {
       if bridge.use_xdp_bridge {
         // Enable "promiscuous" mode on interfaces
-        info!("Enabling promiscuous mode on {}", &bridge.to_internet);
+        debug!("Enabling promiscuous mode on {}", &bridge.to_internet);
         std::process::Command::new("/bin/ip")
               .args(["link", "set", &bridge.to_internet, "promisc", "on"])
               .output()?;
-        info!("Enabling promiscuous mode on {}", &bridge.to_network);
+        debug!("Enabling promiscuous mode on {}", &bridge.to_network);
         std::process::Command::new("/bin/ip")
           .args(["link", "set", &bridge.to_network, "promisc", "on"])
           .output()?;
@@ -265,7 +265,7 @@ pub fn attach_xdp_and_tc_to_interface(
 
     if let Some(stick) = &etc.single_interface {
       // Enable "promiscuous" mode on interface
-      info!("Enabling promiscuous mode on {}", &stick.interface);
+      debug!("Enabling promiscuous mode on {}", &stick.interface);
       std::process::Command::new("/bin/ip")
         .args(["link", "set", &stick.interface, "promisc", "on"])
         .output()?;

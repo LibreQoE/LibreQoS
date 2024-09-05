@@ -10,7 +10,7 @@ use crate::{
     stats::TIME_TO_POLL_HOSTS,
     throughput_tracker::tracking_data::ThroughputTracker,
 };
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use lqos_bus::{BusResponse, FlowbeeProtocol, IpStats, TcHandle, TopFlowType, XdpPpingResult};
 use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
@@ -38,7 +38,7 @@ pub fn spawn_throughput_monitor(
     long_term_stats_tx: Sender<StatsUpdateMessage>,
     netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
 ) {
-    info!("Starting the bandwidth monitor thread.");
+    debug!("Starting the bandwidth monitor thread.");
     std::thread::spawn(|| {throughput_task(
         long_term_stats_tx,
         netflow_sender,

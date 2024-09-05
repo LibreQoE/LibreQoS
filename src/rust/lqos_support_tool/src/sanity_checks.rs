@@ -20,8 +20,8 @@ pub struct SanityCheck {
     pub comments: String,
 }
 
-pub fn run_sanity_checks() -> anyhow::Result<SanityChecks> {
-    println!("Running Sanity Checks");
+pub fn run_sanity_checks(echo: bool) -> anyhow::Result<SanityChecks> {
+    if echo { println!("Running Sanity Checks"); }
     let mut results = Vec::new();
 
     // Run the checks
@@ -42,15 +42,15 @@ pub fn run_sanity_checks() -> anyhow::Result<SanityChecks> {
     let mut any_errors = false;
     for s in results.iter() {
         if s.success {
-            success(&format!("{} {}", s.name, s.comments));
+            if echo { success(&format!("{} {}", s.name, s.comments)); }
         } else {
             error(&format!("{}: {}", s.name, s.comments));
-            any_errors = true;
+            if echo { any_errors = true; }
         }
     }
 
     if any_errors {
-        error("ERRORS FOUND DURING SANITY CHECK");
+        if echo { error("ERRORS FOUND DURING SANITY CHECK"); }
     }
 
     Ok(SanityChecks { results })

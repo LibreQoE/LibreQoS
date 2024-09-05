@@ -8,7 +8,7 @@ pub mod perf_interface;
 pub mod stats;
 
 use std::time::Duration;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
 pub use config::{HeimdalConfig, HeimdallMode};
 mod timeline;
@@ -41,7 +41,7 @@ pub fn start_heimdall() {
   }
 
   let interval_ms = 1000; // 1 second
-  info!("Heimdall check period set to {interval_ms} ms.");
+  debug!("Heimdall check period set to {interval_ms} ms.");
 
   std::thread::spawn(move || {
     let mut tfd = TimerFd::new().unwrap();

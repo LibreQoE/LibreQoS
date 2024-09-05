@@ -7,7 +7,7 @@ use super::{
 };
 use thiserror::Error;
 use toml_edit::DocumentMut;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 #[derive(Debug, Error)]
 pub enum MigrationError {
@@ -24,7 +24,7 @@ pub enum MigrationError {
 }
 
 pub fn migrate_if_needed() -> Result<(), MigrationError> {
-    info!("Checking config file version");
+    debug!("Checking config file version");
     let raw =
         std::fs::read_to_string("/etc/lqos.conf").map_err(|e| MigrationError::ReadError(e))?;
 
@@ -32,9 +32,9 @@ pub fn migrate_if_needed() -> Result<(), MigrationError> {
         .parse::<DocumentMut>()
         .map_err(|e| MigrationError::ParseError(e))?;
     if let Some((_key, version)) = doc.get_key_value("version") {
-        info!("Configuration file is at version {}", version.as_str().unwrap());
+        debug!("Configuration file is at version {}", version.as_str().unwrap());
         if version.as_str().unwrap().trim() == "1.5" {
-            info!("Configuration file is already at version 1.5, no migration needed");
+            debug!("Configuration file is already at version 1.5, no migration needed");
             return Ok(());
         } else {
             error!("Configuration file is at version {}, but this version of lqos only supports version 1.5", version.as_str().unwrap());

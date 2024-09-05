@@ -1,6 +1,6 @@
 use anyhow::{Error, Result};
 use libbpf_sys::{bpf_map_update_elem, bpf_obj_get};
-use tracing::info;
+use tracing::{debug, info};
 use std::{ffi::CString, os::raw::c_void};
 use crate::{num_possible_cpus, linux::map_txq_config_base_setup};
 
@@ -39,7 +39,7 @@ impl CpuMapping {
     let queue_size = 2048u32;
     let val_ptr: *const u32 = &queue_size;
     for cpu in 0..cpu_count {
-      info!("Mapping core #{cpu}");
+      debug!("Mapping core #{cpu}");
       // Insert into the cpu map
       let cpu_ptr: *const u32 = &cpu;
       let error = unsafe {
@@ -86,14 +86,14 @@ impl Drop for CpuMapping {
 /// Emulates xd_setup from cpumap
 pub(crate) fn xps_setup_default_disable(interface: &str) -> Result<()> {
   use std::io::Write;
-  info!("xps_setup");
+  debug!("xps_setup");
   let queues = sorted_txq_xps_cpus(interface)?;
   for (cpu, xps_cpu) in queues.iter().enumerate() {
     let mask = cpu_to_mask_disabled(cpu);
     let mut f = std::fs::OpenOptions::new().write(true).open(xps_cpu)?;
     f.write_all(mask.to_string().as_bytes())?;
     f.flush()?;
-    info!("Mapped TX queue for CPU {cpu}");
+    debug!("Mapped TX queue for CPU {cpu}");
   }
 
   Ok(())

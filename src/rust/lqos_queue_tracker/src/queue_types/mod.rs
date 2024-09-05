@@ -2,7 +2,7 @@ pub(crate) mod tc_cake;
 mod tc_fq_codel;
 mod tc_htb;
 mod tc_mq;
-use tracing::warn;
+use tracing::{debug, warn};
 use serde::Serialize;
 use serde_json::Value;
 use thiserror::Error;
@@ -30,7 +30,7 @@ impl QueueType {
       "cake" => Ok(QueueType::Cake(tc_cake::TcCake::from_json(map)?)),
       "clsact" => Ok(QueueType::ClsAct),
       _ => {
-        warn!("I don't know how to parse qdisc type {kind}");
+        debug!("I don't know how to parse qdisc type {kind}");
         Err(QDiscError::UnknownQdisc(format!("Unknown queue kind: {kind}")))
       }
     }

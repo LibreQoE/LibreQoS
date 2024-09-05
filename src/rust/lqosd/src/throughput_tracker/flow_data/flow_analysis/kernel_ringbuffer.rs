@@ -83,7 +83,7 @@ impl FlowTracker {
                     let mut mask;
                     if subnet.contains('/') {
                         let split = subnet.split('/').collect::<Vec<_>>();
-                        println!("{:?}", split);
+                        //println!("{:?}", split);
                         if split.len() != 2 {
                             error!("Invalid subnet: {}", subnet);
                             continue;
@@ -100,7 +100,7 @@ impl FlowTracker {
                             mask += 96;
                             ip.to_ipv6_mapped()
                         };
-                        println!("{:?} {:?}", ip, mask);
+                        //println!("{:?} {:?}", ip, mask);
 
                         let addr = ip_network::IpNetwork::new(ip, mask).unwrap();
                         ignore_subnets.insert(addr, true);

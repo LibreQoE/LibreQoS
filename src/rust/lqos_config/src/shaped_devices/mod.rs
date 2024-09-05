@@ -4,7 +4,7 @@ mod shaped_device;
 use std::net::IpAddr;
 use crate::SUPPORTED_CUSTOMERS;
 use csv::{QuoteStyle, ReaderBuilder, WriterBuilder};
-use tracing::{error, info};
+use tracing::{debug, error, info};
 use serializable::SerializableShapedDevice;
 pub use shaped_device::ShapedDevice;
 use std::path::{Path, PathBuf};
@@ -40,7 +40,7 @@ impl ConfigShapedDevices {
       crate::load_config().map_err(|_| ShapedDevicesError::ConfigLoadError)?;
     let base_path = Path::new(&cfg.lqos_directory);
     let full_path = base_path.join("ShapedDevices.csv");
-    info!("ShapedDevices.csv path: {:?}", full_path);
+    debug!("ShapedDevices.csv path: {:?}", full_path);
     Ok(full_path)
   }
 
@@ -116,7 +116,7 @@ impl ConfigShapedDevices {
   /// Replace the current shaped devices list with a new one
   pub fn replace_with_new_data(&mut self, devices: Vec<ShapedDevice>) {
     self.devices = devices;
-    info!("{:?}", self.devices);
+    debug!("{:?}", self.devices);
     self.trie = ConfigShapedDevices::make_trie(&self.devices);
   }
 
