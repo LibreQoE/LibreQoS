@@ -9,7 +9,7 @@ use crate::{shaped_devices_tracker::{SHAPED_DEVICES, NETWORK_JSON}, stats::HIGH_
 const SLOW_START_SECS: u64 = 1;
 const INTERVAL_SECS: u64 = 60 * 60 * 24;
 
-pub async fn start_anonymous_usage() {
+pub fn start_anonymous_usage() {
     if let Ok(cfg) = lqos_config::load_config() {
         if cfg.usage_stats.send_anonymous {
             std::thread::spawn(|| {

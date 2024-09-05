@@ -27,10 +27,12 @@ fn load_shaped_devices() {
 }
 
 pub fn shaped_devices_watcher() {
-    info!("Watching for ShapedDevices.csv changes");
-    if let Err(e) = watch_for_shaped_devices_changing() {
-        error!("Error watching for ShapedDevices.csv: {:?}", e);
-    }
+    std::thread::spawn(|| {
+        info!("Watching for ShapedDevices.csv changes");
+        if let Err(e) = watch_for_shaped_devices_changing() {
+            error!("Error watching for ShapedDevices.csv: {:?}", e);
+        }
+    });
 }
 
 /// Fires up a Linux file system watcher than notifies
