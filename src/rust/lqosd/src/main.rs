@@ -30,7 +30,6 @@ use signal_hook::{
 };
 use stats::{BUS_REQUESTS, TIME_TO_POLL_HOSTS, HIGH_WATERMARK, FLOWS_TRACKED};
 use throughput_tracker::flow_data::get_rtt_events_per_second;
-use tokio::join;
 mod stats;
 mod preflight_checks;
 mod node_manager;
@@ -96,9 +95,7 @@ async fn main() -> Result<()> {
   shaped_devices_tracker::shaped_devices_watcher();
   shaped_devices_tracker::network_json_watcher();
   anonymous_usage::start_anonymous_usage();
-  join!(
-    throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone(), flow_tx),
-  );
+  throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone(), flow_tx);
   spawn_queue_monitor();
 
   // Handle signals

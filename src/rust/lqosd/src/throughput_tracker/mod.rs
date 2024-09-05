@@ -16,6 +16,7 @@ use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 use lts_client::collector::{HostSummary, StatsUpdateMessage, ThroughputSummary};
 use once_cell::sync::Lazy;
+use timerfd::{SetTimeFlags, TimerFd, TimerState};
 use tokio::{
     sync::mpsc::Sender,
     time::{Duration, Instant},
@@ -33,22 +34,18 @@ pub static THROUGHPUT_TRACKER: Lazy<ThroughputTracker> = Lazy::new(ThroughputTra
 ///
 /// * `long_term_stats_tx` - an optional MPSC sender to notify the
 ///   collection thread that there is fresh data.
-pub async fn spawn_throughput_monitor(
+pub fn spawn_throughput_monitor(
     long_term_stats_tx: Sender<StatsUpdateMessage>,
     netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
 ) {
     info!("Starting the bandwidth monitor thread.");
-    let interval_ms = 1000; // 1 second
-    info!("Bandwidth check period set to {interval_ms} ms.");
-    tokio::spawn(throughput_task(
-        interval_ms,
+    std::thread::spawn(|| {throughput_task(
         long_term_stats_tx,
         netflow_sender,
-    ));
+    )});
 }
 
-async fn throughput_task(
-    interval_ms: u64,
+fn throughput_task(
     long_term_stats_tx: Sender<StatsUpdateMessage>,
     netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
 ) {
@@ -74,15 +71,19 @@ async fn throughput_task(
         false
     };
 
-    let mut ticker = tokio::time::interval(Duration::from_millis(interval_ms));
-    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut last_submitted_to_lts: Option<Instant> = None;
+    let mut tfd = TimerFd::new().unwrap();
+    assert_eq!(tfd.get_state(), TimerState::Disarmed);
+    tfd.set_state(TimerState::Periodic{
+        current: Duration::new(1, 0),
+        interval: Duration::new(1, 0)}
+                  , SetTimeFlags::Default
+    );
     loop {
         let start = Instant::now();
 
-        // Perform the stats collection in a blocking thread, ensuring that
-        // the tokio runtime is not blocked.
-        let my_netflow_sender = netflow_sender.clone();
-        if let Err(e) = tokio::task::spawn_blocking(move || {
+        // Formerly a "spawn blocking" blob
+        {
             let mut net_json_calc = {
                 let read = NETWORK_JSON.read().unwrap();
                 read.begin_update_cycle()
@@ -93,7 +94,7 @@ async fn throughput_task(
             THROUGHPUT_TRACKER.apply_flow_data(
                 timeout_seconds,
                 netflow_enabled,
-                my_netflow_sender.clone(),
+                netflow_sender.clone(),
                 &mut net_json_calc,
             );
             THROUGHPUT_TRACKER.apply_queue_stats(&mut net_json_calc);
@@ -105,18 +106,30 @@ async fn throughput_task(
             }
             let duration_ms = start.elapsed().as_micros();
             TIME_TO_POLL_HOSTS.store(duration_ms as u64, std::sync::atomic::Ordering::Relaxed);
-        })
-        .await
-        {
-            log::error!("Error polling network. {e:?}");
         }
-        tokio::spawn(submit_throughput_stats(long_term_stats_tx.clone()));
 
-        ticker.tick().await;
+        if last_submitted_to_lts.is_none() {
+            submit_throughput_stats(long_term_stats_tx.clone(), 1.0);
+        } else {
+            let elapsed = last_submitted_to_lts.unwrap().elapsed();
+            let elapsed_f64 = elapsed.as_secs_f64();
+            submit_throughput_stats(long_term_stats_tx.clone(), elapsed_f64);
+        }
+        last_submitted_to_lts = Some(Instant::now());
+
+        // Sleep until the next second
+        let missed_ticks = tfd.read();
+        if missed_ticks > 1 {
+            warn!("Missed {} ticks", missed_ticks - 1);
+        }
     }
 }
 
-async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>) {
+fn scale_u64_by_f64(value: u64, scale: f64) -> u64 {
+    (value as f64 * scale) as u64
+}
+
+fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>, scale: f64) {
     // If ShapedDevices has changed, notify the stats thread
     if let Ok(changed) = STATS_NEEDS_NEW_SHAPED_DEVICES.compare_exchange(
         true,
@@ -127,8 +140,7 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>)
         if changed {
             let shaped_devices = SHAPED_DEVICES.read().unwrap().devices.clone();
             let _ = long_term_stats_tx
-                .send(StatsUpdateMessage::ShapedDevicesChanged(shaped_devices))
-                .await;
+                .blocking_send(StatsUpdateMessage::ShapedDevicesChanged(shaped_devices));
         }
     }
 
@@ -148,15 +160,15 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>)
         .map(|host| HostSummary {
             ip: host.key().as_ip(),
             circuit_id: host.circuit_id.clone(),
-            bits_per_second: (host.bytes_per_second.down * 8, host.bytes_per_second.up * 8),
+            bits_per_second: (scale_u64_by_f64(host.bytes_per_second.down * 8, scale), scale_u64_by_f64(host.bytes_per_second.up * 8, scale)),
             median_rtt: host.median_latency().unwrap_or(0.0),
         })
         .collect();
 
     let summary = Box::new((
         ThroughputSummary {
-            bits_per_second: (bits_per_second.down, bits_per_second.up),
-            shaped_bits_per_second: (shaped_bits_per_second.down, shaped_bits_per_second.up),
+            bits_per_second: (scale_u64_by_f64(bits_per_second.down, scale), scale_u64_by_f64(bits_per_second.up, scale)),
+            shaped_bits_per_second: (scale_u64_by_f64(shaped_bits_per_second.down, scale), scale_u64_by_f64(shaped_bits_per_second.up, scale)),
             packets_per_second,
             hosts,
         },
@@ -165,8 +177,7 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>)
 
     // Send the stats
     let result = long_term_stats_tx
-        .send(StatsUpdateMessage::ThroughputReady(summary))
-        .await;
+        .blocking_send(StatsUpdateMessage::ThroughputReady(summary));
     if let Err(e) = result {
         warn!("Error sending message to stats collection system. {e:?}");
     }
