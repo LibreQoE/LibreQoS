@@ -5,7 +5,6 @@ use lqos_config::{ConfigShapedDevices, NetworkJsonTransport};
 use lqos_utils::file_watcher::FileWatcher;
 use once_cell::sync::Lazy;
 use std::sync::{RwLock, atomic::AtomicBool};
-use tokio::task::spawn_blocking;
 mod netjson;
 pub use netjson::*;
 
@@ -27,11 +26,11 @@ fn load_shaped_devices() {
     }
 }
 
-pub async fn shaped_devices_watcher() {
-    spawn_blocking(|| {
-        info!("Watching for ShapedDevices.csv changes");
-        let _ = watch_for_shaped_devices_changing();
-    });
+pub fn shaped_devices_watcher() {
+    info!("Watching for ShapedDevices.csv changes");
+    if let Err(e) = watch_for_shaped_devices_changing() {
+        error!("Error watching for ShapedDevices.csv: {:?}", e);
+    }
 }
 
 /// Fires up a Linux file system watcher than notifies
