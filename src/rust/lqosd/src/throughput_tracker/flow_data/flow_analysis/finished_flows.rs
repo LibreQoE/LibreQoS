@@ -23,8 +23,8 @@ struct TimeEntry {
 
 #[derive(Debug, Serialize)]
 pub struct FlowDurationSummary {
-    count: usize,
-    duration: u64,
+    pub count: usize,
+    pub duration: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -52,11 +52,6 @@ impl TimeBuffer {
         Self {
             buffer: Mutex::new(Vec::new()),
         }
-    }
-
-    pub fn len(&self) -> usize {
-        let buffer = self.buffer.lock().unwrap();
-        buffer.len()
     }
 
     fn expire_over_five_minutes(&self) {

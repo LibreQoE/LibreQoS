@@ -777,3 +777,13 @@ pub fn ip_protocol_summary() -> BusResponse {
         flow_data::RECENT_FLOWS.ip_protocol_summary()
     )
 }
+
+/// Flow duration summary
+pub fn flow_duration() -> BusResponse {
+    BusResponse::FlowDuration(
+        flow_data::RECENT_FLOWS.flow_duration_summary()
+            .into_iter()
+            .map(|v| (v.count, v.duration))
+            .collect()
+    )
+}

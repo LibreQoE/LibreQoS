@@ -190,6 +190,9 @@ pub enum BusRequest {
   /// Lat/Lon of Endpoints
   CurrentEndpointLatLon,
 
+  /// Duration of flows
+  FlowDuration,
+
   /// Ether Protocol Summary
   EtherProtocolSummary,
 

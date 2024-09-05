@@ -176,15 +176,17 @@ fn main() -> Result<()> {
     .enable_all()
     .build().unwrap()
     .block_on(async {
+      let (bus_tx, bus_rx) = tokio::sync::mpsc::channel::<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>(100);
+
       // Webserver starting point
       tokio::spawn(async {
-        if let Err(e) = node_manager::spawn_webserver().await {
+        if let Err(e) = node_manager::spawn_webserver(bus_tx).await {
           error!("Node Manager Failed: {e:?}");
         }
       });
 
       // Main bus listen loop
-      server.listen(handle_bus_requests).await.unwrap();
+      server.listen(handle_bus_requests, bus_rx).await.unwrap();
     });
   });
   let _ = handle.join();
@@ -227,7 +229,7 @@ fn handle_bus_requests(
       BusRequest::ClearIpFlow => clear_ip_flows(),
       BusRequest::ListIpFlow => list_mapped_ips(),
       BusRequest::XdpPping => throughput_tracker::xdp_pping_compat(),
-      BusRequest::RttHistogram => throughput_tracker::rtt_histogram::<20>(),
+      BusRequest::RttHistogram => throughput_tracker::rtt_histogram::<50>(),
       BusRequest::HostCounts => throughput_tracker::host_counts(),
       BusRequest::AllUnknownIps => throughput_tracker::all_unknown_ips(),
       BusRequest::ReloadLibreQoS => program_control::reload_libre_qos(),
@@ -311,6 +313,7 @@ fn handle_bus_requests(
       BusRequest::CurrentEndpointLatLon => throughput_tracker::current_lat_lon(),
       BusRequest::EtherProtocolSummary => throughput_tracker::ether_protocol_summary(),
       BusRequest::IpProtocolSummary => throughput_tracker::ip_protocol_summary(),
+      BusRequest::FlowDuration => throughput_tracker::flow_duration(),
     });
   }
 }

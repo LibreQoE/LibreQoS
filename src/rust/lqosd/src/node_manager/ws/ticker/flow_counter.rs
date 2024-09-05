@@ -1,28 +1,32 @@
 use std::sync::Arc;
 use serde_json::json;
+use tokio::sync::mpsc::Sender;
+use lqos_bus::{BusReply, BusRequest, BusResponse};
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
-use crate::throughput_tracker::flow_data::{ALL_FLOWS, RECENT_FLOWS};
 
-pub async fn flow_count(channels: Arc<PubSub>) {
+pub async fn flow_count(
+    channels: Arc<PubSub>,
+    bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>
+) {
     if !channels.is_channel_alive(PublishedChannels::FlowCount).await {
         return;
     }
 
-    let active_flows = {
-        if let Ok(lock) = ALL_FLOWS.lock() {
-            lock.len() as u64
-        } else {
-            0
-        }
-    };
-    let expired_flows = RECENT_FLOWS.len();
-    let active_flows = json!(
+    let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
+    let request = BusRequest::CountActiveFlows;
+    bus_tx.send((tx, request)).await.expect("Failed to send request to bus");
+    let replies = rx.await.expect("Failed to receive throughput from bus");
+    for reply in replies.responses.into_iter() {
+        if let BusResponse::CountActiveFlows(active) = reply {
+            let active_flows = json!(
             {
                 "event": PublishedChannels::FlowCount.to_string(),
-                "active": active_flows,
-                "recent": expired_flows,
+                "active": active,
+                "recent": 0,
             }
         ).to_string();
-    channels.send(PublishedChannels::FlowCount, active_flows).await;
+            channels.send(PublishedChannels::FlowCount, active_flows).await;
+        }
+    }
 }

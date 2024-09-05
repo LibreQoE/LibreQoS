@@ -138,6 +138,9 @@ pub enum BusResponse {
   /// Current Lat/Lon of endpoints
   CurrentLatLon(Vec<(f64, f64, String, u64, f32)>),
 
+  /// Duration of flows
+  FlowDuration(Vec<(usize, u64)>),
+
   /// Summary of Ether Protocol
   EtherProtocols{
     /// Number of IPv4 Bytes

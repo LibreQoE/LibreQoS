@@ -19,6 +19,7 @@ use axum::{Extension, extract::{WebSocketUpgrade, ws::{Message, WebSocket}}, res
 use serde::Deserialize;
 use tokio::sync::mpsc::Sender;
 use tracing::{debug, info};
+use lqos_bus::BusRequest;
 use crate::node_manager::auth::auth_layer;
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
@@ -34,15 +35,18 @@ mod single_user_channels;
 /// * /private_ws: A private websocket route that allows for subscribing to a single channel
 ///
 /// Returns a router that can be mounted in the main application.
-pub fn websocket_router() -> Router {
+pub fn websocket_router(
+    bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>
+) -> Router {
     let channels = PubSub::new();
-    tokio::spawn(channel_ticker(channels.clone()));
+    tokio::spawn(channel_ticker(channels.clone(), bus_tx.clone()));
     tokio::spawn(ticker::system_info::cache::update_cache());
     Router::new()
         .route("/private_ws", get(single_user_channels::private_channel_ws_handler))
         .route("/ws", get(ws_handler))
         .route_layer(axum::middleware::from_fn(auth_layer))
         .layer(Extension(channels))
+        .layer(Extension(bus_tx.clone()))
 }
 
 async fn ws_handler(

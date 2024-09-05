@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use serde::Serialize;
 use serde_json::json;
-use tokio::task::spawn_blocking;
-
+use tokio::sync::mpsc::Sender;
+use lqos_bus::{BusReply, BusRequest};
 use lqos_config::NetworkJsonTransport;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::time_since_boot;
@@ -15,12 +15,16 @@ use crate::node_manager::ws::published_channels::PublishedChannels;
 use crate::shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES};
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
 
-pub async fn network_tree(channels: Arc<PubSub>) {
+pub async fn network_tree(
+    channels: Arc<PubSub>,
+    _bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>
+) {
+    // TODO: This function should be refactored to use the bus.
     if !channels.is_channel_alive(PublishedChannels::NetworkTree).await {
         return;
     }
 
-    if let Ok(data) = spawn_blocking(|| {
+    let data = {
         if let Ok(net_json) = NETWORK_JSON.read() {
             net_json
                 .get_nodes_when_ready()
@@ -31,15 +35,15 @@ pub async fn network_tree(channels: Arc<PubSub>) {
         } else {
             Vec::new()
         }
-    }).await {
-        let message = json!(
-        {
-            "event": PublishedChannels::NetworkTree.to_string(),
-            "data": data,
-        }
-    ).to_string();
-        channels.send(PublishedChannels::NetworkTree, message).await;
+    };
+
+    let message = json!(
+    {
+        "event": PublishedChannels::NetworkTree.to_string(),
+        "data": data,
     }
+    ).to_string();
+    channels.send(PublishedChannels::NetworkTree, message).await;
 }
 
 #[derive(Serialize)]
