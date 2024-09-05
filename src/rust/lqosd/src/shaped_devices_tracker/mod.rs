@@ -1,5 +1,5 @@
 use anyhow::Result;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use lqos_bus::BusResponse;
 use lqos_config::{ConfigShapedDevices, NetworkJsonTransport};
 use lqos_utils::file_watcher::FileWatcher;
@@ -13,10 +13,10 @@ pub static SHAPED_DEVICES: Lazy<RwLock<ConfigShapedDevices>> =
 pub static STATS_NEEDS_NEW_SHAPED_DEVICES: AtomicBool = AtomicBool::new(false);
 
 fn load_shaped_devices() {
-    info!("ShapedDevices.csv has changed. Attempting to load it.");
+    debug!("ShapedDevices.csv has changed. Attempting to load it.");
     let shaped_devices = ConfigShapedDevices::load();
     if let Ok(new_file) = shaped_devices {
-        info!("ShapedDevices.csv loaded");
+        debug!("ShapedDevices.csv loaded");
         *SHAPED_DEVICES.write().unwrap() = new_file;
         crate::throughput_tracker::THROUGHPUT_TRACKER.refresh_circuit_ids();
         STATS_NEEDS_NEW_SHAPED_DEVICES.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -28,7 +28,7 @@ fn load_shaped_devices() {
 
 pub fn shaped_devices_watcher() {
     std::thread::spawn(|| {
-        info!("Watching for ShapedDevices.csv changes");
+        debug!("Watching for ShapedDevices.csv changes");
         if let Err(e) = watch_for_shaped_devices_changing() {
             error!("Error watching for ShapedDevices.csv: {:?}", e);
         }

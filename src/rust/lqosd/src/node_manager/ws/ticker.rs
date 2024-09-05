@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tokio::{join, spawn};
 use tokio::sync::mpsc::Sender;
-use tracing::info;
+use tracing::{debug, info};
 use lqos_bus::BusRequest;
 use crate::node_manager::ws::publish_subscribe::PubSub;
 mod cadence;
@@ -24,7 +24,7 @@ pub use network_tree::{Circuit, all_circuits};
 
 /// Runs a periodic tick to feed data to the node manager.
 pub(super) async fn channel_ticker(channels: Arc<PubSub>, bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>) {
-    info!("Starting channel tickers");
+    debug!("Starting channel tickers");
     join!(
         one_second_cadence(channels.clone(), bus_tx.clone()),
         two_second_cadence(channels.clone(), bus_tx.clone()),

@@ -188,7 +188,7 @@ fn all_queue_reader() {
 pub fn spawn_queue_monitor() {
   std::thread::spawn(|| {
     // Setup the queue monitor loop
-    info!("Starting Queue Monitor Thread.");
+    debug!("Starting Queue Monitor Thread.");
     let interval_ms = if let Ok(config) = lqos_config::load_config() {
       config.queue_check_period_ms
     } else {
@@ -196,7 +196,7 @@ pub fn spawn_queue_monitor() {
     };
     QUEUE_MONITOR_INTERVAL
       .store(interval_ms, std::sync::atomic::Ordering::Relaxed);
-    info!("Queue check period set to {interval_ms} ms.");
+    debug!("Queue check period set to {interval_ms} ms.");
 
     // Setup the Linux timer fd system
     periodic(interval_ms, "Queue Reader", &mut || {

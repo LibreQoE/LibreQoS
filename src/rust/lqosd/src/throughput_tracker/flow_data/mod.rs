@@ -13,7 +13,7 @@ use std::sync::{
     mpsc::{channel, Sender},
     Arc,
 };
-use tracing::{error, info};
+use tracing::{debug, error, info};
 pub(crate) use flow_analysis::{setup_flow_analysis, get_asn_name_and_country,
                                FlowAnalysis, RECENT_FLOWS, flowbee_handle_events, get_flowbee_event_count_and_reset,
                                expire_rtt_flows, flowbee_rtt_map, RttData, get_rtt_events_per_second, AsnListEntry,
@@ -30,7 +30,7 @@ pub fn setup_netflow_tracker() -> Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAna
     let config = lqos_config::load_config().unwrap();
 
     std::thread::spawn(move || {
-        info!("Starting the network flow tracker back-end");
+        debug!("Starting the network flow tracker back-end");
 
         // Build the endpoints list
         let mut endpoints: Vec<Arc<dyn FlowbeeRecipient>> = Vec::new();
@@ -59,7 +59,7 @@ pub fn setup_netflow_tracker() -> Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAna
                 }
             }
         }
-        info!("Flow Endpoints: {}", endpoints.len());
+        debug!("Flow Endpoints: {}", endpoints.len());
 
         // Send to all endpoints upon receipt
         while let Ok((key, (value, analysis))) = rx.recv() {
