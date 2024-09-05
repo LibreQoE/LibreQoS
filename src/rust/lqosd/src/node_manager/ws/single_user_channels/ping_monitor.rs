@@ -4,6 +4,7 @@ use surge_ping::{Client, Config, ICMP, IcmpPacket, PingIdentifier, PingSequence}
 use tokio::time::MissedTickBehavior;
 use rand::random;
 use serde::Serialize;
+use tracing::{debug, info};
 
 #[derive(Serialize)]
 enum PingState {
@@ -27,7 +28,7 @@ pub(super) async fn ping_monitor(ip_addresses: Vec<(String, String)>, tx: tokio:
         let client_v4 = Client::new(&Config::default());
         let client_v6 = Client::new(&Config::builder().kind(ICMP::V6).build());
         if client_v4.is_err() || client_v6.is_err() {
-            log::info!("Failed to create ping clients");
+            info!("Failed to create ping clients");
             break;
         }
         let client_v4 = client_v4.unwrap();
@@ -59,7 +60,7 @@ pub(super) async fn ping_monitor(ip_addresses: Vec<(String, String)>, tx: tokio:
         };
         if let Ok(message) = serde_json::to_string(&channel_test) {
             if let Err(_) = tx.send(message.to_string()).await {
-                log::debug!("Channel is gone");
+                debug!("Channel is gone");
                 break;
             }
         }
@@ -73,7 +74,7 @@ async fn send_timeout(tx: tokio::sync::mpsc::Sender<String>, ip: String) {
     };
     if let Ok(message) = serde_json::to_string(&result) {
         if let Err(_) = tx.send(message.to_string()).await {
-            log::info!("Channel is gone");
+            info!("Channel is gone");
         }
     }
 }
@@ -88,7 +89,7 @@ async fn send_alive(tx: tokio::sync::mpsc::Sender<String>, ip: String, ping_time
     };
     if let Ok(message) = serde_json::to_string(&result) {
         if let Err(_) = tx.send(message.to_string()).await {
-            log::info!("Channel is gone");
+            info!("Channel is gone");
         }
     }
 }

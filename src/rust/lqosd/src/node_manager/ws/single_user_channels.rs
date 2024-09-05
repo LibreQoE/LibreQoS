@@ -8,6 +8,7 @@ use axum::extract::ws::{Message, WebSocket};
 use axum::response::IntoResponse;
 use serde::{Deserialize, Serialize};
 use tokio::spawn;
+use tracing::{debug, info};
 use crate::node_manager::ws::single_user_channels::cake_watcher::cake_watcher;
 use crate::node_manager::ws::single_user_channels::circuit::circuit_watcher;
 use crate::node_manager::ws::single_user_channels::flows_by_circuit::flows_by_circuit;
@@ -24,14 +25,14 @@ enum PrivateChannel {
 pub(super) async fn private_channel_ws_handler(
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    log::info!("WS Upgrade Called");
+    info!("WS Upgrade Called");
     ws.on_upgrade(move |socket| async {
         handle_socket(socket).await;
     })
 }
 
 async fn handle_socket(mut socket: WebSocket) {
-    log::info!("Websocket connected");
+    info!("Websocket connected");
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(10);
     loop {
@@ -40,7 +41,7 @@ async fn handle_socket(mut socket: WebSocket) {
                 // Handle incoming message - select a private message source
                 match inbound {
                     Some(Ok(msg)) => {
-                        log::info!("Received private message: {:?}", msg);
+                        info!("Received private message: {:?}", msg);
                         if let Ok(text) = msg.to_text() {
                             if let Ok(sub) = serde_json::from_str::<PrivateChannel>(text) {
                                 match sub {
@@ -58,7 +59,7 @@ async fn handle_socket(mut socket: WebSocket) {
                                     },
                                 }
                             } else {
-                                log::debug!("Failed to parse private message: {:?}", text);
+                                debug!("Failed to parse private message: {:?}", text);
                             }
                         }
                     }

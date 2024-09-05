@@ -9,7 +9,7 @@ lqos_utils = { path = "../lqos_utils" }
 lqos_bus = { path = "../lqos_bus" }
 lqos_sys = { path = "../lqos_sys" }
 lqos_config = { path = "../lqos_config" }
-log = { workspace = true }
+tracing = { workspace = true }
 zerocopy = { workspace = true }
 once_cell = { workspace = true}
 dashmap = { workspace = true }

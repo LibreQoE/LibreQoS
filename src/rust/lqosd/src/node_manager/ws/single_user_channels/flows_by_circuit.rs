@@ -2,6 +2,7 @@ use std::net::IpAddr;
 use std::time::Duration;
 use serde::Serialize;
 use tokio::time::MissedTickBehavior;
+use tracing::debug;
 use lqos_utils::unix_time::time_since_boot;
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use crate::throughput_tracker::flow_data::{ALL_FLOWS, FlowAnalysis, FlowbeeLocalData, get_asn_name_and_country};
@@ -132,7 +133,7 @@ pub(super) async fn flows_by_circuit(circuit: String, tx: tokio::sync::mpsc::Sen
             };
             if let Ok(message) = serde_json::to_string(&result) {
                 if let Err(_) = tx.send(message).await {
-                    log::debug!("Channel is gone");
+                    debug!("Channel is gone");
                     break;
                 }
             }

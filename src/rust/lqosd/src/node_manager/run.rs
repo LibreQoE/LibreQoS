@@ -1,6 +1,6 @@
 use std::path::Path;
 use axum::Router;
-use log::info;
+use tracing::info;
 use tokio::net::TcpListener;
 use anyhow::{bail, Result};
 use axum::response::Redirect;

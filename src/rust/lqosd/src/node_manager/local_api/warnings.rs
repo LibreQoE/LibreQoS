@@ -1,5 +1,5 @@
 use axum::Json;
-use log::{error, info};
+use tracing::{error, info};
 use crate::node_manager::WarningLevel;
 
 pub async fn get_global_warnings() -> Json<Vec<(WarningLevel, String)>> {

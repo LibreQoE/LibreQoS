@@ -2,6 +2,7 @@ use lqos_config::ShapedDevice;
 use once_cell::sync::Lazy;
 use thiserror::Error;
 use tokio::{sync::{Mutex, mpsc::Sender}, net::TcpStream, io::AsyncWriteExt};
+use tracing::{error, info};
 use crate::transport_data::{StatsSubmission, LtsCommand};
 use super::{licensing::{LicenseState, get_license_status}, comm_channel::{SenderChannelMessage, encode_submission}};
 
@@ -9,16 +10,16 @@ pub(crate) async fn enqueue_if_allowed(data: StatsSubmission, comm_tx: Sender<Se
     let license = get_license_status().await;
     match license {
         LicenseState::Unknown => {
-            log::info!("Temporary error finding license status. Will retry.");
+            info!("Temporary error finding license status. Will retry.");
         }
         LicenseState::Denied => {
-            log::error!("Your license is invalid. Please contact support.");
+            error!("Your license is invalid. Please contact support.");
         }
         LicenseState::Valid{ .. } => {
-            log::info!("Sending data to the queue.");
+            info!("Sending data to the queue.");
             QUEUE.push(LtsCommand::Submit(Box::new(data))).await;
             if let Err(e) = comm_tx.send(SenderChannelMessage::QueueReady).await {
-                log::error!("Unable to send queue ready message: {}", e);
+                error!("Unable to send queue ready message: {}", e);
             }
         }
     }
@@ -28,10 +29,10 @@ pub(crate) async fn enqueue_shaped_devices_if_allowed(devices: Vec<ShapedDevice>
     let license = get_license_status().await;
     match license {
         LicenseState::Unknown => {
-            log::info!("Temporary error finding license status. Will retry.");
+            info!("Temporary error finding license status. Will retry.");
         }
         LicenseState::Denied => {
-            log::error!("Your license is invalid. Please contact support.");
+            error!("Your license is invalid. Please contact support.");
         }
         LicenseState::Valid{ .. } => {
             QUEUE.push(LtsCommand::Devices(devices)).await;
@@ -76,17 +77,17 @@ pub(crate) async fn send_queue(stream: &mut TcpStream) -> Result<(), QueueError>
     for message in lock.iter_mut() {
         let submission_buffer = encode_submission(&message.body).await?;
         let ret = stream.write_all(&submission_buffer).await;
-        log::info!("Sent submission: {} bytes.", submission_buffer.len());
+        info!("Sent submission: {} bytes.", submission_buffer.len());
         if ret.is_err() {
-            log::error!("Unable to write to TCP stream.");
-            log::error!("{:?}", ret);
+            error!("Unable to write to TCP stream.");
+            error!("{:?}", ret);
             message.sent = false;
             match crate::submission_queue::comm_channel::key_exchange().await {
                 true => {
-                    log::info!("Successfully exchanged license keys.");
+                    info!("Successfully exchanged license keys.");
                 }
                 false => {
-                    log::error!("Unable to talk to the licensing system to fix keys.");
+                    error!("Unable to talk to the licensing system to fix keys.");
                 }
             }
             return Err(QueueError::SendFail);

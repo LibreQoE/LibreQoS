@@ -2,7 +2,7 @@ use crate::{
   decode_request, encode_response, BusReply, BusRequest, BusResponse,
   BUS_SOCKET_PATH,
 };
-use log::{error, warn};
+use tracing::{error, warn};
 use std::{ffi::CString, fs::remove_file};
 use thiserror::Error;
 use tokio::{

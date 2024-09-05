@@ -1,7 +1,7 @@
 mod tc_handle;
 mod queue_network;
 mod queue_node;
-use log::error;
+use tracing::error;
 use queue_network::QueueNetwork;
 use thiserror::Error;
 pub(crate) use queue_node::QueueNode;

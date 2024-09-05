@@ -1,5 +1,5 @@
 use crate::{deserialize_tc_tree, queue_types::QueueType};
-use log::{error, info};
+use tracing::{error, info};
 use lqos_bus::TcHandle;
 use std::process::Command;
 use thiserror::Error;

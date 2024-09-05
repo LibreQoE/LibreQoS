@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::{error, info, warn};
+use tracing::{error, info, warn};
 use lqos_bus::BusResponse;
 use lqos_config::{ConfigShapedDevices, NetworkJsonTransport};
 use lqos_utils::file_watcher::FileWatcher;

@@ -18,7 +18,7 @@ use std::sync::Arc;
 use axum::{Extension, extract::{WebSocketUpgrade, ws::{Message, WebSocket}}, response::IntoResponse, Router, routing::get};
 use serde::Deserialize;
 use tokio::sync::mpsc::Sender;
-
+use tracing::{debug, info};
 use crate::node_manager::auth::auth_layer;
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
@@ -49,7 +49,7 @@ async fn ws_handler(
     ws: WebSocketUpgrade,
     Extension(channels): Extension<Arc<PubSub>>,
 ) -> impl IntoResponse {
-    log::info!("WS Upgrade Called");
+    info!("WS Upgrade Called");
     let channels = channels.clone();
     ws.on_upgrade(move |socket| async {
         handle_socket(socket, channels).await;
@@ -62,7 +62,7 @@ struct Subscribe {
 }
 
 async fn handle_socket(mut socket: WebSocket, channels: Arc<PubSub>) {
-    log::info!("Websocket connected");
+    info!("Websocket connected");
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(10);
     let mut subscribed_channels = HashSet::new();
@@ -88,18 +88,18 @@ async fn handle_socket(mut socket: WebSocket, channels: Arc<PubSub>) {
                         }
                     }
                     None => {
-                        log::info!("WebSocket Disconnected");
+                        info!("WebSocket Disconnected");
                         break;
                     }
                 }
             }
         }
     }
-    log::info!("Websocket disconnected");
+    info!("Websocket disconnected");
 }
 
 async fn receive_channel_message(msg: Message, channels: Arc<PubSub>, tx: Sender<String>, subscribed_channels: &mut HashSet<PublishedChannels>) {
-    log::debug!("Received message: {:?}", msg);
+    debug!("Received message: {:?}", msg);
     if let Ok(text) = msg.to_text() {
         if let Ok(sub) = serde_json::from_str::<Subscribe>(text) {
             if let Ok(channel) = PublishedChannels::from_str(&sub.channel) {

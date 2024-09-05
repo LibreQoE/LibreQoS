@@ -3,7 +3,7 @@ use std::sync::RwLock;
 use crate::queue_structure::{
   queue_network::QueueNetwork, queue_node::QueueNode, read_queueing_structure,
 };
-use log::{error, info};
+use tracing::{error, info};
 use lqos_utils::file_watcher::FileWatcher;
 use once_cell::sync::Lazy;
 use thiserror::Error;

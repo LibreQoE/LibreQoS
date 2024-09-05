@@ -1,4 +1,4 @@
-use log::{error, info};
+use tracing::{error, info};
 use notify::{Config, RecursiveMode, Watcher};
 use std::{
   path::PathBuf,

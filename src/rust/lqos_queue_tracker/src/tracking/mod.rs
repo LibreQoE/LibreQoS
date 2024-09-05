@@ -3,7 +3,7 @@ use crate::{
   circuit_to_queue::CIRCUIT_TO_QUEUE, interval::QUEUE_MONITOR_INTERVAL,
   queue_store::QueueStore, tracking::reader::read_named_queue_from_interface,
 };
-use log::info;
+use tracing::{debug, info, warn};
 use lqos_utils::fdtimer::periodic;
 mod reader;
 mod watched_queues;
@@ -173,13 +173,13 @@ fn all_queue_reader() {
       //println!("{}", download.len() + upload.len());
       ALL_QUEUE_SUMMARY.ingest_batch(download, upload);
     } else {
-      log::warn!("(TC monitor) Unable to read configuration");
+      warn!("(TC monitor) Unable to read configuration");
     }
   } else {
-    log::warn!("(TC monitor) Not reading queues due to structure not yet ready");
+    warn!("(TC monitor) Not reading queues due to structure not yet ready");
   }
   let elapsed = start.elapsed();
-  log::debug!("(TC monitor) Completed in {:.5} seconds", elapsed.as_secs_f32());
+  debug!("(TC monitor) Completed in {:.5} seconds", elapsed.as_secs_f32());
 }
 
 /// Spawns a thread that periodically reads the queue statistics from

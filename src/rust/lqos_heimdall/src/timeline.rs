@@ -16,6 +16,7 @@ use std::{
   sync::atomic::{AtomicBool, AtomicUsize},
   time::Duration,
 };
+use tracing::warn;
 use zerocopy::AsBytes;
 
 impl HeimdallEvent {
@@ -142,7 +143,7 @@ pub fn hyperfocus_on_target(ip: XdpIpAddress) -> Option<(usize, usize)> {
     });
     Some((new_id, capture_time))
   } else {
-    log::warn!(
+    warn!(
       "Heimdall was busy and won't start another collection session."
     );
     None

@@ -9,13 +9,17 @@ mod anonymous_usage;
 mod tuning;
 mod validation;
 mod long_term_stats;
+mod stats;
+mod preflight_checks;
+mod node_manager;
+
 use std::net::IpAddr;
 use crate::{
   file_lock::FileLock,
   ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow}, throughput_tracker::flow_data::{flowbee_handle_events, setup_netflow_tracker},
 };
 use anyhow::Result;
-use log::{info, warn};
+use tracing::{info, warn, error};
 use lqos_bus::{BusRequest, BusResponse, UnixSocketServer, StatsRequest};
 use lqos_heimdall::{n_second_packet_dump, perf_interface::heimdall_handle_events, start_heimdall};
 use lqos_queue_tracker::{
@@ -30,33 +34,67 @@ use signal_hook::{
 };
 use stats::{BUS_REQUESTS, TIME_TO_POLL_HOSTS, HIGH_WATERMARK, FLOWS_TRACKED};
 use throughput_tracker::flow_data::get_rtt_events_per_second;
-mod stats;
-mod preflight_checks;
-mod node_manager;
+use crate::ip_mapping::clear_hot_cache;
 
 // Use JemAllocator only on supported platforms
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use jemallocator::Jemalloc;
-use crate::ip_mapping::clear_hot_cache;
+use tracing::level_filters::LevelFilter;
 
+// Use JemAllocator only on supported platforms
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
+/// Configure a highly detailed logging system.
+pub fn set_console_logging() -> anyhow::Result<()> {
+  // install global collector configured based on RUST_LOG env var.
+  let level = if let Ok(level) = std::env::var("RUST_LOG") {
+    match level.to_lowercase().as_str() {
+      "trace" => LevelFilter::TRACE,
+      "debug" => LevelFilter::DEBUG,
+      "info" => LevelFilter::INFO,
+      "warn" => LevelFilter::WARN,
+      "error" => LevelFilter::ERROR,
+      _ => LevelFilter::WARN,
+    }
+  } else {
+    LevelFilter::WARN
+  };
+
+  let subscriber = tracing_subscriber::fmt()
+      .with_max_level(level)
+      // Use a more compact, abbreviated log format
+      .compact()
+      // Display source code file paths
+      .with_file(true)
+      // Display source code line numbers
+      .with_line_number(true)
+      // Display the thread ID an event was recorded on
+      .with_thread_ids(false)
+      // Don't display the event's target (module path)
+      .with_target(false)
+      // Build the subscriber
+      .finish();
+
+  // Set the subscriber as the default
+  tracing::subscriber::set_global_default(subscriber)?;
+  Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
-  // Configure log level with RUST_LOG environment variable,
-  // defaulting to "warn"
-  env_logger::init_from_env(
-    env_logger::Env::default()
-      .filter_or(env_logger::DEFAULT_FILTER_ENV, "warn"),
-  );
-  let file_lock = FileLock::new();
-  if let Err(e) = file_lock {
-    log::error!("File lock error: {:?}", e);
-    std::process::exit(0);
-  }
+  // Set up logging
+  set_console_logging()?;
 
+  // Check that the file lock is available. Bail out if it isn't.
+  let file_lock = FileLock::new()
+      .inspect_err(|e| {
+        error!("Unable to acquire file lock: {:?}", e);
+        std::process::exit(0);
+      })?;
+
+  // Announce startup
   info!("LibreQoS Daemon Starting");
   
   // Run preflight checks
@@ -137,7 +175,7 @@ async fn main() -> Result<()> {
   // Webserver starting point
   tokio::spawn(async {
     if let Err(e) = node_manager::spawn_webserver().await {
-      log::error!("Node Manager Failed: {e:?}");
+      error!("Node Manager Failed: {e:?}");
     }
   });
 
@@ -196,7 +234,7 @@ fn handle_bus_requests(
       BusRequest::UpdateLqosdConfig(config) => {
         let result = lqos_config::update_config(config);
         if result.is_err() {
-          log::error!("Error updating config: {:?}", result);
+          error!("Error updating config: {:?}", result);
         }
         BusResponse::Ack
       },

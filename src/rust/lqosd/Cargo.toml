@@ -23,8 +23,8 @@ lqos_bus = { path = "../lqos_bus" }
 signal-hook = "0.3"
 serde_json = { workspace = true }
 serde = { workspace = true }
-env_logger = "0"
-log = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 nix = {  workspace = true }
 sysinfo = {  workspace = true }
 dashmap = { workspace = true }

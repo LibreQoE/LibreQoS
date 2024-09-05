@@ -3,6 +3,7 @@ use crate::{shaped_devices_tracker::SHAPED_DEVICES, stats::HIGH_WATERMARK, throu
 use super::{flow_data::{get_flowbee_event_count_and_reset, FlowAnalysis, FlowbeeLocalData, RttData, ALL_FLOWS}, throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
 use dashmap::DashMap;
 use fxhash::FxHashMap;
+use tracing::{info, warn};
 use lqos_bus::TcHandle;
 use lqos_config::NetworkJsonCounting;
 use lqos_queue_tracker::ALL_QUEUE_SUMMARY;
@@ -354,7 +355,7 @@ impl ThroughputTracker {
 
         let ret = lqos_sys::end_flows(&mut expired_keys);
         if let Err(e) = ret {
-          log::warn!("Failed to end flows: {:?}", e);
+          warn!("Failed to end flows: {:?}", e);
         }
       }
 
@@ -428,7 +429,7 @@ impl ThroughputTracker {
   pub(crate) fn dump(&self) {
     for v in self.raw_data.iter() {
       let ip = v.key().as_ip();
-      log::info!("{:<34}{:?}", ip, v.tc_handle);
+      info!("{:<34}{:?}", ip, v.tc_handle);
     }
   }
 }

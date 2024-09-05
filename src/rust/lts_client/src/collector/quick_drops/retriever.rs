@@ -1,6 +1,7 @@
 //! Async reader/parser for tc -s -j qdisc show dev (whatever)
 use thiserror::Error;
 use tokio::process::Command;
+use tracing::error;
 pub use crate::collector::CakeStats;
 use super::queue_structure::{read_queueing_structure, QueueNode};
 
@@ -39,7 +40,7 @@ impl AsyncQueueReader {
                 let stats = self.quick_parse(&raw, &queue_map).await?;
                 result = Some(stats);
             } else {
-                log::error!("Unable to fetch raw tc output");
+                error!("Unable to fetch raw tc output");
             }
         }
 
@@ -55,7 +56,7 @@ impl AsyncQueueReader {
                 let stats = self.quick_parse_stick(&raw, &queue_map).await?;
                 result = (Some(stats.0), Some(stats.1));
             } else {
-                log::error!("Unable to fetch raw tc output");
+                error!("Unable to fetch raw tc output");
             }
         }
 

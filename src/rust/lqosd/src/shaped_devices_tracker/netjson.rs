@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::{error, info, warn};
+use tracing::{error, info, warn};
 use lqos_config::NetworkJson;
 use lqos_utils::file_watcher::FileWatcher;
 use once_cell::sync::Lazy;

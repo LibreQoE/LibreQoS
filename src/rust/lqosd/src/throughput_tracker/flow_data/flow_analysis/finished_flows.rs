@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use itertools::Itertools;
 use serde::Serialize;
+use tracing::debug;
 use lqos_utils::units::DownUpOrder;
 
 pub struct TimeBuffer {
@@ -428,7 +429,7 @@ pub struct FinishedFlowAnalysis {}
 
 impl FinishedFlowAnalysis {
     pub fn new() -> Arc<Self> {
-        log::debug!("Created Flow Analysis Endpoint");
+        debug!("Created Flow Analysis Endpoint");
 
         std::thread::spawn(|| loop {
             RECENT_FLOWS.expire_over_five_minutes();
@@ -441,7 +442,7 @@ impl FinishedFlowAnalysis {
 
 impl FlowbeeRecipient for FinishedFlowAnalysis {
     fn enqueue(&self, key: FlowbeeKey, mut data: FlowbeeLocalData, analysis: FlowAnalysis) {
-        log::debug!("Finished flow analysis");
+        debug!("Finished flow analysis");
         data.trim(); // Remove the trailing 30 seconds of zeroes
         RECENT_FLOWS.push(TimeEntry {
             time: std::time::SystemTime::now()

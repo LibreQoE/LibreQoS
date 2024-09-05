@@ -7,6 +7,7 @@ use super::{
 };
 use thiserror::Error;
 use toml_edit::DocumentMut;
+use tracing::{error, info};
 
 #[derive(Debug, Error)]
 pub enum MigrationError {
@@ -23,7 +24,7 @@ pub enum MigrationError {
 }
 
 pub fn migrate_if_needed() -> Result<(), MigrationError> {
-    log::info!("Checking config file version");
+    info!("Checking config file version");
     let raw =
         std::fs::read_to_string("/etc/lqos.conf").map_err(|e| MigrationError::ReadError(e))?;
 
@@ -31,18 +32,18 @@ pub fn migrate_if_needed() -> Result<(), MigrationError> {
         .parse::<DocumentMut>()
         .map_err(|e| MigrationError::ParseError(e))?;
     if let Some((_key, version)) = doc.get_key_value("version") {
-        log::info!("Configuration file is at version {}", version.as_str().unwrap());
+        info!("Configuration file is at version {}", version.as_str().unwrap());
         if version.as_str().unwrap().trim() == "1.5" {
-            log::info!("Configuration file is already at version 1.5, no migration needed");
+            info!("Configuration file is already at version 1.5, no migration needed");
             return Ok(());
         } else {
-            log::error!("Configuration file is at version {}, but this version of lqos only supports version 1.5", version.as_str().unwrap());
+            error!("Configuration file is at version {}, but this version of lqos only supports version 1.5", version.as_str().unwrap());
             return Err(MigrationError::UnknownVersion(
                 version.as_str().unwrap().to_string(),
             ));
         }
     } else {
-        log::info!("No version found in configuration file, assuming 1.4x and migration is needed");
+        info!("No version found in configuration file, assuming 1.4x and migration is needed");
         let new_config = migrate_14_to_15()?;
         // Backup the old configuration
         std::fs::rename("/etc/lqos.conf", "/etc/lqos.conf.backup14")

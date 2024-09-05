@@ -1,4 +1,4 @@
-use log::error;
+use tracing::error;
 use lqos_utils::hex_string::read_hex_string;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;

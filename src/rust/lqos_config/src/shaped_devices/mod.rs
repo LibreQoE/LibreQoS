@@ -4,7 +4,7 @@ mod shaped_device;
 use std::net::IpAddr;
 use crate::SUPPORTED_CUSTOMERS;
 use csv::{QuoteStyle, ReaderBuilder, WriterBuilder};
-use log::error;
+use tracing::{error, info};
 use serializable::SerializableShapedDevice;
 pub use shaped_device::ShapedDevice;
 use std::path::{Path, PathBuf};
@@ -40,7 +40,7 @@ impl ConfigShapedDevices {
       crate::load_config().map_err(|_| ShapedDevicesError::ConfigLoadError)?;
     let base_path = Path::new(&cfg.lqos_directory);
     let full_path = base_path.join("ShapedDevices.csv");
-    log::info!("ShapedDevices.csv path: {:?}", full_path);
+    info!("ShapedDevices.csv path: {:?}", full_path);
     Ok(full_path)
   }
 
@@ -76,13 +76,13 @@ impl ConfigShapedDevices {
         if let Ok(device) = device {
           devices.push(device);
         } else {
-          log::error!("Error reading Device line: {:?}", &device);
+          error!("Error reading Device line: {:?}", &device);
           return Err(ShapedDevicesError::DeviceDecode(format!(
             "DEVICE DECODE: {device:?}"
           )));
         }
       } else {
-        log::error!("Error reading CSV record: {:?}", result);
+        error!("Error reading CSV record: {:?}", result);
         if let csv::ErrorKind::UnequalLengths { pos, expected_len, len } =
           result.as_ref().err().as_ref().unwrap().kind()
         {
@@ -116,7 +116,7 @@ impl ConfigShapedDevices {
   /// Replace the current shaped devices list with a new one
   pub fn replace_with_new_data(&mut self, devices: Vec<ShapedDevice>) {
     self.devices = devices;
-    log::info!("{:?}", self.devices);
+    info!("{:?}", self.devices);
     self.trie = ConfigShapedDevices::make_trie(&self.devices);
   }
 

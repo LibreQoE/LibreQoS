@@ -1,4 +1,4 @@
-use log::{error, warn};
+use tracing::{error, warn};
 use nix::{
   sys::time::TimeSpec,
   time::{clock_gettime, ClockId},

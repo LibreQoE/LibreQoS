@@ -13,10 +13,11 @@ use std::sync::{
     mpsc::{channel, Sender},
     Arc,
 };
-pub(crate) use flow_analysis::{setup_flow_analysis, get_asn_name_and_country, 
-    FlowAnalysis, RECENT_FLOWS, flowbee_handle_events, get_flowbee_event_count_and_reset,
-    expire_rtt_flows, flowbee_rtt_map, RttData, get_rtt_events_per_second, AsnListEntry,
-    AsnCountryListEntry, AsnProtocolListEntry,
+use tracing::{error, info};
+pub(crate) use flow_analysis::{setup_flow_analysis, get_asn_name_and_country,
+                               FlowAnalysis, RECENT_FLOWS, flowbee_handle_events, get_flowbee_event_count_and_reset,
+                               expire_rtt_flows, flowbee_rtt_map, RttData, get_rtt_events_per_second, AsnListEntry,
+                               AsnCountryListEntry, AsnProtocolListEntry,
 };
 
 trait FlowbeeRecipient {
@@ -29,7 +30,7 @@ pub fn setup_netflow_tracker() -> Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAna
     let config = lqos_config::load_config().unwrap();
 
     std::thread::spawn(move || {
-        log::info!("Starting the network flow tracker back-end");
+        info!("Starting the network flow tracker back-end");
 
         // Build the endpoints list
         let mut endpoints: Vec<Arc<dyn FlowbeeRecipient>> = Vec::new();
@@ -41,24 +42,24 @@ pub fn setup_netflow_tracker() -> Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAna
                 flow_config.netflow_port,
                 flow_config.netflow_version,
             ) {
-                log::info!("Setting up netflow target: {ip}:{port}, version: {version}");
+                info!("Setting up netflow target: {ip}:{port}, version: {version}");
                 let target = format!("{ip}:{port}", ip = ip, port = port);
                 match version {
                     5 => {
                         let endpoint = Netflow5::new(target).unwrap();
                         endpoints.push(endpoint);
-                        log::info!("Netflow 5 endpoint added");
+                        info!("Netflow 5 endpoint added");
                     }
                     9 => {
                         let endpoint = Netflow9::new(target).unwrap();
                         endpoints.push(endpoint);
-                        log::info!("Netflow 9 endpoint added");
+                        info!("Netflow 9 endpoint added");
                     }
-                    _ => log::error!("Unsupported netflow version: {version}"),
+                    _ => error!("Unsupported netflow version: {version}"),
                 }
             }
         }
-        log::info!("Flow Endpoints: {}", endpoints.len());
+        info!("Flow Endpoints: {}", endpoints.len());
 
         // Send to all endpoints upon receipt
         while let Ok((key, (value, analysis))) = rx.recv() {
@@ -67,7 +68,7 @@ pub fn setup_netflow_tracker() -> Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAna
                 f.enqueue(key.clone(), value.clone(), analysis.clone());
             });
         }
-        log::info!("Network flow tracker back-end has stopped")
+        info!("Network flow tracker back-end has stopped")
     });
 
     tx

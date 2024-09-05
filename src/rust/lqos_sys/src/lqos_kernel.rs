@@ -10,7 +10,7 @@ use libbpf_sys::{
   XDP_FLAGS_DRV_MODE, XDP_FLAGS_HW_MODE, XDP_FLAGS_SKB_MODE,
   XDP_FLAGS_UPDATE_IF_NOEXIST,
 };
-use log::{info, warn};
+use tracing::{error, info, warn};
 use nix::libc::{geteuid, if_nametoindex};
 use std::{ffi::{CString, c_void}, process::Command};
 
@@ -175,7 +175,7 @@ pub fn attach_xdp_and_tc_to_interface(
   let heimdall_events_map = unsafe { bpf::bpf_object__find_map_by_name((*skeleton).obj, heimdall_events_name.as_ptr()) };
   let heimdall_events_fd = unsafe { bpf::bpf_map__fd(heimdall_events_map) };
   if heimdall_events_fd < 0 {
-    log::error!("Unable to load Heimdall Events FD");
+    error!("Unable to load Heimdall Events FD");
     return Err(anyhow::Error::msg("Unable to load Heimdall Events FD"));
   }
   let opts: *const bpf::ring_buffer_opts = std::ptr::null();
@@ -186,7 +186,7 @@ pub fn attach_xdp_and_tc_to_interface(
       opts as *mut c_void, opts)
   };
   if unsafe { bpf::libbpf_get_error(heimdall_perf_buffer as *mut c_void) != 0 } {
-    log::error!("Failed to create Heimdall event buffer");
+    error!("Failed to create Heimdall event buffer");
     return Err(anyhow::Error::msg("Failed to create Heimdall event buffer"));
   }
   let handle = PerfBufferHandle(heimdall_perf_buffer);
@@ -197,7 +197,7 @@ pub fn attach_xdp_and_tc_to_interface(
   let flowbee_events_map = unsafe { bpf::bpf_object__find_map_by_name((*skeleton).obj, flowbee_events_name.as_ptr()) };
   let flowbee_events_fd = unsafe { bpf::bpf_map__fd(flowbee_events_map) };
   if flowbee_events_fd < 0 {
-    log::error!("Unable to load Flowbee Events FD");
+    error!("Unable to load Flowbee Events FD");
     return Err(anyhow::Error::msg("Unable to load Flowbee Events FD"));
   }
   let opts: *const bpf::ring_buffer_opts = std::ptr::null();
@@ -208,7 +208,7 @@ pub fn attach_xdp_and_tc_to_interface(
       opts as *mut c_void, opts)
   };
   if unsafe { bpf::libbpf_get_error(flowbee_perf_buffer as *mut c_void) != 0 } {
-    log::error!("Failed to create Flowbee event buffer");
+    error!("Failed to create Flowbee event buffer");
     return Err(anyhow::Error::msg("Failed to create Flowbee event buffer"));
   }
   let handle = PerfBufferHandle(flowbee_perf_buffer);
@@ -350,7 +350,7 @@ fn poll_perf_events(heimdall_perf_buffer: PerfBufferHandle) {
   loop {
     let err = unsafe { bpf::ring_buffer__poll(heimdall_perf_buffer, 100) };
     if err < 0 {
-      log::error!("Error polling perfbuffer");
+      error!("Error polling perfbuffer");
     }
   }
 }

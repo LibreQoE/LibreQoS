@@ -9,6 +9,7 @@ use std::sync::Arc;
 use strum::IntoEnumIterator;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
+use tracing::warn;
 use crate::node_manager::ws::publish_subscribe::publisher_channel::PublisherChannel;
 use crate::node_manager::ws::published_channels::PublishedChannels;
 
@@ -47,7 +48,7 @@ impl PubSub {
         if let Some(channel) = channels.iter_mut().find(|c| c.channel_type == channel) {
             channel.subscribe(sender).await;
         } else {
-            log::warn!("Tried to subscribe to channel {:?}, which doesn't exist", channel);
+            warn!("Tried to subscribe to channel {:?}, which doesn't exist", channel);
         }
     }
 

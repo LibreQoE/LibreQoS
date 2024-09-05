@@ -4,10 +4,10 @@
 
 use super::QDiscError;
 use crate::parse_tc_handle;
-use log_once::info_once;
 use lqos_bus::TcHandle;
 use serde::Serialize;
 use serde_json::Value;
+use tracing::info;
 
 #[derive(Default, Clone, Debug, Serialize)]
 pub struct TcMultiQueue {
@@ -43,7 +43,7 @@ impl TcMultiQueue {
         "kind" => {}
         "options" => {}
         _ => {
-          info_once!("Unknown entry in tc-MQ json decoder: {key}");
+          info!("Unknown entry in tc-MQ json decoder: {key}");
         }
       }
     }

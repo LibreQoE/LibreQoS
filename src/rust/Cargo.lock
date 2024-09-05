@@ -1666,26 +1666,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24"
 
 [[package]]
-name = "log-once"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d8a05e3879b317b1b6dbf353e5bba7062bedcc59815267bb23eaa0c576cebf0"
-dependencies = [
- "log",
-]
-
-[[package]]
 name = "lqos_anonymous_stats_server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum 0.6.20",
  "env_logger",
- "log",
  "lqos_bus",
  "serde_cbor",
  "sqlite",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -1694,7 +1685,6 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "criterion",
- "log",
  "lqos_config",
  "lqos_utils",
  "lts_client",
@@ -1703,6 +1693,7 @@ dependencies = [
  "serde_cbor",
  "thiserror",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -1713,7 +1704,6 @@ dependencies = [
  "dashmap",
  "ip_network",
  "ip_network_table",
- "log",
  "lqos_utils",
  "pyo3",
  "serde",
@@ -1722,6 +1712,7 @@ dependencies = [
  "thiserror",
  "toml",
  "toml_edit",
+ "tracing",
  "uuid",
 ]
 
@@ -1731,13 +1722,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "dashmap",
- "log",
  "lqos_bus",
  "lqos_config",
  "lqos_sys",
  "lqos_utils",
  "once_cell",
  "timerfd",
+ "tracing",
  "zerocopy 0.6.6",
 ]
 
@@ -1771,8 +1762,6 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "dashmap",
- "log",
- "log-once",
  "lqos_bus",
  "lqos_config",
  "lqos_sys",
@@ -1782,6 +1771,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -1821,13 +1811,13 @@ dependencies = [
  "anyhow",
  "bindgen",
  "libbpf-sys",
- "log",
  "lqos_bus",
  "lqos_config",
  "lqos_utils",
  "nix 0.29.0",
  "once_cell",
  "thiserror",
+ "tracing",
  "zerocopy 0.6.6",
 ]
 
@@ -1836,12 +1826,12 @@ name = "lqos_utils"
 version = "0.1.0"
 dependencies = [
  "byteorder",
- "log",
  "nix 0.29.0",
  "notify",
  "num-traits",
  "serde",
  "thiserror",
+ "tracing",
  "zerocopy 0.6.6",
 ]
 
@@ -1856,14 +1846,12 @@ dependencies = [
  "csv",
  "dashmap",
  "default-net",
- "env_logger",
  "flate2",
  "fxhash",
  "ip_network",
  "ip_network_table",
  "itertools 0.12.1",
  "jemallocator",
- "log",
  "lqos_bus",
  "lqos_config",
  "lqos_heimdall",
@@ -1886,6 +1874,8 @@ dependencies = [
  "timerfd",
  "tokio",
  "tower-http",
+ "tracing",
+ "tracing-subscriber",
  "zerocopy 0.6.6",
 ]
 
@@ -1938,7 +1928,6 @@ dependencies = [
  "bincode",
  "dashmap",
  "dryoc",
- "log",
  "lqos_config",
  "lqos_utils",
  "miniz_oxide",
@@ -1950,7 +1939,17 @@ dependencies = [
  "sysinfo",
  "thiserror",
  "tokio",
+ "tracing",
  "uisp",
+]
+
+[[package]]
+name = "matchers"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8263075bb86c5a1b1427b5ae862e8889656f126e9f77c484496e8b47cf5c5558"
+dependencies = [
+ "regex-automata 0.1.10",
 ]
 
 [[package]]
@@ -2627,8 +2626,17 @@ checksum = "b91213439dad192326a0d7c6ee3955910425f441d7038e0d6933b0aec5c4517f"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-automata",
- "regex-syntax",
+ "regex-automata 0.4.7",
+ "regex-syntax 0.8.4",
+]
+
+[[package]]
+name = "regex-automata"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c230d73fb8d8c1b9c0b3135c5142a8acee3a0558fb8db5cf1cb65f8d7862132"
+dependencies = [
+ "regex-syntax 0.6.29",
 ]
 
 [[package]]
@@ -2639,8 +2647,14 @@ checksum = "38caf58cc5ef2fed281f89292ef23f6365465ed9a41b7a7754eb4e26496c92df"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-syntax",
+ "regex-syntax 0.8.4",
 ]
+
+[[package]]
+name = "regex-syntax"
+version = "0.6.29"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f162c6dd7b008981e4d40210aca20b4bd0f9b60ca9271061b07f78537722f2e1"
 
 [[package]]
 name = "regex-syntax"
@@ -3505,10 +3519,14 @@ version = "0.3.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ad0f048c97dbd9faa9b7df56362b8ebcaa52adb06b498c050d2f4e32f90a7a8b"
 dependencies = [
+ "matchers",
  "nu-ansi-term",
+ "once_cell",
+ "regex",
  "sharded-slab",
  "smallvec",
  "thread_local",
+ "tracing",
  "tracing-core",
  "tracing-log",
 ]

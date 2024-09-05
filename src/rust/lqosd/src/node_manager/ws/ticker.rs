@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use tokio::{join, spawn};
+use tracing::info;
 use crate::node_manager::ws::publish_subscribe::PubSub;
 mod cadence;
 mod throughput;
@@ -21,7 +22,7 @@ pub use network_tree::{Circuit, all_circuits};
 
 /// Runs a periodic tick to feed data to the node manager.
 pub(super) async fn channel_ticker(channels: Arc<PubSub>) {
-    log::info!("Starting channel tickers");
+    info!("Starting channel tickers");
     join!(one_second_cadence(channels.clone()), two_second_cadence(channels.clone()), five_second_cadence(channels.clone()));
 }
 

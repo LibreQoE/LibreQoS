@@ -1,4 +1,4 @@
-use log::error;
+use tracing::error;
 use thiserror::Error;
 
 /// `read_hex_string` converts a string from C-friendly Hex format

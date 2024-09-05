@@ -7,6 +7,7 @@ use once_cell::sync::Lazy;
 use std::{
     ffi::c_void, net::{IpAddr, Ipv4Addr, Ipv6Addr}, slice, sync::{atomic::AtomicU64, Mutex}, time::Duration
 };
+use tracing::{warn, error};
 use zerocopy::FromBytes;
 
 static EVENT_COUNT: AtomicU64 = AtomicU64::new(0);
@@ -84,7 +85,7 @@ impl FlowTracker {
                         let split = subnet.split('/').collect::<Vec<_>>();
                         println!("{:?}", split);
                         if split.len() != 2 {
-                            log::error!("Invalid subnet: {}", subnet);
+                            error!("Invalid subnet: {}", subnet);
                             continue;
                         }
                         let ip = if split[0].contains(":") {
@@ -104,7 +105,7 @@ impl FlowTracker {
                         let addr = ip_network::IpNetwork::new(ip, mask).unwrap();
                         ignore_subnets.insert(addr, true);
                     } else {
-                        log::error!("Invalid subnet: {}", subnet);
+                        error!("Invalid subnet: {}", subnet);
                         continue;                    
                     }
 
@@ -138,7 +139,7 @@ pub unsafe extern "C" fn flowbee_handle_events(
 ) -> i32 {
     const EVENT_SIZE: usize = std::mem::size_of::<FlowbeeEvent>();
     if data_size < EVENT_SIZE {
-        log::warn!("Warning: incoming data too small in Flowbee buffer");
+        warn!("Warning: incoming data too small in Flowbee buffer");
         return 0;
     }
 
@@ -187,7 +188,7 @@ pub unsafe extern "C" fn flowbee_handle_events(
             }
         }
     } else {
-        log::error!("Failed to decode Flowbee Event");
+        error!("Failed to decode Flowbee Event");
     }
 
     0

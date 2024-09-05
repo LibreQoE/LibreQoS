@@ -2,6 +2,7 @@ use std::{net::IpAddr, sync::Mutex};
 use lqos_sys::flowbee_data::FlowbeeKey;
 use once_cell::sync::Lazy;
 use serde::Serialize;
+use tracing::error;
 
 mod asn;
 mod protocol;
@@ -34,7 +35,7 @@ impl FlowAnalysisSystem {
                         ANALYSIS.asn_table.lock().unwrap().replace(table);
                     }
                     Err(e) => {
-                        log::error!("Failed to update ASN table: {e}");
+                        error!("Failed to update ASN table: {e}");
                     }
                 }
                 std::thread::sleep(std::time::Duration::from_secs(60 * 60 * 24));

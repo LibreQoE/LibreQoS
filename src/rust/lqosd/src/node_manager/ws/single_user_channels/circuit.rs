@@ -1,6 +1,7 @@
 use std::time::Duration;
 use serde::Serialize;
 use tokio::time::MissedTickBehavior;
+use tracing::info;
 use crate::node_manager::ws::ticker::{all_circuits, Circuit};
 
 #[derive(Serialize)]
@@ -34,7 +35,7 @@ pub(super) async fn circuit_watcher(circuit: String, tx: tokio::sync::mpsc::Send
 
         if let Ok(message) = serde_json::to_string(&result) {
             if let Err(_) = tx.send(message.to_string()).await {
-                log::info!("Channel is gone");
+                info!("Channel is gone");
                 break;
             }
         }

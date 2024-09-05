@@ -8,7 +8,7 @@ pub mod perf_interface;
 pub mod stats;
 
 use std::time::Duration;
-use log::warn;
+use tracing::{error, info, warn};
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
 pub use config::{HeimdalConfig, HeimdallMode};
 mod timeline;
@@ -34,14 +34,14 @@ const SESSION_EXPIRE_SECONDS: u64 = 600;
 /// Interface to running Heimdall (start this when lqosd starts)
 pub fn start_heimdall() {
   if set_heimdall_mode(HeimdallMode::WatchOnly).is_err() {
-    log::error!(
+    error!(
       "Unable to set Heimdall Mode. Packet watching will be unavailable."
     );
     return;
   }
 
   let interval_ms = 1000; // 1 second
-  log::info!("Heimdall check period set to {interval_ms} ms.");
+  info!("Heimdall check period set to {interval_ms} ms.");
 
   std::thread::spawn(move || {
     let mut tfd = TimerFd::new().unwrap();
