@@ -14,3 +14,4 @@ zerocopy = { workspace = true }
 once_cell = { workspace = true}
 dashmap = { workspace = true }
 anyhow = { workspace = true }
+timerfd = { workspace = true }

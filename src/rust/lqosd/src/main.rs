@@ -91,8 +91,8 @@ async fn main() -> Result<()> {
   let long_term_stats_tx = start_long_term_stats().await;
   let flow_tx = setup_netflow_tracker();
   let _ = throughput_tracker::flow_data::setup_flow_analysis();
+  start_heimdall();
   join!(
-    start_heimdall(),
     spawn_queue_structure_monitor(),
     shaped_devices_tracker::shaped_devices_watcher(),
     shaped_devices_tracker::network_json_watcher(),
