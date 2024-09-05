@@ -82,8 +82,7 @@ pub fn set_console_logging() -> anyhow::Result<()> {
   Ok(())
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
   // Set up logging
   set_console_logging()?;
 
@@ -125,7 +124,7 @@ async fn main() -> Result<()> {
   };
 
   // Spawn tracking sub-systems
-  let long_term_stats_tx = start_long_term_stats().await;
+  let long_term_stats_tx = start_long_term_stats();
   let flow_tx = setup_netflow_tracker();
   let _ = throughput_tracker::flow_data::setup_flow_analysis();
   start_heimdall();
@@ -172,15 +171,24 @@ async fn main() -> Result<()> {
   // Create the socket server
   let server = UnixSocketServer::new().expect("Unable to spawn server");
 
-  // Webserver starting point
-  tokio::spawn(async {
-    if let Err(e) = node_manager::spawn_webserver().await {
-      error!("Node Manager Failed: {e:?}");
-    }
-  });
+  let handle = std::thread::spawn(move || {
+    tokio::runtime::Builder::new_current_thread()
+    .enable_all()
+    .build().unwrap()
+    .block_on(async {
+      // Webserver starting point
+      tokio::spawn(async {
+        if let Err(e) = node_manager::spawn_webserver().await {
+          error!("Node Manager Failed: {e:?}");
+        }
+      });
 
-  // Main bus listen loop
-  server.listen(handle_bus_requests).await?;
+      // Main bus listen loop
+      server.listen(handle_bus_requests).await.unwrap();
+    });
+  });
+  let _ = handle.join();
+  warn!("Main thread exiting");
   Ok(())
 }
 

@@ -32,12 +32,31 @@ pub(crate) static DEVICE_ID_LIST: Lazy<DashSet<String>> = Lazy::new(DashSet::new
 /// because it creates the channel and then spawns listener threads.
 ///
 /// Returns a channel that may be used to notify of data availability.
-pub async fn start_long_term_stats() -> Sender<StatsUpdateMessage> {
-    let (update_tx, mut update_rx): (Sender<StatsUpdateMessage>, Receiver<StatsUpdateMessage>) =
+pub fn start_long_term_stats() -> Sender<StatsUpdateMessage> {
+    let (update_tx, update_rx): (Sender<StatsUpdateMessage>, Receiver<StatsUpdateMessage>) =
         mpsc::channel(10);
     let (comm_tx, comm_rx): (Sender<SenderChannelMessage>, Receiver<SenderChannelMessage>) =
         mpsc::channel(10);
 
+    let cloned_update_tx = update_tx.clone();
+    std::thread::spawn(move || {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(startup(update_rx, comm_tx, cloned_update_tx, comm_rx));
+    });
+
+    // Return the channel, for notifications
+    update_tx
+}
+
+async fn startup(
+    mut update_rx: Receiver<StatsUpdateMessage>,
+    comm_tx: Sender<SenderChannelMessage>,
+    update_tx: Sender<StatsUpdateMessage>,
+    comm_rx: Receiver<SenderChannelMessage>,
+) {
     if let Ok(cfg) = load_config() {
         if !cfg.long_term_stats.gather_stats {
             // Wire up a null recipient to the channel, so it receives messages
@@ -46,8 +65,9 @@ pub async fn start_long_term_stats() -> Sender<StatsUpdateMessage> {
                 while let Some(_msg) = update_rx.recv().await {
                     // Do nothing
                 }
-            });
-            return update_tx;
+            }).await.unwrap();
+            warn!("Long-term stats gathering is disabled in the configuration. Exiting.");
+            return;
         }
     }
 
@@ -55,9 +75,6 @@ pub async fn start_long_term_stats() -> Sender<StatsUpdateMessage> {
     tokio::spawn(collation_scheduler(update_tx.clone()));
     tokio::spawn(uisp_collection_manager(update_tx.clone()));
     tokio::spawn(start_communication_channel(comm_rx));
-
-    // Return the channel, for notifications
-    update_tx
 }
 
 async fn collation_scheduler(tx: Sender<StatsUpdateMessage>) {
