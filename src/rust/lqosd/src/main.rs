@@ -92,8 +92,8 @@ async fn main() -> Result<()> {
   let flow_tx = setup_netflow_tracker();
   let _ = throughput_tracker::flow_data::setup_flow_analysis();
   start_heimdall();
+  spawn_queue_structure_monitor();
   join!(
-    spawn_queue_structure_monitor(),
     shaped_devices_tracker::shaped_devices_watcher(),
     shaped_devices_tracker::network_json_watcher(),
     anonymous_usage::start_anonymous_usage(),

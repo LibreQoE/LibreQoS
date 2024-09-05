@@ -7,7 +7,6 @@ use log::{error, info};
 use lqos_utils::file_watcher::FileWatcher;
 use once_cell::sync::Lazy;
 use thiserror::Error;
-use tokio::task::spawn_blocking;
 use crate::tracking::ALL_QUEUE_SUMMARY;
 
 pub(crate) static QUEUE_STRUCTURE: Lazy<RwLock<QueueStructure>> =
@@ -39,10 +38,10 @@ impl QueueStructure {
 
 /// Global file watched for `queueStructure.json`.
 /// Reloads the queue structure when it is available.
-pub async fn spawn_queue_structure_monitor() {
-  spawn_blocking(|| {
-    let _ = watch_for_queueing_structure_changing();
-  });
+pub fn spawn_queue_structure_monitor() {
+    if let Err(e) = watch_for_queueing_structure_changing() {
+        error!("Error watching for queueingStructure.json: {:?}", e);
+    }
 }
 
 fn update_queue_structure() {

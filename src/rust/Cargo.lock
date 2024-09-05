@@ -1737,6 +1737,7 @@ dependencies = [
  "lqos_sys",
  "lqos_utils",
  "once_cell",
+ "timerfd",
  "zerocopy 0.6.6",
 ]
 
@@ -3255,6 +3256,15 @@ checksum = "3f252a68540fde3a3877aeea552b832b40ab9a69e318efd078774a01ddee1ccf"
 dependencies = [
  "num-conv",
  "time-core",
+]
+
+[[package]]
+name = "timerfd"
+version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "84e482e368cf7efa2c8b570f476e5b9fd9fd5e9b9219fc567832b05f13511091"
+dependencies = [
+ "rustix",
 ]
 
 [[package]]

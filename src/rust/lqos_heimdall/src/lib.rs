@@ -15,7 +15,6 @@ mod timeline;
 pub use timeline::{n_second_packet_dump, n_second_pcap, hyperfocus_on_target};
 mod pcap;
 mod watchlist;
-use lqos_utils::fdtimer::periodic;
 pub use watchlist::{heimdall_expire, heimdall_watch_ip, set_heimdall_mode};
 
 use crate::timeline::expire_timeline;
