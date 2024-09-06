@@ -19,7 +19,6 @@ pub async fn network_tree(
     channels: Arc<PubSub>,
     _bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>
 ) {
-    // TODO: This function should be refactored to use the bus.
     if !channels.is_channel_alive(PublishedChannels::NetworkTree).await {
         return;
     }

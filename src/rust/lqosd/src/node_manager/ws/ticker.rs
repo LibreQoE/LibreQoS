@@ -68,24 +68,6 @@ async fn one_second_cadence(
             system_info::ram_info(channels.clone(), system_usage_tx.clone()),
         );
 
-        //let mc = channels.clone(); spawn(async move { cadence::cadence(mc).await });
-        //let mc = channels.clone(); spawn(async move { throughput::throughput(mc).await });
-        //let mc = channels.clone(); spawn(async move { rtt_histogram::rtt_histo(mc).await });
-        //let mc = channels.clone(); spawn(async move { flow_counter::flow_count(mc).await });
-        //let mc = channels.clone(); spawn(async move { top_10::top_10_downloaders(mc).await });
-        //let mc = channels.clone(); spawn(async move { top_10::worst_10_downloaders(mc).await });
-        //let mc = channels.clone(); spawn(async move { top_10::worst_10_retransmit(mc).await });
-        //let mc = channels.clone(); spawn(async move { top_flows::top_flows_bytes(mc).await });
-        //let mc = channels.clone(); spawn(async move { top_flows::top_flows_rate(mc).await });
-        //let mc = channels.clone(); spawn(async move { flow_endpoints::endpoints_by_country(mc).await });
-        //let mc = channels.clone(); spawn(async move { flow_endpoints::ether_protocols(mc).await });
-        //let mc = channels.clone(); spawn(async move { flow_endpoints::ip_protocols(mc).await });
-        //let mc = channels.clone(); spawn(async move { flow_endpoints::flow_duration(mc).await });
-        //let mc = channels.clone(); spawn(async move { tree_summary::tree_summary(mc).await });
-        //let mc = channels.clone(); spawn(async move { network_tree::network_tree(mc).await });
-        //let mc = channels.clone(); spawn(async move { circuit_capacity::circuit_capacity(mc).await });
-        //let mc = channels.clone(); spawn(async move { tree_capacity::tree_capacity(mc).await });
-
         channels.clean().await;
     }
 }
