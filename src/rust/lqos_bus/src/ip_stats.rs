@@ -1,3 +1,4 @@
+use std::net::IpAddr;
 use crate::TcHandle;
 use serde::{Deserialize, Serialize};
 use lqos_utils::units::DownUpOrder;
@@ -181,4 +182,31 @@ pub struct FlowbeeSummaryData {
     pub circuit_id: String,
     /// Circuit Name
     pub circuit_name: String,
+}
+
+/// Circuit statistics for transmit
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Circuit {
+    /// The IP address of the host.
+    pub ip: IpAddr,
+    /// Current bytes-per-second passing through this host.
+    pub bytes_per_second: DownUpOrder<u64>,
+    /// Median latency for this host at the current time.
+    pub median_latency: Option<f32>,
+    /// TCP Retransmits for this host at the current time.
+    pub tcp_retransmits: DownUpOrder<u64>,
+    /// The mapped circuit ID
+    pub circuit_id: Option<String>,
+    /// The mapped device ID
+    pub device_id: Option<String>,
+    /// The parent node of the device
+    pub parent_node: Option<String>,
+    /// The circuit name
+    pub circuit_name: Option<String>,
+    /// The device name
+    pub device_name: Option<String>,
+    /// The current plan for this circuit.
+    pub plan: DownUpOrder<u32>,
+    /// The last time this host was seen, in nanoseconds since boot.
+    pub last_seen_nanos: u64,
 }

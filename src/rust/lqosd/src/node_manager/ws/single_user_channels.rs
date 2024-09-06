@@ -3,6 +3,7 @@ mod ping_monitor;
 mod flows_by_circuit;
 mod cake_watcher;
 
+use axum::Extension;
 use axum::extract::WebSocketUpgrade;
 use axum::extract::ws::{Message, WebSocket};
 use axum::response::IntoResponse;
@@ -24,14 +25,19 @@ enum PrivateChannel {
 
 pub(super) async fn private_channel_ws_handler(
     ws: WebSocketUpgrade,
+    Extension(bus_tx): Extension<tokio::sync::mpsc::Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, lqos_bus::BusRequest)>>,
 ) -> impl IntoResponse {
     info!("WS Upgrade Called");
+    let my_bus = bus_tx.clone();
     ws.on_upgrade(move |socket| async {
-        handle_socket(socket).await;
+        handle_socket(socket, my_bus).await;
     })
 }
 
-async fn handle_socket(mut socket: WebSocket) {
+async fn handle_socket(
+    mut socket: WebSocket,
+    bus_tx: tokio::sync::mpsc::Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, lqos_bus::BusRequest)>,
+) {
     info!("Websocket connected");
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(10);
@@ -46,7 +52,7 @@ async fn handle_socket(mut socket: WebSocket) {
                             if let Ok(sub) = serde_json::from_str::<PrivateChannel>(text) {
                                 match sub {
                                     PrivateChannel::CircuitWatcher {circuit } => {
-                                        spawn(circuit_watcher(circuit, tx.clone()));
+                                        spawn(circuit_watcher(circuit, tx.clone(), bus_tx.clone()));
                                     },
                                     PrivateChannel::PingMonitor { ips } => {
                                         spawn(ping_monitor(ips, tx.clone()));

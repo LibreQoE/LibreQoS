@@ -258,12 +258,16 @@ fn handle_bus_requests(
       BusRequest::GetNetworkMap { parent } => {
         shaped_devices_tracker::get_one_network_map_layer(*parent)
       }
+      BusRequest::GetFullNetworkMap => {
+          shaped_devices_tracker::get_full_network_map()
+      }
       BusRequest::TopMapQueues(n_queues) => {
         shaped_devices_tracker::get_top_n_root_queues(*n_queues)
       }
       BusRequest::GetNodeNamesFromIds(nodes) => {
         shaped_devices_tracker::map_node_names(nodes)
       }
+      BusRequest::GetAllCircuits => shaped_devices_tracker::get_all_circuits(),
       BusRequest::GetFunnel { target: parent } => {
         shaped_devices_tracker::get_funnel(parent)
       }

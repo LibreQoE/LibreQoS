@@ -132,6 +132,9 @@ pub enum BusRequest {
     /// The parent of the map to retrieve
     parent: usize,
   },
+  
+  /// Request the full network tree
+  GetFullNetworkMap,
 
   /// Retrieves the top N queues from the root level, and summarizes
   /// the others as "other"
@@ -139,6 +142,9 @@ pub enum BusRequest {
 
   /// Retrieve node names from network.json
   GetNodeNamesFromIds(Vec<usize>),
+  
+  /// Get all circuits and usage statistics
+  GetAllCircuits,
 
   /// Retrieve stats for all queues above a named circuit id
   GetFunnel {

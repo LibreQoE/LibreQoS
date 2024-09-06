@@ -20,7 +20,7 @@ mod network_tree;
 mod circuit_capacity;
 mod tree_capacity;
 
-pub use network_tree::{Circuit, all_circuits};
+pub use network_tree::all_circuits;
 use crate::system_stats::SystemStats;
 
 /// Runs a periodic tick to feed data to the node manager.
@@ -74,7 +74,7 @@ async fn one_second_cadence(
 
 async fn two_second_cadence(
     channels: Arc<PubSub>,
-    _bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>
+    bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>
 ) {
     let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(2));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -83,7 +83,7 @@ async fn two_second_cadence(
 
         join!(
             queue_stats_total::queue_stats_totals(channels.clone()),
-            network_tree::all_subscribers(channels.clone()),
+            network_tree::all_subscribers(channels.clone(), bus_tx.clone()),
         );
     }
 }

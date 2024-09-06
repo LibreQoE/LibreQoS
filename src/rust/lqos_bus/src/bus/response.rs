@@ -1,7 +1,5 @@
 use super::QueueStoreTransit;
-use crate::{
-  ip_stats::{FlowbeeSummaryData, PacketHeader}, IpMapping, IpStats, XdpPpingResult,
-};
+use crate::{ip_stats::{FlowbeeSummaryData, PacketHeader}, Circuit, IpMapping, IpStats, XdpPpingResult};
 use lts_client::transport_data::{StatsTotals, StatsHost, StatsTreeNode};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
@@ -82,6 +80,9 @@ pub enum BusResponse {
 
   /// Named nodes from network.json
   NodeNames(Vec<(usize, String)>),
+  
+  /// Circuit data
+  CircuitData(Vec<Circuit>),
 
   /// Statistics from lqosd
   LqosdStats {
