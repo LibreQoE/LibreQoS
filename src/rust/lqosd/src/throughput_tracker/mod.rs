@@ -10,7 +10,7 @@ use crate::{
     stats::TIME_TO_POLL_HOSTS,
     throughput_tracker::tracking_data::ThroughputTracker,
 };
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 use lqos_bus::{BusResponse, FlowbeeProtocol, IpStats, TcHandle, TopFlowType, XdpPpingResult};
 use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
@@ -21,6 +21,7 @@ use tokio::{
     sync::mpsc::Sender,
     time::{Duration, Instant},
 };
+use lqos_config::load_config;
 use lqos_utils::units::DownUpOrder;
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
@@ -153,10 +154,22 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>, scale
     );
     let bits_per_second = THROUGHPUT_TRACKER.bits_per_second();
     let shaped_bits_per_second = THROUGHPUT_TRACKER.shaped_bits_per_second();
+    
+    if let Ok(config) = load_config() {
+        if bits_per_second.down > (config.queues.downlink_bandwidth_mbps as u64 * 1_000_000) {
+            info!("Spike detected - not submitting LTS");
+            return; // Do not submit these stats
+        }
+        if bits_per_second.up > (config.queues.uplink_bandwidth_mbps as u64 * 1_000_000) {
+            info!("Spike detected - not submitting LTS");
+            return; // Do not submit these stats
+        }
+    }
+    
     let hosts = THROUGHPUT_TRACKER
         .raw_data
         .iter()
-        .filter(|host| host.median_latency().is_some())
+        //.filter(|host| host.median_latency().is_some())
         .map(|host| HostSummary {
             ip: host.key().as_ip(),
             circuit_id: host.circuit_id.clone(),
