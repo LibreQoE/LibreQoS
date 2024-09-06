@@ -8,7 +8,7 @@ pub mod perf_interface;
 pub mod stats;
 
 use std::time::Duration;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
 pub use config::{HeimdalConfig, HeimdallMode};
 mod timeline;

@@ -4,7 +4,7 @@ use std::{time::Duration, net::TcpStream, io::Write};
 use lqos_bus::anonymous::{AnonymousUsageV1, build_stats};
 use lqos_sys::num_possible_cpus;
 use sysinfo::System;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 use crate::{shaped_devices_tracker::{SHAPED_DEVICES, NETWORK_JSON}, stats::HIGH_WATERMARK};
 
 const SLOW_START_SECS: u64 = 1;

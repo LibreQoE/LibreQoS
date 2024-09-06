@@ -6,7 +6,6 @@ use lqos_bus::{BusReply, BusRequest, BusResponse, TopFlowType};
 
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
-use crate::throughput_tracker;
 
 pub async fn top_flows_bytes(
     channels: Arc<PubSub>,

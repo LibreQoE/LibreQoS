@@ -12,6 +12,7 @@ mod long_term_stats;
 mod stats;
 mod preflight_checks;
 mod node_manager;
+mod system_stats;
 
 use std::net::IpAddr;
 use crate::{
@@ -134,6 +135,7 @@ fn main() -> Result<()> {
   anonymous_usage::start_anonymous_usage();
   throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone(), flow_tx);
   spawn_queue_monitor();
+  let system_usage_tx = system_stats::start_system_stats();
 
   // Handle signals
   let mut signals = Signals::new([SIGINT, SIGHUP, SIGTERM])?;
@@ -180,7 +182,7 @@ fn main() -> Result<()> {
 
       // Webserver starting point
       tokio::spawn(async {
-        if let Err(e) = node_manager::spawn_webserver(bus_tx).await {
+        if let Err(e) = node_manager::spawn_webserver(bus_tx, system_usage_tx).await {
           error!("Node Manager Failed: {e:?}");
         }
       });

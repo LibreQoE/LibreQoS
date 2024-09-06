@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use tokio::{join, spawn};
+use tokio::join;
 use tokio::sync::mpsc::Sender;
-use tracing::{debug, info};
+use tracing::debug;
 use lqos_bus::BusRequest;
 use crate::node_manager::ws::publish_subscribe::PubSub;
 mod cadence;
@@ -21,20 +21,25 @@ mod circuit_capacity;
 mod tree_capacity;
 
 pub use network_tree::{Circuit, all_circuits};
+use crate::system_stats::SystemStats;
 
 /// Runs a periodic tick to feed data to the node manager.
-pub(super) async fn channel_ticker(channels: Arc<PubSub>, bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>) {
+pub(super) async fn channel_ticker(
+    channels: Arc<PubSub>,
+    bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
+    system_usage_tx: std::sync::mpsc::Sender<tokio::sync::oneshot::Sender<SystemStats>>
+) {
     debug!("Starting channel tickers");
     join!(
-        one_second_cadence(channels.clone(), bus_tx.clone()),
+        one_second_cadence(channels.clone(), bus_tx.clone(), system_usage_tx.clone()),
         two_second_cadence(channels.clone(), bus_tx.clone()),
-        five_second_cadence(channels.clone(), bus_tx.clone())
     );
 }
 
 async fn one_second_cadence(
     channels: Arc<PubSub>,
-    bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>
+    bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
+    system_usage_tx: std::sync::mpsc::Sender<tokio::sync::oneshot::Sender<SystemStats>>
 ) {
     let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -59,6 +64,8 @@ async fn one_second_cadence(
             network_tree::network_tree(channels.clone(), bus_tx.clone()),
             circuit_capacity::circuit_capacity(channels.clone()),
             tree_capacity::tree_capacity(channels.clone()),
+            system_info::cpu_info(channels.clone(), system_usage_tx.clone()),
+            system_info::ram_info(channels.clone(), system_usage_tx.clone()),
         );
 
         //let mc = channels.clone(); spawn(async move { cadence::cadence(mc).await });
@@ -85,7 +92,7 @@ async fn one_second_cadence(
 
 async fn two_second_cadence(
     channels: Arc<PubSub>,
-    bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>
+    _bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>
 ) {
     let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(2));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -95,22 +102,6 @@ async fn two_second_cadence(
         join!(
             queue_stats_total::queue_stats_totals(channels.clone()),
             network_tree::all_subscribers(channels.clone()),
-        );
-    }
-}
-
-async fn five_second_cadence(
-    channels: Arc<PubSub>,
-    bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>
-) {
-    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    loop {
-        interval.tick().await; // Once per second
-
-        join!(
-            system_info::cpu_info(channels.clone()),
-            system_info::ram_info(channels.clone()),
         );
     }
 }

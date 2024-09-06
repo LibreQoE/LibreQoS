@@ -4,7 +4,7 @@ mod shaped_device;
 use std::net::IpAddr;
 use crate::SUPPORTED_CUSTOMERS;
 use csv::{QuoteStyle, ReaderBuilder, WriterBuilder};
-use tracing::{debug, error, info};
+use tracing::{debug, error};
 use serializable::SerializableShapedDevice;
 pub use shaped_device::ShapedDevice;
 use std::path::{Path, PathBuf};

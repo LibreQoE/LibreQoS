@@ -1,6 +1,6 @@
 use anyhow::{Error, Result};
 use libbpf_sys::{bpf_map_update_elem, bpf_obj_get};
-use tracing::{debug, info};
+use tracing::debug;
 use std::{ffi::CString, os::raw::c_void};
 use crate::{num_possible_cpus, linux::map_txq_config_base_setup};
 

@@ -1,6 +1,6 @@
 use crate::{bpf_map::BpfMap, lqos_kernel::interface_name_to_index};
 use anyhow::Result;
-use tracing::{debug, info};
+use tracing::debug;
 
 #[repr(C)]
 #[derive(Default, Clone, Debug)]

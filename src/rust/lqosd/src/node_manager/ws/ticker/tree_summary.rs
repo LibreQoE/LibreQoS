@@ -4,7 +4,6 @@ use tokio::sync::mpsc::Sender;
 use lqos_bus::{BusReply, BusRequest, BusResponse};
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
-use crate::shaped_devices_tracker;
 
 pub async fn tree_summary(
     channels: Arc<PubSub>,

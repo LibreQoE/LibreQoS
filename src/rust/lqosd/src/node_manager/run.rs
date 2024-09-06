@@ -11,12 +11,14 @@ use lqos_bus::BusRequest;
 use lqos_config::load_config;
 use crate::node_manager::{auth, static_pages::{static_routes, vendor_route}, ws::websocket_router};
 use crate::node_manager::local_api::local_api;
+use crate::system_stats::SystemStats;
 
 /// Launches the Axum webserver to take over node manager duties.
 /// This is designed to be run as an independent Tokio future,
 /// with tokio::spawn unless you want it to block execution.
 pub async fn spawn_webserver(
-    bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>
+    bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
+    system_usage_tx: std::sync::mpsc::Sender<tokio::sync::oneshot::Sender<SystemStats>>
 ) -> Result<()>  {
     // TODO: port change is temporary
     let listener = TcpListener::bind(":::9123").await?;
@@ -36,7 +38,7 @@ pub async fn spawn_webserver(
         .route("/", get(redirect_to_index))
         .route("/doLogin", post(auth::try_login))
         .route("/firstLogin", post(auth::first_user))
-        .nest("/websocket/", websocket_router(bus_tx.clone()))
+        .nest("/websocket/", websocket_router(bus_tx.clone(), system_usage_tx.clone()))
         .nest("/vendor", vendor_route()?) // Serve /vendor as purely static
         .nest("/", static_routes()?)
         .nest("/local-api", local_api())

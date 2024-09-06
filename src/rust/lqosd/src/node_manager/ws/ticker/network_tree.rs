@@ -5,7 +5,7 @@ use std::time::Duration;
 use serde::Serialize;
 use serde_json::json;
 use tokio::sync::mpsc::Sender;
-use lqos_bus::{BusReply, BusRequest};
+use lqos_bus::BusRequest;
 use lqos_config::NetworkJsonTransport;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::time_since_boot;
