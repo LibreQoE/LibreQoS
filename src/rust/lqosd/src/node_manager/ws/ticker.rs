@@ -27,7 +27,7 @@ use crate::system_stats::SystemStats;
 pub(super) async fn channel_ticker(
     channels: Arc<PubSub>,
     bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
-    system_usage_tx: std::sync::mpsc::Sender<tokio::sync::oneshot::Sender<SystemStats>>
+    system_usage_tx: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>
 ) {
     debug!("Starting channel tickers");
     join!(
@@ -39,7 +39,7 @@ pub(super) async fn channel_ticker(
 async fn one_second_cadence(
     channels: Arc<PubSub>,
     bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
-    system_usage_tx: std::sync::mpsc::Sender<tokio::sync::oneshot::Sender<SystemStats>>
+    system_usage_tx: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>
 ) {
     let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);

@@ -18,7 +18,7 @@ use crate::system_stats::SystemStats;
 /// with tokio::spawn unless you want it to block execution.
 pub async fn spawn_webserver(
     bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
-    system_usage_tx: std::sync::mpsc::Sender<tokio::sync::oneshot::Sender<SystemStats>>
+    system_usage_tx: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>
 ) -> Result<()>  {
     // TODO: port change is temporary
     let listener = TcpListener::bind(":::9123").await?;

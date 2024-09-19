@@ -70,6 +70,7 @@ byteorder = "1"
 num-traits = "0.2.19"
 clap = { version = "4", features = ["derive"] }
 timerfd = "1.6"
+crossbeam-channel = { version = "0.5" }
 
 # May have to change this one for ARM?
 jemallocator = "0.5"

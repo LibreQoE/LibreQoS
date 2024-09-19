@@ -46,6 +46,7 @@ surge-ping = "0.8.1"
 rand = "0.8.5"
 mime_guess = "2.0.4"
 timerfd = {  workspace = true }
+crossbeam-channel = { workspace = true }
 
 # Support JemAlloc on supported platforms
 [target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]

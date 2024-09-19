@@ -38,7 +38,7 @@ mod single_user_channels;
 /// Returns a router that can be mounted in the main application.
 pub fn websocket_router(
     bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
-    system_usage_tx: std::sync::mpsc::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
+    system_usage_tx: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
 ) -> Router {
     let channels = PubSub::new();
     tokio::spawn(channel_ticker(channels.clone(), bus_tx.clone(), system_usage_tx.clone()));

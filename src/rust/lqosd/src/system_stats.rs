@@ -1,5 +1,5 @@
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize};
-use std::sync::mpsc::Sender;
+use crossbeam_channel::Sender;
 use std::time::Duration;
 use once_cell::sync::Lazy;
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
@@ -28,7 +28,7 @@ pub struct SystemStats {
 
 pub fn start_system_stats() -> anyhow::Result<Sender<tokio::sync::oneshot::Sender<SystemStats>>> {
     debug!("Starting system stats threads");
-    let (tx, rx) = std::sync::mpsc::channel::<tokio::sync::oneshot::Sender<SystemStats>>();
+    let (tx, rx) = crossbeam_channel::bounded::<tokio::sync::oneshot::Sender<SystemStats>>(32);
 
     std::thread::Builder::new()
         .name("SysInfo Checker".to_string())

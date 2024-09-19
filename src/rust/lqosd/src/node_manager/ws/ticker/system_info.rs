@@ -6,7 +6,7 @@ use crate::system_stats::SystemStats;
 
 pub async fn cpu_info(
     channels: Arc<PubSub>,
-    system_usage_tx: std::sync::mpsc::Sender<tokio::sync::oneshot::Sender<SystemStats>>
+    system_usage_tx: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>
 ) {
     if !channels.is_channel_alive(PublishedChannels::Cpu).await {
         return;
@@ -28,7 +28,7 @@ pub async fn cpu_info(
 
 pub async fn ram_info(
     channels: Arc<PubSub>,
-    system_usage_tx: std::sync::mpsc::Sender<tokio::sync::oneshot::Sender<SystemStats>>
+    system_usage_tx: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>
 ) {
     if !channels.is_channel_alive(PublishedChannels::Ram).await {
         return;
