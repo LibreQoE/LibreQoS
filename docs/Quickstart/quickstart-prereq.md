@@ -85,6 +85,3 @@ Then run
 ```shell
 sudo netplan apply
 ```
-```{note}
-You may want to install a reverse proxy in front of the web interfaces for influx and lqos. Setting these up is outside the scope of this document, but some examples are [Caddy](https://caddyserver.com/), and Nginx [Proxy Manager](https://nginxproxymanager.com/)
-```
