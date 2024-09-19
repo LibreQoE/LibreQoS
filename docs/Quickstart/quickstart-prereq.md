@@ -85,44 +85,6 @@ Then run
 ```shell
 sudo netplan apply
 ```
-
-### Install InfluxDB (Optional but Recommended)
-
-InfluxDB allows you to track long-term stats beyond what lqos_node_manager can so far.
-
-To install InfluxDB 2.x., follow the steps at [https://portal.influxdata.com/downloads/](https://portal.influxdata.com/downloads/).
-
-For high throughput networks (5+ Gbps) you will likely want to install InfluxDB to a separate machine or VM from that of the LibreQoS server to avoid CPU load.
-
-Restart your system that is running InfluxDB
-
-```shell
-sudo reboot
-```
-
-Check to ensure InfluxDB is running properly. This command should show "Active: active" with green dot.
-
-```shell
-sudo service influxdb status
-```
-
-Check that Web UI is running:<br>
-
-```shell
-http://SERVER_IP_ADDRESS:8086
-```
-
-Create Bucket
-
-- Data > Buckets > Create Bucket
-
-Call the bucket `libreqos` (all lowercase).<br>
-Have it store as many days of data as you prefer. 7 days is standard.<>
-Import Dashboard `Boards > Create Dashboard > Import Dashboard`
-Then upload the file [influxDBdashboardTemplate.json](https://github.com/rchac/LibreQoS/blob/main/src/influxDBdashboardTemplate.json) to InfluxDB.
-
-[Generate an InfluxDB Token](https://docs.influxdata.com/influxdb/cloud/security/tokens/create-token/). It will be added to ispConfig.py in the following steps.
-
 ```{note}
 You may want to install a reverse proxy in front of the web interfaces for influx and lqos. Setting these up is outside the scope of this document, but some examples are [Caddy](https://caddyserver.com/), and Nginx [Proxy Manager](https://nginxproxymanager.com/)
 ```
