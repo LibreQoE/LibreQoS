@@ -26,11 +26,13 @@ pub struct SystemStats {
     pub total_ram: u64,
 }
 
-pub fn start_system_stats() -> Sender<tokio::sync::oneshot::Sender<SystemStats>> {
+pub fn start_system_stats() -> anyhow::Result<Sender<tokio::sync::oneshot::Sender<SystemStats>>> {
     debug!("Starting system stats threads");
     let (tx, rx) = std::sync::mpsc::channel::<tokio::sync::oneshot::Sender<SystemStats>>();
 
-    std::thread::spawn(move || {
+    std::thread::Builder::new()
+        .name("SysInfo Checker".to_string())
+    .spawn(move || {
         // System Status Update Ticker Thread
         use sysinfo::System;
         let mut sys = System::new_all();
@@ -50,7 +52,7 @@ pub fn start_system_stats() -> Sender<tokio::sync::oneshot::Sender<SystemStats>>
                 debug!("System Stats Update: Missed {} ticks", missed);
             }
 
-            sys.refresh_cpu();
+            sys.refresh_cpu_all();
             sys.refresh_memory();
 
             sys
@@ -69,9 +71,11 @@ pub fn start_system_stats() -> Sender<tokio::sync::oneshot::Sender<SystemStats>>
             TOTAL_RAM
                 .store(sys.total_memory(), std::sync::atomic::Ordering::Relaxed);
         }
-    });
+    })?;
 
-    std::thread::spawn(move || {
+    std::thread::Builder::new()
+        .name("SysInfo Channel".to_string())
+    .spawn(move || {
         // Channel Receiver Thread
         while let Ok(sender) = rx.recv() {
             let mut cpus =CPU_USAGE.iter().map(|x| x.load(std::sync::atomic::Ordering::Relaxed)).collect::<Vec<u32>>();
@@ -89,9 +93,9 @@ pub fn start_system_stats() -> Sender<tokio::sync::oneshot::Sender<SystemStats>>
             // Ignoring error because it's just the data returned to the sender
             let _ = sender.send(stats);
         }
-    });
+    })?;
 
-    tx
+    Ok(tx)
 }
 
 fn build_empty_cpu_list() -> [AtomicU32; MAX_CPUS_COUNTED] {

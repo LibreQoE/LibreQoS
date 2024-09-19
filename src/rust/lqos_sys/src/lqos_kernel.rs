@@ -190,7 +190,7 @@ pub fn attach_xdp_and_tc_to_interface(
     return Err(anyhow::Error::msg("Failed to create Heimdall event buffer"));
   }
   let handle = PerfBufferHandle(heimdall_perf_buffer);
-  std::thread::spawn(|| poll_perf_events(handle));
+  std::thread::Builder::new().name("HeimdallEvents".to_string()).spawn(|| poll_perf_events(handle))?;
 
   // Find and attach the Flowbee handler
   let flowbee_events_name = CString::new("flowbee_events").unwrap();
@@ -212,7 +212,7 @@ pub fn attach_xdp_and_tc_to_interface(
     return Err(anyhow::Error::msg("Failed to create Flowbee event buffer"));
   }
   let handle = PerfBufferHandle(flowbee_perf_buffer);
-  std::thread::spawn(|| poll_perf_events(handle));
+  std::thread::Builder::new().name("FlowEvents".to_string()).spawn(|| poll_perf_events(handle));
 
   // Remove any previous entry
   let _r = Command::new("tc")

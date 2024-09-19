@@ -13,7 +13,9 @@ const INTERVAL_SECS: u64 = 60 * 60 * 24;
 pub fn start_anonymous_usage() {
     if let Ok(cfg) = lqos_config::load_config() {
         if cfg.usage_stats.send_anonymous {
-            std::thread::spawn(|| {
+            let _ = std::thread::Builder::new()
+                .name("Anonymous Usage Collector".to_string())
+            .spawn(|| {
                 std::thread::sleep(Duration::from_secs(SLOW_START_SECS));
                 loop {
                     let _ = anonymous_usage_dump();

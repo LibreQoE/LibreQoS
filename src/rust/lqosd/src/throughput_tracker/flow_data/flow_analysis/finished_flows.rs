@@ -426,7 +426,7 @@ impl FinishedFlowAnalysis {
     pub fn new() -> Arc<Self> {
         debug!("Created Flow Analysis Endpoint");
 
-        std::thread::spawn(|| loop {
+        let _ = std::thread::Builder::new().name("Flow Endpoint".to_string()).spawn(|| loop {
             RECENT_FLOWS.expire_over_five_minutes();
             std::thread::sleep(std::time::Duration::from_secs(60 * 5));
         });

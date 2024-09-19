@@ -16,6 +16,7 @@ tracing = { workspace = true }
 tokio = { workspace = true }
 once_cell = { workspace = true}
 dashmap = { workspace = true }
+anyhow = { workspace = true }
 
 [dev-dependencies]
 criterion = { version = "0", features = [ "html_reports"] }

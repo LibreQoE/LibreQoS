@@ -16,6 +16,7 @@ pub use timeline::{n_second_packet_dump, n_second_pcap, hyperfocus_on_target};
 mod pcap;
 mod watchlist;
 pub use watchlist::{heimdall_expire, heimdall_watch_ip, set_heimdall_mode};
+use anyhow::Result;
 
 use crate::timeline::expire_timeline;
 
@@ -32,18 +33,20 @@ const TIMELINE_EXPIRE_SECS: u64 = 10;
 const SESSION_EXPIRE_SECONDS: u64 = 600;
 
 /// Interface to running Heimdall (start this when lqosd starts)
-pub fn start_heimdall() {
+pub fn start_heimdall() -> Result<()> {
   if set_heimdall_mode(HeimdallMode::WatchOnly).is_err() {
     error!(
       "Unable to set Heimdall Mode. Packet watching will be unavailable."
     );
-    return;
+    anyhow::bail!("Unable to set Heimdall Mode.");
   }
 
   let interval_ms = 1000; // 1 second
   debug!("Heimdall check period set to {interval_ms} ms.");
 
-  std::thread::spawn(move || {
+  std::thread::Builder::new()
+        .name("Heimdall Packet Watcher".to_string())
+        .spawn(move || {
     let mut tfd = TimerFd::new().unwrap();
     assert_eq!(tfd.get_state(), TimerState::Disarmed);
     tfd.set_state(TimerState::Periodic{
@@ -61,5 +64,7 @@ pub fn start_heimdall() {
         warn!("Heimdall Missed {} ticks", missed_ticks - 1);
       }
     }
-  });
+  })?;
+
+  Ok(())
 }

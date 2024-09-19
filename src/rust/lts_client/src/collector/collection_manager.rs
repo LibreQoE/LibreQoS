@@ -39,7 +39,7 @@ pub fn start_long_term_stats() -> Sender<StatsUpdateMessage> {
         mpsc::channel(10);
 
     let cloned_update_tx = update_tx.clone();
-    std::thread::spawn(move || {
+    let _ = std::thread::Builder::new().name("LTS1 Collector".to_string()).spawn(move || {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()

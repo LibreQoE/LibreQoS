@@ -14,6 +14,8 @@ use std::sync::{
     Arc,
 };
 use tracing::{debug, error, info};
+use anyhow::Result;
+
 pub(crate) use flow_analysis::{setup_flow_analysis, get_asn_name_and_country,
                                FlowAnalysis, RECENT_FLOWS, flowbee_handle_events, get_flowbee_event_count_and_reset,
                                expire_rtt_flows, flowbee_rtt_map, RttData, get_rtt_events_per_second, AsnListEntry,
@@ -25,11 +27,13 @@ trait FlowbeeRecipient {
 }
 
 // Creates the netflow tracker and returns the sender
-pub fn setup_netflow_tracker() -> Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))> {
+pub fn setup_netflow_tracker() -> Result<Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>> {
     let (tx, rx) = channel::<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>();
     let config = lqos_config::load_config().unwrap();
 
-    std::thread::spawn(move || {
+    std::thread::Builder::new()
+        .name("Netflow Tracker".to_string())
+        .spawn(move || {
         debug!("Starting the network flow tracker back-end");
 
         // Build the endpoints list
@@ -69,7 +73,7 @@ pub fn setup_netflow_tracker() -> Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAna
             });
         }
         info!("Network flow tracker back-end has stopped")
-    });
+    })?;
 
-    tx
+    Ok(tx)
 }

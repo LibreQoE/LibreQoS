@@ -38,12 +38,16 @@ impl QueueStructure {
 
 /// Global file watched for `queueStructure.json`.
 /// Reloads the queue structure when it is available.
-pub fn spawn_queue_structure_monitor() {
-  std::thread::spawn(|| {
+pub fn spawn_queue_structure_monitor() -> anyhow::Result<()> {
+    std::thread::Builder::new()
+        .name("Queue Structure Monitor".to_string())
+  .spawn(|| {
     if let Err(e) = watch_for_queueing_structure_changing() {
         error!("Error watching for queueingStructure.json: {:?}", e);
     }
-  });
+  })?;
+
+    Ok(())
 }
 
 fn update_queue_structure() {

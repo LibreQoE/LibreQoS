@@ -27,7 +27,7 @@ pub struct FlowAnalysisSystem {
 impl FlowAnalysisSystem {
     pub fn new() -> Self {
         // Periodically update the ASN table
-        std::thread::spawn(|| {
+        let _ = std::thread::Builder::new().name("GeoTable Updater".to_string()).spawn(|| {
             loop {
                 let result = asn::GeoTable::load();
                 match result {

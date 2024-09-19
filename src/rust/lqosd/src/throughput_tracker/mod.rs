@@ -38,12 +38,16 @@ pub static THROUGHPUT_TRACKER: Lazy<ThroughputTracker> = Lazy::new(ThroughputTra
 pub fn spawn_throughput_monitor(
     long_term_stats_tx: Sender<StatsUpdateMessage>,
     netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
-) {
+) -> anyhow::Result<()> {
     debug!("Starting the bandwidth monitor thread.");
-    std::thread::spawn(|| {throughput_task(
+    std::thread::Builder::new()
+        .name("Throughput Monitor".to_string())
+    .spawn(|| {throughput_task(
         long_term_stats_tx,
         netflow_sender,
-    )});
+    )})?;
+
+    Ok(())
 }
 
 fn throughput_task(

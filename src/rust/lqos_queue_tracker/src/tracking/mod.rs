@@ -185,8 +185,10 @@ fn all_queue_reader() {
 /// Spawns a thread that periodically reads the queue statistics from
 /// the Linux `tc` shaper, and stores them in a `QueueStore` for later
 /// retrieval.
-pub fn spawn_queue_monitor() {
-  std::thread::spawn(|| {
+pub fn spawn_queue_monitor() -> anyhow::Result<()> {
+  std::thread::Builder::new()
+        .name("Queue Monitor".to_string())
+  .spawn(|| {
     // Setup the queue monitor loop
     debug!("Starting Queue Monitor Thread.");
     let interval_ms = if let Ok(config) = lqos_config::load_config() {
@@ -202,12 +204,16 @@ pub fn spawn_queue_monitor() {
     periodic(interval_ms, "Queue Reader", &mut || {
       track_queues();
     });
-  });
+  })?;
 
   // Set up a 2nd thread to periodically gather ALL the queue stats
-  std::thread::spawn(|| {
+  std::thread::Builder::new()
+        .name("All Queue Monitor".to_string())
+  .spawn(|| {
     periodic(2000, "All Queues", &mut || {
       all_queue_reader();
     })
-  });
+  })?;
+
+  Ok(())
 }

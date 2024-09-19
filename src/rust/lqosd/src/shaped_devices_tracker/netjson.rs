@@ -8,13 +8,16 @@ use std::sync::RwLock;
 pub static NETWORK_JSON: Lazy<RwLock<NetworkJson>> =
   Lazy::new(|| RwLock::new(NetworkJson::default()));
 
-pub fn network_json_watcher() {
-  std::thread::spawn(|| {
+pub fn network_json_watcher() -> Result<()> {
+    std::thread::Builder::new()
+        .name("NetJson Watcher".to_string())
+  .spawn(|| {
       debug!("Watching for network.kson changes");
       if let Err(e) = watch_for_network_json_changing() {
           error!("Error watching for network.json changes: {:?}", e);
       }
-    });
+    })?;
+    Ok(())
 }
 
 /// Fires up a Linux file system watcher than notifies

@@ -126,20 +126,20 @@ fn main() -> Result<()> {
 
   // Spawn tracking sub-systems
   let long_term_stats_tx = start_long_term_stats();
-  let flow_tx = setup_netflow_tracker();
+  let flow_tx = setup_netflow_tracker()?;
   let _ = throughput_tracker::flow_data::setup_flow_analysis();
-  start_heimdall();
-  spawn_queue_structure_monitor();
-  shaped_devices_tracker::shaped_devices_watcher();
-  shaped_devices_tracker::network_json_watcher();
+  start_heimdall()?;
+  spawn_queue_structure_monitor()?;
+  shaped_devices_tracker::shaped_devices_watcher()?;
+  shaped_devices_tracker::network_json_watcher()?;
   anonymous_usage::start_anonymous_usage();
-  throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone(), flow_tx);
-  spawn_queue_monitor();
-  let system_usage_tx = system_stats::start_system_stats();
+  throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone(), flow_tx)?;
+  spawn_queue_monitor()?;
+  let system_usage_tx = system_stats::start_system_stats()?;
 
   // Handle signals
   let mut signals = Signals::new([SIGINT, SIGHUP, SIGTERM])?;
-  std::thread::spawn(move || {
+  std::thread::Builder::new().name("Signal Handler".to_string()).spawn(move || {
     for sig in signals.forever() {
       match sig {
         SIGINT | SIGTERM => {
@@ -168,12 +168,12 @@ fn main() -> Result<()> {
         _ => warn!("No handler for signal: {sig}"),
       }
     }
-  });
+  })?;
 
   // Create the socket server
   let server = UnixSocketServer::new().expect("Unable to spawn server");
 
-  let handle = std::thread::spawn(move || {
+  let handle = std::thread::Builder::new().name("Async Bus/Web".to_string()).spawn(move || {
     tokio::runtime::Builder::new_current_thread()
     .enable_all()
     .build().unwrap()
@@ -190,7 +190,7 @@ fn main() -> Result<()> {
       // Main bus listen loop
       server.listen(handle_bus_requests, bus_rx).await.unwrap();
     });
-  });
+  })?;
   let _ = handle.join();
   warn!("Main thread exiting");
   Ok(())
