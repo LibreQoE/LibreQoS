@@ -71,10 +71,13 @@ async fn startup(
         }
     }
 
-    tokio::spawn(lts_manager(update_rx, comm_tx));
-    tokio::spawn(collation_scheduler(update_tx.clone()));
-    tokio::spawn(uisp_collection_manager(update_tx.clone()));
-    tokio::spawn(start_communication_channel(comm_rx));
+    let _ = tokio::join!(
+        lts_manager(update_rx, comm_tx),
+        collation_scheduler(update_tx.clone()),
+        uisp_collection_manager(update_tx.clone()),
+        start_communication_channel(comm_rx),
+    );
+    warn!("Long-term stats gathering thread has exited.");
 }
 
 async fn collation_scheduler(tx: Sender<StatsUpdateMessage>) {
