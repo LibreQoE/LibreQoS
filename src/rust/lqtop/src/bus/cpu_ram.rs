@@ -28,7 +28,7 @@ pub async fn gather_sysinfo() {
         }
 
         // Refresh system info
-        sys.refresh_cpu();
+        sys.refresh_cpu_all();
         sys.refresh_memory();
 
         sys.cpus()
