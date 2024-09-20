@@ -17,7 +17,7 @@ mod system_stats;
 use std::net::IpAddr;
 use crate::{
   file_lock::FileLock,
-  ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow}, throughput_tracker::flow_data::{flowbee_handle_events, setup_netflow_tracker},
+  ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow}, throughput_tracker::flow_data::{flowbee_handle_events, setup_netflow_tracker, FlowActor},
 };
 use anyhow::Result;
 use tracing::{info, warn, error};
@@ -105,6 +105,10 @@ fn main() -> Result<()> {
   
   // Apply Tunings
   tuning::tune_lqosd_from_config_file()?;
+
+  // Start the flow tracking actor. This has to happen
+  // before the ringbuffer goes live.
+  FlowActor::start()?;
 
   // Start the XDP/TC kernels
   let kernels = if config.on_a_stick_mode() {

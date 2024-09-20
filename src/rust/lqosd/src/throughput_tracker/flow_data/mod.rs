@@ -19,7 +19,7 @@ use anyhow::Result;
 pub(crate) use flow_analysis::{setup_flow_analysis, get_asn_name_and_country,
                                FlowAnalysis, RECENT_FLOWS, flowbee_handle_events, get_flowbee_event_count_and_reset,
                                expire_rtt_flows, flowbee_rtt_map, RttData, get_rtt_events_per_second, AsnListEntry,
-                               AsnCountryListEntry, AsnProtocolListEntry,
+                               AsnCountryListEntry, AsnProtocolListEntry, FlowActor,
 };
 
 trait FlowbeeRecipient {
