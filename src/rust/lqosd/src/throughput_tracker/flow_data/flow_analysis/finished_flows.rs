@@ -57,8 +57,10 @@ impl TimeBuffer {
 
     fn expire_over_one_minutes(&self) {
         if let Ok(now) = unix_now() {
+            let one_minute_ago = now - 60;
             let mut buffer = self.buffer.lock().unwrap();
-            buffer.retain(|v| now - v.time < 60);
+            buffer.retain(|v| v.time > one_minute_ago);
+            buffer.shrink_to_fit();
         }
     }
 
