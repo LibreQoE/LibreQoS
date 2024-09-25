@@ -10,6 +10,7 @@ use itertools::Itertools;
 use serde::Serialize;
 use tracing::debug;
 use lqos_utils::units::DownUpOrder;
+use lqos_utils::unix_time::unix_now;
 
 pub struct TimeBuffer {
     buffer: Mutex<Vec<TimeEntry>>,
@@ -54,13 +55,11 @@ impl TimeBuffer {
         }
     }
 
-    fn expire_over_five_minutes(&self) {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let mut buffer = self.buffer.lock().unwrap();
-        buffer.retain(|v| now - v.time < 300);
+    fn expire_over_one_minutes(&self) {
+        if let Ok(now) = unix_now() {
+            let mut buffer = self.buffer.lock().unwrap();
+            buffer.retain(|v| now - v.time < 60);
+        }
     }
 
     fn push(&self, entry: TimeEntry) {
@@ -427,8 +426,8 @@ impl FinishedFlowAnalysis {
         debug!("Created Flow Analysis Endpoint");
 
         let _ = std::thread::Builder::new().name("Flow Endpoint".to_string()).spawn(|| loop {
-            RECENT_FLOWS.expire_over_five_minutes();
-            std::thread::sleep(std::time::Duration::from_secs(60 * 5));
+            RECENT_FLOWS.expire_over_one_minutes();
+            std::thread::sleep(std::time::Duration::from_secs(60));
         });
 
         Arc::new(Self {})
