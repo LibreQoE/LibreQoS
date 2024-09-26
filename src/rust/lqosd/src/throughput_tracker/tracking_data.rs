@@ -352,6 +352,7 @@ impl ThroughputTracker {
           // Remove the flow from circulation
           all_flows_lock.remove(&key);
         }
+        all_flows_lock.shrink_to_fit();
 
         let ret = lqos_sys::end_flows(&mut expired_keys);
         if let Err(e) = ret {
