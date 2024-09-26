@@ -178,7 +178,12 @@ fn throughput_task(
         } else {
             let elapsed = last_submitted_to_lts.unwrap().elapsed();
             let elapsed_f64 = elapsed.as_secs_f64();
-            submit_throughput_stats(long_term_stats_tx.clone(), elapsed_f64);
+            // Temporary: place this in a thread to not block the timer
+            let my_lts_tx = long_term_stats_tx.clone();
+            std::thread::Builder::new().name("Throughput Stats Submit".to_string()).spawn(move || {
+                submit_throughput_stats(my_lts_tx, elapsed_f64);
+            }).unwrap().join().unwrap();
+            //submit_throughput_stats(long_term_stats_tx.clone(), elapsed_f64);
         }
         last_submitted_to_lts = Some(Instant::now());
         timer_metrics.lts_submit = timer_metrics.start.elapsed().as_secs_f64();
@@ -196,7 +201,31 @@ fn scale_u64_by_f64(value: u64, scale: f64) -> u64 {
     (value as f64 * scale) as u64
 }
 
+#[derive(Debug)]
+struct LtsSubmitMetrics {
+    start: Instant,
+    shaped_devices: f64,
+    total_throughput: f64,
+    hosts: f64,
+    summary: f64,
+    send: f64,
+}
+
+impl LtsSubmitMetrics {
+    fn new() -> Self {
+        Self {
+            start: Instant::now(),
+            shaped_devices: 0.0,
+            total_throughput: 0.0,
+            hosts: 0.0,
+            summary: 0.0,
+            send: 0.0,
+        }
+    }
+}
+
 fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>, scale: f64) {
+    let mut metrics = LtsSubmitMetrics::new();
     // If ShapedDevices has changed, notify the stats thread
     if let Ok(changed) = STATS_NEEDS_NEW_SHAPED_DEVICES.compare_exchange(
         true,
@@ -210,6 +239,7 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>, scale
                 .blocking_send(StatsUpdateMessage::ShapedDevicesChanged(shaped_devices));
         }
     }
+    metrics.shaped_devices = metrics.start.elapsed().as_secs_f64();
 
     // Gather Global Stats
     let packets_per_second = (
@@ -220,6 +250,7 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>, scale
     );
     let bits_per_second = THROUGHPUT_TRACKER.bits_per_second();
     let shaped_bits_per_second = THROUGHPUT_TRACKER.shaped_bits_per_second();
+    metrics.total_throughput = metrics.start.elapsed().as_secs_f64();
     
     if let Ok(config) = load_config() {
         if bits_per_second.down > (config.queues.downlink_bandwidth_mbps as u64 * 1_000_000) {
@@ -243,6 +274,7 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>, scale
             median_rtt: host.median_latency().unwrap_or(0.0),
         })
         .collect();
+    metrics.hosts = metrics.start.elapsed().as_secs_f64();
 
     let summary = Box::new((
         ThroughputSummary {
@@ -253,12 +285,18 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>, scale
         },
         get_network_tree(),
     ));
+    metrics.summary = metrics.start.elapsed().as_secs_f64();
 
     // Send the stats
     let result = long_term_stats_tx
         .blocking_send(StatsUpdateMessage::ThroughputReady(summary));
     if let Err(e) = result {
         warn!("Error sending message to stats collection system. {e:?}");
+    }
+    metrics.send = metrics.start.elapsed().as_secs_f64();
+
+    if metrics.start.elapsed().as_secs_f64() > 1.0 {
+        warn!("{:?}", metrics);
     }
 }
 
