@@ -50,6 +50,55 @@ pub fn spawn_throughput_monitor(
     Ok(())
 }
 
+/// Used for tracking the "tick" time, with a view to
+/// finding where some code is stalling.
+#[derive(Debug)]
+struct ThroughputTaskTimeMetrics {
+    start: Instant,
+    update_cycle : f64,
+    zero_throughput_and_rtt: f64,
+    copy_previous_and_reset_rtt: f64,
+    apply_new_throughput_counters: f64,
+    apply_flow_data: f64,
+    apply_queue_stats: f64,
+    update_totals: f64,
+    next_cycle: f64,
+    finish_update_cycle: f64,
+    lts_submit: f64,
+}
+
+impl ThroughputTaskTimeMetrics {
+    fn new() -> Self {
+        Self {
+            start: Instant::now(),
+            update_cycle: 0.0,
+            zero_throughput_and_rtt: 0.0,
+            copy_previous_and_reset_rtt: 0.0,
+            apply_new_throughput_counters: 0.0,
+            apply_flow_data: 0.0,
+            apply_queue_stats: 0.0,
+            update_totals: 0.0,
+            next_cycle: 0.0,
+            finish_update_cycle: 0.0,
+            lts_submit: 0.0,
+        }
+    }
+
+    fn zero(&mut self) {
+        self.update_cycle = 0.0;
+        self.zero_throughput_and_rtt = 0.0;
+        self.copy_previous_and_reset_rtt = 0.0;
+        self.apply_new_throughput_counters = 0.0;
+        self.apply_flow_data = 0.0;
+        self.apply_queue_stats = 0.0;
+        self.update_totals = 0.0;
+        self.next_cycle = 0.0;
+        self.finish_update_cycle = 0.0;
+        self.lts_submit = 0.0;
+        self.start = Instant::now();
+    }
+}
+
 fn throughput_task(
     long_term_stats_tx: Sender<StatsUpdateMessage>,
     netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
@@ -84,8 +133,10 @@ fn throughput_task(
         interval: Duration::new(1, 0)}
                   , SetTimeFlags::Default
     );
+    let mut timer_metrics = ThroughputTaskTimeMetrics::new();
     loop {
         let start = Instant::now();
+        timer_metrics.zero();
 
         // Formerly a "spawn blocking" blob
         {
@@ -93,22 +144,31 @@ fn throughput_task(
                 let read = NETWORK_JSON.read().unwrap();
                 read.begin_update_cycle()
             };
+            timer_metrics.update_cycle = timer_metrics.start.elapsed().as_secs_f64();
             net_json_calc.zero_throughput_and_rtt();
+            timer_metrics.zero_throughput_and_rtt = timer_metrics.start.elapsed().as_secs_f64();
             THROUGHPUT_TRACKER.copy_previous_and_reset_rtt();
+            timer_metrics.copy_previous_and_reset_rtt = timer_metrics.start.elapsed().as_secs_f64();
             THROUGHPUT_TRACKER.apply_new_throughput_counters(&mut net_json_calc);
+            timer_metrics.apply_new_throughput_counters = timer_metrics.start.elapsed().as_secs_f64();
             THROUGHPUT_TRACKER.apply_flow_data(
                 timeout_seconds,
                 netflow_enabled,
                 netflow_sender.clone(),
                 &mut net_json_calc,
             );
+            timer_metrics.apply_flow_data = timer_metrics.start.elapsed().as_secs_f64();
             THROUGHPUT_TRACKER.apply_queue_stats(&mut net_json_calc);
+            timer_metrics.apply_queue_stats = timer_metrics.start.elapsed().as_secs_f64();
             THROUGHPUT_TRACKER.update_totals();
+            timer_metrics.update_totals = timer_metrics.start.elapsed().as_secs_f64();
             THROUGHPUT_TRACKER.next_cycle();
+            timer_metrics.next_cycle = timer_metrics.start.elapsed().as_secs_f64();
             {
                 let mut write = NETWORK_JSON.write().unwrap();
                 write.finish_update_cycle(net_json_calc);
             }
+            timer_metrics.finish_update_cycle = timer_metrics.start.elapsed().as_secs_f64();
             let duration_ms = start.elapsed().as_micros();
             TIME_TO_POLL_HOSTS.store(duration_ms as u64, std::sync::atomic::Ordering::Relaxed);
         }
@@ -121,11 +181,13 @@ fn throughput_task(
             submit_throughput_stats(long_term_stats_tx.clone(), elapsed_f64);
         }
         last_submitted_to_lts = Some(Instant::now());
+        timer_metrics.lts_submit = timer_metrics.start.elapsed().as_secs_f64();
 
         // Sleep until the next second
         let missed_ticks = tfd.read();
         if missed_ticks > 1 {
             warn!("Missed {} ticks", missed_ticks - 1);
+            warn!("{:?}", timer_metrics);
         }
     }
 }
