@@ -34,7 +34,7 @@ pub(crate) static DEVICE_ID_LIST: Lazy<DashSet<String>> = Lazy::new(DashSet::new
 /// Returns a channel that may be used to notify of data availability.
 pub fn start_long_term_stats() -> Sender<StatsUpdateMessage> {
     let (update_tx, update_rx): (Sender<StatsUpdateMessage>, Receiver<StatsUpdateMessage>) =
-        mpsc::channel(10);
+        mpsc::channel(102400);
     let (comm_tx, comm_rx): (Sender<SenderChannelMessage>, Receiver<SenderChannelMessage>) =
         mpsc::channel(10);
 
