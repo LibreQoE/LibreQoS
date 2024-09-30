@@ -21,12 +21,14 @@ pub struct ThroughputTracker {
 
 impl ThroughputTracker {
   pub(crate) fn new() -> Self {
-    // The capacity should match that found in
-    // maximums.h (MAX_TRACKED_IPS), so we grab it
-    // from there via the C API.
+    // The capacity used to be taken from MAX_TRACKED_IPs, but
+    // that's quite wasteful for smaller systems. So we're starting
+    // small and allowing vector growth. That will slow down the
+    // first few cycles, but it should be fine after that.
+    const INITIAL_CAPACITY: usize = 1000;
     Self {
       cycle: AtomicU64::new(RETIRE_AFTER_SECONDS),
-      raw_data: DashMap::with_capacity(lqos_sys::max_tracked_ips()),
+      raw_data: DashMap::with_capacity(INITIAL_CAPACITY),
       bytes_per_second: AtomicDownUp::zeroed(),
       packets_per_second: AtomicDownUp::zeroed(),
       shaped_bytes_per_second: AtomicDownUp::zeroed(),
