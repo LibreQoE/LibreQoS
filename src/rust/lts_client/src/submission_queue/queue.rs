@@ -75,6 +75,7 @@ impl Queue {
 pub(crate) async fn send_queue(stream: &mut TcpStream) -> Result<(), QueueError> {
     let mut lock = QUEUE.queue.lock().await;
     for message in lock.iter_mut() {
+        message.attempts += 1;
         let submission_buffer = encode_submission(&message.body).await?;
         let ret = stream.write_all(&submission_buffer).await;
         info!("Sent submission: {} bytes.", submission_buffer.len());
@@ -97,7 +98,7 @@ pub(crate) async fn send_queue(stream: &mut TcpStream) -> Result<(), QueueError>
     }
 
     lock.retain(|s| !s.sent);
-    lock.retain(|s| s.attempts < 200);
+    lock.retain(|s| s.attempts < 20);
     Ok(())
 }
 
