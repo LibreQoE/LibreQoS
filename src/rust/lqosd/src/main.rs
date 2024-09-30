@@ -156,7 +156,7 @@ fn main() -> Result<()> {
           }
           let _ = tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(long_term_stats_tx.send(lts_client::collector::StatsUpdateMessage::Quit));
+            .block_on(long_term_stats_tx.send(lts_client::collector::stats_availability::StatsUpdateMessage::Quit));
           std::mem::drop(kernels);
           UnixSocketServer::signal_cleanup();
           std::mem::drop(file_lock);

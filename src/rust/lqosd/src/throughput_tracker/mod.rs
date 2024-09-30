@@ -14,7 +14,7 @@ use tracing::{debug, info, warn};
 use lqos_bus::{BusResponse, FlowbeeProtocol, IpStats, TcHandle, TopFlowType, XdpPpingResult};
 use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
-use lts_client::collector::{HostSummary, StatsUpdateMessage, ThroughputSummary};
+use lts_client::collector::{HostSummary, stats_availability::StatsUpdateMessage, ThroughputSummary};
 use once_cell::sync::Lazy;
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
 use tokio::{
