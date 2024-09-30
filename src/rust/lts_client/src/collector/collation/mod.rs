@@ -144,4 +144,5 @@ pub(crate) async fn collate_stats(comm_tx: Sender<SenderChannelMessage>) {
 
     // Clear the collection buffer
     writer.clear();
+    writer.shrink_to_fit();
 }
