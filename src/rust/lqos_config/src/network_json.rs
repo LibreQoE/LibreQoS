@@ -36,6 +36,10 @@ impl NetworkJson {
         Self { nodes: Vec::new() }
     }
 
+    pub fn len_and_capacity(&self) -> (usize, usize) {
+        (self.nodes.len(), self.nodes.capacity())
+    }
+
     /// The path to the current `network.json` file, determined
     /// by acquiring the prefix from the `/etc/lqos.conf` configuration
     /// file.
