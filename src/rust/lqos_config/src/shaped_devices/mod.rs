@@ -69,7 +69,7 @@ impl ConfigShapedDevices {
 
     // Example: StringRecord(["1", "968 Circle St., Gurnee, IL 60031", "1", "Device 1", "", "", "192.168.101.2", "", "25", "5", "10000", "10000", ""])
 
-    let mut devices = Vec::with_capacity(SUPPORTED_CUSTOMERS);
+    let mut devices = Vec::new(); // Note that this used to be supported_customers, but we're going to let it grow organically
     for result in reader.records() {
       if let Ok(result) = result {
         let device = ShapedDevice::from_csv(&result);

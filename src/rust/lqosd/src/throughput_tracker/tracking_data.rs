@@ -25,10 +25,9 @@ impl ThroughputTracker {
     // that's quite wasteful for smaller systems. So we're starting
     // small and allowing vector growth. That will slow down the
     // first few cycles, but it should be fine after that.
-    const INITIAL_CAPACITY: usize = 1000;
     Self {
       cycle: AtomicU64::new(RETIRE_AFTER_SECONDS),
-      raw_data: DashMap::with_capacity(INITIAL_CAPACITY),
+      raw_data: DashMap::default(),
       bytes_per_second: AtomicDownUp::zeroed(),
       packets_per_second: AtomicDownUp::zeroed(),
       shaped_bytes_per_second: AtomicDownUp::zeroed(),
