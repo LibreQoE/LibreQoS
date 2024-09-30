@@ -417,6 +417,11 @@ impl TimeBuffer {
             })
             .collect()
     }
+
+    pub fn len_and_capacity(&self) -> (usize, usize) {
+        let buffer = self.buffer.lock().unwrap();
+        (buffer.len(), buffer.capacity())
+    }
 }
 
 pub static RECENT_FLOWS: Lazy<TimeBuffer> = Lazy::new(|| TimeBuffer::new());

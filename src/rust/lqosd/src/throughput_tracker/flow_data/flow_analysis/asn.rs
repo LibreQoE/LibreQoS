@@ -52,6 +52,10 @@ pub struct GeoTable {
 impl GeoTable {
     const FILENAME: &'static str = "geo2.bin";
 
+    pub fn len(&self) -> (usize, usize, usize, usize) {
+        (self.asn_trie.len().1, self.geo_trie.len().1, self.asn_lookup.len(), self.asn_lookup.capacity())
+    }
+
     fn file_path() -> std::path::PathBuf {
         Path::new(&lqos_config::load_config().unwrap().lqos_directory)
             .join(Self::FILENAME)

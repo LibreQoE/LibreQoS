@@ -46,6 +46,18 @@ impl FlowAnalysisSystem {
             asn_table: Mutex::new(None),
         }
     }
+
+    pub fn len_and_capacity() -> (usize, usize, usize, usize) {
+        if let Ok(lock) = ANALYSIS.asn_table.lock() {
+            if let Some(table) = lock.as_ref() {
+                table.len()
+            } else {
+                (0, 0, 0, 0)
+            }
+        } else {
+            (0, 0, 0, 0)
+        }
+    }
 }
 
 pub fn setup_flow_analysis() -> anyhow::Result<()> {

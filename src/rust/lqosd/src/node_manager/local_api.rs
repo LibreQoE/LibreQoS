@@ -14,6 +14,7 @@ mod packet_analysis;
 mod flow_map;
 mod warnings;
 mod flow_explorer;
+mod container_status;
 
 use axum::Router;
 use axum::routing::{get, post};
@@ -56,6 +57,7 @@ pub fn local_api() -> Router {
         .route("/flowTimeline/:asn_id", get(flow_explorer::flow_timeline))
         .route("/countryTimeline/:iso_code", get(flow_explorer::country_timeline))
         .route("/protocolTimeline/:protocol", get(flow_explorer::protocol_timeline))
+        .route("/containerStatus", get(container_status::container_status))
         .layer(CorsLayer::very_permissive())
         .route_layer(axum::middleware::from_fn(auth_layer))
 }
