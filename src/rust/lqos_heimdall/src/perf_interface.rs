@@ -1,4 +1,5 @@
 use std::{ffi::c_void, slice};
+use tracing::warn;
 use lqos_utils::XdpIpAddress;
 use zerocopy::FromBytes;
 use crate::timeline::store_on_timeline;
@@ -67,7 +68,7 @@ pub unsafe extern "C" fn heimdall_handle_events(
 ) -> i32 {
   const EVENT_SIZE: usize = std::mem::size_of::<HeimdallEvent>();
   if data_size < EVENT_SIZE {
-    log::warn!("Warning: incoming data too small in Heimdall buffer");
+    warn!("Warning: incoming data too small in Heimdall buffer");
     return 0;
   }
 

@@ -18,14 +18,14 @@ lqos_heimdall = { path = "../lqos_heimdall" }
 lts_client = { path = "../lts_client" }
 lts2_sys = { path = "../lts2_sys" }
 lqos_support_tool = { path = "../lqos_support_tool" }
-tokio = { version = "=1.39.1", features = [ "full", "parking_lot" ] }
+tokio = { version = "1", features = [ "full", "parking_lot" ] }
 once_cell = { workspace = true}
 lqos_bus = { path = "../lqos_bus" }
 signal-hook = "0.3"
 serde_json = { workspace = true }
 serde = { workspace = true }
-env_logger = "0"
-log = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 nix = {  workspace = true }
 sysinfo = {  workspace = true }
 dashmap = { workspace = true }
@@ -49,9 +49,10 @@ mime_guess = "2.0.4"
 libloading = "0.8.5"
 time = { version = "0.3.36", features = ["serde"] }
 serde_cbor = { workspace = true }
-timerfd = "1.6.0"
+timerfd = {  workspace = true }
+crossbeam-channel = { workspace = true }
+
 
 # Support JemAlloc on supported platforms
 [target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]
 jemallocator = {  workspace = true }
-

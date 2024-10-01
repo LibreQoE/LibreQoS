@@ -1,6 +1,6 @@
 use std::ffi::c_void;
 use libbpf_sys::bpf_map_update_elem;
-use log::error;
+use tracing::error;
 use thiserror::Error;
 use crate::num_possible_cpus;
 

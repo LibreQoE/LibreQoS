@@ -8,6 +8,8 @@ pub use self::v15::Config;
 pub use etclqos_migration::*;
 use std::sync::Mutex;
 use thiserror::Error;
+use tracing::{debug, error, info};
+
 mod migration;
 mod python_migration;
 #[cfg(test)]
@@ -22,28 +24,28 @@ pub fn load_config() -> Result<Config, LibreQoSConfigError> {
     let mut config_location = "/etc/lqos.conf".to_string();
     if let Ok(lqos_config) = std::env::var("LQOS_CONFIG") {
         config_location = lqos_config;
-        log::info!("Overriding lqos.conf location from environment variable.");
+        info!("Overriding lqos.conf location from environment variable.");
     }
     
     let mut lock = CONFIG.lock().unwrap();
     if lock.is_none() {
-        log::info!("Loading configuration file {config_location}");
+        debug!("Loading configuration file {config_location}");
         migrate_if_needed().map_err(|e| {
-            log::error!("Unable to migrate configuration: {:?}", e);
+            error!("Unable to migrate configuration: {:?}", e);
             LibreQoSConfigError::FileNotFoud
         })?;
 
         let file_result = std::fs::read_to_string(&config_location);
         if file_result.is_err() {
-            log::error!("Unable to open {config_location}");
+            error!("Unable to open {config_location}");
             return Err(LibreQoSConfigError::FileNotFoud);
         }
         let raw = file_result.unwrap();
 
         let config_result = Config::load_from_string(&raw);
         if config_result.is_err() {
-            log::error!("Unable to parse /etc/lqos.conf");
-            log::error!("Error: {:?}", config_result);
+            error!("Unable to parse /etc/lqos.conf");
+            error!("Error: {:?}", config_result);
             return Err(LibreQoSConfigError::ParseError(format!(
                 "{:?}",
                 config_result
@@ -55,8 +57,8 @@ pub fn load_config() -> Result<Config, LibreQoSConfigError> {
         if let Ok(lqos_dir) = std::env::var("LQOS_DIRECTORY") {
             final_config.lqos_directory = lqos_dir;
         }
-        
-        log::info!("Set cached version of config file");
+
+        debug!("Set cached version of config file");
         *lock = Some(final_config);
     }
 
@@ -87,7 +89,7 @@ pub fn enable_long_term_stats(license_key: String) -> Result<(), LibreQoSConfigE
 
 /// Update the configuration on disk
 pub fn update_config(new_config: &Config) -> Result<(), LibreQoSConfigError> {
-    log::info!("Updating stored configuration");
+    debug!("Updating stored configuration");
     let mut lock = CONFIG.lock().unwrap();
     *lock = Some(new_config.clone());
 
@@ -97,7 +99,7 @@ pub fn update_config(new_config: &Config) -> Result<(), LibreQoSConfigError> {
         let backup_path = Path::new("/etc/lqos.conf.webbackup");
         std::fs::copy(config_path, backup_path)
             .map_err(|e| {
-                log::error!("Unable to create backup configuration: {e:?}");
+                error!("Unable to create backup configuration: {e:?}");
                 LibreQoSConfigError::CannotCopy
             })?;
     }
@@ -105,12 +107,12 @@ pub fn update_config(new_config: &Config) -> Result<(), LibreQoSConfigError> {
     // Serialize the new one
     let serialized = toml::to_string_pretty(new_config)
         .map_err(|e| {
-            log::error!("Unable to serialize new configuration to TOML: {e:?}");
+            error!("Unable to serialize new configuration to TOML: {e:?}");
             LibreQoSConfigError::SerializeError
         })?;
     std::fs::write(config_path, serialized)
         .map_err(|e| {
-            log::error!("Unable to write new configuration: {e:?}");
+            error!("Unable to write new configuration: {e:?}");
             LibreQoSConfigError::CannotWrite
         })?;
 

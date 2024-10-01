@@ -1,7 +1,7 @@
 //! The `authentication` module provides authorization for use of the
 //! local web UI on LibreQoS boxes. It maps to `/<install dir>/lqusers.toml`
 
-use log::{error, warn};
+use tracing::{error, warn};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{

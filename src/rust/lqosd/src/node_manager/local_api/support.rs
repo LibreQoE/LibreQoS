@@ -8,7 +8,7 @@ use lqos_config::load_config;
 use lqos_support_tool::{run_sanity_checks, SanityChecks};
 
 pub async fn run_sanity_check() -> Json<SanityChecks> {
-    let mut status = run_sanity_checks().unwrap();
+    let mut status = run_sanity_checks(false).unwrap();
     status.results.sort_by(|a,b| a.success.cmp(&b.success));
     Json(status)
 }

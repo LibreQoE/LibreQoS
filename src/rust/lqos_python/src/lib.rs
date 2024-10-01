@@ -287,7 +287,7 @@ fn is_libre_already_running() -> PyResult<bool> {
         let sys = System::new_all();
         let pid = sysinfo::Pid::from(pid as usize);
         if let Some(process) = sys.processes().get(&pid) {
-          if process.name().contains("python") {
+          if process.name().to_string_lossy().contains("python") {
             return Ok(true);
           }
         }

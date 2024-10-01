@@ -14,7 +14,7 @@ ip_network_table = {  workspace = true }
 ip_network = { workspace = true }
 sha2 = {  workspace = true }
 uuid = { workspace = true }
-log = { workspace = true }
+tracing = { workspace = true }
 dashmap = {  workspace = true }
 pyo3 = {  workspace = true }
 toml = {  workspace = true }

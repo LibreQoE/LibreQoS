@@ -23,6 +23,7 @@ use lqos_config::load_config;
 use once_cell::sync::Lazy;
 use std::{sync::atomic::AtomicU64, time::Duration};
 use tokio::sync::mpsc::{self, Receiver, Sender};
+use tracing::{info, warn};
 
 static STATS_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub(crate) static DEVICE_ID_LIST: Lazy<DashSet<String>> = Lazy::new(DashSet::new);
@@ -31,12 +32,31 @@ pub(crate) static DEVICE_ID_LIST: Lazy<DashSet<String>> = Lazy::new(DashSet::new
 /// because it creates the channel and then spawns listener threads.
 ///
 /// Returns a channel that may be used to notify of data availability.
-pub async fn start_long_term_stats() -> Sender<StatsUpdateMessage> {
-    let (update_tx, mut update_rx): (Sender<StatsUpdateMessage>, Receiver<StatsUpdateMessage>) =
-        mpsc::channel(1024);
+pub fn start_long_term_stats() -> Sender<StatsUpdateMessage> {
+    let (update_tx, update_rx): (Sender<StatsUpdateMessage>, Receiver<StatsUpdateMessage>) =
+        mpsc::channel(102400);
     let (comm_tx, comm_rx): (Sender<SenderChannelMessage>, Receiver<SenderChannelMessage>) =
         mpsc::channel(1024);
 
+    let cloned_update_tx = update_tx.clone();
+    let _ = std::thread::Builder::new().name("LTS1 Collector".to_string()).spawn(move || {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(startup(update_rx, comm_tx, cloned_update_tx, comm_rx));
+    });
+
+    // Return the channel, for notifications
+    update_tx
+}
+
+async fn startup(
+    mut update_rx: Receiver<StatsUpdateMessage>,
+    comm_tx: Sender<SenderChannelMessage>,
+    update_tx: Sender<StatsUpdateMessage>,
+    comm_rx: Receiver<SenderChannelMessage>,
+) {
     if let Ok(cfg) = load_config() {
         if !cfg.long_term_stats.gather_stats {
             // Wire up a null recipient to the channel, so it receives messages
@@ -45,43 +65,44 @@ pub async fn start_long_term_stats() -> Sender<StatsUpdateMessage> {
                 while let Some(_msg) = update_rx.recv().await {
                     // Do nothing
                 }
-            });
-            return update_tx;
+            }).await.unwrap();
+            warn!("Long-term stats gathering is disabled in the configuration. Exiting.");
+            return;
         }
     }
 
-    tokio::spawn(lts_manager(update_rx, comm_tx));
-    tokio::spawn(collation_scheduler(update_tx.clone()));
-    tokio::spawn(uisp_collection_manager(update_tx.clone()));
-    tokio::spawn(start_communication_channel(comm_rx));
-
-    // Return the channel, for notifications
-    update_tx
+    let _ = tokio::join!(
+        lts_manager(update_rx, comm_tx),
+        collation_scheduler(update_tx.clone()),
+        uisp_collection_manager(update_tx.clone()),
+        start_communication_channel(comm_rx),
+    );
+    warn!("Long-term stats gathering thread has exited.");
 }
 
 async fn collation_scheduler(tx: Sender<StatsUpdateMessage>) {
-    log::info!("Starting collation scheduler");
+    info!("Starting collation scheduler");
     loop {
         let collation_period = get_collation_period();
-        log::info!("Collation period: {}s", collation_period.as_secs());
+        info!("Collation period: {}s", collation_period.as_secs());
         if tx.send(StatsUpdateMessage::CollationTime).await.is_err() {
-            log::warn!("Unable to send collation time message");
+            warn!("Unable to send collation time message");
         }
-        log::info!("Sent collation time message. Sleeping.");
+        info!("Sent collation time message. Sleeping.");
         tokio::time::sleep(collation_period).await;
-        log::info!("Collation scheduler woke up.");
+        info!("Collation scheduler woke up.");
     }
 }
 
 async fn lts_manager(mut rx: Receiver<StatsUpdateMessage>, comm_tx: Sender<SenderChannelMessage>) {
-    log::info!("Long-term stats gathering thread started");
+    info!("Long-term stats gathering thread started");
     loop {
         let msg = rx.recv().await;
         match msg {
             Some(StatsUpdateMessage::ThroughputReady(throughput)) => {
                 let counter = STATS_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 if counter > 5 {
-                    log::info!("Enqueueing throughput data for collation");
+                    info!("Enqueueing throughput data for collation");
                     SESSION_BUFFER.lock().await.push(StatsSession {
                         throughput: throughput.0,
                         network_tree: throughput.1,
@@ -89,7 +110,7 @@ async fn lts_manager(mut rx: Receiver<StatsUpdateMessage>, comm_tx: Sender<Sende
                 }
             }
             Some(StatsUpdateMessage::ShapedDevicesChanged(shaped_devices)) => {
-                log::info!("Enqueueing shaped devices for collation");
+                info!("Enqueueing shaped devices for collation");
                 // Update the device id list
                 DEVICE_ID_LIST.clear();
                 shaped_devices.iter().for_each(|d| {
@@ -101,11 +122,11 @@ async fn lts_manager(mut rx: Receiver<StatsUpdateMessage>, comm_tx: Sender<Sende
                 ));
             }
             Some(StatsUpdateMessage::CollationTime) => {
-                log::info!("Collation time reached");
+                info!("Collation time reached");
                 tokio::spawn(collate_stats(comm_tx.clone()));
             }
             Some(StatsUpdateMessage::UispCollationTime) => {
-                log::info!("UISP Collation time reached");
+                info!("UISP Collation time reached");
                 tokio::spawn(gather_uisp_data(comm_tx.clone()));
             }
             Some(StatsUpdateMessage::Quit) => {
@@ -114,7 +135,7 @@ async fn lts_manager(mut rx: Receiver<StatsUpdateMessage>, comm_tx: Sender<Sende
                 break;
             }
             None => {
-                log::warn!("Long-term stats thread received a None message");
+                warn!("Long-term stats thread received a None message");
             }
         }
     }
@@ -145,7 +166,7 @@ async fn uisp_collection_manager(control_tx: Sender<StatsUpdateMessage>) {
         // Inner loop - if there's a collation period set for UISP,
         // poll it.
         if let Some(period) = get_uisp_collation_period() {
-            log::info!("Starting UISP poller with period {:?}", period);
+            info!("Starting UISP poller with period {:?}", period);
             loop {
                 control_tx
                     .send(StatsUpdateMessage::UispCollationTime)

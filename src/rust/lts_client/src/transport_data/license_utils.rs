@@ -12,13 +12,14 @@
 use super::{LicenseCheckError, LicenseRequest, LicenseReply, LICENSE_SERVER};
 use dryoc::dryocbox::PublicKey;
 use tokio::{net::TcpStream, io::{AsyncReadExt, AsyncWriteExt}};
+use tracing::{error, warn};
 
 fn build_license_request(key: String) -> Result<Vec<u8>, LicenseCheckError> {
     let mut result = Vec::new();
     let payload = serde_cbor::to_vec(&LicenseRequest::LicenseCheck { key });
     if let Err(e) = payload {
-        log::warn!("Unable to serialize license request. Not sending them.");
-        log::warn!("{e:?}");
+        warn!("Unable to serialize license request. Not sending them.");
+        warn!("{e:?}");
         return Err(LicenseCheckError::SerializeFail);
     }
     let payload = payload.unwrap();
@@ -37,8 +38,8 @@ fn build_activation_query(node_id: String) -> Result<Vec<u8>, LicenseCheckError>
     let mut result = Vec::new();
     let payload = serde_cbor::to_vec(&LicenseRequest::PendingLicenseRequest { node_id } );
     if let Err(e) = payload {
-        log::warn!("Unable to serialize license request. Not sending them.");
-        log::warn!("{e:?}");
+        warn!("Unable to serialize license request. Not sending them.");
+        warn!("{e:?}");
         return Err(LicenseCheckError::SerializeFail);
     }
     let payload = payload.unwrap();
@@ -67,8 +68,8 @@ fn build_key_exchange_request(
         public_key,
     });
     if let Err(e) = payload {
-        log::warn!("Unable to serialize statistics. Not sending them.");
-        log::warn!("{e:?}");
+        warn!("Unable to serialize statistics. Not sending them.");
+        warn!("{e:?}");
         return Err(LicenseCheckError::SerializeFail);
     }
     let payload = payload.unwrap();
@@ -94,7 +95,7 @@ pub async fn ask_license_server(key: String) -> Result<LicenseReply, LicenseChec
         let stream = TcpStream::connect(LICENSE_SERVER).await;
         if let Err(e) = &stream {
             if e.kind() == std::io::ErrorKind::NotFound {
-                log::error!("Unable to access {LICENSE_SERVER}. Check that lqosd is running and you have appropriate permissions.");
+                error!("Unable to access {LICENSE_SERVER}. Check that lqosd is running and you have appropriate permissions.");
                 return Err(LicenseCheckError::SendFail);
             }
         }
@@ -103,22 +104,22 @@ pub async fn ask_license_server(key: String) -> Result<LicenseReply, LicenseChec
             Ok(mut stream) => {
                 let ret = stream.write(&buffer).await;
                 if ret.is_err() {
-                    log::error!("Unable to write to {LICENSE_SERVER} stream.");
-                    log::error!("{:?}", ret);
+                    error!("Unable to write to {LICENSE_SERVER} stream.");
+                    error!("{:?}", ret);
                     return Err(LicenseCheckError::SendFail);
                 }
                 let mut buf = Vec::with_capacity(10240);
                 let ret = stream.read_to_end(&mut buf).await;
                 if ret.is_err() {
-                    log::error!("Unable to read from {LICENSE_SERVER} stream.");
-                    log::error!("{:?}", ret);
+                    error!("Unable to read from {LICENSE_SERVER} stream.");
+                    error!("{:?}", ret);
                     return Err(LicenseCheckError::SendFail);
                 }
 
                 decode_response(&buf)
             }
             Err(e) => {
-                log::warn!("TCP stream failed to connect: {:?}", e);
+                warn!("TCP stream failed to connect: {:?}", e);
                 Err(LicenseCheckError::ReceiveFail)
             }
         }
@@ -135,7 +136,7 @@ pub async fn ask_license_server_for_new_account(
         let stream = TcpStream::connect(LICENSE_SERVER).await;
         if let Err(e) = &stream {
             if e.kind() == std::io::ErrorKind::NotFound {
-                log::error!("Unable to access {LICENSE_SERVER}. Check that lqosd is running and you have appropriate permissions.");
+                error!("Unable to access {LICENSE_SERVER}. Check that lqosd is running and you have appropriate permissions.");
                 return Err(LicenseCheckError::SendFail);
             }
         }
@@ -144,22 +145,22 @@ pub async fn ask_license_server_for_new_account(
             Ok(mut stream) => {
                 let ret = stream.write(&buffer).await;
                 if ret.is_err() {
-                    log::error!("Unable to write to {LICENSE_SERVER} stream.");
-                    log::error!("{:?}", ret);
+                    error!("Unable to write to {LICENSE_SERVER} stream.");
+                    error!("{:?}", ret);
                     return Err(LicenseCheckError::SendFail);
                 }
                 let mut buf = Vec::with_capacity(10240);
                 let ret = stream.read_to_end(&mut buf).await;
                 if ret.is_err() {
-                    log::error!("Unable to read from {LICENSE_SERVER} stream.");
-                    log::error!("{:?}", ret);
+                    error!("Unable to read from {LICENSE_SERVER} stream.");
+                    error!("{:?}", ret);
                     return Err(LicenseCheckError::SendFail);
                 }
 
                 decode_response(&buf)
             }
             Err(e) => {
-                log::warn!("TCP stream failed to connect: {:?}", e);
+                warn!("TCP stream failed to connect: {:?}", e);
                 Err(LicenseCheckError::ReceiveFail)
             }
         }
@@ -179,22 +180,22 @@ pub async fn exchange_keys_with_license_server(
         let stream = TcpStream::connect(LICENSE_SERVER).await;
         if let Err(e) = &stream {
             if e.kind() == std::io::ErrorKind::NotFound {
-                log::error!("Unable to access {LICENSE_SERVER}. Check that lqosd is running and you have appropriate permissions.");
+                error!("Unable to access {LICENSE_SERVER}. Check that lqosd is running and you have appropriate permissions.");
                 return Err(LicenseCheckError::SendFail);
             }
         }
         let mut stream = stream.unwrap(); // This unwrap is safe, we checked that it exists previously
         let ret = stream.write(&buffer).await;
         if ret.is_err() {
-            log::error!("Unable to write to {LICENSE_SERVER} stream.");
-            log::error!("{:?}", ret);
+            error!("Unable to write to {LICENSE_SERVER} stream.");
+            error!("{:?}", ret);
             return Err(LicenseCheckError::SendFail);
         }
         let mut buf = Vec::with_capacity(10240);
         let ret = stream.read_to_end(&mut buf).await;
         if ret.is_err() {
-            log::error!("Unable to read from {LICENSE_SERVER} stream.");
-            log::error!("{:?}", ret);
+            error!("Unable to read from {LICENSE_SERVER} stream.");
+            error!("{:?}", ret);
             return Err(LicenseCheckError::SendFail);
         }
 
@@ -206,7 +207,7 @@ pub async fn exchange_keys_with_license_server(
 
 fn decode_response(buf: &[u8]) -> Result<LicenseReply, LicenseCheckError> {
     if buf.len() < 2 + std::mem::size_of::<u64>() {
-        log::error!("License server returned an invalid response");
+        error!("License server returned an invalid response");
         return Err(LicenseCheckError::DeserializeFail);
     }
     const U64SIZE: usize = std::mem::size_of::<u64>();
@@ -220,7 +221,7 @@ fn decode_response(buf: &[u8]) -> Result<LicenseReply, LicenseCheckError> {
     let size = u64::from_be_bytes(*size_buf);
 
     if version != 1 {
-        log::error!("License server returned an unknown version: {}", version);
+        error!("License server returned an unknown version: {}", version);
         return Err(LicenseCheckError::DeserializeFail);
     }
 
@@ -230,8 +231,8 @@ fn decode_response(buf: &[u8]) -> Result<LicenseReply, LicenseCheckError> {
     match payload {
         Ok(payload) => Ok(payload),
         Err(e) => {
-            log::error!("Unable to deserialize license result");
-            log::error!("{e:?}");
+            error!("Unable to deserialize license result");
+            error!("{e:?}");
             Err(LicenseCheckError::DeserializeFail)
         }
     }

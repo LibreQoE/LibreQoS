@@ -25,7 +25,7 @@ impl Netflow9 {
             send_queue: Mutex::new(Vec::new()),
         });
         let thread_result = result.clone();
-        std::thread::spawn(move || thread_result.queue_handler());
+        std::thread::Builder::new().name("Netflow9".to_string()).spawn(move || thread_result.queue_handler())?;
         Ok(result)
     }
 

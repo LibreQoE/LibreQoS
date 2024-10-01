@@ -1,5 +1,5 @@
 //! Manages the `/etc/lqos.conf` file.
-use log::error;
+use tracing::{error, info};
 use serde::{Deserialize, Serialize};
 use toml_edit::{DocumentMut, value};
 use std::{fs, path::Path};
@@ -171,7 +171,7 @@ impl EtcLqos {
   }
 
   pub(crate) fn load_from_string(raw: &str) -> Result<Self, EtcLqosError> {
-    log::info!("Trying to load old TOML version from /etc/lqos.conf");
+    info!("Trying to load old TOML version from /etc/lqos.conf");
     let document = raw.parse::<DocumentMut>();
       match document {
         Err(e) => {
@@ -203,14 +203,14 @@ impl EtcLqos {
     let cfg_path = Path::new("/etc/lqos.conf");
     let backup_path = Path::new("/etc/lqos.conf.backup");
     if let Err(e) = std::fs::copy(cfg_path, backup_path) {
-      log::error!("Unable to backup /etc/lqos.conf");
-      log::error!("{e:?}");
+      error!("Unable to backup /etc/lqos.conf");
+      error!("{e:?}");
       return Err(EtcLqosError::BackupFail);
     }
     let new_cfg = document.to_string();
     if let Err(e) = fs::write(cfg_path, new_cfg) {
-      log::error!("Unable to write to /etc/lqos.conf");
-      log::error!("{e:?}");
+      error!("Unable to write to /etc/lqos.conf");
+      error!("{e:?}");
       return Err(EtcLqosError::WriteFail);
     }
     Ok(())
@@ -249,8 +249,8 @@ pub fn enable_long_term_stats(license_key: String) {
 
                 let new_cfg = config_doc.to_string();
                 if let Err(e) = fs::write(Path::new("/etc/lqos.conf"), new_cfg) {
-                  log::error!("Unable to write to /etc/lqos.conf");
-                  log::error!("{e:?}");
+                  error!("Unable to write to /etc/lqos.conf");
+                  error!("{e:?}");
                   return;
                 }
               }
@@ -278,8 +278,8 @@ fn check_config(cfg_doc: &mut DocumentMut, cfg: &mut EtcLqos) {
       cfg_doc["node_id"] = value(format!("{:x}", hash));
       println!("Updating");
       if let Err(e) = cfg.save(cfg_doc) {
-        log::error!("Unable to save /etc/lqos.conf");
-        log::error!("{e:?}");
+        error!("Unable to save /etc/lqos.conf");
+        error!("{e:?}");
       }
     }
   }

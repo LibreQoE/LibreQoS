@@ -3,7 +3,7 @@ use crate::{
   circuit_to_queue::CIRCUIT_TO_QUEUE, interval::QUEUE_MONITOR_INTERVAL,
   queue_store::QueueStore, tracking::reader::read_named_queue_from_interface,
 };
-use log::info;
+use tracing::{debug, info, warn};
 use lqos_utils::fdtimer::periodic;
 mod reader;
 mod watched_queues;
@@ -173,22 +173,24 @@ fn all_queue_reader() {
       //println!("{}", download.len() + upload.len());
       ALL_QUEUE_SUMMARY.ingest_batch(download, upload);
     } else {
-      log::warn!("(TC monitor) Unable to read configuration");
+      warn!("(TC monitor) Unable to read configuration");
     }
   } else {
-    log::warn!("(TC monitor) Not reading queues due to structure not yet ready");
+    warn!("(TC monitor) Not reading queues due to structure not yet ready");
   }
   let elapsed = start.elapsed();
-  log::debug!("(TC monitor) Completed in {:.5} seconds", elapsed.as_secs_f32());
+  debug!("(TC monitor) Completed in {:.5} seconds", elapsed.as_secs_f32());
 }
 
 /// Spawns a thread that periodically reads the queue statistics from
 /// the Linux `tc` shaper, and stores them in a `QueueStore` for later
 /// retrieval.
-pub fn spawn_queue_monitor() {
-  std::thread::spawn(|| {
+pub fn spawn_queue_monitor() -> anyhow::Result<()> {
+  std::thread::Builder::new()
+        .name("Queue Monitor".to_string())
+  .spawn(|| {
     // Setup the queue monitor loop
-    info!("Starting Queue Monitor Thread.");
+    debug!("Starting Queue Monitor Thread.");
     let interval_ms = if let Ok(config) = lqos_config::load_config() {
       config.queue_check_period_ms
     } else {
@@ -196,18 +198,22 @@ pub fn spawn_queue_monitor() {
     };
     QUEUE_MONITOR_INTERVAL
       .store(interval_ms, std::sync::atomic::Ordering::Relaxed);
-    info!("Queue check period set to {interval_ms} ms.");
+    debug!("Queue check period set to {interval_ms} ms.");
 
     // Setup the Linux timer fd system
     periodic(interval_ms, "Queue Reader", &mut || {
       track_queues();
     });
-  });
+  })?;
 
   // Set up a 2nd thread to periodically gather ALL the queue stats
-  std::thread::spawn(|| {
+  std::thread::Builder::new()
+        .name("All Queue Monitor".to_string())
+  .spawn(|| {
     periodic(2000, "All Queues", &mut || {
       all_queue_reader();
     })
-  });
+  })?;
+
+  Ok(())
 }

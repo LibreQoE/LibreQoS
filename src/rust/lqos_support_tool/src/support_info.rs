@@ -51,7 +51,7 @@ impl SupportDump {
 }
 
 pub fn gather_all_support_info(sender: &str, comments: &str, lts_key: &str) -> anyhow::Result<SupportDump> {
-    let sanity_checks = run_sanity_checks()?;
+    let sanity_checks = run_sanity_checks(false)?;
 
     let mut data_targets: Vec<Box<dyn SupportInfo>> = vec![
         lqos_config::LqosConfig::boxed(),

@@ -9,13 +9,18 @@ mod anonymous_usage;
 mod tuning;
 mod validation;
 mod long_term_stats;
+mod stats;
+mod preflight_checks;
+mod node_manager;
+mod system_stats;
+
 use std::net::IpAddr;
 use crate::{
   file_lock::FileLock,
-  ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow}, throughput_tracker::flow_data::{flowbee_handle_events, setup_netflow_tracker},
+  ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow}, throughput_tracker::flow_data::{flowbee_handle_events, setup_netflow_tracker, FlowActor},
 };
 use anyhow::Result;
-use log::{info, warn};
+use tracing::{info, warn, error};
 use lqos_bus::{BusRequest, BusResponse, UnixSocketServer, StatsRequest};
 use lqos_heimdall::{n_second_packet_dump, perf_interface::heimdall_handle_events, start_heimdall};
 use lqos_queue_tracker::{
@@ -30,34 +35,67 @@ use signal_hook::{
 };
 use stats::{BUS_REQUESTS, TIME_TO_POLL_HOSTS, HIGH_WATERMARK, FLOWS_TRACKED};
 use throughput_tracker::flow_data::get_rtt_events_per_second;
-use tokio::join;
-mod stats;
-mod preflight_checks;
-mod node_manager;
-
-// Use JemAllocator only on supported platforms
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use jemallocator::Jemalloc;
 use crate::ip_mapping::clear_hot_cache;
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[global_allocator]
-static GLOBAL: Jemalloc = Jemalloc;
+// Use JemAllocator only on supported platforms
+//#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+//use jemallocator::Jemalloc;
 
-#[tokio::main]
-async fn main() -> Result<()> {
-  // Configure log level with RUST_LOG environment variable,
-  // defaulting to "warn"
-  env_logger::init_from_env(
-    env_logger::Env::default()
-      .filter_or(env_logger::DEFAULT_FILTER_ENV, "warn"),
-  );
-  let file_lock = FileLock::new();
-  if let Err(e) = file_lock {
-    log::error!("File lock error: {:?}", e);
-    std::process::exit(0);
-  }
+use tracing::level_filters::LevelFilter;
 
+// Use JemAllocator only on supported platforms
+//#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+//#[global_allocator]
+//static GLOBAL: Jemalloc = Jemalloc;
+
+/// Configure a highly detailed logging system.
+pub fn set_console_logging() -> anyhow::Result<()> {
+  // install global collector configured based on RUST_LOG env var.
+  let level = if let Ok(level) = std::env::var("RUST_LOG") {
+    match level.to_lowercase().as_str() {
+      "trace" => LevelFilter::TRACE,
+      "debug" => LevelFilter::DEBUG,
+      "info" => LevelFilter::INFO,
+      "warn" => LevelFilter::WARN,
+      "error" => LevelFilter::ERROR,
+      _ => LevelFilter::WARN,
+    }
+  } else {
+    LevelFilter::WARN
+  };
+
+  let subscriber = tracing_subscriber::fmt()
+      .with_max_level(level)
+      // Use a more compact, abbreviated log format
+      .compact()
+      // Display source code file paths
+      .with_file(true)
+      // Display source code line numbers
+      .with_line_number(true)
+      // Display the thread ID an event was recorded on
+      .with_thread_ids(false)
+      // Don't display the event's target (module path)
+      .with_target(false)
+      // Build the subscriber
+      .finish();
+
+  // Set the subscriber as the default
+  tracing::subscriber::set_global_default(subscriber)?;
+  Ok(())
+}
+
+fn main() -> Result<()> {
+  // Set up logging
+  set_console_logging()?;
+
+  // Check that the file lock is available. Bail out if it isn't.
+  let file_lock = FileLock::new()
+      .inspect_err(|e| {
+        error!("Unable to acquire file lock: {:?}", e);
+        std::process::exit(0);
+      })?;
+
+  // Announce startup
   info!("LibreQoS Daemon Starting");
   
   // Run preflight checks
@@ -68,6 +106,10 @@ async fn main() -> Result<()> {
   
   // Apply Tunings
   tuning::tune_lqosd_from_config_file()?;
+
+  // Start the flow tracking actor. This has to happen
+  // before the ringbuffer goes live.
+  FlowActor::start()?;
 
   // Start the XDP/TC kernels
   let kernels = if config.on_a_stick_mode() {
@@ -88,27 +130,26 @@ async fn main() -> Result<()> {
   };
 
   // Spawn tracking sub-systems
-  if let Err(e) = lts2_sys::start_lts2() {
-    log::error!("Failed to start LTS2: {:?}", e);
-  } else {
-    log::info!("LTS2 client started successfully");
-  }
-  let long_term_stats_tx = start_long_term_stats().await;
-  let flow_tx = setup_netflow_tracker();
+    if let Err(e) = lts2_sys::start_lts2() {
+        log::error!("Failed to start LTS2: {:?}", e);
+    } else {
+        log::info!("LTS2 client started successfully");
+    }
+  let long_term_stats_tx = start_long_term_stats();
+  let flow_tx = setup_netflow_tracker()?;
   let _ = throughput_tracker::flow_data::setup_flow_analysis();
-  join!(
-    start_heimdall(),
-    spawn_queue_structure_monitor(),
-    shaped_devices_tracker::shaped_devices_watcher(),
-    shaped_devices_tracker::network_json_watcher(),
-    anonymous_usage::start_anonymous_usage(),
-  );
-  throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone(), flow_tx);
-  spawn_queue_monitor();
+  start_heimdall()?;
+  spawn_queue_structure_monitor()?;
+  shaped_devices_tracker::shaped_devices_watcher()?;
+  shaped_devices_tracker::network_json_watcher()?;
+  anonymous_usage::start_anonymous_usage();
+  throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone(), flow_tx)?;
+  spawn_queue_monitor()?;
+  let system_usage_tx = system_stats::start_system_stats()?;
 
   // Handle signals
   let mut signals = Signals::new([SIGINT, SIGHUP, SIGTERM])?;
-  std::thread::spawn(move || {
+  std::thread::Builder::new().name("Signal Handler".to_string()).spawn(move || {
     for sig in signals.forever() {
       match sig {
         SIGINT | SIGTERM => {
@@ -121,7 +162,7 @@ async fn main() -> Result<()> {
           }
           let _ = tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(long_term_stats_tx.send(lts_client::collector::StatsUpdateMessage::Quit));
+            .block_on(long_term_stats_tx.send(lts_client::collector::stats_availability::StatsUpdateMessage::Quit));
           std::mem::drop(kernels);
           UnixSocketServer::signal_cleanup();
           std::mem::drop(file_lock);
@@ -137,20 +178,31 @@ async fn main() -> Result<()> {
         _ => warn!("No handler for signal: {sig}"),
       }
     }
-  });
+  })?;
 
   // Create the socket server
   let server = UnixSocketServer::new().expect("Unable to spawn server");
 
-  // Webserver starting point
-  tokio::spawn(async {
-    if let Err(e) = node_manager::spawn_webserver().await {
-      log::error!("Node Manager Failed: {e:?}");
-    }
-  });
+  let handle = std::thread::Builder::new().name("Async Bus/Web".to_string()).spawn(move || {
+    tokio::runtime::Builder::new_current_thread()
+    .enable_all()
+    .build().unwrap()
+    .block_on(async {
+      let (bus_tx, bus_rx) = tokio::sync::mpsc::channel::<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>(100);
 
-  // Main bus listen loop
-  server.listen(handle_bus_requests).await?;
+      // Webserver starting point
+      tokio::spawn(async {
+        if let Err(e) = node_manager::spawn_webserver(bus_tx, system_usage_tx).await {
+          error!("Node Manager Failed: {e:?}");
+        }
+      });
+
+      // Main bus listen loop
+      server.listen(handle_bus_requests, bus_rx).await.unwrap();
+    });
+  })?;
+  let _ = handle.join();
+  warn!("Main thread exiting");
   Ok(())
 }
 
@@ -189,7 +241,7 @@ fn handle_bus_requests(
       BusRequest::ClearIpFlow => clear_ip_flows(),
       BusRequest::ListIpFlow => list_mapped_ips(),
       BusRequest::XdpPping => throughput_tracker::xdp_pping_compat(),
-      BusRequest::RttHistogram => throughput_tracker::rtt_histogram::<20>(),
+      BusRequest::RttHistogram => throughput_tracker::rtt_histogram::<50>(),
       BusRequest::HostCounts => throughput_tracker::host_counts(),
       BusRequest::AllUnknownIps => throughput_tracker::all_unknown_ips(),
       BusRequest::ReloadLibreQoS => program_control::reload_libre_qos(),
@@ -204,7 +256,7 @@ fn handle_bus_requests(
       BusRequest::UpdateLqosdConfig(config) => {
         let result = lqos_config::update_config(config);
         if result.is_err() {
-          log::error!("Error updating config: {:?}", result);
+          error!("Error updating config: {:?}", result);
         }
         BusResponse::Ack
       },
@@ -216,12 +268,16 @@ fn handle_bus_requests(
       BusRequest::GetNetworkMap { parent } => {
         shaped_devices_tracker::get_one_network_map_layer(*parent)
       }
+      BusRequest::GetFullNetworkMap => {
+          shaped_devices_tracker::get_full_network_map()
+      }
       BusRequest::TopMapQueues(n_queues) => {
         shaped_devices_tracker::get_top_n_root_queues(*n_queues)
       }
       BusRequest::GetNodeNamesFromIds(nodes) => {
         shaped_devices_tracker::map_node_names(nodes)
       }
+      BusRequest::GetAllCircuits => shaped_devices_tracker::get_all_circuits(),
       BusRequest::GetFunnel { target: parent } => {
         shaped_devices_tracker::get_funnel(parent)
       }
@@ -273,6 +329,7 @@ fn handle_bus_requests(
       BusRequest::CurrentEndpointLatLon => throughput_tracker::current_lat_lon(),
       BusRequest::EtherProtocolSummary => throughput_tracker::ether_protocol_summary(),
       BusRequest::IpProtocolSummary => throughput_tracker::ip_protocol_summary(),
+      BusRequest::FlowDuration => throughput_tracker::flow_duration(),
     });
   }
 }

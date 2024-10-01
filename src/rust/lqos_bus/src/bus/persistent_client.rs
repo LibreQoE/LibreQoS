@@ -3,7 +3,7 @@ use crate::{
   decode_response, encode_request, BusRequest, BusResponse, BusSession,
   BUS_SOCKET_PATH,
 };
-use log::{error, warn};
+use tracing::{error, warn};
 use std::time::Duration;
 use tokio::{
   io::{AsyncReadExt, AsyncWriteExt},

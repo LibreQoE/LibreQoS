@@ -1,7 +1,7 @@
 use std::{path::Path, process::Command};
 
 use anyhow::Result;
-use log::{error, info};
+use tracing::{error, info, warn};
 use lqos_config::Config;
 use lqos_sys::interface_name_to_index;
 use crate::node_manager::{add_global_warning, WarningLevel};
@@ -176,9 +176,9 @@ pub fn preflight_checks() -> Result<()> {
 
     // Does the bridge system make sense?
     if check_bridge_status(&config, &interfaces).is_err() {
-        log::warn!("Disabling XDP bridge");
+        warn!("Disabling XDP bridge");
         lqos_config::disable_xdp_bridge()?;
-        log::warn!("XDP bridge disabled in ACTIVE config. Please fix the configuration file.");
+        warn!("XDP bridge disabled in ACTIVE config. Please fix the configuration file.");
         add_global_warning(WarningLevel::Error, "XDP bridge is disabled due to the presence of a Linux bridge. Please fix your configuration.".to_string());
     };
 

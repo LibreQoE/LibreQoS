@@ -1,19 +1,23 @@
 use anyhow::Result;
-use log::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use lqos_config::NetworkJson;
 use lqos_utils::file_watcher::FileWatcher;
 use once_cell::sync::Lazy;
 use std::sync::RwLock;
-use tokio::task::spawn_blocking;
 
 pub static NETWORK_JSON: Lazy<RwLock<NetworkJson>> =
   Lazy::new(|| RwLock::new(NetworkJson::default()));
 
-pub async fn network_json_watcher() {
-  spawn_blocking(|| {
-    info!("Watching for network.kson changes");
-    let _ = watch_for_network_json_changing();
-  });
+pub fn network_json_watcher() -> Result<()> {
+    std::thread::Builder::new()
+        .name("NetJson Watcher".to_string())
+  .spawn(|| {
+      debug!("Watching for network.kson changes");
+      if let Err(e) = watch_for_network_json_changing() {
+          error!("Error watching for network.json changes: {:?}", e);
+      }
+    })?;
+    Ok(())
 }
 
 /// Fires up a Linux file system watcher than notifies

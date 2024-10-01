@@ -1,6 +1,6 @@
 use crate::queue_structure::QUEUE_STRUCTURE;
 use dashmap::DashMap;
-use log::{info, warn};
+use tracing::{info, warn};
 use lqos_bus::TcHandle;
 use lqos_sys::num_possible_cpus;
 use lqos_utils::unix_time::unix_now;

@@ -35,13 +35,15 @@ impl PublisherChannel {
     }
 
     /// Submit a message to an entire channel
-    pub(super) async fn send_and_clean(&mut self, message: String) {
+    pub(super) async fn send(&mut self, message: String) {
         for subscriber in self.subscribers.iter_mut() {
             if subscriber.sender.send(message.clone()).await.is_err() {
                 subscriber.is_alive = false;
             }
         }
+    }
 
+    pub(super) async fn clean(&mut self) {
         self.subscribers.retain(|s| s.is_alive);
     }
 }

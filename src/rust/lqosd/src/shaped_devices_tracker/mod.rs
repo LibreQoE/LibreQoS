@@ -1,23 +1,28 @@
+use std::net::IpAddr;
 use anyhow::Result;
-use log::{error, info, warn};
-use lqos_bus::BusResponse;
+use tracing::{debug, error, info, warn};
+use lqos_bus::{BusResponse, Circuit};
 use lqos_config::{ConfigShapedDevices, NetworkJsonTransport};
 use lqos_utils::file_watcher::FileWatcher;
 use once_cell::sync::Lazy;
 use std::sync::{RwLock, atomic::AtomicBool};
-use tokio::task::spawn_blocking;
+use std::time::Duration;
+use lqos_utils::units::DownUpOrder;
+use lqos_utils::unix_time::time_since_boot;
+
 mod netjson;
 pub use netjson::*;
+use crate::throughput_tracker::THROUGHPUT_TRACKER;
 
 pub static SHAPED_DEVICES: Lazy<RwLock<ConfigShapedDevices>> =
     Lazy::new(|| RwLock::new(ConfigShapedDevices::default()));
 pub static STATS_NEEDS_NEW_SHAPED_DEVICES: AtomicBool = AtomicBool::new(false);
 
 fn load_shaped_devices() {
-    info!("ShapedDevices.csv has changed. Attempting to load it.");
+    debug!("ShapedDevices.csv has changed. Attempting to load it.");
     let shaped_devices = ConfigShapedDevices::load();
     if let Ok(new_file) = shaped_devices {
-        info!("ShapedDevices.csv loaded");
+        debug!("ShapedDevices.csv loaded");
         *SHAPED_DEVICES.write().unwrap() = new_file;
         crate::throughput_tracker::THROUGHPUT_TRACKER.refresh_circuit_ids();
         STATS_NEEDS_NEW_SHAPED_DEVICES.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -27,11 +32,16 @@ fn load_shaped_devices() {
     }
 }
 
-pub async fn shaped_devices_watcher() {
-    spawn_blocking(|| {
-        info!("Watching for ShapedDevices.csv changes");
-        let _ = watch_for_shaped_devices_changing();
-    });
+pub fn shaped_devices_watcher() -> Result<()> {
+    std::thread::Builder::new()
+        .name("ShapedDevices Watcher".to_string())
+    .spawn(|| {
+        debug!("Watching for ShapedDevices.csv changes");
+        if let Err(e) = watch_for_shaped_devices_changing() {
+            error!("Error watching for ShapedDevices.csv: {:?}", e);
+        }
+    })?;
+    Ok(())
 }
 
 /// Fires up a Linux file system watcher than notifies
@@ -65,6 +75,23 @@ pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
     } else {
         BusResponse::Fail("No such node".to_string())
     }
+}
+
+pub fn get_full_network_map() -> BusResponse {
+    let data = {
+        if let Ok(net_json) = NETWORK_JSON.read() {
+            net_json
+                .get_nodes_when_ready()
+                .iter()
+                .enumerate()
+                .map(|(i, n)| (i, n.clone_to_transit()))
+                .collect::<Vec<(usize, NetworkJsonTransport)>>()
+        } else {
+            Vec::new()
+        }
+    };
+    
+    BusResponse::NetworkMap(data)
 }
 
 pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
@@ -142,4 +169,65 @@ pub fn get_funnel(circuit_id: &str) -> BusResponse {
     }
 
     BusResponse::Fail("Unknown Node".into())
+}
+
+pub fn get_all_circuits() -> BusResponse {
+    if let Ok(kernel_now) = time_since_boot() {
+        if let Ok(devices) = SHAPED_DEVICES.read() {
+            let data = THROUGHPUT_TRACKER.
+                raw_data.
+                iter()
+                .map(|v| {
+                    let ip = v.key().as_ip();
+                    let last_seen_nanos = if v.last_seen > 0 {
+                        let last_seen_nanos = v.last_seen as u128;
+                        let since_boot = Duration::from(kernel_now).as_nanos();
+                        //println!("since_boot: {:?}, last_seen: {:?}", since_boot, last_seen_nanos);
+                        (since_boot - last_seen_nanos) as u64
+                    } else {
+                        u64::MAX
+                    };
+
+                    // Map to circuit et al
+                    let mut circuit_id = None;
+                    let mut circuit_name = None;
+                    let mut device_id = None;
+                    let mut device_name = None;
+                    let mut parent_node = None;
+                    let mut plan = DownUpOrder::new(0, 0);
+                    let lookup = match ip {
+                        IpAddr::V4(ip) => ip.to_ipv6_mapped(),
+                        IpAddr::V6(ip) => ip,
+                    };
+                    if let Some(c) = devices.trie.longest_match(lookup) {
+                        circuit_id = Some(devices.devices[*c.1].circuit_id.clone());
+                        circuit_name = Some(devices.devices[*c.1].circuit_name.clone());
+                        device_id = Some(devices.devices[*c.1].device_id.clone());
+                        device_name = Some(devices.devices[*c.1].device_name.clone());
+                        parent_node = Some(devices.devices[*c.1].parent_node.clone());
+                        plan.down = devices.devices[*c.1].download_max_mbps;
+                        plan.up = devices.devices[*c.1].upload_max_mbps;
+                    }
+
+                    Circuit {
+                        ip: v.key().as_ip(),
+                        bytes_per_second: v.bytes_per_second,
+                        median_latency: v.median_latency(),
+                        tcp_retransmits: v.tcp_retransmits,
+                        circuit_id,
+                        device_id,
+                        circuit_name,
+                        device_name,
+                        parent_node,
+                        plan,
+                        last_seen_nanos,
+                    }
+                }).collect();
+            BusResponse::CircuitData(data)
+        } else {
+            BusResponse::CircuitData(Vec::new())
+        }
+    } else {
+        BusResponse::CircuitData(Vec::new())
+    }
 }

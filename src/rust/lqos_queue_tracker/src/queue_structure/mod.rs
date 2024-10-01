@@ -1,7 +1,7 @@
 mod queing_structure_json_monitor;
 mod queue_network;
 mod queue_node;
-use log::error;
+use tracing::error;
 pub use queing_structure_json_monitor::spawn_queue_structure_monitor;
 pub(crate) use queing_structure_json_monitor::QUEUE_STRUCTURE;
 use queue_network::QueueNetwork;

@@ -3,7 +3,7 @@ mod network_json_transport;
 mod network_json_counting;
 
 use dashmap::DashSet;
-use log::{debug, error};
+use tracing::{error, info};
 use serde_json::{Map, Value};
 use std::{
     fs, path::{Path, PathBuf},
@@ -34,6 +34,10 @@ impl NetworkJson {
     /// Generates an empty network.json
     pub fn new() -> Self {
         Self { nodes: Vec::new() }
+    }
+
+    pub fn len_and_capacity(&self) -> (usize, usize) {
+        (self.nodes.len(), self.nodes.capacity())
     }
 
     /// The path to the current `network.json` file, determined

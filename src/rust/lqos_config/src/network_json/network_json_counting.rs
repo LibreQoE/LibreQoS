@@ -1,4 +1,4 @@
-use log::{debug, warn};
+use tracing::warn;
 use lqos_utils::units::DownUpOrder;
 use crate::NetworkJsonNode;
 

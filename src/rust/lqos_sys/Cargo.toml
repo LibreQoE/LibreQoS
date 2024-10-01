@@ -10,7 +10,7 @@ libbpf-sys = "1"
 anyhow = { workspace = true }
 lqos_bus = { path = "../lqos_bus" }
 lqos_config = { path = "../lqos_config" }
-log = { workspace = true }
+tracing = { workspace = true }
 lqos_utils = { path = "../lqos_utils" }
 once_cell = { workspace = true}
 thiserror = { workspace = true }

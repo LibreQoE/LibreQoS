@@ -113,7 +113,7 @@ fn summarize(filename: &str) {
 }
 
 fn sanity_checks() {
-    if let Err(e) = run_sanity_checks() {
+    if let Err(e) = run_sanity_checks(true) {
         println!("Sanity Check Failed: {e:?}");
     }
 }

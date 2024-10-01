@@ -3,11 +3,10 @@ use std::sync::RwLock;
 use crate::queue_structure::{
   queue_network::QueueNetwork, queue_node::QueueNode, read_queueing_structure,
 };
-use log::{error, info};
+use tracing::{debug, error, info};
 use lqos_utils::file_watcher::FileWatcher;
 use once_cell::sync::Lazy;
 use thiserror::Error;
-use tokio::task::spawn_blocking;
 use crate::tracking::ALL_QUEUE_SUMMARY;
 
 pub(crate) static QUEUE_STRUCTURE: Lazy<RwLock<QueueStructure>> =
@@ -39,14 +38,20 @@ impl QueueStructure {
 
 /// Global file watched for `queueStructure.json`.
 /// Reloads the queue structure when it is available.
-pub async fn spawn_queue_structure_monitor() {
-  spawn_blocking(|| {
-    let _ = watch_for_queueing_structure_changing();
-  });
+pub fn spawn_queue_structure_monitor() -> anyhow::Result<()> {
+    std::thread::Builder::new()
+        .name("Queue Structure Monitor".to_string())
+  .spawn(|| {
+    if let Err(e) = watch_for_queueing_structure_changing() {
+        error!("Error watching for queueingStructure.json: {:?}", e);
+    }
+  })?;
+
+    Ok(())
 }
 
 fn update_queue_structure() {
-  info!("queueingStructure.json reloaded");
+  debug!("queueingStructure.json reloaded");
   QUEUE_STRUCTURE.write().unwrap().update();
 }
 

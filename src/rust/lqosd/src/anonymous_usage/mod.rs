@@ -4,15 +4,18 @@ use std::{time::Duration, net::TcpStream, io::Write};
 use lqos_bus::anonymous::{AnonymousUsageV1, build_stats};
 use lqos_sys::num_possible_cpus;
 use sysinfo::System;
+use tracing::{debug, warn};
 use crate::{shaped_devices_tracker::{SHAPED_DEVICES, NETWORK_JSON}, stats::HIGH_WATERMARK};
 
 const SLOW_START_SECS: u64 = 1;
 const INTERVAL_SECS: u64 = 60 * 60 * 24;
 
-pub async fn start_anonymous_usage() {
+pub fn start_anonymous_usage() {
     if let Ok(cfg) = lqos_config::load_config() {
         if cfg.usage_stats.send_anonymous {
-            std::thread::spawn(|| {
+            let _ = std::thread::Builder::new()
+                .name("Anonymous Usage Collector".to_string())
+            .spawn(|| {
                 std::thread::sleep(Duration::from_secs(SLOW_START_SECS));
                 loop {
                     let _ = anonymous_usage_dump();
@@ -86,23 +89,23 @@ fn anonymous_usage_dump() -> anyhow::Result<()> {
 fn send_stats(data: AnonymousUsageV1, server: &str) {
     let buffer = build_stats(&data);
     if let Err(e) = buffer {
-        log::warn!("Unable to serialize stats buffer");
-        log::warn!("{e:?}");
+        warn!("Unable to serialize stats buffer");
+        warn!("{e:?}");
         return;
     }
     let buffer = buffer.unwrap();
 
     let stream = TcpStream::connect(server);
     if let Err(e) = stream {
-        log::warn!("Unable to connect to {server}");
-        log::warn!("{e:?}");
+        warn!("Unable to connect to {server}");
+        warn!("{e:?}");
         return;
     }
     let mut stream = stream.unwrap();
     let result = stream.write(&buffer);
     if let Err(e) = result {
-        log::warn!("Unable to send bytes to {server}");
-        log::warn!("{e:?}");
+        warn!("Unable to send bytes to {server}");
+        warn!("{e:?}");
     }
-    log::info!("Anonymous usage stats submitted");
+    debug!("Anonymous usage stats submitted");
 }

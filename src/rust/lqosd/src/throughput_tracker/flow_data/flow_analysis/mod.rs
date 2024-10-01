@@ -2,6 +2,7 @@ use std::{net::IpAddr, sync::Mutex};
 use lqos_sys::flowbee_data::FlowbeeKey;
 use once_cell::sync::Lazy;
 use serde::Serialize;
+use tracing::error;
 
 mod asn;
 mod protocol;
@@ -26,7 +27,7 @@ pub struct FlowAnalysisSystem {
 impl FlowAnalysisSystem {
     pub fn new() -> Self {
         // Periodically update the ASN table
-        std::thread::spawn(|| {
+        let _ = std::thread::Builder::new().name("GeoTable Updater".to_string()).spawn(|| {
             loop {
                 let result = asn::GeoTable::load();
                 match result {
@@ -34,7 +35,7 @@ impl FlowAnalysisSystem {
                         ANALYSIS.asn_table.lock().unwrap().replace(table);
                     }
                     Err(e) => {
-                        log::error!("Failed to update ASN table: {e}");
+                        error!("Failed to update ASN table: {e}");
                     }
                 }
                 std::thread::sleep(std::time::Duration::from_secs(60 * 60 * 24));
@@ -43,6 +44,18 @@ impl FlowAnalysisSystem {
 
         Self {
             asn_table: Mutex::new(None),
+        }
+    }
+
+    pub fn len_and_capacity() -> (usize, usize, usize, usize) {
+        if let Ok(lock) = ANALYSIS.asn_table.lock() {
+            if let Some(table) = lock.as_ref() {
+                table.len()
+            } else {
+                (0, 0, 0, 0)
+            }
+        } else {
+            (0, 0, 0, 0)
         }
     }
 }

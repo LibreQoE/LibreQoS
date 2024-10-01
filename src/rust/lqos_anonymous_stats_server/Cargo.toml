@@ -8,7 +8,7 @@ license = "GPL-2.0-only"
 tokio = { version = "1.25.0", features = ["full"] }
 anyhow = { workspace = true }
 env_logger = "0"
-log = { workspace = true }
+tracing = { workspace = true }
 lqos_bus = { path = "../lqos_bus" }
 serde_cbor = { workspace = true }
 sqlite = "0.30.4"

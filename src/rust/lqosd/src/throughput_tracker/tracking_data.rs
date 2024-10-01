@@ -3,6 +3,7 @@ use crate::{shaped_devices_tracker::SHAPED_DEVICES, stats::HIGH_WATERMARK, throu
 use super::{flow_data::{get_flowbee_event_count_and_reset, FlowAnalysis, FlowbeeLocalData, RttData, ALL_FLOWS}, throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
 use dashmap::DashMap;
 use fxhash::FxHashMap;
+use tracing::{info, warn};
 use lqos_bus::TcHandle;
 use lqos_config::NetworkJsonCounting;
 use lqos_queue_tracker::ALL_QUEUE_SUMMARY;
@@ -20,12 +21,13 @@ pub struct ThroughputTracker {
 
 impl ThroughputTracker {
   pub(crate) fn new() -> Self {
-    // The capacity should match that found in
-    // maximums.h (MAX_TRACKED_IPS), so we grab it
-    // from there via the C API.
+    // The capacity used to be taken from MAX_TRACKED_IPs, but
+    // that's quite wasteful for smaller systems. So we're starting
+    // small and allowing vector growth. That will slow down the
+    // first few cycles, but it should be fine after that.
     Self {
       cycle: AtomicU64::new(RETIRE_AFTER_SECONDS),
-      raw_data: DashMap::with_capacity(lqos_sys::max_tracked_ips()),
+      raw_data: DashMap::default(),
       bytes_per_second: AtomicDownUp::zeroed(),
       packets_per_second: AtomicDownUp::zeroed(),
       shaped_bytes_per_second: AtomicDownUp::zeroed(),
@@ -361,10 +363,11 @@ impl ThroughputTracker {
           // Remove the flow from circulation
           all_flows_lock.remove(&key);
         }
+        all_flows_lock.shrink_to_fit();
 
         let ret = lqos_sys::end_flows(&mut expired_keys);
         if let Err(e) = ret {
-          log::warn!("Failed to end flows: {:?}", e);
+          warn!("Failed to end flows: {:?}", e);
         }
       }
 
@@ -438,7 +441,7 @@ impl ThroughputTracker {
   pub(crate) fn dump(&self) {
     for v in self.raw_data.iter() {
       let ip = v.key().as_ip();
-      log::info!("{:<34}{:?}", ip, v.tc_handle);
+      info!("{:<34}{:?}", ip, v.tc_handle);
     }
   }
 }

@@ -1,4 +1,4 @@
-use log::{error, info};
+use tracing::{debug, error};
 use notify::{Config, RecursiveMode, Watcher};
 use std::{
   path::PathBuf,
@@ -76,14 +76,14 @@ impl FileWatcher {
   pub fn watch(&mut self) -> Result<(), WatchedFileError> {
     // Handle the case in which the file does not yet exist
     if !self.path.exists() {
-      info!(
+      debug!(
         "{} does not exist yet. Waiting for it to appear.",
         self.nice_name
       );
       loop {
         std::thread::sleep(Duration::from_secs(SLEEP_UNTIL_EXISTS_SECONDS));
         if self.path.exists() {
-          info!("{} has been created. Waiting a second.", self.nice_name);
+          debug!("{} has been created. Waiting a second.", self.nice_name);
           std::thread::sleep(Duration::from_secs(
             SLEEP_AFTER_CREATION_SECONDS,
           ));
@@ -135,7 +135,7 @@ impl FileWatcher {
       if process {
         std::thread::sleep(Duration::from_secs(SLEEP_AFTER_CHANGE_SECONDS));
         last_event = Some(Instant::now());
-        info!("{} changed", self.nice_name);
+        debug!("{} changed", self.nice_name);
         if let Some(callback) = &mut self.file_changed_callback {
           callback();
           return Ok(()); // Bail out to restart

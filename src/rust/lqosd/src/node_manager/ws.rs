@@ -18,11 +18,13 @@ use std::sync::Arc;
 use axum::{Extension, extract::{WebSocketUpgrade, ws::{Message, WebSocket}}, response::IntoResponse, Router, routing::get};
 use serde::Deserialize;
 use tokio::sync::mpsc::Sender;
-
+use tracing::{debug, info};
+use lqos_bus::BusRequest;
 use crate::node_manager::auth::auth_layer;
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
 use crate::node_manager::ws::ticker::channel_ticker;
+use crate::system_stats::SystemStats;
 
 mod publish_subscribe;
 mod published_channels;
@@ -34,22 +36,25 @@ mod single_user_channels;
 /// * /private_ws: A private websocket route that allows for subscribing to a single channel
 ///
 /// Returns a router that can be mounted in the main application.
-pub fn websocket_router() -> Router {
+pub fn websocket_router(
+    bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
+    system_usage_tx: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
+) -> Router {
     let channels = PubSub::new();
-    tokio::spawn(channel_ticker(channels.clone()));
-    tokio::spawn(ticker::system_info::cache::update_cache());
+    tokio::spawn(channel_ticker(channels.clone(), bus_tx.clone(), system_usage_tx.clone()));
     Router::new()
         .route("/private_ws", get(single_user_channels::private_channel_ws_handler))
         .route("/ws", get(ws_handler))
         .route_layer(axum::middleware::from_fn(auth_layer))
         .layer(Extension(channels))
+        .layer(Extension(bus_tx.clone()))
 }
 
 async fn ws_handler(
     ws: WebSocketUpgrade,
     Extension(channels): Extension<Arc<PubSub>>,
 ) -> impl IntoResponse {
-    log::info!("WS Upgrade Called");
+    info!("WS Upgrade Called");
     let channels = channels.clone();
     ws.on_upgrade(move |socket| async {
         handle_socket(socket, channels).await;
@@ -62,7 +67,7 @@ struct Subscribe {
 }
 
 async fn handle_socket(mut socket: WebSocket, channels: Arc<PubSub>) {
-    log::info!("Websocket connected");
+    info!("Websocket connected");
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(10);
     let mut subscribed_channels = HashSet::new();
@@ -88,18 +93,18 @@ async fn handle_socket(mut socket: WebSocket, channels: Arc<PubSub>) {
                         }
                     }
                     None => {
-                        log::info!("WebSocket Disconnected");
+                        info!("WebSocket Disconnected");
                         break;
                     }
                 }
             }
         }
     }
-    log::info!("Websocket disconnected");
+    info!("Websocket disconnected");
 }
 
 async fn receive_channel_message(msg: Message, channels: Arc<PubSub>, tx: Sender<String>, subscribed_channels: &mut HashSet<PublishedChannels>) {
-    log::debug!("Received message: {:?}", msg);
+    debug!("Received message: {:?}", msg);
     if let Ok(text) = msg.to_text() {
         if let Ok(sub) = serde_json::from_str::<Subscribe>(text) {
             if let Ok(channel) = PublishedChannels::from_str(&sub.channel) {

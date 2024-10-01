@@ -1,6 +1,6 @@
 use std::{fs::read_to_string, path::Path};
 
-use log::error;
+use tracing::error;
 use thiserror::Error;
 
 const POSSIBLE_CPUS_PATH: &str = "/sys/devices/system/cpu/possible";

@@ -4,6 +4,7 @@ use lqos_sys::bpf_map::BpfMap;
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 use once_cell::sync::Lazy;
 use std::time::Duration;
+use tracing::{debug, info};
 
 const HEIMDALL_CFG_PATH: &str = "/sys/fs/bpf/heimdall_config";
 const HEIMDALL_WATCH_PATH: &str = "/sys/fs/bpf/heimdall_watching";
@@ -35,7 +36,7 @@ impl HeimdallWatching {
   }
 
   fn stop_watching(&mut self) {
-    log::info!("Heimdall stopped watching {}", self.ip_address.as_ip().to_string());
+    info!("Heimdall stopped watching {}", self.ip_address.as_ip().to_string());
     let mut map =
       BpfMap::<XdpIpAddress, u32>::from_path(HEIMDALL_WATCH_PATH).unwrap();
     map.delete(&mut self.ip_address).unwrap();
@@ -70,7 +71,7 @@ pub fn heimdall_watch_ip(ip: XdpIpAddress) {
       watch.expiration = expire.as_nanos();
     }
   } else if let Ok(h) = HeimdallWatching::new(ip) {
-    log::info!("Heimdall is watching {}", ip.as_ip().to_string());
+    debug!("Heimdall is watching {}", ip.as_ip().to_string());
     HEIMDALL_WATCH_LIST.insert(ip, h);
   }
 }

@@ -53,9 +53,9 @@ fn ipv4_record(key: &FlowbeeKey, data: &FlowbeeLocalData, direction: usize) -> a
     // Add the data itself
     bytes.extend_from_slice(&field_bytes);
 
-    println!("Padding: {}", padding);
-    println!("IPv4 data {} = {}", bytes.len(), size);
-    println!("Field bytes was: {}", field_bytes.len());
+    //println!("Padding: {}", padding);
+    //println!("IPv4 data {} = {}", bytes.len(), size);
+    //println!("Field bytes was: {}", field_bytes.len());
 
     // Pad to 32-bits
     for _ in 0..padding {

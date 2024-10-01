@@ -112,7 +112,7 @@ pub async fn update_network_and_devices(
     }
     let mut lock = SHAPED_DEVICES.write().unwrap();
     lock.replace_with_new_data(data.shaped_devices.clone());
-    println!("{:?}", lock.devices);
+    //println!("{:?}", lock.devices);
     lock.write_csv(&format!("{}/ShapedDevices.csv", config.lqos_directory)).unwrap();
 
     "Ok".to_string()
