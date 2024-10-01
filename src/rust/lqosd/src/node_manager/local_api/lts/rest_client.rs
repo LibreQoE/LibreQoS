@@ -2,7 +2,7 @@
 //! appropriate settings enabled for the LTS2 API.
 
 use axum::http::StatusCode;
-use log::error;
+use tracing::error;
 use lqos_config::load_config;
 
 pub(crate) async fn lts_query<T>(url: &str) -> Result<Vec<T>, StatusCode>

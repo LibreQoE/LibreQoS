@@ -3,7 +3,7 @@ mod network_json_transport;
 mod network_json_counting;
 
 use dashmap::DashSet;
-use tracing::{error, info};
+use tracing::{debug, error};
 use serde_json::{Map, Value};
 use std::{
     fs, path::{Path, PathBuf},

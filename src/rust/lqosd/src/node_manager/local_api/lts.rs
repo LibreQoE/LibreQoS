@@ -4,7 +4,7 @@ mod rest_client;
 
 use axum::{Form, Json};
 use axum::response::Redirect;
-use log::{info, warn};
+use tracing::{info, warn};
 use serde::Serialize;
 use lqos_bus::{bus_request, BusRequest};
 use lqos_config::load_config;

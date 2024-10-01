@@ -1,8 +1,6 @@
 pub mod flow_data;
 mod throughput_entry;
 mod tracking_data;
-use std::net::IpAddr;
-
 use std::fs::read_to_string;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::path::Path;
@@ -17,16 +15,20 @@ use crate::{
 use tracing::{debug, info, warn};
 use lqos_bus::{BusResponse, FlowbeeProtocol, IpStats, TcHandle, TopFlowType, XdpPpingResult};
 use lqos_sys::flowbee_data::FlowbeeKey;
-use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
+use lqos_utils::{hash_to_i64, unix_time::time_since_boot, XdpIpAddress};
 use lts_client::collector::{HostSummary, stats_availability::StatsUpdateMessage, ThroughputSummary};
 use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
 use tokio::{
     sync::mpsc::Sender,
     time::{Duration, Instant},
 };
 use lqos_config::load_config;
+use lqos_queue_tracker::{ALL_QUEUE_SUMMARY, TOTAL_QUEUE_STATS};
 use lqos_utils::units::DownUpOrder;
+use lqos_utils::unix_time::unix_now;
+use lts2_sys::shared_types::{CircuitCakeDrops, CircuitCakeMarks};
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
@@ -230,6 +232,7 @@ impl LtsSubmitMetrics {
 
 fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>, scale: f64) {
     let mut metrics = LtsSubmitMetrics::new();
+    let mut lts2_needs_shaped_devices = false;
     // If ShapedDevices has changed, notify the stats thread
     if let Ok(changed) = STATS_NEEDS_NEW_SHAPED_DEVICES.compare_exchange(
         true,
@@ -238,6 +241,7 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>, scale
         std::sync::atomic::Ordering::Relaxed,
     ) {
         if changed {
+            lts2_needs_shaped_devices = true;
             let shaped_devices = SHAPED_DEVICES.read().unwrap().devices.clone();
             let _ = long_term_stats_tx
                 .blocking_send(StatsUpdateMessage::ShapedDevicesChanged(shaped_devices));

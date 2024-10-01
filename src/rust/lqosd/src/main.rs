@@ -131,9 +131,9 @@ fn main() -> Result<()> {
 
   // Spawn tracking sub-systems
     if let Err(e) = lts2_sys::start_lts2() {
-        log::error!("Failed to start LTS2: {:?}", e);
+        error!("Failed to start LTS2: {:?}", e);
     } else {
-        log::info!("LTS2 client started successfully");
+        info!("LTS2 client started successfully");
     }
   let long_term_stats_tx = start_long_term_stats();
   let flow_tx = setup_netflow_tracker()?;

@@ -67,6 +67,7 @@ async fn one_second_cadence(
             tree_capacity::tree_capacity(channels.clone()),
             system_info::cpu_info(channels.clone(), system_usage_tx.clone()),
             system_info::ram_info(channels.clone(), system_usage_tx.clone()),
+            retransmits::tcp_retransmits(channels.clone()),
         );
 
         channels.clean().await;

@@ -1,6 +1,6 @@
 use axum::http::StatusCode;
 use axum::Json;
-use log::error;
+use tracing::error;
 use serde::{Deserialize, Serialize};
 use lqos_config::load_config;
 
