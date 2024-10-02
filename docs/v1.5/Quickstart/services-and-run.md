@@ -24,7 +24,7 @@ Finally, run
 
 ```shell
 sudo systemctl daemon-reload
-sudo systemctl enable lqosd lqos_node_manager lqos_scheduler
+sudo systemctl enable lqosd lqos_scheduler
 ```
 
 You can now point a web browser at `http://a.b.c.d:9123` (replace `a.b.c.d` with the management IP address of your shaping server) and enjoy a real-time view of your network.
