@@ -5,7 +5,8 @@ import warnings
 import os
 import csv
 from liblqos_python import exclude_sites, find_ipv6_using_mikrotik, bandwidth_overhead_factor, splynx_api_key, \
-	splynx_api_secret, splynx_api_url
+	splynx_api_secret, splynx_api_url, overwrite_network_json_always
+
 from integrationCommon import isIpv4Permitted
 import base64
 from requests.auth import HTTPBasicAuth
@@ -281,8 +282,12 @@ def createShaper():
 	
 	net.prepareTree()
 	net.plotNetworkGraph(False)
+	
 	if net.doesNetworkJsonExist():
-		print("network.json already exists. Leaving in-place.")
+		if overwrite_network_json_always:
+			net.createNetworkJson()
+		else:
+			print("network.json already exists. Leaving in-place.")
 	else:
 		net.createNetworkJson()
 	net.createShapedDevices()
