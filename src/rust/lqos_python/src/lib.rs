@@ -91,6 +91,7 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_wrapped(wrap_pyfunction!(get_weights))?;
   m.add_wrapped(wrap_pyfunction!(get_tree_weights))?;
   m.add_wrapped(wrap_pyfunction!(get_libreqos_directory))?;
+  m.add_wrapped(wrap_pyfunction!(is_network_flat))?;
 
   Ok(())
 }
@@ -551,7 +552,7 @@ fn automatic_import_uisp() -> PyResult<bool> {
 #[pyfunction]
 fn automatic_import_splynx() -> PyResult<bool> {
   let config = lqos_config::load_config().unwrap();
-  Ok(config.uisp_integration.enable_uisp)
+  Ok(config.spylnx_integration.enable_splynx)
 }
 
 #[pyfunction]
@@ -674,4 +675,9 @@ pub fn get_tree_weights() -> PyResult<Vec<device_weights::NetworkNodeWeight>> {
 pub fn get_libreqos_directory() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
   Ok(config.lqos_directory)
+}
+
+#[pyfunction]
+pub fn is_network_flat() -> PyResult<bool> {
+  Ok(lqos_config::NetworkJson::load().unwrap().get_nodes_when_ready().len() == 1)
 }

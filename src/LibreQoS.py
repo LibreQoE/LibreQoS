@@ -25,7 +25,7 @@ from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping,
 	check_config, sqm, upstream_bandwidth_capacity_download_mbps, upstream_bandwidth_capacity_upload_mbps, \
 	interface_a, interface_b, enable_actual_shell_commands, use_bin_packing_to_balance_cpu, monitor_mode_only, \
 	run_shell_commands_as_sudo, generated_pn_download_mbps, generated_pn_upload_mbps, queues_available_override, \
-	on_a_stick, get_tree_weights, get_weights
+	on_a_stick, get_tree_weights, get_weights, is_network_flat
 
 R2Q = 10
 #MAX_R2Q = 200_000
@@ -765,7 +765,7 @@ def refreshShapers():
 		
 		# If we're in binpacking mode, we need to sort the network structure a bit
 		bins = []
-		if use_bin_packing_to_balance_cpu():
+		if use_bin_packing_to_balance_cpu() and not is_network_flat():
 			print("BinPacking is enabled, so we're going to sort your network.")
 			cpuBin = {}
 			weights = get_tree_weights()
