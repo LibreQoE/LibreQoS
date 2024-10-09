@@ -186,11 +186,16 @@ fn main() -> Result<()> {
       let (bus_tx, bus_rx) = tokio::sync::mpsc::channel::<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>(100);
 
       // Webserver starting point
-      tokio::spawn(async {
-        if let Err(e) = node_manager::spawn_webserver(bus_tx, system_usage_tx).await {
-          error!("Node Manager Failed: {e:?}");
+      let webserver_disabled = config.disable_webserver.unwrap_or(false);
+        if !webserver_disabled {
+          tokio::spawn(async {
+            if let Err(e) = node_manager::spawn_webserver(bus_tx, system_usage_tx).await {
+              error!("Node Manager Failed: {e:?}");
+            }
+          });
+        } else {
+          warn!("Webserver disabled by configuration");
         }
-      });
 
       // Main bus listen loop
       server.listen(handle_bus_requests, bus_rx).await.unwrap();

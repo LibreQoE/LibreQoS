@@ -3,7 +3,7 @@ mod network_json_transport;
 mod network_json_counting;
 
 use dashmap::DashSet;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 use serde_json::{Map, Value};
 use std::{
     fs, path::{Path, PathBuf},
@@ -182,7 +182,7 @@ fn recurse_node(
     parents: &[usize],
     immediate_parent: usize,
 ) {
-    info!("Mapping {name} from network.json");
+    debug!("Mapping {name} from network.json");
     let mut parents = parents.to_vec();
     let my_id = if name != "children" {
         parents.push(nodes.len());
