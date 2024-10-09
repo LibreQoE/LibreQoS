@@ -2,7 +2,7 @@ use crate::{
   decode_request, encode_response, BusReply, BusRequest, BusResponse,
   BUS_SOCKET_PATH,
 };
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use std::{ffi::CString, fs::remove_file};
 use thiserror::Error;
 use tokio::{
@@ -130,9 +130,9 @@ impl UnixSocketServer {
 
               let bytes_read = socket.read(&mut buf).await;
               if bytes_read.is_err() {
-                warn!("Unable to read from client socket. Server remains alive.");
-                warn!("This is probably harmless.");
-                warn!("{:?}", bytes_read);
+                debug!("Unable to read from client socket. Server remains alive.");
+                debug!("This is probably harmless.");
+                debug!("{:?}", bytes_read);
                 break; // Escape out of the thread
               }
 
@@ -170,8 +170,8 @@ async fn reply_unix(
 ) -> Result<(), UnixSocketServerError> {
   let ret = socket.write_all(response).await;
   if ret.is_err() {
-    warn!("Unable to write to UNIX socket. This is usually harmless, meaning the client went away.");
-    warn!("{:?}", ret);
+    debug!("Unable to write to UNIX socket. This is usually harmless, meaning the client went away.");
+    debug!("{:?}", ret);
     return Err(UnixSocketServerError::WriteFail);
   };
   Ok(())
