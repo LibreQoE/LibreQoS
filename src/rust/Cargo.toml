@@ -30,7 +30,7 @@ members = [
     "lqos_heimdall", # Library for managing Heimdall flow watching
     "lqos_map_perf", # A CLI tool for testing eBPF map performance
     "lqstats", # A CLI utility for retrieving long-term statistics
-    "lts_client", # Shared data and client-side code for long-term stats
+    #"lts_client", # Shared data and client-side code for long-term stats
     "lqos_map_perf", # A CLI tool for testing eBPF map performance
     "uisp", # REST support for the UISP API
     "uisp_integration", # UISP Integration in Rust

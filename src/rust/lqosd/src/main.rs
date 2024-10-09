@@ -135,7 +135,7 @@ fn main() -> Result<()> {
     } else {
         info!("LTS2 client started successfully");
     }
-  let long_term_stats_tx = start_long_term_stats();
+  //let long_term_stats_tx = start_long_term_stats();
   let flow_tx = setup_netflow_tracker()?;
   let _ = throughput_tracker::flow_data::setup_flow_analysis();
   start_heimdall()?;
@@ -143,7 +143,7 @@ fn main() -> Result<()> {
   shaped_devices_tracker::shaped_devices_watcher()?;
   shaped_devices_tracker::network_json_watcher()?;
   anonymous_usage::start_anonymous_usage();
-  throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone(), flow_tx)?;
+  throughput_tracker::spawn_throughput_monitor(flow_tx)?;
   spawn_queue_monitor()?;
   let system_usage_tx = system_stats::start_system_stats()?;
 
@@ -160,9 +160,9 @@ fn main() -> Result<()> {
               warn!("This should never happen - terminating on unknown signal")
             }
           }
-          let _ = tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(long_term_stats_tx.send(lts_client::collector::stats_availability::StatsUpdateMessage::Quit));
+          //let _ = tokio::runtime::Runtime::new()
+          //  .unwrap()
+          //  .block_on(long_term_stats_tx.send(lts_client::collector::stats_availability::StatsUpdateMessage::Quit));
           std::mem::drop(kernels);
           UnixSocketServer::signal_cleanup();
           std::mem::drop(file_lock);
