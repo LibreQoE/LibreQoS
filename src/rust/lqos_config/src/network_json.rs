@@ -158,7 +158,8 @@ impl NetworkJson {
     /// into the main structure.
     pub fn finish_update_cycle(&mut self, counting: NetworkJsonCounting) {
         if !counting.nodes.is_empty() {
-            self.nodes = counting.nodes;
+            self.nodes.clear();
+            self.nodes.extend(counting.nodes);
         }
     }
 }
