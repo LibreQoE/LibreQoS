@@ -9,13 +9,10 @@ mod flow_analysis;
 use crate::throughput_tracker::flow_data::{flow_analysis::FinishedFlowAnalysis, netflow5::Netflow5, netflow9::Netflow9};
 pub(crate) use flow_tracker::{ALL_FLOWS, AsnId, FlowbeeLocalData};
 use lqos_sys::flowbee_data::FlowbeeKey;
-use std::sync::{
-    mpsc::{channel, Sender},
-    Arc,
-};
+use std::sync::Arc;
 use tracing::{debug, error, info};
 use anyhow::Result;
-
+use crossbeam_channel::Sender;
 pub(crate) use flow_analysis::{setup_flow_analysis, get_asn_name_and_country,
                                FlowAnalysis, RECENT_FLOWS, flowbee_handle_events, get_flowbee_event_count_and_reset,
                                expire_rtt_flows, flowbee_rtt_map, RttData, get_rtt_events_per_second, AsnListEntry,
@@ -28,8 +25,9 @@ trait FlowbeeRecipient {
 
 // Creates the netflow tracker and returns the sender
 pub fn setup_netflow_tracker() -> Result<Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>> {
-    let (tx, rx) = channel::<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>();
-    let config = lqos_config::load_config().unwrap();
+    let (tx, rx) = crossbeam_channel::bounded::<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>(65535);
+    let config = lqos_config::load_config()
+        .inspect_err(|e| error!("Failed to load configuration: {e}"))?;
 
     std::thread::Builder::new()
         .name("Netflow Tracker".to_string())
