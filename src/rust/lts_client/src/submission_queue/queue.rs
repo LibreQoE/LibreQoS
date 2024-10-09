@@ -97,8 +97,8 @@ pub(crate) async fn send_queue(stream: &mut TcpStream) -> Result<(), QueueError>
         }
     }
 
-    lock.retain(|s| !s.sent);
-    lock.retain(|s| s.attempts < 20);
+    lock.clear();
+    lock.shrink_to_fit();
     Ok(())
 }
 
