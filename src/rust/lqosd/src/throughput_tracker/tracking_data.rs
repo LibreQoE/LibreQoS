@@ -201,7 +201,7 @@ impl ThroughputTracker {
     &self, 
     timeout_seconds: u64,
     _netflow_enabled: bool,
-    sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
+    sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
     net_json_calc: &mut NetworkJsonCounting,
   ) {
     //log::debug!("Flowbee events this second: {}", get_flowbee_event_count_and_reset());

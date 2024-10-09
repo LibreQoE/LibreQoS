@@ -43,7 +43,7 @@ pub static THROUGHPUT_TRACKER: Lazy<ThroughputTracker> = Lazy::new(ThroughputTra
 ///   collection thread that there is fresh data.
 pub fn spawn_throughput_monitor(
     long_term_stats_tx: Sender<StatsUpdateMessage>,
-    netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
+    netflow_sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
 ) -> anyhow::Result<()> {
     debug!("Starting the bandwidth monitor thread.");
     std::thread::Builder::new()
@@ -107,7 +107,7 @@ impl ThroughputTaskTimeMetrics {
 
 fn throughput_task(
     long_term_stats_tx: Sender<StatsUpdateMessage>,
-    netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
+    netflow_sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
 ) {
     // Obtain the flow timeout from the config, default to 30 seconds
     let timeout_seconds = if let Ok(config) = lqos_config::load_config() {
