@@ -18,7 +18,7 @@ You have the option to run integrationUISP.py automatically on boot and every 10
 
 ## Powercode Integration
 
-First, set the relevant parameters for Sonar (powercode_api_key, powercode_api_url, etc.) in ispConfig.py.
+First, set the relevant parameters for Powercode (powercode_api_key, powercode_api_url, etc.) in ispConfig.py.
 
 To test the Powercode Integration, use
 
