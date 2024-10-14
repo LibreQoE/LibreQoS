@@ -13,3 +13,4 @@ lqos_bus = { path = "../lqos_bus" }
 serde_cbor = { workspace = true }
 sqlite = "0.30.4"
 axum = "0.6"
+log = "0.4"
