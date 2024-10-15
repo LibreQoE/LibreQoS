@@ -195,6 +195,7 @@ impl ThroughputTracker {
     net_json_calc: &mut NetworkJsonCounting,
     rtt_circuit_tracker: &mut FxHashMap<XdpIpAddress, [Vec<RttData>; 2]>,
     tcp_retries: &mut FxHashMap<XdpIpAddress, DownUpOrder<u64>>,
+    expired_keys: &mut Vec<FlowbeeKey>,
   ) {
     //log::debug!("Flowbee events this second: {}", get_flowbee_event_count_and_reset());
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
@@ -214,7 +215,7 @@ impl ThroughputTracker {
       //let mut tcp_retries: FxHashMap<XdpIpAddress, DownUpOrder<u64>> = FxHashMap::default();
 
       // Track the expired keys
-      let mut expired_keys = Vec::new();
+      //let mut expired_keys = Vec::new();
 
       let mut all_flows_lock = ALL_FLOWS.lock().unwrap();
         
@@ -357,7 +358,7 @@ impl ThroughputTracker {
         }
         all_flows_lock.shrink_to_fit();
 
-        let ret = lqos_sys::end_flows(&mut expired_keys);
+        let ret = lqos_sys::end_flows(expired_keys);
         if let Err(e) = ret {
           warn!("Failed to end flows: {:?}", e);
         }

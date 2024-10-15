@@ -139,6 +139,7 @@ fn throughput_task(
     // Preallocate some buffers to avoid allocations in the loop
     let mut rtt_circuit_tracker: FxHashMap<XdpIpAddress, [Vec<RttData>; 2]> = FxHashMap::default();
     let mut tcp_retries: FxHashMap<XdpIpAddress, DownUpOrder<u64>> = FxHashMap::default();
+    let mut expired_flows: Vec<FlowbeeKey> = Vec::new();
 
     loop {
         let start = Instant::now();
@@ -164,9 +165,11 @@ fn throughput_task(
                 &mut net_json_calc,
                 &mut rtt_circuit_tracker,
                 &mut tcp_retries,
+                &mut expired_flows,
             );
             rtt_circuit_tracker.clear();
             tcp_retries.clear();
+            expired_flows.clear();
             timer_metrics.apply_flow_data = timer_metrics.start.elapsed().as_secs_f64();
             THROUGHPUT_TRACKER.apply_queue_stats(&mut net_json_calc);
             timer_metrics.apply_queue_stats = timer_metrics.start.elapsed().as_secs_f64();
