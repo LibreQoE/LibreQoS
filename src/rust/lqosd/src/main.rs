@@ -38,8 +38,8 @@ use throughput_tracker::flow_data::get_rtt_events_per_second;
 use crate::ip_mapping::clear_hot_cache;
 
 // Use JemAllocator only on supported platforms
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use jemallocator::Jemalloc;
+//#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+//use jemallocator::Jemalloc;
 
 use tracing::level_filters::LevelFilter;
 

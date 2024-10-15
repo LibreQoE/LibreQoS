@@ -203,6 +203,8 @@ impl ThroughputTracker {
     _netflow_enabled: bool,
     sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
     net_json_calc: &mut NetworkJsonCounting,
+    rtt_circuit_tracker: &mut FxHashMap<XdpIpAddress, [Vec<RttData>; 2]>,
+    tcp_retries: &mut FxHashMap<XdpIpAddress, DownUpOrder<u64>>,
   ) {
     //log::debug!("Flowbee events this second: {}", get_flowbee_event_count_and_reset());
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
@@ -216,10 +218,10 @@ impl ThroughputTracker {
       // Tracker for per-circuit RTT data. We're losing some of the smoothness by sampling
       // every flow; the idea is to combine them into a single entry for the circuit. This
       // should limit outliers.
-      let mut rtt_circuit_tracker: FxHashMap<XdpIpAddress, [Vec<RttData>; 2]> = FxHashMap::default();
+      //let mut rtt_circuit_tracker: FxHashMap<XdpIpAddress, [Vec<RttData>; 2]> = FxHashMap::default();
 
       // Tracker for TCP retries. We're storing these per second.
-      let mut tcp_retries: FxHashMap<XdpIpAddress, DownUpOrder<u64>> = FxHashMap::default();
+      //let mut tcp_retries: FxHashMap<XdpIpAddress, DownUpOrder<u64>> = FxHashMap::default();
 
       // Track the expired keys
       let mut expired_keys = Vec::new();

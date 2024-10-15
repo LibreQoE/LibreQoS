@@ -2,7 +2,6 @@ mod serializable;
 mod shaped_device;
 
 use std::net::IpAddr;
-use crate::SUPPORTED_CUSTOMERS;
 use csv::{QuoteStyle, ReaderBuilder, WriterBuilder};
 use tracing::{debug, error};
 use serializable::SerializableShapedDevice;

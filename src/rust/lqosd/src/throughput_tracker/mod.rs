@@ -15,10 +15,9 @@ use crate::{
 use tracing::{debug, info, warn};
 use lqos_bus::{BusResponse, FlowbeeProtocol, IpStats, TcHandle, TopFlowType, XdpPpingResult};
 use lqos_sys::flowbee_data::FlowbeeKey;
-use lqos_utils::{hash_to_i64, unix_time::time_since_boot, XdpIpAddress};
+use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 use lts_client::collector::{HostSummary, stats_availability::StatsUpdateMessage, ThroughputSummary};
 use once_cell::sync::Lazy;
-use serde::{Deserialize, Serialize};
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
 use tokio::{
     sync::mpsc::Sender,
@@ -29,6 +28,7 @@ use lqos_queue_tracker::{ALL_QUEUE_SUMMARY, TOTAL_QUEUE_STATS};
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::unix_now;
 use lts2_sys::shared_types::{CircuitCakeDrops, CircuitCakeMarks};
+use crate::throughput_tracker::flow_data::RttData;
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
@@ -140,6 +140,11 @@ fn throughput_task(
                   , SetTimeFlags::Default
     );
     let mut timer_metrics = ThroughputTaskTimeMetrics::new();
+
+    // Preallocate some buffers to avoid allocations in the loop
+    let mut rtt_circuit_tracker: FxHashMap<XdpIpAddress, [Vec<RttData>; 2]> = FxHashMap::default();
+    let mut tcp_retries: FxHashMap<XdpIpAddress, DownUpOrder<u64>> = FxHashMap::default();
+
     loop {
         let start = Instant::now();
         timer_metrics.zero();
@@ -162,7 +167,11 @@ fn throughput_task(
                 netflow_enabled,
                 netflow_sender.clone(),
                 &mut net_json_calc,
+                &mut rtt_circuit_tracker,
+                &mut tcp_retries,
             );
+            rtt_circuit_tracker.clear();
+            tcp_retries.clear();
             timer_metrics.apply_flow_data = timer_metrics.start.elapsed().as_secs_f64();
             THROUGHPUT_TRACKER.apply_queue_stats(&mut net_json_calc);
             timer_metrics.apply_queue_stats = timer_metrics.start.elapsed().as_secs_f64();
@@ -232,7 +241,6 @@ impl LtsSubmitMetrics {
 
 fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>, scale: f64) {
     let mut metrics = LtsSubmitMetrics::new();
-    let mut lts2_needs_shaped_devices = false;
     // If ShapedDevices has changed, notify the stats thread
     if let Ok(changed) = STATS_NEEDS_NEW_SHAPED_DEVICES.compare_exchange(
         true,
@@ -241,7 +249,6 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>, scale
         std::sync::atomic::Ordering::Relaxed,
     ) {
         if changed {
-            lts2_needs_shaped_devices = true;
             let shaped_devices = SHAPED_DEVICES.read().unwrap().devices.clone();
             let _ = long_term_stats_tx
                 .blocking_send(StatsUpdateMessage::ShapedDevicesChanged(shaped_devices));
@@ -259,7 +266,7 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>, scale
     let bits_per_second = THROUGHPUT_TRACKER.bits_per_second();
     let shaped_bits_per_second = THROUGHPUT_TRACKER.shaped_bits_per_second();
     metrics.total_throughput = metrics.start.elapsed().as_secs_f64();
-
+    
     if let Ok(config) = load_config() {
         if bits_per_second.down > (config.queues.downlink_bandwidth_mbps as u64 * 1_000_000) {
             info!("Spike detected - not submitting LTS");
@@ -270,7 +277,7 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>, scale
             return; // Do not submit these stats
         }
     }
-
+    
     let hosts = THROUGHPUT_TRACKER
         .raw_data
         .iter()
