@@ -2,7 +2,7 @@ pub mod flow_data;
 mod throughput_entry;
 mod tracking_data;
 use std::net::IpAddr;
-
+use fxhash::FxHashMap;
 use self::flow_data::{get_asn_name_and_country, FlowAnalysis, FlowbeeLocalData, ALL_FLOWS};
 use crate::{
     long_term_stats::get_network_tree,
@@ -23,6 +23,7 @@ use tokio::{
 };
 use lqos_config::load_config;
 use lqos_utils::units::DownUpOrder;
+use crate::throughput_tracker::flow_data::RttData;
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
@@ -134,6 +135,11 @@ fn throughput_task(
                   , SetTimeFlags::Default
     );
     let mut timer_metrics = ThroughputTaskTimeMetrics::new();
+
+    // Preallocate some buffers to avoid allocations in the loop
+    let mut rtt_circuit_tracker: FxHashMap<XdpIpAddress, [Vec<RttData>; 2]> = FxHashMap::default();
+    let mut tcp_retries: FxHashMap<XdpIpAddress, DownUpOrder<u64>> = FxHashMap::default();
+
     loop {
         let start = Instant::now();
         timer_metrics.zero();
@@ -156,7 +162,11 @@ fn throughput_task(
                 netflow_enabled,
                 netflow_sender.clone(),
                 &mut net_json_calc,
+                &mut rtt_circuit_tracker,
+                &mut tcp_retries,
             );
+            rtt_circuit_tracker.clear();
+            tcp_retries.clear();
             timer_metrics.apply_flow_data = timer_metrics.start.elapsed().as_secs_f64();
             THROUGHPUT_TRACKER.apply_queue_stats(&mut net_json_calc);
             timer_metrics.apply_queue_stats = timer_metrics.start.elapsed().as_secs_f64();

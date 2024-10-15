@@ -76,7 +76,7 @@ pub unsafe extern "C" fn heimdall_handle_events(
   let data_u8 = data as *const u8;
   let data_slice : &[u8] = slice::from_raw_parts(data_u8, EVENT_SIZE);
 
-  if let Some(incoming) = HeimdallEvent::read_from_bytes(data_slice) {
+  if let Ok(incoming) = HeimdallEvent::read_from_bytes(data_slice) {
     store_on_timeline(incoming);
   } else {
     println!("Failed to decode");
