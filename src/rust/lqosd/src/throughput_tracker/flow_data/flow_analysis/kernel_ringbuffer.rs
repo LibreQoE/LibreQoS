@@ -205,7 +205,7 @@ impl FlowActor {
 
     #[inline(always)]
     fn receive_flow(flows: &mut FlowTracker, message: &[u8]) {
-        if let Some(incoming) = FlowbeeEvent::read_from(message) {
+        if let Some(incoming) = FlowbeeEvent::read_from_bytes(message) {
             EVENT_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
              if let Ok(now) = time_since_boot() {
                 let since_boot = Duration::from(now);
