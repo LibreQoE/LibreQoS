@@ -116,7 +116,9 @@ impl ConfigShapedDevices {
   pub fn replace_with_new_data(&mut self, devices: Vec<ShapedDevice>) {
     self.devices = devices;
     debug!("{:?}", self.devices);
-    self.trie = ConfigShapedDevices::make_trie(&self.devices);
+    let mut new_trie = ConfigShapedDevices::make_trie(&self.devices);
+    std::mem::swap(&mut self.trie, &mut new_trie);
+    std::mem::drop(new_trie); // Explicitly drop the old trie
   }
 
   fn make_trie(
