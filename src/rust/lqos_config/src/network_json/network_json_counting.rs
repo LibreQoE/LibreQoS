@@ -9,7 +9,7 @@ use crate::NetworkJsonNode;
 /// structure. Once the updates are complete, we copy the data back
 /// into the main network tree.
 pub struct NetworkJsonCounting {
-    pub(super) nodes: Vec<NetworkJsonNode>,
+    pub nodes: Vec<NetworkJsonNode>,
 }
 
 impl NetworkJsonCounting {

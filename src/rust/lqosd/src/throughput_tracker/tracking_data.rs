@@ -86,7 +86,7 @@ impl ThroughputTracker {
     circuit_id: Option<String>,
   ) -> Option<Vec<usize>> {
     if let Some(parent) = Self::get_node_name_for_circuit_id(circuit_id) {
-      let lock = crate::shaped_devices_tracker::NETWORK_JSON.read().unwrap();
+      let lock = crate::shaped_devices_tracker::NETWORK_JSON.load();
       lock.get_parents_for_circuit_id(&parent)
     } else {
       None

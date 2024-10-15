@@ -67,7 +67,7 @@ fn watch_for_shaped_devices_changing() -> Result<()> {
 }
 
 pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
-    let net_json = NETWORK_JSON.read().unwrap();
+    let net_json = NETWORK_JSON.load();
     if let Some(parent) = net_json.get_cloned_entry_by_index(parent_idx) {
         let mut nodes = vec![(parent_idx, parent)];
         nodes.extend_from_slice(&net_json.get_cloned_children(parent_idx));
@@ -79,23 +79,19 @@ pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
 
 pub fn get_full_network_map() -> BusResponse {
     let data = {
-        if let Ok(net_json) = NETWORK_JSON.read() {
-            net_json
+            NETWORK_JSON.load()
                 .get_nodes_when_ready()
                 .iter()
                 .enumerate()
                 .map(|(i, n)| (i, n.clone_to_transit()))
                 .collect::<Vec<(usize, NetworkJsonTransport)>>()
-        } else {
-            Vec::new()
-        }
     };
     
     BusResponse::NetworkMap(data)
 }
 
 pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
-    let net_json = NETWORK_JSON.read().unwrap();
+    let net_json = NETWORK_JSON.load();
     if let Some(parent) = net_json.get_cloned_entry_by_index(0) {
         let mut nodes = vec![(0, parent)];
         nodes.extend_from_slice(&net_json.get_cloned_children(0));
@@ -148,7 +144,7 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
 
 pub fn map_node_names(nodes: &[usize]) -> BusResponse {
     let mut result = Vec::new();
-    let reader = NETWORK_JSON.read().unwrap();
+    let reader = NETWORK_JSON.load();
     nodes.iter().for_each(|id| {
         if let Some(node) = reader.get_nodes_when_ready().get(*id) {
             result.push((*id, node.name.clone()));
@@ -158,7 +154,7 @@ pub fn map_node_names(nodes: &[usize]) -> BusResponse {
 }
 
 pub fn get_funnel(circuit_id: &str) -> BusResponse {
-    let reader = NETWORK_JSON.read().unwrap();
+    let reader = NETWORK_JSON.load();
     if let Some(index) = reader.get_index_for_name(circuit_id) {
         // Reverse the scanning order and skip the last entry (the parent)
         let mut result = Vec::new();

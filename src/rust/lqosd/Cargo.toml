@@ -47,6 +47,7 @@ rand = "0.8.5"
 mime_guess = "2.0.4"
 timerfd = {  workspace = true }
 crossbeam-channel = { workspace = true }
+arc-swap = "1.7.1"
 
 # Support JemAlloc on supported platforms
 [target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]

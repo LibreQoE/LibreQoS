@@ -21,7 +21,7 @@ pub use network_json_counting::NetworkJsonCounting;
 pub struct NetworkJson {
     /// Nodes that make up the tree, flattened and referenced by index number.
     /// TODO: We should add a primary key to nodes in network.json.
-    nodes: Vec<NetworkJsonNode>,
+    pub nodes: Vec<NetworkJsonNode>,
 }
 
 impl Default for NetworkJson {

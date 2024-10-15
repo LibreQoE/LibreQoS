@@ -21,7 +21,7 @@ use tokio::{
     sync::mpsc::Sender,
     time::{Duration, Instant},
 };
-use lqos_config::load_config;
+use lqos_config::{load_config, NetworkJson};
 use lqos_utils::units::DownUpOrder;
 use crate::throughput_tracker::flow_data::RttData;
 
@@ -148,7 +148,7 @@ fn throughput_task(
         // Formerly a "spawn blocking" blob
         {
             let mut net_json_calc = {
-                let read = NETWORK_JSON.read().unwrap();
+                let read = NETWORK_JSON.load();
                 read.begin_update_cycle()
             };
             timer_metrics.update_cycle = timer_metrics.start.elapsed().as_secs_f64();
@@ -178,8 +178,10 @@ fn throughput_task(
             THROUGHPUT_TRACKER.next_cycle();
             timer_metrics.next_cycle = timer_metrics.start.elapsed().as_secs_f64();
             {
-                let mut write = NETWORK_JSON.write().unwrap();
-                write.finish_update_cycle(net_json_calc);
+                let new_net_json = std::sync::Arc::new(NetworkJson {
+                    nodes: net_json_calc.nodes,
+                });
+                NETWORK_JSON.store(new_net_json);
             }
             timer_metrics.finish_update_cycle = timer_metrics.start.elapsed().as_secs_f64();
             let duration_ms = start.elapsed().as_micros();

@@ -6,17 +6,14 @@ use lts_client::{
 };
 
 pub(crate) fn get_network_tree() -> Vec<(usize, NetworkTreeEntry)> {
-    if let Ok(reader) = NETWORK_JSON.read() {
-        let result = reader
+        let result = NETWORK_JSON.load()
             .get_nodes_when_ready()
             .iter()
             .enumerate()
             .map(|(idx, n)| (idx, n.into()))
             .collect::<Vec<(usize, NetworkTreeEntry)>>();
         //println!("{result:#?}");
-        return result;
-    }
-    Vec::new()
+        result
 }
 
 pub fn get_stats_totals() -> BusResponse {
