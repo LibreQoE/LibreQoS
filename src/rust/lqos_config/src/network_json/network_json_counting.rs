@@ -15,8 +15,9 @@ pub struct NetworkJsonCounting {
 impl NetworkJsonCounting {
     /// Starts an update cycle. This clones the nodes into
     /// the `NetworkJsonCounting` structure - work will be performed on the clone.
-    pub fn begin_update_cycle(nodes: Vec<NetworkJsonNode>) -> Self {
-        Self { nodes }
+    pub fn begin_update_cycle(source: &[NetworkJsonNode], destination: &mut Vec<NetworkJsonNode>) {
+        destination.clear();
+        destination.extend_from_slice(source);
     }
 
     /// Sets all current throughput values to zero

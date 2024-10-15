@@ -21,7 +21,7 @@ use tokio::{
     sync::mpsc::Sender,
     time::{Duration, Instant},
 };
-use lqos_config::{load_config, NetworkJson};
+use lqos_config::{load_config, NetworkJson, NetworkJsonCounting};
 use lqos_utils::units::DownUpOrder;
 use crate::throughput_tracker::flow_data::RttData;
 
@@ -140,6 +140,9 @@ fn throughput_task(
     let mut rtt_circuit_tracker: FxHashMap<XdpIpAddress, [Vec<RttData>; 2]> = FxHashMap::default();
     let mut tcp_retries: FxHashMap<XdpIpAddress, DownUpOrder<u64>> = FxHashMap::default();
     let mut expired_flows: Vec<FlowbeeKey> = Vec::new();
+    let mut net_json_calc = NetworkJsonCounting {
+        nodes: Vec::new(),
+    };
 
     loop {
         let start = Instant::now();
@@ -147,10 +150,7 @@ fn throughput_task(
 
         // Formerly a "spawn blocking" blob
         {
-            let mut net_json_calc = {
-                let read = NETWORK_JSON.load();
-                read.begin_update_cycle()
-            };
+            NETWORK_JSON.load().begin_update_cycle(&mut net_json_calc);
             timer_metrics.update_cycle = timer_metrics.start.elapsed().as_secs_f64();
             net_json_calc.zero_throughput_and_rtt();
             timer_metrics.zero_throughput_and_rtt = timer_metrics.start.elapsed().as_secs_f64();
@@ -181,6 +181,7 @@ fn throughput_task(
                 let new_net_json = std::sync::Arc::new(NetworkJson {
                     nodes: net_json_calc.nodes,
                 });
+                net_json_calc.nodes = Vec::new();
                 NETWORK_JSON.store(new_net_json);
             }
             timer_metrics.finish_update_cycle = timer_metrics.start.elapsed().as_secs_f64();

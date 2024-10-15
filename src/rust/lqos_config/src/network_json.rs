@@ -150,8 +150,8 @@ impl NetworkJson {
 
     /// Starts an update cycle. This clones the nodes into
     /// another structure - work will be performed on the clone.
-    pub fn begin_update_cycle(&self) -> NetworkJsonCounting {
-        NetworkJsonCounting::begin_update_cycle(self.nodes.clone())
+    pub fn begin_update_cycle(&self, target: &mut NetworkJsonCounting) {
+        NetworkJsonCounting::begin_update_cycle(&self.nodes, &mut target.nodes);
     }
 
     /// Finishes an update cycle. This is called after all updates
