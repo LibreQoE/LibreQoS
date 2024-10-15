@@ -1,8 +1,8 @@
 use std::time::Duration;
-use zerocopy::AsBytes;
+use zerocopy::{Immutable, IntoBytes};
 use crate::perf_interface::{HeimdallEvent, PACKET_OCTET_SIZE};
 
-#[derive(AsBytes)]
+#[derive(IntoBytes, Immutable)]
 #[repr(C)]
 pub(crate) struct PcapFileHeader {
   magic: u32,
@@ -28,7 +28,7 @@ impl PcapFileHeader {
     }
 }
 
-#[derive(AsBytes)]
+#[derive(IntoBytes, Immutable)]
 #[repr(C)]
 pub(crate) struct PcapPacketHeader {
   ts_sec: u32,

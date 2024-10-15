@@ -17,7 +17,7 @@ use std::{
   time::Duration,
 };
 use tracing::warn;
-use zerocopy::AsBytes;
+use zerocopy::IntoBytes;
 
 impl HeimdallEvent {
   fn as_header(&self) -> PacketHeader {
