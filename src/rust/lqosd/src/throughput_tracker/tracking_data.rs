@@ -415,6 +415,7 @@ impl ThroughputTracker {
 
   pub(crate) fn next_cycle(&self) {
     self.cycle.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    self.raw_data.shrink_to_fit();
   }
 
   pub(crate) fn bits_per_second(&self) -> DownUpOrder<u64> {
