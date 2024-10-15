@@ -3,7 +3,7 @@ mod network_json_transport;
 mod network_json_counting;
 
 use dashmap::DashSet;
-use tracing::{debug, error, info};
+use tracing::{debug, error};
 use serde_json::{Map, Value};
 use std::{
     fs, path::{Path, PathBuf},
@@ -36,6 +36,7 @@ impl NetworkJson {
         Self { nodes: Vec::new() }
     }
 
+    /// Retrieves the length and capacity for the nodes vector.
     pub fn len_and_capacity(&self) -> (usize, usize) {
         (self.nodes.len(), self.nodes.capacity())
     }
