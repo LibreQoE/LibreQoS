@@ -15,9 +15,10 @@ use crate::{
 use tracing::{debug, info, warn};
 use lqos_bus::{BusResponse, FlowbeeProtocol, IpStats, TcHandle, TopFlowType, XdpPpingResult};
 use lqos_sys::flowbee_data::FlowbeeKey;
-use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
+use lqos_utils::{hash_to_i64, unix_time::time_since_boot, XdpIpAddress};
 use lts_client::collector::{HostSummary, stats_availability::StatsUpdateMessage, ThroughputSummary};
 use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
 use tokio::{
     sync::mpsc::Sender,
@@ -241,6 +242,7 @@ impl LtsSubmitMetrics {
 
 fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>, scale: f64) {
     let mut metrics = LtsSubmitMetrics::new();
+    let mut lts2_needs_shaped_devices = false;
     // If ShapedDevices has changed, notify the stats thread
     if let Ok(changed) = STATS_NEEDS_NEW_SHAPED_DEVICES.compare_exchange(
         true,
@@ -252,6 +254,7 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>, scale
             let shaped_devices = SHAPED_DEVICES.read().unwrap().devices.clone();
             let _ = long_term_stats_tx
                 .blocking_send(StatsUpdateMessage::ShapedDevicesChanged(shaped_devices));
+            lts2_needs_shaped_devices = true;
         }
     }
     metrics.shaped_devices = metrics.start.elapsed().as_secs_f64();

@@ -44,9 +44,9 @@ use crate::ip_mapping::clear_hot_cache;
 use tracing::level_filters::LevelFilter;
 
 // Use JemAllocator only on supported platforms
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[global_allocator]
-static GLOBAL: Jemalloc = Jemalloc;
+//#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+//#[global_allocator]
+//static GLOBAL: Jemalloc = Jemalloc;
 
 /// Configure a highly detailed logging system.
 pub fn set_console_logging() -> anyhow::Result<()> {

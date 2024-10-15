@@ -36,6 +36,7 @@ impl NetworkJson {
         Self { nodes: Vec::new() }
     }
 
+    /// Returns the length and capacity of the nodes vector.
     pub fn len_and_capacity(&self) -> (usize, usize) {
         (self.nodes.len(), self.nodes.capacity())
     }
