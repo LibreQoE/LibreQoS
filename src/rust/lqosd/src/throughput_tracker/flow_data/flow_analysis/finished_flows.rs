@@ -446,10 +446,7 @@ impl FlowbeeRecipient for FinishedFlowAnalysis {
         debug!("Finished flow analysis");
         data.trim(); // Remove the trailing 30 seconds of zeroes
         RECENT_FLOWS.push(TimeEntry {
-            time: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
+            time: unix_now().unwrap_or(0),
             data: (key, data, analysis),
         });
     }
