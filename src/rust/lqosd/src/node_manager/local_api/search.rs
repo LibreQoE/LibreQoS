@@ -29,7 +29,7 @@ pub async fn search(Json(search) : Json<SearchRequest>) -> Json<Vec<SearchResult
         });
     }
     {
-        let net_reader = NETWORK_JSON.load();
+        let net_reader = NETWORK_JSON.read().unwrap();
         net_reader.get_nodes_when_ready().iter().enumerate().for_each(|(idx,n)| {
             if n.name.to_lowercase().trim().contains(&term) {
                 match n.node_type.as_ref() {

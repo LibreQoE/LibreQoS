@@ -64,7 +64,7 @@ fn asn_analysis() -> (usize, usize, ContainerSize) {
 }
 
 fn net_json() -> ContainerSize {
-    let nj = NETWORK_JSON.load();
+    let nj = NETWORK_JSON.read().unwrap();
     let (size, capacity) = nj.len_and_capacity();
     ContainerSize { size, capacity }
 }

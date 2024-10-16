@@ -6,7 +6,7 @@ use lts_client::{
 };
 
 pub(crate) fn get_network_tree() -> Vec<(usize, NetworkTreeEntry)> {
-        let result = NETWORK_JSON.load()
+        let result = NETWORK_JSON.read().unwrap()
             .get_nodes_when_ready()
             .iter()
             .enumerate()

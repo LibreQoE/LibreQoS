@@ -3,11 +3,10 @@ use tracing::{debug, error, info, warn};
 use lqos_config::NetworkJson;
 use lqos_utils::file_watcher::FileWatcher;
 use once_cell::sync::Lazy;
-use std::sync::Arc;
-use arc_swap::ArcSwap;
+use std::sync::RwLock;
 
-pub static NETWORK_JSON: Lazy<ArcSwap<NetworkJson>> =
-  Lazy::new(|| ArcSwap::new(Arc::new(NetworkJson::default())));
+pub static NETWORK_JSON: Lazy<RwLock<NetworkJson>> =
+  Lazy::new(|| RwLock::new(NetworkJson::default()));
 
 pub fn network_json_watcher() -> Result<()> {
     std::thread::Builder::new()
@@ -44,7 +43,8 @@ fn watch_for_network_json_changing() -> Result<()> {
 fn load_network_json() {
   let njs = NetworkJson::load();
   if let Ok(njs) = njs {
-    NETWORK_JSON.store(Arc::new(njs));
+    let mut nj = NETWORK_JSON.write().unwrap();
+    *nj = njs;
     crate::throughput_tracker::THROUGHPUT_TRACKER
       .refresh_circuit_ids();
   } else {

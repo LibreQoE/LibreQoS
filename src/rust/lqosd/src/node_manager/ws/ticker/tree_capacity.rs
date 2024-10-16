@@ -1,8 +1,6 @@
 use std::sync::Arc;
-use arc_swap::access::{Access, DynAccess};
 use serde::Serialize;
 use serde_json::json;
-use lqos_config::NetworkJson;
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
 use crate::shaped_devices_tracker::NETWORK_JSON;
@@ -23,9 +21,8 @@ pub async fn tree_capacity(channels: Arc<PubSub>) {
         return;
     }
 
-    let reader = NETWORK_JSON.load_full();
     let capacities: Vec<NodeCapacity> =
-        reader.get_nodes_when_ready().iter().enumerate().map(|(id, node)| {
+        NETWORK_JSON.read().unwrap().get_nodes_when_ready().iter().enumerate().map(|(id, node)| {
                 let node = node.clone_to_transit();
                 let down = node.current_throughput.0 as f64 * 8.0 / 1_000_000.0;
                 let up = node.current_throughput.1 as f64 * 8.0 / 1_000_000.0;

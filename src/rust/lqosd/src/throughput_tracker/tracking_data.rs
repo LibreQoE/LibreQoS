@@ -5,7 +5,7 @@ use dashmap::DashMap;
 use fxhash::FxHashMap;
 use tracing::{info, warn};
 use lqos_bus::TcHandle;
-use lqos_config::NetworkJsonCounting;
+use lqos_config::NetworkJson;
 use lqos_queue_tracker::ALL_QUEUE_SUMMARY;
 use lqos_sys::{flowbee_data::FlowbeeKey, iterate_flows, throughput_for_each};
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
@@ -86,7 +86,7 @@ impl ThroughputTracker {
     circuit_id: Option<String>,
   ) -> Option<Vec<usize>> {
     if let Some(parent) = Self::get_node_name_for_circuit_id(circuit_id) {
-      let lock = crate::shaped_devices_tracker::NETWORK_JSON.load();
+      let lock = crate::shaped_devices_tracker::NETWORK_JSON.read().unwrap();
       lock.get_parents_for_circuit_id(&parent)
     } else {
       None
@@ -103,7 +103,7 @@ impl ThroughputTracker {
 
   pub(crate) fn apply_new_throughput_counters(
     &self,
-    net_json_calc: &mut NetworkJsonCounting,
+    net_json_calc: &mut NetworkJson,
   ) {
     let raw_data = &self.raw_data;
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
@@ -166,7 +166,7 @@ impl ThroughputTracker {
     });
   }
 
-  pub(crate) fn apply_queue_stats(&self, net_json_calc: &mut NetworkJsonCounting) {
+  pub(crate) fn apply_queue_stats(&self, net_json_calc: &mut NetworkJson) {
     // Apply totals
     ALL_QUEUE_SUMMARY.calculate_total_queue_stats();
 
@@ -192,7 +192,7 @@ impl ThroughputTracker {
     timeout_seconds: u64,
     _netflow_enabled: bool,
     sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
-    net_json_calc: &mut NetworkJsonCounting,
+    net_json_calc: &mut NetworkJson,
     rtt_circuit_tracker: &mut FxHashMap<XdpIpAddress, [Vec<RttData>; 2]>,
     tcp_retries: &mut FxHashMap<XdpIpAddress, DownUpOrder<u64>>,
     expired_keys: &mut Vec<FlowbeeKey>,
