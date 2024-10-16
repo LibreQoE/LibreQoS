@@ -43,9 +43,8 @@ fn watch_for_network_json_changing() -> Result<()> {
 fn load_network_json() {
   let njs = NetworkJson::load();
   if let Ok(njs) = njs {
-    let mut write_lock = NETWORK_JSON.write().unwrap();
-    *write_lock = njs;
-    std::mem::drop(write_lock);
+    let mut nj = NETWORK_JSON.write().unwrap();
+    *nj = njs;
     crate::throughput_tracker::THROUGHPUT_TRACKER
       .refresh_circuit_ids();
   } else {

@@ -21,9 +21,8 @@ pub async fn tree_capacity(channels: Arc<PubSub>) {
         return;
     }
 
-    let capacities: Vec<_> = {
-        if let Ok(reader) = NETWORK_JSON.read() {
-            reader.get_nodes_when_ready().iter().enumerate().map(|(id, node)| {
+    let capacities: Vec<NodeCapacity> =
+        NETWORK_JSON.read().unwrap().get_nodes_when_ready().iter().enumerate().map(|(id, node)| {
                 let node = node.clone_to_transit();
                 let down = node.current_throughput.0 as f64 * 8.0 / 1_000_000.0;
                 let up = node.current_throughput.1 as f64 * 8.0 / 1_000_000.0;
@@ -49,11 +48,7 @@ pub async fn tree_capacity(channels: Arc<PubSub>) {
                     max_up,
                     median_rtt,
                 }
-            }).collect()
-        } else {
-            Vec::new()
-        }
-    };
+            }).collect();
 
     let message = json!(
         {

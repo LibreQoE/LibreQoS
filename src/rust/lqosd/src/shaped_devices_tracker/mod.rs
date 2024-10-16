@@ -79,16 +79,12 @@ pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
 
 pub fn get_full_network_map() -> BusResponse {
     let data = {
-        if let Ok(net_json) = NETWORK_JSON.read() {
-            net_json
+            NETWORK_JSON.read().unwrap()
                 .get_nodes_when_ready()
                 .iter()
                 .enumerate()
                 .map(|(i, n)| (i, n.clone_to_transit()))
                 .collect::<Vec<(usize, NetworkJsonTransport)>>()
-        } else {
-            Vec::new()
-        }
     };
     
     BusResponse::NetworkMap(data)
