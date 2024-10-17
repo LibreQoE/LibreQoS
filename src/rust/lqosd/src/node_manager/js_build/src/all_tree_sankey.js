@@ -47,7 +47,7 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
                     color: "#999",
                     formatter: (params) => {
                         // Trim to 10 chars with elipsis
-                        return trimStringWithElipsis(params.name, 14);
+                        return trimStringWithElipsis(params.name.replace("(Generated Site) ", ""), 14);
                     }
                 };
                 if (redact) label.backgroundColor = label.color;
