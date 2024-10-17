@@ -95,8 +95,10 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
             // Now go through the links and average the values, recalculating the color
             for (let i=0; i<links.length; i++) {
                 links[i].value /= links[i].n;
-                let percent = Math.min(100, (links[i].value / links[i].maxBytes) * 100);
-                links[i].lineStyle.color = lerpGreenToRedViaOrange(100 - percent, 100);
+                let bytesAsMegabits = links[i].value / 1000000;
+                let percent = Math.min(100, (bytesAsMegabits / links[i].maxBytes) * 100);
+                let capacityColor = lerpGreenToRedViaOrange(100 - percent, 100);
+                links[i].lineStyle.color = capacityColor;
             }
 
             // Update the graph
