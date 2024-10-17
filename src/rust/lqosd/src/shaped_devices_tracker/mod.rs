@@ -24,7 +24,8 @@ fn load_shaped_devices() {
     if let Ok(new_file) = shaped_devices {
         debug!("ShapedDevices.csv loaded");
         *SHAPED_DEVICES.write().unwrap() = new_file;
-        crate::throughput_tracker::THROUGHPUT_TRACKER.refresh_circuit_ids();
+        let nj = NETWORK_JSON.read().unwrap();
+        crate::throughput_tracker::THROUGHPUT_TRACKER.refresh_circuit_ids(&nj);
         STATS_NEEDS_NEW_SHAPED_DEVICES.store(true, std::sync::atomic::Ordering::Relaxed);
     } else {
         warn!("ShapedDevices.csv failed to load, see previous error messages. Reverting to empty set.");
