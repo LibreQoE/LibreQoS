@@ -46,7 +46,7 @@ fn load_network_json() {
     let mut nj = NETWORK_JSON.write().unwrap();
     *nj = njs;
     crate::throughput_tracker::THROUGHPUT_TRACKER
-      .refresh_circuit_ids();
+      .refresh_circuit_ids(&nj);
   } else {
     warn!("Unable to load network.json");
   }

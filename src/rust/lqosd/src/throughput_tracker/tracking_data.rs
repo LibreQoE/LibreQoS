@@ -86,22 +86,23 @@ impl ThroughputTracker {
 
   pub(crate) fn lookup_network_parents(
     circuit_id: Option<String>,
+    lock: &NetworkJson,
   ) -> Option<Vec<usize>> {
     if let Some(parent) = Self::get_node_name_for_circuit_id(circuit_id) {
-      let lock = crate::shaped_devices_tracker::NETWORK_JSON.read().unwrap();
+      //let lock = crate::shaped_devices_tracker::NETWORK_JSON.read().unwrap();
       lock.get_parents_for_circuit_id(&parent)
     } else {
       None
     }
   }
 
-  pub(crate) fn refresh_circuit_ids(&self) {
+  pub(crate) fn refresh_circuit_ids(&self, lock: &NetworkJson) {
     self.raw_data.iter_mut().for_each(|mut data| {
       let (circuit_id, circuit_hash) = Self::lookup_circuit_id(data.key());
       data.circuit_id = circuit_id;
       data.circuit_hash = circuit_hash;
       data.network_json_parents =
-        Self::lookup_network_parents(data.circuit_id.clone());
+        Self::lookup_network_parents(data.circuit_id.clone(), lock);
     });
   }
 
@@ -115,7 +116,6 @@ impl ThroughputTracker {
       if let Some(mut entry) = raw_data.get_mut(xdp_ip) {
         entry.bytes = DownUpOrder::zeroed();
         entry.packets = DownUpOrder::zeroed();
-        // Sum the per-CPU counters
         for c in counts {
           entry.bytes.checked_add_direct(c.download_bytes, c.upload_bytes);
           entry.packets.checked_add_direct(c.download_packets, c.upload_packets);
@@ -126,13 +126,9 @@ impl ThroughputTracker {
             entry.last_seen = u64::max(entry.last_seen, c.last_seen);
           }
         }
-
-        // If it has changed...
         if entry.packets != entry.prev_packets {
-          // Mark data as fresh
           entry.most_recent_cycle = self_cycle;
 
-          // Send the new total down the tree
           if let Some(parents) = &entry.network_json_parents {
             net_json_calc.add_throughput_cycle(
               parents,
@@ -148,7 +144,7 @@ impl ThroughputTracker {
         let mut entry = ThroughputEntry {
           circuit_id: circuit_id.clone(),
           circuit_hash,
-          network_json_parents: Self::lookup_network_parents(circuit_id),
+          network_json_parents: Self::lookup_network_parents(circuit_id, net_json_calc),
           first_cycle: self_cycle,
           most_recent_cycle: 0,
           bytes: DownUpOrder::zeroed(),
@@ -375,7 +371,6 @@ impl ThroughputTracker {
 
       // Cleaning run
       all_flows_lock.retain(|_k,v| v.0.last_seen >= expire);
-      all_flows_lock.shrink_to_fit();
       expire_rtt_flows();
     }
   }
