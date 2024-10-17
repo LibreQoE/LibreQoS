@@ -46,7 +46,7 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
                 type: 'value',
                 axisLabel: {
                     formatter: (val) => {
-                        return scaleNumber(Math.abs(val));
+                        return scaleNumber(Math.abs(val), 1);
                     },
                 }
             },
