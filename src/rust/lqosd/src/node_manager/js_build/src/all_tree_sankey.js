@@ -66,7 +66,7 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
                     links.push({
                         source: head[immediateParent][1].name,
                         target: head[i][1].name,
-                        value: head[i][1].current_throughput[0] + head[i][1].current_throughput[1],
+                        value: head[i][1].current_throughput[0],
                         lineStyle: {
                             color: capacityColor,
                         },
@@ -85,7 +85,7 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
                         let immediateParent = data[i][1].immediate_parent;
                         let link = links.find((link) => { return link.source === data[immediateParent][1].name && link.target === data[i][1].name; });
                         if (link !== undefined) {
-                            link.value += data[i][1].current_throughput[0] + data[i][1].current_throughput[1];
+                            link.value += data[i][1].current_throughput[0];
                             link.n++;
                         }
                     }
