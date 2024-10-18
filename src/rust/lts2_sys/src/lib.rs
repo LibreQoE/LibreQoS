@@ -136,6 +136,16 @@ pub fn total_throughput(
     }
 }
 
+pub fn shaper_utilization(tick: u64, average_cpu: f32, peak_cpu: f32, memory_percent: f32) -> Result<()> {
+    unsafe {
+        if external::submit_shaper_utilization(tick, average_cpu, peak_cpu, memory_percent) != 0 {
+            bail!("Failed to submit shaper utilization");
+        } else {
+            Ok(())
+        }
+    }
+}
+
 pub fn circuit_throughput(data: &[shared_types::CircuitThroughput]) -> Result<()> {
     unsafe {
         if external::submit_circuit_throughput_batch(data.as_ptr(), data.len()) != 0 {

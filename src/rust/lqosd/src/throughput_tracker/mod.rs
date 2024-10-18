@@ -29,6 +29,7 @@ use lqos_queue_tracker::{ALL_QUEUE_SUMMARY, TOTAL_QUEUE_STATS};
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::unix_now;
 use lts2_sys::shared_types::{CircuitCakeDrops, CircuitCakeMarks};
+use crate::system_stats::SystemStats;
 use crate::throughput_tracker::flow_data::RttData;
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
@@ -45,6 +46,7 @@ pub static THROUGHPUT_TRACKER: Lazy<ThroughputTracker> = Lazy::new(ThroughputTra
 pub fn spawn_throughput_monitor(
     long_term_stats_tx: Sender<StatsUpdateMessage>,
     netflow_sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
+    system_usage_actor: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
 ) -> anyhow::Result<()> {
     debug!("Starting the bandwidth monitor thread.");
     std::thread::Builder::new()
@@ -52,6 +54,7 @@ pub fn spawn_throughput_monitor(
     .spawn(|| {throughput_task(
         long_term_stats_tx,
         netflow_sender,
+        system_usage_actor,
     )})?;
 
     Ok(())
@@ -109,6 +112,7 @@ impl ThroughputTaskTimeMetrics {
 fn throughput_task(
     long_term_stats_tx: Sender<StatsUpdateMessage>,
     netflow_sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
+    system_usage_actor: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
 ) {
     // Obtain the flow timeout from the config, default to 30 seconds
     let timeout_seconds = if let Ok(config) = lqos_config::load_config() {
@@ -146,6 +150,9 @@ fn throughput_task(
     let mut rtt_circuit_tracker: FxHashMap<XdpIpAddress, [Vec<RttData>; 2]> = FxHashMap::default();
     let mut tcp_retries: FxHashMap<XdpIpAddress, DownUpOrder<u64>> = FxHashMap::default();
     let mut expired_flows: Vec<FlowbeeKey> = Vec::new();
+
+    // Counter for occasional stats
+    let mut stats_counter = 0;
 
     loop {
         let start = Instant::now();
@@ -187,19 +194,23 @@ fn throughput_task(
         }
 
         if last_submitted_to_lts.is_none() {
-            submit_throughput_stats(long_term_stats_tx.clone(), 1.0);
+            submit_throughput_stats(long_term_stats_tx.clone(), 1.0, stats_counter, system_usage_actor.clone());
         } else {
             let elapsed = last_submitted_to_lts.unwrap().elapsed();
             let elapsed_f64 = elapsed.as_secs_f64();
             // Temporary: place this in a thread to not block the timer
             let my_lts_tx = long_term_stats_tx.clone();
+            let my_system_usage_actor = system_usage_actor.clone();
             std::thread::Builder::new().name("Throughput Stats Submit".to_string()).spawn(move || {
-                submit_throughput_stats(my_lts_tx, elapsed_f64);
+                submit_throughput_stats(my_lts_tx, elapsed_f64, stats_counter, my_system_usage_actor);
             }).unwrap().join().unwrap();
             //submit_throughput_stats(long_term_stats_tx.clone(), elapsed_f64);
         }
         last_submitted_to_lts = Some(Instant::now());
         timer_metrics.lts_submit = timer_metrics.start.elapsed().as_secs_f64();
+
+        // Counter for occasional stats
+        stats_counter = stats_counter.wrapping_add(1);
 
         // Sleep until the next second
         let missed_ticks = tfd.read();
@@ -237,7 +248,12 @@ impl LtsSubmitMetrics {
     }
 }
 
-fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>, scale: f64) {
+fn submit_throughput_stats(
+    long_term_stats_tx: Sender<StatsUpdateMessage>,
+    scale: f64,
+    counter: u8,
+    system_usage_actor: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
+) {
     let mut metrics = LtsSubmitMetrics::new();
     let mut lts2_needs_shaped_devices = false;
     // If ShapedDevices has changed, notify the stats thread
@@ -615,6 +631,24 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>, scale
                 warn!("Error sending message to LTS2.");
             }
         }
+
+        // Shaper utilization
+        if counter % 10 == 0 {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            if system_usage_actor.send(tx).is_ok() {
+                if let Ok(reply) = rx.blocking_recv() {
+                    let avg_cpu = reply.cpu_usage.iter().sum::<u32>() as f32 / reply.cpu_usage.len() as f32;
+                    let peak_cpu: u32 = reply.cpu_usage.iter().copied().sum();
+                    let memory = reply.ram_used as f32 / reply.total_ram as f32;
+
+                    if lts2_sys::shaper_utilization(now, avg_cpu, peak_cpu as f32, memory).is_err() {
+                        warn!("Error sending message to LTS2.");
+                    }
+                }
+            }
+
+        }
+
         // Notify of completion, which triggers processing
         lts2_sys::ingest_batch_complete();
     }

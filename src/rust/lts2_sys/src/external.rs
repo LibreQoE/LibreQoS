@@ -116,6 +116,13 @@ extern "C" {
         length: usize,
     ) -> c_int;
 
+    pub(crate) fn submit_shaper_utilization(
+        tick: u64,
+        average_cpu: f32,
+        peak_cpu: f32,
+        memory_percent: f32,
+    ) -> c_int;
+
     pub(crate) fn get_lts_license_status() -> i32;
     pub(crate) fn get_lts_license_trial_remaining() -> i32;
     pub(crate) fn ingest_batch_complete();
