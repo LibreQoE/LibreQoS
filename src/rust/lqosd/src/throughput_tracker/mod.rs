@@ -633,7 +633,7 @@ fn submit_throughput_stats(
         }
 
         // Shaper utilization
-        if counter % 10 == 0 {
+        if counter % 60 == 0 {
             let (tx, rx) = tokio::sync::oneshot::channel();
             if system_usage_actor.send(tx).is_ok() {
                 if let Ok(reply) = rx.blocking_recv() {
