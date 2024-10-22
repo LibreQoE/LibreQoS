@@ -15,7 +15,7 @@ python3 integrationSplynx.py
 On the first successful run, it will create a ShapedDevices.csv file.
 You can manually create your network.json file to more accurately reflect bandwidth limits.
 ShapedDevices.csv will be overwritten every time the Splynx integration is run.
-You have the option to run integrationSplynx.py automatically on boot and every 5 minutes, which is recommended. This can be enabled by setting ```automaticImportSplynx = True``` in `/etc/lqos.conf`.
+You have the option to run integrationSplynx.py automatically on boot and every 5 minutes, which is recommended. This can be enabled by setting ```enable_spylnx = true``` in `/etc/lqos.conf`.
 
 ## UISP Integration
 
@@ -118,4 +118,4 @@ On the first successful run, it will create a ShapedDevices.csv file.
 If a network.json file exists, it will not be overwritten, unless you set ```always_overwrite_network_json = true```.
 You can modify the network.json file to more accurately reflect bandwidth limits.
 ShapedDevices.csv will be overwritten every time the Sonar integration is run.
-You have the option to run integrationSonar.py automatically on boot and every 10 minutes, which is recommended. This can be enabled by setting ```automaticImportSonar = True``` in `/etc/lqos.conf`.
+You have the option to run integrationSonar.py automatically on boot and every 5 minutes, which is recommended. This can be enabled by setting ```enable_sonar = true``` in `/etc/lqos.conf`.
