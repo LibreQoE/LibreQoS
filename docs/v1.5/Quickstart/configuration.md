@@ -27,6 +27,10 @@ Then, if using Bifrost/XDP set `use_xdp_bridge = true` under that same `[bridge]
 
 Note: If you find that traffic is not being shaped when it should, please make sure to swap the interface order and restart lqosd as well as lqos_scheduler with ```sudo systemctl restart lqosd lqos_scheduler```.
 
+### Integrations
+
+Learn more about [configuring integrations here](../TechnicalDocs/integrations.md).
+
 ## Network.json
 
 Network.json allows ISP operators to define a Hierarchical Network Topology, or Flat Network Topology.
