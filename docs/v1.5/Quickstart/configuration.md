@@ -22,8 +22,8 @@ In the ```[bridge]``` section, change `to_internet` and `to_network` to match yo
 Then, if using Bifrost/XDP set `use_xdp_bridge = true` under that same `[bridge]` section. If you're not sure whether you need this, we recommend to leave it as `false`.
 
 - Set downlink_bandwidth_mbps and uplink_bandwidth_mbps to match the bandwidth in Mbps of your network's upstream / WAN internet connection. The same can be done for generated_pn_download_mbps and generated_pn_upload_mbps.
-- enp1s0f2 would be the interface facing your core router (or bridged internal network if your network is bridged)
-- enp1s0f1 would be the interface facing your edge router
+- to_internet would be the interface facing your edge router and the broader internet
+- to_network would be the interface facing your core router (or bridged internal network if your network is bridged)
 
 Note: If you find that traffic is not being shaped when it should, please make sure to swap the interface order and restart lqosd as well as lqos_scheduler with ```sudo systemctl restart lqosd lqos_scheduler```.
 
@@ -37,17 +37,8 @@ Learn more about [configuring integrations here](../TechnicalDocs/integrations.m
 
 Network.json allows ISP operators to define a Hierarchical Network Topology, or Flat Network Topology.
 
-For networks with no Parent Nodes (no strictly defined Access Points or Sites) edit the network.json to use a Flat Network Topology with
-```nano network.json```
-setting the following file content:
-
-```json
-{}
-```
-
 If you plan to use the built-in UISP or Splynx integrations, you do not need to create a network.json file quite yet.
-
-If you plan to use the built-in UISP integration, it will create this automatically on its first run (assuming network.json is not already present). You can then modify the network.json to more accurately reflect your topology.
+If you plan to use the built-in UISP integration, it will create this automatically on its first run (assuming network.json is not already present).
 
 If you will not be using an integration, you can manually define the network.json following the template file - network.example.json
 
@@ -61,6 +52,14 @@ If you will not be using an integration, you can manually define the network.jso
 +-------+-------+-------+-------+-------+-------+-------+-------+-------+
 | Sub 1 | Sub 2 |       |                       |       | Sub 8 | Sub 9 |
 +-------+-------+-------+-----------------------+-------+-------+-------+
+```
+
+For networks with no Parent Nodes (no strictly defined Access Points or Sites) edit the network.json to use a Flat Network Topology with
+```nano network.json```
+setting the following file content:
+
+```json
+{}
 ```
 
 ## Manual Setup
