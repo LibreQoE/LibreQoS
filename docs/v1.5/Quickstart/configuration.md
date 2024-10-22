@@ -27,6 +27,8 @@ Then, if using Bifrost/XDP set `use_xdp_bridge = true` under that same `[bridge]
 
 Note: If you find that traffic is not being shaped when it should, please make sure to swap the interface order and restart lqosd as well as lqos_scheduler with ```sudo systemctl restart lqosd lqos_scheduler```.
 
+After changing any part of `/etc/lqos.conf` it is highly recommended to always restart lqosd, using `sudo systemctl restart lqosd`. This re-parses any new values in lqos.conf, making those new values accessible to both the Rust and Python sides of the code.
+
 ### Integrations
 
 Learn more about [configuring integrations here](../TechnicalDocs/integrations.md).
