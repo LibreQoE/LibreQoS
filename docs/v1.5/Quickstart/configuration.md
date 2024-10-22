@@ -62,7 +62,7 @@ setting the following file content:
 {}
 ```
 
-## Manual Setup
+## CSV to JSON format helper
 
 You can use
 
