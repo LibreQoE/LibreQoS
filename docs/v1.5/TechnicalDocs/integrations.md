@@ -76,8 +76,8 @@ uisp_use_burst = true
 To test the UISP Integration, use
 
 ```shell
-cd /opt/libreqos/src/rust/uisp_integration
-sudo cargo run
+cd /opt/libreqos/src
+sudo /opt/libreqos/src/bin/uisp_integration
 ```
 
 On the first successful run, it will create a network.json and ShapedDevices.csv file.
