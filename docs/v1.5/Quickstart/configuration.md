@@ -2,7 +2,7 @@
 
 ## Configure lqos.conf
 
-Copy the lqosd daemon configuration file to `/etc`:
+If you installed LibreQoS the complex (Git) installation, you can copy the lqosd daemon configuration file to `/etc`. This is not neccesarry if you installed using the .deb:
 
 ```shell
 cd /opt/libreqos/src
@@ -15,19 +15,17 @@ Now edit the file to match your setup with
 sudo nano /etc/lqos.conf
 ```
 
-Change `enp1s0f1` and `enp1s0f2` to match your network interfaces. Notice, it's paring the interfaces, so when you first enter enps0f<ins>**1**</ins> in the first line, the `redirect_to` parameter is enp1s0f<ins>**2**</ins> (replacing with your actual interface names).
+In the ```[bridge]``` section, change `to_internet` and `to_network` to match your network interfaces.
+- `to_internet = "enp1s0f1"`
+- `to_network = "enp1s0f2"`
 
-- First Line: `name = "enp1s0f1", redirect_to = "enp1s0f2"`
-- Second Line: `name = "enp1s0f2", redirect_to = "enp1s0f1"`
-
-Then, if using Bifrost/XDP set `use_xdp_bridge = true` under that same `[bridge]` section.
+Then, if using Bifrost/XDP set `use_xdp_bridge = true` under that same `[bridge]` section. If you're not sure whether you need this, we recommend to leave it as `false`.
 
 - Set downlink_bandwidth_mbps and uplink_bandwidth_mbps to match the bandwidth in Mbps of your network's upstream / WAN internet connection. The same can be done for generated_pn_download_mbps and generated_pn_upload_mbps.
 - enp1s0f2 would be the interface facing your core router (or bridged internal network if your network is bridged)
 - enp1s0f1 would be the interface facing your edge router
-- Set ```enableActualShellCommands = True``` to allow the program to actually run the commands.
 
-Note: If you find that traffic is not being shaped when it should, please make sure to swap the interface order and restart lqosd as well as lqos_scheduler / LibreQoS.py
+Note: If you find that traffic is not being shaped when it should, please make sure to swap the interface order and restart lqosd as well as lqos_scheduler with ```sudo systemctl restart lqosd lqos_scheduler```.
 
 ## Network.json
 
