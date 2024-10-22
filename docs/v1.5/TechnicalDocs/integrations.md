@@ -20,11 +20,64 @@ You have the option to run integrationSplynx.py automatically on boot and every 
 ## UISP Integration
 
 First, set the relevant parameters for UISP (token, url, automatic_import_uisp, etc.) in `/etc/lqos.conf`.
+```
+# Whether to run the UISP integration automatically in the lqos_scheduler service
+enable_uisp = true
+
+# Your UISP API Access Token
+token = ""
+
+# Your UISP URL (include https://, but omit anything past .com, .net, etc)
+url = "https://uisp.your_domain.com"
+
+# The site here refers to the Root site you want UISP to base its topology "perspective" from.
+# Default value is a blank string.
+site = "Site_name"
+
+# Strategy type. "full" is recommended. "flat" can be used if only client shaping is desired.
+strategy = "full"
+
+# Suspension strategy:
+# * "none" - do not handle suspensions
+# * "ignore" - do not add suspended customers to the network map
+# * "slow" - limit suspended customers to 1mbps
+suspended_strategy = "none"
+
+# UISP's reported AP capacities for AirMax can be a bit optimistic. For AirMax APs, we limit
+# to 65% of what UISP claims an AP's capacity is, by default. This is adjustable.
+airmax_capacity = 0.65
+
+# UISP's reported AP capacities for LTU are more accurate, but to be safe we adjust to 95%
+# of those capacities. This is adjustable.
+ltu_capacity = 0.95
+
+# If you want to exclude sites in UISP from appearing in your LibreQoS network.json, simply
+# include them here. For example, exclude_sites = ["Site_1", "Site_2"]
+exclude_sites = []
+
+# If you use DHCPv6, and want to pull in IPv6 CIDRs corresponding to each customer's IPv4
+# address, you can do so with this. If enabled, be sure to fill out mikrotikDHCPRouterList.csv
+# and run `python3 mikrotikFindIPv6.py` to test its functionality.
+ipv6_with_mikrotik = false
+
+# If you want customers to recieve a bit more of less than their allocated speed plan, set
+# it here. For example, 1.15 is 15% above their alloted speed plan.
+bandwidth_overhead_factor = 1.15
+
+# By default, the customer "minimum" is set to 98% of the maximuum (CIR).
+commit_bandwidth_multiplier = 0.98
+exception_cpes = []
+
+# If you have some sites branched off PtMP Access Points, set `true`
+use_ptmp_as_parent = true
+uisp_use_burst = true
+```
 
 To test the UISP Integration, use
 
 ```shell
-python3 integrationUISP.py
+cd /opt/libreqos/src/rust/uisp_integration
+sudo cargo run
 ```
 
 On the first successful run, it will create a network.json and ShapedDevices.csv file.
