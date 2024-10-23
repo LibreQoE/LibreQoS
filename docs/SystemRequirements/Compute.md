@@ -48,5 +48,5 @@ Here are some convenient, off-the-shelf server options to consider:
 | Throughput   | Model | CPU Option | RAM Option | NIC Option | Extras | Temp Range |
 | --- | --- | --- | --- | --- | --- | --- | 
 | 2.5 Gbps | [Supermicro SYS-E102-13R-E](https://store.supermicro.com/us_en/compact-embedded-iot-i5-1350pe-sys-e102-13r-e.html) | Default | 2x8GB | Built-in | [USB-C RJ45](https://www.amazon.com/Anker-Ethernet-PowerExpand-Aluminum-Portable/dp/B08CK9X9Z8/)| 0°C ~ 40°C (32°F ~ 104°F) |
-| 10 Gbps | [Supermicro AS -1115S-FWTRT](https://store.supermicro.com/us_en/1u-amd-epyc-8004-compact-server-as-1115s-fwtrt.html) | 8124P | 2x16GB | Built-in | | 0°C ~ 40°C (32°F ~ 104°F) |
-| 25 Gbps | [Supermicro AS -1115S-FWTRT](https://store.supermicro.com/us_en/1u-amd-epyc-8004-compact-server-as-1115s-fwtrt.html) | 8534P | 4x16GB | Built-in | | 0°C ~ 40°C (32°F ~ 104°F) |
+| 10 Gbps | [Supermicro AS -1115S-FWTRT](https://store.supermicro.com/us_en/1u-amd-epyc-8004-compact-server-as-1115s-fwtrt.html) | 8124P | 2x16GB | Mellanox (2 x SFP28) | | 0°C ~ 40°C (32°F ~ 104°F) |
+| 25 Gbps | [Supermicro AS -1115S-FWTRT](https://store.supermicro.com/us_en/1u-amd-epyc-8004-compact-server-as-1115s-fwtrt.html) | 8534P | 4x16GB | Mellanox (2 x SFP28) | | 0°C ~ 40°C (32°F ~ 104°F) |
