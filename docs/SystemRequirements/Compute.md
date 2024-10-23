@@ -33,28 +33,20 @@ Below is a table of approximate aggregate throughput capacity, assuming a a CPU 
 So for example, an ISP delivering 1Gbps service plans with 10Gbps aggregate throughput would choose a CPU with a 2500+ single-thread score and 8 cores, such as the Intel Xeon E-2388G @ 3.20GHz.
 
 ### Memory
-* Minimum RAM = 2 + (0.002 x Subscriber Count) GB
 * Recommended RAM:
 
 | Subscribers   | RAM           |
 | ------------- | ------------- |
-| 100           | 4 GB          |
-| 1,000         | 8 GB          |
-| 5,000         | 16 GB         |
-| 10,000        | 32 GB         |
-| 50,000*       | 64 GB         |
-
-(* Estimated)
+| 100           | 8 GB          |
+| 1,000         | 16 GB         |
+| 5,000         | 64 GB         |
+| 10,000        | 128 GB        |
+| 20,000        | 256 GB        |
 
 ### Server Recommendations
-It is most cost-effective to buy a used server with specifications matching your unique requirements, as laid out in the System Requirements section above.
-For those who do not have the time to do that, here are some off-the-shelf options to consider:
-
-|   Aggregate   | 100Mbps Plans |  1Gbps Plans  |  2Gbps Plans  |
-| ------------- | ------------- | ------------- | ------------- |
-| 1 Gbps Total  |       A       |               |               |
-| 10 Gbps Total |    B or C     |    B or C     |       C       |
-
-* A | [Lanner L-1513-4C](https://www.whiteboxsolution.com/product/l-1513/) (Select L-1513-4C)
-* B | [Supermicro SuperServer 510T-ML](https://www.thinkmate.com/system/superserver-510t-ml) (Select E-2388G)
-* C | [Supermicro AS-1015A-MT](https://store.supermicro.com/us_en/as-1015a-mt.html) (Ryzen 9 7700X, 2x16GB DDR5 4800MHz ECC, 1xSupermicro 10-Gigabit XL710+ X557)
+Here are some convenient, off-the-shelf server options to consider:
+| Throughput   | Model | CPU Option | RAM Option | NIC Option | Extras | Temp Range |
+| --- | --- | --- | --- | --- | --- | --- | 
+| 2.5 Gbps | [Supermicro SYS-E102-13R-E](https://store.supermicro.com/us_en/compact-embedded-iot-i5-1350pe-sys-e102-13r-e.html) | Default | 2x8GB | Built-in | [USB-C RJ45](https://www.amazon.com/Anker-Ethernet-PowerExpand-Aluminum-Portable/dp/B08CK9X9Z8/)| 0°C ~ 40°C (32°F ~ 104°F) |
+| 10 Gbps | [Supermicro AS -1115S-FWTRT](https://store.supermicro.com/us_en/1u-amd-epyc-8004-compact-server-as-1115s-fwtrt.html) | 8124P | 2x16GB | Built-in | | 0°C ~ 40°C (32°F ~ 104°F) |
+| 25 Gbps | [Supermicro AS-1015A-MT](https://store.supermicro.com/us_en/as-1015a-mt.html) | 8534P | 4x16GB | Built-in | | 0°C ~ 40°C (32°F ~ 104°F) |
