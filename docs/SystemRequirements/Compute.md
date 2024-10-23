@@ -1,6 +1,6 @@
 ## System Requirements
 ### Physical server
-* LibreQoS requires a dedicated, physical x86 device.
+* LibreQoS requires a dedicated, physical x86_64 device.
 * While it is technically possible to run LibreQoS in  VM, it is not officially supported, and comes at a significant 30% performance penalty (even when using NIC passthrough). For VMs, NIC passthrough is required for throughput above 1 Gbps (XDP vs generic XDP).
 
 ### CPU
