@@ -16,10 +16,9 @@ If that fixes it, and if you are using the scheduler service, run ```sudo system
 Make sure your services are running properly
 
 - `lqosd.service`
-- `lqos_node_manager`
 - `lqos_scheduler`
 
-Node manager and scheduler are dependent on the `lqos.service` being in a healthy, running state.
+The Web UI and lqos_scheduler are dependent on the `lqos.service` being in a healthy, running state.
 
 For example to check the status of lqosd, run:
 ```sudo systemctl status lqosd```
