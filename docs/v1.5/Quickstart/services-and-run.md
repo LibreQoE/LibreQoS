@@ -14,8 +14,7 @@ lqos_scheduler
 
 ## Run daemons with systemd
 
-.. note::
-  Note: If you used the .deb installer, you can skip this section. The .deb installer automatically sets these up.
+Note: If you used the .deb installer, you can skip this section. The .deb installer automatically sets these up.
 
 You can setup `lqosd`, and `lqos_scheduler` as systemd services.
 
