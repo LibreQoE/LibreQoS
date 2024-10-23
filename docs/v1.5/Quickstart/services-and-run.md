@@ -10,8 +10,12 @@ lqos_scheduler
 - lqos_scheduler handles statistics and performs continuous refreshes of LibreQoS' shapers, including pulling from any enabled CRM Integrations (UISP, Splynx).
 - On start: Run a full setup of queues
 - Every 30 minutes: Update queues, pulling new configuration from CRM integration if enabled
+  - Minute interval is adjustable with the setting `queue_refresh_interval_mins` in `/etc/lqos.conf`.
 
 ## Run daemons with systemd
+
+.. note::
+  Note: If you used the .deb installer, you can skip this section. The .deb installer automatically sets these up.
 
 You can setup `lqosd`, and `lqos_scheduler` as systemd services.
 
