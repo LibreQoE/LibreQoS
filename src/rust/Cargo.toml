@@ -57,7 +57,7 @@ ip_network_table = "0"
 ip_network = "0"
 sha2 = "0"
 uuid = { version = "1", features = ["v4", "fast-rng" ] }
-dashmap = "6"
+dashmap = "5.1.0"
 toml = "0.8.8"
 zerocopy = {version = "0.8.5", features = [ "derive", "zerocopy-derive", "simd" ] }
 sysinfo = { version = "0", default-features = false, features = [ "system" ] }
