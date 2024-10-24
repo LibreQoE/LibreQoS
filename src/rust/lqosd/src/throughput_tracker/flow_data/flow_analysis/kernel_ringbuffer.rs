@@ -128,7 +128,7 @@ pub struct FlowActor {}
 
 const EVENT_SIZE: usize = size_of::<FlowbeeEvent>();
 
-static FLOW_BYTES_SENDER: OnceLock<crossbeam_channel::Sender<[u8; EVENT_SIZE]>> = OnceLock::new();
+static FLOW_BYTES_SENDER: OnceLock<crossbeam_channel::Sender<Box<[u8; EVENT_SIZE]>>> = OnceLock::new();
 static FLOW_COMMAND_SENDER: OnceLock<crossbeam_channel::Sender<FlowCommands>> = OnceLock::new();
 
 #[derive(Debug)]
@@ -139,7 +139,7 @@ enum FlowCommands {
 
 impl FlowActor {
     pub fn start() -> anyhow::Result<()> {
-        let (tx, rx) = crossbeam_channel::bounded::<[u8; EVENT_SIZE]>(4096);
+        let (tx, rx) = crossbeam_channel::bounded::<Box<[u8; EVENT_SIZE]>>(65536);
         // Placeholder for when you need to read the flow system.
         let (cmd_tx, cmd_rx) = crossbeam_channel::bounded::<FlowCommands>(16);
 
@@ -257,7 +257,7 @@ pub unsafe extern "C" fn flowbee_handle_events(
         // Copy the bytes (to free the ringbuffer slot)
         let data_u8 = data as *const u8;
         let data_slice: &[u8] = slice::from_raw_parts(data_u8, EVENT_SIZE);
-        let target: [u8; EVENT_SIZE] = data_slice.try_into().unwrap();
+        let target: Box<[u8; EVENT_SIZE]> = Box::new(data_slice.try_into().unwrap());
         if tx.try_send(target).is_err() {
             warn!("Could not submit flow event - buffer full");
         }
