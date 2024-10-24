@@ -444,13 +444,17 @@ impl FinishedFlowAnalysis {
 impl FlowbeeRecipient for FinishedFlowAnalysis {
     fn enqueue(&self, key: FlowbeeKey, mut data: FlowbeeLocalData, analysis: FlowAnalysis) {
         debug!("Finished flow analysis");
-        data.trim(); // Remove the trailing 30 seconds of zeroes
-        RECENT_FLOWS.push(TimeEntry {
-            time: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            data: (key, data, analysis),
-        });
+        let one_way = data.bytes_sent.down == 0 || data.bytes_sent.up == 0;
+        if !one_way {
+            data.trim(); // Remove the trailing 30 seconds of zeroes
+            RECENT_FLOWS.push(TimeEntry {
+                time: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
+                data: (key, data, analysis),
+            });
+        }
+        // TODO: Log failed connection attempts in some useful manner
     }
 }
