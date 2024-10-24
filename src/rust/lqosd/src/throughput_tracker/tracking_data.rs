@@ -207,17 +207,6 @@ impl ThroughputTracker {
       let since_boot = Duration::from(now);
       let expire = (since_boot - Duration::from_secs(timeout_seconds)).as_nanos() as u64;
 
-      // Tracker for per-circuit RTT data. We're losing some of the smoothness by sampling
-      // every flow; the idea is to combine them into a single entry for the circuit. This
-      // should limit outliers.
-      //let mut rtt_circuit_tracker: FxHashMap<XdpIpAddress, [Vec<RttData>; 2]> = FxHashMap::default();
-
-      // Tracker for TCP retries. We're storing these per second.
-      //let mut tcp_retries: FxHashMap<XdpIpAddress, DownUpOrder<u64>> = FxHashMap::default();
-
-      // Track the expired keys
-      //let mut expired_keys = Vec::new();
-
       let mut all_flows_lock = ALL_FLOWS.lock().unwrap();
         
       // Track through all the flows
