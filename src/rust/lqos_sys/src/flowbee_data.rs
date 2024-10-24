@@ -25,7 +25,7 @@ pub struct FlowbeeKey {
 }
 
 /// Mapped representation of the eBPF `flow_data_t` type.
-#[derive(Debug, Clone, Default, FromBytes)]
+#[derive(Debug, Clone, Copy, Default, FromBytes)]
 #[repr(C)]
 pub struct FlowbeeData {
     /// Time (nanos) when the connection was established
