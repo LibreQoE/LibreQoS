@@ -44,7 +44,7 @@ pub async fn spawn_webserver(
         .nest("/local-api", local_api())
         .fallback_service(ServeDir::new(static_path));
 
-    info!("Webserver listening on :: port 9223");
+    info!("Webserver listening on :: port 9123");
     axum::serve(listener, router).await?;
     Ok(())
 }

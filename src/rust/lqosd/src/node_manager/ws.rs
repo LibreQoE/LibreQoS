@@ -54,7 +54,7 @@ async fn ws_handler(
     ws: WebSocketUpgrade,
     Extension(channels): Extension<Arc<PubSub>>,
 ) -> impl IntoResponse {
-    info!("WS Upgrade Called");
+    debug!("WS Upgrade Called");
     let channels = channels.clone();
     ws.on_upgrade(move |socket| async {
         handle_socket(socket, channels).await;
@@ -67,9 +67,9 @@ struct Subscribe {
 }
 
 async fn handle_socket(mut socket: WebSocket, channels: Arc<PubSub>) {
-    info!("Websocket connected");
+    debug!("Websocket connected");
 
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(10);
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(128);
     let mut subscribed_channels = HashSet::new();
     loop {
         tokio::select! {
@@ -93,18 +93,16 @@ async fn handle_socket(mut socket: WebSocket, channels: Arc<PubSub>) {
                         }
                     }
                     None => {
-                        info!("WebSocket Disconnected");
                         break;
                     }
                 }
             }
         }
     }
-    info!("Websocket disconnected");
+    debug!("Websocket disconnected");
 }
 
 async fn receive_channel_message(msg: Message, channels: Arc<PubSub>, tx: Sender<String>, subscribed_channels: &mut HashSet<PublishedChannels>) {
-    debug!("Received message: {:?}", msg);
     if let Ok(text) = msg.to_text() {
         if let Ok(sub) = serde_json::from_str::<Subscribe>(text) {
             if let Ok(channel) = PublishedChannels::from_str(&sub.channel) {
