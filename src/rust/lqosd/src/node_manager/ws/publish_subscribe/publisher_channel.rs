@@ -1,6 +1,6 @@
+use std::sync::Arc;
 use serde_json::json;
 use tokio::sync::mpsc::Sender;
-use tracing::info;
 use crate::node_manager::ws::publish_subscribe::subscriber::Subscriber;
 use crate::node_manager::ws::published_channels::PublishedChannels;
 
@@ -21,22 +21,22 @@ impl PublisherChannel {
         !self.subscribers.is_empty()
     }
     
-    pub(super) async fn subscribe(&mut self, sender: Sender<String>) {
+    pub(super) async fn subscribe(&mut self, sender: Sender<Arc<String>>) {
         self.subscribers.push(Subscriber{
             is_alive: true,
             sender: sender.clone(),
         });
-        let welcome = json!(
+        let welcome = Arc::new(json!(
             {
                 "event" : "join",
                 "channel" : self.channel_type.to_string(),
             }
-        ).to_string();
+        ).to_string());
         let _ = sender.send(welcome).await;
     }
 
     /// Submit a message to an entire channel
-    pub(super) async fn send(&mut self, message: String) {
+    pub(super) async fn send(&mut self, message: Arc<String>) {
         for subscriber in self.subscribers.iter_mut() {
             if subscriber.sender.send(message.clone()).await.is_err() {
                 subscriber.is_alive = false;

@@ -10,7 +10,7 @@ use crate::{
     stats::TIME_TO_POLL_HOSTS,
     throughput_tracker::tracking_data::ThroughputTracker,
 };
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 use lqos_bus::{BusResponse, FlowbeeProtocol, IpStats, TcHandle, TopFlowType, XdpPpingResult};
 use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
