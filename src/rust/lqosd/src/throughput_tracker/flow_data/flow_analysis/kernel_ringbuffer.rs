@@ -131,7 +131,7 @@ const EVENT_SIZE: usize = size_of::<FlowbeeEvent>();
 
 static FLOW_BYTES_SENDER: OnceLock<crossbeam_channel::Sender<()>> = OnceLock::new();
 static FLOW_COMMAND_SENDER: OnceLock<crossbeam_channel::Sender<FlowCommands>> = OnceLock::new();
-static FLOW_BYTES: Lazy<crossbeam_queue::ArrayQueue<[u8; EVENT_SIZE]>> = Lazy::new(|| crossbeam_queue::ArrayQueue::new(65536*2));
+static FLOW_BYTES: Lazy<crossbeam_queue::ArrayQueue<[u8; EVENT_SIZE]>> = Lazy::new(|| crossbeam_queue::ArrayQueue::new(65536*32));
 
 #[derive(Debug)]
 enum FlowCommands {
