@@ -59,6 +59,8 @@ async fn one_second_cadence(
             flow_endpoints::ip_protocols(channels.clone(), bus_tx.clone()),
             flow_endpoints::flow_duration(channels.clone(), bus_tx.clone()),
             tree_summary::tree_summary(channels.clone(), bus_tx.clone()),
+            network_tree::all_subscribers(channels.clone(), bus_tx.clone()),
+            queue_stats_total::queue_stats_totals(channels.clone()),
             network_tree::network_tree(channels.clone(), bus_tx.clone()),
             circuit_capacity::circuit_capacity(channels.clone()),
             tree_capacity::tree_capacity(channels.clone()),
