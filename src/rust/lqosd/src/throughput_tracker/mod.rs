@@ -285,11 +285,11 @@ fn submit_throughput_stats(
     
     if let Ok(config) = load_config() {
         if bits_per_second.down > (config.queues.downlink_bandwidth_mbps as u64 * 1_000_000) {
-            info!("Spike detected - not submitting LTS");
+            debug!("Spike detected - not submitting LTS");
             return; // Do not submit these stats
         }
         if bits_per_second.up > (config.queues.uplink_bandwidth_mbps as u64 * 1_000_000) {
-            info!("Spike detected - not submitting LTS");
+            debug!("Spike detected - not submitting LTS");
             return; // Do not submit these stats
         }
     }

@@ -38,7 +38,7 @@ async fn handle_socket(
     mut socket: WebSocket,
     bus_tx: tokio::sync::mpsc::Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, lqos_bus::BusRequest)>,
 ) {
-    info!("Websocket connected");
+    debug!("Websocket connected");
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(10);
     loop {
@@ -47,7 +47,6 @@ async fn handle_socket(
                 // Handle incoming message - select a private message source
                 match inbound {
                     Some(Ok(msg)) => {
-                        info!("Received private message: {:?}", msg);
                         if let Ok(text) = msg.to_text() {
                             if let Ok(sub) = serde_json::from_str::<PrivateChannel>(text) {
                                 match sub {

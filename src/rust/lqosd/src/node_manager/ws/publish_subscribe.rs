@@ -5,7 +5,10 @@
 mod publisher_channel;
 mod subscriber;
 
+use std::collections::HashSet;
 use std::sync::Arc;
+use arc_swap::ArcSwap;
+use fxhash::FxHashSet;
 use strum::IntoEnumIterator;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
@@ -21,6 +24,7 @@ use crate::node_manager::ws::published_channels::PublishedChannels;
 /// Please don't.
 pub struct PubSub {
     channels: Mutex<Vec<PublisherChannel>>,
+    living_channels: ArcSwap<FxHashSet<PublishedChannels>>,
 }
 
 impl PubSub {
@@ -36,6 +40,7 @@ impl PubSub {
 
         let result = Self {
             channels: Mutex::new(channels),
+            living_channels: ArcSwap::new(Arc::new(FxHashSet::default())),
         };
         Arc::new(result)
     }
@@ -52,15 +57,21 @@ impl PubSub {
         }
     }
 
+    /// Provide a set of channels that have subscribers.
+    pub(super) async fn update_living_channel_list(&self) {
+        let channels = self.channels.lock().await;
+        let living_channels: FxHashSet<PublishedChannels> = channels
+            .iter()
+            .filter(|c| c.has_subscribers())
+            .map(|c| c.channel_type)
+            .collect();
+        self.living_channels.store(Arc::new(living_channels));
+    }
+
     /// Checks that a channel has anyone listening for it. If it doesn't,
     /// there's no point in using CPU to process it!
     pub(super) async fn is_channel_alive(&self, channel: PublishedChannels) -> bool {
-        let channels = self.channels.lock().await;
-        if let Some(channel) = channels.iter().find(|c| c.channel_type == channel) {
-            channel.has_subscribers()
-        } else {
-            false
-        }
+        self.living_channels.load().contains(&channel)
     }
 
     /// Sends a message to everyone subscribed to a topic. If senders' channels

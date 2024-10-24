@@ -51,6 +51,7 @@ time = { version = "0.3.36", features = ["serde"] }
 serde_cbor = { workspace = true }
 timerfd = {  workspace = true }
 crossbeam-channel = { workspace = true }
+arc-swap = "1.7.1"
 
 
 # Support JemAlloc on supported platforms
