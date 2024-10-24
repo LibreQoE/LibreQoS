@@ -5,7 +5,6 @@
 mod publisher_channel;
 mod subscriber;
 
-use std::collections::HashSet;
 use std::sync::Arc;
 use arc_swap::ArcSwap;
 use fxhash::FxHashSet;
@@ -48,7 +47,7 @@ impl PubSub {
     /// Adds a subscriber to a channel set. Once added, they are
     /// self-managing and will be deleted when they become inactive
     /// automatically.
-    pub(super) async fn subscribe(&self, channel: PublishedChannels, sender: Sender<String>) {
+    pub(super) async fn subscribe(&self, channel: PublishedChannels, sender: Sender<Arc<String>>) {
         let mut channels = self.channels.lock().await;
         if let Some(channel) = channels.iter_mut().find(|c| c.channel_type == channel) {
             channel.subscribe(sender).await;
@@ -79,7 +78,7 @@ impl PubSub {
     pub(super) async fn send(&self, channel: PublishedChannels, message: String) {
         let mut channels = self.channels.lock().await;
         if let Some(channel) = channels.iter_mut().find(|c| c.channel_type == channel) {
-            channel.send(message).await;
+            channel.send(Arc::new(message)).await;
         }
     }
 

@@ -18,7 +18,7 @@ use std::sync::Arc;
 use axum::{Extension, extract::{WebSocketUpgrade, ws::{Message, WebSocket}}, response::IntoResponse, Router, routing::get};
 use serde::Deserialize;
 use tokio::sync::mpsc::Sender;
-use tracing::{debug, info};
+use tracing::debug;
 use lqos_bus::BusRequest;
 use crate::node_manager::auth::auth_layer;
 use crate::node_manager::ws::publish_subscribe::PubSub;
@@ -69,7 +69,7 @@ struct Subscribe {
 async fn handle_socket(mut socket: WebSocket, channels: Arc<PubSub>) {
     debug!("Websocket connected");
 
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(128);
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Arc<String>>(128);
     let mut subscribed_channels = HashSet::new();
     loop {
         tokio::select! {
@@ -84,7 +84,7 @@ async fn handle_socket(mut socket: WebSocket, channels: Arc<PubSub>) {
             outbound = rx.recv() => {
                 match outbound {
                     Some(msg) => {
-                        if let Err(_) = socket.send(Message::Text(msg)).await {
+                        if let Err(_) = socket.send(Message::Text((*msg).clone())).await {
                             // The outbound websocket has closed. That's ok, it's not
                             // an error. We're relying on *this* task terminating to in
                             // turn close the subscription channel, which will in turn
@@ -102,7 +102,7 @@ async fn handle_socket(mut socket: WebSocket, channels: Arc<PubSub>) {
     debug!("Websocket disconnected");
 }
 
-async fn receive_channel_message(msg: Message, channels: Arc<PubSub>, tx: Sender<String>, subscribed_channels: &mut HashSet<PublishedChannels>) {
+async fn receive_channel_message(msg: Message, channels: Arc<PubSub>, tx: Sender<Arc<String>>, subscribed_channels: &mut HashSet<PublishedChannels>) {
     if let Ok(text) = msg.to_text() {
         if let Ok(sub) = serde_json::from_str::<Subscribe>(text) {
             if let Ok(channel) = PublishedChannels::from_str(&sub.channel) {
