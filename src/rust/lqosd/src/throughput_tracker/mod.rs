@@ -147,13 +147,14 @@ fn throughput_task(
 
         // Formerly a "spawn blocking" blob
         {
+            let mut raw_data = THROUGHPUT_TRACKER.raw_data.lock().unwrap();
             let mut net_json_calc = NETWORK_JSON.write().unwrap();
             timer_metrics.update_cycle = timer_metrics.start.elapsed().as_secs_f64();
             net_json_calc.zero_throughput_and_rtt();
             timer_metrics.zero_throughput_and_rtt = timer_metrics.start.elapsed().as_secs_f64();
-            THROUGHPUT_TRACKER.copy_previous_and_reset_rtt();
+            THROUGHPUT_TRACKER.copy_previous_and_reset_rtt(&mut raw_data);
             timer_metrics.copy_previous_and_reset_rtt = timer_metrics.start.elapsed().as_secs_f64();
-            THROUGHPUT_TRACKER.apply_new_throughput_counters(&mut net_json_calc);
+            THROUGHPUT_TRACKER.apply_new_throughput_counters(&mut net_json_calc, &mut raw_data);
             timer_metrics.apply_new_throughput_counters = timer_metrics.start.elapsed().as_secs_f64();
             THROUGHPUT_TRACKER.apply_flow_data(
                 timeout_seconds,
@@ -163,12 +164,14 @@ fn throughput_task(
                 &mut rtt_circuit_tracker,
                 &mut tcp_retries,
                 &mut expired_flows,
+                &mut raw_data,
             );
             rtt_circuit_tracker.clear();
             tcp_retries.clear();
             expired_flows.clear();
             timer_metrics.apply_flow_data = timer_metrics.start.elapsed().as_secs_f64();
-            THROUGHPUT_TRACKER.apply_queue_stats(&mut net_json_calc);
+            THROUGHPUT_TRACKER.apply_queue_stats(&mut net_json_calc, &mut raw_data);
+            std::mem::drop(raw_data);
             timer_metrics.apply_queue_stats = timer_metrics.start.elapsed().as_secs_f64();
             THROUGHPUT_TRACKER.update_totals();
             timer_metrics.update_totals = timer_metrics.start.elapsed().as_secs_f64();
@@ -271,11 +274,11 @@ fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>, scale
     }
     
     let hosts = THROUGHPUT_TRACKER
-        .raw_data
+        .raw_data.lock().unwrap()
         .iter()
         //.filter(|host| host.median_latency().is_some())
-        .map(|host| HostSummary {
-            ip: host.key().as_ip(),
+        .map(|(k, host)| HostSummary {
+            ip: k.as_ip(),
             circuit_id: host.circuit_id.clone(),
             bits_per_second: (scale_u64_by_f64(host.bytes_per_second.down * 8, scale), scale_u64_by_f64(host.bytes_per_second.up * 8, scale)),
             median_rtt: host.median_latency().unwrap_or(0.0),
@@ -324,8 +327,8 @@ pub fn current_throughput() -> BusResponse {
 
 pub fn host_counters() -> BusResponse {
     let mut result = Vec::new();
-    THROUGHPUT_TRACKER.raw_data.iter().for_each(|v| {
-        let ip = v.key().as_ip();
+    THROUGHPUT_TRACKER.raw_data.lock().unwrap().iter().for_each(|(k,v)| {
+        let ip = k.as_ip();
         result.push((ip, v.bytes_per_second));
     });
     BusResponse::HostCounters(result)
@@ -345,12 +348,14 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
             .load(std::sync::atomic::Ordering::Relaxed);
         THROUGHPUT_TRACKER
             .raw_data
+            .lock()
+            .unwrap()
             .iter()
-            .filter(|v| !v.key().as_ip().is_loopback())
-            .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
-            .map(|te| {
+            .filter(|(k,_v)| !k.as_ip().is_loopback())
+            .filter(|(_k,d)| retire_check(tp_cycle, d.most_recent_cycle))
+            .map(|(k,te)| {
                 (
-                    *te.key(),
+                    *k,
                     te.bytes_per_second,
                     te.packets_per_second,
                     te.median_latency().unwrap_or(0.0),
@@ -396,13 +401,14 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
             .load(std::sync::atomic::Ordering::Relaxed);
         THROUGHPUT_TRACKER
             .raw_data
+            .lock().unwrap()
             .iter()
-            .filter(|v| !v.key().as_ip().is_loopback())
-            .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
-            .filter(|te| te.median_latency().is_some())
-            .map(|te| {
+            .filter(|(k,_v)| !k.as_ip().is_loopback())
+            .filter(|(_k, d)| retire_check(tp_cycle, d.most_recent_cycle))
+            .filter(|(_k, te)| te.median_latency().is_some())
+            .map(|(k,te)| {
                 (
-                    *te.key(),
+                    *k,
                     te.bytes_per_second,
                     te.packets_per_second,
                     te.median_latency().unwrap_or(0.0),
@@ -448,13 +454,14 @@ pub fn worst_n_retransmits(start: u32, end: u32) -> BusResponse {
             .load(std::sync::atomic::Ordering::Relaxed);
         THROUGHPUT_TRACKER
             .raw_data
+            .lock().unwrap()
             .iter()
-            .filter(|v| !v.key().as_ip().is_loopback())
-            .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
-            .filter(|te| te.median_latency().is_some())
-            .map(|te| {
+            .filter(|(k,_v)| !k.as_ip().is_loopback())
+            .filter(|(_k,d)| retire_check(tp_cycle, d.most_recent_cycle))
+            .filter(|(_k, te)| te.median_latency().is_some())
+            .map(|(k,te)| {
                 (
-                    *te.key(),
+                    *k,
                     te.bytes_per_second,
                     te.packets_per_second,
                     te.median_latency().unwrap_or(0.0),
@@ -504,13 +511,14 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
             .load(std::sync::atomic::Ordering::Relaxed);
         THROUGHPUT_TRACKER
             .raw_data
+            .lock().unwrap()
             .iter()
-            .filter(|v| !v.key().as_ip().is_loopback())
-            .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
-            .filter(|te| te.median_latency().is_some())
-            .map(|te| {
+            .filter(|(k,_v)| !k.as_ip().is_loopback())
+            .filter(|(_k, d)| retire_check(tp_cycle, d.most_recent_cycle))
+            .filter(|(_k, te)| te.median_latency().is_some())
+            .map(|(k,te)| {
                 (
-                    *te.key(),
+                    *k,
                     te.bytes_per_second,
                     te.packets_per_second,
                     te.median_latency().unwrap_or(0.0),
@@ -556,9 +564,10 @@ pub fn xdp_pping_compat() -> BusResponse {
         .load(std::sync::atomic::Ordering::Relaxed);
     let result = THROUGHPUT_TRACKER
         .raw_data
+        .lock().unwrap()
         .iter()
-        .filter(|d| retire_check(raw_cycle, d.most_recent_cycle))
-        .filter_map(|data| {
+        .filter(|(_k,d)| retire_check(raw_cycle, d.most_recent_cycle))
+        .filter_map(|(_k,data)| {
             if data.tc_handle.as_u32() > 0 {
                 let mut valid_samples: Vec<u32> = data
                     .recent_rtt_data
@@ -599,10 +608,11 @@ pub fn rtt_histogram<const N: usize>() -> BusResponse {
     let reader_cycle = THROUGHPUT_TRACKER
         .cycle
         .load(std::sync::atomic::Ordering::Relaxed);
-    for data in THROUGHPUT_TRACKER
+    for (_k,data) in THROUGHPUT_TRACKER
         .raw_data
+        .lock().unwrap()
         .iter()
-        .filter(|d| retire_check(reader_cycle, d.most_recent_cycle))
+        .filter(|(_k,d)| retire_check(reader_cycle, d.most_recent_cycle))
     {
         let valid_samples: Vec<f64> = data
             .recent_rtt_data
@@ -630,9 +640,10 @@ pub fn host_counts() -> BusResponse {
         .load(std::sync::atomic::Ordering::Relaxed);
     THROUGHPUT_TRACKER
         .raw_data
+        .lock().unwrap()
         .iter()
-        .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
-        .for_each(|d| {
+        .filter(|(_k,d)| retire_check(tp_cycle, d.most_recent_cycle))
+        .for_each(|(_k,d)| {
             total += 1;
             if d.tc_handle.as_u32() != 0 {
                 shaped += 1;
@@ -658,13 +669,14 @@ pub fn all_unknown_ips() -> BusResponse {
     let mut full_list: Vec<FullList> = {
         THROUGHPUT_TRACKER
             .raw_data
+            .lock().unwrap()
             .iter()
-            .filter(|v| !v.key().as_ip().is_loopback())
-            .filter(|d| d.tc_handle.as_u32() == 0)
-            .filter(|d| d.last_seen as u128 > five_minutes_ago_nanoseconds)
-            .map(|te| {
+            .filter(|(k,_v)| !k.as_ip().is_loopback())
+            .filter(|(_k,d)| d.tc_handle.as_u32() == 0)
+            .filter(|(_k,d)| d.last_seen as u128 > five_minutes_ago_nanoseconds)
+            .map(|(k,te)| {
                 (
-                    *te.key(),
+                    *k,
                     te.bytes,
                     te.packets,
                     te.median_latency().unwrap_or(0.0),

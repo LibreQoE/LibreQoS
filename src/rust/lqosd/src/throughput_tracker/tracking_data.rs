@@ -1,7 +1,7 @@
 use std::{sync::atomic::AtomicU64, time::Duration};
+use std::sync::Mutex;
 use crate::{shaped_devices_tracker::SHAPED_DEVICES, stats::HIGH_WATERMARK, throughput_tracker::flow_data::{expire_rtt_flows, flowbee_rtt_map}};
 use super::{flow_data::{get_flowbee_event_count_and_reset, FlowAnalysis, FlowbeeLocalData, RttData, ALL_FLOWS}, throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
-use dashmap::DashMap;
 use fxhash::FxHashMap;
 use tracing::{info, warn};
 use lqos_bus::TcHandle;
@@ -13,7 +13,7 @@ use lqos_utils::units::{AtomicDownUp, DownUpOrder};
 
 pub struct ThroughputTracker {
   pub(crate) cycle: AtomicU64,
-  pub(crate) raw_data: DashMap<XdpIpAddress, ThroughputEntry>,
+  pub(crate) raw_data: Mutex<FxHashMap<XdpIpAddress, ThroughputEntry>>,
   pub(crate) bytes_per_second: AtomicDownUp,
   pub(crate) packets_per_second: AtomicDownUp,
   pub(crate) shaped_bytes_per_second: AtomicDownUp,
@@ -27,17 +27,17 @@ impl ThroughputTracker {
     // first few cycles, but it should be fine after that.
     Self {
       cycle: AtomicU64::new(RETIRE_AFTER_SECONDS),
-      raw_data: DashMap::default(),
+      raw_data: Mutex::new(FxHashMap::default()),
       bytes_per_second: AtomicDownUp::zeroed(),
       packets_per_second: AtomicDownUp::zeroed(),
       shaped_bytes_per_second: AtomicDownUp::zeroed(),
     }
   }
 
-  pub(crate) fn copy_previous_and_reset_rtt(&self) {
+  pub(crate) fn copy_previous_and_reset_rtt(&self, raw_data: &mut FxHashMap<XdpIpAddress, ThroughputEntry>) {
     // Copy previous byte/packet numbers and reset RTT data
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
-    self.raw_data.iter_mut().for_each(|mut v| {
+    raw_data.iter_mut().for_each(|(_k,v)| {
       if v.first_cycle < self_cycle {
         v.bytes_per_second = v.bytes.checked_sub_or_zero(v.prev_bytes);
         v.packets_per_second = v.packets.checked_sub_or_zero(v.prev_packets);
@@ -95,8 +95,9 @@ impl ThroughputTracker {
   }
 
   pub(crate) fn refresh_circuit_ids(&self, lock: &NetworkJson) {
-    self.raw_data.iter_mut().for_each(|mut data| {
-      data.circuit_id = Self::lookup_circuit_id(data.key());
+    let mut raw_data = self.raw_data.lock().unwrap();
+    raw_data.iter_mut().for_each(|(key, data)| {
+      data.circuit_id = Self::lookup_circuit_id(key);
       data.network_json_parents =
         Self::lookup_network_parents(data.circuit_id.clone(), lock);
     });
@@ -105,11 +106,11 @@ impl ThroughputTracker {
   pub(crate) fn apply_new_throughput_counters(
     &self,
     net_json_calc: &mut NetworkJson,
+    raw_data: &mut FxHashMap<XdpIpAddress, ThroughputEntry>,
   ) {
-    let raw_data = &self.raw_data;
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
     throughput_for_each(&mut |xdp_ip, counts| {
-      if let Some(mut entry) = raw_data.get_mut(xdp_ip) {
+      if let Some(entry) = raw_data.get_mut(xdp_ip) {
         entry.bytes = DownUpOrder::zeroed();
         entry.packets = DownUpOrder::zeroed();
         for c in counts {
@@ -167,13 +168,13 @@ impl ThroughputTracker {
     });
   }
 
-  pub(crate) fn apply_queue_stats(&self, net_json_calc: &mut NetworkJson) {
+  pub(crate) fn apply_queue_stats(&self, net_json_calc: &mut NetworkJson, raw_data: &mut FxHashMap<XdpIpAddress, ThroughputEntry>) {
     // Apply totals
     ALL_QUEUE_SUMMARY.calculate_total_queue_stats();
 
     // Iterate through the queue data and find the matching circuit_id
     ALL_QUEUE_SUMMARY.iterate_queues(|circuit_id, drops, marks| {
-      if let Some(entry) = self.raw_data.iter().find(|v| {
+      if let Some((_k, entry)) = raw_data.iter().find(|(_k,v)| {
         match v.circuit_id {
           Some(ref id) => id == circuit_id,
           None => false,
@@ -197,6 +198,7 @@ impl ThroughputTracker {
     rtt_circuit_tracker: &mut FxHashMap<XdpIpAddress, [Vec<RttData>; 2]>,
     tcp_retries: &mut FxHashMap<XdpIpAddress, DownUpOrder<u64>>,
     expired_keys: &mut Vec<FlowbeeKey>,
+    raw_data: &mut FxHashMap<XdpIpAddress, ThroughputEntry>,
   ) {
     //log::debug!("Flowbee events this second: {}", get_flowbee_event_count_and_reset());
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
@@ -257,7 +259,7 @@ impl ThroughputTracker {
           }
 
           // TCP - we have RTT data? 6 is TCP
-          if key.ip_protocol == 6 && data.end_status == 0 && self.raw_data.contains_key(&key.local_ip) {
+          if key.ip_protocol == 6 && data.end_status == 0 && raw_data.contains_key(&key.local_ip) {
               if let Some(rtt) = rtt_samples.get(&key) {
                 // Add the RTT data to the per-circuit tracker
                 if let Some(tracker) = rtt_circuit_tracker.get_mut(&key.local_ip) {
@@ -297,7 +299,7 @@ impl ThroughputTracker {
         if !rtts.is_empty() {
           rtts.sort();
           let median = rtts[rtts.len() / 2];
-          if let Some(mut tracker) = self.raw_data.get_mut(&local_ip) {
+          if let Some(tracker) = raw_data.get_mut(&local_ip) {
             // Only apply if the flow has achieved 1 Mbps or more
             if tracker.bytes_per_second.sum_exceeds(125_000) {
               // Shift left
@@ -318,12 +320,12 @@ impl ThroughputTracker {
 
       // Merge in the TCP retries
       // Reset all entries in the tracker to 0
-      for mut circuit in self.raw_data.iter_mut() {
+      for (_,circuit) in raw_data.iter_mut() {
         circuit.tcp_retransmits = DownUpOrder::zeroed();
       }
       // Apply the new ones
       for (local_ip, retries) in tcp_retries {
-        if let Some(mut tracker) = self.raw_data.get_mut(&local_ip) {
+        if let Some(tracker) = raw_data.get_mut(&local_ip) {
           tracker.tcp_retransmits.down = retries.down.saturating_sub(tracker.prev_tcp_retransmits.down);
           tracker.tcp_retransmits.up = retries.up.saturating_sub(tracker.prev_tcp_retransmits.up);
           tracker.prev_tcp_retransmits.down = retries.down;
@@ -355,7 +357,7 @@ impl ThroughputTracker {
       // Cleaning run
       all_flows_lock.retain(|_k,v| v.0.last_seen >= expire);
       expire_rtt_flows();
-      self.raw_data.shrink_to_fit();
+      raw_data.shrink_to_fit();
     }
   }
 
@@ -366,12 +368,14 @@ impl ThroughputTracker {
     self.shaped_bytes_per_second.set_to_zero();
     self
       .raw_data
+      .lock()
+      .unwrap()
       .iter()
-      .filter(|v| 
+      .filter(|(_k,v)|
         v.most_recent_cycle == current_cycle &&
         v.first_cycle + 2 < current_cycle
       )
-      .map(|v| {
+      .map(|(_k,v)| {
         (
           v.bytes.down.saturating_sub(v.prev_bytes.down),
           v.bytes.up.saturating_sub(v.prev_bytes.up),
@@ -405,7 +409,6 @@ impl ThroughputTracker {
 
   pub(crate) fn next_cycle(&self) {
     self.cycle.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    self.raw_data.shrink_to_fit();
   }
 
   pub(crate) fn bits_per_second(&self) -> DownUpOrder<u64> {
@@ -422,8 +425,8 @@ impl ThroughputTracker {
 
   #[allow(dead_code)]
   pub(crate) fn dump(&self) {
-    for v in self.raw_data.iter() {
-      let ip = v.key().as_ip();
+    for (k,v) in self.raw_data.lock().unwrap().iter() {
+      let ip = k.as_ip();
       info!("{:<34}{:?}", ip, v.tc_handle);
     }
   }
