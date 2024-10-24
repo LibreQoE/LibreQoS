@@ -340,11 +340,9 @@ impl ThroughputTracker {
       if !expired_keys.is_empty() {
         for key in expired_keys.iter() {
           // Send it off to netperf for analysis if we are supporting doing so.
-          if let Some(d) = all_flows_lock.get(&key) {
+          if let Some(d) = all_flows_lock.remove(&key) {
             let _ = sender.send((key.clone(), (d.0.clone(), d.1.clone())));
           }
-          // Remove the flow from circulation
-          all_flows_lock.remove(&key);
         }
         all_flows_lock.shrink_to_fit();
 
@@ -357,6 +355,7 @@ impl ThroughputTracker {
       // Cleaning run
       all_flows_lock.retain(|_k,v| v.0.last_seen >= expire);
       expire_rtt_flows();
+      self.raw_data.shrink_to_fit();
     }
   }
 
