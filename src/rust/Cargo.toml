@@ -71,6 +71,8 @@ num-traits = "0.2.19"
 clap = { version = "4", features = ["derive"] }
 timerfd = "1.6"
 crossbeam-channel = { version = "0.5" }
+crossbeam-queue = "0.3.11"
+arc-swap = "1.7.1"
 
 # May have to change this one for ARM?
 jemallocator = "0.5"
