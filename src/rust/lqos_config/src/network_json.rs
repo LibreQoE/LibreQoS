@@ -1,12 +1,12 @@
 mod network_json_node;
 mod network_json_transport;
 
-use dashmap::DashSet;
 use tracing::{debug, error, warn};
 use serde_json::{Map, Value};
 use std::{
     fs, path::{Path, PathBuf},
 };
+use std::collections::HashSet;
 use thiserror::Error;
 use lqos_utils::units::DownUpOrder;
 pub use network_json_node::NetworkJsonNode;
@@ -69,7 +69,7 @@ impl NetworkJson {
             current_marks: DownUpOrder::zeroed(),
             parents: Vec::new(),
             immediate_parent: None,
-            rtts: DashSet::new(),
+            rtts: HashSet::new(),
             node_type: None,
         }];
         if !Self::exists() {
@@ -177,10 +177,10 @@ impl NetworkJson {
 
     /// Record RTT time in the tree. Note that due to interior mutability,
     /// this does not require mutable access.
-    pub fn add_rtt_cycle(&self, targets: &[usize], rtt: f32) {
+    pub fn add_rtt_cycle(&mut self, targets: &[usize], rtt: f32) {
         for idx in targets {
             // Safety first: use "get" to ensure that the node exists
-            if let Some(node) = self.nodes.get(*idx) {
+            if let Some(node) = self.nodes.get_mut(*idx) {
                 node.rtts.insert((rtt * 100.0) as u16);
             } else {
                 warn!("No network tree entry for index {idx}");
@@ -253,7 +253,7 @@ fn recurse_node(
         current_marks: DownUpOrder::zeroed(),
         name: name.to_string(),
         immediate_parent: Some(immediate_parent),
-        rtts: DashSet::new(),
+        rtts: HashSet::new(),
         node_type: json.get("type").map(|v| v.as_str().unwrap().to_string()),
     };
 
