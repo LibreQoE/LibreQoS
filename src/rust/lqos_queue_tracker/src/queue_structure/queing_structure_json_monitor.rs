@@ -1,5 +1,5 @@
-use std::sync::RwLock;
-
+use std::sync::Arc;
+use arc_swap::ArcSwap;
 use crate::queue_structure::{
   queue_network::QueueNetwork, queue_node::QueueNode, read_queueing_structure,
 };
@@ -9,8 +9,8 @@ use once_cell::sync::Lazy;
 use thiserror::Error;
 use crate::tracking::ALL_QUEUE_SUMMARY;
 
-pub(crate) static QUEUE_STRUCTURE: Lazy<RwLock<QueueStructure>> =
-  Lazy::new(|| RwLock::new(QueueStructure::new()));
+pub(crate) static QUEUE_STRUCTURE: Lazy<ArcSwap<QueueStructure>> =
+  Lazy::new(|| ArcSwap::new(Arc::new(QueueStructure::new())));
 
 #[derive(Clone)]
 pub(crate) struct QueueStructure {
@@ -23,15 +23,6 @@ impl QueueStructure {
       Self { maybe_queues: Some(queues) }
     } else {
       Self { maybe_queues: None }
-    }
-  }
-
-  fn update(&mut self) {
-    ALL_QUEUE_SUMMARY.clear();
-    if let Ok(queues) = read_queueing_structure() {
-      self.maybe_queues = Some(queues);
-    } else {
-      self.maybe_queues = None;
     }
   }
 }
@@ -52,7 +43,9 @@ pub fn spawn_queue_structure_monitor() -> anyhow::Result<()> {
 
 fn update_queue_structure() {
   debug!("queueingStructure.json reloaded");
-  QUEUE_STRUCTURE.write().unwrap().update();
+  let new_queue_structure = QueueStructure::new();
+  ALL_QUEUE_SUMMARY.clear();
+  QUEUE_STRUCTURE.store(Arc::new(new_queue_structure));
 }
 
 /// Fires up a Linux file system watcher than notifies
