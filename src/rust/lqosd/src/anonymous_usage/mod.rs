@@ -73,7 +73,7 @@ fn anonymous_usage_dump() -> anyhow::Result<()> {
     }
 
     data.git_hash = env!("GIT_HASH").to_string();
-    data.shaped_device_count = SHAPED_DEVICES.read().unwrap().devices.len();
+    data.shaped_device_count = SHAPED_DEVICES.load().devices.len();
     data.net_json_len = NETWORK_JSON.read().unwrap().get_nodes_when_ready().len();
 
     data.high_watermark_bps = (

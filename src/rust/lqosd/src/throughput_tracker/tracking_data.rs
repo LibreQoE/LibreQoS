@@ -57,7 +57,7 @@ impl ThroughputTracker {
   fn lookup_circuit_id(xdp_ip: &XdpIpAddress) -> Option<String> {
     let mut circuit_id = None;
     let lookup = xdp_ip.as_ipv6();
-    let cfg = SHAPED_DEVICES.read().unwrap();
+    let cfg = SHAPED_DEVICES.load();
     if let Some((_, id)) = cfg.trie.longest_match(lookup) {
       circuit_id = Some(cfg.devices[*id].circuit_id.clone());
     }
@@ -69,7 +69,7 @@ impl ThroughputTracker {
     circuit_id: Option<String>,
   ) -> Option<String> {
     if let Some(circuit_id) = circuit_id {
-      let shaped = SHAPED_DEVICES.read().unwrap();
+      let shaped = SHAPED_DEVICES.load();
       let parent_name = shaped
         .devices
         .iter()

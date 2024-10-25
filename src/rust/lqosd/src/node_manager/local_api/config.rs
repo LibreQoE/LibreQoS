@@ -1,6 +1,7 @@
+use std::sync::Arc;
 use axum::{Extension, Json};
 use axum::http::StatusCode;
-use lqos_config::{Config, ShapedDevice};
+use lqos_config::{Config, ConfigShapedDevices, ShapedDevice};
 use crate::node_manager::auth::LoginResult;
 use default_net::get_interfaces;
 use serde::Deserialize;
@@ -61,7 +62,7 @@ pub async fn network_json()-> Json<Value> {
 }
 
 pub async fn all_shaped_devices() -> Json<Vec<ShapedDevice>> {
-    Json(SHAPED_DEVICES.read().unwrap().devices.clone())
+    Json(SHAPED_DEVICES.load().devices.clone())
 }
 
 pub async fn update_lqosd_config(
@@ -110,10 +111,10 @@ pub async fn update_network_and_devices(
     if sd_path.exists() {
         std::fs::copy(&sd_path, sd_backup_path).unwrap();
     }
-    let mut lock = SHAPED_DEVICES.write().unwrap();
-    lock.replace_with_new_data(data.shaped_devices.clone());
-    //println!("{:?}", lock.devices);
-    lock.write_csv(&format!("{}/ShapedDevices.csv", config.lqos_directory)).unwrap();
+    let mut copied = ConfigShapedDevices::default();
+    copied.replace_with_new_data(data.shaped_devices.clone());
+    copied.write_csv(&format!("{}/ShapedDevices.csv", config.lqos_directory)).unwrap();
+    SHAPED_DEVICES.store(Arc::new(copied));
 
     "Ok".to_string()
 }

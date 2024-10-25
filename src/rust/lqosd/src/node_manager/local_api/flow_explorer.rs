@@ -59,7 +59,7 @@ fn all_flows_to_transport(boot_time: u64, all_flows_for_asn: Vec<(FlowbeeKey, Fl
         })
         .map(|flow| {
             let (circuit_id, mut circuit_name) = {
-                let sd = SHAPED_DEVICES.read().unwrap();
+                let sd = SHAPED_DEVICES.load();
                 sd.get_circuit_id_and_name_from_ip(&flow.0.local_ip).unwrap_or((String::new(), String::new()))
             };
             if circuit_name.is_empty() {
