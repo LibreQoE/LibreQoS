@@ -21,18 +21,16 @@ pub fn get_unknown_ips() -> Vec<UnknownIp> {
     let sd_reader = SHAPED_DEVICES.read().unwrap();
     THROUGHPUT_TRACKER
         .raw_data
-        .lock()
-        .unwrap()
         .iter()
-        .filter(|(k,_v)| !k.as_ip().is_loopback())
-        .filter(|(_k,d)| d.tc_handle.as_u32() == 0)
-        .filter(|(k,_d)| {
-            let ip = k.as_ip();
+        .filter(|v| !v.key().as_ip().is_loopback())
+        .filter(|d| d.tc_handle.as_u32() == 0)
+        .filter(|d| {
+            let ip = d.key().as_ip();
             !sd_reader.trie.longest_match(ip).is_some()
         })
-        .map(|(k,d)| {
+        .map(|d| {
             UnknownIp {
-                ip: k.as_ip().to_string(),
+                ip: d.key().as_ip().to_string(),
                 last_seen_nanos: now - d.last_seen,
                 total_bytes: d.bytes,
                 current_bytes: d.bytes_per_second,
