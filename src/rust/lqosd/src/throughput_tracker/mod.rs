@@ -173,12 +173,12 @@ fn throughput_task(
             THROUGHPUT_TRACKER.apply_queue_stats(&mut net_json_calc, &mut raw_data);
 
             // Raw Data cleanup time
-            if let Ok(boot_time) = time_since_boot() {
+            /*if let Ok(boot_time) = time_since_boot() {
                 let time_since_boot = Duration::from(boot_time);
                 let five_minutes_ago = time_since_boot.saturating_sub(Duration::from_secs(300));
                 let five_minutes_ago_nanoseconds = five_minutes_ago.as_nanos();
                 raw_data.retain(|_k, v| v.last_seen > 0 && (v.last_seen as u128) < five_minutes_ago_nanoseconds);
-            }
+            }*/
 
             std::mem::drop(raw_data);
             timer_metrics.apply_queue_stats = timer_metrics.start.elapsed().as_secs_f64();
