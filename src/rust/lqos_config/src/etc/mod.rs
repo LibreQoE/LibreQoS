@@ -21,11 +21,12 @@ static CONFIG: Mutex<Option<Config>> = Mutex::new(None);
 
 /// Load the configuration from `/etc/lqos.conf`.
 pub fn load_config() -> Result<Config, LibreQoSConfigError> {
-    let mut config_location = "/etc/lqos.conf".to_string();
-    if let Ok(lqos_config) = std::env::var("LQOS_CONFIG") {
-        config_location = lqos_config;
+    let config_location = if let Ok(lqos_config) = std::env::var("LQOS_CONFIG") {
         info!("Overriding lqos.conf location from environment variable.");
-    }
+        lqos_config
+    } else {
+        "/etc/lqos.conf".to_string()
+    };
     
     let mut lock = CONFIG.lock().unwrap();
     if lock.is_none() {
