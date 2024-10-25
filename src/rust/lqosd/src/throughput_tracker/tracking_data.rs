@@ -281,11 +281,11 @@ impl ThroughputTracker {
                  DownUpOrder::new(data.tcp_retransmits.down as u64, data.tcp_retransmits.up as u64)
                 );
               }
+          }
 
-              if data.end_status != 0 {
-                // The flow has ended. We need to remove it from the map.
-                expired_keys.push(key.clone());
-              }
+          if data.end_status != 0 {
+            // The flow has ended. We need to remove it from the map.
+            expired_keys.push(key.clone());
           }
         }
       }); // End flow iterator
