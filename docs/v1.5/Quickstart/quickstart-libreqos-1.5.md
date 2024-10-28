@@ -1,5 +1,9 @@
 # Install LibreQoS 1.5
 
+## Prerequisites
+
+[Quickstart Prerequisites](quickstart-prereq.md)
+
 ## Download .DEB (Recommended Method)
 
 Donwload the latest .deb from https://libreqos.io/#download .
