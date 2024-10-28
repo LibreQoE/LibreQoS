@@ -1,10 +1,12 @@
 # Install LibreQoS 1.5
 
-## Prerequisites
+## Step 1 - Complete The Prerequisites
 
-[Quickstart Prerequisites](quickstart-prereq.md)
+[LibreQoS Installation Prerequisites](quickstart-prereq.md)
 
-## Download .DEB (Recommended Method)
+## Step 2 - Install
+
+### Download .DEB Package (Recommended Method)
 
 Donwload the latest .deb from https://libreqos.io/#download .
 
@@ -13,10 +15,10 @@ Unzip the .zip file and transfer the .deb to your LibreQoS box, installing with:
 sudo apt install [deb file name]
 ```
 
-## Git Install (For Developers - Not Recommended)
+### Git Install (For Developers Only - Not Recommended)
 
 [Complex Installation](../TechnicalDocs/git-install.md)
 
-## Configure
+## Step 3 - Configure
 
 You are now ready to [Configure](./configuration.md) LibreQoS!
