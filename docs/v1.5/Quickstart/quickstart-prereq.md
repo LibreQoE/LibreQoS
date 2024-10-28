@@ -83,6 +83,8 @@ network:
         - ens20
 ```
 
+By setting `dhcp4: no` and `dhcp6: no`, the interfaces will be brought up as part of the normal boot cycle, despite not having IP addresses assigned.
+
 Make sure to replace `(addr goes here)` with your LibreQoS VM's address and subnet CIDR, and to replace `(gateway goes here)` with whatever your default gateway is.
 
 Then run
@@ -122,14 +124,14 @@ network:
         - (etc)
         search: []
     ens19:
-      dhcp4: off
-      dhcp6: off
+      dhcp4: no
+      dhcp6: no
     ens20:
-      dhcp4: off
-      dhcp6: off
+      dhcp4: no
+      dhcp6: no
 ```
 
-By setting `dhcp4: off` and `dhcp6: off`, bringing them up but not assigning addresses is part of the normal boot cycle.
+By setting `dhcp4: no` and `dhcp6: no`, the interfaces will be brought up as part of the normal boot cycle, despite not having IP addresses assigned.
 
 Make sure to replace (addr goes here) with your LibreQoS VM's address and subnet CIDR, and to replace `(gateway goes here)` with whatever your default gateway is.
 Once everything is in place, run:
