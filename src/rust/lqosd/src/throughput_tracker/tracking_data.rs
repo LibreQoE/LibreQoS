@@ -344,7 +344,6 @@ impl ThroughputTracker {
             let _ = sender.send((key.clone(), (d.0.clone(), d.1.clone())));
           }
         }
-        all_flows_lock.shrink_to_fit();
 
         let ret = lqos_sys::end_flows(expired_keys);
         if let Err(e) = ret {
@@ -355,7 +354,6 @@ impl ThroughputTracker {
       // Cleaning run
       all_flows_lock.retain(|_k,v| v.0.last_seen >= expire);
       expire_rtt_flows();
-      self.raw_data.shrink_to_fit();
     }
   }
 
@@ -405,7 +403,6 @@ impl ThroughputTracker {
 
   pub(crate) fn next_cycle(&self) {
     self.cycle.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    self.raw_data.shrink_to_fit();
   }
 
   pub(crate) fn bits_per_second(&self) -> DownUpOrder<u64> {

@@ -164,7 +164,6 @@ impl FlowActor {
                                         let since_boot = Duration::from(now);
                                         let expire = (since_boot - Duration::from_secs(30)).as_nanos() as u64;
                                         flows.flow_rtt.retain(|_, v| v.last_seen > expire);
-                                        flows.flow_rtt.shrink_to_fit();
                                     }
                                 }
                                 Ok(FlowCommands::RttMap(reply)) => {

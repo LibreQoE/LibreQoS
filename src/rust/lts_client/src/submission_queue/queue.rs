@@ -98,7 +98,6 @@ pub(crate) async fn send_queue(stream: &mut TcpStream) -> Result<(), QueueError>
     }
 
     lock.clear();
-    lock.shrink_to_fit();
     Ok(())
 }
 
