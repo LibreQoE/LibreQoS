@@ -25,7 +25,7 @@ pub async fn gather_support_data(
     let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
     let filename = format!("libreqos_{}.support", timestamp);
     let lts_key = if let Ok(cfg) = load_config() {
-        cfg.long_term_stats.license_key.unwrap_or("None".to_string())
+        cfg.long_term_stats.license_key.clone().unwrap_or("None".to_string())
     } else {
         "None".to_string()
     };
@@ -46,7 +46,7 @@ pub async fn submit_support_data(
     info: Json<SupportMetadata>
 ) -> String {
     let lts_key = if let Ok(cfg) = load_config() {
-        cfg.long_term_stats.license_key.unwrap_or("None".to_string())
+        cfg.long_term_stats.license_key.clone().unwrap_or("None".to_string())
     } else {
         "None".to_string()
     };

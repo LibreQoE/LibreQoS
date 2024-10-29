@@ -25,7 +25,7 @@ pub async fn get_config(
         return Err(StatusCode::FORBIDDEN);
     }
     let config = lqos_config::load_config().unwrap();
-    Ok(Json(config))
+    Ok(Json((*config).clone()))
 }
 
 pub async fn list_nics(

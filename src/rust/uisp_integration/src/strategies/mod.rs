@@ -1,6 +1,7 @@
 mod flat;
 mod full;
 
+use std::sync::Arc;
 use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
 use lqos_config::Config;
@@ -8,7 +9,7 @@ use tracing::{error, info};
 
 /// Builds the network using the selected strategy.
 pub async fn build_with_strategy(
-    config: Config,
+    config: Arc<Config>,
     ip_ranges: IpRanges,
 ) -> Result<(), UispIntegrationError> {
     // Select a Strategy

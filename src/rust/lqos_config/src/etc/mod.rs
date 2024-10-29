@@ -6,7 +6,10 @@ use std::path::Path;
 use self::migration::migrate_if_needed;
 pub use self::v15::Config;
 pub use etclqos_migration::*;
-use std::sync::Mutex;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use arc_swap::ArcSwap;
+use once_cell::sync::Lazy;
 use thiserror::Error;
 use tracing::{debug, error, info};
 
@@ -17,10 +20,29 @@ pub mod test_data;
 mod v15;
 pub use v15::{Tunables, BridgeConfig};
 
-static CONFIG: Mutex<Option<Config>> = Mutex::new(None);
+static CONFIG_LOADED: AtomicBool = AtomicBool::new(false);
+static CONFIG: Lazy<ArcSwap<Config>> = Lazy::new(|| {
+    match load_config() {
+        Ok(config) => {
+            CONFIG_LOADED.store(true, std::sync::atomic::Ordering::SeqCst);
+            ArcSwap::new(config)
+        },
+        Err(e) => {
+            error!("Unable to load configuration: {:?}", e);
+            ArcSwap::new(Arc::new(Config::default()))
+        }
+    }
+});
+
+//static CONFIG: Mutex<Option<Config>> = Mutex::new(None);
 
 /// Load the configuration from `/etc/lqos.conf`.
-pub fn load_config() -> Result<Config, LibreQoSConfigError> {
+pub fn load_config() -> Result<Arc<Config>, LibreQoSConfigError> {
+    // If we have a cached version, return it
+    if CONFIG_LOADED.load(std::sync::atomic::Ordering::SeqCst) {
+        return Ok(CONFIG.load().clone());
+    }
+
     let config_location = if let Ok(lqos_config) = std::env::var("LQOS_CONFIG") {
         info!("Overriding lqos.conf location from environment variable.");
         lqos_config
@@ -28,45 +50,43 @@ pub fn load_config() -> Result<Config, LibreQoSConfigError> {
         "/etc/lqos.conf".to_string()
     };
     
-    let mut lock = CONFIG.lock().unwrap();
-    if lock.is_none() {
-        debug!("Loading configuration file {config_location}");
-        migrate_if_needed().map_err(|e| {
-            error!("Unable to migrate configuration: {:?}", e);
-            LibreQoSConfigError::FileNotFoud
-        })?;
+    debug!("Loading configuration file {config_location}");
+    migrate_if_needed().map_err(|e| {
+        error!("Unable to migrate configuration: {:?}", e);
+        LibreQoSConfigError::FileNotFoud
+    })?;
 
-        let file_result = std::fs::read_to_string(&config_location);
-        if file_result.is_err() {
-            error!("Unable to open {config_location}");
-            return Err(LibreQoSConfigError::FileNotFoud);
-        }
-        let raw = file_result.unwrap();
+    let file_result = std::fs::read_to_string(&config_location);
+    if file_result.is_err() {
+        error!("Unable to open {config_location}");
+        return Err(LibreQoSConfigError::FileNotFoud);
+    }
+    let raw = file_result.unwrap();
 
-        let config_result = Config::load_from_string(&raw);
-        if config_result.is_err() {
-            error!("Unable to parse /etc/lqos.conf");
-            error!("Error: {:?}", config_result);
-            return Err(LibreQoSConfigError::ParseError(format!(
-                "{:?}",
-                config_result
-            )));
-        }
-        let mut final_config = config_result.unwrap(); // We know it's good at this point
-        
-        // Check for environment variable overrides
-        if let Ok(lqos_dir) = std::env::var("LQOS_DIRECTORY") {
-            final_config.lqos_directory = lqos_dir;
-        }
+    let config_result = Config::load_from_string(&raw);
+    if config_result.is_err() {
+        error!("Unable to parse /etc/lqos.conf");
+        error!("Error: {:?}", config_result);
+        return Err(LibreQoSConfigError::ParseError(format!(
+            "{:?}",
+            config_result
+        )));
+    }
+    let mut final_config = config_result.unwrap(); // We know it's good at this point
 
-        debug!("Set cached version of config file");
-        *lock = Some(final_config);
+    // Check for environment variable overrides
+    if let Ok(lqos_dir) = std::env::var("LQOS_DIRECTORY") {
+        final_config.lqos_directory = lqos_dir;
     }
 
-    Ok(lock.as_ref().unwrap().clone())
+    debug!("Set cached version of config file");
+    CONFIG.store(Arc::new(final_config));
+    CONFIG_LOADED.store(true, std::sync::atomic::Ordering::SeqCst);
+
+    Ok(CONFIG.load().clone())
 }
 
-/// Enables LTS reporting in the configuration file.
+/*/// Enables LTS reporting in the configuration file.
 pub fn enable_long_term_stats(license_key: String) -> Result<(), LibreQoSConfigError> {
     let mut config = load_config()?;
     let mut lock = CONFIG.lock().unwrap();
@@ -86,13 +106,12 @@ pub fn enable_long_term_stats(license_key: String) -> Result<(), LibreQoSConfigE
     *lock = Some(config);
 
     Ok(())
-}
+}*/
 
 /// Update the configuration on disk
 pub fn update_config(new_config: &Config) -> Result<(), LibreQoSConfigError> {
     debug!("Updating stored configuration");
-    let mut lock = CONFIG.lock().unwrap();
-    *lock = Some(new_config.clone());
+    CONFIG.store(Arc::new(new_config.clone()));
 
     // Does the configuration exist?
     let config_path = Path::new("/etc/lqos.conf");
@@ -125,15 +144,15 @@ pub fn update_config(new_config: &Config) -> Result<(), LibreQoSConfigError> {
 /// intended for use when the XDP bridge is disabled by pre-flight
 /// because of a Linux bridge.
 pub fn disable_xdp_bridge() -> Result<(), LibreQoSConfigError> {
-    let mut config = load_config()?;
-    let mut lock = CONFIG.lock().unwrap();
+    let config = load_config()?;
+    let mut config = (*config).clone();
 
     if let Some(bridge) = &mut config.bridge {
         bridge.use_xdp_bridge = false;
     }
 
     // Write the lock
-    *lock = Some(config);
+    CONFIG.store(Arc::new(config));
 
     Ok(())
 }

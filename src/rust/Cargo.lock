@@ -1711,11 +1711,13 @@ dependencies = [
 name = "lqos_config"
 version = "0.1.0"
 dependencies = [
+ "arc-swap",
  "csv",
  "dashmap",
  "ip_network",
  "ip_network_table",
  "lqos_utils",
+ "once_cell",
  "pyo3",
  "serde",
  "serde_json",

@@ -13,6 +13,7 @@ mod utils;
 mod zero_capacity_sites;
 mod mikrotik;
 
+use std::sync::Arc;
 use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
 use crate::strategies::full::ap_promotion::promote_access_points;
@@ -45,7 +46,7 @@ use lqos_config::Config;
 /// * An `Ok` if the operation was successful
 /// * An `Err` if the operation failed
 pub async fn build_full_network(
-    config: Config,
+    config: Arc<Config>,
     ip_ranges: IpRanges,
 ) -> Result<(), UispIntegrationError> {
     // Load any bandwidth overrides

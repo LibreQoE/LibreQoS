@@ -106,7 +106,7 @@ fn throughput_task(
 ) {
     // Obtain the flow timeout from the config, default to 30 seconds
     let timeout_seconds = if let Ok(config) = lqos_config::load_config() {
-        if let Some(flow_config) = config.flows {
+        if let Some(flow_config) = &config.flows {
             flow_config.flow_timeout_seconds
         } else {
             30
@@ -117,7 +117,7 @@ fn throughput_task(
 
     // Obtain the netflow_enabled from the config, default to false
     let netflow_enabled = if let Ok(config) = lqos_config::load_config() {
-        if let Some(flow_config) = config.flows {
+        if let Some(flow_config) = &config.flows {
             flow_config.netflow_enabled
         } else {
             false
