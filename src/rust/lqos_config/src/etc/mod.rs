@@ -6,7 +6,7 @@ use std::path::Path;
 use self::migration::migrate_if_needed;
 pub use self::v15::Config;
 pub use etclqos_migration::*;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicBool;
 use arc_swap::ArcSwap;
 use once_cell::sync::Lazy;
@@ -34,14 +34,21 @@ static CONFIG: Lazy<ArcSwap<Config>> = Lazy::new(|| {
     }
 });
 
-//static CONFIG: Mutex<Option<Config>> = Mutex::new(None);
+static LOADER_MUTEX: Mutex<bool> = Mutex::new(false);
 
 /// Load the configuration from `/etc/lqos.conf`.
 pub fn load_config() -> Result<Arc<Config>, LibreQoSConfigError> {
     // If we have a cached version, return it
+    let mut lock = LOADER_MUTEX.lock().unwrap();
+    *lock = !(*lock); // Not actually useful, prevents it from being optimized away
+    println!("Config lock obtained");
     if CONFIG_LOADED.load(std::sync::atomic::Ordering::SeqCst) {
-        return Ok(CONFIG.load().clone());
+        println!("Returning cached config version");
+        let clone = CONFIG.load().clone();
+        println!("Cloned the existing config");
+        return Ok(clone);
     }
+    println!("Not cached");
 
     let config_location = if let Ok(lqos_config) = std::env::var("LQOS_CONFIG") {
         info!("Overriding lqos.conf location from environment variable.");
@@ -79,11 +86,12 @@ pub fn load_config() -> Result<Arc<Config>, LibreQoSConfigError> {
         final_config.lqos_directory = lqos_dir;
     }
 
+    println!("Final config loaded");
     debug!("Set cached version of config file");
-    CONFIG.store(Arc::new(final_config));
-    CONFIG_LOADED.store(true, std::sync::atomic::Ordering::SeqCst);
+    let new_config = Arc::new(final_config.clone());
 
-    Ok(CONFIG.load().clone())
+    println!("Returning config");
+    Ok(new_config)
 }
 
 /*/// Enables LTS reporting in the configuration file.
