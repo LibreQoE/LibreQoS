@@ -41,14 +41,10 @@ pub fn load_config() -> Result<Arc<Config>, LibreQoSConfigError> {
     // If we have a cached version, return it
     let mut lock = LOADER_MUTEX.lock().unwrap();
     *lock = !(*lock); // Not actually useful, prevents it from being optimized away
-    println!("Config lock obtained");
     if CONFIG_LOADED.load(std::sync::atomic::Ordering::SeqCst) {
-        println!("Returning cached config version");
         let clone = CONFIG.load().clone();
-        println!("Cloned the existing config");
         return Ok(clone);
     }
-    println!("Not cached");
 
     let config_location = if let Ok(lqos_config) = std::env::var("LQOS_CONFIG") {
         info!("Overriding lqos.conf location from environment variable.");
@@ -86,11 +82,9 @@ pub fn load_config() -> Result<Arc<Config>, LibreQoSConfigError> {
         final_config.lqos_directory = lqos_dir;
     }
 
-    println!("Final config loaded");
     debug!("Set cached version of config file");
     let new_config = Arc::new(final_config.clone());
 
-    println!("Returning config");
     Ok(new_config)
 }
 
