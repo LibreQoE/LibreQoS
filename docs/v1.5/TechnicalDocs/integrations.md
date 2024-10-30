@@ -12,10 +12,15 @@ To test the Splynx Integration, use
 python3 integrationSplynx.py
 ```
 
-On the first successful run, it will create a ShapedDevices.csv file.
-You can manually create your network.json file to more accurately reflect bandwidth limits.
+On the first successful run, it will create a ShapedDevices.csv file and network.json.
 ShapedDevices.csv will be overwritten every time the Splynx integration is run.
-You have the option to run integrationSplynx.py automatically on boot and every 5 minutes, which is recommended. This can be enabled by setting ```enable_spylnx = true``` in `/etc/lqos.conf`.
+
+To ensure the network.json is always overwritten with the newest version pulled in by the integration, please edit `/etc/lqos.conf` with the command `sudo nano /etc/lqos.conf`.
+Edit the file to set the value of `always_overwrite_network_json` to `true`.
+Then, run `sudo systemctl restart lqosd`.
+
+You have the option to run integrationSplynx.py automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_spylnx = true``` in `/etc/lqos.conf`.
+Once set, run `sudo systemctl restart lqos_scheduler`.
 
 ## UISP Integration
 
@@ -87,7 +92,12 @@ You can modify the the following files to more accurately reflect your network:
 - integrationUISProutes.csv
 
 ShapedDevices.csv will be overwritten every time the UISP integration is run.
-You have the option to run integrationUISP.py automatically on boot and every 5 minutes, which is recommended. This can be enabled by setting ```enable_uisp = true``` in `/etc/lqos.conf`.
+
+To ensure the network.json is always overwritten with the newest version pulled in by the integration, please edit `/etc/lqos.conf` with the command `sudo nano /etc/lqos.conf`.
+Edit the file to set the value of `always_overwrite_network_json` to `true`.
+Then, run `sudo systemctl restart lqosd`.
+
+You have the option to run integrationUISP.py automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_uisp = true``` in `/etc/lqos.conf`. Once set, run `sudo systemctl restart lqos_scheduler`.
 
 ## Powercode Integration
 
@@ -102,7 +112,7 @@ python3 integrationPowercode.py
 On the first successful run, it will create a ShapedDevices.csv file.
 You can modify the network.json file manually to reflect Site/AP bandwidth limits.
 ShapedDevices.csv will be overwritten every time the Powercode integration is run.
-You have the option to run integrationPowercode.py automatically on boot and every 5 minutes, which is recommended. This can be enabled by setting ```enable_powercode = true``` in `/etc/lqos.conf`.
+You have the option to run integrationPowercode.py automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_powercode = true``` in `/etc/lqos.conf`.
 
 ## Sonar Integration
 
@@ -118,4 +128,4 @@ On the first successful run, it will create a ShapedDevices.csv file.
 If a network.json file exists, it will not be overwritten, unless you set ```always_overwrite_network_json = true```.
 You can modify the network.json file to more accurately reflect bandwidth limits.
 ShapedDevices.csv will be overwritten every time the Sonar integration is run.
-You have the option to run integrationSonar.py automatically on boot and every 5 minutes, which is recommended. This can be enabled by setting ```enable_sonar = true``` in `/etc/lqos.conf`.
+You have the option to run integrationSonar.py automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_sonar = true``` in `/etc/lqos.conf`.
