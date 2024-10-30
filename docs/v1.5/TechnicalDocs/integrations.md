@@ -22,6 +22,16 @@ Then, run `sudo systemctl restart lqosd`.
 You have the option to run integrationSplynx.py automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_spylnx = true``` in `/etc/lqos.conf`.
 Once set, run `sudo systemctl restart lqos_scheduler`.
 
+### Splynx Overrides
+
+You can also modify the the file `integrationSplynxBandwidths.csv` to override the default bandwidths for each Node (Site, AP).
+
+A template is available in the `/opt/libreqos/src` folder. To utilize the template, copy the file `integrationSplynxBandwidths.template.csv` (removing the `.template` part of the filename) and set the appropriate information inside each file. For example, if you want to change the set bandwidth for a site, you would do:
+```
+sudo cp /opt/libreqos/src/integrationSplynxBandwidths.template.csv /opt/libreqos/src/integrationSplynxBandwidths.csv
+```
+And edit the CSV using LibreOffice or your preferred CSV editor.
+
 ## UISP Integration
 
 First, set the relevant parameters for UISP (token, url, automatic_import_uisp, etc.) in `/etc/lqos.conf`.
@@ -87,9 +97,6 @@ sudo /opt/libreqos/src/bin/uisp_integration
 
 On the first successful run, it will create a network.json and ShapedDevices.csv file.
 If a network.json file exists, it will not be overwritten, unless you set ```always_overwrite_network_json = true```.
-You can modify the the following files to more accurately reflect your network:
-- integrationUISPbandwidths.csv
-- integrationUISProutes.csv
 
 ShapedDevices.csv will be overwritten every time the UISP integration is run.
 
@@ -98,6 +105,19 @@ Edit the file to set the value of `always_overwrite_network_json` to `true`.
 Then, run `sudo systemctl restart lqosd`.
 
 You have the option to run integrationUISP.py automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_uisp = true``` in `/etc/lqos.conf`. Once set, run `sudo systemctl restart lqos_scheduler`.
+
+### UISP Overrides
+
+You can also modify the the following files to more accurately reflect your network:
+- integrationUISPbandwidths.csv
+- integrationUISProutes.csv
+
+Each of the files above have templates available in the `/opt/libreqos/src` folder. If you don't find them there, you can navigate [here](https://github.com/LibreQoE/LibreQoS/tree/develop/src). To utilize the template, copy the file (removing the `.template` part of the filename) and set the appropriate information inside each file.
+For example, if you want to change the set bandwidth for a site, you would do:
+```
+sudo cp /opt/libreqos/src/integrationUISPbandwidths.template.csv /opt/libreqos/src/integrationUISPbandwidths.csv
+```
+And edit the CSV using LibreOffice or your preferred CSV editor.
 
 ## Powercode Integration
 
