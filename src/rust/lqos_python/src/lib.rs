@@ -91,6 +91,7 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_wrapped(wrap_pyfunction!(get_weights))?;
   m.add_wrapped(wrap_pyfunction!(get_tree_weights))?;
   m.add_wrapped(wrap_pyfunction!(get_libreqos_directory))?;
+  m.add_wrapped(wrap_pyfunction!(is_network_flat))?;
 
   Ok(())
 }
@@ -372,7 +373,7 @@ fn use_bin_packing_to_balance_cpu() -> PyResult<bool> {
   let config = lqos_config::load_config().unwrap();
   Ok(config.queues.use_binpacking)
 }
-
+https://github.com/LibreQoE/LibreQoS/pull/564
 #[pyfunction]
 fn monitor_mode_only() -> PyResult<bool> {
   let config = lqos_config::load_config().unwrap();
@@ -695,4 +696,9 @@ pub fn get_libreqos_directory() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
   let dir = config.lqos_directory.clone();
   Ok(dir)
+}
+
+#[pyfunction]
+pub fn is_network_flat() -> PyResult<bool> {
+  Ok(lqos_config::NetworkJson::load().unwrap().get_nodes_when_ready().len() == 1)
 }
