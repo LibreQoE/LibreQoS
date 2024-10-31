@@ -1,7 +1,7 @@
 //! The `authentication` module provides authorization for use of the
 //! local web UI on LibreQoS boxes. It maps to `/<install dir>/lqusers.toml`
 
-use log::{error, warn};
+use tracing::{error, warn};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -59,11 +59,16 @@ pub struct WebUsers {
 
 impl WebUsers {
   fn path() -> Result<PathBuf, AuthenticationError> {
-    let base_path = crate::EtcLqos::load()
+    let base_path = crate::load_config()
       .map_err(|_| AuthenticationError::UnableToLoadEtcLqos)?
-      .lqos_directory;
+      .lqos_directory.clone();
     let filename = Path::new(&base_path).join("lqusers.toml");
     Ok(filename)
+  }
+
+  /// Is the list of users empty?
+  pub fn is_empty(&self) -> bool {
+    self.users.is_empty()
   }
 
   fn save_to_disk(&self) -> Result<(), AuthenticationError> {

@@ -1,6 +1,7 @@
 use lqos_bus::BusResponse;
 use std::{process::Command, sync::atomic::AtomicBool};
 use tokio::task::spawn_blocking;
+use tracing::log::warn;
 
 static TEST_BUSY: AtomicBool = AtomicBool::new(false);
 
@@ -17,7 +18,7 @@ pub fn lqos_daht_test() -> BusResponse {
         .args(["-t", "lqtest@lqos.taht.net", "\"/home/lqtest/bin/v6vsv4.sh\""])
         .output();
       if result.is_err() {
-        log::warn!("Unable to call dtaht test: {:?}", result);
+        warn!("Unable to call dtaht test: {:?}", result);
       }
 
       TEST_BUSY.store(false, std::sync::atomic::Ordering::Relaxed);

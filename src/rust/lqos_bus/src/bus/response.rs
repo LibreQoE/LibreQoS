@@ -1,10 +1,9 @@
 use super::QueueStoreTransit;
-use crate::{
-  ip_stats::PacketHeader, FlowTransport, IpMapping, IpStats, XdpPpingResult,
-};
+use crate::{ip_stats::{FlowbeeSummaryData, PacketHeader}, Circuit, IpMapping, IpStats, XdpPpingResult};
 use lts_client::transport_data::{StatsTotals, StatsHost, StatsTreeNode};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
+use lqos_utils::units::DownUpOrder;
 
 /// A `BusResponse` object represents a single
 /// reply generated from a `BusRequest`, and batched
@@ -24,24 +23,27 @@ pub enum BusResponse {
   /// Current throughput for the overall system.
   CurrentThroughput {
     /// In bps
-    bits_per_second: (u64, u64),
+    bits_per_second: DownUpOrder<u64>,
 
     /// In pps
-    packets_per_second: (u64, u64),
+    packets_per_second: DownUpOrder<u64>,
 
     /// How much of the response has been subject to the shaper?
-    shaped_bits_per_second: (u64, u64),
+    shaped_bits_per_second: DownUpOrder<u64>,
   },
 
   /// Provides a list of ALL mapped hosts traffic counters,
   /// listing the IP Address and upload/download in a tuple.
-  HostCounters(Vec<(IpAddr, u64, u64)>),
+  HostCounters(Vec<(IpAddr, DownUpOrder<u64>)>),
 
   /// Provides the Top N downloaders IP stats.
   TopDownloaders(Vec<IpStats>),
 
   /// Provides the worst N RTT scores, sorted in descending order.
   WorstRtt(Vec<IpStats>),
+
+  /// Provides the worst N Retransmit scores, sorted in descending order.
+  WorstRetransmits(Vec<IpStats>),
 
   /// Provides the best N RTT scores, sorted in descending order.
   BestRtt(Vec<IpStats>),
@@ -78,6 +80,9 @@ pub enum BusResponse {
 
   /// Named nodes from network.json
   NodeNames(Vec<(usize, String)>),
+  
+  /// Circuit data
+  CircuitData(Vec<Circuit>),
 
   /// Statistics from lqosd
   LqosdStats {
@@ -86,13 +91,12 @@ pub enum BusResponse {
     /// Us to poll hosts
     time_to_poll_hosts: u64,
     /// High traffic watermark
-    high_watermark: (u64, u64),
+    high_watermark: DownUpOrder<u64>,
     /// Number of flows tracked
     tracked_flows: u64,
+    /// RTT events per second
+    rtt_events_per_second: u64,
   },
-
-  /// Flow Data
-  FlowData(Vec<(FlowTransport, Option<FlowTransport>)>),
 
   /// The index of the new packet collection session
   PacketCollectionSession {
@@ -116,4 +120,44 @@ pub enum BusResponse {
 
   /// Long-term stats tree
   LongTermTree(Vec<StatsTreeNode>),
+
+  /// All Active Flows (Not Recommended - Debug Use)
+  AllActiveFlows(Vec<FlowbeeSummaryData>),
+
+  /// Count active flows
+  CountActiveFlows(u64),
+
+  /// Top Flopws
+  TopFlows(Vec<FlowbeeSummaryData>),
+
+  /// Flows by IP
+  FlowsByIp(Vec<FlowbeeSummaryData>),
+
+  /// Current endpoints by country
+  CurrentEndpointsByCountry(Vec<(String, DownUpOrder<u64>, [f32; 2], String)>),
+
+  /// Current Lat/Lon of endpoints
+  CurrentLatLon(Vec<(f64, f64, String, u64, f32)>),
+
+  /// Duration of flows
+  FlowDuration(Vec<(usize, u64)>),
+
+  /// Summary of Ether Protocol
+  EtherProtocols{
+    /// Number of IPv4 Bytes
+    v4_bytes: DownUpOrder<u64>,
+    /// Number of IPv6 Bytes
+    v6_bytes: DownUpOrder<u64>,
+    /// Number of IPv4 Packets
+    v4_packets: DownUpOrder<u64>,
+    /// Number of IPv6 Packets
+    v6_packets: DownUpOrder<u64>,
+    /// Number of IPv4 Flows
+    v4_rtt: DownUpOrder<u64>,
+    /// Number of IPv6 Flows
+    v6_rtt: DownUpOrder<u64>,
+  },
+  
+  /// Summary of IP Protocols
+  IpProtocols(Vec<(String, DownUpOrder<u64>)>),
 }

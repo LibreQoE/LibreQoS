@@ -6,7 +6,7 @@ use std::{
   io::{Read, Write},
   path::Path,
 };
-use sysinfo::{ProcessExt, System, SystemExt};
+use sysinfo::System;
 
 const LOCK_PATH: &str = "/run/lqos/lqosd.lock";
 const LOCK_DIR: &str = "/run/lqos";
@@ -42,7 +42,7 @@ impl FileLock {
     let sys = System::new_all();
     let pid = sysinfo::Pid::from(pid as usize);
     if let Some(process) = sys.processes().get(&pid) {
-      if process.name().contains("lqosd") {
+      if process.name().to_str().unwrap().contains("lqosd") {
         return Ok(true);
       }
     }

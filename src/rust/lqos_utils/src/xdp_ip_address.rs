@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use byteorder::{BigEndian, ByteOrder};
 use zerocopy::FromBytes;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -42,7 +43,8 @@ impl XdpIpAddress {
     result
   }
 
-  fn is_v4(&self) -> bool {
+  /// Checks if the `XdpIpAddress` is an IPv4 address
+  pub fn is_v4(&self) -> bool {
     self.0[0] == 0xFF
       && self.0[1] == 0xFF
       && self.0[2] == 0xFF
@@ -57,7 +59,7 @@ impl XdpIpAddress {
       && self.0[11] == 0xFF
   }
 
-  /// Convers an `XdpIpAddress` type to a Rust `IpAddr` type, using
+  /// Converts an `XdpIpAddress` type to a Rust `IpAddr` type, using
   /// the in-build mapped function for squishing IPv4 into IPv6
   pub fn as_ipv6(&self) -> Ipv6Addr {
     if self.is_v4() {
@@ -96,6 +98,13 @@ impl XdpIpAddress {
       ))
     }
   }
+}
+
+impl Display for XdpIpAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_ip())
+    }
+
 }
 
 impl From<XdpIpAddress> for IpAddr {

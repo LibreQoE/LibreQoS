@@ -1,0 +1,16 @@
+[package]
+name = "lqos_support_tool"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+colored = {  workspace = true }
+lqos_config = { path = "../lqos_config" }
+serde = { workspace = true }
+serde_cbor = { workspace = true }
+miniz_oxide = { workspace = true }
+libc = "0.2.155"
+nix = {  workspace = true }
+serde_json = { workspace = true }

@@ -5,35 +5,16 @@ import os
 import csv
 from datetime import datetime, timedelta
 from integrationCommon import isIpv4Permitted, fixSubnet
-try:
-	from ispConfig import uispSite, uispStrategy, overwriteNetworkJSONalways
-except:
-	from ispConfig import uispSite, uispStrategy
-	overwriteNetworkJSONalways = False
-try:
-	from ispConfig import uispSuspendedStrategy
-except:
-	uispSuspendedStrategy = "none"
-try:
-	from ispConfig import airMax_capacity
-except:
-	airMax_capacity = 0.65
-try:
-	from ispConfig import ltu_capacity
-except:
-	ltu_capacity = 0.90
-try:
-	from ispConfig import usePtMPasParent
-except:
-	usePtMPasParent = False
+from liblqos_python import uisp_site, uisp_strategy, overwrite_network_json_always, uisp_suspended_strategy, \
+	airmax_capacity, ltu_capacity, use_ptmp_as_parent, uisp_base_url, uisp_auth_token, \
+	generated_pn_download_mbps, generated_pn_upload_mbps
 
 def uispRequest(target):
 	# Sends an HTTP request to UISP and returns the
 	# result in JSON. You only need to specify the
 	# tail end of the URL, e.g. "sites"
-	from ispConfig import UISPbaseURL, uispAuthToken
-	url = UISPbaseURL + "/nms/api/v2.1/" + target
-	headers = {'accept': 'application/json', 'x-auth-token': uispAuthToken}
+	url = uisp_base_url() + "/nms/api/v2.1/" + target
+	headers = {'accept': 'application/json', 'x-auth-token': uisp_auth_token()}
 	r = requests.get(url, headers=headers, timeout=60)
 	return r.json()
 
@@ -41,7 +22,6 @@ def buildFlatGraph():
 	# Builds a high-performance (but lacking in site or AP bandwidth control)
 	# network.
 	from integrationCommon import NetworkGraph, NetworkNode, NodeType
-	from ispConfig import generatedPNUploadMbps, generatedPNDownloadMbps
 
 	# Load network sites
 	print("Loading Data from UISP")
@@ -60,22 +40,21 @@ def buildFlatGraph():
 			customerName = ''
 			name = site['identification']['name']
 			type = site['identification']['type']
-			download = generatedPNDownloadMbps
-			upload = generatedPNUploadMbps
+			download = generated_pn_download_mbps()
+			upload = generated_pn_upload_mbps()
 			if (site['qos']['downloadSpeed']) and (site['qos']['uploadSpeed']):
 				download = int(round(site['qos']['downloadSpeed']/1000000))
 				upload = int(round(site['qos']['uploadSpeed']/1000000))
 			if site['identification'] is not None and site['identification']['suspended'] is not None and site['identification']['suspended'] == True:
-				if uispSuspendedStrategy == "ignore":
+				if uisp_suspended_strategy() == "ignore":
 					print("WARNING: Site " + name + " is suspended")
 					continue
-				if uispSuspendedStrategy == "slow":
+				if uisp_suspended_strategy() == "slow":
 					print("WARNING: Site " + name + " is suspended")
-					download = 2
-					upload = 2
+					download = 1
+					upload = 1
 			if site['identification']['status'] == "disconnected":
 				print("WARNING: Site " + name + " is disconnected")
-
 			node = NetworkNode(id=id, displayName=name, type=NodeType.client, download=download, upload=upload, address=address, customerName=customerName)
 			net.addRawNode(node)
 			for device in devices:
@@ -102,7 +81,7 @@ def buildFlatGraph():
 	net.prepareTree()
 	net.plotNetworkGraph(False)
 	if net.doesNetworkJsonExist():
-		if overwriteNetworkJSONalways:
+		if overwrite_network_json_always():
 			net.createNetworkJson()
 		else:
 			print("network.json already exists and overwriteNetworkJSONalways set to False. Leaving in-place.")
@@ -166,8 +145,8 @@ def findApCapacities(devices, siteBandwidth):
 				if device['identification']['type'] == 'airMax':
 					download, upload = airMaxCapacityCorrection(device, download, upload)
 				elif device['identification']['model'] == 'LTU-Rocket':
-					download = download * ltu_capacity
-					upload = upload * ltu_capacity
+					download = download * ltu_capacity()
+					upload = upload * ltu_capacity()
 				if device['identification']['model'] == 'WaveAP':
 					if (download < 500) or (upload < 500):
 						download = 2450
@@ -198,8 +177,8 @@ def airMaxCapacityCorrection(device, download, upload):
 		upload = upload * 0.50
 	# Flexible frame
 	elif dlRatio == None:
-		download = download * airMax_capacity
-		upload = upload * airMax_capacity
+		download = download * airmax_capacity()
+		upload = upload * airmax_capacity()
 	return (download, upload)
 
 def findAirfibers(devices, generatedPNDownloadMbps, generatedPNUploadMbps):
@@ -320,12 +299,11 @@ def loadRoutingOverrides():
 
 def findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite, foundAirFibersBySite):
 	nodeOffPtMP = {}
-	if usePtMPasParent:
+	if use_ptmp_as_parent():
 		for site in siteList:
 			id = site['id']
 			name = site['name']
 			if id != rootSite['id']:
-				
 				if id not in foundAirFibersBySite:
 					trueParent = findInSiteListById(siteList, id)['parent']
 					#parent = findInSiteListById(siteList, id)['parent']
@@ -365,7 +343,7 @@ def findNodesBranchedOffPtMP(siteList, dataLinks, sites, rootSite, foundAirFiber
 																				'upload': upload,
 																				parent: apID
 																				}
-																	if usePtMPasParent:
+																	if use_ptmp_as_parent():
 																		site['parent'] = apID
 																		print('Site ' + name + ' will use PtMP AP ' + link['from']['device']['identification']['name'] + ' as parent from site ' + link['from']['site']['identification']['name'])
 	return siteList, nodeOffPtMP
@@ -396,7 +374,7 @@ def buildFullGraph():
 	# Attempts to build a full network graph, incorporating as much of the UISP
 	# hierarchy as possible.
 	from integrationCommon import NetworkGraph, NetworkNode, NodeType
-	from ispConfig import uispSite, generatedPNUploadMbps, generatedPNDownloadMbps
+	uispSite = uisp_site()
 
 	# Load network sites
 	print("Loading Data from UISP")
@@ -418,7 +396,7 @@ def buildFullGraph():
 	siteList = buildSiteList(sites, dataLinks)
 	rootSite = findInSiteList(siteList, uispSite)
 	print("Finding PtP Capacities")
-	foundAirFibersBySite = findAirfibers(devices, generatedPNDownloadMbps, generatedPNUploadMbps)
+	foundAirFibersBySite = findAirfibers(devices, generated_pn_download_mbps(), generated_pn_upload_mbps())
 	print('Creating list of route overrides')
 	routeOverrides = loadRoutingOverrides()
 	if rootSite is None:
@@ -446,8 +424,8 @@ def buildFullGraph():
 		id = site['identification']['id']
 		name = site['identification']['name']
 		type = site['identification']['type']
-		download = generatedPNDownloadMbps
-		upload = generatedPNUploadMbps
+		download = generated_pn_download_mbps()
+		upload = generated_pn_upload_mbps()
 		address = ""
 		customerName = ""
 		parent = findInSiteListById(siteList, id)['parent']
@@ -490,10 +468,10 @@ def buildFullGraph():
 					download = int(round(site['qos']['downloadSpeed']/1000000))
 					upload = int(round(site['qos']['uploadSpeed']/1000000))
 				if site['identification'] is not None and site['identification']['suspended'] is not None and site['identification']['suspended'] == True:
-					if uispSuspendedStrategy == "ignore":
+					if uisp_suspended_strategy() == "ignore":
 						print("WARNING: Site " + name + " is suspended")
 						continue
-					if uispSuspendedStrategy == "slow":
+					if uisp_suspended_strategy() == "slow":
 						print("WARNING: Site " + name + " is suspended")
 						download = 2
 						upload = 2
@@ -550,13 +528,13 @@ def buildFullGraph():
 								else:
 									# Add some defaults in case they want to change them
 									siteBandwidth[node.displayName] = {
-										"download": generatedPNDownloadMbps, "upload": generatedPNUploadMbps}
+										"download": generated_pn_download_mbps(), "upload": generated_pn_upload_mbps()}
 	
 	net.prepareTree()
 	print('Plotting network graph')
 	net.plotNetworkGraph(False)
 	if net.doesNetworkJsonExist():
-		if overwriteNetworkJSONalways:
+		if overwrite_network_json_always():
 			net.createNetworkJson()
 		else:
 			print("network.json already exists and overwriteNetworkJSONalways set to False. Leaving in-place.")
@@ -578,7 +556,7 @@ def buildFullGraph():
 
 def importFromUISP():
 	startTime = datetime.now()
-	match uispStrategy:
+	match uisp_strategy():
 		case "full": buildFullGraph()
 		case default: buildFlatGraph()
 	endTime = datetime.now()

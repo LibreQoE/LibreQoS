@@ -1,0 +1,102 @@
+version = "1.5"
+lqos_directory = "/opt/libreqos/src"
+node_id = "0000-0000-0000"
+node_name = "Example Node"
+packet_capture_time = 10
+queue_check_period_ms = 1000
+
+[usage_stats]
+send_anonymous = true
+anonymous_server = "stats.libreqos.io:9125"
+
+[tuning]
+stop_irq_balance = true
+netdev_budget_usecs = 8000
+netdev_budget_packets = 300
+rx_usecs = 8
+tx_usecs = 8
+disable_rxvlan = true
+disable_txvlan = true
+disable_offload = [ "gso", "tso", "lro", "sg", "gro" ]
+
+# EITHER:
+[bridge]
+use_xdp_bridge = true
+to_internet = "eth0"
+to_network = "eth1"
+
+# OR:
+#[single_interface]
+#interface = "eth0"
+#internet_vlan = 2
+#network_vlan = 3
+
+[queues]
+default_sqm = "cake diffserv4"
+monitor_only = false
+uplink_bandwidth_mbps = 1000
+downlink_bandwidth_mbps = 1000
+generated_pn_download_mbps = 1000
+generated_pn_upload_mbps = 1000
+dry_run = false
+sudo = false
+#override_available_queues = 12 # This can be omitted and be 0 for Python
+use_binpacking = false
+
+[long_term_stats]
+gather_stats = true
+collation_period_seconds = 10
+license_key = "(data)"
+uisp_reporting_interval_seconds = 300
+
+[ip_ranges]
+ignore_subnets = []
+allow_subnets = [ "172.16.0.0/12", "10.0.0.0/8", "100.64.0.0/16", "192.168.0.0/16" ]
+
+[integration_common]
+circuit_name_as_address = false
+always_overwrite_network_json = false
+queue_refresh_interval_mins = 30
+
+[spylnx_integration]
+enable_spylnx = false
+api_key = ""
+api_secret = ""
+url = ""
+
+[uisp_integration]
+enable_uisp = false
+token = ""
+url = ""
+site = ""
+strategy = ""
+suspended_strategy = ""
+airmax_capacity = 0.65
+ltu_capacity = 0.9
+exclude_sites = []
+ipv6_with_mikrotik = false
+bandwidth_overhead_factor = 1.0
+commit_bandwidth_multiplier = 0.98
+exception_cpes = []
+use_ptmp_as_parent = false
+
+[powercode_integration]
+enable_powercode = false
+powercode_api_key = ""
+powercode_api_url = ""
+
+[sonar_integration]
+enable_sonar = false
+sonar_api_key = ""
+sonar_api_url = ""
+snmp_community = "public"
+airmax_model_ids = [ "" ]
+ltu_model_ids = [ "" ]
+active_status_ids = [ "" ]
+
+[influxdb]
+enable_influxdb = false
+url = "http://localhost:8086"
+org = "libreqos"
+bucket = "Your ISP Name Here"
+token = ""

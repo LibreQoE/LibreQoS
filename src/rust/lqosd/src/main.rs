@@ -9,15 +9,19 @@ mod anonymous_usage;
 mod tuning;
 mod validation;
 mod long_term_stats;
+mod stats;
+mod preflight_checks;
+mod node_manager;
+mod system_stats;
+
 use std::net::IpAddr;
 use crate::{
   file_lock::FileLock,
-  ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow},
+  ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow}, throughput_tracker::flow_data::{flowbee_handle_events, setup_netflow_tracker, FlowActor},
 };
 use anyhow::Result;
-use log::{info, warn};
+use tracing::{info, warn, error};
 use lqos_bus::{BusRequest, BusResponse, UnixSocketServer, StatsRequest};
-use lqos_config::LibreQoSConfig;
 use lqos_heimdall::{n_second_packet_dump, perf_interface::heimdall_handle_events, start_heimdall};
 use lqos_queue_tracker::{
   add_watched_queue, get_raw_circuit_data, spawn_queue_monitor,
@@ -29,64 +33,119 @@ use signal_hook::{
   consts::{SIGHUP, SIGINT, SIGTERM},
   iterator::Signals,
 };
-use stats::{BUS_REQUESTS, TIME_TO_POLL_HOSTS, HIGH_WATERMARK_DOWN, HIGH_WATERMARK_UP, FLOWS_TRACKED};
-use throughput_tracker::get_flow_stats;
-use tokio::join;
-mod stats;
+use stats::{BUS_REQUESTS, TIME_TO_POLL_HOSTS, HIGH_WATERMARK, FLOWS_TRACKED};
+use throughput_tracker::flow_data::get_rtt_events_per_second;
+use crate::ip_mapping::clear_hot_cache;
+
+// Use MiMalloc only on supported platforms
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+use mimalloc::MiMalloc;
+
+use tracing::level_filters::LevelFilter;
 
 // Use JemAllocator only on supported platforms
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use jemallocator::Jemalloc;
-
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[global_allocator]
-static GLOBAL: Jemalloc = Jemalloc;
+static GLOBAL: MiMalloc = MiMalloc;
 
-#[tokio::main]
-async fn main() -> Result<()> {
-  // Configure log level with RUST_LOG environment variable,
-  // defaulting to "warn"
-  env_logger::init_from_env(
-    env_logger::Env::default()
-      .filter_or(env_logger::DEFAULT_FILTER_ENV, "warn"),
-  );
-  let file_lock = FileLock::new();
-  if let Err(e) = file_lock {
-    log::error!("File lock error: {:?}", e);
-    std::process::exit(0);
-  }
+/// Configure a highly detailed logging system.
+pub fn set_console_logging() -> anyhow::Result<()> {
+  // install global collector configured based on RUST_LOG env var.
+  let level = if let Ok(level) = std::env::var("RUST_LOG") {
+    match level.to_lowercase().as_str() {
+      "trace" => LevelFilter::TRACE,
+      "debug" => LevelFilter::DEBUG,
+      "info" => LevelFilter::INFO,
+      "warn" => LevelFilter::WARN,
+      "error" => LevelFilter::ERROR,
+      _ => LevelFilter::WARN,
+    }
+  } else {
+    LevelFilter::WARN
+  };
 
+  let subscriber = tracing_subscriber::fmt()
+      .with_max_level(level)
+      // Use a more compact, abbreviated log format
+      .compact()
+      // Display source code file paths
+      .with_file(true)
+      // Display source code line numbers
+      .with_line_number(true)
+      // Display the thread ID an event was recorded on
+      .with_thread_ids(false)
+      // Don't display the event's target (module path)
+      .with_target(false)
+      // Build the subscriber
+      .finish();
+
+  // Set the subscriber as the default
+  tracing::subscriber::set_global_default(subscriber)?;
+  Ok(())
+}
+
+fn main() -> Result<()> {
+  // Set up logging
+  set_console_logging()?;
+
+  // Check that the file lock is available. Bail out if it isn't.
+  let file_lock = FileLock::new()
+      .inspect_err(|e| {
+        error!("Unable to acquire file lock: {:?}", e);
+        std::process::exit(0);
+      })?;
+
+  // Announce startup
   info!("LibreQoS Daemon Starting");
-  let config = LibreQoSConfig::load()?;
-  tuning::tune_lqosd_from_config_file(&config)?;
+  
+  // Run preflight checks
+  preflight_checks::preflight_checks()?;
+
+  // Load config
+  let config = lqos_config::load_config()?;
+  
+  // Apply Tunings
+  tuning::tune_lqosd_from_config_file()?;
+
+  // Start the flow tracking actor. This has to happen
+  // before the ringbuffer goes live.
+  FlowActor::start()?;
 
   // Start the XDP/TC kernels
-  let kernels = if config.on_a_stick_mode {
+  let kernels = if config.on_a_stick_mode() {
     LibreQoSKernels::on_a_stick_mode(
-      &config.internet_interface,
-      config.stick_vlans.1,
-      config.stick_vlans.0,
+      &config.internet_interface(),
+      config.stick_vlans().1 as u16,
+      config.stick_vlans().0 as u16,
       Some(heimdall_handle_events),
+      Some(flowbee_handle_events),
     )?
   } else {
-    LibreQoSKernels::new(&config.internet_interface, &config.isp_interface, Some(heimdall_handle_events))?
+    LibreQoSKernels::new(
+      &config.internet_interface(), 
+      &config.isp_interface(), 
+      Some(heimdall_handle_events), 
+      Some(flowbee_handle_events)
+    )?
   };
 
   // Spawn tracking sub-systems
-  let long_term_stats_tx = start_long_term_stats().await;
-  join!(
-    start_heimdall(),
-    spawn_queue_structure_monitor(),
-    shaped_devices_tracker::shaped_devices_watcher(),
-    shaped_devices_tracker::network_json_watcher(),
-    anonymous_usage::start_anonymous_usage(),
-    throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone()),
-  );
-  spawn_queue_monitor();
+  let long_term_stats_tx = start_long_term_stats();
+  let flow_tx = setup_netflow_tracker()?;
+  let _ = throughput_tracker::flow_data::setup_flow_analysis();
+  start_heimdall()?;
+  spawn_queue_structure_monitor()?;
+  shaped_devices_tracker::shaped_devices_watcher()?;
+  shaped_devices_tracker::network_json_watcher()?;
+  anonymous_usage::start_anonymous_usage();
+  throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone(), flow_tx)?;
+  spawn_queue_monitor()?;
+  let system_usage_tx = system_stats::start_system_stats()?;
+  lqos_sys::bpf_garbage_collector();
 
   // Handle signals
   let mut signals = Signals::new([SIGINT, SIGHUP, SIGTERM])?;
-  std::thread::spawn(move || {
+  std::thread::Builder::new().name("Signal Handler".to_string()).spawn(move || {
     for sig in signals.forever() {
       match sig {
         SIGINT | SIGTERM => {
@@ -99,7 +158,7 @@ async fn main() -> Result<()> {
           }
           let _ = tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(long_term_stats_tx.send(lts_client::collector::StatsUpdateMessage::Quit));
+            .block_on(long_term_stats_tx.send(lts_client::collector::stats_availability::StatsUpdateMessage::Quit));
           std::mem::drop(kernels);
           UnixSocketServer::signal_cleanup();
           std::mem::drop(file_lock);
@@ -107,25 +166,44 @@ async fn main() -> Result<()> {
         }
         SIGHUP => {
           warn!("Reloading configuration because of SIGHUP");
-          if let Ok(config) = LibreQoSConfig::load() {
-            let result = tuning::tune_lqosd_from_config_file(&config);
-            if let Err(err) = result {
-              warn!("Unable to HUP tunables: {:?}", err)
-            }
-          } else {
-            warn!("Unable to reload configuration");
+          let result = tuning::tune_lqosd_from_config_file();
+          if let Err(err) = result {
+            warn!("Unable to HUP tunables: {:?}", err)
           }
         }
         _ => warn!("No handler for signal: {sig}"),
       }
     }
-  });
+  })?;
 
   // Create the socket server
   let server = UnixSocketServer::new().expect("Unable to spawn server");
 
-  // Main bus listen loop
-  server.listen(handle_bus_requests).await?;
+  let handle = std::thread::Builder::new().name("Async Bus/Web".to_string()).spawn(move || {
+    tokio::runtime::Builder::new_current_thread()
+    .enable_all()
+    .build().unwrap()
+    .block_on(async {
+      let (bus_tx, bus_rx) = tokio::sync::mpsc::channel::<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>(100);
+
+      // Webserver starting point
+      let webserver_disabled = config.disable_webserver.unwrap_or(false);
+        if !webserver_disabled {
+          tokio::spawn(async {
+            if let Err(e) = node_manager::spawn_webserver(bus_tx, system_usage_tx).await {
+              error!("Node Manager Failed: {e:?}");
+            }
+          });
+        } else {
+          warn!("Webserver disabled by configuration");
+        }
+
+      // Main bus listen loop
+      server.listen(handle_bus_requests, bus_rx).await.unwrap();
+    });
+  })?;
+  let _ = handle.join();
+  warn!("Main thread exiting");
   Ok(())
 }
 
@@ -148,19 +226,23 @@ fn handle_bus_requests(
       BusRequest::GetWorstRtt { start, end } => {
         throughput_tracker::worst_n(*start, *end)
       }
+      BusRequest::GetWorstRetransmits { start, end } => {
+        throughput_tracker::worst_n_retransmits(*start, *end)
+      }
       BusRequest::GetBestRtt { start, end } => {
         throughput_tracker::best_n(*start, *end)
       }
       BusRequest::MapIpToFlow { ip_address, tc_handle, cpu, upload } => {
         map_ip_to_flow(ip_address, tc_handle, *cpu, *upload)
       }
+      BusRequest::ClearHotCache => clear_hot_cache(),
       BusRequest::DelIpFlow { ip_address, upload } => {
         del_ip_flow(ip_address, *upload)
       }
       BusRequest::ClearIpFlow => clear_ip_flows(),
       BusRequest::ListIpFlow => list_mapped_ips(),
       BusRequest::XdpPping => throughput_tracker::xdp_pping_compat(),
-      BusRequest::RttHistogram => throughput_tracker::rtt_histogram(),
+      BusRequest::RttHistogram => throughput_tracker::rtt_histogram::<50>(),
       BusRequest::HostCounts => throughput_tracker::host_counts(),
       BusRequest::AllUnknownIps => throughput_tracker::all_unknown_ips(),
       BusRequest::ReloadLibreQoS => program_control::reload_libre_qos(),
@@ -172,6 +254,13 @@ fn handle_bus_requests(
         lqos_bus::BusResponse::Ack
       }
       BusRequest::UpdateLqosDTuning(..) => tuning::tune_lqosd_from_bus(req),
+      BusRequest::UpdateLqosdConfig(config) => {
+        let result = lqos_config::update_config(config);
+        if result.is_err() {
+          error!("Error updating config: {:?}", result);
+        }
+        BusResponse::Ack
+      },
       #[cfg(feature = "equinix_tests")]
       BusRequest::RequestLqosEquinixTest => lqos_daht_test::lqos_daht_test(),
       BusRequest::ValidateShapedDevicesCsv => {
@@ -180,12 +269,16 @@ fn handle_bus_requests(
       BusRequest::GetNetworkMap { parent } => {
         shaped_devices_tracker::get_one_network_map_layer(*parent)
       }
+      BusRequest::GetFullNetworkMap => {
+          shaped_devices_tracker::get_full_network_map()
+      }
       BusRequest::TopMapQueues(n_queues) => {
         shaped_devices_tracker::get_top_n_root_queues(*n_queues)
       }
       BusRequest::GetNodeNamesFromIds(nodes) => {
         shaped_devices_tracker::map_node_names(nodes)
       }
+      BusRequest::GetAllCircuits => shaped_devices_tracker::get_all_circuits(),
       BusRequest::GetFunnel { target: parent } => {
         shaped_devices_tracker::get_funnel(parent)
       }
@@ -193,14 +286,11 @@ fn handle_bus_requests(
         BusResponse::LqosdStats { 
           bus_requests: BUS_REQUESTS.load(std::sync::atomic::Ordering::Relaxed),
           time_to_poll_hosts: TIME_TO_POLL_HOSTS.load(std::sync::atomic::Ordering::Relaxed),
-          high_watermark: (
-            HIGH_WATERMARK_DOWN.load(std::sync::atomic::Ordering::Relaxed),
-            HIGH_WATERMARK_UP.load(std::sync::atomic::Ordering::Relaxed),
-          ),
+          high_watermark: HIGH_WATERMARK.as_down_up(),
           tracked_flows: FLOWS_TRACKED.load(std::sync::atomic::Ordering::Relaxed),
+          rtt_events_per_second: get_rtt_events_per_second(),
         }
       }
-      BusRequest::GetFlowStats(ip) => get_flow_stats(ip),
       BusRequest::GetPacketHeaderDump(id) => {
         BusResponse::PacketDump(n_second_packet_dump(*id))
       }
@@ -228,6 +318,19 @@ fn handle_bus_requests(
       BusRequest::GetLongTermStats(StatsRequest::Tree) => {
         long_term_stats::get_stats_tree()
       }
+      BusRequest::DumpActiveFlows => {
+        throughput_tracker::dump_active_flows()
+      }
+      BusRequest::CountActiveFlows => {
+        throughput_tracker::count_active_flows()
+      }
+      BusRequest::TopFlows { n, flow_type } => throughput_tracker::top_flows(*n, *flow_type),
+      BusRequest::FlowsByIp(ip) => throughput_tracker::flows_by_ip(ip),
+      BusRequest::CurrentEndpointsByCountry => throughput_tracker::current_endpoints_by_country(),
+      BusRequest::CurrentEndpointLatLon => throughput_tracker::current_lat_lon(),
+      BusRequest::EtherProtocolSummary => throughput_tracker::ether_protocol_summary(),
+      BusRequest::IpProtocolSummary => throughput_tracker::ip_protocol_summary(),
+      BusRequest::FlowDuration => throughput_tracker::flow_duration(),
     });
   }
 }

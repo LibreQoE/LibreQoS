@@ -1,6 +1,7 @@
 use dryoc::{dryocbox::{Nonce, DryocBox}, types::{NewByteArray, ByteArray}};
-use lqos_config::EtcLqos;
+use lqos_config::load_config;
 use thiserror::Error;
+use tracing::error;
 use crate::{transport_data::{LtsCommand, NodeIdAndLicense, HelloVersion2}, submission_queue::queue::QueueError};
 use super::keys::{SERVER_PUBLIC_KEY, KEYPAIR};
 
@@ -48,12 +49,12 @@ pub enum SubmissionDecodeError {
 pub(crate) fn decode_submission_hello(bytes: &[u8]) -> Result<HelloVersion2, SubmissionDecodeError> {
     let version = u16::from_be_bytes([bytes[0], bytes[1]]);
     if version != 2 {
-        log::error!("Received an invalid version from the server: {}", version);
+        error!("Received an invalid version from the server: {}", version);
         return Err(SubmissionDecodeError::InvalidVersion);
     }
     let padding = u16::from_be_bytes([bytes[2], bytes[3]]);
     if padding != 3 {
-        log::error!("Received an invalid padding from the server: {}", padding);
+        error!("Received an invalid padding from the server: {}", padding);
         return Err(SubmissionDecodeError::InvalidPadding);
     }
     let size = u64::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9], bytes[10], bytes[11]]);
@@ -104,17 +105,13 @@ pub(crate) async fn encode_submission(submission: &LtsCommand) -> Result<Vec<u8>
 }
 
 fn get_license_key_and_node_id(nonce: &Nonce) -> Result<NodeIdAndLicense, QueueError> {
-    let cfg = EtcLqos::load().map_err(|_| QueueError::SendFail)?;
-    if let Some(node_id) = cfg.node_id {
-        if let Some(lts) = &cfg.long_term_stats {
-            if let Some(license_key) = &lts.license_key {
-                return Ok(NodeIdAndLicense {
-                    node_id,
-                    license_key: license_key.clone(),
-                    nonce: *nonce.as_array(),
-                });
-            }
-        }
+    let cfg = load_config().map_err(|_| QueueError::SendFail)?;
+    if let Some(license_key) = &cfg.long_term_stats.license_key {
+        return Ok(NodeIdAndLicense {
+            node_id: cfg.node_id.clone(),
+            license_key: license_key.clone(),
+            nonce: *nonce.as_array(),
+        });
     }
     Err(QueueError::SendFail)
 }

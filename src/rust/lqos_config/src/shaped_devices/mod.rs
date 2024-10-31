@@ -1,12 +1,14 @@
 mod serializable;
 mod shaped_device;
-use crate::{etc, SUPPORTED_CUSTOMERS};
+
+use std::net::IpAddr;
 use csv::{QuoteStyle, ReaderBuilder, WriterBuilder};
-use log::error;
+use tracing::{debug, error};
 use serializable::SerializableShapedDevice;
 pub use shaped_device::ShapedDevice;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
+use lqos_utils::XdpIpAddress;
 
 /// Provides handling of the `ShapedDevices.csv` file that maps
 /// circuits to traffic shaping.
@@ -34,9 +36,11 @@ impl ConfigShapedDevices {
   /// file.
   pub fn path() -> Result<PathBuf, ShapedDevicesError> {
     let cfg =
-      etc::EtcLqos::load().map_err(|_| ShapedDevicesError::ConfigLoadError)?;
+      crate::load_config().map_err(|_| ShapedDevicesError::ConfigLoadError)?;
     let base_path = Path::new(&cfg.lqos_directory);
-    Ok(base_path.join("ShapedDevices.csv"))
+    let full_path = base_path.join("ShapedDevices.csv");
+    debug!("ShapedDevices.csv path: {:?}", full_path);
+    Ok(full_path)
   }
 
   /// Does ShapedDevices.csv exist?
@@ -64,20 +68,20 @@ impl ConfigShapedDevices {
 
     // Example: StringRecord(["1", "968 Circle St., Gurnee, IL 60031", "1", "Device 1", "", "", "192.168.101.2", "", "25", "5", "10000", "10000", ""])
 
-    let mut devices = Vec::with_capacity(SUPPORTED_CUSTOMERS);
+    let mut devices = Vec::new(); // Note that this used to be supported_customers, but we're going to let it grow organically
     for result in reader.records() {
       if let Ok(result) = result {
         let device = ShapedDevice::from_csv(&result);
         if let Ok(device) = device {
           devices.push(device);
         } else {
-          log::error!("Error reading Device line: {:?}", &device);
+          error!("Error reading Device line: {:?}", &device);
           return Err(ShapedDevicesError::DeviceDecode(format!(
             "DEVICE DECODE: {device:?}"
           )));
         }
       } else {
-        log::error!("Error reading CSV record: {:?}", result);
+        error!("Error reading CSV record: {:?}", result);
         if let csv::ErrorKind::UnequalLengths { pos, expected_len, len } =
           result.as_ref().err().as_ref().unwrap().kind()
         {
@@ -106,6 +110,13 @@ impl ConfigShapedDevices {
     }
     let trie = ConfigShapedDevices::make_trie(&devices);
     Ok(Self { devices, trie })
+  }
+
+  /// Replace the current shaped devices list with a new one
+  pub fn replace_with_new_data(&mut self, devices: Vec<ShapedDevice>) {
+    self.devices = devices;
+    debug!("{:?}", self.devices);
+    self.trie = ConfigShapedDevices::make_trie(&self.devices);
   }
 
   fn make_trie(
@@ -146,7 +157,7 @@ impl ConfigShapedDevices {
   /// Saves the current shaped devices list to `ShapedDevices.csv`
   pub fn write_csv(&self, filename: &str) -> Result<(), ShapedDevicesError> {
     let cfg =
-      etc::EtcLqos::load().map_err(|_| ShapedDevicesError::ConfigLoadError)?;
+      crate::load_config().map_err(|_| ShapedDevicesError::ConfigLoadError)?;
     let base_path = Path::new(&cfg.lqos_directory);
     let path = base_path.join(filename);
     let csv = self.to_csv_string()?;
@@ -154,7 +165,23 @@ impl ConfigShapedDevices {
       error!("Unable to write ShapedDevices.csv. Permissions?");
       return Err(ShapedDevicesError::WriteFail);
     }
+    //println!("Would write to file: {}", csv);
     Ok(())
+  }
+
+  /// Helper function to search for an XdpIpAddress and return a circuit id and name
+  /// if they exist.
+  pub fn get_circuit_id_and_name_from_ip(&self, ip: &XdpIpAddress) -> Option<(String, String)> {
+    let lookup = match ip.as_ip() {
+      IpAddr::V4(ip) => ip.to_ipv6_mapped(),
+      IpAddr::V6(ip) => ip,
+    };
+    if let Some(c) = self.trie.longest_match(lookup) {
+      let device = &self.devices[*c.1];
+      return Some((device.circuit_id.clone(), device.circuit_name.clone()));
+    }
+
+    None
   }
 }
 

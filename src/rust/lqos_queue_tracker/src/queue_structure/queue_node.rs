@@ -1,5 +1,5 @@
 use super::QueueStructureError;
-use log::error;
+use tracing::{error, warn};
 use lqos_bus::TcHandle;
 use lqos_utils::hex_string::read_hex_string;
 use serde_json::Value;
@@ -216,18 +216,18 @@ impl QueueNode {
                 result.circuits.push(n.unwrap());
               }
             } else {
-              log::warn!("Children was not an object");
-              log::warn!("{:?}", value);
+              warn!("Children was not an object");
+              warn!("{:?}", value);
             }
           }
           "idForCircuitsWithoutParentNodes" | "type" => {
             // Ignore
           }
-          _ => log::error!("I don't know how to parse key: [{key}]"),
+          _ => error!("I don't know how to parse key: [{key}]"),
         }
       }
     } else {
-      log::warn!("Unable to parse node structure for [{key}]");
+      warn!("Unable to parse node structure for [{key}]");
     }
     Ok(result)
   }

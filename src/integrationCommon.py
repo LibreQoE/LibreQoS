@@ -2,7 +2,10 @@
 # integrations.
 
 from typing import List, Any
-from ispConfig import allowedSubnets, ignoreSubnets, generatedPNUploadMbps, generatedPNDownloadMbps, circuitNameUseAddress, upstreamBandwidthCapacityDownloadMbps, upstreamBandwidthCapacityUploadMbps
+from liblqos_python import allowed_subnets, ignore_subnets, generated_pn_download_mbps, generated_pn_upload_mbps, \
+	circuit_name_use_address, upstream_bandwidth_capacity_download_mbps, upstream_bandwidth_capacity_upload_mbps, \
+	find_ipv6_using_mikrotik, exclude_sites, bandwidth_overhead_factor, committed_bandwidth_multiplier, \
+	exception_cpes
 import ipaddress
 import enum
 import os
@@ -12,7 +15,7 @@ def isInAllowedSubnets(inputIP):
 	isAllowed = False
 	if '/' in inputIP:
 		inputIP = inputIP.split('/')[0]
-	for subnet in allowedSubnets:
+	for subnet in allowed_subnets():
 		if (ipaddress.ip_address(inputIP) in ipaddress.ip_network(subnet)):
 			isAllowed = True
 	return isAllowed
@@ -23,7 +26,7 @@ def isInIgnoredSubnets(inputIP):
 	isIgnored = False
 	if '/' in inputIP:
 		inputIP = inputIP.split('/')[0]
-	for subnet in ignoreSubnets:
+	for subnet in ignore_subnets():
 		if (ipaddress.ip_address(inputIP) in ipaddress.ip_network(subnet)):
 			isIgnored = True
 	return isIgnored
@@ -98,7 +101,7 @@ class NetworkNode:
 	address: str
 	mac: str
 
-	def __init__(self, id: str, displayName: str = "", parentId: str = "", type: NodeType = NodeType.site, download: int = generatedPNDownloadMbps, upload: int = generatedPNUploadMbps, ipv4: List = [], ipv6: List = [], address: str = "", mac: str = "", customerName: str = "") -> None:
+	def __init__(self, id: str, displayName: str = "", parentId: str = "", type: NodeType = NodeType.site, download: int = generated_pn_download_mbps(), upload: int = generated_pn_upload_mbps(), ipv4: List = [], ipv6: List = [], address: str = "", mac: str = "", customerName: str = "") -> None:
 		self.id = id
 		self.parentIndex = 0
 		self.type = type
@@ -129,14 +132,13 @@ class NetworkGraph:
 	exceptionCPEs: Any
 
 	def __init__(self) -> None:
-		from ispConfig import findIPv6usingMikrotik, excludeSites, exceptionCPEs
 		self.nodes = [
 			NetworkNode("FakeRoot", type=NodeType.root,
 						parentId="", displayName="Shaper Root")
 		]
-		self.excludeSites = excludeSites
-		self.exceptionCPEs = exceptionCPEs
-		if findIPv6usingMikrotik:
+		self.excludeSites = exclude_sites()
+		self.exceptionCPEs = exception_cpes()
+		if find_ipv6_using_mikrotik():
 			from mikrotikFindIPv6 import pullMikrotikIPv6  
 			self.ipv4ToIPv6 = pullMikrotikIPv6()
 		else:
@@ -144,11 +146,13 @@ class NetworkGraph:
 
 	def addRawNode(self, node: NetworkNode) -> None:
 		# Adds a NetworkNode to the graph, unchanged.
-		# If a site is excluded (via excludedSites in ispConfig)
+		# If a site is excluded (via excludedSites in lqos.conf)
 		# it won't be added
 		if not node.displayName in self.excludeSites:
-			if node.displayName in self.exceptionCPEs.keys():
-				node.parentId = self.exceptionCPEs[node.displayName]
+			# TODO: Fixup exceptionCPE handling
+			#print(self.excludeSites)
+			#if node.displayName in self.exceptionCPEs.keys():
+			#	node.parentId = self.exceptionCPEs[node.displayName]
 			self.nodes.append(node)
 
 	def replaceRootNode(self, node: NetworkNode) -> None:
@@ -315,7 +319,7 @@ class NetworkGraph:
 						data[node]['uploadBandwidthMbps'] = min(int(data[node]['uploadBandwidthMbps']),int(parentMaxUL))
 						if 'children' in data[node]:
 							inheritBandwidthMaxes(data[node]['children'], data[node]['downloadBandwidthMbps'], data[node]['uploadBandwidthMbps'])
-		inheritBandwidthMaxes(topLevelNode, parentMaxDL=upstreamBandwidthCapacityDownloadMbps, parentMaxUL=upstreamBandwidthCapacityUploadMbps)
+		inheritBandwidthMaxes(topLevelNode, parentMaxDL=upstream_bandwidth_capacity_download_mbps(), parentMaxUL=upstream_bandwidth_capacity_upload_mbps())
 		
 		with open('network.json', 'w') as f:
 			json.dump(topLevelNode, f, indent=4)
@@ -355,19 +359,14 @@ class NetworkGraph:
 
 	def createShapedDevices(self):
 			import csv
-			from ispConfig import bandwidthOverheadFactor
-			try:
-				from ispConfig import committedBandwidthMultiplier
-			except:
-				committedBandwidthMultiplier = 0.98
-		# Builds ShapedDevices.csv from the network tree.
+			# Builds ShapedDevices.csv from the network tree.
 			circuits = []
 			for (i, node) in enumerate(self.nodes):
 				if node.type == NodeType.client:
 					parent = self.nodes[node.parentIndex].displayName
 					if parent == "Shaper Root": parent = ""
 					
-					if circuitNameUseAddress:
+					if circuit_name_use_address():
 						displayNameToUse = node.address
 					else:
 						if node.type == NodeType.client:
@@ -420,10 +419,10 @@ class NetworkGraph:
 							device["mac"],
 							device["ipv4"],
 							device["ipv6"],
-							int(float(circuit["download"]) * committedBandwidthMultiplier),
-							int(float(circuit["upload"]) * committedBandwidthMultiplier),
-							int(float(circuit["download"]) * bandwidthOverheadFactor),
-							int(float(circuit["upload"]) * bandwidthOverheadFactor),
+							int(float(circuit["download"]) * committed_bandwidth_multiplier()),
+							int(float(circuit["upload"]) * committed_bandwidth_multiplier()),
+							int(float(circuit["download"]) * bandwidth_overhead_factor()),
+							int(float(circuit["upload"]) * bandwidth_overhead_factor()),
 							""
 						]
 						wr.writerow(row)

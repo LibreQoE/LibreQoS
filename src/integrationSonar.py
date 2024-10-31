@@ -2,8 +2,9 @@ from pythonCheck import checkPythonVersion
 checkPythonVersion()
 import requests
 import subprocess
-from ispConfig import sonar_api_url,sonar_api_key,sonar_airmax_ap_model_ids,sonar_active_status_ids,sonar_ltu_ap_model_ids,snmp_community
-all_models = sonar_airmax_ap_model_ids + sonar_ltu_ap_model_ids
+from liblqos_python import sonar_api_key, sonar_api_url, snmp_community, sonar_airmax_ap_model_ids, \
+  sonar_ltu_ap_model_ids, sonar_active_status_ids
+all_models = sonar_airmax_ap_model_ids() + sonar_ltu_ap_model_ids()
 from integrationCommon import NetworkGraph, NetworkNode, NodeType
 from multiprocessing.pool import ThreadPool
 
@@ -26,7 +27,7 @@ from multiprocessing.pool import ThreadPool
 
 def sonarRequest(query,variables={}):
 
-  r = requests.post(sonar_api_url, json={'query': query, 'variables': variables}, headers={'Authorization': 'Bearer ' + sonar_api_key}, timeout=10)
+  r = requests.post(sonar_api_url(), json={'query': query, 'variables': variables}, headers={'Authorization': 'Bearer ' + sonar_api_key()}, timeout=10)
   r_json = r.json()
 
   # Sonar responses look like this: {"data": {"accounts": {"entities": [{"id": '1'},{"id": 2}]}}}
@@ -36,7 +37,7 @@ def sonarRequest(query,variables={}):
   return sonar_list
 
 def getActiveStatuses():
-  if not sonar_active_status_ids:
+  if not sonar_active_status_ids():
     query = """query getActiveStatuses {
                 account_statuses (activates_account: true) {
                   entities {
@@ -52,7 +53,7 @@ def getActiveStatuses():
       status_ids.append(status['id'])
     return status_ids
   else:
-     return sonar_active_status_ids
+     return sonar_active_status_ids()
 
 # Sometimes the IP will be under the field data for an item and sometimes it will be assigned to the inventory item itself.
 def findIPs(inventory_item):
@@ -118,7 +119,7 @@ def getSitesAndAps():
               }
 
   sites_and_aps = sonarRequest(query,variables)
-  # This should only return sites that have equipment on them that is in the list sonar_ubiquiti_ap_model_ids in ispConfig.py
+  # This should only return sites that have equipment on them that is in the list sonar_ubiquiti_ap_model_ids in lqos.conf
   sites = []
   aps = []
   for site in sites_and_aps:
@@ -184,7 +185,7 @@ def getAccounts(sonar_active_status_ids):
               }"""
   
   active_status_ids = []
-  for status_id in sonar_active_status_ids:
+  for status_id in sonar_active_status_ids():
      active_status_ids.append({
                       "attribute": "account_status_id",
                       "operator": "EQ",
@@ -246,12 +247,12 @@ def getAccounts(sonar_active_status_ids):
 def mapApCpeMacs(ap):
     macs = []
     macs_output = None
-    if ap['model'] in sonar_airmax_ap_model_ids: #Tested with Prism Gen2AC and Rocket M5.
-      macs_output = subprocess.run(['snmpwalk', '-Os', '-v', '1', '-c', snmp_community, ap['ip'], '.1.3.6.1.4.1.41112.1.4.7.1.1.1'], capture_output=True).stdout.decode('utf8')
-    if ap['model'] in sonar_ltu_ap_model_ids: #Tested with LTU Rocket
-      macs_output = subprocess.run(['snmpwalk', '-Os', '-v', '1', '-c', snmp_community, ap['ip'], '.1.3.6.1.4.1.41112.1.10.1.4.1.11'], capture_output=True).stdout.decode('utf8')
+    if ap['model'] in sonar_airmax_ap_model_ids(): #Tested with Prism Gen2AC and Rocket M5.
+      macs_output = subprocess.run(['snmpwalk', '-Os', '-v', '1', '-c', snmp_community(), ap['ip'], '.1.3.6.1.4.1.41112.1.4.7.1.1.1'], capture_output=True).stdout.decode('utf8')
+    if ap['model'] in sonar_ltu_ap_model_ids(): #Tested with LTU Rocket
+      macs_output = subprocess.run(['snmpwalk', '-Os', '-v', '1', '-c', snmp_community(), ap['ip'], '.1.3.6.1.4.1.41112.1.10.1.4.1.11'], capture_output=True).stdout.decode('utf8')
     if macs_output:
-      name_output  = subprocess.run(['snmpwalk', '-Os', '-v', '1', '-c', snmp_community, ap['ip'], '.1.3.6.1.2.1.1.5.0'], capture_output=True).stdout.decode('utf8')
+      name_output  = subprocess.run(['snmpwalk', '-Os', '-v', '1', '-c', snmp_community(), ap['ip'], '.1.3.6.1.2.1.1.5.0'], capture_output=True).stdout.decode('utf8')
       ap['name'] = name_output[name_output.find('"')+1:name_output.rfind('"')]
       for mac_line in macs_output.splitlines():
          mac = mac_line[mac_line.find(':')+1:]

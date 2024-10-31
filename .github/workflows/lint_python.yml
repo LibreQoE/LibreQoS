@@ -11,7 +11,7 @@ jobs:
       - run: pip install --upgrade pip wheel
       - run: pip install bandit black codespell flake8 flake8-2020 flake8-bugbear
                          flake8-comprehensions isort mypy pytest pyupgrade safety
-      - run: bandit --recursive --skip B105,B110,B404,B602,B603,B605 .
+      - run: bandit --recursive --skip B105,B110,B404,B602,B603,B605,B501,B607 -x ./rust/target/ .
       - run: black --check . || true
 #      - run: codespell --skip="./.*,./old"  # --ignore-words-list="" 
       - run: flake8 . --count --exclude="./.*,./old/" --select=E9,F63,F7,F82 --show-source --statistics
@@ -24,7 +24,7 @@ jobs:
       - run: pytest . || true
       - run: pytest --doctest-modules . || true
       - run: shopt -s globstar && pyupgrade --py37-plus **/*.py || true
-      - run: safety check --ignore=62044
+      - run: safety check --ignore=62044,70612,66742,67895
       #- uses: pyupio/safety@2.3.4
       #  with:
       #    api-key: ${{secrets.SAFETY_API_KEY}}

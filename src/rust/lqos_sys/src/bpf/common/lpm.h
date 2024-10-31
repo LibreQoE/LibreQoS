@@ -9,9 +9,7 @@
 #include <linux/ip.h>
 #include <linux/ipv6.h>
 #include "maximums.h"
-#include "debug.h"
 #include "dissector.h"
-#include "dissector_tc.h"
 
 // Data structure used for map_ip_hash
 struct ip_hash_info {
@@ -24,6 +22,23 @@ struct ip_hash_key {
 	__u32 prefixlen; // Length of the prefix to match
 	struct in6_addr address; // An IPv6 address. IPv4 uses the last 32 bits.
 };
+
+// Hot cache for recent IP lookups, an attempt
+// at a speed improvement predicated on the idea
+// that LPM isn't the fastest
+// The cache is optional. define USE_HOTCACHE
+// to enable it.
+#define USE_HOTCACHE 1
+
+#ifdef USE_HOTCACHE
+struct {
+	__uint(type, BPF_MAP_TYPE_LRU_HASH);
+	__uint(max_entries, HOT_CACHE_SIZE);
+	__type(key, struct in6_addr);
+	__type(value, struct ip_hash_info);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
+} ip_to_cpu_and_tc_hotcache SEC(".maps");
+#endif
 
 // Map describing IP to CPU/TC mappings
 struct {
@@ -47,60 +62,83 @@ struct {
 	__uint(map_flags, BPF_F_NO_PREALLOC);
 } map_ip_to_cpu_and_tc_recip SEC(".maps");
 
+// Determine the effective direction of a packet
+static __always_inline u_int8_t determine_effective_direction(int direction, __be16 internet_vlan, struct dissector_t * dissector) {
+    if (direction < 3) {
+        return direction;
+    } else {
+        if (dissector->current_vlan == internet_vlan) {
+            return 1;
+        } else {
+            return 2;
+        }
+    }
+}
+
 // Performs an LPM lookup for an `ip_hash.h` encoded address, taking
 // into account redirection and "on a stick" setup.
 static __always_inline struct ip_hash_info * setup_lookup_key_and_tc_cpu(
-    // The "direction" constant from the main program. 1 = Internet,
-    // 2 = LAN, 3 = Figure it out from VLAN tags
-    int direction,
+    // This must have been pre-calculated by `determine_effective_direction`.
+    u_int8_t direction,
     // Pointer to the "lookup key", which should contain the IP address
     // to search for. Prefix length will be set for you.
     struct ip_hash_key * lookup_key,
     // Pointer to the traffic dissector.
-    struct dissector_t * dissector,
-    // Which VLAN represents the Internet, in redirection scenarios? (i.e.
-    // when direction == 3)
-    __be16 internet_vlan,
-    // Out variable setting the real "direction" of traffic when it has to
-    // be calculated.
-    int * out_effective_direction
+    struct dissector_t * dissector
 ) 
 {
-    lookup_key->prefixlen = 128;
-    // Normal preset 2-interface setup, no need to calculate any direction
-    // related VLANs.
-    if (direction < 3) {
-        lookup_key->address = (direction == 1) ? dissector->dst_ip : 
-            dissector->src_ip;
-        *out_effective_direction = direction;
-        struct ip_hash_info * ip_info = bpf_map_lookup_elem(
-            &map_ip_to_cpu_and_tc, 
-            lookup_key
-        );
-        return ip_info;
-    } else {
-        if (dissector->current_vlan == internet_vlan) {
-            // Packet is coming IN from the Internet.
-            // Therefore it is download.
-            lookup_key->address = dissector->dst_ip;
-            *out_effective_direction = 1;
-            struct ip_hash_info * ip_info = bpf_map_lookup_elem(
-                &map_ip_to_cpu_and_tc, 
-                lookup_key
-            );
-            return ip_info;
-        } else {
-            // Packet is coming IN from the ISP.
-            // Therefore it is UPLOAD.
-            lookup_key->address = dissector->src_ip;
-            *out_effective_direction = 2;
-            struct ip_hash_info * ip_info = bpf_map_lookup_elem(
-                &map_ip_to_cpu_and_tc_recip, 
-                lookup_key
-            );
-            return ip_info;
+    struct ip_hash_info * ip_info;
+
+    lookup_key->address = (direction == 1) ? dissector->dst_ip :
+        dissector->src_ip;
+
+    #ifdef USE_HOTCACHE
+    // Try a hot cache search
+    ip_info = bpf_map_lookup_elem(
+        &ip_to_cpu_and_tc_hotcache,
+        &lookup_key->address
+    );
+    if (ip_info) {
+        // Is it a negative hit?
+        if (ip_info->cpu == NEGATIVE_HIT) {
+            return NULL;
         }
+
+        // We got a cache hit, so return
+        return ip_info;
     }
+    #endif
+
+    lookup_key->prefixlen = 128;
+    ip_info = bpf_map_lookup_elem(
+        &map_ip_to_cpu_and_tc, 
+        lookup_key
+    );
+    #ifdef USE_HOTCACHE
+    if (ip_info) {
+        // We found it, so add it to the cache
+        bpf_map_update_elem(
+            &ip_to_cpu_and_tc_hotcache,
+            &lookup_key->address,
+            ip_info,
+            BPF_NOEXIST
+        );
+    } else {
+        // Store a negative result. This is designed to alleviate the pain
+        // of repeatedly hitting queries for IPs that ARE NOT shaped.
+        struct ip_hash_info negative_hit = {
+            .cpu = NEGATIVE_HIT,
+            .tc_handle = NEGATIVE_HIT
+        };
+        bpf_map_update_elem(
+            &ip_to_cpu_and_tc_hotcache,
+            &lookup_key->address,
+            &negative_hit,
+            BPF_NOEXIST
+        );
+    }
+    #endif
+    return ip_info;
 }
 
 // For the TC side, the dissector is different. Operates similarly to
@@ -126,9 +164,10 @@ static __always_inline struct ip_hash_info * tc_setup_lookup_key_and_tc_cpu(
     lookup_key->prefixlen = 128;
 	// Direction is reversed because we are operating on egress
     if (direction < 3) {
-        lookup_key->address = (direction == 1) ? dissector->src_ip : 
+        lookup_key->address = (direction == 1) ? dissector->src_ip :
             dissector->dst_ip;
         *out_effective_direction = direction;
+
         struct ip_hash_info * ip_info = bpf_map_lookup_elem(
             &map_ip_to_cpu_and_tc, 
             lookup_key

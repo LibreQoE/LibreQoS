@@ -7,7 +7,6 @@ use crate::{
 };
 use dashmap::{DashMap, DashSet};
 use lqos_bus::{tos_parser, PacketHeader};
-use lqos_config::EtcLqos;
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 use once_cell::sync::Lazy;
 use std::{
@@ -17,7 +16,8 @@ use std::{
   sync::atomic::{AtomicBool, AtomicUsize},
   time::Duration,
 };
-use zerocopy::AsBytes;
+use tracing::warn;
+use zerocopy::IntoBytes;
 
 impl HeimdallEvent {
   fn as_header(&self) -> PacketHeader {
@@ -110,14 +110,14 @@ pub fn hyperfocus_on_target(ip: XdpIpAddress) -> Option<(usize, usize)> {
   {
     // If explicitly set, obtain the capture time. Otherwise, default to
     // a reasonable 10 seconds.
-    let capture_time = if let Ok(cfg) = EtcLqos::load() {
-      cfg.packet_capture_time.unwrap_or(10)
+    let capture_time = if let Ok(cfg) = lqos_config::load_config() {
+      cfg.packet_capture_time
     } else {
       10
     };
     let new_id =
       FOCUS_SESSION_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    std::thread::spawn(move || {
+    let _ = std::thread::Builder::new().name("HeimdalTimeline".to_string()).spawn(move || {
       for _ in 0..capture_time {
         let _ = set_heimdall_mode(HeimdallMode::Analysis);
         heimdall_watch_ip(ip);
@@ -143,7 +143,7 @@ pub fn hyperfocus_on_target(ip: XdpIpAddress) -> Option<(usize, usize)> {
     });
     Some((new_id, capture_time))
   } else {
-    log::warn!(
+    warn!(
       "Heimdall was busy and won't start another collection session."
     );
     None

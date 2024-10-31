@@ -15,11 +15,13 @@
 #include "common/throughput.h"
 #include "common/lpm.h"
 #include "common/cpu_map.h"
-#include "common/tcp_rtt.h"
+//#include "common/tcp_rtt.h"
 #include "common/bifrost.h"
 #include "common/heimdall.h"
+#include "common/flows.h"
 
 //#define VERBOSE 1
+//#define TRACING 1
 
 /* Theory of operation:
 1. (Packet arrives at interface)
@@ -54,10 +56,23 @@ int direction = 255;
 __be16 internet_vlan = 0; // Note: turn these into big-endian
 __be16 isp_vlan = 0;
 
+// Helpers from https://elixir.bootlin.com/linux/v5.4.153/source/tools/testing/selftests/bpf/progs/test_xdp_meta.c#L37
+#define __round_mask(x, y) ((__typeof__(x))((y) - 1))
+#define round_up(x, y) ((((x) - 1) | __round_mask(x, y)) + 1)
+#define ctx_ptr(ctx, mem) (void *)(unsigned long)ctx->mem
+
+// Structure for passing metadata from XDP to TC
+struct metadata_pass_t {
+    __u32 tc_handle; // The encoded TC handle
+};
+
 // XDP Entry Point
 SEC("xdp")
 int xdp_prog(struct xdp_md *ctx)
 {
+#ifdef TRACING
+    __u64 started = bpf_ktime_get_ns();
+#endif
 #ifdef VERBOSE
     bpf_debug("XDP-RDR");
 #endif
@@ -94,27 +109,32 @@ int xdp_prog(struct xdp_md *ctx)
     // If the dissector is unable to figure out what's going on, bail
     // out.
     if (!dissector_new(ctx, &dissector)) return XDP_PASS;
+
     // Note that this step rewrites the VLAN tag if redirection
     // is requested.
     if (!dissector_find_l3_offset(&dissector, vlan_redirect)) return XDP_PASS;
     if (!dissector_find_ip_header(&dissector)) return XDP_PASS;
+    u_int8_t effective_direction = determine_effective_direction(
+        direction, 
+        internet_vlan, 
+        &dissector
+    );
+
+#ifdef VERBOSE
+    bpf_debug("(XDP) Effective direction: %d", effective_direction);
+#endif
+
 #ifdef VERBOSE
     bpf_debug("(XDP) Spotted VLAN: %u", dissector.current_vlan);
 #endif
 
     // Determine the lookup key by direction
     struct ip_hash_key lookup_key;
-    int effective_direction = 0;
     struct ip_hash_info * ip_info = setup_lookup_key_and_tc_cpu(
-        direction, 
+        effective_direction, 
         &lookup_key, 
-        &dissector, 
-        internet_vlan, 
-        &effective_direction
+        &dissector
     );
-#ifdef VERBOSE
-    bpf_debug("(XDP) Effective direction: %d", effective_direction);
-#endif
 
     // Find the desired TC handle and CPU target
     __u32 tc_handle = 0;
@@ -123,14 +143,18 @@ int xdp_prog(struct xdp_md *ctx)
         tc_handle = ip_info->tc_handle;
         cpu = ip_info->cpu;
     }
+
+    // Per-Flow RTT Tracking
+    track_flows(&dissector, effective_direction);
+
     // Update the traffic tracking buffers
     track_traffic(
         effective_direction, 
         &lookup_key.address, 
         ctx->data_end - ctx->data, // end - data = length
-        tc_handle
+        tc_handle,
+        dissector.now
     );
-
 
     // Send on its way
     if (tc_handle != 0) {
@@ -152,6 +176,34 @@ int xdp_prog(struct xdp_md *ctx)
         }
         __u32 cpu_dest = *cpu_lookup;
 
+        // Can we adjust the metadata? We'll try to do so, and if we can store the
+        // needed info there. Not all drivers support this, so it has to remain
+        // optional. This call invalidates the ctx->data pointer, so it has to be
+        // done last.
+        int ret = bpf_xdp_adjust_meta(ctx, -round_up(ETH_ALEN, sizeof(struct metadata_pass_t)));
+        if (ret < 0) {
+            #ifdef VERBOSE
+            bpf_debug("Error: unable to adjust metadata, ret: %d", ret);
+            #endif
+        } else {
+            #ifdef VERBOSE
+            bpf_debug("Metadata adjusted, ret: %d", ret);
+            #endif
+
+            __u8 *data_meta = ctx_ptr(ctx, data_meta);
+            __u8 *data_end  = ctx_ptr(ctx, data_end);
+            __u8 *data      = ctx_ptr(ctx, data);
+
+            if (data + ETH_ALEN > data_end || data_meta + round_up(ETH_ALEN, 4) > data) {
+                bpf_debug("Bounds error on the metadata");
+                return XDP_DROP;
+            }
+            struct metadata_pass_t meta = (struct metadata_pass_t) {
+                .tc_handle = tc_handle,
+            };
+            __builtin_memcpy(data_meta, &meta, sizeof(struct metadata_pass_t));
+        }
+
         // Redirect based on CPU
 #ifdef VERBOSE
         bpf_debug("(XDP) Zooming to CPU: %u", cpu_dest);
@@ -161,6 +213,14 @@ int xdp_prog(struct xdp_md *ctx)
 #ifdef VERBOSE
         bpf_debug("(XDP) Redirect result: %u", redirect_result);
 #endif
+
+#ifdef TRACING
+{
+    __u64 now = bpf_ktime_get_ns();
+    bpf_debug("(XDP) Exit time: %u", now - started);
+}
+#endif
+
         return redirect_result;
     }
 	return XDP_PASS;
@@ -170,6 +230,9 @@ int xdp_prog(struct xdp_md *ctx)
 SEC("tc")
 int tc_iphash_to_cpu(struct __sk_buff *skb)
 {
+#ifdef TRACING
+    __u64 started = bpf_ktime_get_ns();
+#endif
 #ifdef VERBOSE
     bpf_debug("TC-MAP");
 #endif
@@ -196,6 +259,49 @@ int tc_iphash_to_cpu(struct __sk_buff *skb)
         }
     } // Scope to remove tcq_cfg when done with it
 
+    // Do we have metadata?
+    if (skb->data != skb->data_meta) {
+        #ifdef VERBOSE
+        bpf_debug("(TC) Metadata is present");
+        #endif
+        int size = skb->data_meta - skb->data;
+        if (size < sizeof(struct metadata_pass_t)) {
+            bpf_debug("(TC) Metadata too small");
+        } else {
+            // Use it here
+            __u8 *data_meta = ctx_ptr(skb, data_meta);
+            __u8 *data_end  = ctx_ptr(skb, data_end);
+            __u8 *data      = ctx_ptr(skb, data);
+
+	        if (data + ETH_ALEN > data_end || data_meta + round_up(ETH_ALEN, 4) > data)
+            {
+                bpf_debug("(TC) Bounds error on the metadata");
+		        return TC_ACT_SHOT;
+            }
+
+            struct metadata_pass_t *meta = (struct metadata_pass_t *)data_meta;
+            #ifdef VERBOSE
+            bpf_debug("(TC) Metadata: CPU: %u, TC: %u", meta->cpu, meta->tc_handle);
+            #endif
+            if (meta->tc_handle != 0) {
+                // We can short-circuit the redirect and bypass the second
+                // LPM lookup! Yay!
+                skb->priority = meta->tc_handle;
+                #ifdef TRACING
+                {
+                    __u64 now = bpf_ktime_get_ns();
+                    bpf_debug("(TC) Exit time: %u", now - started);
+                }
+                #endif
+                return TC_ACT_OK;
+            }
+        }
+    } else {
+        #ifdef VERBOSE
+        bpf_debug("(TC) No metadata present");
+        #endif
+    }
+
     // Once again parse the packet
     // Note that we are returning OK on failure, which is a little odd.
     // The reasoning being that if its a packet we don't know how to handle,
@@ -220,26 +326,30 @@ int tc_iphash_to_cpu(struct __sk_buff *skb)
     bpf_debug("(TC) effective direction: %d", effective_direction);
 #endif
 
-    // Call pping to obtain RTT times
-    struct parsing_context context = {0};
-    context.now = bpf_ktime_get_ns();
-    context.tcp = NULL;
-    context.dissector = &dissector;
-    context.active_host = &lookup_key.address;
-    tc_pping_start(&context);
-
     if (ip_info && ip_info->tc_handle != 0) {
         // We found a matching mapped TC flow
 #ifdef VERBOSE
         bpf_debug("(TC) Mapped to TC handle %x", ip_info->tc_handle);
 #endif
         skb->priority = ip_info->tc_handle;
+        #ifdef TRACING
+        {
+            __u64 now = bpf_ktime_get_ns();
+            bpf_debug("(TC) Exit time: %u", now - started);
+        }
+        #endif
         return TC_ACT_OK;
     } else {
         // We didn't find anything
 #ifdef VERBOSE
         bpf_debug("(TC) didn't map anything");
 #endif
+        #ifdef TRACING
+        {
+            __u64 now = bpf_ktime_get_ns();
+            bpf_debug("(TC) Exit time: %u", now - started);
+        }
+        #endif
         return TC_ACT_OK;
     }
 
@@ -368,12 +478,12 @@ int throughput_reader(struct bpf_iter__bpf_map_elem *ctx)
 }
 
 SEC("iter/bpf_map_elem")
-int rtt_reader(struct bpf_iter__bpf_map_elem *ctx)
+int flow_reader(struct bpf_iter__bpf_map_elem *ctx)
 {
     // The sequence file
     struct seq_file *seq = ctx->meta->seq;
-    struct rotating_performance *counter = ctx->value;
-    struct in6_addr *ip = ctx->key;
+    struct flow_data_t *counter = ctx->value;
+    struct flow_key_t *ip = ctx->key;
 
     // Bail on end
     if (counter == NULL || ip == NULL) {
@@ -381,36 +491,8 @@ int rtt_reader(struct bpf_iter__bpf_map_elem *ctx)
     }
 
     //BPF_SEQ_PRINTF(seq, "%d %d\n", counter->next_entry, counter->rtt[0]);
-    bpf_seq_write(seq, ip, sizeof(struct in6_addr));
-    bpf_seq_write(seq, counter, sizeof(struct rotating_performance));
-    return 0;
-}
-
-SEC("iter/bpf_map_elem")
-int heimdall_reader(struct bpf_iter__bpf_map_elem *ctx) {
-    // The sequence file
-    struct seq_file *seq = ctx->meta->seq;
-    void *counter = ctx->value;
-    struct heimdall_key *ip = ctx->key;
-    __u32 num_cpus = NUM_CPUS;
-
-    if (ctx->meta->seq_num == 0) {
-        bpf_seq_write(seq, &num_cpus, sizeof(__u32));
-        bpf_seq_write(seq, &num_cpus, sizeof(__u32)); // Repeat for padding
-    }
-
-    // Bail on end
-    if (counter == NULL || ip == NULL) {
-        return 0;
-    }
-
-    bpf_seq_write(seq, ip, sizeof(struct heimdall_key));
-    for (__u32 i=0; i<NUM_CPUS; i++) {
-        struct heimdall_data * content = counter+(i*sizeof(struct heimdall_data));
-        bpf_seq_write(seq, content, sizeof(struct heimdall_data));
-    }
-
-    //BPF_SEQ_PRINTF(seq, "%d %d\n", counter->download_bytes, counter->upload_bytes);
+    bpf_seq_write(seq, ip, sizeof(struct flow_key_t));
+    bpf_seq_write(seq, counter, sizeof(struct flow_data_t));
     return 0;
 }
 

@@ -6,6 +6,8 @@ pub struct DataLink {
     pub id: String,
     pub from: DataLinkFrom,
     pub to: DataLinkTo,
+    #[serde(rename = "canDelete")]
+    pub can_delete: bool,
 }
 
 #[allow(non_snake_case)]

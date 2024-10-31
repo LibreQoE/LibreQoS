@@ -44,6 +44,8 @@ enum Commands {
   Clear,
   /// List all mapped IPs.
   List,
+  /// Flushes the Hot Cache (to be used after when you are done making changes).
+  Flush,
 }
 
 async fn talk_to_server(command: BusRequest) -> Result<()> {
@@ -122,6 +124,7 @@ pub async fn main() -> Result<()> {
     }
     Some(Commands::Clear) => talk_to_server(BusRequest::ClearIpFlow).await?,
     Some(Commands::List) => talk_to_server(BusRequest::ListIpFlow).await?,
+    Some(Commands::Flush) => talk_to_server(BusRequest::ClearHotCache).await?,
     None => {
       println!("Run with --help to see instructions");
       exit(0);

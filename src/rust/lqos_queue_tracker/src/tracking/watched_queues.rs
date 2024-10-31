@@ -1,6 +1,6 @@
 use crate::queue_structure::QUEUE_STRUCTURE;
 use dashmap::DashMap;
-use log::{info, warn};
+use tracing::{info, warn};
 use lqos_bus::TcHandle;
 use lqos_sys::num_possible_cpus;
 use lqos_utils::unix_time::unix_now;
@@ -55,7 +55,8 @@ pub fn add_watched_queue(circuit_id: &str) {
     }
   }
 
-  if let Some(queues) = &QUEUE_STRUCTURE.read().unwrap().maybe_queues {
+  let queues = QUEUE_STRUCTURE.load();
+  if let Some(queues) = &queues.maybe_queues {
     if let Some(circuit) = queues.iter().find(|c| {
       c.circuit_id.is_some() && c.circuit_id.as_ref().unwrap() == circuit_id
     }) {

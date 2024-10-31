@@ -1,4 +1,4 @@
-use log::{error, warn};
+use tracing::{error, warn};
 use nix::sys::{
   time::{TimeSpec, TimeValLike},
   timerfd::{ClockId, Expiration, TimerFd, TimerFlags, TimerSetTimeFlags},

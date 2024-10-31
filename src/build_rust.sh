@@ -3,37 +3,23 @@
 # This script builds the Rust sub-system and places the results in the
 # `src/bin` directory.
 #
-# You still need to setup services to run `lqosd` and `lqos_node_manager`
-# automatically.
+# You still need to setup services to run `lqosd` and possibly `lqos_scheduler` automatically.
 #
 # Don't forget to setup `/etc/lqos.conf`
 
 # Check Pre-Requisites
-if ! bpftool help &> /dev/null
-then
-    echo "bpftool is not installed."
-    echo "Let's try to install it"
-    sudo apt-get install linux-tools-common linux-tools-`uname -r`
-else
-    echo "bpftool found."
-fi
+sudo apt install python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname -r` libbpf-dev libssl-dev esbuild mold
 
-if ! pkg-config --help &> /dev/null
+if ! rustup -V &> /dev/null
 then
-    echo "pkg-config is not installed."
-    echo "Let's try to install it"
-    sudo apt-get install pkg-config
+    echo "rustup is not installed."
+    echo "Visit https://rustup.rs and install Rust from there"
+    echo "Usually, you can copy the following and follow the on-screen instructions."
+    echo "Please don't install Rust as root."
+    echo "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+    exit 1
 else
-    echo "pkg-config found."
-fi
-
-if ! clang -v &> /dev/null
-then
-    echo "LLVM/clang is not installed."
-    echo "Let's try to install it"
-    sudo apt-get install llvm libelf-dev gcc gcc-multilib libbpf-dev
-else
-    echo "LLVM/clang found."
+    echo "rustup found."
 fi
 
 # To enable heavy debug mode (slow)
@@ -52,7 +38,7 @@ rustup update
 
 # Start building
 echo "Please wait while the system is compiled. Service will not be interrupted during this stage."
-PROGS="lqosd lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqos_node_manager lqusers lqos_map_perf"
+PROGS="lqosd lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqusers lqos_map_perf uisp_integration lqos_support_tool"
 mkdir -p bin/static
 pushd rust > /dev/null
 #cargo clean
@@ -78,10 +64,10 @@ done
 popd > /dev/null
 
 # Copy the node manager's static web content
-cp -R rust/lqos_node_manager/static/* bin/static
-
-# Copy Rocket.toml to tell the node manager where to listen
-cp rust/lqos_node_manager/Rocket.toml bin/
+mkdir -p bin/static2/vendor
+pushd rust/lqosd > /dev/null
+./copy_files.sh
+popd > /dev/null
 
 # Copy the Python library for LibreQoS.py et al.
 pushd rust/lqos_python > /dev/null
@@ -100,13 +86,18 @@ service_exists() {
     fi
 }
 
+if service_exists lqos_node_manager; then
+    echo "lqos_node_manager is running as a service. It's not needed anymore. Killing it."
+    sudo systemctl stop lqos_node_manager
+    sudo systemctl disable lqos_node_manager
+fi
 if service_exists lqosd; then
     echo "lqosd is running as a service. Restarting it. You may need to enter your sudo password."
     sudo systemctl restart lqosd
 fi
-if service_exists lqos_node_manager; then
-    echo "lqos_node_manager is running as a service. Restarting it. You may need to enter your sudo password."
-    sudo systemctl restart lqos_node_manager
+if service_exists lqos_scheduler; then
+    echo "lqos_scheduler is running as a service. Restarting it. You may need to enter your sudo password."
+    sudo systemctl restart lqos_scheduler
 fi
 
 echo "-----------------------------------------------------------------"

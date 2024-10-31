@@ -1,8 +1,9 @@
 use crate::transport_data::{ask_license_server, LicenseReply, ask_license_server_for_new_account};
-use lqos_config::EtcLqos;
+use lqos_config::load_config;
 use lqos_utils::unix_time::unix_now;
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
+use tracing::{debug, error, info, warn};
 
 #[derive(Default, Clone)]
 struct LicenseStatus {
@@ -44,15 +45,15 @@ pub(crate) async fn get_license_status() -> LicenseState {
 const MISERLY_NO_KEY: &str = "IDontSupportDevelopersAndShouldFeelBad";
 
 async fn check_license(unix_time: u64) -> LicenseState {
-    log::info!("Checking LTS stats license");
-    if let Ok(cfg) = EtcLqos::load() {
+    debug!("Checking LTS stats license");
+    if let Ok(cfg) = load_config() {
         // The config file is good. Is LTS enabled?
         // If it isn't, we need to try very gently to see if a pending
         // request has been submitted.
-        if let Some(cfg) = cfg.long_term_stats {
-            if let Some(key) = cfg.license_key {
+        if cfg.long_term_stats.gather_stats && cfg.long_term_stats.license_key.is_some() {
+            if let Some(key) = &cfg.long_term_stats.license_key {
                 if key == MISERLY_NO_KEY {
-                    log::warn!("You are using the self-hosting license key. We'd be happy to sell you a real one.");
+                    warn!("You are using the self-hosting license key. We'd be happy to sell you a real one.");
                     return LicenseState::Valid { expiry: 0, stats_host: "192.168.100.11:9127".to_string() }
                 }
 
@@ -63,25 +64,25 @@ async fn check_license(unix_time: u64) -> LicenseState {
                     Ok(state) => {
                         match state {
                             LicenseReply::Denied => {
-                                log::warn!("License is in state: DENIED.");
+                                warn!("License is in state: DENIED.");
                                 lock.state = LicenseState::Denied;                                
                             }
                             LicenseReply::Valid{expiry, stats_host} => {
-                                log::info!("License is in state: VALID.");
+                                info!("License is in state: VALID.");
                                 lock.state = LicenseState::Valid{
                                     expiry, stats_host
                                 };
                             }
                             _ => {
-                                log::warn!("Unexpected type of data received. Denying to be safe.");
+                                warn!("Unexpected type of data received. Denying to be safe.");
                                 lock.state = LicenseState::Denied; 
                             }
                         }
                         return lock.state.clone();
                     }
                     Err(e) => {
-                        log::error!("Error checking licensing server");
-                        log::error!("{e:?}");
+                        error!("Error checking licensing server");
+                        error!("{e:?}");
                     }
                 }
             }
@@ -90,24 +91,19 @@ async fn check_license(unix_time: u64) -> LicenseState {
             // So we need to check if we have a pending request.
             // If a license key has been assigned, then we'll setup
             // LTS. If it hasn't, we'll just return Unknown.
-            if let Some(node_id) = &cfg.node_id {
-                if let Ok(result) = ask_license_server_for_new_account(node_id.to_string()).await {
-                    if let LicenseReply::NewActivation { license_key } = result {
-                        // We have a new license!
-                        let _ = lqos_config::enable_long_term_stats(license_key);
-                        // Note that we're not doing anything beyond this - the next cycle
-                        // will pick up on there actually being a license
-                    } else {
-                        log::info!("No pending LTS license found");
-                    }
+            if let Ok(result) = ask_license_server_for_new_account(cfg.node_id.to_string()).await {
+                if let LicenseReply::NewActivation { license_key } = result {
+                    // We have a new license!
+                    let _ = lqos_config::enable_long_term_stats(license_key);
+                    // Note that we're not doing anything beyond this - the next cycle
+                    // will pick up on there actually being a license
+                } else {
+                    info!("No pending LTS license found");
                 }
-            } else {
-                // There's no node ID either - we can't talk to this
-                log::warn!("No NodeID is configured. No online services are possible.");
             }
         }
     } else {
-        log::error!("Unable to load lqosd configuration. Not going to try.");
+        error!("Unable to load lqosd configuration. Not going to try.");
     }
     LicenseState::Unknown
 }

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="auto">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LibreQoS Node Manager</title>
+    <link href="vendor/bootstrap.min.css" rel="stylesheet">
+    <script src="vendor/jquery-3.7.1.min.js"></script>
+    <script src="vendor/echarts.min.js"></script>
+    <script src="vendor/echarts-gl.min.js"></script>
+    <script src="vendor/4c979e6ebb.js"></script>
+    <link href="./node_manager.css" rel="stylesheet">
+</head>
+<body>
+
+<div id="container" class="pad4">
+    <div class="row">
+        <div class="col-sm-4"></div>
+        <div class="col-sm-4">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h5 class="card-title">Login</h5>
+                    <p>Please enter a username and password to access LibreQoS.</p>
+                    <p>You can control access locally with <em>bin/lqusers</em> from the console.</p>
+                    <table class="table">
+                        <tr>
+                            <td>Username</td>
+                            <td><input type="text" id="username" /></td>
+                        </tr>
+                        <tr>
+                            <td>Password</td>
+                            <td><input type="password" id="password" /></td>
+                        </tr>
+                    </table>
+                    <a class="btn btn-primary" id="btnLogin">Login</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-4"></div>
+    </div>
+</div>
+
+<script src="login.js"></script>
+
+<footer class="justify-content-center">
+    &copy; Copyright 2022-2024, LibreQoE LLC
+</footer>
+
+<script src="vendor/bootstrap.bundle.min.js"></script>
+</body>
+</html>

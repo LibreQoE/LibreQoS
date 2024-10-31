@@ -1,6 +1,7 @@
 mod v1;
 use serde::{Serialize, Deserialize};
 use thiserror::Error;
+use tracing::warn;
 pub use v1::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,8 +20,8 @@ pub fn build_stats(stats: &AnonymousUsageV1) -> Result<Vec<u8>, StatsError> {
     let mut result = Vec::new();
     let payload = serde_cbor::to_vec(stats);
     if let Err(e) = payload {
-        log::warn!("Unable to serialize statistics. Not sending them.");
-        log::warn!("{e:?}");
+        warn!("Unable to serialize statistics. Not sending them.");
+        warn!("{e:?}");
         return Err(StatsError::SerializeFail);
     }
     let payload = payload.unwrap();

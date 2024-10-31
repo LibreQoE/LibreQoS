@@ -15,27 +15,23 @@ Now edit the file to match your setup with
 sudo nano /etc/lqos.conf
 ```
 
-Change `enp1s0f1` and `enp1s0f2` to match your network interfaces. It doesn't matter which one is which. Notice, it's paring the interfaces, so when you first enter enps0f<ins>**1**</ins> in the first line, the `redirect_to` parameter is enp1s0f<ins>**2**</ins> (replacing with your actual interface names).
-
-- First Line: `name = "enp1s0f1", redirect_to = "enp1s0f2"`
-- Second Line: `name = "enp1s0f2", redirect_to = "enp1s0f1"`
+Change `eth0` and `eth1` to match your network interfaces. The interface facing the Internet should be specified in `to_internet`. The interfacing facing your ISP network should be in `to_network`.
 
 Then, if using Bifrost/XDP set `use_xdp_bridge = true` under that same `[bridge]` section.
 
-## Configure ispConfig.py
+For example:
 
-Copy ispConfig.example.py to ispConfig.py and edit as needed
-
-```shell
-cd /opt/libreqos/src/
-cp ispConfig.example.py ispConfig.py
-nano ispConfig.py
+```toml
+[bridge]
+use_xdp_bridge = true
+to_internet = "eth0"
+to_network = "eth1"
 ```
 
-- Set upstreamBandwidthCapacityDownloadMbps and upstreamBandwidthCapacityUploadMbps to match the bandwidth in Mbps of your network's upstream / WAN internet connection. The same can be done for generatedPNDownloadMbps and generatedPNUploadMbps.
-- Set interfaceA to the interface facing your core router (or bridged internal network if your network is bridged)
-- Set interfaceB to the interface facing your edge router
-- Set ```enableActualShellCommands = True``` to allow the program to actually run the commands.
+## Configure Your Network Settings
+
+- Set `uplink_bandwidth_mbps` and `downlink_bandwidth_mbps` to match the bandwidth in Mbps of your network's upstream / WAN internet connection. The same can be done for `generated_pn_download_mbps` and `generated_pn_upload_mbps`.
+- Set ```dry_run = false``` to allow the program to actually run the commands.
 
 ## Network.json
 

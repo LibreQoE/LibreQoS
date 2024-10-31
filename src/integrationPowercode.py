@@ -2,20 +2,20 @@ from pythonCheck import checkPythonVersion
 checkPythonVersion()
 import requests
 import warnings
-from ispConfig import excludeSites, findIPv6usingMikrotik, bandwidthOverheadFactor, exceptionCPEs, powercode_api_key, powercode_api_url
+from liblqos_python import find_ipv6_using_mikrotik, powercode_api_key, powercode_api_url
 from integrationCommon import isIpv4Permitted
 import base64
 from requests.auth import HTTPBasicAuth
-if findIPv6usingMikrotik == True:
+if find_ipv6_using_mikrotik() == True:
 	from mikrotikFindIPv6 import pullMikrotikIPv6  
 from integrationCommon import NetworkGraph, NetworkNode, NodeType
 from urllib3.exceptions import InsecureRequestWarning
 
 def getCustomerInfo():
 	headers= {'Content-Type': 'application/x-www-form-urlencoded'}
-	url = powercode_api_url + ":444/api/preseem/index.php"
+	url = powercode_api_url() + ":444/api/preseem/index.php"
 	data = {}
-	data['apiKey'] = powercode_api_key
+	data['apiKey'] = powercode_api_key()
 	data['action'] = 'list_customers'
 	
 	r = requests.post(url, data=data, headers=headers, verify=False, timeout=10)
@@ -23,9 +23,9 @@ def getCustomerInfo():
 
 def getListServices():
 	headers= {'Content-Type': 'application/x-www-form-urlencoded'}
-	url = powercode_api_url + ":444/api/preseem/index.php"
+	url = powercode_api_url() + ":444/api/preseem/index.php"
 	data = {}
-	data['apiKey'] = powercode_api_key
+	data['apiKey'] = powercode_api_key()
 	data['action'] = 'list_services'
 	
 	r = requests.post(url, data=data, headers=headers, verify=False, timeout=10)

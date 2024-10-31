@@ -1,0 +1,22 @@
+[package]
+name = "uisp_integration"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }
+tracing = "0.1.40"
+tracing-subscriber = "0.3.18"
+lqos_config = { path = "../lqos_config" }
+uisp = { path = "../uisp" }
+thiserror = { workspace = true }
+serde = { workspace = true }
+csv = { workspace = true }
+serde_json = { workspace = true }
+ip_network_table = {  workspace = true }
+ip_network = { workspace = true }
+pyo3 = {  workspace = true }

@@ -1,7 +1,6 @@
 use super::QDiscError;
 use crate::parse_tc_handle;
-use log::warn;
-use log_once::info_once;
+use tracing::{error, info, warn};
 use lqos_bus::TcHandle;
 use lqos_utils::{dashy_table_enum, string_table_enum};
 use serde::{Deserialize, Serialize};
@@ -140,7 +139,7 @@ impl TcCake {
         }
         "kind" => {}
         _ => {
-          log::error!("Unknown entry in Tc-cake: {key}");
+          error!("Unknown entry in Tc-cake: {key}");
         }
       }
     }
@@ -182,7 +181,7 @@ impl TcCakeOptions {
               parse_tc_handle!(result.fwmark, value);
             }
             _ => {
-              info_once!(
+              info!(
                 "Unknown entry in tc-cake-options json decoder: {key}"
               );
             }
@@ -259,7 +258,7 @@ impl TcCakeTin {
               result.flow_quantum = value.as_u64().unwrap_or(0) as u16
             }
             _ => {
-              info_once!("Unknown entry in tc-cake-tin json decoder: {key}");
+              info!("Unknown entry in tc-cake-tin json decoder: {key}");
             }
           }
         }

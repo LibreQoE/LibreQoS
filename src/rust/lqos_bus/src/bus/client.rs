@@ -3,7 +3,7 @@ use crate::{
     bus::BusClientError, decode_response, encode_request, BusRequest, BusResponse, BusSession,
     BUS_SOCKET_PATH,
 };
-use log::error;
+use tracing::error;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::UnixStream,
