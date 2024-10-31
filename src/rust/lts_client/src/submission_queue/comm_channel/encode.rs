@@ -1,6 +1,7 @@
 use dryoc::{dryocbox::{Nonce, DryocBox}, types::{NewByteArray, ByteArray}};
 use lqos_config::load_config;
 use thiserror::Error;
+use tracing::error;
 use crate::{transport_data::{LtsCommand, NodeIdAndLicense, HelloVersion2}, submission_queue::queue::QueueError};
 use super::keys::{SERVER_PUBLIC_KEY, KEYPAIR};
 
@@ -48,12 +49,12 @@ pub enum SubmissionDecodeError {
 pub(crate) fn decode_submission_hello(bytes: &[u8]) -> Result<HelloVersion2, SubmissionDecodeError> {
     let version = u16::from_be_bytes([bytes[0], bytes[1]]);
     if version != 2 {
-        log::error!("Received an invalid version from the server: {}", version);
+        error!("Received an invalid version from the server: {}", version);
         return Err(SubmissionDecodeError::InvalidVersion);
     }
     let padding = u16::from_be_bytes([bytes[2], bytes[3]]);
     if padding != 3 {
-        log::error!("Received an invalid padding from the server: {}", padding);
+        error!("Received an invalid padding from the server: {}", padding);
         return Err(SubmissionDecodeError::InvalidPadding);
     }
     let size = u64::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9], bytes[10], bytes[11]]);

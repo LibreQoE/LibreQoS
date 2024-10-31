@@ -5,10 +5,10 @@
 
 use super::QDiscError;
 use crate::parse_tc_handle;
-use log_once::info_once;
 use lqos_bus::TcHandle;
 use serde::Serialize;
 use serde_json::Value;
+use tracing::info;
 
 #[derive(Default, Clone, Debug, Serialize)]
 pub struct TcHtb {
@@ -55,7 +55,7 @@ impl TcHtb {
         "options" => result.options = TcHtbOptions::from_json(value)?,
         "kind" => {}
         _ => {
-          info_once!("Unknown entry in tc-HTB json decoder: {key}");
+          info!("Unknown entry in tc-HTB json decoder: {key}");
         }
       }
     }
@@ -81,7 +81,7 @@ impl TcHtbOptions {
               result.direct_qlen = value.as_u64().unwrap_or(0) as u32
             }
             _ => {
-              info_once!("Unknown entry in tc-HTB json decoder: {key}");
+              info!("Unknown entry in tc-HTB json decoder: {key}");
             }
           }
         }

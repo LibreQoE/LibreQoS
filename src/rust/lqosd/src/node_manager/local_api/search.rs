@@ -18,7 +18,7 @@ pub async fn search(Json(search) : Json<SearchRequest>) -> Json<Vec<SearchResult
     let mut results = vec![];
     let term = search.term.to_lowercase().trim().to_string();
     {
-        let sd_reader = SHAPED_DEVICES.read().unwrap();
+        let sd_reader = SHAPED_DEVICES.load();
         sd_reader.devices.iter().for_each(|sd| {
             if sd.circuit_name.to_lowercase().trim().contains(&term) {
                 results.push(SearchResult::Circuit { id: sd.circuit_id.clone(), name: sd.circuit_name.clone() });

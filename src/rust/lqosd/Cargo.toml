@@ -23,8 +23,8 @@ lqos_bus = { path = "../lqos_bus" }
 signal-hook = "0.3"
 serde_json = { workspace = true }
 serde = { workspace = true }
-env_logger = "0"
-log = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 nix = {  workspace = true }
 sysinfo = {  workspace = true }
 dashmap = { workspace = true }
@@ -45,7 +45,12 @@ default-net = {  workspace = true }
 surge-ping = "0.8.1"
 rand = "0.8.5"
 mime_guess = "2.0.4"
+timerfd = {  workspace = true }
+crossbeam-channel = { workspace = true }
+arc-swap = {  workspace = true }
+crossbeam-queue = { workspace = true }
 
 # Support JemAlloc on supported platforms
-[target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]
-jemallocator = {  workspace = true }
+#[target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]
+#jemallocator = {  workspace = true }
+mimalloc = { workspace = true }

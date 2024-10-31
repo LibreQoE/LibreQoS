@@ -3,8 +3,9 @@ use crate::{shaped_devices_tracker::SHAPED_DEVICES, stats::HIGH_WATERMARK, throu
 use super::{flow_data::{get_flowbee_event_count_and_reset, FlowAnalysis, FlowbeeLocalData, RttData, ALL_FLOWS}, throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
 use dashmap::DashMap;
 use fxhash::FxHashMap;
+use tracing::{info, warn};
 use lqos_bus::TcHandle;
-use lqos_config::NetworkJsonCounting;
+use lqos_config::NetworkJson;
 use lqos_queue_tracker::ALL_QUEUE_SUMMARY;
 use lqos_sys::{flowbee_data::FlowbeeKey, iterate_flows, throughput_for_each};
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
@@ -20,12 +21,13 @@ pub struct ThroughputTracker {
 
 impl ThroughputTracker {
   pub(crate) fn new() -> Self {
-    // The capacity should match that found in
-    // maximums.h (MAX_TRACKED_IPS), so we grab it
-    // from there via the C API.
+    // The capacity used to be taken from MAX_TRACKED_IPs, but
+    // that's quite wasteful for smaller systems. So we're starting
+    // small and allowing vector growth. That will slow down the
+    // first few cycles, but it should be fine after that.
     Self {
       cycle: AtomicU64::new(RETIRE_AFTER_SECONDS),
-      raw_data: DashMap::with_capacity(lqos_sys::max_tracked_ips()),
+      raw_data: DashMap::default(),
       bytes_per_second: AtomicDownUp::zeroed(),
       packets_per_second: AtomicDownUp::zeroed(),
       shaped_bytes_per_second: AtomicDownUp::zeroed(),
@@ -55,7 +57,7 @@ impl ThroughputTracker {
   fn lookup_circuit_id(xdp_ip: &XdpIpAddress) -> Option<String> {
     let mut circuit_id = None;
     let lookup = xdp_ip.as_ipv6();
-    let cfg = SHAPED_DEVICES.read().unwrap();
+    let cfg = SHAPED_DEVICES.load();
     if let Some((_, id)) = cfg.trie.longest_match(lookup) {
       circuit_id = Some(cfg.devices[*id].circuit_id.clone());
     }
@@ -67,7 +69,7 @@ impl ThroughputTracker {
     circuit_id: Option<String>,
   ) -> Option<String> {
     if let Some(circuit_id) = circuit_id {
-      let shaped = SHAPED_DEVICES.read().unwrap();
+      let shaped = SHAPED_DEVICES.load();
       let parent_name = shaped
         .devices
         .iter()
@@ -82,26 +84,27 @@ impl ThroughputTracker {
 
   pub(crate) fn lookup_network_parents(
     circuit_id: Option<String>,
+    lock: &NetworkJson,
   ) -> Option<Vec<usize>> {
     if let Some(parent) = Self::get_node_name_for_circuit_id(circuit_id) {
-      let lock = crate::shaped_devices_tracker::NETWORK_JSON.read().unwrap();
+      //let lock = crate::shaped_devices_tracker::NETWORK_JSON.read().unwrap();
       lock.get_parents_for_circuit_id(&parent)
     } else {
       None
     }
   }
 
-  pub(crate) fn refresh_circuit_ids(&self) {
+  pub(crate) fn refresh_circuit_ids(&self, lock: &NetworkJson) {
     self.raw_data.iter_mut().for_each(|mut data| {
       data.circuit_id = Self::lookup_circuit_id(data.key());
       data.network_json_parents =
-        Self::lookup_network_parents(data.circuit_id.clone());
+        Self::lookup_network_parents(data.circuit_id.clone(), lock);
     });
   }
 
   pub(crate) fn apply_new_throughput_counters(
     &self,
-    net_json_calc: &mut NetworkJsonCounting,
+    net_json_calc: &mut NetworkJson,
   ) {
     let raw_data = &self.raw_data;
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
@@ -136,7 +139,7 @@ impl ThroughputTracker {
         let circuit_id = Self::lookup_circuit_id(xdp_ip);
         let mut entry = ThroughputEntry {
           circuit_id: circuit_id.clone(),
-          network_json_parents: Self::lookup_network_parents(circuit_id),
+          network_json_parents: Self::lookup_network_parents(circuit_id, net_json_calc),
           first_cycle: self_cycle,
           most_recent_cycle: 0,
           bytes: DownUpOrder::zeroed(),
@@ -164,7 +167,7 @@ impl ThroughputTracker {
     });
   }
 
-  pub(crate) fn apply_queue_stats(&self, net_json_calc: &mut NetworkJsonCounting) {
+  pub(crate) fn apply_queue_stats(&self, net_json_calc: &mut NetworkJson) {
     // Apply totals
     ALL_QUEUE_SUMMARY.calculate_total_queue_stats();
 
@@ -189,8 +192,11 @@ impl ThroughputTracker {
     &self, 
     timeout_seconds: u64,
     _netflow_enabled: bool,
-    sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
-    net_json_calc: &mut NetworkJsonCounting,
+    sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
+    net_json_calc: &mut NetworkJson,
+    rtt_circuit_tracker: &mut FxHashMap<XdpIpAddress, [Vec<RttData>; 2]>,
+    tcp_retries: &mut FxHashMap<XdpIpAddress, DownUpOrder<u64>>,
+    expired_keys: &mut Vec<FlowbeeKey>,
   ) {
     //log::debug!("Flowbee events this second: {}", get_flowbee_event_count_and_reset());
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
@@ -200,17 +206,6 @@ impl ThroughputTracker {
       get_flowbee_event_count_and_reset();
       let since_boot = Duration::from(now);
       let expire = (since_boot - Duration::from_secs(timeout_seconds)).as_nanos() as u64;
-
-      // Tracker for per-circuit RTT data. We're losing some of the smoothness by sampling
-      // every flow; the idea is to combine them into a single entry for the circuit. This
-      // should limit outliers.
-      let mut rtt_circuit_tracker: FxHashMap<XdpIpAddress, [Vec<RttData>; 2]> = FxHashMap::default();
-
-      // Tracker for TCP retries. We're storing these per second.
-      let mut tcp_retries: FxHashMap<XdpIpAddress, DownUpOrder<u64>> = FxHashMap::default();
-
-      // Track the expired keys
-      let mut expired_keys = Vec::new();
 
       let mut all_flows_lock = ALL_FLOWS.lock().unwrap();
         
@@ -286,11 +281,11 @@ impl ThroughputTracker {
                  DownUpOrder::new(data.tcp_retransmits.down as u64, data.tcp_retransmits.up as u64)
                 );
               }
+          }
 
-              if data.end_status != 0 {
-                // The flow has ended. We need to remove it from the map.
-                expired_keys.push(key.clone());
-              }
+          if data.end_status != 0 {
+            // The flow has ended. We need to remove it from the map.
+            expired_keys.push(key.clone());
           }
         }
       }); // End flow iterator
@@ -345,16 +340,14 @@ impl ThroughputTracker {
       if !expired_keys.is_empty() {
         for key in expired_keys.iter() {
           // Send it off to netperf for analysis if we are supporting doing so.
-          if let Some(d) = all_flows_lock.get(&key) {
+          if let Some(d) = all_flows_lock.remove(&key) {
             let _ = sender.send((key.clone(), (d.0.clone(), d.1.clone())));
           }
-          // Remove the flow from circulation
-          all_flows_lock.remove(&key);
         }
 
-        let ret = lqos_sys::end_flows(&mut expired_keys);
+        let ret = lqos_sys::end_flows(expired_keys);
         if let Err(e) = ret {
-          log::warn!("Failed to end flows: {:?}", e);
+          warn!("Failed to end flows: {:?}", e);
         }
       }
 
@@ -428,7 +421,7 @@ impl ThroughputTracker {
   pub(crate) fn dump(&self) {
     for v in self.raw_data.iter() {
       let ip = v.key().as_ip();
-      log::info!("{:<34}{:?}", ip, v.tc_handle);
+      info!("{:<34}{:?}", ip, v.tc_handle);
     }
   }
 }

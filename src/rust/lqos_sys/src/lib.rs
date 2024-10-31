@@ -21,6 +21,7 @@ mod bpf_iterator;
 /// Data shared between eBPF and Heimdall that needs local access
 /// for map control.
 pub mod flowbee_data;
+mod garbage_collector;
 
 pub use ip_mapping::{
   add_ip_to_tc, clear_ips_from_tc, del_ip_from_tc, list_mapped_ips, clear_hot_cache,
@@ -31,3 +32,4 @@ pub use lqos_kernel::max_tracked_ips;
 pub use throughput::{throughput_for_each, HostCounter};
 pub use bpf_iterator::{iterate_flows, end_flows};
 pub use lqos_kernel::interface_name_to_index;
+pub use garbage_collector::bpf_garbage_collector;

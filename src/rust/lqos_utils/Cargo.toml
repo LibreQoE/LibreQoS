@@ -7,7 +7,7 @@ license = "GPL-2.0-only"
 [dependencies]
 serde = { workspace = true }
 nix = { workspace = true }
-log = { workspace = true }
+tracing = { workspace = true }
 notify = { version = "5.0.0", default-features = false } # Not using crossbeam because of Tokio
 thiserror = { workspace = true }
 byteorder = { workspace = true }

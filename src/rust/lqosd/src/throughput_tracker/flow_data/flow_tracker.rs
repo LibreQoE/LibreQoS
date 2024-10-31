@@ -4,15 +4,16 @@
 use super::{flow_analysis::FlowAnalysis, RttData};
 use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
 use once_cell::sync::Lazy;
-use std::{collections::HashMap, sync::Mutex};
+use std::sync::Mutex;
+use fxhash::FxHashMap;
 use serde::Serialize;
 use lqos_utils::units::DownUpOrder;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub struct AsnId(pub u32);
 
-pub static ALL_FLOWS: Lazy<Mutex<HashMap<FlowbeeKey, (FlowbeeLocalData, FlowAnalysis)>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+pub static ALL_FLOWS: Lazy<Mutex<FxHashMap<FlowbeeKey, (FlowbeeLocalData, FlowAnalysis)>>> =
+    Lazy::new(|| Mutex::new(FxHashMap::default()));
 
 
 /// Condensed representation of the FlowbeeData type. This contains

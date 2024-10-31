@@ -7,6 +7,7 @@ use std::{
   fmt::Debug, fs::File, io::Read, marker::PhantomData, os::fd::FromRawFd,
 };
 use thiserror::Error;
+use tracing::error;
 use zerocopy::FromBytes;
 
 /// Represents a link to an eBPF defined iterator. The iterators
@@ -65,7 +66,7 @@ where
     let link_fd = unsafe { bpf::bpf_link__fd(self.link) };
     let iter_fd = unsafe { bpf::bpf_iter_create(link_fd) };
     if iter_fd < 0 {
-      log::error!("Unable to create map file descriptor");
+      error!("Unable to create map file descriptor");
       Err(BpfIteratorError::FailedToCreateFd)
     } else {
       unsafe { Ok(File::from_raw_fd(iter_fd)) }
@@ -85,8 +86,8 @@ where
     let bytes_read = file.read_to_end(&mut buf);
     match bytes_read {
       Err(e) => {
-        log::error!("Unable to read from kernel map iterator file");
-        log::error!("{e:?}");
+        error!("Unable to read from kernel map iterator file");
+        error!("{e:?}");
         Err(BpfIteratorError::UnableToCreateIterator)
       }
       Ok(bytes) => {
@@ -130,8 +131,8 @@ where
     let bytes_read = file.read_to_end(&mut buf);
     match bytes_read {
       Err(e) => {
-        log::error!("Unable to read from kernel map iterator file");
-        log::error!("{e:?}");
+        error!("Unable to read from kernel map iterator file");
+        error!("{e:?}");
         Err(BpfIteratorError::UnableToCreateIterator)
       }
       Ok(_) => {
@@ -151,12 +152,12 @@ where
           if !key.is_empty() && !values.is_empty() {
             callback(&key[0], &values[0]);
           } else {
-            log::error!("Empty key or value found in iterator");
+            error!("Empty key or value found in iterator");
             if key.is_empty() {
-              log::error!("Empty key");
+              error!("Empty key");
             }
             if values.is_empty() {
-              log::error!("Empty value");
+              error!("Empty value");
             }
           }
 
@@ -255,5 +256,14 @@ pub fn end_flows(flows: &mut [FlowbeeKey]) -> anyhow::Result<()> {
     map.delete(flow)?;
   }
 
+  Ok(())
+}
+
+pub(crate) fn expire_throughput(keys: &mut [XdpIpAddress]) -> anyhow::Result<()> {
+  let mut map = BpfMap::<XdpIpAddress, HostCounter>::from_path("/sys/fs/bpf/map_traffic")?;
+
+  for key in keys {
+      map.delete(key).unwrap();
+  }
   Ok(())
 }

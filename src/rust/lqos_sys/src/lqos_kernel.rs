@@ -10,7 +10,7 @@ use libbpf_sys::{
   XDP_FLAGS_DRV_MODE, XDP_FLAGS_HW_MODE, XDP_FLAGS_SKB_MODE,
   XDP_FLAGS_UPDATE_IF_NOEXIST,
 };
-use log::{info, warn};
+use tracing::{debug, error, info, warn};
 use nix::libc::{geteuid, if_nametoindex};
 use std::{ffi::{CString, c_void}, process::Command};
 
@@ -55,7 +55,7 @@ pub fn interface_name_to_index(interface_name: &str) -> Result<u32> {
 }
 
 pub fn unload_xdp_from_interface(interface_name: &str) -> Result<()> {
-  info!("Unloading XDP/TC");
+  debug!("Unloading XDP/TC");
   check_root()?;
   let interface_index = interface_name_to_index(interface_name)?.try_into()?;
   unsafe {
@@ -83,7 +83,7 @@ pub fn unload_xdp_from_interface(interface_name: &str) -> Result<()> {
 
 fn set_strict_mode() -> Result<()> {
   let err = unsafe { libbpf_set_strict_mode(LIBBPF_STRICT_ALL) };
-  #[cfg(not(debug_assertions))]
+  //#[cfg(not(debug_assertions))]
   unsafe {
     bpf::do_not_print();
   }
@@ -175,7 +175,7 @@ pub fn attach_xdp_and_tc_to_interface(
   let heimdall_events_map = unsafe { bpf::bpf_object__find_map_by_name((*skeleton).obj, heimdall_events_name.as_ptr()) };
   let heimdall_events_fd = unsafe { bpf::bpf_map__fd(heimdall_events_map) };
   if heimdall_events_fd < 0 {
-    log::error!("Unable to load Heimdall Events FD");
+    error!("Unable to load Heimdall Events FD");
     return Err(anyhow::Error::msg("Unable to load Heimdall Events FD"));
   }
   let opts: *const bpf::ring_buffer_opts = std::ptr::null();
@@ -186,18 +186,18 @@ pub fn attach_xdp_and_tc_to_interface(
       opts as *mut c_void, opts)
   };
   if unsafe { bpf::libbpf_get_error(heimdall_perf_buffer as *mut c_void) != 0 } {
-    log::error!("Failed to create Heimdall event buffer");
+    error!("Failed to create Heimdall event buffer");
     return Err(anyhow::Error::msg("Failed to create Heimdall event buffer"));
   }
   let handle = PerfBufferHandle(heimdall_perf_buffer);
-  std::thread::spawn(|| poll_perf_events(handle));
+  std::thread::Builder::new().name("HeimdallEvents".to_string()).spawn(|| poll_perf_events(handle))?;
 
   // Find and attach the Flowbee handler
   let flowbee_events_name = CString::new("flowbee_events").unwrap();
   let flowbee_events_map = unsafe { bpf::bpf_object__find_map_by_name((*skeleton).obj, flowbee_events_name.as_ptr()) };
   let flowbee_events_fd = unsafe { bpf::bpf_map__fd(flowbee_events_map) };
   if flowbee_events_fd < 0 {
-    log::error!("Unable to load Flowbee Events FD");
+    error!("Unable to load Flowbee Events FD");
     return Err(anyhow::Error::msg("Unable to load Flowbee Events FD"));
   }
   let opts: *const bpf::ring_buffer_opts = std::ptr::null();
@@ -208,11 +208,13 @@ pub fn attach_xdp_and_tc_to_interface(
       opts as *mut c_void, opts)
   };
   if unsafe { bpf::libbpf_get_error(flowbee_perf_buffer as *mut c_void) != 0 } {
-    log::error!("Failed to create Flowbee event buffer");
+    error!("Failed to create Flowbee event buffer");
     return Err(anyhow::Error::msg("Failed to create Flowbee event buffer"));
   }
   let handle = PerfBufferHandle(flowbee_perf_buffer);
-  std::thread::spawn(|| poll_perf_events(handle));
+  std::thread::Builder::new()
+      .name(format!("FlowEvents_{}", interface_name))
+      .spawn(|| poll_perf_events(handle))?;
 
   // Remove any previous entry
   let _r = Command::new("tc")
@@ -240,11 +242,11 @@ pub fn attach_xdp_and_tc_to_interface(
     if let Some(bridge) = &etc.bridge {
       if bridge.use_xdp_bridge {
         // Enable "promiscuous" mode on interfaces
-        info!("Enabling promiscuous mode on {}", &bridge.to_internet);
+        debug!("Enabling promiscuous mode on {}", &bridge.to_internet);
         std::process::Command::new("/bin/ip")
               .args(["link", "set", &bridge.to_internet, "promisc", "on"])
               .output()?;
-        info!("Enabling promiscuous mode on {}", &bridge.to_network);
+        debug!("Enabling promiscuous mode on {}", &bridge.to_network);
         std::process::Command::new("/bin/ip")
           .args(["link", "set", &bridge.to_network, "promisc", "on"])
           .output()?;
@@ -265,7 +267,7 @@ pub fn attach_xdp_and_tc_to_interface(
 
     if let Some(stick) = &etc.single_interface {
       // Enable "promiscuous" mode on interface
-      info!("Enabling promiscuous mode on {}", &stick.interface);
+      debug!("Enabling promiscuous mode on {}", &stick.interface);
       std::process::Command::new("/bin/ip")
         .args(["link", "set", &stick.interface, "promisc", "on"])
         .output()?;
@@ -350,7 +352,7 @@ fn poll_perf_events(heimdall_perf_buffer: PerfBufferHandle) {
   loop {
     let err = unsafe { bpf::ring_buffer__poll(heimdall_perf_buffer, 100) };
     if err < 0 {
-      log::error!("Error polling perfbuffer");
+      error!("Error polling perfbuffer");
     }
   }
 }

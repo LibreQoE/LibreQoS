@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::errors::UispIntegrationError;
 use lqos_config::Config;
 use tokio::join;
@@ -7,7 +8,7 @@ use uisp::{DataLink, Device, Site};
 /// Load required data from UISP, using the API.
 /// Requires a valid configuration with working token data.
 pub async fn load_uisp_data(
-    config: Config,
+    config: Arc<Config>,
 ) -> Result<(Vec<Site>, Vec<Device>, Vec<DataLink>), UispIntegrationError> {
     info!("Loading Devices, Sites and Data-Links from UISP");
     let (devices, sites, data_links) = join!(

@@ -11,7 +11,7 @@ pub struct DeviceCount {
 
 pub async fn count_users() -> Json<DeviceCount> {
     Json(DeviceCount{
-        shaped_devices: SHAPED_DEVICES.read().unwrap().devices.len(),
+        shaped_devices: SHAPED_DEVICES.load().devices.len(),
         unknown_ips: get_unknown_ips().len(),
     })
 }

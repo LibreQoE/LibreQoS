@@ -1,5 +1,5 @@
 use csv::StringRecord;
-use log::error;
+use tracing::error;
 use serde::{Deserialize, Serialize};
 use std::net::{Ipv4Addr, Ipv6Addr};
 

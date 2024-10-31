@@ -8,7 +8,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use itertools::Itertools;
 use serde::Serialize;
+use tracing::debug;
 use lqos_utils::units::DownUpOrder;
+use lqos_utils::unix_time::unix_now;
 
 pub struct TimeBuffer {
     buffer: Mutex<Vec<TimeEntry>>,
@@ -22,8 +24,8 @@ struct TimeEntry {
 
 #[derive(Debug, Serialize)]
 pub struct FlowDurationSummary {
-    count: usize,
-    duration: u64,
+    pub count: usize,
+    pub duration: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -53,18 +55,12 @@ impl TimeBuffer {
         }
     }
 
-    pub fn len(&self) -> usize {
-        let buffer = self.buffer.lock().unwrap();
-        buffer.len()
-    }
-
-    fn expire_over_five_minutes(&self) {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let mut buffer = self.buffer.lock().unwrap();
-        buffer.retain(|v| now - v.time < 300);
+    fn expire_over_one_minutes(&self) {
+        if let Ok(now) = unix_now() {
+            let one_minute_ago = now - 60;
+            let mut buffer = self.buffer.lock().unwrap();
+            buffer.retain(|v| v.time > one_minute_ago);
+        }
     }
 
     fn push(&self, entry: TimeEntry) {
@@ -420,6 +416,11 @@ impl TimeBuffer {
             })
             .collect()
     }
+
+    pub fn len_and_capacity(&self) -> (usize, usize) {
+        let buffer = self.buffer.lock().unwrap();
+        (buffer.len(), buffer.capacity())
+    }
 }
 
 pub static RECENT_FLOWS: Lazy<TimeBuffer> = Lazy::new(|| TimeBuffer::new());
@@ -428,11 +429,11 @@ pub struct FinishedFlowAnalysis {}
 
 impl FinishedFlowAnalysis {
     pub fn new() -> Arc<Self> {
-        log::debug!("Created Flow Analysis Endpoint");
+        debug!("Created Flow Analysis Endpoint");
 
-        std::thread::spawn(|| loop {
-            RECENT_FLOWS.expire_over_five_minutes();
-            std::thread::sleep(std::time::Duration::from_secs(60 * 5));
+        let _ = std::thread::Builder::new().name("Flow Endpoint".to_string()).spawn(|| loop {
+            RECENT_FLOWS.expire_over_one_minutes();
+            std::thread::sleep(std::time::Duration::from_secs(60));
         });
 
         Arc::new(Self {})
@@ -441,14 +442,18 @@ impl FinishedFlowAnalysis {
 
 impl FlowbeeRecipient for FinishedFlowAnalysis {
     fn enqueue(&self, key: FlowbeeKey, mut data: FlowbeeLocalData, analysis: FlowAnalysis) {
-        log::debug!("Finished flow analysis");
-        data.trim(); // Remove the trailing 30 seconds of zeroes
-        RECENT_FLOWS.push(TimeEntry {
-            time: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            data: (key, data, analysis),
-        });
+        debug!("Finished flow analysis");
+        let one_way = data.bytes_sent.down == 0 || data.bytes_sent.up == 0;
+        if !one_way {
+            data.trim(); // Remove the trailing 30 seconds of zeroes
+            RECENT_FLOWS.push(TimeEntry {
+                time: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
+                data: (key, data, analysis),
+            });
+        }
+        // TODO: Log failed connection attempts in some useful manner
     }
 }
