@@ -1,5 +1,5 @@
 use std::time::Duration;
-use tracing::{debug, error, info};
+use tracing::{debug, error};
 use lqos_utils::unix_time::time_since_boot;
 
 /// Starts a periodic garbage collector that will run every hour.
@@ -8,13 +8,13 @@ pub fn bpf_garbage_collector() {
     const SLEEP_TIME: u64 = 60 * 60; // 1 Hour
     //const SLEEP_TIME: u64 = 5 * 60; // 5 Minutes
 
-    info!("Starting BPF garbage collector");
+    debug!("Starting BPF garbage collector");
     let result = std::thread::Builder::new()
         .name("bpf_garbage_collector".to_string())
         .spawn(|| {
             loop {
                 std::thread::sleep(Duration::from_secs(SLEEP_TIME));
-                info!("Running BPF garbage collector");
+                debug!("Running BPF garbage collector");
                 throughput_garbage_collect();
             }
         });
@@ -51,7 +51,7 @@ fn throughput_garbage_collect() {
     }
 
     if !expired.is_empty() {
-        info!("Garbage collecting {} throughput entries", expired.len());
+        debug!("Garbage collecting {} throughput entries", expired.len());
         if let Err(e) = crate::bpf_iterator::expire_throughput(&mut expired) {
             error!("Failed to garbage collect throughput: {:?}", e);
         }
