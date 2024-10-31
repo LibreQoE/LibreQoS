@@ -136,7 +136,7 @@ function buildRow(i, depth=0) {
     if (node.max_throughput[1] === 0) {
         limit += "Unlimited";
     } else {
-        limit += scaleNumber(node.max_throughput[0] * 1000 * 1000, 0);
+        limit += scaleNumber(node.max_throughput[1] * 1000 * 1000, 0);
     }
     col.textContent = limit;
     row.appendChild(col);
