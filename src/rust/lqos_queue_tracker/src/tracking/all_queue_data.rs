@@ -69,8 +69,7 @@ impl AllQueueData {
         // Make download markings
         for dl in download.into_iter() {
             if let Some(q) = lock.get_mut(&dl.circuit_hash) {
-            seen_queue_ids.push(dl.circuit_id.clone());
-            if let Some(q) = lock.get_mut(&dl.circuit_id) {
+                seen_queue_ids.push(dl.circuit_hash.clone());
                 // We need to update it
                 q.drops.down = dl.drops;
                 q.marks.down = dl.marks;
@@ -91,8 +90,7 @@ impl AllQueueData {
         // Make upload markings
         for ul in upload.into_iter() {
             if let Some(q) = lock.get_mut(&ul.circuit_hash) {
-            seen_queue_ids.push(ul.circuit_id.clone());
-            if let Some(q) = lock.get_mut(&ul.circuit_id) {
+                seen_queue_ids.push(ul.circuit_hash.clone());
                 // We need to update it
                 q.drops.up = ul.drops;
                 q.marks.up = ul.marks;

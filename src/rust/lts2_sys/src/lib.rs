@@ -284,8 +284,8 @@ fn get_config() -> anyhow::Result<Lts2Config> {
 
         let remote_host = std::ffi::CString::new(remote_host).unwrap();
         let license_key = std::ffi::CString::new(license_key).unwrap();
-        let node_id = std::ffi::CString::new(config.node_id).unwrap();
-        let node_name = std::ffi::CString::new(config.node_name).unwrap();
+        let node_id = std::ffi::CString::new(config.node_id.clone()).unwrap();
+        let node_name = std::ffi::CString::new(config.node_name.clone()).unwrap();
 
         Ok(Lts2Config {
             has_remote_host: config.long_term_stats.lts_url.is_some(),

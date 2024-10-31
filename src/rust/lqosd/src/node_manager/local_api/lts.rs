@@ -2,6 +2,7 @@ mod shaper_status;
 mod last_24_hours;
 mod rest_client;
 
+use std::ops::Deref;
 use axum::{Form, Json};
 use axum::response::Redirect;
 use tracing::{info, warn};
@@ -65,7 +66,7 @@ pub async fn lts_trial_signup(
         warn!("Free trial request failed");
         Redirect::temporary("../lts_trail_fail.html")
     } else {
-        let mut cfg = load_config().unwrap();
+        let mut cfg = load_config().unwrap().deref().clone();
         cfg.long_term_stats.license_key = Some(license_key);
         bus_request(vec![BusRequest::UpdateLqosdConfig(Box::new(cfg))])
             .await

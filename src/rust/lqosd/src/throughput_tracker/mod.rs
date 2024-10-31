@@ -360,7 +360,7 @@ fn submit_throughput_stats(
             }
 
             // Send the shaped devices
-            let shaped_devices = SHAPED_DEVICES.read().unwrap().devices.clone();
+            let shaped_devices = SHAPED_DEVICES.load().devices.clone();
             let mut circuit_map: FxHashMap<String, Lts2Circuit> = FxHashMap::default();
             for device in shaped_devices.into_iter() {
                 if let Some(circuit) = circuit_map.get_mut(&device.circuit_id) {

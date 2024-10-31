@@ -20,7 +20,7 @@ where T: serde::de::DeserializeOwned
 
     let received_data = client
         .get(url)
-        .header("x-license-key", config.long_term_stats.license_key.unwrap_or("".to_string()))
+        .header("x-license-key", config.long_term_stats.license_key.clone().unwrap_or("".to_string()))
         .header("x-node-id", config.node_id.to_string())
         .send()
         .await

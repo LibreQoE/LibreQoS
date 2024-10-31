@@ -36,28 +36,28 @@ pub struct CakeData {
 pub async fn last_24_hours()-> Result<Json<Vec<ThroughputData>>, StatusCode> {
     let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let seconds = 24 * 60 * 60;
-    let url = format!("https://{}/shaper_api/totalThroughput/{seconds}", config.long_term_stats.lts_url.unwrap_or("stats.libreqos.io".to_string()));
+    let url = format!("https://{}/shaper_api/totalThroughput/{seconds}", config.long_term_stats.clone().lts_url.unwrap_or("stats.libreqos.io".to_string()));
     let throughput = lts_query(&url).await?;
     Ok(Json(throughput))
 }
 
 pub async fn throughput_period(Path(seconds): Path<i32>)-> Result<Json<Vec<ThroughputData>>, StatusCode> {
     let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let url = format!("https://{}/shaper_api/totalThroughput/{seconds}", config.long_term_stats.lts_url.unwrap_or("stats.libreqos.io".to_string()));
+    let url = format!("https://{}/shaper_api/totalThroughput/{seconds}", config.long_term_stats.lts_url.clone().unwrap_or("stats.libreqos.io".to_string()));
     let throughput = lts_query(&url).await?;
     Ok(Json(throughput))
 }
 
 pub async fn retransmits_period(Path(seconds): Path<i32>)-> Result<Json<Vec<ThroughputData>>, StatusCode> {
     let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let url = format!("https://{}/shaper_api/totalRetransmits/{seconds}", config.long_term_stats.lts_url.unwrap_or("stats.libreqos.io".to_string()));
+    let url = format!("https://{}/shaper_api/totalRetransmits/{seconds}", config.long_term_stats.lts_url.clone().unwrap_or("stats.libreqos.io".to_string()));
     let throughput = lts_query(&url).await?;
     Ok(Json(throughput))
 }
 
 pub async fn cake_period(Path(seconds): Path<i32>)-> Result<Json<Vec<CakeData>>, StatusCode> {
     let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let url = format!("https://{}/shaper_api/totalCake/{seconds}", config.long_term_stats.lts_url.unwrap_or("stats.libreqos.io".to_string()));
+    let url = format!("https://{}/shaper_api/totalCake/{seconds}", config.long_term_stats.lts_url.clone().unwrap_or("stats.libreqos.io".to_string()));
     let throughput = lts_query(&url).await?;
     Ok(Json(throughput))
 }
