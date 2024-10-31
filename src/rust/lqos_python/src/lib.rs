@@ -559,7 +559,7 @@ fn automatic_import_uisp() -> PyResult<bool> {
 #[pyfunction]
 fn automatic_import_splynx() -> PyResult<bool> {
   let config = lqos_config::load_config().unwrap();
-  Ok(config.uisp_integration.enable_uisp)
+  Ok(config.spylnx_integration.enable_spylnx)
 }
 
 #[pyfunction]
