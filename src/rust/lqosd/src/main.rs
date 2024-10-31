@@ -141,6 +141,7 @@ fn main() -> Result<()> {
   throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone(), flow_tx)?;
   spawn_queue_monitor()?;
   let system_usage_tx = system_stats::start_system_stats()?;
+  lqos_sys::bpf_garbage_collector();
 
   // Handle signals
   let mut signals = Signals::new([SIGINT, SIGHUP, SIGTERM])?;

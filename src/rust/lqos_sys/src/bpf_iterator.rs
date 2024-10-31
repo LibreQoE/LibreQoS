@@ -258,3 +258,12 @@ pub fn end_flows(flows: &mut [FlowbeeKey]) -> anyhow::Result<()> {
 
   Ok(())
 }
+
+pub(crate) fn expire_throughput(keys: &mut [XdpIpAddress]) -> anyhow::Result<()> {
+  let mut map = BpfMap::<XdpIpAddress, HostCounter>::from_path("/sys/fs/bpf/map_traffic")?;
+
+  for key in keys {
+      map.delete(key).unwrap();
+  }
+  Ok(())
+}
