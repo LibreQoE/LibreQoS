@@ -1,4 +1,4 @@
-use dashmap::DashSet;
+use std::collections::HashSet;
 use lqos_utils::units::DownUpOrder;
 use crate::NetworkJsonTransport;
 
@@ -26,7 +26,7 @@ pub struct NetworkJsonNode {
     /// Approximate RTTs reported for this level of the tree.
     /// It's never going to be as statistically accurate as the actual
     /// numbers, being based on medians.
-    pub rtts: DashSet<u16>,
+    pub rtts: HashSet<u16>,
 
     /// A list of indices in the `NetworkJson` vector of nodes
     /// linking to parent nodes

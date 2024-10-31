@@ -139,7 +139,7 @@ fn connect_queues_to_circuit_up(structure: &[QueueNode], queues: &[QueueType]) -
 
 fn all_queue_reader() {
   let start = Instant::now();
-  let structure = QUEUE_STRUCTURE.read().unwrap();
+  let structure = QUEUE_STRUCTURE.load();
   if let Some(structure) = &structure.maybe_queues {
     if let Ok(config) = lqos_config::load_config() {
       // Get all the queues

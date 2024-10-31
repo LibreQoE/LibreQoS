@@ -47,7 +47,7 @@ fn throughput_tracker() -> ContainerSize {
 }
 
 fn shaped_devices() -> (ContainerSize, usize) {
-    let sd = SHAPED_DEVICES.read().unwrap();
+    let sd = SHAPED_DEVICES.load();
     let size = sd.devices.len();
     let capacity = sd.devices.capacity();
     let trie_size = sd.trie.len();

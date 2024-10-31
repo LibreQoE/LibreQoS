@@ -66,14 +66,14 @@ fn anonymous_usage_dump() -> anyhow::Result<()> {
         data.on_a_stick = cfg.on_a_stick_mode();
 
         data.node_id = cfg.node_id.clone();
-        if let Some(bridge) = cfg.bridge {
+        if let Some(bridge) = &cfg.bridge {
             data.using_xdp_bridge = bridge.use_xdp_bridge;
         }
-        server = cfg.usage_stats.anonymous_server;
+        server = cfg.usage_stats.anonymous_server.clone();
     }
 
     data.git_hash = env!("GIT_HASH").to_string();
-    data.shaped_device_count = SHAPED_DEVICES.read().unwrap().devices.len();
+    data.shaped_device_count = SHAPED_DEVICES.load().devices.len();
     data.net_json_len = NETWORK_JSON.read().unwrap().get_nodes_when_ready().len();
 
     data.high_watermark_bps = (

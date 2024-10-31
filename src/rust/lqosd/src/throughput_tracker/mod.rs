@@ -116,7 +116,7 @@ fn throughput_task(
 ) {
     // Obtain the flow timeout from the config, default to 30 seconds
     let timeout_seconds = if let Ok(config) = lqos_config::load_config() {
-        if let Some(flow_config) = config.flows {
+        if let Some(flow_config) = &config.flows {
             flow_config.flow_timeout_seconds
         } else {
             30
@@ -127,7 +127,7 @@ fn throughput_task(
 
     // Obtain the netflow_enabled from the config, default to false
     let netflow_enabled = if let Ok(config) = lqos_config::load_config() {
-        if let Some(flow_config) = config.flows {
+        if let Some(flow_config) = &config.flows {
             flow_config.netflow_enabled
         } else {
             false
@@ -264,7 +264,7 @@ fn submit_throughput_stats(
         std::sync::atomic::Ordering::Relaxed,
     ) {
         if changed {
-            let shaped_devices = SHAPED_DEVICES.read().unwrap().devices.clone();
+            let shaped_devices = SHAPED_DEVICES.load().devices.clone();
             let _ = long_term_stats_tx
                 .blocking_send(StatsUpdateMessage::ShapedDevicesChanged(shaped_devices));
             lts2_needs_shaped_devices = true;
@@ -1218,7 +1218,7 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
         }
     }
 
-    let sd = SHAPED_DEVICES.read().unwrap();
+    let sd = SHAPED_DEVICES.load();
 
     let result = table
         .iter()
@@ -1263,7 +1263,7 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
     if let Ok(ip) = ip.parse::<IpAddr>() {
         let ip = XdpIpAddress::from_ip(ip);
         let lock = ALL_FLOWS.lock().unwrap();
-        let sd = SHAPED_DEVICES.read().unwrap();
+        let sd = SHAPED_DEVICES.load();
         let matching_flows: Vec<_> = lock
             .iter()
             .filter(|(key, _)| key.local_ip == ip)

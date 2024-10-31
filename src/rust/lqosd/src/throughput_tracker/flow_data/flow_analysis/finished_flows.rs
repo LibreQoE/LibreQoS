@@ -60,7 +60,6 @@ impl TimeBuffer {
             let one_minute_ago = now - 60;
             let mut buffer = self.buffer.lock().unwrap();
             buffer.retain(|v| v.time > one_minute_ago);
-            buffer.shrink_to_fit();
         }
     }
 

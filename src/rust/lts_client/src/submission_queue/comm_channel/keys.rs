@@ -15,11 +15,11 @@ pub(crate) async fn key_exchange() -> bool {
     let cfg = load_config().unwrap();
     let node_id = cfg.node_id.clone();
     let node_name = if !cfg.node_name.is_empty() {
-        cfg.node_name
+        cfg.node_name.clone()
     } else {
         node_id.clone()
     };
-    let license_key = cfg.long_term_stats.license_key.unwrap();
+    let license_key = cfg.long_term_stats.license_key.clone().unwrap();
     let keypair = (KEYPAIR.read().await).clone();
     match exchange_keys_with_license_server(node_id, node_name, license_key, keypair.public_key.clone()).await {
         Ok(LicenseReply::MyPublicKey { public_key }) => {

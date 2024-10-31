@@ -1571,26 +1571,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49f1f14873335454500d59611f1cf4a4b0f786f9ac11f4312a78e4cf2566695b"
 
 [[package]]
-name = "jemalloc-sys"
-version = "0.5.4+5.3.0-patched"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac6c1946e1cea1788cbfde01c993b52a10e2da07f4bac608228d1bed20bfebf2"
-dependencies = [
- "cc",
- "libc",
-]
-
-[[package]]
-name = "jemallocator"
-version = "0.5.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0de374a9f8e63150e6f5e8a60cc14c668226d7a347d8aee1a45766e3c4dd3bc"
-dependencies = [
- "jemalloc-sys",
- "libc",
-]
-
-[[package]]
 name = "js-sys"
 version = "0.3.70"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1650,6 +1630,16 @@ checksum = "4979f22fdb869068da03c9f7528f8297c6fd2606bc3a4affe42e6a823fdb8da4"
 dependencies = [
  "cfg-if",
  "windows-targets 0.52.6",
+]
+
+[[package]]
+name = "libmimalloc-sys"
+version = "0.1.39"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23aa6811d3bd4deb8a84dde645f943476d13b248d818edcf8ce0b2f37f036b44"
+dependencies = [
+ "cc",
+ "libc",
 ]
 
 [[package]]
@@ -1721,11 +1711,13 @@ dependencies = [
 name = "lqos_config"
 version = "0.1.0"
 dependencies = [
+ "arc-swap",
  "csv",
  "dashmap",
  "ip_network",
  "ip_network_table",
  "lqos_utils",
+ "once_cell",
  "pyo3",
  "serde",
  "serde_json",
@@ -1782,6 +1774,7 @@ name = "lqos_queue_tracker"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arc-swap",
  "criterion",
  "dashmap",
  "lqos_bus",
@@ -1876,7 +1869,6 @@ dependencies = [
  "ip_network",
  "ip_network_table",
  "itertools 0.12.1",
- "jemallocator",
  "lqos_bus",
  "lqos_config",
  "lqos_heimdall",
@@ -1885,6 +1877,7 @@ dependencies = [
  "lqos_sys",
  "lqos_utils",
  "lts_client",
+ "mimalloc",
  "mime_guess",
  "nix",
  "once_cell",
@@ -2002,6 +1995,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "mimalloc"
+version = "0.1.43"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68914350ae34959d83f732418d51e2427a794055d0b9529f48259ac07af65633"
+dependencies = [
+ "libmimalloc-sys",
 ]
 
 [[package]]

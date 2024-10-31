@@ -51,7 +51,7 @@ async fn check_license(unix_time: u64) -> LicenseState {
         // If it isn't, we need to try very gently to see if a pending
         // request has been submitted.
         if cfg.long_term_stats.gather_stats && cfg.long_term_stats.license_key.is_some() {
-            if let Some(key) = cfg.long_term_stats.license_key {
+            if let Some(key) = &cfg.long_term_stats.license_key {
                 if key == MISERLY_NO_KEY {
                     warn!("You are using the self-hosting license key. We'd be happy to sell you a real one.");
                     return LicenseState::Valid { expiry: 0, stats_host: "192.168.100.11:9127".to_string() }

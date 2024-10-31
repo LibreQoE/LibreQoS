@@ -101,8 +101,8 @@ pub(crate) fn get_weights_rust() -> Result<Vec<DeviceWeightResponse>> {
         println!("Using LTS weights");
 
         let config = load_config().unwrap();
-        let org_key = config.long_term_stats.license_key.unwrap();
-        let node_id = config.node_id;
+        let org_key = config.long_term_stats.license_key.clone().unwrap();
+        let node_id = config.node_id.clone();
 
         // Get current local time as unix timestamp
         let now = chrono::Utc::now().timestamp();

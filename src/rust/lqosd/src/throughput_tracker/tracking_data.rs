@@ -58,7 +58,7 @@ impl ThroughputTracker {
     let mut circuit_id = None;
     let mut circuit_hash = None;
     let lookup = xdp_ip.as_ipv6();
-    let cfg = SHAPED_DEVICES.read().unwrap();
+    let cfg = SHAPED_DEVICES.load();
     if let Some((_, id)) = cfg.trie.longest_match(lookup) {
       circuit_id = Some(cfg.devices[*id].circuit_id.clone());
       circuit_hash = Some(cfg.devices[*id].circuit_hash);
@@ -71,7 +71,7 @@ impl ThroughputTracker {
     circuit_id: Option<String>,
   ) -> Option<String> {
     if let Some(circuit_id) = circuit_id {
-      let shaped = SHAPED_DEVICES.read().unwrap();
+      let shaped = SHAPED_DEVICES.load();
       let parent_name = shaped
         .devices
         .iter()
@@ -212,17 +212,6 @@ impl ThroughputTracker {
       let since_boot = Duration::from(now);
       let expire = (since_boot - Duration::from_secs(timeout_seconds)).as_nanos() as u64;
 
-      // Tracker for per-circuit RTT data. We're losing some of the smoothness by sampling
-      // every flow; the idea is to combine them into a single entry for the circuit. This
-      // should limit outliers.
-      //let mut rtt_circuit_tracker: FxHashMap<XdpIpAddress, [Vec<RttData>; 2]> = FxHashMap::default();
-
-      // Tracker for TCP retries. We're storing these per second.
-      //let mut tcp_retries: FxHashMap<XdpIpAddress, DownUpOrder<u64>> = FxHashMap::default();
-
-      // Track the expired keys
-      //let mut expired_keys = Vec::new();
-
       let mut all_flows_lock = ALL_FLOWS.lock().unwrap();
         
       // Track through all the flows
@@ -355,13 +344,10 @@ impl ThroughputTracker {
       if !expired_keys.is_empty() {
         for key in expired_keys.iter() {
           // Send it off to netperf for analysis if we are supporting doing so.
-          if let Some(d) = all_flows_lock.get(&key) {
+          if let Some(d) = all_flows_lock.remove(&key) {
             let _ = sender.send((key.clone(), (d.0.clone(), d.1.clone())));
           }
-          // Remove the flow from circulation
-          all_flows_lock.remove(&key);
         }
-        all_flows_lock.shrink_to_fit();
 
         let ret = lqos_sys::end_flows(expired_keys);
         if let Err(e) = ret {
@@ -421,7 +407,6 @@ impl ThroughputTracker {
 
   pub(crate) fn next_cycle(&self) {
     self.cycle.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    self.raw_data.shrink_to_fit();
   }
 
   pub(crate) fn bits_per_second(&self) -> DownUpOrder<u64> {

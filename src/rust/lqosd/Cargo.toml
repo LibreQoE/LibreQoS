@@ -56,5 +56,6 @@ crossbeam-queue = { workspace = true }
 
 
 # Support JemAlloc on supported platforms
-[target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]
-jemallocator = {  workspace = true }
+#[target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]
+#jemallocator = {  workspace = true }
+mimalloc = { workspace = true }

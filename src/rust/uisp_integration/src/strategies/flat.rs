@@ -5,6 +5,7 @@ use lqos_config::Config;
 use serde::Serialize;
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 use tracing::{error, info};
 
 /// Represents a shaped device in the ShapedDevices.csv file.
@@ -31,7 +32,7 @@ struct ShapedDevice {
 /// * `config` - The configuration
 /// * `ip_ranges` - The IP ranges to use for the network
 pub async fn build_flat_network(
-    config: Config,
+    config: Arc<Config>,
     ip_ranges: IpRanges,
 ) -> Result<(), UispIntegrationError> {
     // Load the devices from UISP

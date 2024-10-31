@@ -37,16 +37,16 @@ use stats::{BUS_REQUESTS, TIME_TO_POLL_HOSTS, HIGH_WATERMARK, FLOWS_TRACKED};
 use throughput_tracker::flow_data::get_rtt_events_per_second;
 use crate::ip_mapping::clear_hot_cache;
 
-// Use JemAllocator only on supported platforms
-// #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-// use jemallocator::Jemalloc;
+// Use MiMalloc only on supported platforms
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+use mimalloc::MiMalloc;
 
 use tracing::level_filters::LevelFilter;
 
 // Use JemAllocator only on supported platforms
-// #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-// #[global_allocator]
-// static GLOBAL: Jemalloc = Jemalloc;
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 /// Configure a highly detailed logging system.
 pub fn set_console_logging() -> anyhow::Result<()> {
@@ -143,9 +143,12 @@ fn main() -> Result<()> {
   shaped_devices_tracker::shaped_devices_watcher()?;
   shaped_devices_tracker::network_json_watcher()?;
   anonymous_usage::start_anonymous_usage();
+  throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone(), flow_tx)?;
+  spawn_queue_monitor()?;
   let system_usage_tx = system_stats::start_system_stats()?;
   throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone(), flow_tx, system_usage_tx.clone())?;
   spawn_queue_monitor()?;
+  lqos_sys::bpf_garbage_collector();
 
   // Handle signals
   let mut signals = Signals::new([SIGINT, SIGHUP, SIGTERM])?;

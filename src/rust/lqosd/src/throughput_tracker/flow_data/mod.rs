@@ -38,9 +38,9 @@ pub fn setup_netflow_tracker() -> Result<Sender<(FlowbeeKey, (FlowbeeLocalData, 
         let mut endpoints: Vec<Arc<dyn FlowbeeRecipient>> = Vec::new();
         endpoints.push(FinishedFlowAnalysis::new());
 
-        if let Some(flow_config) = config.flows {
+        if let Some(flow_config) = &config.flows {
             if let (Some(ip), Some(port), Some(version)) = (
-                flow_config.netflow_ip,
+                flow_config.netflow_ip.clone(),
                 flow_config.netflow_port,
                 flow_config.netflow_version,
             ) {
