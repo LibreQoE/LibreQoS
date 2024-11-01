@@ -373,7 +373,7 @@ fn use_bin_packing_to_balance_cpu() -> PyResult<bool> {
   let config = lqos_config::load_config().unwrap();
   Ok(config.queues.use_binpacking)
 }
-https://github.com/LibreQoE/LibreQoS/pull/564
+
 #[pyfunction]
 fn monitor_mode_only() -> PyResult<bool> {
   let config = lqos_config::load_config().unwrap();
