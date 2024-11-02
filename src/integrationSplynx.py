@@ -1,5 +1,7 @@
+
 from pythonCheck import checkPythonVersion
 checkPythonVersion()
+
 import requests
 import warnings
 import os
@@ -13,6 +15,8 @@ from requests.auth import HTTPBasicAuth
 if find_ipv6_using_mikrotik() == True:
 	from mikrotikFindIPv6 import pullMikrotikIPv6  
 from integrationCommon import NetworkGraph, NetworkNode, NodeType
+import os
+import csv
 
 def buildHeaders():
 	"""
