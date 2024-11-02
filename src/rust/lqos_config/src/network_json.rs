@@ -64,6 +64,10 @@ impl NetworkJson {
             name: "Root".to_string(),
             max_throughput: (0, 0),
             current_throughput: DownUpOrder::zeroed(),
+            current_packets: DownUpOrder::zeroed(),
+            current_tcp_packets: DownUpOrder::zeroed(),
+            current_udp_packets: DownUpOrder::zeroed(),
+            current_icmp_packets: DownUpOrder::zeroed(),
             current_tcp_retransmits: DownUpOrder::zeroed(),
             current_drops: DownUpOrder::zeroed(),
             current_marks: DownUpOrder::zeroed(),
@@ -150,6 +154,10 @@ impl NetworkJson {
         //log::warn!("Locking network tree for throughput cycle");
         self.nodes.iter_mut().for_each(|n| {
             n.current_throughput.set_to_zero();
+            n.current_packets.set_to_zero();
+            n.current_tcp_packets.set_to_zero();
+            n.current_udp_packets.set_to_zero();
+            n.current_icmp_packets.set_to_zero();
             n.current_tcp_retransmits.set_to_zero();
             n.rtts.clear();
             n.current_drops.set_to_zero();
@@ -164,11 +172,19 @@ impl NetworkJson {
         &mut self,
         targets: &[usize],
         bytes: (u64, u64),
+        packets: (u64, u64),
+        tcp: (u64, u64),
+        udp: (u64, u64),
+        icmp: (u64, u64),
     ) {
         for idx in targets {
             // Safety first: use "get" to ensure that the node exists
             if let Some(node) = self.nodes.get_mut(*idx) {
                 node.current_throughput.checked_add_tuple(bytes);
+                node.current_packets.checked_add_tuple(packets);
+                node.current_tcp_packets.checked_add_tuple(tcp);
+                node.current_udp_packets.checked_add_tuple(udp);
+                node.current_icmp_packets.checked_add_tuple(icmp);
             } else {
                 warn!("No network tree entry for index {idx}");
             }
@@ -248,6 +264,10 @@ fn recurse_node(
             json_to_u32(json.get("uploadBandwidthMbps")),
         ),
         current_throughput: DownUpOrder::zeroed(),
+        current_packets: DownUpOrder::zeroed(),
+        current_tcp_packets: DownUpOrder::zeroed(),
+        current_udp_packets: DownUpOrder::zeroed(),
+        current_icmp_packets: DownUpOrder::zeroed(),
         current_tcp_retransmits: DownUpOrder::zeroed(),
         current_drops: DownUpOrder::zeroed(),
         current_marks: DownUpOrder::zeroed(),

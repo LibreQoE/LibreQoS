@@ -11,6 +11,14 @@ pub struct NetworkJsonTransport {
     pub max_throughput: (u32, u32),
     /// Current node throughput
     pub current_throughput: (u64, u64),
+    /// Current node packets
+    pub current_packets: (u64, u64),
+    /// Current TCP packets
+    pub current_tcp_packets: (u64, u64),
+    /// Current UDP packets
+    pub current_udp_packets: (u64, u64),
+    /// Current ICMP packets
+    pub current_icmp_packets: (u64, u64),
     /// Current count of TCP retransmits
     pub current_retransmits: (u64, u64),
     /// Cake marks

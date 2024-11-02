@@ -108,12 +108,24 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
         // Summarize everything after n_queues
         if nodes.len() > n_queues {
             let mut other_bw = (0, 0);
+            let mut other_packets = (0, 0);
+            let mut other_tcp_packets = (0, 0);
+            let mut other_udp_packets = (0, 0);
+            let mut other_icmp_packets = (0, 0);
             let mut other_xmit = (0, 0);
             let mut other_marks = (0, 0);
             let mut other_drops = (0, 0);
             nodes.drain(n_queues..).for_each(|n| {
                 other_bw.0 += n.1.current_throughput.0;
                 other_bw.1 += n.1.current_throughput.1;
+                other_packets.0 += n.1.current_packets.0;
+                other_packets.1 += n.1.current_packets.1;
+                other_tcp_packets.0 += n.1.current_tcp_packets.0;
+                other_tcp_packets.1 += n.1.current_tcp_packets.1;
+                other_udp_packets.0 += n.1.current_udp_packets.0;
+                other_udp_packets.1 += n.1.current_udp_packets.1;
+                other_icmp_packets.0 += n.1.current_icmp_packets.0;
+                other_icmp_packets.1 += n.1.current_icmp_packets.1;
                 other_xmit.0 += n.1.current_retransmits.0;
                 other_xmit.1 += n.1.current_retransmits.1;
                 other_marks.0 += n.1.current_marks.0;
@@ -128,6 +140,10 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
                     name: "Others".into(),
                     max_throughput: (0, 0),
                     current_throughput: other_bw,
+                    current_packets: other_packets,
+                    current_tcp_packets: other_tcp_packets,
+                    current_udp_packets: other_udp_packets,
+                    current_icmp_packets: other_icmp_packets,
                     current_retransmits: other_xmit,
                     current_marks: other_marks,
                     current_drops: other_drops,
