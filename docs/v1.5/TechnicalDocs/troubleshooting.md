@@ -55,7 +55,7 @@ At the command-line, type ```sudo RUST_LOG=info /opt/libreqos/src/bin/lqosd``` w
 
 ### RTNETLINK answers: Invalid argument
 
-This tends to show up when the MQ qdisc cannot be added correctly to the NIC interface. This would suggest the NIC has insufficient RX/TX queues. Please make sure you are using the [recommended NICs](../SystemRequirements/Networking.md).
+This tends to show up when the MQ qdisc cannot be added correctly to the NIC interface. This would suggest the NIC has insufficient RX/TX queues. Please make sure you are using the [recommended NICs](../../SystemRequirements/Compute.md#network-interface-requirements).
 
 ### InfluxDB "Failed to update bandwidth graphs"
 
