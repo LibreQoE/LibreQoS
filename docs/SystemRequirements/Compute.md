@@ -51,7 +51,7 @@ Here are some convenient, off-the-shelf server options to consider:
 | 10 Gbps | [Supermicro AS -1115S-FWTRT](https://store.supermicro.com/us_en/1u-amd-epyc-8004-compact-server-as-1115s-fwtrt.html) | 8124P | 2x16GB | Mellanox (2 x SFP28) | | 0°C ~ 40°C (32°F ~ 104°F) |
 | 25 Gbps | [Supermicro AS -1115S-FWTRT](https://store.supermicro.com/us_en/1u-amd-epyc-8004-compact-server-as-1115s-fwtrt.html) | 8534P | 4x16GB | Mellanox (2 x SFP28) | | 0°C ~ 40°C (32°F ~ 104°F) |
 
-## Network Interface Requirements
+### Network Interface Requirements
 * One management network interface completely separate from the traffic shaping interfaces. Usually this would be the Ethernet interface built in to the motherboard.
 * Dedicated Network Interface Card for Shaping Interfaces
   * NIC must have 2 or more interfaces for traffic shaping.
