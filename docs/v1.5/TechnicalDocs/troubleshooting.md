@@ -2,28 +2,55 @@
 
 ## Common Issues
 
+### No WebUI at x.x.x.x:9123
+
+The WebUI is controlled by the lqosd service. Usually, when the WebUI doesn't start, it is related to lqosd being in a failed state.
+Check to see if the lqosd service is running:
+```
+sudo systemctl status lqosd
+```
+
+If the status is 'failed', examine why using journalctl, which shows the full status of the service:
+```
+sudo journalctl -u lqosd -b
+```
+Press the End key on the keyboard to take you to the bottom of the log to see the latest updates to that log.
+
+Lqosd will provide specific reasons it failed, such as an interface not being up, an interface lacking multi-queue, or other cocnerns.
+
 ### LibreQoS Is Running, But Traffic Not Shaping
 
-- In /etc/lqos.conf swap the interfaces
-- Restart lqosd
-```
-cd /opt/libreqos/src
-sudo python3 LibreQoS.py
-```
+In /etc/lqos.conf, ensure that `to_internet` and `to_network` are set correctly. If not, simply swap the interfaces between those and restart lqosd and the scheduler.
 
-If that fixes it, and if you are using the scheduler service, run ```sudo systemctl restart lqos_scheduler```
+```
+sudo systemctl restart lqosd lqos_scheduler
+```
 
 Make sure your services are running properly
 
-- `lqosd.service`
-- `lqos_scheduler`
+```
+sudo systemctl status lqosd lqos_scheduler
+```
 
-The Web UI and lqos_scheduler are dependent on the `lqos.service` being in a healthy, running state.
+The service lqos_scheduler is dependent on the lqosd service being in a healthy, running state.
 
-For example to check the status of lqosd, run:
-```sudo systemctl status lqosd```
+### Service lqosd is not running or failed to start
 
-### lqosd not running or failed to start
+Check to see the state of the lqosd service:
+```
+sudo systemctl status lqosd
+```
+
+If the status is 'failed', examine why using journalctl, which shows the full status of the service:
+```
+sudo journalctl -u lqosd -b
+```
+Press the End key on the keyboard to take you to the bottom of the log to see the latest updates to that log.
+
+Lqosd will provide specific reasons it failed, such as an interface not being up, an interface lacking multi-queue, or other cocnerns.
+
+### Advanced lqosd debug
+
 At the command-line, type ```sudo RUST_LOG=info /opt/libreqos/src/bin/lqosd``` which will provide specifics regarding why it failed to start.
 
 ### RTNETLINK answers: Invalid argument

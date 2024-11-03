@@ -8,7 +8,7 @@
 
 ### Download .DEB Package (Recommended Method)
 
-Donwload the latest .deb from https://libreqos.io/#download .
+Donwload the latest .deb from [libreqos.io/#download](https://libreqos.io/#download).
 
 Unzip the .zip file and transfer the .deb to your LibreQoS box, installing with:
 ```
