@@ -1,12 +1,13 @@
-# LibreQoS systemd service daemons
+# LibreQoS systemd services
 
-lqosd
+## What each service does
+### lqosd
 
 - Manages actual XDP code.
 - Coded in Rust.
 - Runs the GUI available at http://a.b.c.d:9123
 
-lqos_scheduler
+### lqos_scheduler
 
 - lqos_scheduler performs continuous refreshes of LibreQoS' shapers, including pulling from any enabled CRM Integrations (UISP, Splynx).
 - Actions:
