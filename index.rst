@@ -18,7 +18,6 @@ Welcome to the LibreQoS documentation!
 
    docs/Quickstart/networkdesignassumptions
    docs/SystemRequirements/Compute
-   docs/SystemRequirements/Networking
 
 .. toctree::
    :maxdepth: 1
