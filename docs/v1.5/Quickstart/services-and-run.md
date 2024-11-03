@@ -12,26 +12,6 @@ lqos_scheduler
 - Every 30 minutes: Update queues, pulling new configuration from CRM integration if enabled
   - Minute interval is adjustable with the setting `queue_refresh_interval_mins` in `/etc/lqos.conf`.
 
-## Run daemons with systemd
-
-Note: If you used the .deb installer, you can skip this section. The .deb installer automatically sets these up.
-
-You can setup `lqosd`, and `lqos_scheduler` as systemd services.
-
-```shell
-sudo cp /opt/libreqos/src/bin/lqosd.service.example /etc/systemd/system/lqosd.service
-sudo cp /opt/libreqos/src/bin/lqos_scheduler.service.example /etc/systemd/system/lqos_scheduler.service
-```
-
-Finally, run
-
-```shell
-sudo systemctl daemon-reload
-sudo systemctl enable lqosd lqos_scheduler
-```
-
-You can now point a web browser at `http://a.b.c.d:9123` (replace `a.b.c.d` with the management IP address of your shaping server) and enjoy a real-time view of your network.
-
 ## Debugging lqos_scheduler
 
 In the background, lqos_scheduler runs scheduler.py, which in turn runs LibreQoS.py
