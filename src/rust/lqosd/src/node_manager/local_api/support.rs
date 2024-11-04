@@ -8,7 +8,7 @@ use lqos_config::load_config;
 use lqos_support_tool::{run_sanity_checks, SanityChecks};
 
 pub async fn run_sanity_check() -> Json<SanityChecks> {
-    let mut status = run_sanity_checks().unwrap();
+    let mut status = run_sanity_checks(false).unwrap();
     status.results.sort_by(|a,b| a.success.cmp(&b.success));
     Json(status)
 }
@@ -25,7 +25,7 @@ pub async fn gather_support_data(
     let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
     let filename = format!("libreqos_{}.support", timestamp);
     let lts_key = if let Ok(cfg) = load_config() {
-        cfg.long_term_stats.license_key.unwrap_or("None".to_string())
+        cfg.long_term_stats.license_key.clone().unwrap_or("None".to_string())
     } else {
         "None".to_string()
     };
@@ -46,7 +46,7 @@ pub async fn submit_support_data(
     info: Json<SupportMetadata>
 ) -> String {
     let lts_key = if let Ok(cfg) = load_config() {
-        cfg.long_term_stats.license_key.unwrap_or("None".to_string())
+        cfg.long_term_stats.license_key.clone().unwrap_or("None".to_string())
     } else {
         "None".to_string()
     };

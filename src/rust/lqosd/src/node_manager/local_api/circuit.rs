@@ -11,7 +11,7 @@ pub struct CircuitId {
 
 pub async fn get_circuit_by_id(Json(id) : Json<CircuitId>) -> Result<Json<Vec<ShapedDevice>>, StatusCode> {
     let safe_id = id.id.to_lowercase().trim().to_string();
-    let reader = SHAPED_DEVICES.read().unwrap();
+    let reader = SHAPED_DEVICES.load();
     let devices: Vec<ShapedDevice> = reader
         .devices
         .iter()

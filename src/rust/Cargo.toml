@@ -44,6 +44,8 @@ anyhow = "1"
 thiserror = "1"
 tokio = { version = "1", features = [ "full" ] }
 log = "0"
+tracing = "0.1"
+tracing-subscriber = {  version = "0.3", features = ["env-filter"] }
 bincode = "1"
 once_cell = "1"
 nix = {  version = "0", features = ["time"] }
@@ -55,18 +57,23 @@ ip_network_table = "0"
 ip_network = "0"
 sha2 = "0"
 uuid = { version = "1", features = ["v4", "fast-rng" ] }
-dashmap = "5"
+dashmap = "5.1.0"
 toml = "0.8.8"
-zerocopy = {version = "0.6.1", features = [ "simd" ] }
-sysinfo = "0"
+zerocopy = {version = "0.8.5", features = [ "derive", "zerocopy-derive", "simd" ] }
+sysinfo = { version = "0", default-features = false, features = [ "system" ] }
 default-net = "0"
 reqwest = { version = "0", features = ["json", "blocking"] }
 pyo3 = "0.20.3"
 colored = "2"
-miniz_oxide = "0.7"
+miniz_oxide = "0.8"
 byteorder = "1"
 num-traits = "0.2.19"
 clap = { version = "4", features = ["derive"] }
+timerfd = "1.6"
+crossbeam-channel = { version = "0.5" }
+crossbeam-queue = "0.3.11"
+arc-swap = "1.7.1"
 
 # May have to change this one for ARM?
 jemallocator = "0.5"
+mimalloc = "0.1.43"

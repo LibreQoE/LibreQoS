@@ -1,6 +1,7 @@
 use std::sync::atomic::AtomicU64;
 use axum::Json;
 use serde::{Deserialize, Serialize};
+use tracing::error;
 use lqos_config::load_config;
 use lqos_utils::unix_time::unix_now;
 
@@ -54,8 +55,8 @@ pub async fn version_check() -> Json<String> {
                     return Json(String::from("Update available"));
                 }
             } else {
-                log::error!("Unable to send version check");
-                log::error!("{res:?}");
+                error!("Unable to send version check");
+                error!("{res:?}");
             }
         }
     }

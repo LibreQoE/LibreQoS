@@ -1,6 +1,111 @@
 import { DashboardGraph } from "./graphs/dashboard_graph";
 import {lerpGreenToRedViaOrange} from "./helpers/scaling";
 import {isRedacted} from "./helpers/redact";
+import {GenericRingBuffer} from "./helpers/ringbuffer";
+import {trimStringWithElipsis} from "./helpers/strings_help";
+
+class AllTreeSankeyGraph extends GenericRingBuffer {
+    constructor() {
+        super(10);
+    }
+
+    onTick(graph) {
+        let self = this;
+        $.get("/local-api/networkTree", (data) => {
+            // Maintain a 10-second ringbuffer of recent data
+            this.push(data);
+
+            let redact = isRedacted();
+            let nodes = [];
+            let links = [];
+
+            // Build the basic tree from the current head, to ensure
+            // that we're displaying the most recent nodes.
+            let head = self.getHead();
+            if (head === undefined) { return }
+            let startDepth = head[rootId][1].parents.length - 1;
+            for (let i=0; i<head.length; i++) {
+                let depth = head[i][1].parents.length - startDepth;
+                if (depth > maxDepth) {
+                    continue;
+                }
+                // If head[i][1].parents does not contain rootId, skip
+                if (rootId !== 0 && !head[i][1].parents.includes(rootId)) {
+                    continue;
+                }
+                let name = head[i][1].name;
+                let bytes = head[i][1].current_throughput[0];
+                let bytesAsMegabits = bytes / 1000000;
+                let maxBytes = head[i][1].max_throughput[0] / 8;
+                let percent = Math.min(100, (bytesAsMegabits / maxBytes) * 100);
+                let capacityColor = lerpGreenToRedViaOrange(100 - percent, 100);
+
+                let color = lerpGreenToRedViaOrange(200 - lastRtt[name], 200);
+
+                let label = {
+                    fontSize: 10,
+                    color: "#999",
+                    formatter: (params) => {
+                        // Trim to 10 chars with elipsis
+                        return trimStringWithElipsis(params.name.replace("(Generated Site) ", ""), 14);
+                    }
+                };
+                if (redact) label.backgroundColor = label.color;
+
+                nodes.push({
+                    name: head[i][1].name,
+                    label: label,
+                    itemStyle: {
+                        color: color
+                    },
+                    n: 1,
+                });
+
+                if (i > 0) {
+                    let immediateParent = head[i][1].immediate_parent;
+                    links.push({
+                        source: head[immediateParent][1].name,
+                        target: head[i][1].name,
+                        value: head[i][1].current_throughput[0],
+                        lineStyle: {
+                            color: capacityColor,
+                        },
+                        maxBytes: maxBytes,
+                        n: 1,
+                    });
+                }
+            }
+
+            // Now we iterate over the entire ringbuffer to accumulate data over the period
+            // of the ringbuffer.
+            self.iterate((data) => {
+                for (let i=0; i<data.length; i++) {
+                    // Search for links that match so we can update the value
+                    if (i > 0) {
+                        let immediateParent = data[i][1].immediate_parent;
+                        let link = links.find((link) => { return link.source === data[immediateParent][1].name && link.target === data[i][1].name; });
+                        if (link !== undefined) {
+                            link.value += data[i][1].current_throughput[0];
+                            link.n++;
+                        }
+                    }
+                }
+            });
+
+            // Now go through the links and average the values, recalculating the color
+            for (let i=0; i<links.length; i++) {
+                links[i].value /= links[i].n;
+                let bytesAsMegabits = links[i].value / 1000000;
+                let percent = Math.min(100, (bytesAsMegabits / links[i].maxBytes) * 100);
+                let capacityColor = lerpGreenToRedViaOrange(100 - percent, 100);
+                links[i].lineStyle.color = capacityColor;
+            }
+
+            // Update the graph
+            graph.update(nodes, links);
+        });
+    }
+}
 
 var allNodes = [];
 let rootId = 0;
@@ -19,6 +124,7 @@ function idOfNode(name) {
 class AllTreeSankey extends DashboardGraph {
     constructor(id) {
         super(id);
+        this.model = new AllTreeSankeyGraph();
         this.option = {
             series: [
                 {
@@ -30,7 +136,7 @@ class AllTreeSankey extends DashboardGraph {
             ]
         };
         this.option && this.chart.setOption(this.option);
-        this.chart.hideLoading();
+        this.chart.showLoading();
         this.chart.on('click', (params) => {
             console.log(params.name);
             console.log(this.nodeMap);
@@ -54,76 +160,8 @@ class AllTreeSankey extends DashboardGraph {
 }
 
 function start() {
-    $.get("/local-api/networkTree", (data) => {
-        let cadence = parseInt($("#cadence").val());
-        if (paused) {
-            setTimeout(start, cadence * 1000);
-            return;
-        }
-        allNodes = data;
-        //console.log(data);
-        let redact = isRedacted();
-        $("#rootNode").text(data[rootId][1].name);
-
-        let nodes = [];
-        let links = [];
-
-        let startDepth = data[rootId][1].parents.length - 1;
-
-        for (let i=0; i<data.length; i++) {
-            let depth = data[i][1].parents.length - startDepth;
-            if (depth > maxDepth) {
-                continue;
-            }
-            // If data[i][1].parents does not contain rootId, skip
-            if (rootId !== 0 && !data[i][1].parents.includes(rootId)) {
-                continue;
-            }
-            let name = data[i][1].name;
-            let bytes = data[i][1].current_throughput[0];
-            let bytesAsMegabits = bytes / 1000000;
-            let maxBytes = data[i][1].max_throughput[0] / 8;
-            let percent = Math.min(100, (bytesAsMegabits / maxBytes) * 100);
-            let capacityColor = lerpGreenToRedViaOrange(100 - percent, 100);
-
-
-            if (data[i][1].rtts.length > 0) {
-                lastRtt[name] = data[i][1].rtts[0];
-            } else {
-                lastRtt[name] = 0;
-            }
-            let color = lerpGreenToRedViaOrange(200 - lastRtt[name], 200);
-
-            let label = {
-                fontSize: 6,
-                color: "#999"
-            };
-            if (redact) label.backgroundColor = label.color;
-
-            nodes.push({
-                name: data[i][1].name,
-                label: label,
-                itemStyle: {
-                    color: color
-                }
-            });
-
-            if (i > 0) {
-                let immediateParent = data[i][1].immediate_parent;
-                links.push({
-                    source: data[immediateParent][1].name,
-                    target: data[i][1].name,
-                    value: data[i][1].current_throughput[0] + data[i][1].current_throughput[1],
-                    lineStyle: {
-                        color: capacityColor,
-                    }
-                });
-            }
-        }
-
-        graph.update(nodes, links);
-        setTimeout(start, cadence * 1000);
-    });
+    graph.model.onTick(graph);
+    setTimeout(start, 1000);
 }
 
 function getMaxDepth() {

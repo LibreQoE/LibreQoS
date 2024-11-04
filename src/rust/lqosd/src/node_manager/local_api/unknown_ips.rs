@@ -18,7 +18,7 @@ pub fn get_unknown_ips() -> Vec<UnknownIp> {
     const FIVE_MINUTES_IN_NANOS: u64 = 5 * 60 * 1_000_000_000;
 
     let now = Duration::from(time_since_boot().unwrap()).as_nanos() as u64;
-    let sd_reader = SHAPED_DEVICES.read().unwrap();
+    let sd_reader = SHAPED_DEVICES.load();
     THROUGHPUT_TRACKER
         .raw_data
         .iter()

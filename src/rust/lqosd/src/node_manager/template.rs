@@ -39,12 +39,19 @@ pub async fn apply_templates(
     let res = next.run(req).await;
 
     if apply_template {
+        // Title
+        let mut title = "LibreQoS Node Manager".to_string();
+        if let Ok(config) = load_config() {
+            title = config.node_name.clone();
+        }
+
         let (mut res_parts, res_body) = res.into_parts();
         let bytes = to_bytes(res_body, 1_000_000).await.unwrap();
         let byte_string = String::from_utf8_lossy(&bytes).to_string();
         let byte_string = template_text
             .replace("%%BODY%%", &byte_string)
-            .replace("%%VERSION%%", VERSION_STRING);
+            .replace("%%VERSION%%", VERSION_STRING)
+            .replace("%%TITLE%%", &title);
         if let Some(length) = res_parts.headers.get_mut("content-length") {
             *length = HeaderValue::from(byte_string.len());
         }

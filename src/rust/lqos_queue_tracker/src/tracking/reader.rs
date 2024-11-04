@@ -1,5 +1,5 @@
 use crate::{deserialize_tc_tree, queue_types::QueueType};
-use log::{error, info};
+use tracing::{debug, error, info};
 use lqos_bus::TcHandle;
 use std::process::Command;
 use thiserror::Error;
@@ -33,8 +33,8 @@ pub fn read_all_queues_from_interface(
       })?;
   let result = deserialize_tc_tree(&raw_json)
       .map_err(|e| {
-        info!("Failed to deserialize TC tree result.");
-        info!("{:?}", e);
+        debug!("Failed to deserialize TC tree result.");
+        debug!("{:?}", e);
         QueueReaderError::Deserialization
       })?;
 

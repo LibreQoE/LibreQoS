@@ -2,9 +2,8 @@ mod serializable;
 mod shaped_device;
 
 use std::net::IpAddr;
-use crate::SUPPORTED_CUSTOMERS;
 use csv::{QuoteStyle, ReaderBuilder, WriterBuilder};
-use log::error;
+use tracing::{debug, error};
 use serializable::SerializableShapedDevice;
 pub use shaped_device::ShapedDevice;
 use std::path::{Path, PathBuf};
@@ -40,7 +39,7 @@ impl ConfigShapedDevices {
       crate::load_config().map_err(|_| ShapedDevicesError::ConfigLoadError)?;
     let base_path = Path::new(&cfg.lqos_directory);
     let full_path = base_path.join("ShapedDevices.csv");
-    log::info!("ShapedDevices.csv path: {:?}", full_path);
+    debug!("ShapedDevices.csv path: {:?}", full_path);
     Ok(full_path)
   }
 
@@ -69,20 +68,20 @@ impl ConfigShapedDevices {
 
     // Example: StringRecord(["1", "968 Circle St., Gurnee, IL 60031", "1", "Device 1", "", "", "192.168.101.2", "", "25", "5", "10000", "10000", ""])
 
-    let mut devices = Vec::with_capacity(SUPPORTED_CUSTOMERS);
+    let mut devices = Vec::new(); // Note that this used to be supported_customers, but we're going to let it grow organically
     for result in reader.records() {
       if let Ok(result) = result {
         let device = ShapedDevice::from_csv(&result);
         if let Ok(device) = device {
           devices.push(device);
         } else {
-          log::error!("Error reading Device line: {:?}", &device);
+          error!("Error reading Device line: {:?}", &device);
           return Err(ShapedDevicesError::DeviceDecode(format!(
             "DEVICE DECODE: {device:?}"
           )));
         }
       } else {
-        log::error!("Error reading CSV record: {:?}", result);
+        error!("Error reading CSV record: {:?}", result);
         if let csv::ErrorKind::UnequalLengths { pos, expected_len, len } =
           result.as_ref().err().as_ref().unwrap().kind()
         {
@@ -116,7 +115,7 @@ impl ConfigShapedDevices {
   /// Replace the current shaped devices list with a new one
   pub fn replace_with_new_data(&mut self, devices: Vec<ShapedDevice>) {
     self.devices = devices;
-    log::info!("{:?}", self.devices);
+    debug!("{:?}", self.devices);
     self.trie = ConfigShapedDevices::make_trie(&self.devices);
   }
 

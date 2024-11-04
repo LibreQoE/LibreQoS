@@ -5,6 +5,7 @@
 use std::{io::Read, net::IpAddr, path::Path};
 use fxhash::FxHashMap;
 use serde::Deserialize;
+use tracing::{debug, info};
 
 #[derive(Deserialize, Clone, Debug)]
 struct AsnEncoded {
@@ -51,13 +52,17 @@ pub struct GeoTable {
 impl GeoTable {
     const FILENAME: &'static str = "geo2.bin";
 
+    pub fn len(&self) -> (usize, usize, usize, usize) {
+        (self.asn_trie.len().1, self.geo_trie.len().1, self.asn_lookup.len(), self.asn_lookup.capacity())
+    }
+
     fn file_path() -> std::path::PathBuf {
         Path::new(&lqos_config::load_config().unwrap().lqos_directory)
             .join(Self::FILENAME)
     }
 
     fn download() -> anyhow::Result<()> {
-        log::info!("Downloading ASN-IP Table");
+        debug!("Downloading ASN-IP Table");
         let file_path = Self::file_path();
         let url = "https://stats.libreqos.io/geo2.bin";
         let response = reqwest::blocking::get(url)?;
@@ -70,7 +75,7 @@ impl GeoTable {
     pub fn load() -> anyhow::Result<Self> {
         let path = Self::file_path();
         if !path.exists() {
-            log::info!("geo.bin not found - trying to download it");
+            info!("geo.bin not found - trying to download it");
             Self::download()?;
         }
 
@@ -83,7 +88,7 @@ impl GeoTable {
         // Build the ASN trie and ASN lookup map
         let mut asn_lookup = FxHashMap::default();
 
-        log::info!("Building ASN trie");
+        debug!("Building ASN trie");
         let mut asn_trie = ip_network_table::IpNetworkTable::<AsnEncoded>::new();
         for entry in geobin.asn {
             asn_lookup.insert(entry.asn, entry.organization.clone());
@@ -97,7 +102,7 @@ impl GeoTable {
         }
 
         // Build the GeoIP trie
-        log::info!("Building GeoIP trie");
+        debug!("Building GeoIP trie");
         let mut geo_trie = ip_network_table::IpNetworkTable::<GeoIpLocation>::new();
         for entry in geobin.geo {
             let (ip, prefix) = match entry.network {
@@ -109,7 +114,7 @@ impl GeoTable {
             }
         }
 
-        log::info!("GeoTables loaded, {}-{} records.", asn_trie.len().1, geo_trie.len().1);
+        debug!("GeoTables loaded, {}-{} records.", asn_trie.len().1, geo_trie.len().1);
 
         Ok(Self {
             asn_trie,
@@ -119,22 +124,22 @@ impl GeoTable {
     }
 
     pub fn find_asn(&self, ip: IpAddr) -> Option<u32> {
-        log::debug!("Looking up ASN for IP: {:?}", ip);
+        debug!("Looking up ASN for IP: {:?}", ip);
         let ip = match ip {
             IpAddr::V4(ip) => ip.to_ipv6_mapped(),
             IpAddr::V6(ip) => ip,
         };
         if let Some(matched) = self.asn_trie.longest_match(ip) {
-            log::debug!("Matched ASN: {:?}", matched.1.asn);
+            debug!("Matched ASN: {:?}", matched.1.asn);
             Some(matched.1.asn)
         } else {
-            log::debug!("No ASN found");
+            debug!("No ASN found");
             None
         }
     }
 
     pub fn find_owners_by_ip(&self, ip: IpAddr) -> AsnNameCountryFlag{
-        log::debug!("Looking up ASN for IP: {:?}", ip);
+        debug!("Looking up ASN for IP: {:?}", ip);
         let ip = match ip {
             IpAddr::V4(ip) => ip.to_ipv6_mapped(),
             IpAddr::V6(ip) => ip,
@@ -144,11 +149,11 @@ impl GeoTable {
         let mut flag = "Unknown".to_string();
 
         if let Some(matched) = self.asn_trie.longest_match(ip) {
-            log::debug!("Matched ASN: {:?}", matched.1.asn);
+            debug!("Matched ASN: {:?}", matched.1.asn);
             owners = matched.1.organization.clone();
         }
         if let Some(matched) = self.geo_trie.longest_match(ip) {
-            log::debug!("Matched Geo: {:?}", matched.1.city_and_country());
+            debug!("Matched Geo: {:?}", matched.1.city_and_country());
             country = matched.1.city_and_country();
             flag = matched.1.country_iso_code.clone();
         }
@@ -161,14 +166,14 @@ impl GeoTable {
     }
 
     pub fn find_lat_lon_by_ip(&self, ip: IpAddr) -> (f64, f64) {
-        log::debug!("Looking up ASN for IP: {:?}", ip);
+        debug!("Looking up ASN for IP: {:?}", ip);
         let ip = match ip {
             IpAddr::V4(ip) => ip.to_ipv6_mapped(),
             IpAddr::V6(ip) => ip,
         };
 
         if let Some(matched) = self.geo_trie.longest_match(ip) {
-            log::debug!("Matched Geo: {:?}", matched.1.city_and_country());
+            debug!("Matched Geo: {:?}", matched.1.city_and_country());
             return (matched.1.latitude, matched.1.longitude);
         }
 

@@ -9,14 +9,14 @@ mod flow_analysis;
 use crate::throughput_tracker::flow_data::{flow_analysis::FinishedFlowAnalysis, netflow5::Netflow5, netflow9::Netflow9};
 pub(crate) use flow_tracker::{ALL_FLOWS, AsnId, FlowbeeLocalData};
 use lqos_sys::flowbee_data::FlowbeeKey;
-use std::sync::{
-    mpsc::{channel, Sender},
-    Arc,
-};
-pub(crate) use flow_analysis::{setup_flow_analysis, get_asn_name_and_country, 
-    FlowAnalysis, RECENT_FLOWS, flowbee_handle_events, get_flowbee_event_count_and_reset,
-    expire_rtt_flows, flowbee_rtt_map, RttData, get_rtt_events_per_second, AsnListEntry,
-    AsnCountryListEntry, AsnProtocolListEntry,
+use std::sync::Arc;
+use tracing::{debug, error, info};
+use anyhow::Result;
+use crossbeam_channel::Sender;
+pub(crate) use flow_analysis::{setup_flow_analysis, get_asn_name_and_country,
+                               FlowAnalysis, RECENT_FLOWS, flowbee_handle_events, get_flowbee_event_count_and_reset,
+                               expire_rtt_flows, flowbee_rtt_map, RttData, get_rtt_events_per_second, AsnListEntry,
+                               AsnCountryListEntry, AsnProtocolListEntry, FlowActor, FlowAnalysisSystem
 };
 
 trait FlowbeeRecipient {
@@ -24,41 +24,44 @@ trait FlowbeeRecipient {
 }
 
 // Creates the netflow tracker and returns the sender
-pub fn setup_netflow_tracker() -> Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))> {
-    let (tx, rx) = channel::<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>();
-    let config = lqos_config::load_config().unwrap();
+pub fn setup_netflow_tracker() -> Result<Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>> {
+    let (tx, rx) = crossbeam_channel::bounded::<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>(65535);
+    let config = lqos_config::load_config()
+        .inspect_err(|e| error!("Failed to load configuration: {e}"))?;
 
-    std::thread::spawn(move || {
-        log::info!("Starting the network flow tracker back-end");
+    std::thread::Builder::new()
+        .name("Netflow Tracker".to_string())
+        .spawn(move || {
+        debug!("Starting the network flow tracker back-end");
 
         // Build the endpoints list
         let mut endpoints: Vec<Arc<dyn FlowbeeRecipient>> = Vec::new();
         endpoints.push(FinishedFlowAnalysis::new());
 
-        if let Some(flow_config) = config.flows {
+        if let Some(flow_config) = &config.flows {
             if let (Some(ip), Some(port), Some(version)) = (
-                flow_config.netflow_ip,
+                flow_config.netflow_ip.clone(),
                 flow_config.netflow_port,
                 flow_config.netflow_version,
             ) {
-                log::info!("Setting up netflow target: {ip}:{port}, version: {version}");
+                info!("Setting up netflow target: {ip}:{port}, version: {version}");
                 let target = format!("{ip}:{port}", ip = ip, port = port);
                 match version {
                     5 => {
                         let endpoint = Netflow5::new(target).unwrap();
                         endpoints.push(endpoint);
-                        log::info!("Netflow 5 endpoint added");
+                        info!("Netflow 5 endpoint added");
                     }
                     9 => {
                         let endpoint = Netflow9::new(target).unwrap();
                         endpoints.push(endpoint);
-                        log::info!("Netflow 9 endpoint added");
+                        info!("Netflow 9 endpoint added");
                     }
-                    _ => log::error!("Unsupported netflow version: {version}"),
+                    _ => error!("Unsupported netflow version: {version}"),
                 }
             }
         }
-        log::info!("Flow Endpoints: {}", endpoints.len());
+        debug!("Flow Endpoints: {}", endpoints.len());
 
         // Send to all endpoints upon receipt
         while let Ok((key, (value, analysis))) = rx.recv() {
@@ -67,8 +70,8 @@ pub fn setup_netflow_tracker() -> Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAna
                 f.enqueue(key.clone(), value.clone(), analysis.clone());
             });
         }
-        log::info!("Network flow tracker back-end has stopped")
-    });
+        info!("Network flow tracker back-end has stopped")
+    })?;
 
-    tx
+    Ok(tx)
 }

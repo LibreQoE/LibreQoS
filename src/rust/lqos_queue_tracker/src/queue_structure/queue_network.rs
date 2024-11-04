@@ -1,5 +1,5 @@
 use super::{queue_node::QueueNode, QueueStructureError};
-use log::error;
+use tracing::error;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 

@@ -2,7 +2,7 @@ pub mod flow_data;
 mod throughput_entry;
 mod tracking_data;
 use std::net::IpAddr;
-
+use fxhash::FxHashMap;
 use self::flow_data::{get_asn_name_and_country, FlowAnalysis, FlowbeeLocalData, ALL_FLOWS};
 use crate::{
     long_term_stats::get_network_tree,
@@ -10,17 +10,20 @@ use crate::{
     stats::TIME_TO_POLL_HOSTS,
     throughput_tracker::tracking_data::ThroughputTracker,
 };
-use log::{info, warn};
+use tracing::{debug, warn};
 use lqos_bus::{BusResponse, FlowbeeProtocol, IpStats, TcHandle, TopFlowType, XdpPpingResult};
 use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
-use lts_client::collector::{HostSummary, StatsUpdateMessage, ThroughputSummary};
+use lts_client::collector::{HostSummary, stats_availability::StatsUpdateMessage, ThroughputSummary};
 use once_cell::sync::Lazy;
+use timerfd::{SetTimeFlags, TimerFd, TimerState};
 use tokio::{
     sync::mpsc::Sender,
     time::{Duration, Instant},
 };
+use lqos_config::load_config;
 use lqos_utils::units::DownUpOrder;
+use crate::throughput_tracker::flow_data::RttData;
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
@@ -33,28 +36,77 @@ pub static THROUGHPUT_TRACKER: Lazy<ThroughputTracker> = Lazy::new(ThroughputTra
 ///
 /// * `long_term_stats_tx` - an optional MPSC sender to notify the
 ///   collection thread that there is fresh data.
-pub async fn spawn_throughput_monitor(
+pub fn spawn_throughput_monitor(
     long_term_stats_tx: Sender<StatsUpdateMessage>,
-    netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
-) {
-    info!("Starting the bandwidth monitor thread.");
-    let interval_ms = 1000; // 1 second
-    info!("Bandwidth check period set to {interval_ms} ms.");
-    tokio::spawn(throughput_task(
-        interval_ms,
+    netflow_sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
+) -> anyhow::Result<()> {
+    debug!("Starting the bandwidth monitor thread.");
+    std::thread::Builder::new()
+        .name("Throughput Monitor".to_string())
+    .spawn(|| {throughput_task(
         long_term_stats_tx,
         netflow_sender,
-    ));
+    )})?;
+
+    Ok(())
 }
 
-async fn throughput_task(
-    interval_ms: u64,
+/// Used for tracking the "tick" time, with a view to
+/// finding where some code is stalling.
+#[derive(Debug)]
+struct ThroughputTaskTimeMetrics {
+    start: Instant,
+    update_cycle : f64,
+    zero_throughput_and_rtt: f64,
+    copy_previous_and_reset_rtt: f64,
+    apply_new_throughput_counters: f64,
+    apply_flow_data: f64,
+    apply_queue_stats: f64,
+    update_totals: f64,
+    next_cycle: f64,
+    finish_update_cycle: f64,
+    lts_submit: f64,
+}
+
+impl ThroughputTaskTimeMetrics {
+    fn new() -> Self {
+        Self {
+            start: Instant::now(),
+            update_cycle: 0.0,
+            zero_throughput_and_rtt: 0.0,
+            copy_previous_and_reset_rtt: 0.0,
+            apply_new_throughput_counters: 0.0,
+            apply_flow_data: 0.0,
+            apply_queue_stats: 0.0,
+            update_totals: 0.0,
+            next_cycle: 0.0,
+            finish_update_cycle: 0.0,
+            lts_submit: 0.0,
+        }
+    }
+
+    fn zero(&mut self) {
+        self.update_cycle = 0.0;
+        self.zero_throughput_and_rtt = 0.0;
+        self.copy_previous_and_reset_rtt = 0.0;
+        self.apply_new_throughput_counters = 0.0;
+        self.apply_flow_data = 0.0;
+        self.apply_queue_stats = 0.0;
+        self.update_totals = 0.0;
+        self.next_cycle = 0.0;
+        self.finish_update_cycle = 0.0;
+        self.lts_submit = 0.0;
+        self.start = Instant::now();
+    }
+}
+
+fn throughput_task(
     long_term_stats_tx: Sender<StatsUpdateMessage>,
-    netflow_sender: std::sync::mpsc::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
+    netflow_sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
 ) {
     // Obtain the flow timeout from the config, default to 30 seconds
     let timeout_seconds = if let Ok(config) = lqos_config::load_config() {
-        if let Some(flow_config) = config.flows {
+        if let Some(flow_config) = &config.flows {
             flow_config.flow_timeout_seconds
         } else {
             30
@@ -65,7 +117,7 @@ async fn throughput_task(
 
     // Obtain the netflow_enabled from the config, default to false
     let netflow_enabled = if let Ok(config) = lqos_config::load_config() {
-        if let Some(flow_config) = config.flows {
+        if let Some(flow_config) = &config.flows {
             flow_config.netflow_enabled
         } else {
             false
@@ -74,49 +126,113 @@ async fn throughput_task(
         false
     };
 
-    let mut ticker = tokio::time::interval(Duration::from_millis(interval_ms));
-    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut last_submitted_to_lts: Option<Instant> = None;
+    let mut tfd = TimerFd::new().unwrap();
+    assert_eq!(tfd.get_state(), TimerState::Disarmed);
+    tfd.set_state(TimerState::Periodic{
+        current: Duration::new(1, 0),
+        interval: Duration::new(1, 0)}
+                  , SetTimeFlags::Default
+    );
+    let mut timer_metrics = ThroughputTaskTimeMetrics::new();
+
+    // Preallocate some buffers to avoid allocations in the loop
+    let mut rtt_circuit_tracker: FxHashMap<XdpIpAddress, [Vec<RttData>; 2]> = FxHashMap::default();
+    let mut tcp_retries: FxHashMap<XdpIpAddress, DownUpOrder<u64>> = FxHashMap::default();
+    let mut expired_flows: Vec<FlowbeeKey> = Vec::new();
+
     loop {
         let start = Instant::now();
+        timer_metrics.zero();
 
-        // Perform the stats collection in a blocking thread, ensuring that
-        // the tokio runtime is not blocked.
-        let my_netflow_sender = netflow_sender.clone();
-        if let Err(e) = tokio::task::spawn_blocking(move || {
-            let mut net_json_calc = {
-                let read = NETWORK_JSON.read().unwrap();
-                read.begin_update_cycle()
-            };
+        // Formerly a "spawn blocking" blob
+        {
+            let mut net_json_calc = NETWORK_JSON.write().unwrap();
+            timer_metrics.update_cycle = timer_metrics.start.elapsed().as_secs_f64();
             net_json_calc.zero_throughput_and_rtt();
+            timer_metrics.zero_throughput_and_rtt = timer_metrics.start.elapsed().as_secs_f64();
             THROUGHPUT_TRACKER.copy_previous_and_reset_rtt();
+            timer_metrics.copy_previous_and_reset_rtt = timer_metrics.start.elapsed().as_secs_f64();
             THROUGHPUT_TRACKER.apply_new_throughput_counters(&mut net_json_calc);
+            timer_metrics.apply_new_throughput_counters = timer_metrics.start.elapsed().as_secs_f64();
             THROUGHPUT_TRACKER.apply_flow_data(
                 timeout_seconds,
                 netflow_enabled,
-                my_netflow_sender.clone(),
+                netflow_sender.clone(),
                 &mut net_json_calc,
+                &mut rtt_circuit_tracker,
+                &mut tcp_retries,
+                &mut expired_flows,
             );
+            rtt_circuit_tracker.clear();
+            tcp_retries.clear();
+            expired_flows.clear();
+            timer_metrics.apply_flow_data = timer_metrics.start.elapsed().as_secs_f64();
             THROUGHPUT_TRACKER.apply_queue_stats(&mut net_json_calc);
+            timer_metrics.apply_queue_stats = timer_metrics.start.elapsed().as_secs_f64();
             THROUGHPUT_TRACKER.update_totals();
+            timer_metrics.update_totals = timer_metrics.start.elapsed().as_secs_f64();
             THROUGHPUT_TRACKER.next_cycle();
-            {
-                let mut write = NETWORK_JSON.write().unwrap();
-                write.finish_update_cycle(net_json_calc);
-            }
+            timer_metrics.next_cycle = timer_metrics.start.elapsed().as_secs_f64();
+            std::mem::drop(net_json_calc);
+            timer_metrics.finish_update_cycle = timer_metrics.start.elapsed().as_secs_f64();
             let duration_ms = start.elapsed().as_micros();
             TIME_TO_POLL_HOSTS.store(duration_ms as u64, std::sync::atomic::Ordering::Relaxed);
-        })
-        .await
-        {
-            log::error!("Error polling network. {e:?}");
         }
-        tokio::spawn(submit_throughput_stats(long_term_stats_tx.clone()));
 
-        ticker.tick().await;
+        if last_submitted_to_lts.is_none() {
+            submit_throughput_stats(long_term_stats_tx.clone(), 1.0);
+        } else {
+            let elapsed = last_submitted_to_lts.unwrap().elapsed();
+            let elapsed_f64 = elapsed.as_secs_f64();
+            // Temporary: place this in a thread to not block the timer
+            let my_lts_tx = long_term_stats_tx.clone();
+            std::thread::Builder::new().name("Throughput Stats Submit".to_string()).spawn(move || {
+                submit_throughput_stats(my_lts_tx, elapsed_f64);
+            }).unwrap().join().unwrap();
+            //submit_throughput_stats(long_term_stats_tx.clone(), elapsed_f64);
+        }
+        last_submitted_to_lts = Some(Instant::now());
+        timer_metrics.lts_submit = timer_metrics.start.elapsed().as_secs_f64();
+
+        // Sleep until the next second
+        let missed_ticks = tfd.read();
+        if missed_ticks > 1 {
+            warn!("Missed {} ticks", missed_ticks - 1);
+            warn!("{:?}", timer_metrics);
+        }
     }
 }
 
-async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>) {
+fn scale_u64_by_f64(value: u64, scale: f64) -> u64 {
+    (value as f64 * scale) as u64
+}
+
+#[derive(Debug)]
+struct LtsSubmitMetrics {
+    start: Instant,
+    shaped_devices: f64,
+    total_throughput: f64,
+    hosts: f64,
+    summary: f64,
+    send: f64,
+}
+
+impl LtsSubmitMetrics {
+    fn new() -> Self {
+        Self {
+            start: Instant::now(),
+            shaped_devices: 0.0,
+            total_throughput: 0.0,
+            hosts: 0.0,
+            summary: 0.0,
+            send: 0.0,
+        }
+    }
+}
+
+fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>, scale: f64) {
+    let mut metrics = LtsSubmitMetrics::new();
     // If ShapedDevices has changed, notify the stats thread
     if let Ok(changed) = STATS_NEEDS_NEW_SHAPED_DEVICES.compare_exchange(
         true,
@@ -125,12 +241,12 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>)
         std::sync::atomic::Ordering::Relaxed,
     ) {
         if changed {
-            let shaped_devices = SHAPED_DEVICES.read().unwrap().devices.clone();
+            let shaped_devices = SHAPED_DEVICES.load().devices.clone();
             let _ = long_term_stats_tx
-                .send(StatsUpdateMessage::ShapedDevicesChanged(shaped_devices))
-                .await;
+                .blocking_send(StatsUpdateMessage::ShapedDevicesChanged(shaped_devices));
         }
     }
+    metrics.shaped_devices = metrics.start.elapsed().as_secs_f64();
 
     // Gather Global Stats
     let packets_per_second = (
@@ -141,34 +257,53 @@ async fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>)
     );
     let bits_per_second = THROUGHPUT_TRACKER.bits_per_second();
     let shaped_bits_per_second = THROUGHPUT_TRACKER.shaped_bits_per_second();
+    metrics.total_throughput = metrics.start.elapsed().as_secs_f64();
+    
+    if let Ok(config) = load_config() {
+        if bits_per_second.down > (config.queues.downlink_bandwidth_mbps as u64 * 1_000_000) {
+            debug!("Spike detected - not submitting LTS");
+            return; // Do not submit these stats
+        }
+        if bits_per_second.up > (config.queues.uplink_bandwidth_mbps as u64 * 1_000_000) {
+            debug!("Spike detected - not submitting LTS");
+            return; // Do not submit these stats
+        }
+    }
+    
     let hosts = THROUGHPUT_TRACKER
         .raw_data
         .iter()
-        .filter(|host| host.median_latency().is_some())
+        //.filter(|host| host.median_latency().is_some())
         .map(|host| HostSummary {
             ip: host.key().as_ip(),
             circuit_id: host.circuit_id.clone(),
-            bits_per_second: (host.bytes_per_second.down * 8, host.bytes_per_second.up * 8),
+            bits_per_second: (scale_u64_by_f64(host.bytes_per_second.down * 8, scale), scale_u64_by_f64(host.bytes_per_second.up * 8, scale)),
             median_rtt: host.median_latency().unwrap_or(0.0),
         })
         .collect();
+    metrics.hosts = metrics.start.elapsed().as_secs_f64();
 
     let summary = Box::new((
         ThroughputSummary {
-            bits_per_second: (bits_per_second.down, bits_per_second.up),
-            shaped_bits_per_second: (shaped_bits_per_second.down, shaped_bits_per_second.up),
+            bits_per_second: (scale_u64_by_f64(bits_per_second.down, scale), scale_u64_by_f64(bits_per_second.up, scale)),
+            shaped_bits_per_second: (scale_u64_by_f64(shaped_bits_per_second.down, scale), scale_u64_by_f64(shaped_bits_per_second.up, scale)),
             packets_per_second,
             hosts,
         },
         get_network_tree(),
     ));
+    metrics.summary = metrics.start.elapsed().as_secs_f64();
 
     // Send the stats
     let result = long_term_stats_tx
-        .send(StatsUpdateMessage::ThroughputReady(summary))
-        .await;
+        .blocking_send(StatsUpdateMessage::ThroughputReady(summary));
     if let Err(e) = result {
         warn!("Error sending message to stats collection system. {e:?}");
+    }
+    metrics.send = metrics.start.elapsed().as_secs_f64();
+
+    if metrics.start.elapsed().as_secs_f64() > 1.0 {
+        warn!("{:?}", metrics);
     }
 }
 
@@ -657,7 +792,7 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
         }
     }
 
-    let sd = SHAPED_DEVICES.read().unwrap();
+    let sd = SHAPED_DEVICES.load();
 
     let result = table
         .iter()
@@ -702,7 +837,7 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
     if let Ok(ip) = ip.parse::<IpAddr>() {
         let ip = XdpIpAddress::from_ip(ip);
         let lock = ALL_FLOWS.lock().unwrap();
-        let sd = SHAPED_DEVICES.read().unwrap();
+        let sd = SHAPED_DEVICES.load();
         let matching_flows: Vec<_> = lock
             .iter()
             .filter(|(key, _)| key.local_ip == ip)
@@ -764,5 +899,15 @@ pub fn ether_protocol_summary() -> BusResponse {
 pub fn ip_protocol_summary() -> BusResponse {
     BusResponse::IpProtocols(
         flow_data::RECENT_FLOWS.ip_protocol_summary()
+    )
+}
+
+/// Flow duration summary
+pub fn flow_duration() -> BusResponse {
+    BusResponse::FlowDuration(
+        flow_data::RECENT_FLOWS.flow_duration_summary()
+            .into_iter()
+            .map(|v| (v.count, v.duration))
+            .collect()
     )
 }

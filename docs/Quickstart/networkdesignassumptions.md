@@ -11,6 +11,10 @@
 
 ![Offical Configuration](https://raw.githubusercontent.com/LibreQoE/LibreQoS/main/docs/design.png)
 
+## Testbed configuration
+When you are first testing out LibreQoS, we recommend deploying a small-scale testbed to see it in action.
+![image](https://github.com/user-attachments/assets/6174bd29-112d-4b00-bea8-41314983d37a)
+
 ### Network Interface Card
 
 ```{note}

@@ -2,7 +2,7 @@ pub(crate) mod tc_cake;
 mod tc_fq_codel;
 mod tc_htb;
 mod tc_mq;
-use log::warn;
+use tracing::{debug, warn};
 use serde::Serialize;
 use serde_json::Value;
 use thiserror::Error;
@@ -30,7 +30,7 @@ impl QueueType {
       "cake" => Ok(QueueType::Cake(tc_cake::TcCake::from_json(map)?)),
       "clsact" => Ok(QueueType::ClsAct),
       _ => {
-        warn!("I don't know how to parse qdisc type {kind}");
+        debug!("I don't know how to parse qdisc type {kind}");
         Err(QDiscError::UnknownQdisc(format!("Unknown queue kind: {kind}")))
       }
     }
@@ -90,11 +90,11 @@ macro_rules! parse_tc_handle {
       if let Ok(handle) = TcHandle::from_string(s) {
         $target = handle;
       } else {
-        info_once!("Unable to extract TC handle from string");
+        tracing::info!("Unable to extract TC handle from string");
         $target = TcHandle::default();
       }
     } else {
-      info_once!("Unable to extract string for TC handle");
+      tracing::info!("Unable to extract string for TC handle");
       $target = TcHandle::default();
     }
   };

@@ -1,5 +1,6 @@
-# Allows you to override route costs in the UISP integration, to better
-# represent your network. Costs by default increment 10 at each hop.
-# So if you want to skip 10 links, put a cost of 100 in.
+# Allows you to override route costs in the UISP integration to better,,
+# represent your network. Costs by default increment 10 at each hop.,,
+# So if you want to skip 10 links put a cost of 100 in,,
 # From Site Name, To Site Name, New Cost
-# MYCORE, MYTOWER, 100
+# MYCORE, MYTOWER,100
+Site1Name,Site2Name,20

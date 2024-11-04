@@ -1,4 +1,5 @@
 use dryoc::dryocbox::*;
+use tracing::info;
 
 /// Genereate a new keypair and store it in a file. If the file exists,
 /// it will be loaded rather than re-generated.
@@ -12,7 +13,7 @@ use dryoc::dryocbox::*;
 /// The generated or loaded keypair
 pub fn generate_new_keypair() -> KeyPair {
     let keypair = KeyPair::gen();
-    log::info!("Generated new keypair");
+    info!("Generated new keypair");
     keypair
 }
 

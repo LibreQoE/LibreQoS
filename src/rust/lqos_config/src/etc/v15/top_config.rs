@@ -71,6 +71,9 @@ pub struct Config {
 
     /// InfluxDB Configuration
     pub influxdb: super::influxdb::InfluxDbConfig,
+
+    /// Option to disable the webserver for headless/CLI operation
+    pub disable_webserver: Option<bool>,
 }
 
 impl Config {
@@ -137,6 +140,7 @@ impl Default for Config {
             packet_capture_time: 10,
             queue_check_period_ms: 1000,
             flows: None,
+            disable_webserver: None,
         }
     }
 }

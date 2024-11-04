@@ -46,7 +46,7 @@ fn read_line() -> String {
 
 fn get_lts_key() -> String {
     if let Ok(cfg) = load_config() {
-        if let Some(key) = cfg.long_term_stats.license_key {
+        if let Some(key) = &cfg.long_term_stats.license_key {
             return key.clone();
         }
     }
@@ -113,7 +113,7 @@ fn summarize(filename: &str) {
 }
 
 fn sanity_checks() {
-    if let Err(e) = run_sanity_checks() {
+    if let Err(e) = run_sanity_checks(true) {
         println!("Sanity Check Failed: {e:?}");
     }
 }

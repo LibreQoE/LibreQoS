@@ -7,7 +7,7 @@ mod session;
 mod unix_socket_server;
 mod queue_data;
 pub use client::bus_request;
-use log::error;
+use tracing::error;
 pub use persistent_client::BusClient;
 pub use reply::BusReply;
 pub use request::{BusRequest, StatsRequest, TopFlowType};

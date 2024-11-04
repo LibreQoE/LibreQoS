@@ -16,7 +16,7 @@ lqos_config = { path = "../lqos_config" }
 lqos_utils = { path = "../lqos_utils" }
 lts_client = { path = "../lts_client" }
 tokio = { workspace = true }
-log = { workspace = true }
+tracing = { workspace = true }
 nix = { workspace = true }
 serde_cbor = { workspace = true }
 

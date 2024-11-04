@@ -1,18 +1,16 @@
 mod network_json_node;
 mod network_json_transport;
-mod network_json_counting;
 
-use dashmap::DashSet;
-use log::{error, info};
+use tracing::{debug, error, warn};
 use serde_json::{Map, Value};
 use std::{
     fs, path::{Path, PathBuf},
 };
+use std::collections::HashSet;
 use thiserror::Error;
 use lqos_utils::units::DownUpOrder;
 pub use network_json_node::NetworkJsonNode;
 pub use network_json_transport::NetworkJsonTransport;
-pub use network_json_counting::NetworkJsonCounting;
 
 /// Holder for the network.json representation.
 /// This is condensed into a single level vector with index-based referencing
@@ -21,7 +19,7 @@ pub use network_json_counting::NetworkJsonCounting;
 pub struct NetworkJson {
     /// Nodes that make up the tree, flattened and referenced by index number.
     /// TODO: We should add a primary key to nodes in network.json.
-    nodes: Vec<NetworkJsonNode>,
+    pub nodes: Vec<NetworkJsonNode>,
 }
 
 impl Default for NetworkJson {
@@ -34,6 +32,11 @@ impl NetworkJson {
     /// Generates an empty network.json
     pub fn new() -> Self {
         Self { nodes: Vec::new() }
+    }
+
+    /// Retrieves the length and capacity for the nodes vector.
+    pub fn len_and_capacity(&self) -> (usize, usize) {
+        (self.nodes.len(), self.nodes.capacity())
     }
 
     /// The path to the current `network.json` file, determined
@@ -66,7 +69,7 @@ impl NetworkJson {
             current_marks: DownUpOrder::zeroed(),
             parents: Vec::new(),
             immediate_parent: None,
-            rtts: DashSet::new(),
+            rtts: HashSet::new(),
             node_type: None,
         }];
         if !Self::exists() {
@@ -137,24 +140,76 @@ impl NetworkJson {
     /// Obtains a reference to nodes once we're sure that
     /// doing so will provide valid data.
     pub fn get_nodes_when_ready(&self) -> &Vec<NetworkJsonNode> {
-        //log::warn!("Awaiting the network tree");
-        //atomic_wait::wait(&self.busy, 1);
-        //log::warn!("Acquired");
         &self.nodes
     }
 
-    /// Starts an update cycle. This clones the nodes into
-    /// another structure - work will be performed on the clone.
-    pub fn begin_update_cycle(&self) -> NetworkJsonCounting {
-        NetworkJsonCounting::begin_update_cycle(self.nodes.clone())
+    /// Sets all current throughput values to zero
+    /// Note that due to interior mutability, this does not require mutable
+    /// access.
+    pub fn zero_throughput_and_rtt(&mut self) {
+        //log::warn!("Locking network tree for throughput cycle");
+        self.nodes.iter_mut().for_each(|n| {
+            n.current_throughput.set_to_zero();
+            n.current_tcp_retransmits.set_to_zero();
+            n.rtts.clear();
+            n.current_drops.set_to_zero();
+            n.current_marks.set_to_zero();
+        });
     }
 
-    /// Finishes an update cycle. This is called after all updates
-    /// have been made to the clone, and the clone is then copied back
-    /// into the main structure.
-    pub fn finish_update_cycle(&mut self, counting: NetworkJsonCounting) {
-        if !counting.nodes.is_empty() {
-            self.nodes = counting.nodes;
+    /// Add throughput numbers to node entries. Note that this does *not* require
+    /// mutable access due to atomics and interior mutability - so it is safe to use
+    /// a read lock.
+    pub fn add_throughput_cycle(
+        &mut self,
+        targets: &[usize],
+        bytes: (u64, u64),
+    ) {
+        for idx in targets {
+            // Safety first: use "get" to ensure that the node exists
+            if let Some(node) = self.nodes.get_mut(*idx) {
+                node.current_throughput.checked_add_tuple(bytes);
+            } else {
+                warn!("No network tree entry for index {idx}");
+            }
+        }
+    }
+
+    /// Record RTT time in the tree. Note that due to interior mutability,
+    /// this does not require mutable access.
+    pub fn add_rtt_cycle(&mut self, targets: &[usize], rtt: f32) {
+        for idx in targets {
+            // Safety first: use "get" to ensure that the node exists
+            if let Some(node) = self.nodes.get_mut(*idx) {
+                node.rtts.insert((rtt * 100.0) as u16);
+            } else {
+                warn!("No network tree entry for index {idx}");
+            }
+        }
+    }
+
+    /// Record TCP Retransmits in the tree.
+    pub fn add_retransmit_cycle(&mut self, targets: &[usize], tcp_retransmits: DownUpOrder<u64>) {
+        for idx in targets {
+            // Safety first; use "get" to ensure that the node exists
+            if let Some(node) = self.nodes.get_mut(*idx) {
+                node.current_tcp_retransmits.checked_add(tcp_retransmits);
+            } else {
+                warn!("No network tree entry for index {idx}");
+            }
+        }
+    }
+
+    /// Adds a series of CAKE marks and drops to the tree structure.
+    pub fn add_queue_cycle(&mut self, targets: &[usize], marks: &DownUpOrder<u64>, drops: &DownUpOrder<u64>) {
+        for idx in targets {
+            // Safety first; use "get" to ensure that the node exists
+            if let Some(node) = self.nodes.get_mut(*idx) {
+                node.current_marks.checked_add(*marks);
+                node.current_drops.checked_add(*drops);
+            } else {
+                warn!("No network tree entry for index {idx}");
+            }
         }
     }
 }
@@ -178,7 +233,7 @@ fn recurse_node(
     parents: &[usize],
     immediate_parent: usize,
 ) {
-    info!("Mapping {name} from network.json");
+    debug!("Mapping {name} from network.json");
     let mut parents = parents.to_vec();
     let my_id = if name != "children" {
         parents.push(nodes.len());
@@ -198,7 +253,7 @@ fn recurse_node(
         current_marks: DownUpOrder::zeroed(),
         name: name.to_string(),
         immediate_parent: Some(immediate_parent),
-        rtts: DashSet::new(),
+        rtts: HashSet::new(),
         node_type: json.get("type").map(|v| v.as_str().unwrap().to_string()),
     };
 

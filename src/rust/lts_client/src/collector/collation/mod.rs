@@ -115,10 +115,6 @@ pub(crate) async fn collate_stats(comm_tx: Sender<SenderChannelMessage>) {
     // Obtain the CPU/RAM utilization
     let (cpu, ram) = system_stats::get_cpu_ram().await;
 
-    // Obtain queue stats
-    //let cake_stats = super::update_cake_stats().await;
-
-
     // Add to the submissions queue
     new_submission(StatsSubmission {
         timestamp,
@@ -144,7 +140,6 @@ pub(crate) async fn collate_stats(comm_tx: Sender<SenderChannelMessage>) {
         hosts: Some(stats_hosts),
         tree: Some(tree_entries),
         uisp_devices: None,
-        cake_stats: None,
     }, comm_tx).await;
 
     // Clear the collection buffer

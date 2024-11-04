@@ -63,8 +63,11 @@ impl AllQueueData {
             q.marks = DownUpOrder::zeroed();
         }
 
+        let mut seen_queue_ids = Vec::new();
+
         // Make download markings
         for dl in download.into_iter() {
+            seen_queue_ids.push(dl.circuit_id.clone());
             if let Some(q) = lock.get_mut(&dl.circuit_id) {
                 // We need to update it
                 q.drops.down = dl.drops;
@@ -85,6 +88,7 @@ impl AllQueueData {
 
         // Make upload markings
         for ul in upload.into_iter() {
+            seen_queue_ids.push(ul.circuit_id.clone());
             if let Some(q) = lock.get_mut(&ul.circuit_id) {
                 // We need to update it
                 q.drops.up = ul.drops;
@@ -102,6 +106,9 @@ impl AllQueueData {
                 lock.insert(ul.circuit_id.clone(), new_record);
             }
         }
+
+        // Remove any queues that were not seen
+        lock.retain(|k, _| seen_queue_ids.contains(k));
     }
 
     pub fn iterate_queues(&self, mut f: impl FnMut(&str, &DownUpOrder<u64>, &DownUpOrder<u64>)) {

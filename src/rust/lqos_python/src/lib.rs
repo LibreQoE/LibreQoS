@@ -91,6 +91,7 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_wrapped(wrap_pyfunction!(get_weights))?;
   m.add_wrapped(wrap_pyfunction!(get_tree_weights))?;
   m.add_wrapped(wrap_pyfunction!(get_libreqos_directory))?;
+  m.add_wrapped(wrap_pyfunction!(is_network_flat))?;
 
   Ok(())
 }
@@ -287,7 +288,7 @@ fn is_libre_already_running() -> PyResult<bool> {
         let sys = System::new_all();
         let pid = sysinfo::Pid::from(pid as usize);
         if let Some(process) = sys.processes().get(&pid) {
-          if process.name().contains("python") {
+          if process.name().to_string_lossy().contains("python") {
             return Ok(true);
           }
         }
@@ -479,19 +480,22 @@ fn exception_cpes() -> PyResult<Vec<PyExceptionCpe>> {
 #[pyfunction]
 fn uisp_site() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
-  Ok(config.uisp_integration.site)
+  let site = config.uisp_integration.site.clone();
+  Ok(site)
 }
 
 #[pyfunction]
 fn uisp_strategy() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
-  Ok(config.uisp_integration.strategy)
+  let strategy = config.uisp_integration.strategy.clone();
+  Ok(strategy)
 }
 
 #[pyfunction]
 fn uisp_suspended_strategy() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
-  Ok(config.uisp_integration.suspended_strategy)
+  let strategy = config.uisp_integration.suspended_strategy.clone();
+  Ok(strategy)
 }
 
 #[pyfunction]
@@ -515,31 +519,36 @@ fn use_ptmp_as_parent() -> PyResult<bool> {
 #[pyfunction]
 fn uisp_base_url() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
-  Ok(config.uisp_integration.url)
+  let url = config.uisp_integration.url.clone();
+  Ok(url)
 }
 
 #[pyfunction]
 fn uisp_auth_token() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
-  Ok(config.uisp_integration.token)
+  let token = config.uisp_integration.token.clone();
+  Ok(token)
 }
 
 #[pyfunction]
 fn splynx_api_key() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
-  Ok(config.spylnx_integration.api_key)
+  let key = config.spylnx_integration.api_key.clone();
+  Ok(key)
 }
 
 #[pyfunction]
 fn splynx_api_secret() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
-  Ok(config.spylnx_integration.api_secret)
+  let secret = config.spylnx_integration.api_secret.clone();
+  Ok(secret)
 }
 
 #[pyfunction]
 fn splynx_api_url() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
-  Ok(config.spylnx_integration.url)
+  let url = config.spylnx_integration.url.clone();
+  Ok(url)
 }
 
 #[pyfunction]
@@ -551,7 +560,7 @@ fn automatic_import_uisp() -> PyResult<bool> {
 #[pyfunction]
 fn automatic_import_splynx() -> PyResult<bool> {
   let config = lqos_config::load_config().unwrap();
-  Ok(config.uisp_integration.enable_uisp)
+  Ok(config.spylnx_integration.enable_spylnx)
 }
 
 #[pyfunction]
@@ -569,13 +578,15 @@ fn automatic_import_powercode() -> PyResult<bool> {
 #[pyfunction]
 fn powercode_api_key() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
-  Ok(config.powercode_integration.powercode_api_key)
+  let key = config.powercode_integration.powercode_api_key.clone();
+  Ok(key)
 }
 
 #[pyfunction]
 fn powercode_api_url() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
-  Ok(config.powercode_integration.powercode_api_url)
+  let url = config.powercode_integration.powercode_api_url.clone();
+  Ok(url)
 }
 
 #[pyfunction]
@@ -587,37 +598,43 @@ fn automatic_import_sonar() -> PyResult<bool> {
 #[pyfunction]
 fn sonar_api_url() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
-  Ok(config.sonar_integration.sonar_api_url)
+  let url = config.sonar_integration.sonar_api_url.clone();
+  Ok(url)
 }
 
 #[pyfunction]
 fn sonar_api_key() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
-  Ok(config.sonar_integration.sonar_api_key)
+  let key = config.sonar_integration.sonar_api_key.clone();
+  Ok(key)
 }
 
 #[pyfunction]
 fn snmp_community() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
-  Ok(config.sonar_integration.snmp_community)
+  let key = config.sonar_integration.snmp_community.clone();
+  Ok(key)
 }
 
 #[pyfunction]
 fn sonar_airmax_ap_model_ids() -> PyResult<Vec<String>> {
   let config = lqos_config::load_config().unwrap();
-  Ok(config.sonar_integration.airmax_model_ids)
+  let key = config.sonar_integration.airmax_model_ids.clone();
+  Ok(key)
 }
 
 #[pyfunction]
 fn sonar_ltu_ap_model_ids() -> PyResult<Vec<String>> {
   let config = lqos_config::load_config().unwrap();
-  Ok(config.sonar_integration.ltu_model_ids)
+  let key = config.sonar_integration.ltu_model_ids.clone();
+  Ok(key)
 }
 
 #[pyfunction]
 fn sonar_active_status_ids() -> PyResult<Vec<String>> {
   let config = lqos_config::load_config().unwrap();
-  Ok(config.sonar_integration.active_status_ids)
+  let key = config.sonar_integration.active_status_ids.clone();
+  Ok(key)
 }
 
 #[pyfunction]
@@ -629,25 +646,29 @@ fn influx_db_enabled() -> PyResult<bool> {
 #[pyfunction]
 fn influx_db_bucket() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
-  Ok(config.influxdb.bucket)
+  let bucket = config.influxdb.bucket.clone();
+  Ok(bucket)
 }
 
 #[pyfunction]
 fn influx_db_org() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
-  Ok(config.influxdb.org)
+  let org = config.influxdb.org.clone();
+  Ok(org)
 }
 
 #[pyfunction]
 fn influx_db_token() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
-  Ok(config.influxdb.token)
+  let token = config.influxdb.token.clone();
+  Ok(token)
 }
 
 #[pyfunction]
 fn influx_db_url() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
-  Ok(config.influxdb.url)
+  let url = config.influxdb.url.clone();
+  Ok(url)
 }
 
 #[pyfunction]
@@ -673,5 +694,11 @@ pub fn get_tree_weights() -> PyResult<Vec<device_weights::NetworkNodeWeight>> {
 #[pyfunction]
 pub fn get_libreqos_directory() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
-  Ok(config.lqos_directory)
+  let dir = config.lqos_directory.clone();
+  Ok(dir)
+}
+
+#[pyfunction]
+pub fn is_network_flat() -> PyResult<bool> {
+  Ok(lqos_config::NetworkJson::load().unwrap().get_nodes_when_ready().len() == 1)
 }

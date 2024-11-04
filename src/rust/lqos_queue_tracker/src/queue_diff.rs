@@ -1,5 +1,5 @@
 use crate::queue_types::QueueType;
-use log::error;
+use tracing::error;
 use serde::Serialize;
 use thiserror::Error;
 

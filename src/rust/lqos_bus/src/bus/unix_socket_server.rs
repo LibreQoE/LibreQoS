@@ -2,7 +2,7 @@ use crate::{
   decode_request, encode_response, BusReply, BusRequest, BusResponse,
   BUS_SOCKET_PATH,
 };
-use log::{error, warn};
+use tracing::{debug, error, info, warn};
 use std::{ffi::CString, fs::remove_file};
 use thiserror::Error;
 use tokio::{
@@ -92,8 +92,9 @@ impl UnixSocketServer {
   pub async fn listen(
     &self,
     handle_bus_requests: fn(&[BusRequest], &mut Vec<BusResponse>),
+    mut bus_rx: tokio::sync::mpsc::Receiver<(tokio::sync::oneshot::Sender<BusReply>, BusRequest)>,
   ) -> Result<(), UnixSocketServerError> {
-    // Setup the listener and grant permissions to it
+    // Set up the listener and grant permissions to it
     let listener = UnixListener::bind(BUS_SOCKET_PATH);
     if listener.is_err() {
       error!("Unable to bind to {BUS_SOCKET_PATH}");
@@ -102,42 +103,56 @@ impl UnixSocketServer {
     }
     let listener = listener.unwrap();
     Self::make_socket_public()?;
-    warn!("Listening on: {}", BUS_SOCKET_PATH);
+    info!("Listening on: {}", BUS_SOCKET_PATH);
     loop {
-      let ret = listener.accept().await;
-      if ret.is_err() {
-        error!("Unable to listen for requests on bound {BUS_SOCKET_PATH}");
-        error!("{:?}", ret);
-        return Err(UnixSocketServerError::ListenFail);
-      }
-      let (mut socket, _) = ret.unwrap();
-      tokio::spawn(async move {
-        loop {
-          let mut buf = vec![0; READ_BUFFER_SIZE];
-
-          let bytes_read = socket.read(&mut buf).await;
-          if bytes_read.is_err() {
-            warn!("Unable to read from client socket. Server remains alive.");
-            warn!("This is probably harmless.");
-            warn!("{:?}", bytes_read);
-            break; // Escape out of the thread
-          }
-
-          if let Ok(request) = decode_request(&buf) {
+      tokio::select!(
+        ret = bus_rx.recv() => {
+          // We received a channel-based message
+          if let Some((reply_channel, msg)) = ret {
             let mut response = BusReply { responses: Vec::with_capacity(8) };
-            handle_bus_requests(&request.requests, &mut response.responses);
-            let _ =
-              reply_unix(&encode_response(&response).unwrap(), &mut socket)
-                .await;
-            if !request.persist {
-              break;
+            handle_bus_requests(&[msg], &mut response.responses);
+            if let Err(e) = reply_channel.send(response) {
+                warn!("Unable to send response back to client: {:?}", e);
             }
-          } else {
-            warn!("Invalid data on local socket");
-            break;
           }
-        }
-      });
+        },
+        ret = listener.accept() => {
+          // We received a UNIX socket message
+          if ret.is_err() {
+            error!("Unable to listen for requests on bound {BUS_SOCKET_PATH}");
+            error!("{:?}", ret);
+            return Err(UnixSocketServerError::ListenFail);
+          }
+          let (mut socket, _) = ret.unwrap();
+          tokio::spawn(async move {
+            loop {
+              let mut buf = vec![0; READ_BUFFER_SIZE];
+
+              let bytes_read = socket.read(&mut buf).await;
+              if bytes_read.is_err() {
+                debug!("Unable to read from client socket. Server remains alive.");
+                debug!("This is probably harmless.");
+                debug!("{:?}", bytes_read);
+                break; // Escape out of the thread
+              }
+
+              if let Ok(request) = decode_request(&buf) {
+                let mut response = BusReply { responses: Vec::with_capacity(8) };
+                handle_bus_requests(&request.requests, &mut response.responses);
+                let _ =
+                  reply_unix(&encode_response(&response).unwrap(), &mut socket)
+                    .await;
+                if !request.persist {
+                  break;
+                }
+              } else {
+                warn!("Invalid data on local socket");
+                break;
+              }
+            }
+          });
+        },
+      );
     }
     //Ok(()) // unreachable
   }
@@ -155,8 +170,8 @@ async fn reply_unix(
 ) -> Result<(), UnixSocketServerError> {
   let ret = socket.write_all(response).await;
   if ret.is_err() {
-    warn!("Unable to write to UNIX socket. This is usually harmless, meaning the client went away.");
-    warn!("{:?}", ret);
+    debug!("Unable to write to UNIX socket. This is usually harmless, meaning the client went away.");
+    debug!("{:?}", ret);
     return Err(UnixSocketServerError::WriteFail);
   };
   Ok(())

@@ -5,7 +5,7 @@ use zerocopy::FromBytes;
 use lqos_utils::units::DownUpOrder;
 
 /// Representation of the eBPF `flow_key_t` type.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, FromBytes)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, FromBytes)]
 #[repr(C)]
 pub struct FlowbeeKey {
     /// Mapped `XdpIpAddress` source for the flow.
@@ -25,7 +25,7 @@ pub struct FlowbeeKey {
 }
 
 /// Mapped representation of the eBPF `flow_data_t` type.
-#[derive(Debug, Clone, Default, FromBytes)]
+#[derive(Debug, Clone, Copy, Default, FromBytes)]
 #[repr(C)]
 pub struct FlowbeeData {
     /// Time (nanos) when the connection was established
