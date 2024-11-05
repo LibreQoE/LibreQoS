@@ -23,6 +23,14 @@ pub struct CircuitThroughput {
     pub circuit_hash: i64,
     pub download_bytes: u64,
     pub upload_bytes: u64,
+    pub packets_down: u64,
+    pub packets_up: u64,
+    pub packets_tcp_down: u64,
+    pub packets_tcp_up: u64,
+    pub packets_udp_down: u64,
+    pub packets_udp_up: u64,
+    pub packets_icmp_down: u64,
+    pub packets_icmp_up: u64,
 }
 
 #[repr(C)]
@@ -67,6 +75,14 @@ pub struct SiteThroughput {
     pub site_hash: i64,
     pub download_bytes: u64,
     pub upload_bytes: u64,
+    pub packets_down: u64,
+    pub packets_up: u64,
+    pub packets_tcp_down: u64,
+    pub packets_tcp_up: u64,
+    pub packets_udp_down: u64,
+    pub packets_udp_up: u64,
+    pub packets_icmp_down: u64,
+    pub packets_icmp_up: u64,
 }
 
 #[repr(C)]

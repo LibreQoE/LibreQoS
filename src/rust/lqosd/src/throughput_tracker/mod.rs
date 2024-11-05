@@ -204,7 +204,6 @@ fn throughput_task(
             std::thread::Builder::new().name("Throughput Stats Submit".to_string()).spawn(move || {
                 submit_throughput_stats(my_lts_tx, elapsed_f64, stats_counter, my_system_usage_actor);
             }).unwrap().join().unwrap();
-            //submit_throughput_stats(long_term_stats_tx.clone(), elapsed_f64);
         }
         last_submitted_to_lts = Some(Instant::now());
         timer_metrics.lts_submit = timer_metrics.start.elapsed().as_secs_f64();
@@ -279,6 +278,24 @@ fn submit_throughput_stats(
         THROUGHPUT_TRACKER
             .packets_per_second.get_up(),
     );
+    let tcp_packets_per_second = (
+        THROUGHPUT_TRACKER
+            .tcp_packets_per_second.get_down(),
+        THROUGHPUT_TRACKER
+            .tcp_packets_per_second.get_up(),
+    );
+    let udp_packets_per_second = (
+        THROUGHPUT_TRACKER
+            .udp_packets_per_second.get_down(),
+        THROUGHPUT_TRACKER
+            .udp_packets_per_second.get_up(),
+    );
+    let icmp_packets_per_second = (
+        THROUGHPUT_TRACKER
+            .icmp_packets_per_second.get_down(),
+        THROUGHPUT_TRACKER
+            .icmp_packets_per_second.get_up(),
+    );
     let bits_per_second = THROUGHPUT_TRACKER.bits_per_second();
     let shaped_bits_per_second = THROUGHPUT_TRACKER.shaped_bits_per_second();
     metrics.total_throughput = metrics.start.elapsed().as_secs_f64();
@@ -331,6 +348,7 @@ fn submit_throughput_stats(
         warn!("{:?}", metrics);
     }
 
+    /////////////////////////////////////////////////////////////////
     // LTS2 Block
     if let Ok(now) = unix_now() {
         // LTS2 Shaped Devices
@@ -423,6 +441,9 @@ fn submit_throughput_stats(
         if lts2_sys::total_throughput(now,
                                       scale_u64_by_f64(bytes.down, scale), scale_u64_by_f64(bytes.up, scale), scale_u64_by_f64(shaped_bytes.down, scale), scale_u64_by_f64(shaped_bytes.up, scale),
                                       scale_u64_by_f64(packets_per_second.0, scale), scale_u64_by_f64(packets_per_second.1, scale),
+                                      scale_u64_by_f64(tcp_packets_per_second.0, scale), scale_u64_by_f64(tcp_packets_per_second.1, scale),
+                                      scale_u64_by_f64(udp_packets_per_second.0, scale), scale_u64_by_f64(udp_packets_per_second.1, scale),
+                                      scale_u64_by_f64(icmp_packets_per_second.0, scale), scale_u64_by_f64(icmp_packets_per_second.1, scale),
                                       min_rtt, max_rtt, median_rtt,
                                       tcp_retransmits.down, tcp_retransmits.up,
                                       TOTAL_QUEUE_STATS.marks.get_down() as i32, TOTAL_QUEUE_STATS.marks.get_up() as i32,
@@ -433,7 +454,15 @@ fn submit_throughput_stats(
 
         // Send per-circuit stats to LTS2
         // Start by combining the throughput data for each circuit as a whole
-        let mut circuit_throughput: FxHashMap<i64, DownUpOrder<u64>> = FxHashMap::default();
+        struct CircuitThroughputTemp {
+            bytes: DownUpOrder<u64>,
+            packets: DownUpOrder<u64>,
+            tcp_packets: DownUpOrder<u64>,
+            udp_packets: DownUpOrder<u64>,
+            icmp_packets: DownUpOrder<u64>,
+        }
+
+        let mut circuit_throughput: FxHashMap<i64, CircuitThroughputTemp> = FxHashMap::default();
         let mut circuit_retransmits: FxHashMap<i64, DownUpOrder<u64>> = FxHashMap::default();
         let mut circuit_rtt: FxHashMap<i64, Vec<f32>> = FxHashMap::default();
 
@@ -443,9 +472,19 @@ fn submit_throughput_stats(
             .filter(|h| h.circuit_id.is_some() && h.bytes_per_second.not_zero())
             .for_each(|h| {
                 if let Some(c) = circuit_throughput.get_mut(&h.circuit_hash.unwrap()) {
-                    *c += h.bytes_per_second;
+                    c.bytes += h.bytes_per_second;
+                    c.packets += h.packets_per_second;
+                    c.tcp_packets += h.tcp_packets;
+                    c.udp_packets += h.udp_packets;
+                    c.icmp_packets += h.icmp_packets;
                 } else {
-                    circuit_throughput.insert(h.circuit_hash.unwrap(), h.bytes_per_second);
+                    circuit_throughput.insert(h.circuit_hash.unwrap(), CircuitThroughputTemp {
+                        bytes: h.bytes_per_second,
+                        packets: h.packets_per_second,
+                        tcp_packets: h.tcp_packets,
+                        udp_packets: h.udp_packets,
+                        icmp_packets: h.icmp_packets,
+                    });
                 }
             });
 
@@ -480,8 +519,16 @@ fn submit_throughput_stats(
                 lts2_sys::shared_types::CircuitThroughput {
                     timestamp: now,
                     circuit_hash: k,
-                    download_bytes: scale_u64_by_f64(v.down, scale),
-                    upload_bytes: scale_u64_by_f64(v.up, scale),
+                    download_bytes: scale_u64_by_f64(v.bytes.down, scale),
+                    upload_bytes: scale_u64_by_f64(v.bytes.up, scale),
+                    packets_down: scale_u64_by_f64(v.packets.down, scale),
+                    packets_up: scale_u64_by_f64(v.packets.up, scale),
+                    packets_tcp_down: scale_u64_by_f64(v.tcp_packets.down, scale),
+                    packets_tcp_up: scale_u64_by_f64(v.tcp_packets.up, scale),
+                    packets_udp_down: scale_u64_by_f64(v.udp_packets.down, scale),
+                    packets_udp_up: scale_u64_by_f64(v.udp_packets.up, scale),
+                    packets_icmp_down: scale_u64_by_f64(v.icmp_packets.down, scale),
+                    packets_icmp_up: scale_u64_by_f64(v.icmp_packets.up, scale),
                 }
             })
             .collect::<Vec<_>>();
@@ -568,6 +615,14 @@ fn submit_throughput_stats(
                     site_hash,
                     download_bytes: scale_u64_by_f64(node.current_throughput.down, scale),
                     upload_bytes: scale_u64_by_f64(node.current_throughput.up, scale),
+                    packets_down: scale_u64_by_f64(node.current_packets.down, scale),
+                    packets_up: scale_u64_by_f64(node.current_packets.up, scale),
+                    packets_tcp_down: scale_u64_by_f64(node.current_tcp_packets.down, scale),
+                    packets_tcp_up: scale_u64_by_f64(node.current_tcp_packets.up, scale),
+                    packets_udp_down: scale_u64_by_f64(node.current_udp_packets.down, scale),
+                    packets_udp_up: scale_u64_by_f64(node.current_udp_packets.up, scale),
+                    packets_icmp_down: scale_u64_by_f64(node.current_icmp_packets.down, scale),
+                    packets_icmp_up: scale_u64_by_f64(node.current_icmp_packets.up, scale),
                 });
             }
             if node.current_tcp_retransmits.not_zero() {

@@ -16,14 +16,14 @@ const VERSION_STRING: &str = include_str!("../../../../VERSION_STRING");
 const LTS_LINK_ACTIVE: &str = r#"
 <li class="nav-item">
     <a class="nav-link" id="lnkStats" href="https://stats.libreqos.io/">
-        <i class="fa fa-fw fa-centerline fa-line-chart nav-icon"></i> Statistics
+        <i class="fa fa-fw fa-centerline fa-line-chart nav-icon"></i> Insight
     </a>
 </li>"#;
 
 const LTS_LINK_OFFER_TRIAL: &str = r#"
 <li class="nav-item">
     <a class="nav-link text-success" id="lnkStats" href="lts_trial.html">
-        <i class="fa fa-line-chart nav-icon"></i> Statistics - Free Trial
+        <i class="fa fa-line-chart nav-icon"></i> Insight - Free Trial
     </a>
 </li>"#;
 
