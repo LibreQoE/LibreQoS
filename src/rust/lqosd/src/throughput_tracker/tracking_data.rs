@@ -16,6 +16,9 @@ pub struct ThroughputTracker {
   pub(crate) raw_data: DashMap<XdpIpAddress, ThroughputEntry>,
   pub(crate) bytes_per_second: AtomicDownUp,
   pub(crate) packets_per_second: AtomicDownUp,
+  pub(crate) tcp_packets_per_second: AtomicDownUp,
+  pub(crate) udp_packets_per_second: AtomicDownUp,
+  pub(crate) icmp_packets_per_second: AtomicDownUp,
   pub(crate) shaped_bytes_per_second: AtomicDownUp,
 }
 
@@ -30,6 +33,9 @@ impl ThroughputTracker {
       raw_data: DashMap::default(),
       bytes_per_second: AtomicDownUp::zeroed(),
       packets_per_second: AtomicDownUp::zeroed(),
+      tcp_packets_per_second: AtomicDownUp::zeroed(),
+      udp_packets_per_second: AtomicDownUp::zeroed(),
+      icmp_packets_per_second: AtomicDownUp::zeroed(),
       shaped_bytes_per_second: AtomicDownUp::zeroed(),
     }
   }
@@ -114,11 +120,19 @@ impl ThroughputTracker {
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
     throughput_for_each(&mut |xdp_ip, counts| {
       if let Some(mut entry) = raw_data.get_mut(xdp_ip) {
+        // Zero the counter, we have to do a per-CPU sum
         entry.bytes = DownUpOrder::zeroed();
         entry.packets = DownUpOrder::zeroed();
+        entry.tcp_packets = DownUpOrder::zeroed();
+        entry.udp_packets = DownUpOrder::zeroed();
+        entry.icmp_packets = DownUpOrder::zeroed();
+        // Sum the counts across CPUs (it's a per-CPU map)
         for c in counts {
           entry.bytes.checked_add_direct(c.download_bytes, c.upload_bytes);
           entry.packets.checked_add_direct(c.download_packets, c.upload_packets);
+          entry.tcp_packets.checked_add_direct(c.tcp_download_packets, c.tcp_upload_packets);
+          entry.udp_packets.checked_add_direct(c.udp_download_packets, c.udp_upload_packets);
+          entry.icmp_packets.checked_add_direct(c.icmp_download_packets, c.icmp_upload_packets);
           if c.tc_handle != 0 {
             entry.tc_handle = TcHandle::from_u32(c.tc_handle);
           }
@@ -135,6 +149,22 @@ impl ThroughputTracker {
               (
                 entry.bytes.down.saturating_sub(entry.prev_bytes.down),
                 entry.bytes.up.saturating_sub(entry.prev_bytes.up),
+              ),
+              (
+                  entry.packets.down.saturating_sub(entry.prev_packets.down),
+                  entry.packets.up.saturating_sub(entry.prev_packets.up),
+              ),
+              (
+                  entry.tcp_packets.down.saturating_sub(entry.prev_tcp_packets.down),
+                  entry.tcp_packets.up.saturating_sub(entry.prev_tcp_packets.up),
+              ),
+              (
+                  entry.udp_packets.down.saturating_sub(entry.prev_udp_packets.down),
+                  entry.udp_packets.up.saturating_sub(entry.prev_udp_packets.up),
+              ),
+              (
+                  entry.icmp_packets.down.saturating_sub(entry.prev_icmp_packets.down),
+                  entry.icmp_packets.up.saturating_sub(entry.prev_icmp_packets.up),
               ),
             );
           }
@@ -153,6 +183,12 @@ impl ThroughputTracker {
           prev_packets: DownUpOrder::zeroed(),
           bytes_per_second: DownUpOrder::zeroed(),
           packets_per_second: DownUpOrder::zeroed(),
+          tcp_packets: DownUpOrder::zeroed(),
+          udp_packets: DownUpOrder::zeroed(),
+          icmp_packets: DownUpOrder::zeroed(),
+          prev_tcp_packets: DownUpOrder::zeroed(),
+          prev_udp_packets: DownUpOrder::zeroed(),
+          prev_icmp_packets: DownUpOrder::zeroed(),
           tc_handle: TcHandle::zero(),
           recent_rtt_data: [RttData::from_nanos(0); 60],
           last_fresh_rtt_data_cycle: 0,
@@ -163,6 +199,9 @@ impl ThroughputTracker {
         for c in counts {
           entry.bytes.checked_add_direct(c.download_bytes, c.upload_bytes);
           entry.packets.checked_add_direct(c.download_packets, c.upload_packets);
+          entry.tcp_packets.checked_add_direct(c.tcp_download_packets, c.tcp_upload_packets);
+          entry.udp_packets.checked_add_direct(c.udp_download_packets, c.udp_upload_packets);
+          entry.icmp_packets.checked_add_direct(c.icmp_download_packets, c.icmp_upload_packets);
           if c.tc_handle != 0 {
             entry.tc_handle = TcHandle::from_u32(c.tc_handle);
           }
@@ -365,6 +404,9 @@ impl ThroughputTracker {
     let current_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
     self.bytes_per_second.set_to_zero();
     self.packets_per_second.set_to_zero();
+    self.tcp_packets_per_second.set_to_zero();
+    self.udp_packets_per_second.set_to_zero();
+    self.icmp_packets_per_second.set_to_zero();
     self.shaped_bytes_per_second.set_to_zero();
     self
       .raw_data
@@ -379,12 +421,21 @@ impl ThroughputTracker {
           v.bytes.up.saturating_sub(v.prev_bytes.up),
           v.packets.down.saturating_sub(v.prev_packets.down),
           v.packets.up.saturating_sub(v.prev_packets.up),
+          v.tcp_packets.down.saturating_sub(v.prev_tcp_packets.down),
+          v.tcp_packets.up.saturating_sub(v.prev_tcp_packets.up),
+          v.udp_packets.down.saturating_sub(v.prev_udp_packets.down),
+          v.udp_packets.up.saturating_sub(v.prev_udp_packets.up),
+          v.icmp_packets.down.saturating_sub(v.prev_icmp_packets.down),
+          v.icmp_packets.up.saturating_sub(v.prev_icmp_packets.up),
           v.tc_handle.as_u32() > 0,
         )
       })
-      .for_each(|(bytes_down, bytes_up, packets_down, packets_up, shaped)| {
+      .for_each(|(bytes_down, bytes_up, packets_down, packets_up, tcp_down, tcp_up, udp_down, udp_up, icmp_down, icmp_up, shaped)| {
         self.bytes_per_second.checked_add_tuple((bytes_down, bytes_up));
         self.packets_per_second.checked_add_tuple((packets_down, packets_up));
+        self.tcp_packets_per_second.checked_add_tuple((tcp_down, tcp_up));
+        self.udp_packets_per_second.checked_add_tuple((udp_down, udp_up));
+        self.icmp_packets_per_second.checked_add_tuple((icmp_down, icmp_up));
         if shaped {
           self.shaped_bytes_per_second.checked_add_tuple((bytes_down, bytes_up));
         }

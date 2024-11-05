@@ -14,6 +14,18 @@ pub struct NetworkJsonNode {
     /// Current throughput (in bytes/second) at this node
     pub current_throughput: DownUpOrder<u64>, // In bytes
 
+    /// Current Packets
+    pub current_packets: DownUpOrder<u64>,
+
+    /// Current TCP Packets
+    pub current_tcp_packets: DownUpOrder<u64>,
+
+    /// Current UDP Packets
+    pub current_udp_packets: DownUpOrder<u64>,
+
+    /// Current ICMP Packets
+    pub current_icmp_packets: DownUpOrder<u64>,
+
     /// Current TCP Retransmits
     pub current_tcp_retransmits: DownUpOrder<u64>, // In retries
 
@@ -49,6 +61,22 @@ impl NetworkJsonNode {
             current_throughput: (
                 self.current_throughput.get_down(),
                 self.current_throughput.get_up(),
+            ),
+            current_packets: (
+                self.current_packets.get_down(),
+                self.current_packets.get_up(),
+            ),
+            current_tcp_packets: (
+                self.current_tcp_packets.get_down(),
+                self.current_tcp_packets.get_up(),
+            ),
+            current_udp_packets: (
+                self.current_udp_packets.get_down(),
+                self.current_udp_packets.get_up(),
+            ),
+            current_icmp_packets: (
+                self.current_icmp_packets.get_down(),
+                self.current_icmp_packets.get_up(),
             ),
             current_retransmits: (
                 self.current_tcp_retransmits.get_down(),

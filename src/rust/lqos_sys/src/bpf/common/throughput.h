@@ -14,6 +14,12 @@ struct host_counter {
     __u64 upload_bytes;
     __u64 download_packets;
     __u64 upload_packets;
+    __u64 tcp_download_packets;
+    __u64 tcp_upload_packets;
+    __u64 udp_download_packets;
+    __u64 udp_upload_packets;
+    __u64 icmp_download_packets;
+    __u64 icmp_upload_packets;
     __u32 tc_handle;
     __u64 last_seen;
 };
@@ -34,37 +40,77 @@ static __always_inline void track_traffic(
     struct in6_addr * key, 
     __u32 size, 
     __u32 tc_handle,
-    __u64 now
+    struct dissector_t * dissector
 ) {
     // Count the bits. It's per-CPU, so we can't be interrupted - no sync required
     struct host_counter * counter = 
         (struct host_counter *)bpf_map_lookup_elem(&map_traffic, key);
     if (counter) {
-        counter->last_seen = now;
+        counter->last_seen = dissector->now;
         counter->tc_handle = tc_handle;
         if (direction == 1) {
             // Download
             counter->download_packets += 1;
             counter->download_bytes += size;
+            switch (dissector->ip_protocol) {
+                case IPPROTO_TCP:
+                    counter->tcp_download_packets += 1;
+                    break;
+                case IPPROTO_UDP:
+                    counter->udp_download_packets += 1;
+                    break;
+                case IPPROTO_ICMP:
+                    counter->icmp_download_packets += 1;
+                    break;
+            }
         } else {
             // Upload
             counter->upload_packets += 1;
             counter->upload_bytes += size;
+            switch (dissector->ip_protocol) {
+                case IPPROTO_TCP:
+                    counter->tcp_upload_packets += 1;
+                    break;
+                case IPPROTO_UDP:
+                    counter->udp_upload_packets += 1;
+                    break;
+                case IPPROTO_ICMP:
+                    counter->icmp_upload_packets += 1;
+                    break;
+            }
         }
     } else {
         struct host_counter new_host = {0};
         new_host.tc_handle = tc_handle;
-        new_host.last_seen = now;
+        new_host.last_seen = dissector->now;
         if (direction == 1) {
             new_host.download_packets = 1;
             new_host.download_bytes = size;
-            new_host.upload_bytes = 0;
-            new_host.upload_packets = 0;
+            switch (dissector->ip_protocol) {
+                case IPPROTO_TCP:
+                    new_host.tcp_download_packets = 1;
+                    break;
+                case IPPROTO_UDP:
+                    new_host.udp_download_packets = 1;
+                    break;
+                case IPPROTO_ICMP:
+                    new_host.icmp_download_packets = 1;
+                    break;
+            }
         } else {
             new_host.upload_packets = 1;
             new_host.upload_bytes = size;
-            new_host.download_bytes = 0;
-            new_host.download_packets = 0;
+            switch (dissector->ip_protocol) {
+                case IPPROTO_TCP:
+                    new_host.tcp_upload_packets = 1;
+                    break;
+                case IPPROTO_UDP:
+                    new_host.udp_upload_packets = 1;
+                    break;
+                case IPPROTO_ICMP:
+                    new_host.icmp_upload_packets = 1;
+                    break;
+            }
         }
         if (bpf_map_update_elem(&map_traffic, key, &new_host, BPF_NOEXIST) != 0) {
             bpf_debug("Failed to insert flow");

@@ -27,11 +27,16 @@ There are two options for the bridge to pass data through your two interfaces:
 - Bifrost XDP-Accelerated Bridge
 - Regular Linux Bridge
 
-The Bifrost Bridge is recommended for Intel NICs with XDP support, such as the X520 and X710.
-The regular Linux bridge is recommended for Nvidea/Mellanox NICs such as the ConnectX-5 series (which have superior bridge performance), and VM setups using virtualized NICs.
-To use the Bifrost bridge, skip the regular Linux bridge section below, and be sure to enable Bifrost/XDP in lqos.conf a few sections below.
 
-### Adding a regular Linux bridge (if not using Bifrost XDP bridge)
+The regular Linux bridge is recommended for Nvidea/Mellanox NICs such as the ConnectX-5 series (which have superior bridge performance), and VM setups using virtualized NICs. The Bifrost Bridge is recommended for Intel NICs with XDP support, such as the X520 and X710.
+
+To use the Bifrost bridge, be sure to enable Bifrost/XDP in lqos.conf in the [Configuration](configuration.md) section.
+
+Below are the instructions to configure Netplan, whether using the Linux Bridge or Bifrost XDP bridge:
+
+## Netplan config
+
+### Netplan for a regular Linux bridge (if not using Bifrost XDP bridge)
 
 From the Ubuntu VM, create a linux interface bridge - br0 - with the two shaping interfaces.
 Find your existing .yaml file in /etc/netplan/ with
@@ -57,10 +62,8 @@ network:
   ethernets:
     ens18:
       addresses:
-      - 10.0.0.12/24
-      routes:
-      - to: default
-        via: 10.0.0.1
+      - (addr goes here)
+      gateway4: (gateway goes here)
       nameservers:
         addresses:
         - 1.1.1.1
@@ -68,8 +71,10 @@ network:
         search: []
     ens19:
       dhcp4: no
+      dhcp6: no
     ens20:
       dhcp4: no
+      dhcp6: no
   version: 2
   bridges:
     br0:
@@ -78,9 +83,58 @@ network:
         - ens20
 ```
 
-Make sure to replace 10.0.0.12/24 with your LibreQoS VM's address and subnet, and to replace the default gateway 10.0.0.1 with whatever your default gateway is.
+By setting `dhcp4: no` and `dhcp6: no`, the interfaces will be brought up as part of the normal boot cycle, despite not having IP addresses assigned.
+
+Make sure to replace `(addr goes here)` with your LibreQoS VM's address and subnet CIDR, and to replace `(gateway goes here)` with whatever your default gateway is.
 
 Then run
+
+```shell
+sudo netplan apply
+```
+
+### Netplan for the Bifrost XDP bridge
+
+Find your existing .yaml file in /etc/netplan/ with
+
+```shell
+cd /etc/netplan/
+ls
+```
+
+Then edit the .yaml file there with
+
+```shell
+sudo nano XX-cloud-init.yaml
+```
+
+With XX corresponding to the name of the existing file.
+
+Editing the .yaml file, we need to define the shaping interfaces (here, ens19 and ens20) and add the bridge with those two interfaces. Assuming your interfaces are ens18, ens19, and ens20, here is what your file might look like:
+
+```
+network:
+  ethernets:
+    ens18:
+      addresses:
+      - (addr goes here)
+      gateway4: (gateway goes here)
+      nameservers:
+        addresses:
+        - (etc)
+        search: []
+    ens19:
+      dhcp4: no
+      dhcp6: no
+    ens20:
+      dhcp4: no
+      dhcp6: no
+```
+
+By setting `dhcp4: no` and `dhcp6: no`, the interfaces will be brought up as part of the normal boot cycle, despite not having IP addresses assigned.
+
+Make sure to replace (addr goes here) with your LibreQoS VM's address and subnet CIDR, and to replace `(gateway goes here)` with whatever your default gateway is.
+Once everything is in place, run:
 
 ```shell
 sudo netplan apply

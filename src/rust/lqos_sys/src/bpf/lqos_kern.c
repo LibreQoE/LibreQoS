@@ -153,7 +153,7 @@ int xdp_prog(struct xdp_md *ctx)
         &lookup_key.address, 
         ctx->data_end - ctx->data, // end - data = length
         tc_handle,
-        dissector.now
+        &dissector
     );
 
     // Send on its way
