@@ -15,7 +15,7 @@ const VERSION_STRING: &str = include_str!("../../../../VERSION_STRING");
 
 const LTS_LINK_ACTIVE: &str = r#"
 <li class="nav-item">
-    <a class="nav-link" id="lnkStats" href="https://stats.libreqos.io/">
+    <a class="nav-link" id="lnkStats" href="https://insight.libreqos.com/">
         <i class="fa fa-fw fa-centerline fa-line-chart nav-icon"></i> Insight
     </a>
 </li>"#;
