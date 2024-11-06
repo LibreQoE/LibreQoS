@@ -15,7 +15,7 @@ export class RetransmitsGraph extends DashboardGraph {
 
         this.option = {
             grid: {
-                x: '15%',
+                x: '25%',
             },
             legend: {
                 orient: "horizontal",
@@ -44,7 +44,7 @@ export class RetransmitsGraph extends DashboardGraph {
                 type: 'value',
                 axisLabel: {
                     formatter: (val) => {
-                        return scaleNumber(Math.abs(val), 0);
+                        return Math.abs(val) + "%";
                     },
                 }
             },
@@ -70,7 +70,15 @@ export class RetransmitsGraph extends DashboardGraph {
         this.option && this.chart.setOption(this.option);
     }
 
-    update(down, up) {
+    update(down, up, tcp_down, tcp_up) {
+        if (tcp_down === 0) {
+            tcp_down = 1;
+        }
+        if (tcp_up === 0) {
+            tcp_up = 1;
+        }
+        up = (up / tcp_up) * 100.0; // Percentage
+        down = (down / tcp_down) * 100.0; // Percentage
         this.chart.hideLoading();
         this.ringbuffer.push(down, 0 - up);
 

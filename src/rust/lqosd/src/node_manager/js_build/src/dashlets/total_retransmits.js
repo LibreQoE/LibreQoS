@@ -68,7 +68,7 @@ export class TcpRetransmitsDash extends BaseDashlet{
 
     onMessage(msg) {
         if (msg.event === "Retransmits") {
-            this.graph.update(msg.data.down, msg.data.up);
+            this.graph.update(msg.data.down, msg.data.up, msg.data.tcp_down, msg.data.tcp_up);
             if (!this.ltsLoaded && window.hasLts) {
                 //console.log("Loading LTS data");
                 this.graphs.forEach((g) => {

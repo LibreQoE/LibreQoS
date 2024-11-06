@@ -1060,6 +1060,8 @@ pub fn min_max_median_rtt() -> Option<MinMaxMedianRtt> {
 pub struct TcpRetransmitTotal {
     pub up: i32,
     pub down: i32,
+    pub tcp_up: u64,
+    pub tcp_down: u64,
 }
 
 pub fn min_max_median_tcp_retransmits() -> TcpRetransmitTotal {
@@ -1067,7 +1069,8 @@ pub fn min_max_median_tcp_retransmits() -> TcpRetransmitTotal {
         .cycle
         .load(std::sync::atomic::Ordering::Relaxed);
 
-    let mut total = TcpRetransmitTotal { up: 0, down: 0 };
+    let total_tcp = THROUGHPUT_TRACKER.tcp_packets_per_second();
+    let mut total = TcpRetransmitTotal { up: 0, down: 0, tcp_down: total_tcp.down, tcp_up: total_tcp.up };
 
     THROUGHPUT_TRACKER
         .raw_data
