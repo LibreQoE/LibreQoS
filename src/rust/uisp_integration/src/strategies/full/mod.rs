@@ -26,7 +26,7 @@ use crate::strategies::full::parse::parse_uisp_datasets;
 use crate::strategies::full::root_site::{find_root_site, set_root_site};
 use crate::strategies::full::routes_override::get_route_overrides;
 use crate::strategies::full::shaped_devices_writer::write_shaped_devices;
-use crate::strategies::full::squash_single_entry_aps::squash_single_aps;
+use crate::strategies::full::squash_single_entry_aps::{squash_squashed_sites, squash_single_aps};
 use crate::strategies::full::tree_walk::walk_tree_for_routing;
 use crate::strategies::full::uisp_fetch::load_uisp_data;
 use crate::strategies::full::utils::{print_sites, warn_of_no_parents_and_promote};
@@ -120,6 +120,9 @@ pub async fn build_full_network(
 
     // Correct any sites with zero capacity
     correct_zero_capacity_sites(&mut sites, &config);
+
+    // Squash any sites that are in the squash list
+    squash_squashed_sites(&mut sites, config.clone(), &root_site)?;
 
     // Print Sites
     if let Some(root_idx) = sites.iter().position(|s| s.name == root_site) {
