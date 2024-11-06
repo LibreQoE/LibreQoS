@@ -16,16 +16,16 @@ export class PacketsPerSecondBar extends DashboardGraph {
             },
             yAxis: {
                 type: 'category',
-                data: ['TCP', 'UDP', 'ICMP'],
+                data: ['TCP', 'UDP', 'ICMP', 'Other'],
             },
             series: [
                 {
                     type: 'bar',
-                    data: [0, 0, 0],
+                    data: [0, 0, 0, 0],
                 },
                 {
                     type: 'bar',
-                    data: [0, 0, 0],
+                    data: [0, 0, 0, 0],
                 }
             ]
         }
@@ -38,11 +38,13 @@ export class PacketsPerSecondBar extends DashboardGraph {
             tcp.down,
             udp.down,
             icmp.down,
+            down - tcp.down - udp.down - icmp.down,
         ];
         this.option.series[1].data = [
             tcp.up,
             udp.up,
             icmp.up,
+            up - tcp.up - udp.up - icmp.up,
         ];
         this.chart.setOption(this.option);
     }
