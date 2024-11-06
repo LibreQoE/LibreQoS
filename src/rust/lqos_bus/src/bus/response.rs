@@ -28,6 +28,15 @@ pub enum BusResponse {
     /// In pps
     packets_per_second: DownUpOrder<u64>,
 
+    /// PPS TCP only
+    tcp_packets_per_second: DownUpOrder<u64>,
+
+    /// PPS UDP only
+    udp_packets_per_second: DownUpOrder<u64>,
+
+    /// PPS ICMP only
+    icmp_packets_per_second: DownUpOrder<u64>,
+
     /// How much of the response has been subject to the shaper?
     shaped_bits_per_second: DownUpOrder<u64>,
   },

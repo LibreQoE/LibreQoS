@@ -720,17 +720,23 @@ fn ip6_to_bytes(ip: (Ipv6Addr, u32)) -> ([u8; 16], u8) {
 }
 
 pub fn current_throughput() -> BusResponse {
-    let (bits_per_second, packets_per_second, shaped_bits_per_second) = {
+    let (bits_per_second, packets_per_second, shaped_bits_per_second, tcp_pps, udp_pps, icmp_pps) = {
         (
             THROUGHPUT_TRACKER.bits_per_second(),
             THROUGHPUT_TRACKER.packets_per_second(),
             THROUGHPUT_TRACKER.shaped_bits_per_second(),
+            THROUGHPUT_TRACKER.tcp_packets_per_second(),
+            THROUGHPUT_TRACKER.udp_packets_per_second(),
+            THROUGHPUT_TRACKER.icmp_packets_per_second(),
         )
     };
     BusResponse::CurrentThroughput {
         bits_per_second,
         packets_per_second,
         shaped_bits_per_second,
+        tcp_packets_per_second: tcp_pps,
+        udp_packets_per_second: udp_pps,
+        icmp_packets_per_second: icmp_pps,
     }
 }
 

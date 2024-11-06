@@ -20,7 +20,7 @@ pub async fn throughput(
     bus_tx.send((tx, request)).await.expect("Failed to send request to bus");
     let replies = rx.await.expect("Failed to receive throughput from bus");
     for reply in replies.responses.into_iter() {
-        if let BusResponse::CurrentThroughput { bits_per_second, packets_per_second, shaped_bits_per_second } = reply {
+        if let BusResponse::CurrentThroughput { bits_per_second, packets_per_second, tcp_packets_per_second, udp_packets_per_second, icmp_packets_per_second, shaped_bits_per_second } = reply {
             let max = if let Ok(config) = load_config() {
                 DownUpOrder::new(
                     config.queues.uplink_bandwidth_mbps,
@@ -36,6 +36,9 @@ pub async fn throughput(
                 "data": {
                     "bps": bits_per_second,
                     "pps": packets_per_second,
+                    "tcp_pps": tcp_packets_per_second,
+                    "udp_pps": udp_packets_per_second,
+                    "icmp_pps": icmp_packets_per_second,
                     "shaped_bps": shaped_bits_per_second,
                     "max": max,
                 }

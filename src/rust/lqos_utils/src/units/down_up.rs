@@ -22,7 +22,7 @@ pub struct DownUpOrder<T> {
 impl <T> DownUpOrder<T>
 where T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedSub
     + num_traits::CheckedAdd + num_traits::SaturatingSub + num_traits::SaturatingMul
-    + num_traits::FromPrimitive
+    + num_traits::FromPrimitive + num_traits::SaturatingAdd
 {
     /// Create a new DownUpOrder with the given down and up values.
     pub fn new(down: T, up: T) -> Self {
@@ -92,7 +92,7 @@ where T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedSub
 
     /// Add the `down` and `up` values, giving a total.
     pub fn sum(&self) -> T {
-        self.down + self.up
+        self.down.saturating_add(&self.up)
     }
 
     /// Multiply the `down` and `up` values by 8, giving the total number of bits, assuming

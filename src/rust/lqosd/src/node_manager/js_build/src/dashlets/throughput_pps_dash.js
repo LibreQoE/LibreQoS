@@ -27,7 +27,7 @@ export class ThroughputPpsDash extends BaseDashlet{
 
     onMessage(msg) {
         if (msg.event === "Throughput") {
-            this.graph.update(msg.data.pps.down, msg.data.pps.up);
+            this.graph.update(msg.data.pps.down, msg.data.pps.up, msg.data.tcp_pps, msg.data.udp_pps, msg.data.icmp_pps);
         }
     }
 }

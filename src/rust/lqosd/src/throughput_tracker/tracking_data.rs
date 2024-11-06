@@ -472,6 +472,18 @@ impl ThroughputTracker {
     self.packets_per_second.as_down_up()
   }
 
+  pub(crate) fn tcp_packets_per_second(&self) -> DownUpOrder<u64> {
+      self.tcp_packets_per_second.as_down_up()
+  }
+
+  pub(crate) fn udp_packets_per_second(&self) -> DownUpOrder<u64> {
+      self.udp_packets_per_second.as_down_up()
+  }
+
+  pub(crate) fn icmp_packets_per_second(&self) -> DownUpOrder<u64> {
+      self.icmp_packets_per_second.as_down_up()
+  }
+
   #[allow(dead_code)]
   pub(crate) fn dump(&self) {
     for v in self.raw_data.iter() {
