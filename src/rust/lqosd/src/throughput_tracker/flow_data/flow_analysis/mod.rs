@@ -26,19 +26,16 @@ pub struct FlowAnalysisSystem {
 
 impl FlowAnalysisSystem {
     pub fn new() -> Self {
-        // Periodically update the ASN table
+        // Moved from being periodically updated to being updated on startup
         let _ = std::thread::Builder::new().name("GeoTable Updater".to_string()).spawn(|| {
-            loop {
-                let result = asn::GeoTable::load();
-                match result {
-                    Ok(table) => {
-                        ANALYSIS.asn_table.lock().unwrap().replace(table);
-                    }
-                    Err(e) => {
-                        error!("Failed to update ASN table: {e}");
-                    }
+            let result = asn::GeoTable::load();
+            match result {
+                Ok(table) => {
+                    ANALYSIS.asn_table.lock().unwrap().replace(table);
                 }
-                std::thread::sleep(std::time::Duration::from_secs(60 * 60 * 24));
+                Err(e) => {
+                    error!("Failed to update ASN table: {e}");
+                }
             }
         });
 
@@ -61,6 +58,8 @@ impl FlowAnalysisSystem {
 }
 
 pub fn setup_flow_analysis() -> anyhow::Result<()> {
+    // This is locking the table, which triggers lazy-loading of the
+    // data. It's not actually doing nothing.
     let e = ANALYSIS.asn_table.lock();
     if e.is_err() {
         anyhow::bail!("Failed to lock ASN table");
