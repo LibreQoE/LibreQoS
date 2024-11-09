@@ -1,4 +1,5 @@
 use std::ffi::CString;
+use std::net::IpAddr;
 use std::ptr::null_mut;
 use log::error;
 use lqos_config::load_config;
@@ -269,6 +270,77 @@ pub fn get_lts_license_status() -> (LtsStatus, i32) {
 pub fn ingest_batch_complete() {
     unsafe {
         external::ingest_batch_complete();
+    }
+}
+
+pub fn one_way_flow(
+    start_time: u64,
+    end_time: u64,
+    local_ip: IpAddr,
+    remote_ip: IpAddr,
+    dst_port: u16,
+    src_port: u16,
+    bytes: u64,
+) {
+    let local_ip = match local_ip {
+        IpAddr::V4(ip) => ip.to_ipv6_mapped().octets(),
+        IpAddr::V6(ip) => ip.octets(),
+    };
+    let remote_ip = match remote_ip {
+        IpAddr::V4(ip) => ip.to_ipv6_mapped().octets(),
+        IpAddr::V6(ip) => ip.octets(),
+    };
+    unsafe {
+        external::one_way_flow(
+            start_time,
+            end_time,
+            local_ip.as_ptr(),
+            remote_ip.as_ptr(),
+            dst_port,
+            src_port,
+            bytes,
+        );
+    }
+}
+
+pub fn two_way_flow(
+    start_time: u64,
+    end_time: u64,
+    local_ip: IpAddr,
+    remote_ip: IpAddr,
+    dst_port: u16,
+    src_port: u16,
+    bytes_down: u64,
+    bytes_up: u64,
+    retransmit_times_down: Vec<u64>,
+    retransmit_times_up: Vec<u64>,
+    throughput_buffer_down: Vec<u64>,
+    throughput_buffer_up: Vec<u64>,
+)
+{
+    let local_ip = match local_ip {
+        IpAddr::V4(ip) => ip.to_ipv6_mapped().octets(),
+        IpAddr::V6(ip) => ip.octets(),
+    };
+    let remote_ip = match remote_ip {
+        IpAddr::V4(ip) => ip.to_ipv6_mapped().octets(),
+        IpAddr::V6(ip) => ip.octets(),
+    };
+    unsafe {
+        external::two_way_flow(
+            start_time,
+            end_time,
+            local_ip.as_ptr(),
+            remote_ip.as_ptr(),
+            dst_port,
+            src_port,
+            bytes_down,
+            bytes_up,
+            retransmit_times_down,
+            retransmit_times_up,
+            throughput_buffer_down,
+            throughput_buffer_up,
+        );
     }
 }
 

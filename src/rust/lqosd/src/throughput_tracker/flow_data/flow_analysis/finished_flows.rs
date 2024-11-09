@@ -9,6 +9,7 @@ use std::time::Duration;
 use itertools::Itertools;
 use serde::Serialize;
 use tracing::debug;
+use lqos_config::load_config;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::unix_now;
 
@@ -446,6 +447,22 @@ impl FlowbeeRecipient for FinishedFlowAnalysis {
         let one_way = data.bytes_sent.down == 0 || data.bytes_sent.up == 0;
         if !one_way {
             data.trim(); // Remove the trailing 30 seconds of zeroes
+            let tp_buf_dn = data.throughput_buffer.iter().map(|v| v.down).collect();
+            let tp_buf_up = data.throughput_buffer.iter().map(|v| v.up).collect();
+            lts2_sys::two_way_flow(
+                data.start_time,
+                data.last_seen,
+                key.local_ip.as_ip(),
+                key.remote_ip.as_ip(),
+                key.dst_port,
+                key.src_port,
+                data.bytes_sent.down,
+                data.bytes_sent.up,
+                data.retry_times_down.clone(),
+                data.retry_times_up.clone(),
+                tp_buf_dn,
+                tp_buf_up,
+            );
             RECENT_FLOWS.push(TimeEntry {
                 time: std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -453,7 +470,19 @@ impl FlowbeeRecipient for FinishedFlowAnalysis {
                     .as_secs(),
                 data: (key, data, analysis),
             });
+        } else {
+            // We have a one-way flow!
+            let Ok(config) = load_config() else { return; };
+            if !config.long_term_stats.gather_stats { return; }
+            lts2_sys::one_way_flow(
+                data.start_time,
+                data.last_seen,
+                key.local_ip.as_ip(),
+                key.remote_ip.as_ip(),
+                key.dst_port,
+                key.src_port,
+                data.bytes_sent.sum(),
+            );
         }
-        // TODO: Log failed connection attempts in some useful manner
     }
 }

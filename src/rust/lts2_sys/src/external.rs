@@ -132,4 +132,29 @@ extern "C" {
     pub(crate) fn get_lts_license_status() -> i32;
     pub(crate) fn get_lts_license_trial_remaining() -> i32;
     pub(crate) fn ingest_batch_complete();
+
+    pub(crate) fn one_way_flow(
+        start_time: u64,
+        end_time: u64,
+        local_ip: *const u8,
+        remote_ip: *const u8,
+        dst_port: u16,
+        src_port: u16,
+        bytes: u64,
+    );
+
+    pub(crate) fn two_way_flow(
+        start_time: u64,
+        end_time: u64,
+        local_ip: *const u8,
+        remote_ip: *const u8,
+        dst_port: u16,
+        src_port: u16,
+        bytes_down: u64,
+        bytes_up: u64,
+        retransmit_times_down: Vec<u64>,
+        retransmit_times_up: Vec<u64>,
+        throughput_buffer_down: Vec<u64>,
+        throughput_buffer_up: Vec<u64>,
+    );
 }
