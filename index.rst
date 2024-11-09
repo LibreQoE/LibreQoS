@@ -18,7 +18,6 @@ Welcome to the LibreQoS documentation!
 
    docs/Quickstart/networkdesignassumptions
    docs/SystemRequirements/Compute
-   docs/SystemRequirements/Networking
 
 .. toctree::
    :maxdepth: 1
@@ -48,8 +47,8 @@ Welcome to the LibreQoS documentation!
    :maxdepth: 1
    :caption: v1.5:
 
-   docs/v1.5/Quickstart/quickstart-prereq
    docs/v1.5/Quickstart/quickstart-libreqos-1.5
+   docs/v1.5/Quickstart/quickstart-prereq
    docs/v1.5/Quickstart/configuration
    docs/v1.5/Quickstart/services-and-run
    docs/v1.5/Quickstart/share
