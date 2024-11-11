@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 anyhow = { workspace = true }
-reqwest = { workspace = true }
 tokio = { workspace = true }
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
