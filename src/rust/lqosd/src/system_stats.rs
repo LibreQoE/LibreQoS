@@ -35,7 +35,7 @@ pub fn start_system_stats() -> anyhow::Result<Sender<tokio::sync::oneshot::Sende
     .spawn(move || {
         // System Status Update Ticker Thread
         use sysinfo::System;
-        let mut sys = System::new_all();
+        let mut sys = System::new();
 
         // Timer
         let mut tfd = TimerFd::new().unwrap();

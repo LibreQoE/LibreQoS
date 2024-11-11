@@ -141,7 +141,7 @@ enum FlowCommands {
 
 impl FlowActor {
     pub fn start() -> anyhow::Result<()> {
-        let (tx, rx) = crossbeam_channel::bounded::<()>(65536);
+        let (tx, rx) = crossbeam_channel::bounded::<()>(131_072);
         // Placeholder for when you need to read the flow system.
         let (cmd_tx, cmd_rx) = crossbeam_channel::bounded::<FlowCommands>(16);
 
