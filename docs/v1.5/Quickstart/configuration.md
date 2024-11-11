@@ -1,15 +1,11 @@
 # Configure LibreQoS
 
-## Configure lqos.conf
+## Main Configuration File
+### /etc/lqos.conf
 
-If you installed LibreQoS the complex (Git) installation, you can copy the lqosd daemon configuration file to `/etc`. This is not neccesarry if you installed using the .deb:
+The LibreQoS configuration for each shaper box is stored in the file `/etc/lqos.conf`.
 
-```shell
-cd /opt/libreqos/src
-sudo cp lqos.example /etc/lqos.conf
-```
-
-Now edit the file to match your setup with
+Edit the file to match your setup with
 
 ```shell
 sudo nano /etc/lqos.conf
@@ -33,7 +29,8 @@ After changing any part of `/etc/lqos.conf` it is highly recommended to always r
 
 Learn more about [configuring integrations here](../TechnicalDocs/integrations.md).
 
-## Network.json
+## Network Hierarchy
+### Network.json
 
 Network.json allows ISP operators to define a Hierarchical Network Topology, or Flat Network Topology.
 
@@ -62,7 +59,7 @@ setting the following file content:
 {}
 ```
 
-## CSV to JSON format helper
+#### CSV to JSON conversion helper
 
 You can use
 
@@ -75,14 +72,29 @@ manualNetwork.csv can be copied from the template file, manualNetwork.template.c
 
 Note: The parent node name must match that used for clients in ShapedDevices.csv
 
-## ShapedDevices.csv
+## Circuits
 
-If you are using an integration, this file will be automatically generated. If you are not using an integration, you can manually edit the file using either the WebUI or by directly editing the ShapedDevices.csv file through the CLI.
+LibreQoS shapes individual devices by their IP addresses, which are grouped into "circuits".
 
-### Manual Editing by WebUI
+A circuit represents an ISP subscriber's internet service, which may have just one associated IP (the subscriber's router may be assigned a single /32 IPv4 for example) or it might have multiple IPs associated (maybe their router has a /29 assigned, or multiple /32s).
+
+LibreQoS knows how to shape these devices, and what Node (AP, Site, etc) they are contained by, with the ShapedDevices.csv file.
+
+### ShapedDevices.csv
+
+The ShapedDevices.csv file correlates device IP addresses to Circuits (each internet subscriber's unique service).
+
+Here is an example of an entry in the ShapedDevices.csv file:
+| Circuit ID | Circuit Name | Device ID | Device Name | Parent Node | MAC | IPv4                      | IPv6                 | Download Min Mbps | Upload Min Mbps | Download Max Mbps | Upload Max Mbps | Comment |
+|------------|--------------|-----------|-------------|-------------|-----|---------------------------|----------------------|-------------------|-----------------|-------------------|-----------------|---------|
+| 10001      | Person Name  | 10001     | Device 1    | AP_A        |     | 100.64.0.2, 100.64.0.8/29 | fdd7:b724:0:100::/56 | 25                | 5               | 155               | 20              |         |
+
+If you are using one of our CRM integrations, this file will be automatically generated. If you are not using an integration, you can manually edit the file using either the WebUI or by directly editing the ShapedDevices.csv file through the CLI.
+
+#### Manual Editing by WebUI
 Navigate to the LibreQoS WebUI (http://a.b.c.d:9123) and select Configuration > Shaped Devices.
 
-### Manual Editing by CLI
+#### Manual Editing by CLI
 
 - Modify the ShapedDevices.csv file using your preferred spreadsheet editor (LibreOffice Calc, Excel, etc), following the template file - ShapedDevices.example.csv
 - Circuit ID is required. Must be a string of some sort (int is fine, gets parsed as string). Must NOT include any number symbols (#). Every circuit needs a unique CircuitID - they cannot be reused. Here, circuit essentially means customer location. If a customer has multiple locations on different parts of your network, use a unique CircuitID for each of those locations.
