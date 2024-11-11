@@ -290,7 +290,7 @@ pub fn one_way_flow(
         IpAddr::V4(ip) => ip.to_ipv6_mapped().octets(),
         IpAddr::V6(ip) => ip.octets(),
     };
-    unsafe {
+    /*unsafe {
         external::one_way_flow(
             start_time,
             end_time,
@@ -300,7 +300,7 @@ pub fn one_way_flow(
             src_port,
             bytes,
         );
-    }
+    }*/
 }
 
 pub fn two_way_flow(
@@ -326,7 +326,7 @@ pub fn two_way_flow(
         IpAddr::V4(ip) => ip.to_ipv6_mapped().octets(),
         IpAddr::V6(ip) => ip.octets(),
     };
-    unsafe {
+    /*unsafe {
         external::two_way_flow(
             start_time,
             end_time,
@@ -341,7 +341,7 @@ pub fn two_way_flow(
             throughput_buffer_down,
             throughput_buffer_up,
         );
-    }
+    }*/
 }
 
 struct Lts2Config {
