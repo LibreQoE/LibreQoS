@@ -17,7 +17,7 @@ lqos_utils = { path = "../lqos_utils" }
 lqos_heimdall = { path = "../lqos_heimdall" }
 lts_client = { path = "../lts_client" }
 lqos_support_tool = { path = "../lqos_support_tool" }
-tokio = { version = "1", features = [ "full", "parking_lot" ] }
+tokio = { version = "1", features = [ "full" ] }
 once_cell = { workspace = true}
 lqos_bus = { path = "../lqos_bus" }
 signal-hook = "0.3"
@@ -37,7 +37,7 @@ ip_network_table = {  workspace = true }
 ip_network = { workspace = true }
 zerocopy = { workspace = true }
 fxhash = "0.2.1"
-axum = { version = "0.7.5", features = ["ws", "http2"] }
+axum = { version = "0.7.5", features = ["ws"] }
 axum-extra = {  version = "0.9.3", features = ["cookie", "cookie-private"] }
 tower-http = { version = "0.5.2", features = ["fs", "cors"] }
 strum = {  version = "0.26.3", features = ["derive"] }
