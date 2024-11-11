@@ -18,7 +18,7 @@ lqos_heimdall = { path = "../lqos_heimdall" }
 lts_client = { path = "../lts_client" }
 lts2_sys = { path = "../lts2_sys" }
 lqos_support_tool = { path = "../lqos_support_tool" }
-tokio = { version = "1", features = [ "full", "parking_lot" ] }
+tokio = { version = "1", features = [ "full" ] }
 once_cell = { workspace = true}
 lqos_bus = { path = "../lqos_bus" }
 signal-hook = "0.3"
@@ -29,18 +29,17 @@ tracing-subscriber = { workspace = true }
 nix = {  workspace = true }
 sysinfo = {  workspace = true }
 dashmap = { workspace = true }
-itertools = "0.12.1"
-csv = { workspace = true }
+itertools = "0.13.0"
 reqwest = { workspace = true }
-flate2 = "1.0"
+flate2 = "1"
 bincode = { workspace = true }
 ip_network_table = {  workspace = true }
 ip_network = { workspace = true }
 zerocopy = { workspace = true }
 fxhash = "0.2.1"
-axum = { version = "0.7.5", features = ["ws", "http2"] }
-axum-extra = {  version = "0.9.3", features = ["cookie", "cookie-private"] }
-tower-http = { version = "0.5.2", features = ["fs", "cors"] }
+axum = { version = "0.7.7", features = ["ws"] }
+axum-extra = {  version = "0.9.4", features = ["cookie", "cookie-private"] }
+tower-http = { version = "0.6.1", features = ["fs", "cors"] }
 strum = {  version = "0.26.3", features = ["derive"] }
 default-net = {  workspace = true }
 surge-ping = "0.8.1"
