@@ -65,7 +65,7 @@ popd > /dev/null
 
 # Copy the node manager's static web content
 mkdir -p bin/static2/vendor
-pushd rust/lqosd > /dev/null
+pushd rust/lqos_node_manager > /dev/null
 ./copy_files.sh
 popd > /dev/null
 
