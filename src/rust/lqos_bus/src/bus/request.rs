@@ -204,6 +204,42 @@ pub enum BusRequest {
 
   /// IP Protocol Summary
   IpProtocolSummary,
+
+  /// System Stats (CPU/RAM)
+  SystemStatsCpuRam,
+
+  /// Get the current queue stats
+  TotalCakeStats,
+
+  /// Unknown IP Addresses
+  UnknownIps,
+
+  /// Flow Locations
+  FlowLatLon,
+
+  /// ASN List
+  FlowAsnList,
+
+  /// Country List
+  FlowCountryList,
+
+  /// Protocol List
+  FlowProtocolList,
+
+  /// Flow Timeline (ASN id)
+  FlowTimeline(u32),
+
+  /// Flow Country Timeline (ISO code)
+  FlowCountryTimeline(String),
+
+  /// Flow Protocol Timeline (protocol name)
+  FlowProtocolTimeline(String),
+
+  /// Circuit capacity and utilization
+  CircuitCapacities,
+
+  /// Flows by Circuit (Circuit ID)
+  FlowsByCircuit(String),
 }
 
 /// Defines the type of "top" flow being requested

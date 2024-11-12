@@ -1,9 +1,10 @@
 use super::QueueStoreTransit;
-use crate::{ip_stats::{FlowbeeSummaryData, PacketHeader}, Circuit, IpMapping, IpStats, XdpPpingResult};
+use crate::{ip_stats::{FlowbeeSummaryData, PacketHeader}, AsnCountryListEntry, AsnListEntry, AsnProtocolListEntry, Circuit, CircuitCapacity, FlowAnalysisTransport, FlowTimeline, FlowbeeKeyTransit, FlowbeeLocalData, IpMapping, IpStats, XdpPpingResult};
 use lts_client::transport_data::{StatsTotals, StatsHost, StatsTreeNode};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use lqos_utils::units::DownUpOrder;
+use crate::ip_stats::UnknownIp;
 
 /// A `BusResponse` object represents a single
 /// reply generated from a `BusRequest`, and batched
@@ -160,4 +161,53 @@ pub enum BusResponse {
   
   /// Summary of IP Protocols
   IpProtocols(Vec<(String, DownUpOrder<u64>)>),
+
+  /// System Stats
+  SystemStatsCpuRam {
+    /// CPU Usage
+    cpu_usage: Vec<u32>,
+    /// RAM Used
+    ram_used: u64,
+    /// Total RAM
+    total_ram: u64,
+  },
+
+  /// Queue Stats
+  TotalCakeStats {
+    /// Total Cake Marks
+    marks: DownUpOrder<u64>,
+    /// Total Cake Drops
+    drops: DownUpOrder<u64>,
+  },
+
+  /// Unknown IP Addresses
+  UnknownIps(Vec<UnknownIp>),
+
+  /// Flow Locations
+  FlowLatLon(Vec<(f64, f64, String, u64, f32)>),
+
+  /// ASN List
+  FlowAsnList(Vec<AsnListEntry>),
+
+  /// Country List
+  FlowCountryList(Vec<AsnCountryListEntry>),
+
+  /// Protocol List
+  FlowProtocolList(Vec<AsnProtocolListEntry>),
+
+  /// Flow Timeline
+  FlowTimeline(Vec<FlowTimeline>),
+
+  /// Flow Country Timeline
+  FlowCountryTimeline(Vec<FlowTimeline>),
+
+  /// Flow Protocol Timeline
+  FlowProtocolTimeline(Vec<FlowTimeline>),
+
+  /// Circuit capacity and utilization
+  CircuitCapacities(Vec<CircuitCapacity>),
+
+  /// Flows by Circuit
+  FlowsByCircuit(Vec<(FlowbeeKeyTransit, FlowbeeLocalData, FlowAnalysisTransport)>),
 }
+

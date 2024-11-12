@@ -1,7 +1,7 @@
 use super::{get_asn_lat_lon, get_asn_name_and_country, FlowAnalysis, get_asn_name_by_id};
 use crate::throughput_tracker::flow_data::{FlowbeeLocalData, FlowbeeRecipient};
 use fxhash::FxHashMap;
-use lqos_bus::BusResponse;
+use lqos_bus::{AsnCountryListEntry, AsnListEntry, AsnProtocolListEntry, BusResponse, FlowDurationSummary};
 use lqos_sys::flowbee_data::FlowbeeKey;
 use once_cell::sync::Lazy;
 use std::sync::{Arc, Mutex};
@@ -20,32 +20,6 @@ pub struct TimeBuffer {
 struct TimeEntry {
     time: u64,
     data: (FlowbeeKey, FlowbeeLocalData, FlowAnalysis),
-}
-
-#[derive(Debug, Serialize)]
-pub struct FlowDurationSummary {
-    pub count: usize,
-    pub duration: u64,
-}
-
-#[derive(Debug, Serialize)]
-pub struct AsnListEntry {
-    count: usize,
-    asn: u32,
-    name: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct AsnCountryListEntry {
-    count: usize,
-    name: String,
-    iso_code: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct AsnProtocolListEntry {
-    count: usize,
-    protocol: String,
 }
 
 impl TimeBuffer {

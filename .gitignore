@@ -123,3 +123,4 @@ src/ShapedDevices.csv.good
 src/rust/lqosd/lts_keys.bin
 src/rust/lqosd/src/node_manager/js_build/out
 src/bin/dashboards
+/src/rust/lqos_node_manager/src/js_build/out/

@@ -1,5 +1,4 @@
 //! Connects to the "flowbee_events" ring buffer and processes the events.
-use crate::throughput_tracker::flow_data::flow_analysis::rtt_types::RttData;
 use fxhash::FxHashMap;
 use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::unix_time::time_since_boot;
@@ -10,6 +9,7 @@ use tracing::{warn, error};
 use zerocopy::FromBytes;
 use std::sync::OnceLock;
 use once_cell::sync::Lazy;
+use lqos_bus::RttData;
 
 static EVENT_COUNT: AtomicU64 = AtomicU64::new(0);
 static EVENTS_PER_SECOND: AtomicU64 = AtomicU64::new(0);

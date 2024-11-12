@@ -12,11 +12,8 @@
 #![warn(missing_docs)]
 mod bus;
 mod ip_stats;
-pub use ip_stats::{
-  tos_parser, IpMapping, IpStats, PacketHeader,
-  XdpPpingResult, FlowbeeSummaryData, FlowbeeProtocol,
-  Circuit
-};
+mod protocol;
+pub use ip_stats::*;
 mod tc_handle;
 pub use bus::{
   bus_request, decode_request, decode_response, encode_request,
@@ -25,9 +22,12 @@ pub use bus::{
   UnixSocketServer, BUS_SOCKET_PATH, StatsRequest, TopFlowType,
 };
 pub use tc_handle::TcHandle;
+pub use rtt_types::*;
+pub use protocol::*;
 
 /// Anonymous Usage Statistics Data Types
 pub mod anonymous;
+mod rtt_types;
 
 /// Re-export bincode
 pub mod bincode {

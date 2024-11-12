@@ -92,7 +92,6 @@ impl UnixSocketServer {
   pub async fn listen(
     &self,
     handle_bus_requests: fn(&[BusRequest], &mut Vec<BusResponse>),
-    mut bus_rx: tokio::sync::mpsc::Receiver<(tokio::sync::oneshot::Sender<BusReply>, BusRequest)>,
   ) -> Result<(), UnixSocketServerError> {
     // Set up the listener and grant permissions to it
     let listener = UnixListener::bind(BUS_SOCKET_PATH);
@@ -106,16 +105,6 @@ impl UnixSocketServer {
     info!("Listening on: {}", BUS_SOCKET_PATH);
     loop {
       tokio::select!(
-        ret = bus_rx.recv() => {
-          // We received a channel-based message
-          if let Some((reply_channel, msg)) = ret {
-            let mut response = BusReply { responses: Vec::with_capacity(8) };
-            handle_bus_requests(&[msg], &mut response.responses);
-            if let Err(e) = reply_channel.send(response) {
-                warn!("Unable to send response back to client: {:?}", e);
-            }
-          }
-        },
         ret = listener.accept() => {
           // We received a UNIX socket message
           if ret.is_err() {

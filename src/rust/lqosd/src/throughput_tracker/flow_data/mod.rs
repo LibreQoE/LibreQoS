@@ -7,7 +7,7 @@ mod netflow9;
 mod flow_analysis;
 
 use crate::throughput_tracker::flow_data::{flow_analysis::FinishedFlowAnalysis, netflow5::Netflow5, netflow9::Netflow9};
-pub(crate) use flow_tracker::{ALL_FLOWS, AsnId, FlowbeeLocalData};
+pub(crate) use flow_tracker::ALL_FLOWS;
 use lqos_sys::flowbee_data::FlowbeeKey;
 use std::sync::Arc;
 use tracing::{debug, error, info};
@@ -15,9 +15,10 @@ use anyhow::Result;
 use crossbeam_channel::Sender;
 pub(crate) use flow_analysis::{setup_flow_analysis, get_asn_name_and_country,
                                FlowAnalysis, RECENT_FLOWS, flowbee_handle_events, get_flowbee_event_count_and_reset,
-                               expire_rtt_flows, flowbee_rtt_map, RttData, get_rtt_events_per_second, AsnListEntry,
-                               AsnCountryListEntry, AsnProtocolListEntry, FlowActor, FlowAnalysisSystem
+                               expire_rtt_flows, flowbee_rtt_map, get_rtt_events_per_second,
+                               FlowActor, FlowAnalysisSystem
 };
+use lqos_bus::FlowbeeLocalData;
 
 trait FlowbeeRecipient {
     fn enqueue(&self, key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis);

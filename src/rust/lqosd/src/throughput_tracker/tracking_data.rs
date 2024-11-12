@@ -1,10 +1,10 @@
 use std::{sync::atomic::AtomicU64, time::Duration};
 use crate::{shaped_devices_tracker::SHAPED_DEVICES, stats::HIGH_WATERMARK, throughput_tracker::flow_data::{expire_rtt_flows, flowbee_rtt_map}};
-use super::{flow_data::{get_flowbee_event_count_and_reset, FlowAnalysis, FlowbeeLocalData, RttData, ALL_FLOWS}, throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
+use super::{flow_data::{get_flowbee_event_count_and_reset, FlowAnalysis, ALL_FLOWS}, throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
 use dashmap::DashMap;
 use fxhash::FxHashMap;
 use tracing::{info, warn};
-use lqos_bus::TcHandle;
+use lqos_bus::{FlowbeeLocalData, RttData, TcHandle};
 use lqos_config::NetworkJson;
 use lqos_queue_tracker::ALL_QUEUE_SUMMARY;
 use lqos_sys::{flowbee_data::FlowbeeKey, iterate_flows, throughput_for_each};
@@ -253,7 +253,22 @@ impl ThroughputTracker {
           } else {
             // Insert it into the map
             let flow_analysis = FlowAnalysis::new(&key);
-            all_flows_lock.insert(key.clone(), (data.into(), flow_analysis));
+            let local_data: FlowbeeLocalData = FlowbeeLocalData {
+              start_time: data.start_time,
+              last_seen: data.last_seen,
+              bytes_sent: data.bytes_sent,
+              packets_sent: data.packets_sent,
+              rate_estimate_bps: data.rate_estimate_bps,
+              tcp_retransmits: data.tcp_retransmits,
+              end_status: data.end_status,
+              tos: data.tos,
+              flags: data.flags,
+              rtt: [RttData::from_nanos(0); 2],
+              throughput_buffer: vec![ data.bytes_sent ],
+              retry_times_down: Vec::new(),
+              retry_times_up: Vec::new(),
+            };
+            all_flows_lock.insert(key.clone(), (local_data, flow_analysis));
           }
 
           // TCP - we have RTT data? 6 is TCP

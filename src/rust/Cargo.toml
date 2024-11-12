@@ -18,6 +18,7 @@ members = [
     "lqos_sys", # System support for handling the XDP component
     "lqos_config", # Configuration support
     "lqosd", # LibreQoS Daemon
+    "lqos_node_manager", # The LibreQoS web-based node manager
     "lqos_bus", # Bus data types
     "lqtop", # A command line utility to show current activity
     "xdp_iphash_to_cpu_cmdline", # Rust port of the C xdp_iphash_to_cpu_cmdline tool, for compatibility

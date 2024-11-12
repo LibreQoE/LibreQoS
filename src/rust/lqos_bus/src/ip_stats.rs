@@ -1,7 +1,8 @@
 use std::net::IpAddr;
-use crate::TcHandle;
+use crate::{FlowProtocol, RttData, TcHandle};
 use serde::{Deserialize, Serialize};
 use lqos_utils::units::DownUpOrder;
+use lqos_utils::XdpIpAddress;
 
 /// Transmission representation of IP statistics associated
 /// with a host.
@@ -209,4 +210,166 @@ pub struct Circuit {
     pub plan: DownUpOrder<u32>,
     /// The last time this host was seen, in nanoseconds since boot.
     pub last_seen_nanos: u64,
+}
+
+/// Represents an unknown IP address in the system.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct UnknownIp {
+    /// The IP address of the host.
+    pub ip: String,
+    /// The last time this host was seen, in nanoseconds since boot.
+    pub last_seen_nanos: u64,
+    /// The total bytes transferred by this host.
+    pub total_bytes: DownUpOrder<u64>,
+    /// The current bytes-per-second passing through this host.
+    pub current_bytes: DownUpOrder<u64>,
+}
+
+/// ASN name and country flag
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct AsnListEntry {
+    /// The number of flows associated with this ASN.
+    pub count: usize,
+    /// The ASN number.
+    pub asn: u32,
+    /// The ASN name.
+    pub name: String,
+}
+
+/// ASN name and country flag
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct AsnCountryListEntry {
+    /// The number of flows associated with this ASN.
+    pub count: usize,
+    /// The ASN number.
+    pub name: String,
+    /// The ASN name.
+    pub iso_code: String,
+}
+
+/// Duration of flows
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct FlowDurationSummary {
+    /// The number of flows in the duration.
+    pub count: usize,
+    /// The duration of the flows.
+    pub duration: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct AsnProtocolListEntry {
+    pub count: usize,
+    pub protocol: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct FlowTimeline {
+    pub start: u64,
+    pub end: u64,
+    pub duration_nanos: u64,
+    pub throughput: Vec<DownUpOrder<u64>>,
+    pub tcp_retransmits: DownUpOrder<u16>,
+    pub rtt: [RttData; 2],
+    pub retransmit_times_down: Vec<u64>,
+    pub retransmit_times_up: Vec<u64>,
+    pub total_bytes: DownUpOrder<u64>,
+    pub protocol: String,
+    pub circuit_id: String,
+    pub circuit_name: String,
+    pub remote_ip: String,
+}
+
+/// Circuit capacity and utilization
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct CircuitCapacity {
+    /// The circuit ID
+    pub circuit_id: String,
+    /// The circuit name
+    pub circuit_name: String,
+    /// The capacity of the circuit, as a fraction of the maximum
+    pub capacity: [f64; 2],
+    /// The median round-trip-time for the circuit
+    pub median_rtt: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct FlowbeeKeyTransit {
+    /// Mapped `XdpIpAddress` source for the flow.
+    pub remote_ip: IpAddr,
+    /// Mapped `XdpIpAddress` destination for the flow
+    pub local_ip: IpAddr,
+    /// Source port number, or ICMP type.
+    pub src_port: u16,
+    /// Destination port number.
+    pub dst_port: u16,
+    /// IP protocol (see the Linux kernel!)
+    pub ip_protocol: u8,
+}
+
+/// Condensed representation of the FlowbeeData type. This contains
+/// only the information we want to keep locally for analysis purposes,
+/// adds RTT data, and uses Rust-friendly typing.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct FlowbeeLocalData {
+    /// Time (nanos) when the connection was established
+    pub start_time: u64,
+    /// Time (nanos) when the connection was last seen
+    pub last_seen: u64,
+    /// Bytes transmitted
+    pub bytes_sent: DownUpOrder<u64>,
+    /// Packets transmitted
+    pub packets_sent: DownUpOrder<u64>,
+    /// Rate estimate
+    pub rate_estimate_bps: DownUpOrder<u32>,
+    /// TCP Retransmission count (also counts duplicates)
+    pub tcp_retransmits: DownUpOrder<u16>,
+    /// Has the connection ended?
+    /// 0 = Alive, 1 = FIN, 2 = RST
+    pub end_status: u8,
+    /// Raw IP TOS
+    pub tos: u8,
+    /// Raw TCP flags
+    pub flags: u8,
+    /// Recent RTT median
+    pub rtt: [RttData; 2],
+    /// Throughput Buffer
+    pub throughput_buffer: Vec<DownUpOrder<u64>>,
+    /// When did the retries happen? In nanoseconds since kernel boot
+    pub retry_times_down: Vec<u64>,
+    /// When did the retries happen? In nanoseconds since kernel boot
+    pub retry_times_up: Vec<u64>,
+}
+
+impl FlowbeeLocalData {
+    pub fn trim(&mut self) {
+        // Find the point at which the throughput buffer starts being all zeroes
+        let mut last_start: Option<usize> = None;
+        let mut in_zero_run = false;
+
+        for (i, &value) in self.throughput_buffer.iter().enumerate() {
+            if value.down == 0 && value.up == 0 {
+                if !in_zero_run {
+                    in_zero_run = true;
+                    last_start = Some(i);
+                }
+            } else {
+                in_zero_run = false;
+            }
+        }
+
+        if let Some(start_index) = last_start {
+            // There's a run of zeroes terminating the throughput buffer
+            // That means we need to truncate the buffer
+            self.throughput_buffer.truncate(start_index);
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct AsnId(pub u32);
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct FlowAnalysisTransport {
+    pub asn_id: AsnId,
+    pub protocol_analysis: FlowProtocol,
 }

@@ -3,7 +3,8 @@ mod throughput_entry;
 mod tracking_data;
 use std::net::IpAddr;
 use fxhash::FxHashMap;
-use self::flow_data::{get_asn_name_and_country, FlowAnalysis, FlowbeeLocalData, ALL_FLOWS};
+use itertools::Itertools;
+use self::flow_data::{get_asn_name_and_country, ALL_FLOWS};
 use crate::{
     long_term_stats::get_network_tree,
     shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES, STATS_NEEDS_NEW_SHAPED_DEVICES},
@@ -11,7 +12,7 @@ use crate::{
     throughput_tracker::tracking_data::ThroughputTracker,
 };
 use tracing::{debug, warn};
-use lqos_bus::{BusResponse, FlowbeeProtocol, IpStats, TcHandle, TopFlowType, XdpPpingResult};
+use lqos_bus::{BusResponse, FlowbeeLocalData, FlowbeeProtocol, IpStats, RttData, TcHandle, TopFlowType, UnknownIp, XdpPpingResult};
 use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 use lts_client::collector::{HostSummary, stats_availability::StatsUpdateMessage, ThroughputSummary};
@@ -23,7 +24,7 @@ use tokio::{
 };
 use lqos_config::load_config;
 use lqos_utils::units::DownUpOrder;
-use crate::throughput_tracker::flow_data::RttData;
+use crate::throughput_tracker::flow_data::FlowAnalysis;
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
 
@@ -910,4 +911,34 @@ pub fn flow_duration() -> BusResponse {
             .map(|v| (v.count, v.duration))
             .collect()
     )
+}
+
+/// Unknown IPs
+pub fn unknown_ips() -> BusResponse {
+    const FIVE_MINUTES_IN_NANOS: u64 = 5 * 60 * 1_000_000_000;
+
+    let now = Duration::from(time_since_boot().unwrap()).as_nanos() as u64;
+    let sd_reader = SHAPED_DEVICES.load();
+    let ips = THROUGHPUT_TRACKER
+        .raw_data
+        .iter()
+        .filter(|v| !v.key().as_ip().is_loopback())
+        .filter(|d| d.tc_handle.as_u32() == 0)
+        .filter(|d| {
+            let ip = d.key().as_ip();
+            !sd_reader.trie.longest_match(ip).is_some()
+        })
+        .map(|d| {
+            UnknownIp {
+                ip: d.key().as_ip().to_string(),
+                last_seen_nanos: now - d.last_seen,
+                total_bytes: d.bytes,
+                current_bytes: d.bytes_per_second,
+            }
+        })
+        .filter(|u| u.last_seen_nanos <FIVE_MINUTES_IN_NANOS )
+        .sorted_by(|a, b| a.last_seen_nanos.cmp(&b.last_seen_nanos))
+        .collect();
+
+    BusResponse::UnknownIps(ips)
 }

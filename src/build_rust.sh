@@ -38,7 +38,7 @@ rustup update
 
 # Start building
 echo "Please wait while the system is compiled. Service will not be interrupted during this stage."
-PROGS="lqosd lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqusers lqos_map_perf uisp_integration lqos_support_tool"
+PROGS="lqosd lqos_node_manager lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqusers lqos_map_perf uisp_integration lqos_support_tool"
 mkdir -p bin/static
 pushd rust > /dev/null
 #cargo clean
@@ -88,8 +88,8 @@ service_exists() {
 
 if service_exists lqos_node_manager; then
     echo "lqos_node_manager is running as a service. It's not needed anymore. Killing it."
-    sudo systemctl stop lqos_node_manager
-    sudo systemctl disable lqos_node_manager
+    sudo systemctl enable lqos_node_manager
+    sudo systemctl start lqos_node_manager
 fi
 if service_exists lqosd; then
     echo "lqosd is running as a service. Restarting it. You may need to enter your sudo password."

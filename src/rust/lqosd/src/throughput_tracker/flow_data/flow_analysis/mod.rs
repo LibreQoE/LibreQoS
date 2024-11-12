@@ -5,17 +5,12 @@ use serde::Serialize;
 use tracing::error;
 
 mod asn;
-mod protocol;
-pub use protocol::FlowProtocol;
-use super::AsnId;
 mod finished_flows;
 pub use finished_flows::FinishedFlowAnalysis;
 pub use finished_flows::RECENT_FLOWS;
 mod kernel_ringbuffer;
 pub use kernel_ringbuffer::*;
-mod rtt_types;
-pub use rtt_types::RttData;
-pub use finished_flows::{AsnListEntry, AsnCountryListEntry, AsnProtocolListEntry};
+use lqos_bus::{AsnId, FlowProtocol, FlowbeeKeyTransit};
 use crate::throughput_tracker::flow_data::flow_analysis::asn::AsnNameCountryFlag;
 
 static ANALYSIS: Lazy<FlowAnalysisSystem> = Lazy::new(|| FlowAnalysisSystem::new());
@@ -68,6 +63,16 @@ pub fn setup_flow_analysis() -> anyhow::Result<()> {
     Ok(())
 }
 
+pub fn flowbee_key_to_transit(key: &FlowbeeKey) -> FlowbeeKeyTransit {
+    FlowbeeKeyTransit {
+        remote_ip: key.remote_ip.as_ip(),
+        local_ip: key.local_ip.as_ip(),
+        src_port: key.src_port,
+        dst_port: key.dst_port,
+        ip_protocol: key.ip_protocol,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct FlowAnalysis {
     pub asn_id: AsnId,
@@ -77,7 +82,7 @@ pub struct FlowAnalysis {
 impl FlowAnalysis {
     pub fn new(key: &FlowbeeKey) -> Self {
         let asn_id = lookup_asn_id(key.remote_ip.as_ip());
-        let protocol_analysis = FlowProtocol::new(key);
+        let protocol_analysis = FlowProtocol::new(&flowbee_key_to_transit(key));
         Self {
             asn_id: AsnId(asn_id.unwrap_or(0)),
             protocol_analysis,

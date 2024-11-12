@@ -1,4 +1,5 @@
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize};
+use std::sync::OnceLock;
 use crossbeam_channel::Sender;
 use std::time::Duration;
 use once_cell::sync::Lazy;
@@ -26,9 +27,14 @@ pub struct SystemStats {
     pub total_ram: u64,
 }
 
-pub fn start_system_stats() -> anyhow::Result<Sender<tokio::sync::oneshot::Sender<SystemStats>>> {
+pub static STATS_SENDER: OnceLock<Sender<tokio::sync::oneshot::Sender<SystemStats>>> = OnceLock::new();
+
+pub fn start_system_stats() -> anyhow::Result<()> {
     debug!("Starting system stats threads");
     let (tx, rx) = crossbeam_channel::bounded::<tokio::sync::oneshot::Sender<SystemStats>>(32);
+    if let Err(e) = STATS_SENDER.set(tx) {
+        return Err(anyhow::anyhow!("Failed to set STATS_SENDER: {:?}", e));
+    }
 
     std::thread::Builder::new()
         .name("SysInfo Checker".to_string())
@@ -95,7 +101,7 @@ pub fn start_system_stats() -> anyhow::Result<Sender<tokio::sync::oneshot::Sende
         }
     })?;
 
-    Ok(tx)
+    Ok(())
 }
 
 fn build_empty_cpu_list() -> [AtomicU32; MAX_CPUS_COUNTED] {

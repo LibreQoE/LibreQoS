@@ -4,7 +4,7 @@ use anyhow::Result;
 use tracing::{error, info, warn};
 use lqos_config::Config;
 use lqos_sys::interface_name_to_index;
-use crate::node_manager::{add_global_warning, WarningLevel};
+//use crate::node_manager::{add_global_warning, WarningLevel};
 
 fn check_queues(interface: &str) -> Result<()> {
     let path = format!("/sys/class/net/{interface}/queues/");
@@ -179,7 +179,8 @@ pub fn preflight_checks() -> Result<()> {
         warn!("Disabling XDP bridge");
         lqos_config::disable_xdp_bridge()?;
         warn!("XDP bridge disabled in ACTIVE config. Please fix the configuration file.");
-        add_global_warning(WarningLevel::Error, "XDP bridge is disabled due to the presence of a Linux bridge. Please fix your configuration.".to_string());
+        // FIXME: This is not implemented yet
+        //add_global_warning(WarningLevel::Error, "XDP bridge is disabled due to the presence of a Linux bridge. Please fix your configuration.".to_string());
     };
 
     info!("Sanity checks passed");

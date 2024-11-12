@@ -1753,6 +1753,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "lqos_node_manager"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arc-swap",
+ "axum 0.7.5",
+ "axum-extra",
+ "default-net",
+ "fxhash",
+ "lqos_bus",
+ "lqos_config",
+ "lqos_support_tool",
+ "lqos_utils",
+ "once_cell",
+ "rand",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "strum",
+ "surge-ping",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "lqos_python"
 version = "0.1.0"
 dependencies = [

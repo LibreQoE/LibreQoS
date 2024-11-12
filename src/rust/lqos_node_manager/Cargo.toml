@@ -1,0 +1,27 @@
+[package]
+name = "lqos_node_manager"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lqos_config = { path = "../lqos_config" }
+lqos_bus = { path = "../lqos_bus" }
+lqos_utils = { path = "../lqos_utils" }
+lqos_support_tool = { path = "../lqos_support_tool" }
+anyhow = { workspace = true }
+tokio = { version = "1", features = [ "full" ] }
+axum = { version = "0.7.5", features = ["ws"] }
+axum-extra = {  version = "0.9.3", features = ["cookie", "cookie-private"] }
+tower-http = { version = "0.5.2", features = ["fs", "cors"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+arc-swap = {  workspace = true }
+fxhash = "0.2.1"
+strum = {  version = "0.26.3", features = ["derive"] }
+surge-ping = "0.8.1"
+rand = "0.8.5"
+once_cell = { workspace = true}
+default-net = {  workspace = true }
+reqwest = { workspace = true }

@@ -1,6 +1,5 @@
-use lqos_bus::TcHandle;
+use lqos_bus::{RttData, TcHandle};
 use lqos_utils::units::DownUpOrder;
-use super::flow_data::RttData;
 
 #[derive(Debug)]
 pub(crate) struct ThroughputEntry {
