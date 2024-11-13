@@ -43,6 +43,7 @@ export class TimedLRUCache {
     }
 
     toArray() {
-        return Array.from(this.cache.values());
+        // Convert to an array and return only the .value entry
+        return Array.from(this.cache.values()).map(entry => entry.value);
     }
 }

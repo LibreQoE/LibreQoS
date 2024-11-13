@@ -47,9 +47,9 @@ export class Worst10Downloaders extends BaseDashlet {
             this.buffer.tick();
 
             let results = { data: this.buffer.toArray() };
-            //results.sort((a, b) => b.median_tcp_rtt - a.median_tcp_rtt);
+            results.sort((a, b) => b.median_tcp_rtt - a.median_tcp_rtt);
 
-            let t = TopNTableFromMsgData(msg);
+            let t = TopNTableFromMsgData(results);
 
             // Display it
             clearDashDiv(this.id, target);
