@@ -251,10 +251,9 @@ pub fn iterate_flows(
 // Arguments: the list of flow keys to expire
 pub fn end_flows(flows: &mut [FlowbeeKey]) -> anyhow::Result<()> {
   let mut map = BpfMap::<FlowbeeKey, FlowbeeData>::from_path("/sys/fs/bpf/flowbee")?;
+  let mut keys = flows.iter().map(|k| k.clone()).collect();
 
-  for flow in flows {
-    map.delete(flow)?;
-  }
+  map.clear_bulk_keys(&mut keys)?;
 
   Ok(())
 }
