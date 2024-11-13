@@ -447,8 +447,8 @@ impl FlowbeeRecipient for FinishedFlowAnalysis {
         let one_way = data.bytes_sent.down == 0 || data.bytes_sent.up == 0;
         if !one_way {
             data.trim(); // Remove the trailing 30 seconds of zeroes
-            let tp_buf_dn = data.throughput_buffer.iter().map(|v| v.down).collect();
-            let tp_buf_up = data.throughput_buffer.iter().map(|v| v.up).collect();
+            //let tp_buf_dn = data.throughput_buffer.iter().map(|v| v.down).collect();
+            //let tp_buf_up = data.throughput_buffer.iter().map(|v| v.up).collect();
             lts2_sys::two_way_flow(
                 data.start_time,
                 data.last_seen,
@@ -460,8 +460,8 @@ impl FlowbeeRecipient for FinishedFlowAnalysis {
                 data.bytes_sent.up,
                 data.retry_times_down.clone(),
                 data.retry_times_up.clone(),
-                tp_buf_dn,
-                tp_buf_up,
+                vec![],
+                vec![],
             );
             RECENT_FLOWS.push(TimeEntry {
                 time: std::time::SystemTime::now()

@@ -281,7 +281,7 @@ impl ThroughputTracker {
             }
 
             let change_since_last_time = data.bytes_sent.checked_sub_or_zero(this_flow.0.bytes_sent);
-            this_flow.0.throughput_buffer.push(change_since_last_time);
+            //this_flow.0.throughput_buffer.push(change_since_last_time);
             //println!("{change_since_last_time:?}");
 
             this_flow.0.last_seen = data.last_seen;
