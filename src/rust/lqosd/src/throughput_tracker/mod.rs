@@ -1198,7 +1198,7 @@ pub fn all_unknown_ips() -> BusResponse {
 /// For debugging: dump all active flows!
 pub fn dump_active_flows() -> BusResponse {
     let lock = ALL_FLOWS.lock().unwrap();
-    let result: Vec<lqos_bus::FlowbeeSummaryData> = lock
+    let result: Vec<lqos_bus::FlowbeeSummaryData> = lock.flow_data
         .iter()
         .map(|(key, row)| {
             let geo =
@@ -1238,13 +1238,13 @@ pub fn dump_active_flows() -> BusResponse {
 /// Count active flows
 pub fn count_active_flows() -> BusResponse {
     let lock = ALL_FLOWS.lock().unwrap();
-    BusResponse::CountActiveFlows(lock.len() as u64)
+    BusResponse::CountActiveFlows(lock.flow_data.len() as u64)
 }
 
 /// Top Flows Report
 pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
     let lock = ALL_FLOWS.lock().unwrap();
-    let mut table: Vec<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))> = lock
+    let mut table: Vec<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))> = lock.flow_data
         .iter()
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
@@ -1334,7 +1334,7 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
         let ip = XdpIpAddress::from_ip(ip);
         let lock = ALL_FLOWS.lock().unwrap();
         let sd = SHAPED_DEVICES.load();
-        let matching_flows: Vec<_> = lock
+        let matching_flows: Vec<_> = lock.flow_data
             .iter()
             .filter(|(key, _)| key.local_ip == ip)
             .map(|(key, row)| {

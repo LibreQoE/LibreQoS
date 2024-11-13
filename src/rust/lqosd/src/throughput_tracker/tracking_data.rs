@@ -265,7 +265,7 @@ impl ThroughputTracker {
           expired_keys.push(key.clone());
         } else {
           // We have a valid flow, so it needs to be tracked
-          if let Some(this_flow) = all_flows_lock.get_mut(&key) {
+          if let Some(this_flow) = all_flows_lock.flow_data.get_mut(&key) {
             // If retransmits have changed, add the time to the retry list
             if data.tcp_retransmits.down != this_flow.0.tcp_retransmits.down {
               this_flow.0.retry_times_down.push(data.last_seen);
@@ -298,7 +298,7 @@ impl ThroughputTracker {
           } else {
             // Insert it into the map
             let flow_analysis = FlowAnalysis::new(&key);
-            all_flows_lock.insert(key.clone(), (data.into(), flow_analysis));
+            all_flows_lock.flow_data.insert(key.clone(), (data.into(), flow_analysis));
           }
 
           // TCP - we have RTT data? 6 is TCP
@@ -384,7 +384,7 @@ impl ThroughputTracker {
       if !expired_keys.is_empty() {
         for key in expired_keys.iter() {
           // Send it off to netperf for analysis if we are supporting doing so.
-          if let Some(d) = all_flows_lock.remove(&key) {
+          if let Some(d) = all_flows_lock.flow_data.remove(&key) {
             let _ = sender.send((key.clone(), (d.0.clone(), d.1.clone())));
           }
         }
@@ -396,8 +396,8 @@ impl ThroughputTracker {
       }
 
       // Cleaning run
-      all_flows_lock.retain(|_k,v| v.0.last_seen >= expire);
-      all_flows_lock.shrink_to_fit();
+      all_flows_lock.flow_data.retain(|_k,v| v.0.last_seen >= expire);
+      all_flows_lock.flow_data.shrink_to_fit();
       expire_rtt_flows();
     }
   }

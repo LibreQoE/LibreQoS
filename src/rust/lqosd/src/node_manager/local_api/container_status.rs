@@ -29,8 +29,8 @@ pub struct ContainerStatus {
 
 fn tracked_flows() -> ContainerSize {
     let all_flows = ALL_FLOWS.lock().unwrap();
-    let size = all_flows.len();
-    let capacity = all_flows.capacity();
+    let size = all_flows.flow_data.len();
+    let capacity = all_flows.flow_data.capacity();
     ContainerSize { size, capacity }
 }
 

@@ -2005,6 +2005,8 @@ dependencies = [
 name = "lqos_sys"
 version = "0.1.0"
 dependencies = [
+ "allocative",
+ "allocative_derive",
  "anyhow",
  "bindgen",
  "libbpf-sys",
