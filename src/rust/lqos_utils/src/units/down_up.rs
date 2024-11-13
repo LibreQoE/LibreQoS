@@ -3,6 +3,7 @@
 //! helps reduce directional confusion/bugs.
 
 use std::ops::AddAssign;
+use allocative_derive::Allocative;
 use serde::{Deserialize, Serialize};
 use zerocopy::FromBytes;
 use crate::units::UpDownOrder;
@@ -11,7 +12,7 @@ use crate::units::UpDownOrder;
 /// stored statistics to eliminate confusion. This is a generic
 /// type: you can control the type stored inside.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, FromBytes, Default, Ord, PartialOrd)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, FromBytes, Default, Ord, PartialOrd, Allocative)]
 pub struct DownUpOrder<T> {
     /// The down value
     pub down: T,

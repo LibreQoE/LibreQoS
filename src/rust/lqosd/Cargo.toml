@@ -7,6 +7,7 @@ license = "GPL-2.0-only"
 [features]
 default = ["equinix_tests"]
 equinix_tests = []
+flamegraphs = []
 
 [dependencies]
 anyhow = { workspace = true }
@@ -53,6 +54,9 @@ crossbeam-channel = { workspace = true }
 arc-swap = {  workspace = true }
 crossbeam-queue = { workspace = true }
 
+# For memory debugging
+allocative = {  version = "0.3.3", features = [ "dashmap" ] }
+allocative_derive = "0.3.3"
 
 # Support JemAlloc on supported platforms
 #[target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]

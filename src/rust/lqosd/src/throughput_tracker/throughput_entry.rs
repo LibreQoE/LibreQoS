@@ -1,8 +1,9 @@
+use allocative_derive::Allocative;
 use lqos_bus::TcHandle;
 use lqos_utils::units::DownUpOrder;
 use super::flow_data::RttData;
 
-#[derive(Debug)]
+#[derive(Debug, Allocative)]
 pub(crate) struct ThroughputEntry {
   pub(crate) circuit_id: Option<String>,
   pub(crate) circuit_hash: Option<i64>,

@@ -1,4 +1,5 @@
 use std::{sync::atomic::AtomicU64, time::Duration};
+use allocative_derive::Allocative;
 use crate::{shaped_devices_tracker::SHAPED_DEVICES, stats::HIGH_WATERMARK, throughput_tracker::flow_data::{expire_rtt_flows, flowbee_rtt_map}};
 use super::{flow_data::{get_flowbee_event_count_and_reset, FlowAnalysis, FlowbeeLocalData, RttData, ALL_FLOWS}, throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
 use dashmap::DashMap;
@@ -11,6 +12,7 @@ use lqos_sys::{flowbee_data::FlowbeeKey, iterate_flows, throughput_for_each};
 use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
 use lqos_utils::units::{AtomicDownUp, DownUpOrder};
 
+#[derive(Allocative)]
 pub struct ThroughputTracker {
   pub(crate) cycle: AtomicU64,
   pub(crate) raw_data: DashMap<XdpIpAddress, ThroughputEntry>,
@@ -459,6 +461,17 @@ impl ThroughputTracker {
 
   pub(crate) fn next_cycle(&self) {
     self.cycle.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+    // Cleanup
+    if let Ok(now) = time_since_boot() {
+      let since_boot = Duration::from(now);
+      let timeout_seconds = 5 * 60; // 5 minutes
+      let expire = (since_boot - Duration::from_secs(timeout_seconds)).as_nanos() as u64;
+      self.raw_data.retain(|k, v| {
+        v.last_seen >= expire
+      });
+      self.raw_data.shrink_to_fit();
+    }
   }
 
   pub(crate) fn bits_per_second(&self) -> DownUpOrder<u64> {

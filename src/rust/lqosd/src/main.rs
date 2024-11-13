@@ -14,7 +14,9 @@ mod preflight_checks;
 mod node_manager;
 mod system_stats;
 
+use std::io::Write;
 use std::net::IpAddr;
+use allocative::Allocative;
 use crate::{
   file_lock::FileLock,
   ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow}, throughput_tracker::flow_data::{flowbee_handle_events, setup_netflow_tracker, FlowActor},
@@ -42,7 +44,7 @@ use crate::ip_mapping::clear_hot_cache;
 //use mimalloc::MiMalloc;
 
 use tracing::level_filters::LevelFilter;
-
+use crate::throughput_tracker::THROUGHPUT_TRACKER;
 // Use JemAllocator only on supported platforms
 //#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 //#[global_allocator]
@@ -184,6 +186,9 @@ fn main() -> Result<()> {
   // Create the socket server
   let server = UnixSocketServer::new().expect("Unable to spawn server");
 
+  // Memory Debugging
+  memory_debug();
+
   let handle = std::thread::Builder::new().name("Async Bus/Web".to_string()).spawn(move || {
     tokio::runtime::Builder::new_current_thread()
     .enable_all()
@@ -211,6 +216,26 @@ fn main() -> Result<()> {
   warn!("Main thread exiting");
   Ok(())
 }
+
+#[cfg(feature = "flamegraphs")]
+fn memory_debug() {
+  std::thread::spawn(|| {
+    loop {
+      std::thread::sleep(std::time::Duration::from_secs(60));
+      let mut fb = allocative::FlameGraphBuilder::default();
+      fb.visit_global_roots();
+      fb.visit_root(&*THROUGHPUT_TRACKER);
+      let flamegraph_src = fb.finish();
+      let flamegraph_src = flamegraph_src.flamegraph();
+      let mut file = std::fs::File::create("/tmp/lqosd-mem.svg").unwrap();
+      file.write_all(flamegraph_src.write().as_bytes()).unwrap();
+      info!("Wrote flamegraph to /tmp/lqosd-mem.svg");
+    }
+  });
+}
+
+#[cfg(not(feature = "flamegraphs"))]
+fn memory_debug() {}
 
 fn handle_bus_requests(
   requests: &[BusRequest],

@@ -1,3 +1,4 @@
+use allocative_derive::Allocative;
 use tracing::error;
 use lqos_utils::hex_string::read_hex_string;
 use serde::{Deserialize, Serialize};
@@ -5,7 +6,7 @@ use thiserror::Error;
 
 /// Provides consistent handling of TC handle types.
 #[derive(
-  Copy, Clone, Serialize, Deserialize, Debug, Default, PartialEq, Eq, Hash
+  Copy, Clone, Serialize, Deserialize, Debug, Default, PartialEq, Eq, Hash, Allocative
 )]
 pub struct TcHandle(u32);
 

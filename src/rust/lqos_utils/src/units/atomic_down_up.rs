@@ -4,6 +4,7 @@
 
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::Relaxed;
+use allocative_derive::Allocative;
 use crate::units::DownUpOrder;
 
 /// AtomicDownUp is a struct that contains two atomic u64 values, one for down and one for up.
@@ -12,7 +13,7 @@ use crate::units::DownUpOrder;
 ///
 /// Note that unlike the DownUpOrder struct, it is not intended for direct serialization, and
 /// is not generic.
-#[derive(Debug)]
+#[derive(Debug, Allocative)]
 pub struct AtomicDownUp {
     down: AtomicU64,
     up: AtomicU64,
