@@ -86,7 +86,7 @@ impl TimeBuffer {
         // Sort by lat/lon
         my_buffer.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
-        // Depuplicate
+        // Deduplicate
         my_buffer.dedup();
 
         my_buffer
