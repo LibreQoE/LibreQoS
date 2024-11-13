@@ -4,7 +4,7 @@ use crate::{shaped_devices_tracker::SHAPED_DEVICES, stats::HIGH_WATERMARK, throu
 use super::{flow_data::{get_flowbee_event_count_and_reset, FlowAnalysis, FlowbeeLocalData, RttData, ALL_FLOWS}, throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
 use dashmap::DashMap;
 use fxhash::FxHashMap;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use lqos_bus::TcHandle;
 use lqos_config::NetworkJson;
 use lqos_queue_tracker::ALL_QUEUE_SUMMARY;
@@ -466,11 +466,19 @@ impl ThroughputTracker {
       let since_boot = Duration::from(now);
       let timeout_seconds = 5 * 60; // 5 minutes
       let expire = (since_boot - Duration::from_secs(timeout_seconds)).as_nanos() as u64;
+      let mut keys_to_expire = Vec::new();
       self.raw_data.retain(|k, v| {
-        //println!("{} > {} = {}", v.last_seen, expire, v.last_seen > expire);
-        v.last_seen >= expire && v.last_seen > 0
+        let keep_it =v.last_seen >= expire && v.last_seen > 0;
+        if !keep_it {
+          debug!("Removing {:?} from tracking", k);
+          keys_to_expire.push(k.clone());
+        }
+        keep_it
       });
       self.raw_data.shrink_to_fit();
+      if let Err(e) = lqos_sys::expire_throughput(keys_to_expire) {
+        warn!("Failed to expire throughput: {:?}", e);
+      }
     }
   }
 
