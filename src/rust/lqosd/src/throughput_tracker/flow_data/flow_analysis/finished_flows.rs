@@ -6,6 +6,7 @@ use lqos_sys::flowbee_data::FlowbeeKey;
 use once_cell::sync::Lazy;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use allocative_derive::Allocative;
 use itertools::Itertools;
 use serde::Serialize;
 use tracing::debug;
@@ -13,11 +14,12 @@ use lqos_config::load_config;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::unix_now;
 
+#[derive(Allocative)]
 pub struct TimeBuffer {
     buffer: Mutex<Vec<TimeEntry>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Allocative)]
 struct TimeEntry {
     time: u64,
     data: (FlowbeeKey, FlowbeeLocalData, FlowAnalysis),

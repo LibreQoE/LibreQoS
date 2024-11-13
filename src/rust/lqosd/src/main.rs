@@ -44,7 +44,7 @@ use crate::ip_mapping::clear_hot_cache;
 //use mimalloc::MiMalloc;
 
 use tracing::level_filters::LevelFilter;
-use crate::throughput_tracker::flow_data::ALL_FLOWS;
+use crate::throughput_tracker::flow_data::{ALL_FLOWS, RECENT_FLOWS};
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
 // Use JemAllocator only on supported platforms
 //#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -227,6 +227,7 @@ fn memory_debug() {
       fb.visit_global_roots();
       fb.visit_root(&*THROUGHPUT_TRACKER);
       fb.visit_root(&*ALL_FLOWS);
+      fb.visit_root(&*RECENT_FLOWS);
       let flamegraph_src = fb.finish();
       let flamegraph_src = flamegraph_src.flamegraph();
       let mut file = std::fs::File::create("/tmp/lqosd-mem.svg").unwrap();
