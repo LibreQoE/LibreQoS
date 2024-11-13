@@ -44,14 +44,34 @@ pushd rust > /dev/null
 #cargo clean
 for prog in $PROGS
 do
-    pushd $prog > /dev/null
-    cargo build $BUILD_FLAGS
-    if [ $? -ne 0 ]; then
-      echo "Cargo build failed. Exiting with code 1."
-    exit 1
-    fi    
-    popd > /dev/null
+    # If prog is lqosd
+    if [ $prog == "lqosd" ]; then
+        # If the environment variable FLAMEGRAPHS is set, set the FEATURE variable to flamegraph, otherwise it's empty
+        if [ -n "$FLAMEGRAPHS" ]; then
+            echo "Building lqosd with flamegraph support"
+            FEATURE="-F flamegraphs"
+        else
+            echo "Building lqosd without flamegraph support"
+            FEATURE=""
+        fi
+        echo "Building lqosd"
+        pushd lqosd > /dev/null
+        cargo build $BUILD_FLAGS $FEATURE
+        if [ $? -ne 0 ]; then
+          echo "Cargo build failed. Exiting with code 1."
+          exit 1
+        fi
+        popd > /dev/null
+    else
+      pushd $prog > /dev/null
+      cargo build $BUILD_FLAGS
+      if [ $? -ne 0 ]; then
+        echo "Cargo build failed. Exiting with code 1."
+        exit 1
+      fi
+    fi
 done
+popd > /dev/null
 
 echo "Installing new binaries into bin folder."
 for prog in $PROGS
