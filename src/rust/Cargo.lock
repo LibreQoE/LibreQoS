@@ -1895,6 +1895,8 @@ dependencies = [
 name = "lqos_config"
 version = "0.1.0"
 dependencies = [
+ "allocative",
+ "allocative_derive",
  "arc-swap",
  "csv",
  "ip_network",

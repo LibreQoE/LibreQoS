@@ -48,6 +48,8 @@ use crate::ip_mapping::clear_hot_cache;
 
 use tracing::level_filters::LevelFilter;
 #[cfg(feature = "flamegraphs")]
+use crate::shaped_devices_tracker::NETWORK_JSON;
+#[cfg(feature = "flamegraphs")]
 use crate::throughput_tracker::flow_data::{ALL_FLOWS, RECENT_FLOWS};
 #[cfg(feature = "flamegraphs")]
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
@@ -233,6 +235,7 @@ fn memory_debug() {
       fb.visit_root(&*THROUGHPUT_TRACKER);
       fb.visit_root(&*ALL_FLOWS);
       fb.visit_root(&*RECENT_FLOWS);
+      fb.visit_root(&*NETWORK_JSON);
       let flamegraph_src = fb.finish();
       let flamegraph_src = flamegraph_src.flamegraph();
       let mut file = std::fs::File::create("/tmp/lqosd-mem.svg").unwrap();

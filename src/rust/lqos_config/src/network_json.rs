@@ -7,6 +7,7 @@ use std::{
     fs, path::{Path, PathBuf},
 };
 use std::collections::HashSet;
+use allocative_derive::Allocative;
 use thiserror::Error;
 use lqos_utils::units::DownUpOrder;
 pub use network_json_node::NetworkJsonNode;
@@ -15,7 +16,7 @@ pub use network_json_transport::NetworkJsonTransport;
 /// Holder for the network.json representation.
 /// This is condensed into a single level vector with index-based referencing
 /// for easy use in funnel calculations.
-#[derive(Debug)]
+#[derive(Debug, Allocative)]
 pub struct NetworkJson {
     /// Nodes that make up the tree, flattened and referenced by index number.
     /// TODO: We should add a primary key to nodes in network.json.

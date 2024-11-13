@@ -20,3 +20,7 @@ toml = {  workspace = true }
 lqos_utils = { path = "../lqos_utils" }
 arc-swap = { workspace = true }
 once_cell = { workspace = true }
+
+# For memory debugging
+allocative = {  version = "0.3.3", features = [ "dashmap" ] }
+allocative_derive = "0.3.3"

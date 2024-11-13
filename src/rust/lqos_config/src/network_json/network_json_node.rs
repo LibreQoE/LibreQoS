@@ -1,9 +1,10 @@
 use std::collections::HashSet;
+use allocative_derive::Allocative;
 use lqos_utils::units::DownUpOrder;
 use crate::NetworkJsonTransport;
 
 /// Describes a node in the network map tree.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Allocative)]
 pub struct NetworkJsonNode {
     /// The node name, as it appears in `network.json`
     pub name: String,
