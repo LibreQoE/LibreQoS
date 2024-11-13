@@ -177,9 +177,15 @@ fn throughput_task(
                 &mut tcp_retries,
                 &mut expired_flows,
             );
+
+            // Clean up work tables
             rtt_circuit_tracker.clear();
             tcp_retries.clear();
             expired_flows.clear();
+            rtt_circuit_tracker.shrink_to_fit();
+            tcp_retries.shrink_to_fit();
+            expired_flows.shrink_to_fit();
+
             timer_metrics.apply_flow_data = timer_metrics.start.elapsed().as_secs_f64();
             THROUGHPUT_TRACKER.apply_queue_stats(&mut net_json_calc);
             timer_metrics.apply_queue_stats = timer_metrics.start.elapsed().as_secs_f64();
