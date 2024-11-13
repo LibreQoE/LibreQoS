@@ -43,8 +43,8 @@ use throughput_tracker::flow_data::get_rtt_events_per_second;
 use crate::ip_mapping::clear_hot_cache;
 
 // Use MiMalloc only on supported platforms
-//#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-//use mimalloc::MiMalloc;
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+use mimalloc::MiMalloc;
 
 use tracing::level_filters::LevelFilter;
 #[cfg(feature = "flamegraphs")]
@@ -54,9 +54,9 @@ use crate::throughput_tracker::flow_data::{ALL_FLOWS, RECENT_FLOWS};
 #[cfg(feature = "flamegraphs")]
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
 // Use JemAllocator only on supported platforms
-//#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-//#[global_allocator]
-//static GLOBAL: MiMalloc = MiMalloc;
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 /// Configure a highly detailed logging system.
 pub fn set_console_logging() -> anyhow::Result<()> {
