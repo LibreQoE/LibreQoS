@@ -223,7 +223,7 @@ impl ThroughputTracker {
     // Iterate through the queue data and find the matching circuit_id
     let mut raw_data = self.raw_data.lock().unwrap();
     ALL_QUEUE_SUMMARY.iterate_queues(|circuit_hash, drops, marks| {
-      if let Some((k,entry)) = raw_data.iter().find(|(k,v)| {
+      if let Some((_k,entry)) = raw_data.iter().find(|(k,v)| {
         match v.circuit_hash {
           Some(ref id) => *id == circuit_hash,
           None => false,
@@ -368,7 +368,7 @@ impl ThroughputTracker {
 
       // Merge in the TCP retries
       // Reset all entries in the tracker to 0
-      for (k, circuit) in raw_data.iter_mut() {
+      for (_k, circuit) in raw_data.iter_mut() {
         circuit.tcp_retransmits = DownUpOrder::zeroed();
       }
       // Apply the new ones

@@ -1115,7 +1115,7 @@ pub fn rtt_histogram<const N: usize>() -> BusResponse {
     let reader_cycle = THROUGHPUT_TRACKER
         .cycle
         .load(std::sync::atomic::Ordering::Relaxed);
-    for (k,data) in THROUGHPUT_TRACKER
+    for (_k,data) in THROUGHPUT_TRACKER
         .raw_data
         .lock()
         .unwrap()
