@@ -3,10 +3,12 @@ import {RttHistogram} from "../graphs/rtt_histo";
 import {clearDashDiv, theading, TopNTableFromMsgData, topNTableHeader, topNTableRow} from "../helpers/builders";
 import {scaleNumber, rttCircleSpan, formatThroughput, formatRtt} from "../helpers/scaling";
 import {redactCell} from "../helpers/redact";
+import {TimedLRUCache} from "../helpers/timed_lru_cache";
 
 export class Worst10Downloaders extends BaseDashlet {
     constructor(slot) {
         super(slot);
+        this.buffer = new TimedLRUCache(10, 300);
     }
 
     canBeSlowedDown() {
@@ -39,6 +41,13 @@ export class Worst10Downloaders extends BaseDashlet {
     onMessage(msg) {
         if (msg.event === "WorstRTT") {
             let target = document.getElementById(this.id);
+            msg.data.forEach((r) => {
+                this.buffer.set(r.circuit_id, r);
+            });
+            this.buffer.tick();
+
+            let results = this.buffer.toArray();
+            results.sort((a, b) => b.median_tcp_rtt - a.median_tcp_rtt);
 
             let t = TopNTableFromMsgData(msg);
 

@@ -3,10 +3,12 @@ import {RttHistogram} from "../graphs/rtt_histo";
 import {clearDashDiv, theading, TopNTableFromMsgData, topNTableHeader, topNTableRow} from "../helpers/builders";
 import {scaleNumber, rttCircleSpan, formatThroughput, formatRtt, formatRetransmit} from "../helpers/scaling";
 import {redactCell} from "../helpers/redact";
+import {TimedLRUCache} from "../helpers/timed_lru_cache";
 
 export class Top10Downloaders extends BaseDashlet {
     constructor(slot) {
         super(slot);
+        this.buffer = new TimedLRUCache(10, 300);
     }
 
     title() {
@@ -39,8 +41,15 @@ export class Top10Downloaders extends BaseDashlet {
     onMessage(msg) {
         if (msg.event === "TopDownloads") {
             let target = document.getElementById(this.id);
+            msg.data.forEach((r) => {
+                this.buffer.set(r.circuit_id, r);
+            });
+            this.buffer.tick();
 
-            let t = TopNTableFromMsgData(msg);
+            let results = this.buffer.toArray();
+            results.sort((a, b) => a.bits_per_second.down - b.bits_per_second.down);
+
+            let t = TopNTableFromMsgData(results);
 
             // Display it
             clearDashDiv(this.id, target);
