@@ -138,9 +138,7 @@ impl ThroughputTracker {
           if c.tc_handle != 0 {
             entry.tc_handle = TcHandle::from_u32(c.tc_handle);
           }
-          if c.last_seen != 0 {
-            entry.last_seen = u64::max(entry.last_seen, c.last_seen);
-          }
+          entry.last_seen = u64::max(entry.last_seen, c.last_seen);
         }
         if entry.packets != entry.prev_packets {
           entry.most_recent_cycle = self_cycle;
@@ -207,6 +205,7 @@ impl ThroughputTracker {
           if c.tc_handle != 0 {
             entry.tc_handle = TcHandle::from_u32(c.tc_handle);
           }
+          entry.last_seen = u64::max(entry.last_seen, c.last_seen);
         }
         raw_data.insert(*xdp_ip, entry);
       }
@@ -468,7 +467,8 @@ impl ThroughputTracker {
       let timeout_seconds = 5 * 60; // 5 minutes
       let expire = (since_boot - Duration::from_secs(timeout_seconds)).as_nanos() as u64;
       self.raw_data.retain(|k, v| {
-        v.last_seen >= expire
+        //println!("{} > {} = {}", v.last_seen, expire, v.last_seen > expire);
+        v.last_seen >= expire && v.last_seen > 0
       });
       self.raw_data.shrink_to_fit();
     }
