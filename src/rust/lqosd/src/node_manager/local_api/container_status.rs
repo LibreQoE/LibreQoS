@@ -41,8 +41,8 @@ fn recent_flows() -> ContainerSize {
 
 fn throughput_tracker() -> ContainerSize {
     ContainerSize {
-        size: THROUGHPUT_TRACKER.raw_data.len(),
-        capacity: THROUGHPUT_TRACKER.raw_data.capacity(),
+        size: THROUGHPUT_TRACKER.raw_data.lock().unwrap().len(),
+        capacity: THROUGHPUT_TRACKER.raw_data.lock().unwrap().capacity(),
     }
 }
 

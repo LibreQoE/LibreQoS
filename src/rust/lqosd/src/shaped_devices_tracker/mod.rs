@@ -189,10 +189,10 @@ pub fn get_all_circuits() -> BusResponse {
     if let Ok(kernel_now) = time_since_boot() {
         let devices = SHAPED_DEVICES.load();
             let data = THROUGHPUT_TRACKER.
-            raw_data.
-            iter()
-            .map(|v| {
-                let ip = v.key().as_ip();
+            raw_data.lock().unwrap()
+            .iter()
+            .map(|(k,v)| {
+                let ip = k.as_ip();
                 let last_seen_nanos = if v.last_seen > 0 {
                     let last_seen_nanos = v.last_seen as u128;
                     let since_boot = Duration::from(kernel_now).as_nanos();
@@ -224,7 +224,7 @@ pub fn get_all_circuits() -> BusResponse {
                 }
 
                 Circuit {
-                    ip: v.key().as_ip(),
+                    ip: k.as_ip(),
                     bytes_per_second: v.bytes_per_second,
                     median_latency: v.median_latency(),
                     tcp_retransmits: v.tcp_retransmits,
