@@ -49,7 +49,7 @@ export class Top10Downloaders extends BaseDashlet {
             let results = { data: this.buffer.toArray() };
             //results.sort((a, b) => a.bits_per_second.down - b.bits_per_second.down);
 
-            let t = TopNTableFromMsgData(results);
+            let t = TopNTableFromMsgData(msg);
 
             // Display it
             clearDashDiv(this.id, target);
