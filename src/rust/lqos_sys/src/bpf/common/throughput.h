@@ -28,7 +28,7 @@ struct host_counter {
 // runs out of space, the least recently seen host will be removed.
 struct
 {
-	__uint(type, BPF_MAP_TYPE_LRU_PERCPU_HASH);
+	__uint(type, BPF_MAP_TYPE_PERCPU_HASH);
 	__type(key, struct in6_addr);
 	__type(value, struct host_counter);
     __uint(max_entries, MAX_TRACKED_IPS);

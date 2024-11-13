@@ -396,6 +396,7 @@ impl ThroughputTracker {
 
       // Cleaning run
       all_flows_lock.retain(|_k,v| v.0.last_seen >= expire);
+      all_flows_lock.shrink_to_fit();
       expire_rtt_flows();
     }
   }
