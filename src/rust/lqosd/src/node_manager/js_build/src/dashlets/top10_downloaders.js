@@ -47,7 +47,7 @@ export class Top10Downloaders extends BaseDashlet {
             this.buffer.tick();
 
             let results = { data: this.buffer.toArray() };
-            results.data.sort((a, b) => a.bits_per_second.down - b.bits_per_second.down);
+            results.data.sort((a, b) => b.bits_per_second.down - a.bits_per_second.down);
 
             let t = TopNTableFromMsgData(results);
 
