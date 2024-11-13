@@ -258,6 +258,9 @@ pub fn end_flows(flows: &mut [FlowbeeKey]) -> anyhow::Result<()> {
   Ok(())
 }
 
+/// Expire all throughput data for the given keys
+/// This uses the bulk delete method, which is faster than
+/// the per-row method due to only having one lock.
 pub fn expire_throughput(mut keys: Vec<XdpIpAddress>) -> anyhow::Result<()> {
   let mut map = BpfMap::<XdpIpAddress, HostCounter>::from_path("/sys/fs/bpf/map_traffic")?;
   map.clear_bulk_keys(&mut keys)?;

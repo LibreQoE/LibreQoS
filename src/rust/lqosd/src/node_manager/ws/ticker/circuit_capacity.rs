@@ -29,7 +29,7 @@ pub async fn circuit_capacity(channels: Arc<PubSub>) {
     let mut circuits: HashMap<String, CircuitAccumulator> = HashMap::new();
 
     // Aggregate the data by circuit id
-    THROUGHPUT_TRACKER.raw_data.lock().unwrap().iter().for_each(|(k,c)| {
+    THROUGHPUT_TRACKER.raw_data.lock().unwrap().iter().for_each(|(_k,c)| {
         if let Some(circuit_id) = &c.circuit_id {
             if let Some(accumulator) = circuits.get_mut(circuit_id) {
                 accumulator.bytes += c.bytes_per_second;

@@ -74,28 +74,3 @@ impl From<&FlowbeeData> for FlowbeeLocalData {
         }
     }
 }
-
-impl FlowbeeLocalData {
-    pub fn trim(&mut self) {
-        // Find the point at which the throughput buffer starts being all zeroes
-        let mut last_start: Option<usize> = None;
-        let mut in_zero_run = false;
-
-        /*for (i, &value) in self.throughput_buffer.iter().enumerate() {
-            if value.down == 0 && value.up == 0 {
-                if !in_zero_run {
-                    in_zero_run = true;
-                    last_start = Some(i);
-                }
-            } else {
-                in_zero_run = false;
-            }
-        }*/
-
-        if let Some(start_index) = last_start {
-            // There's a run of zeroes terminating the throughput buffer
-            // That means we need to truncate the buffer
-            //self.throughput_buffer.truncate(start_index);
-        }
-    }
-}

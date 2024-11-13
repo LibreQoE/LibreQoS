@@ -445,11 +445,11 @@ impl FinishedFlowAnalysis {
 }
 
 impl FlowbeeRecipient for FinishedFlowAnalysis {
-    fn enqueue(&self, key: FlowbeeKey, mut data: FlowbeeLocalData, analysis: FlowAnalysis) {
+    fn enqueue(&self, key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
         debug!("Finished flow analysis");
         let one_way = data.bytes_sent.down == 0 || data.bytes_sent.up == 0;
         if !one_way {
-            data.trim(); // Remove the trailing 30 seconds of zeroes
+            //data.trim(); // Remove the trailing 30 seconds of zeroes
             //let tp_buf_dn = data.throughput_buffer.iter().map(|v| v.down).collect();
             //let tp_buf_up = data.throughput_buffer.iter().map(|v| v.up).collect();
             lts2_sys::two_way_flow(

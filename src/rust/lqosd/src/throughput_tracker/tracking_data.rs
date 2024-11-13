@@ -4,7 +4,6 @@ use std::sync::Mutex;
 use allocative_derive::Allocative;
 use crate::{shaped_devices_tracker::SHAPED_DEVICES, stats::HIGH_WATERMARK, throughput_tracker::flow_data::{expire_rtt_flows, flowbee_rtt_map}};
 use super::{flow_data::{get_flowbee_event_count_and_reset, FlowAnalysis, FlowbeeLocalData, RttData, ALL_FLOWS}, throughput_entry::ThroughputEntry, RETIRE_AFTER_SECONDS};
-use dashmap::DashMap;
 use fxhash::FxHashMap;
 use tracing::{debug, info, warn};
 use lqos_bus::TcHandle;
@@ -48,7 +47,7 @@ impl ThroughputTracker {
     // Copy previous byte/packet numbers and reset RTT data
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
     let mut raw_data = self.raw_data.lock().unwrap();
-    raw_data.iter_mut().for_each(|(k,v)| {
+    raw_data.iter_mut().for_each(|(_k,v)| {
       if v.first_cycle < self_cycle {
         v.bytes_per_second = v.bytes.checked_sub_or_zero(v.prev_bytes);
         v.packets_per_second = v.packets.checked_sub_or_zero(v.prev_packets);
@@ -125,7 +124,7 @@ impl ThroughputTracker {
     let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
     let mut raw_data = self.raw_data.lock().unwrap();
     throughput_for_each(&mut |xdp_ip, counts| {
-      if let Some(mut entry) = raw_data.get_mut(xdp_ip) {
+      if let Some(entry) = raw_data.get_mut(xdp_ip) {
         // Zero the counter, we have to do a per-CPU sum
         entry.bytes = DownUpOrder::zeroed();
         entry.packets = DownUpOrder::zeroed();
@@ -221,9 +220,9 @@ impl ThroughputTracker {
     ALL_QUEUE_SUMMARY.calculate_total_queue_stats();
 
     // Iterate through the queue data and find the matching circuit_id
-    let mut raw_data = self.raw_data.lock().unwrap();
+    let raw_data = self.raw_data.lock().unwrap();
     ALL_QUEUE_SUMMARY.iterate_queues(|circuit_hash, drops, marks| {
-      if let Some((_k,entry)) = raw_data.iter().find(|(k,v)| {
+      if let Some((_k,entry)) = raw_data.iter().find(|(_k,v)| {
         match v.circuit_hash {
           Some(ref id) => *id == circuit_hash,
           None => false,
@@ -280,7 +279,7 @@ impl ThroughputTracker {
               this_flow.0.retry_times_up.push(data.last_seen);
             }
 
-            let change_since_last_time = data.bytes_sent.checked_sub_or_zero(this_flow.0.bytes_sent);
+            //let change_since_last_time = data.bytes_sent.checked_sub_or_zero(this_flow.0.bytes_sent);
             //this_flow.0.throughput_buffer.push(change_since_last_time);
             //println!("{change_since_last_time:?}");
 
@@ -347,7 +346,7 @@ impl ThroughputTracker {
         if !rtts.is_empty() {
           rtts.sort();
           let median = rtts[rtts.len() / 2];
-          if let Some(mut tracker) = raw_data.get_mut(&local_ip) {
+          if let Some(tracker) = raw_data.get_mut(&local_ip) {
             // Only apply if the flow has achieved 1 Mbps or more
             if tracker.bytes_per_second.sum_exceeds(125_000) {
               // Shift left
@@ -373,7 +372,7 @@ impl ThroughputTracker {
       }
       // Apply the new ones
       for (local_ip, retries) in tcp_retries {
-        if let Some(mut tracker) = raw_data.get_mut(&local_ip) {
+        if let Some(tracker) = raw_data.get_mut(&local_ip) {
           tracker.tcp_retransmits.down = retries.down.saturating_sub(tracker.prev_tcp_retransmits.down);
           tracker.tcp_retransmits.up = retries.up.saturating_sub(tracker.prev_tcp_retransmits.up);
           tracker.prev_tcp_retransmits.down = retries.down;
@@ -416,14 +415,14 @@ impl ThroughputTracker {
     self.udp_packets_per_second.set_to_zero();
     self.icmp_packets_per_second.set_to_zero();
     self.shaped_bytes_per_second.set_to_zero();
-    let mut raw_data = self.raw_data.lock().unwrap();
+    let raw_data = self.raw_data.lock().unwrap();
     raw_data
       .iter()
-      .filter(|(k,v)|
+      .filter(|(_k,v)|
         v.most_recent_cycle == current_cycle &&
         v.first_cycle + 2 < current_cycle
       )
-      .map(|(k,v)| {
+      .map(|(_k,v)| {
         (
           v.bytes.down.saturating_sub(v.prev_bytes.down),
           v.bytes.up.saturating_sub(v.prev_bytes.up),

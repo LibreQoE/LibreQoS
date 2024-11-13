@@ -14,8 +14,11 @@ mod preflight_checks;
 mod node_manager;
 mod system_stats;
 
+#[cfg(feature = "flamegraphs")]
 use std::io::Write;
 use std::net::IpAddr;
+
+#[cfg(feature = "flamegraphs")]
 use allocative::Allocative;
 use crate::{
   file_lock::FileLock,
@@ -44,7 +47,9 @@ use crate::ip_mapping::clear_hot_cache;
 //use mimalloc::MiMalloc;
 
 use tracing::level_filters::LevelFilter;
+#[cfg(feature = "flamegraphs")]
 use crate::throughput_tracker::flow_data::{ALL_FLOWS, RECENT_FLOWS};
+#[cfg(feature = "flamegraphs")]
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
 // Use JemAllocator only on supported platforms
 //#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]

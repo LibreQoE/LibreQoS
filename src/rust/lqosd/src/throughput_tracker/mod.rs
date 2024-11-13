@@ -477,8 +477,8 @@ fn submit_throughput_stats(
             .raw_data
             .lock().unwrap()
             .iter()
-            .filter(|(k,h)| h.circuit_id.is_some() && h.bytes_per_second.not_zero())
-            .for_each(|(k,h)| {
+            .filter(|(_k,h)| h.circuit_id.is_some() && h.bytes_per_second.not_zero())
+            .for_each(|(_k,h)| {
                 if let Some(c) = circuit_throughput.get_mut(&h.circuit_hash.unwrap()) {
                     c.bytes += h.bytes_per_second;
                     c.packets += h.packets_per_second;
@@ -501,8 +501,8 @@ fn submit_throughput_stats(
             .lock()
             .unwrap()
             .iter()
-            .filter(|(k,h)| h.circuit_id.is_some() && h.tcp_retransmits.not_zero())
-            .for_each(|(k,h)| {
+            .filter(|(_k,h)| h.circuit_id.is_some() && h.tcp_retransmits.not_zero())
+            .for_each(|(_k,h)| {
                 if let Some(c) = circuit_retransmits.get_mut(&h.circuit_hash.unwrap()) {
                     *c += h.tcp_retransmits;
                 } else {
@@ -515,8 +515,8 @@ fn submit_throughput_stats(
             .lock()
             .unwrap()
             .iter()
-            .filter(|(k,h)| h.circuit_id.is_some() && h.median_latency().is_some())
-            .for_each(|(k,h)| {
+            .filter(|(_k,h)| h.circuit_id.is_some() && h.median_latency().is_some())
+            .for_each(|(_k,h)| {
                 if let Some(c) = circuit_rtt.get_mut(&h.circuit_hash.unwrap()) {
                     c.push(h.median_latency().unwrap());
                 } else {
@@ -778,8 +778,8 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
             .lock()
             .unwrap()
             .iter()
-            .filter(|(k,v)| !k.as_ip().is_loopback())
-            .filter(|(k,d)| retire_check(tp_cycle, d.most_recent_cycle))
+            .filter(|(k,_v)| !k.as_ip().is_loopback())
+            .filter(|(_k,d)| retire_check(tp_cycle, d.most_recent_cycle))
             .map(|(k,te)| {
                 (
                     *k,
@@ -831,9 +831,9 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
             .lock()
             .unwrap()
             .iter()
-            .filter(|(k,v)| !k.as_ip().is_loopback())
-            .filter(|(k,d)| retire_check(tp_cycle, d.most_recent_cycle))
-            .filter(|(k,te)| te.median_latency().is_some())
+            .filter(|(k,_v)| !k.as_ip().is_loopback())
+            .filter(|(_k,d)| retire_check(tp_cycle, d.most_recent_cycle))
+            .filter(|(_k,te)| te.median_latency().is_some())
             .map(|(k,te)| {
                 (
                     *k,
@@ -885,9 +885,9 @@ pub fn worst_n_retransmits(start: u32, end: u32) -> BusResponse {
             .lock()
             .unwrap()
             .iter()
-            .filter(|(k,v)| !k.as_ip().is_loopback())
-            .filter(|(k,d)| retire_check(tp_cycle, d.most_recent_cycle))
-            .filter(|(k,te)| te.median_latency().is_some())
+            .filter(|(k,_v)| !k.as_ip().is_loopback())
+            .filter(|(_k,d)| retire_check(tp_cycle, d.most_recent_cycle))
+            .filter(|(_k,te)| te.median_latency().is_some())
             .map(|(k,te)| {
                 (
                     *k,
@@ -943,9 +943,9 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
             .lock()
             .unwrap()
             .iter()
-            .filter(|(k,v)| !k.as_ip().is_loopback())
-            .filter(|(k,d)| retire_check(tp_cycle, d.most_recent_cycle))
-            .filter(|(k,te)| te.median_latency().is_some())
+            .filter(|(k,_v)| !k.as_ip().is_loopback())
+            .filter(|(_k,d)| retire_check(tp_cycle, d.most_recent_cycle))
+            .filter(|(_k,te)| te.median_latency().is_some())
             .map(|(k, te)| {
                 (
                     *k,
@@ -997,8 +997,8 @@ pub fn xdp_pping_compat() -> BusResponse {
         .lock()
         .unwrap()
         .iter()
-        .filter(|(k,d)| retire_check(raw_cycle, d.most_recent_cycle))
-        .filter_map(|(k,data)| {
+        .filter(|(_k,d)| retire_check(raw_cycle, d.most_recent_cycle))
+        .filter_map(|(_k,data)| {
             if data.tc_handle.as_u32() > 0 {
                 let mut valid_samples: Vec<u32> = data
                     .recent_rtt_data
@@ -1053,8 +1053,8 @@ pub fn min_max_median_rtt() -> Option<MinMaxMedianRtt> {
         .lock()
         .unwrap()
         .iter()
-        .filter(|(k,d)| retire_check(reader_cycle, d.most_recent_cycle))
-        .for_each(|(k,d)| {
+        .filter(|(_k,d)| retire_check(reader_cycle, d.most_recent_cycle))
+        .for_each(|(_k,d)| {
             samples.extend(
                 d.recent_rtt_data
                     .iter()
@@ -1101,8 +1101,8 @@ pub fn min_max_median_tcp_retransmits() -> TcpRetransmitTotal {
         .lock()
         .unwrap()
         .iter()
-        .filter(|(k,d)| retire_check(reader_cycle, d.most_recent_cycle))
-        .for_each(|(k,d)| {
+        .filter(|(_k,d)| retire_check(reader_cycle, d.most_recent_cycle))
+        .for_each(|(_k,d)| {
             total.up += d.tcp_retransmits.up as i32;
             total.down += d.tcp_retransmits.down as i32;
         });
@@ -1120,7 +1120,7 @@ pub fn rtt_histogram<const N: usize>() -> BusResponse {
         .lock()
         .unwrap()
         .iter()
-        .filter(|(k,d)| retire_check(reader_cycle, d.most_recent_cycle))
+        .filter(|(_k,d)| retire_check(reader_cycle, d.most_recent_cycle))
     {
         let valid_samples: Vec<f64> = data
             .recent_rtt_data
@@ -1151,8 +1151,8 @@ pub fn host_counts() -> BusResponse {
         .lock()
         .unwrap()
         .iter()
-        .filter(|(k,d)| retire_check(tp_cycle, d.most_recent_cycle))
-        .for_each(|(k,d)| {
+        .filter(|(_k,d)| retire_check(tp_cycle, d.most_recent_cycle))
+        .for_each(|(_k,d)| {
             total += 1;
             if d.tc_handle.as_u32() != 0 {
                 shaped += 1;
@@ -1181,9 +1181,9 @@ pub fn all_unknown_ips() -> BusResponse {
             .lock()
             .unwrap()
             .iter()
-            .filter(|(k,v)| !k.as_ip().is_loopback())
-            .filter(|(k,d)| d.tc_handle.as_u32() == 0)
-            .filter(|(k,d)| d.last_seen as u128 > five_minutes_ago_nanoseconds)
+            .filter(|(k,_v)| !k.as_ip().is_loopback())
+            .filter(|(_k,d)| d.tc_handle.as_u32() == 0)
+            .filter(|(_k,d)| d.last_seen as u128 > five_minutes_ago_nanoseconds)
             .map(|(k,te)| {
                 (
                     *k,

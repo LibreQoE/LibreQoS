@@ -24,9 +24,9 @@ pub fn get_unknown_ips() -> Vec<UnknownIp> {
         .lock()
         .unwrap()
         .iter()
-        .filter(|(k,v)| !k.as_ip().is_loopback())
-        .filter(|(k,d)| d.tc_handle.as_u32() == 0)
-        .filter(|(k,d)| {
+        .filter(|(k,_v)| !k.as_ip().is_loopback())
+        .filter(|(_k,d)| d.tc_handle.as_u32() == 0)
+        .filter(|(k,_d)| {
             let ip = k.as_ip();
             !sd_reader.trie.longest_match(ip).is_some()
         })
