@@ -53,6 +53,7 @@ timerfd = {  workspace = true }
 crossbeam-channel = { workspace = true }
 arc-swap = {  workspace = true }
 crossbeam-queue = { workspace = true }
+sha256 = "1.5.0"
 
 # For memory debugging
 allocative = {  version = "0.3.3", features = [ "dashmap" ] }
