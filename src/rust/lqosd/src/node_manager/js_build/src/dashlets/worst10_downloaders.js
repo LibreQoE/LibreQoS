@@ -8,7 +8,6 @@ import {TimedLRUCache} from "../helpers/timed_lru_cache";
 export class Worst10Downloaders extends BaseDashlet {
     constructor(slot) {
         super(slot);
-        this.buffer = new TimedLRUCache(10, 300);
     }
 
     canBeSlowedDown() {
@@ -41,15 +40,8 @@ export class Worst10Downloaders extends BaseDashlet {
     onMessage(msg) {
         if (msg.event === "WorstRTT") {
             let target = document.getElementById(this.id);
-            msg.data.forEach((r) => {
-                this.buffer.set(r.circuit_id, r);
-            });
-            this.buffer.tick();
 
-            let results = { data: this.buffer.toArray() };
-            results.data.sort((a, b) => b.median_tcp_rtt - a.median_tcp_rtt);
-
-            let t = TopNTableFromMsgData(results);
+            let t = TopNTableFromMsgData(msg);
 
             // Display it
             clearDashDiv(this.id, target);

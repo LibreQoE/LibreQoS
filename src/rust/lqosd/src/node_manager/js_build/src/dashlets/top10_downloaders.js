@@ -8,7 +8,6 @@ import {TimedLRUCache} from "../helpers/timed_lru_cache";
 export class Top10Downloaders extends BaseDashlet {
     constructor(slot) {
         super(slot);
-        this.buffer = new TimedLRUCache(10, 300);
     }
 
     title() {
@@ -41,15 +40,8 @@ export class Top10Downloaders extends BaseDashlet {
     onMessage(msg) {
         if (msg.event === "TopDownloads") {
             let target = document.getElementById(this.id);
-            msg.data.forEach((r) => {
-                this.buffer.set(r.circuit_id, r);
-            });
-            this.buffer.tick();
 
-            let results = { data: this.buffer.toArray() };
-            results.data.sort((a, b) => b.bits_per_second.down - a.bits_per_second.down);
-
-            let t = TopNTableFromMsgData(results);
+            let t = TopNTableFromMsgData(msg);
 
             // Display it
             clearDashDiv(this.id, target);
