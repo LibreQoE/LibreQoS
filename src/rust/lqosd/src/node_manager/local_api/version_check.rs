@@ -30,7 +30,7 @@ async fn send_version_check() -> anyhow::Result<VersionCheckResponse> {
             node_id: cfg.node_id.to_string(),
         };
         let response = reqwest::Client::new()
-            .post("https://stats.libreqos.io/api/version_check")
+            .post("https://insight.libreqos.com/shaper_api/version_check")
             .json(&request)
             .send()
             .await?

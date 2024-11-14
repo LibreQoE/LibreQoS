@@ -12,7 +12,7 @@ pub struct ShaperStatus {
 
 pub async fn shaper_status_from_lts() -> Result<Json<Vec<ShaperStatus>>, StatusCode> {
     let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let url = format!("https://{}/shaper_api/status", config.long_term_stats.clone().lts_url.unwrap_or("stats.libreqos.io".to_string()));
+    let url = format!("https://{}/shaper_api/status", config.long_term_stats.clone().lts_url.unwrap_or("insight.libreqos.com".to_string()));
     println!("URL: {}", url);
 
     let client = reqwest::Client::builder()

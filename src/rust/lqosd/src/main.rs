@@ -238,7 +238,10 @@ fn memory_debug() {
       fb.visit_root(&*NETWORK_JSON);
       let flamegraph_src = fb.finish();
       let flamegraph_src = flamegraph_src.flamegraph();
-      let mut file = std::fs::File::create("/tmp/lqosd-mem.svg").unwrap();
+      let Ok(mut file) = std::fs::File::create("/tmp/lqosd-mem.svg") else {
+        error!("Unable to write flamegraph: {:?}", e);
+        continue;
+      };
       file.write_all(flamegraph_src.write().as_bytes()).unwrap();
       info!("Wrote flamegraph to /tmp/lqosd-mem.svg");
     }
