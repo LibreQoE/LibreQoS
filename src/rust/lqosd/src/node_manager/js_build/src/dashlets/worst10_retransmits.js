@@ -3,10 +3,12 @@ import {RttHistogram} from "../graphs/rtt_histo";
 import {clearDashDiv, theading, TopNTableFromMsgData, topNTableHeader, topNTableRow} from "../helpers/builders";
 import {scaleNumber, rttCircleSpan, formatRtt, formatThroughput} from "../helpers/scaling";
 import {redactCell} from "../helpers/redact";
+import {TopXTable} from "../helpers/top_x_cache";
 
 export class Worst10Retransmits extends BaseDashlet {
     constructor(slot) {
         super(slot);
+        this.buffer = new TopXTable(10, 10);
     }
 
     canBeSlowedDown() {
@@ -40,7 +42,14 @@ export class Worst10Retransmits extends BaseDashlet {
         if (msg.event === "WorstRetransmits") {
             let target = document.getElementById(this.id);
 
-            let t = TopNTableFromMsgData(msg);
+            msg.data.forEach((r) => {
+                this.buffer.push(r.circuit_id, r, (data) => {
+                    return data.tcp_retransmits.down;
+                });
+            });
+            let ranked = this.buffer.getRankedArrayAndClean();
+
+            let t = TopNTableFromMsgData(ranked);
 
             // Display it
             clearDashDiv(this.id, target);

@@ -170,8 +170,8 @@ export function TopNTableFromMsgData(msg) {
     t.appendChild(topNTableHeader());
 
     let tbody = document.createElement("tbody");
-    msg.data.forEach((r) => {
-        t.appendChild(topNTableRow(r));
+    msg.forEach((r) => {
+        t.appendChild(topNTableRow(r.data));
     });
     t.appendChild(tbody);
     return t;
