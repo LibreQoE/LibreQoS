@@ -17,7 +17,7 @@ Donwload the latest .deb from [libreqos.io/#download](https://libreqos.io/#downl
 
 Unzip the .zip file and transfer the .deb to your LibreQoS box, installing with:
 ```
-sudo apt install ./libreqos_1.5-BETA3_amd64.deb
+sudo apt install ./deb_file_name.deb
 ```
 
 ### Git Install (For Developers Only - Not Recommended)
