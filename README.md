@@ -1,10 +1,18 @@
 <a href="https://libreqos.io/"><img alt="LibreQoS" src="https://user-images.githubusercontent.com/22501920/202913614-4ff2e506-e645-4a94-9918-d512905ab290.png"></a>
 
-LibreQoS is a Quality of Experience (QoE) Smart Queue Management (SQM) system designed for Internet Service Providers to optimize the flow of their network traffic and thus reduce bufferbloat, keep the network responsive, and improve the end-user experience.
+LibreQoS is software used by Internet Service Providers (ISPs) and companies to improve the Quality of Experience (QoE) of end-users on their networks. 
 
-Servers running LibreQoS can shape traffic for thousands of customers. On higher-end servers, LibreQoS is capable of shaping 50-80 Gbps of traffic.
+LibreQoS works by monitoring network performance and reducing latency for interactive online applications. ISPs regularly report that trouble calls reduce substantially after deploying LibreQoS on networks.
 
-Learn more at [LibreQoS.io](https://libreqos.io/)!
+For an ISP or other company to deploy LibreQoS – no changes are required for existing Routers, Switches or Access points: LibreQoS runs on a server that acts as a managed bridge sitting between the edge router and the core of the network. LibreQoS servers can shape traffic for tens of thousands of customers.
+
+LibreQoS benefits network operation and planning by measuring metrics such as end-to-end TCP round trip time for each Subscriber, Access Point, and Site on a network – saving the relevant data for later analysis on the LibreQoS Long Term Stats (LTS) system.
+
+LibreQoS code is Open Source. It improves Quality of Experience by implementing state of the art Flow Queueing (FQ) and Active Queue Management (AQM) algorithms. LibreQoS offers paid support packages and subscriptions to additional analysis service features available through [LTS](https://libreqos.io/lts/).
+
+
+
+To learn more, please visit [LibreQoS.io](https://libreqos.io/).
 
 <img alt="LibreQoS" src="https://user-images.githubusercontent.com/22501920/223866474-603e1112-e2e6-4c67-93e4-44c17b1b7c43.png"></a>
 
@@ -38,11 +46,9 @@ Our Zulip chat server is available at [https://chat.libreqos.io/join/fvu3cerayya
 
 ## Long-Term Stats (LTS)
 
-Long-Term Stats (LTS) is an analytics service built for LibreQoS that revolutionizes the way you track and analyze your network.
-With flexible time window views ranging from 5 minutes to 1 month, LTS gives you comprehensive insights into your network's performance.
-Built from the ground-up for performance and efficiency, LTS greatly outperforms our original InfluxDB plugin, and gives you rapidly rendered data to help you maximize your network performance.
+LibreQoS Long-Term Stats (LTS) is an analytics service that overhauls the way you track and analyze your network. With flexible time window views ranging from 5 minutes to 1 month, LTS gives you  comprehensive insights into your network’s performance. Built from the ground-up for performance and efficiency, LTS greatly outperforms other solutions, and gives you rapidly rendered data to help you maximize your network performance.
 
-We provide a free 30-day trial of LTS, after which the rate is $0.30 USD per shaped subscriber.
+We provide a free 30-day trial of LTS, after which the rate is $0.30 USD per shaped subscriber per month.
 You can enroll in the 30-day free trial by [upgrading to the latest version of LibreQoS v1.4](https://libreqos.readthedocs.io/en/latest/docs/Updates/update.html) and selecting "Start Stats Free Trial" in the top-right corner of the local LibreQoS WebUI.
 
 <img alt="LibreQoS Long Term Stats" src="https://i0.wp.com/libreqos.io/wp-content/uploads/2023/11/01-Dashboard.png"></a>
