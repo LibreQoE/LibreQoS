@@ -1,4 +1,4 @@
-# Updating 1.5 To Latest Version
+# Updating To The Latest Version
 
 ```{warning}
 If you use the XDP bridge, traffic will briefly stop passing through the bridge when lqosd restarts (XDP bridge is only operating while lqosd runs).
@@ -10,7 +10,7 @@ Donwload the latest .deb from [libreqos.io/#download](https://libreqos.io/#downl
 
 Unzip the .zip file and transfer the .deb to your LibreQoS box, installing with:
 ```
-sudo apt install [deb file name]
+sudo apt install ./[deb file name]
 ```
 
 Now run:
