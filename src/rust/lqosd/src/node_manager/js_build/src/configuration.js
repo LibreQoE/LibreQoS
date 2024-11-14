@@ -279,12 +279,35 @@ function validateConfig() {
                     $("#" + target.field).addClass("invalid");
                 }
             }
-        } else if (target.data === "integer" || target.data === "float") {
+        } else if (target.data === "integer") {
             let newValue = $("#" + target.field).val();
             newValue = parseInt(newValue);
             if (isNaN(newValue)) {
                 valid = false;
                 errors.push(target.path + " must be an integer number.");
+                $("#" + target.field).addClass("invalid");
+            } else {
+                if (target.min != null) {
+                    if (newValue < target.min) {
+                        valid = false;
+                        errors.push(target.path + " must be between " + target.min + " and " + target.max + ".");
+                        $("#" + target.field).addClass("invalid");
+                    }
+                }
+                if (target.max != null) {
+                    if (newValue > target.max) {
+                        valid = false;
+                        errors.push(target.path + " must be between " + target.min + " and " + target.max + ".");
+                        $("#" + target.field).addClass("invalid");
+                    }
+                }
+            }
+        } else if (target.data === "float") {
+            let newValue = $("#" + target.field).val();
+            newValue = parseFloat(newValue);
+            if (isNaN(newValue)) {
+                valid = false;
+                errors.push(target.path + " must be a decimal number.");
                 $("#" + target.field).addClass("invalid");
             } else {
                 if (target.min != null) {
