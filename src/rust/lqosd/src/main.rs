@@ -239,7 +239,7 @@ fn memory_debug() {
       let flamegraph_src = fb.finish();
       let flamegraph_src = flamegraph_src.flamegraph();
       let Ok(mut file) = std::fs::File::create("/tmp/lqosd-mem.svg") else {
-        error!("Unable to write flamegraph: {:?}", e);
+        error!("Unable to write flamegraph.");
         continue;
       };
       file.write_all(flamegraph_src.write().as_bytes()).unwrap();

@@ -54,6 +54,9 @@ impl ThroughputTracker {
       }
       v.prev_bytes = v.bytes;
       v.prev_packets = v.packets;
+      v.prev_tcp_packets = v.tcp_packets;
+      v.prev_udp_packets = v.udp_packets;
+      v.prev_icmp_packets = v.icmp_packets;
 
       // Roll out stale RTT data
       if self_cycle > RETIRE_AFTER_SECONDS
