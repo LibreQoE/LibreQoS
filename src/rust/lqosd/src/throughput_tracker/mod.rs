@@ -431,6 +431,14 @@ fn submit_throughput_stats(
                     warn!("Error sending message to LTS2.");
                 }
             }
+
+            // TODO: Send permitted IP ranges at the same time
+            if let Ok(config) = lqos_config::load_config() {
+                lts2_sys::ip_policies(
+                    &config.ip_ranges.allow_subnets,
+                    &config.ip_ranges.ignore_subnets
+                );
+            }
         }
 
         // Send top-level throughput stats to LTS2

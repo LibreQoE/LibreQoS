@@ -290,7 +290,7 @@ pub fn one_way_flow(
         IpAddr::V4(ip) => ip.to_ipv6_mapped().octets(),
         IpAddr::V6(ip) => ip.octets(),
     };
-    /*unsafe {
+    unsafe {
         external::one_way_flow(
             start_time,
             end_time,
@@ -300,7 +300,7 @@ pub fn one_way_flow(
             src_port,
             bytes,
         );
-    }*/
+    }
 }
 
 pub fn two_way_flow(
@@ -314,8 +314,6 @@ pub fn two_way_flow(
     bytes_up: u64,
     retransmit_times_down: Vec<u64>,
     retransmit_times_up: Vec<u64>,
-    throughput_buffer_down: Vec<u64>,
-    throughput_buffer_up: Vec<u64>,
 )
 {
     let local_ip = match local_ip {
@@ -326,7 +324,7 @@ pub fn two_way_flow(
         IpAddr::V4(ip) => ip.to_ipv6_mapped().octets(),
         IpAddr::V6(ip) => ip.octets(),
     };
-    /*unsafe {
+    unsafe {
         external::two_way_flow(
             start_time,
             end_time,
@@ -336,12 +334,28 @@ pub fn two_way_flow(
             src_port,
             bytes_down,
             bytes_up,
-            retransmit_times_down,
-            retransmit_times_up,
-            throughput_buffer_down,
-            throughput_buffer_up,
+            retransmit_times_down.as_ptr(),
+            retransmit_times_down.len() as u64,
+            retransmit_times_up.as_ptr(),
+            retransmit_times_up.len() as u64,
         );
-    }*/
+    }
+}
+
+pub fn ip_policies(
+    allow_subnets: &Vec<String>,
+    ignore_subnets: &Vec<String>,
+) {
+    unsafe {
+        for subnet in allow_subnets {
+            let subnet = CString::new(subnet.clone()).unwrap();
+            external::allow_subnet(subnet.as_ptr());
+        }
+        for subnet in ignore_subnets {
+            let subnet = CString::new(subnet.clone()).unwrap();
+            external::ignore_subnet(subnet.as_ptr());
+        }
+    }
 }
 
 struct Lts2Config {

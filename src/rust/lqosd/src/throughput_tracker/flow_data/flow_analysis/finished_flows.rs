@@ -463,8 +463,6 @@ impl FlowbeeRecipient for FinishedFlowAnalysis {
                 data.bytes_sent.up,
                 data.retry_times_down.clone(),
                 data.retry_times_up.clone(),
-                vec![],
-                vec![],
             );
             RECENT_FLOWS.push(TimeEntry {
                 time: std::time::SystemTime::now()
