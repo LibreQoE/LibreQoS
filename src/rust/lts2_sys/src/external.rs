@@ -138,6 +138,7 @@ extern "C" {
         end_time: u64,
         local_ip: *const u8,
         remote_ip: *const u8,
+        protocol: u8,
         dst_port: u16,
         src_port: u16,
         bytes: u64,
@@ -148,6 +149,7 @@ extern "C" {
         end_time: u64,
         local_ip: *const u8,
         remote_ip: *const u8,
+        protocol: u8,
         dst_port: u16,
         src_port: u16,
         bytes_down: u64,
@@ -156,6 +158,8 @@ extern "C" {
         retransmit_times_length: u64,
         retransmit_times_up: *const u64,
         retransmit_times_up_length: u64,
+        rtt1: f32,
+        rtt2: f32,
     );
 
     pub(crate) fn allow_subnet(ip: *const c_char);

@@ -204,6 +204,25 @@ pub enum BusRequest {
 
   /// IP Protocol Summary
   IpProtocolSummary,
+
+  /// Submit a piece of information to the blackboard
+  BlackboardData {
+    subsystem: BlackboardSystem,
+    key: String,
+    value: String,
+  },
+
+  /// Finish a blackboard session
+  BlackboardFinish,
+}
+
+/// Defines the parts of the blackboard
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy)]
+pub enum BlackboardSystem {
+  System,
+  Site,
+  Circuit,
+  Device,
 }
 
 /// Defines the type of "top" flow being requested

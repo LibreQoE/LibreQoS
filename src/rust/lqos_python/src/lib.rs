@@ -1,4 +1,4 @@
-use lqos_bus::{BusRequest, BusResponse, TcHandle};
+use lqos_bus::{BlackboardSystem, BusRequest, BusResponse, TcHandle};
 use lqos_utils::hex_string::read_hex_string;
 use nix::libc::getpid;
 use pyo3::{
@@ -92,6 +92,7 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_wrapped(wrap_pyfunction!(get_tree_weights))?;
   m.add_wrapped(wrap_pyfunction!(get_libreqos_directory))?;
   m.add_wrapped(wrap_pyfunction!(is_network_flat))?;
+  m.add_wrapped(wrap_pyfunction!(blackboard_finish))?;
 
   Ok(())
 }
@@ -701,4 +702,22 @@ pub fn get_libreqos_directory() -> PyResult<String> {
 #[pyfunction]
 pub fn is_network_flat() -> PyResult<bool> {
   Ok(lqos_config::NetworkJson::load().unwrap().get_nodes_when_ready().len() == 1)
+}
+
+#[pyfunction]
+pub fn blackboard_finish() -> PyResult<()> {
+  let _ = run_query(vec![BusRequest::BlackboardFinish]);
+  Ok(())
+}
+
+#[pyfunction]
+pub fn blackboard_submit(subsystem: String, key: String, value: String) -> PyResult<()> {
+  let subsystem = match subsystem.as_str() {
+    "system" => BlackboardSystem::System,
+    "site" => BlackboardSystem::Site,
+    "circuit" => BlackboardSystem::Circuit,
+    _ => return Err(PyOSError::new_err("Invalid subsystem")),
+  };
+  let _ = run_query(vec![BusRequest::BlackboardData { subsystem, key, value }]);
+  Ok(())
 }

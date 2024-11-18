@@ -457,12 +457,15 @@ impl FlowbeeRecipient for FinishedFlowAnalysis {
                 data.last_seen,
                 key.local_ip.as_ip(),
                 key.remote_ip.as_ip(),
+                key.ip_protocol,
                 key.dst_port,
                 key.src_port,
                 data.bytes_sent.down,
                 data.bytes_sent.up,
                 data.retry_times_down.clone(),
                 data.retry_times_up.clone(),
+                data.rtt[0].as_micros() as f32,
+                data.rtt[1].as_micros() as f32,
             );
             RECENT_FLOWS.push(TimeEntry {
                 time: std::time::SystemTime::now()
@@ -480,6 +483,7 @@ impl FlowbeeRecipient for FinishedFlowAnalysis {
                 data.last_seen,
                 key.local_ip.as_ip(),
                 key.remote_ip.as_ip(),
+                key.ip_protocol,
                 key.dst_port,
                 key.src_port,
                 data.bytes_sent.sum(),

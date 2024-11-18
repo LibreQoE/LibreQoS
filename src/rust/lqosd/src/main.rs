@@ -13,6 +13,7 @@ mod stats;
 mod preflight_checks;
 mod node_manager;
 mod system_stats;
+mod blackboard;
 
 #[cfg(feature = "flamegraphs")]
 use std::io::Write;
@@ -47,6 +48,7 @@ use crate::ip_mapping::clear_hot_cache;
 use mimalloc::MiMalloc;
 
 use tracing::level_filters::LevelFilter;
+use crate::blackboard::{BlackboardCommand, BLACKBOARD_SENDER};
 #[cfg(feature = "flamegraphs")]
 use crate::shaped_devices_tracker::NETWORK_JSON;
 #[cfg(feature = "flamegraphs")]
@@ -145,6 +147,7 @@ fn main() -> Result<()> {
     } else {
         info!("LTS2 client started successfully");
     }
+  let blackboard_tx = blackboard::start_blackboard();
   let long_term_stats_tx = start_long_term_stats();
   let flow_tx = setup_netflow_tracker()?;
   let _ = throughput_tracker::flow_data::setup_flow_analysis();
@@ -375,6 +378,22 @@ fn handle_bus_requests(
       BusRequest::EtherProtocolSummary => throughput_tracker::ether_protocol_summary(),
       BusRequest::IpProtocolSummary => throughput_tracker::ip_protocol_summary(),
       BusRequest::FlowDuration => throughput_tracker::flow_duration(),
+      BusRequest::BlackboardFinish => {
+        if let Some(sender) = BLACKBOARD_SENDER.get() {
+            let _ = sender.send(BlackboardCommand::FinishSession);
+        }
+        BusResponse::Ack
+      }
+      BusRequest::BlackboardData { subsystem, key, value } => {
+        if let Some(sender) = BLACKBOARD_SENDER.get() {
+            let _ = sender.send(BlackboardCommand::BlackboardData {
+              subsystem: subsystem.clone(),
+              key: key.to_string(),
+              value: value.to_string()
+            });
+        }
+        BusResponse::Ack
+      }
     });
   }
 }

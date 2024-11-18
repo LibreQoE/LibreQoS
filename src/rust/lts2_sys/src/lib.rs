@@ -278,6 +278,7 @@ pub fn one_way_flow(
     end_time: u64,
     local_ip: IpAddr,
     remote_ip: IpAddr,
+    protocol: u8,
     dst_port: u16,
     src_port: u16,
     bytes: u64,
@@ -296,6 +297,7 @@ pub fn one_way_flow(
             end_time,
             local_ip.as_ptr(),
             remote_ip.as_ptr(),
+            protocol,
             dst_port,
             src_port,
             bytes,
@@ -308,12 +310,15 @@ pub fn two_way_flow(
     end_time: u64,
     local_ip: IpAddr,
     remote_ip: IpAddr,
+    protocol: u8,
     dst_port: u16,
     src_port: u16,
     bytes_down: u64,
     bytes_up: u64,
     retransmit_times_down: Vec<u64>,
     retransmit_times_up: Vec<u64>,
+    rtt1: f32,
+    rtt2: f32,
 )
 {
     let local_ip = match local_ip {
@@ -330,6 +335,7 @@ pub fn two_way_flow(
             end_time,
             local_ip.as_ptr(),
             remote_ip.as_ptr(),
+            protocol,
             dst_port,
             src_port,
             bytes_down,
@@ -338,6 +344,8 @@ pub fn two_way_flow(
             retransmit_times_down.len() as u64,
             retransmit_times_up.as_ptr(),
             retransmit_times_up.len() as u64,
+            rtt1,
+            rtt2,
         );
     }
 }
@@ -355,6 +363,12 @@ pub fn ip_policies(
             let subnet = CString::new(subnet.clone()).unwrap();
             external::ignore_subnet(subnet.as_ptr());
         }
+    }
+}
+
+pub fn blackboard(json: &[u8]) {
+    unsafe {
+        external::submit_blackboard(json.as_ptr(), json.len());
     }
 }
 
