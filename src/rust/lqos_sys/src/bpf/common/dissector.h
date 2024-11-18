@@ -159,8 +159,8 @@ static __always_inline bool dissector_find_l3_offset(
         return true;
     }
 
-    // Fast return for ARP or non-802.3 ether types
-    if (eth_type == ETH_P_ARP || eth_type < ETH_P_802_3_MIN)
+    // Fast return for ARP or non-802.3 ether types (0xFEFE is IS-IS)
+    if (eth_type == ETH_P_ARP || eth_type < ETH_P_802_3_MIN || eth_type == 0xFEFE)
     {
         return false;
     }
