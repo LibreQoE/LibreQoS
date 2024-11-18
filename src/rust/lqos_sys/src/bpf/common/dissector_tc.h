@@ -77,18 +77,19 @@ static __always_inline bool tc_dissector_find_l3_offset(
     __u32 offset = sizeof(struct ethhdr);
     __u16 eth_type = bpf_ntohs(dissector->ethernet_header->h_proto);
 
+    // Fast return for ARP or non-802.3 ether types/
+    // 0xFEFE is the ethertype used to ISIS
+    if (eth_type == ETH_P_ARP || eth_type < ETH_P_802_3_MIN || eth_type == 0xFEFE)
+    {
+        return false;
+    }
+
     // Fast return for unwrapped IP
     if (eth_type == ETH_P_IP || eth_type == ETH_P_IPV6)
     {
         dissector->eth_type = eth_type;
         dissector->l3offset = offset;
         return true;
-    }
-
-    // Fast return for ARP or non-802.3 ether types
-    if (eth_type == ETH_P_ARP || eth_type < ETH_P_802_3_MIN)
-    {
-        return false;
     }
 
     // Walk the headers until we find IP

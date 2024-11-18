@@ -107,7 +107,7 @@ int xdp_prog(struct xdp_md *ctx)
     bpf_debug("(XDP) Scan VLANs: %u %u", internet_vlan, isp_vlan);
 #endif
     // If the dissector is unable to figure out what's going on, bail
-    // out.
+    // out. This specifically permits non-IP packets to pass unmolested.
     if (!dissector_new(ctx, &dissector)) return XDP_PASS;
 
     // Note that this step rewrites the VLAN tag if redirection
@@ -308,6 +308,9 @@ int tc_iphash_to_cpu(struct __sk_buff *skb)
     // we probably don't want to drop it - to ensure that IS-IS, ARP, STP
     // and other packet types are still handled by the default queues.
     struct tc_dissector_t dissector = {0};
+    // If the dissector returns false, return TC_ACT_OK to pass the packet
+    // unmolested/unshaped. This is designed to pass STP and similar non-IP
+    // traffic.
     if (!tc_dissector_new(skb, &dissector)) return TC_ACT_OK;
     if (!tc_dissector_find_l3_offset(&dissector)) return TC_ACT_OK;
     if (!tc_dissector_find_ip_header(&dissector)) return TC_ACT_OK;
