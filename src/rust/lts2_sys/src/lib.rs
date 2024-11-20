@@ -282,6 +282,7 @@ pub fn one_way_flow(
     dst_port: u16,
     src_port: u16,
     bytes: u64,
+    circuit_hash: Option<i64>,
 ) {
     let local_ip = match local_ip {
         IpAddr::V4(ip) => ip.to_ipv6_mapped().octets(),
@@ -301,6 +302,7 @@ pub fn one_way_flow(
             dst_port,
             src_port,
             bytes,
+            circuit_hash.unwrap_or(0),
         );
     }
 }
@@ -319,6 +321,7 @@ pub fn two_way_flow(
     retransmit_times_up: Vec<u64>,
     rtt1: f32,
     rtt2: f32,
+    circuit_hash: Option<i64>,
 )
 {
     let local_ip = match local_ip {
@@ -346,6 +349,7 @@ pub fn two_way_flow(
             retransmit_times_up.len() as u64,
             rtt1,
             rtt2,
+            circuit_hash.unwrap_or(0),
         );
     }
 }
@@ -369,6 +373,12 @@ pub fn ip_policies(
 pub fn blackboard(json: &[u8]) {
     unsafe {
         external::submit_blackboard(json.as_ptr(), json.len());
+    }
+}
+
+pub fn flow_count(timestamp:u64, count: u64) {
+    unsafe {
+        external::flow_count(timestamp, count);
     }
 }
 

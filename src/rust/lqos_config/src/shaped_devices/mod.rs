@@ -185,6 +185,21 @@ impl ConfigShapedDevices {
 
     None
   }
+
+  /// Helper function to search for an XdpIpAddress and return a circuit id and name
+  /// if they exist.
+  pub fn get_circuit_hash_from_ip(&self, ip: &XdpIpAddress) -> Option<i64> {
+    let lookup = match ip.as_ip() {
+      IpAddr::V4(ip) => ip.to_ipv6_mapped(),
+      IpAddr::V6(ip) => ip,
+    };
+    if let Some(c) = self.trie.longest_match(lookup) {
+      let device = &self.devices[*c.1];
+      return Some(device.circuit_hash);
+    }
+
+    None
+  }
 }
 
 #[derive(Error, Debug)]

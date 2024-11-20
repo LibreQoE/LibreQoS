@@ -42,15 +42,15 @@ pub fn start_blackboard() {
                         continue;
                     }
 
-                    // Serialize JSON to a vec of u8
-                    let json = match serde_json::to_vec(&board) {
+                    // Serialize CBOR to a vec of u8
+                    let cbor = match serde_cbor::to_vec(&board) {
                         Ok(j) => j,
                         Err(e) => {
                             warn!("Failed to serialize blackboard: {}", e);
                             continue;
                         }
                     };
-                    lts2_sys::blackboard(&json);
+                    lts2_sys::blackboard(&cbor);
                     board.circuits.clear();
                     board.sites.clear();
                     board.system.clear();

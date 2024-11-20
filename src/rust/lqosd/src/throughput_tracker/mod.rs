@@ -466,6 +466,7 @@ fn submit_throughput_stats(
         ).is_err() {
             warn!("Error sending message to LTS2.");
         }
+        lts2_sys::flow_count(now, ALL_FLOWS.lock().unwrap().flow_data.len() as u64);
 
         // Send per-circuit stats to LTS2
         // Start by combining the throughput data for each circuit as a whole

@@ -142,6 +142,7 @@ extern "C" {
         dst_port: u16,
         src_port: u16,
         bytes: u64,
+        circuit_hash: i64,
     );
 
     pub(crate) fn two_way_flow(
@@ -160,9 +161,12 @@ extern "C" {
         retransmit_times_up_length: u64,
         rtt1: f32,
         rtt2: f32,
+        circuit_hash: i64,
     );
 
     pub(crate) fn allow_subnet(ip: *const c_char);
     pub(crate) fn ignore_subnet(ip: *const c_char);
     pub(crate) fn submit_blackboard(bytes: *const u8, length: usize);
+
+    pub(crate) fn flow_count(timestamp: u64, count: u64);
 }

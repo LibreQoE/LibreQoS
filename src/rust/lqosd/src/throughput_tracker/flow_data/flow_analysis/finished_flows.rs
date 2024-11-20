@@ -12,7 +12,8 @@ use serde::Serialize;
 use tracing::debug;
 use lqos_config::load_config;
 use lqos_utils::units::DownUpOrder;
-use lqos_utils::unix_time::unix_now;
+use lqos_utils::unix_time::{boot_time_nanos_to_unix_now, unix_now};
+use crate::shaped_devices_tracker::SHAPED_DEVICES;
 
 #[derive(Allocative)]
 pub struct TimeBuffer {
@@ -447,14 +448,20 @@ impl FinishedFlowAnalysis {
 impl FlowbeeRecipient for FinishedFlowAnalysis {
     fn enqueue(&self, key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
         debug!("Finished flow analysis");
+        let start_time = boot_time_nanos_to_unix_now(data.start_time).unwrap_or(0);
+        let last_seen = boot_time_nanos_to_unix_now(data.last_seen).unwrap_or(0);
+
         let one_way = data.bytes_sent.down == 0 || data.bytes_sent.up == 0;
+        let sd = SHAPED_DEVICES.load();
+        let circuit_hash = sd.get_circuit_hash_from_ip(&key.local_ip);
+
         if !one_way {
             //data.trim(); // Remove the trailing 30 seconds of zeroes
             //let tp_buf_dn = data.throughput_buffer.iter().map(|v| v.down).collect();
             //let tp_buf_up = data.throughput_buffer.iter().map(|v| v.up).collect();
             lts2_sys::two_way_flow(
-                data.start_time,
-                data.last_seen,
+                start_time,
+                last_seen,
                 key.local_ip.as_ip(),
                 key.remote_ip.as_ip(),
                 key.ip_protocol,
@@ -466,6 +473,7 @@ impl FlowbeeRecipient for FinishedFlowAnalysis {
                 data.retry_times_up.clone(),
                 data.rtt[0].as_micros() as f32,
                 data.rtt[1].as_micros() as f32,
+                circuit_hash,
             );
             RECENT_FLOWS.push(TimeEntry {
                 time: std::time::SystemTime::now()
@@ -479,14 +487,15 @@ impl FlowbeeRecipient for FinishedFlowAnalysis {
             let Ok(config) = load_config() else { return; };
             if !config.long_term_stats.gather_stats { return; }
             lts2_sys::one_way_flow(
-                data.start_time,
-                data.last_seen,
+                start_time,
+                last_seen,
                 key.local_ip.as_ip(),
                 key.remote_ip.as_ip(),
                 key.ip_protocol,
                 key.dst_port,
                 key.src_port,
                 data.bytes_sent.sum(),
+                circuit_hash,
             );
         }
     }
