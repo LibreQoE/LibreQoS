@@ -93,6 +93,7 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_wrapped(wrap_pyfunction!(get_libreqos_directory))?;
   m.add_wrapped(wrap_pyfunction!(is_network_flat))?;
   m.add_wrapped(wrap_pyfunction!(blackboard_finish))?;
+  m.add_wrapped(wrap_pyfunction!(blackboard_submit))?;
 
   Ok(())
 }
