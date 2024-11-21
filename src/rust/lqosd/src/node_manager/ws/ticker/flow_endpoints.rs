@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use serde_json::json;
 use tokio::sync::mpsc::Sender;
+use tracing::info;
 use lqos_bus::{BusReply, BusRequest, BusResponse};
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
@@ -97,7 +98,7 @@ pub async fn flow_duration(
     }
 
     let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
-    let request = BusRequest::IpProtocolSummary;
+    let request = BusRequest::FlowDuration;
     bus_tx.send((tx, request)).await.expect("Failed to send request to bus");
     let replies = rx.await.expect("Failed to receive throughput from bus");
     for reply in replies.responses.into_iter() {
