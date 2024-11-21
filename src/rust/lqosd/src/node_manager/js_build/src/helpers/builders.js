@@ -153,11 +153,11 @@ export function topNTableRow(r) {
     row.append(rtt);
 
     let tcp_xmit_down = document.createElement("td");
-    tcp_xmit_down.innerHTML = formatRetransmit(r.tcp_retransmits.down);
+    tcp_xmit_down.innerHTML = formatRetransmit(r.tcp_retransmits[0]);
     row.append(tcp_xmit_down);
 
     let tcp_xmit_up = document.createElement("td");
-    tcp_xmit_up.innerHTML = formatRetransmit(r.tcp_retransmits.up);
+    tcp_xmit_up.innerHTML = formatRetransmit(r.tcp_retransmits[1]);
     row.append(tcp_xmit_up);
 
     return row;

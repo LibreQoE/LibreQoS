@@ -84,9 +84,10 @@ export function formatRtt(rtt) {
 }
 
 export function formatRetransmit(retransmits) {
-    let percent = Math.min(100, retransmits) / 100;
+    retransmits *= 100;
+    let percent = Math.min(100, retransmits);
     let color = lerpColor([0, 255, 0], [255, 0, 0], percent);
-    return "<span class='muted' style='color: " + color + "'>■</span>" + retransmits + "</span>";
+    return "<span class='muted' style='color: " + color + "'>■</span>" + retransmits + "%</span>";
 }
 
 export function formatCakeStat(n) {

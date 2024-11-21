@@ -12,7 +12,7 @@ pub struct IpStatsWithPlan {
     pub tc_handle: TcHandle,
     pub circuit_id: String,
     pub plan: DownUpOrder<u32>,
-    pub tcp_retransmits: DownUpOrder<u64>,
+    pub tcp_retransmits: (f64, f64),
 }
 
 impl From<&IpStats> for IpStatsWithPlan {

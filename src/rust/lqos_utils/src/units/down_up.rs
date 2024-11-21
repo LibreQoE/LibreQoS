@@ -145,6 +145,14 @@ where T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedAdd
     }
 }
 
+/// Divides two DownUpOrder values, returning a tuple of the results.
+pub fn down_up_divide(left: DownUpOrder<u64>, right: DownUpOrder<u64>) -> (f64, f64) {
+    (
+        left.down as f64 / right.down as f64,
+        left.up as f64 / right.up as f64,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
