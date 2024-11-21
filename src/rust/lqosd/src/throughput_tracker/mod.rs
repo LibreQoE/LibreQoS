@@ -373,7 +373,7 @@ fn submit_throughput_stats(
                                 let lts2_format: Vec<_> = json.iter().map(|(k,v)| v.to_lts2(&k)).collect();
                                 if let Ok(bytes) = serde_cbor::to_vec(&lts2_format) {
                                     if let Err(e) = lts2_sys::network_tree(now, &bytes) {
-                                        warn!("Error sending message to LTS2. {e:?}");
+                                        warn!("Error sending message to Insight. {e:?}");
                                     }
                                 }
                             }

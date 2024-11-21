@@ -8,7 +8,7 @@ export class LtsShaperStatus extends BaseDashlet {
     }
 
     title() {
-        return "Shaper Status (LTS)";
+        return "Shaper Status (Insight)";
     }
 
     canBeSlowedDown() {

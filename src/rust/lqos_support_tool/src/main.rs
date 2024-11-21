@@ -21,7 +21,7 @@ enum Commands {
     Sanity,
     /// Gather Support Info and Save it to /tmp
     Gather,
-    /// Gather Support Info and Send it to the LibreQoS Team. Note that LTS users and donors get priority, we don't guarantee that we'll help anyone else. Please make sure you've tried Zulip first ( https://chat.libreqos.io/ )
+    /// Gather Support Info and Send it to the LibreQoS Team. Note that Insight users and donors get priority, we don't guarantee that we'll help anyone else. Please make sure you've tried Zulip first ( https://chat.libreqos.io/ )
     Submit,
     /// Summarize the contents of a support dump
     Summarize {

@@ -1,5 +1,5 @@
 //! Provides a helpful wrapper to Reqwest with the
-//! appropriate settings enabled for the LTS2 API.
+//! appropriate settings enabled for the Insight API.
 
 use axum::http::StatusCode;
 use tracing::error;

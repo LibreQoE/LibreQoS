@@ -58,8 +58,8 @@ export const DashletMenu = [
     { name: "Tree Nodes At Capacity", tag: "treeCapacity", size: 6 },
     { name: "Network Tree Sankey", tag: "networkTreeSankey", size: 6 },
     { name: "Round-Trip Time Histogram 3D", tag: "rttHistogram3D", size: 12 },
-    { name: "(LTS) Shaper Status", tag: "ltsShaperStatus", size: 3 },
-    { name: "(LTS) Last 24 Hours", tag: "ltsLast24", size: 3}
+    { name: "(Insight) Shaper Status", tag: "ltsShaperStatus", size: 3 },
+    { name: "(Insight) Last 24 Hours", tag: "ltsLast24", size: 3}
 ];
 
 export function widgetFactory(widgetName, count) {

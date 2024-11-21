@@ -25,7 +25,7 @@ pub mod units;
 /// XDP compatible IP Address
 pub use xdp_ip_address::XdpIpAddress;
 
-/// LTS2 standard hasher for strings
+/// Insight standard hasher for strings
 pub fn hash_to_i64(text: &str) -> i64 {
     use std::hash::{DefaultHasher, Hasher};
     let mut hasher = DefaultHasher::new();

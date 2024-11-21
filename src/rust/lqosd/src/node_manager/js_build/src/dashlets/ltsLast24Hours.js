@@ -9,7 +9,7 @@ export class LtsLast24Hours extends BaseDashlet {
     }
 
     title() {
-        return "Last 24 Hours Throughput (LTS)";
+        return "Last 24 Hours Throughput (Insight)";
     }
 
     canBeSlowedDown() {
