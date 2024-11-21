@@ -108,11 +108,11 @@ export class Top10FlowsRate extends BaseDashlet {
                 row.appendChild(rttU);
 
                 let tcp1 = document.createElement("td");
-                tcp1.innerHTML = formatRetransmit(r.tcp_retransmits.down);
+                tcp1.innerHTML = formatRetransmit(r.tcp_retransmits.down / r.packets_sent.down);
                 row.appendChild(tcp1);
 
                 let tcp2 = document.createElement("td");
-                tcp2.innerHTML = formatRetransmit(r.tcp_retransmits.up);
+                tcp2.innerHTML = formatRetransmit(r.tcp_retransmits.up  / r.packets_sent.up);
                 row.appendChild(tcp2);
 
                 let asn = document.createElement("td");
