@@ -169,4 +169,8 @@ extern "C" {
     pub(crate) fn submit_blackboard(bytes: *const u8, length: usize);
 
     pub(crate) fn flow_count(timestamp: u64, count: u64);
+
+    // Command sender system
+    pub(crate) fn remote_command_count() -> u64;
+    pub fn get_commands(callback: extern "C" fn(*const u8, u64));
 }

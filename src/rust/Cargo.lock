@@ -2141,7 +2141,9 @@ dependencies = [
  "anyhow",
  "log",
  "lqos_config",
+ "once_cell",
  "serde",
+ "serde_cbor",
 ]
 
 [[package]]

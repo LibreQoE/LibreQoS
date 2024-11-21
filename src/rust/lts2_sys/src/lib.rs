@@ -1,13 +1,16 @@
 use std::ffi::CString;
 use std::net::IpAddr;
 use std::ptr::null_mut;
+use std::sync::Mutex;
 use log::error;
 use lqos_config::load_config;
 mod external;
 pub mod shared_types;
 
 use anyhow::{bail, Result};
+use once_cell::sync::Lazy;
 use crate::shared_types::{FreeTrialDetails, LtsStatus};
+pub use shared_types::RemoteCommand;
 
 pub fn start_lts2() -> Result<()> {
     // Launch the process
@@ -419,4 +422,29 @@ fn get_config() -> anyhow::Result<Lts2Config> {
     } else {
         bail!("Failed to load config");
     }
+}
+
+pub fn remote_command_count() -> u64 {
+    unsafe {
+        external::remote_command_count()
+    }
+}
+
+extern "C" fn command_callback(buffer: *const u8, size: u64) {
+    let mut lock = COMMANDS.lock().unwrap();
+    lock.clear();
+    let buffer = unsafe { std::slice::from_raw_parts(buffer, size as usize) };
+    let commands: Vec<shared_types::RemoteCommand> = serde_cbor::from_slice(buffer).unwrap();
+    lock.extend(commands);
+}
+
+static COMMANDS: Lazy<Mutex<Vec<shared_types::RemoteCommand>>> = Lazy::new(|| Mutex::new(Vec::new()));
+
+pub fn remote_commands() -> Vec<shared_types::RemoteCommand> {
+    unsafe {
+        external::get_commands(command_callback);
+    }
+
+    let lock = COMMANDS.lock().unwrap();
+    lock.clone()
 }

@@ -14,6 +14,7 @@ mod preflight_checks;
 mod node_manager;
 mod system_stats;
 mod blackboard;
+mod remote_commands;
 
 #[cfg(feature = "flamegraphs")]
 use std::io::Write;
@@ -49,6 +50,7 @@ use mimalloc::MiMalloc;
 
 use tracing::level_filters::LevelFilter;
 use crate::blackboard::{BlackboardCommand, BLACKBOARD_SENDER};
+use crate::remote_commands::start_remote_commands;
 #[cfg(feature = "flamegraphs")]
 use crate::shaped_devices_tracker::NETWORK_JSON;
 #[cfg(feature = "flamegraphs")]
@@ -147,8 +149,9 @@ fn main() -> Result<()> {
     } else {
         info!("LTS2 client started successfully");
     }
-  let blackboard_tx = blackboard::start_blackboard();
+  let _blackboard_tx = blackboard::start_blackboard();
   let long_term_stats_tx = start_long_term_stats();
+  start_remote_commands();
   let flow_tx = setup_netflow_tracker()?;
   let _ = throughput_tracker::flow_data::setup_flow_analysis();
   start_heimdall()?;

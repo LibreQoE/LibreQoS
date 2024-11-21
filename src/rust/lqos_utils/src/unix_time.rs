@@ -32,6 +32,7 @@ pub fn time_since_boot() -> Result<TimeSpec, TimeError> {
   }
 }
 
+/// Convert a time in nanoseconds since boot to a UNIX timestamp.
 pub fn boot_time_nanos_to_unix_now(
   start_time_nanos_since_boot: u64,
 ) -> Result<u64, TimeError> {

@@ -1,5 +1,10 @@
 use serde::Deserialize;
 
+#[derive(Deserialize, Debug, Clone, PartialEq)]
+pub enum RemoteCommand {
+    Log(String)
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct FreeTrialDetails {
