@@ -62,7 +62,7 @@ export class TopNSankey extends DashboardGraph {
             };
             if (isRedacted()) label.backgroundColor = label.color;
 
-            let name = r.ip_address+ " (" + scaleNumber(r.bits_per_second.down, 0) + ", " + r.tcp_retransmits.down + "/" + r.tcp_retransmits.up + ")";
+            let name = r.ip_address+ " (" + scaleNumber(r.bits_per_second.down, 0) + ", " + r.tcp_retransmits[0].toFixed(1) + "/" + r.tcp_retransmits[1].toFixed(1) + ")";
             let bytes = r.bits_per_second.down / 8;
             let bytesAsMegabits = bytes / 1000000;
             let maxBytes = r.plan.down / 8;
