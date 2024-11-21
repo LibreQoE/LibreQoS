@@ -717,8 +717,8 @@ fn submit_throughput_stats(
                     let peak_cpu: u32 = reply.cpu_usage.iter().copied().sum();
                     let memory = reply.ram_used as f32 / reply.total_ram as f32;
 
-                    if lts2_sys::shaper_utilization(now, avg_cpu, peak_cpu as f32, memory).is_err() {
-                        warn!("Error sending message to LTS2.");
+                    if let Err(e) = lts2_sys::shaper_utilization(now, avg_cpu, peak_cpu as f32, memory) {
+                        warn!("Error sending message to LTS2: {e:?}");
                     }
                 }
             }
