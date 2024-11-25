@@ -119,6 +119,22 @@ sudo cp /opt/libreqos/src/integrationUISPbandwidths.template.csv /opt/libreqos/s
 ```
 And edit the CSV using LibreOffice or your preferred CSV editor.
 
+#### UISP Route Overrides
+
+The default cost between nodes is 10.
+
+Say you have Site 1, Site 2, and Site 3.
+A backup path exists between Site 1 and Site 3, but is not the preferred path.
+Your preference is Site 1 > Site 2 > Site 3, but the integration by default connects Site 1 > Site 3 directly.
+
+To fix this, add a cost above the default for the path between Site 1 and Site 3.
+```
+Site 1, Site 3, 100
+```
+With this, data will flow Site 1 > Site 2 > Site 3.
+
+To make the change, perform a reload of the integration with ```sudo systemctl restart lqos_scheduler```.
+
 ## Powercode Integration
 
 First, set the relevant parameters for Powercode (powercode_api_key, powercode_api_url, etc.) in `/etc/lqos.conf`.
