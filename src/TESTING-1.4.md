@@ -186,3 +186,15 @@ systemctl disable cloud-config iscsid cloud-final
 ```
 cpupower frequency-set --governor performance
 ```
+
+#Make bigger network backlog:
+```
+echo "net.core.netdev_budget=600" > /etc/sysctl.d/libreqos.conf 
+echo "net.core.netdev_max_backlog=300000" >> /etc/sysctl.d/libreqos.conf
+sysctl --system
+```
+
+#Don't use swap so often
+```
+vm.swappiness=10
+```
