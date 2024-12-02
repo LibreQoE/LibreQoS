@@ -157,7 +157,7 @@ function updateTrafficTab(msg) {
     thead.appendChild(theading("Remote IP"));
     table.appendChild(thead);
     let tbody = document.createElement("tbody");
-    const one_second_in_nanos = 1000000000; // For display filtering
+    const thirty_seconds_in_nanos = 30000000000; // For display filtering
 
     // Sort msg.flows by flows[0].rate_estimate_bps.down + flows[0].rate_estimate_bps.up descending
     msg.flows.sort((a, b) => {
@@ -167,9 +167,11 @@ function updateTrafficTab(msg) {
     });
 
     msg.flows.forEach((flow) => {
-        if (flow[0].last_seen_nanos > one_second_in_nanos) return;
+        if (flow[0].last_seen_nanos > thirty_seconds_in_nanos) return;
         let row = document.createElement("tr");
         row.classList.add("small");
+        let opacity = Math.min(1, flow[0].last_seen_nanos / thirty_seconds_in_nanos);
+        row.style.opacity = 1.0 - opacity;
         row.appendChild(simpleRow(flow[0].protocol_name));
         row.appendChild(simpleRowHtml(formatThroughput(flow[1].rate_estimate_bps.down * 8, plan.down)));
         row.appendChild(simpleRowHtml(formatThroughput(flow[1].rate_estimate_bps.up * 8, plan.up)));
