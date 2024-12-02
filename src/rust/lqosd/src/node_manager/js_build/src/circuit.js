@@ -160,11 +160,13 @@ function updateTrafficTab(msg) {
     const thirty_seconds_in_nanos = 30000000000; // For display filtering
 
     // Sort msg.flows by flows[0].rate_estimate_bps.down + flows[0].rate_estimate_bps.up descending
-    msg.flows.sort((a, b) => {
-        let aRate = a[1].rate_estimate_bps.down + a[1].rate_estimate_bps.up;
-        let bRate = b[1].rate_estimate_bps.down + b[1].rate_estimate_bps.up;
+    /*msg.flows.sort((a, b) => {
+        //let aRate = a[1].rate_estimate_bps.down + a[1].rate_estimate_bps.up;
+        //let bRate = b[1].rate_estimate_bps.down + b[1].rate_estimate_bps.up;
+        let aRate = a[0].last_seen_nanos;
+        let bRate = b[0].last_seen_nanos;
         return bRate - aRate;
-    });
+    });*/
 
     msg.flows.forEach((flow) => {
         if (flow[0].last_seen_nanos > thirty_seconds_in_nanos) return;
@@ -179,8 +181,8 @@ function updateTrafficTab(msg) {
         row.appendChild(simpleRow(scaleNumber(flow[1].bytes_sent.up)));
         row.appendChild(simpleRow(scaleNumber(flow[1].packets_sent.down)));
         row.appendChild(simpleRow(scaleNumber(flow[1].packets_sent.up)));
-        row.appendChild(simpleRowHtml(formatRetransmit(flow[1].tcp_retransmits.down)));
-        row.appendChild(simpleRowHtml(formatRetransmit(flow[1].tcp_retransmits.up)));
+        row.appendChild(simpleRowHtml(formatRetransmit(flow[1].tcp_retransmits.down / 100.0)));
+        row.appendChild(simpleRowHtml(formatRetransmit(flow[1].tcp_retransmits.up / 100.0)));
         row.appendChild(simpleRow(scaleNanos(flow[1].rtt[0].nanoseconds)));
         row.appendChild(simpleRow(scaleNanos(flow[1].rtt[1].nanoseconds)));
         row.appendChild(simpleRow(flow[0].asn_name));
