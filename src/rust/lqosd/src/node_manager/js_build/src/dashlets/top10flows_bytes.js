@@ -1,7 +1,8 @@
 import {BaseDashlet} from "./base_dashlet";
 import {clearDashDiv, theading} from "../helpers/builders";
-import {scaleNumber, formatRetransmit, rttNanosAsSpan} from "../helpers/scaling";
+import {scaleNumber} from "../lq_js_common/helpers/scaling";
 import {RttCache} from "../helpers/rtt_cache";
+import {formatRetransmit, rttNanosAsSpan} from "../helpers/scaling";
 
 export class Top10FlowsBytes extends BaseDashlet {
     constructor(slot) {

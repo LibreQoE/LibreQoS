@@ -1,6 +1,6 @@
 import {BaseDashlet} from "./base_dashlet";
 import {clearDashDiv, simpleRow, theading} from "../helpers/builders";
-import {scaleNumber, scaleNanos} from "../helpers/scaling";
+import {scaleNumber, scaleNanos} from "../lq_js_common/helpers/scaling";
 
 export class EtherProtocols extends BaseDashlet {
     constructor(slot) {

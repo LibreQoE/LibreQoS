@@ -1,6 +1,4 @@
 import {BaseDashlet} from "./base_dashlet";
-import {clearDashDiv, clearDiv, simpleRow, simpleRowHtml, theading} from "../helpers/builders";
-import {scaleNumber, scaleNanos} from "../helpers/scaling";
 import {LtsLast24Hours_graph} from "../graphs/ltsLast24Hours_graph";
 
 export class LtsLast24Hours extends BaseDashlet {

@@ -1,5 +1,6 @@
 import {DashboardGraph} from "./dashboard_graph";
-import {lerpColor, lerpGreenToRedViaOrange, scaleNumber} from "../helpers/scaling";
+import {lerpColor, lerpGreenToRedViaOrange} from "../helpers/scaling";
+import {scaleNumber} from "../lq_js_common/helpers/scaling";
 import {isRedacted} from "../helpers/redact";
 
 export class TopNSankey extends DashboardGraph {

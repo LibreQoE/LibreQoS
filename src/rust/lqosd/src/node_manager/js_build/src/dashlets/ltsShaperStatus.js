@@ -1,6 +1,5 @@
 import {BaseDashlet} from "./base_dashlet";
-import {clearDashDiv, clearDiv, simpleRow, simpleRowHtml, theading} from "../helpers/builders";
-import {scaleNumber, scaleNanos} from "../helpers/scaling";
+import {clearDiv, simpleRow, simpleRowHtml, theading} from "../helpers/builders";
 
 export class LtsShaperStatus extends BaseDashlet {
     constructor(slot) {

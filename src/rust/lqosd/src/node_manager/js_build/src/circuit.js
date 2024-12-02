@@ -5,7 +5,7 @@ import {formatRetransmit, formatRtt, formatThroughput, lerpGreenToRedViaOrange} 
 import {BitsPerSecondGauge} from "./graphs/bits_gauge";
 import {CircuitTotalGraph} from "./graphs/circuit_throughput_graph";
 import {CircuitRetransmitGraph} from "./graphs/circuit_retransmit_graph";
-import {scaleNanos, scaleNumber} from "./helpers/scaling";
+import {scaleNanos, scaleNumber} from "./lq_js_common/helpers/scaling";
 import {DevicePingHistogram} from "./graphs/device_ping_graph";
 import {FlowsSankey} from "./graphs/flow_sankey";
 import {subscribeWS} from "./pubsub/ws";

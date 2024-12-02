@@ -1,4 +1,5 @@
-import {formatRetransmit, formatRtt, formatThroughput, scaleNanos} from "./scaling";
+import {formatRetransmit, formatRtt, formatThroughput} from "./scaling";
+import {scaleNanos} from "../lq_js_common/helpers/scaling";
 import {redactCell} from "./redact";
 
 export function heading5Icon(icon, text) {

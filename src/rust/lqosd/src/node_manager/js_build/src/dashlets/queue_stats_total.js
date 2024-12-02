@@ -1,6 +1,4 @@
 import {BaseDashlet} from "./base_dashlet";
-import {clearDashDiv, simpleRow, theading} from "../helpers/builders";
-import {scaleNumber, scaleNanos} from "../helpers/scaling";
 import {QueueStatsTotalGraph} from "../graphs/queue_stats_total_graph";
 import {periodNameToSeconds} from "../helpers/time_periods";
 import {LtsCakeGraph} from "../graphs/lts_cake_stats_graph";

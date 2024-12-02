@@ -1,29 +1,4 @@
-export function scaleNumber(n, fixed=2) {
-    if (n >= 1000000000000) {
-        return (n / 1000000000000).toFixed(fixed) + "T";
-    } else if (n >= 1000000000) {
-        return (n / 1000000000).toFixed(fixed) + "G";
-    } else if (n >= 1000000) {
-        return (n / 1000000).toFixed(fixed) + "M";
-    } else if (n >= 1000) {
-        return (n / 1000).toFixed(fixed) + "K";
-    }
-    return n;
-}
-
-export function scaleNanos(n, precision=2) {
-    if (n === 0) return "-";
-    if (n > 60000000000) {
-        return (n / 60000000000).toFixed(precision) + "m";
-    }else if (n > 1000000000) {
-        return (n / 1000000000).toFixed(precision) + "s";
-    } else if (n > 1000000) {
-        return (n / 1000000).toFixed(precision) + "ms";
-    } else if (n > 1000) {
-        return (n / 1000).toFixed(precision) + "µs";
-    }
-    return n + "ns";
-}
+import {scaleNumber} from "../lq_js_common/helpers/scaling";
 
 export function colorRamp(n) {
     if (n <= 100) {

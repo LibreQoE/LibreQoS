@@ -1,8 +1,5 @@
 import {BaseDashlet} from "./base_dashlet";
-import {RttHistogram} from "../graphs/rtt_histo";
-import {clearDashDiv, theading, TopNTableFromMsgData, topNTableHeader, topNTableRow} from "../helpers/builders";
-import {scaleNumber, rttCircleSpan, formatRtt, formatThroughput} from "../helpers/scaling";
-import {redactCell} from "../helpers/redact";
+import {clearDashDiv, TopNTableFromMsgData} from "../helpers/builders";
 import {TopXTable} from "../helpers/top_x_cache";
 
 export class Worst10Retransmits extends BaseDashlet {

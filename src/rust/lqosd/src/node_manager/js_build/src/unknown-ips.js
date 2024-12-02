@@ -1,5 +1,5 @@
 import {clearDiv, formatLastSeen, simpleRow, theading} from "./helpers/builders";
-import {scaleNumber} from "./helpers/scaling";
+import {scaleNumber} from "./lq_js_common/helpers/scaling";
 
 let button = document.getElementById("btnCsv");
 button.onclick = () => {
