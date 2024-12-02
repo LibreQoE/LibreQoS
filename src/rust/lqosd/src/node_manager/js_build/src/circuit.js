@@ -140,6 +140,8 @@ function connectFlowChannel() {
     });
 }
 
+let movingAverages = new Map();
+
 function updateTrafficTab(msg) {
     let target = document.getElementById("allTraffic");
 
@@ -159,14 +161,29 @@ function updateTrafficTab(msg) {
     let tbody = document.createElement("tbody");
     const thirty_seconds_in_nanos = 30000000000; // For display filtering
 
+    msg.flows.forEach((flow) => {
+        let flowKey = flow[0].protocol_name + flow[0].row_id;
+        let rate = flow[1].rate_estimate_bps.down + flow[1].rate_estimate_bps.up;
+        if (movingAverages.has(flowKey)) {
+            let avg = movingAverages.get(flowKey);
+            avg.push(rate);
+            if (avg.length > 10) {
+                avg.shift();
+            }
+            movingAverages.set(flowKey, avg);
+        } else {
+            movingAverages.set(flowKey, [ rate ]);
+        }
+    });
+
     // Sort msg.flows by flows[0].rate_estimate_bps.down + flows[0].rate_estimate_bps.up descending
-    /*msg.flows.sort((a, b) => {
-        //let aRate = a[1].rate_estimate_bps.down + a[1].rate_estimate_bps.up;
-        //let bRate = b[1].rate_estimate_bps.down + b[1].rate_estimate_bps.up;
-        let aRate = a[0].last_seen_nanos;
-        let bRate = b[0].last_seen_nanos;
+    msg.flows.sort((a, b) => {
+        let flowKeyA = a[0].protocol_name + a[0].row_id;
+        let flowKeyB = b[0].protocol_name + b[0].row_id;
+        let aRate = movingAverages.get(flowKeyA).reduce((a, b) => a + b, 0) / movingAverages.get(flowKeyA).length;
+        let bRate = movingAverages.get(flowKeyB).reduce((a, b) => a + b, 0) / movingAverages.get(flowKeyB).length;
         return bRate - aRate;
-    });*/
+    });
 
     msg.flows.forEach((flow) => {
         if (flow[0].last_seen_nanos > thirty_seconds_in_nanos) return;
