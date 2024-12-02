@@ -147,11 +147,11 @@ function updateTrafficTab(msg) {
     table.classList.add("table", "table-sm", "table-striped");
     let thead = document.createElement("thead");
     thead.appendChild(theading("Protocol"));
-    thead.appendChild(theading("Current Rate", 2));
-    thead.appendChild(theading("Total Bytes", 2));
-    thead.appendChild(theading("Total Packets", 2));
-    thead.appendChild(theading("TCP Retransmits", 2));
-    thead.appendChild(theading("RTT", 2));
+    thead.appendChild(theading("Current Rate (⬇️/⬆️)", 2));
+    thead.appendChild(theading("Total Bytes (⬇️/⬆️)", 2));
+    thead.appendChild(theading("Total Packets (⬇️/⬆️)", 2));
+    thead.appendChild(theading("TCP Retransmits (⬇️/⬆️)", 2));
+    thead.appendChild(theading("RTT (⬇️/⬆️)", 2));
     thead.appendChild(theading("ASN"));
     thead.appendChild(theading("Country"));
     thead.appendChild(theading("Remote IP"));
