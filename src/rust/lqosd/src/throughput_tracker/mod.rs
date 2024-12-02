@@ -355,6 +355,12 @@ fn submit_throughput_stats(
         warn!("{:?}", metrics);
     }
 
+    // Check if we should be submitting to Insight
+    let Ok(config) = load_config() else { return; };
+    if config.long_term_stats.use_insight.unwrap_or(false) == false {
+        return;
+    }
+
     /////////////////////////////////////////////////////////////////
     // LTS2 Block
     if let Ok(now) = unix_now() {

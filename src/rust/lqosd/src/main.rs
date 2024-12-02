@@ -144,11 +144,11 @@ fn main() -> Result<()> {
   };
 
   // Spawn tracking sub-systems
-    if let Err(e) = lts2_sys::start_lts2() {
-        error!("Failed to start Insight: {:?}", e);
-    } else {
-        info!("Insight client started successfully");
-    }
+  if let Err(e) = lts2_sys::start_lts2() {
+      error!("Failed to start Insight: {:?}", e);
+  } else {
+      info!("Insight client started successfully");
+  }
   let _blackboard_tx = blackboard::start_blackboard();
   let long_term_stats_tx = start_long_term_stats();
   start_remote_commands();

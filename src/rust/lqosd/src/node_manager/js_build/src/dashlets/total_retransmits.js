@@ -30,20 +30,22 @@ export class TcpRetransmitsDash extends BaseDashlet{
         let controls = document.createElement("div");
         controls.classList.add("dashgraph-controls", "small");
 
-        let btnLive = this.makePeriodBtn("Live");
-        btnLive.classList.add("active");
-        controls.appendChild(btnLive);
+        if (window.hasInsight) {
+            let btnLive = this.makePeriodBtn("Live");
+            btnLive.classList.add("active");
+            controls.appendChild(btnLive);
 
-        let targets = ["1h", "6h", "12h", "24h", "7d"];
-        targets.forEach((t) => {
-            let graph = document.createElement("div");
-            graph.id = this.graphDivId() + "_" + t;
-            graph.classList.add("dashgraph");
-            graph.style.display = "none";
-            graph.innerHTML = window.hasLts ? "Loading..." : "<p class='text-secondary small'>You need an active LibreQoS Insight account to view this data.</p>";
-            this.graphDivs.push(graph);
-            controls.appendChild(this.makePeriodBtn(t));
-        });
+            let targets = ["1h", "6h", "12h", "24h", "7d"];
+            targets.forEach((t) => {
+                let graph = document.createElement("div");
+                graph.id = this.graphDivId() + "_" + t;
+                graph.classList.add("dashgraph");
+                graph.style.display = "none";
+                graph.innerHTML = window.hasLts ? "Loading..." : "<p class='text-secondary small'>You need an active LibreQoS Insight account to view this data.</p>";
+                this.graphDivs.push(graph);
+                controls.appendChild(this.makePeriodBtn(t));
+            });
+        }
 
         base.appendChild(controls);
         base.appendChild(graphs);

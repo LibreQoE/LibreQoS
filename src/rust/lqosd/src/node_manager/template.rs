@@ -13,19 +13,35 @@ use crate::node_manager::auth::get_username;
 
 const VERSION_STRING: &str = include_str!("../../../../VERSION_STRING");
 
-const LTS_LINK_ACTIVE: &str = r#"
+const INSIGHT_LINK_ACTIVE: &str = r#"
 <li class="nav-item">
     <a class="nav-link" id="lnkStats" href="https://insight.libreqos.com/">
         <i class="fa fa-fw fa-centerline fa-line-chart nav-icon"></i> Insight
     </a>
 </li>"#;
 
-const LTS_LINK_OFFER_TRIAL: &str = r#"
+const INSIGHT_LINK_OFFER_TRIAL: &str = r#"
 <li class="nav-item">
     <a class="nav-link text-success" id="lnkStats" href="lts_trial.html">
         <i class="fa fa-line-chart nav-icon"></i> Insight - Free Trial
     </a>
 </li>"#;
+
+const LTS1_LINK_ACTIVE: &str = r#"
+<li class="nav-item">
+    <a class="nav-link" id="lnkStats" href="https://stats.libreqos.io/">
+        <i class=\"fa fa-line-chart nav-icon\"></i> Statistics
+    </a>
+</li>
+"#;
+
+const LTS1_LINK_OFFER_TRIAL: &str = r#"
+<li class="nav-item">
+    <a class="nav-link text-success" id="lnkStats" href="%%LTS_TRIAL_LINK%%">
+        <i class=\"fa fa-line-chart nav-icon\"></i> Statistics - Free Trial
+    </a>
+</li>
+"#;
 
 pub async fn apply_templates(
     jar: CookieJar,
@@ -36,10 +52,10 @@ pub async fn apply_templates(
         let path = &req.uri().path().to_string();
         path.ends_with(".html")
     };
+    let config = load_config().unwrap();
 
     // TODO: Cache this once we're not continually making changes
     let template_text = {
-        let config = load_config().unwrap();
         let path = Path::new(&config.lqos_directory)
             .join("bin")
             .join("static2")
@@ -55,15 +71,33 @@ pub async fn apply_templates(
     let mut lts_script = "<script>window.hasLts = false;</script>";
 
     if apply_template {
-        // Change the LTS part of the template
-        let (lts_status, _) = lts2_sys::get_lts_license_status();
-        let mut trial_link = LTS_LINK_OFFER_TRIAL;
-        match lts_status {
-            LtsStatus::Invalid | LtsStatus::NotChecked => {}
-            _ => {
-                // Link to it
-                trial_link = LTS_LINK_ACTIVE;
-                lts_script = "<script>window.hasLts = true;</script>";
+        // Check to see if the box is participating in the Insight Alpha Test
+        let has_insight = config.long_term_stats.use_insight.unwrap_or(false);
+        let mut trial_link;
+
+        if has_insight {
+            // Change the LTS part of the template
+            let (lts_status, _) = lts2_sys::get_lts_license_status();
+            trial_link = INSIGHT_LINK_OFFER_TRIAL.to_string();
+            match lts_status {
+                LtsStatus::Invalid | LtsStatus::NotChecked => {}
+                _ => {
+                    // Link to it
+                    trial_link = INSIGHT_LINK_ACTIVE.to_string();
+                    lts_script = "<script>window.hasLts = true; window.hasInsight = true;</script>";
+                }
+            }
+        } else {
+            if config.long_term_stats.gather_stats && config.long_term_stats.license_key.is_some() {
+                // LTS is enabled
+                trial_link = LTS1_LINK_ACTIVE.to_string();
+                lts_script = "<script>window.hasLts = true; window.hasInsight = false;</script>";
+            } else {
+                trial_link = LTS1_LINK_OFFER_TRIAL.replace(
+                    "%%LTS_TRIAL_LINK%%",
+                    &format!("https://stats.libreqos.io/trial1/{}", config.node_id)
+                );
+                lts_script = "<script>window.hasLts = false; window.hasInsight = false;</script>";
             }
         }
 
@@ -80,7 +114,7 @@ pub async fn apply_templates(
             .replace("%%BODY%%", &byte_string)
             .replace("%%VERSION%%", VERSION_STRING)
             .replace("%%TITLE%%", &title)
-            .replace("%%LTS_LINK%%", trial_link)
+            .replace("%%LTS_LINK%%", &trial_link)
             .replace("%%%LTS_SCRIPT%%%", lts_script);
         if let Some(length) = res_parts.headers.get_mut("content-length") {
             *length = HeaderValue::from(byte_string.len());
