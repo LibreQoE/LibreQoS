@@ -1,7 +1,4 @@
-export function trimTrailingZeros(num) {
-    // Convert the number to a string with sufficient decimal places
-    var str = num.toFixed(20);
-
+export function trimTrailingZeros(str) {
     // Check if the string contains a decimal point
     if (str.indexOf('.') === -1) {
         // No decimal point, return the string as is
