@@ -17,17 +17,16 @@ export function trimTrailingZeros(num) {
 
 
 // Scale a number to T/G/M/K, with a fixed number of decimal places.
-export function scaleNumber(n, fixed=2, trimZeroes=true) {
+export function scaleNumber(n, fixed=2) {
     if (n >= 1000000000000) {
-        return (n / 1000000000000).toFixed(fixed) + "T";
+        return trimTrailingZeros((n / 1000000000000).toFixed(fixed)) + "T";
     } else if (n >= 1000000000) {
-        return (n / 1000000000).toFixed(fixed) + "G";
+        return trimTrailingZeros((n / 1000000000).toFixed(fixed)) + "G";
     } else if (n >= 1000000) {
-        return (n / 1000000).toFixed(fixed) + "M";
+        return trimTrailingZeros((n / 1000000).toFixed(fixed)) + "M";
     } else if (n >= 1000) {
-        return (n / 1000).toFixed(fixed) + "K";
+        return trimTrailingZeros((n / 1000).toFixed(fixed)) + "K";
     }
-    if (trimZeroes) n = trimTrailingZeros(n)
 
     return n;
 }
@@ -36,13 +35,13 @@ export function scaleNumber(n, fixed=2, trimZeroes=true) {
 export function scaleNanos(n, precision=2) {
     if (n === 0) return "-";
     if (n > 60000000000) {
-        return (n / 60000000000).toFixed(precision) + "m";
+        return trimTrailingZeros((n / 60000000000).toFixed(precision)) + "m";
     }else if (n > 1000000000) {
-        return (n / 1000000000).toFixed(precision) + "s";
+        return trimTrailingZeros((n / 1000000000).toFixed(precision)) + "s";
     } else if (n > 1000000) {
-        return (n / 1000000).toFixed(precision) + "ms";
+        return trimTrailingZeros((n / 1000000).toFixed(precision)) + "ms";
     } else if (n > 1000) {
-        return (n / 1000).toFixed(precision) + "µs";
+        return trimTrailingZeros((n / 1000).toFixed(precision)) + "µs";
     }
     return n + "ns";
 }
