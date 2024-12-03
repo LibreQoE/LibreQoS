@@ -1,5 +1,5 @@
 import {DashboardGraph} from "./dashboard_graph";
-import {scaleNumber} from "../lq_js_common/helpers/scaling";
+import {GraphOptionsBuilder} from "../lq_js_common/e_charts/chart_builder";
 
 const RING_SIZE = 60 * 5; // 5 Minutes
 
@@ -8,101 +8,84 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
         super(id);
         this.ringbuffer = new RingBuffer(RING_SIZE);
 
-        let xaxis = [];
-        for (let i=0; i<RING_SIZE; i++) {
-            xaxis.push(i);
-        }
+        this.option = new GraphOptionsBuilder()
+            .withSequenceAxis(0, RING_SIZE)
+            .withScaledAbsYAxis("Throughput (bps)", 40)
+            .build();
 
-        this.option = {
-            legend: {
-                orient: "horizontal",
-                right: 10,
-                top: "bottom",
-                selectMode: false,
-                data: [
-                    {
-                        name: "Shaped Traffic",
-                        icon: 'circle',
-                        itemStyle: {
-                            color: window.graphPalette[0]
-                        }
-                    }, {
-                        name: "Unshaped Traffic",
-                        icon: 'circle',
-                        itemStyle: {
-                            color: window.graphPalette[1]
-                        }
+        this.option.legend = {
+            orient: "horizontal",
+            right: 10,
+            top: "bottom",
+            selectMode: false,
+            data: [
+                {
+                    name: "Shaped Traffic",
+                    icon: 'circle',
+                    itemStyle: {
+                        color: window.graphPalette[0]
                     }
-                ],
-                textStyle: {
-                    color: '#aaa'
-                },
-            },
-            xAxis: {
-                type: 'category',
-                data: xaxis,
-            },
-            yAxis: {
-                type: 'value',
-                axisLabel: {
-                    formatter: (val) => {
-                        return scaleNumber(Math.abs(val), 1);
-                    },
+                }, {
+                    name: "Unshaped Traffic",
+                    icon: 'circle',
+                    itemStyle: {
+                        color: window.graphPalette[1]
+                    }
                 }
-            },
-            series: [
-                {
-                    name: 'shaped0',
-                    data: [],
-                    type: 'line',
-                    stack: 'shaped',
-                    lineStyle: {
-                        opacity: 0,
-                        color: window.graphPalette[0],
-                    },
-                    symbol: 'none',
-                    areaStyle: {
-                        color: window.graphPalette[0]
-                    },
-                },
-                {
-                    name: 'Shaped Traffic',
-                    data: [],
-                    type: 'line',
-                    stack: 'shaped',
-                    lineStyle: {
-                        opacity: 0,
-                        color: window.graphPalette[0],
-                    },
-                    symbol: 'none',
-                    areaStyle: {
-                        color: window.graphPalette[0]
-                    }
-
-                },
-                {
-                    name: 'unshaped0',
-                    data: [],
-                    type: 'line',
-                    lineStyle: {
-                        color: window.graphPalette[1],
-                    },
-                    symbol: 'none',
-                },
-                {
-                    name: 'Unshaped Traffic',
-                    data: [],
-                    type: 'line',
-                    lineStyle: {
-                        color: window.graphPalette[1],
-                    },
-                    symbol: 'none',
-                },
             ],
-            tooltip: {
-                trigger: 'item',
+            textStyle: {
+                color: '#aaa'
             },
-        }
+        };
+        this.option.series = [
+            {
+                name: 'shaped0',
+                data: [],
+                type: 'line',
+                stack: 'shaped',
+                lineStyle: {
+                    opacity: 0,
+                    color: window.graphPalette[0],
+                },
+                symbol: 'none',
+                areaStyle: {
+                    color: window.graphPalette[0]
+                },
+            },
+            {
+                name: 'Shaped Traffic',
+                data: [],
+                type: 'line',
+                stack: 'shaped',
+                lineStyle: {
+                    opacity: 0,
+                    color: window.graphPalette[0],
+                },
+                symbol: 'none',
+                areaStyle: {
+                    color: window.graphPalette[0]
+                }
+
+            },
+            {
+                name: 'unshaped0',
+                data: [],
+                type: 'line',
+                lineStyle: {
+                    color: window.graphPalette[1],
+                },
+                symbol: 'none',
+            },
+            {
+                name: 'Unshaped Traffic',
+                data: [],
+                type: 'line',
+                lineStyle: {
+                    color: window.graphPalette[1],
+                },
+                symbol: 'none',
+            },
+        ];
         this.option && this.chart.setOption(this.option);
     }
 
