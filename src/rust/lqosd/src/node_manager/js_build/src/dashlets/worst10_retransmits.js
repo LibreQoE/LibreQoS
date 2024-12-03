@@ -43,6 +43,7 @@ export class Worst10Retransmits extends BaseDashlet {
                 let key = r.circuit_id;
                 this.timeCache.addOrUpdate(key, r);
             });
+            this.timeCache.tick();
 
             let items = this.timeCache.get();
             items.sort((a, b) => {
