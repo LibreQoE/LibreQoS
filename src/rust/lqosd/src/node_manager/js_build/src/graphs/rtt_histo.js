@@ -19,11 +19,15 @@ export class RttHistogram extends DashboardGraph {
             xAxis: {
                 type: 'category',
                 data: axis,
-                name: "RTT"
+                name: "RTT",
+                nameLocation: 'middle',
+                nameGap: 40,
             },
             yAxis: {
                 type: 'value',
-                name: "Samples"
+                name: "Samples",
+                nameLocation: 'middle',
+                nameGap: 40,
             },
             series: {
                 data: d,
