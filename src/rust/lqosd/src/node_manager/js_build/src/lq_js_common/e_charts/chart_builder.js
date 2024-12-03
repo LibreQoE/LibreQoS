@@ -25,9 +25,22 @@ export class GraphOptionsBuilder {
         return this;
     }
 
+    // Provides a sequence X axis
+    withSequenceAxis(min, max) {
+        let xAxis = [];
+        for (let i=min; i<max; i++) {
+            xAxis.push(i);
+        }
+        this.option.xAxis = {
+            type: 'category',
+                data: xAxis,
+        };
+        return this;
+    }
+
     // Provide a positive-number only (suitable for inverted) Y axis
     // that scales the number K/M/G/etc.
-    withScaledAbsYAxis() {
+    withScaledAbsYAxis(name="") {
         this.option.yAxis = {
             type: 'value',
             axisLabel: {
@@ -36,10 +49,15 @@ export class GraphOptionsBuilder {
                 },
             }
         };
+        if (name.length > 0) {
+            this.option.yAxis.name = name;
+            this.option.yAxis.nameLocation = 'middle';
+            this.option.yAxis.nameGap = 50;
+        }
         return this;
     }
 
-    withScaledAbsYAxisPercent() {
+    withScaledAbsYAxisPercent(name="") {
         this.option.yAxis = {
             type: 'value',
             axisLabel: {
@@ -48,6 +66,11 @@ export class GraphOptionsBuilder {
                 },
             }
         };
+        if (name.length > 0) {
+            this.option.yAxis.name = name;
+            this.option.yAxis.nameLocation = 'middle';
+            this.option.yAxis.nameGap = 50;
+        }
         return this;
     }
 
@@ -60,6 +83,13 @@ export class GraphOptionsBuilder {
     // Adds an empty legend
     withEmptyLegend() {
         this.option.legend = { data: [] };
+        return this;
+    }
+
+    withLeftGridSize(x = "15%") {
+        this.option.grid = {
+            x: x,
+        };
         return this;
     }
 
