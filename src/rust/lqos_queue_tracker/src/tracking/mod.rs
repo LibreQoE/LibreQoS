@@ -66,13 +66,13 @@ fn track_queues() {
               QueueStore::new(download[0].clone(), upload[0].clone()),
             );
           } else {
-            info!(
+            debug!(
               "No queue data returned for {}, {}/{} found.",
               circuit_id.to_string(),
               download.len(),
               upload.len()
             );
-            info!("You probably want to run LibreQoS.py");
+            debug!("You probably want to run LibreQoS.py");
           }
         }
       }
