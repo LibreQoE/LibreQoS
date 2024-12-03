@@ -164,15 +164,15 @@ export function topNTableRow(r) {
     return row;
 }
 
-export function TopNTableFromMsgData(msg) {
+export function TopNTableFromMsgData(circuits) {
     let t = document.createElement("table");
     t.classList.add("table-sm", "dash-table");
 
     t.appendChild(topNTableHeader());
 
     let tbody = document.createElement("tbody");
-    msg.forEach((r) => {
-        t.appendChild(topNTableRow(r.data));
+    circuits.forEach((r) => {
+        t.appendChild(topNTableRow(r));
     });
     t.appendChild(tbody);
     return t;

@@ -1,11 +1,11 @@
 import {BaseDashlet} from "./base_dashlet";
 import {clearDashDiv, TopNTableFromMsgData} from "../helpers/builders";
-import {TopXTable} from "../helpers/top_x_cache";
+import {TimedCache} from "../lq_js_common/helpers/timed_cache";
 
 export class Top10Downloaders extends BaseDashlet {
     constructor(slot) {
         super(slot);
-        this.buffer = new TopXTable(10, 10);
+        this.timeCache = new TimedCache(10);
     }
 
     title() {
@@ -40,13 +40,17 @@ export class Top10Downloaders extends BaseDashlet {
             let target = document.getElementById(this.id);
 
             msg.data.forEach((r) => {
-                this.buffer.push(r.circuit_id, r, (data) => {
-                    return data.bits_per_second.down;
-                });
+                let key = r.circuit_id;
+                this.timeCache.addOrUpdate(key, r);
             });
-            let ranked = this.buffer.getRankedArrayAndClean();
 
-            let t = TopNTableFromMsgData(ranked);
+            let items = this.timeCache.get();
+            items.sort((a, b) => {
+                return b.bits_per_second.down - a.bits_per_second.down;
+            });
+            // Limit to 10 entries
+            items = items.slice(0, 10);
+            let t = TopNTableFromMsgData(items);
 
             // Display it
             clearDashDiv(this.id, target);
