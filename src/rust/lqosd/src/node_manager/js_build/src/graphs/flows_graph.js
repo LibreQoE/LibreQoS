@@ -11,7 +11,7 @@ export class FlowCountGraph extends DashboardGraph {
 
         this.option = new GraphOptionsBuilder()
             .withSequenceAxis(0, RING_SIZE)
-            .withScaledAbsYAxis("Tracked Flows")
+            .withScaledAbsYAxis("Tracked Flows", 30)
             .withLeftGridSize("15%")
             .build();
         this.option.series = [
