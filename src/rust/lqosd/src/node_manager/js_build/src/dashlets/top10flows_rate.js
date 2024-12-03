@@ -3,6 +3,7 @@ import {clearDashDiv, theading} from "../helpers/builders";
 import {formatRetransmit, rttNanosAsSpan} from "../helpers/scaling";
 import {RttCache} from "../helpers/rtt_cache";
 import {scaleNumber} from "../lq_js_common/helpers/scaling";
+import {TrimToFit} from "../lq_js_common/helpers/text_utils";
 
 export class Top10FlowsRate extends BaseDashlet {
     constructor(slot) {
@@ -66,7 +67,7 @@ export class Top10FlowsRate extends BaseDashlet {
                     let circuit = document.createElement("td");
                     let link = document.createElement("a");
                     link.href = "circuit.html?id=" + encodeURI(r.circuit_id);
-                    link.innerText = r.circuit_name;
+                    link.innerText = TrimToFit(r.circuit_name);
                     link.classList.add("redactable");
                     circuit.appendChild(link);
                     row.appendChild(circuit);
