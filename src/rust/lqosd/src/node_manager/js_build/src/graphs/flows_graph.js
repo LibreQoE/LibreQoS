@@ -1,5 +1,6 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {scaleNumber} from "../lq_js_common/helpers/scaling";
+import {GraphOptionsBuilder} from "../lq_js_common/e_charts/chart_builder";
 
 const RING_SIZE = 60 * 5; // 5 Minutes
 
@@ -8,55 +9,20 @@ export class FlowCountGraph extends DashboardGraph {
         super(id);
         this.ringbuffer = new RingBuffer(RING_SIZE);
 
-        let xaxis = [];
-        for (let i=0; i<RING_SIZE; i++) {
-            xaxis.push(i);
-        }
+        this.option = new GraphOptionsBuilder()
+            .withSequenceAxis(0, RING_SIZE)
+            .withScaledAbsYAxis("Tracked Flows")
+            .withLeftGridSize("15%")
+            .build();
+        this.option.series = [
+            {
+                name: 'Active/Tracked',
+                data: [],
+                type: 'line',
+                symbol: 'none',
+            }
+        ];
 
-        this.option = {
-            grid: {
-                x: '15%',
-            },
-            legend: {
-                orient: "horizontal",
-                right: 10,
-                top: "bottom",
-                selectMode: false,
-                data: [
-                    {
-                        name: "Active/Tracked",
-                        icon: 'circle',
-                    },
-                ],
-                textStyle: {
-                    color: '#aaa'
-                },
-            },
-            xAxis: {
-                type: 'category',
-                data: xaxis,
-            },
-            yAxis: {
-                type: 'value',
-                axisLabel: {
-                    formatter: (val) => {
-                        return scaleNumber(Math.abs(val), 0);
-                    },
-                }
-            },
-            series: [
-                {
-                    name: 'Active/Tracked',
-                    data: [],
-                    type: 'line',
-                    symbol: 'none',
-                }
-            ],
-            tooltip: {
-                trigger: 'item',
-            },
-            animation: false,
-        }
         this.option && this.chart.setOption(this.option);
     }
 
