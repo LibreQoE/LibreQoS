@@ -40,7 +40,7 @@ export class GraphOptionsBuilder {
 
     // Provide a positive-number only (suitable for inverted) Y axis
     // that scales the number K/M/G/etc.
-    withScaledAbsYAxis(name="") {
+    withScaledAbsYAxis(name="", gap=25) {
         this.option.yAxis = {
             type: 'value',
             axisLabel: {
@@ -52,12 +52,12 @@ export class GraphOptionsBuilder {
         if (name.length > 0) {
             this.option.yAxis.name = name;
             this.option.yAxis.nameLocation = 'middle';
-            this.option.yAxis.nameGap = 50;
+            this.option.yAxis.nameGap = gap;
         }
         return this;
     }
 
-    withScaledAbsYAxisPercent(name="") {
+    withScaledAbsYAxisPercent(name="", gap=25) {
         this.option.yAxis = {
             type: 'value',
             axisLabel: {
@@ -69,7 +69,7 @@ export class GraphOptionsBuilder {
         if (name.length > 0) {
             this.option.yAxis.name = name;
             this.option.yAxis.nameLocation = 'middle';
-            this.option.yAxis.nameGap = 50;
+            this.option.yAxis.nameGap = gap;
         }
         return this;
     }
