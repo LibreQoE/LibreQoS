@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use toml_edit::{DocumentMut, value};
 use std::{fs, path::Path};
 use thiserror::Error;
+use crate::{load_config, update_config};
 
 /// Represents the top-level of the `/etc/lqos.conf` file. Serialization
 /// structure.
@@ -222,47 +223,18 @@ impl EtcLqos {
 /// config file - ONLY if one doesn't already exist.
 #[allow(dead_code)]
 pub fn enable_long_term_stats(license_key: String) {
-  if let Ok(raw) = std::fs::read_to_string("/etc/lqos.conf") {
-    let document = raw.parse::<DocumentMut>();
-    match document {
-      Err(e) => {
-        error!("Unable to parse TOML from /etc/lqos.conf");
-        error!("Full error: {:?}", e);
-        return;
-      }
-      Ok(mut config_doc) => {
-        let cfg = toml_edit::de::from_document::<EtcLqos>(config_doc.clone());
-        match cfg {
-          Ok(cfg) => {
-            // Now we enable LTS if its not present
-            if let Ok(isp_config) = crate::load_config() {
-              if cfg.long_term_stats.is_none() {
-               
-                let mut new_section = toml_edit::table();
-                new_section["gather_stats"] = value(true);
-                new_section["collation_period_seconds"] = value(60);
-                new_section["license_key"] = value(license_key);
-                if isp_config.uisp_integration.enable_uisp {
-                  new_section["uisp_reporting_interval_seconds"] = value(300);
-                }
-                config_doc["long_term_stats"] = new_section;
-
-                let new_cfg = config_doc.to_string();
-                if let Err(e) = fs::write(Path::new("/etc/lqos.conf"), new_cfg) {
-                  error!("Unable to write to /etc/lqos.conf");
-                  error!("{e:?}");
-                  return;
-                }
-              }
-            }
-          }
-          Err(e) => {
-            error!("Unable to parse TOML from /etc/lqos.conf");
-            error!("Full error: {:?}", e);
-            return;
-          }
-        }
-      }
+  let Ok(config) = load_config() else { return };
+  let mut new_config = (*config).clone();
+  new_config.long_term_stats.gather_stats = true;
+  new_config.long_term_stats.license_key = Some(license_key);
+  new_config.long_term_stats.collation_period_seconds = 60;
+  if config.uisp_integration.enable_uisp {
+      new_config.long_term_stats.uisp_reporting_interval_seconds = Some(300);
+  }
+  match update_config(&new_config) {
+    Ok(_) => info!("Long-term stats enabled"),
+    Err(e) => {
+      error!("Unable to update configuration: {e:?}");
     }
   }
 }
