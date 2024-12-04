@@ -20,12 +20,22 @@ impl Netflow9 {
             .spawn(move || {
                 let mut accumulator = Vec::with_capacity(14);
                 let sequence = AtomicU32::new(0);
+                let mut last_sent = std::time::Instant::now();
                 while let Ok((key, (data, analysis))) = rx.recv() {
+                    // Exclude one-way flows
+                    if (data.bytes_sent.sum()) == 0 {
+                        continue;
+                    }
+
                     accumulator.push((key, (data, analysis)));
 
-                    if accumulator.len() >= 14 {
-                        Self::queue_handler(&accumulator, &socket, &target, &sequence);
+                    // Send if there is more than 15 records AND it has been more than 1 second since the last send
+                    if accumulator.len() >= 14 && last_sent.elapsed().as_secs() > 1 {
+                        for chunk in accumulator.chunks(14) {
+                            Self::queue_handler(chunk, &socket, &target, &sequence);
+                        }
                         accumulator.clear();
+                        last_sent = std::time::Instant::now();
                     }
                 };
             })?;
@@ -46,7 +56,7 @@ impl Netflow9 {
             let header_bytes = unsafe { std::slice::from_raw_parts(&header as *const _ as *const u8, std::mem::size_of::<Netflow9Header>()) };
             let template1 = template_data_ipv4();
             let template2 = template_data_ipv6();
-            let mut buffer = Vec::with_capacity(header_bytes.len() + template1.len() + template2.len() + (num_records as usize) * 140);
+            let mut buffer = Vec::with_capacity(header_bytes.len() + template1.len() + template2.len() + (num_records as usize * 140));
             buffer.extend_from_slice(header_bytes);
             buffer.extend_from_slice(&template1);
             buffer.extend_from_slice(&template2);

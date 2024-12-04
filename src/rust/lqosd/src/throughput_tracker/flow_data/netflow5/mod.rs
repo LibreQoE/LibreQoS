@@ -21,16 +21,26 @@ impl Netflow5 {
             .spawn(move || {
                 let sequence = AtomicU32::new(0);
                 let mut accumulator = Vec::with_capacity(15);
+                let mut last_sent = std::time::Instant::now();
                 while let Ok((key, (data, analysis))) = rx.recv() {
+                    // Exclude one-way flows
+                    if (data.bytes_sent.sum()) == 0 {
+                        continue;
+                    }
+
                     accumulator.push((key, (data, analysis)));
 
                     let Ok(socket) = UdpSocket::bind("0.0.0.0:12212") else {
                         tracing::error!("Failed to bind to UDP socket");
                         continue;
                     };
-                    if accumulator.len() >= 15 {
-                        Self::queue_handler(&accumulator, &socket, &target, &sequence);
+                    // Send if there is more than 15 records AND it has been more than 1 second since the last send
+                    if accumulator.len() >= 15 && last_sent.elapsed().as_secs() > 1 {
+                        for chunk in accumulator.chunks(15) {
+                            Self::queue_handler(chunk, &socket, &target, &sequence);
+                        }
                         accumulator.clear();
+                        last_sent = std::time::Instant::now();
                     }
                 }
             })?;
@@ -56,7 +66,7 @@ impl Netflow5 {
             };
 
             let mut buffer = Vec::with_capacity(
-                header_bytes.len() + accumulator.len() * 2 * std::mem::size_of::<Netflow5Record>(),
+                header_bytes.len() + (accumulator.len() * 2 * std::mem::size_of::<Netflow5Record>()),
             );
 
             buffer.extend_from_slice(header_bytes);
