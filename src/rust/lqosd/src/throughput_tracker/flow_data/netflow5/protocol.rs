@@ -2,7 +2,7 @@
 
 use std::net::IpAddr;
 use lqos_sys::flowbee_data::FlowbeeKey;
-use lqos_utils::unix_time::time_since_boot;
+use lqos_utils::unix_time::{time_since_boot, unix_now};
 use nix::sys::time::TimeValLike;
 
 use crate::throughput_tracker::flow_data::FlowbeeLocalData;
@@ -25,12 +25,13 @@ impl Netflow5Header {
     /// Create a new Netflow 5 header
     pub(crate) fn new(flow_sequence: u32, num_records: u16) -> Self {
         let uptime = time_since_boot().unwrap();
+        let unix_secs = unix_now().unwrap_or(0);
 
         Self {
             version: (5u16).to_be(),
             count: num_records.to_be(),
             sys_uptime: (uptime.num_milliseconds() as u32).to_be(),
-            unix_secs: (uptime.num_seconds() as u32).to_be(),
+            unix_secs: (unix_secs as u32).to_be(),
             unix_nsecs: 0,
             flow_sequence,
             engine_type: 0,
