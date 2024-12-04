@@ -49,26 +49,24 @@ impl Netflow9 {
         target: &str,
         sequence: &AtomicU32,
     ) {
-        loop {
-            let num_records = (accumulator.len() * 2) as u16 + 2; // +2 to include templates
-            let sequence_num = sequence.load(std::sync::atomic::Ordering::Relaxed);
-            let header = Netflow9Header::new(sequence_num, num_records);
-            let header_bytes = unsafe { std::slice::from_raw_parts(&header as *const _ as *const u8, std::mem::size_of::<Netflow9Header>()) };
-            let template1 = template_data_ipv4();
-            let template2 = template_data_ipv6();
-            let mut buffer = Vec::with_capacity(header_bytes.len() + template1.len() + template2.len() + (num_records as usize * 140));
-            buffer.extend_from_slice(header_bytes);
-            buffer.extend_from_slice(&template1);
-            buffer.extend_from_slice(&template2);
+        let num_records = (accumulator.len() * 2) as u16 + 2; // +2 to include templates
+        let sequence_num = sequence.load(std::sync::atomic::Ordering::Relaxed);
+        let header = Netflow9Header::new(sequence_num, num_records);
+        let header_bytes = unsafe { std::slice::from_raw_parts(&header as *const _ as *const u8, std::mem::size_of::<Netflow9Header>()) };
+        let template1 = template_data_ipv4();
+        let template2 = template_data_ipv6();
+        let mut buffer = Vec::with_capacity(header_bytes.len() + template1.len() + template2.len() + (num_records as usize * 140));
+        buffer.extend_from_slice(header_bytes);
+        buffer.extend_from_slice(&template1);
+        buffer.extend_from_slice(&template2);
 
-            for (key, (data, _)) in accumulator {
-                if let Ok((packet1, packet2)) = to_netflow_9(key, data) {
-                    buffer.extend_from_slice(&packet1);
-                    buffer.extend_from_slice(&packet2);
-                }
+        for (key, (data, _)) in accumulator {
+            if let Ok((packet1, packet2)) = to_netflow_9(key, data) {
+                buffer.extend_from_slice(&packet1);
+                buffer.extend_from_slice(&packet2);
             }
-            socket.send_to(&buffer, target).unwrap();
-            sequence.fetch_add(num_records as u32, std::sync::atomic::Ordering::Relaxed);
         }
+        socket.send_to(&buffer, target).unwrap();
+        sequence.fetch_add(num_records as u32, std::sync::atomic::Ordering::Relaxed);
     }
 }

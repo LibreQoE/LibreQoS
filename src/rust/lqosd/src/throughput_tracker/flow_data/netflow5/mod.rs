@@ -54,43 +54,41 @@ impl Netflow5 {
         target: &str,
         sequence: &AtomicU32,
     ) {
-        loop {
-            let num_records = (accumulator.len() * 2) as u16;
-            let sequence_number = sequence.load(std::sync::atomic::Ordering::Relaxed);
-            let header = Netflow5Header::new(sequence_number, num_records);
-            let header_bytes = unsafe {
-                std::slice::from_raw_parts(
-                    &header as *const _ as *const u8,
-                    std::mem::size_of::<Netflow5Header>(),
-                )
-            };
+        let num_records = (accumulator.len() * 2) as u16;
+        let sequence_number = sequence.load(std::sync::atomic::Ordering::Relaxed);
+        let header = Netflow5Header::new(sequence_number, num_records);
+        let header_bytes = unsafe {
+            std::slice::from_raw_parts(
+                &header as *const _ as *const u8,
+                std::mem::size_of::<Netflow5Header>(),
+            )
+        };
 
-            let mut buffer = Vec::with_capacity(
-                header_bytes.len() + (accumulator.len() * 2 * std::mem::size_of::<Netflow5Record>()),
-            );
+        let mut buffer = Vec::with_capacity(
+            header_bytes.len() + (accumulator.len() * 2 * std::mem::size_of::<Netflow5Record>()),
+        );
 
-            buffer.extend_from_slice(header_bytes);
-            for (key, (data, _)) in accumulator {
-                if let Ok((packet1, packet2)) = to_netflow_5(key, data) {
-                    let packet1_bytes = unsafe {
-                        std::slice::from_raw_parts(
-                            &packet1 as *const _ as *const u8,
-                            std::mem::size_of::<Netflow5Record>(),
-                        )
-                    };
-                    let packet2_bytes = unsafe {
-                        std::slice::from_raw_parts(
-                            &packet2 as *const _ as *const u8,
-                            std::mem::size_of::<Netflow5Record>(),
-                        )
-                    };
-                    buffer.extend_from_slice(packet1_bytes);
-                    buffer.extend_from_slice(packet2_bytes);
-                }
+        buffer.extend_from_slice(header_bytes);
+        for (key, (data, _)) in accumulator {
+            if let Ok((packet1, packet2)) = to_netflow_5(key, data) {
+                let packet1_bytes = unsafe {
+                    std::slice::from_raw_parts(
+                        &packet1 as *const _ as *const u8,
+                        std::mem::size_of::<Netflow5Record>(),
+                    )
+                };
+                let packet2_bytes = unsafe {
+                    std::slice::from_raw_parts(
+                        &packet2 as *const _ as *const u8,
+                        std::mem::size_of::<Netflow5Record>(),
+                    )
+                };
+                buffer.extend_from_slice(packet1_bytes);
+                buffer.extend_from_slice(packet2_bytes);
             }
-
-            socket.send_to(&buffer, target).unwrap();
-            sequence.fetch_add(num_records as u32, std::sync::atomic::Ordering::Relaxed);
         }
+
+        socket.send_to(&buffer, target).unwrap();
+        sequence.fetch_add(num_records as u32, std::sync::atomic::Ordering::Relaxed);
     }
 }
