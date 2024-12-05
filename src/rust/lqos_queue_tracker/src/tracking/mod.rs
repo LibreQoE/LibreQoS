@@ -3,7 +3,7 @@ use crate::{
   circuit_to_queue::CIRCUIT_TO_QUEUE, interval::QUEUE_MONITOR_INTERVAL,
   queue_store::QueueStore, tracking::reader::read_named_queue_from_interface,
 };
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 use lqos_utils::fdtimer::periodic;
 mod reader;
 mod watched_queues;
