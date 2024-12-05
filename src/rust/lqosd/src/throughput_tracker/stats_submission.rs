@@ -284,11 +284,12 @@ pub(crate) fn submit_throughput_stats(
         let mut circuit_rtt: FxHashMap<i64, Vec<f32>> = FxHashMap::default();
 
         let shaped_devices = SHAPED_DEVICES.load();
+        const CRAZY_LIMIT: u64 = 8; // 8x the max bandwidth
         let plan_lookup: FxHashMap<i64, (u64, u64)> = shaped_devices
             .devices
             .iter()
             // Bandwidth: mbps * 1_000_000 to bytes
-            .map(|d| (d.circuit_hash, (d.download_max_mbps as u64 * 1_000_000, d.upload_max_mbps as u64 * 1_000_000)))
+            .map(|d| (d.circuit_hash, (d.download_max_mbps as u64 * 1_000_000 * CRAZY_LIMIT, d.upload_max_mbps as u64 * 1_000_000 * CRAZY_LIMIT)))
             .collect();
 
         THROUGHPUT_TRACKER
