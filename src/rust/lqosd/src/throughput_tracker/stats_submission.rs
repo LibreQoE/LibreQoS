@@ -1,7 +1,7 @@
 use std::fs::read_to_string;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::path::Path;
-use fxhash::FxHashMap;
+use fxhash::{FxHashMap, FxHashSet};
 use tokio::sync::mpsc::Sender;
 use tokio::time::Instant;
 use tracing::debug;
@@ -156,7 +156,7 @@ pub(crate) fn submit_throughput_stats(
     }
 
     /////////////////////////////////////////////////////////////////
-    // LTS2 Block
+    // Insight Block
     if let Ok(now) = unix_now() {
         // LTS2 Shaped Devices
         if lts2_needs_shaped_devices {
@@ -278,9 +278,18 @@ pub(crate) fn submit_throughput_stats(
             icmp_packets: DownUpOrder<u64>,
         }
 
+        let mut crazy_values: FxHashSet<i64> = FxHashSet::default(); // Circuits to skip because the numbers are too high
         let mut circuit_throughput: FxHashMap<i64, CircuitThroughputTemp> = FxHashMap::default();
         let mut circuit_retransmits: FxHashMap<i64, DownUpOrder<u64>> = FxHashMap::default();
         let mut circuit_rtt: FxHashMap<i64, Vec<f32>> = FxHashMap::default();
+
+        let shaped_devices = SHAPED_DEVICES.load();
+        let plan_lookup: FxHashMap<i64, (u64, u64)> = shaped_devices
+            .devices
+            .iter()
+            // Bandwidth: mbps * 1_000_000 to bytes
+            .map(|d| (d.circuit_hash, (d.download_max_mbps as u64 * 1_000_000, d.upload_max_mbps as u64 * 1_000_000)))
+            .collect();
 
         THROUGHPUT_TRACKER
             .raw_data
@@ -288,6 +297,20 @@ pub(crate) fn submit_throughput_stats(
             .iter()
             .filter(|(_k,h)| h.circuit_id.is_some() && h.bytes_per_second.not_zero())
             .for_each(|(_k,h)| {
+                let mut crazy = false;
+                if let Some((dl,ul)) = plan_lookup.get(&h.circuit_hash.unwrap_or(0)) {
+                    if h.bytes_per_second.down > *dl {
+                        crazy_values.insert(h.circuit_hash.unwrap());
+                        crazy = true;
+                    } else if h.bytes_per_second.up > *ul {
+                        crazy_values.insert(h.circuit_hash.unwrap());
+                        crazy = true;
+                    }
+                }
+
+                if crazy {
+                    return;
+                }
                 if let Some(c) = circuit_throughput.get_mut(&h.circuit_hash.unwrap()) {
                     c.bytes += h.bytes_per_second;
                     c.packets += h.packets_per_second;
@@ -310,7 +333,7 @@ pub(crate) fn submit_throughput_stats(
             .lock()
             .unwrap()
             .iter()
-            .filter(|(_k,h)| h.circuit_id.is_some() && h.tcp_retransmits.not_zero())
+            .filter(|(_k,h)| h.circuit_id.is_some() && h.tcp_retransmits.not_zero() && !crazy_values.contains(&h.circuit_hash.unwrap_or(0)))
             .for_each(|(_k,h)| {
                 if let Some(c) = circuit_retransmits.get_mut(&h.circuit_hash.unwrap()) {
                     *c += h.tcp_retransmits;
@@ -324,7 +347,7 @@ pub(crate) fn submit_throughput_stats(
             .lock()
             .unwrap()
             .iter()
-            .filter(|(_k,h)| h.circuit_id.is_some() && h.median_latency().is_some())
+            .filter(|(_k,h)| h.circuit_id.is_some() && h.median_latency().is_some() && !crazy_values.contains(&h.circuit_hash.unwrap_or(0)))
             .for_each(|(_k,h)| {
                 if let Some(c) = circuit_rtt.get_mut(&h.circuit_hash.unwrap()) {
                     c.push(h.median_latency().unwrap());
