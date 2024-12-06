@@ -91,7 +91,7 @@ export class TopTreeSankey extends BaseDashlet {
                     fontSize: 9,
                     color: "#999"
                 };
-                if (redact) label.backgroundColor = label.color;
+                if (redact) label.fontFamily = "Illegible";
 
                 let name = r[1].name;
                 let bytes = r[1].current_throughput[0];

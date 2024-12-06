@@ -180,3 +180,7 @@ table tr td a {
     top: 0;
     right: 0;
 }
+@font-face {
+    font-family: "Illegible";
+    src: url(glyphz.ttf) format("truetype");
+}

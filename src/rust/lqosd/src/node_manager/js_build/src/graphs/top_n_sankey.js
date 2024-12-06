@@ -61,7 +61,7 @@ export class TopNSankey extends DashboardGraph {
                 fontSize: 9,
                 color: "#999"
             };
-            if (isRedacted()) label.backgroundColor = label.color;
+            if (isRedacted()) label.fontFamily = "Illegible";
 
             let name = r.ip_address+ " (" + scaleNumber(r.bits_per_second.down, 0) + ", " + r.tcp_retransmits[0].toFixed(1) + "/" + r.tcp_retransmits[1].toFixed(1) + ")";
             let bytes = r.bits_per_second.down / 8;

@@ -4,7 +4,7 @@ export function sponsorTag(parentId) {
     if (!window.hasLts) {
         $.get("/local-api/deviceCount", (counts) => {
             //console.log(data);
-            if (data.action !== "GoodToGo") {
+            if (!window.hasLts) {
                 let div = document.createElement("div");
                 let random = Math.floor(Math.random() * 5) + 1;
                 if (random === 1) {
@@ -39,5 +39,5 @@ export function sponsorTag(parentId) {
                 parent.appendChild(div);
             }
         });
-    };
+    }
 }
