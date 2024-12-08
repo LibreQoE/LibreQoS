@@ -4,7 +4,35 @@
 
 First, set the relevant parameters for Splynx (splynx_api_key, splynx_api_secret, etc.) in `/etc/lqos.conf`.
 
+### Splynx API Access
+
 The Splynx Integration uses Basic authentication. For using this type of authentication, please make sure you enable [Unsecure access](https://splynx.docs.apiary.io/#introduction/authentication) in your Splynx API key settings. Also the Splynx API key should be granted access to the necessary permissions.
+
+* Tarrif Plans->Internet ->view
+* Tarrif Plans->Bundle->view
+* Tarrif Plans->One time->view
+* Tarrif Plans->Recurring ->view
+* FUP->Counter->view
+* FUP->Compiler->view
+* FUP->Policies->view
+* FUP->Capped Data->view
+* FUP->CAP Tarrif->view
+* FUP->FUP Limits->view
+* FUP->Traffic Usage->view
+* customers>customer->view
+* customers->customer information->view
+* customers->customers online->view
+* customers->customer bundle services->view
+* customers->customer internet services->view
+* customers->traffic counter->view
+* customers->customer recurring services->view
+* customers->bonus traffic counter->view
+* customers->CAP history->view
+* Networking->routers->view
+* Networking->network sites >view
+* Networking->router contention->view
+* Netowrking->IPv4 networks->view
+* Netowrking->IPv4 networks IP->view
 
 To test the Splynx Integration, use
 
