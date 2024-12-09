@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 use crossbeam_channel::Sender;
 use serde::Serialize;
-use tracing::warn;
+use tracing::{info, warn};
 use lqos_bus::BlackboardSystem;
 
 pub static BLACKBOARD_SENDER: OnceLock<Sender<BlackboardCommand>> = OnceLock::new();
@@ -44,11 +44,12 @@ pub fn start_blackboard() {
             match rx.recv() {
                 Ok(BlackboardCommand::FinishSession) => {
                     // If empty, do nothing
-                    if board.circuits.is_empty() && board.sites.is_empty() && board.system.is_empty() {
+                    if board.circuits.is_empty() && board.sites.is_empty() && board.system.is_empty() && board.blobs.is_empty() {
                         continue;
                     }
 
                     // Serialize CBOR to a vec of u8
+                    info!("Sending blackboard data");
                     let cbor = match serde_cbor::to_vec(&board) {
                         Ok(j) => j,
                         Err(e) => {
