@@ -14,6 +14,7 @@ use crate::ip_ranges::IpRanges;
 use lqos_config::Config;
 use tokio::time::Instant;
 use tracing::{error, info};
+use lqos_bus::BlackboardSystem;
 
 /// Start the tracing/logging system
 fn init_tracing() {
@@ -32,6 +33,17 @@ fn check_enabled_status(config: &Config) -> Result<(), UispIntegrationError> {
     } else {
         Ok(())
     }
+}
+
+pub async fn blackboard(subsystem: BlackboardSystem, key: &str, value: &str) {
+    let req = vec![
+        lqos_bus::BusRequest::BlackboardData {
+            subsystem,
+            key: key.to_string(),
+            value: value.to_string(),
+        },
+    ];
+    let _ = lqos_bus::bus_request(req).await;
 }
 
 #[tokio::main]

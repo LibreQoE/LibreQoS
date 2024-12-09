@@ -14,6 +14,7 @@ mod zero_capacity_sites;
 mod mikrotik;
 
 use std::sync::Arc;
+use lqos_bus::BlackboardSystem;
 use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
 use crate::strategies::full::ap_promotion::promote_access_points;
@@ -33,6 +34,7 @@ use crate::strategies::full::utils::{print_sites, warn_of_no_parents_and_promote
 use crate::strategies::full::zero_capacity_sites::correct_zero_capacity_sites;
 use crate::uisp_types::{UispSite, UispSiteType};
 use lqos_config::Config;
+use crate::blackboard;
 
 /// Attempt to construct a full hierarchy topology for the UISP network.
 /// This function will load the UISP data, parse it into a more usable format,
@@ -51,12 +53,33 @@ pub async fn build_full_network(
 ) -> Result<(), UispIntegrationError> {
     // Load any bandwidth overrides
     let bandwidth_overrides = get_site_bandwidth_overrides(&config)?;
+    blackboard(BlackboardSystem::System, "UISP-Bandwidth", &serde_json::to_string(&bandwidth_overrides).unwrap_or_default()).await;
 
     // Load any routing overrides
     let routing_overrides = get_route_overrides(&config)?;
+    blackboard(BlackboardSystem::System, "UISP-Routes", &serde_json::to_string(&routing_overrides).unwrap_or_default()).await;
 
     // Obtain the UISP data and transform it into easier to work with types
     let (sites_raw, devices_raw, data_links_raw) = load_uisp_data(config.clone()).await?;
+
+    if let Ok(sites_bin) = serde_cbor::to_vec(&sites_raw) {
+        let _ = lqos_bus::bus_request(vec![lqos_bus::BusRequest::BlackboardBlob {
+            tag: "uisp_sites".to_string(),
+            blob: sites_bin,
+        }]).await;
+    }
+    if let Ok(devices_bin) = serde_cbor::to_vec(&devices_raw) {
+        let _ = lqos_bus::bus_request(vec![lqos_bus::BusRequest::BlackboardBlob {
+            tag: "uisp_devices".to_string(),
+            blob: devices_bin,
+        }]).await;
+    }
+    if let Ok(data_links_bin) = serde_cbor::to_vec(&data_links_raw) {
+        let _ = lqos_bus::bus_request(vec![lqos_bus::BusRequest::BlackboardBlob {
+            tag: "uisp_data_links".to_string(),
+            blob: data_links_bin,
+        }]).await;
+    }
 
     // If Mikrotik is enabled, we need to fetch the Mikrotik data
     let ipv4_to_v6 = mikrotik::mikrotik_data(&config).await.unwrap_or_else(|_| Vec::new());
@@ -74,6 +97,7 @@ pub async fn build_full_network(
 
     // Check root sites
     let root_site = find_root_site(&config, &mut sites, &data_links)?;
+    blackboard(BlackboardSystem::System, "UISP-Root", &root_site).await;
 
     // Set the site root
     set_root_site(&mut sites, &root_site)?;
@@ -104,7 +128,7 @@ pub async fn build_full_network(
         &sites_raw,
         &devices,
         &config,
-    );
+    ).await;
 
     // Sites that are clients but have children should be promoted
     promote_clients_with_children(&mut sites)?;

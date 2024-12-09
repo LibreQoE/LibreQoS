@@ -215,6 +215,12 @@ pub enum BusRequest {
     value: String,
   },
 
+  /// Submit binary data to the blackboard
+  BlackboardBlob {
+    tag: String,
+    blob: Vec<u8>,
+  },
+
   /// Finish a blackboard session
   BlackboardFinish,
 }

@@ -48,6 +48,30 @@ pub async fn build_flat_network(
         error!("{e:?}");
         UispIntegrationError::UispConnectError
     })?;
+    let data_links = uisp::load_all_data_links(config.clone()).await.map_err(|e| {
+        error!("Unable to load device list from UISP");
+        error!("{e:?}");
+        UispIntegrationError::UispConnectError
+    })?;
+
+    if let Ok(sites_bin) = serde_cbor::to_vec(&sites) {
+        let _ = lqos_bus::bus_request(vec![lqos_bus::BusRequest::BlackboardBlob {
+            tag: "uisp_sites".to_string(),
+            blob: sites_bin,
+        }]).await;
+    }
+    if let Ok(devices_bin) = serde_cbor::to_vec(&devices) {
+        let _ = lqos_bus::bus_request(vec![lqos_bus::BusRequest::BlackboardBlob {
+            tag: "uisp_devices".to_string(),
+            blob: devices_bin,
+        }]).await;
+    }
+    if let Ok(data_links_bin) = serde_cbor::to_vec(&data_links) {
+        let _ = lqos_bus::bus_request(vec![lqos_bus::BusRequest::BlackboardBlob {
+            tag: "uisp_data_links".to_string(),
+            blob: data_links_bin,
+        }]).await;
+    }
 
     // Create a {} network.json
     let net_json_path = Path::new(&config.lqos_directory).join("network.json");

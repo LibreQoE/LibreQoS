@@ -14,6 +14,10 @@ pub enum BlackboardCommand {
         key: String,
         value: String,
     },
+    BlackboardBlob {
+        tag: String,
+        blob: Vec<u8>,
+    },
 }
 
 #[derive(Serialize)]
@@ -22,6 +26,7 @@ struct Blackboard {
     sites: HashMap<String, String>,
     circuits: HashMap<String, String>,
     devices: HashMap<String, String>,
+    blobs: HashMap<String, Vec<u8>>,
 }
 
 pub fn start_blackboard() {
@@ -32,6 +37,7 @@ pub fn start_blackboard() {
             sites: HashMap::new(),
             circuits: HashMap::new(),
             devices: HashMap::new(),
+            blobs: HashMap::new(),
         };
 
         loop {
@@ -54,8 +60,11 @@ pub fn start_blackboard() {
                     board.circuits.clear();
                     board.sites.clear();
                     board.system.clear();
+                    board.devices.clear();
+                    board.blobs.clear();
                 }
                 Ok(BlackboardCommand::BlackboardData { subsystem, key, value }) => {
+                    println!("Received data: {} = {}", key, value);
                     match subsystem {
                         BlackboardSystem::System => {
                             board.system.insert(key, value);
@@ -70,6 +79,10 @@ pub fn start_blackboard() {
                             board.devices.insert(key, value);
                         }
                     }
+                }
+                Ok(BlackboardCommand::BlackboardBlob { tag, blob }) => {
+                    println!("Received blob: {}", tag);
+                    board.blobs.insert(tag, blob);
                 }
                 Err(_) => break,
             }
