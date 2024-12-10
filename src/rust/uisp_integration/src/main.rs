@@ -37,6 +37,12 @@ fn check_enabled_status(config: &Config) -> Result<(), UispIntegrationError> {
 }
 
 pub async fn blackboard(subsystem: BlackboardSystem, key: &str, value: &str) {
+    let Ok(config) = lqos_config::load_config() else {
+        return;
+    };
+    if !config.long_term_stats.use_insight.unwrap_or(false) {
+        return;
+    }
     let req = vec![
         lqos_bus::BusRequest::BlackboardData {
             subsystem,
@@ -49,6 +55,10 @@ pub async fn blackboard(subsystem: BlackboardSystem, key: &str, value: &str) {
 
 pub async fn blackboard_blob<T: Serialize>(key: &str, value: T) -> anyhow::Result<()>
 {
+    let config = lqos_config::load_config()?;
+    if !config.long_term_stats.use_insight.unwrap_or(false) {
+        return Ok(());
+    }
     let blob = serde_cbor::to_vec(&value)?;
     let chunks = blob.chunks(1024*16);
     info!("Blob {key} is {} bytes long, split into {} chunks", blob.len(), chunks.len());
