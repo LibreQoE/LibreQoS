@@ -6,7 +6,8 @@ use serde::Serialize;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::{error, info, warn};
+use crate::blackboard_blob;
 
 /// Represents a shaped device in the ShapedDevices.csv file.
 #[derive(Serialize, Debug)]
@@ -54,23 +55,14 @@ pub async fn build_flat_network(
         UispIntegrationError::UispConnectError
     })?;
 
-    if let Ok(sites_bin) = serde_json::to_vec(&sites) {
-        let _ = lqos_bus::bus_request(vec![lqos_bus::BusRequest::BlackboardBlob {
-            tag: "uisp_sites".to_string(),
-            blob: sites_bin,
-        }]).await;
+    if let Err(e) = blackboard_blob("uisp_sites", &sites).await {
+        warn!("Unable to write sites to blackboard: {e:?}");
     }
-    if let Ok(devices_bin) = serde_json::to_vec(&devices) {
-        let _ = lqos_bus::bus_request(vec![lqos_bus::BusRequest::BlackboardBlob {
-            tag: "uisp_devices".to_string(),
-            blob: devices_bin,
-        }]).await;
+    if let Err(e) = blackboard_blob("uisp_devices", &devices).await {
+        warn!("Unable to write devices to blackboard: {e:?}");
     }
-    if let Ok(data_links_bin) = serde_json::to_vec(&data_links) {
-        let _ = lqos_bus::bus_request(vec![lqos_bus::BusRequest::BlackboardBlob {
-            tag: "uisp_data_links".to_string(),
-            blob: data_links_bin,
-        }]).await;
+    if let Err(e) = blackboard_blob("uisp_data_links", &data_links).await {
+        warn!("Unable to write data links to blackboard: {e:?}");
     }
 
     // Create a {} network.json

@@ -397,10 +397,11 @@ fn handle_bus_requests(
         }
         BusResponse::Ack
       }
-      BusRequest::BlackboardBlob { tag, blob } => {
+      BusRequest::BlackboardBlob { tag, part, blob } => {
         if let Some(sender) = BLACKBOARD_SENDER.get() {
             let _ = sender.send(BlackboardCommand::BlackboardBlob {
               tag: tag.to_string(),
+              part: *part,
               blob: blob.clone()
             });
         }

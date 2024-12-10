@@ -16,6 +16,7 @@ pub enum BlackboardCommand {
     },
     BlackboardBlob {
         tag: String,
+        part: usize,
         blob: Vec<u8>,
     },
 }
@@ -65,7 +66,7 @@ pub fn start_blackboard() {
                     board.blobs.clear();
                 }
                 Ok(BlackboardCommand::BlackboardData { subsystem, key, value }) => {
-                    println!("Received data: {} = {}", key, value);
+                    info!("Received data: {} = {}", key, value);
                     match subsystem {
                         BlackboardSystem::System => {
                             board.system.insert(key, value);
@@ -81,9 +82,14 @@ pub fn start_blackboard() {
                         }
                     }
                 }
-                Ok(BlackboardCommand::BlackboardBlob { tag, blob }) => {
-                    println!("Received blob: {}", tag);
-                    board.blobs.insert(tag, blob);
+                Ok(BlackboardCommand::BlackboardBlob { tag, part, blob }) => {
+                    info!("Received blob: {tag}, part {part}");
+                    // If it is the first one, insert it. Otherwise, append it
+                    if part == 0 {
+                        board.blobs.insert(tag, blob);
+                    } else {
+                        board.blobs.get_mut(&tag).unwrap().extend_from_slice(&blob);
+                    }
                 }
                 Err(_) => break,
             }

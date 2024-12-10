@@ -14,6 +14,7 @@ mod zero_capacity_sites;
 mod mikrotik;
 
 use std::sync::Arc;
+use tracing::warn;
 use lqos_bus::BlackboardSystem;
 use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
@@ -34,7 +35,7 @@ use crate::strategies::full::utils::{print_sites, warn_of_no_parents_and_promote
 use crate::strategies::full::zero_capacity_sites::correct_zero_capacity_sites;
 use crate::uisp_types::{UispSite, UispSiteType};
 use lqos_config::Config;
-use crate::blackboard;
+use crate::{blackboard, blackboard_blob};
 
 /// Attempt to construct a full hierarchy topology for the UISP network.
 /// This function will load the UISP data, parse it into a more usable format,
@@ -62,23 +63,14 @@ pub async fn build_full_network(
     // Obtain the UISP data and transform it into easier to work with types
     let (sites_raw, devices_raw, data_links_raw) = load_uisp_data(config.clone()).await?;
 
-    if let Ok(sites_bin) = serde_json::to_vec(&sites_raw) {
-        let _ = lqos_bus::bus_request(vec![lqos_bus::BusRequest::BlackboardBlob {
-            tag: "uisp_sites".to_string(),
-            blob: sites_bin,
-        }]).await;
+    if let Err(e) = blackboard_blob("uisp_sites", &sites_raw).await {
+        warn!("Unable to write sites to blackboard: {e:?}");
     }
-    if let Ok(devices_bin) = serde_json::to_vec(&devices_raw) {
-        let _ = lqos_bus::bus_request(vec![lqos_bus::BusRequest::BlackboardBlob {
-            tag: "uisp_devices".to_string(),
-            blob: devices_bin,
-        }]).await;
+    if let Err(e) = blackboard_blob("uisp_devices", &devices_raw).await {
+        warn!("Unable to write devices to blackboard: {e:?}");
     }
-    if let Ok(data_links_bin) = serde_json::to_vec(&data_links_raw) {
-        let _ = lqos_bus::bus_request(vec![lqos_bus::BusRequest::BlackboardBlob {
-            tag: "uisp_data_links".to_string(),
-            blob: data_links_bin,
-        }]).await;
+    if let Err(e) = blackboard_blob("uisp_data_links", &data_links_raw).await {
+        warn!("Unable to write data links to blackboard: {e:?}");
     }
 
     // If Mikrotik is enabled, we need to fetch the Mikrotik data
