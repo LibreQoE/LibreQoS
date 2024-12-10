@@ -1,7 +1,7 @@
 import {clearDiv, clientTableHeader, formatLastSeen, simpleRow, simpleRowHtml, theading} from "./helpers/builders";
 import {
     formatCakeStat,
-    formatRetransmit,
+    formatRetransmit, formatRetransmitRaw,
     formatRtt,
     formatThroughput,
 } from "./helpers/scaling";
@@ -166,7 +166,7 @@ function buildRow(i, depth=0) {
     col = document.createElement("td");
     col.id = "re-xmit-down-" + nodeId;
     if (node.current_retransmits[0] !== undefined) {
-        col.innerHTML = formatRetransmit(node.current_retransmits[0]);
+        col.innerHTML = formatRetransmitRaw(node.current_retransmits[0]);
     } else {
         col.textContent = "-";
     }
@@ -175,7 +175,7 @@ function buildRow(i, depth=0) {
     col = document.createElement("td");
     col.id = "re-xmit-up-" + nodeId;
     if (node.current_retransmits[1] !== undefined) {
-        col.innerHTML = formatRetransmit(node.current_retransmits[1]);
+        col.innerHTML = formatRetransmitRaw(node.current_retransmits[1]);
     } else {
         col.textContent = "-";
     }
@@ -249,7 +249,7 @@ function treeUpdate(msg) {
         col = document.getElementById("re-xmit-down-" + nodeId);
         if (col !== null) {
             if (node.current_retransmits[0] !== undefined) {
-                col.innerHTML = formatRetransmit(node.current_retransmits[0]);
+                col.innerHTML = formatRetransmitRaw(node.current_retransmits[0]);
             } else {
                 col.textContent = "-";
             }
@@ -257,7 +257,7 @@ function treeUpdate(msg) {
         col = document.getElementById("re-xmit-up-" + nodeId);
         if (col !== null) {
             if (node.current_retransmits[1] !== undefined) {
-                col.innerHTML = formatRetransmit(node.current_retransmits[1]);
+                col.innerHTML = formatRetransmitRaw(node.current_retransmits[1]);
             } else {
                 col.textContent = "-";
             }

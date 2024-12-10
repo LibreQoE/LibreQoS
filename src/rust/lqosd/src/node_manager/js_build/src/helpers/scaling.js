@@ -66,6 +66,13 @@ export function formatRetransmit(retransmits) {
     return "<span class='muted' style='color: " + color + "'>■</span>" + retransmits.toFixed(1) + "%</span>";
 }
 
+export function formatRetransmitRaw(retransmits) {
+    retransmits *= 100;
+    let percent = Math.min(100, retransmits);
+    let color = lerpColor([0, 255, 0], [255, 0, 0], percent);
+    return "<span class='muted' style='color: " + color + "'>■</span>" + retransmits.toFixed(0) + "</span>";
+}
+
 export function formatCakeStat(n) {
     let percent = Math.min(100, n) / 100;
     let color = lerpColor([128, 128, 0], [255, 255, 255], percent);
