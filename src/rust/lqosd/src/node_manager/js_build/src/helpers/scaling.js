@@ -24,9 +24,9 @@ export function lerpGreenToRedViaOrange(value, max) {
     let b = 0;
     if (value < max / 2) {
         r = 255;
-        g = Math.floor(255 * value / (max / 2));
+        g = 255 - Math.floor(255 * (value / (max / 2)));
     } else {
-        r = Math.floor(255 * (max - value) / (max / 2));
+        r = Math.floor(255 * ((max - value) / (max / 2)));
         g = 255;
     }
     return `rgb(${r}, ${g}, ${b})`;

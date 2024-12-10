@@ -51,6 +51,10 @@ export class TopNSankey extends DashboardGraph {
         nodes.push({
             name: "Root",
             label: "Root",
+            itemStyle: {
+                color: "green",
+                borderWidth: 1,
+            }
         });
 
         this.nodeMap = {};
@@ -63,16 +67,17 @@ export class TopNSankey extends DashboardGraph {
             };
             if (isRedacted()) label.fontFamily = "Illegible";
 
-            let name = r.ip_address+ " (" + scaleNumber(r.bits_per_second.down, 0) + ", " + r.tcp_retransmits[0].toFixed(1) + "/" + r.tcp_retransmits[1].toFixed(1) + ")";
+            let name = r.ip_address+ " (" + scaleNumber(r.bits_per_second.down * 8.0, 0) + "bps/s)";
             let bytes = r.bits_per_second.down / 8;
             let bytesAsMegabits = bytes / 1000000;
             let maxBytes = r.plan.down / 8;
             let percent = Math.min(100, (bytesAsMegabits / maxBytes) * 100);
             let capacityColor = lerpGreenToRedViaOrange(100 - percent, 100);
 
-            let rttColor = lerpGreenToRedViaOrange(200 - r.median_tcp_rtt, 200);
+            let rtt = Math.max(Math.min(r.median_tcp_rtt, 200), 0);
+            let rttColor = lerpGreenToRedViaOrange(200 - rtt, 200);
 
-            let percentRxmit = Math.min(100, r.tcp_retransmits.down + r.tcp_retransmits.up) / 100;
+            let percentRxmit = Math.min(100, r.tcp_retransmits[0] + r.tcp_retransmits[1]) / 100;
             let rxmitColor = lerpColor([0, 255, 0], [255, 0, 0], percentRxmit);
 
             nodes.push({
