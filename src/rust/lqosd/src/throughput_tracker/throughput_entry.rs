@@ -1,17 +1,25 @@
+use allocative_derive::Allocative;
 use lqos_bus::TcHandle;
 use lqos_utils::units::DownUpOrder;
 use super::flow_data::RttData;
 
-#[derive(Debug)]
+#[derive(Debug, Allocative)]
 pub(crate) struct ThroughputEntry {
   pub(crate) circuit_id: Option<String>,
+  pub(crate) circuit_hash: Option<i64>,
   pub(crate) network_json_parents: Option<Vec<usize>>,
   pub(crate) first_cycle: u64,
   pub(crate) most_recent_cycle: u64,
   pub(crate) bytes: DownUpOrder<u64>, // 0 DL, 1 UL
   pub(crate) packets: DownUpOrder<u64>, // 0 DL, 1 UL
+  pub(crate) tcp_packets: DownUpOrder<u64>, // 0 DL, 1 UL
+  pub(crate) udp_packets: DownUpOrder<u64>, // 0 DL, 1 UL
+  pub(crate) icmp_packets: DownUpOrder<u64>, // 0 DL, 1 UL
   pub(crate) prev_bytes: DownUpOrder<u64>, // Has to mirror
   pub(crate) prev_packets: DownUpOrder<u64>,
+  pub(crate) prev_tcp_packets: DownUpOrder<u64>,
+  pub(crate) prev_udp_packets: DownUpOrder<u64>,
+  pub(crate) prev_icmp_packets: DownUpOrder<u64>,
   pub(crate) bytes_per_second: DownUpOrder<u64>,
   pub(crate) packets_per_second: DownUpOrder<u64>,
   pub(crate) tc_handle: TcHandle,

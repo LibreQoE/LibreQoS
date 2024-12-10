@@ -1,9 +1,4 @@
 import {BaseDashlet} from "./base_dashlet";
-import {
-    scaleNumber,
-    lerpGreenToRedViaOrange, lerpColor
-} from "../helpers/scaling";
-import {DashboardGraph} from "../graphs/dashboard_graph";
 import {TopNSankey} from "../graphs/top_n_sankey";
 
 export class Top10DownloadersVisual extends BaseDashlet {

@@ -39,7 +39,8 @@ fn zero_total_queue_stats() {
 
 #[derive(Debug)]
 pub struct AllQueueData {
-    data: Mutex<HashMap<String, QueueData>>,
+    // Map is keyed on circuit hash (which is a hash of circuit_id)
+    data: Mutex<HashMap<i64, QueueData>>,
 }
 
 impl AllQueueData {
@@ -67,8 +68,8 @@ impl AllQueueData {
 
         // Make download markings
         for dl in download.into_iter() {
-            seen_queue_ids.push(dl.circuit_id.clone());
-            if let Some(q) = lock.get_mut(&dl.circuit_id) {
+            if let Some(q) = lock.get_mut(&dl.circuit_hash) {
+                seen_queue_ids.push(dl.circuit_hash.clone());
                 // We need to update it
                 q.drops.down = dl.drops;
                 q.marks.down = dl.marks;
@@ -82,14 +83,14 @@ impl AllQueueData {
                 };
                 new_record.drops.down = dl.drops;
                 new_record.marks.down = dl.marks;
-                lock.insert(dl.circuit_id.clone(), new_record);
+                lock.insert(dl.circuit_hash, new_record);
             }
         }
 
         // Make upload markings
         for ul in upload.into_iter() {
-            seen_queue_ids.push(ul.circuit_id.clone());
-            if let Some(q) = lock.get_mut(&ul.circuit_id) {
+            if let Some(q) = lock.get_mut(&ul.circuit_hash) {
+                seen_queue_ids.push(ul.circuit_hash.clone());
                 // We need to update it
                 q.drops.up = ul.drops;
                 q.marks.up = ul.marks;
@@ -103,7 +104,7 @@ impl AllQueueData {
                 };
                 new_record.drops.up = ul.drops;
                 new_record.marks.up = ul.marks;
-                lock.insert(ul.circuit_id.clone(), new_record);
+                lock.insert(ul.circuit_hash, new_record);
             }
         }
 
@@ -111,7 +112,7 @@ impl AllQueueData {
         lock.retain(|k, _| seen_queue_ids.contains(k));
     }
 
-    pub fn iterate_queues(&self, mut f: impl FnMut(&str, &DownUpOrder<u64>, &DownUpOrder<u64>)) {
+    pub fn iterate_queues(&self, mut f: impl FnMut(i64, &DownUpOrder<u64>, &DownUpOrder<u64>)) {
         let lock = self.data.lock().unwrap();
         for (circuit_id, q) in lock.iter() {
             if let Some(prev_drops) = q.prev_drops {
@@ -119,7 +120,7 @@ impl AllQueueData {
                     if q.drops > prev_drops || q.marks > prev_marks {
                         let drops = q.drops.checked_sub_or_zero(prev_drops);
                         let marks = q.marks.checked_sub_or_zero(prev_marks);
-                        f(circuit_id, &drops, &marks);
+                        f(*circuit_id, &drops, &marks);
                     }
                 }
             }

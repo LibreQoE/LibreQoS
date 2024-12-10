@@ -50,7 +50,9 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
                         return trimStringWithElipsis(params.name.replace("(Generated Site) ", ""), 14);
                     }
                 };
-                if (redact) label.backgroundColor = label.color;
+                if (redact) {
+                    label.fontFamily = "Illegible";
+                }
 
                 nodes.push({
                     name: head[i][1].name,
@@ -66,7 +68,7 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
                     links.push({
                         source: head[immediateParent][1].name,
                         target: head[i][1].name,
-                        value: head[i][1].current_throughput[0],
+                        value: Math.min(1, head[i][1].current_throughput[0]),
                         lineStyle: {
                             color: capacityColor,
                         },
@@ -130,6 +132,9 @@ class AllTreeSankey extends DashboardGraph {
                 {
                     nodeAlign: 'left',
                     type: 'sankey',
+                    labelLayout: {
+                        moveOverlap: 'shiftx',
+                    },
                     data: [],
                     links: []
                 }

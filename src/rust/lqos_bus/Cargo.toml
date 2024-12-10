@@ -20,6 +20,10 @@ tracing = { workspace = true }
 nix = { workspace = true }
 serde_cbor = { workspace = true }
 
+# For memory debugging
+allocative = {  version = "0.3.3", features = [ "dashmap" ] }
+allocative_derive = "0.3.3"
+
 [dev-dependencies]
 criterion = { version = "0", features = [ "html_reports", "async_tokio"] }
 

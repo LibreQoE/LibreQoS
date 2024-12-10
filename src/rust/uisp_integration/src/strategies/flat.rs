@@ -6,7 +6,8 @@ use serde::Serialize;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::{error, info, warn};
+use crate::blackboard_blob;
 
 /// Represents a shaped device in the ShapedDevices.csv file.
 #[derive(Serialize, Debug)]
@@ -48,6 +49,21 @@ pub async fn build_flat_network(
         error!("{e:?}");
         UispIntegrationError::UispConnectError
     })?;
+    let data_links = uisp::load_all_data_links(config.clone()).await.map_err(|e| {
+        error!("Unable to load device list from UISP");
+        error!("{e:?}");
+        UispIntegrationError::UispConnectError
+    })?;
+
+    if let Err(e) = blackboard_blob("uisp_sites", &sites).await {
+        warn!("Unable to write sites to blackboard: {e:?}");
+    }
+    if let Err(e) = blackboard_blob("uisp_devices", &devices).await {
+        warn!("Unable to write devices to blackboard: {e:?}");
+    }
+    if let Err(e) = blackboard_blob("uisp_data_links", &data_links).await {
+        warn!("Unable to write data links to blackboard: {e:?}");
+    }
 
     // Create a {} network.json
     let net_json_path = Path::new(&config.lqos_directory).join("network.json");

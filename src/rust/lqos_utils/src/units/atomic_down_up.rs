@@ -4,6 +4,7 @@
 
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::Relaxed;
+use allocative_derive::Allocative;
 use crate::units::DownUpOrder;
 
 /// AtomicDownUp is a struct that contains two atomic u64 values, one for down and one for up.
@@ -12,7 +13,7 @@ use crate::units::DownUpOrder;
 ///
 /// Note that unlike the DownUpOrder struct, it is not intended for direct serialization, and
 /// is not generic.
-#[derive(Debug)]
+#[derive(Debug, Allocative)]
 pub struct AtomicDownUp {
     down: AtomicU64,
     up: AtomicU64,
@@ -36,29 +37,15 @@ impl AtomicDownUp {
     /// Add a tuple of u64 values to the down and up values. The addition
     /// is checked, and will not occur if it would result in an overflow.
     pub fn checked_add_tuple(&self, n: (u64, u64)) {
-        let n0 = self.down.load(std::sync::atomic::Ordering::Relaxed);
-        if let Some(n) = n0.checked_add(n.0) {
-            self.down.store(n, std::sync::atomic::Ordering::Relaxed);
-        }
-
-        let n1 = self.up.load(std::sync::atomic::Ordering::Relaxed);
-        if let Some(n) = n1.checked_add(n.1) {
-            self.up.store(n, std::sync::atomic::Ordering::Relaxed);
-        }
+        let _ = self.down.fetch_update(Relaxed, Relaxed, |x| x.checked_add(n.0));
+        let _ = self.up.fetch_update(Relaxed, Relaxed, |x| x.checked_add(n.1));
     }
 
     /// Add a DownUpOrder to the down and up values. The addition
     /// is checked, and will not occur if it would result in an overflow.
     pub fn checked_add(&self, n: DownUpOrder<u64>) {
-        let n0 = self.down.load(std::sync::atomic::Ordering::Relaxed);
-        if let Some(n) = n0.checked_add(n.down) {
-            self.down.store(n, std::sync::atomic::Ordering::Relaxed);
-        }
-
-        let n1 = self.up.load(std::sync::atomic::Ordering::Relaxed);
-        if let Some(n) = n1.checked_add(n.up) {
-            self.up.store(n, std::sync::atomic::Ordering::Relaxed);
-        }
+        let _ = self.down.fetch_update(Relaxed, Relaxed, |x| x.checked_add(n.down));
+        let _ = self.up.fetch_update(Relaxed, Relaxed, |x| x.checked_add(n.up));
     }
 
     /// Get the down value.

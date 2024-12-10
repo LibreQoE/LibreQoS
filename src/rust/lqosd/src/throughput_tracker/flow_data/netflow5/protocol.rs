@@ -2,7 +2,7 @@
 
 use std::net::IpAddr;
 use lqos_sys::flowbee_data::FlowbeeKey;
-use lqos_utils::unix_time::time_since_boot;
+use lqos_utils::unix_time::{time_since_boot, unix_now};
 use nix::sys::time::TimeValLike;
 
 use crate::throughput_tracker::flow_data::FlowbeeLocalData;
@@ -25,12 +25,13 @@ impl Netflow5Header {
     /// Create a new Netflow 5 header
     pub(crate) fn new(flow_sequence: u32, num_records: u16) -> Self {
         let uptime = time_since_boot().unwrap();
+        let unix_secs = unix_now().unwrap_or(0);
 
         Self {
             version: (5u16).to_be(),
             count: num_records.to_be(),
             sys_uptime: (uptime.num_milliseconds() as u32).to_be(),
-            unix_secs: (uptime.num_seconds() as u32).to_be(),
+            unix_secs: (unix_secs as u32).to_be(),
             unix_nsecs: 0,
             flow_sequence,
             engine_type: 0,
@@ -74,10 +75,10 @@ pub(crate) fn to_netflow_5(key: &FlowbeeKey, data: &FlowbeeLocalData) -> anyhow:
         let src_ip = u32::from_ne_bytes(local.octets());
         let dst_ip = u32::from_ne_bytes(remote.octets());
         // Convert d_pkts to network order
-        let d_pkts = (data.packets_sent.down as u32).to_be();
-        let d_octets = (data.bytes_sent.down as u32).to_be();
-        let d_pkts2 = (data.packets_sent.up as u32).to_be();
-        let d_octets2 = (data.bytes_sent.up as u32).to_be();
+        let d_pkts2 = (data.packets_sent.down as u32).to_be();
+        let d_octets2 = (data.bytes_sent.down as u32).to_be();
+        let d_pkts = (data.packets_sent.up as u32).to_be();
+        let d_octets = (data.bytes_sent.up as u32).to_be();
 
         let record = Netflow5Record {
             src_addr: src_ip,

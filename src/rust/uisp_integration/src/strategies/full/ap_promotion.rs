@@ -2,7 +2,9 @@ use crate::uisp_types::{UispDevice, UispSite, UispSiteType};
 use lqos_config::Config;
 use std::collections::HashSet;
 use tracing::info;
+use lqos_bus::{BlackboardSystem, BusRequest};
 use uisp::{DataLink, Device, Site};
+use crate::blackboard;
 
 /// Finds access points that are connected to other sites and promotes them to their own site.
 /// This is useful for sites that have multiple APs, but are currently represented as a single site.
@@ -14,7 +16,7 @@ use uisp::{DataLink, Device, Site};
 /// * `sites_raw` - The list of sites
 /// * `devices` - The list of devices with their speeds
 /// * `config` - The configuration
-pub fn promote_access_points(
+pub async fn promote_access_points(
     sites: &mut Vec<UispSite>,
     devices_raw: &[Device],
     data_links_raw: &[DataLink],
@@ -32,6 +34,7 @@ pub fn promote_access_points(
     info!("Detected {} intra-site links", all_links.len());
 
     // Insert AP entries
+    let mut blackboard_notes = Vec::new();
     for link in all_links {
         // Create the new AP site
         let parent_site_id = sites.iter().position(|s| s.id == link.site_id).unwrap();
@@ -57,6 +60,11 @@ pub fn promote_access_points(
             max_down_mbps = sites[parent_site_id].max_down_mbps;
         }
 
+        blackboard_notes.push(BusRequest::BlackboardData {
+            subsystem: BlackboardSystem::Site,
+            key: format!("UISP-SiteDevice={}", &link.device_name),
+            value: link.device_id.clone(),
+        });
         let mut new_site = UispSite {
             id: link.device_id,
             name: link.device_name,
@@ -78,4 +86,5 @@ pub fn promote_access_points(
             }
         });
     }
+    let _ = lqos_bus::bus_request(blackboard_notes).await;
 }

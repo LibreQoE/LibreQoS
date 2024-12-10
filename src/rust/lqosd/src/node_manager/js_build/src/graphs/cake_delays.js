@@ -1,5 +1,4 @@
 import {DashboardGraph} from "./dashboard_graph";
-import {scaleNumber} from "../helpers/scaling";
 
 export class CakeDelays extends DashboardGraph {
     constructor(id) {

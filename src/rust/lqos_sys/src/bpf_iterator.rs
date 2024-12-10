@@ -251,19 +251,18 @@ pub fn iterate_flows(
 // Arguments: the list of flow keys to expire
 pub fn end_flows(flows: &mut [FlowbeeKey]) -> anyhow::Result<()> {
   let mut map = BpfMap::<FlowbeeKey, FlowbeeData>::from_path("/sys/fs/bpf/flowbee")?;
+  let mut keys = flows.iter().map(|k| k.clone()).collect();
 
-  for flow in flows {
-    map.delete(flow)?;
-  }
+  map.clear_bulk_keys(&mut keys)?;
 
   Ok(())
 }
 
-pub(crate) fn expire_throughput(keys: &mut [XdpIpAddress]) -> anyhow::Result<()> {
+/// Expire all throughput data for the given keys
+/// This uses the bulk delete method, which is faster than
+/// the per-row method due to only having one lock.
+pub fn expire_throughput(mut keys: Vec<XdpIpAddress>) -> anyhow::Result<()> {
   let mut map = BpfMap::<XdpIpAddress, HostCounter>::from_path("/sys/fs/bpf/map_traffic")?;
-
-  for key in keys {
-      map.delete(key).unwrap();
-  }
+  map.clear_bulk_keys(&mut keys)?;
   Ok(())
 }

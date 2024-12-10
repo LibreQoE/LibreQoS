@@ -116,7 +116,9 @@ impl ConfigShapedDevices {
   pub fn replace_with_new_data(&mut self, devices: Vec<ShapedDevice>) {
     self.devices = devices;
     debug!("{:?}", self.devices);
-    self.trie = ConfigShapedDevices::make_trie(&self.devices);
+    let mut new_trie = ConfigShapedDevices::make_trie(&self.devices);
+    std::mem::swap(&mut self.trie, &mut new_trie);
+    std::mem::drop(new_trie); // Explicitly drop the old trie
   }
 
   fn make_trie(
@@ -179,6 +181,21 @@ impl ConfigShapedDevices {
     if let Some(c) = self.trie.longest_match(lookup) {
       let device = &self.devices[*c.1];
       return Some((device.circuit_id.clone(), device.circuit_name.clone()));
+    }
+
+    None
+  }
+
+  /// Helper function to search for an XdpIpAddress and return a circuit id and name
+  /// if they exist.
+  pub fn get_circuit_hash_from_ip(&self, ip: &XdpIpAddress) -> Option<i64> {
+    let lookup = match ip.as_ip() {
+      IpAddr::V4(ip) => ip.to_ipv6_mapped(),
+      IpAddr::V6(ip) => ip,
+    };
+    if let Some(c) = self.trie.longest_match(lookup) {
+      let device = &self.devices[*c.1];
+      return Some(device.circuit_hash);
     }
 
     None

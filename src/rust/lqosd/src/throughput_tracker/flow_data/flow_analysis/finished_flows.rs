@@ -1,22 +1,27 @@
 use super::{get_asn_lat_lon, get_asn_name_and_country, FlowAnalysis, get_asn_name_by_id};
-use crate::throughput_tracker::flow_data::{FlowbeeLocalData, FlowbeeRecipient};
+use crate::throughput_tracker::flow_data::FlowbeeLocalData;
 use fxhash::FxHashMap;
 use lqos_bus::BusResponse;
 use lqos_sys::flowbee_data::FlowbeeKey;
 use once_cell::sync::Lazy;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::time::Duration;
+use allocative_derive::Allocative;
+use crossbeam_channel::Sender;
 use itertools::Itertools;
 use serde::Serialize;
 use tracing::debug;
+use lqos_config::load_config;
 use lqos_utils::units::DownUpOrder;
-use lqos_utils::unix_time::unix_now;
+use lqos_utils::unix_time::{boot_time_nanos_to_unix_now, unix_now};
+use crate::shaped_devices_tracker::SHAPED_DEVICES;
 
+#[derive(Allocative)]
 pub struct TimeBuffer {
     buffer: Mutex<Vec<TimeEntry>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Allocative)]
 struct TimeEntry {
     time: u64,
     data: (FlowbeeKey, FlowbeeLocalData, FlowAnalysis),
@@ -60,6 +65,7 @@ impl TimeBuffer {
             let one_minute_ago = now - 60;
             let mut buffer = self.buffer.lock().unwrap();
             buffer.retain(|v| v.time > one_minute_ago);
+            buffer.shrink_to_fit();
         }
     }
 
@@ -84,7 +90,7 @@ impl TimeBuffer {
         // Sort by lat/lon
         my_buffer.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
-        // Depuplicate
+        // Deduplicate
         my_buffer.dedup();
 
         my_buffer
@@ -428,32 +434,75 @@ pub static RECENT_FLOWS: Lazy<TimeBuffer> = Lazy::new(|| TimeBuffer::new());
 pub struct FinishedFlowAnalysis {}
 
 impl FinishedFlowAnalysis {
-    pub fn new() -> Arc<Self> {
+    pub fn new() -> Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))> {
         debug!("Created Flow Analysis Endpoint");
+        let (tx, rx) = crossbeam_channel::bounded::<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>(65535);
 
-        let _ = std::thread::Builder::new().name("Flow Endpoint".to_string()).spawn(|| loop {
+        let _ = std::thread::Builder::new().name("Flow Expiration".to_string()).spawn(|| loop {
             RECENT_FLOWS.expire_over_one_minutes();
             std::thread::sleep(std::time::Duration::from_secs(60));
         });
+        let _ = std::thread::Builder::new().name("Flow Analysis".to_string()).spawn(move || {
+            while let Ok((key, (data, analysis))) = rx.recv() {
+                enqueue(key, data, analysis);
+            }
+            tracing::error!("Flow Analysis thread died");
+        });
 
-        Arc::new(Self {})
+        tx
     }
 }
 
-impl FlowbeeRecipient for FinishedFlowAnalysis {
-    fn enqueue(&self, key: FlowbeeKey, mut data: FlowbeeLocalData, analysis: FlowAnalysis) {
-        debug!("Finished flow analysis");
-        let one_way = data.bytes_sent.down == 0 || data.bytes_sent.up == 0;
-        if !one_way {
-            data.trim(); // Remove the trailing 30 seconds of zeroes
-            RECENT_FLOWS.push(TimeEntry {
-                time: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs(),
-                data: (key, data, analysis),
-            });
-        }
-        // TODO: Log failed connection attempts in some useful manner
+fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
+    debug!("Finished flow analysis");
+    let start_time = boot_time_nanos_to_unix_now(data.start_time).unwrap_or(0);
+    let last_seen = boot_time_nanos_to_unix_now(data.last_seen).unwrap_or(0);
+
+    let one_way = data.bytes_sent.down == 0 || data.bytes_sent.up == 0;
+    let sd = SHAPED_DEVICES.load();
+    let circuit_hash = sd.get_circuit_hash_from_ip(&key.local_ip);
+
+    if !one_way {
+        //data.trim(); // Remove the trailing 30 seconds of zeroes
+        //let tp_buf_dn = data.throughput_buffer.iter().map(|v| v.down).collect();
+        //let tp_buf_up = data.throughput_buffer.iter().map(|v| v.up).collect();
+        lts2_sys::two_way_flow(
+            start_time,
+            last_seen,
+            key.local_ip.as_ip(),
+            key.remote_ip.as_ip(),
+            key.ip_protocol,
+            key.dst_port,
+            key.src_port,
+            data.bytes_sent.down,
+            data.bytes_sent.up,
+            data.retry_times_down.iter().map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64).collect(),
+            data.retry_times_up.iter().map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64).collect(),
+            data.rtt[0].as_micros() as f32,
+            data.rtt[1].as_micros() as f32,
+            circuit_hash,
+        );
+        RECENT_FLOWS.push(TimeEntry {
+            time: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            data: (key, data, analysis),
+        });
+    } else {
+        // We have a one-way flow!
+        let Ok(config) = load_config() else { return; };
+        if !config.long_term_stats.gather_stats { return; }
+        lts2_sys::one_way_flow(
+            start_time,
+            last_seen,
+            key.local_ip.as_ip(),
+            key.remote_ip.as_ip(),
+            key.ip_protocol,
+            key.dst_port,
+            key.src_port,
+            data.bytes_sent.sum(),
+            circuit_hash,
+        );
     }
 }

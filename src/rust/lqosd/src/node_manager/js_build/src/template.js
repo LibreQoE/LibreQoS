@@ -25,26 +25,6 @@ function initLogout() {
     });
 }
 
-function titleAndLts() {
-    $.get("/local-api/ltsCheck", (data) => {
-        // Set the title
-        if (data.node_name !== null) {
-            document.title = data.node_name + " - LibreQoS Node Manager";
-        }
-
-        if (data.action !== "GoodToGo") {
-            let element = document.getElementById("lnkStats");
-            element.innerHTML = "<i class=\"fa fa-line-chart nav-icon\"></i> Statistics - Free Trial";
-            element.classList.add("text-success");
-            element.href = "https://stats.libreqos.io/trial1/" + encodeURI(data.node_id);
-        } else {
-            let element = document.getElementById("lnkStats");
-            element.innerHTML = "<i class=\"fa fa-line-chart nav-icon\"></i> Statistics";
-            element.href = "https://stats.libreqos.io/";
-        }
-    });
-}
-
 function doSearch(search) {
     if (search.length > 2) {
         $.ajax({
@@ -114,6 +94,5 @@ initLogout();
 initDayNightMode();
 initRedact();
 getDeviceCounts();
-titleAndLts();
 setupSearch();
 setupReload();

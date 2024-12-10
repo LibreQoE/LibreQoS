@@ -98,7 +98,7 @@ impl FileWatcher {
     }
 
     // Build the watcher
-    let (tx, rx) = std::sync::mpsc::channel();
+    let (tx, rx) = crossbeam_channel::bounded(32);
     let watcher = notify::RecommendedWatcher::new(tx, Config::default());
     if watcher.is_err() {
       error!("Unable to create watcher for ShapedDevices.csv");

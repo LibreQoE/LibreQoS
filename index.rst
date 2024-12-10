@@ -45,25 +45,18 @@ Welcome to the LibreQoS documentation!
 
 .. toctree::
    :maxdepth: 1
-   :caption: v1.5:
+   :caption: v2.0:
 
-   docs/v1.5/Quickstart/quickstart-libreqos-1.5
-   docs/v1.5/Quickstart/quickstart-prereq
-   docs/v1.5/Quickstart/configuration
-   docs/v1.5/Quickstart/services-and-run
-   docs/v1.5/Quickstart/share
+   docs/v2.0/Quickstart/quickstart-libreqos-2.0
+   docs/v2.0/Quickstart/quickstart-prereq
+   docs/v2.0/Quickstart/configuration
+   docs/v2.0/Quickstart/services-and-run
+   docs/v2.0/Quickstart/share
 
-   docs/v1.5/Updates/update
+   docs/v2.0/Updates/update
 
-   docs/v1.5/TechnicalDocs/complex-install
-   docs/v1.5/TechnicalDocs/troubleshooting
-   docs/v1.5/TechnicalDocs/integrations
-   docs/v1.5/TechnicalDocs/extras
-   docs/v1.5/TechnicalDocs/performance-tuning
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Legacy:
-
-   docs/Legacy/v1.3.1
-
+   docs/v2.0/TechnicalDocs/complex-install
+   docs/v2.0/TechnicalDocs/troubleshooting
+   docs/v2.0/TechnicalDocs/integrations
+   docs/v2.0/TechnicalDocs/extras
+   docs/v2.0/TechnicalDocs/performance-tuning

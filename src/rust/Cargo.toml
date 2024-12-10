@@ -6,7 +6,7 @@ license = "GPL-2.0-only"
 
 [profile.release]
 strip = "debuginfo"
-lto = "thin"
+lto = "off"
 incremental = true
 
 [profile.release.build-override]
@@ -35,6 +35,7 @@ members = [
     "uisp", # REST support for the UISP API
     "uisp_integration", # UISP Integration in Rust
     "lqos_support_tool", # A Helper tool to make it easier to request/receive support
+    "lts2_sys", # Linkage to the proprietary LTS2 system
 ]
 
 [dependencies]
@@ -57,7 +58,7 @@ ip_network_table = "0"
 ip_network = "0"
 sha2 = "0"
 uuid = { version = "1", features = ["v4", "fast-rng" ] }
-dashmap = "5.1.0"
+dashmap = "^5.5.3"
 toml = "0.8.8"
 zerocopy = {version = "0.8.5", features = [ "derive", "zerocopy-derive", "simd" ] }
 sysinfo = { version = "0", default-features = false, features = [ "system" ] }

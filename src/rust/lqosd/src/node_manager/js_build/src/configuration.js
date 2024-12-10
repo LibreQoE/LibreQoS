@@ -279,12 +279,35 @@ function validateConfig() {
                     $("#" + target.field).addClass("invalid");
                 }
             }
-        } else if (target.data === "integer" || target.data === "float") {
+        } else if (target.data === "integer") {
             let newValue = $("#" + target.field).val();
             newValue = parseInt(newValue);
             if (isNaN(newValue)) {
                 valid = false;
                 errors.push(target.path + " must be an integer number.");
+                $("#" + target.field).addClass("invalid");
+            } else {
+                if (target.min != null) {
+                    if (newValue < target.min) {
+                        valid = false;
+                        errors.push(target.path + " must be between " + target.min + " and " + target.max + ".");
+                        $("#" + target.field).addClass("invalid");
+                    }
+                }
+                if (target.max != null) {
+                    if (newValue > target.max) {
+                        valid = false;
+                        errors.push(target.path + " must be between " + target.min + " and " + target.max + ".");
+                        $("#" + target.field).addClass("invalid");
+                    }
+                }
+            }
+        } else if (target.data === "float") {
+            let newValue = $("#" + target.field).val();
+            newValue = parseFloat(newValue);
+            if (isNaN(newValue)) {
+                valid = false;
+                errors.push(target.path + " must be a decimal number.");
                 $("#" + target.field).addClass("invalid");
             } else {
                 if (target.min != null) {
@@ -713,15 +736,9 @@ function checkIpv4(ip) {
 }
 
 function checkIpv6(ip) {
-    const ipv6Pattern =
-        /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$/;
-
-    if (ip.indexOf('/') === -1) {
-        return ipv6Pattern.test(ip);
-    } else {
-        let parts = ip.split('/');
-        return ipv6Pattern.test(parts[0]);
-    }
+    // Check if the input is a valid IPv6 address with prefix
+    const regex = /^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))(\/([0-9]{1,3}))?$/;
+    return regex.test(ip);
 }
 
 function checkIpv4Duplicate(ip, index) {

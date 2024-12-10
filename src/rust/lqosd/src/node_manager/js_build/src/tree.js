@@ -4,8 +4,8 @@ import {
     formatRetransmit,
     formatRtt,
     formatThroughput,
-    scaleNumber
 } from "./helpers/scaling";
+import {scaleNumber} from "./lq_js_common/helpers/scaling";
 import {subscribeWS} from "./pubsub/ws";
 
 var tree = null;

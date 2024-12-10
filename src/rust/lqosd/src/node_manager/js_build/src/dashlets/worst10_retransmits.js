@@ -1,12 +1,11 @@
 import {BaseDashlet} from "./base_dashlet";
-import {RttHistogram} from "../graphs/rtt_histo";
-import {clearDashDiv, theading, TopNTableFromMsgData, topNTableHeader, topNTableRow} from "../helpers/builders";
-import {scaleNumber, rttCircleSpan, formatRtt, formatThroughput} from "../helpers/scaling";
-import {redactCell} from "../helpers/redact";
+import {clearDashDiv, TopNTableFromMsgData} from "../helpers/builders";
+import {TimedCache} from "../lq_js_common/helpers/timed_cache";
 
 export class Worst10Retransmits extends BaseDashlet {
     constructor(slot) {
         super(slot);
+        this.timeCache = new TimedCache(10);
     }
 
     canBeSlowedDown() {
@@ -40,7 +39,19 @@ export class Worst10Retransmits extends BaseDashlet {
         if (msg.event === "WorstRetransmits") {
             let target = document.getElementById(this.id);
 
-            let t = TopNTableFromMsgData(msg);
+            msg.data.forEach((r) => {
+                let key = r.circuit_id;
+                this.timeCache.addOrUpdate(key, r);
+            });
+            this.timeCache.tick();
+
+            let items = this.timeCache.get();
+            items.sort((a, b) => {
+                return a.tcp_retransmits.down - b.tcp_retransmits.down;
+            });
+            // Limit to 10 entries
+            items = items.slice(0, 10);
+            let t = TopNTableFromMsgData(items);
 
             // Display it
             clearDashDiv(this.id, target);

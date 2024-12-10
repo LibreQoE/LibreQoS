@@ -27,7 +27,7 @@ pub struct IpStats {
     pub tc_handle: TcHandle,
 
     /// TCP Retransmits for this host at the current time.
-    pub tcp_retransmits: DownUpOrder<u64>,
+    pub tcp_retransmits: (f64, f64),
 }
 
 /// Represents an IP Mapping in the XDP IP to TC/CPU mapping system.

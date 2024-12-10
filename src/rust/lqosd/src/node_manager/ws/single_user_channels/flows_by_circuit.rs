@@ -16,7 +16,7 @@ fn recent_flows_by_circuit(circuit_id: &str) -> Vec<(FlowbeeKeyTransit, FlowbeeL
         let five_minutes_ago = now_as_nanos - FIVE_MINUTES_AS_NANOS;
 
         if let Ok(all_flows) = ALL_FLOWS.lock() {
-            let result: Vec<(FlowbeeKeyTransit, FlowbeeLocalData, FlowAnalysis)> = all_flows
+            let result: Vec<(FlowbeeKeyTransit, FlowbeeLocalData, FlowAnalysis)> = all_flows.flow_data
                 .iter()
                 .filter_map(|(key, (local, analysis))| {
                     // Don't show older flows

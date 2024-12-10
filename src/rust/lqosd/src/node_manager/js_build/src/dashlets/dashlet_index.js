@@ -25,6 +25,9 @@ import {Top10DownloadersVisual} from "./top10_downloads_graphic";
 import {Worst10DownloadersVisual} from "./worst10_downloaders_graphic";
 import {Worst10RetransmitsVisual} from "./worst10_retransmits_graphic";
 import {FlowDurationDash} from "./flow_durations_dash";
+import {LtsShaperStatus} from "./ltsShaperStatus";
+import {LtsLast24Hours} from "./ltsLast24Hours";
+import {TcpRetransmitsDash} from "./total_retransmits";
 
 export const DashletMenu = [
     { name: "Throughput Bits/Second", tag: "throughputBps", size: 3 },
@@ -50,10 +53,13 @@ export const DashletMenu = [
     { name: "Network Tree Summary", tag: "treeSummary", size: 6 },
     { name: "Combined Top 10 Box", tag: "combinedTop10", size: 6 },
     { name: "Total Cake Stats", tag: "totalCakeStats", size: 3 },
+    { name: "Total TCP Retransmits", tag: "totalRetransmits", size: 3 },
     { name: "Circuits At Capacity", tag: "circuitCapacity", size: 6 },
     { name: "Tree Nodes At Capacity", tag: "treeCapacity", size: 6 },
     { name: "Network Tree Sankey", tag: "networkTreeSankey", size: 6 },
     { name: "Round-Trip Time Histogram 3D", tag: "rttHistogram3D", size: 12 },
+    { name: "(Insight) Shaper Status", tag: "ltsShaperStatus", size: 3 },
+    { name: "(Insight) Last 24 Hours", tag: "ltsLast24", size: 3}
 ];
 
 export function widgetFactory(widgetName, count) {
@@ -83,9 +89,12 @@ export function widgetFactory(widgetName, count) {
         case "treeSummary"      : widget = new TopTreeSummary(count); break;
         case "combinedTop10"    : widget = new CombinedTopDashlet(count); break;
         case "totalCakeStats"   : widget = new QueueStatsTotalDash(count); break;
+        case "totalRetransmits" : widget = new TcpRetransmitsDash(count); break;
         case "circuitCapacity"  : widget = new CircuitCapacityDash(count); break;
         case "treeCapacity"     : widget = new TreeCapacityDash(count); break;
         case "networkTreeSankey": widget = new TopTreeSankey(count); break;
+        case "ltsShaperStatus"  : widget = new LtsShaperStatus(count); break;
+        case "ltsLast24"        : widget = new LtsLast24Hours(count); break;
         default: {
             console.log("I don't know how to construct a widget of type [" + widgetName + "]");
             return null;

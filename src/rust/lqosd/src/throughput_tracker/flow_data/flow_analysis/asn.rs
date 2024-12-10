@@ -64,19 +64,38 @@ impl GeoTable {
     fn download() -> anyhow::Result<()> {
         tracing::warn!("Downloading ASN-IP Table");
         let file_path = Self::file_path();
-        let url = "https://stats.libreqos.io/geo2.bin";
+        let url = "https://insight.libreqos.com/geo2.bin";
         let response = reqwest::blocking::get(url)?;
         let content = response.bytes()?;
         let bytes = &content[0..];
         std::fs::write(file_path, bytes)?;
+        tracing::info!("Downloaded geo2.bin");
         Ok(())
+    }
+
+    fn is_file_uptodate() -> anyhow::Result<bool> {
+        let bytes = std::fs::read(&Self::file_path())?;  // Vec<u8>
+        let hash = sha256::digest(&bytes);
+
+        // Using blocking reqwest, retrieve the checksum as a string from https://insight.libreqos.com/geo/checksum
+        let checksum = reqwest::blocking::get("https://insight.libreqos.com/geo/checksum")?.text()?;
+        if checksum == hash {
+            return Ok(true)
+        }
+
+        Ok(false)
     }
 
     pub fn load() -> anyhow::Result<Self> {
         let path = Self::file_path();
         if !path.exists() {
-            info!("geo.bin not found - trying to download it");
+            info!("geo2.bin not found - trying to download it");
             Self::download()?;
+        } else {
+            if !Self::is_file_uptodate().unwrap_or(true) {
+                info!("geo2.bin is outdated - trying to download it");
+                Self::download()?;
+            }
         }
 
         // Decompress and deserialize

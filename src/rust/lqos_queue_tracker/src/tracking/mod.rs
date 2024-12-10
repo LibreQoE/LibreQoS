@@ -3,7 +3,7 @@ use crate::{
   circuit_to_queue::CIRCUIT_TO_QUEUE, interval::QUEUE_MONITOR_INTERVAL,
   queue_store::QueueStore, tracking::reader::read_named_queue_from_interface,
 };
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 use lqos_utils::fdtimer::periodic;
 mod reader;
 mod watched_queues;
@@ -66,13 +66,13 @@ fn track_queues() {
               QueueStore::new(download[0].clone(), upload[0].clone()),
             );
           } else {
-            info!(
+            debug!(
               "No queue data returned for {}, {}/{} found.",
               circuit_id.to_string(),
               download.len(),
               upload.len()
             );
-            info!("You probably want to run LibreQoS.py");
+            debug!("You probably want to run LibreQoS.py");
           }
         }
       }
@@ -84,7 +84,7 @@ fn track_queues() {
 
 /// Holds the CAKE marks/drops for a given queue/circuit.
 pub struct TrackedQueue {
-  circuit_id: String,
+  circuit_hash: i64,
   drops: u64,
   marks: u64,
 }
@@ -96,11 +96,11 @@ fn connect_queues_to_circuit(structure: &[QueueNode], queues: &[QueueType]) -> V
         if let QueueType::Cake(cake) = q {
           let (major, minor) = cake.parent.get_major_minor();
           if let Some (s) = structure.iter().find(|s| s.class_major == major as u32 && s.class_minor == minor as u32) {
-            if let Some(circuit_id) = &s.circuit_id {
+            if let Some(circuit_hash) = &s.circuit_hash {
               let marks: u32 = cake.tins.iter().map(|tin| tin.ecn_marks).sum();
               if cake.drops > 0 || marks > 0 {
                 return Some(TrackedQueue {
-                  circuit_id: circuit_id.clone(),
+                  circuit_hash: *circuit_hash,
                   drops: cake.drops as u64,
                   marks: marks as u64,
                 })
@@ -120,11 +120,11 @@ fn connect_queues_to_circuit_up(structure: &[QueueNode], queues: &[QueueType]) -
         if let QueueType::Cake(cake) = q {
           let (major, minor) = cake.parent.get_major_minor();
           if let Some (s) = structure.iter().find(|s| s.up_class_major == major as u32 && s.class_minor == minor as u32) {
-            if let Some(circuit_id) = &s.circuit_id {
+            if let Some(circuit_hash) = &s.circuit_hash {
               let marks: u32 = cake.tins.iter().map(|tin| tin.ecn_marks).sum();
               if cake.drops > 0 || marks > 0 {
                 return Some(TrackedQueue {
-                  circuit_id: circuit_id.clone(),
+                  circuit_hash: *circuit_hash,
                   drops: cake.drops as u64,
                   marks: marks as u64,
                 })

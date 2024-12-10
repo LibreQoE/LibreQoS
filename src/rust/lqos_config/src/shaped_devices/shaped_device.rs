@@ -2,7 +2,7 @@ use csv::StringRecord;
 use tracing::error;
 use serde::{Deserialize, Serialize};
 use std::net::{Ipv4Addr, Ipv6Addr};
-
+use lqos_utils::hash_to_i64;
 use super::ShapedDevicesError;
 
 /// Represents a row in the `ShapedDevices.csv` file.
@@ -55,6 +55,18 @@ pub struct ShapedDevice {
 
   /// Generic comments field, does nothing.
   pub comment: String,
+
+  /// Hash of the circuit ID, used for internal lookups.
+  #[serde(skip)]
+  pub circuit_hash: i64,
+
+  /// Hash of the device ID, used for internal lookups.
+  #[serde(skip)]
+  pub device_hash: i64,
+
+  /// Hash of the parent node, used for internal lookups.
+  #[serde(skip)]
+  pub parent_hash: i64,
 }
 
 impl ShapedDevice {
@@ -83,6 +95,9 @@ impl ShapedDevice {
         ShapedDevicesError::CsvEntryParseError(record[11].to_string())
       })?,
       comment: record[12].to_string(),
+      circuit_hash: hash_to_i64(&record[0]),
+      device_hash: hash_to_i64(&record[2]),
+      parent_hash: hash_to_i64(&record[4]),
     })
   }
 

@@ -1,5 +1,5 @@
 import {DashboardGraph} from "./dashboard_graph";
-import {scaleNumber} from "../helpers/scaling";
+import {scaleNumber} from "../lq_js_common/helpers/scaling";
 
 const RING_SIZE = 60 * 5; // 5 Minutes
 

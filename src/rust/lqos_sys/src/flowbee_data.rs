@@ -1,11 +1,12 @@
 //! Data structures for the Flowbee eBPF program.
 
+use allocative_derive::Allocative;
 use lqos_utils::XdpIpAddress;
 use zerocopy::FromBytes;
 use lqos_utils::units::DownUpOrder;
 
 /// Representation of the eBPF `flow_key_t` type.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, FromBytes)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, FromBytes, Allocative)]
 #[repr(C)]
 pub struct FlowbeeKey {
     /// Mapped `XdpIpAddress` source for the flow.

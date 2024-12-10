@@ -2,12 +2,13 @@ use std::fmt::Display;
 use byteorder::{BigEndian, ByteOrder};
 use zerocopy::FromBytes;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use allocative_derive::Allocative;
 
 /// XdpIpAddress provides helpful conversion between the XDP program's
 /// native storage of IP addresses in `[u8; 16]` blocks of bytes and
 /// Rust `IpAddr` types.
 #[repr(C)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, FromBytes)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, FromBytes, Allocative)]
 pub struct XdpIpAddress(pub [u8; 16]);
 
 impl Default for XdpIpAddress {

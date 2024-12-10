@@ -97,7 +97,7 @@ pub async fn flow_duration(
     }
 
     let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
-    let request = BusRequest::IpProtocolSummary;
+    let request = BusRequest::FlowDuration;
     bus_tx.send((tx, request)).await.expect("Failed to send request to bus");
     let replies = rx.await.expect("Failed to receive throughput from bus");
     for reply in replies.responses.into_iter() {

@@ -1,5 +1,5 @@
 import {DashboardGraph} from "./dashboard_graph";
-import {scaleNumber} from "../helpers/scaling";
+import {scaleNumber} from "../lq_js_common/helpers/scaling";
 
 export class BitsPerSecondGauge extends DashboardGraph {
     constructor(id) {

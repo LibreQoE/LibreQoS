@@ -1,7 +1,9 @@
 import {BaseDashlet} from "./base_dashlet";
 import {clearDashDiv, theading} from "../helpers/builders";
-import {scaleNumber, formatRetransmit, rttNanosAsSpan} from "../helpers/scaling";
+import {scaleNumber} from "../lq_js_common/helpers/scaling";
 import {RttCache} from "../helpers/rtt_cache";
+import {formatRetransmit, rttNanosAsSpan} from "../helpers/scaling";
+import {TrimToFit} from "../lq_js_common/helpers/text_utils";
 
 export class Top10FlowsBytes extends BaseDashlet {
     constructor(slot) {
@@ -65,7 +67,7 @@ export class Top10FlowsBytes extends BaseDashlet {
                     let circuit = document.createElement("td");
                     let link = document.createElement("a");
                     link.href = "circuit.html?id=" + encodeURI(r.circuit_id);
-                    link.innerText = r.circuit_name;
+                    link.innerText = TrimToFit(r.circuit_name);
                     link.classList.add("redactable");
                     circuit.appendChild(link);
                     row.appendChild(circuit);
@@ -108,11 +110,11 @@ export class Top10FlowsBytes extends BaseDashlet {
                 row.appendChild(rttU);
 
                 let tcp1 = document.createElement("td");
-                tcp1.innerHTML = formatRetransmit(r.tcp_retransmits.down);
+                tcp1.innerHTML = formatRetransmit(r.tcp_retransmits.down / r.packets_sent.down);
                 row.appendChild(tcp1);
 
                 let tcp2 = document.createElement("td");
-                tcp2.innerHTML = formatRetransmit(r.tcp_retransmits.up);
+                tcp2.innerHTML = formatRetransmit(r.tcp_retransmits.up / r.packets_sent.up);
                 row.appendChild(tcp2);
 
                 let asn = document.createElement("td");

@@ -23,7 +23,7 @@ pub async fn spawn_webserver(
     // TODO: port change is temporary
     let listener = TcpListener::bind(":::9123").await?;
 
-    // Check that static content is available and setup the path
+    // Check that static content is available and set up the path
     let config = load_config()?;
     let static_path = Path::new(&config.lqos_directory)
         .join("bin")

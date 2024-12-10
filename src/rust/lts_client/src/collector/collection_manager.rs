@@ -36,7 +36,7 @@ pub fn start_long_term_stats() -> Sender<StatsUpdateMessage> {
     let (update_tx, update_rx): (Sender<StatsUpdateMessage>, Receiver<StatsUpdateMessage>) =
         mpsc::channel(102400);
     let (comm_tx, comm_rx): (Sender<SenderChannelMessage>, Receiver<SenderChannelMessage>) =
-        mpsc::channel(10);
+        mpsc::channel(1024);
 
     let cloned_update_tx = update_tx.clone();
     let _ = std::thread::Builder::new().name("LTS1 Collector".to_string()).spawn(move || {

@@ -17,6 +17,24 @@ pub struct HostCounter {
   /// Upload packets counter (keeps incrementing)
   pub upload_packets: u64,
 
+  /// TCP packets downloaded
+  pub tcp_download_packets: u64,
+
+    /// TCP packets uploaded
+  pub tcp_upload_packets: u64,
+
+    /// UDP packets downloaded
+  pub udp_download_packets: u64,
+
+  /// UDP packets uploaded
+  pub udp_upload_packets: u64,
+
+  /// ICMP packets downloaded
+  pub icmp_download_packets: u64,
+
+  /// ICMP packets uploaded
+  pub icmp_upload_packets: u64,
+
   /// Mapped TC handle, 0 if there isn't one.
   pub tc_handle: u32,
 

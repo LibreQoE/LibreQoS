@@ -58,6 +58,12 @@ pub fn local_api() -> Router {
         .route("/countryTimeline/:iso_code", get(flow_explorer::country_timeline))
         .route("/protocolTimeline/:protocol", get(flow_explorer::protocol_timeline))
         .route("/containerStatus", get(container_status::container_status))
+        .route("/ltsSignUp", post(lts::lts_trial_signup))
+        .route("/ltsShaperStatus", get(lts::shaper_status_from_lts))
+        .route("/lts24", get(lts::last_24_hours))
+        .route("/ltsThroughput/:seconds", get(lts::throughput_period))
+        .route("/ltsRetransmits/:seconds", get(lts::retransmits_period))
+        .route("/ltsCake/:seconds", get(lts::cake_period))
         .layer(CorsLayer::very_permissive())
         .route_layer(axum::middleware::from_fn(auth_layer))
 }

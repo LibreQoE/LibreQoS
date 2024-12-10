@@ -1,29 +1,5 @@
-export function scaleNumber(n, fixed=2) {
-    if (n >= 1000000000000) {
-        return (n / 1000000000000).toFixed(fixed) + "T";
-    } else if (n >= 1000000000) {
-        return (n / 1000000000).toFixed(fixed) + "G";
-    } else if (n >= 1000000) {
-        return (n / 1000000).toFixed(fixed) + "M";
-    } else if (n >= 1000) {
-        return (n / 1000).toFixed(fixed) + "K";
-    }
-    return n;
-}
-
-export function scaleNanos(n, precision=2) {
-    if (n === 0) return "-";
-    if (n > 60000000000) {
-        return (n / 60000000000).toFixed(precision) + "m";
-    }else if (n > 1000000000) {
-        return (n / 1000000000).toFixed(precision) + "s";
-    } else if (n > 1000000) {
-        return (n / 1000000).toFixed(precision) + "ms";
-    } else if (n > 1000) {
-        return (n / 1000).toFixed(precision) + "µs";
-    }
-    return n + "ns";
-}
+import {scaleNumber} from "../lq_js_common/helpers/scaling";
+import {scaleNanos} from "../lq_js_common/helpers/scaling";
 
 export function colorRamp(n) {
     if (n <= 100) {
@@ -48,9 +24,9 @@ export function lerpGreenToRedViaOrange(value, max) {
     let b = 0;
     if (value < max / 2) {
         r = 255;
-        g = Math.floor(255 * value / (max / 2));
+        g = 255 - Math.floor(255 * (value / (max / 2)));
     } else {
-        r = Math.floor(255 * (max - value) / (max / 2));
+        r = Math.floor(255 * ((max - value) / (max / 2)));
         g = 255;
     }
     return `rgb(${r}, ${g}, ${b})`;
@@ -84,9 +60,10 @@ export function formatRtt(rtt) {
 }
 
 export function formatRetransmit(retransmits) {
-    let percent = Math.min(100, retransmits) / 100;
+    retransmits *= 100;
+    let percent = Math.min(100, retransmits);
     let color = lerpColor([0, 255, 0], [255, 0, 0], percent);
-    return "<span class='muted' style='color: " + color + "'>■</span>" + retransmits + "</span>";
+    return "<span class='muted' style='color: " + color + "'>■</span>" + retransmits.toFixed(1) + "%</span>";
 }
 
 export function formatCakeStat(n) {

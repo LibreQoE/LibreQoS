@@ -5,9 +5,10 @@
 //! multipliers, divisors, etc. It is intended to become pervasive
 //! throughout the system.
 
+use allocative_derive::Allocative;
 use serde::Serialize;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Allocative)]
 pub struct RttData {
     nanoseconds: u64,
 }

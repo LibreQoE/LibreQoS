@@ -13,7 +13,6 @@ lqos_config = { path = "../lqos_config" }
 lqos_sys = { path = "../lqos_sys" }
 lqos_utils = { path = "../lqos_utils" }
 tracing = { workspace = true }
-tokio = { workspace = true }
 once_cell = { workspace = true}
 dashmap = { workspace = true }
 anyhow = { workspace = true }

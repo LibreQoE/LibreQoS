@@ -1,4 +1,5 @@
-import {formatRetransmit, formatRtt, formatThroughput, scaleNanos} from "./scaling";
+import {formatRetransmit, formatRtt, formatThroughput} from "./scaling";
+import {scaleNanos} from "../lq_js_common/helpers/scaling";
 import {redactCell} from "./redact";
 
 export function heading5Icon(icon, text) {
@@ -153,24 +154,24 @@ export function topNTableRow(r) {
     row.append(rtt);
 
     let tcp_xmit_down = document.createElement("td");
-    tcp_xmit_down.innerHTML = formatRetransmit(r.tcp_retransmits.down);
+    tcp_xmit_down.innerHTML = formatRetransmit(r.tcp_retransmits[0]);
     row.append(tcp_xmit_down);
 
     let tcp_xmit_up = document.createElement("td");
-    tcp_xmit_up.innerHTML = formatRetransmit(r.tcp_retransmits.up);
+    tcp_xmit_up.innerHTML = formatRetransmit(r.tcp_retransmits[1]);
     row.append(tcp_xmit_up);
 
     return row;
 }
 
-export function TopNTableFromMsgData(msg) {
+export function TopNTableFromMsgData(circuits) {
     let t = document.createElement("table");
     t.classList.add("table-sm", "dash-table");
 
     t.appendChild(topNTableHeader());
 
     let tbody = document.createElement("tbody");
-    msg.data.forEach((r) => {
+    circuits.forEach((r) => {
         t.appendChild(topNTableRow(r));
     });
     t.appendChild(tbody);

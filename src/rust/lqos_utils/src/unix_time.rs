@@ -3,7 +3,7 @@ use nix::{
   sys::time::TimeSpec,
   time::{clock_gettime, ClockId},
 };
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
 /// Retrieves the current time, in seconds since the UNIX epoch.
@@ -30,6 +30,16 @@ pub fn time_since_boot() -> Result<TimeSpec, TimeError> {
       Err(TimeError::ClockNotReady)
     }
   }
+}
+
+/// Convert a time in nanoseconds since boot to a UNIX timestamp.
+pub fn boot_time_nanos_to_unix_now(
+  start_time_nanos_since_boot: u64,
+) -> Result<u64, TimeError> {
+  let time_since_boot = time_since_boot()?;
+  let since_boot = Duration::from(time_since_boot);
+  let boot_time = unix_now().unwrap() - since_boot.as_secs();
+  Ok(boot_time + Duration::from_nanos(start_time_nanos_since_boot).as_secs())
 }
 
 /// Error type for time functions.

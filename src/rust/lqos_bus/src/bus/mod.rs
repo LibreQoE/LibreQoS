@@ -10,7 +10,7 @@ pub use client::bus_request;
 use tracing::error;
 pub use persistent_client::BusClient;
 pub use reply::BusReply;
-pub use request::{BusRequest, StatsRequest, TopFlowType};
+pub use request::{BusRequest, StatsRequest, TopFlowType, BlackboardSystem};
 pub use response::BusResponse;
 pub use session::BusSession;
 use thiserror::Error;

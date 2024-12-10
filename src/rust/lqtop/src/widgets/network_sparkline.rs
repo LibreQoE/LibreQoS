@@ -45,6 +45,7 @@ impl TopWidget for NetworkSparkline {
                 bits_per_second,
                 packets_per_second,
                 shaped_bits_per_second,
+                ..
             } = msg
             {
                 self.throughput.push(CurrentThroughput {

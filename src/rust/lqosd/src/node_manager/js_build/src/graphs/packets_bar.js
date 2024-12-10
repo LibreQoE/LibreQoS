@@ -1,5 +1,5 @@
 import {DashboardGraph} from "./dashboard_graph";
-import {scaleNumber} from "../helpers/scaling";
+import {scaleNumber} from "../lq_js_common/helpers/scaling";
 
 export class PacketsPerSecondBar extends DashboardGraph {
     constructor(id) {
@@ -16,23 +16,35 @@ export class PacketsPerSecondBar extends DashboardGraph {
             },
             yAxis: {
                 type: 'category',
-                data: ['UP', 'DN'],
+                data: ['TCP', 'UDP', 'ICMP', 'Other'],
             },
             series: [
                 {
                     type: 'bar',
-                    data: [0, 0],
+                    data: [0, 0, 0, 0],
+                },
+                {
+                    type: 'bar',
+                    data: [0, 0, 0, 0],
                 }
             ]
         }
         this.option && this.chart.setOption(this.option);
     }
 
-    update(down, up) {
+    update(down, up, tcp, udp, icmp) {
         this.chart.hideLoading();
         this.option.series[0].data = [
-            { value: up,  },
-            { value: down, }
+            tcp.down,
+            udp.down,
+            icmp.down,
+            Math.max(0, down - (tcp.down + udp.down + icmp.down)),
+        ];
+        this.option.series[1].data = [
+            tcp.up,
+            udp.up,
+            icmp.up,
+            Math.max(0, up - (tcp.up + udp.up + icmp.up)),
         ];
         this.chart.setOption(this.option);
     }

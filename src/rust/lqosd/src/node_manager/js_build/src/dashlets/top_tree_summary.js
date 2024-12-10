@@ -71,8 +71,16 @@ export class TopTreeSummary extends BaseDashlet {
                 row.appendChild(nameCol);
                 row.appendChild(simpleRowHtml(formatThroughput(r[1].current_throughput[0] * 8, r[1].max_throughput[0])));
                 row.appendChild(simpleRowHtml(formatThroughput(r[1].current_throughput[1] * 8, r[1].max_throughput[1])));
-                row.appendChild(simpleRowHtml(formatRetransmit(r[1].current_retransmits[0] )))
-                row.appendChild(simpleRowHtml(formatRetransmit(r[1].current_retransmits[1])))
+                if (r[1].current_tcp_packets[0] > 0) {
+                    row.appendChild(simpleRowHtml(formatRetransmit(r[1].current_retransmits[0] / r[1].current_tcp_packets[0])))
+                } else {
+                    row.appendChild(simpleRowHtml(""));
+                }
+                if (r[1].current_tcp_packets[1] > 0) {
+                    row.appendChild(simpleRowHtml(formatRetransmit(r[1].current_retransmits[1] / r[1].current_tcp_packets[1])))
+                } else {
+                    row.appendChild(simpleRowHtml(""));
+                }
                 row.appendChild(simpleRowHtml(formatCakeStat(r[1].current_marks[0])))
                 row.appendChild(simpleRowHtml(formatCakeStat(r[1].current_marks[1])))
                 row.appendChild(simpleRowHtml(formatCakeStat(r[1].current_drops[0])))

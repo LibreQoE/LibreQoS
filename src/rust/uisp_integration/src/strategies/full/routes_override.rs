@@ -1,12 +1,12 @@
 use crate::errors::UispIntegrationError;
 use csv::ReaderBuilder;
 use lqos_config::Config;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tracing::{error, info};
 
 /// Represents a route override in the integrationUISProutes.csv file.
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct RouteOverride {
     /// The site to override the route from.
     pub from_site: String,

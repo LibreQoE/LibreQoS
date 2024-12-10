@@ -303,4 +303,4 @@ def importFromSplynx():
 	createShaper()
 
 if __name__ == '__main__':
-    importFromSplynx()
+	importFromSplynx()

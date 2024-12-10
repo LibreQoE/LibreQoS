@@ -13,8 +13,15 @@ mod stats;
 mod preflight_checks;
 mod node_manager;
 mod system_stats;
+mod blackboard;
+mod remote_commands;
 
+#[cfg(feature = "flamegraphs")]
+use std::io::Write;
 use std::net::IpAddr;
+
+#[cfg(feature = "flamegraphs")]
+use allocative::Allocative;
 use crate::{
   file_lock::FileLock,
   ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow}, throughput_tracker::flow_data::{flowbee_handle_events, setup_netflow_tracker, FlowActor},
@@ -42,7 +49,14 @@ use crate::ip_mapping::clear_hot_cache;
 use mimalloc::MiMalloc;
 
 use tracing::level_filters::LevelFilter;
-
+use crate::blackboard::{BlackboardCommand, BLACKBOARD_SENDER};
+use crate::remote_commands::start_remote_commands;
+#[cfg(feature = "flamegraphs")]
+use crate::shaped_devices_tracker::NETWORK_JSON;
+#[cfg(feature = "flamegraphs")]
+use crate::throughput_tracker::flow_data::{ALL_FLOWS, RECENT_FLOWS};
+#[cfg(feature = "flamegraphs")]
+use crate::throughput_tracker::THROUGHPUT_TRACKER;
 // Use JemAllocator only on supported platforms
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[global_allocator]
@@ -130,7 +144,14 @@ fn main() -> Result<()> {
   };
 
   // Spawn tracking sub-systems
+  if let Err(e) = lts2_sys::start_lts2() {
+      error!("Failed to start Insight: {:?}", e);
+  } else {
+      info!("Insight client started successfully");
+  }
+  let _blackboard_tx = blackboard::start_blackboard();
   let long_term_stats_tx = start_long_term_stats();
+  start_remote_commands();
   let flow_tx = setup_netflow_tracker()?;
   let _ = throughput_tracker::flow_data::setup_flow_analysis();
   start_heimdall()?;
@@ -138,9 +159,9 @@ fn main() -> Result<()> {
   shaped_devices_tracker::shaped_devices_watcher()?;
   shaped_devices_tracker::network_json_watcher()?;
   anonymous_usage::start_anonymous_usage();
-  throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone(), flow_tx)?;
-  spawn_queue_monitor()?;
   let system_usage_tx = system_stats::start_system_stats()?;
+  throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone(), flow_tx, system_usage_tx.clone())?;
+  spawn_queue_monitor()?;
   lqos_sys::bpf_garbage_collector();
 
   // Handle signals
@@ -179,6 +200,9 @@ fn main() -> Result<()> {
   // Create the socket server
   let server = UnixSocketServer::new().expect("Unable to spawn server");
 
+  // Memory Debugging
+  memory_debug();
+
   let handle = std::thread::Builder::new().name("Async Bus/Web".to_string()).spawn(move || {
     tokio::runtime::Builder::new_current_thread()
     .enable_all()
@@ -206,6 +230,32 @@ fn main() -> Result<()> {
   warn!("Main thread exiting");
   Ok(())
 }
+
+#[cfg(feature = "flamegraphs")]
+fn memory_debug() {
+  std::thread::spawn(|| {
+    loop {
+      std::thread::sleep(std::time::Duration::from_secs(60));
+      let mut fb = allocative::FlameGraphBuilder::default();
+      fb.visit_global_roots();
+      fb.visit_root(&*THROUGHPUT_TRACKER);
+      fb.visit_root(&*ALL_FLOWS);
+      fb.visit_root(&*RECENT_FLOWS);
+      fb.visit_root(&*NETWORK_JSON);
+      let flamegraph_src = fb.finish();
+      let flamegraph_src = flamegraph_src.flamegraph();
+      let Ok(mut file) = std::fs::File::create("/tmp/lqosd-mem.svg") else {
+        error!("Unable to write flamegraph.");
+        continue;
+      };
+      file.write_all(flamegraph_src.write().as_bytes()).unwrap();
+      info!("Wrote flamegraph to /tmp/lqosd-mem.svg");
+    }
+  });
+}
+
+#[cfg(not(feature = "flamegraphs"))]
+fn memory_debug() {}
 
 fn handle_bus_requests(
   requests: &[BusRequest],
@@ -331,6 +381,32 @@ fn handle_bus_requests(
       BusRequest::EtherProtocolSummary => throughput_tracker::ether_protocol_summary(),
       BusRequest::IpProtocolSummary => throughput_tracker::ip_protocol_summary(),
       BusRequest::FlowDuration => throughput_tracker::flow_duration(),
+      BusRequest::BlackboardFinish => {
+        if let Some(sender) = BLACKBOARD_SENDER.get() {
+            let _ = sender.send(BlackboardCommand::FinishSession);
+        }
+        BusResponse::Ack
+      }
+      BusRequest::BlackboardData { subsystem, key, value } => {
+        if let Some(sender) = BLACKBOARD_SENDER.get() {
+            let _ = sender.send(BlackboardCommand::BlackboardData {
+              subsystem: subsystem.clone(),
+              key: key.to_string(),
+              value: value.to_string()
+            });
+        }
+        BusResponse::Ack
+      }
+      BusRequest::BlackboardBlob { tag, part, blob } => {
+        if let Some(sender) = BLACKBOARD_SENDER.get() {
+            let _ = sender.send(BlackboardCommand::BlackboardBlob {
+              tag: tag.to_string(),
+              part: *part,
+              blob: blob.clone()
+            });
+        }
+        BusResponse::Ack
+      }
     });
   }
 }

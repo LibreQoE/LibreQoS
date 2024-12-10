@@ -71,7 +71,7 @@ fn all_flows_to_transport(boot_time: u64, all_flows_for_asn: Vec<(FlowbeeKey, Fl
                 end: boot_time + Duration::from_nanos(flow.1.last_seen).as_secs(),
                 duration_nanos: flow.1.last_seen - flow.1.start_time,
                 tcp_retransmits: flow.1.tcp_retransmits.clone(),
-                throughput: flow.1.throughput_buffer.clone(),
+                throughput: vec![],
                 rtt: flow.1.rtt.clone(),
                 retransmit_times_down: flow.1.retry_times_down
                     .iter()

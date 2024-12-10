@@ -1,5 +1,6 @@
 import {DashboardGraph} from "./dashboard_graph";
-import {lerpColor, lerpGreenToRedViaOrange, scaleNumber} from "../helpers/scaling";
+import {lerpColor, lerpGreenToRedViaOrange} from "../helpers/scaling";
+import {scaleNumber} from "../lq_js_common/helpers/scaling";
 import {isRedacted} from "../helpers/redact";
 
 export class TopNSankey extends DashboardGraph {
@@ -50,6 +51,10 @@ export class TopNSankey extends DashboardGraph {
         nodes.push({
             name: "Root",
             label: "Root",
+            itemStyle: {
+                color: "green",
+                borderWidth: 1,
+            }
         });
 
         this.nodeMap = {};
@@ -60,18 +65,19 @@ export class TopNSankey extends DashboardGraph {
                 fontSize: 9,
                 color: "#999"
             };
-            if (isRedacted()) label.backgroundColor = label.color;
+            if (isRedacted()) label.fontFamily = "Illegible";
 
-            let name = r.ip_address+ " (" + scaleNumber(r.bits_per_second.down, 0) + ", " + r.tcp_retransmits.down + "/" + r.tcp_retransmits.up + ")";
+            let name = r.ip_address+ " (" + scaleNumber(r.bits_per_second.down, 0) + "bps)";
             let bytes = r.bits_per_second.down / 8;
             let bytesAsMegabits = bytes / 1000000;
             let maxBytes = r.plan.down / 8;
             let percent = Math.min(100, (bytesAsMegabits / maxBytes) * 100);
             let capacityColor = lerpGreenToRedViaOrange(100 - percent, 100);
 
-            let rttColor = lerpGreenToRedViaOrange(200 - r.median_tcp_rtt, 200);
+            let rtt = Math.max(Math.min(r.median_tcp_rtt, 200), 0);
+            let rttColor = lerpGreenToRedViaOrange(200 - rtt, 200);
 
-            let percentRxmit = Math.min(100, r.tcp_retransmits.down + r.tcp_retransmits.up) / 100;
+            let percentRxmit = Math.min(100, r.tcp_retransmits[0] + r.tcp_retransmits[1]) / 100;
             let rxmitColor = lerpColor([0, 255, 0], [255, 0, 0], percentRxmit);
 
             nodes.push({

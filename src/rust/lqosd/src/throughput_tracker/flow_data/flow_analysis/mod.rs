@@ -1,4 +1,5 @@
 use std::{net::IpAddr, sync::Mutex};
+use allocative_derive::Allocative;
 use lqos_sys::flowbee_data::FlowbeeKey;
 use once_cell::sync::Lazy;
 use serde::Serialize;
@@ -67,7 +68,7 @@ pub fn setup_flow_analysis() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Allocative)]
 pub struct FlowAnalysis {
     pub asn_id: AsnId,
     pub protocol_analysis: FlowProtocol,

@@ -47,10 +47,11 @@ body {
     font-size: 10pt;
     background-color: var(--bs-tertiary-bg);
     color: var(--bs-tertiary-color);
-    text-align: center;
+    text-align: left;
     margin: 0;
     font-variant: small-caps;
     font-weight: bold;
+    padding-left: 1em;
 }
 .dashgraph {
     width: 100%;
@@ -169,4 +170,17 @@ table tr td a {
 }
 .nav-pills .nav-link.active {
     background-color: var(--bs-tertiary-bg);
+}
+.dashlet-with-controls {
+    position: relative;
+}
+.dashgraph-controls {
+    position: absolute;
+    z-index: 100;
+    top: 0;
+    right: 0;
+}
+@font-face {
+    font-family: "Illegible";
+    src: url(glyphz.ttf) format("truetype");
 }

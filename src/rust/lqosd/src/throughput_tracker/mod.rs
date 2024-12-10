@@ -1,28 +1,30 @@
 pub mod flow_data;
 mod throughput_entry;
 mod tracking_data;
+mod stats_submission;
+
 use std::net::IpAddr;
 use fxhash::FxHashMap;
 use self::flow_data::{get_asn_name_and_country, FlowAnalysis, FlowbeeLocalData, ALL_FLOWS};
 use crate::{
-    long_term_stats::get_network_tree,
-    shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES, STATS_NEEDS_NEW_SHAPED_DEVICES},
+    shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES},
     stats::TIME_TO_POLL_HOSTS,
     throughput_tracker::tracking_data::ThroughputTracker,
 };
 use tracing::{debug, warn};
 use lqos_bus::{BusResponse, FlowbeeProtocol, IpStats, TcHandle, TopFlowType, XdpPpingResult};
 use lqos_sys::flowbee_data::FlowbeeKey;
-use lqos_utils::{unix_time::time_since_boot, XdpIpAddress};
-use lts_client::collector::{HostSummary, stats_availability::StatsUpdateMessage, ThroughputSummary};
+use lqos_utils::{hash_to_i64, unix_time::time_since_boot, XdpIpAddress};
+use lts_client::collector::stats_availability::StatsUpdateMessage;
 use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
 use tokio::{
     sync::mpsc::Sender,
     time::{Duration, Instant},
 };
-use lqos_config::load_config;
-use lqos_utils::units::DownUpOrder;
+use lqos_utils::units::{down_up_divide, DownUpOrder};
+use crate::system_stats::SystemStats;
 use crate::throughput_tracker::flow_data::RttData;
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
@@ -39,6 +41,7 @@ pub static THROUGHPUT_TRACKER: Lazy<ThroughputTracker> = Lazy::new(ThroughputTra
 pub fn spawn_throughput_monitor(
     long_term_stats_tx: Sender<StatsUpdateMessage>,
     netflow_sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
+    system_usage_actor: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
 ) -> anyhow::Result<()> {
     debug!("Starting the bandwidth monitor thread.");
     std::thread::Builder::new()
@@ -46,6 +49,7 @@ pub fn spawn_throughput_monitor(
     .spawn(|| {throughput_task(
         long_term_stats_tx,
         netflow_sender,
+        system_usage_actor,
     )})?;
 
     Ok(())
@@ -103,6 +107,7 @@ impl ThroughputTaskTimeMetrics {
 fn throughput_task(
     long_term_stats_tx: Sender<StatsUpdateMessage>,
     netflow_sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
+    system_usage_actor: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
 ) {
     // Obtain the flow timeout from the config, default to 30 seconds
     let timeout_seconds = if let Ok(config) = lqos_config::load_config() {
@@ -141,6 +146,9 @@ fn throughput_task(
     let mut tcp_retries: FxHashMap<XdpIpAddress, DownUpOrder<u64>> = FxHashMap::default();
     let mut expired_flows: Vec<FlowbeeKey> = Vec::new();
 
+    // Counter for occasional stats
+    let mut stats_counter = 0;
+
     loop {
         let start = Instant::now();
         timer_metrics.zero();
@@ -164,9 +172,15 @@ fn throughput_task(
                 &mut tcp_retries,
                 &mut expired_flows,
             );
+
+            // Clean up work tables
             rtt_circuit_tracker.clear();
             tcp_retries.clear();
             expired_flows.clear();
+            rtt_circuit_tracker.shrink_to_fit();
+            tcp_retries.shrink_to_fit();
+            expired_flows.shrink_to_fit();
+
             timer_metrics.apply_flow_data = timer_metrics.start.elapsed().as_secs_f64();
             THROUGHPUT_TRACKER.apply_queue_stats(&mut net_json_calc);
             timer_metrics.apply_queue_stats = timer_metrics.start.elapsed().as_secs_f64();
@@ -181,19 +195,25 @@ fn throughput_task(
         }
 
         if last_submitted_to_lts.is_none() {
-            submit_throughput_stats(long_term_stats_tx.clone(), 1.0);
+            stats_submission::submit_throughput_stats(long_term_stats_tx.clone(), 1.0, stats_counter, system_usage_actor.clone());
         } else {
             let elapsed = last_submitted_to_lts.unwrap().elapsed();
             let elapsed_f64 = elapsed.as_secs_f64();
             // Temporary: place this in a thread to not block the timer
             let my_lts_tx = long_term_stats_tx.clone();
-            std::thread::Builder::new().name("Throughput Stats Submit".to_string()).spawn(move || {
-                submit_throughput_stats(my_lts_tx, elapsed_f64);
-            }).unwrap().join().unwrap();
-            //submit_throughput_stats(long_term_stats_tx.clone(), elapsed_f64);
+            let my_system_usage_actor = system_usage_actor.clone();
+            // Submit if a reasonable amount of time has passed - drop if there was a long hitch
+            if elapsed_f64 < 2.0 {
+                std::thread::Builder::new().name("Throughput Stats Submit".to_string()).spawn(move || {
+                    stats_submission::submit_throughput_stats(my_lts_tx, elapsed_f64, stats_counter, my_system_usage_actor);
+                }).unwrap().join().unwrap();
+            }
         }
         last_submitted_to_lts = Some(Instant::now());
         timer_metrics.lts_submit = timer_metrics.start.elapsed().as_secs_f64();
+
+        // Counter for occasional stats
+        stats_counter = stats_counter.wrapping_add(1);
 
         // Sleep until the next second
         let missed_ticks = tfd.read();
@@ -204,128 +224,31 @@ fn throughput_task(
     }
 }
 
-fn scale_u64_by_f64(value: u64, scale: f64) -> u64 {
-    (value as f64 * scale) as u64
-}
-
-#[derive(Debug)]
-struct LtsSubmitMetrics {
-    start: Instant,
-    shaped_devices: f64,
-    total_throughput: f64,
-    hosts: f64,
-    summary: f64,
-    send: f64,
-}
-
-impl LtsSubmitMetrics {
-    fn new() -> Self {
-        Self {
-            start: Instant::now(),
-            shaped_devices: 0.0,
-            total_throughput: 0.0,
-            hosts: 0.0,
-            summary: 0.0,
-            send: 0.0,
-        }
-    }
-}
-
-fn submit_throughput_stats(long_term_stats_tx: Sender<StatsUpdateMessage>, scale: f64) {
-    let mut metrics = LtsSubmitMetrics::new();
-    // If ShapedDevices has changed, notify the stats thread
-    if let Ok(changed) = STATS_NEEDS_NEW_SHAPED_DEVICES.compare_exchange(
-        true,
-        false,
-        std::sync::atomic::Ordering::Relaxed,
-        std::sync::atomic::Ordering::Relaxed,
-    ) {
-        if changed {
-            let shaped_devices = SHAPED_DEVICES.load().devices.clone();
-            let _ = long_term_stats_tx
-                .blocking_send(StatsUpdateMessage::ShapedDevicesChanged(shaped_devices));
-        }
-    }
-    metrics.shaped_devices = metrics.start.elapsed().as_secs_f64();
-
-    // Gather Global Stats
-    let packets_per_second = (
-        THROUGHPUT_TRACKER
-            .packets_per_second.get_down(),
-        THROUGHPUT_TRACKER
-            .packets_per_second.get_up(),
-    );
-    let bits_per_second = THROUGHPUT_TRACKER.bits_per_second();
-    let shaped_bits_per_second = THROUGHPUT_TRACKER.shaped_bits_per_second();
-    metrics.total_throughput = metrics.start.elapsed().as_secs_f64();
-    
-    if let Ok(config) = load_config() {
-        if bits_per_second.down > (config.queues.downlink_bandwidth_mbps as u64 * 1_000_000) {
-            debug!("Spike detected - not submitting LTS");
-            return; // Do not submit these stats
-        }
-        if bits_per_second.up > (config.queues.uplink_bandwidth_mbps as u64 * 1_000_000) {
-            debug!("Spike detected - not submitting LTS");
-            return; // Do not submit these stats
-        }
-    }
-    
-    let hosts = THROUGHPUT_TRACKER
-        .raw_data
-        .iter()
-        //.filter(|host| host.median_latency().is_some())
-        .map(|host| HostSummary {
-            ip: host.key().as_ip(),
-            circuit_id: host.circuit_id.clone(),
-            bits_per_second: (scale_u64_by_f64(host.bytes_per_second.down * 8, scale), scale_u64_by_f64(host.bytes_per_second.up * 8, scale)),
-            median_rtt: host.median_latency().unwrap_or(0.0),
-        })
-        .collect();
-    metrics.hosts = metrics.start.elapsed().as_secs_f64();
-
-    let summary = Box::new((
-        ThroughputSummary {
-            bits_per_second: (scale_u64_by_f64(bits_per_second.down, scale), scale_u64_by_f64(bits_per_second.up, scale)),
-            shaped_bits_per_second: (scale_u64_by_f64(shaped_bits_per_second.down, scale), scale_u64_by_f64(shaped_bits_per_second.up, scale)),
-            packets_per_second,
-            hosts,
-        },
-        get_network_tree(),
-    ));
-    metrics.summary = metrics.start.elapsed().as_secs_f64();
-
-    // Send the stats
-    let result = long_term_stats_tx
-        .blocking_send(StatsUpdateMessage::ThroughputReady(summary));
-    if let Err(e) = result {
-        warn!("Error sending message to stats collection system. {e:?}");
-    }
-    metrics.send = metrics.start.elapsed().as_secs_f64();
-
-    if metrics.start.elapsed().as_secs_f64() > 1.0 {
-        warn!("{:?}", metrics);
-    }
-}
-
 pub fn current_throughput() -> BusResponse {
-    let (bits_per_second, packets_per_second, shaped_bits_per_second) = {
+    let (bits_per_second, packets_per_second, shaped_bits_per_second, tcp_pps, udp_pps, icmp_pps) = {
         (
             THROUGHPUT_TRACKER.bits_per_second(),
             THROUGHPUT_TRACKER.packets_per_second(),
             THROUGHPUT_TRACKER.shaped_bits_per_second(),
+            THROUGHPUT_TRACKER.tcp_packets_per_second(),
+            THROUGHPUT_TRACKER.udp_packets_per_second(),
+            THROUGHPUT_TRACKER.icmp_packets_per_second(),
         )
     };
     BusResponse::CurrentThroughput {
         bits_per_second,
         packets_per_second,
         shaped_bits_per_second,
+        tcp_packets_per_second: tcp_pps,
+        udp_packets_per_second: udp_pps,
+        icmp_packets_per_second: icmp_pps,
     }
 }
 
 pub fn host_counters() -> BusResponse {
     let mut result = Vec::new();
-    THROUGHPUT_TRACKER.raw_data.iter().for_each(|v| {
-        let ip = v.key().as_ip();
+    THROUGHPUT_TRACKER.raw_data.lock().unwrap().iter().for_each(|(k,v)| {
+        let ip = k.as_ip();
         result.push((ip, v.bytes_per_second));
     });
     BusResponse::HostCounters(result)
@@ -336,7 +259,7 @@ fn retire_check(cycle: u64, recent_cycle: u64) -> bool {
     cycle < recent_cycle + RETIRE_AFTER_SECONDS
 }
 
-type TopList = (XdpIpAddress, DownUpOrder<u64>,DownUpOrder<u64>, f32, TcHandle, String, DownUpOrder<u64>);
+type TopList = (XdpIpAddress, DownUpOrder<u64>,DownUpOrder<u64>, f32, TcHandle, String, (f64, f64));
 
 pub fn top_n(start: u32, end: u32) -> BusResponse {
     let mut full_list: Vec<TopList> = {
@@ -345,18 +268,20 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
             .load(std::sync::atomic::Ordering::Relaxed);
         THROUGHPUT_TRACKER
             .raw_data
+            .lock()
+            .unwrap()
             .iter()
-            .filter(|v| !v.key().as_ip().is_loopback())
-            .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
-            .map(|te| {
+            .filter(|(k,_v)| !k.as_ip().is_loopback())
+            .filter(|(_k,d)| retire_check(tp_cycle, d.most_recent_cycle))
+            .map(|(k,te)| {
                 (
-                    *te.key(),
+                    *k,
                     te.bytes_per_second,
                     te.packets_per_second,
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
                     te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
-                    te.tcp_retransmits,
+                    down_up_divide(te.tcp_retransmits, te.tcp_packets),
                 )
             })
             .collect()
@@ -396,19 +321,21 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
             .load(std::sync::atomic::Ordering::Relaxed);
         THROUGHPUT_TRACKER
             .raw_data
+            .lock()
+            .unwrap()
             .iter()
-            .filter(|v| !v.key().as_ip().is_loopback())
-            .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
-            .filter(|te| te.median_latency().is_some())
-            .map(|te| {
+            .filter(|(k,_v)| !k.as_ip().is_loopback())
+            .filter(|(_k,d)| retire_check(tp_cycle, d.most_recent_cycle))
+            .filter(|(_k,te)| te.median_latency().is_some())
+            .map(|(k,te)| {
                 (
-                    *te.key(),
+                    *k,
                     te.bytes_per_second,
                     te.packets_per_second,
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
                     te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
-                    te.tcp_retransmits,
+                    down_up_divide(te.tcp_retransmits, te.tcp_packets),
                 )
             })
             .collect()
@@ -448,27 +375,29 @@ pub fn worst_n_retransmits(start: u32, end: u32) -> BusResponse {
             .load(std::sync::atomic::Ordering::Relaxed);
         THROUGHPUT_TRACKER
             .raw_data
+            .lock()
+            .unwrap()
             .iter()
-            .filter(|v| !v.key().as_ip().is_loopback())
-            .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
-            .filter(|te| te.median_latency().is_some())
-            .map(|te| {
+            .filter(|(k,_v)| !k.as_ip().is_loopback())
+            .filter(|(_k,d)| retire_check(tp_cycle, d.most_recent_cycle))
+            .filter(|(_k,te)| te.median_latency().is_some())
+            .map(|(k,te)| {
                 (
-                    *te.key(),
+                    *k,
                     te.bytes_per_second,
                     te.packets_per_second,
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
                     te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
-                    te.tcp_retransmits,
+                    down_up_divide(te.tcp_retransmits, te.tcp_packets),
                 )
             })
             .collect()
     };
     full_list.sort_by(|a, b| {
-        let total_a = a.6.sum();
-        let total_b = b.6.sum();
-        total_b.cmp(&total_a)
+        let total_a = a.6.0 + a.6.1;
+        let total_b = b.6.0 + b.6.1;
+        total_b.partial_cmp(&total_a).unwrap()
     });
     let result = full_list
         .iter()
@@ -504,19 +433,21 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
             .load(std::sync::atomic::Ordering::Relaxed);
         THROUGHPUT_TRACKER
             .raw_data
+            .lock()
+            .unwrap()
             .iter()
-            .filter(|v| !v.key().as_ip().is_loopback())
-            .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
-            .filter(|te| te.median_latency().is_some())
-            .map(|te| {
+            .filter(|(k,_v)| !k.as_ip().is_loopback())
+            .filter(|(_k,d)| retire_check(tp_cycle, d.most_recent_cycle))
+            .filter(|(_k,te)| te.median_latency().is_some())
+            .map(|(k, te)| {
                 (
-                    *te.key(),
+                    *k,
                     te.bytes_per_second,
                     te.packets_per_second,
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
                     te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
-                    te.tcp_retransmits,
+                    down_up_divide(te.tcp_retransmits, te.tcp_packets),
                 )
             })
             .collect()
@@ -556,9 +487,11 @@ pub fn xdp_pping_compat() -> BusResponse {
         .load(std::sync::atomic::Ordering::Relaxed);
     let result = THROUGHPUT_TRACKER
         .raw_data
+        .lock()
+        .unwrap()
         .iter()
-        .filter(|d| retire_check(raw_cycle, d.most_recent_cycle))
-        .filter_map(|data| {
+        .filter(|(_k,d)| retire_check(raw_cycle, d.most_recent_cycle))
+        .filter_map(|(_k,data)| {
             if data.tc_handle.as_u32() > 0 {
                 let mut valid_samples: Vec<u32> = data
                     .recent_rtt_data
@@ -594,15 +527,93 @@ pub fn xdp_pping_compat() -> BusResponse {
     BusResponse::XdpPping(result)
 }
 
+pub struct MinMaxMedianRtt {
+    pub min: f32,
+    pub max: f32,
+    pub median: f32,
+}
+
+pub fn min_max_median_rtt() -> Option<MinMaxMedianRtt> {
+    let reader_cycle = THROUGHPUT_TRACKER
+        .cycle
+        .load(std::sync::atomic::Ordering::Relaxed);
+
+    // Put all valid RTT samples into a big buffer
+    let mut samples: Vec<f32> = Vec::new();
+
+    THROUGHPUT_TRACKER
+        .raw_data
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(_k,d)| retire_check(reader_cycle, d.most_recent_cycle))
+        .for_each(|(_k,d)| {
+            samples.extend(
+                d.recent_rtt_data
+                    .iter()
+                    .filter(|d| d.as_millis() > 0.0)
+                    .map(|d| d.as_millis() as f32)
+                    .collect::<Vec<f32>>()
+            );
+        });
+
+    if samples.is_empty() {
+        return None;
+    }
+
+    // Sort the buffer
+    samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+    let result = MinMaxMedianRtt {
+        min: samples[0] as f32,
+        max: samples[samples.len() - 1] as f32,
+        median: samples[samples.len() / 2] as f32,
+    };
+
+    Some(result)
+}
+
+#[derive(Serialize)]
+pub struct TcpRetransmitTotal {
+    pub up: i32,
+    pub down: i32,
+    pub tcp_up: u64,
+    pub tcp_down: u64,
+}
+
+pub fn min_max_median_tcp_retransmits() -> TcpRetransmitTotal {
+    let reader_cycle = THROUGHPUT_TRACKER
+        .cycle
+        .load(std::sync::atomic::Ordering::Relaxed);
+
+    let total_tcp = THROUGHPUT_TRACKER.tcp_packets_per_second();
+    let mut total = TcpRetransmitTotal { up: 0, down: 0, tcp_down: total_tcp.down, tcp_up: total_tcp.up };
+
+    THROUGHPUT_TRACKER
+        .raw_data
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(_k,d)| retire_check(reader_cycle, d.most_recent_cycle))
+        .for_each(|(_k,d)| {
+            total.up += d.tcp_retransmits.up as i32;
+            total.down += d.tcp_retransmits.down as i32;
+        });
+
+    total
+}
+
 pub fn rtt_histogram<const N: usize>() -> BusResponse {
     let mut result = vec![0; N];
     let reader_cycle = THROUGHPUT_TRACKER
         .cycle
         .load(std::sync::atomic::Ordering::Relaxed);
-    for data in THROUGHPUT_TRACKER
+    for (_k,data) in THROUGHPUT_TRACKER
         .raw_data
+        .lock()
+        .unwrap()
         .iter()
-        .filter(|d| retire_check(reader_cycle, d.most_recent_cycle))
+        .filter(|(_k,d)| retire_check(reader_cycle, d.most_recent_cycle))
     {
         let valid_samples: Vec<f64> = data
             .recent_rtt_data
@@ -630,9 +641,11 @@ pub fn host_counts() -> BusResponse {
         .load(std::sync::atomic::Ordering::Relaxed);
     THROUGHPUT_TRACKER
         .raw_data
+        .lock()
+        .unwrap()
         .iter()
-        .filter(|d| retire_check(tp_cycle, d.most_recent_cycle))
-        .for_each(|d| {
+        .filter(|(_k,d)| retire_check(tp_cycle, d.most_recent_cycle))
+        .for_each(|(_k,d)| {
             total += 1;
             if d.tc_handle.as_u32() != 0 {
                 shaped += 1;
@@ -658,13 +671,15 @@ pub fn all_unknown_ips() -> BusResponse {
     let mut full_list: Vec<FullList> = {
         THROUGHPUT_TRACKER
             .raw_data
+            .lock()
+            .unwrap()
             .iter()
-            .filter(|v| !v.key().as_ip().is_loopback())
-            .filter(|d| d.tc_handle.as_u32() == 0)
-            .filter(|d| d.last_seen as u128 > five_minutes_ago_nanoseconds)
-            .map(|te| {
+            .filter(|(k,_v)| !k.as_ip().is_loopback())
+            .filter(|(_k,d)| d.tc_handle.as_u32() == 0)
+            .filter(|(_k,d)| d.last_seen as u128 > five_minutes_ago_nanoseconds)
+            .map(|(k,te)| {
                 (
-                    *te.key(),
+                    *k,
                     te.bytes,
                     te.packets,
                     te.median_latency().unwrap_or(0.0),
@@ -692,7 +707,7 @@ pub fn all_unknown_ips() -> BusResponse {
                 packets_per_second: *packets,
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
-                tcp_retransmits: DownUpOrder::zeroed(),
+                tcp_retransmits: (0.0, 0.0),
             },
         )
         .collect();
@@ -702,7 +717,7 @@ pub fn all_unknown_ips() -> BusResponse {
 /// For debugging: dump all active flows!
 pub fn dump_active_flows() -> BusResponse {
     let lock = ALL_FLOWS.lock().unwrap();
-    let result: Vec<lqos_bus::FlowbeeSummaryData> = lock
+    let result: Vec<lqos_bus::FlowbeeSummaryData> = lock.flow_data
         .iter()
         .map(|(key, row)| {
             let geo =
@@ -742,13 +757,13 @@ pub fn dump_active_flows() -> BusResponse {
 /// Count active flows
 pub fn count_active_flows() -> BusResponse {
     let lock = ALL_FLOWS.lock().unwrap();
-    BusResponse::CountActiveFlows(lock.len() as u64)
+    BusResponse::CountActiveFlows(lock.flow_data.len() as u64)
 }
 
 /// Top Flows Report
 pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
     let lock = ALL_FLOWS.lock().unwrap();
-    let mut table: Vec<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))> = lock
+    let mut table: Vec<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))> = lock.flow_data
         .iter()
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
@@ -838,7 +853,7 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
         let ip = XdpIpAddress::from_ip(ip);
         let lock = ALL_FLOWS.lock().unwrap();
         let sd = SHAPED_DEVICES.load();
-        let matching_flows: Vec<_> = lock
+        let matching_flows: Vec<_> = lock.flow_data
             .iter()
             .filter(|(key, _)| key.local_ip == ip)
             .map(|(key, row)| {
@@ -910,4 +925,74 @@ pub fn flow_duration() -> BusResponse {
             .map(|v| (v.count, v.duration))
             .collect()
     )
+}
+
+type RawNetJs = std::collections::HashMap<String, RawNetJsBody>;
+
+#[derive(Deserialize, Debug)]
+struct RawNetJsBody {
+    #[serde(rename = "downloadBandwidthMbps")]
+    download_bandwidth_mbps: u32,
+    #[serde(rename = "uploadBandwidthMbps")]
+    upload_bandwidth_mbps: u32,
+    #[serde(rename = "type")]
+    site_type: Option<String>,
+    children: Option<RawNetJs>,
+}
+
+#[derive(Serialize, Debug)]
+struct Lts2NetJs {
+    name: String,
+    site_hash: i64,
+    site_type: Option<String>,
+    download_bandwidth_mbps: u32,
+    upload_bandwidth_mbps: u32,
+    children: Vec<Lts2NetJs>
+}
+
+impl RawNetJsBody {
+    fn to_lts2(&self, name: &str) -> Lts2NetJs {
+        let mut result = Lts2NetJs {
+            name: name.to_string(),
+            site_hash: hash_to_i64(name),
+            site_type: self.site_type.clone(),
+            download_bandwidth_mbps: self.download_bandwidth_mbps,
+            upload_bandwidth_mbps: self.upload_bandwidth_mbps,
+            children: vec![],
+        };
+
+        if let Some(children) = &self.children {
+            for (name, body) in children.iter() {
+                result.children.push(body.to_lts2(name));
+            }
+        }
+
+        result
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Serialize)]
+pub struct Lts2Circuit {
+    pub circuit_id: String,
+    pub circuit_name: String,
+    pub circuit_hash: i64,
+    pub download_min_mbps: u32,
+    pub upload_min_mbps: u32,
+    pub download_max_mbps: u32,
+    pub upload_max_mbps: u32,
+    pub parent_node: i64,
+    pub devices: Vec<Lts2Device>,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Serialize)]
+pub struct Lts2Device {
+    pub device_id: String,
+    pub device_name: String,
+    pub device_hash: i64,
+    pub mac: String,
+    pub ipv4: Vec<([u8; 4], u8)>,
+    pub ipv6: Vec<([u8; 16], u8)>,
+    pub comment: String,
 }

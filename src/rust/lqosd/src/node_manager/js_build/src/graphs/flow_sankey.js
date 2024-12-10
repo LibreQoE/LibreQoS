@@ -1,5 +1,4 @@
 import {DashboardGraph} from "./dashboard_graph";
-import {scaleNumber} from "../helpers/scaling";
 
 export class FlowsSankey extends DashboardGraph {
     constructor(id) {
@@ -25,12 +24,12 @@ export class FlowsSankey extends DashboardGraph {
         let asns = {};
         let remoteDevices = {};
 
-        const one_second_in_nanos = 1000000000;
+        const ten_second_in_nanos = 10000000000;
 
         // Iterate over each flow and accumulate traffic.
         let flowCount = 0;
         flows.flows.forEach((flow) => {
-            if (flow[0].last_seen_nanos > one_second_in_nanos) return;
+            if (flow[0].last_seen_nanos > ten_second_in_nanos) return;
             flowCount++;
             let localDevice = flow[0].device_name;
             let proto = flow[0].protocol_name;

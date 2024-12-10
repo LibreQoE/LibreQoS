@@ -8,8 +8,13 @@ license = "GPL-2.0-only"
 serde = { workspace = true }
 nix = { workspace = true }
 tracing = { workspace = true }
-notify = { version = "5.0.0", default-features = false } # Not using crossbeam because of Tokio
+notify = { version = "6", features = ["crossbeam-channel"] }
 thiserror = { workspace = true }
 byteorder = { workspace = true }
 zerocopy = { workspace = true }
 num-traits = { workspace = true }
+crossbeam-channel = { workspace = true }
+
+# For memory debugging
+allocative = {  version = "0.3.3", features = [ "dashmap" ] }
+allocative_derive = "0.3.3"

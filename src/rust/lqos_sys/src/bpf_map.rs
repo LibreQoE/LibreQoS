@@ -238,6 +238,20 @@ where
         }
         Ok(())
     }
+
+    /// Bulk clear selected keys from the map.
+    pub fn clear_bulk_keys(&mut self, keys: &mut Vec<K>) -> Result<()> {
+        let mut count = keys.len() as u32;
+        loop {
+            let ret = unsafe {
+                bpf_map_delete_batch(self.fd, keys.as_mut_ptr() as *mut c_void, &mut count, null_mut())
+            };
+            if ret != 0 || count == 0 {
+                break;
+            }
+        }
+        Ok(())
+    }
 }
 
 impl<K, V> Drop for BpfMap<K, V> {

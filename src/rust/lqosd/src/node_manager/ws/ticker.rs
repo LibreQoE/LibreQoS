@@ -19,6 +19,7 @@ mod queue_stats_total;
 mod network_tree;
 mod circuit_capacity;
 mod tree_capacity;
+mod retransmits;
 
 pub use network_tree::all_circuits;
 use crate::system_stats::SystemStats;
@@ -58,14 +59,14 @@ async fn one_second_cadence(
             flow_endpoints::ip_protocols(channels.clone(), bus_tx.clone()),
             flow_endpoints::flow_duration(channels.clone(), bus_tx.clone()),
             tree_summary::tree_summary(channels.clone(), bus_tx.clone()),
+            network_tree::all_subscribers(channels.clone(), bus_tx.clone()),
+            queue_stats_total::queue_stats_totals(channels.clone()),
             network_tree::network_tree(channels.clone(), bus_tx.clone()),
             circuit_capacity::circuit_capacity(channels.clone()),
             tree_capacity::tree_capacity(channels.clone()),
             system_info::cpu_info(channels.clone(), system_usage_tx.clone()),
             system_info::ram_info(channels.clone(), system_usage_tx.clone()),
-            queue_stats_total::queue_stats_totals(channels.clone()),
-            network_tree::all_subscribers(channels.clone(), bus_tx.clone()),
-
+            retransmits::tcp_retransmits(channels.clone()),
         );
 
         channels.clean().await;

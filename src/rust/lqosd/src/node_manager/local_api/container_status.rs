@@ -29,8 +29,8 @@ pub struct ContainerStatus {
 
 fn tracked_flows() -> ContainerSize {
     let all_flows = ALL_FLOWS.lock().unwrap();
-    let size = all_flows.len();
-    let capacity = all_flows.capacity();
+    let size = all_flows.flow_data.len();
+    let capacity = all_flows.flow_data.capacity();
     ContainerSize { size, capacity }
 }
 
@@ -41,8 +41,8 @@ fn recent_flows() -> ContainerSize {
 
 fn throughput_tracker() -> ContainerSize {
     ContainerSize {
-        size: THROUGHPUT_TRACKER.raw_data.len(),
-        capacity: THROUGHPUT_TRACKER.raw_data.capacity(),
+        size: THROUGHPUT_TRACKER.raw_data.lock().unwrap().len(),
+        capacity: THROUGHPUT_TRACKER.raw_data.lock().unwrap().capacity(),
     }
 }
 

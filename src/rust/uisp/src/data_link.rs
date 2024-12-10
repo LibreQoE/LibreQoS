@@ -1,7 +1,7 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[allow(non_snake_case)]
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct DataLink {
     pub id: String,
     pub from: DataLinkFrom,
@@ -11,34 +11,34 @@ pub struct DataLink {
 }
 
 #[allow(non_snake_case)]
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct DataLinkFrom {
     pub device: Option<DataLinkDevice>,
     pub site: Option<DataLinkSite>,
 }
 
 #[allow(non_snake_case)]
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct DataLinkDevice {
     pub identification: DataLinkDeviceIdentification,
 }
 
 #[allow(non_snake_case)]
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct DataLinkDeviceIdentification {
     pub id: String,
     pub name: String,
 }
 
 #[allow(non_snake_case)]
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct DataLinkTo {
     pub device: Option<DataLinkDevice>,
     pub site: Option<DataLinkSite>,
 }
 
 #[allow(non_snake_case)]
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct DataLinkSite {
     pub identification: DataLinkDeviceIdentification,
 }

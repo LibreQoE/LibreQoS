@@ -1,5 +1,5 @@
 import {clearDiv} from "./helpers/builders";
-import {scaleNanos, scaleNumber} from "./helpers/scaling";
+import {scaleNanos, scaleNumber} from "./lq_js_common/helpers/scaling";
 
 //const API_URL = "local-api/";
 const API_URL = "local-api/";

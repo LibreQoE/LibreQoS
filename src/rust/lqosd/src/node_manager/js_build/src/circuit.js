@@ -5,7 +5,7 @@ import {formatRetransmit, formatRtt, formatThroughput, lerpGreenToRedViaOrange} 
 import {BitsPerSecondGauge} from "./graphs/bits_gauge";
 import {CircuitTotalGraph} from "./graphs/circuit_throughput_graph";
 import {CircuitRetransmitGraph} from "./graphs/circuit_retransmit_graph";
-import {scaleNanos, scaleNumber} from "./helpers/scaling";
+import {scaleNanos, scaleNumber} from "./lq_js_common/helpers/scaling";
 import {DevicePingHistogram} from "./graphs/device_ping_graph";
 import {FlowsSankey} from "./graphs/flow_sankey";
 import {subscribeWS} from "./pubsub/ws";
@@ -140,6 +140,8 @@ function connectFlowChannel() {
     });
 }
 
+let movingAverages = new Map();
+
 function updateTrafficTab(msg) {
     let target = document.getElementById("allTraffic");
 
@@ -147,29 +149,48 @@ function updateTrafficTab(msg) {
     table.classList.add("table", "table-sm", "table-striped");
     let thead = document.createElement("thead");
     thead.appendChild(theading("Protocol"));
-    thead.appendChild(theading("Current Rate", 2));
-    thead.appendChild(theading("Total Bytes", 2));
-    thead.appendChild(theading("Total Packets", 2));
-    thead.appendChild(theading("TCP Retransmits", 2));
-    thead.appendChild(theading("RTT", 2));
+    thead.appendChild(theading("Current Rate (⬇️/⬆️)", 2));
+    thead.appendChild(theading("Total Bytes (⬇️/⬆️)", 2));
+    thead.appendChild(theading("Total Packets (⬇️/⬆️)", 2));
+    thead.appendChild(theading("TCP Retransmits (⬇️/⬆️)", 2));
+    thead.appendChild(theading("RTT (⬇️/⬆️)", 2));
     thead.appendChild(theading("ASN"));
     thead.appendChild(theading("Country"));
     thead.appendChild(theading("Remote IP"));
     table.appendChild(thead);
     let tbody = document.createElement("tbody");
-    const one_second_in_nanos = 1000000000; // For display filtering
+    const thirty_seconds_in_nanos = 30000000000; // For display filtering
+
+    msg.flows.forEach((flow) => {
+        let flowKey = flow[0].protocol_name + flow[0].row_id;
+        let rate = flow[1].rate_estimate_bps.down + flow[1].rate_estimate_bps.up;
+        if (movingAverages.has(flowKey)) {
+            let avg = movingAverages.get(flowKey);
+            avg.push(rate);
+            if (avg.length > 10) {
+                avg.shift();
+            }
+            movingAverages.set(flowKey, avg);
+        } else {
+            movingAverages.set(flowKey, [ rate ]);
+        }
+    });
 
     // Sort msg.flows by flows[0].rate_estimate_bps.down + flows[0].rate_estimate_bps.up descending
     msg.flows.sort((a, b) => {
-        let aRate = a[1].rate_estimate_bps.down + a[1].rate_estimate_bps.up;
-        let bRate = b[1].rate_estimate_bps.down + b[1].rate_estimate_bps.up;
+        let flowKeyA = a[0].protocol_name + a[0].row_id;
+        let flowKeyB = b[0].protocol_name + b[0].row_id;
+        let aRate = movingAverages.get(flowKeyA).reduce((a, b) => a + b, 0) / movingAverages.get(flowKeyA).length;
+        let bRate = movingAverages.get(flowKeyB).reduce((a, b) => a + b, 0) / movingAverages.get(flowKeyB).length;
         return bRate - aRate;
     });
 
     msg.flows.forEach((flow) => {
-        if (flow[0].last_seen_nanos > one_second_in_nanos) return;
+        if (flow[0].last_seen_nanos > thirty_seconds_in_nanos) return;
         let row = document.createElement("tr");
         row.classList.add("small");
+        let opacity = Math.min(1, flow[0].last_seen_nanos / thirty_seconds_in_nanos);
+        row.style.opacity = 1.0 - opacity;
         row.appendChild(simpleRow(flow[0].protocol_name));
         row.appendChild(simpleRowHtml(formatThroughput(flow[1].rate_estimate_bps.down * 8, plan.down)));
         row.appendChild(simpleRowHtml(formatThroughput(flow[1].rate_estimate_bps.up * 8, plan.up)));
@@ -177,8 +198,8 @@ function updateTrafficTab(msg) {
         row.appendChild(simpleRow(scaleNumber(flow[1].bytes_sent.up)));
         row.appendChild(simpleRow(scaleNumber(flow[1].packets_sent.down)));
         row.appendChild(simpleRow(scaleNumber(flow[1].packets_sent.up)));
-        row.appendChild(simpleRowHtml(formatRetransmit(flow[1].tcp_retransmits.down)));
-        row.appendChild(simpleRowHtml(formatRetransmit(flow[1].tcp_retransmits.up)));
+        row.appendChild(simpleRowHtml(formatRetransmit(flow[1].tcp_retransmits.down / 100.0)));
+        row.appendChild(simpleRowHtml(formatRetransmit(flow[1].tcp_retransmits.up / 100.0)));
         row.appendChild(simpleRow(scaleNanos(flow[1].rtt[0].nanoseconds)));
         row.appendChild(simpleRow(scaleNanos(flow[1].rtt[1].nanoseconds)));
         row.appendChild(simpleRow(flow[0].asn_name));

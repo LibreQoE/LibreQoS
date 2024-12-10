@@ -6,6 +6,8 @@ use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
 use lqos_config::Config;
 use tracing::{error, info};
+use lqos_bus::BlackboardSystem;
+use crate::blackboard;
 
 /// Builds the network using the selected strategy.
 pub async fn build_with_strategy(
@@ -13,6 +15,7 @@ pub async fn build_with_strategy(
     ip_ranges: IpRanges,
 ) -> Result<(), UispIntegrationError> {
     // Select a Strategy
+    blackboard(BlackboardSystem::System, "UISP", config.uisp_integration.strategy.to_lowercase().as_str()).await;
     match config.uisp_integration.strategy.to_lowercase().as_str() {
         "flat" => {
             info!("Strategy selected: flat");

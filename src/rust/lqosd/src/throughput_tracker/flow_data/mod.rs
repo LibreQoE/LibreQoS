@@ -9,7 +9,6 @@ mod flow_analysis;
 use crate::throughput_tracker::flow_data::{flow_analysis::FinishedFlowAnalysis, netflow5::Netflow5, netflow9::Netflow9};
 pub(crate) use flow_tracker::{ALL_FLOWS, AsnId, FlowbeeLocalData};
 use lqos_sys::flowbee_data::FlowbeeKey;
-use std::sync::Arc;
 use tracing::{debug, error, info};
 use anyhow::Result;
 use crossbeam_channel::Sender;
@@ -18,10 +17,6 @@ pub(crate) use flow_analysis::{setup_flow_analysis, get_asn_name_and_country,
                                expire_rtt_flows, flowbee_rtt_map, RttData, get_rtt_events_per_second, AsnListEntry,
                                AsnCountryListEntry, AsnProtocolListEntry, FlowActor, FlowAnalysisSystem
 };
-
-trait FlowbeeRecipient {
-    fn enqueue(&self, key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis);
-}
 
 // Creates the netflow tracker and returns the sender
 pub fn setup_netflow_tracker() -> Result<Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>> {
@@ -35,7 +30,7 @@ pub fn setup_netflow_tracker() -> Result<Sender<(FlowbeeKey, (FlowbeeLocalData, 
         debug!("Starting the network flow tracker back-end");
 
         // Build the endpoints list
-        let mut endpoints: Vec<Arc<dyn FlowbeeRecipient>> = Vec::new();
+        let mut endpoints: Vec<Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>> = Vec::new();
         endpoints.push(FinishedFlowAnalysis::new());
 
         if let Some(flow_config) = &config.flows {
@@ -67,7 +62,9 @@ pub fn setup_netflow_tracker() -> Result<Sender<(FlowbeeKey, (FlowbeeLocalData, 
         while let Ok((key, (value, analysis))) = rx.recv() {
             endpoints.iter_mut().for_each(|f| {
                 //log::debug!("Enqueueing flow data for {key:?}");
-                f.enqueue(key.clone(), value.clone(), analysis.clone());
+                if let Err(e) = f.send((key.clone(), (value.clone(), analysis.clone()))) {
+                    tracing::warn!("Failed to send flow data to endpoint: {e}");
+                }
             });
         }
         info!("Network flow tracker back-end has stopped")

@@ -38,9 +38,10 @@ pub enum LoginResult {
 async fn check_login(jar: &CookieJar, users: &WebUsers) -> LoginResult {
     if let Some(token) = jar.get(COOKIE_PATH) {
         // Validate the token
-        return match users.get_role_from_token(token.value()).unwrap() {
-            UserRole::ReadOnly => LoginResult::ReadOnly,
-            UserRole::Admin => LoginResult::Admin,
+        return match users.get_role_from_token(token.value()) {
+            Ok(UserRole::ReadOnly) => LoginResult::ReadOnly,
+            Ok(UserRole::Admin) => LoginResult::Admin,
+            Err(_e) => LoginResult::Denied,
         }
     }
     LoginResult::Denied

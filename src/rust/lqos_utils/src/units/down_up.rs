@@ -3,6 +3,7 @@
 //! helps reduce directional confusion/bugs.
 
 use std::ops::AddAssign;
+use allocative_derive::Allocative;
 use serde::{Deserialize, Serialize};
 use zerocopy::FromBytes;
 use crate::units::UpDownOrder;
@@ -11,7 +12,7 @@ use crate::units::UpDownOrder;
 /// stored statistics to eliminate confusion. This is a generic
 /// type: you can control the type stored inside.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, FromBytes, Default, Ord, PartialOrd)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, FromBytes, Default, Ord, PartialOrd, Allocative)]
 pub struct DownUpOrder<T> {
     /// The down value
     pub down: T,
@@ -22,7 +23,7 @@ pub struct DownUpOrder<T> {
 impl <T> DownUpOrder<T>
 where T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedSub
     + num_traits::CheckedAdd + num_traits::SaturatingSub + num_traits::SaturatingMul
-    + num_traits::FromPrimitive
+    + num_traits::FromPrimitive + num_traits::SaturatingAdd
 {
     /// Create a new DownUpOrder with the given down and up values.
     pub fn new(down: T, up: T) -> Self {
@@ -92,7 +93,7 @@ where T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedSub
 
     /// Add the `down` and `up` values, giving a total.
     pub fn sum(&self) -> T {
-        self.down + self.up
+        self.down.saturating_add(&self.up)
     }
 
     /// Multiply the `down` and `up` values by 8, giving the total number of bits, assuming
@@ -119,6 +120,11 @@ where T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedSub
         self.down = T::zero();
         self.up = T::zero();
     }
+
+    /// Check if both down and up are zero.
+    pub fn not_zero(&self) -> bool {
+        self.down != T::zero() || self.up != T::zero()
+    }
 }
 
 impl <T> Into<UpDownOrder<T>> for DownUpOrder<T> {
@@ -137,6 +143,14 @@ where T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedAdd
         self.down = self.down.checked_add(&rhs.down).unwrap_or(T::zero());
         self.up = self.up.checked_add(&rhs.up).unwrap_or(T::zero());
     }
+}
+
+/// Divides two DownUpOrder values, returning a tuple of the results.
+pub fn down_up_divide(left: DownUpOrder<u64>, right: DownUpOrder<u64>) -> (f64, f64) {
+    (
+        left.down as f64 / right.down as f64,
+        left.up as f64 / right.up as f64,
+    )
 }
 
 #[cfg(test)]
