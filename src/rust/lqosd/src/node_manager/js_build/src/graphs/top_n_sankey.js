@@ -67,7 +67,7 @@ export class TopNSankey extends DashboardGraph {
             };
             if (isRedacted()) label.fontFamily = "Illegible";
 
-            let name = r.ip_address+ " (" + scaleNumber(r.bits_per_second.down / 8.0, 0) + "bps)";
+            let name = r.ip_address+ " (" + scaleNumber(r.bits_per_second.down, 0) + "bps)";
             let bytes = r.bits_per_second.down / 8;
             let bytesAsMegabits = bytes / 1000000;
             let maxBytes = r.plan.down / 8;
