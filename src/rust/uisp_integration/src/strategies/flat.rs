@@ -54,19 +54,19 @@ pub async fn build_flat_network(
         UispIntegrationError::UispConnectError
     })?;
 
-    if let Ok(sites_bin) = serde_cbor::to_vec(&sites) {
+    if let Ok(sites_bin) = serde_json::to_vec(&sites) {
         let _ = lqos_bus::bus_request(vec![lqos_bus::BusRequest::BlackboardBlob {
             tag: "uisp_sites".to_string(),
             blob: sites_bin,
         }]).await;
     }
-    if let Ok(devices_bin) = serde_cbor::to_vec(&devices) {
+    if let Ok(devices_bin) = serde_json::to_vec(&devices) {
         let _ = lqos_bus::bus_request(vec![lqos_bus::BusRequest::BlackboardBlob {
             tag: "uisp_devices".to_string(),
             blob: devices_bin,
         }]).await;
     }
-    if let Ok(data_links_bin) = serde_cbor::to_vec(&data_links) {
+    if let Ok(data_links_bin) = serde_json::to_vec(&data_links) {
         let _ = lqos_bus::bus_request(vec![lqos_bus::BusRequest::BlackboardBlob {
             tag: "uisp_data_links".to_string(),
             blob: data_links_bin,

@@ -62,19 +62,19 @@ pub async fn build_full_network(
     // Obtain the UISP data and transform it into easier to work with types
     let (sites_raw, devices_raw, data_links_raw) = load_uisp_data(config.clone()).await?;
 
-    if let Ok(sites_bin) = serde_cbor::to_vec(&sites_raw) {
+    if let Ok(sites_bin) = serde_json::to_vec(&sites_raw) {
         let _ = lqos_bus::bus_request(vec![lqos_bus::BusRequest::BlackboardBlob {
             tag: "uisp_sites".to_string(),
             blob: sites_bin,
         }]).await;
     }
-    if let Ok(devices_bin) = serde_cbor::to_vec(&devices_raw) {
+    if let Ok(devices_bin) = serde_json::to_vec(&devices_raw) {
         let _ = lqos_bus::bus_request(vec![lqos_bus::BusRequest::BlackboardBlob {
             tag: "uisp_devices".to_string(),
             blob: devices_bin,
         }]).await;
     }
-    if let Ok(data_links_bin) = serde_cbor::to_vec(&data_links_raw) {
+    if let Ok(data_links_bin) = serde_json::to_vec(&data_links_raw) {
         let _ = lqos_bus::bus_request(vec![lqos_bus::BusRequest::BlackboardBlob {
             tag: "uisp_data_links".to_string(),
             blob: data_links_bin,
