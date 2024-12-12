@@ -11,6 +11,7 @@ git clone https://github.com/LibreQoE/LibreQoS.git libreqos
 sudo chown -R YOUR_USER /opt/libreqos
 cd /opt/libreqos/
 git switch develop
+git pull
 ```
 
 By specifying `libreqos` at the end, git will ensure the folder name is lowercase.
