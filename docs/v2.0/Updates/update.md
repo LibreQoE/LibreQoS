@@ -13,12 +13,11 @@ Unzip the .zip file and transfer the .deb to your LibreQoS box, installing with:
 sudo apt install ./[deb file name]
 ```
 
-Now run:
+Now reboot the LibreQoS box with:
 ```
-cd /opt/libreqos/src
-sudo rust/remove_pinned_maps.sh
-sudo systemctl restart lqosd lqos_scheduler
+sudo reboot
 ```
+This will flush the old eBPF maps and load the latest LibreQoS version.
 
 ## If you installed with Git
 
