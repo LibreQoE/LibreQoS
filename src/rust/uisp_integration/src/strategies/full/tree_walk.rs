@@ -1,3 +1,4 @@
+use std::io::Write;
 use crate::errors::UispIntegrationError;
 use crate::strategies::full::routes_override::RouteOverride;
 use crate::uisp_types::{UispSite, UispSiteType};
@@ -18,7 +19,15 @@ pub fn walk_tree_for_routing(
     if let Some(root_idx) = sites.iter().position(|s| s.name == root_site) {
         let mut visited = std::collections::HashSet::new();
         let current_node = root_idx;
-        walk_node(current_node, 10, sites, &mut visited, overrides);
+        let mut dot_graph = "digraph G {\n  graph [ ranksep=2.0 overlap=false ]".to_string();
+        walk_node(current_node, 10, sites, &mut visited, overrides, &mut dot_graph);
+        dot_graph.push_str("}\n");
+        {
+            let graph_file = std::fs::File::create("graph.dot");
+            if let Ok(mut file) = graph_file {
+                let _ = file.write_all(dot_graph.as_bytes());
+            }
+        }
     } else {
         tracing::error!("Unable to build a path-weights graph because I can't find the root node");
         return Err(UispIntegrationError::NoRootSite);
@@ -42,6 +51,7 @@ fn walk_node(
     sites: &mut Vec<UispSite>,
     visited: &mut std::collections::HashSet<usize>,
     overrides: &Vec<RouteOverride>,
+    dot_graph: &mut String,
 ) {
     if visited.contains(&idx) {
         return;
@@ -51,6 +61,10 @@ fn walk_node(
         if sites[i].parent_indices.contains(&idx) {
             let from = sites[i].name.clone();
             let to = sites[idx].name.clone();
+            if sites[idx].site_type != UispSiteType::Client
+            {
+                dot_graph.push_str(&format!("\"{}\" [label=\"{}\"];\n", to, to));
+            }
             if let Some(route_override) = overrides
                 .iter()
                 .find(|o| (o.from_site == from && o.to_site == to) || (o.from_site == to && o.to_site == from))
@@ -60,7 +74,7 @@ fn walk_node(
             } else {
                 sites[i].route_weights.push((idx, weight));
             }
-            walk_node(i, weight + 10, sites, visited, overrides);
+            walk_node(i, weight + 10, sites, visited, overrides, dot_graph);
         }
     }
 }
