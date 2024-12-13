@@ -97,7 +97,7 @@ impl Device {
         result
     }
 
-    pub fn get_noise_floor(&self) -> Option<i32> {
+    pub fn get_noise_floor(&self) -> Option<i64> {
         if let Some(interfaces) = &self.interfaces {
             for intf in interfaces.iter() {
                 if let Some(w) = &intf.wireless {
@@ -190,21 +190,21 @@ pub struct DeviceOverview {
     pub status: Option<String>,
     pub frequency: Option<f64>,
     pub outageScore: Option<f64>,
-    pub stationsCount: Option<i32>,
+    pub stationsCount: Option<i64>,
     pub downlinkCapacity: Option<i64>,
     pub uplinkCapacity: Option<i64>,
-    pub channelWidth: Option<i32>,
-    pub transmitPower: Option<i32>,
-    pub signal: Option<i32>,
+    pub channelWidth: Option<i64>,
+    pub transmitPower: Option<i64>,
+    pub signal: Option<i64>,
 
-    pub cpu: Option<i32>,
+    pub cpu: Option<i64>,
     pub createdAt: Option<String>,
-    pub distance: Option<i32>,
-    pub downlinkUtilization: Option<f32>,
-    pub uplinkUtilization: Option<f32>,
-    pub ram: Option<i32>,
-    pub temperature: Option<i32>,
-    pub uptime: Option<i32>,
+    pub distance: Option<i64>,
+    pub downlinkUtilization: Option<f64>,
+    pub uplinkUtilization: Option<f64>,
+    pub ram: Option<i64>,
+    pub temperature: Option<i64>,
+    pub uptime: Option<i64>,
     pub wirelessMode: Option<String>,
     pub linkScore: Option<DeviceLinkScore>,
     pub antenna: Option<DeviceAntenna>,
@@ -213,44 +213,44 @@ pub struct DeviceOverview {
 #[allow(non_snake_case)]
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DeviceLinkScore {
-    pub score: Option<f32>,
-    pub scoreMax: Option<f32>,
-    pub airTimeScore: Option<f32>,
-    pub linkScore: Option<f32>,
+    pub score: Option<f64>,
+    pub scoreMax: Option<f64>,
+    pub airTimeScore: Option<f64>,
+    pub linkScore: Option<f64>,
     pub linkScoreHint: String,
-    pub theoreticalDownlinkCapacity: Option<i32>,
-    pub theoreticalUplinkCapacity: Option<i32>,
+    pub theoreticalDownlinkCapacity: Option<i64>,
+    pub theoreticalUplinkCapacity: Option<i64>,
 }
 
 #[allow(non_snake_case)]
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DeviceAntenna {
     pub id: Option<String>,
-    pub gain: Option<i32>,
+    pub gain: Option<i64>,
     pub name: Option<String>,
     pub builtIn: Option<bool>,
-    pub cableLoss: Option<i32>,
+    pub cableLoss: Option<i64>,
 }
 
 #[allow(non_snake_case)]
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DeviceWireless {
-    pub noiseFloor: Option<i32>,
+    pub noiseFloor: Option<i64>,
 }
 
 #[allow(non_snake_case)]
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DeviceStation {
     connected: Option<bool>,
-    connectedTime: Option<i32>,
+    connectedTime: Option<i64>,
     device_identification: Option<DeviceIdentification>,
-    latency: Option<i32>,
+    latency: Option<i64>,
     mac: Option<String>,
     name: Option<String>,
     model: Option<String>,
     rxModulation: Option<String>,
-    rxSignal: Option<i32>,
-    txSignal: Option<i32>,
-    downlinkAirTime: Option<f32>,
-    uplinkAirTime: Option<f32>,
+    rxSignal: Option<i64>,
+    txSignal: Option<i64>,
+    downlinkAirTime: Option<f64>,
+    uplinkAirTime: Option<f64>,
 }
