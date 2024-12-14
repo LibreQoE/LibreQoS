@@ -1,4 +1,4 @@
-# Install LibreQoS 2.0
+# Install LibreQoS 1.5/2.0
 
 ## Step 1 - Validate Network Design Assumptions and Hardware Selection
 
