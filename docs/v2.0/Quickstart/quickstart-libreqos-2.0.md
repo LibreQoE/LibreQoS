@@ -1,4 +1,4 @@
-# Install LibreQoS 2.0
+# Install LibreQoS 1.5/2.0
 
 ## Step 1 - Validate Network Design Assumptions and Hardware Selection
 
@@ -13,7 +13,7 @@
 
 ### Download .DEB Package (Recommended Method)
 
-Donwload the latest .deb from [libreqos.io/#download](https://libreqos.io/#download).
+Donwload the latest .deb from [https://libreqos.io/download/](https://libreqos.io/download/).
 
 Unzip the .zip file and transfer the .deb to your LibreQoS box, installing with:
 ```
