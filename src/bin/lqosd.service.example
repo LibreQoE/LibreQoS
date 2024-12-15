@@ -1,5 +1,6 @@
 [Unit]
-After=network.service
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 WorkingDirectory=/opt/libreqos/src/bin
