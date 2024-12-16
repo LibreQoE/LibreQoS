@@ -367,12 +367,12 @@ pub(crate) fn submit_throughput_stats(
                     upload_bytes: scale_u64_by_f64(v.bytes.up, scale),
                     packets_down: scale_u64_by_f64(v.packets.down, scale),
                     packets_up: scale_u64_by_f64(v.packets.up, scale),
-                    packets_tcp_down: scale_u64_by_f64(v.tcp_packets.down, scale),
-                    packets_tcp_up: scale_u64_by_f64(v.tcp_packets.up, scale),
-                    packets_udp_down: scale_u64_by_f64(v.udp_packets.down, scale),
-                    packets_udp_up: scale_u64_by_f64(v.udp_packets.up, scale),
-                    packets_icmp_down: scale_u64_by_f64(v.icmp_packets.down, scale),
-                    packets_icmp_up: scale_u64_by_f64(v.icmp_packets.up, scale),
+                    tcp_packets_down: scale_u64_by_f64(v.tcp_packets.down, scale),
+                    tcp_packets_up: scale_u64_by_f64(v.tcp_packets.up, scale),
+                    udp_packets_down: scale_u64_by_f64(v.udp_packets.down, scale),
+                    udp_packets_up: scale_u64_by_f64(v.udp_packets.up, scale),
+                    icmp_packets_down: scale_u64_by_f64(v.icmp_packets.down, scale),
+                    icmp_packets_up: scale_u64_by_f64(v.icmp_packets.up, scale),
                 }
             })
             .collect::<Vec<_>>();
@@ -386,8 +386,8 @@ pub(crate) fn submit_throughput_stats(
                 crate::lts2_sys::shared_types::CircuitRetransmits {
                     timestamp: now,
                     circuit_hash: k,
-                    tcp_retransmits_down: v.down as i32,
-                    tcp_retransmits_up: v.up as i32,
+                    tcp_retransmits_down: v.down as u32,
+                    tcp_retransmits_up: v.up as u32,
                 }
             })
             .collect::<Vec<_>>();
@@ -417,16 +417,16 @@ pub(crate) fn submit_throughput_stats(
                 cake_drops.push(CircuitCakeDrops {
                     timestamp: now,
                     circuit_hash,
-                    cake_drops_down: drops.get_down() as i32,
-                    cake_drops_up: drops.get_up() as i32,
+                    cake_drops_down: drops.get_down() as u32,
+                    cake_drops_up: drops.get_up() as u32,
                 });
             }
             if marks.not_zero() {
                 cake_marks.push(CircuitCakeMarks {
                     timestamp: now,
                     circuit_hash,
-                    cake_marks_down: marks.get_down() as i32,
-                    cake_marks_up: marks.get_up() as i32,
+                    cake_marks_down: marks.get_down() as u32,
+                    cake_marks_up: marks.get_up() as u32,
                 });
             }
         });
@@ -473,24 +473,24 @@ pub(crate) fn submit_throughput_stats(
                 site_retransmits.push(crate::lts2_sys::shared_types::SiteRetransmits {
                     timestamp: now,
                     site_hash,
-                    tcp_retransmits_down: node.current_tcp_retransmits.down as i32,
-                    tcp_retransmits_up: node.current_tcp_retransmits.up as i32,
+                    tcp_retransmits_down: node.current_tcp_retransmits.down as u32,
+                    tcp_retransmits_up: node.current_tcp_retransmits.up as u32,
                 });
             }
             if node.current_drops.not_zero() {
                 site_cake_drops.push(crate::lts2_sys::shared_types::SiteCakeDrops {
                     timestamp: now,
                     site_hash,
-                    cake_drops_down: node.current_drops.get_down() as i32,
-                    cake_drops_up: node.current_drops.get_up() as i32,
+                    cake_drops_down: node.current_drops.get_down() as u32,
+                    cake_drops_up: node.current_drops.get_up() as u32,
                 });
             }
             if node.current_marks.not_zero() {
                 site_cake_marks.push(crate::lts2_sys::shared_types::SiteCakeMarks {
                     timestamp: now,
                     site_hash,
-                    cake_marks_down: node.current_marks.get_down() as i32,
-                    cake_marks_up: node.current_marks.get_up() as i32,
+                    cake_marks_down: node.current_marks.get_down() as u32,
+                    cake_marks_up: node.current_marks.get_up() as u32,
                 });
             }
             if !node.rtts.is_empty() {

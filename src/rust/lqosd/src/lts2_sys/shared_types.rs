@@ -1,6 +1,33 @@
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
+#[derive(Serialize, Deserialize, Default)]
+pub struct IngestSession {
+    pub license_key: Uuid,
+    pub node_id: String,
+    pub node_name: String,
+    pub shaper_throughput: Vec<ShaperThroughput>,
+    pub shaped_devices: Vec<ShapedDevices>,
+    pub network_tree: Vec<NetworkTree>,
+    pub circuit_throughput: Vec<CircuitThroughput>,
+    pub circuit_retransmits: Vec<CircuitRetransmits>,
+    pub circuit_rtt: Vec<CircuitRtt>,
+    pub circuit_cake_drops: Vec<CircuitCakeDrops>,
+    pub circuit_cake_marks: Vec<CircuitCakeMarks>,
+    pub site_cake_drops: Vec<SiteCakeDrops>,
+    pub site_cake_marks: Vec<SiteCakeMarks>,
+    pub site_retransmits: Vec<SiteRetransmits>,
+    pub site_rtt: Vec<SiteRtt>,
+    pub site_throughput: Vec<SiteThroughput>,
+    pub shaper_utilization: Option<Vec<ShaperUtilization>>,
+    pub one_way_flows: Option<Vec<OneWayFlow>>,
+    pub two_way_flows: Option<Vec<TwoWayFlow>>,
+    pub allowed_ips: Option<Vec<String>>,
+    pub ignored_ips: Option<Vec<String>>,
+    pub blackboard_json: Option<Vec<u8>>,
+    pub flow_count: Option<Vec<FlowCount>>,
+}
+
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub enum RemoteCommand {
     Log(String)
@@ -31,12 +58,12 @@ pub struct CircuitThroughput {
     pub upload_bytes: u64,
     pub packets_down: u64,
     pub packets_up: u64,
-    pub packets_tcp_down: u64,
-    pub packets_tcp_up: u64,
-    pub packets_udp_down: u64,
-    pub packets_udp_up: u64,
-    pub packets_icmp_down: u64,
-    pub packets_icmp_up: u64,
+    pub tcp_packets_down: u64,
+    pub tcp_packets_up: u64,
+    pub udp_packets_down: u64,
+    pub udp_packets_up: u64,
+    pub icmp_packets_down: u64,
+    pub icmp_packets_up: u64,
 }
 
 #[repr(C)]
@@ -44,8 +71,8 @@ pub struct CircuitThroughput {
 pub struct CircuitRetransmits {
     pub timestamp: u64,
     pub circuit_hash: i64,
-    pub tcp_retransmits_down: i32,
-    pub tcp_retransmits_up: i32,
+    pub tcp_retransmits_down: u32,
+    pub tcp_retransmits_up: u32,
 }
 
 #[repr(C)]
@@ -61,8 +88,8 @@ pub struct CircuitRtt {
 pub struct CircuitCakeDrops {
     pub timestamp: u64,
     pub circuit_hash: i64,
-    pub cake_drops_down: i32,
-    pub cake_drops_up: i32,
+    pub cake_drops_down: u32,
+    pub cake_drops_up: u32,
 }
 
 #[repr(C)]
@@ -70,8 +97,8 @@ pub struct CircuitCakeDrops {
 pub struct CircuitCakeMarks {
     pub timestamp: u64,
     pub circuit_hash: i64,
-    pub cake_marks_down: i32,
-    pub cake_marks_up: i32,
+    pub cake_marks_down: u32,
+    pub cake_marks_up: u32,
 }
 
 #[repr(C)]
@@ -96,8 +123,8 @@ pub struct SiteThroughput {
 pub struct SiteRetransmits {
     pub timestamp: u64,
     pub site_hash: i64,
-    pub tcp_retransmits_down: i32,
-    pub tcp_retransmits_up: i32,
+    pub tcp_retransmits_down: u32,
+    pub tcp_retransmits_up: u32,
 }
 
 #[repr(C)]
@@ -105,8 +132,8 @@ pub struct SiteRetransmits {
 pub struct SiteCakeDrops {
     pub timestamp: u64,
     pub site_hash: i64,
-    pub cake_drops_down: i32,
-    pub cake_drops_up: i32,
+    pub cake_drops_down: u32,
+    pub cake_drops_up: u32,
 }
 
 #[repr(C)]
@@ -114,8 +141,8 @@ pub struct SiteCakeDrops {
 pub struct SiteCakeMarks {
     pub timestamp: u64,
     pub site_hash: i64,
-    pub cake_marks_down: i32,
-    pub cake_marks_up: i32,
+    pub cake_marks_down: u32,
+    pub cake_marks_up: u32,
 }
 
 #[repr(C)]
@@ -150,33 +177,6 @@ impl LtsStatus {
             _ => LtsStatus::Invalid,
         }
     }
-}
-
-#[derive(Serialize, Deserialize, Default)]
-pub struct IngestSession {
-    pub license_key: Uuid,
-    pub node_id: String,
-    pub node_name: String,
-    pub shaper_throughput: Vec<ShaperThroughput>,
-    pub shaped_devices: Vec<ShapedDevices>,
-    pub network_tree: Vec<NetworkTree>,
-    pub circuit_throughput: Vec<CircuitThroughput>,
-    pub circuit_retransmits: Vec<CircuitRetransmits>,
-    pub circuit_rtt: Vec<CircuitRtt>,
-    pub circuit_cake_drops: Vec<CircuitCakeDrops>,
-    pub circuit_cake_marks: Vec<CircuitCakeMarks>,
-    pub site_cake_drops: Vec<SiteCakeDrops>,
-    pub site_cake_marks: Vec<SiteCakeMarks>,
-    pub site_retransmits: Vec<SiteRetransmits>,
-    pub site_rtt: Vec<SiteRtt>,
-    pub site_throughput: Vec<SiteThroughput>,
-    pub shaper_utilization: Option<Vec<ShaperUtilization>>,
-    pub one_way_flows: Option<Vec<OneWayFlow>>,
-    pub two_way_flows: Option<Vec<TwoWayFlow>>,
-    pub allowed_ips: Option<Vec<String>>,
-    pub ignored_ips: Option<Vec<String>>,
-    pub blackboard_json: Option<Vec<u8>>,
-    pub flow_count: Option<Vec<FlowCount>>,
 }
 
 #[derive(Serialize, Deserialize)]
