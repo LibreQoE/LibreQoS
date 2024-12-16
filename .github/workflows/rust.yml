@@ -10,6 +10,8 @@ jobs:
     runs-on: [ lq_run ]
     
     steps:
+    - name: Set Version ENV
+      run: echo "::set-env name=VERSION_STRING::'$(cat VERSION_STRING)"
     - uses: actions/checkout@v2
     - name: Install dependencies
       run: sudo /bin/apt-get update; sudo /bin/apt-get install --no-install-recommends python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`/bin/uname r` libbpf-dev mold
@@ -23,8 +25,8 @@ jobs:
     - name: Archive .deb file
       uses: actions/upload-artifact@v3
       with:
-        name: libreqos_1.5.-1_amd64.deb
-        path: src/dist/libreqos_1.5.-1_amd64.deb
+        name: libreqos_${{ env.VERSION }}.-1_amd64.deb
+        path: src/dist/${{ env.VERSION }}.-1_amd64.deb
   
   audit:
     strategy:
