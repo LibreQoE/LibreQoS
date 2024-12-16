@@ -885,10 +885,10 @@ def refreshShapers():
 						# Generate TC commands to be executed later
 						tcComment = " # CircuitID: " + circuit['circuitID'] + " DeviceIDs: "
 						for device in circuit['devices']:
-							tcComment = tcComment + device['deviceID'] + ', '
+							tcComment = '' #tcComment + device['deviceID'] + ', '
 						if 'devices' in circuit:
 							if 'comment' in circuit['devices'][0]:
-								tcComment = tcComment + '| Comment: ' + circuit['devices'][0]['comment']
+								tcComment = '' # tcComment + '| Comment: ' + circuit['devices'][0]['comment']
 						tcComment = tcComment.replace("\n", "")
 						command = 'class add dev ' + interface_a() + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ str(circuit['minDownload']) + 'mbit ceil '+ str(circuit['maxDownload']) + 'mbit prio 3' + quantum(circuit['maxDownload']) + tcComment
 						linuxTCcommands.append(command)
