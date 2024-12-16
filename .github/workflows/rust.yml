@@ -7,7 +7,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-    runs-on: [ self-hosted, ubuntu-latest ]
+    runs-on: [ lq_run ]
     
     steps:
     - uses: actions/checkout@v2
