@@ -1,4 +1,4 @@
-# Git Install (For Developers Only - Not Recommended)
+# Git Install (For Developers - Not Recommended)
 
 ## Clone the repo
 
