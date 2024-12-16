@@ -24,7 +24,7 @@ jobs:
       uses: actions/upload-artifact@v3
       with:
         name: libreqos_latest_amd64.deb
-        path: ${{ github.workspace }}/src/dist/libreqos_latest_amd64.deb
+        path: ~/work/LibreQoS/LibreQoS/src/dist/libreqos_latest_amd64.deb
   
   audit:
     strategy:
