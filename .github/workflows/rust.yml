@@ -11,7 +11,7 @@ jobs:
     
     steps:
     - name: Set Version ENV
-      run: echo "::set-env name=VERSION_STRING::'$(cat src/VERSION_STRING)"
+      run: pushd src; echo "::set-env name=VERSION::'$(cat /src/VERSION_STRING)"
       env:
         ACTIONS_ALLOW_UNSECURE_COMMANDS: 'true'
     - uses: actions/checkout@v2
