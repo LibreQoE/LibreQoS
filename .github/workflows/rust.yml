@@ -15,6 +15,9 @@ jobs:
       run: pushd src; echo "::set-env name=VERSION::'$(cat VERSION_STRING)'"
       env:
         ACTIONS_ALLOW_UNSECURE_COMMANDS: 'true'
+    - name: Check env var
+      run: |
+         echo ${{ env.VERSION }}
     - name: Install dependencies
       run: sudo /bin/apt-get update; sudo /bin/apt-get install --no-install-recommends python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`/bin/uname r` libbpf-dev mold
       if: matrix.os == 'ubuntu-latest'
@@ -22,14 +25,8 @@ jobs:
       run: pushd src/rust; cargo build --verbose --all; popd
     - name: Run tests
       run: pushd src/rust; cargo test --verbose --all; popd
-    - name: Check env var
-      run: |
-         echo ${{ env.VERSION }}
     - name: Build .deb file
       run: pushd src; ./build_dpkg.sh --nostamp; popd
-    - name: Check env var
-      run: |
-         echo ${{ env.VERSION }}
     - name: Archive .deb file
       uses: actions/upload-artifact@v3
       with:
