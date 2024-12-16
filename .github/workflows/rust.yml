@@ -12,7 +12,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Set Version ENV
-      run: pushd src; echo "::set-env name=VERSION::'$(cat VERSION_STRING)"
+      run: pushd src; echo "::set-env name=VERSION::'$(cat VERSION_STRING)'"
       env:
         ACTIONS_ALLOW_UNSECURE_COMMANDS: 'true'
     - name: Install dependencies
