@@ -7,8 +7,8 @@ Go to the install location, and clone the repo:
 
 ```shell
 cd /opt/
-git clone https://github.com/LibreQoE/LibreQoS.git libreqos
-sudo chown -R YOUR_USER /opt/libreqos
+sudo git clone https://github.com/LibreQoE/LibreQoS.git libreqos
+sudo chown -R $USER /opt/libreqos
 cd /opt/libreqos/
 git switch develop
 git pull
@@ -77,7 +77,7 @@ Proceed to configure settings [following this guide](../Quickstart/configuration
 
 Note: If you used the .deb installer, you can skip this section. The .deb installer automatically sets these up.
 
-You can setup `lqosd`, and `lqos_scheduler` as systemd services.
+You can now set up `lqosd`, and `lqos_scheduler` as systemd services.
 
 ```shell
 sudo cp /opt/libreqos/src/bin/lqosd.service.example /etc/systemd/system/lqosd.service
@@ -89,6 +89,7 @@ Finally, run
 ```shell
 sudo systemctl daemon-reload
 sudo systemctl enable lqosd lqos_scheduler
+sudo systemctl start lqosd lqos_scheduler
 ```
 
 You can now point a web browser at `http://a.b.c.d:9123` (replace `a.b.c.d` with the management IP address of your shaping server) and enjoy a real-time view of your network.
