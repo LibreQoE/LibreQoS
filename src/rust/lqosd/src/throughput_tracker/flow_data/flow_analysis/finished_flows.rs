@@ -466,7 +466,7 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
         //data.trim(); // Remove the trailing 30 seconds of zeroes
         //let tp_buf_dn = data.throughput_buffer.iter().map(|v| v.down).collect();
         //let tp_buf_up = data.throughput_buffer.iter().map(|v| v.up).collect();
-        lts2_sys::two_way_flow(
+        crate::lts2_sys::two_way_flow(
             start_time,
             last_seen,
             key.local_ip.as_ip(),
@@ -493,7 +493,7 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
         // We have a one-way flow!
         let Ok(config) = load_config() else { return; };
         if !config.long_term_stats.gather_stats { return; }
-        lts2_sys::one_way_flow(
+        crate::lts2_sys::one_way_flow(
             start_time,
             last_seen,
             key.local_ip.as_ip(),

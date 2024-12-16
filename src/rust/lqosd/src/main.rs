@@ -15,6 +15,7 @@ mod node_manager;
 mod system_stats;
 mod blackboard;
 mod remote_commands;
+pub mod lts2_sys;
 
 #[cfg(feature = "flamegraphs")]
 use std::io::Write;

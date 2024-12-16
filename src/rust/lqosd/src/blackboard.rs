@@ -58,7 +58,7 @@ pub fn start_blackboard() {
                             continue;
                         }
                     };
-                    lts2_sys::blackboard(&cbor);
+                    crate::lts2_sys::blackboard(&cbor);
                     board.circuits.clear();
                     board.sites.clear();
                     board.system.clear();

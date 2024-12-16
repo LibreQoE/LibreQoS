@@ -35,7 +35,6 @@ members = [
     "uisp", # REST support for the UISP API
     "uisp_integration", # UISP Integration in Rust
     "lqos_support_tool", # A Helper tool to make it easier to request/receive support
-    "lts2_sys", # Linkage to the proprietary LTS2 system
 ]
 
 [dependencies]
