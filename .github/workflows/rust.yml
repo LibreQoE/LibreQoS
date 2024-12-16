@@ -23,8 +23,8 @@ jobs:
     - name: Archive .deb file
       uses: actions/upload-artifact@v3
       with:
-        name: libreqos_latest_amd64.deb
-        path: ~/work/LibreQoS/LibreQoS/src/dist/libreqos_latest_amd64.deb
+        name: libreqos_1.4.-1_amd64.deb
+        path: src/dist/libreqos_1.4.-1_amd64.deb
   
   audit:
     strategy:
