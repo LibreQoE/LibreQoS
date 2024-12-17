@@ -102,6 +102,12 @@ impl MessageQueue {
     }
 
     pub(crate) fn send(&mut self, keys: Arc<KeyStore>) -> Result<()> {
+        let config = load_config()?;
+        if config.long_term_stats.use_insight.unwrap_or(false) {
+            self.clear();
+            return Ok(());
+        }
+
         use std::net::ToSocketAddrs;
         let remote_host = get_remote_host();
         let target = &format!("{}:9121", remote_host);
@@ -165,5 +171,19 @@ impl MessageQueue {
         }
         println!("Finished sending messages to {}", remote_host);
         Ok(())
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.general_queue.clear();
+        self.circuit_throughput.clear();
+        self.circuit_retransmits.clear();
+        self.circuit_rtt.clear();
+        self.circuit_cake_drops.clear();
+        self.circuit_cake_marks.clear();
+        self.site_throughput.clear();
+        self.site_retransmits.clear();
+        self.site_cake_drops.clear();
+        self.site_cake_marks.clear();
+        self.site_rtt.clear();
     }
 }
