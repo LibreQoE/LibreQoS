@@ -217,8 +217,11 @@ pub enum BusRequest {
 
   /// Submit binary data to the blackboard
   BlackboardBlob {
+    /// The subsystem to which the data applies
     tag: String,
+    /// The part of the data being submitted
     part: usize,
+    /// The binary data
     blob: Vec<u8>,
   },
 

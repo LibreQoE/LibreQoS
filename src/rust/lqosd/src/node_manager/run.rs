@@ -20,8 +20,6 @@ pub async fn spawn_webserver(
     bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
     system_usage_tx: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>
 ) -> Result<()>  {
-    // TODO: port change is temporary
-    let listener = TcpListener::bind(":::9123").await?;
 
     // Check that static content is available and set up the path
     let config = load_config()?;
@@ -32,6 +30,10 @@ pub async fn spawn_webserver(
     if !static_path.exists() {
         bail!("Static path not found for webserver (vin/static2/");
     }
+
+    // Listen for net connections
+    let listen_address = config.webserver_listen.clone().unwrap_or(":::9123".to_string());
+    let listener = TcpListener::bind(&listen_address).await?;
 
     // Construct the router from parts
     let router = Router::new()
@@ -44,7 +46,7 @@ pub async fn spawn_webserver(
         .nest("/local-api", local_api())
         .fallback_service(ServeDir::new(static_path));
 
-    info!("Webserver listening on :: port 9123");
+    info!("Webserver listening on: [{listen_address}]");
     axum::serve(listener, router).await?;
     Ok(())
 }
