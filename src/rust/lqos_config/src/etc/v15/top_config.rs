@@ -74,6 +74,9 @@ pub struct Config {
 
     /// Option to disable the webserver for headless/CLI operation
     pub disable_webserver: Option<bool>,
+
+    /// Listen options for the webserver
+    pub webserver_listen: Option<String>,
 }
 
 impl Config {
@@ -141,6 +144,7 @@ impl Default for Config {
             queue_check_period_ms: 1000,
             flows: None,
             disable_webserver: None,
+            webserver_listen: None,
         }
     }
 }
