@@ -10,10 +10,10 @@ mod site_rtt;
 mod site_cake_drops;
 mod site_cake_marks;
 
-use std::net::{SocketAddr, TcpStream};
+use std::net::TcpStream;
 use anyhow::Result;
 use nacl_blob::KeyStore;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
 use lqos_config::load_config;

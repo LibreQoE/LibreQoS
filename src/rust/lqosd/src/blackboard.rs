@@ -58,7 +58,9 @@ pub fn start_blackboard() {
                             continue;
                         }
                     };
-                    crate::lts2_sys::blackboard(&cbor);
+                    if let Err(e) = crate::lts2_sys::blackboard(&cbor) {
+                        warn!("Failed to send blackboard data: {}", e);
+                    }
                     board.circuits.clear();
                     board.sites.clear();
                     board.system.clear();

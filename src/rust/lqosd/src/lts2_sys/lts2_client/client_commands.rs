@@ -1,7 +1,7 @@
 use std::sync::{mpsc, OnceLock};
 use anyhow::{bail, Result};
 use tokio::sync::oneshot;
-use crate::lts2_sys::lts2_client::{free_trial, ingestor};
+use crate::lts2_sys::lts2_client::ingestor;
 use crate::lts2_sys::shared_types::FreeTrialDetails;
 
 /// Commands that can be sent to the LTS client.

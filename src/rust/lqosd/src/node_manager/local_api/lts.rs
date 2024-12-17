@@ -7,7 +7,6 @@ use axum::{Form, Json};
 use axum::response::Redirect;
 use tracing::{info, warn};
 use serde::Serialize;
-use tokio::task::spawn_blocking;
 use lqos_bus::{bus_request, BusRequest};
 use lqos_config::load_config;
 pub use shaper_status::shaper_status_from_lts;

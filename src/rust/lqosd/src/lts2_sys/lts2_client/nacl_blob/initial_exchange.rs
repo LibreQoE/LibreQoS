@@ -1,4 +1,3 @@
-use std::io::{Read, Write};
 use dryoc::dryocbox::PublicKey;
 use crate::lts2_sys::lts2_client::nacl_blob::{initial_exchange, KeyStore};
 use crate::lts2_sys::lts2_client::nacl_blob::size_info::SizeInfo;
@@ -64,6 +63,7 @@ pub fn receive_hello(tcp_stream: &mut std::net::TcpStream) -> anyhow::Result<(in
     }, size_info))
 }
 
+#[allow(dead_code)]
 pub struct InitialExchange {
     pub magic_number: u16,
     pub version: u16,

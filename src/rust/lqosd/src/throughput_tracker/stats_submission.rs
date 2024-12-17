@@ -233,10 +233,12 @@ pub(crate) fn submit_throughput_stats(
 
             // TODO: Send permitted IP ranges at the same time
             if let Ok(config) = lqos_config::load_config() {
-                crate::lts2_sys::ip_policies(
+                if let Err(e) = crate::lts2_sys::ip_policies(
                     &config.ip_ranges.allow_subnets,
                     &config.ip_ranges.ignore_subnets
-                );
+                ) {
+                    debug!("Error sending message to LTS2. {e:?}");
+                }
             }
         }
 
@@ -265,7 +267,9 @@ pub(crate) fn submit_throughput_stats(
         ).is_err() {
             warn!("Error sending message to LTS2.");
         }
-        crate::lts2_sys::flow_count(now, ALL_FLOWS.lock().unwrap().flow_data.len() as u64);
+        if let Err(e) = crate::lts2_sys::flow_count(now, ALL_FLOWS.lock().unwrap().flow_data.len() as u64) {
+            debug!("Error sending message to LTS2. {e:?}");
+        }
 
         // Send per-circuit stats to LTS2
         // Start by combining the throughput data for each circuit as a whole
@@ -549,7 +553,9 @@ pub(crate) fn submit_throughput_stats(
         }
 
         // Notify of completion, which triggers processing
-        crate::lts2_sys::ingest_batch_complete();
+        if let Err(e) = crate::lts2_sys::ingest_batch_complete() {
+            warn!("Error sending message to LTS2: {e:?}");
+        }
     }
 }
 
