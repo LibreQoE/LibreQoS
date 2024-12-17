@@ -77,7 +77,7 @@ pub async fn apply_templates(
 
         if has_insight {
             // Change the LTS part of the template
-            let (lts_status, _) = crate::lts2_sys::get_lts_license_status();
+            let (lts_status, _) = crate::lts2_sys::get_lts_license_status_async().await;
             trial_link = INSIGHT_LINK_OFFER_TRIAL.to_string();
             match lts_status {
                 LtsStatus::Invalid | LtsStatus::NotChecked => {}

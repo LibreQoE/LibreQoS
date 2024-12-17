@@ -7,6 +7,7 @@ use axum::{Form, Json};
 use axum::response::Redirect;
 use tracing::{info, warn};
 use serde::Serialize;
+use tokio::task::spawn_blocking;
 use lqos_bus::{bus_request, BusRequest};
 use lqos_config::load_config;
 pub use shaper_status::shaper_status_from_lts;
@@ -28,7 +29,7 @@ pub struct StatsCheckAction {
 }
 
 pub async fn stats_check() -> Json<StatsCheckAction> {
-    let (status, trial_expiration) = crate::lts2_sys::get_lts_license_status();
+    let (status, trial_expiration) = crate::lts2_sys::get_lts_license_status_async().await;
     println!("{:?}, {trial_expiration:?}", status);
     let mut response = StatsCheckAction {
         action: StatsCheckResponse::DoNothing,

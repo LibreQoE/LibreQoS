@@ -130,6 +130,12 @@ pub fn get_lts_license_status() -> (LtsStatus, i32) {
     (LtsStatus::from_i32(status), remaining)
 }
 
+pub async fn get_lts_license_status_async() -> (LtsStatus, i32) {
+    let remaining = lts2_client::get_lts_license_trial_remaining().unwrap_or(0);
+    let status = lts2_client::get_lts_license_status().unwrap_or(-1);
+    (LtsStatus::from_i32(status), remaining)
+}
+
 pub fn ingest_batch_complete() -> Result<()> {
     Ok(lts2_client::ingest_batch_complete()?)
 }

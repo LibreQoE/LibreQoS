@@ -393,6 +393,40 @@ pub fn get_lts_license_trial_remaining() -> anyhow::Result<i32> {
     Err(anyhow::anyhow!("Failed to get command channel"))
 }
 
+pub async fn get_lts_license_status_async() -> anyhow::Result<i32> {
+    if let Ok(tx) = client_commands::get_command_channel() {
+        let (otx, orx) = oneshot::channel();
+        if tx.send(LtsClientCommand::LicenseStatus(otx)).is_err() {
+            error!("Failed to send license status request to LTS2 client");
+            return Err(anyhow::anyhow!("Failed to send license status request to LTS2 client"));
+        }
+        return if let Ok(result) = orx.await {
+            Ok(result)
+        } else {
+            error!("Failed to receive license status response from LTS2 client");
+            Err(anyhow::anyhow!("Failed to receive license status response from LTS2 client"))
+        }
+    }
+    Err(anyhow::anyhow!("Failed to get command channel"))
+}
+
+pub async fn get_lts_license_trial_remaining_async() -> anyhow::Result<i32> {
+    if let Ok(tx) = client_commands::get_command_channel() {
+        let (otx, orx) = oneshot::channel();
+        if tx.send(LtsClientCommand::TrialDaysRemaining(otx)).is_err() {
+            error!("Failed to send trial days remaining request to LTS2 client");
+            return Err(anyhow::anyhow!("Failed to send trial days remaining request to LTS2 client"));
+        }
+        return if let Ok(result) = orx.await {
+            Ok(result)
+        } else {
+            error!("Failed to receive trial days remaining response from LTS2 client");
+            Err(anyhow::anyhow!("Failed to receive trial days remaining response from LTS2 client"))
+        }
+    }
+    Err(anyhow::anyhow!("Failed to get command channel"))
+}
+
 pub fn ingest_batch_complete() -> anyhow::Result<()> {
     if let Ok(tx) = client_commands::get_command_channel() {
         if tx.send(LtsClientCommand::IngestBatchComplete).is_err() {
