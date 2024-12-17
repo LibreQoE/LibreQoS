@@ -857,7 +857,7 @@ def refreshShapers():
 			def sqmFixupRate(rate:int, sqm:str) -> str:
 				# If we aren't using cake, just return the sqm string
 				if not sqm.startswith("cake") or "rtt" in sqm:
-					return sqm()
+					return sqm
 
 				# If we are using cake, we need to fixup the rate
 				# Based on: 1 MTU is 1500 bytes, or 12,000 bits.
