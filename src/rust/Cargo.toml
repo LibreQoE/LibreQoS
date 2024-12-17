@@ -6,7 +6,7 @@ license = "GPL-2.0-only"
 
 [profile.release]
 strip = "debuginfo"
-lto = "off"
+lto = "thin"
 incremental = true
 
 [profile.release.build-override]
