@@ -103,7 +103,7 @@ impl MessageQueue {
 
     pub(crate) fn send(&mut self, keys: Arc<KeyStore>) -> Result<()> {
         let config = load_config()?;
-        if config.long_term_stats.use_insight.unwrap_or(false) {
+        if !config.long_term_stats.use_insight.unwrap_or(false) {
             self.clear();
             return Ok(());
         }
