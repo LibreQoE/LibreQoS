@@ -78,6 +78,9 @@ echo "sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip install binpacking" >> postinst
 echo "PIP_BREAK_SYSTEM_PACKAGES=1 pip uninstall apscheduler --yes" >> postinst
 echo "sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip uninstall apscheduler --yes" >> postinst
 echo "sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip install apscheduler" >> postinst
+echo "PIP_BREAK_SYSTEM_PACKAGES=1 pip uninstall deepdiff --yes" >> postinst
+echo "sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip uninstall deepdiff --yes" >> postinst
+echo "sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip install deepdiff" >> postinst
 # - Run lqsetup
 echo "/opt/libreqos/src/bin/lqos_setup" >> postinst
 # - Setup the services
