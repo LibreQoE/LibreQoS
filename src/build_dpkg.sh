@@ -71,6 +71,13 @@ echo "pushd /opt/libreqos" >> postinst
 # - Setup Python dependencies as a post-install task
 echo "PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install -r src/requirements.txt" >> postinst
 echo "sudo PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install -r src/requirements.txt" >> postinst
+# - Setup Python dependencies as a post-install task - handle issue with two packages on Ubuntu Server 24.04
+echo "PIP_BREAK_SYSTEM_PACKAGES=1 pip uninstall binpacking --yes" >> postinst
+echo "sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip uninstall binpacking --yes" >> postinst
+echo "sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip install binpacking" >> postinst
+echo "PIP_BREAK_SYSTEM_PACKAGES=1 pip uninstall apscheduler --yes" >> postinst
+echo "sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip uninstall apscheduler --yes" >> postinst
+echo "sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip install apscheduler" >> postinst
 # - Run lqsetup
 echo "/opt/libreqos/src/bin/lqos_setup" >> postinst
 # - Setup the services
