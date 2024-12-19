@@ -20,7 +20,7 @@ DEBIAN_DIR=$DPKG_DIR/DEBIAN
 LQOS_DIR=$DPKG_DIR/opt/libreqos/src
 ETC_DIR=$DPKG_DIR/etc
 MOTD_DIR=$DPKG_DIR/etc/update-motd.d
-LQOS_FILES="integrationCommon.py integrationPowercode.py integrationRestHttp.py integrationSonar.py integrationSplynx.py integrationUISP.py integrationSonar.py LibreQoS.py lqos.example lqTools.py mikrotikFindIPv6.py network.example.json pythonCheck.py README.md scheduler.py ShapedDevices.example.csv lqos.example ../requirements.txt"
+LQOS_FILES="csvToNetworkJSON.py integrationCommon.py integrationPowercode.py integrationRestHttp.py integrationSonar.py integrationSplynx.py integrationUISP.py integrationSonar.py LibreQoS.py lqos.example lqTools.py mikrotikFindIPv6.py network.example.json pythonCheck.py README.md scheduler.py ShapedDevices.example.csv mikrotikDHCPRouterList.csv integrationUISPbandwidths.template.csv manualNetwork.template.csv integrationUISProutes.template.csv integrationSplynxBandwidths.template.csv lqos.example ../requirements.txt"
 LQOS_BIN_FILES="lqos_scheduler.service.example lqosd.service.example"
 RUSTPROGS="lqosd lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqusers lqos_setup lqos_map_perf uisp_integration lqos_support_tool"
 
