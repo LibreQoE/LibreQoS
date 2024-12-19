@@ -12,7 +12,7 @@ sudo systemctl status lqosd
 
 If the status is 'failed', examine why using journalctl, which shows the full status of the service:
 ```
-sudo journalctl -u lqosd -b
+journalctl -u lqosd --since "10 minutes ago"
 ```
 Press the End key on the keyboard to take you to the bottom of the log to see the latest updates to that log.
 
@@ -43,7 +43,7 @@ sudo systemctl status lqosd
 
 If the status is 'failed', examine why using journalctl, which shows the full status of the service:
 ```
-sudo journalctl -u lqosd -b
+journalctl -u lqosd --since "10 minutes ago"
 ```
 Press the End key on the keyboard to take you to the bottom of the log to see the latest updates to that log.
 
@@ -51,17 +51,24 @@ Lqosd will provide specific reasons it failed, such as an interface not being up
 
 ### Advanced lqosd debug
 
-At the command-line, type ```sudo RUST_LOG=info /opt/libreqos/src/bin/lqosd``` which will provide specifics regarding why it failed to start.
+At the command-line, run ```sudo RUST_LOG=info /opt/libreqos/src/bin/lqosd``` which runs lqosd manually, and will provide specifics regarding why it failed to start.
 
 ### RTNETLINK answers: Invalid argument
 
 This tends to show up when the MQ qdisc cannot be added correctly to the NIC interface. This would suggest the NIC has insufficient RX/TX queues. Please make sure you are using the [recommended NICs](../../SystemRequirements/Compute.md#network-interface-requirements).
 
-### InfluxDB "Failed to update bandwidth graphs"
-
-The scheduler (scheduler.py) runs the InfluxDB integration within a try/except statement. If it fails to update InfluxDB, it will report "Failed to update bandwidth graphs".
-To find the exact cause of the failure, please run ```python3 graphInfluxDB.py``` which will provde more specific errors.
-
+### Python ModuleNotFoundError in Ubuntu 24.04
+```
+pip uninstall binpacking --break-system-packages --yes
+sudo pip uninstall binpacking --break-system-packages --yes
+sudo pip install binpacking --break-system-packages
+pip uninstall apscheduler --break-system-packages --yes
+sudo pip uninstall apscheduler --break-system-packages --yes
+sudo pip install apscheduler --break-system-packages
+pip uninstall deepdiff --break-system-packages --yes
+sudo pip uninstall deepdiff --break-system-packages --yes
+sudo pip install deepdiff --break-system-packages
+```
 ### All customer IPs are listed under Unknown IPs, rather than Shaped Devices in GUI
 ```
 cd /opt/libreqos/src
