@@ -11,3 +11,4 @@ waitress
 setuptools >= 65.5.1
 apscheduler
 deepdiff
+routeros_api
