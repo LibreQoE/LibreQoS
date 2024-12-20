@@ -20,7 +20,7 @@ DEBIAN_DIR=$DPKG_DIR/DEBIAN
 LQOS_DIR=$DPKG_DIR/opt/libreqos/src
 ETC_DIR=$DPKG_DIR/etc
 MOTD_DIR=$DPKG_DIR/etc/update-motd.d
-LQOS_FILES="integrationCommon.py integrationPowercode.py integrationRestHttp.py integrationSonar.py integrationSplynx.py integrationUISP.py integrationSonar.py LibreQoS.py lqos.example lqTools.py mikrotikFindIPv6.py network.example.json pythonCheck.py README.md scheduler.py ShapedDevices.example.csv lqos.example ../requirements.txt"
+LQOS_FILES="csvToNetworkJSON.py integrationCommon.py integrationPowercode.py integrationRestHttp.py integrationSonar.py integrationSplynx.py integrationUISP.py integrationSonar.py LibreQoS.py lqos.example lqTools.py mikrotikFindIPv6.py network.example.json pythonCheck.py README.md scheduler.py ShapedDevices.example.csv mikrotikDHCPRouterList.csv integrationUISPbandwidths.template.csv manualNetwork.template.csv integrationUISProutes.template.csv integrationSplynxBandwidths.template.csv lqos.example ../requirements.txt"
 LQOS_BIN_FILES="lqos_scheduler.service.example lqosd.service.example"
 RUSTPROGS="lqosd lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqusers lqos_setup lqos_map_perf uisp_integration lqos_support_tool"
 
@@ -71,6 +71,18 @@ echo "pushd /opt/libreqos" >> postinst
 # - Setup Python dependencies as a post-install task
 echo "PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install -r src/requirements.txt" >> postinst
 echo "sudo PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install -r src/requirements.txt" >> postinst
+# - Setup Python dependencies as a post-install task - handle issue with two packages on Ubuntu Server 24.04
+echo "PIP_BREAK_SYSTEM_PACKAGES=1 pip uninstall binpacking --yes" >> postinst
+echo "sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip uninstall binpacking --yes" >> postinst
+echo "sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip install binpacking" >> postinst
+echo "PIP_BREAK_SYSTEM_PACKAGES=1 pip uninstall apscheduler --yes" >> postinst
+echo "sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip uninstall apscheduler --yes" >> postinst
+echo "sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip install apscheduler" >> postinst
+echo "PIP_BREAK_SYSTEM_PACKAGES=1 pip uninstall deepdiff --yes" >> postinst
+echo "sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip uninstall deepdiff --yes" >> postinst
+echo "sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip install deepdiff" >> postinst
+# Ensure folder permissions are correct post-install
+echo "sudo chown -R $USER /opt/libreqos" >> postinst
 # - Run lqsetup
 echo "/opt/libreqos/src/bin/lqos_setup" >> postinst
 # - Setup the services

@@ -119,10 +119,8 @@ fn write_network_json() {
   fs::write(NETWORK_JSON, output).expect("Unable to write file");
 }
 
-const EMPTY_SHAPED_DEVICES: &str = "# This is a comment
-Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment
-# This is another comment
-\"9999\",\"968 Circle St., Gurnee, IL 60031\",1,Device 1,AP_7,,\"100.64.1.2, 100.64.0.14\",,25,5,500,500,";
+const EMPTY_SHAPED_DEVICES: &str = "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment
+\"9999\",\"968 Circle St., Gurnee, IL 60031\",1,Device 1,,,\"100.64.1.2, 100.64.0.14\",,25,5,500,500,";
 
 fn write_shaped_devices() {
   fs::write(SHAPED_DEVICES, EMPTY_SHAPED_DEVICES)
