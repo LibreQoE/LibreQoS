@@ -81,6 +81,8 @@ echo "sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip install apscheduler" >> postinst
 echo "PIP_BREAK_SYSTEM_PACKAGES=1 pip uninstall deepdiff --yes" >> postinst
 echo "sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip uninstall deepdiff --yes" >> postinst
 echo "sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip install deepdiff" >> postinst
+# Ensure folder permissions are correct post-install
+echo "sudo chown -R $USER /opt/libreqos" >> postinst
 # - Run lqsetup
 echo "/opt/libreqos/src/bin/lqos_setup" >> postinst
 # - Setup the services
