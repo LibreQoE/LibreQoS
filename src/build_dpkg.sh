@@ -60,7 +60,6 @@ pushd rust > /dev/null || exit
 #cargo clean
 cargo build --all --release
 popd > /dev/null || exit
-LINKED_PYTHON=$(ldd rust/target/release/lqosd | grep libpython | sed -e '/^[^\t]/ d' | sed -e 's/\t//' | sed -e 's/.*=..//' | sed -e 's/ (0.*)//')
 
 # Create the post-installation file
 pushd "$DEBIAN_DIR" > /dev/null || exit
@@ -95,17 +94,6 @@ echo "/bin/systemctl enable lqosd lqos_scheduler" >> postinst
 echo "/bin/systemctl start lqosd" >> postinst
 echo "/bin/systemctl start lqos_scheduler" >> postinst
 echo "popd" >> postinst
-# Attempting to fixup versioning issues with libpython.
-# This requires that you already have LibreQoS installed.
-echo "if ! test -f $LINKED_PYTHON; then" >> postinst
-echo "  if test -f /lib/x86_64-linux-gnu/libpython3.12.so.1.0; then" >> postinst
-echo "    ln -s /lib/x86_64-linux-gnu/libpython3.12.so.1.0 $LINKED_PYTHON" >> postinst
-echo "  fi" >> postinst
-echo "  if test -f /lib/x86_64-linux-gnu/libpython3.11.so.1.0; then" >> postinst
-echo "    ln -s /lib/x86_64-linux-gnu/libpython3.11.so.1.0 $LINKED_PYTHON" >> postinst
-echo "  fi" >> postinst
-echo "fi" >> postinst
-# End of symlink insanity
 chmod a+x postinst
 
 # Uninstall Script

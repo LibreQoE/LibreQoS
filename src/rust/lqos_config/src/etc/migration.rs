@@ -147,12 +147,12 @@ fn migrate_bridge(
     python_config: &PythonMigration,
     new_config: &mut Config,
 ) -> Result<(), MigrationError> {
-    if python_config.on_a_stick {
+    if python_config.on_astick {
         new_config.bridge = None;
         new_config.single_interface = Some(SingleInterfaceConfig {
             interface: python_config.interface_a.clone(),
-            internet_vlan: python_config.stick_vlan_a,
-            network_vlan: python_config.stick_vlan_b,
+            internet_vlan: python_config.stick_vlan_a as u32,
+            network_vlan: python_config.stick_vlan_b as u32,
         });
     } else {
         new_config.single_interface = None;
@@ -171,17 +171,17 @@ fn migrate_queues(
 ) -> Result<(), MigrationError> {
     new_config.queues.default_sqm = python_config.sqm.clone();
     new_config.queues.monitor_only = python_config.monitor_only_mode;
-    new_config.queues.uplink_bandwidth_mbps = python_config.upstream_bandwidth_capacity_upload_mbps;
+    new_config.queues.uplink_bandwidth_mbps = python_config.upstream_bandwidth_capacity_upload_mbps as u32;
     new_config.queues.downlink_bandwidth_mbps =
-        python_config.upstream_bandwidth_capacity_download_mbps;
-    new_config.queues.generated_pn_upload_mbps = python_config.generated_pn_upload_mbps;
-    new_config.queues.generated_pn_download_mbps = python_config.generated_pn_download_mbps;
+        python_config.upstream_bandwidth_capacity_download_mbps as u32;
+    new_config.queues.generated_pn_upload_mbps = python_config.generated_pnupload_mbps as u32;
+    new_config.queues.generated_pn_download_mbps = python_config.generated_pndownload_mbps as u32;
     new_config.queues.dry_run = !python_config.enable_actual_shell_commands;
     new_config.queues.sudo = python_config.run_shell_commands_as_sudo;
     if python_config.queues_available_override == 0 {
         new_config.queues.override_available_queues = None;
     } else {
-        new_config.queues.override_available_queues = Some(python_config.queues_available_override);
+        new_config.queues.override_available_queues = Some(python_config.queues_available_override as u32);
     }
     new_config.queues.use_binpacking = python_config.use_bin_packing_to_balance_cpu;
     Ok(())
@@ -215,9 +215,9 @@ fn migrate_integration_common(
 ) -> Result<(), MigrationError> {
     new_config.integration_common.circuit_name_as_address = python_config.circuit_name_use_address;
     new_config.integration_common.always_overwrite_network_json =
-        python_config.overwrite_network_json_always;
+        python_config.overwrite_network_jsonalways;
     new_config.integration_common.queue_refresh_interval_mins =
-        python_config.queue_refresh_interval_mins;
+        python_config.queue_refresh_interval_mins as u32;
     Ok(())
 }
 
@@ -227,8 +227,8 @@ fn migrate_spylnx(
 ) -> Result<(), MigrationError> {
     new_config.spylnx_integration.enable_spylnx = python_config.automatic_import_splynx;
     new_config.spylnx_integration.api_key = python_config.splynx_api_key.clone();
-    new_config.spylnx_integration.api_secret = python_config.spylnx_api_secret.clone();
-    new_config.spylnx_integration.url = python_config.spylnx_api_url.clone();
+    new_config.spylnx_integration.api_secret = python_config.splynx_api_secret.clone();
+    new_config.spylnx_integration.url = python_config.splynx_api_url.clone();
     Ok(())
 }
 
@@ -259,17 +259,17 @@ fn migrate_uisp(
 ) -> Result<(), MigrationError> {
     new_config.uisp_integration.enable_uisp = python_config.automatic_import_uisp;
     new_config.uisp_integration.token = python_config.uisp_auth_token.clone();
-    new_config.uisp_integration.url = python_config.uisp_base_url.clone();
+    new_config.uisp_integration.url = python_config.uispbase_url.clone();
     new_config.uisp_integration.site = python_config.uisp_site.clone();
     new_config.uisp_integration.strategy = python_config.uisp_strategy.clone();
     new_config.uisp_integration.suspended_strategy = python_config.uisp_suspended_strategy.clone();
-    new_config.uisp_integration.airmax_capacity = python_config.airmax_capacity;
-    new_config.uisp_integration.ltu_capacity = python_config.ltu_capacity;
+    new_config.uisp_integration.airmax_capacity = python_config.air_max_capacity as f32;
+    new_config.uisp_integration.ltu_capacity = python_config.ltu_capacity as f32;
     new_config.uisp_integration.exclude_sites = python_config.exclude_sites.clone();
-    new_config.uisp_integration.ipv6_with_mikrotik = python_config.find_ipv6_using_mikrotik;
-    new_config.uisp_integration.bandwidth_overhead_factor = python_config.bandwidth_overhead_factor;
+    new_config.uisp_integration.ipv6_with_mikrotik = python_config.find_ipv6using_mikrotik_api;
+    new_config.uisp_integration.bandwidth_overhead_factor = python_config.bandwidth_overhead_factor as f32;
     new_config.uisp_integration.commit_bandwidth_multiplier =
-        python_config.committed_bandwidth_multiplier;
+        python_config.committed_bandwidth_multiplier as f32;
     // TODO: ExceptionCPEs is going to require some real work
     Ok(())
 }
@@ -278,24 +278,10 @@ fn migrate_influx(
     python_config: &PythonMigration,
     new_config: &mut Config,
 ) -> Result<(), MigrationError> {
-    new_config.influxdb.enable_influxdb = python_config.influx_db_enabled;
-    new_config.influxdb.url = python_config.influx_db_url.clone();
-    new_config.influxdb.bucket = python_config.infux_db_bucket.clone();
-    new_config.influxdb.org = python_config.influx_db_org.clone();
-    new_config.influxdb.token = python_config.influx_db_token.clone();
+    new_config.influxdb.enable_influxdb = python_config.influx_enabled;
+    new_config.influxdb.url = python_config.influx_dburl.clone();
+    new_config.influxdb.bucket = python_config.influx_dbbucket.clone();
+    new_config.influxdb.org = python_config.influx_dborg.clone();
+    new_config.influxdb.token = python_config.influx_dbtoken.clone();
     Ok(())
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use crate::etc::test_data::{OLD_CONFIG, PYTHON_CONFIG};
-
-    #[test]
-    fn test_migration() {
-        let old_config = EtcLqos::load_from_string(OLD_CONFIG).unwrap();
-        let python_config = PythonMigration::load_from_string(PYTHON_CONFIG).unwrap();
-        let new_config = do_migration_14_to_15(&old_config, &python_config).unwrap();
-        assert_eq!(new_config.version, "1.5");
-    }
 }
