@@ -3,14 +3,6 @@ use std::process::Command;
 use lqos_config::Config;
 use crate::uisp_types::Ipv4ToIpv6;
 
-// To ease debugging in the absense of this particular setup, there's a mock function
-// available, too.
-//
-// Enable one of these!
-//const PY_FUNC: &str = "pullMikrotikIPv6_Mock";
-const PY_FUNC: &str = "pullMikrotikIPv6";
-
-
 pub async fn mikrotik_data(config: &Config) -> anyhow::Result<Vec<Ipv4ToIpv6>> {
     if config.uisp_integration.ipv6_with_mikrotik {
         fetch_mikrotik_data(config).await
@@ -40,7 +32,6 @@ async fn fetch_mikrotik_data(config: &Config) -> anyhow::Result<Vec<Ipv4ToIpv6>>
     let csv_path = mikrotik_dhcp_router_list_path.to_string_lossy().to_string();
 
     // Get the Python environment going
-    let mut json_from_python = None;
     let output = Command::new("/usr/bin/python3")
         .args(&[ &code, &csv_path ])
         .output();
@@ -49,12 +40,11 @@ async fn fetch_mikrotik_data(config: &Config) -> anyhow::Result<Vec<Ipv4ToIpv6>>
         return Err(anyhow::anyhow!("Python error: {:?}", e));
     }
     let output = output?;
-    json_from_python = Some(String::from_utf8(output.stdout)?);
+    let json_from_python = String::from_utf8(output.stdout)?;
 
     // Parse the JSON
 
     // If we got this far, we have some JSON to work with
-    let json_from_python = json_from_python.unwrap();
     let json = serde_json::from_str::<serde_json::Value>(&json_from_python)?;
     if let Some(map) = json.as_object() {
         let mut result = Vec::new();
