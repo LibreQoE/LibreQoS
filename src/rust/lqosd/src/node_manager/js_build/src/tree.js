@@ -10,6 +10,7 @@ import {subscribeWS} from "./pubsub/ws";
 
 var tree = null;
 var parent = 0;
+var upParent = 0;
 var maxDepth = 1;
 var subscribed = false;
 
@@ -33,6 +34,7 @@ function getInitialTree() {
 
         treeTable.appendChild(thead);
         let tbody = document.createElement("tbody");
+
         for (let i=0; i<tree.length; i++) {
             let nodeId = tree[i][0];
             let node = tree[i][1];
@@ -49,6 +51,20 @@ function getInitialTree() {
                 }
             }
         }
+
+        if (parent !== 0) {
+            let row = document.createElement("tr");
+            let col = document.createElement("td");
+            col.colSpan = 12;
+            col.classList.add("small", "text-center");
+            if (upParent === 0) {
+                upParent = tree[parent][1].immediate_parent;
+            }
+            col.innerHTML = "<a href='tree.html?parent=" + upParent + "' class='redactable'><i class='fa fa-chevron-up'></i> Up One Level - " + tree[upParent][1].name + "</a>";
+            row.appendChild(col);
+            thead.appendChild(row);
+        }
+
         treeTable.appendChild(tbody);
 
         // Clear and apply
@@ -113,7 +129,7 @@ function buildRow(i, depth=0) {
         nodeName += "─";
     }
     if (depth > 0) nodeName += " ";
-    nodeName += "<a href='/tree.html?parent=" + nodeId + "' class='redactable'>";
+    nodeName += "<a href='/tree.html?parent=" + nodeId + "&upParent=" + parent + "' class='redactable'>";
     nodeName += node.name;
     nodeName += "</a>";
     if (node.type !== null) {
@@ -357,6 +373,10 @@ if (params.parent !== null) {
     parent = parseInt(params.parent);
 } else {
     parent = 0;
+}
+
+if (params.upParent !== null) {
+    upParent = parseInt(params.upParent);
 }
 
 if (localStorage.getItem("treeMaxDepth") !== null) {
