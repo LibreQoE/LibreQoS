@@ -170,12 +170,17 @@ def createShaper():
 
 	print("Fetching data from Spylnx")
 	headers = buildHeaders()
+	print("Fetching tariffs from Spylnx")
 	tariff, downloadForTariffID, uploadForTariffID = getTariffs(headers)
+	print("Fetching all customers from Spylnx")
 	customers = getCustomers(headers)
+	print("Fetching online customers from Spylnx")
 	customersOnline = getCustomersOnline(headers)
 	#ipForRouter, nameForRouterID, routerIdList = getRouters(headers)
 	#sectorForRouter = getSectors(headers)
+	print("Fetching services from Spylnx")
 	allServices = getAllServices(headers)
+	print("Fetching hardware monitoring from Spylnx")
 	monitoring = getMonitoring(headers)
 	#ipv4ByCustomerID, ipv6ByCustomerID = getAllIPs(headers)
 	siteBandwidth = buildSiteBandwidths()
@@ -184,8 +189,9 @@ def createShaper():
 	allParentNodes = []
 	custIDtoParentNode = {}
 	parentNodeIDCounter = 100000
-	matched_via_access_device = 0
+	matched_via_primary_method = 0
 	matched_via_alternate_method = 0
+	matched_with_parent_node = 0
 	
 	print("Matching customer services to IPs")
 	# First priority - see if clients are associated with a Network Site via the access_device parameter
@@ -236,9 +242,9 @@ def createShaper():
 			if serviceItem['access_device'] != 0:
 				if serviceItem['access_device'] in hardware_name:
 					parent_node_id = serviceItem['access_device']
-		if 'geo' in serviceItem:
-			if 'address' in serviceItem['geo']:
-				address = serviceItem['geo']['address']
+		#if 'geo' in serviceItem:
+		#	if 'address' in serviceItem['geo']:
+		#		address = serviceItem['geo']['address']
 		if (serviceItem['ipv4'] != '') or (serviceItem['ipv6'] != ''):
 			customer = NetworkNode(
 				type=NodeType.client,
@@ -265,7 +271,9 @@ def createShaper():
 			parentNodeIDCounter = parentNodeIDCounter + 1
 			if serviceItem['id'] not in service_ids_handled:
 				service_ids_handled.append(serviceItem['id'])
-			matched_via_access_device += 1
+			matched_via_primary_method += 1
+			if parent_node_id != None:
+				matched_with_parent_node += 1
 
 	# For any services not correctly handled the way we just tried, try an alternative way
 	previously_unhandled_services = {}
@@ -277,7 +285,6 @@ def createShaper():
 			temp = previously_unhandled_services[serviceItem["id"]]
 			temp.append(serviceItem)
 			previously_unhandled_services[serviceItem["id"]] = temp
-
 	customerIDtoCustomerName = {}
 	for customer in customers:
 		customerIDtoCustomerName[customer['id']] = customer['name']
@@ -303,47 +310,55 @@ def createShaper():
 		if ipv6 not in temp:
 			temp.append(ipv6)
 		ipv6sForService[customerJson['service_id']] = temp
-				
+	customer_name_for_id = {}
 	for customerJson in customers:
-		for service in allServices:
-			if service["id"] in previously_unhandled_services:
+		customer_name_for_id[customerJson['id']] = customerJson["name"]
+	customer_name_for_service = {}
+	for customerJson in customersOnline:
+		if customerJson['id'] in customer_name_for_id:
+			customer_name_for_service[customerJson['service_id']] = customer_name_for_id[customerJson['id']]
+	for service in allServices:
+		if service["id"] in previously_unhandled_services:
+			if service["id"] not in service_ids_handled:
+				if service["id"] in ipv4sForService:
+					ipv4 = ipv4sForService[service["id"]]
+				else:
+					ipv4 = []
+				if service["id"] in ipv6sForService:
+					ipv6 = ipv6sForService[service["id"]]
+				else:
+					ipv6 = []
+				customer_name = ''
+				if service["id"] in customer_name_for_service:
+					customer_name = customer_name_for_service[service["id"]]
+				customer = NetworkNode(
+					type=NodeType.client,
+					id=service["id"],
+					parentId=None,
+					displayName=customer_name,
+					address=customer_name,
+					customerName=customer_name,
+					download=downloadForTariffID[service['tariff_id']],
+					upload=uploadForTariffID[service['tariff_id']]
+				)
+				net.addRawNode(customer)
+				device = NetworkNode(
+					id=service["id"],
+					displayName=service["id"],
+					type=NodeType.device,
+					parentId=service["id"],
+					mac=service["mac"],
+					ipv4=ipv4,
+					ipv6=ipv6
+				)
+				net.addRawNode(device)
+				matched_via_alternate_method += 1
 				if service["id"] not in service_ids_handled:
-					if service["id"] in ipv4sForService:
-						ipv4 = ipv4sForService[service["id"]]
-					else:
-						ipv4 = []
-					if service["id"] in ipv6sForService:
-						ipv6 = ipv6sForService[service["id"]]
-					else:
-						ipv6 = []
-					customer = NetworkNode(
-						type=NodeType.client,
-						id=service["id"],
-						parentId=None,
-						displayName=customerJson["name"],
-						address=customerJson["name"],
-						customerName=customerJson["name"],
-						download=downloadForTariffID[service['tariff_id']],
-						upload=uploadForTariffID[service['tariff_id']]
-					)
-					net.addRawNode(customer)
-					device = NetworkNode(
-						id=service["id"],
-						displayName=service["id"],
-						type=NodeType.device,
-						parentId=service["id"],
-						mac=service["mac"],
-						ipv4=ipv4,
-						ipv6=ipv6
-					)
-					net.addRawNode(device)
-					matched_via_alternate_method += 1
-					if service["id"] not in service_ids_handled:
-						service_ids_handled.append(service["id"])
-	percentage_found = len(service_ids_handled)/len(allServices)
-	print("Matched " + "{:.0%}".format(percentage_found) + " of known services in Splynx.")
-	print("Matched " + str(matched_via_access_device) + " services via associated access devices.")
-	print("Matched " + str(matched_via_alternate_method) + " services via alternate method.")
+					service_ids_handled.append(service["id"])
+	print("Matched " + "{:.0%}".format(len(service_ids_handled)/len(allServices)) + " of known services in Splynx.")
+	print("Matched " + "{:.0%}".format(matched_via_primary_method/len(service_ids_handled)) + " services via primary method.")
+	print("Matched " + "{:.0%}".format(matched_via_alternate_method/len(service_ids_handled)) + " services via alternate method.")
+	print("Matched " + "{:.0%}".format(matched_with_parent_node/len(service_ids_handled)) + " of services found with their corresponding parent node.")
 	
 	net.prepareTree()
 	net.plotNetworkGraph(False)
