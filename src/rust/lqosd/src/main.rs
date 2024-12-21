@@ -16,6 +16,7 @@ mod system_stats;
 mod blackboard;
 mod remote_commands;
 pub mod lts2_sys;
+mod version_checks;
 
 #[cfg(feature = "flamegraphs")]
 use std::io::Write;
@@ -164,6 +165,7 @@ fn main() -> Result<()> {
   throughput_tracker::spawn_throughput_monitor(long_term_stats_tx.clone(), flow_tx, system_usage_tx.clone())?;
   spawn_queue_monitor()?;
   lqos_sys::bpf_garbage_collector();
+  version_checks::start_version_check()?;
 
   // Handle signals
   let mut signals = Signals::new([SIGINT, SIGHUP, SIGTERM])?;
