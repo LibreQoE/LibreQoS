@@ -240,17 +240,17 @@ def createShaper():
 	for serviceItem in allServices:
 		if serviceItem['status'] == 'active':
 			address = ''
-			ipv4 = []
-			ipv6 = []
+			ipv4 = ''
+			ipv6 = ''
 			if serviceItem['ipv4'] != '':
 				if serviceItem['ipv4'] not in allocated_ipv4s:
-					ipv4 = [serviceItem['ipv4']]
+					ipv4 = serviceItem['ipv4']
 					allocated_ipv4s[serviceItem['ipv4']] = True
 				else:
 					print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IP of " + serviceItem['ipv4'] + ". IP omitted.")
 			if serviceItem['ipv6'] != '':
 				if serviceItem['ipv6'] not in allocated_ipv6s:
-					ipv6 = [serviceItem['ipv6']]
+					ipv6 = serviceItem['ipv6']
 					allocated_ipv6s[serviceItem['ipv6']] = True
 				else:
 					print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IP of " + serviceItem['ipv6'] + ". IP omitted.")
@@ -262,7 +262,7 @@ def createShaper():
 			#if 'geo' in serviceItem:
 			#	if 'address' in serviceItem['geo']:
 			#		address = serviceItem['geo']['address']
-			if (len(ipv4)>0) or (len(ipv6)>0):
+			if (ipv4 != '') or (ipv6 != ''):
 				customer = NetworkNode(
 					type=NodeType.client,
 					id=parentNodeIDCounter,
