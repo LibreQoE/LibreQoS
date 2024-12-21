@@ -159,6 +159,9 @@ def getAllIPs(headers):
 			ipv6ByCustomerID[ipv6['customer_id']] = temp
 	return (ipv4ByCustomerID, ipv6ByCustomerID)
 
+def getMonitoring(headers):
+	return spylnxRequest("admin/networking/monitoring", headers)
+
 def createShaper():
 	"""
 	Main function to fetch data from Splynx, build the network graph, and shape devices.
@@ -171,50 +174,113 @@ def createShaper():
 	customers = getCustomers(headers)
 	customersOnline = getCustomersOnline(headers)
 	#ipForRouter, nameForRouterID, routerIdList = getRouters(headers)
-	sectorForRouter = getSectors(headers)
+	#sectorForRouter = getSectors(headers)
 	allServices = getAllServices(headers)
+	monitoring = getMonitoring(headers)
 	#ipv4ByCustomerID, ipv6ByCustomerID = getAllIPs(headers)
 	siteBandwidth = buildSiteBandwidths()
+	print("Successfully fetched data from Spylnx")
 	
 	allParentNodes = []
 	custIDtoParentNode = {}
-	parentNodeIDCounter = 30000
+	parentNodeIDCounter = 100000
+	matched_via_access_device = 0
+	matched_via_alternate_method = 0
 	
-	# Create nodes for sites and assign bandwidth
-	for customer in customersOnline:
+	print("Matching customer services to IPs")
+	# First priority - see if clients are associated with a Network Site via the access_device parameter
+	hardware_name = {}
+	access_device_name = {}
+	hardware_parent = {}
+	for monitored_device in monitoring:
+		hardware_name[monitored_device['id']] = monitored_device['title']
+		if 'access_device' in monitored_device:
+			if monitored_device['access_device'] == '1':
+				access_device_name[monitored_device['id']] = monitored_device['title']
+				if 'parent_id' in monitored_device:
+					hardware_parent[monitored_device['id']] = monitored_device['parent_id']
+	# If site/node has parent, include that as "parentName_nodeName"
+	hardware_name_extended = {}
+	for monitored_device in monitoring:
+		hardware_name[monitored_device['id']] = monitored_device['title']
+		if 'parent_id' in monitored_device:
+			if monitored_device['id'] in hardware_parent:
+				if hardware_parent[monitored_device['id']] in hardware_name:
+					hardware_name_extended[monitored_device['id']] = hardware_name[hardware_parent[monitored_device['id']]] + "_" + monitored_device['title'] 
+		if monitored_device['id'] not in hardware_name_extended:
+			hardware_name_extended[monitored_device['id']] = monitored_device['title'] 
+	for device_num in hardware_name:
+		# Find parent name of hardware
+		parent_name = ''
+		parent_id = None	
+		if device_num in hardware_parent.keys():
+			parent_id = hardware_parent[device_num]
+			parent_name = hardware_name_extended[parent_id]
 		download = 10000
 		upload = 10000
-		nodeName = str(customer['nas_id']) + "_" + str(customer['call_to']).replace('.','_') + "_" + str(customer['port'])
-		
-		if nodeName not in allParentNodes:
-			if nodeName in siteBandwidth:
-				download = siteBandwidth[nodeName]["download"]
-				upload = siteBandwidth[nodeName]["upload"]
-			
-			node = NetworkNode(id=parentNodeIDCounter, displayName=nodeName, type=NodeType.site,
-							   parentId=None, download=download, upload=upload, address=None)
-			net.addRawNode(node)
-			
-			pnEntry = {}
-			pnEntry['name'] = nodeName
-			pnEntry['id'] = parentNodeIDCounter
-			custIDtoParentNode[customer['customer_id']] = pnEntry
-			
-			parentNodeIDCounter += 1
-
-	allServicesDict = {}
+		nodeName = hardware_name_extended[device_num]
+		if nodeName in siteBandwidth:
+			download = siteBandwidth[nodeName]["download"]
+			upload = siteBandwidth[nodeName]["upload"]
+		node = NetworkNode(id=device_num, displayName=nodeName, type=NodeType.site,
+						   parentId=parent_id, download=download, upload=upload, address=None)
+		net.addRawNode(node)
+	cust_id_to_name ={}
+	for customer in customers:
+		cust_id_to_name[customer['id']] = customer['name']
+	service_ids_handled = []
 	for serviceItem in allServices:
-		if serviceItem['status'] == 'active':
-			if serviceItem["customer_id"] not in allServicesDict:
-				allServicesDict[serviceItem["customer_id"]] = []
-			temp = allServicesDict[serviceItem["customer_id"]]
+		address = ''
+		parent_node_id = None
+		if 'access_device' in serviceItem:
+			if serviceItem['access_device'] != 0:
+				if serviceItem['access_device'] in hardware_name:
+					parent_node_id = serviceItem['access_device']
+		if 'geo' in serviceItem:
+			if 'address' in serviceItem['geo']:
+				address = serviceItem['geo']['address']
+		if (serviceItem['ipv4'] != '') or (serviceItem['ipv6'] != ''):
+			customer = NetworkNode(
+				type=NodeType.client,
+				id=parentNodeIDCounter,
+				parentId=parent_node_id,
+				displayName=cust_id_to_name[serviceItem['customer_id']],
+				address=cust_id_to_name[serviceItem['customer_id']],
+				customerName=cust_id_to_name[serviceItem['customer_id']],
+				download=downloadForTariffID[serviceItem['tariff_id']],
+				upload=uploadForTariffID[serviceItem['tariff_id']]
+			)
+			net.addRawNode(customer)
+			
+			device = NetworkNode(
+				id=100000 + parentNodeIDCounter,
+				displayName=cust_id_to_name[serviceItem['customer_id']],
+				type=NodeType.device,
+				parentId=parentNodeIDCounter,
+				mac=serviceItem['mac'],
+				ipv4=[serviceItem['ipv4']],
+				ipv6=[serviceItem['ipv6']]
+			)
+			net.addRawNode(device)
+			parentNodeIDCounter = parentNodeIDCounter + 1
+			if serviceItem['id'] not in service_ids_handled:
+				service_ids_handled.append(serviceItem['id'])
+			matched_via_access_device += 1
+
+	# For any services not correctly handled the way we just tried, try an alternative way
+	previously_unhandled_services = {}
+	for serviceItem in allServices:
+		if serviceItem['id'] not in service_ids_handled:
+			#if serviceItem['status'] == 'active':
+			if serviceItem["id"] not in previously_unhandled_services:
+				previously_unhandled_services[serviceItem["id"]] = []
+			temp = previously_unhandled_services[serviceItem["id"]]
 			temp.append(serviceItem)
-			allServicesDict[serviceItem["customer_id"]] = temp
+			previously_unhandled_services[serviceItem["id"]] = temp
+
 	customerIDtoCustomerName = {}
 	for customer in customers:
 		customerIDtoCustomerName[customer['id']] = customer['name']
-	#print(customerIDtoCustomerName)
-	# Create nodes for customers and their devices
 	alreadyObservedIPv4s = []
 	alreadyObservedCombinedIDs = []
 	ipv4sForService= {}
@@ -239,50 +305,45 @@ def createShaper():
 		ipv6sForService[customerJson['service_id']] = temp
 				
 	for customerJson in customers:
-		#if customerJson['status'] == 'active':
-		if customerJson['id'] in allServicesDict:
-			servicesForCustomer = allServicesDict[customerJson['id']]
-			for service in servicesForCustomer:
-				if service["id"] in ipv4sForService:
-					ipv4 = ipv4sForService[service["id"]]
-				else:
-					ipv4 = []
-				if service["id"] in ipv6sForService:
-					ipv6 = ipv6sForService[service["id"]]
-				else:
-					ipv6 = []
-				
-				combinedId = "c_" + str(customerJson["id"]) + "_s_" + str(service["id"])
-				combinedId = combinedId.replace('.','_')
-				tariff_id = service['tariff_id']
-				
-				parentID = None
-				if customerJson['id'] in custIDtoParentNode:
-					parentID = custIDtoParentNode[customerJson['id']]['id']
-				
-				customer = NetworkNode(
-					type=NodeType.client,
-					id=combinedId,
-					parentId=parentID,
-					displayName=customerJson["name"],
-					address=combineAddress(customerJson),
-					customerName=customerJson["name"],
-					download=downloadForTariffID[tariff_id],
-					upload=uploadForTariffID[tariff_id]
-				)
-				net.addRawNode(customer)
-				
-				device = NetworkNode(
-					id=combinedId + "_d" + str(service["id"]),
-					displayName=service["id"],
-					type=NodeType.device,
-					parentId=combinedId,
-					mac=service["mac"],
-					ipv4=ipv4,
-					ipv6=ipv6
-				)
-				net.addRawNode(device)
-	
+		for service in allServices:
+			if service["id"] in previously_unhandled_services:
+				if service["id"] not in service_ids_handled:
+					if service["id"] in ipv4sForService:
+						ipv4 = ipv4sForService[service["id"]]
+					else:
+						ipv4 = []
+					if service["id"] in ipv6sForService:
+						ipv6 = ipv6sForService[service["id"]]
+					else:
+						ipv6 = []
+					customer = NetworkNode(
+						type=NodeType.client,
+						id=service["id"],
+						parentId=None,
+						displayName=customerJson["name"],
+						address=customerJson["name"],
+						customerName=customerJson["name"],
+						download=downloadForTariffID[service['tariff_id']],
+						upload=uploadForTariffID[service['tariff_id']]
+					)
+					net.addRawNode(customer)
+					device = NetworkNode(
+						id=service["id"],
+						displayName=service["id"],
+						type=NodeType.device,
+						parentId=service["id"],
+						mac=service["mac"],
+						ipv4=ipv4,
+						ipv6=ipv6
+					)
+					net.addRawNode(device)
+					matched_via_alternate_method += 1
+					if service["id"] not in service_ids_handled:
+						service_ids_handled.append(service["id"])
+	percentage_found = len(service_ids_handled)/len(allServices)
+	print("Matched " + "{:.0%}".format(percentage_found) + " of known services in Splynx.")
+	print("Matched " + str(matched_via_access_device) + " services via associated access devices.")
+	print("Matched " + str(matched_via_alternate_method) + " services via alternate method.")
 	
 	net.prepareTree()
 	net.plotNetworkGraph(False)
