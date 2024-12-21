@@ -28,7 +28,7 @@ async fn fetch_mikrotik_data(config: &Config) -> anyhow::Result<Vec<Ipv4ToIpv6>>
     }
 
     // Load the script
-    let code = read_to_string(mikrotik_script_path)?;
+    let code = mikrotik_script_path.to_string_lossy().to_string();
     let csv_path = mikrotik_dhcp_router_list_path.to_string_lossy().to_string();
 
     // Get the Python environment going

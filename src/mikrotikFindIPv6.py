@@ -7,7 +7,6 @@ def pullMikrotikIPv6(CsvPath):
 	import csv
 	import json
 
-	print("Reading from " + CsvPath)
 	ipv4ToIPv6 = {}
 	routerList = []
 	with open(CsvPath) as csv_file:

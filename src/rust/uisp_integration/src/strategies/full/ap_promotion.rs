@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use tracing::info;
 use lqos_bus::{BlackboardSystem, BusRequest};
 use uisp::{DataLink, Device, Site};
+use crate::blackboard;
 
 /// Finds access points that are connected to other sites and promotes them to their own site.
 /// This is useful for sites that have multiple APs, but are currently represented as a single site.
