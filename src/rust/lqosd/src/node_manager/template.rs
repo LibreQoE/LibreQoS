@@ -43,6 +43,14 @@ const LTS1_LINK_OFFER_TRIAL: &str = r#"
 </li>
 "#;
 
+fn js_tf(b: bool) -> &'static str {
+    if b {
+        "true"
+    } else {
+        "false"
+    }
+}
+
 pub async fn apply_templates(
     jar: CookieJar,
     req: Request<axum::body::Body>,
@@ -68,7 +76,10 @@ pub async fn apply_templates(
     let template_text = template_text.replace("%%USERNAME%%", &username);
 
     let res = next.run(req).await;
-    let mut lts_script = "<script>window.hasLts = false;</script>";
+    //let mut lts_script = "<script>window.hasLts = false;</script>";
+    let mut script_has_lts = false;
+    let mut script_has_insight = false;
+    let new_version = crate::version_checks::new_version_available();
 
     if apply_template {
         // Check to see if the box is participating in the Insight Alpha Test
@@ -84,20 +95,23 @@ pub async fn apply_templates(
                 _ => {
                     // Link to it
                     trial_link = INSIGHT_LINK_ACTIVE.to_string();
-                    lts_script = "<script>window.hasLts = true; window.hasInsight = true;</script>";
+                    script_has_insight = true;
+                    script_has_lts = true;
                 }
             }
         } else {
             if config.long_term_stats.gather_stats && config.long_term_stats.license_key.is_some() {
                 // LTS is enabled
                 trial_link = LTS1_LINK_ACTIVE.to_string();
-                lts_script = "<script>window.hasLts = true; window.hasInsight = false;</script>";
+                script_has_lts = true;
+                script_has_insight = false;
             } else {
                 trial_link = LTS1_LINK_OFFER_TRIAL.replace(
                     "%%LTS_TRIAL_LINK%%",
                     &format!("https://stats.libreqos.io/trial1/{}", config.node_id)
                 );
-                lts_script = "<script>window.hasLts = false; window.hasInsight = false;</script>";
+                script_has_insight = false;
+                script_has_insight = false;
             }
         }
 
@@ -107,6 +121,10 @@ pub async fn apply_templates(
             title = config.node_name.clone();
         }
 
+        // "LTS script" - which is increasingly becoming a misnomer
+        let lts_script = format!("<script>window.hasLts = {}; window.hasInsight = {}; window.newVersion = {};</script>",
+            js_tf(script_has_lts), js_tf(script_has_insight), js_tf(new_version));
+
         let (mut res_parts, res_body) = res.into_parts();
         let bytes = to_bytes(res_body, 1_000_000).await.unwrap();
         let byte_string = String::from_utf8_lossy(&bytes).to_string();
@@ -115,7 +133,7 @@ pub async fn apply_templates(
             .replace("%%VERSION%%", VERSION_STRING)
             .replace("%%TITLE%%", &title)
             .replace("%%LTS_LINK%%", &trial_link)
-            .replace("%%%LTS_SCRIPT%%%", lts_script);
+            .replace("%%%LTS_SCRIPT%%%", &lts_script);
         if let Some(length) = res_parts.headers.get_mut("content-length") {
             *length = HeaderValue::from(byte_string.len());
         }
