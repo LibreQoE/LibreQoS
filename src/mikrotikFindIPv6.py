@@ -77,5 +77,12 @@ def pullMikrotikIPv6_Mock(CsvPath):
 	return "{\n\"172.29.200.2\": \"2602:fdca:800:1500::/56\"\n}"
 
 if __name__ == '__main__':
-	print("Mikrotik IPv6 Finder")
+	# If the first argument is a string, that's the path to the csv file
+	import sys
+	if len(sys.argv) > 1:
+		CsvPath = sys.argv[1]
+		print(pullMikrotikIPv6(CsvPath))
+	else:
+		print("Mikrotik IPv6 Finder")
+
 	#print(pullMikrotikIPv6())

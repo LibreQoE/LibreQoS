@@ -40,7 +40,7 @@ rustup update
 echo "Please wait while the system is compiled. Service will not be interrupted during this stage."
 PROGS="lqosd lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqusers lqos_map_perf uisp_integration lqos_support_tool"
 mkdir -p bin/static
-pushd rust > /dev/null
+pushd rust > /dev/null || exit
 #cargo clean
 for prog in $PROGS
 do
@@ -55,44 +55,46 @@ do
             FEATURE=""
         fi
         echo "Building lqosd"
-        pushd lqosd > /dev/null
+        pushd lqosd > /dev/null || exit
         cargo build $BUILD_FLAGS $FEATURE
         if [ $? -ne 0 ]; then
           echo "Cargo build failed. Exiting with code 1."
           exit 1
         fi
-        popd > /dev/null
+        popd > /dev/null || exit
     else
-      pushd $prog > /dev/null
+      pushd $prog > /dev/null || exit
       cargo build $BUILD_FLAGS
       if [ $? -ne 0 ]; then
         echo "Cargo build failed. Exiting with code 1."
         exit 1
       fi
+      popd || exit
     fi
 done
-popd > /dev/null
+popd > /dev/null || exit
 
 echo "Installing new binaries into bin folder."
+pushd rust > /dev/null || exit
 for prog in $PROGS
 do
     echo "Installing $prog in bin folder"
-    cp target/$TARGET/$prog ../bin/$prog.new
+    cp target/$TARGET/$prog ../bin/$prog.new || exit
     # Use a move to avoid file locking
-    mv ../bin/$prog.new ../bin/$prog
+    mv ../bin/$prog.new ../bin/$prog || exit
 done
-popd > /dev/null
+popd > /dev/null || exit
 
 # Copy the node manager's static web content
 mkdir -p bin/static2/vendor
-pushd rust/lqosd > /dev/null
+pushd rust/lqosd > /dev/null || exit
 ./copy_files.sh
-popd > /dev/null
+popd > /dev/null || exit
 
 # Copy the Python library for LibreQoS.py et al.
-pushd rust/lqos_python > /dev/null
+pushd rust/lqos_python > /dev/null || exit
 cargo build $BUILD_FLAGS
-popd > /dev/null
+popd > /dev/null || exit
 cp rust/target/$TARGET/liblqos_python.so ./liblqos_python.so.new
 mv liblqos_python.so.new liblqos_python.so
 
