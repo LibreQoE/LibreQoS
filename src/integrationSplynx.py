@@ -235,45 +235,62 @@ def createShaper():
 	for customer in customers:
 		cust_id_to_name[customer['id']] = customer['name']
 	service_ids_handled = []
+	allocated_ipv4s = {}
+	allocated_ipv6s = {}
 	for serviceItem in allServices:
-		address = ''
-		parent_node_id = None
-		if 'access_device' in serviceItem:
-			if serviceItem['access_device'] != 0:
-				if serviceItem['access_device'] in hardware_name:
-					parent_node_id = serviceItem['access_device']
-		#if 'geo' in serviceItem:
-		#	if 'address' in serviceItem['geo']:
-		#		address = serviceItem['geo']['address']
-		if (serviceItem['ipv4'] != '') or (serviceItem['ipv6'] != ''):
-			customer = NetworkNode(
-				type=NodeType.client,
-				id=parentNodeIDCounter,
-				parentId=parent_node_id,
-				displayName=cust_id_to_name[serviceItem['customer_id']],
-				address=cust_id_to_name[serviceItem['customer_id']],
-				customerName=cust_id_to_name[serviceItem['customer_id']],
-				download=downloadForTariffID[serviceItem['tariff_id']],
-				upload=uploadForTariffID[serviceItem['tariff_id']]
-			)
-			net.addRawNode(customer)
-			
-			device = NetworkNode(
-				id=100000 + parentNodeIDCounter,
-				displayName=cust_id_to_name[serviceItem['customer_id']],
-				type=NodeType.device,
-				parentId=parentNodeIDCounter,
-				mac=serviceItem['mac'],
-				ipv4=[serviceItem['ipv4']],
-				ipv6=[serviceItem['ipv6']]
-			)
-			net.addRawNode(device)
-			parentNodeIDCounter = parentNodeIDCounter + 1
-			if serviceItem['id'] not in service_ids_handled:
-				service_ids_handled.append(serviceItem['id'])
-			matched_via_primary_method += 1
-			if parent_node_id != None:
-				matched_with_parent_node += 1
+		if serviceItem['status'] == 'active':
+			address = ''
+			ipv4 = []
+			ipv6 = []
+			if serviceItem['ipv4'] != '':
+				if serviceItem['ipv4'] not in allocated_ipv4s:
+					ipv4 = [serviceItem['ipv4']]
+					allocated_ipv4s[serviceItem['ipv4']] = True
+				else:
+					print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IP of " + serviceItem['ipv4'] + ". IP omitted.")
+			if serviceItem['ipv6'] != '':
+				if serviceItem['ipv6'] not in allocated_ipv6s:
+					ipv6 = [serviceItem['ipv6']]
+					allocated_ipv6s[serviceItem['ipv6']] = True
+				else:
+					print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IP of " + serviceItem['ipv6'] + ". IP omitted.")
+			parent_node_id = None
+			if 'access_device' in serviceItem:
+				if serviceItem['access_device'] != 0:
+					if serviceItem['access_device'] in hardware_name:
+						parent_node_id = serviceItem['access_device']
+			#if 'geo' in serviceItem:
+			#	if 'address' in serviceItem['geo']:
+			#		address = serviceItem['geo']['address']
+			if (len(ipv4)>0) or (len(ipv6)>0):
+				customer = NetworkNode(
+					type=NodeType.client,
+					id=parentNodeIDCounter,
+					parentId=parent_node_id,
+					displayName=cust_id_to_name[serviceItem['customer_id']],
+					address=cust_id_to_name[serviceItem['customer_id']],
+					customerName=cust_id_to_name[serviceItem['customer_id']],
+					download=downloadForTariffID[serviceItem['tariff_id']],
+					upload=uploadForTariffID[serviceItem['tariff_id']]
+				)
+				net.addRawNode(customer)
+				
+				device = NetworkNode(
+					id=100000 + parentNodeIDCounter,
+					displayName=cust_id_to_name[serviceItem['customer_id']],
+					type=NodeType.device,
+					parentId=parentNodeIDCounter,
+					mac=serviceItem['mac'],
+					ipv4=[ipv4],
+					ipv6=[ipv6]
+				)
+				net.addRawNode(device)
+				parentNodeIDCounter = parentNodeIDCounter + 1
+				if serviceItem['id'] not in service_ids_handled:
+					service_ids_handled.append(serviceItem['id'])
+				matched_via_primary_method += 1
+				if parent_node_id != None:
+					matched_with_parent_node += 1
 
 	# For any services not correctly handled the way we just tried, try an alternative way
 	previously_unhandled_services = {}
