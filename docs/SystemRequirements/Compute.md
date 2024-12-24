@@ -65,22 +65,26 @@ Here are some convenient, off-the-shelf server options to consider:
 
 ### Network Interface Requirements
 * One management network interface completely separate from the traffic shaping interfaces. Usually this would be the Ethernet interface built in to the motherboard.
-* Dedicated Network Interface Card for Shaping Interfaces
-  * NIC must have 2 or more interfaces for traffic shaping.
+* A Dedicated Network Interface Card for Two Shaping Interfaces
+
+Officially supported Network Interface Cards for the two shaping interfaces are listed below:
+
+| NIC Controller         | Port Speed       | Suggested Models                                                                        | Known Issues                                                                                  |
+|------------------------|------------------|-----------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------|
+| Intel X520             | 10 Gbps          |                                                                                         | Module compatibility*                                                                         |
+| Intel X710             | 10 Gbps          | [X710-BM2 10G]( https://www.fs.com/products/75600.html?now_cid=4253)                    | Module compatibility*                                                                         |
+| Intel XXV710           | 10 / 25 Gbps     | [XXV710 25G](https://www.fs.com/products/75604.html?attribute=67774&id=1709896)         | Module compatibility*                                                                         |
+| Intel XL710            | 10 / 40 Gbps     | [XL710-BM2 40G](https://www.fs.com/products/75604.html?attribute=67774&id=1709896 )     | Module compatibility*                                                                         |
+| Mellanox ConnectX-4 Lx | 10/25/40/50 Gbps |                                                                                         | No known issues.                                                                              |
+| Mellanox ConnectX-5    | 100 Gbps         | [MCX516A-CCAT 100G](https://www.fs.com/products/119647.html?attribute=67743&id=3746410) | Extreme heat at high load (50+ Gbps). Use Liquid CPU Cooler kit on chip to avoid overheating. |
+| Mellanox ConnectX-6    | 10/25 Gbps       | [MCX631102AN-ADAT](https://www.fs.com/products/212177.html?now_cid=4014)                | No known issues.                                                                              |
+| Mellanox ConnectX-6    | 100 Gbps         | [MCX623106AN-CDAT 100G](https://www.fs.com/products/119646.html?now_cid=4014)           | No known issues.                                                                              |
+| Mellanox ConnectX-7    | 200 Gbps         | [MCX755106AS-HEAT 200G](https://www.fs.com/products/242589.html?now_cid=4014)           | No known issues.                                                                              |
+
+(*) Intel often vendor-locks SFP+ module compatibility. Check module compatibility before buying. Mellanox does not have this problem.
+
+**We will ONLY provide support for systems using a NIC listed above**. Some other NICs *may* work, but will not be officially supported by LibreQoS. If you want to *test* the compatability of another card, please be aware of these fundamental NIC requirements:
   * NIC must have multiple TX/RX transmit queues, greater than or equal to the number of CPU cores. [Here's how to check from the command line](https://serverfault.com/questions/772380/how-to-tell-if-nic-has-multiqueue-enabled).
-  * NIC must have [XDP driver support](https://github.com/xdp-project/xdp-project/blob/master/areas/drivers/README.org)
-  * Supported cards:
-    * Intel X520
-    * Intel X550
-    * [Intel X710](https://www.fs.com/products/75600.html)
-    * Intel XL710
-    * Intel XXV710
-    * NVIDIA Mellanox ConnectX-4 series
-    * [NVIDIA Mellanox ConnectX-5 series](https://www.fs.com/products/119649.html)
-    * NVIDIA Mellanox ConnectX-6 series
-    * NVIDIA Mellanox ConnectX-7 series
-  * Unsupported cards:
-    * Broadcom (all)
-    * NVIDIA Mellanox ConnectX-3 series
-    * Intel E810
-    * We will not provide support for any system using an unsupported NIC
+  * NIC must have [XDP driver support](https://github.com/xdp-project/xdp-project/blob/master/areas/drivers/README.org) for high-throughput (10 Gbps+).
+
+If you discover that a card not listed in the table above is compatible, please let us know by emailing support [at] libreqos.io.
