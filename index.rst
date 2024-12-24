@@ -47,8 +47,9 @@ Welcome to the LibreQoS documentation!
    :maxdepth: 1
    :caption: v2.0:
 
+   docs/v2.0/Quickstart/quickstart-prereq   
    docs/v2.0/Quickstart/quickstart-libreqos-2.0
-   docs/v2.0/Quickstart/quickstart-prereq
+   
    docs/v2.0/Quickstart/configuration
    docs/v2.0/Quickstart/services-and-run
    docs/v2.0/Quickstart/share
