@@ -21,7 +21,7 @@ Welcome to the LibreQoS documentation!
 
 .. toctree::
    :maxdepth: 1
-   :caption: v2.0:
+   :caption: v1.5/v2.0:
 
    docs/v2.0/Quickstart/quickstart-prereq   
    docs/v2.0/Quickstart/quickstart-libreqos-2.0
@@ -36,7 +36,6 @@ Welcome to the LibreQoS documentation!
    docs/v2.0/TechnicalDocs/troubleshooting
    docs/v2.0/TechnicalDocs/integrations
    docs/v2.0/TechnicalDocs/extras
-   docs/v2.0/TechnicalDocs/performance-tuning
 
 .. toctree::
    :maxdepth: 1
@@ -54,4 +53,3 @@ Welcome to the LibreQoS documentation!
    docs/v1.4/TechnicalDocs/troubleshooting
    docs/v1.4/TechnicalDocs/integrations
    docs/v1.4/TechnicalDocs/extras
-   docs/v1.4/TechnicalDocs/performance-tuning
