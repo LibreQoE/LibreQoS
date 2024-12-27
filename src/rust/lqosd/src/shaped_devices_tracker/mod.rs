@@ -17,7 +17,7 @@ use crate::throughput_tracker::THROUGHPUT_TRACKER;
 
 pub static SHAPED_DEVICES: Lazy<ArcSwap<ConfigShapedDevices>> =
     Lazy::new(|| ArcSwap::new(Arc::new(ConfigShapedDevices::default())));
-pub static STATS_NEEDS_NEW_SHAPED_DEVICES: AtomicBool = AtomicBool::new(false);
+pub static STATS_NEEDS_NEW_SHAPED_DEVICES: AtomicBool = AtomicBool::new(true);
 
 fn load_shaped_devices() {
     debug!("ShapedDevices.csv has changed. Attempting to load it.");
