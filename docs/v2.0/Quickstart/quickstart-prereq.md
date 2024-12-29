@@ -24,9 +24,8 @@ You can download Ubuntu Server 22.04 from <a href="https://ubuntu.com/download/s
 
 There are two options for the bridge to pass data through your two interfaces:
 
-- Bifrost XDP-Accelerated Bridge
-- Regular Linux Bridge
-
+- Option A: Bifrost XDP-Accelerated Bridge
+- Option B: Regular Linux Bridge
 
 The regular Linux bridge is recommended for Nvidea/Mellanox NICs such as the ConnectX-5 series (which have superior bridge performance), and VM setups using virtualized NICs. The Bifrost Bridge is recommended for Intel NICs with XDP support, such as the X520 and X710.
 
@@ -36,56 +35,38 @@ Below are the instructions to configure Netplan, whether using the Linux Bridge 
 
 ## Netplan config
 
-### Netplan for a regular Linux bridge (if not using Bifrost XDP bridge)
+### Option A: Netplan config for a regular Linux bridge
 
-From the Ubuntu VM, create a linux interface bridge - br0 - with the two shaping interfaces.
-Find your existing .yaml file in /etc/netplan/ with
-
-```shell
-cd /etc/netplan/
-ls
-```
-
-Then edit the .yaml file there with
+Ubuntu Server uses NetPlan, which uses .yaml files in /etc/netplan to determine interface settings.
+Here, we will add a .yaml specifically for LibreQoS - that way it is not overwritten when changes are made to the default .yaml file.
 
 ```shell
-sudo nano XX-cloud-init.yaml
+sudo nano /etc/netplan/libreqos.yaml
 ```
 
-With XX corresponding to the name of the existing file.
-
-Editing the .yaml file, we need to define the shaping interfaces (here, ens19 and ens20) and add the bridge with those two interfaces. Assuming your interfaces are ens18, ens19, and ens20, here is what your file might look like:
+Assuming your interfaces are ens19 and ens20, here is what your file would look like:
 
 ```yaml
-# This is the network config written by 'subiquity'
 network:
-  ethernets:
-    ens18:
-      addresses:
-      - (addr goes here)
-      gateway4: (gateway goes here)
-      nameservers:
-        addresses:
-        - 1.1.1.1
-        - 8.8.8.8
-        search: []
-    ens19:
-      dhcp4: no
-      dhcp6: no
-    ens20:
-      dhcp4: no
-      dhcp6: no
-  version: 2
-  bridges:
-    br0:
-      interfaces:
-        - ens19
-        - ens20
+    ethernets:
+        ens19:
+            dhcp4: no
+            dhcp6: no
+        ens20:
+            dhcp4: no
+            dhcp6: no
+    bridges:
+        br0:
+            interfaces:
+            - ens19
+            - ens20
+    version: 2
+```
+```{note}
+Please be sure to replace ens19 and ens20 in the example above with the correct shaping interfaces. The order of the interfaces does not matter for this section.
 ```
 
 By setting `dhcp4: no` and `dhcp6: no`, the interfaces will be brought up as part of the normal boot cycle, despite not having IP addresses assigned.
-
-Make sure to replace `(addr goes here)` with your LibreQoS VM's address and subnet CIDR, and to replace `(gateway goes here)` with whatever your default gateway is.
 
 Then run
 
@@ -93,48 +74,35 @@ Then run
 sudo netplan apply
 ```
 
-### Netplan for the Bifrost XDP bridge
+### Option B: Netplan config for the Bifrost XDP bridge
 
-Find your existing .yaml file in /etc/netplan/ with
-
-```shell
-cd /etc/netplan/
-ls
-```
-
-Then edit the .yaml file there with
+Ubuntu Server uses NetPlan, which uses .yaml files in /etc/netplan to determine interface settings.
+Here, we will add a .yaml specifically for LibreQoS - that way it is not overwritten when changes are made to the default .yaml file.
 
 ```shell
-sudo nano XX-cloud-init.yaml
+sudo nano /etc/netplan/libreqos.yaml
 ```
 
-With XX corresponding to the name of the existing file.
+Assuming your interfaces are ens19 and ens20, here is what your file would look like:
 
-Editing the .yaml file, we need to define the shaping interfaces (here, ens19 and ens20) and add the bridge with those two interfaces. Assuming your interfaces are ens18, ens19, and ens20, here is what your file might look like:
-
-```
+```yaml
 network:
-  ethernets:
-    ens18:
-      addresses:
-      - (addr goes here)
-      gateway4: (gateway goes here)
-      nameservers:
-        addresses:
-        - (etc)
-        search: []
-    ens19:
-      dhcp4: no
-      dhcp6: no
-    ens20:
-      dhcp4: no
-      dhcp6: no
+    ethernets:
+        ens19:
+            dhcp4: no
+            dhcp6: no
+        ens20:
+            dhcp4: no
+            dhcp6: no
+    version: 2
+```
+```{note}
+Please be sure to replace ens19 and ens20 in the example above with the correct shaping interfaces. The order of the interfaces does not matter for this section.
 ```
 
 By setting `dhcp4: no` and `dhcp6: no`, the interfaces will be brought up as part of the normal boot cycle, despite not having IP addresses assigned.
 
-Make sure to replace (addr goes here) with your LibreQoS VM's address and subnet CIDR, and to replace `(gateway goes here)` with whatever your default gateway is.
-Once everything is in place, run:
+Then run
 
 ```shell
 sudo netplan apply
