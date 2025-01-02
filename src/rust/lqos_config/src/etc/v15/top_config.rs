@@ -70,7 +70,7 @@ pub struct Config {
     pub sonar_integration: super::sonar_integration::SonarIntegration,
 
     /// InfluxDB Configuration
-    pub influxdb: super::influxdb::InfluxDbConfig,
+    pub influxdb: Option<super::influxdb::InfluxDbConfig>,
 
     /// Option to disable the webserver for headless/CLI operation
     pub disable_webserver: Option<bool>,
@@ -139,7 +139,7 @@ impl Default for Config {
             uisp_integration: super::uisp_integration::UispIntegration::default(),
             powercode_integration: super::powercode_integration::PowercodeIntegration::default(),
             sonar_integration: super::sonar_integration::SonarIntegration::default(),
-            influxdb: super::influxdb::InfluxDbConfig::default(),
+            influxdb: None,
             packet_capture_time: 10,
             queue_check_period_ms: 1000,
             flows: None,

@@ -642,34 +642,49 @@ fn sonar_active_status_ids() -> PyResult<Vec<String>> {
 #[pyfunction]
 fn influx_db_enabled() -> PyResult<bool> {
   let config = lqos_config::load_config().unwrap();
-  Ok(config.influxdb.enable_influxdb)
+  let Some(config) = config.influxdb.as_ref() else {
+    return Ok(false);
+  };
+  Ok(config.enable_influxdb)
 }
 
 #[pyfunction]
 fn influx_db_bucket() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
-  let bucket = config.influxdb.bucket.clone();
+  let Some(config) = config.influxdb.as_ref() else {
+    return Ok(String::new());
+  };
+  let bucket = config.bucket.clone();
   Ok(bucket)
 }
 
 #[pyfunction]
 fn influx_db_org() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
-  let org = config.influxdb.org.clone();
+  let Some(config) = config.influxdb.as_ref() else {
+    return Ok(String::new());
+  };
+  let org = config.org.clone();
   Ok(org)
 }
 
 #[pyfunction]
 fn influx_db_token() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
-  let token = config.influxdb.token.clone();
+  let Some(config) = config.influxdb.as_ref() else {
+    return Ok(String::new());
+  };
+  let token = config.token.clone();
   Ok(token)
 }
 
 #[pyfunction]
 fn influx_db_url() -> PyResult<String> {
   let config = lqos_config::load_config().unwrap();
-  let url = config.influxdb.url.clone();
+  let Some(config) = config.influxdb.as_ref() else {
+    return Ok(String::new());
+  };
+  let url = config.url.clone();
   Ok(url)
 }
 

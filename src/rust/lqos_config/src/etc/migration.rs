@@ -8,6 +8,7 @@ use super::{
 use thiserror::Error;
 use toml_edit::DocumentMut;
 use tracing::{debug, error, info};
+use crate::etc::v15::influxdb::InfluxDbConfig;
 
 #[derive(Debug, Error)]
 pub enum MigrationError {
@@ -278,10 +279,14 @@ fn migrate_influx(
     python_config: &PythonMigration,
     new_config: &mut Config,
 ) -> Result<(), MigrationError> {
-    new_config.influxdb.enable_influxdb = python_config.influx_enabled;
-    new_config.influxdb.url = python_config.influx_dburl.clone();
-    new_config.influxdb.bucket = python_config.influx_dbbucket.clone();
-    new_config.influxdb.org = python_config.influx_dborg.clone();
-    new_config.influxdb.token = python_config.influx_dbtoken.clone();
+    if python_config.influx_enabled {
+        let mut cfg = InfluxDbConfig::default();
+        cfg.enable_influxdb = python_config.influx_enabled;
+        cfg.url = python_config.influx_dburl.clone();
+        cfg.bucket = python_config.influx_dbbucket.clone();
+        cfg.org = python_config.influx_dborg.clone();
+        cfg.token = python_config.influx_dbtoken.clone();
+        new_config.influxdb = Some(cfg);
+    }
     Ok(())
 }
