@@ -9,14 +9,12 @@ Disable hyperthreading on the BIOS/UEFI of your host system. Hyperthreaading is 
 
 ## Install Ubuntu Server
 
-We recommend Ubuntu Server because its kernel version tends to track closely with the mainline Linux releases. Our current documentation assumes Ubuntu Server. To run LibreQoS v1.4, Linux kernel 5.11 or greater is required, as 5.11 includes some important XDP patches. Ubuntu Server 22.04 uses kernel 5.13, which meets that requirement.
-
-You can download Ubuntu Server 22.04 from <a href="https://ubuntu.com/download/server">https://ubuntu.com/download/server</a>.
+You can download Ubuntu Server 24.04 from <a href="https://ubuntu.com/download/server">https://ubuntu.com/download/server</a>.
 
 1. Boot Ubuntu Server from USB.
 2. Follow the steps to install Ubuntu Server.
 3. If you use a Mellanox network card, the Ubuntu Server installer will ask you whether to install the mellanox/intel NIC drivers. Check the box to confirm. This extra driver is important.
-4. On the Networking settings step, it is recommended to assign a static IP address to the management NIC.
+4. On the Networking settings step, it is recommended to assign a static IP address to the management network interface.
 5. Ensure SSH server is enabled so you can more easily log into the server later.
 6. You can use scp or sftp to access files from your LibreQoS server for easier file editing. Here's how to access via scp or sftp using an [Ubuntu](https://www.addictivetips.com/ubuntu-linux-tips/sftp-server-ubuntu/) or [Windows](https://winscp.net/eng/index.php) machine.
 
@@ -27,7 +25,7 @@ There are two options for the bridge to pass data through your two interfaces:
 - Option A: Bifrost XDP-Accelerated Bridge
 - Option B: Regular Linux Bridge
 
-The regular Linux bridge is recommended for Nvidea/Mellanox NICs such as the ConnectX-5 series (which have superior bridge performance), and VM setups using virtualized NICs. The Bifrost Bridge is recommended for Intel NICs with XDP support, such as the X520 and X710.
+The regular Linux bridge is recommended for Nvidia/Mellanox NICs such as the ConnectX-5 series (which have superior bridge performance), and VM setups using virtualized NICs. The Bifrost Bridge is recommended for Intel NICs with XDP support, such as the X520 and X710.
 
 To use the Bifrost bridge, be sure to enable Bifrost/XDP in lqos.conf in the [Configuration](configuration.md) section.
 
