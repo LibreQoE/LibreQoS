@@ -71,6 +71,7 @@ By setting `dhcp4: no` and `dhcp6: no`, the interfaces will be brought up as par
 Then run
 
 ```shell
+sudo chmod 600 /etc/netplan/libreqos.yaml
 sudo netplan apply
 ```
 
@@ -105,5 +106,6 @@ By setting `dhcp4: no` and `dhcp6: no`, the interfaces will be brought up as par
 Then run
 
 ```shell
+sudo chmod 600 /etc/netplan/libreqos.yaml
 sudo netplan apply
 ```
