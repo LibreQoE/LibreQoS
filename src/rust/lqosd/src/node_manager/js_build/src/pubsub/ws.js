@@ -2,7 +2,7 @@
 let ws = null;
 
 export function ws_proto() {
-    if (window.location.protocl === 'https') {
+    if (window.location.protocol.startsWith('https')) {
         return "wss://";
     } else {
         return "ws://";
