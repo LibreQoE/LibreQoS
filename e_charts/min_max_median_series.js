@@ -67,7 +67,7 @@ export class MinMaxSeries {
 
     // Add an inverted "downwards" band. (Typically upload)
     pushNegative(median, min, max) {
-        console.log("Pushing negative", median, min, max);
+        //console.log("Pushing negative", median, min, max);
         this.series[0].data.push(0.0 - median);
         this.series[1].data.push((0.0 - min));
         this.series[2].data.push(0.0 - (max - min));
