@@ -22,8 +22,8 @@ You can download Ubuntu Server 22.04 from <a href="https://releases.ubuntu.com/2
 
 There are two options for the bridge to pass data through your two interfaces:
 
-- Option A: Bifrost XDP-Accelerated Bridge
-- Option B: Regular Linux Bridge
+- Option A: Regular Linux Bridge
+- Option B: Bifrost XDP-Accelerated Bridge
 
 The regular Linux bridge is recommended for Nvidia/Mellanox NICs such as the ConnectX-5 series (which have superior bridge performance), and VM setups using virtualized NICs. The Bifrost Bridge is recommended for Intel NICs with XDP support, such as the X520 and X710.
 
