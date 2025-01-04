@@ -9,7 +9,7 @@ Disable hyperthreading on the BIOS/UEFI of your host system. Hyperthreaading is 
 
 ## Install Ubuntu Server
 
-You can download Ubuntu Server 24.04 from <a href="https://ubuntu.com/download/server">https://ubuntu.com/download/server</a>.
+You can download Ubuntu Server 22.04 from <a href="https://ubuntu.com/download/server">https://ubuntu.com/download/server</a>.
 
 1. Boot Ubuntu Server from USB.
 2. Follow the steps to install Ubuntu Server.
