@@ -198,6 +198,7 @@ def createShaper():
 	hardware_name = {}
 	access_device_name = {}
 	hardware_parent = {}
+	hardware_type = {}
 	for monitored_device in monitoring:
 		hardware_name[monitored_device['id']] = monitored_device['title']
 		if 'access_device' in monitored_device:
@@ -214,7 +215,12 @@ def createShaper():
 				if hardware_parent[monitored_device['id']] in hardware_name:
 					hardware_name_extended[monitored_device['id']] = hardware_name[hardware_parent[monitored_device['id']]] + "_" + monitored_device['title'] 
 		if monitored_device['id'] not in hardware_name_extended:
-			hardware_name_extended[monitored_device['id']] = monitored_device['title'] 
+			hardware_name_extended[monitored_device['id']] = monitored_device['title']
+		if 'type' in monitored_device:
+			if monitored_device['type'] == 5:
+				hardware_type[monitored_device['id']] = 'AP'
+			else:
+				hardware_type[monitored_device['id']] = 'Site'
 	for device_num in hardware_name:
 		# Find parent name of hardware
 		parent_name = ''
@@ -228,8 +234,13 @@ def createShaper():
 		if nodeName in siteBandwidth:
 			download = siteBandwidth[nodeName]["download"]
 			upload = siteBandwidth[nodeName]["upload"]
-		node = NetworkNode(id=device_num, displayName=nodeName, type=NodeType.site,
-						   parentId=parent_id, download=download, upload=upload, address=None)
+		nodeType = hardware_type[device_num]
+		if nodeType == 'AP':
+			node = NetworkNode(id=device_num, displayName=nodeName, type=NodeType.ap,
+				parentId=parent_id, download=download, upload=upload, address=None)
+		else:
+			node = NetworkNode(id=device_num, displayName=nodeName, type=NodeType.site,
+				parentId=parent_id, download=download, upload=upload, address=None)
 		net.addRawNode(node)
 	cust_id_to_name ={}
 	for customer in customers:
