@@ -7,16 +7,11 @@ Disable hyperthreading on the BIOS/UEFI of your host system. Hyperthreaading is 
 - For Intel systems, you will also have to navigate the settings to find the "hyperthrading" toggle option. On HP servers it's under ```System Configuration > BIOS/Platform Configuration (RBSU) > Processor Options > Intel (R) Hyperthreading Options.```
 - Save changes and reboot
 
-## Install Ubuntu Server
+## Install Ubuntu Server 22.04
 
-You can download Ubuntu Server 22.04 from <a href="https://releases.ubuntu.com/22.04/?_ga=2.149898549.2084151835.1707729318-1126754318.1683186906">here</a>.
+- [Install Ubuntu Server 22.04](../TechnicalDocs/ubuntu-server.md)
 
-1. Boot Ubuntu Server from USB.
-2. Follow the steps to install Ubuntu Server.
-3. If you use a Mellanox network card, the Ubuntu Server installer will ask you whether to install the mellanox/intel NIC drivers. Check the box to confirm. This extra driver is important.
-4. On the Networking settings step, it is recommended to assign a static IP address to the management network interface.
-5. Ensure SSH server is enabled so you can more easily log into the server later.
-6. You can use scp or sftp to access files from your LibreQoS server for easier file editing. Here's how to access via scp or sftp using an [Ubuntu](https://www.addictivetips.com/ubuntu-linux-tips/sftp-server-ubuntu/) or [Windows](https://winscp.net/eng/index.php) machine.
+## Set up Bridge
 
 ### Choose Bridge Type
 
@@ -30,8 +25,6 @@ The regular Linux bridge is recommended for Nvidia/Mellanox NICs such as the Con
 To use the Bifrost bridge, be sure to enable Bifrost/XDP in lqos.conf in the [Configuration](configuration.md) section.
 
 Below are the instructions to configure Netplan, whether using the Linux Bridge or Bifrost XDP bridge:
-
-## Netplan config
 
 ### Option A: Netplan config for a regular Linux bridge
 
