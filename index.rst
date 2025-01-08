@@ -8,12 +8,6 @@ Welcome to the LibreQoS documentation!
 
 .. toctree::
    :maxdepth: 1
-   :caption: Readme:
-
-   README
-
-.. toctree::
-   :maxdepth: 1
    :caption: Read me first!
 
    docs/Quickstart/networkdesignassumptions
