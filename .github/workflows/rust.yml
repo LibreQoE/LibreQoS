@@ -31,8 +31,8 @@ jobs:
     - name: Archive .deb file
       uses: actions/upload-artifact@v4
       with:
-        name: libreqos_${{ env.VERSION }}.-1_${{ matrix.runs-on }}_amd64.deb
-        path: src/dist/libreqos_${{ env.VERSION }}.-1_-${{ matrix.runs-on }}_amd64.deb
+        name: libreqos_${{ env.VERSION }}.-1_amd64.deb
+        path: src/dist/libreqos_${{ env.VERSION }}.-1_amd64.deb
   
   audit:
     strategy:
