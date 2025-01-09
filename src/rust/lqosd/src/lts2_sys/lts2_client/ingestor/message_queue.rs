@@ -12,7 +12,8 @@ mod site_cake_marks;
 
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
-use tracing::warn;
+use tracing::{info, warn};
+use tungstenite::http::{uri, Uri};
 use uuid::Uuid;
 use lqos_config::load_config;
 use crate::lts2_sys::lts2_client::ingestor::commands::IngestorCommand;
@@ -107,7 +108,8 @@ impl MessageQueue {
         }
 
         let remote_host = get_remote_host();
-        let target = &format!("ws://{}:9121", remote_host);
+        let target = format!("wss://{}/ingest", remote_host);
+        info!("Sending messages to {}", target);
         let Ok((mut socket, _response)) = tungstenite::connect(target) else {
             warn!("Failed to connect to ingestion server");
             return Ok(());
@@ -212,7 +214,7 @@ impl MessageQueue {
         }
 
         // Remote Commands
-        let Ok((_, _, request_remote_commands)) = (WsMessage::RequestRemoteCommands { node_id }).to_bytes() else {
+        let Ok((_, _, request_remote_commands)) = (WsMessage::RequestRemoteCommands ).to_bytes() else {
             warn!("Failed to serialize request remote commands message");
             return Ok(());
         };
@@ -265,7 +267,7 @@ enum WsMessage {
     Hello { magic: u32 },
     License { license: Uuid },
     DataDump { data: IngestSession },
-    RequestRemoteCommands { node_id: String },
+    RequestRemoteCommands,
 
     // Response messages
     CanSubmit,
