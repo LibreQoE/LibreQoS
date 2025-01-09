@@ -3961,6 +3961,7 @@ dependencies = [
  "base64",
  "flate2",
  "log",
+ "native-tls",
  "once_cell",
  "rustls",
  "rustls-pki-types",

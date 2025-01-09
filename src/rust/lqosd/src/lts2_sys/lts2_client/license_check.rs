@@ -1,9 +1,12 @@
 use std::sync::Arc;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::net::TcpStream;
 use std::sync::Mutex;
 use std::time::Duration;
+use axum::http::StatusCode;
+use native_tls::TlsConnector;
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 use lqos_config::load_config;
 use crate::lts2_sys::lts2_client::{get_remote_host, nacl_blob};
@@ -25,8 +28,14 @@ impl Default for LicenseStatus {
     }
 }
 
-#[derive(Deserialize, Debug)]
-pub(crate) struct LicenseResponse {
+#[derive(Serialize, Deserialize)]
+pub struct LicenseRequest {
+    pub license: Uuid,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct LicenseResponse {
+    pub valid: bool,
     pub license_state: i32,
     pub expiration_date: i64,
 }
@@ -34,8 +43,6 @@ pub(crate) struct LicenseResponse {
 pub(crate) fn license_check_loop(
     license_status: Arc<Mutex<LicenseStatus>>,
 ) {
-    let keys = KeyStore::new();
-
     let mut tfd = TimerFd::new().unwrap();
     assert_eq!(tfd.get_state(), TimerState::Disarmed);
     tfd.set_state(TimerState::Periodic{
@@ -50,7 +57,7 @@ pub(crate) fn license_check_loop(
         if !license_key.is_empty() {
             if let Ok(lic) = Uuid::parse_str(&license_key) {
                 let remote_host = get_remote_host();
-                remote_license_check(remote_host, &keys, lic, license_status.clone());
+                remote_license_check(remote_host, lic, license_status.clone());
             } else {
                 println!("Invalid license key: {}", license_key);
             }
@@ -61,40 +68,47 @@ pub(crate) fn license_check_loop(
 
 fn remote_license_check(
     remote_host: String,
-    keys: &KeyStore,
     lic: Uuid,
     license_status: Arc<Mutex<LicenseStatus>>,
 ) {
-    println!("Checking license key with remote host: {}", remote_host);
-    if let Ok(mut socket) = TcpStream::connect(format!("{}:9122", remote_host)) {
-        if let Err(e) = nacl_blob::transmit_hello(&keys, 0x8342, 1, &mut socket) {
-            println!("Failed to send hello to license server. {e:?}");
+    info!("Checking license key with remote host: {}", remote_host);
+    let url = format!("https://{}/license/license_check", remote_host);
+    // Make a ureq request to the remote host. POST a LicenseRequest with the license key.
+
+    let Ok(tls) = TlsConnector::builder()
+        .danger_accept_invalid_certs(true)
+        .danger_accept_invalid_hostnames(true)
+        .build() else {
+            error!("Failed to build TLS connector.");
             return;
-        }
+    };
+    let tls = Arc::new(tls);
 
-        if let Ok((server_hello, _)) = nacl_blob::receive_hello(&mut socket) {
-            if let Err(e) = nacl_blob::transmit_payload(&keys, &server_hello.public_key, &lic, &mut socket) {
-                println!("Failed to send license key to license server. {e:?}");
-                return;
-            }
+    let client = ureq::builder()
+        .timeout_connect(Duration::from_secs(20))
+        .tls_connector(tls.clone())
+        .build();
 
-            if let Ok((response, _)) = nacl_blob::receive_payload::<LicenseResponse>(&keys, &server_hello.public_key, &mut socket) {
-                println!("Received license response from license server: {response:?}");
-                let mut license_lock = license_status.lock().unwrap();
-                license_lock.valid = response.license_state != 0;
-                license_lock.license_type = response.license_state;
-                license_lock.trial_expires = response.expiration_date as i32;
-
-            } else {
-                println!("Failed to receive license response from license server.");
-                return;
-            }
-        } else {
-            println!("Failed to receive hello from license server.");
-            return;
-        }
-    } else {
-        println!("Failed to connect to license server. This is not fatal - we'll try again.");
+    let result = client
+        .post(&url)
+        .send_json(serde_json::json!(&LicenseRequest { license: lic }));
+    if result.is_err() {
+        warn!("Failed to connect to license server. This is not fatal - we'll try again. {result:?}");
         return;
     }
+    let Ok(response) = result else {
+        warn!("Failed to receive license response from license server.");
+        return;
+    };
+    let response = response.into_json::<LicenseResponse>();
+    if response.is_err() {
+        warn!("Failed to receive license response from license server.");
+        return;
+    }
+    let response = response.unwrap();
+    info!("Received license response from license server: {response:?}");
+    let mut license_lock = license_status.lock().unwrap();
+    license_lock.valid = response.valid;
+    license_lock.license_type = response.license_state;
+    license_lock.trial_expires = response.expiration_date as i32;
 }
