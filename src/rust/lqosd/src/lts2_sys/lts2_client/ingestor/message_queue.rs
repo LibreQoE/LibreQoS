@@ -10,10 +10,10 @@ mod site_rtt;
 mod site_cake_drops;
 mod site_cake_marks;
 
+use std::net::TcpStream;
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
-use tungstenite::http::{uri, Uri};
 use uuid::Uuid;
 use lqos_config::load_config;
 use crate::lts2_sys::lts2_client::ingestor::commands::IngestorCommand;
@@ -108,9 +108,39 @@ impl MessageQueue {
         }
 
         let remote_host = get_remote_host();
-        let target = format!("wss://{}/ingest", remote_host);
+        let target = format!("wss://{}:443/ingest/ws", remote_host);
         info!("Sending messages to {}", target);
-        let Ok((mut socket, _response)) = tungstenite::connect(target) else {
+
+        let Ok(stream) = TcpStream::connect(&format!("{}:443", remote_host)) else {
+            warn!("Failed to connect to ingestion server");
+            return Ok(());
+        };
+
+        let Ok(connector) = native_tls::TlsConnector::builder()
+            .danger_accept_invalid_certs(true)
+            .danger_accept_invalid_hostnames(true)
+            .build() else
+        {
+            warn!("Failed to create TLS connector");
+            return Ok(());
+        };
+
+        let result = connector.connect(&format!("{}:443", remote_host), stream);
+        if result.is_err() {
+            warn!("Failed to connect TLS stream to ingestion server: {result:?}");
+            return Ok(());
+        }
+        let Ok(tls_stream) = result else {
+            warn!("Failed to connect TLS stream to ingestion server");
+            return Ok(());
+        };
+
+        let result = tungstenite::client(target, tls_stream);
+        if result.is_err() {
+            warn!("Failed to connect to ingestion server. {result:?}");
+            return Ok(());
+        }
+        let Ok((mut socket, _response)) = result else {
             warn!("Failed to connect to ingestion server");
             return Ok(());
         };

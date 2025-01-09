@@ -2088,6 +2088,7 @@ dependencies = [
  "lts_client",
  "mimalloc",
  "miniz_oxide",
+ "native-tls",
  "nix",
  "once_cell",
  "rand",
