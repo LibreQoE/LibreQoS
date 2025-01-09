@@ -10,7 +10,6 @@ pub(crate) use permission::check_submit_permission;
 use crate::lts2_sys::lts2_client::ingestor::commands::IngestorCommand;
 use crate::lts2_sys::lts2_client::ingestor::message_queue::MessageQueue;
 use crate::lts2_sys::lts2_client::ingestor::permission::is_allowed_to_submit;
-use crate::lts2_sys::lts2_client::nacl_blob::KeyStore;
 
 pub fn start_ingestor() -> Sender<IngestorCommand> {
     println!("Starting ingestor");
@@ -24,9 +23,8 @@ fn ingestor_loop(
     rx: std::sync::mpsc::Receiver<IngestorCommand>,
 ) {
     let message_queue = Arc::new(Mutex::new(MessageQueue::new()));
-    let keys = Arc::new(KeyStore::new());
     let my_message_queue = message_queue.clone();
-    std::thread::spawn(move || ticker_timer(my_message_queue, keys.clone()));
+    std::thread::spawn(move || ticker_timer(my_message_queue));
 
     println!("Starting ingestor loop");
     while let Ok(msg) = rx.recv() {
@@ -36,7 +34,7 @@ fn ingestor_loop(
     println!("Ingestor loop exited");
 }
 
-fn ticker_timer(message_queue: Arc<Mutex<MessageQueue>>, keys: Arc<KeyStore>) {
+fn ticker_timer(message_queue: Arc<Mutex<MessageQueue>>) {
     let mut tfd = TimerFd::new().unwrap();
     assert_eq!(tfd.get_state(), TimerState::Disarmed);
     tfd.set_state(TimerState::Periodic{
@@ -55,7 +53,7 @@ fn ticker_timer(message_queue: Arc<Mutex<MessageQueue>>, keys: Arc<KeyStore>) {
         let mut message_queue_lock = message_queue.lock().unwrap();
         if !message_queue_lock.is_empty() && permitted {
             let start = std::time::Instant::now();
-            if let Err(e) = message_queue_lock.send(keys.clone()) {
+            if let Err(e) = message_queue_lock.send() {
                 println!("Failed to send queue: {e:?}");
             }
             println!("Queue send took: {:?}s", start.elapsed().as_secs_f32());
