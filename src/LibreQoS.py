@@ -25,7 +25,7 @@ from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping,
 	check_config, sqm, upstream_bandwidth_capacity_download_mbps, upstream_bandwidth_capacity_upload_mbps, \
 	interface_a, interface_b, enable_actual_shell_commands, use_bin_packing_to_balance_cpu, monitor_mode_only, \
 	run_shell_commands_as_sudo, generated_pn_download_mbps, generated_pn_upload_mbps, queues_available_override, \
-	on_a_stick, get_tree_weights, get_weights, is_network_flat
+	on_a_stick, get_tree_weights, get_weights, is_network_flat, lock_tc_wait, unlock_tc
 
 R2Q = 10
 #MAX_R2Q = 200_000
@@ -972,11 +972,13 @@ def refreshShapers():
 			for command in linuxTCcommands:
 				logging.info(command)
 				f.write(f"{command}\n")
+		lock_tc_wait()
 		if logging.DEBUG <= logging.root.level:
 			# Do not --force in debug mode, so we can see any errors 
 			shell("/sbin/tc -b linux_tc.txt")
 		else:
 			shell("/sbin/tc -f -b linux_tc.txt")
+		unlock_tc()
 		tcEndTime = datetime.now()
 		print("Executed " + str(len(linuxTCcommands)) + " linux TC class/qdisc commands")
 		

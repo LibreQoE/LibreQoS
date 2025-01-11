@@ -94,6 +94,8 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_wrapped(wrap_pyfunction!(is_network_flat))?;
   m.add_wrapped(wrap_pyfunction!(blackboard_finish))?;
   m.add_wrapped(wrap_pyfunction!(blackboard_submit))?;
+  m.add_wrapped(wrap_pyfunction!(lock_tc_wait))?;
+  m.add_wrapped(wrap_pyfunction!(unlock_tc))?;
 
   Ok(())
 }
@@ -735,5 +737,17 @@ pub fn blackboard_submit(subsystem: String, key: String, value: String) -> PyRes
     _ => return Err(PyOSError::new_err("Invalid subsystem")),
   };
   let _ = run_query(vec![BusRequest::BlackboardData { subsystem, key, value }]);
+  Ok(())
+}
+
+#[pyfunction]
+pub fn lock_tc_wait() -> PyResult<()> {
+  let _ = run_query(vec![BusRequest::LockTc]).unwrap();
+  Ok(())
+}
+
+#[pyfunction]
+pub fn unlock_tc() -> PyResult<()> {
+  let _ = run_query(vec![BusRequest::UnlockTc]).unwrap();
   Ok(())
 }
