@@ -9,7 +9,7 @@ name = "lqos_python"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = {  workspace = true }
+pyo3 = {  workspace = true, features = ["extension-module"] }
 lqos_bus = { path = "../lqos_bus" }
 lqos_utils = { path = "../lqos_utils" }
 lqos_config = { path = "../lqos_config" }
