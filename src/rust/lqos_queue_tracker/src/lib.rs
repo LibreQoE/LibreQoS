@@ -24,4 +24,4 @@ pub use queue_types::deserialize_tc_tree; // Exported for the benchmarker
 pub use tracking::spawn_queue_monitor;
 pub use tracking::{add_watched_queue, still_watching};
 pub use tracking::{ALL_QUEUE_SUMMARY, TOTAL_QUEUE_STATS};
-pub use tracking::{lock_tc, unlock_tc};
+pub use tracking::{lock_tc, unlock_tc, tc_wait_for_lock};

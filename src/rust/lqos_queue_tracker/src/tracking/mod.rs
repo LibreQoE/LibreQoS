@@ -1,5 +1,6 @@
 use std::sync::atomic::AtomicBool;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+use timerfd::{SetTimeFlags, TimerFd, TimerState};
 use crate::{
   circuit_to_queue::CIRCUIT_TO_QUEUE, interval::QUEUE_MONITOR_INTERVAL,
   queue_store::QueueStore, tracking::reader::read_named_queue_from_interface,
@@ -33,6 +34,12 @@ pub fn unlock_tc() {
   TC_LOCK.store(false, std::sync::atomic::Ordering::Relaxed);
 }
 
+pub fn tc_wait_for_lock() {
+    while !lock_tc() {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
 fn track_queues() {
   if WATCHED_QUEUES.is_empty() {
     //info!("No queues marked for read.");
@@ -44,10 +51,6 @@ fn track_queues() {
     return;
   }
   let config = config.unwrap();
-  if !lock_tc() {
-    //warn!("Unable to lock TC monitor. Skipping queue collection cycle.");
-    return;
-  }
   WATCHED_QUEUES.iter_mut().for_each(|q| {
     let (circuit_id, download_class, upload_class) = q.get();
 
@@ -98,7 +101,6 @@ fn track_queues() {
       }
     }
   });
-  unlock_tc();
 
   expire_watched_queues();
 }
@@ -161,10 +163,6 @@ fn connect_queues_to_circuit_up(structure: &[QueueNode], queues: &[QueueType]) -
 fn all_queue_reader() {
   let start = Instant::now();
   let structure = QUEUE_STRUCTURE.load();
-  if !lock_tc() {
-    //warn!("Unable to lock TC monitor. Skipping all queue collection cycle.");
-    return;
-  }
   if let Some(structure) = &structure.maybe_queues {
     if let Ok(config) = lqos_config::load_config() {
       // Get all the queues
@@ -203,7 +201,6 @@ fn all_queue_reader() {
   } else {
     warn!("(TC monitor) Not reading queues due to structure not yet ready");
   }
-  unlock_tc();
   let elapsed = start.elapsed();
   debug!("(TC monitor) Completed in {:.5} seconds", elapsed.as_secs_f32());
 }
@@ -217,7 +214,7 @@ pub fn spawn_queue_monitor() -> anyhow::Result<()> {
   .spawn(|| {
     // Setup the queue monitor loop
     debug!("Starting Queue Monitor Thread.");
-    let interval_ms = if let Ok(config) = lqos_config::load_config() {
+    let mut interval_ms = if let Ok(config) = lqos_config::load_config() {
       config.queue_check_period_ms
     } else {
       1000
@@ -227,18 +224,65 @@ pub fn spawn_queue_monitor() -> anyhow::Result<()> {
     debug!("Queue check period set to {interval_ms} ms.");
 
     // Set up the Linux timer fd system
-    periodic(interval_ms, "Queue Reader", &mut || {
-      track_queues();
-    });
+    let mut tfd = TimerFd::new().unwrap();
+    assert_eq!(tfd.get_state(), TimerState::Disarmed);
+    tfd.set_state(TimerState::Periodic{
+      current: Duration::new(interval_ms / 1000, 0),
+      interval: Duration::new(interval_ms / 1000, 0)}, SetTimeFlags::Default
+    );
+
+    loop {
+      let mut did_something = false;
+      if lock_tc() {
+        track_queues();
+        unlock_tc();
+        did_something = true;
+      }
+
+      // Wait for the timer to expire
+      let missed_ticks = tfd.read();
+      if missed_ticks > 0 && did_something {
+        // If we missed a tick, adjust the interval
+        interval_ms = (missed_ticks + 1) * QUEUE_MONITOR_INTERVAL.load(std::sync::atomic::Ordering::Relaxed);
+        tfd.set_state(TimerState::Periodic{
+          current: Duration::new(interval_ms / 1000, 0),
+          interval: Duration::new(interval_ms / 1000, 0)}, SetTimeFlags::Default
+        );
+      }
+    }
   })?;
 
   // Set up a 2nd thread to periodically gather ALL the queue stats
   std::thread::Builder::new()
         .name("All Queue Monitor".to_string())
   .spawn(|| {
-    periodic(2000, "All Queues", &mut || {
-      all_queue_reader();
-    })
+    let mut interval_ms = 2000;
+    let mut tfd = TimerFd::new().unwrap();
+    assert_eq!(tfd.get_state(), TimerState::Disarmed);
+    tfd.set_state(TimerState::Periodic{
+      current: Duration::new(interval_ms / 1000, 0),
+      interval: Duration::new(interval_ms / 1000, 0)}, SetTimeFlags::Default
+    );
+
+    loop {
+      let mut did_something = false;
+      if lock_tc() {
+        all_queue_reader();
+        unlock_tc();
+        did_something = true;
+      }
+
+      // Wait for the timer to expire
+      let missed_ticks = tfd.read();
+      if missed_ticks > 0 && did_something {
+        // If we missed a tick, adjust the interval
+        interval_ms = (missed_ticks + 2) * 2000;
+        tfd.set_state(TimerState::Periodic{
+          current: Duration::new(interval_ms / 1000, 0),
+          interval: Duration::new(interval_ms / 1000, 0)}, SetTimeFlags::Default
+        );
+      }
+    }
   })?;
 
   Ok(())

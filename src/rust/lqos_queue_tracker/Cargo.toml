@@ -17,6 +17,7 @@ once_cell = { workspace = true}
 dashmap = { workspace = true }
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
+timerfd = {  workspace = true }
 
 [dev-dependencies]
 criterion = { version = "0", features = [ "html_reports"] }
