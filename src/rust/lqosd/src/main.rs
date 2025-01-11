@@ -32,10 +32,7 @@ use anyhow::Result;
 use tracing::{info, warn, error};
 use lqos_bus::{BusRequest, BusResponse, UnixSocketServer, StatsRequest};
 use lqos_heimdall::{n_second_packet_dump, perf_interface::heimdall_handle_events, start_heimdall};
-use lqos_queue_tracker::{
-  add_watched_queue, get_raw_circuit_data, spawn_queue_monitor,
-  spawn_queue_structure_monitor,
-};
+use lqos_queue_tracker::{add_watched_queue, get_raw_circuit_data, spawn_queue_monitor, spawn_queue_structure_monitor, tc_wait_for_lock, unlock_tc};
 use lqos_sys::LibreQoSKernels;
 use lts_client::collector::start_long_term_stats;
 use signal_hook::{
@@ -408,6 +405,14 @@ fn handle_bus_requests(
               blob: blob.clone()
             });
         }
+        BusResponse::Ack
+      }
+      BusRequest::LockTc => {
+        tc_wait_for_lock();
+        BusResponse::Ack
+      }
+      BusRequest::UnlockTc => {
+        unlock_tc();
         BusResponse::Ack
       }
     });

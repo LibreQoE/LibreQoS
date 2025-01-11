@@ -227,6 +227,12 @@ pub enum BusRequest {
 
   /// Finish a blackboard session
   BlackboardFinish,
+
+  /// Lock the TC system, waiting for the lock to be available.
+  LockTc,
+
+  /// Unlock the TC system
+  UnlockTc,
 }
 
 /// Defines the parts of the blackboard
