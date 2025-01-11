@@ -5,7 +5,7 @@ use crate::{
   circuit_to_queue::CIRCUIT_TO_QUEUE, interval::QUEUE_MONITOR_INTERVAL,
   queue_store::QueueStore, tracking::reader::read_named_queue_from_interface,
 };
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 use lqos_utils::fdtimer::periodic;
 mod reader;
 mod watched_queues;
@@ -237,6 +237,7 @@ pub fn spawn_queue_monitor() -> anyhow::Result<()> {
         track_queues();
         unlock_tc();
         did_something = true;
+        debug!("Queue reader completed.");
       }
 
       // Wait for the timer to expire
@@ -244,6 +245,7 @@ pub fn spawn_queue_monitor() -> anyhow::Result<()> {
       if missed_ticks > 0 && did_something {
         // If we missed a tick, adjust the interval
         interval_ms = (missed_ticks + 1) * QUEUE_MONITOR_INTERVAL.load(std::sync::atomic::Ordering::Relaxed);
+        info!("Queue monitor interval adjusted to {interval_ms} ms.");
         tfd.set_state(TimerState::Periodic{
           current: Duration::new(interval_ms / 1000, 0),
           interval: Duration::new(interval_ms / 1000, 0)}, SetTimeFlags::Default
@@ -269,6 +271,7 @@ pub fn spawn_queue_monitor() -> anyhow::Result<()> {
       if lock_tc() {
         all_queue_reader();
         unlock_tc();
+        debug!("All queue reader completed.");
         did_something = true;
       }
 
@@ -277,6 +280,7 @@ pub fn spawn_queue_monitor() -> anyhow::Result<()> {
       if missed_ticks > 0 && did_something {
         // If we missed a tick, adjust the interval
         interval_ms = (missed_ticks + 2) * 2000;
+        info!("All queue monitor interval adjusted to {interval_ms} ms.");
         tfd.set_state(TimerState::Periodic{
           current: Duration::new(interval_ms / 1000, 0),
           interval: Duration::new(interval_ms / 1000, 0)}, SetTimeFlags::Default
