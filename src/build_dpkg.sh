@@ -44,11 +44,6 @@ mkdir -p "$ETC_DIR"
 # shellcheck disable=SC2086
 mkdir -p $MOTD_DIR
 
-# Test stuff to remove later
-ls bin/static2/
-ls "$LQOS_DIR"/bin/static2
-echo "$LQOS_DIR"
-
 # Create the Debian control file
 pushd "$DEBIAN_DIR" > /dev/null || exit
 touch control
@@ -149,9 +144,6 @@ do
     cp rust/target/release/"$prog" "$LQOS_DIR"/bin
 done
 
-ls bin/static2/
-ls "$LQOS_DIR"/bin/static2
-echo "$LQOS_DIR"
 cp -r bin/static2/* "$LQOS_DIR"/bin/static2
 mkdir "$LQOS_DIR"/bin/dashboards
 echo "{\"name\":\"default\",\"entries\":[{\"name\":\"Shaped/Unshaped Pie\",\"tag\":\"shapedUnshaped\",\"size\":2},{\"name\":\"Last 5 Minutes Throughput\",\"tag\":\"throughputRing\",\"size\":4},{\"name\":\"Total TCP Retransmits\",\"tag\":\"totalRetransmits\",\"size\":4},{\"name\":\"RAM Utilization\",\"tag\":\"ram\",\"size\":2},{\"name\":\"Throughput Packets/Second\",\"tag\":\"throughputPps\",\"size\":2},{\"name\":\"Round-Trip Time Histogram\",\"tag\":\"rttHistogram\",\"size\":2},{\"name\":\"Total Cake Stats\",\"tag\":\"totalCakeStats\",\"size\":4},{\"name\":\"Tracked Flows Counter\",\"tag\":\"trackedFlowsCount\",\"size\":2},{\"name\":\"CPU Utilization\",\"tag\":\"cpu\",\"size\":2},{\"name\":\"Network Tree Sankey\",\"tag\":\"networkTreeSankey\",\"size\":6},{\"name\":\"Network Tree Summary\",\"tag\":\"treeSummary\",\"size\":6},{\"name\":\"Top 10 Downloaders (Visual)\",\"tag\":\"top10downloadersV\",\"size\":6},{\"name\":\"Top 10 Downloaders\",\"tag\":\"top10downloaders\",\"size\":6},{\"name\":\"Worst 10 Round-Trip Time (Visual)\",\"tag\":\"worst10downloadersV\",\"size\":6},{\"name\":\"Worst 10 Round-Trip Time\",\"tag\":\"worst10downloaders\",\"size\":6},{\"name\":\"Worst 10 Retransmits (Visual)\",\"tag\":\"worst10retransmitsV\",\"size\":6},{\"name\":\"Worst 10 Retransmits\",\"tag\":\"worst10retransmits\",\"size\":6},{\"name\":\"Top 10 Flows (total bytes)\",\"tag\":\"top10flowsBytes\",\"size\":6},{\"name\":\"Top 10 Flows (rate)\",\"tag\":\"top10flowsRate\",\"size\":6},{\"name\":\"Top 10 Endpoints by Country\",\"tag\":\"top10endpointsCountry\",\"size\":6},{\"name\":\"Ether Protocols\",\"tag\":\"etherProtocols\",\"size\":6},{\"name\":\"IP Protocols\",\"tag\":\"ipProtocols\",\"size\":6},{\"name\":\"Combined Top 10 Box\",\"tag\":\"combinedTop10\",\"size\":6},{\"name\":\"Circuits At Capacity\",\"tag\":\"circuitCapacity\",\"size\":6},{\"name\":\"Tree Nodes At Capacity\",\"tag\":\"treeCapacity\",\"size\":6}]}" > "$LQOS_DIR"/bin/dashboards/default.json
