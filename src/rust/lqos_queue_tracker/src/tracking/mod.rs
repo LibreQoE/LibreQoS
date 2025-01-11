@@ -1,3 +1,4 @@
+use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 use crate::{
   circuit_to_queue::CIRCUIT_TO_QUEUE, interval::QUEUE_MONITOR_INTERVAL,
@@ -17,6 +18,21 @@ use crate::queue_structure::{QUEUE_STRUCTURE, QueueNode};
 use crate::queue_types::QueueType;
 use crate::tracking::reader::read_all_queues_from_interface;
 
+static TC_LOCK: AtomicBool = AtomicBool::new(false);
+
+/// Locks the TC monitor to prevent multiple threads from reading the
+/// queue data at the same time.
+pub fn lock_tc() -> bool {
+  TC_LOCK
+      .compare_exchange(false, true, std::sync::atomic::Ordering::Relaxed, std::sync::atomic::Ordering::Relaxed)
+      .is_ok()
+}
+
+/// Unlocks the TC monitor to allow other threads to read the queue data.
+pub fn unlock_tc() {
+  TC_LOCK.store(false, std::sync::atomic::Ordering::Relaxed);
+}
+
 fn track_queues() {
   if WATCHED_QUEUES.is_empty() {
     //info!("No queues marked for read.");
@@ -28,6 +44,10 @@ fn track_queues() {
     return;
   }
   let config = config.unwrap();
+  if !lock_tc() {
+    //warn!("Unable to lock TC monitor. Skipping queue collection cycle.");
+    return;
+  }
   WATCHED_QUEUES.iter_mut().for_each(|q| {
     let (circuit_id, download_class, upload_class) = q.get();
 
@@ -78,6 +98,7 @@ fn track_queues() {
       }
     }
   });
+  unlock_tc();
 
   expire_watched_queues();
 }
@@ -140,6 +161,10 @@ fn connect_queues_to_circuit_up(structure: &[QueueNode], queues: &[QueueType]) -
 fn all_queue_reader() {
   let start = Instant::now();
   let structure = QUEUE_STRUCTURE.load();
+  if !lock_tc() {
+    //warn!("Unable to lock TC monitor. Skipping all queue collection cycle.");
+    return;
+  }
   if let Some(structure) = &structure.maybe_queues {
     if let Ok(config) = lqos_config::load_config() {
       // Get all the queues
@@ -178,6 +203,7 @@ fn all_queue_reader() {
   } else {
     warn!("(TC monitor) Not reading queues due to structure not yet ready");
   }
+  unlock_tc();
   let elapsed = start.elapsed();
   debug!("(TC monitor) Completed in {:.5} seconds", elapsed.as_secs_f32());
 }
