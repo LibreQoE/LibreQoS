@@ -200,7 +200,7 @@ pub fn spawn_queue_monitor() -> anyhow::Result<()> {
       .store(interval_ms, std::sync::atomic::Ordering::Relaxed);
     debug!("Queue check period set to {interval_ms} ms.");
 
-    // Setup the Linux timer fd system
+    // Set up the Linux timer fd system
     periodic(interval_ms, "Queue Reader", &mut || {
       track_queues();
     });
