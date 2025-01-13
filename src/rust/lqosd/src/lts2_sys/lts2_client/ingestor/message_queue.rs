@@ -287,6 +287,10 @@ impl MessageQueue {
                 return Ok(());
             }
         }
+        if let Err(e) = socket.close(None) {
+            warn!("Failed to close connection to server: {}", e);
+            return Ok(());
+        }
         drop(socket);
         println!("Finished sending messages to {}", remote_host);
         Ok(())
