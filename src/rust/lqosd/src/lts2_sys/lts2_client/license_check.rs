@@ -1,16 +1,13 @@
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
-use std::net::TcpStream;
 use std::sync::Mutex;
 use std::time::Duration;
-use axum::http::StatusCode;
 use native_tls::TlsConnector;
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 use lqos_config::load_config;
-use crate::lts2_sys::lts2_client::{get_remote_host, nacl_blob};
-use crate::lts2_sys::lts2_client::nacl_blob::KeyStore;
+use crate::lts2_sys::lts2_client::get_remote_host;
 
 pub(crate) struct LicenseStatus {
     pub(crate) valid: bool,
