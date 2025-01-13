@@ -73,6 +73,7 @@ fn remote_license_check(
 ) {
     info!("Checking license key with remote host: {}", remote_host);
     let url = format!("https://{}/license/license_check", remote_host);
+    info!("License Check URL: {}", url);
     // Make a ureq request to the remote host. POST a LicenseRequest with the license key.
 
     let Ok(tls) = TlsConnector::builder()
