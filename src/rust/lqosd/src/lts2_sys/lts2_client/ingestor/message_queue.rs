@@ -111,7 +111,7 @@ impl MessageQueue {
         let target = format!("wss://{}:443/ingest/ws", remote_host);
         info!("Sending messages to {}", target);
 
-        let Ok(stream) = TcpStream::connect(&format!("{}", remote_host)) else {
+        let Ok(stream) = TcpStream::connect(&format!("{}:443", remote_host)) else {
             warn!("Failed to connect to ingestion server");
             return Ok(());
         };
@@ -125,7 +125,7 @@ impl MessageQueue {
             return Ok(());
         };
 
-        let result = connector.connect(&format!("{}:443", remote_host), stream);
+        let result = connector.connect(&format!("{}", remote_host), stream);
         if result.is_err() {
             warn!("Failed to connect TLS stream to ingestion server: {result:?}");
             return Ok(());
