@@ -3,40 +3,47 @@
 		{
 		"downloadBandwidthMbps":1000,
 		"uploadBandwidthMbps":1000,
+		"type": "Site",
 		"children":
 			{
 				"AP_A":
 					{
 					"downloadBandwidthMbps":500,
-					"uploadBandwidthMbps":500
+					"uploadBandwidthMbps":500,
+					"type": "AP"
 					},
 				"Site_3":
 					{
 					"downloadBandwidthMbps":500,
 					"uploadBandwidthMbps":500,
+					"type": "Site",
 					"children":
 						{
 							"PoP_5":
 							{
 							"downloadBandwidthMbps":200,
 							"uploadBandwidthMbps":200,
+							"type": "Site",
 							"children":
 								{
 									"AP_9":
 									{
 									"downloadBandwidthMbps":120,
-									"uploadBandwidthMbps":120
+									"uploadBandwidthMbps":120,
+									"type": "AP"
 									},
 									"PoP_6":
 									{
 									"downloadBandwidthMbps":60,
 									"uploadBandwidthMbps":60,
+									"type": "Site",
 									"children":
 										{
 											"AP_11":
 											{
 											"downloadBandwidthMbps":30,
-											"uploadBandwidthMbps":30
+											"uploadBandwidthMbps":30,
+											"type": "AP"
 											}
 										}
 									}
@@ -50,25 +57,29 @@
 		{
 		"downloadBandwidthMbps":500,
 		"uploadBandwidthMbps":500,
+		"type": "Site",
 		"children":
 			{
 				"PoP_1":
 				{
 				"downloadBandwidthMbps":200,
 				"uploadBandwidthMbps":200,
+				"type": "Site",
 				"children":
 					{
 						"AP_7":
 						{
 						"downloadBandwidthMbps":100,
-						"uploadBandwidthMbps":100
+						"uploadBandwidthMbps":100,
+						"type": "AP"
 						}
 					}
 				},
 				"AP_1":
 				{
 				"downloadBandwidthMbps":150,
-				"uploadBandwidthMbps":150
+				"uploadBandwidthMbps":150,
+				"type": "AP"
 				}
 			}
 		}
