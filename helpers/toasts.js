@@ -1,13 +1,8 @@
 export function createBootstrapToast(toastId, headerSpan, toastBody) {
-    // Create main wrapper div
-    const wrapper = document.createElement('div');
-    wrapper.className = 'position-fixed bottom-0 end-0 p-3';
-    wrapper.style.zIndex = '11';
-
     // Create the toast div
     const toast = document.createElement('div');
     toast.id = toastId;
-    toast.className = 'toast hide';
+    toast.className = 'toast hide'; // Hidden initially
     toast.setAttribute('role', 'alert');
     toast.setAttribute('aria-live', 'assertive');
     toast.setAttribute('aria-atomic', 'true');
@@ -15,17 +10,6 @@ export function createBootstrapToast(toastId, headerSpan, toastBody) {
     // Create the toast-header div
     const toastHeader = document.createElement('div');
     toastHeader.className = 'toast-header';
-
-    // Create the image element
-    const img = document.createElement('img');
-    img.src = '...'; // Replace with the actual image URL
-    img.className = 'rounded me-2';
-    img.alt = '...';
-
-    // Create the strong element
-    const strong = document.createElement('strong');
-    strong.className = 'me-auto';
-    strong.textContent = 'Bootstrap';
 
     // Create the close button
     const button = document.createElement('button');
@@ -45,14 +29,15 @@ export function createBootstrapToast(toastId, headerSpan, toastBody) {
     toast.appendChild(toastHeader);
     toast.appendChild(toastBody);
 
-    // Append toast to wrapper
-    wrapper.appendChild(toast);
-
-    // Append wrapper to body (or another container)
-    document.body.appendChild(wrapper);
+    // Append toast to the toast container
+    const target = document.getElementById('toastHolder');
+    if (target !== null) {
+        target.appendChild(toast);
+    } else {
+        document.body.appendChild(toast);
+    }
 
     // Fire it up
-    const toastElement = document.getElementById(toastId);
-    const toastJs = new bootstrap.Toast(toastElement);
+    const toastJs = new bootstrap.Toast(toast);
     toastJs.show();
 }
