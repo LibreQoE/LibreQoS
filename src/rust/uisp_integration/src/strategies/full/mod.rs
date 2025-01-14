@@ -138,7 +138,7 @@ pub async fn build_full_network(
     squash_squashed_sites(&mut sites, config.clone(), &root_site)?;
 
     // Build Path Weights
-    walk_tree_for_routing(&mut sites, &root_site, &routing_overrides)?;
+    walk_tree_for_routing(config.clone(), &mut sites, &root_site, &routing_overrides)?;
 
     // Print Sites
     if let Some(root_idx) = sites.iter().position(|s| s.name == root_site) {
