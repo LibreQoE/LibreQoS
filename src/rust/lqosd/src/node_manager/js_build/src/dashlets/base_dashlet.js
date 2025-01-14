@@ -68,6 +68,7 @@ export class BaseDashlet {
         let graphDiv = document.createElement("div");
         graphDiv.id = this.id + "_graph";
         graphDiv.classList.add("dashgraph");
+        graphDiv.style.position = "relative";
         return graphDiv;
     }
 

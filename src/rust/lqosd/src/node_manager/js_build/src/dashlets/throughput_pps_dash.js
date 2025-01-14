@@ -1,5 +1,6 @@
 import {BaseDashlet} from "./base_dashlet";
 import {PacketsPerSecondBar} from "../graphs/packets_bar";
+import {clearDiv} from "../helpers/builders";
 
 export class ThroughputPpsDash extends BaseDashlet{
     title() {
@@ -23,11 +24,16 @@ export class ThroughputPpsDash extends BaseDashlet{
     setup() {
         super.setup();
         this.graph = new PacketsPerSecondBar(this.graphDivId());
+        window.timeGraphs.push(this);
     }
 
     onMessage(msg) {
-        if (msg.event === "Throughput") {
+        if (msg.event === "Throughput" && window.timePeriods.activePeriod === "Live") {
             this.graph.update(msg.data.pps.down, msg.data.pps.up, msg.data.tcp_pps, msg.data.udp_pps, msg.data.icmp_pps);
         }
+    }
+
+    onTimeChange() {
+
     }
 }

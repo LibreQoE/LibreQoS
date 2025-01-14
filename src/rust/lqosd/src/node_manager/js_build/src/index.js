@@ -4,6 +4,7 @@ import {sponsorTag} from "./toasts/sponsor_us";
 import {globalWarningToasts} from "./toasts/global_warnings";
 import {showTimeControls} from "./components/timescale";
 
+window.timeGraphs = [];
 showTimeControls("timescale");
 checkForUpgrades();
 sponsorTag("toasts");
