@@ -34,7 +34,7 @@ export function sponsorTag(parentId) {
                     html += ". By the way, we'll stop asking if you sign up for LibreQoS Insight.";
                     div.innerHTML = html;
                 }
-                div.classList.add("alert", "alert-warning");
+                div.classList.add("alert", "alert-warning", "toasty");
                 let parent = document.getElementById(parentId);
                 parent.appendChild(div);
             }
