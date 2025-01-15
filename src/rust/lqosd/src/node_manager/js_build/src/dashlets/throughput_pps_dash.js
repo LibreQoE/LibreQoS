@@ -1,6 +1,7 @@
 import {BaseDashlet} from "./base_dashlet";
 import {PacketsPerSecondBar} from "../graphs/packets_bar";
 import {clearDiv} from "../helpers/builders";
+import {PacketsPerSecondTimescale} from "../graphs/packets_bar_insight";
 
 export class ThroughputPpsDash extends BaseDashlet{
     title() {
@@ -34,6 +35,13 @@ export class ThroughputPpsDash extends BaseDashlet{
     }
 
     onTimeChange() {
-
+        // TODO: Clear the chart and display the correct one
+        this.graph.chart.clear();
+        this.graph.chart.showLoading();
+        if (window.timePeriods.activePeriod === "Live") {
+            this.graph = new PacketsPerSecondBar(this.graphDivId());
+        } else {
+            this.graph = new PacketsPerSecondTimescale(this.graphDivId(), window.timePeriods.activePeriod);
+        }
     }
 }
