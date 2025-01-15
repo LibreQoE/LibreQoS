@@ -23,7 +23,7 @@ pub fn walk_tree_for_routing(
         let mut visited = std::collections::HashSet::new();
         let current_node = root_idx;
         let mut natural_weights: Vec<RouteOverride> = Vec::new();
-        let mut dot_graph = "digraph G {\n  graph [ ranksep=2.0 overlap=false ]".to_string();
+        let mut dot_graph = "digraph G {\n  graph [ ranksep=2.0 overlap=false ]\n".to_string();
         walk_node(current_node, 10, sites, &mut visited, overrides, &mut dot_graph, &mut natural_weights);
         dot_graph.push_str("}\n");
         {
@@ -73,7 +73,7 @@ fn walk_node(
             let to = sites[idx].name.clone();
             if sites[idx].site_type != UispSiteType::Client && sites[i].site_type != UispSiteType::Client
             {
-                dot_graph.push_str(&format!("\"{}\" [label=\"{}\"];\n", to, to));
+                dot_graph.push_str(&format!("\"{}\" -> \"{}\" [label=\"{}\"] \n", from, to, weight));
                 natural_weights.push(RouteOverride {
                     from_site: from.clone(),
                     to_site: to.clone(),
