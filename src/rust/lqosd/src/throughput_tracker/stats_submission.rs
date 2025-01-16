@@ -53,6 +53,18 @@ pub(crate) fn submit_throughput_stats(
     counter: u8,
     system_usage_actor: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
 ) {
+    let config = load_config();
+    if config.is_err() {
+        return;
+    }
+    let config = config.unwrap();
+    if config.long_term_stats.gather_stats == false {
+        return;
+    }
+    if config.long_term_stats.license_key.is_none() {
+        return;
+    }
+
     let mut metrics = LtsSubmitMetrics::new();
     let mut lts2_needs_shaped_devices = false;
     // If ShapedDevices has changed, notify the stats thread
