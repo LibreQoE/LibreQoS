@@ -26,6 +26,7 @@ fn shaper_queries(rx: crossbeam_channel::Receiver<ShaperQueryCommand>) {
         match command {
             ShaperQueryCommand::ShaperThroughput { seconds, reply } => {
                 if let Some(result) = caches.throughput.get(&seconds) {
+                    info!("Cache hit for {seconds} seconds throughput");
                     let _ = reply.send(result.clone());
                 } else {
                     // Get the data
@@ -34,6 +35,7 @@ fn shaper_queries(rx: crossbeam_channel::Receiver<ShaperQueryCommand>) {
                     // Return from the cache once more
                     if result.is_ok() {
                         let Some(result) = caches.throughput.get(&seconds) else {
+                            warn!("Failed to get data for {seconds} seconds: {result:?}");
                             return;
                         };
                         let _ = reply.send(result.clone());

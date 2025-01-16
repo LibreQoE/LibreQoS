@@ -1,6 +1,7 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {GraphOptionsBuilder} from "../lq_js_common/e_charts/chart_builder";
 import {periodNameToSeconds} from "../helpers/time_periods";
+import {MinMaxSeries} from "../lq_js_common/e_charts/min_max_median_series";
 
 const RING_SIZE = 60 * 5; // 5 Minutes
 
@@ -11,87 +12,34 @@ export class ThroughputRingBufferGraphTimescale extends DashboardGraph {
         this.option = new GraphOptionsBuilder()
             .withSequenceAxis(0, RING_SIZE)
             .withScaledAbsYAxis("Throughput (bps)", 40)
+            .withEmptySeries()
+            .withEmptyLegend()
             .build();
 
-        this.option.legend = {
-            orient: "horizontal",
-            right: 10,
-            top: "bottom",
-            selectMode: false,
-            data: [
-                {
-                    name: "Shaped Traffic",
-                    icon: 'circle',
-                    itemStyle: {
-                        color: window.graphPalette[0]
-                    }
-                }, {
-                    name: "Unshaped Traffic",
-                    icon: 'circle',
-                    itemStyle: {
-                        color: window.graphPalette[1]
-                    }
-                }
-            ],
-            textStyle: {
-                color: '#aaa'
-            },
-        };
-        this.option.series = [
-            {
-                name: 'shaped0',
-                data: [],
-                type: 'line',
-                stack: 'shaped',
-                lineStyle: {
-                    opacity: 0,
-                    color: window.graphPalette[0],
-                },
-                symbol: 'none',
-                areaStyle: {
-                    color: window.graphPalette[0]
-                },
-            },
-            {
-                name: 'Shaped Traffic',
-                data: [],
-                type: 'line',
-                stack: 'shaped',
-                lineStyle: {
-                    opacity: 0,
-                    color: window.graphPalette[0],
-                },
-                symbol: 'none',
-                areaStyle: {
-                    color: window.graphPalette[0]
-                }
-
-            },
-            {
-                name: 'unshaped0',
-                data: [],
-                type: 'line',
-                lineStyle: {
-                    color: window.graphPalette[1],
-                },
-                symbol: 'none',
-            },
-            {
-                name: 'Unshaped Traffic',
-                data: [],
-                type: 'line',
-                lineStyle: {
-                    color: window.graphPalette[1],
-                },
-                symbol: 'none',
-            },
-        ];
         this.option && this.chart.setOption(this.option);
 
         let seconds = periodNameToSeconds(period);
         console.log("Requesting Insight History Data");
         $.get("local-api/ltsThroughput/" + seconds, (data) => {
-            console.log("Received Insight History Data");
+            let shaperDown = new MinMaxSeries("Down", 1);
+            let shaperUp = new MinMaxSeries(" Up", 1);
+            data.forEach((r) => {
+                this.option.xAxis.data.push(r.time);
+                shaperDown.pushPositive(
+                    r.median_down * 8,
+                    r.min_down * 8,
+                    r.max_down * 8
+                );
+                shaperUp.pushNegative(
+                    (r.median_up) * 8,
+                    (r.min_up) * 8,
+                    (r.max_up) * 8
+                );
+            });
+            shaperDown.addToOptions(this.option);
+            shaperUp.addToOptions(this.option);
+            this.chart.setOption(this.option);
+            this.chart.hideLoading();
         });
     }
 

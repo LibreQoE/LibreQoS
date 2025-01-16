@@ -17,7 +17,9 @@ pub fn get_remote_data(caches: &mut Caches, seconds: i32) -> anyhow::Result<()> 
     };
 
     let mut socket = connect_shaper_socket()?;
+    info!("Saying hello");
     send_hello(&mut socket, license_key.as_str(), &config.node_id)?;
+    info!("Authorized");
 
     request_graphs(&mut socket, seconds)?;
 
@@ -132,6 +134,7 @@ fn close(socket: &mut Wss) -> anyhow::Result<()> {
 }
 
 fn request_graphs(socket: &mut Wss, seconds: i32) -> anyhow::Result<()> {
+    info!("Requesting throughput for {seconds} seconds");
     let msg = WsMessage::ShaperThroughput { seconds }.to_bytes()?;
     socket.send(Message::Binary(msg))?;
     Ok(())
