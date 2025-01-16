@@ -23,19 +23,24 @@ pub fn get_remote_data(caches: &mut Caches, seconds: i32) -> anyhow::Result<()> 
 
     request_graphs(&mut socket, seconds)?;
 
-    // TODO: Loop on all requests here
-    let response = socket.read()?;
-    let reply = WsMessage::from_bytes(&response.into_data())?;
-    let WsMessage::QueryResult { tag, data } = reply else {
-        bail!("Failed to get data from shaper query server");
-    };
-    match tag.as_str() {
-        "throughput" => {
-            let throughput = serde_cbor::from_slice(&data)?;
-            caches.throughput.insert(seconds, throughput);
-        }
-        _ => {
-            warn!("Unknown tag received from shaper query server: {tag}");
+    for _ in 0 .. 2 {
+        let response = socket.read()?;
+        let reply = WsMessage::from_bytes(&response.into_data())?;
+        let WsMessage::QueryResult { tag, data } = reply else {
+            bail!("Failed to get data from shaper query server");
+        };
+        match tag.as_str() {
+            "throughput" => {
+                let throughput = serde_cbor::from_slice(&data)?;
+                caches.throughput.insert(seconds, throughput);
+            }
+            "packets" => {
+                let packets = serde_cbor::from_slice(&data)?;
+                caches.packets.insert(seconds, packets);
+            }
+            _ => {
+                warn!("Unknown tag received from shaper query server: {tag}");
+            }
         }
     }
 
@@ -49,6 +54,7 @@ enum WsMessage {
     InvalidToken,
     TokenAccepted,
     ShaperThroughput { seconds: i32 },
+    ShaperPackets { seconds: i32 },
 
     // Responses
     Hello { license_key: String, node_id: String },
@@ -136,6 +142,8 @@ fn close(socket: &mut Wss) -> anyhow::Result<()> {
 fn request_graphs(socket: &mut Wss, seconds: i32) -> anyhow::Result<()> {
     info!("Requesting throughput for {seconds} seconds");
     let msg = WsMessage::ShaperThroughput { seconds }.to_bytes()?;
+    socket.send(Message::Binary(msg))?;
+    let msg = WsMessage::ShaperPackets { seconds }.to_bytes()?;
     socket.send(Message::Binary(msg))?;
     Ok(())
 }

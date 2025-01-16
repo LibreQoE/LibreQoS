@@ -18,6 +18,35 @@ pub struct ThroughputData {
     median_up: i64,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct FullPacketData {
+    pub time: i64, // Unix timestamp
+    pub max_down: i64,
+    pub max_up: i64,
+    pub max_tcp_down: i64,
+    pub max_tcp_up: i64,
+    pub max_udp_down: i64,
+    pub max_udp_up: i64,
+    pub max_icmp_down: i64,
+    pub max_icmp_up: i64,
+    pub min_down: i64,
+    pub min_up: i64,
+    pub min_tcp_down: i64,
+    pub min_tcp_up: i64,
+    pub min_udp_down: i64,
+    pub min_udp_up: i64,
+    pub min_icmp_down: i64,
+    pub min_icmp_up: i64,
+    pub median_down: i64,
+    pub median_up: i64,
+    pub median_tcp_down: i64,
+    pub median_tcp_up: i64,
+    pub median_udp_down: i64,
+    pub median_udp_up: i64,
+    pub median_icmp_down: i64,
+    pub median_icmp_up: i64,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct RetransmitData {
     time: i64, // Unix timestamp
@@ -60,6 +89,19 @@ pub async fn throughput_period(
 )-> Result<Json<Vec<ThroughputData>>, StatusCode> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     shaper_query.send(ShaperQueryCommand::ShaperThroughput { seconds, reply: tx }).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let throughput = rx.await.map_err(|e| {
+        warn!("Error getting total throughput: {:?}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    Ok(Json(throughput))
+}
+
+pub async fn packets_period(
+    Extension(shaper_query): Extension<crossbeam_channel::Sender<ShaperQueryCommand>>,
+    Path(seconds): Path<i32>,
+)-> Result<Json<Vec<FullPacketData>>, StatusCode> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    shaper_query.send(ShaperQueryCommand::ShaperPackets { seconds, reply: tx }).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let throughput = rx.await.map_err(|e| {
         warn!("Error getting total throughput: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
