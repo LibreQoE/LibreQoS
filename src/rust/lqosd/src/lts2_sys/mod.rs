@@ -1,7 +1,7 @@
 use std::net::IpAddr;
 use std::sync::Mutex;
 pub mod shared_types;
-mod lts2_client;
+pub(crate) mod lts2_client;
 
 use anyhow::Result;
 use once_cell::sync::Lazy;

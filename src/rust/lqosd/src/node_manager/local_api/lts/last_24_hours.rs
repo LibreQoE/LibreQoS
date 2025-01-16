@@ -1,11 +1,13 @@
 use axum::extract::Path;
 use axum::http::StatusCode;
-use axum::Json;
+use axum::{Extension, Json};
 use serde::{Deserialize, Serialize};
+use tracing::log::warn;
 use lqos_config::load_config;
 use crate::node_manager::local_api::lts::rest_client::lts_query;
+use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Copy, Clone)]
 pub struct ThroughputData {
     time: i64, // Unix timestamp
     max_down: i64,
@@ -52,10 +54,16 @@ pub async fn last_24_hours()-> Result<Json<Vec<ThroughputData>>, StatusCode> {
     Ok(Json(throughput))
 }
 
-pub async fn throughput_period(Path(seconds): Path<i32>)-> Result<Json<Vec<ThroughputData>>, StatusCode> {
-    let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let url = format!("https://{}/shaper_api/totalThroughput/{seconds}", config.long_term_stats.lts_url.clone().unwrap_or("insight.libreqos.com".to_string()));
-    let throughput = lts_query(&url).await?;
+pub async fn throughput_period(
+    Extension(shaper_query): Extension<crossbeam_channel::Sender<ShaperQueryCommand>>,
+    Path(seconds): Path<i32>,
+)-> Result<Json<Vec<ThroughputData>>, StatusCode> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    shaper_query.send(ShaperQueryCommand::ShaperThroughput { seconds, reply: tx }).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let throughput = rx.await.map_err(|e| {
+        warn!("Error getting total throughput: {:?}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     Ok(Json(throughput))
 }
 

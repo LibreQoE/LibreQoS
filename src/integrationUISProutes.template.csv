@@ -1,6 +1,212 @@
-# Allows you to override route costs in the UISP integration to better,,
-# represent your network. Costs by default increment 10 at each hop.,,
-# So if you want to skip 10 links put a cost of 100 in,,
-# From Site Name, To Site Name, New Cost
-# MYCORE, MYTOWER,100
-Site1Name,Site2Name,20
+From Site,To Site,Cost
+TIGER,PAQUIN,10
+PAQUIN,TIGER,20
+FSW,PAQUIN,10
+PAQUIN,FSW,20
+PAQUIN APTS,PAQUIN,10
+PAQUIN,PAQUIN APTS,20
+Paquin F12,PAQUIN APTS,20
+Paquin F10,PAQUIN APTS,20
+Paquin F13,PAQUIN APTS,20
+Paquin F14,PAQUIN APTS,20
+Paquin F02,PAQUIN APTS,20
+Paquin F07,PAQUIN APTS,20
+Paquin F04,PAQUIN APTS,20
+Paquin F09,PAQUIN APTS,20
+Paquin F15,PAQUIN APTS,20
+Paqiom F11,PAQUIN APTS,20
+CALVIN,PAQUIN,10
+WHITTWORTH,CALVIN,20
+CALVIN,WHITTWORTH,30
+WHITWORTH s3 u58 120SW,WHITTWORTH,30
+WHITWORTH s1 u58 120N,WHITTWORTH,30
+WHITWORTH s2 u58 120SE,WHITTWORTH,30
+PAQUIN,CALVIN,20
+CALVIN s5 u58 120SE,CALVIN,20
+"(Generated Site) Bailey, Gail",CALVIN s5 u58 120SE,30
+CALVIN,"(Generated Site) Bailey, Gail",40
+CALVIN 2,CALVIN,20
+GIESSMANN,CALVIN 2,30
+CALVIN,GIESSMANN,40
+GIESSMANN s1 u58 Omni,GIESSMANN,40
+"(Generated Site) Spencer, Gayla",GIESSMANN s1 u58 Omni,50
+GIESSMANN,"(Generated Site) Spencer, Gayla",60
+"(Generated Site) Barnett, III, Ewin H.",CALVIN 2,30
+CALVIN,"(Generated Site) Barnett, III, Ewin H.",40
+CALVIN s7 v58 LOW-120N,CALVIN,20
+"(Generated Site) Sherman, Ron",CALVIN s7 v58 LOW-120N,30
+CALVIN,"(Generated Site) Sherman, Ron",40
+CALVIN s9 u58 LOW-120W,CALVIN,20
+CALVIN 4,CALVIN,20
+CALVIN 3,CALVIN,20
+CALVIN s6-120,CALVIN,20
+CALVIN 1,CALVIN,20
+"(Generated Site) Severs, Loren",CALVIN 1,30
+CALVIN,"(Generated Site) Severs, Loren",40
+Calvin Medusa,CALVIN,20
+"(Generated Site) Craig, Terry",Calvin Medusa,30
+CALVIN,"(Generated Site) Craig, Terry",40
+TONY,Calvin Medusa,30
+CALVIN,TONY,40
+TONY s1 u58 Omni AC,TONY,40
+BUCKNER,Calvin Medusa,30
+CALVIN,BUCKNER,40
+BUCKNER s1 u58 360,BUCKNER,40
+"(Generated Site) Kennish, Mike",Calvin Medusa,30
+CALVIN,"(Generated Site) Kennish, Mike",40
+ROBS,PAQUIN,10
+PAQUIN,ROBS,20
+ROB s1 u58 Omni,ROBS,20
+"(Generated Site) Paul, Andrea",ROB s1 u58 Omni,30
+ROBS,"(Generated Site) Paul, Andrea",40
+DOUGLAS,PAQUIN,10
+GRAINLEG,DOUGLAS,20
+WOOLWATER,GRAINLEG,30
+GRAINLEG,WOOLWATER,40
+PAQUIN,WOOLWATER,40
+"(Generated Site) Les Bourgeois Vineyards, Inc",WOOLWATER,40
+WOOLWATER,"(Generated Site) Les Bourgeois Vineyards, Inc",50
+WOOLWATER s3 u58 120SW,WOOLWATER,40
+MARK,WOOLWATER s3 u58 120SW,50
+WOOLWATER,MARK,60
+Mark Tower M2 Omni,MARK,60
+WOOLWATER s2 u58 120SE,WOOLWATER,40
+SCHNEIDER,WOOLWATER s2 u58 120SE,50
+WOOLWATER,SCHNEIDER,60
+SCHNEIDER s1 u24 Omni,SCHNEIDER,60
+DOUGLAS,GRAINLEG,30
+GRAINLEG Omni Elevate,GRAINLEG,30
+ALAN,DOUGLAS,20
+SCOTT,ALAN,30
+ALAN,SCOTT,40
+SCOTT s1 u24 Omni,SCOTT,40
+"(Generated Site) Reed, Karen",SCOTT s1 u24 Omni,50
+SCOTT,"(Generated Site) Reed, Karen",60
+JEREMY,ALAN,30
+ALAN,JEREMY,40
+JEREMY s1 u24 Omni,JEREMY,40
+AGLER,ALAN,30
+HESS,AGLER,40
+AGLER,HESS,50
+HESS s1 u24 Omni,HESS,50
+SUTHERLAND,HESS s1 u24 Omni,60
+HESS,SUTHERLAND,70
+SUTHERLAND s1 58 OMNI,SUTHERLAND,70
+ALAN,AGLER,40
+AGLER s4 u58 Omni,AGLER,40
+BRILHART,AGLER s4 u58 Omni,50
+AGLER,BRILHART,60
+BRILHART s1 u58 Omni,BRILHART,60
+Marc Hess,BRILHART s1 u58 Omni,70
+BRILHART,Marc Hess,80
+"(Generated Site) Agler, Bob",AGLER s4 u58 Omni,50
+AGLER,"(Generated Site) Agler, Bob",60
+DOUGLAS,ALAN,30
+DJBRILL,ALAN,30
+ALAN,DJBRILL,40
+JUSTIN,DJBRILL,40
+DJBRILL,JUSTIN,50
+JUSTIN s1 u24 Omni,JUSTIN,50
+TERRY,DJBRILL,40
+DJBRILL,TERRY,50
+Terry s1 u24 Omni,TERRY,50
+STURGEON,DJBRILL,40
+DJBRILL,STURGEON,50
+Mimosa A5,STURGEON,50
+DJBRILL s3 u58 60LOW,DJBRILL,40
+DJBRILL s1 u24 Omni,DJBRILL,40
+YATES,ALAN,30
+ALAN,YATES,40
+Yates s1 u24 Omni,YATES,40
+"(Generated Site) Steele, Richard",Yates s1 u24 Omni,50
+YATES,"(Generated Site) Steele, Richard",60
+ALAN s1 c24 90N,ALAN,30
+"(Generated Site) Botts, Jr, Steven",ALAN s1 c24 90N,40
+ALAN,"(Generated Site) Botts, Jr, Steven",50
+Alan Medusa Omni,ALAN,30
+MITTENDORF,Alan Medusa Omni,40
+ALAN,MITTENDORF,50
+MITTENDORF s1 u24 Omni,MITTENDORF,50
+Huddleston Tower Relay Cappi Stone,Alan Medusa Omni,40
+ALAN,Huddleston Tower Relay Cappi Stone,50
+PAQUIN,DOUGLAS,20
+DOUGLAS s1 u24 Nanobridge,DOUGLAS,20
+SWIFT,PAQUIN,10
+PAQUIN,SWIFT,20
+SWIFT s1 u58 Omni,SWIFT,20
+ZIMMER,PAQUIN,10
+(Generated Site) Aspen Square Management,ZIMMER,20
+ZIMMER,(Generated Site) Aspen Square Management,30
+PAQUIN,ZIMMER,20
+KOPNTower,PAQUIN,10
+PAQUIN,KOPNTower,20
+KOPN s3 u58 90S,KOPNTower,20
+"(Generated Site) Propane, Ballenger",KOPN s3 u58 90S,30
+KOPNTower,"(Generated Site) Propane, Ballenger",40
+STATLER,KOPN s3 u58 90S,30
+KOPNTower,STATLER,40
+STATLER s1 u24 Omni,STATLER,40
+KOPN s2 u58 90E,KOPNTower,20
+"(Generated Site) Propane, Ballenger",KOPN s2 u58 90E,30
+KOPN s1 u58 90N,KOPNTower,20
+KOPN Cambium epmp1000,KOPNTower,20
+GLP,PAQUIN,10
+PAQUIN,GLP,20
+GLP to PAQUIN,GLP,20
+PAQUIN,GLP to PAQUIN,30
+"(Generated Site) Turner, Stephen",PAQUIN,10
+PAQUIN,"(Generated Site) Turner, Stephen",20
+Medusa East,PAQUIN,10
+ASHMANOR,Medusa East,20
+PAQUIN,ASHMANOR,30
+ASHMANOR MT Router,ASHMANOR,30
+Paquin Sector NW2 AC,PAQUIN,10
+(Generated Site) Lakota Downtown,Paquin Sector NW2 AC,20
+PAQUIN,(Generated Site) Lakota Downtown,30
+ATKINS,Paquin Sector NW2 AC,20
+PAQUIN,ATKINS,30
+ATKINS s1 u58 Omni,ATKINS,30
+SENIORCENTER,ATKINS s1 u58 Omni,40
+ATKINS,SENIORCENTER,50
+GUITAR,Paquin Sector NW2 AC,20
+PAQUIN,GUITAR,30
+PaquinCore3,PAQUIN,10
+Paquin Sector NW2 AC,PAQUIN,10
+Medusa West,PAQUIN,10
+WOOLWATER,Medusa West,20
+STEPHENSLAKE,Medusa West,20
+PAQUIN,STEPHENSLAKE,30
+(Generated Site) Lakota Downtown,Medusa West,20
+HOLIDAYINN,Medusa West,20
+PAQUIN,HOLIDAYINN,30
+HOLIDAYINN s1 u58 90S,HOLIDAYINN,30
+(Generated Site) GingerC LLC,Medusa West,20
+PAQUIN,(Generated Site) GingerC LLC,30
+"(Generated Site) Turner, Stephen",Medusa West,20
+Paquin Sector SE AC,PAQUIN,10
+1411 BASS,Paquin Sector SE AC,20
+PAQUIN,1411 BASS,30
+Bass Avenue Mikrotik,1411 BASS,30
+Medusa North,PAQUIN,10
+FLOATINGAXE,Medusa North,20
+Kurt Bock 450b,FLOATINGAXE,30
+PAQUIN,Kurt Bock 450b,40
+DOGMASTER,Medusa North,20
+DOGMASTER BH,DOGMASTER,30
+PAQUIN,DOGMASTER BH,40
+"(Generated Site) 2pifi - JC Penney, TForce",Medusa North,20
+PAQUIN,"(Generated Site) 2pifi - JC Penney, TForce",30
+GUTWEIN,Medusa North,20
+PAQUIN,GUTWEIN,30
+GUTWEIN s1 u24 Omni,GUTWEIN,30
+(Generated Site) The Social Room,Medusa North,20
+PAQUIN,(Generated Site) The Social Room,30
+Paquin to Midway AC,PAQUIN,10
+MIDWAY,Paquin to Midway AC,20
+PAQUIN,MIDWAY,30
+MIDWAY s1 u58 Omni,MIDWAY,30
+MIDWAY ANTIQUE RELAY,Paquin to Midway AC,20
+PAQUIN,MIDWAY ANTIQUE RELAY,30
+ANTIQUE s1 u58 90E,MIDWAY ANTIQUE RELAY,30
+Medusa S,PAQUIN,10
+GLP,Medusa S,20

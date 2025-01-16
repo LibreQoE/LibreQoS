@@ -4,7 +4,7 @@ mod device_counts;
 mod shaped_device_api;
 mod network_tree;
 mod support;
-mod lts;
+pub mod lts;
 mod search;
 mod unknown_ips;
 mod reload_libreqos;
@@ -16,12 +16,13 @@ mod warnings;
 mod flow_explorer;
 mod container_status;
 
-use axum::Router;
+use axum::{Extension, Router};
 use axum::routing::{get, post};
 use crate::node_manager::auth::auth_layer;
 use tower_http::cors::CorsLayer;
+use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 
-pub fn local_api() -> Router {
+pub fn local_api(shaper_query: crossbeam_channel::Sender<ShaperQueryCommand>) -> Router {
     Router::new()
         .route("/dashletThemes", get(dashboard_themes::list_themes))
         .route("/dashletSave", post(dashboard_themes::save_theme))
@@ -64,6 +65,7 @@ pub fn local_api() -> Router {
         .route("/ltsThroughput/:seconds", get(lts::throughput_period))
         .route("/ltsRetransmits/:seconds", get(lts::retransmits_period))
         .route("/ltsCake/:seconds", get(lts::cake_period))
+        .layer(Extension(shaper_query))
         .layer(CorsLayer::very_permissive())
         .route_layer(axum::middleware::from_fn(auth_layer))
 }

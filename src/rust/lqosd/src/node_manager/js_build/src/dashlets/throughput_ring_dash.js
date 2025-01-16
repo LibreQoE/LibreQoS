@@ -1,7 +1,6 @@
 import {BaseDashlet} from "./base_dashlet";
 import {ThroughputRingBufferGraph} from "../graphs/throughput_ring_graph";
-import {LtsThroughputPeriodGraph} from "../graphs/lts_throughput_period_graph";
-import {periodNameToSeconds} from "../helpers/time_periods";
+import {ThroughputRingBufferGraphTimescale} from "../graphs/throughput_ring_graph_timescale";
 
 export class ThroughputRingDash extends BaseDashlet{
     constructor(slot) {
@@ -30,23 +29,6 @@ export class ThroughputRingDash extends BaseDashlet{
         let controls = document.createElement("div");
         controls.classList.add("dashgraph-controls", "small");
 
-        if (window.hasInsight) {
-            let btnLive = this.makePeriodBtn("Live");
-            btnLive.classList.add("active");
-            controls.appendChild(btnLive);
-
-            let targets = ["1h", "6h", "12h", "24h", "7d"];
-            targets.forEach((t) => {
-                let graph = document.createElement("div");
-                graph.id = this.graphDivId() + "_" + t;
-                graph.classList.add("dashgraph");
-                graph.style.display = "none";
-                graph.innerHTML = window.hasLts ? "Loading..." : "<p class='text-secondary small'>You need an active LibreQoS Insight account to view this data.</p>";
-                this.graphDivs.push(graph);
-                controls.appendChild(this.makePeriodBtn(t));
-            });
-        }
-
         base.appendChild(controls);
         base.appendChild(graphs);
         this.graphDivs.forEach((g) => {
@@ -58,32 +40,13 @@ export class ThroughputRingDash extends BaseDashlet{
     setup() {
         super.setup();
         this.graph = new ThroughputRingBufferGraph(this.graphDivId());
-        this.ltsLoaded = false;
-        if (window.hasLts) {
-            this.graphDivs.forEach((g) => {
-                let period = periodNameToSeconds(g.id.replace(this.graphDivId() + "_", ""));
-                let graph = new LtsThroughputPeriodGraph(g.id, period);
-                this.graphs.push(graph);
-            });
-        }
+        window.timeGraphs.push(this);
     }
 
     onMessage(msg) {
-        if (msg.event === "Throughput") {
+        if (msg.event === "Throughput" && window.timePeriods.activePeriod === "Live") {
             this.graph.update(msg.data.shaped_bps, msg.data.bps);
-            if (!this.ltsLoaded && window.hasLts) {
-                //console.log("Loading LTS data");
-                this.graphs.forEach((g) => {
-                    //console.log("Loading " + g.period);
-                    let url = "/local-api/ltsThroughput/" + g.period;
-                    //console.log(url);
-                    $.get(url, (data) => {
-                        //console.log(data);
-                        g.update(data);
-                    });
-                });
-                this.ltsLoaded = true;
-            }
+
             this.counter++;
             if (this.counter > 120) {
                 // Reload the LTS graphs every 2 minutes
@@ -95,5 +58,16 @@ export class ThroughputRingDash extends BaseDashlet{
 
     supportsZoom() {
         return true;
+    }
+
+    onTimeChange() {
+        // TODO: Clear the chart and display the correct one
+        this.graph.chart.clear();
+        this.graph.chart.showLoading();
+        if (window.timePeriods.activePeriod === "Live") {
+            this.graph = new ThroughputRingBufferGraph(this.graphDivId());
+        } else {
+            this.graph = new ThroughputRingBufferGraphTimescale(this.graphDivId(), window.timePeriods.activePeriod);
+        }
     }
 }
