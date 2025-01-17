@@ -23,7 +23,7 @@ pub fn get_remote_data(caches: &mut Caches, seconds: i32) -> anyhow::Result<()> 
 
     request_graphs(&mut socket, seconds)?;
 
-    for _ in 0 .. 3 {
+    for _ in 0 .. 4 {
         let response = socket.read()?;
         let reply = WsMessage::from_bytes(&response.into_data())?;
         let WsMessage::QueryResult { tag, data } = reply else {
@@ -41,6 +41,10 @@ pub fn get_remote_data(caches: &mut Caches, seconds: i32) -> anyhow::Result<()> 
             "percent" => {
                 let percent = serde_cbor::from_slice(&data)?;
                 caches.percent_shaped.insert(seconds, percent);
+            }
+            "flows" => {
+                let flows = serde_cbor::from_slice(&data)?;
+                caches.flows.insert(seconds, flows);
             }
             _ => {
                 warn!("Unknown tag received from shaper query server: {tag}");
@@ -60,6 +64,7 @@ enum WsMessage {
     ShaperThroughput { seconds: i32 },
     ShaperPackets { seconds: i32 },
     ShaperPercent { seconds: i32 },
+    ShaperFlows { seconds: i32 },
 
     // Responses
     Hello { license_key: String, node_id: String },
@@ -73,7 +78,6 @@ fn connect_shaper_socket() -> anyhow::Result<Wss> {
     let remote_host = crate::lts2_sys::lts2_client::get_remote_host();
     let target = format!("wss://{}:443/shaper_api/shaperWs", remote_host);
     info!("Connecting to shaper query server: {target}");
-    let addresses = format!("{}:443", remote_host);
     let mut addresses = format!("{}:443", remote_host).to_socket_addrs()?;
     let addr = addresses.next().ok_or_else(|| anyhow!("Failed to resolve remote host"))?;
 
@@ -151,6 +155,8 @@ fn request_graphs(socket: &mut Wss, seconds: i32) -> anyhow::Result<()> {
     let msg = WsMessage::ShaperPackets { seconds }.to_bytes()?;
     socket.send(Message::Binary(msg))?;
     let msg = WsMessage::ShaperPercent { seconds }.to_bytes()?;
+    socket.send(Message::Binary(msg))?;
+    let msg = WsMessage::ShaperFlows { seconds }.to_bytes()?;
     socket.send(Message::Binary(msg))?;
     Ok(())
 }

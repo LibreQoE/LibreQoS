@@ -3,13 +3,14 @@ mod timed_cache;
 
 use std::time::Duration;
 use tracing::{info, warn};
-use crate::node_manager::local_api::lts::{FullPacketData, PercentShapedWeb, ThroughputData};
+use crate::node_manager::local_api::lts::{FlowCountViewWeb, FullPacketData, PercentShapedWeb, ThroughputData};
 use crate::node_manager::shaper_queries_actor::timed_cache::TimedCache;
 
 pub enum ShaperQueryCommand {
     ShaperThroughput { seconds: i32, reply: tokio::sync::oneshot::Sender<Vec<ThroughputData>> },
     ShaperPackets { seconds: i32, reply: tokio::sync::oneshot::Sender<Vec<FullPacketData>> },
     ShaperPercent { seconds: i32, reply: tokio::sync::oneshot::Sender<Vec<PercentShapedWeb>> },
+    ShaperFlows { seconds: i32, reply: tokio::sync::oneshot::Sender<Vec<FlowCountViewWeb>> },
 }
 
 pub fn shaper_queries_actor() -> crossbeam_channel::Sender<ShaperQueryCommand> {
@@ -85,6 +86,25 @@ fn shaper_queries(rx: crossbeam_channel::Receiver<ShaperQueryCommand>) {
                     }
                 }
             }
+            ShaperQueryCommand::ShaperFlows { seconds, reply } => {
+                if let Some(result) = caches.flows.get(&seconds) {
+                    let _ = reply.send(result.clone());
+                } else {
+                    // Get the data
+                    let result = ws::get_remote_data(&mut caches, seconds);
+
+                    // Return from the cache once more
+                    if result.is_ok() {
+                        let Some(result) = caches.flows.get(&seconds) else {
+                            warn!("Failed to get data for {seconds} seconds: {result:?}");
+                            return;
+                        };
+                        let _ = reply.send(result.clone());
+                    } else {
+                        warn!("Failed to get data for {seconds} seconds: {result:?}");
+                    }
+                }
+            }
         }
     }
     warn!("Shaper query actor closing.")
@@ -96,6 +116,7 @@ struct Caches {
     throughput: TimedCache<i32, Vec<ThroughputData>>,
     packets: TimedCache<i32, Vec<FullPacketData>>,
     percent_shaped: TimedCache<i32, Vec<PercentShapedWeb>>,
+    flows: TimedCache<i32, Vec<FlowCountViewWeb>>,
 }
 
 impl Caches {
@@ -104,6 +125,7 @@ impl Caches {
             throughput: TimedCache::new(CACHE_DURATION),
             packets: TimedCache::new(CACHE_DURATION),
             percent_shaped: TimedCache::new(CACHE_DURATION),
+            flows: TimedCache::new(CACHE_DURATION),
         }
     }
 

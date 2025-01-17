@@ -1,5 +1,6 @@
 import {BaseDashlet} from "./base_dashlet";
 import {FlowCountGraph} from "../graphs/flows_graph";
+import {FlowCountGraphTimescale} from "../graphs/flows_graph_timeseries";
 
 export class TrackedFlowsCount extends BaseDashlet{
     title() {
@@ -23,11 +24,22 @@ export class TrackedFlowsCount extends BaseDashlet{
     setup() {
         super.setup();
         this.graph = new FlowCountGraph(this.graphDivId());
+        window.timeGraphs.push(this);
     }
 
     onMessage(msg) {
-        if (msg.event === "FlowCount") {
+        if (msg.event === "FlowCount" && window.timePeriods.activePeriod === "Live") {
             this.graph.update(msg.active, msg.recent);
+        }
+    }
+
+    onTimeChange() {
+        this.graph.chart.clear();
+        this.graph.chart.showLoading();
+        if (window.timePeriods.activePeriod === "Live") {
+            this.graph = new FlowCountGraph(this.graphDivId());
+        } else {
+            this.graph = new FlowCountGraphTimescale(this.graphDivId(), window.timePeriods.activePeriod);
         }
     }
 }
