@@ -61,7 +61,6 @@ export class ThroughputRingDash extends BaseDashlet{
     }
 
     onTimeChange() {
-        // TODO: Clear the chart and display the correct one
         this.graph.chart.clear();
         this.graph.chart.showLoading();
         if (window.timePeriods.activePeriod === "Live") {

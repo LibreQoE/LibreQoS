@@ -1,5 +1,6 @@
 import {BaseDashlet} from "./base_dashlet";
 import {ShapedUnshapedPie} from "../graphs/shaped_unshaped_pie";
+import {ShapedUnshapedTimescale} from "../graphs/shaped_unshaped_timescale";
 
 export class ShapedUnshapedDash extends BaseDashlet{
     title() {
@@ -23,13 +24,24 @@ export class ShapedUnshapedDash extends BaseDashlet{
     setup() {
         super.setup();
         this.graph = new ShapedUnshapedPie(this.graphDivId());
+        window.timeGraphs.push(this);
     }
 
     onMessage(msg) {
-        if (msg.event === "Throughput") {
+        if (msg.event === "Throughput" && window.timePeriods.activePeriod === "Live") {
             let shaped = msg.data.shaped_bps.down + msg.data.shaped_bps.up;
             let unshaped = msg.data.bps.down + msg.data.bps.up;
             this.graph.update(shaped, unshaped);
+        }
+    }
+
+    onTimeChange() {
+        this.graph.chart.clear();
+        this.graph.chart.showLoading();
+        if (window.timePeriods.activePeriod === "Live") {
+            this.graph = new ShapedUnshapedPie(this.graphDivId());
+        } else {
+            this.graph = new ShapedUnshapedTimescale(this.graphDivId(), window.timePeriods.activePeriod);
         }
     }
 }

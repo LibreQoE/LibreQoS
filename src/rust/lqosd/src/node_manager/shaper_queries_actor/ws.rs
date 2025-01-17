@@ -23,7 +23,7 @@ pub fn get_remote_data(caches: &mut Caches, seconds: i32) -> anyhow::Result<()> 
 
     request_graphs(&mut socket, seconds)?;
 
-    for _ in 0 .. 2 {
+    for _ in 0 .. 3 {
         let response = socket.read()?;
         let reply = WsMessage::from_bytes(&response.into_data())?;
         let WsMessage::QueryResult { tag, data } = reply else {
@@ -37,6 +37,10 @@ pub fn get_remote_data(caches: &mut Caches, seconds: i32) -> anyhow::Result<()> 
             "packets" => {
                 let packets = serde_cbor::from_slice(&data)?;
                 caches.packets.insert(seconds, packets);
+            }
+            "percent" => {
+                let percent = serde_cbor::from_slice(&data)?;
+                caches.percent_shaped.insert(seconds, percent);
             }
             _ => {
                 warn!("Unknown tag received from shaper query server: {tag}");
@@ -55,6 +59,7 @@ enum WsMessage {
     TokenAccepted,
     ShaperThroughput { seconds: i32 },
     ShaperPackets { seconds: i32 },
+    ShaperPercent { seconds: i32 },
 
     // Responses
     Hello { license_key: String, node_id: String },
@@ -144,6 +149,8 @@ fn request_graphs(socket: &mut Wss, seconds: i32) -> anyhow::Result<()> {
     let msg = WsMessage::ShaperThroughput { seconds }.to_bytes()?;
     socket.send(Message::Binary(msg))?;
     let msg = WsMessage::ShaperPackets { seconds }.to_bytes()?;
+    socket.send(Message::Binary(msg))?;
+    let msg = WsMessage::ShaperPercent { seconds }.to_bytes()?;
     socket.send(Message::Binary(msg))?;
     Ok(())
 }

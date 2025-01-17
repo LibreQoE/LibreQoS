@@ -64,6 +64,7 @@ pub fn local_api(shaper_query: crossbeam_channel::Sender<ShaperQueryCommand>) ->
         .route("/lts24", get(lts::last_24_hours))
         .route("/ltsThroughput/:seconds", get(lts::throughput_period))
         .route("/ltsPackets/:seconds", get(lts::packets_period))
+        .route("/ltsPercentShaped/:seconds", get(lts::percent_shaped_period))
         .route("/ltsRetransmits/:seconds", get(lts::retransmits_period))
         .route("/ltsCake/:seconds", get(lts::cake_period))
         .layer(Extension(shaper_query))

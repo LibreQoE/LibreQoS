@@ -75,6 +75,13 @@ pub struct CakeData {
     median_drops_up: i64,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PercentShapedWeb {
+    pub time: i64,
+    pub shaper_id: i64,
+    pub percent_shaped: f64,
+}
+
 pub async fn last_24_hours()-> Result<Json<Vec<ThroughputData>>, StatusCode> {
     let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let seconds = 24 * 60 * 60;
@@ -102,6 +109,19 @@ pub async fn packets_period(
 )-> Result<Json<Vec<FullPacketData>>, StatusCode> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     shaper_query.send(ShaperQueryCommand::ShaperPackets { seconds, reply: tx }).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let throughput = rx.await.map_err(|e| {
+        warn!("Error getting total throughput: {:?}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    Ok(Json(throughput))
+}
+
+pub async fn percent_shaped_period(
+    Extension(shaper_query): Extension<crossbeam_channel::Sender<ShaperQueryCommand>>,
+    Path(seconds): Path<i32>,
+)-> Result<Json<Vec<PercentShapedWeb>>, StatusCode> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    shaper_query.send(ShaperQueryCommand::ShaperPercent { seconds, reply: tx }).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let throughput = rx.await.map_err(|e| {
         warn!("Error getting total throughput: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR

@@ -10,7 +10,7 @@ export class ThroughputRingBufferGraphTimescale extends DashboardGraph {
         super(id);
 
         this.option = new GraphOptionsBuilder()
-            .withSequenceAxis(0, RING_SIZE)
+            .withTimeAxis()
             .withScaledAbsYAxis("Throughput (bps)", 40)
             .withEmptySeries()
             .withEmptyLegend()
