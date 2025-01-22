@@ -37,6 +37,7 @@ pub(super) fn static_routes() -> Result<Router> {
         "config_general.html",
         "config_anon.html",
         "config_tuning.html",
+        "config_queues.html",
     ];
 
     // Iterate through pages and construct the router
