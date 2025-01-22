@@ -476,6 +476,8 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
             key.src_port,
             data.bytes_sent.down,
             data.bytes_sent.up,
+            data.packets_sent.down as i64,
+            data.packets_sent.up as i64,
             data.retry_times_down.iter().map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64).collect(),
             data.retry_times_up.iter().map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64).collect(),
             data.rtt[0].as_micros() as f32,

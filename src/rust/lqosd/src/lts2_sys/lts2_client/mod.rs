@@ -477,6 +477,8 @@ pub fn two_way_flow(
     src_port: u16,
     bytes_down: u64,
     bytes_up: u64,
+    packets_down: i64,
+    packets_up: i64,
     retransmit_times_down: Vec<i64>,
     retransmit_times_up: Vec<i64>,
     rtt1: f32,
@@ -500,6 +502,8 @@ pub fn two_way_flow(
             rtt1,
             rtt2,
             circuit_hash,
+            packets_down,
+            packets_up,
         })).is_err() {
             error!("Failed to send two-way flow to LTS2 client");
             return Err(anyhow::anyhow!("Failed to send two-way flow to LTS2 client"));
