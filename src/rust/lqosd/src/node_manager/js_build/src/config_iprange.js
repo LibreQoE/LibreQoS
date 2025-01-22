@@ -1,4 +1,4 @@
-import {loadConfig} from "./config/config_helper";
+import {saveConfig, loadConfig} from "./config/config_helper";
 
 function isValidCIDR(cidr) {
     try {
@@ -73,6 +73,21 @@ function removeSubnet(listId) {
     selected.forEach(option => select.removeChild(option));
 }
 
+function getSubnetsFromList(listId) {
+    const select = document.getElementById(listId);
+    return Array.from(select.options).map(option => option.value);
+}
+
+function updateConfig() {
+    // Update only the ip_ranges section
+    window.config.ip_ranges = {
+        ignore_subnets: getSubnetsFromList('ignoredSubnets'),
+        allow_subnets: getSubnetsFromList('allowedSubnets'),
+        unknown_ip_honors_ignore: document.getElementById('unknownHonorsIgnore').checked,
+        unknown_ip_honors_allow: document.getElementById('unknownHonorsAllow').checked
+    };
+}
+
 loadConfig(() => {
     // window.config now contains the configuration.
     // Populate form fields with config values
@@ -101,6 +116,14 @@ loadConfig(() => {
         });
         document.getElementById('removeAllowedSubnet').addEventListener('click', () => {
             removeSubnet('allowedSubnets');
+        });
+
+        // Add save button click handler
+        document.getElementById('saveButton').addEventListener('click', () => {
+            updateConfig();
+            saveConfig(() => {
+                alert("Configuration saved successfully!");
+            });
         });
     } else {
         console.error("IP Ranges configuration not found in window.config");
