@@ -112,46 +112,96 @@ function deleteNode(nodeId) {
         return;
     }
 
-    function iterate(tree) {
+    let deleteList = [ nodeId ];
+    let deleteParent = "";
+
+    // Find the node to delete
+    function iterate(tree, depth, parent) {
         for (const [key, value] of Object.entries(tree)) {
             if (key === nodeId) {
+                // Find nodes that will go away
+                if (value.children != null) {
+                    iterateTargets(value.children, depth+1);
+                }
+                deleteParent = parent;
                 delete tree[key];
-                return;
             }
 
             if (value.children != null) {
-                iterate(value.children);
+                iterate(value.children, depth+1, key);
             }
         }
     }
 
-    iterate(network_json);
+    function iterateTargets(tree, depth) {
+        for (const [key, value] of Object.entries(tree)) {
+            deleteList.push(key);
+
+            if (value.children != null) {
+                iterateTargets(value.children, depth+1);
+            }
+        }
+    }
+
+    // Find the nodes to delete and erase them
+    iterate(network_json, "");
+
+    // Now we have a list in deleteList of all the nodes that were deleted
+    // We need to go through ShapedDevices and re-parent devices
+    console.log(deleteParent);
+    if (deleteParent == null) {
+        // We deleted something at the top of the tree, so there's no
+        // natural parent! So we'll set them to be at the root. That's
+        // only really the right answer if the user went "flat" - but there's
+        // no way to know. So they'll have to fix some validation themselves.
+        for (let i=0; i<shaped_devices.length; i++) {
+            let sd = shaped_devices[i];
+            if (deleteList.indexOf(sd.parent_node) > -1) {
+                sd.parent_node = "";
+            }
+        }
+        alert("Because there was no obvious parent, you may have to fix some parenting in your Shaped Devices list.");
+    } else {
+        // Move everything up the tree
+        for (let i=0; i<shaped_devices.length; i++) {
+            let sd = shaped_devices[i];
+            if (deleteList.indexOf(sd.parent_node) > -1) {
+                sd.parent_node = deleteParent;
+            }
+        }
+    }
+
+    // Update the display
     renderNetwork();
+    shapedDevices();
 }
 
 function renameNode(nodeId) {
-    let newName = prompt("Enter new node name:");
-    if (!newName || newName.trim() === "") {
-        alert("Please enter a valid name");
-        return;
-    }
+    let newName = prompt("New node name?");
 
-    function iterate(tree) {
+    function iterate(tree, depth) {
         for (const [key, value] of Object.entries(tree)) {
             if (key === nodeId) {
-                tree[newName] = value;
+                let tmp = value;
                 delete tree[nodeId];
-                return;
+                tree[newName] = tmp;
             }
 
             if (value.children != null) {
-                iterate(value.children);
+                iterate(value.children, depth+1);
             }
         }
     }
 
     iterate(network_json);
+
+    for (let i=0; i<shaped_devices.length; i++) {
+        let sd = shaped_devices[i];
+        if (sd.parent_node === nodeId) sd.parent_node = newName;
+    }
+
     renderNetwork();
+    shapedDevices();
 }
 
 function start() {
