@@ -184,6 +184,23 @@ table tr td a {
     font-family: "Illegible";
     src: url(glyphz.ttf) format("truetype");
 }
-.config-menu-item {
+.config-menu {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
 
+.config-menu-item {
+    margin: 0;
+    padding: 5px 10px;
+    background-color: var(--bs-tertiary-bg);
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.config-menu-item:hover {
+    background-color: var(--bs-info-bg-subtle);
 }
