@@ -1,4 +1,5 @@
 let network_json = null;
+let shaped_devices = null;
 
 function renderNetworkNode(level, depth) {
     let html = `<div class="card mb-3" style="margin-left: ${depth * 30}px;">`;
@@ -244,9 +245,12 @@ function start() {
     });
 
     // Load network data
-    $.get("/local-api/networkJson", (njs) => {
-        network_json = njs;
-        renderNetwork();
+    $.get("/local-api/allShapedDevices", (data) => {
+        shaped_devices = data;
+        $.get("/local-api/networkJson", (njs) => {
+            network_json = njs;
+            renderNetwork();
+        });
     });
 }
 
