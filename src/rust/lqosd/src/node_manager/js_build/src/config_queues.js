@@ -1,4 +1,56 @@
-import {loadConfig} from "./config/config_helper";
+import {saveConfig, loadConfig} from "./config/config_helper";
+
+function validateConfig() {
+    // Validate numeric fields
+    const uplink = parseInt(document.getElementById("uplinkBandwidth").value);
+    if (isNaN(uplink) || uplink < 1) {
+        alert("Uplink Bandwidth must be a number greater than 0");
+        return false;
+    }
+
+    const downlink = parseInt(document.getElementById("downlinkBandwidth").value);
+    if (isNaN(downlink) || downlink < 1) {
+        alert("Downlink Bandwidth must be a number greater than 0");
+        return false;
+    }
+
+    const pnDownload = parseInt(document.getElementById("generatedPnDownload").value);
+    if (isNaN(pnDownload) || pnDownload < 1) {
+        alert("Per-Node Download must be a number greater than 0");
+        return false;
+    }
+
+    const pnUpload = parseInt(document.getElementById("generatedPnUpload").value);
+    if (isNaN(pnUpload) || pnUpload < 1) {
+        alert("Per-Node Upload must be a number greater than 0");
+        return false;
+    }
+
+    const overrideQueues = document.getElementById("overrideQueues").value;
+    if (overrideQueues && (isNaN(overrideQueues) || overrideQueues < 1)) {
+        alert("Override Queues must be a number greater than 0");
+        return false;
+    }
+
+    return true;
+}
+
+function updateConfig() {
+    // Update only the queues section
+    window.config.queues = {
+        default_sqm: document.getElementById("defaultSqm").value,
+        monitor_only: document.getElementById("monitorOnly").checked,
+        uplink_bandwidth_mbps: parseInt(document.getElementById("uplinkBandwidth").value),
+        downlink_bandwidth_mbps: parseInt(document.getElementById("downlinkBandwidth").value),
+        generated_pn_download_mbps: parseInt(document.getElementById("generatedPnDownload").value),
+        generated_pn_upload_mbps: parseInt(document.getElementById("generatedPnUpload").value),
+        dry_run: document.getElementById("dryRun").checked,
+        sudo: document.getElementById("sudo").checked,
+        override_available_queues: document.getElementById("overrideQueues").value ? 
+            parseInt(document.getElementById("overrideQueues").value) : null,
+        use_binpacking: document.getElementById("useBinpacking").checked
+    };
+}
 
 loadConfig(() => {
     // window.config now contains the configuration.
@@ -16,23 +68,23 @@ loadConfig(() => {
         document.getElementById("useBinpacking").checked = queues.use_binpacking ?? false;
 
         // Numeric fields
-        if (queues.uplink_bandwidth_mbps) {
-            document.getElementById("uplinkBandwidth").value = queues.uplink_bandwidth_mbps;
-        }
-        if (queues.downlink_bandwidth_mbps) {
-            document.getElementById("downlinkBandwidth").value = queues.downlink_bandwidth_mbps;
-        }
-        if (queues.generated_pn_download_mbps) {
-            document.getElementById("generatedPnDownload").value = queues.generated_pn_download_mbps;
-        }
-        if (queues.generated_pn_upload_mbps) {
-            document.getElementById("generatedPnUpload").value = queues.generated_pn_upload_mbps;
-        }
+        document.getElementById("uplinkBandwidth").value = queues.uplink_bandwidth_mbps ?? 1000;
+        document.getElementById("downlinkBandwidth").value = queues.downlink_bandwidth_mbps ?? 1000;
+        document.getElementById("generatedPnDownload").value = queues.generated_pn_download_mbps ?? 1000;
+        document.getElementById("generatedPnUpload").value = queues.generated_pn_upload_mbps ?? 1000;
 
         // Optional numeric field
-        if (queues.override_available_queues) {
-            document.getElementById("overrideQueues").value = queues.override_available_queues;
-        }
+        document.getElementById("overrideQueues").value = queues.override_available_queues ?? "";
+
+        // Add save button click handler
+        document.getElementById('saveButton').addEventListener('click', () => {
+            if (validateConfig()) {
+                updateConfig();
+                saveConfig(() => {
+                    alert("Configuration saved successfully!");
+                });
+            }
+        });
     } else {
         console.error("Queue configuration not found in window.config");
     }
