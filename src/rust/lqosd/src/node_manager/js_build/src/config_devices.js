@@ -150,11 +150,36 @@ function start() {
     // Setup button handlers
     $("#btnNewDevice").on('click', newSdRow);
     $("#btnSaveDevices").on('click', () => {
-        saveNetworkAndDevices(network_json, shaped_devices, (success) => {
+        // Validate before saving
+        const validation = validateSd();
+        if (!validation.valid) {
+            alert("Cannot save - please fix validation errors first");
+            return;
+        }
+
+        // Update shaped devices from UI
+        for (let i=0; i<shaped_devices.length; i++) {
+            let row = shaped_devices[i];
+            row.circuit_id = $("#" + rowPrefix(i, "circuit_id")).val();
+            row.circuit_name = $("#" + rowPrefix(i, "circuit_name")).val();
+            row.device_id = $("#" + rowPrefix(i, "device_id")).val();
+            row.device_name = $("#" + rowPrefix(i, "device_name")).val();
+            row.parent_node = $("#" + rowPrefix(i, "parent_node")).val();
+            row.mac = $("#" + rowPrefix(i, "mac")).val();
+            row.ipv4 = ipAddressesToTuple($("#" + rowPrefix(i, "ipv4")).val());
+            row.ipv6 = ipAddressesToTuple($("#" + rowPrefix(i, "ipv6")).val());
+            row.download_min_mbps = parseInt($("#" + rowPrefix(i, "download_min_mbps")).val());
+            row.upload_min_mbps = parseInt($("#" + rowPrefix(i, "upload_min_mbps")).val());
+            row.download_max_mbps = parseInt($("#" + rowPrefix(i, "download_max_mbps")).val());
+            row.upload_max_mbps = parseInt($("#" + rowPrefix(i, "upload_max_mbps")).val());
+            row.comment = $("#" + rowPrefix(i, "comment")).val();
+        }
+
+        saveNetworkAndDevices(network_json, shaped_devices, (success, message) => {
             if (success) {
                 alert("Configuration saved successfully!");
             } else {
-                alert("Failed to save configuration");
+                alert("Failed to save configuration: " + message);
             }
         });
     });
