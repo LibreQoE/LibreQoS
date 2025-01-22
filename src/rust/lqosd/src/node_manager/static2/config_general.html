@@ -45,6 +45,18 @@
                 <input type="number" class="form-control" id="queueCheckPeriod" min="100">
             </div>
 
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="disableWebserver">
+                <label class="form-check-label" for="disableWebserver">Disable Web Server</label>
+                <div class="form-text">Check to disable the web interface (headless mode)</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="webserverListen" class="form-label">Web Server Listen Address</label>
+                <input type="text" class="form-control" id="webserverListen" placeholder="e.g. 0.0.0.0:80">
+                <div class="form-text">Leave blank for default (0.0.0.0:9123)</div>
+            </div>
+
             <button type="submit" class="btn btn-outline-primary">Save Changes</button>
         </form>
     </div>
