@@ -78,11 +78,18 @@ loadConfig(() => {
 
         // Add network save button handler
         $("#btnSaveNetwork").on('click', () => {
-            saveNetworkAndDevices(network_json, [], (success) => {
+            // Validate network structure
+            if (!network_json || Object.keys(network_json).length === 0) {
+                alert("Network configuration is empty");
+                return;
+            }
+
+            // Save with empty shaped_devices since we're only saving network
+            saveNetworkAndDevices(network_json, [], (success, message) => {
                 if (success) {
                     alert("Network configuration saved successfully!");
                 } else {
-                    alert("Failed to save network configuration");
+                    alert("Failed to save network configuration: " + message);
                 }
             });
         });
