@@ -2,7 +2,7 @@
     <div class="col-12">
         <ul class="config-menu">
         <li class="config-menu-item"><a href="config_general.html" class="text-decoration-none"><i class="fa fa-server"></i> General</a></li>
-        <li class="config-menu-item active"><a href="config_anon.html" class="text-decoration-none"><i class="fa fa-user-secret"></i> Anonymous Usage Stats</a></li>
+        <li class="config-menu-item"><a href="config_anon.html" class="text-decoration-none"><i class="fa fa-user-secret"></i> Anonymous Usage Stats</a></li>
         <li class="config-menu-item"><a href="config_tuning.html" class="text-decoration-none"><i class="fa fa-warning"></i> Tuning</a></li>
         <li class="config-menu-item"><i class="fa fa-chain"></i> Network Mode</li>
         <li class="config-menu-item"><a href="config_queues.html" class="text-decoration-none"><i class="fa fa-car"></i> Queues</a></li>
@@ -10,10 +10,10 @@
         <li class="config-menu-item"><a href="config_iprange.html" class="text-decoration-none"><i class="fa fa-address-card"></i> IP Ranges</a></li>
         <li class="config-menu-item"><a href="config_flows.html" class="text-decoration-none"><i class="fa fa-arrow-circle-down"></i> Flow Tracking</a></li>
         <li class="config-menu-item"><a href="config_integration.html" class="text-decoration-none"><i class="fa fa-link"></i> Integration - Common</a></li>
-        <li class="config-menu-item"><a href="config_spylnx.html" class="text-decoration-none"><i class="fa fa-link"></i> Splynx</a></li>
-        <li class="config-menu-item"><i class="fa fa-link"></i> UISP</li>
-        <li class="config-menu-item"><i class="fa fa-link"></i> Powercode</li>
-        <li class="config-menu-item"><i class="fa fa-link"></i> Sonar</li>
+        <li class="config-menu-item active"><a href="config_spylnx.html" class="text-decoration-none"><i class="fa fa-link"></i> Splynx</a></li>
+        <li class="config-menu-item"><a href="config_uisp.html" class="text-decoration-none"><i class="fa fa-link"></i> UISP</a></li>
+        <li class="config-menu-item"><a href="config_powercode.html" class="text-decoration-none"><i class="fa fa-link"></i> Powercode</a></li>
+        <li class="config-menu-item"><a href="config_sonar.html" class="text-decoration-none"><i class="fa fa-link"></i> Sonar</a></li>
         <li class="config-menu-item"><i class="fa fa-map"></i> Network Layout</li>
         <li class="config-menu-item"><i class="fa fa-table"></i> Shaped Devices</li>
         <li class="config-menu-item"><i class="fa fa-users"></i> LibreQoS Users</li>
@@ -25,15 +25,27 @@
     <div class="col-12">
         <form>
             <div class="mb-3 form-check">
-                <input type="checkbox" class="form-check-input" id="sendAnonymous">
-                <label class="form-check-label" for="sendAnonymous">Send Anonymous Usage Statistics</label>
-                <div class="form-text">Help improve LibreQoS by sharing anonymous usage data</div>
+                <input type="checkbox" class="form-check-input" id="enableSplynx">
+                <label class="form-check-label" for="enableSplynx">Enable Splynx Integration</label>
+                <div class="form-text">Enable integration with Splynx billing system</div>
             </div>
 
             <div class="mb-3">
-                <label for="anonymousServer" class="form-label">Statistics Server</label>
-                <input type="text" class="form-control" id="anonymousServer" aria-describedby="serverHelp">
-                <div id="serverHelp" class="form-text">Server address and port for anonymous statistics collection</div>
+                <label for="apiKey" class="form-label">API Key</label>
+                <input type="text" class="form-control" id="apiKey">
+                <div class="form-text">Splynx API key for authentication</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="apiSecret" class="form-label">API Secret</label>
+                <input type="password" class="form-control" id="apiSecret">
+                <div class="form-text">Splynx API secret for authentication</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="spylnxUrl" class="form-label">Splynx URL</label>
+                <input type="text" class="form-control" id="spylnxUrl">
+                <div class="form-text">Base URL for Splynx API (e.g. https://your-splynx.com)</div>
             </div>
 
             <button type="submit" class="btn btn-outline-primary">Save Changes</button>
