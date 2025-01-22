@@ -3,13 +3,13 @@ import {loadConfig} from "./config/config_helper";
 loadConfig(() => {
     // window.config now contains the configuration.
     // Populate form fields with config values
-    if (window.config && window.config.tunables) {
-        const tunables = window.config.tunables;
+    if (window.config && window.config.tuning) {
+        const tunables = window.config.tuning;
         
         // Boolean fields
         document.getElementById("stopIrqBalance").checked = tunables.stop_irq_balance ?? false;
-        document.getElementById("disableRxVlan").checked = tunables.disable_rx_vlan_offload ?? false;
-        document.getElementById("disableTxVlan").checked = tunables.disable_tx_vlan_offload ?? false;
+        document.getElementById("disableRxVlan").checked = tunables.disable_rxvlan ?? false;
+        document.getElementById("disableTxVlan").checked = tunables.disable_txvlan ?? false;
 
         // Numeric fields
         if (tunables.netdev_budget_usecs) {
