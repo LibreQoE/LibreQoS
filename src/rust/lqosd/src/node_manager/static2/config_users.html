@@ -23,7 +23,83 @@
 </div>
 <div class="row">
     <div class="col-12">
-        <!-- Users configuration will go here -->
+        <div class="card">
+            <div class="card-header">
+                <h4>Manage Users</h4>
+            </div>
+            <div class="card-body">
+                <div id="users-list">
+                    <!-- Users will be populated here by JavaScript -->
+                    <div class="text-center">
+                        <div class="spinner-border" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <hr>
+
+                <h5>Add New User</h5>
+                <form id="add-user-form">
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label for="username" class="form-label">Username</label>
+                            <input type="text" class="form-control" id="username" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="password" class="form-label">Password</label>
+                            <input type="password" class="form-control" id="password" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="role" class="form-label">Role</label>
+                            <select class="form-select" id="role" required>
+                                <option value="Admin">Admin</option>
+                                <option value="ReadOnly">Read Only</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fa fa-plus"></i> Add User
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Edit User Modal -->
+        <div class="modal fade" id="editUserModal" tabindex="-1" aria-labelledby="editUserModalLabel" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="editUserModalLabel">Edit User</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="edit-user-form">
+                            <div class="mb-3">
+                                <label for="edit-username" class="form-label">Username</label>
+                                <input type="text" class="form-control" id="edit-username" readonly>
+                            </div>
+                            <div class="mb-3">
+                                <label for="edit-password" class="form-label">Password</label>
+                                <input type="password" class="form-control" id="edit-password">
+                                <div class="form-text">Leave blank to keep current password</div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="edit-role" class="form-label">Role</label>
+                                <select class="form-select" id="edit-role">
+                                    <option value="Admin">Admin</option>
+                                    <option value="ReadOnly">Read Only</option>
+                                </select>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        <button type="button" class="btn btn-primary" id="save-user-changes">Save changes</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
