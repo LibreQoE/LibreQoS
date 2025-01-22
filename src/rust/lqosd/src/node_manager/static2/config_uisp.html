@@ -1,0 +1,108 @@
+<div class="row">
+    <div class="col-12">
+        <ul class="config-menu">
+        <li class="config-menu-item"><a href="config_general.html" class="text-decoration-none"><i class="fa fa-server"></i> General</a></li>
+        <li class="config-menu-item"><a href="config_anon.html" class="text-decoration-none"><i class="fa fa-user-secret"></i> Anonymous Usage Stats</a></li>
+        <li class="config-menu-item"><a href="config_tuning.html" class="text-decoration-none"><i class="fa fa-warning"></i> Tuning</a></li>
+        <li class="config-menu-item"><i class="fa fa-chain"></i> Network Mode</li>
+        <li class="config-menu-item"><a href="config_queues.html" class="text-decoration-none"><i class="fa fa-car"></i> Queues</a></li>
+        <li class="config-menu-item"><a href="config_lts.html" class="text-decoration-none"><i class="fa fa-line-chart"></i> Long-Term Stats</a></li>
+        <li class="config-menu-item"><a href="config_iprange.html" class="text-decoration-none"><i class="fa fa-address-card"></i> IP Ranges</a></li>
+        <li class="config-menu-item"><a href="config_flows.html" class="text-decoration-none"><i class="fa fa-arrow-circle-down"></i> Flow Tracking</a></li>
+        <li class="config-menu-item"><a href="config_integration.html" class="text-decoration-none"><i class="fa fa-link"></i> Integration - Common</a></li>
+        <li class="config-menu-item"><a href="config_spylnx.html" class="text-decoration-none"><i class="fa fa-link"></i> Splynx</a></li>
+        <li class="config-menu-item active"><a href="config_uisp.html" class="text-decoration-none"><i class="fa fa-link"></i> UISP</a></li>
+        <li class="config-menu-item"><a href="config_powercode.html" class="text-decoration-none"><i class="fa fa-link"></i> Powercode</a></li>
+        <li class="config-menu-item"><a href="config_sonar.html" class="text-decoration-none"><i class="fa fa-link"></i> Sonar</a></li>
+        <li class="config-menu-item"><i class="fa fa-map"></i> Network Layout</li>
+        <li class="config-menu-item"><i class="fa fa-table"></i> Shaped Devices</li>
+        <li class="config-menu-item"><i class="fa fa-users"></i> LibreQoS Users</li>
+        </ul>
+        <hr class="mt-3 mb-3" />
+    </div>
+</div>
+<div class="row">
+    <div class="col-12">
+        <form>
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="enableUisp">
+                <label class="form-check-label" for="enableUisp">Enable UISP Integration</label>
+                <div class="form-text">Enable integration with UISP billing system</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="uispToken" class="form-label">API Token</label>
+                <input type="text" class="form-control" id="uispToken">
+                <div class="form-text">UISP API token for authentication</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="uispUrl" class="form-label">UISP URL</label>
+                <input type="text" class="form-control" id="uispUrl">
+                <div class="form-text">Base URL for UISP API (e.g. https://your-uisp.com)</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="uispSite" class="form-label">UISP Site</label>
+                <input type="text" class="form-control" id="uispSite">
+                <div class="form-text">Site identifier in UISP</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="uispStrategy" class="form-label">Strategy</label>
+                <input type="text" class="form-control" id="uispStrategy">
+                <div class="form-text">Strategy for handling devices</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="uispSuspendedStrategy" class="form-label">Suspended Strategy</label>
+                <input type="text" class="form-control" id="uispSuspendedStrategy">
+                <div class="form-text">Strategy for handling suspended devices</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="uispAirmaxCapacity" class="form-label">Airmax Capacity</label>
+                <input type="number" class="form-control" id="uispAirmaxCapacity" step="0.1">
+                <div class="form-text">Capacity factor for Airmax devices</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="uispLtuCapacity" class="form-label">LTU Capacity</label>
+                <input type="number" class="form-control" id="uispLtuCapacity" step="0.1">
+                <div class="form-text">Capacity factor for LTU devices</div>
+            </div>
+
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="uispIpv6WithMikrotik">
+                <label class="form-check-label" for="uispIpv6WithMikrotik">IPv6 with Mikrotik</label>
+                <div class="form-text">Enable IPv6 support with Mikrotik devices</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="uispBandwidthOverhead" class="form-label">Bandwidth Overhead Factor</label>
+                <input type="number" class="form-control" id="uispBandwidthOverhead" step="0.1" value="1.0">
+                <div class="form-text">Multiplier for bandwidth overhead calculations</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="uispCommitMultiplier" class="form-label">Commit Bandwidth Multiplier</label>
+                <input type="number" class="form-control" id="uispCommitMultiplier" step="0.1" value="1.0">
+                <div class="form-text">Multiplier for commit bandwidth calculations</div>
+            </div>
+
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="uispUsePtmpAsParent">
+                <label class="form-check-label" for="uispUsePtmpAsParent">Use PTMP as Parent</label>
+                <div class="form-text">Treat PTMP devices as parent nodes</div>
+            </div>
+
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="uispIgnoreCalculatedCapacity">
+                <label class="form-check-label" for="uispIgnoreCalculatedCapacity">Ignore Calculated Capacity</label>
+                <div class="form-text">Ignore capacity calculations from UISP</div>
+            </div>
+
+            <button type="submit" class="btn btn-outline-primary">Save Changes</button>
+        </form>
+    </div>
+</div>
