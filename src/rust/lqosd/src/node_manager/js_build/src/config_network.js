@@ -178,6 +178,30 @@ function deleteNode(nodeId) {
 
 function renameNode(nodeId) {
     let newName = prompt("New node name?");
+    if (!newName || newName.trim() === "") {
+        alert("Please enter a valid name");
+        return;
+    }
+
+    // Check if the new name already exists
+    function checkExists(tree) {
+        for (const [key, _] of Object.entries(tree)) {
+            if (key === newName) {
+                return true;
+            }
+            if (tree[key].children) {
+                if (checkExists(tree[key].children)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    if (checkExists(network_json)) {
+        alert("A node with that name already exists");
+        return;
+    }
 
     function iterate(tree, depth) {
         for (const [key, value] of Object.entries(tree)) {
@@ -195,9 +219,12 @@ function renameNode(nodeId) {
 
     iterate(network_json);
 
+    // Update shaped devices
     for (let i=0; i<shaped_devices.length; i++) {
         let sd = shaped_devices[i];
-        if (sd.parent_node === nodeId) sd.parent_node = newName;
+        if (sd.parent_node === nodeId) {
+            sd.parent_node = newName;
+        }
     }
 
     renderNetwork();
