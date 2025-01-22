@@ -66,9 +66,8 @@ loadConfig(() => {
         document.getElementById("disableWebserver").checked = window.config.disable_webserver ?? false;
         document.getElementById("webserverListen").value = window.config.webserver_listen ?? "";
 
-        // Add form submit handler
-        document.querySelector('form').addEventListener('submit', (e) => {
-            e.preventDefault();
+        // Add save button click handler
+        document.getElementById('saveButton').addEventListener('click', () => {
             if (validateConfig()) {
                 updateConfig();
                 saveConfig(() => {
