@@ -44,6 +44,7 @@ pub(super) fn static_routes() -> Result<Router> {
         "config_integration.html",
         "config_spylnx.html",
         "config_uisp.html",
+        "config_powercode.html",
     ];
 
     // Iterate through pages and construct the router
