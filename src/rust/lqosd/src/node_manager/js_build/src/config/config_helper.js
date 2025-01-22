@@ -35,7 +35,8 @@ export function saveNetworkAndDevices(network_json, shaped_devices, onComplete) 
 
     // Validate individual shaped devices
     const validationErrors = [];
-    const validNodes = Object.keys(network_json);
+    const validNodes = validNodeList(network_json);
+    console.log(validNodes);
     
     shaped_devices.forEach((device, index) => {
         // Required fields
@@ -68,9 +69,10 @@ export function saveNetworkAndDevices(network_json, shaped_devices, onComplete) 
         network_json,
         shaped_devices
     };
+    console.log(submission);
 
     // Send to server with enhanced error handling
-    $.ajax({
+    /*$.ajax({
         type: "POST",
         url: "/local-api/updateNetworkAndDevices",
         contentType: 'application/json',
@@ -113,5 +115,21 @@ export function saveNetworkAndDevices(network_json, shaped_devices, onComplete) 
             if (onComplete) onComplete(false, errorMsg);
             alert("Error saving configuration: " + errorMsg);
         }
-    });
+    });*/
+}
+
+export function validNodeList(network_json) {
+    let nodes = [];
+
+    function iterate(data, level) {
+        for (const [key, value] of Object.entries(data)) {
+            nodes.push(key);
+            if (value.children != null)
+                iterate(value.children, level+1);
+        }
+    }
+
+    iterate(network_json, 0);
+
+    return nodes;
 }

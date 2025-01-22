@@ -104,11 +104,7 @@ function deleteSdRow(id) {
 }
 
 function shapedDevices() {
-    // Initialize shaped_devices if null
-    if (!shaped_devices) {
-        shaped_devices = [];
-    }
-    
+    console.log(shaped_devices);
     let html = "<table style='height: 500px; overflow: scroll; border-collapse: collapse; width: 100%; padding: 0px'>";
     html += "<thead style='position: sticky; top: 0; height: 50px; background: navy; color: white;'>";
     html += "<tr style='font-size: 9pt;'><th>Circuit ID</th><th>Circuit Name</th><th>Device ID</th><th>Device Name</th><th>Parent Node</th><th>MAC</th><th>IPv4</th><th>IPv6</th><th>Download Min</th><th>Upload Min</th><th>Download Max</th><th>Upload Max</th><th>Comment</th><th></th></th></tr>";
@@ -416,22 +412,6 @@ function validateSd() {
         valid: valid,
         errors: errors
     };
-}
-
-function validNodeList() {
-    let nodes = [];
-
-    function iterate(data, level) {
-        for (const [key, value] of Object.entries(data)) {
-            nodes.push(key);
-            if (value.children != null)
-                iterate(value.children, level+1);
-        }
-    }
-
-    iterate(network_json, 0);
-
-    return nodes;
 }
 
 function checkIpv4(ip) {
