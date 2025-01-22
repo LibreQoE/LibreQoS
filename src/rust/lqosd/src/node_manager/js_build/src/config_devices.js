@@ -139,9 +139,12 @@ function shapedDevices() {
 
 function start() {
     // Load shaped devices data
-    $.get("/local-api/allShapedDevices", (data) => {
-        shaped_devices = data;
-        shapedDevices();
+    $.get("/local-api/networkJson", (njs) => {
+        network_json = njs;
+        $.get("/local-api/allShapedDevices", (data) => {
+            shaped_devices = data;
+            shapedDevices();
+        });
     });
 
     // Setup button handlers

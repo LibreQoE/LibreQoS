@@ -232,6 +232,12 @@ function renameNode(nodeId) {
 }
 
 function start() {
+    // Add links
+    window.promoteNode = promoteNode;
+    window.renameNode = renameNode;
+    window.deleteNode = deleteNode;
+    window.nodeSpeedChange = nodeSpeedChange;
+
     // Add save button handler
     $("#btnSaveNetwork").on('click', () => {
         alert("Save functionality coming soon!");
