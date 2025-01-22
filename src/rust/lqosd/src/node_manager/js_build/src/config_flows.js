@@ -21,7 +21,7 @@ loadConfig(() => {
         
         // Required fields
         document.getElementById("flowTimeout").value = flows.flow_timeout_seconds;
-        document.getElementById("netflowEnabled").checked = flows.netflow_enabled;
+        document.getElementById("enableNetflow").checked = flows.netflow_enabled ?? false;
 
         // Optional fields
         if (flows.netflow_port) {

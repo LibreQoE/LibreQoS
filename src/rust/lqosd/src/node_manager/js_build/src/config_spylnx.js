@@ -11,9 +11,9 @@ loadConfig(() => {
             spylnx.enable_spylnx ?? false;
 
         // String fields
-        document.getElementById("spylnxApiKey").value = 
+        document.getElementById("apiKey").value =
             spylnx.api_key ?? "";
-        document.getElementById("spylnxApiSecret").value = 
+        document.getElementById("apiSecret").value =
             spylnx.api_secret ?? "";
         document.getElementById("spylnxUrl").value = 
             spylnx.url ?? "";
