@@ -75,6 +75,17 @@ loadConfig(() => {
                 });
             }
         });
+
+        // Add network save button handler
+        $("#btnSaveNetwork").on('click', () => {
+            saveNetworkAndDevices(network_json, [], (success) => {
+                if (success) {
+                    alert("Network configuration saved successfully!");
+                } else {
+                    alert("Failed to save network configuration");
+                }
+            });
+        });
     } else {
         console.error("Configuration not found in window.config");
     }
