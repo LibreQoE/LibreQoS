@@ -12,11 +12,11 @@ function validateConfig() {
         }
     } else if (document.getElementById('singleInterfaceMode').checked) {
         // Validate single interface mode fields
-        const interface = document.getElementById('interface').value.trim();
+        const interfaceName = document.getElementById('interface').value.trim();
         const internetVlan = parseInt(document.getElementById('internetVlan').value);
         const networkVlan = parseInt(document.getElementById('networkVlan').value);
         
-        if (!interface) {
+        if (!interfaceName) {
             alert("Interface name is required in single interface mode");
             return false;
         }
