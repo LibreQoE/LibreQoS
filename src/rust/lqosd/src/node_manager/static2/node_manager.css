@@ -204,3 +204,9 @@ table tr td a {
 .config-menu-item:hover {
     background-color: var(--bs-info-bg-subtle);
 }
+
+.config-menu-item.active {
+    background-color: var(--bs-info);
+    color: var(--bs-info-text);
+    font-weight: bold;
+}
