@@ -36,6 +36,7 @@ pub(super) fn static_routes() -> Result<Router> {
         "lts_trial_fail.html",
         "config_general.html",
         "config_anon.html",
+        "config_tuning.html",
     ];
 
     // Iterate through pages and construct the router
