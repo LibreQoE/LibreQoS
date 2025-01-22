@@ -253,7 +253,7 @@ function start() {
         // Save with empty shaped_devices since we're only saving network
         saveNetworkAndDevices(network_json, [], (success, message) => {
             if (success) {
-                alert("Network configuration saved successfully!");
+                alert(message);
             } else {
                 alert("Failed to save network configuration: " + message);
             }

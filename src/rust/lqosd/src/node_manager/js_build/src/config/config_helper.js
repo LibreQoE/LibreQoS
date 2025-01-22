@@ -69,21 +69,49 @@ export function saveNetworkAndDevices(network_json, shaped_devices, onComplete) 
         shaped_devices
     };
 
-    // Send to server
+    // Send to server with enhanced error handling
     $.ajax({
         type: "POST",
         url: "/local-api/updateNetworkAndDevices",
         contentType: 'application/json',
         data: JSON.stringify(submission),
+        dataType: 'json', // Expect JSON response
         success: (response) => {
-            if (response === "Ok") {
-                if (onComplete) onComplete();
-            } else {
-                alert("Failed to save: " + response);
+            try {
+                if (response && response.success) {
+                    if (onComplete) onComplete(true, "Saved successfully");
+                } else {
+                    const msg = response?.message || "Unknown error occurred";
+                    if (onComplete) onComplete(false, msg);
+                    alert("Failed to save: " + msg);
+                }
+            } catch (e) {
+                console.error("Error parsing response:", e);
+                if (onComplete) onComplete(false, "Invalid server response");
+                alert("Invalid server response format");
             }
         },
-        error: (xhr, status, error) => {
-            alert("Error saving configuration: " + error);
+        error: (xhr) => {
+            let errorMsg = "Request failed";
+            try {
+                if (xhr.responseText) {
+                    const json = JSON.parse(xhr.responseText);
+                    errorMsg = json.message || xhr.responseText;
+                } else if (xhr.statusText) {
+                    errorMsg = xhr.statusText;
+                }
+                console.error("AJAX Error:", {
+                    status: xhr.status,
+                    statusText: xhr.statusText,
+                    response: xhr.responseText
+                });
+            } catch (e) {
+                console.error("Error parsing error response:", e);
+                errorMsg = "Unknown error occurred";
+            }
+            
+            if (onComplete) onComplete(false, errorMsg);
+            alert("Error saving configuration: " + errorMsg);
         }
     });
 }
