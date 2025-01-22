@@ -783,6 +783,82 @@ function checkIpv6Duplicate(ip, index) {
     return -1;
 }
 
+function validNodeList() {
+    let nodes = [];
+
+    function iterate(data, level) {
+        for (const [key, value] of Object.entries(data)) {
+            nodes.push(key);
+            if (value.children != null)
+                iterate(value.children, level+1);
+        }
+    }
+
+    iterate(network_json, 0);
+
+    return nodes;
+}
+
+function checkIpv4(ip) {
+    const ipv4Pattern =
+        /^(\d{1,3}\.){3}\d{1,3}$/;
+
+    if (ip.indexOf('/') === -1) {
+        return ipv4Pattern.test(ip);
+    } else {
+        let parts = ip.split('/');
+        return ipv4Pattern.test(parts[0]);
+    }
+}
+
+function checkIpv6(ip) {
+    // Check if the input is a valid IPv6 address with prefix
+    const regex = /^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))(\/([0-9]{1,3}))?$/;
+    return regex.test(ip);
+}
+
+function checkIpv4Duplicate(ip, index) {
+    ip = ip.trim();
+    for (let i=0; i < shaped_devices.length; i++) {
+        if (i !== index) {
+            let sd = shaped_devices[i];
+            for (let j=0; j<sd.ipv4.length; j++) {
+                let formatted = "";
+                if (ip.indexOf('/') > 0) {
+                    formatted = sd.ipv4[j][0] + "/" + sd.ipv4[j][1];
+                } else {
+                    formatted = sd.ipv4[j][0];
+                }
+                if (formatted === ip) {
+                    return index;
+                }
+            }
+        }
+    }
+    return -1;
+}
+
+function checkIpv6Duplicate(ip, index) {
+    ip = ip.trim();
+    for (let i=0; i < shaped_devices.length; i++) {
+        if (i !== index) {
+            let sd = shaped_devices[i];
+            for (let j=0; j<sd.ipv6.length; j++) {
+                let formatted = "";
+                if (ip.indexOf('/') > 0) {
+                    formatted = sd.ipv6[j][0] + "/" + sd.ipv6[j][1];
+                } else {
+                    formatted = sd.ipv6[j][0];
+                }
+                if (formatted === ip) {
+                    return index;
+                }
+            }
+        }
+    }
+    return -1;
+}
+
 function validateSd() {
     let valid = true;
     let errors = [];
