@@ -186,4 +186,312 @@ function start() {
     window.deleteSdRow = deleteSdRow;
 }
 
+function validateSd() {
+    let valid = true;
+    let errors = [];
+    $(".invalid").removeClass("invalid");
+    let validNodes = validNodeList();
+
+    for (let i=0; i<shaped_devices.length; i++) {
+        // Check that circuit ID is good
+        let controlId = "#" + rowPrefix(i, "circuit_id");
+        let circuit_id = $(controlId).val();
+        if (circuit_id.length === 0) {
+            valid = false;
+            errors.push("Circuits must have a Circuit ID");
+            $(controlId).addClass("invalid");
+        }
+
+        // Check that the Circuit Name is good
+        controlId = "#" + rowPrefix(i, "circuit_name");
+        let circuit_name = $(controlId).val();
+        if (circuit_name.length === 0) {
+            valid = false;
+            errors.push("Circuits must have a Circuit Name");
+            $(controlId).addClass("invalid");
+        }
+
+        // Check that the Device ID is good
+        controlId = "#" + rowPrefix(i, "device_id");
+        let device_id = $(controlId).val();
+        if (device_id.length === 0) {
+            valid = false;
+            errors.push("Circuits must have a Device ID");
+            $(controlId).addClass("invalid");
+        }
+        for (let j=0; j<shaped_devices.length; j++) {
+            if (i !== j) {
+                if (shaped_devices[j].device_id === device_id) {
+                    valid = false;
+                    errors.push("Devices with duplicate ID [" + device_id + "] detected");
+                    $(controlId).addClass("invalid");
+                    $("#" + rowPrefix(j, "device_id")).addClass("invalid");
+                }
+            }
+        }
+
+        // Check that the Device Name is good
+        controlId = "#" + rowPrefix(i, "device_name");
+        let device_name = $(controlId).val();
+        if (device_name.length === 0) {
+            valid = false;
+            errors.push("Circuits must have a Device Name");
+            $(controlId).addClass("invalid");
+        }
+
+        // Check the parent node
+        controlId = "#" + rowPrefix(i, "parent_node");
+        let parent_node = $(controlId).val();
+        if (parent_node == null) parent_node = "";
+        if (validNodes.length === 0) {
+            // Flat
+            if (parent_node.length > 0) {
+                valid = false;
+                errors.push("You have a flat network, so you can't specify a parent node.");
+                $(controlId).addClass("invalid");
+            }
+        } else {
+            // Hierarchy - so we need to know if it exists
+            if (validNodes.indexOf(parent_node) === -1) {
+                valid = false;
+                errors.push("Parent node: " + parent_node + " does not exist");
+                $(controlId).addClass("invalid");
+            }
+        }
+
+        // We can ignore the MAC address
+
+        // IPv4
+        controlId = "#" + rowPrefix(i, "ipv4");
+        let ipv4 = $(controlId).val();
+        if (ipv4.length > 0) {
+            // We have IP addresses
+            if (ipv4.indexOf(',') !== -1) {
+                // We have multiple addresses
+                let ips = ipv4.replace(' ', '').split(',');
+                for (let j=0; j<ips.length; j++) {
+                    if (!checkIpv4(ips[j].trim())) {
+                        valid = false;
+                        errors.push(ips[j] + "is not a valid IPv4 address");
+                        $(controlId).addClass("invalid");
+                    }
+                    let dupes = checkIpv4Duplicate(ips[j], i);
+                    if (dupes > 0 && dupes !== i) {
+                        valid = false;
+                        errors.push(ips[j] + " is a duplicate IP");
+                        $(controlId).addClass("invalid");
+                        $("#" + rowPrefix(dupes, "ipv4")).addClass("invalid");
+                    }
+                }
+            } else {
+                // Just the one
+                if (!checkIpv4(ipv4)) {
+                    valid = false;
+                    errors.push(ipv4 + "is not a valid IPv4 address");
+                    $(controlId).addClass("invalid");
+                }
+                let dupes = checkIpv4Duplicate(ipv4, i);
+                if (dupes > 0) {
+                    valid = false;
+                    errors.push(ipv4 + " is a duplicate IP");
+                    $(controlId).addClass("invalid");
+                    $("#" + rowPrefix(dupes, "ipv4")).addClass("invalid");
+                }
+            }
+        }
+
+        // IPv6
+        controlId = "#" + rowPrefix(i, "ipv6");
+        let ipv6 = $(controlId).val();
+        if (ipv6.length > 0) {
+            // We have IP addresses
+            if (ipv6.indexOf(',') !== -1) {
+                // We have multiple addresses
+                let ips = ipv6.replace(' ', '').split(',');
+                for (let j=0; j<ips.length; j++) {
+                    if (!checkIpv6(ips[j].trim())) {
+                        valid = false;
+                        errors.push(ips[j] + "is not a valid IPv6 address");
+                        $(controlId).addClass("invalid");
+                    }
+                    let dupes = checkIpv6Duplicate(ips[j], i);
+                    if (dupes > 0 && dupes !== i) {
+                        valid = false;
+                        errors.push(ips[j] + " is a duplicate IP");
+                        $(controlId).addClass("invalid");
+                        $("#" + rowPrefix(dupes, "ipv6")).addClass("invalid");
+                    }
+                }
+            } else {
+                // Just the one
+                if (!checkIpv6(ipv6)) {
+                    valid = false;
+                    errors.push(ipv6 + "is not a valid IPv6 address");
+                    $(controlId).addClass("invalid");
+                }
+                let dupes = checkIpv6Duplicate(ipv6, i);
+                if (dupes > 0 && dupes !== i) {
+                    valid = false;
+                    errors.push(ipv6 + " is a duplicate IP");
+                    $(controlId).addClass("invalid");
+                    $("#" + rowPrefix(dupes, "ipv6")).addClass("invalid");
+                }
+            }
+        }
+
+        // Combined - must be an address between them
+        if (ipv4.length === 0 && ipv6.length === 0) {
+            valid = false;
+            errors.push("You must specify either an IPv4 or IPv6 (or both) address");
+            $(controlId).addClass("invalid");
+            $("#" + rowPrefix(i, "ipv4")).addClass("invalid");
+        }
+
+        // Download Min
+        controlId = "#" + rowPrefix(i, "download_min_mbps");
+        let download_min = $(controlId).val();
+        download_min = parseInt(download_min);
+        if (isNaN(download_min)) {
+            valid = false;
+            errors.push("Download min is not a valid number");
+            $(controlId).addClass("invalid");
+        } else if (download_min < 1) {
+            valid = false;
+            errors.push("Download min must be 1 or more");
+            $(controlId).addClass("invalid");
+        }
+
+        // Upload Min
+        controlId = "#" + rowPrefix(i, "upload_min_mbps");
+        let upload_min = $(controlId).val();
+        upload_min = parseInt(upload_min);
+        if (isNaN(upload_min)) {
+            valid = false;
+            errors.push("Upload min is not a valid number");
+            $(controlId).addClass("invalid");
+        } else if (upload_min < 1) {
+            valid = false;
+            errors.push("Upload min must be 1 or more");
+            $(controlId).addClass("invalid");
+        }
+
+        // Download Max
+        controlId = "#" + rowPrefix(i, "download_max_mbps");
+        let download_max = $(controlId).val();
+        upload_min = parseInt(download_max);
+        if (isNaN(download_max)) {
+            valid = false;
+            errors.push("Download Max is not a valid number");
+            $(controlId).addClass("invalid");
+        } else if (download_max < 1) {
+            valid = false;
+            errors.push("Download Max must be 1 or more");
+            $(controlId).addClass("invalid");
+        }
+
+        // Upload Max
+        controlId = "#" + rowPrefix(i, "upload_max_mbps");
+        let upload_max = $(controlId).val();
+        upload_min = parseInt(upload_max);
+        if (isNaN(upload_max)) {
+            valid = false;
+            errors.push("Upload Max is not a valid number");
+            $(controlId).addClass("invalid");
+        } else if (upload_max < 1) {
+            valid = false;
+            errors.push("Upload Max must be 1 or more");
+            $(controlId).addClass("invalid");
+        }
+    }
+
+    if (!valid) {
+        let errorMessage = "Invalid ShapedDevices Entries:\n";
+        for (let i=0; i<errors.length; i++) {
+            errorMessage += errors[i] + "\n";
+        }
+        alert(errorMessage);
+    }
+
+    return {
+        valid: valid,
+        errors: errors
+    };
+}
+
+function validNodeList() {
+    let nodes = [];
+
+    function iterate(data, level) {
+        for (const [key, value] of Object.entries(data)) {
+            nodes.push(key);
+            if (value.children != null)
+                iterate(value.children, level+1);
+        }
+    }
+
+    iterate(network_json, 0);
+
+    return nodes;
+}
+
+function checkIpv4(ip) {
+    const ipv4Pattern =
+        /^(\d{1,3}\.){3}\d{1,3}$/;
+
+    if (ip.indexOf('/') === -1) {
+        return ipv4Pattern.test(ip);
+    } else {
+        let parts = ip.split('/');
+        return ipv4Pattern.test(parts[0]);
+    }
+}
+
+function checkIpv6(ip) {
+    // Check if the input is a valid IPv6 address with prefix
+    const regex = /^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))(\/([0-9]{1,3}))?$/;
+    return regex.test(ip);
+}
+
+function checkIpv4Duplicate(ip, index) {
+    ip = ip.trim();
+    for (let i=0; i < shaped_devices.length; i++) {
+        if (i !== index) {
+            let sd = shaped_devices[i];
+            for (let j=0; j<sd.ipv4.length; j++) {
+                let formatted = "";
+                if (ip.indexOf('/') > 0) {
+                    formatted = sd.ipv4[j][0] + "/" + sd.ipv4[j][1];
+                } else {
+                    formatted = sd.ipv4[j][0];
+                }
+                if (formatted === ip) {
+                    return index;
+                }
+            }
+        }
+    }
+    return -1;
+}
+
+function checkIpv6Duplicate(ip, index) {
+    ip = ip.trim();
+    for (let i=0; i < shaped_devices.length; i++) {
+        if (i !== index) {
+            let sd = shaped_devices[i];
+            for (let j=0; j<sd.ipv6.length; j++) {
+                let formatted = "";
+                if (ip.indexOf('/') > 0) {
+                    formatted = sd.ipv6[j][0] + "/" + sd.ipv6[j][1];
+                } else {
+                    formatted = sd.ipv6[j][0];
+                }
+                if (formatted === ip) {
+                    return index;
+                }
+            }
+        }
+    }
+    return -1;
+}
+
 $(document).ready(start);
