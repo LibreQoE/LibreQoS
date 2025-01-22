@@ -34,6 +34,8 @@ pub(super) fn static_routes() -> Result<Router> {
         "circuit.html", "flow_map.html", "all_tree_sankey.html",
         "asn_explorer.html", "lts_trial.html", "lts_trial_success.html",
         "lts_trial_fail.html",
+        "config_general.html",
+        "config_anon.html",
     ];
 
     // Iterate through pages and construct the router
