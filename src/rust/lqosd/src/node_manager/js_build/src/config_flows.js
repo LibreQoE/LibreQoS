@@ -72,7 +72,7 @@ loadConfig(() => {
 
         // Optional fields
         document.getElementById("netflowPort").value = flows.netflow_port ?? "";
-        document.getElementById("netflowIp").value = flows.netflow_ip ?? "";
+        document.getElementById("netflowIP").value = flows.netflow_ip ?? "";
         document.getElementById("netflowVersion").value = flows.netflow_version ?? "5";
 
         // Populate do not track list
