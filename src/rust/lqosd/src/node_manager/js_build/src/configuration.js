@@ -1259,7 +1259,13 @@ function start() {
                 saveConfig();
             });
             $("#btnSaveNetDevices").on('click', (data) => {
-               saveNetAndDevices();
+                saveNetworkAndDevices(network_json, shaped_devices, (success, message) => {
+                    if (success) {
+                        alert("Network configuration saved successfully!");
+                    } else {
+                        alert("Failed to save network configuration: " + message);
+                    }
+                });
             });
         }
         $.get("/local-api/getConfig", (data) => {
