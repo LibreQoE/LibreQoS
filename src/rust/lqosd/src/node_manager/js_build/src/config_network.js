@@ -1,3 +1,5 @@
+import {saveNetworkAndDevices} from "./config/config_helper";
+
 let network_json = null;
 let shaped_devices = null;
 
@@ -240,8 +242,22 @@ function start() {
     window.nodeSpeedChange = nodeSpeedChange;
 
     // Add save button handler
+    // Add network save button handler
     $("#btnSaveNetwork").on('click', () => {
-        alert("Save functionality coming soon!");
+        // Validate network structure
+        if (!network_json || Object.keys(network_json).length === 0) {
+            alert("Network configuration is empty");
+            return;
+        }
+
+        // Save with empty shaped_devices since we're only saving network
+        saveNetworkAndDevices(network_json, [], (success, message) => {
+            if (success) {
+                alert("Network configuration saved successfully!");
+            } else {
+                alert("Failed to save network configuration: " + message);
+            }
+        });
     });
 
     // Load network data
