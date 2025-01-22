@@ -149,6 +149,15 @@ function start() {
 
     // Setup button handlers
     $("#btnNewDevice").on('click', newSdRow);
+    $("#btnSaveDevices").on('click', () => {
+        saveNetworkAndDevices(network_json, shaped_devices, (success) => {
+            if (success) {
+                alert("Configuration saved successfully!");
+            } else {
+                alert("Failed to save configuration");
+            }
+        });
+    });
     window.deleteSdRow = deleteSdRow;
 }
 
