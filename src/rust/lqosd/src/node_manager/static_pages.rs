@@ -49,6 +49,7 @@ pub(super) fn static_routes() -> Result<Router> {
         "config_interface.html",
         "config_network.html",
         "config_devices.html",
+        "config_users.html",
     ];
 
     // Iterate through pages and construct the router
