@@ -4,10 +4,11 @@ use axum::http::StatusCode;
 use lqos_config::{Config, ConfigShapedDevices, ShapedDevice, WebUser};
 use crate::node_manager::auth::LoginResult;
 use default_net::get_interfaces;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use lqos_bus::{bus_request, BusRequest};
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
+use lqos_config::authentication::{WebUser, WebUsers};
 
 pub async fn admin_check(
     Extension(login): Extension<LoginResult>
@@ -119,13 +120,62 @@ pub async fn update_network_and_devices(
     "Ok".to_string()
 }
 
+#[derive(Serialize, Deserialize)]
+struct UserRequest {
+    username: String,
+    password: String,
+    role: String,
+}
+
 pub async fn get_users(
     Extension(login): Extension<LoginResult>,
 ) -> Result<Json<Vec<WebUser>>, StatusCode> {
     if login != LoginResult::Admin {
         return Err(StatusCode::FORBIDDEN);
     }
-    let users = lqos_config::WebUsers::load_or_create()
+    let users = WebUsers::load_or_create()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(users.get_users()))
+}
+
+pub async fn add_user(
+    Extension(login): Extension<LoginResult>,
+    Json(data): Json<UserRequest>,
+) -> Result<String, StatusCode> {
+    if login != LoginResult::Admin {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let mut users = WebUsers::load_or_create()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    users.add_or_update_user(&data.username, &data.password, data.role.into())
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok("User added".to_string())
+}
+
+pub async fn update_user(
+    Extension(login): Extension<LoginResult>,
+    Json(data): Json<UserRequest>,
+) -> Result<String, StatusCode> {
+    if login != LoginResult::Admin {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let mut users = WebUsers::load_or_create()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    users.add_or_update_user(&data.username, &data.password, data.role.into())
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok("User updated".to_string())
+}
+
+pub async fn delete_user(
+    Extension(login): Extension<LoginResult>,
+    Json(data): Json<UserRequest>,
+) -> Result<String, StatusCode> {
+    if login != LoginResult::Admin {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let mut users = WebUsers::load_or_create()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    users.remove_user(&data.username)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok("User deleted".to_string())
 }
