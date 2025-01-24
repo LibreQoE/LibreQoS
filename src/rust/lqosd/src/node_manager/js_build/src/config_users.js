@@ -115,7 +115,8 @@ function loadUsers() {
                     success: () => {
                         loadUsers();
                     },
-                    error: () => {
+                    error: (e) => {
+                        console.error(e);
                         alert('Failed to delete user');
                     }
                 });

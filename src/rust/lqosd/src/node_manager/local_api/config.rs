@@ -168,9 +168,14 @@ pub async fn update_user(
     Ok("User updated".to_string())
 }
 
+#[derive(Deserialize)]
+struct DeleteUserRequest {
+    username: String,
+}
+
 pub async fn delete_user(
     Extension(login): Extension<LoginResult>,
-    Json(data): Json<UserRequest>,
+    Json(data): Json<DeleteUserRequest>,
 ) -> Result<String, StatusCode> {
     if login != LoginResult::Admin {
         return Err(StatusCode::FORBIDDEN);
