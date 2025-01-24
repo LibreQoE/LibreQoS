@@ -1,14 +1,13 @@
 use std::sync::Arc;
 use axum::{Extension, Json};
 use axum::http::StatusCode;
-use lqos_config::{Config, ConfigShapedDevices, ShapedDevice, WebUser};
+use lqos_config::{Config, ConfigShapedDevices, ShapedDevice, WebUser, WebUsers};
 use crate::node_manager::auth::LoginResult;
 use default_net::get_interfaces;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use lqos_bus::{bus_request, BusRequest};
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
-use lqos_config::authentication::{WebUser, WebUsers};
 
 pub async fn admin_check(
     Extension(login): Extension<LoginResult>
@@ -121,10 +120,10 @@ pub async fn update_network_and_devices(
 }
 
 #[derive(Serialize, Deserialize)]
-struct UserRequest {
-    username: String,
-    password: String,
-    role: String,
+pub struct UserRequest {
+    pub username: String,
+    pub password: String,
+    pub role: String,
 }
 
 pub async fn get_users(
