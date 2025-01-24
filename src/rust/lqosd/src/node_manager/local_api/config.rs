@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use axum::{Extension, Json};
 use axum::http::StatusCode;
-use lqos_config::{Config, ConfigShapedDevices, ShapedDevice};
+use lqos_config::{Config, ConfigShapedDevices, ShapedDevice, WebUser};
 use crate::node_manager::auth::LoginResult;
 use default_net::get_interfaces;
 use serde::Deserialize;
@@ -117,4 +117,15 @@ pub async fn update_network_and_devices(
     SHAPED_DEVICES.store(Arc::new(copied));
 
     "Ok".to_string()
+}
+
+pub async fn get_users(
+    Extension(login): Extension<LoginResult>,
+) -> Result<Json<Vec<WebUser>>, StatusCode> {
+    if login != LoginResult::Admin {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let users = lqos_config::WebUsers::load_or_create()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(users.get_users()))
 }

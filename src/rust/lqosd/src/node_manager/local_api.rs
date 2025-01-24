@@ -46,6 +46,7 @@ pub fn local_api() -> Router {
         .route("/allShapedDevices", get(config::all_shaped_devices))
         .route("/updateConfig", post(config::update_lqosd_config))
         .route("/updateNetworkAndDevices", post(config::update_network_and_devices))
+        .route("/getUsers", get(config::get_users))
         .route("/circuitById", post(circuit::get_circuit_by_id))
         .route("/requestAnalysis/:ip", get(packet_analysis::request_analysis))
         .route("/pcapDump/:id", get(packet_analysis::pcap_dump))
