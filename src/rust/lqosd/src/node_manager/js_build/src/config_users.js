@@ -4,9 +4,14 @@ $(document).ready(() => {
     // Handle add user form submission
     $('#add-user-form').on('submit', function(e) {
         e.preventDefault();
-        const username = $('#username').val();
+        const username = $('#username').val().trim();
         const password = $('#password').val();
         const role = $('#role').val();
+        
+        if (!username) {
+            alert('Username cannot be empty');
+            return;
+        }
         
         $.ajax({
             type: "POST",

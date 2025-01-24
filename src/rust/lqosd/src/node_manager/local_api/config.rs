@@ -144,11 +144,14 @@ pub async fn add_user(
     if login != LoginResult::Admin {
         return Err(StatusCode::FORBIDDEN);
     }
+    if data.username.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
     let mut users = WebUsers::load_or_create()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    users.add_or_update_user(&data.username, &data.password, data.role.into())
+    users.add_or_update_user(&data.username.trim(), &data.password, data.role.into())
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    Ok("User added".to_string())
+    Ok(format!("User '{}' added", data.username))
 }
 
 pub async fn update_user(
