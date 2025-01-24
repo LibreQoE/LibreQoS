@@ -4,9 +4,10 @@ $(document).ready(() => {
     // Handle add user form submission
     $('#add-user-form').on('submit', function(e) {
         e.preventDefault();
-        const username = $('#username').val().trim();
+        const username = $('#add-username').val().trim();
         const password = $('#password').val();
         const role = $('#role').val();
+        console.log(username, password, role);
         
         if (!username) {
             alert('Username cannot be empty');
@@ -27,8 +28,9 @@ $(document).ready(() => {
                 $('#password').val('');
                 loadUsers();
             },
-            error: () => {
+            error: (e) => {
                 alert('Failed to add user');
+                console.log(e);
             }
         });
     });
