@@ -169,8 +169,8 @@ pub async fn update_user(
 }
 
 #[derive(Deserialize)]
-struct DeleteUserRequest {
-    username: String,
+pub struct DeleteUserRequest {
+    pub username: String,
 }
 
 pub async fn delete_user(

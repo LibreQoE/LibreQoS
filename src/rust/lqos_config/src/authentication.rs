@@ -33,6 +33,17 @@ impl From<&str> for UserRole {
   }
 }
 
+impl From<String> for UserRole {
+  fn from(s: String) -> Self {
+    let s = s.to_lowercase();
+    if s == "admin" {
+      UserRole::Admin
+    } else {
+      UserRole::ReadOnly
+    }
+  }
+}
+
 impl Display for UserRole {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
@@ -43,11 +54,11 @@ impl Display for UserRole {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct WebUser {
-  username: String,
-  password_hash: String,
-  role: UserRole,
-  token: String,
+pub struct WebUser {
+  pub username: String,
+  pub password_hash: String,
+  pub role: UserRole,
+  pub token: String,
 }
 
 /// Container holding the authorized web users.
@@ -235,6 +246,11 @@ impl WebUsers {
       println!("{:<40} {:<10}", u.username, u.role.to_string());
     });
     Ok(())
+  }
+
+  /// Return a list of user objects
+  pub fn get_users(&self) -> Vec<WebUser> {
+    self.users.clone()
   }
 
   /// Sets the "allow unauthenticated users" field. If true,
