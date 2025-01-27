@@ -20,13 +20,6 @@ pub fn walk_tree_for_routing(
     root_site: &str,
     overrides: &Vec<RouteOverride>,
 ) -> Result<(), UispIntegrationError> {
-    // Make sure that parent indices go both ways
-    let parent_map = sites.iter().enumerate().map(|(i,s)| (i, s.parent_indices.clone())).collect::<HashMap<usize, HashSet<usize>>>();
-    for (i, site) in parent_map {
-        for parent in site.iter() {
-            sites[*parent].parent_indices.insert(i);
-        }
-    }
 
     // Initialize the visualization
     let mut dot_graph = "digraph G {\n  graph [ ranksep=2.0 overlap=false ]\n".to_string();
