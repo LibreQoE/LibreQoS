@@ -11,6 +11,18 @@ pub struct UispDataLink {
 }
 
 impl UispDataLink {
+    /// Inverts a data-link to provide the recripocal link.
+    pub fn invert(&self) -> Self {
+        Self {
+            id: self.id.clone(),
+            from_site_id: self.to_site_id.clone(),
+            to_site_id: self.from_site_id.clone(),
+            from_site_name: self.to_site_name.clone(),
+            to_site_name: self.from_site_name.clone(),
+            can_delete: self.can_delete,
+        }
+    }
+
     /// Converts a UISP DataLink into a UispDataLink.
     /// 
     /// # Arguments
