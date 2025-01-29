@@ -34,6 +34,7 @@ export class TrackedFlowsCount extends BaseDashlet{
     }
 
     onTimeChange() {
+        super.onTimeChange();
         this.graph.chart.clear();
         this.graph.chart.showLoading();
         if (window.timePeriods.activePeriod === "Live") {

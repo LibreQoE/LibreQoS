@@ -11,6 +11,10 @@ pub enum WsMessage {
     ShaperPercent { seconds: i32 },
     ShaperFlows { seconds: i32 },
     ShaperRttHistogram { seconds: i32 },
+    ShaperTopDownloaders { seconds: i32 },
+    ShaperWorstRtt { seconds: i32 },
+    ShaperWorstRxmit { seconds: i32 },
+    ShaperTopFlows { seconds: i32 },
 
     // Responses
     Hello { license_key: String, node_id: String },

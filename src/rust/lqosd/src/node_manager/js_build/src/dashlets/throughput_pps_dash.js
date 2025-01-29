@@ -35,7 +35,7 @@ export class ThroughputPpsDash extends BaseDashlet{
     }
 
     onTimeChange() {
-        // TODO: Clear the chart and display the correct one
+        super.onTimeChange();
         this.graph.chart.clear();
         this.graph.chart.showLoading();
         if (window.timePeriods.activePeriod === "Live") {

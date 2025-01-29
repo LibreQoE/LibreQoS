@@ -25,6 +25,10 @@ pub enum RemoteInsightCommand {
     ShaperPercent { seconds: i32 },
     ShaperFlows { seconds: i32 },
     ShaperRttHistogram { seconds: i32 },
+    ShaperTopDownloaders { seconds: i32 },
+    ShaperWorstRtt { seconds: i32 },
+    ShaperWorstRxmit { seconds: i32 },
+    ShaperTopFlows { seconds: i32 },
 }
 
 pub struct RemoteInsight {
@@ -176,6 +180,22 @@ async fn run_remote_insight(
                     }
                     Some(RemoteInsightCommand::ShaperRttHistogram { seconds }) => {
                         let msg = WsMessage::ShaperRttHistogram { seconds }.to_bytes()?;
+                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                    }
+                    Some(RemoteInsightCommand::ShaperTopDownloaders { seconds }) => {
+                        let msg = WsMessage::ShaperTopDownloaders { seconds }.to_bytes()?;
+                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                    }
+                    Some(RemoteInsightCommand::ShaperWorstRtt { seconds }) => {
+                        let msg = WsMessage::ShaperWorstRtt { seconds }.to_bytes()?;
+                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                    }
+                    Some(RemoteInsightCommand::ShaperWorstRxmit { seconds }) => {
+                        let msg = WsMessage::ShaperWorstRxmit { seconds }.to_bytes()?;
+                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                    }
+                    Some(RemoteInsightCommand::ShaperTopFlows { seconds }) => {
+                        let msg = WsMessage::ShaperTopFlows { seconds }.to_bytes()?;
                         tx.send(tungstenite::Message::Binary(msg)).await?;
                     }
                 }

@@ -189,3 +189,10 @@ table tr td a {
     font-size: smaller;
     padding: 4px;
 }
+.insight-box {
+    background-color: var(--bs-tertiary-bg);
+    background-image: url("/vendor/10pc.png");
+    background-position: bottom left;
+    background-repeat: no-repeat;
+    background-size: 32px;
+}

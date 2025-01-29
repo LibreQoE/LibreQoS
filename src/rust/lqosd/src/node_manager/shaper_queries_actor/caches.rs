@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use serde::de::DeserializeOwned;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
-use crate::node_manager::local_api::lts::{FlowCountViewWeb, FullPacketData, PercentShapedWeb, ShaperRttHistogramEntry, ThroughputData};
+use crate::node_manager::local_api::lts::{AsnFlowSizeWeb, FlowCountViewWeb, FullPacketData, PercentShapedWeb, ShaperRttHistogramEntry, ThroughputData, Top10Circuit, Worst10RttCircuit, Worst10RxmitCircuit};
 use crate::node_manager::shaper_queries_actor::timed_cache::TimedCache;
 
 const CACHE_DURATION: Duration = Duration::from_secs(60 * 5);
@@ -16,6 +16,10 @@ pub enum CacheType {
     PercentShaped,
     Flows,
     RttHistogram,
+    TopDownloaders,
+    WorstRtt,
+    WorstRxmit,
+    TopFlows,
 }
 
 impl CacheType {
@@ -26,6 +30,10 @@ impl CacheType {
             "percent" => Self::PercentShaped,
             "flows" => Self::Flows,
             "rtt_histogram" => Self::RttHistogram,
+            "top_downloaders" => Self::TopDownloaders,
+            "worst_rtt" => Self::WorstRtt,
+            "worst_rxmit" => Self::WorstRxmit,
+            "top_flows" => Self::TopFlows,
             _ => panic!("Unknown cache type: {}", tag),
         }
     }
@@ -113,5 +121,29 @@ impl Cacheable for FlowCountViewWeb {
 impl Cacheable for ShaperRttHistogramEntry {
     fn tag() -> CacheType {
         CacheType::RttHistogram
+    }
+}
+
+impl Cacheable for Top10Circuit {
+    fn tag() -> CacheType {
+        CacheType::TopDownloaders
+    }
+}
+
+impl Cacheable for Worst10RttCircuit {
+    fn tag() -> CacheType {
+        CacheType::WorstRtt
+    }
+}
+
+impl Cacheable for Worst10RxmitCircuit {
+    fn tag() -> CacheType {
+        CacheType::WorstRxmit
+    }
+}
+
+impl Cacheable for AsnFlowSizeWeb {
+    fn tag() -> CacheType {
+        CacheType::TopFlows
     }
 }

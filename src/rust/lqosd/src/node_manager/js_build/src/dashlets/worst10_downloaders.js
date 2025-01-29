@@ -1,6 +1,8 @@
 import {BaseDashlet} from "./base_dashlet";
-import {clearDashDiv, TopNTableFromMsgData} from "../helpers/builders";
+import {clearDashDiv, clearDiv, simpleRow, simpleRowHtml, theading, TopNTableFromMsgData} from "../helpers/builders";
 import {TimedCache} from "../lq_js_common/helpers/timed_cache";
+import {periodNameToSeconds} from "../helpers/time_periods";
+import {formatRetransmit, formatRtt} from "../helpers/scaling";
 
 export class Worst10Downloaders extends BaseDashlet {
     constructor(slot) {
@@ -33,10 +35,11 @@ export class Worst10Downloaders extends BaseDashlet {
 
     setup() {
         super.setup();
+        window.timeGraphs.push(this);
     }
 
     onMessage(msg) {
-        if (msg.event === "WorstRTT") {
+        if (msg.event === "WorstRTT" && window.timePeriods.activePeriod === "Live") {
             let target = document.getElementById(this.id);
 
             msg.data.forEach((r) => {
@@ -57,5 +60,45 @@ export class Worst10Downloaders extends BaseDashlet {
             clearDashDiv(this.id, target);
             target.appendChild(t);
         }
+    }
+
+    onTimeChange() {
+        super.onTimeChange();
+        let seconds = periodNameToSeconds(window.timePeriods.activePeriod);
+        $.get("/local-api/ltsWorst10Rtt/" + seconds, (data) => {
+            let target = document.getElementById(this.id);
+
+            let table = document.createElement("table");
+            table.classList.add("table", "table-sm", "small");
+            let thead = document.createElement("thead");
+            thead.appendChild(theading("Circuit"));
+            thead.appendChild(theading("Bytes Downloaded"));
+            thead.appendChild(theading("RTT"));
+            thead.appendChild(theading("Rxmits"));
+            table.appendChild(thead);
+            let tbody = document.createElement("tbody");
+
+            data.forEach((row) => {
+                //console.log(row);
+                let tr = document.createElement("tr");
+                tr.classList.add("small");
+                tr.appendChild(simpleRowHtml("<a href='circuit.html?circuit=" + row.circuit_hash + "' class='redactable'>" + row.circuit_name + "</a>"));
+                tr.appendChild(simpleRow(scaleNumber(row.bytes_down * 1000000, 0)));
+                if (row.rtt !== null) {
+                    tr.appendChild(simpleRowHtml(formatRtt(row.rtt)));
+                } else {
+                    tr.appendChild(simpleRow("-"));
+                }
+                if (row.rxmit !== null) {
+                    tr.appendChild(simpleRowHtml(formatRetransmit(row.rxmit)));
+                } else {
+                    tr.appendChild(simpleRow("-"));
+                }
+                tbody.appendChild(tr);
+            })
+            table.appendChild(tbody);
+            clearDashDiv(this.id, target);
+            target.appendChild(table);
+        });
     }
 }

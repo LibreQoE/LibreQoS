@@ -146,4 +146,13 @@ export class BaseDashlet {
         this.buttons.push(btn);
         return btn;
     }
+
+    onTimeChange() {
+        if (window.timePeriods.activePeriod === "Live") {
+            document.getElementById(this.id).classList.remove("insight-box");
+        } else {
+            let e = document.getElementById(this.id);
+            e.classList.add("insight-box");
+        }
+    }
 }
