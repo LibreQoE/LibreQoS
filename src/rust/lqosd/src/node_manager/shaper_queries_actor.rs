@@ -1,135 +1,20 @@
-mod ws;
 mod timed_cache;
+mod queries;
+mod caches;
+mod commands;
+mod ws_message;
+mod remote_insight;
 
-use std::time::Duration;
-use tracing::{info, warn};
-use crate::node_manager::local_api::lts::{FlowCountViewWeb, FullPacketData, PercentShapedWeb, ThroughputData};
-use crate::node_manager::shaper_queries_actor::timed_cache::TimedCache;
+pub use crate::node_manager::shaper_queries_actor::commands::ShaperQueryCommand;
+use crate::node_manager::shaper_queries_actor::queries::shaper_queries;
 
-pub enum ShaperQueryCommand {
-    ShaperThroughput { seconds: i32, reply: tokio::sync::oneshot::Sender<Vec<ThroughputData>> },
-    ShaperPackets { seconds: i32, reply: tokio::sync::oneshot::Sender<Vec<FullPacketData>> },
-    ShaperPercent { seconds: i32, reply: tokio::sync::oneshot::Sender<Vec<PercentShapedWeb>> },
-    ShaperFlows { seconds: i32, reply: tokio::sync::oneshot::Sender<Vec<FlowCountViewWeb>> },
-}
 
-pub fn shaper_queries_actor() -> crossbeam_channel::Sender<ShaperQueryCommand> {
-    let (tx, rx) = crossbeam_channel::bounded(128);
-    let _ = std::thread::Builder::new().name("shaper_queries_actor".to_string()).spawn(move || {
-        shaper_queries(rx);
-    });
+
+pub async fn shaper_queries_actor() -> tokio::sync::mpsc::Sender<ShaperQueryCommand> {
+    let (tx, rx) = tokio::sync::mpsc::channel(128);
+    tokio::spawn(shaper_queries(rx));
     tx
 }
 
-fn shaper_queries(rx: crossbeam_channel::Receiver<ShaperQueryCommand>) {
-    info!("Starting the shaper query actor.");
-    let mut caches = Caches::new();
-    while let Ok(command) = rx.recv() {
-        caches.cleanup();
-        match command {
-            ShaperQueryCommand::ShaperThroughput { seconds, reply } => {
-                if let Some(result) = caches.throughput.get(&seconds) {
-                    info!("Cache hit for {seconds} seconds throughput");
-                    let _ = reply.send(result.clone());
-                } else {
-                    // Get the data
-                    let result = ws::get_remote_data(&mut caches, seconds);
 
-                    // Return from the cache once more
-                    if result.is_ok() {
-                        let Some(result) = caches.throughput.get(&seconds) else {
-                            warn!("Failed to get data for {seconds} seconds: {result:?}");
-                            return;
-                        };
-                        let _ = reply.send(result.clone());
-                    } else {
-                        warn!("Failed to get data for {seconds} seconds: {result:?}");
-                    }
-                }
-            }
-            ShaperQueryCommand::ShaperPackets { seconds, reply } => {
-                if let Some(result) = caches.packets.get(&seconds) {
-                    info!("Cache hit for {seconds} seconds packets");
-                    let _ = reply.send(result.clone());
-                } else {
-                    // Get the data
-                    let result = ws::get_remote_data(&mut caches, seconds);
 
-                    // Return from the cache once more
-                    if result.is_ok() {
-                        let Some(result) = caches.packets.get(&seconds) else {
-                            warn!("Failed to get data for {seconds} seconds: {result:?}");
-                            return;
-                        };
-                        let _ = reply.send(result.clone());
-                    } else {
-                        warn!("Failed to get data for {seconds} seconds: {result:?}");
-                    }
-                }
-            }
-            ShaperQueryCommand::ShaperPercent { seconds, reply } => {
-                if let Some(result) = caches.percent_shaped.get(&seconds) {
-                    let _ = reply.send(result.clone());
-                } else {
-                    // Get the data
-                    let result = ws::get_remote_data(&mut caches, seconds);
-
-                    // Return from the cache once more
-                    if result.is_ok() {
-                        let Some(result) = caches.percent_shaped.get(&seconds) else {
-                            warn!("Failed to get data for {seconds} seconds: {result:?}");
-                            return;
-                        };
-                        let _ = reply.send(result.clone());
-                    } else {
-                        warn!("Failed to get data for {seconds} seconds: {result:?}");
-                    }
-                }
-            }
-            ShaperQueryCommand::ShaperFlows { seconds, reply } => {
-                if let Some(result) = caches.flows.get(&seconds) {
-                    let _ = reply.send(result.clone());
-                } else {
-                    // Get the data
-                    let result = ws::get_remote_data(&mut caches, seconds);
-
-                    // Return from the cache once more
-                    if result.is_ok() {
-                        let Some(result) = caches.flows.get(&seconds) else {
-                            warn!("Failed to get data for {seconds} seconds: {result:?}");
-                            return;
-                        };
-                        let _ = reply.send(result.clone());
-                    } else {
-                        warn!("Failed to get data for {seconds} seconds: {result:?}");
-                    }
-                }
-            }
-        }
-    }
-    warn!("Shaper query actor closing.")
-}
-
-const CACHE_DURATION: Duration = Duration::from_secs(60 * 5);
-
-struct Caches {
-    throughput: TimedCache<i32, Vec<ThroughputData>>,
-    packets: TimedCache<i32, Vec<FullPacketData>>,
-    percent_shaped: TimedCache<i32, Vec<PercentShapedWeb>>,
-    flows: TimedCache<i32, Vec<FlowCountViewWeb>>,
-}
-
-impl Caches {
-    fn new() -> Self {
-        Self {
-            throughput: TimedCache::new(CACHE_DURATION),
-            packets: TimedCache::new(CACHE_DURATION),
-            percent_shaped: TimedCache::new(CACHE_DURATION),
-            flows: TimedCache::new(CACHE_DURATION),
-        }
-    }
-
-    fn cleanup(&mut self) {
-        self.throughput.cleanup();
-    }
-}

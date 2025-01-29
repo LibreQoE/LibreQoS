@@ -2,12 +2,14 @@ use axum::extract::Path;
 use axum::http::StatusCode;
 use axum::{Extension, Json};
 use serde::{Deserialize, Serialize};
+use tracing::info;
 use tracing::log::warn;
 use lqos_config::load_config;
 use crate::node_manager::local_api::lts::rest_client::lts_query;
 use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 
 #[derive(Serialize, Deserialize, Copy, Clone)]
+#[derive(Debug)]
 pub struct ThroughputData {
     time: i64, // Unix timestamp
     max_down: i64,
@@ -98,24 +100,27 @@ pub async fn last_24_hours()-> Result<Json<Vec<ThroughputData>>, StatusCode> {
 }
 
 pub async fn throughput_period(
-    Extension(shaper_query): Extension<crossbeam_channel::Sender<ShaperQueryCommand>>,
+    Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
     Path(seconds): Path<i32>,
 )-> Result<Json<Vec<ThroughputData>>, StatusCode> {
+    info!("Requesting throughput data for {} seconds", seconds);
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query.send(ShaperQueryCommand::ShaperThroughput { seconds, reply: tx }).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    shaper_query.send(ShaperQueryCommand::ShaperThroughput { seconds, reply: tx }).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    info!("Sent throughput request. Awaiting reply.");
     let throughput = rx.await.map_err(|e| {
         warn!("Error getting total throughput: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+    info!("Received throughput data.");
     Ok(Json(throughput))
 }
 
 pub async fn packets_period(
-    Extension(shaper_query): Extension<crossbeam_channel::Sender<ShaperQueryCommand>>,
+    Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
     Path(seconds): Path<i32>,
 )-> Result<Json<Vec<FullPacketData>>, StatusCode> {
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query.send(ShaperQueryCommand::ShaperPackets { seconds, reply: tx }).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    shaper_query.send(ShaperQueryCommand::ShaperPackets { seconds, reply: tx }).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let throughput = rx.await.map_err(|e| {
         warn!("Error getting total throughput: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
@@ -124,11 +129,11 @@ pub async fn packets_period(
 }
 
 pub async fn percent_shaped_period(
-    Extension(shaper_query): Extension<crossbeam_channel::Sender<ShaperQueryCommand>>,
+    Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
     Path(seconds): Path<i32>,
 )-> Result<Json<Vec<PercentShapedWeb>>, StatusCode> {
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query.send(ShaperQueryCommand::ShaperPercent { seconds, reply: tx }).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    shaper_query.send(ShaperQueryCommand::ShaperPercent { seconds, reply: tx }).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let throughput = rx.await.map_err(|e| {
         warn!("Error getting total throughput: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
@@ -137,11 +142,11 @@ pub async fn percent_shaped_period(
 }
 
 pub async fn percent_flows_period(
-    Extension(shaper_query): Extension<crossbeam_channel::Sender<ShaperQueryCommand>>,
+    Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
     Path(seconds): Path<i32>,
 )-> Result<Json<Vec<FlowCountViewWeb>>, StatusCode> {
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query.send(ShaperQueryCommand::ShaperFlows { seconds, reply: tx }).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    shaper_query.send(ShaperQueryCommand::ShaperFlows { seconds, reply: tx }).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let throughput = rx.await.map_err(|e| {
         warn!("Error getting total throughput: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR

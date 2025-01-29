@@ -37,7 +37,7 @@ pub async fn spawn_webserver(
     let listener = TcpListener::bind(&listen_address).await?;
 
     // Setup shaper queries
-    let shaper_tx = shaper_queries_actor();
+    let shaper_tx = shaper_queries_actor().await;
 
     // Construct the router from parts
     let router = Router::new()

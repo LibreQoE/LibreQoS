@@ -22,7 +22,7 @@ use crate::node_manager::auth::auth_layer;
 use tower_http::cors::CorsLayer;
 use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 
-pub fn local_api(shaper_query: crossbeam_channel::Sender<ShaperQueryCommand>) -> Router {
+pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) -> Router {
     Router::new()
         .route("/dashletThemes", get(dashboard_themes::list_themes))
         .route("/dashletSave", post(dashboard_themes::save_theme))

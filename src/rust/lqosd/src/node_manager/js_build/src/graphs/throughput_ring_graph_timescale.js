@@ -21,6 +21,7 @@ export class ThroughputRingBufferGraphTimescale extends DashboardGraph {
         let seconds = periodNameToSeconds(period);
         console.log("Requesting Insight History Data");
         $.get("local-api/ltsThroughput/" + seconds, (data) => {
+            console.log("Received Insight History Data", data);
             let shaperDown = new MinMaxSeries("Down", 1);
             let shaperUp = new MinMaxSeries(" Up", 1);
             data.forEach((r) => {
