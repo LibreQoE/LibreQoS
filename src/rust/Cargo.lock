@@ -2091,6 +2091,7 @@ dependencies = [
  "ip_network",
  "ip_network_table",
  "itertools 0.13.0",
+ "log",
  "lqos_bus",
  "lqos_config",
  "lqos_heimdall",

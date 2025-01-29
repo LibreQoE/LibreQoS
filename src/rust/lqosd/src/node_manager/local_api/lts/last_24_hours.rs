@@ -103,15 +103,12 @@ pub async fn throughput_period(
     Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
     Path(seconds): Path<i32>,
 )-> Result<Json<Vec<ThroughputData>>, StatusCode> {
-    info!("Requesting throughput data for {} seconds", seconds);
     let (tx, rx) = tokio::sync::oneshot::channel();
     shaper_query.send(ShaperQueryCommand::ShaperThroughput { seconds, reply: tx }).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    info!("Sent throughput request. Awaiting reply.");
     let throughput = rx.await.map_err(|e| {
         warn!("Error getting total throughput: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    info!("Received throughput data.");
     Ok(Json(throughput))
 }
 
@@ -120,9 +117,12 @@ pub async fn packets_period(
     Path(seconds): Path<i32>,
 )-> Result<Json<Vec<FullPacketData>>, StatusCode> {
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query.send(ShaperQueryCommand::ShaperPackets { seconds, reply: tx }).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    shaper_query.send(ShaperQueryCommand::ShaperPackets { seconds, reply: tx }).await.map_err(|_| {
+        warn!("Error sending packets period");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     let throughput = rx.await.map_err(|e| {
-        warn!("Error getting total throughput: {:?}", e);
+        warn!("Error getting packets period: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     Ok(Json(throughput))
@@ -133,9 +133,12 @@ pub async fn percent_shaped_period(
     Path(seconds): Path<i32>,
 )-> Result<Json<Vec<PercentShapedWeb>>, StatusCode> {
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query.send(ShaperQueryCommand::ShaperPercent { seconds, reply: tx }).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    shaper_query.send(ShaperQueryCommand::ShaperPercent { seconds, reply: tx }).await.map_err(|_| {
+        warn!("Error sending percent shaped period");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     let throughput = rx.await.map_err(|e| {
-        warn!("Error getting total throughput: {:?}", e);
+        warn!("Error getting percent shaped: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     Ok(Json(throughput))
@@ -146,9 +149,12 @@ pub async fn percent_flows_period(
     Path(seconds): Path<i32>,
 )-> Result<Json<Vec<FlowCountViewWeb>>, StatusCode> {
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query.send(ShaperQueryCommand::ShaperFlows { seconds, reply: tx }).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    shaper_query.send(ShaperQueryCommand::ShaperFlows { seconds, reply: tx }).await.map_err(|_| {
+        warn!("Error sending flows period");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     let throughput = rx.await.map_err(|e| {
-        warn!("Error getting total throughput: {:?}", e);
+        warn!("Error getting flows: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     Ok(Json(throughput))

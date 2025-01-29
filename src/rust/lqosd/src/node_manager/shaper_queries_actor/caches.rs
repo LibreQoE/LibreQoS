@@ -22,9 +22,9 @@ impl CacheType {
         match tag {
             "throughput" => Self::Throughput,
             "packets" => Self::Packets,
-            "percent_shaped" => Self::PercentShaped,
+            "percent" => Self::PercentShaped,
             "flows" => Self::Flows,
-            _ => panic!(),
+            _ => panic!("Unknown cache type: {}", tag),
         }
     }
 }
@@ -50,28 +50,32 @@ impl Caches {
     }
 
     pub async fn store(&self, tag: String, seconds: i32, data: Vec<u8>) {
+        info!("Storing cache for {} seconds: {:?}", seconds, tag);
         let mut cache = self.cache.lock().await;
-        let tag = match tag.as_str() {
-            "throughput" => CacheType::Throughput,
-            "packets" => CacheType::Packets,
-            "percent_shaped" => CacheType::PercentShaped,
-            "flows" => CacheType::Flows,
-            _ => return,
-        };
+        let tag = CacheType::from_str(&tag);
         cache.insert((tag, seconds), (Instant::now(), data));
+        drop(cache);
         let _ = self.on_update.send(tag);
+        info!("Cache stored for {} seconds: {:?}", seconds, tag);
     }
 
     pub async fn get<T: Cacheable + DeserializeOwned>(&self, seconds: i32) -> Option<Vec<T>> {
+        info!("Checking cache for {} seconds: {:?}", seconds, T::tag());
         let cache = self.cache.lock().await;
         let tag = T::tag();
-        let (_, data) = cache.get(&(tag, seconds))?;
+        let Some((_, data)) = cache.get(&(tag, seconds)) else {
+            drop(cache);
+            info!("Cache miss for {} seconds: {:?}", seconds, tag);
+            return None;
+        };
         info!("Cache hit for {} seconds {:?}. Length: {}", seconds, tag, data.len());
         let deserialized = serde_cbor::from_slice(&data);
+        drop(cache);
         if let Err(e) = deserialized {
             warn!("Failed to deserialize cache: {:?}", e);
             return None;
         }
+        info!("Cache deserialized for {} seconds: {:?}", seconds, tag);
         Some(deserialized.unwrap())
     }
 }
@@ -83,5 +87,23 @@ pub trait Cacheable {
 impl Cacheable for ThroughputData {
     fn tag() -> CacheType {
         CacheType::Throughput
+    }
+}
+
+impl Cacheable for FullPacketData {
+    fn tag() -> CacheType {
+        CacheType::Packets
+    }
+}
+
+impl Cacheable for PercentShapedWeb {
+    fn tag() -> CacheType {
+        CacheType::PercentShaped
+    }
+}
+
+impl Cacheable for FlowCountViewWeb {
+    fn tag() -> CacheType {
+        CacheType::Flows
     }
 }

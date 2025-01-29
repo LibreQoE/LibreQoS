@@ -10,9 +10,10 @@ use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::select;
+use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 const TCP_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -20,35 +21,43 @@ const TCP_TIMEOUT: Duration = Duration::from_secs(10);
 pub enum RemoteInsightCommand {
     Ping,
     ShaperThroughput { seconds: i32 },
+    ShaperPackets { seconds: i32 },
+    ShaperPercent { seconds: i32 },
+    ShaperFlows { seconds: i32 },
 }
 
 pub struct RemoteInsight {
-    tx: Option<tokio::sync::mpsc::Sender<RemoteInsightCommand>>,
+    tx: Mutex<Option<tokio::sync::mpsc::Sender<RemoteInsightCommand>>>,
     caches: Arc<Caches>,
 }
 
 impl RemoteInsight {
     pub fn new(caches: Arc<Caches>) -> Self {
-        Self { tx: None, caches }
+        Self { tx: Mutex::new(None), caches }
     }
 
-    async fn connect(&mut self) {
+    async fn connect(&self) {
         let (tx, rx) = tokio::sync::mpsc::channel(128);
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
         tokio::spawn(run_remote_insight(rx, ready_tx, self.caches.clone()));
         let _ = ready_rx.await;
-        self.tx = Some(tx);
+        let mut lock = self.tx.lock().await;
+        *lock = Some(tx);
+        drop(lock);
         info!("Connected to remote insight (processor layer)");
     }
 
-    pub async fn command(&mut self, command: RemoteInsightCommand)
+    pub async fn command(&self, command: RemoteInsightCommand) -> bool
     {
-        if self.tx.is_none() {
+        info!("RICMD - Sending command: {command:?}");
+        let lock_exists = self.tx.lock().await.is_some();
+        if !lock_exists {
             self.connect().await;
         }
 
         let mut failed = false;
-        if let Some(tx) = self.tx.as_ref() {
+        let mut tx = self.tx.lock().await;
+        if let Some(tx) = tx.as_ref() {
             let ping = tx.send(RemoteInsightCommand::Ping).await;
             if ping.is_err() {
                 failed = true;
@@ -60,8 +69,10 @@ impl RemoteInsight {
             }
         }
         if failed {
-            self.tx = None;
+            *tx = None;
         }
+        info!("RICMD - Sent command: {command:?}, Failed? {failed}");
+        failed
     }
 }
 
@@ -75,7 +86,7 @@ async fn run_remote_insight(
     let (tx, mut rx) = tokio::sync::mpsc::channel(128);
 
     // Negotiation
-    info!("Waiting for IdentifyYourself");
+    debug!("Waiting for IdentifyYourself");
     let msg = read.next().await;
     let Some(Ok(msg)) = msg else {
         warn!("Failed to read from shaper query server");
@@ -88,7 +99,7 @@ async fn run_remote_insight(
     let message = WsMessage::from_bytes(&payload)?;
     match message {
         WsMessage::IdentifyYourself => {
-            info!("Sending Hello");
+            debug!("Sending Hello");
             send_hello(&mut write).await?;
         }
         _ => {
@@ -98,7 +109,7 @@ async fn run_remote_insight(
     }
 
     // Wait for a TokenInvalid or TokenValid
-    info!("Waiting for token response");
+    debug!("Waiting for token response");
     let msg = read.next().await;
     let Some(Ok(msg)) = msg else {
         warn!("Failed to read from shaper query server");
@@ -124,26 +135,25 @@ async fn run_remote_insight(
     }
 
     // Ready
-    info!("Ready to receive commands");
+    debug!("Ready to receive commands");
     ready.send(()).map_err(|_| anyhow!("Failed to send ready message"))?;
 
-    let timeout = Duration::from_secs(60);
+    let timeout = Duration::from_secs(10);
     let mut ticker = tokio::time::interval(timeout);
-    let mut timeout_count = 0;
+    let mut last_action = tokio::time::Instant::now();
     loop {
         select! {
             _ = ticker.tick() => {
-                info!("Shaper WSS timeout reached");
-                timeout_count += 1;
-                if timeout_count > 1 {
-                    warn!("Too many timeouts, closing connection");
-                    break;
+                if last_action.elapsed().as_secs_f32() > 59.9 {
+                    info!("RI Shaper WSS timeout reached");
+                    tx.send(tungstenite::Message::Close(None)).await?;
                 }
             }
             command = command.recv() => {
-                info!("Received command: {command:?}");
+                info!("RI Received command: {command:?}");
+                last_action = tokio::time::Instant::now();
                 match command {
-                    None => break,
+                    None => tx.send(tungstenite::Message::Close(None)).await?,
                     Some(RemoteInsightCommand::Ping) => {
                         // Do nothing - this ensures the channel is alive
                     }
@@ -151,9 +161,23 @@ async fn run_remote_insight(
                         let msg = WsMessage::ShaperThroughput { seconds }.to_bytes()?;
                         tx.send(tungstenite::Message::Binary(msg)).await?;
                     }
+                    Some(RemoteInsightCommand::ShaperPackets { seconds }) => {
+                        let msg = WsMessage::ShaperPackets { seconds }.to_bytes()?;
+                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                    }
+                    Some(RemoteInsightCommand::ShaperPercent { seconds }) => {
+                        let msg = WsMessage::ShaperPercent { seconds }.to_bytes()?;
+                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                    }
+                    Some(RemoteInsightCommand::ShaperFlows { seconds }) => {
+                        let msg = WsMessage::ShaperFlows { seconds }.to_bytes()?;
+                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                    }
                 }
             }
             msg = read.next() => {
+                info!("RI Received message.");
+                last_action = tokio::time::Instant::now();
                 let Some(Ok(msg)) = msg else {
                     warn!("Failed to read from shaper query server");
                     break;
@@ -187,7 +211,7 @@ async fn run_remote_insight(
                             }
                             WsMessage::InvalidToken => {
                                 warn!("Invalid token");
-                                break;
+                                tx.send(tungstenite::Message::Close(None)).await?
                             }
                             WsMessage::Tick => {
                                 info!("Tick");
@@ -202,17 +226,20 @@ async fn run_remote_insight(
                 }
             }
             Some(to_send) = rx.recv() => {
+                info!("RI Sending message.");
+                last_action = tokio::time::Instant::now();
                 write.send(to_send).await?;
             }
         }
     }
+    warn!("RI Closing");
     Ok(())
 }
 
 async fn connect() -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>> {
     let remote_host = crate::lts2_sys::lts2_client::get_remote_host();
     let target = format!("wss://{}:443/shaper_api/shaperWs", remote_host);
-    info!("Connecting to shaper query server: {target}");
+    debug!("Connecting to shaper query server: {target}");
     let mut addresses = format!("{}:443", remote_host).to_socket_addrs()?;
     let addr = addresses.next().ok_or_else(|| anyhow!("Failed to resolve remote host"))?;
 
@@ -223,7 +250,7 @@ async fn connect() -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>>
     };
 
     // Native TLS
-    info!("Connected to shaper query server: {remote_host}");
+    debug!("Connected to shaper query server: {remote_host}");
     let Ok(connector) = native_tls::TlsConnector::builder()
         .danger_accept_invalid_certs(true)
         .danger_accept_invalid_hostnames(true)
@@ -235,7 +262,7 @@ async fn connect() -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>>
     let t_connector = tokio_tungstenite::Connector::NativeTls(connector);
 
     // Tungstenite Client
-    info!("Connecting tungstenite client to shaper query server: {target}");
+    debug!("Connecting tungstenite client to shaper query server: {target}");
     let result = tokio_tungstenite::client_async_tls_with_config(target, stream, None, Some(t_connector)).await;
     if result.is_err() {
         bail!("Failed to connect to shaper query server. {result:?}");
@@ -247,7 +274,7 @@ async fn connect() -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>>
         warn!("Failed to connect to shaper query server");
         bail!("Failed to connect to shaper query server");
     };
-    info!("Connected");
+    debug!("Connected");
     Ok(socket)
 }
 
