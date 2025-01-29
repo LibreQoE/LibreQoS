@@ -4,7 +4,7 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::time::error::Elapsed;
 use tokio::time::timeout;
 use tracing::{info, warn};
-use crate::node_manager::local_api::lts::{FlowCountViewWeb, FullPacketData, PercentShapedWeb, ThroughputData};
+use crate::node_manager::local_api::lts::{FlowCountViewWeb, FullPacketData, PercentShapedWeb, ShaperRttHistogramEntry, ThroughputData};
 use crate::node_manager::shaper_queries_actor::{remote_insight, ShaperQueryCommand};
 use crate::node_manager::shaper_queries_actor::caches::{CacheType, Caches};
 
@@ -87,6 +87,9 @@ pub async fn shaper_queries(mut rx: tokio::sync::mpsc::Receiver<ShaperQueryComma
             }
             ShaperQueryCommand::ShaperFlows { seconds, reply } => {
                 shaper_query!(FlowCountViewWeb, caches, seconds, reply, broadcast_rx, my_remote_insight.command(remote_insight::RemoteInsightCommand::ShaperFlows { seconds }));
+            }
+            ShaperQueryCommand::ShaperRttHistogram { seconds, reply } => {
+                shaper_query!(ShaperRttHistogramEntry, caches, seconds, reply, broadcast_rx, my_remote_insight.command(remote_insight::RemoteInsightCommand::ShaperRttHistogram { seconds }));
             }
         }
         info!("SQ Looping");

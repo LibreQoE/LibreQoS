@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use serde::de::DeserializeOwned;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
-use crate::node_manager::local_api::lts::{FlowCountViewWeb, FullPacketData, PercentShapedWeb, ThroughputData};
+use crate::node_manager::local_api::lts::{FlowCountViewWeb, FullPacketData, PercentShapedWeb, ShaperRttHistogramEntry, ThroughputData};
 use crate::node_manager::shaper_queries_actor::timed_cache::TimedCache;
 
 const CACHE_DURATION: Duration = Duration::from_secs(60 * 5);
@@ -15,6 +15,7 @@ pub enum CacheType {
     Packets,
     PercentShaped,
     Flows,
+    RttHistogram,
 }
 
 impl CacheType {
@@ -24,6 +25,7 @@ impl CacheType {
             "packets" => Self::Packets,
             "percent" => Self::PercentShaped,
             "flows" => Self::Flows,
+            "rtt_histogram" => Self::RttHistogram,
             _ => panic!("Unknown cache type: {}", tag),
         }
     }
@@ -105,5 +107,11 @@ impl Cacheable for PercentShapedWeb {
 impl Cacheable for FlowCountViewWeb {
     fn tag() -> CacheType {
         CacheType::Flows
+    }
+}
+
+impl Cacheable for ShaperRttHistogramEntry {
+    fn tag() -> CacheType {
+        CacheType::RttHistogram
     }
 }

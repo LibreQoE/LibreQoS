@@ -10,6 +10,7 @@ pub enum WsMessage {
     ShaperPackets { seconds: i32 },
     ShaperPercent { seconds: i32 },
     ShaperFlows { seconds: i32 },
+    ShaperRttHistogram { seconds: i32 },
 
     // Responses
     Hello { license_key: String, node_id: String },

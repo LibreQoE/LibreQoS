@@ -91,6 +91,11 @@ pub struct FlowCountViewWeb {
     flow_count: f64,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ShaperRttHistogramEntry {
+    pub value: i32,
+}
+
 pub async fn last_24_hours()-> Result<Json<Vec<ThroughputData>>, StatusCode> {
     let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let seconds = 24 * 60 * 60;
@@ -150,6 +155,23 @@ pub async fn percent_flows_period(
 )-> Result<Json<Vec<FlowCountViewWeb>>, StatusCode> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     shaper_query.send(ShaperQueryCommand::ShaperFlows { seconds, reply: tx }).await.map_err(|_| {
+        warn!("Error sending flows period");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    let throughput = rx.await.map_err(|e| {
+        warn!("Error getting flows: {:?}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    Ok(Json(throughput))
+}
+
+pub async fn rtt_histo_period(
+    Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
+    Path(seconds): Path<i32>,
+)-> Result<Json<Vec<ShaperRttHistogramEntry>>, StatusCode> {
+    tracing::error!("rtt_histo_period");
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    shaper_query.send(ShaperQueryCommand::ShaperRttHistogram { seconds, reply: tx }).await.map_err(|_| {
         warn!("Error sending flows period");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;

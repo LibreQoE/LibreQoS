@@ -24,6 +24,7 @@ pub enum RemoteInsightCommand {
     ShaperPackets { seconds: i32 },
     ShaperPercent { seconds: i32 },
     ShaperFlows { seconds: i32 },
+    ShaperRttHistogram { seconds: i32 },
 }
 
 pub struct RemoteInsight {
@@ -171,6 +172,10 @@ async fn run_remote_insight(
                     }
                     Some(RemoteInsightCommand::ShaperFlows { seconds }) => {
                         let msg = WsMessage::ShaperFlows { seconds }.to_bytes()?;
+                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                    }
+                    Some(RemoteInsightCommand::ShaperRttHistogram { seconds }) => {
+                        let msg = WsMessage::ShaperRttHistogram { seconds }.to_bytes()?;
                         tx.send(tungstenite::Message::Binary(msg)).await?;
                     }
                 }
