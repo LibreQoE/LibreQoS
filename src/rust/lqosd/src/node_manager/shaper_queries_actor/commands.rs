@@ -1,4 +1,4 @@
-use crate::node_manager::local_api::lts::{AsnFlowSizeWeb, FlowCountViewWeb, FullPacketData, PercentShapedWeb, ShaperRttHistogramEntry, ThroughputData, Top10Circuit, Worst10RttCircuit, Worst10RxmitCircuit};
+use crate::node_manager::local_api::lts::{AsnFlowSizeWeb, FlowCountViewWeb, FullPacketData, PercentShapedWeb, RecentMedians, ShaperRttHistogramEntry, ThroughputData, Top10Circuit, Worst10RttCircuit, Worst10RxmitCircuit};
 
 pub enum ShaperQueryCommand {
     ShaperThroughput { seconds: i32, reply: tokio::sync::oneshot::Sender<Vec<ThroughputData>> },
@@ -10,4 +10,5 @@ pub enum ShaperQueryCommand {
     ShaperWorstRtt { seconds: i32, reply: tokio::sync::oneshot::Sender<Vec<Worst10RttCircuit>> },
     ShaperWorstRxmit { seconds: i32, reply: tokio::sync::oneshot::Sender<Vec<Worst10RxmitCircuit>> },
     ShaperTopFlows { seconds: i32, reply: tokio::sync::oneshot::Sender<Vec<AsnFlowSizeWeb>> },
+    ShaperRecentMedian { reply: tokio::sync::oneshot::Sender<Vec<RecentMedians>> },
 }

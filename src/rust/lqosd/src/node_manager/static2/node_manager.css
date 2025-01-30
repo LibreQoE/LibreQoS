@@ -196,3 +196,17 @@ table tr td a {
     background-repeat: no-repeat;
     background-size: 32px;
 }
+.stat-header {
+    font-size: 0.9rem;
+    color: var(--bs-tertiary-color);
+    margin-bottom: 0.3rem;
+}
+.stat-value-big {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--bs-secondary);
+}
+.vertical-divider {
+    width: 1px;
+    background-color: var(--bs-border-color);
+}

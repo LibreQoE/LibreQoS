@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use serde::de::DeserializeOwned;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
-use crate::node_manager::local_api::lts::{AsnFlowSizeWeb, FlowCountViewWeb, FullPacketData, PercentShapedWeb, ShaperRttHistogramEntry, ThroughputData, Top10Circuit, Worst10RttCircuit, Worst10RxmitCircuit};
+use crate::node_manager::local_api::lts::{AsnFlowSizeWeb, FlowCountViewWeb, FullPacketData, PercentShapedWeb, RecentMedians, ShaperRttHistogramEntry, ThroughputData, Top10Circuit, Worst10RttCircuit, Worst10RxmitCircuit};
 use crate::node_manager::shaper_queries_actor::timed_cache::TimedCache;
 
 const CACHE_DURATION: Duration = Duration::from_secs(60 * 5);
@@ -20,6 +20,7 @@ pub enum CacheType {
     WorstRtt,
     WorstRxmit,
     TopFlows,
+    RecentMedians,
 }
 
 impl CacheType {
@@ -34,6 +35,7 @@ impl CacheType {
             "worst_rtt" => Self::WorstRtt,
             "worst_rxmit" => Self::WorstRxmit,
             "top_flows" => Self::TopFlows,
+            "recent_median" => Self::RecentMedians,
             _ => panic!("Unknown cache type: {}", tag),
         }
     }
@@ -145,5 +147,11 @@ impl Cacheable for Worst10RxmitCircuit {
 impl Cacheable for AsnFlowSizeWeb {
     fn tag() -> CacheType {
         CacheType::TopFlows
+    }
+}
+
+impl Cacheable for RecentMedians {
+    fn tag() -> CacheType {
+        CacheType::RecentMedians
     }
 }

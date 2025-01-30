@@ -4,7 +4,7 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::time::error::Elapsed;
 use tokio::time::timeout;
 use tracing::{info, warn};
-use crate::node_manager::local_api::lts::{AsnFlowSizeWeb, FlowCountViewWeb, FullPacketData, PercentShapedWeb, ShaperRttHistogramEntry, ThroughputData, Top10Circuit, Worst10RttCircuit, Worst10RxmitCircuit};
+use crate::node_manager::local_api::lts::{AsnFlowSizeWeb, FlowCountViewWeb, FullPacketData, PercentShapedWeb, RecentMedians, ShaperRttHistogramEntry, ThroughputData, Top10Circuit, Worst10RttCircuit, Worst10RxmitCircuit};
 use crate::node_manager::shaper_queries_actor::{remote_insight, ShaperQueryCommand};
 use crate::node_manager::shaper_queries_actor::caches::Caches;
 
@@ -102,6 +102,9 @@ pub async fn shaper_queries(mut rx: tokio::sync::mpsc::Receiver<ShaperQueryComma
             }
             ShaperQueryCommand::ShaperTopFlows { seconds, reply } => {
                 shaper_query!(AsnFlowSizeWeb, caches, seconds, reply, broadcast_rx, my_remote_insight.command(remote_insight::RemoteInsightCommand::ShaperTopFlows { seconds }));
+            }
+            ShaperQueryCommand::ShaperRecentMedian { reply } => {
+                shaper_query!(RecentMedians, caches, 0, reply, broadcast_rx, my_remote_insight.command(remote_insight::RemoteInsightCommand::ShaperRecentMedians));
             }
         }
         info!("SQ Looping");

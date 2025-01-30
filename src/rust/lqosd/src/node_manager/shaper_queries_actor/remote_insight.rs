@@ -29,6 +29,7 @@ pub enum RemoteInsightCommand {
     ShaperWorstRtt { seconds: i32 },
     ShaperWorstRxmit { seconds: i32 },
     ShaperTopFlows { seconds: i32 },
+    ShaperRecentMedians,
 }
 
 pub struct RemoteInsight {
@@ -196,6 +197,10 @@ async fn run_remote_insight(
                     }
                     Some(RemoteInsightCommand::ShaperTopFlows { seconds }) => {
                         let msg = WsMessage::ShaperTopFlows { seconds }.to_bytes()?;
+                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                    }
+                    Some(RemoteInsightCommand::ShaperRecentMedians) => {
+                        let msg = WsMessage::ShaperRecentMedian.to_bytes()?;
                         tx.send(tungstenite::Message::Binary(msg)).await?;
                     }
                 }

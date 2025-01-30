@@ -73,6 +73,7 @@ pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) ->
         .route("/ltsWorst10Rtt/:seconds", get(lts::worst10_rtt_period))
         .route("/ltsWorst10Rxmit/:seconds", get(lts::worst10_rxmit_period))
         .route("/ltsTopFlows/:seconds", get(lts::top10_flows_period))
+        .route("/ltsRecentMedian", get(lts::recent_medians))
         .layer(Extension(shaper_query))
         .layer(CorsLayer::very_permissive())
         .route_layer(axum::middleware::from_fn(auth_layer))

@@ -147,6 +147,12 @@ pub struct AsnFlowSizeWeb {
     pub shaper_name: Option<String>,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct RecentMedians {
+    pub yesterday: (i64, i64),
+    pub last_week: (i64, i64),
+}
+
 pub async fn last_24_hours()-> Result<Json<Vec<ThroughputData>>, StatusCode> {
     let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let seconds = 24 * 60 * 60;
@@ -291,6 +297,22 @@ pub async fn top10_flows_period(
     tracing::error!("rtt_histo_period");
     let (tx, rx) = tokio::sync::oneshot::channel();
     shaper_query.send(ShaperQueryCommand::ShaperTopFlows { seconds, reply: tx }).await.map_err(|_| {
+        warn!("Error sending flows period");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    let throughput = rx.await.map_err(|e| {
+        warn!("Error getting flows: {:?}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    Ok(Json(throughput))
+}
+
+pub async fn recent_medians(
+    Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
+)-> Result<Json<Vec<RecentMedians>>, StatusCode> {
+    tracing::error!("rtt_histo_period");
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    shaper_query.send(ShaperQueryCommand::ShaperRecentMedian { reply: tx }).await.map_err(|_| {
         warn!("Error sending flows period");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;

@@ -15,6 +15,7 @@ pub enum WsMessage {
     ShaperWorstRtt { seconds: i32 },
     ShaperWorstRxmit { seconds: i32 },
     ShaperTopFlows { seconds: i32 },
+    ShaperRecentMedian,
 
     // Responses
     Hello { license_key: String, node_id: String },
