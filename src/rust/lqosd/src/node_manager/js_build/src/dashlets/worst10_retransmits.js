@@ -3,6 +3,7 @@ import {clearDashDiv, simpleRow, simpleRowHtml, theading, TopNTableFromMsgData} 
 import {TimedCache} from "../lq_js_common/helpers/timed_cache";
 import {periodNameToSeconds} from "../helpers/time_periods";
 import {formatRetransmit, formatRtt} from "../helpers/scaling";
+import {scaleNumber} from "../lq_js_common/helpers/scaling";
 
 export class Worst10Retransmits extends BaseDashlet {
     constructor(slot) {

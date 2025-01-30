@@ -42,6 +42,7 @@ export class RttHistogramTimeseries extends DashboardGraph {
         let seconds = periodNameToSeconds(period);
         console.log("Requesting Insight History Data (RTT Histo)");
         $.get("/local-api/ltsRttHisto/" + seconds, (rtt) => {
+            console.log(rtt);
             for (let i=0; i<rtt.length; i++) {
                 this.option.series.data[i].value = rtt[i].value;
             }
