@@ -1,8 +1,8 @@
 import {BaseDashlet} from "./base_dashlet";
-import {clearDashDiv, theading} from "../helpers/builders";
+import {clearDashDiv, simpleRow, simpleRowHtml, theading} from "../helpers/builders";
 import {scaleNumber} from "../lq_js_common/helpers/scaling";
 import {RttCache} from "../helpers/rtt_cache";
-import {formatRetransmit, rttNanosAsSpan} from "../helpers/scaling";
+import {formatRetransmit, formatRtt, rttNanosAsSpan} from "../helpers/scaling";
 import {TrimToFit} from "../lq_js_common/helpers/text_utils";
 import {periodNameToSeconds} from "../helpers/time_periods";
 
