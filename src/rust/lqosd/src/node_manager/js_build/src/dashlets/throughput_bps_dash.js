@@ -255,7 +255,7 @@ export class ThroughputBpsDash extends BaseDashlet{
             // Get the median from dlRing
             let dlMedian = 0;
             if (this.dlRing.length > 0) {
-                upMedian = this.dlRing.reduce((a, b) => a + b) / this.dlRing.length;
+                dlMedian = this.dlRing.reduce((a, b) => a + b) / this.dlRing.length;
             }
 
             // Big numbers are smoothed medians
