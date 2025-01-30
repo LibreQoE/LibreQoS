@@ -230,6 +230,10 @@ export class ThroughputBpsDash extends BaseDashlet{
                 this.busy = true;
                 $.get("/local-api/ltsRecentMedian", (m) => {
                     this.medians = m[0];
+                    this.medians.yesterday[0] = this.medians.yesterday[0] * 8;
+                    this.medians.yesterday[1] = this.medians.yesterday[1] * 8;
+                    this.medians.last_week[0] = this.medians.last_week[0] * 8;
+                    this.medians.last_week[1] = this.medians.last_week[1] * 8;
                 });
             }
 
