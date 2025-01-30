@@ -249,14 +249,14 @@ export class ThroughputBpsDash extends BaseDashlet{
             // Get the median from upRing
             let upMedian = 0;
             if (this.upRing.length > 0) {
-                this.upRing.sort();
+                this.upRing.sort((a, b) => a - b);
                 upMedian = this.upRing[Math.floor(this.upRing.length / 2)];
             }
 
             // Get the median from dlRing
             let dlMedian = 0;
             if (this.dlRing.length > 0) {
-                this.dlRing.sort();
+                this.dlRing.sort((a, b) => a - b);
                 dlMedian = this.dlRing[Math.floor(this.dlRing.length / 2)];
             }
 
