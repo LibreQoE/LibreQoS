@@ -182,12 +182,12 @@ export class Top10FlowsBytes extends BaseDashlet {
                 if (row.rxmit_down === null) {
                     tr.appendChild(simpleRowHtml("-"));
                 } else {
-                    tr.appendChild(simpleRowHtml(formatRetransmitPercent(row.rxmit_down)));
+                    tr.appendChild(simpleRowHtml(formatRetransmit(row.rxmit_down)));
                 }
                 if (row.rxmit_up === null) {
                     tr.appendChild(simpleRowHtml("-"));
                 } else {
-                    tr.appendChild(simpleRowHtml(formatRetransmitPercent(row.rxmit_up)));
+                    tr.appendChild(simpleRowHtml(formatRetransmit(row.rxmit_up)));
                 }
                 if (row.asn_name === null) {
                     row.asn_name = "-";
