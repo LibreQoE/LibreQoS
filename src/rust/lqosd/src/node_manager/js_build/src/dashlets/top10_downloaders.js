@@ -66,7 +66,9 @@ export class Top10Downloaders extends BaseDashlet {
     onTimeChange() {
         super.onTimeChange();
         let seconds = periodNameToSeconds(window.timePeriods.activePeriod);
-        document.getElementById(this.id).innerHTML = "<i class='fas fa-spinner fa-spin'></i> Fetching Insight Data...";
+        let spinnerDiv = document.createElement("<div>");
+        spinnerDiv.innerHTML = "<i class='fas fa-spinner fa-spin'></i> Fetching Insight Data...";
+        document.getElementById(this.id).appendChild(spinnerDiv);
         $.get("/local-api/ltsTop10Downloaders/" + seconds, (data) => {
             let target = document.getElementById(this.id);
 
