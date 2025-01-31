@@ -222,7 +222,7 @@ export class ThroughputBpsDash extends BaseDashlet{
     }
 
     onMessage(msg) {
-        const RingSize = 10;
+        const RingSize = 60;
         if (msg.event === "Throughput") {
             this.tickCount++;
             if (window.hasLts && this.busy === false && (this.medians === null || this.tickCount > 300)) {
