@@ -50,11 +50,6 @@ export class Worst10Downloaders extends BaseDashlet {
             this.timeCache.tick();
 
             let items = this.timeCache.get();
-            items.sort((a, b) => {
-                return a.bits_per_second.down - b.bits_per_second.down;
-            });
-            // Limit to 10 entries
-            items = items.slice(0, 10);
             let t = TopNTableFromMsgData(items);
 
             // Display it
