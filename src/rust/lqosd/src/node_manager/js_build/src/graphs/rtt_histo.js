@@ -25,9 +25,11 @@ export class RttHistogram extends DashboardGraph {
             },
             yAxis: {
                 type: 'value',
-                name: "Samples",
+                name: "% of Samples",
                 nameLocation: 'middle',
                 nameGap: 40,
+                min: () => 0,
+                max: () => 100,
             },
             series: {
                 data: d,
@@ -39,8 +41,9 @@ export class RttHistogram extends DashboardGraph {
 
     update(rtt) {
         this.chart.hideLoading();
+        let sum = rtt.reduce((a, b) => a + b, 0);
         for (let i=0; i<N_ITEMS; i++) {
-            this.option.series.data[i].value = rtt[i];
+            this.option.series.data[i].value = (rtt[i] / sum) * 100;
         }
         this.chart.setOption(this.option);
     }
