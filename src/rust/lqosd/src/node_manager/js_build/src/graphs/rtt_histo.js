@@ -15,6 +15,7 @@ export class RttHistogram extends DashboardGraph {
             });
             axis.push((i*10).toString());
         }
+        this.max = 1;
         this.option = {
             xAxis: {
                 type: 'category',
@@ -29,7 +30,7 @@ export class RttHistogram extends DashboardGraph {
                 nameLocation: 'middle',
                 nameGap: 40,
                 min: () => 0,
-                max: () => 100,
+                max: () => this.max,
             },
             series: {
                 data: d,
@@ -41,7 +42,13 @@ export class RttHistogram extends DashboardGraph {
 
     update(rtt) {
         this.chart.hideLoading();
-        let sum = rtt.reduce((a, b) => a + b, 0);
+        let sum = 0;
+        rtt.forEach((v) => {
+            if (v > this.max) {
+                this.max = v;
+            }
+            sum += v;
+        })
         for (let i=0; i<N_ITEMS; i++) {
             this.option.series.data[i].value = (rtt[i] / sum) * 100;
         }
