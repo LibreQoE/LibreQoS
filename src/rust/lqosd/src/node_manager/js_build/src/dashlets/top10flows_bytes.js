@@ -144,8 +144,9 @@ export class Top10FlowsBytes extends BaseDashlet {
         let seconds = periodNameToSeconds(window.timePeriods.activePeriod);
         let spinnerDiv = document.createElement("div");
         spinnerDiv.innerHTML = "<i class='fas fa-spinner fa-spin'></i> Fetching Insight Data...";
+        let target = document.getElementById(this.id);
         clearDashDiv(this.id, target);
-        document.getElementById(this.id).appendChild(spinnerDiv);
+        target.appendChild(spinnerDiv);
         $.get("/local-api/ltsTopFlows/" + seconds, (data) => {
             let target = document.getElementById(this.id);
 
