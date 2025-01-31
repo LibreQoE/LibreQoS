@@ -142,6 +142,7 @@ export class Top10FlowsBytes extends BaseDashlet {
     onTimeChange() {
         super.onTimeChange();
         let seconds = periodNameToSeconds(window.timePeriods.activePeriod);
+        document.getElementById(this.id).innerHTML = "<i class='fas fa-spinner fa-spin'></i> Fetching Insight Data...";
         $.get("/local-api/ltsTopFlows/" + seconds, (data) => {
             let target = document.getElementById(this.id);
 
