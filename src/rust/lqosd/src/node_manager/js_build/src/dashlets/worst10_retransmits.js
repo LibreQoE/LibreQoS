@@ -45,7 +45,7 @@ export class Worst10Retransmits extends BaseDashlet {
 
             msg.data.forEach((r) => {
                 let key = r.circuit_id;
-                this.timeCache.addOrUpdate(key, r);
+                this.timeCache.addOrUpdate(key, r, r.tcp_retransmits[0]);
             });
             this.timeCache.tick();
 

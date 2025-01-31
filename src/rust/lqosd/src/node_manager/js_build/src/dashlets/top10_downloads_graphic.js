@@ -39,7 +39,7 @@ export class Top10DownloadersVisual extends BaseDashlet {
         if (msg.event === "TopDownloads") {
             msg.data.forEach((r) => {
                 let key = r.circuit_id;
-                this.timeCache.addOrUpdate(key, r);
+                this.timeCache.addOrUpdate(key, r, r.bits_per_second.down);
             });
             this.timeCache.tick();
             let items = this.timeCache.get();

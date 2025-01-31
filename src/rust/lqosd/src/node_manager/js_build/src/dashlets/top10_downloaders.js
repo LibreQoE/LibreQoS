@@ -45,7 +45,7 @@ export class Top10Downloaders extends BaseDashlet {
 
             msg.data.forEach((r) => {
                 let key = r.circuit_id;
-                this.timeCache.addOrUpdate(key, r);
+                this.timeCache.addOrUpdate(key, r, r.bits_per_second.down);
             });
             this.timeCache.tick();
 
