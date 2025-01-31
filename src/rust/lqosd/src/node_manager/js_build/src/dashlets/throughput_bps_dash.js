@@ -225,10 +225,14 @@ export class ThroughputBpsDash extends BaseDashlet{
         const RingSize = 10;
         if (msg.event === "Throughput") {
             this.tickCount++;
-            if (this.busy === false && (this.medians === null || this.tickCount > 300)) {
+            if (window.hasLts && this.busy === false && (this.medians === null || this.tickCount > 300)) {
                 this.tickCount = 0;
                 this.busy = true;
                 $.get("/local-api/ltsRecentMedian", (m) => {
+                    if (m === null || m.length === 0) {
+                        this.busy = false;
+                        return;
+                    }
                     this.medians = m[0];
                     this.medians.yesterday[0] = this.medians.yesterday[0] * 8;
                     this.medians.yesterday[1] = this.medians.yesterday[1] * 8;
