@@ -26,7 +26,7 @@ export class TopNSankey extends DashboardGraph {
         this.chart.hideLoading();
         this.chart.setOption(this.option);
 
-        this.chart.on('click', (params) => {
+        /*this.chart.on('click', (params) => {
             let name = params.name;
             // Trim to before " ("
             name = name.substring(0, name.indexOf(" ("));
@@ -41,7 +41,7 @@ export class TopNSankey extends DashboardGraph {
                     window.location.href = "/circuit.html?id=" + encodeURI(this.nodeMap[actualName]);
                 }
             }
-        });
+        });*/
     }
 
     processMessage(msg) {
