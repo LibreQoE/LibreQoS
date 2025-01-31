@@ -40,7 +40,9 @@ export class TimedCache {
 
         // Map to only have the value
         entries = entries.map((v) => {
-            return v.value;
+            let x = v.value;
+            x.lastSeen = (Date.now() - v.lastSeen) / 1000;
+            return x;
         });
 
         // Return the top 10

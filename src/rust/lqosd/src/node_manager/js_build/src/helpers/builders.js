@@ -121,6 +121,9 @@ export function topNTableHeader() {
 export function topNTableRow(r) {
     let row = document.createElement("tr");
     row.classList.add("small");
+    let opacity = (10.0 - r.lastSeen) / 10.0;
+    //console.log(opacity, r.lastSeen);
+    row.style.opacity = opacity.toFixed(1);
 
     if (r.circuit_id !== "") {
         let td = document.createElement("td");
