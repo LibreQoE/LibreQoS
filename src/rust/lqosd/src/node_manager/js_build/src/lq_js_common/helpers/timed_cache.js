@@ -32,6 +32,8 @@ export class TimedCache {
     }
 
     get() {
+        let now = Date.now();
+
         // Sort by score, descending
         let entries = Array.from(this.entries.values());
         entries.sort((a, b) => {
@@ -41,7 +43,7 @@ export class TimedCache {
         // Map to only have the value
         entries = entries.map((v) => {
             let x = v.value;
-            x.lastSeen = (Date.now() - v.lastSeen) / 1000;
+            x.lastSeen = (now - v.lastSeen) / 1000;
             return x;
         });
 
