@@ -148,7 +148,6 @@ export class Top10FlowsBytes extends BaseDashlet {
             let table = document.createElement("table");
             table.classList.add("table", "table-sm", "small");
             let thead = document.createElement("thead");
-            thead.appendChild(theading("Shaper"));
             thead.appendChild(theading("Circuit"));
             thead.appendChild(theading("Protocol"));
             thead.appendChild(theading("DL"));
@@ -164,7 +163,6 @@ export class Top10FlowsBytes extends BaseDashlet {
             data.forEach((row) => {
                 let tr = document.createElement("tr");
                 tr.classList.add("small");
-                tr.appendChild(simpleRow(row.shaper_name));
                 tr.appendChild(simpleRow(row.circuit_name));
                 tr.appendChild(simpleRow(row.protocol));
                 tr.appendChild(simpleRowHtml(scaleNumber(row.bytes_down)));
