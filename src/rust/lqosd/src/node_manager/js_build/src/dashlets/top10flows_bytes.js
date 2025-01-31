@@ -142,7 +142,7 @@ export class Top10FlowsBytes extends BaseDashlet {
     onTimeChange() {
         super.onTimeChange();
         let seconds = periodNameToSeconds(window.timePeriods.activePeriod);
-        let spinnerDiv = document.createElement("<div>");
+        let spinnerDiv = document.createElement("div");
         spinnerDiv.innerHTML = "<i class='fas fa-spinner fa-spin'></i> Fetching Insight Data...";
         clearDashDiv(this.id, target);
         document.getElementById(this.id).appendChild(spinnerDiv);
