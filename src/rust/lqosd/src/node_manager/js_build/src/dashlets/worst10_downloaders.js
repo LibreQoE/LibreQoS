@@ -68,6 +68,7 @@ export class Worst10Downloaders extends BaseDashlet {
         let seconds = periodNameToSeconds(window.timePeriods.activePeriod);
         let spinnerDiv = document.createElement("<div>");
         spinnerDiv.innerHTML = "<i class='fas fa-spinner fa-spin'></i> Fetching Insight Data...";
+        clearDashDiv(this.id, target);
         document.getElementById(this.id).appendChild(spinnerDiv);
         $.get("/local-api/ltsWorst10Rtt/" + seconds, (data) => {
             let target = document.getElementById(this.id);
