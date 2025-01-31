@@ -21,7 +21,7 @@ export function theading(text, colspan=0, tooltip="", id="") {
         th.setAttribute("title", tooltip);
         th.innerHTML = text + " <i class='fas fa-info-circle'></i>";
     } else {
-        th.innerText = text;
+        th.innerHTML = text;
     }
 
     return th;
@@ -111,8 +111,8 @@ export function topNTableHeader() {
     th.classList.add("small");
     th.appendChild(theading("IP Address/Circuit"));
     th.appendChild(theading("Plan"));
-    th.appendChild(theading("DL ⬇️"));
-    th.appendChild(theading("UL ⬆️"));
+    th.appendChild(theading("DL <i class='fa fa-arrow-down'></i>"));
+    th.appendChild(theading("UL <i class='fa fa-arrow-up'></i>"));
     th.appendChild(theading("RTT (ms)"));
     th.appendChild(theading("TCP Retransmits", 2));
     return th;
