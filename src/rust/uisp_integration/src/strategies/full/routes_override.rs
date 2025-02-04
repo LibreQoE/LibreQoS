@@ -3,6 +3,7 @@ use csv::ReaderBuilder;
 use lqos_config::Config;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use std::sync::Arc;
 use tracing::{error, info};
 
 /// Represents a route override in the integrationUISProutes.csv file.
@@ -81,4 +82,15 @@ pub fn get_route_overrides(config: &Config) -> Result<Vec<RouteOverride>, UispIn
         info!("No integrationUISProutes.csv found - no route overrides loaded.");
         Ok(Vec::new())
     }
+}
+
+pub fn write_routing_overrides_template(config: Arc<Config>, natural_routes: &[RouteOverride]) -> anyhow::Result<()> {
+    let file_path = Path::new(&config.lqos_directory).join("integrationUISProutes.template.csv");
+    let mut writer = csv::Writer::from_path(file_path)?;
+    writer.write_record(&["From Site", "To Site", "Cost"])?;
+    for route in natural_routes {
+        writer.write_record(&[&route.from_site, &route.to_site, &route.cost.to_string()])?;
+    }
+    writer.flush()?;
+    Ok(())
 }

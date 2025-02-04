@@ -128,9 +128,6 @@ pub async fn build_full_network(
     // Do Link Squashing
     squash_single_aps(&mut sites)?;
 
-    // Build Path Weights
-    walk_tree_for_routing(&mut sites, &root_site, &routing_overrides)?;
-
     // Apply bandwidth overrides
     apply_bandwidth_overrides(&mut sites, &bandwidth_overrides);
 
@@ -139,6 +136,9 @@ pub async fn build_full_network(
 
     // Squash any sites that are in the squash list
     squash_squashed_sites(&mut sites, config.clone(), &root_site)?;
+
+    // Build Path Weights
+    walk_tree_for_routing(config.clone(), &mut sites, &root_site, &routing_overrides)?;
 
     // Print Sites
     if let Some(root_idx) = sites.iter().position(|s| s.name == root_site) {

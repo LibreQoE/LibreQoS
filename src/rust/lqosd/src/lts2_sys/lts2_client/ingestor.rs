@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::sync::mpsc::Sender;
 use std::time::Duration;
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
+use tracing::info;
 pub(crate) use permission::check_submit_permission;
 use crate::lts2_sys::lts2_client::ingestor::commands::IngestorCommand;
 use crate::lts2_sys::lts2_client::ingestor::message_queue::MessageQueue;
@@ -26,12 +27,12 @@ fn ingestor_loop(
     let my_message_queue = message_queue.clone();
     std::thread::spawn(move || ticker_timer(my_message_queue));
 
-    println!("Starting ingestor loop");
+    info!("Starting ingestor loop");
     while let Ok(msg) = rx.recv() {
         let mut message_queue_lock = message_queue.lock().unwrap();
         message_queue_lock.ingest(msg);
     }
-    println!("Ingestor loop exited");
+    info!("Ingestor loop exited");
 }
 
 fn ticker_timer(message_queue: Arc<Mutex<MessageQueue>>) {
@@ -46,7 +47,7 @@ fn ticker_timer(message_queue: Arc<Mutex<MessageQueue>>) {
     loop {
         let missed_ticks = tfd.read();
         if missed_ticks > 1 {
-            println!("Missed queue submission ticks: {}", missed_ticks - 1);
+            info!("Missed queue submission ticks: {}", missed_ticks - 1);
         }
 
         let permitted = is_allowed_to_submit();
@@ -54,11 +55,11 @@ fn ticker_timer(message_queue: Arc<Mutex<MessageQueue>>) {
         if !message_queue_lock.is_empty() && permitted {
             let start = std::time::Instant::now();
             if let Err(e) = message_queue_lock.send() {
-                println!("Failed to send queue: {e:?}");
+                info!("Failed to send queue: {e:?}");
             }
-            println!("Queue send took: {:?}s", start.elapsed().as_secs_f32());
+            info!("Queue send took: {:?}s", start.elapsed().as_secs_f32());
         } else {
-            println!("Queue is empty or not permitted to send - nothing to do");
+            info!("Queue is empty or not permitted to send - nothing to do");
         }
     }
 }

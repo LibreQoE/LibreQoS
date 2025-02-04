@@ -20,7 +20,7 @@ pub async fn bus_request(requests: Vec<BusRequest>) -> Result<Vec<BusResponse>, 
     let stream = UnixStream::connect(BUS_SOCKET_PATH).await;
     if let Err(e) = &stream {
         if e.kind() == std::io::ErrorKind::NotFound {
-            error!("Unable to access {BUS_SOCKET_PATH}. Check that lqosd is running and you have appropriate permissions.");
+            //error!("Unable to access {BUS_SOCKET_PATH}. Check that lqosd is running and you have appropriate permissions.");
             return Err(BusClientError::SocketNotFound);
         }
     }

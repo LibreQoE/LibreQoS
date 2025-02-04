@@ -53,3 +53,6 @@ You can enroll in the 30-day free trial by [upgrading to the latest version of L
 
 <img alt="LibreQoS Long Term Stats" src="https://i0.wp.com/libreqos.io/wp-content/uploads/2023/11/01-Dashboard.png"></a>
 
+## External Pull Request Policy
+
+We can only accept PRs that address one specific change or topic each. We ask that you keep all changes small and focused per-PR to help our review and testing process.

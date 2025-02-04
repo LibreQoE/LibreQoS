@@ -11,6 +11,18 @@ pub struct UispDataLink {
 }
 
 impl UispDataLink {
+    /// Inverts a data-link to provide the recripocal link.
+    pub fn invert(&self) -> Self {
+        Self {
+            id: self.id.clone(),
+            from_site_id: self.to_site_id.clone(),
+            to_site_id: self.from_site_id.clone(),
+            from_site_name: self.to_site_name.clone(),
+            to_site_name: self.from_site_name.clone(),
+            can_delete: self.can_delete,
+        }
+    }
+
     /// Converts a UISP DataLink into a UispDataLink.
     /// 
     /// # Arguments
@@ -19,12 +31,12 @@ impl UispDataLink {
         let mut from_site_id = String::new();
         let mut to_site_id = String::new();
         let mut to_site_name = String::new();
-        let from_site_name = String::new();
+        let mut from_site_name = String::new();
 
         // Obvious Site Links
         if let Some(from_site) = &value.from.site {
             from_site_id = from_site.identification.id.clone();
-            to_site_id = from_site.identification.name.clone();
+            from_site_name = from_site.identification.name.clone();
         }
         if let Some(to_site) = &value.to.site {
             to_site_id = to_site.identification.id.clone();
