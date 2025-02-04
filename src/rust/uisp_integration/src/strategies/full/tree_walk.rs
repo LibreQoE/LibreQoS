@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::sync::Arc;
 use lqos_config::Config;
@@ -19,77 +20,126 @@ pub fn walk_tree_for_routing(
     root_site: &str,
     overrides: &Vec<RouteOverride>,
 ) -> Result<(), UispIntegrationError> {
-    if let Some(root_idx) = sites.iter().position(|s| s.name == root_site) {
-        let mut visited = std::collections::HashSet::new();
-        let current_node = root_idx;
-        let mut natural_weights: Vec<RouteOverride> = Vec::new();
-        let mut dot_graph = "digraph G {\n  graph [ ranksep=2.0 overlap=false ]\n".to_string();
-        walk_node(current_node, 10, sites, &mut visited, overrides, &mut dot_graph, &mut natural_weights);
-        dot_graph.push_str("}\n");
-        {
-            let graph_file = std::fs::File::create("graph.dot");
-            if let Ok(mut file) = graph_file {
-                let _ = file.write_all(dot_graph.as_bytes());
-            }
-        }
-        if let Err(e) = write_routing_overrides_template(config, &natural_weights) {
-            tracing::error!("Unable to write routing overrides template: {:?}", e);
-        } else {
-            tracing::info!("Wrote routing overrides template");
-        }
-    } else {
+
+    // Initialize the visualization
+    let mut dot_graph = "digraph G {\n  graph [ ranksep=2.0 overlap=false ]\n".to_string();
+
+    // Make sure we know where the root is
+    let Some(root_idx) = sites.iter().position(|s| s.name == root_site) else {
         tracing::error!("Unable to build a path-weights graph because I can't find the root node");
         return Err(UispIntegrationError::NoRootSite);
+    };
+
+    // Now we iterate through every node that ISN'T the root
+    for i in 0..sites.len() {
+        // Skip the root. It's not going anywhere.
+        if (i == root_idx) {
+            continue;
+        }
+
+        // We need to find the shortest path to the root
+        let parents = sites[i].parent_indices.clone();
+        for destination_idx in parents {
+            // Is there a route override?
+            if let Some(route_override) = overrides.iter().find(|o| o.from_site == sites[i].name && o.to_site == sites[destination_idx].name) {
+                sites[i].route_weights.push((destination_idx, route_override.cost));
+                continue;
+            }
+
+            // If there's a direct route, it makes sense to use it
+            if destination_idx == root_idx {
+                sites[i].route_weights.push((destination_idx, 10));
+                continue;
+            }
+            // There's no direct route, so we want to evaluate the shortest path
+            let mut visited = std::collections::HashSet::new();
+            visited.insert(i); // Don't go back to where we came from
+            let weight = find_shortest_path(
+                destination_idx,
+                root_idx,
+                visited,
+                sites,
+                overrides,
+                10,
+            );
+            if let Some(shortest) = weight {
+                sites[i].route_weights.push((destination_idx, shortest));
+            }
+        }
     }
 
     // Apply the lowest weight route
+    let site_index = sites
+        .iter()
+        .enumerate()
+        .map(|(i, site)| (i, site.name.clone()))
+        .collect::<std::collections::HashMap<usize, String>>();
     for site in sites.iter_mut() {
         if site.site_type != UispSiteType::Root && !site.route_weights.is_empty() {
             // Sort to find the lowest exit
             site.route_weights.sort_by(|a, b| a.1.cmp(&b.1));
             site.selected_parent = Some(site.route_weights[0].0);
         }
+
+        // Plot it
+        for (i,(idx, weight)) in site.route_weights.iter().enumerate() {
+            let from = site_index.get(&idx).unwrap().clone();
+            let to = site.name.clone();
+            if i == 0 {
+                dot_graph.push_str(&format!("\"{}\" -> \"{}\" [label=\"{}\" color=\"red\"] \n", from, to, weight));
+            } else {
+                dot_graph.push_str(&format!("\"{}\" -> \"{}\" [label=\"{}\"] \n", from, to, weight));
+            }
+        }
+
     }
+
+    dot_graph.push_str("}\n");
+    {
+        let graph_file = std::fs::File::create("graph.dot");
+        if let Ok(mut file) = graph_file {
+            let _ = file.write_all(dot_graph.as_bytes());
+        }
+    }
+
 
     Ok(())
 }
 
-fn walk_node(
-    idx: usize,
-    weight: u32,
+fn find_shortest_path(
+    from_idx: usize,
+    root_idx: usize,
+    mut visited: HashSet<usize>,
     sites: &mut Vec<UispSite>,
-    visited: &mut std::collections::HashSet<usize>,
     overrides: &Vec<RouteOverride>,
-    dot_graph: &mut String,
-    natural_weights: &mut Vec<RouteOverride>,
-) {
-    if visited.contains(&idx) {
-        return;
+    weight: u32,
+) -> Option<u32> {
+    // Make sure we don't loop
+    if visited.contains(&from_idx) {
+        return None;
     }
-    visited.insert(idx);
-    for i in 0..sites.len() {
-        if sites[i].parent_indices.contains(&idx) {
-            let from = sites[i].name.clone();
-            let to = sites[idx].name.clone();
-            if sites[idx].site_type != UispSiteType::Client && sites[i].site_type != UispSiteType::Client
-            {
-                dot_graph.push_str(&format!("\"{}\" -> \"{}\" [label=\"{}\"] \n", from, to, weight));
-                natural_weights.push(RouteOverride {
-                    from_site: from.clone(),
-                    to_site: to.clone(),
-                    cost: weight,
-                });
-            }
-            if let Some(route_override) = overrides
-                .iter()
-                .find(|o| (o.from_site == from && o.to_site == to) || (o.from_site == to && o.to_site == from))
-            {
-                sites[i].route_weights.push((idx, route_override.cost));
-                tracing::info!("Applied route override {} - {}", route_override.from_site, route_override.to_site);
-            } else {
-                sites[i].route_weights.push((idx, weight));
-            }
-            walk_node(i, weight + 10, sites, visited, overrides, dot_graph, natural_weights);
+    visited.insert(from_idx);
+
+    let destinations = sites[from_idx].parent_indices.clone();
+    for destination_idx in destinations {
+        // Is there a route override?
+        if let Some(route_override) = overrides.iter().find(|o| o.from_site == sites[from_idx].name && o.to_site == sites[destination_idx].name) {
+            return Some(route_override.cost);
+        }
+        // If there's a direct route, go that way
+        if destination_idx == root_idx {
+            return Some(weight + 10);
+        }
+        // Don't go back to where we came from
+        if visited.contains(&destination_idx) {
+            continue;
+        }
+        // Calculate the route
+        let new_weight = find_shortest_path(destination_idx, root_idx, visited.clone(), sites, overrides, weight + 10);
+        if let Some(new_weight) = new_weight {
+            return Some(new_weight);
         }
     }
+
+    None
 }

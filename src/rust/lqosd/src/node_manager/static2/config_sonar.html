@@ -1,0 +1,74 @@
+<div class="row">
+    <div class="col-12">
+        <ul class="config-menu">
+        <li class="config-menu-item"><a href="config_general.html" class="text-decoration-none"><i class="fa fa-server"></i> General</a></li>
+        <li class="config-menu-item"><a href="config_anon.html" class="text-decoration-none"><i class="fa fa-user-secret"></i> Anonymous Usage Stats</a></li>
+        <li class="config-menu-item"><a href="config_tuning.html" class="text-decoration-none"><i class="fa fa-warning"></i> Tuning</a></li>
+        <li class="config-menu-item"><a href="config_interface.html" class="text-decoration-none"><i class="fa fa-chain"></i> Network Mode</a></li>
+        <li class="config-menu-item"><a href="config_queues.html" class="text-decoration-none"><i class="fa fa-car"></i> Queues</a></li>
+        <li class="config-menu-item"><a href="config_lts.html" class="text-decoration-none"><i class="fa fa-line-chart"></i> Long-Term Stats</a></li>
+        <li class="config-menu-item"><a href="config_iprange.html" class="text-decoration-none"><i class="fa fa-address-card"></i> IP Ranges</a></li>
+        <li class="config-menu-item"><a href="config_flows.html" class="text-decoration-none"><i class="fa fa-arrow-circle-down"></i> Flow Tracking</a></li>
+        <li class="config-menu-item"><a href="config_integration.html" class="text-decoration-none"><i class="fa fa-link"></i> Integration - Common</a></li>
+        <li class="config-menu-item"><a href="config_spylnx.html" class="text-decoration-none"><i class="fa fa-link"></i> Splynx</a></li>
+        <li class="config-menu-item"><a href="config_uisp.html" class="text-decoration-none"><i class="fa fa-link"></i> UISP</a></li>
+        <li class="config-menu-item"><a href="config_powercode.html" class="text-decoration-none"><i class="fa fa-link"></i> Powercode</a></li>
+        <li class="config-menu-item active"><a href="config_sonar.html" class="text-decoration-none"><i class="fa fa-link"></i> Sonar</a></li>
+        <li class="config-menu-item"><a href="config_network.html" class="text-decoration-none"><i class="fa fa-map"></i> Network Layout</a></li>
+        <li class="config-menu-item"><a href="config_devices.html" class="text-decoration-none"><i class="fa fa-table"></i> Shaped Devices</a></li>
+        <li class="config-menu-item"><a href="config_users.html" class="text-decoration-none"><i class="fa fa-users"></i> LibreQoS Users</a></li>
+        </ul>
+        <hr class="mt-3 mb-3" />
+    </div>
+</div>
+<div class="row">
+    <div class="col-12">
+        <form>
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="enableSonar">
+                <label class="form-check-label" for="enableSonar">Enable Sonar Integration</label>
+                <div class="form-text">Enable integration with Sonar billing system</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="sonarApiUrl" class="form-label">API URL</label>
+                <input type="text" class="form-control" id="sonarApiUrl">
+                <div class="form-text">Base URL for Sonar API (e.g. https://your-sonar.com)</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="sonarApiKey" class="form-label">API Key</label>
+                <input type="text" class="form-control" id="sonarApiKey">
+                <div class="form-text">Sonar API key for authentication</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="snmpCommunity" class="form-label">SNMP Community</label>
+                <input type="text" class="form-control" id="snmpCommunity" value="public">
+                <div class="form-text">SNMP community string for device polling</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="airmaxModelIds" class="form-label">Airmax Model IDs</label>
+                <input type="text" class="form-control" id="airmaxModelIds">
+                <div class="form-text">Comma-separated list of Airmax model IDs</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="ltuModelIds" class="form-label">LTU Model IDs</label>
+                <input type="text" class="form-control" id="ltuModelIds">
+                <div class="form-text">Comma-separated list of LTU model IDs</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="activeStatusIds" class="form-label">Active Status IDs</label>
+                <input type="text" class="form-control" id="activeStatusIds">
+                <div class="form-text">Comma-separated list of active status IDs</div>
+            </div>
+
+            <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
+        </form>
+    </div>
+</div>
+
+<script src="config_sonar.js"></script>

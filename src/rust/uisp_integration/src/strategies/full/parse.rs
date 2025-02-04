@@ -53,12 +53,18 @@ fn parse_sites(sites_raw: &[Site], config: &Config) -> Vec<UispSite> {
 }
 
 fn parse_data_links(data_links_raw: &[DataLink]) -> Vec<UispDataLink> {
-    let data_links: Vec<UispDataLink> = data_links_raw
-        .iter()
-        .filter_map(UispDataLink::from_uisp)
-        .collect();
+    // We need to preserve symmetry, so each link is added twice
+    let mut data_links = Vec::with_capacity(data_links_raw.len() * 2);
+    for link in data_links_raw {
+        let uisp_link = UispDataLink::from_uisp(link);
+        if let Some(link) = uisp_link {
+            data_links.push(link.invert());
+            data_links.push(link);
+        }
+    }
+
     info!(
-        "{} data-links have been successfully parsed",
+        "{} data-links have been successfully parsed (doubled)",
         data_links.len()
     );
     data_links
