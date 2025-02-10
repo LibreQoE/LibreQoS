@@ -62,7 +62,7 @@ impl GeoTable {
     }
 
     fn download() -> anyhow::Result<()> {
-        tracing::warn!("Downloading ASN-IP Table");
+        tracing::info!("Downloading ASN-IP Table");
         let file_path = Self::file_path();
         let url = "https://insight.libreqos.com/geo2.bin";
         let response = reqwest::blocking::get(url)?;
