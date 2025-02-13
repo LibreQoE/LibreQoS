@@ -688,11 +688,17 @@ def refreshShapers():
 					# Cap based on this node's max bandwidth, or parent node's max bandwidth, whichever is lower
 					data[node]['downloadBandwidthMbps'] = min(data[node]['downloadBandwidthMbps'],parentMaxDL)
 					data[node]['uploadBandwidthMbps'] = min(data[node]['uploadBandwidthMbps'],parentMaxUL)
-				# Calculations are done in findBandwidthMins(), determine optimal HTB rates (mins) and ceils (maxs)
+				# Calculations used to be done in findBandwidthMins(), determine optimal HTB rates (mins) and ceils (maxs)
 				# For some reason that doesn't always yield the expected result, so it's better to play with ceil more than rate
-				# Here we override the rate as 95% of ceil.
-				data[node]['downloadBandwidthMbpsMin'] = round(data[node]['downloadBandwidthMbps']*.95)
-				data[node]['uploadBandwidthMbpsMin'] = round(data[node]['uploadBandwidthMbps']*.95)
+				# Here we override the rate as 95% of ceil, unless it's specified already in network.json
+				if ('downloadBandwidthMbps_min' in data[node]):
+					data[node]['downloadBandwidthMbpsMin'] = data[node]['downloadBandwidthMbps_min']
+				else: 
+					data[node]['downloadBandwidthMbpsMin'] = round(data[node]['downloadBandwidthMbps']*.95)
+				if 'uploadBandwidthMbps_min' in data[node]:
+					data[node]['uploadBandwidthMbpsMin'] = data[node]['uploadBandwidthMbps_min']
+				else:
+					data[node]['uploadBandwidthMbpsMin'] = round(data[node]['uploadBandwidthMbps']*.95)
 				
 				data[node]['classMajor'] = hex(major)
 				data[node]['up_classMajor'] = hex(major + stickOffset)
