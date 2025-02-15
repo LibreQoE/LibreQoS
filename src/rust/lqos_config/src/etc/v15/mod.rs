@@ -15,6 +15,8 @@ mod powercode_integration;
 mod sonar_integration;
 pub mod influxdb;
 mod flows;
+mod wispgate;
+
 pub use bridge::*;
 pub use long_term_stats::LongTermStats;
 pub use tuning::Tunables;

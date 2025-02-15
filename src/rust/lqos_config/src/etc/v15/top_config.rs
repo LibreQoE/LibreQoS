@@ -72,6 +72,9 @@ pub struct Config {
     /// InfluxDB Configuration
     pub influxdb: Option<super::influxdb::InfluxDbConfig>,
 
+    /// WispGate Integration
+    pub wispgate_integration: Option<super::wispgate::WispGateIntegration>,
+
     /// Option to disable the webserver for headless/CLI operation
     pub disable_webserver: Option<bool>,
 
@@ -139,6 +142,7 @@ impl Default for Config {
             uisp_integration: super::uisp_integration::UispIntegration::default(),
             powercode_integration: super::powercode_integration::PowercodeIntegration::default(),
             sonar_integration: super::sonar_integration::SonarIntegration::default(),
+            wispgate_integration: None,
             influxdb: None,
             packet_capture_time: 10,
             queue_check_period_ms: 1000,

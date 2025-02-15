@@ -94,6 +94,9 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
   m.add_wrapped(wrap_pyfunction!(is_network_flat))?;
   m.add_wrapped(wrap_pyfunction!(blackboard_finish))?;
   m.add_wrapped(wrap_pyfunction!(blackboard_submit))?;
+  m.add_wrapped(wrap_pyfunction!(automatic_import_wispgate))?;
+  m.add_wrapped(wrap_pyfunction!(wispgate_api_token))?;
+  m.add_wrapped(wrap_pyfunction!(wispgate_api_url))?;
 
   Ok(())
 }
@@ -736,4 +739,31 @@ pub fn blackboard_submit(subsystem: String, key: String, value: String) -> PyRes
   };
   let _ = run_query(vec![BusRequest::BlackboardData { subsystem, key, value }]);
   Ok(())
+}
+
+#[pyfunction]
+fn automatic_import_wispgate() -> PyResult<bool> {
+  let config = lqos_config::load_config().unwrap();
+  let Some(wisp_gate) = config.wispgate_integration.as_ref() else {
+    return Ok(false);
+  };
+  Ok(wisp_gate.enable_wispgate)
+}
+
+#[pyfunction]
+fn wispgate_api_token() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  let Some(wisp_gate) = config.wispgate_integration.as_ref() else {
+    return Ok(String::new());
+  };
+  Ok(wisp_gate.wispgate_api_token.clone())
+}
+
+#[pyfunction]
+fn wispgate_api_url() -> PyResult<String> {
+  let config = lqos_config::load_config().unwrap();
+  let Some(wisp_gate) = config.wispgate_integration.as_ref() else {
+    return Ok(String::new());
+  };
+  Ok(wisp_gate.wispgate_api_url.clone())
 }

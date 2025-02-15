@@ -50,6 +50,7 @@ pub(super) fn static_routes() -> Result<Router> {
         "config_network.html",
         "config_devices.html",
         "config_users.html",
+        "config_wispgate.html",
     ];
 
     // Iterate through pages and construct the router
