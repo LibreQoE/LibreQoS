@@ -58,8 +58,8 @@ def createShaper():
 	for device in shaped_devices:
 		if device['Circuit ID'] not in circuit_id_info:
 			try:
-				download_max = 1
-				upload_max = 1
+				download_max = 2
+				upload_max = 2
 				if device['Download Max Mbps'] != None:
 					download_max = int(device['Download Max Mbps'])
 				else:
