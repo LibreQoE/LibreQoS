@@ -163,6 +163,37 @@ With this, data will flow Site 1 > Site 2 > Site 3.
 
 To make the change, perform a reload of the integration with ```sudo systemctl restart lqos_scheduler```.
 
+## WISPGate Integration
+
+First, set the relevant parameters for WISPGate in `/etc/lqos.conf`.
+There should be a section as follows:
+
+```
+[wispgate_integration]
+enable_wispgate = false
+wispgate_api_token = "token"
+wispgate_api_url = "https://your_wispgate_url.com"
+```
+
+If the section is missing, you can add it by copying the section above.
+Set the appropriate values for wispgate_api_token and wispgate_api_url, then save the file.
+
+To test the WISPGate Integration, use
+
+```shell
+python3 integrationWISPGate.py
+```
+
+On the first successful run, it will create a ShapedDevices.csv file and network.json.
+ShapedDevices.csv will be overwritten every time the WISPGate integration is run.
+
+To ensure the network.json is always overwritten with the newest version pulled in by the integration, please edit `/etc/lqos.conf` with the command `sudo nano /etc/lqos.conf`.
+Edit the file to set the value of `always_overwrite_network_json` to `true`.
+Then, run `sudo systemctl restart lqosd`.
+
+You have the option to run integrationWISPGate.py automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_wispgate = true``` in `/etc/lqos.conf`.
+Once set, run `sudo systemctl restart lqos_scheduler`.
+
 ## Powercode Integration
 
 First, set the relevant parameters for Powercode (powercode_api_key, powercode_api_url, etc.) in `/etc/lqos.conf`.
