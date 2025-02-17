@@ -588,12 +588,14 @@ def refreshShapers():
 					minDL, minUL = findBandwidthMins(data[elem]['children'], depth+1)
 					minDownload += minDL
 					minUpload += minUL
-				if 'downloadBandwidthMbpsMin' not in data[elem]:
-					data[elem]['downloadBandwidthMbpsMin'] = minDownload
-				if 'uploadBandwidthMbpsMin' not in data[elem]:
-					data[elem]['uploadBandwidthMbpsMin'] = minUpload
-				data[elem]['downloadBandwidthMbpsMin'] = min(data[elem]['downloadBandwidthMbpsMin'], minDownload)
-				data[elem]['uploadBandwidthMbpsMin'] = min(data[elem]['uploadBandwidthMbpsMin'], minUpload)
+				if 'downloadBandwidthMbpsMin' in data[elem]:
+					data[elem]['downloadBandwidthMbpsMin'] = max(data[elem]['downloadBandwidthMbpsMin'], minDownload)
+				else:
+					data[elem]['downloadBandwidthMbpsMin'] = max(data[elem]['downloadBandwidthMbps'], minUpload)
+				if 'uploadBandwidthMbpsMin' in data[elem]:
+					data[elem]['uploadBandwidthMbpsMin'] = max(data[elem]['uploadBandwidthMbpsMin'], minUpload)
+				else:
+					data[elem]['uploadBandwidthMbpsMin'] = max(data[elem]['uploadBandwidthMbps'], minUpload)
 			return minDownload, minUpload
 		logging.info("Finding the bandwidth minimums for each node")
 		minDownload, minUpload = findBandwidthMins(network, 0)
