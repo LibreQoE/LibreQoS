@@ -4,13 +4,15 @@ from LibreQoS import refreshShapers, refreshShapersUpdateOnly
 import subprocess
 from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue_refresh_interval_mins, \
 	automatic_import_powercode, automatic_import_sonar, influx_db_enabled, get_libreqos_directory, \
-	blackboard_finish, blackboard_submit
+	blackboard_finish, blackboard_submit, automatic_import_wispgate
 if automatic_import_splynx():
 	from integrationSplynx import importFromSplynx
 if automatic_import_powercode():
 	from integrationPowercode import importFromPowercode
 if automatic_import_sonar():
 	from integrationSonar import importFromSonar
+if automatic_import_wispgate():
+	from integrationWISPGate import importFromWISPGate
 from apscheduler.schedulers.background import BlockingScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
 import os.path
@@ -41,7 +43,11 @@ def importFromCRM():
 			importFromSonar()
 		except:
 			print("Failed to import from Sonar")
-
+	elif automatic_import_wispgate():
+		try:
+			importFromWISPGate()
+		except:
+			print("Failed to import from WISPGate")
 	# Post-CRM Hooks
 	path = get_libreqos_directory() + "/bin/post_integration_hook.sh"
 	binPath = get_libreqos_directory() + "/bin"
