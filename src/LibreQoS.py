@@ -652,7 +652,7 @@ def refreshShapers():
 		# Track minor counter by CPU. This way we can have > 32000 hosts (htb has u16 limit to minor handle)
 		for x in range(queuesAvailable):
 			minorByCPUpreloaded[x+1] = 3
-		def traverseNetwork(data, depth, major, minorByCPU, queue, parentClassID, upParentClassID, parentMaxDL, parentMaxUL):
+		def traverseNetwork(data, depth, major, minorByCPU, queue, parentClassID, upParentClassID, parentMaxDL, parentMaxUL, parentMinDL, parentMinUL):
 			for node in data:
 				#if data[node]['type'] == "virtual":
 				#	print(node + " is a virtual node. Skipping.")
@@ -683,13 +683,13 @@ def refreshShapers():
 				if ('downloadBandwidthMbps_min' in data[node]):
 					data[node]['downloadBandwidthMbpsMin'] = data[node]['downloadBandwidthMbps_min']
 					del data[node]['downloadBandwidthMbps_min']
-				else: 
-					data[node]['downloadBandwidthMbpsMin'] = round(data[node]['downloadBandwidthMbps']*.95)
+				else:
+					data[node]['downloadBandwidthMbpsMin'] = data[node]['downloadBandwidthMbps']
 				if ('uploadBandwidthMbps_min' in data[node]):
 					data[node]['uploadBandwidthMbpsMin'] = data[node]['uploadBandwidthMbps_min']
 					del data[node]['uploadBandwidthMbps_min']
 				else:
-					data[node]['uploadBandwidthMbpsMin'] = round(data[node]['uploadBandwidthMbps']*.95)
+					data[node]['uploadBandwidthMbpsMin'] = data[node]['uploadBandwidthMbps']
 				# If in monitorOnlyMode, override bandwidth rates to where no shaping will actually occur
 				if monitor_mode_only() == True:
 					data[node]['downloadBandwidthMbps'] = 10000
@@ -701,6 +701,8 @@ def refreshShapers():
 					# Cap based on this node's max bandwidth, or parent node's max bandwidth, whichever is lower
 					data[node]['downloadBandwidthMbps'] = min(data[node]['downloadBandwidthMbps'],parentMaxDL)
 					data[node]['uploadBandwidthMbps'] = min(data[node]['uploadBandwidthMbps'],parentMaxUL)
+					data[node]['downloadBandwidthMbpsMin'] = min(data[node]['downloadBandwidthMbpsMin'],parentMinDL)
+					data[node]['uploadBandwidthMbpsMin'] = min(data[node]['uploadBandwidthMbpsMin'],parentMinUL)
 				# Calculations used to be done in findBandwidthMins(), determine optimal HTB rates (mins) and ceils (maxs)
 				# For some reason that doesn't always yield the expected result, so it's better to play with ceil more than rate
 				# Here we override the rate as 95% of ceil, unless it's specified alreayd in network.json
@@ -762,7 +764,7 @@ def refreshShapers():
 				if 'children' in data[node]:
 					# We need to keep tabs on the minor counter, because we can't have repeating class IDs. Here, we bring back the minor counter from the recursive function
 					minorByCPU[queue] = minorByCPU[queue] + 1
-					minorByCPU = traverseNetwork(data[node]['children'], depth+1, major, minorByCPU, queue, nodeClassID, upNodeClassID, data[node]['downloadBandwidthMbps'], data[node]['uploadBandwidthMbps'])
+					minorByCPU = traverseNetwork(data[node]['children'], depth+1, major, minorByCPU, queue, nodeClassID, upNodeClassID, data[node]['downloadBandwidthMbps'], data[node]['uploadBandwidthMbps'], data[node]['downloadBandwidthMbpsMin'], data[node]['uploadBandwidthMbpsMin'])
 				# If top level node, increment to next queue / cpu core
 				if depth == 0:
 					if queue >= queuesAvailable:
@@ -810,7 +812,7 @@ def refreshShapers():
 			network = binnedNetwork
 		
 		# Here is the actual call to the recursive traverseNetwork() function. finalMinor is not used.
-		minorByCPU = traverseNetwork(network, 0, major=1, minorByCPU=minorByCPUpreloaded, queue=1, parentClassID=None, upParentClassID=None, parentMaxDL=upstream_bandwidth_capacity_download_mbps(), parentMaxUL=upstream_bandwidth_capacity_upload_mbps())
+		minorByCPU = traverseNetwork(network, 0, major=1, minorByCPU=minorByCPUpreloaded, queue=1, parentClassID=None, upParentClassID=None, parentMaxDL=upstream_bandwidth_capacity_download_mbps(), parentMaxUL=upstream_bandwidth_capacity_upload_mbps(), parentMinDL=upstream_bandwidth_capacity_download_mbps(), parentMinUL=upstream_bandwidth_capacity_upload_mbps())
 		
 		linuxTCcommands = []
 		devicesShaped = []
