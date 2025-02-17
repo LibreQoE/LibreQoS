@@ -679,21 +679,31 @@ def refreshShapers():
 					upParentClassID = hex(major+stickOffset) + ':'
 				data[node]['parentClassID'] = parentClassID
 				data[node]['up_parentClassID'] = upParentClassID
+				# Factor in bandwidth minimums
+				if ('downloadBandwidthMbps_min' in data[node]):
+					data[node]['downloadBandwidthMbpsMin'] = data[node]['downloadBandwidthMbps_min']
+					del data[node]['downloadBandwidthMbps_min']
+				else: 
+					data[node]['downloadBandwidthMbpsMin'] = round(data[node]['downloadBandwidthMbps']*.95)
+				if ('uploadBandwidthMbps_min' in data[node]):
+					data[node]['uploadBandwidthMbpsMin'] = data[node]['uploadBandwidthMbps_min']
+					del data[node]['uploadBandwidthMbps_min']
+				else:
+					data[node]['uploadBandwidthMbpsMin'] = round(data[node]['uploadBandwidthMbps']*.95)
 				# If in monitorOnlyMode, override bandwidth rates to where no shaping will actually occur
 				if monitor_mode_only() == True:
 					data[node]['downloadBandwidthMbps'] = 10000
 					data[node]['uploadBandwidthMbps'] = 10000
+					data[node]['downloadBandwidthMbpsMin'] = 10000
+					data[node]['uploadBandwidthMbpsMin'] = 10000
 				# If not in monitorOnlyMode
 				else:
 					# Cap based on this node's max bandwidth, or parent node's max bandwidth, whichever is lower
 					data[node]['downloadBandwidthMbps'] = min(data[node]['downloadBandwidthMbps'],parentMaxDL)
 					data[node]['uploadBandwidthMbps'] = min(data[node]['uploadBandwidthMbps'],parentMaxUL)
-				# Calculations are done in findBandwidthMins(), determine optimal HTB rates (mins) and ceils (maxs)
+				# Calculations used to be done in findBandwidthMins(), determine optimal HTB rates (mins) and ceils (maxs)
 				# For some reason that doesn't always yield the expected result, so it's better to play with ceil more than rate
-				# Here we override the rate as 95% of ceil.
-				data[node]['downloadBandwidthMbpsMin'] = round(data[node]['downloadBandwidthMbps']*.95)
-				data[node]['uploadBandwidthMbpsMin'] = round(data[node]['uploadBandwidthMbps']*.95)
-				
+				# Here we override the rate as 95% of ceil, unless it's specified alreayd in network.json
 				data[node]['classMajor'] = hex(major)
 				data[node]['up_classMajor'] = hex(major + stickOffset)
 				data[node]['classMinor'] = hex(minorByCPU[queue])
@@ -882,6 +892,11 @@ def refreshShapers():
 				linuxTCcommands.append(command)
 				if 'circuits' in data[node]:
 					for circuit in data[node]['circuits']:
+						# Handle low min rates very carefully
+						if circuit['minDownload'] == 1:
+							circuit['minDownload'] = 0.01
+						if circuit['minUpload'] == 1:
+							circuit['minUpload'] = 0.01
 						# Generate TC commands to be executed later
 						tcComment = " # CircuitID: " + circuit['circuitID'] + " DeviceIDs: "
 						for device in circuit['devices']:
