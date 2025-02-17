@@ -518,8 +518,8 @@ def refreshShapers():
 				for elem in data:
 					if 'children' in data[elem]:
 						overrideNetworkBandwidths(data[elem]['children'])
-					data[elem]['downloadBandwidthMbpsMin'] = 10000
-					data[elem]['uploadBandwidthMbpsMin'] = 10000
+					data[elem]['downloadBandwidthMbpsMin'] = 100000
+					data[elem]['uploadBandwidthMbpsMin'] = 100000
 			overrideNetworkBandwidths(network)
 		
 		# Generate Parent Nodes. Spread ShapedDevices.csv which lack defined ParentNode across these (balance across CPUs)
@@ -588,8 +588,12 @@ def refreshShapers():
 					minDL, minUL = findBandwidthMins(data[elem]['children'], depth+1)
 					minDownload += minDL
 					minUpload += minUL
-				data[elem]['downloadBandwidthMbpsMin'] = minDownload
-				data[elem]['uploadBandwidthMbpsMin'] = minUpload
+				if 'downloadBandwidthMbpsMin' not in data[elem]:
+					data[elem]['downloadBandwidthMbpsMin'] = minDownload
+				if 'uploadBandwidthMbpsMin' not in data[elem]:
+					data[elem]['uploadBandwidthMbpsMin'] = minUpload
+				data[elem]['downloadBandwidthMbpsMin'] = min(data[elem]['downloadBandwidthMbpsMin'], minDownload)
+				data[elem]['uploadBandwidthMbpsMin'] = min(data[elem]['uploadBandwidthMbpsMin'], minUpload)
 			return minDownload, minUpload
 		logging.info("Finding the bandwidth minimums for each node")
 		minDownload, minUpload = findBandwidthMins(network, 0)
@@ -597,20 +601,22 @@ def refreshShapers():
 		
 		
 		# Child nodes inherit bandwidth maximums of parents. We apply this here to avoid bugs when compression is applied with flattenA().
-		def inheritBandwidthMaxes(data, parentMaxDL, parentMaxUL):
+		def inheritBandwidthMaxes(data, parentMaxDL, parentMaxUL, parentMinDL, parentMinUL):
 			for node in data:
 				if isinstance(node, str):
 					if (isinstance(data[node], dict)) and (node != 'children'):
 						# Cap based on this node's max bandwidth, or parent node's max bandwidth, whichever is lower
 						data[node]['downloadBandwidthMbps'] = min(int(data[node]['downloadBandwidthMbps']),int(parentMaxDL))
 						data[node]['uploadBandwidthMbps'] = min(int(data[node]['uploadBandwidthMbps']),int(parentMaxUL))
+						data[node]['downloadBandwidthMbpsMin'] = min(int(data[node]['downloadBandwidthMbpsMin']),int(data[node]['downloadBandwidthMbps']),int(parentMinDL))
+						data[node]['uploadBandwidthMbpsMin'] = min(int(data[node]['uploadBandwidthMbpsMin']),int(data[node]['uploadBandwidthMbps']),int(parentMinUL))
 						# Recursive call this function for children nodes attached to this node
 						if 'children' in data[node]:
 							# We need to keep tabs on the minor counter, because we can't have repeating class IDs. Here, we bring back the minor counter from the recursive function
-							inheritBandwidthMaxes(data[node]['children'], data[node]['downloadBandwidthMbps'], data[node]['uploadBandwidthMbps'])
+							inheritBandwidthMaxes(data[node]['children'], data[node]['downloadBandwidthMbps'], data[node]['uploadBandwidthMbps'], data[node]['downloadBandwidthMbpsMin'], data[node]['uploadBandwidthMbpsMin'])
 			#return data
 		# Here is the actual call to the recursive function
-		inheritBandwidthMaxes(network, parentMaxDL=upstream_bandwidth_capacity_download_mbps(), parentMaxUL=upstream_bandwidth_capacity_upload_mbps())
+		inheritBandwidthMaxes(network, parentMaxDL=upstream_bandwidth_capacity_download_mbps(), parentMaxUL=upstream_bandwidth_capacity_upload_mbps(), parentMinDL=upstream_bandwidth_capacity_download_mbps(), parentMinUL=upstream_bandwidth_capacity_upload_mbps())
 
 		
 		# Compress network.json. HTB only supports 8 levels of HTB depth. Compress to 8 layers if beyond 8.
@@ -669,7 +675,6 @@ def refreshShapers():
 				#	traverseNetwork(data[node]['children'], depth, major, minorByCPU, queue, parentClassID, upParentClassID, parentMaxDL, parentMaxUL)
 				#	continue
 				circuitsForThisNetworkNode = []
-
 				nodeClassID = hex(major) + ':' + hex(minorByCPU[queue])
 				upNodeClassID = hex(major+stickOffset) + ':' + hex(minorByCPU[queue])
 				data[node]['classid'] = nodeClassID
@@ -679,30 +684,19 @@ def refreshShapers():
 					upParentClassID = hex(major+stickOffset) + ':'
 				data[node]['parentClassID'] = parentClassID
 				data[node]['up_parentClassID'] = upParentClassID
-				# Factor in bandwidth minimums
-				if ('downloadBandwidthMbps_min' in data[node]):
-					data[node]['downloadBandwidthMbpsMin'] = data[node]['downloadBandwidthMbps_min']
-					del data[node]['downloadBandwidthMbps_min']
-				else:
-					data[node]['downloadBandwidthMbpsMin'] = data[node]['downloadBandwidthMbps']
-				if ('uploadBandwidthMbps_min' in data[node]):
-					data[node]['uploadBandwidthMbpsMin'] = data[node]['uploadBandwidthMbps_min']
-					del data[node]['uploadBandwidthMbps_min']
-				else:
-					data[node]['uploadBandwidthMbpsMin'] = data[node]['uploadBandwidthMbps']
 				# If in monitorOnlyMode, override bandwidth rates to where no shaping will actually occur
 				if monitor_mode_only() == True:
-					data[node]['downloadBandwidthMbps'] = 10000
-					data[node]['uploadBandwidthMbps'] = 10000
-					data[node]['downloadBandwidthMbpsMin'] = 10000
-					data[node]['uploadBandwidthMbpsMin'] = 10000
+					data[node]['downloadBandwidthMbps'] = 100000
+					data[node]['uploadBandwidthMbps'] = 100000
+					data[node]['downloadBandwidthMbpsMin'] = 100000
+					data[node]['uploadBandwidthMbpsMin'] = 100000
 				# If not in monitorOnlyMode
 				else:
 					# Cap based on this node's max bandwidth, or parent node's max bandwidth, whichever is lower
 					data[node]['downloadBandwidthMbps'] = min(data[node]['downloadBandwidthMbps'],parentMaxDL)
 					data[node]['uploadBandwidthMbps'] = min(data[node]['uploadBandwidthMbps'],parentMaxUL)
-					data[node]['downloadBandwidthMbpsMin'] = min(data[node]['downloadBandwidthMbpsMin'],parentMinDL)
-					data[node]['uploadBandwidthMbpsMin'] = min(data[node]['uploadBandwidthMbpsMin'],parentMinUL)
+					data[node]['downloadBandwidthMbpsMin'] = min(data[node]['downloadBandwidthMbpsMin'], data[node]['downloadBandwidthMbps'], parentMinDL)
+					data[node]['uploadBandwidthMbpsMin'] = min(data[node]['uploadBandwidthMbpsMin'], data[node]['uploadBandwidthMbps'], parentMinUL)
 				# Calculations used to be done in findBandwidthMins(), determine optimal HTB rates (mins) and ceils (maxs)
 				# For some reason that doesn't always yield the expected result, so it's better to play with ceil more than rate
 				# Here we override the rate as 95% of ceil, unless it's specified alreayd in network.json
@@ -786,8 +780,6 @@ def refreshShapers():
 			bins = binpacking.to_constant_bin_number(cpuBin, queuesAvailable)
 			for x in range(queuesAvailable):
 				print("Bin " + str(x) + " = ", bins[x])
-			#print(network)
-
 			binnedNetwork = {}
 			for cpu in range(queuesAvailable):
 				cpuKey = "CpueQueue" + str(cpu)
@@ -808,7 +800,6 @@ def refreshShapers():
 				if found == False:
 					newQueueId = queuesAvailable-1
 					binnedNetwork["CpueQueue" + str(newQueueId)]['children'][node] = network[node]
-			#print("Binned network = ", binnedNetwork)
 			network = binnedNetwork
 		
 		# Here is the actual call to the recursive traverseNetwork() function. finalMinor is not used.
