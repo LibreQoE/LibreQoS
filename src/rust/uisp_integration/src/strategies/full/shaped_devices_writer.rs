@@ -104,9 +104,9 @@ fn traverse(
                         mac: device.mac.clone(),
                         ipv4: device.ipv4_list(),
                         ipv6: device.ipv6_list(),
-                        download_min: u64::max(0, download_min),
+                        download_min: u64::max(1, download_min),
                         download_max: u64::max(2, download_max),
-                        upload_min: u64::max(0, upload_min),
+                        upload_min: u64::max(1, upload_min),
                         upload_max: u64::max(2, upload_max),
                         comment: "".to_string(),
                     };
@@ -145,9 +145,9 @@ fn traverse(
                         ipv4: device.ipv4_list(),
                         ipv6: device.ipv6_list(),
                         download_min: u64::max(1, download_min),
-                        download_max: u64::max(3, download_max),
+                        download_max: u64::max(2, download_max),
                         upload_min: u64::max(1, upload_min),
-                        upload_max: u64::max(3, upload_max),
+                        upload_max: u64::max(2, upload_max),
                         comment: "Infrastructure Entry".to_string(),
                     };
                     shaped_devices.push(sd);
