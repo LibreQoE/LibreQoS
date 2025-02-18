@@ -419,8 +419,8 @@ class NetworkGraph:
 							device["mac"],
 							device["ipv4"],
 							device["ipv6"],
-							int(0),
-							int(0),
+							int(1),
+							int(1),
 							int(float(circuit["download"]) * bandwidth_overhead_factor()),
 							int(float(circuit["upload"]) * bandwidth_overhead_factor()),
 							""
