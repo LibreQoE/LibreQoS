@@ -91,9 +91,9 @@ fn traverse(
                     let upload_max = (sites[idx].max_up_mbps as f32
                         * config.uisp_integration.bandwidth_overhead_factor)
                         as u64;
-                    let download_min = 0
+                    let download_min = 1
                         as u64;
-                    let upload_min = 0
+                    let upload_min = 1
                         as u64;
                     let sd = ShapedDevice {
                         circuit_id: sites[idx].id.clone(),
