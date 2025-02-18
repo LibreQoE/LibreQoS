@@ -601,7 +601,6 @@ def refreshShapers():
 		minDownload, minUpload = findBandwidthMins(network, 0)
 		logging.info("Found the bandwidth minimums for each node")
 		
-		
 		# Child nodes inherit bandwidth maximums of parents. We apply this here to avoid bugs when compression is applied with flattenA().
 		def inheritBandwidthMaxes(data, parentMaxDL, parentMaxUL, parentMinDL, parentMinUL):
 			for node in data:
@@ -620,7 +619,6 @@ def refreshShapers():
 		# Here is the actual call to the recursive function
 		inheritBandwidthMaxes(network, parentMaxDL=upstream_bandwidth_capacity_download_mbps(), parentMaxUL=upstream_bandwidth_capacity_upload_mbps(), parentMinDL=upstream_bandwidth_capacity_download_mbps(), parentMinUL=upstream_bandwidth_capacity_upload_mbps())
 
-		
 		# Compress network.json. HTB only supports 8 levels of HTB depth. Compress to 8 layers if beyond 8.
 		def flattenB(data):
 			newDict = {}
@@ -653,7 +651,18 @@ def refreshShapers():
 			return newDict
 		network = flattenA(network, 1)
 		
+		# Group circuits by parent node. Reduces runtime for section below this one.
+		circuits_by_parent_node = {}
+		for circuit in subscriberCircuits:
+			#If a device from ShapedDevices.csv lists this node as its Parent Node, attach it as a leaf to this node HTB
+			if circuit['ParentNode'] not in  circuits_by_parent_node:
+				circuits_by_parent_node[circuit['ParentNode']] = []
+			temp = circuits_by_parent_node[circuit['ParentNode']]
+			temp.append(circuit)
+			circuits_by_parent_node[circuit['ParentNode']] = temp
+		
 		# Parse network structure and add devices from ShapedDevices.csv
+		print("Parsing network structure and tallying devices")
 		parentNodes = []
 		minorByCPUpreloaded = {}
 		knownClassIDs = []
@@ -715,45 +724,46 @@ def refreshShapers():
 									}
 				parentNodes.append(thisParentNode)
 				minorByCPU[queue] = minorByCPU[queue] + 1
-				for circuit in subscriberCircuits:
-					#If a device from ShapedDevices.csv lists this node as its Parent Node, attach it as a leaf to this node HTB
-					if node == circuit['ParentNode']:
-						if monitor_mode_only() == False:
-							if circuit['maxDownload'] > data[node]['downloadBandwidthMbps']:
-								logging.info("downloadMax of Circuit ID [" + circuit['circuitID'] + "] exceeded that of its parent node. Reducing to that of its parent node now.", stacklevel=2)
-							if circuit['maxUpload'] > data[node]['uploadBandwidthMbps']:
-								logging.info("uploadMax of Circuit ID [" + circuit['circuitID'] + "] exceeded that of its parent node. Reducing to that of its parent node now.", stacklevel=2)
-						parentString = hex(major) + ':'
-						flowIDstring = hex(major) + ':' + hex(minorByCPU[queue])
-						upFlowIDstring = hex(major + stickOffset) + ':' + hex(minorByCPU[queue])
-						circuit['classid'] = flowIDstring
-						circuit['up_classid'] = upFlowIDstring
-						logging.info("Added up_classid to circuit: " + circuit['up_classid'])
-						# Create circuit dictionary to be added to network structure, eventually output as queuingStructure.json
-						maxDownload = min(circuit['maxDownload'],data[node]['downloadBandwidthMbps'])
-						maxUpload = min(circuit['maxUpload'],data[node]['uploadBandwidthMbps'])
-						minDownload = min(circuit['minDownload'],maxDownload)
-						minUpload = min(circuit['minUpload'],maxUpload)
-						thisNewCircuitItemForNetwork = {
-							'maxDownload' : maxDownload,
-							'maxUpload' : maxUpload,
-							'minDownload' : minDownload,
-							'minUpload' : minUpload,
-							"circuitID": circuit['circuitID'],
-							"circuitName": circuit['circuitName'],
-							"ParentNode": circuit['ParentNode'],
-							"devices": circuit['devices'],
-							"classid": flowIDstring,
-							"up_classid" : upFlowIDstring,
-							"classMajor": hex(major),
-							"up_classMajor" : hex(major + stickOffset),
-							"classMinor": hex(minorByCPU[queue]),
-							"comment": circuit['comment']
-						}
-						# Generate TC commands to be executed later
-						thisNewCircuitItemForNetwork['devices'] = circuit['devices']
-						circuitsForThisNetworkNode.append(thisNewCircuitItemForNetwork)
-						minorByCPU[queue] = minorByCPU[queue] + 1
+				#If a device from ShapedDevices.csv lists this node as its Parent Node, attach it as a leaf to this node HTB
+				if node in circuits_by_parent_node:
+					for circuit in circuits_by_parent_node[node]:
+						if node == circuit['ParentNode']:
+							if monitor_mode_only() == False:
+								if circuit['maxDownload'] > data[node]['downloadBandwidthMbps']:
+									logging.info("downloadMax of Circuit ID [" + circuit['circuitID'] + "] exceeded that of its parent node. Reducing to that of its parent node now.", stacklevel=2)
+								if circuit['maxUpload'] > data[node]['uploadBandwidthMbps']:
+									logging.info("uploadMax of Circuit ID [" + circuit['circuitID'] + "] exceeded that of its parent node. Reducing to that of its parent node now.", stacklevel=2)
+							parentString = hex(major) + ':'
+							flowIDstring = hex(major) + ':' + hex(minorByCPU[queue])
+							upFlowIDstring = hex(major + stickOffset) + ':' + hex(minorByCPU[queue])
+							circuit['classid'] = flowIDstring
+							circuit['up_classid'] = upFlowIDstring
+							logging.info("Added up_classid to circuit: " + circuit['up_classid'])
+							# Create circuit dictionary to be added to network structure, eventually output as queuingStructure.json
+							maxDownload = min(circuit['maxDownload'],data[node]['downloadBandwidthMbps'])
+							maxUpload = min(circuit['maxUpload'],data[node]['uploadBandwidthMbps'])
+							minDownload = min(circuit['minDownload'],maxDownload)
+							minUpload = min(circuit['minUpload'],maxUpload)
+							thisNewCircuitItemForNetwork = {
+								'maxDownload' : maxDownload,
+								'maxUpload' : maxUpload,
+								'minDownload' : minDownload,
+								'minUpload' : minUpload,
+								"circuitID": circuit['circuitID'],
+								"circuitName": circuit['circuitName'],
+								"ParentNode": circuit['ParentNode'],
+								"devices": circuit['devices'],
+								"classid": flowIDstring,
+								"up_classid" : upFlowIDstring,
+								"classMajor": hex(major),
+								"up_classMajor" : hex(major + stickOffset),
+								"classMinor": hex(minorByCPU[queue]),
+								"comment": circuit['comment']
+							}
+							# Generate TC commands to be executed later
+							thisNewCircuitItemForNetwork['devices'] = circuit['devices']
+							circuitsForThisNetworkNode.append(thisNewCircuitItemForNetwork)
+							minorByCPU[queue] = minorByCPU[queue] + 1
 				if len(circuitsForThisNetworkNode) > 0:
 					data[node]['circuits'] = circuitsForThisNetworkNode
 				# Recursive call this function for children nodes attached to this node
@@ -856,6 +866,7 @@ def refreshShapers():
 		
 		# Parse network structure. For each tier, generate commands to create corresponding HTB and leaf classes. Prepare commands for execution later
 		# Define lists for hash filters
+		print("Preparing TC commands")
 		def traverseNetwork(data):
 
 			# Cake needs help handling rates lower than 5 Mbps
