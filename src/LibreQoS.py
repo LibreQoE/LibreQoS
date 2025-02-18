@@ -887,11 +887,6 @@ def refreshShapers():
 				linuxTCcommands.append(command)
 				if 'circuits' in data[node]:
 					for circuit in data[node]['circuits']:
-						# Handle low min rates very carefully
-						if circuit['minDownload'] == 1:
-							circuit['minDownload'] = 0.01
-						if circuit['minUpload'] == 1:
-							circuit['minUpload'] = 0.01
 						# Generate TC commands to be executed later
 						tcComment = " # CircuitID: " + circuit['circuitID'] + " DeviceIDs: "
 						for device in circuit['devices']:
