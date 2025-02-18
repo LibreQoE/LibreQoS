@@ -84,9 +84,9 @@ pub async fn build_flat_network(
                         config.queues.generated_pn_download_mbps,
                         config.queues.generated_pn_upload_mbps,
                     );
-                    let download_min = 0
+                    let download_min = 1
                         as u64;
-                    let upload_min = 0
+                    let upload_min = 1
                         as u64;
                     for device in devices.iter() {
                         let dev = UispDevice::from_uisp(device, &config, &ip_ranges, &ipv4_to_v6);
