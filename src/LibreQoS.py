@@ -253,16 +253,16 @@ def validateNetworkAndDevices():
 						devicesValidatedOrNot = False
 			try:
 				a = int(downloadMin)
-				if a < 0:
-					warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 0 Mbps.", stacklevel=2)
+				if a < 1:
+					warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 1 Mbps.", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
 				warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.", stacklevel=2)
 				devicesValidatedOrNot = False
 			try:
 				a = int(uploadMin)
-				if a < 0:
-					warnings.warn("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 0 Mbps.", stacklevel=2)
+				if a < 1:
+					warnings.warn("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 1 Mbps.", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
 				warnings.warn("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.", stacklevel=2)
