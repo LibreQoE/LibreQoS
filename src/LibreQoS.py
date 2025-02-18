@@ -253,16 +253,16 @@ def validateNetworkAndDevices():
 						devicesValidatedOrNot = False
 			try:
 				a = int(downloadMin)
-				if a < 1:
-					warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 1 Mbps.", stacklevel=2)
+				if a < 0:
+					warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 0 Mbps.", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
 				warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.", stacklevel=2)
 				devicesValidatedOrNot = False
 			try:
 				a = int(uploadMin)
-				if a < 1:
-					warnings.warn("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 1 Mbps.", stacklevel=2)
+				if a < 0:
+					warnings.warn("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 0 Mbps.", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
 				warnings.warn("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.", stacklevel=2)
@@ -887,6 +887,11 @@ def refreshShapers():
 				linuxTCcommands.append(command)
 				if 'circuits' in data[node]:
 					for circuit in data[node]['circuits']:
+						# Handle low min rates of 0 to mean 100 kbps
+						if circuit['minDownload'] == 0:
+							circuit['minDownload'] = 0.1
+						if circuit['minUpload'] == 0:
+							circuit['minUpload'] = 0.1
 						# Generate TC commands to be executed later
 						tcComment = " # CircuitID: " + circuit['circuitID'] + " DeviceIDs: "
 						for device in circuit['devices']:
