@@ -101,9 +101,9 @@ pub async fn build_flat_network(
                                 mac: device.identification.mac.clone().unwrap_or("".to_string()),
                                 ipv4: dev.ipv4_list(),
                                 ipv6: dev.ipv6_list(),
-                                download_min: u64::max(0, download_min),
+                                download_min: u64::max(1, download_min),
                                 download_max: u64::max(2, download_max as u64),
-                                upload_min: u64::max(0, upload_min),
+                                upload_min: u64::max(1, upload_min),
                                 upload_max: u64::max(2, upload_max as u64),
                                 comment: "".to_string(),
                             };
