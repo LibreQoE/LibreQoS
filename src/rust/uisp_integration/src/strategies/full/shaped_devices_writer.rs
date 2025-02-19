@@ -91,9 +91,11 @@ fn traverse(
                     let upload_max = (sites[idx].max_up_mbps as f32
                         * config.uisp_integration.bandwidth_overhead_factor)
                         as u64;
-                    let download_min = 1
+                    let download_min = (download_max as f32
+                        * config.uisp_integration.commit_bandwidth_multiplier)
                         as u64;
-                    let upload_min = 1
+                    let upload_min = (upload_max as f32
+                        * config.uisp_integration.commit_bandwidth_multiplier)
                         as u64;
                     let sd = ShapedDevice {
                         circuit_id: sites[idx].id.clone(),
@@ -104,10 +106,10 @@ fn traverse(
                         mac: device.mac.clone(),
                         ipv4: device.ipv4_list(),
                         ipv6: device.ipv6_list(),
-                        download_min: u64::max(1, download_min),
-                        download_max: u64::max(2, download_max),
-                        upload_min: u64::max(1, upload_min),
-                        upload_max: u64::max(2, upload_max),
+                        download_min: u64::min(1, download_min),
+                        download_max: u64::max(3, download_max),
+                        upload_min: u64::min(1, upload_min),
+                        upload_max: u64::max(3, upload_max),
                         comment: "".to_string(),
                     };
                     shaped_devices.push(sd);
@@ -144,10 +146,10 @@ fn traverse(
                         mac: device.mac.clone(),
                         ipv4: device.ipv4_list(),
                         ipv6: device.ipv6_list(),
-                        download_min: u64::max(1, download_min),
-                        download_max: u64::max(2, download_max),
-                        upload_min: u64::max(1, upload_min),
-                        upload_max: u64::max(2, upload_max),
+                        download_min: u64::max(2, download_min),
+                        download_max: u64::max(3, download_max),
+                        upload_min: u64::max(2, upload_min),
+                        upload_max: u64::max(3, upload_max),
                         comment: "Infrastructure Entry".to_string(),
                     };
                     shaped_devices.push(sd);
