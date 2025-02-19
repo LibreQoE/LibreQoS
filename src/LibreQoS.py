@@ -741,7 +741,7 @@ def refreshShapers():
 						override_min_up = 1
 						warnings.warn("The combined minimums of circuits in Parent Node [" + node + "] exceeded that of the parent node. Reducing these circuits' minimums to 1 now.", stacklevel=2)
 						if ((override_min_down * len(circuits_by_parent_node[node])) > data[node]['downloadBandwidthMbpsMin']) or ((override_min_up * len(circuits_by_parent_node[node])) > data[node]['uploadBandwidthMbpsMin']):
-							warnings.warn("Even with this change, minimums will exceed the min rate of the parent node. Using fq_codel for these circuits.", stacklevel=2)
+							warnings.warn("Even with this change, minimums will exceed the min rate of the parent node. Using 10 kbps as the minimum for these circuits instead.", stacklevel=2)
 							nodes_requiring_min_squashing[node] = True
 					for circuit in circuits_by_parent_node[node]:
 						if node == circuit['ParentNode']:
@@ -919,9 +919,8 @@ def refreshShapers():
 				linuxTCcommands.append(command)
 				if 'circuits' in data[node]:
 					for circuit in data[node]['circuits']:
-						# If circuit mins exceed node mins - handle low min rates of 1 to mean 10 kbps and use fq_codel.
+						# If circuit mins exceed node mins - handle low min rates of 1 to mean 10 kbps.
 						# Avoid changing minDownload or minUpload because they are used in queuingStructure.json, and must remain integers.
-						fq_override = False
 						min_down = circuit['minDownload']
 						min_up = circuit['minUpload']
 						if node in nodes_requiring_min_squashing:
@@ -929,7 +928,6 @@ def refreshShapers():
 								min_down = 0.01
 							if min_up == 1:
 								min_up = 0.01
-							fq_override = True
 						# Generate TC commands to be executed later
 						tcComment = " # CircuitID: " + circuit['circuitID'] + " DeviceIDs: "
 						for device in circuit['devices']:
@@ -943,10 +941,7 @@ def refreshShapers():
 						# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
 						if monitor_mode_only() == False:
 							# SQM Fixup for lower rates
-							if fq_override:
-								useSqm = sqmFixupRate(circuit['maxDownload'], "fq_codel")
-							else:
-								useSqm = sqmFixupRate(circuit['maxDownload'], sqm())
+							useSqm = sqmFixupRate(circuit['maxDownload'], sqm())
 							command = 'qdisc add dev ' + interface_a() + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
 							linuxTCcommands.append(command)
 						command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ str(min_up) + 'mbit ceil '+ str(circuit['maxUpload']) + 'mbit prio 3' + quantum(circuit['maxUpload'])
@@ -954,10 +949,7 @@ def refreshShapers():
 						# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
 						if monitor_mode_only() == False:
 							# SQM Fixup for lower rates
-							if fq_override:
-								useSqm = sqmFixupRate(circuit['maxUpload'], "fq_codel")
-							else:
-								useSqm = sqmFixupRate(circuit['maxUpload'], sqm())
+							useSqm = sqmFixupRate(circuit['maxUpload'], sqm())
 							command = 'qdisc add dev ' + interface_b() + ' parent ' + circuit['up_classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
 							linuxTCcommands.append(command)
 							pass
