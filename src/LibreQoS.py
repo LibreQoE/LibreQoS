@@ -253,16 +253,16 @@ def validateNetworkAndDevices():
 						devicesValidatedOrNot = False
 			try:
 				a = int(downloadMin)
-				if a < 0:
-					warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 0 Mbps.", stacklevel=2)
+				if a < 1:
+					warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 1 Mbps.", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
 				warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.", stacklevel=2)
 				devicesValidatedOrNot = False
 			try:
 				a = int(uploadMin)
-				if a < 0:
-					warnings.warn("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 0 Mbps.", stacklevel=2)
+				if a < 1:
+					warnings.warn("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 1 Mbps.", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
 				warnings.warn("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.", stacklevel=2)
@@ -653,6 +653,8 @@ def refreshShapers():
 		
 		# Group circuits by parent node. Reduces runtime for section below this one.
 		circuits_by_parent_node = {}
+		circuit_min_down_combined_by_parent_node = {}
+		circuit_min_up_combined_by_parent_node = {}
 		for circuit in subscriberCircuits:
 			#If a device from ShapedDevices.csv lists this node as its Parent Node, attach it as a leaf to this node HTB
 			if circuit['ParentNode'] not in  circuits_by_parent_node:
@@ -660,12 +662,19 @@ def refreshShapers():
 			temp = circuits_by_parent_node[circuit['ParentNode']]
 			temp.append(circuit)
 			circuits_by_parent_node[circuit['ParentNode']] = temp
+			if circuit['ParentNode'] not in  circuit_min_down_combined_by_parent_node:
+				circuit_min_down_combined_by_parent_node[circuit['ParentNode']] = 0
+			circuit_min_down_combined_by_parent_node[circuit['ParentNode']] += circuit['minDownload']
+			if circuit['ParentNode'] not in  circuit_min_up_combined_by_parent_node:
+				circuit_min_up_combined_by_parent_node[circuit['ParentNode']] = 0
+			circuit_min_up_combined_by_parent_node[circuit['ParentNode']] += circuit['minUpload']
 		
 		# Parse network structure and add devices from ShapedDevices.csv
 		print("Parsing network structure and tallying devices")
 		parentNodes = []
 		minorByCPUpreloaded = {}
 		knownClassIDs = []
+		nodes_requiring_min_squashing = {}
 		# Track minor counter by CPU. This way we can have > 32000 hosts (htb has u16 limit to minor handle)
 		for x in range(queuesAvailable):
 			minorByCPUpreloaded[x+1] = 3
@@ -708,9 +717,7 @@ def refreshShapers():
 					data[node]['uploadBandwidthMbps'] = min(data[node]['uploadBandwidthMbps'],parentMaxUL)
 					data[node]['downloadBandwidthMbpsMin'] = min(data[node]['downloadBandwidthMbpsMin'], data[node]['downloadBandwidthMbps'], parentMinDL)
 					data[node]['uploadBandwidthMbpsMin'] = min(data[node]['uploadBandwidthMbpsMin'], data[node]['uploadBandwidthMbps'], parentMinUL)
-				# Calculations used to be done in findBandwidthMins(), determine optimal HTB rates (mins) and ceils (maxs)
-				# For some reason that doesn't always yield the expected result, so it's better to play with ceil more than rate
-				# Here we override the rate as 95% of ceil, unless it's specified alreayd in network.json
+				# Calculations are done in findBandwidthMins() to determine optimal HTB rates (mins) and ceils (maxs)
 				data[node]['classMajor'] = hex(major)
 				data[node]['up_classMajor'] = hex(major + stickOffset)
 				data[node]['classMinor'] = hex(minorByCPU[queue])
@@ -724,8 +731,18 @@ def refreshShapers():
 									}
 				parentNodes.append(thisParentNode)
 				minorByCPU[queue] = minorByCPU[queue] + 1
-				#If a device from ShapedDevices.csv lists this node as its Parent Node, attach it as a leaf to this node HTB
+				# If a device from ShapedDevices.csv lists this node as its Parent Node, attach it as a leaf to this node HTB
 				if node in circuits_by_parent_node:
+					# If mins of circuits combined exceed min of parent node - set to 1
+					override_min_down = None
+					override_min_up = None
+					if (circuit_min_down_combined_by_parent_node[node] > data[node]['downloadBandwidthMbpsMin']) or (circuit_min_up_combined_by_parent_node[node] > data[node]['uploadBandwidthMbpsMin']):
+						override_min_down = 1
+						override_min_up = 1
+						warnings.warn("The combined minimums of circuits in Parent Node [" + node + "] exceeded that of the parent node. Reducing these circuits' minimums to 1 now.", stacklevel=2)
+						if ((override_min_down * len(circuits_by_parent_node[node])) > data[node]['downloadBandwidthMbpsMin']) or ((override_min_up * len(circuits_by_parent_node[node])) > data[node]['uploadBandwidthMbpsMin']):
+							warnings.warn("Even with this change, minimums will exceed the min rate of the parent node. Using 10 kbps as the minimum for these circuits instead.", stacklevel=2)
+							nodes_requiring_min_squashing[node] = True
 					for circuit in circuits_by_parent_node[node]:
 						if node == circuit['ParentNode']:
 							if monitor_mode_only() == False:
@@ -742,6 +759,10 @@ def refreshShapers():
 							# Create circuit dictionary to be added to network structure, eventually output as queuingStructure.json
 							maxDownload = min(circuit['maxDownload'],data[node]['downloadBandwidthMbps'])
 							maxUpload = min(circuit['maxUpload'],data[node]['uploadBandwidthMbps'])
+							if override_min_down:
+								circuit['minDownload'] = 1
+							if override_min_up:
+								circuit['minUpload'] = 1
 							minDownload = min(circuit['minDownload'],maxDownload)
 							minUpload = min(circuit['minUpload'],maxUpload)
 							thisNewCircuitItemForNetwork = {
@@ -898,11 +919,15 @@ def refreshShapers():
 				linuxTCcommands.append(command)
 				if 'circuits' in data[node]:
 					for circuit in data[node]['circuits']:
-						# # Handle low min rates of 0 to mean 100 kbps
-						# if circuit['minDownload'] == 0:
-							# circuit['minDownload'] = 0.1
-						# if circuit['minUpload'] == 0:
-							# circuit['minUpload'] = 0.1
+						# If circuit mins exceed node mins - handle low min rates of 1 to mean 10 kbps.
+						# Avoid changing minDownload or minUpload because they are used in queuingStructure.json, and must remain integers.
+						min_down = circuit['minDownload']
+						min_up = circuit['minUpload']
+						if node in nodes_requiring_min_squashing:
+							if min_down == 1:
+								min_down = 0.01
+							if min_up == 1:
+								min_up = 0.01
 						# Generate TC commands to be executed later
 						tcComment = " # CircuitID: " + circuit['circuitID'] + " DeviceIDs: "
 						for device in circuit['devices']:
@@ -911,7 +936,7 @@ def refreshShapers():
 							if 'comment' in circuit['devices'][0]:
 								tcComment = '' # tcComment + '| Comment: ' + circuit['devices'][0]['comment']
 						tcComment = tcComment.replace("\n", "")
-						command = 'class add dev ' + interface_a() + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ str(circuit['minDownload']) + 'mbit ceil '+ str(circuit['maxDownload']) + 'mbit prio 3' + quantum(circuit['maxDownload']) + tcComment
+						command = 'class add dev ' + interface_a() + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ str(min_down) + 'mbit ceil '+ str(circuit['maxDownload']) + 'mbit prio 3' + quantum(circuit['maxDownload']) + tcComment
 						linuxTCcommands.append(command)
 						# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
 						if monitor_mode_only() == False:
@@ -919,7 +944,7 @@ def refreshShapers():
 							useSqm = sqmFixupRate(circuit['maxDownload'], sqm())
 							command = 'qdisc add dev ' + interface_a() + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
 							linuxTCcommands.append(command)
-						command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ str(circuit['minUpload']) + 'mbit ceil '+ str(circuit['maxUpload']) + 'mbit prio 3' + quantum(circuit['maxUpload'])
+						command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ str(min_up) + 'mbit ceil '+ str(circuit['maxUpload']) + 'mbit prio 3' + quantum(circuit['maxUpload'])
 						linuxTCcommands.append(command)
 						# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
 						if monitor_mode_only() == False:
