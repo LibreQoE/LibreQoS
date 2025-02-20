@@ -42,12 +42,12 @@ Below is a table of approximate aggregate capacity, assuming a a CPU with a [sin
 
 | RAM (using CAKE) | Max Subscribers |
 | ---------------- | --------------- |
-| 8 GB             | 1,000           |
-| 16 GB            | 2,000           | 
-| 32 GB            | 5,000           |
-| 64 GB            | 10,000          |
-| 128 GB           | 20,000          |
-| 256 GB           | 40,000          |
+| 4 GB             | 1,000           |
+| 8 GB             | 2,000           |
+| 16 GB            | 5,000           | 
+| 32 GB            | 10,000          |
+| 64 GB            | 20,000          |
+| 128 GB           | 40,000          |
 
 ### Server Recommendations
 Here are some convenient, off-the-shelf server options to consider:
