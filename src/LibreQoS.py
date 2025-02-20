@@ -56,10 +56,6 @@ def quantum(rateInMbps):
 	quantrumString = " quantum " + str(quantum)
 	return quantrumString
 
-# Automatically account for TCP overhead of plans. For example a 100Mbps plan needs to be set to 109Mbps for the user to ever see that result on a speed test
-# Does not apply to nodes of any sort, just endpoint devices
-tcpOverheadFactor = 1.09
-
 def shell(command):
 	if enable_actual_shell_commands():
 		if run_shell_commands_as_sudo():
@@ -362,10 +358,10 @@ def loadSubscriberCircuits(shapedDevicesFile):
 									raise ValueError(errorMessageString)
 							# Check if bandwidth parameters match other cdevices of this same circuit ID, but only check if monitorOnlyMode is Off
 							if monitor_mode_only() == False:
-								if ((circuit['minDownload'] != round(int(downloadMin)*tcpOverheadFactor))
-									or (circuit['minUpload'] != round(int(uploadMin)*tcpOverheadFactor))
-									or (circuit['maxDownload'] != round(int(downloadMax)*tcpOverheadFactor))
-									or (circuit['maxUpload'] != round(int(uploadMax)*tcpOverheadFactor))):
+								if ((circuit['minDownload'] != int(downloadMin))
+									or (circuit['minUpload'] != int(uploadMin))
+									or (circuit['maxDownload'] != int(downloadMax))
+									or (circuit['maxUpload'] != int(uploadMax))):
 									warnings.warn("Device " + deviceName + " with ID " + deviceID + " had different bandwidth parameters than other devices on this circuit. Will instead use the bandwidth parameters defined by the first device added to its circuit.", stacklevel=2)
 							devicesListForCircuit = circuit['devices']
 							thisDevice = 	{
@@ -399,16 +395,16 @@ def loadSubscriberCircuits(shapedDevicesFile):
 					  "circuitName": circuitName,
 					  "ParentNode": ParentNode,
 					  "devices": deviceListForCircuit,
-					  "minDownload": round(int(downloadMin)*tcpOverheadFactor),
-					  "minUpload": round(int(uploadMin)*tcpOverheadFactor),
-					  "maxDownload": round(int(downloadMax)*tcpOverheadFactor),
-					  "maxUpload": round(int(uploadMax)*tcpOverheadFactor),
+					  "minDownload": int(downloadMin),
+					  "minUpload": int(uploadMin),
+					  "maxDownload": int(downloadMax),
+					  "maxUpload": int(uploadMax),
 					  "classid": '',
 					  "comment": comment
 					}
 					if thisCircuit['ParentNode'] == 'none':
 						thisCircuit['idForCircuitsWithoutParentNodes'] = counterForCircuitsWithoutParentNodes
-						dictForCircuitsWithoutParentNodes[counterForCircuitsWithoutParentNodes] = ((round(int(downloadMax)*tcpOverheadFactor))+(round(int(uploadMax)*tcpOverheadFactor))) 
+						dictForCircuitsWithoutParentNodes[counterForCircuitsWithoutParentNodes] = ((int(downloadMax))+(int(uploadMax))) 
 						counterForCircuitsWithoutParentNodes += 1
 					subscriberCircuits.append(thisCircuit)
 			# If there is nothing in the circuit ID field
@@ -433,16 +429,16 @@ def loadSubscriberCircuits(shapedDevicesFile):
 				  "circuitName": circuitName,
 				  "ParentNode": ParentNode,
 				  "devices": deviceListForCircuit,
-				  "minDownload": round(int(downloadMin)*tcpOverheadFactor),
-				  "minUpload": round(int(uploadMin)*tcpOverheadFactor),
-				  "maxDownload": round(int(downloadMax)*tcpOverheadFactor),
-				  "maxUpload": round(int(uploadMax)*tcpOverheadFactor),
+				  "minDownload": int(downloadMin),
+				  "minUpload": int(uploadMin),
+				  "maxDownload": int(downloadMax),
+				  "maxUpload": int(uploadMax),
 				  "classid": '',
 				  "comment": comment
 				}
 				if thisCircuit['ParentNode'] == 'none':
 					thisCircuit['idForCircuitsWithoutParentNodes'] = counterForCircuitsWithoutParentNodes
-					dictForCircuitsWithoutParentNodes[counterForCircuitsWithoutParentNodes] = ((round(int(downloadMax)*tcpOverheadFactor))+(round(int(uploadMax)*tcpOverheadFactor)))
+					dictForCircuitsWithoutParentNodes[counterForCircuitsWithoutParentNodes] = ((int(downloadMax))+(int(uploadMax)))
 					counterForCircuitsWithoutParentNodes += 1
 				subscriberCircuits.append(thisCircuit)
 	return (subscriberCircuits,	dictForCircuitsWithoutParentNodes)
