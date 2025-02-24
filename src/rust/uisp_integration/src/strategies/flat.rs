@@ -84,11 +84,9 @@ pub async fn build_flat_network(
                         config.queues.generated_pn_download_mbps,
                         config.queues.generated_pn_upload_mbps,
                     );
-                    let download_min = (download_max as f32
-                        * config.uisp_integration.commit_bandwidth_multiplier)
+                    let download_min = 1
                         as u64;
-                    let upload_min = (upload_max as f32
-                        * config.uisp_integration.commit_bandwidth_multiplier)
+                    let upload_min = 1
                         as u64;
                     for device in devices.iter() {
                         let dev = UispDevice::from_uisp(device, &config, &ip_ranges, &ipv4_to_v6);
@@ -103,10 +101,10 @@ pub async fn build_flat_network(
                                 mac: device.identification.mac.clone().unwrap_or("".to_string()),
                                 ipv4: dev.ipv4_list(),
                                 ipv6: dev.ipv6_list(),
-                                download_min: u64::max(2, download_min),
-                                download_max: u64::max(3, download_max as u64),
-                                upload_min: u64::max(2, upload_min),
-                                upload_max: u64::max(3, upload_max as u64),
+                                download_min: u64::max(1, download_min),
+                                download_max: u64::max(2, download_max as u64),
+                                upload_min: u64::max(1, upload_min),
+                                upload_max: u64::max(2, upload_max as u64),
                                 comment: "".to_string(),
                             };
                             shaped_devices.push(sd);
