@@ -1,6 +1,5 @@
 // Provides helpers for a 3-entry (min/max/median) series.
 
-// Helper for min/max/median serieses
 export class MinMaxSeries {
     // Build the series
     constructor(seriesName, paletteIndex) {
@@ -16,7 +15,8 @@ export class MinMaxSeries {
                 areaStyle: { opacity: 0 },
                 itemStyle: {
                     color: window.graphPalette[paletteIndex]
-                }
+                },
+                showSymbol: false,
             },
             // Minimum
             {
@@ -31,6 +31,7 @@ export class MinMaxSeries {
                 },
                 lineStyle: { opacity: 0.0 },
                 stack: this.seriesName,
+                showSymbol: false,
             },
             // Maximum
             {
@@ -44,6 +45,7 @@ export class MinMaxSeries {
                 },
                 lineStyle: { opacity: 0.0 },
                 stack: this.seriesName,
+                showSymbol: false,
             }
         ];
     }
@@ -64,14 +66,15 @@ export class MinMaxSeries {
 
     // Add an inverted "downwards" band. (Typically upload)
     pushNegative(median, min, max) {
-        series[0].data.push(0.0 - median);
-        series[1].data.push((0.0 - max) - (0.0 - min));
-        series[2].data.push(0.0 - min_up);
+        //console.log("Pushing negative", median, min, max);
+        this.series[0].data.push(0.0 - median);
+        this.series[1].data.push((0.0 - min));
+        this.series[2].data.push(0.0 - (max - min));
     }
 
     addToOptions(option) {
-        option.series.push(series[0]);
-        option.series.push(series[1]);
-        option.series.push(series[2]);
+        option.series.push(this.series[0]);
+        option.series.push(this.series[1]);
+        option.series.push(this.series[2]);
     }
 }

@@ -1,33 +1,53 @@
 // Keeps items for up to 10 seconds. Items are tagged by a key, which will
 // be used to avoid duplicates.
+const alpha = 0.3;
+
 export class TimedCache {
-    constructor(maxAge = 10) {
-        this.cache = new Map();
-        this.maxAge = maxAge;
+    constructor(maxAgeSeconds) {
+        this.entries = new Map();
+        this.maxAge = maxAgeSeconds;
     }
 
-    addOrUpdate(key, value) {
-        this.cache.set(key, { value: value, age: 0 });
+    addOrUpdate(key, value, score) {
+        if (!this.entries.has(key)) {
+            // New entry
+            this.entries.set(key, { value: value, score: score, lastSeen: Date.now() });
+        } else {
+            // Update existing entry
+            let entry = this.entries.get(key);
+            entry.value = value;
+            entry.score = alpha * score + (1 - alpha) * entry.score;
+            entry.lastSeen = Date.now();
+        }
     }
 
     tick() {
-        let toRemove = [];
-        this.cache.forEach((val, key) => {
-            val.age += 1;
-            if (val.age > this.maxAge) {
-                toRemove.push(key);
+        // Remove older than maxAge seconds
+        let now = Date.now();
+        this.entries.forEach((v, k) => {
+            if (now - v.lastSeen > this.maxAge * 1000) {
+                this.entries.delete(k);
             }
-        });
-        toRemove.forEach((key) => {
-            this.cache.delete(key)
         });
     }
 
     get() {
-        let result = [];
-        this.cache.forEach((val) => {
-            result.push(val.value);
-        })
-        return result;
+        let now = Date.now();
+
+        // Sort by score, descending
+        let entries = Array.from(this.entries.values());
+        entries.sort((a, b) => {
+            return b.score - a.score;
+        });
+
+        // Map to only have the value
+        entries = entries.map((v) => {
+            let x = v.value;
+            x.lastSeen = (now - v.lastSeen) / 1000;
+            return x;
+        });
+
+        // Return the top 10
+        return entries.slice(0, 10);
     }
 }

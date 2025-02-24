@@ -40,50 +40,49 @@ export class Dashboard {
     #editButton() {
         let editDiv = document.createElement("span");
         editDiv.id = this.divName + "_edit";
-        editDiv.innerHTML = "<button type='button' class='btn btn-secondary btn-sm' id='btnEditDash'><i class='fa fa-pencil'></i> Edit</button>";
+        editDiv.innerHTML = "<button type='button' class='btn btn-outline-primary btn-sm' id='btnEditDash'><i class='fa fa-pencil'></i></button>";
         editDiv.onclick = () => {
             if (this.editingDashboard) {
                 let e = document.getElementById("btnEditDash");
-                e.innerHTML = "<i class='fa fa-pencil'></i> Edit";
+                e.innerHTML = "<i class='fa fa-pencil'></i>";
                 this.closeEditMode();
             } else {
                 let e = document.getElementById("btnEditDash");
-                e.innerHTML = "<i class='fa fa-close'></i> Finish Edit";
+                e.innerHTML = "<i class='fa fa-save'></i>";
                 this.editMode();
             }
         };
         let parent = document.getElementById("controls");
 
         // Cadence Picker
-        let cadenceDiv = document.createElement("div");
+        let cadenceDiv = document.createElement("span");
         cadenceDiv.id = this.divName + "_cadence";
-        let cadenceLabel = document.createElement("label");
-        cadenceLabel.htmlFor = "cadencePicker";
-        cadenceLabel.innerText = "Refresh Rate (Seconds): ";
         let cadencePicker = document.createElement("input");
+        cadencePicker.classList.add("ms-1", "small", "text-primary");
         cadencePicker.id = "cadencePicker";
         cadencePicker.type = "number";
         cadencePicker.min = "1";
         cadencePicker.max = "60";
         cadencePicker.value = this.cadence;
+        cadencePicker.alt = "Refresh Rate";
         cadencePicker.onchange = () => {
             this.cadence = parseInt(cadencePicker.value);
             localStorage.setItem("dashCadence", this.cadence.toString());
         }
-        cadenceDiv.appendChild(cadenceLabel);
+        //cadenceDiv.appendChild(cadenceLabel);
         cadenceDiv.appendChild(cadencePicker);
 
         // Pause Button
         let pauseDiv = document.createElement("span");
         pauseDiv.id = this.divName + "_pause";
-        pauseDiv.innerHTML = "<button type='button' class='btn btn-secondary btn-sm ms-2'><i class='fa fa-pause'></i> Pause</button>";
+        pauseDiv.innerHTML = "<button type='button' class='btn btn-outline-primary btn-sm ms-2'><i class='fa fa-pause'></i></button>";
         pauseDiv.onclick = () => {
             this.paused = !this.paused;
             let target = document.getElementById(this.divName + "_pause");
             if (this.paused) {
-                target.innerHTML = "<button type='button' class='btn btn-secondary btn-sm'><i class='fa fa-play'></i> Resume</button>";
+                target.innerHTML = "<button type='button' class='btn btn-outline-primary btn-sm ms-2'><i class='fa fa-play'></i></button>";
             } else {
-                target.innerHTML = "<button type='button' class='btn btn-secondary btn-sm'><i class='fa fa-pause'></i> Pause</button>";
+                target.innerHTML = "<button type='button' class='btn btn-outline-primary btn-sm ms-2'><i class='fa fa-pause'></i></button>";
             }
         };
 

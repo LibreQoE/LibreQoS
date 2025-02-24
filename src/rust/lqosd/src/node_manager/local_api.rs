@@ -4,7 +4,7 @@ mod device_counts;
 mod shaped_device_api;
 mod network_tree;
 mod support;
-mod lts;
+pub mod lts;
 mod search;
 mod unknown_ips;
 mod reload_libreqos;
@@ -16,12 +16,13 @@ mod warnings;
 mod flow_explorer;
 mod container_status;
 
-use axum::Router;
+use axum::{Extension, Router};
 use axum::routing::{get, post};
 use crate::node_manager::auth::auth_layer;
 use tower_http::cors::CorsLayer;
+use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 
-pub fn local_api() -> Router {
+pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) -> Router {
     Router::new()
         .route("/dashletThemes", get(dashboard_themes::list_themes))
         .route("/dashletSave", post(dashboard_themes::save_theme))
@@ -66,8 +67,18 @@ pub fn local_api() -> Router {
         .route("/ltsShaperStatus", get(lts::shaper_status_from_lts))
         .route("/lts24", get(lts::last_24_hours))
         .route("/ltsThroughput/:seconds", get(lts::throughput_period))
+        .route("/ltsPackets/:seconds", get(lts::packets_period))
+        .route("/ltsPercentShaped/:seconds", get(lts::percent_shaped_period))
+        .route("/ltsFlows/:seconds", get(lts::percent_flows_period))
         .route("/ltsRetransmits/:seconds", get(lts::retransmits_period))
         .route("/ltsCake/:seconds", get(lts::cake_period))
+        .route("/ltsRttHisto/:seconds", get(lts::rtt_histo_period))
+        .route("/ltsTop10Downloaders/:seconds", get(lts::top10_downloaders_period))
+        .route("/ltsWorst10Rtt/:seconds", get(lts::worst10_rtt_period))
+        .route("/ltsWorst10Rxmit/:seconds", get(lts::worst10_rxmit_period))
+        .route("/ltsTopFlows/:seconds", get(lts::top10_flows_period))
+        .route("/ltsRecentMedian", get(lts::recent_medians))
+        .layer(Extension(shaper_query))
         .layer(CorsLayer::very_permissive())
         .route_layer(axum::middleware::from_fn(auth_layer))
 }

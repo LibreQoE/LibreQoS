@@ -10,7 +10,8 @@ mod site_rtt;
 mod site_cake_drops;
 mod site_cake_marks;
 
-use std::net::TcpStream;
+use std::net::{TcpStream, ToSocketAddrs};
+use std::time::Duration;
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
@@ -111,7 +112,9 @@ impl MessageQueue {
         let target = format!("wss://{}:443/ingest/ws", remote_host);
         info!("Sending messages to {}", target);
 
-        let Ok(stream) = TcpStream::connect(&format!("{}:443", remote_host)) else {
+        let mut addresses = format!("{}:443", remote_host).to_socket_addrs()?;
+        let addr = addresses.next().ok_or_else(|| anyhow!("Failed to resolve remote host"))?;
+        let Ok(stream) = TcpStream::connect_timeout(&addr, Duration::from_secs(10)) else {
             warn!("Failed to connect to ingestion server");
             return Ok(());
         };

@@ -1,9 +1,10 @@
 import {BaseDashlet} from "./base_dashlet";
-import {clearDashDiv, theading} from "../helpers/builders";
+import {clearDashDiv, simpleRow, simpleRowHtml, theading} from "../helpers/builders";
 import {scaleNumber} from "../lq_js_common/helpers/scaling";
 import {RttCache} from "../helpers/rtt_cache";
-import {formatRetransmit, rttNanosAsSpan} from "../helpers/scaling";
+import {formatRetransmit, formatRtt, rttNanosAsSpan} from "../helpers/scaling";
 import {TrimToFit} from "../lq_js_common/helpers/text_utils";
+import {periodNameToSeconds} from "../helpers/time_periods";
 
 export class Top10FlowsBytes extends BaseDashlet {
     constructor(slot) {
@@ -36,10 +37,11 @@ export class Top10FlowsBytes extends BaseDashlet {
 
     setup() {
         super.setup();
+        window.timeGraphs.push(this);
     }
 
     onMessage(msg) {
-        if (msg.event === "TopFlowsBytes") {
+        if (msg.event === "TopFlowsBytes" && window.timePeriods.activePeriod === "Live") {
             let target = document.getElementById(this.id);
 
             let t = document.createElement("table");
@@ -135,5 +137,71 @@ export class Top10FlowsBytes extends BaseDashlet {
             clearDashDiv(this.id, target);
             target.appendChild(t);
         }
+    }
+
+    onTimeChange() {
+        super.onTimeChange();
+        let seconds = periodNameToSeconds(window.timePeriods.activePeriod);
+        let spinnerDiv = document.createElement("div");
+        spinnerDiv.innerHTML = "<i class='fas fa-spinner fa-spin'></i> Fetching Insight Data...";
+        let target = document.getElementById(this.id);
+        clearDashDiv(this.id, target);
+        target.appendChild(spinnerDiv);
+        $.get("/local-api/ltsTopFlows/" + seconds, (data) => {
+            let target = document.getElementById(this.id);
+
+            let table = document.createElement("table");
+            table.classList.add("table", "table-sm", "small");
+            let thead = document.createElement("thead");
+            thead.appendChild(theading("Circuit"));
+            thead.appendChild(theading("Protocol"));
+            thead.appendChild(theading("DL"));
+            thead.appendChild(theading("UL"));
+            thead.appendChild(theading("RTT DL"));
+            thead.appendChild(theading("RTT UL"));
+            thead.appendChild(theading("Rxmits DL"));
+            thead.appendChild(theading("Rxmits UL"));
+            thead.appendChild(theading("ASN"));
+            table.appendChild(thead);
+            let tbody = document.createElement("tbody");
+
+            data.forEach((row) => {
+                let tr = document.createElement("tr");
+                tr.classList.add("small");
+                tr.appendChild(simpleRow(row.circuit_name));
+                tr.appendChild(simpleRow(row.protocol));
+                tr.appendChild(simpleRowHtml(scaleNumber(row.bytes_down)));
+                tr.appendChild(simpleRowHtml(scaleNumber(row.bytes_up)));
+                if (row.rtt_down === null) {
+                    tr.appendChild(simpleRowHtml("-"));
+                } else {
+                    tr.appendChild(simpleRowHtml(formatRtt(row.rtt_down)));
+                }
+                if (row.rtt_up === null) {
+                    tr.appendChild(simpleRowHtml("-"));
+                } else {
+                    tr.appendChild(simpleRowHtml(formatRtt(row.rtt_up)));
+                }
+                if (row.rxmit_down === null) {
+                    tr.appendChild(simpleRowHtml("-"));
+                } else {
+                    tr.appendChild(simpleRowHtml(formatRetransmit(row.rxmit_down)));
+                }
+                if (row.rxmit_up === null) {
+                    tr.appendChild(simpleRowHtml("-"));
+                } else {
+                    tr.appendChild(simpleRowHtml(formatRetransmit(row.rxmit_up)));
+                }
+                if (row.asn_name === null) {
+                    row.asn_name = "-";
+                } else {
+                    tr.appendChild(simpleRow(row.asn_name));
+                }
+                tbody.appendChild(tr);
+            })
+            table.appendChild(tbody);
+            clearDashDiv(this.id, target);
+            target.appendChild(table);
+        });
     }
 }

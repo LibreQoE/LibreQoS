@@ -96,7 +96,7 @@ pub(crate) fn add_general(message: &mut IngestSession, queue: &mut Vec<IngestorC
                     });
                 }
             }
-            IngestorCommand::TwoWayFlow { start_time, end_time, local_ip, remote_ip, dst_port, src_port, bytes_down, bytes_up, retransmit_times_down, retransmit_times_up, protocol, rtt1, rtt2, circuit_hash } => {
+            IngestorCommand::TwoWayFlow { start_time, end_time, local_ip, remote_ip, dst_port, src_port, bytes_down, bytes_up, retransmit_times_down, retransmit_times_up, protocol, rtt1, rtt2, circuit_hash, packets_down, packets_up } => {
                 if message.two_way_flows.is_none() {
                     message.two_way_flows = Some(Vec::new());
                 }
@@ -115,6 +115,8 @@ pub(crate) fn add_general(message: &mut IngestSession, queue: &mut Vec<IngestorC
                         protocol,
                         rtt: [ rtt1, rtt2 ],
                         circuit_hash,
+                        packets_down: Some(packets_down),
+                        packets_up: Some(packets_up),
                     });
                 }
             }

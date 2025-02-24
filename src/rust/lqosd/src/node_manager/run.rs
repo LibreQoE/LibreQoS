@@ -11,6 +11,7 @@ use lqos_bus::BusRequest;
 use lqos_config::load_config;
 use crate::node_manager::{auth, static_pages::{static_routes, vendor_route}, ws::websocket_router};
 use crate::node_manager::local_api::local_api;
+use crate::node_manager::shaper_queries_actor::shaper_queries_actor;
 use crate::system_stats::SystemStats;
 
 /// Launches the Axum webserver to take over node manager duties.
@@ -35,6 +36,9 @@ pub async fn spawn_webserver(
     let listen_address = config.webserver_listen.clone().unwrap_or(":::9123".to_string());
     let listener = TcpListener::bind(&listen_address).await?;
 
+    // Setup shaper queries
+    let shaper_tx = shaper_queries_actor().await;
+
     // Construct the router from parts
     let router = Router::new()
         .route("/", get(redirect_to_index))
@@ -43,7 +47,7 @@ pub async fn spawn_webserver(
         .nest("/websocket/", websocket_router(bus_tx.clone(), system_usage_tx.clone()))
         .nest("/vendor", vendor_route()?) // Serve /vendor as purely static
         .nest("/", static_routes()?)
-        .nest("/local-api", local_api())
+        .nest("/local-api", local_api(shaper_tx))
         .fallback_service(ServeDir::new(static_path));
 
     info!("Webserver listening on: [{listen_address}]");

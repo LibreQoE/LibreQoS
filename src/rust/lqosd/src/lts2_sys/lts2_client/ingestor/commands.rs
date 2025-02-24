@@ -72,6 +72,8 @@ pub(crate) enum IngestorCommand {
         src_port: u16,
         bytes_down: u64,
         bytes_up: u64,
+        packets_down: i64,
+        packets_up: i64,
         retransmit_times_down: Vec<i64>,
         retransmit_times_up: Vec<i64>,
         rtt1: f32,

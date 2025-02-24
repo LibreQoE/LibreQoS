@@ -1,7 +1,7 @@
 use std::net::IpAddr;
 use std::sync::Mutex;
 pub mod shared_types;
-mod lts2_client;
+pub(crate) mod lts2_client;
 
 use anyhow::Result;
 use once_cell::sync::Lazy;
@@ -174,6 +174,8 @@ pub fn two_way_flow(
     src_port: u16,
     bytes_down: u64,
     bytes_up: u64,
+    packets_down: i64,
+    packets_up: i64,
     retransmit_times_down: Vec<i64>,
     retransmit_times_up: Vec<i64>,
     rtt1: f32,
@@ -191,6 +193,8 @@ pub fn two_way_flow(
         src_port,
         bytes_down,
         bytes_up,
+        packets_down,
+        packets_up,
         retransmit_times_down,
         retransmit_times_up,
         rtt1,
