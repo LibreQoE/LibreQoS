@@ -293,6 +293,7 @@ pub(crate) fn submit_throughput_stats(
             icmp_packets: DownUpOrder<u64>,
         }
 
+        let mut unique_devices = FxHashSet::default();
         let mut crazy_values: FxHashSet<i64> = FxHashSet::default(); // Circuits to skip because the numbers are too high
         let mut circuit_throughput: FxHashMap<i64, CircuitThroughputTemp> = FxHashMap::default();
         let mut circuit_retransmits: FxHashMap<i64, DownUpOrder<u64>> = FxHashMap::default();
@@ -312,7 +313,9 @@ pub(crate) fn submit_throughput_stats(
             .lock().unwrap()
             .iter()
             .filter(|(_k,h)| h.circuit_id.is_some() && h.bytes_per_second.not_zero())
-            .for_each(|(_k,h)| {
+            .for_each(|(k,h)| {
+                unique_devices.insert(*k);
+
                 let mut crazy = false;
                 if let Some((dl,ul)) = plan_lookup.get(&h.circuit_hash.unwrap_or(0)) {
                     if h.bytes_per_second.down > *dl {
@@ -546,6 +549,11 @@ pub(crate) fn submit_throughput_stats(
                 warn!("Error sending message to LTS2.");
             }
         }
+
+        if crate::lts2_sys::device_count(now, unique_devices.len() as u64).is_err() {
+            warn!("Error sending message to LTS2.");
+        }
+
 
         // Shaper utilization
         if counter % 60 == 0 {

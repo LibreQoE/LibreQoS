@@ -87,4 +87,8 @@ pub(crate) enum IngestorCommand {
         timestamp: u64,
         flow_count: u64,
     },
+    DeviceCount {
+        timestamp: u64,
+        device_count: u64,
+    },
 }

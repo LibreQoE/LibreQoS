@@ -225,6 +225,10 @@ pub fn flow_count(timestamp:u64, count: u64) -> Result<()> {
     Ok(lts2_client::flow_count(timestamp, count)?)
 }
 
+pub fn device_count(timestamp:u64, count: u64) -> Result<()> {
+    Ok(lts2_client::device_count(timestamp, count)?)
+}
+
 pub fn remote_command_count() -> u64 {
     lts2_client::remote_command_count()
 }

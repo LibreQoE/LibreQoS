@@ -553,6 +553,16 @@ pub fn flow_count(timestamp: u64, flow_count: u64) -> anyhow::Result<()> {
     Ok(())
 }
 
+pub fn device_count(timestamp: u64, device_count: u64) -> anyhow::Result<()> {
+    if let Ok(tx) = client_commands::get_command_channel() {
+        if tx.send(LtsClientCommand::IngestData(ingestor::commands::IngestorCommand::DeviceCount{ timestamp, device_count })).is_err() {
+            error!("Failed to send flow count to LTS2 client");
+            return Err(anyhow::anyhow!("Failed to send flow count to LTS2 client"));
+        }
+    }
+    Ok(())
+}
+
 // Command Interface
 
 pub fn remote_command_count() -> u64 {

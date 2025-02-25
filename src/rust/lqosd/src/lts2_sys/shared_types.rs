@@ -26,6 +26,7 @@ pub struct IngestSession {
     pub ignored_ips: Option<Vec<String>>,
     pub blackboard_json: Option<Vec<u8>>,
     pub flow_count: Option<Vec<FlowCount>>,
+    pub device_count: Option<Vec<DeviceCount>>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
@@ -207,6 +208,12 @@ pub struct ShaperThroughput {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct FlowCount {
+    pub timestamp: u64,
+    pub count: u64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct DeviceCount {
     pub timestamp: u64,
     pub count: u64,
 }

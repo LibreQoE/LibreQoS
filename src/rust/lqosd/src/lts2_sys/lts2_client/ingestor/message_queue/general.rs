@@ -1,5 +1,5 @@
 use crate::lts2_sys::lts2_client::ingestor::commands::IngestorCommand;
-use crate::lts2_sys::shared_types::{FlowCount, IngestSession, NetworkTree, OneWayFlow, ShapedDevices, ShaperThroughput, ShaperUtilization, TwoWayFlow};
+use crate::lts2_sys::shared_types::{DeviceCount, FlowCount, IngestSession, NetworkTree, OneWayFlow, ShapedDevices, ShaperThroughput, ShaperUtilization, TwoWayFlow};
 
 pub(crate) fn add_general(message: &mut IngestSession, queue: &mut Vec<IngestorCommand>) {
     while let Some(msg) = queue.pop() {
@@ -147,6 +147,17 @@ pub(crate) fn add_general(message: &mut IngestSession, queue: &mut Vec<IngestorC
                     msg.push(FlowCount {
                         timestamp,
                         count: flow_count,
+                    });
+                }
+            }
+            IngestorCommand::DeviceCount{ timestamp, device_count} => {
+                if message.device_count.is_none() {
+                    message.device_count = Some(Vec::new());
+                }
+                if let Some(msg) = &mut message.device_count {
+                    msg.push(DeviceCount {
+                        timestamp,
+                        count: device_count,
                     });
                 }
             }
