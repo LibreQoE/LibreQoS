@@ -29,14 +29,17 @@ impl FlowAnalysisSystem {
     pub fn new() -> Self {
         // Moved from being periodically updated to being updated on startup
         let _ = std::thread::Builder::new().name("GeoTable Updater".to_string()).spawn(|| {
-            let result = asn::GeoTable::load();
-            match result {
-                Ok(table) => {
-                    ANALYSIS.asn_table.lock().unwrap().replace(table);
+            loop {
+                let result = asn::GeoTable::load();
+                match result {
+                    Ok(table) => {
+                        ANALYSIS.asn_table.lock().unwrap().replace(table);
+                    }
+                    Err(e) => {
+                        error!("Failed to update ASN table: {e}");
+                    }
                 }
-                Err(e) => {
-                    error!("Failed to update ASN table: {e}");
-                }
+                std::thread::sleep(std::time::Duration::from_secs(60 * 60));
             }
         });
 
