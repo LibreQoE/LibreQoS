@@ -6,7 +6,6 @@ use futures_util::SinkExt;
 use lqos_config::load_config;
 use std::net::ToSocketAddrs;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::select;
@@ -87,7 +86,7 @@ async fn run_remote_insight(
     ready: tokio::sync::oneshot::Sender<()>,
     caches: Arc<Caches>,
 ) -> anyhow::Result<()> {
-    let mut socket = connect().await?;
+    let socket = connect().await?;
     let (mut write, mut read) = socket.split();
     let (tx, mut rx) = tokio::sync::mpsc::channel(128);
 

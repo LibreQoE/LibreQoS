@@ -5,7 +5,6 @@ use serde::de::DeserializeOwned;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
 use crate::node_manager::local_api::lts::{AsnFlowSizeWeb, FlowCountViewWeb, FullPacketData, PercentShapedWeb, RecentMedians, ShaperRttHistogramEntry, ThroughputData, Top10Circuit, Worst10RttCircuit, Worst10RxmitCircuit};
-use crate::node_manager::shaper_queries_actor::timed_cache::TimedCache;
 
 const CACHE_DURATION: Duration = Duration::from_secs(60 * 5);
 

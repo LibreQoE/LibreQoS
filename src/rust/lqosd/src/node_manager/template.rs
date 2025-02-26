@@ -111,7 +111,6 @@ pub async fn apply_templates(
                     &format!("https://stats.libreqos.io/trial1/{}", config.node_id)
                 );
                 script_has_insight = false;
-                script_has_insight = false;
             }
         }
 

@@ -259,7 +259,7 @@ pub unsafe extern "C" fn flowbee_handle_events(
 
         // Copy the bytes (to free the ringbuffer slot)
         let data_u8 = data as *const u8;
-        let data_slice: &[u8] = slice::from_raw_parts(data_u8, EVENT_SIZE);
+        let data_slice: &[u8] = unsafe { slice::from_raw_parts(data_u8, EVENT_SIZE) };
         if let Ok(_) = FLOW_BYTES.push(data_slice.try_into().unwrap()) {
             if tx.try_send(()).is_err() {
                 warn!("Could not submit flow event - buffer full");

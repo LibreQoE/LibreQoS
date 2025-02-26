@@ -1,8 +1,5 @@
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::broadcast::error::RecvError;
-use tokio::time::error::Elapsed;
-use tokio::time::timeout;
 use tracing::{info, warn};
 use crate::node_manager::local_api::lts::{AsnFlowSizeWeb, FlowCountViewWeb, FullPacketData, PercentShapedWeb, RecentMedians, ShaperRttHistogramEntry, ThroughputData, Top10Circuit, Worst10RttCircuit, Worst10RxmitCircuit};
 use crate::node_manager::shaper_queries_actor::{remote_insight, ShaperQueryCommand};
@@ -45,11 +42,11 @@ macro_rules! shaper_query {
                             break;
                         }
                     }
-                    Ok(msg) = my_broadcast_rx.recv() => {
+                    Ok(_msg) = my_broadcast_rx.recv() => {
                         // Cache updated
                         info!("SQ Cache update hit");
                         if let Some(result) = my_caches.get($seconds).await {
-                            if let Err(e) = $reply.send(result) {
+                            if let Err(_e) = $reply.send(result) {
                                 warn!("Failed to send. Oneshot died?");
                             }
                             break;
@@ -66,8 +63,8 @@ pub async fn shaper_queries(mut rx: tokio::sync::mpsc::Receiver<ShaperQueryComma
     info!("Starting the shaper query actor.");
 
     // Initialize the cache system
-    let (mut caches, mut broadcast_rx) = Caches::new();
-    let mut remote_insight = Arc::new(remote_insight::RemoteInsight::new(caches.clone()));
+    let (caches, broadcast_rx) = Caches::new();
+    let remote_insight = Arc::new(remote_insight::RemoteInsight::new(caches.clone()));
 
     while let Some(command) = rx.recv().await {
         info!("SQ: Received a command.");
