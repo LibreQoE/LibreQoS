@@ -65,7 +65,7 @@ pub(crate) fn decode_submission_hello(bytes: &[u8]) -> Result<HelloVersion2, Sub
 }
 
 pub(crate) async fn encode_submission(submission: &LtsCommand) -> Result<Vec<u8>, QueueError> {
-    let nonce = Nonce::gen();
+    let nonce = Nonce::r#gen();
     let mut result = Vec::new();
 
     // Store the version as network order

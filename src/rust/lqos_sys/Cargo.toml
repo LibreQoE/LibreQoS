@@ -21,4 +21,4 @@ allocative = {  version = "0.3.3", features = [ "dashmap" ] }
 allocative_derive = "0.3.3"
 
 [build-dependencies]
-bindgen = "0"
+bindgen = "0.71.1"
