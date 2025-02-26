@@ -1,6 +1,6 @@
-use std::path::Path;
 use crate::console::success;
 use crate::support_info::SupportInfo;
+use std::path::Path;
 
 #[derive(Default)]
 pub struct LqosConfig {

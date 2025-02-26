@@ -1,5 +1,5 @@
 mod v1;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::warn;
 pub use v1::*;
@@ -27,20 +27,19 @@ pub fn build_stats(stats: &AnonymousUsageV1) -> Result<Vec<u8>, StatsError> {
     let payload = payload.unwrap();
 
     // Store the version as network order
-    result.extend( 1u16.to_be_bytes() );
+    result.extend(1u16.to_be_bytes());
     // Store the payload size as network order
-    result.extend( (payload.len() as u64).to_be_bytes() );
+    result.extend((payload.len() as u64).to_be_bytes());
     // Store the payload itself
     result.extend(payload);
 
     Ok(result)
 }
 
-
 /// Errors for anonymous usage statistics failure
 #[derive(Error, Debug)]
 pub enum StatsError {
     /// Serializing the object failed
     #[error("Unable to serialize object")]
-    SerializeFail
+    SerializeFail,
 }

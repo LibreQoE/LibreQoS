@@ -2,10 +2,10 @@
 //! We frequently order things down and then up in kernel maps, keeping the ordering explicit
 //! helps reduce directional confusion/bugs.
 
+use crate::units::DownUpOrder;
+use allocative_derive::Allocative;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::Relaxed;
-use allocative_derive::Allocative;
-use crate::units::DownUpOrder;
 
 /// AtomicDownUp is a struct that contains two atomic u64 values, one for down and one for up.
 /// It's typically used for throughput, but can be used for any pairing that needs to keep track
@@ -37,15 +37,23 @@ impl AtomicDownUp {
     /// Add a tuple of u64 values to the down and up values. The addition
     /// is checked, and will not occur if it would result in an overflow.
     pub fn checked_add_tuple(&self, n: (u64, u64)) {
-        let _ = self.down.fetch_update(Relaxed, Relaxed, |x| x.checked_add(n.0));
-        let _ = self.up.fetch_update(Relaxed, Relaxed, |x| x.checked_add(n.1));
+        let _ = self
+            .down
+            .fetch_update(Relaxed, Relaxed, |x| x.checked_add(n.0));
+        let _ = self
+            .up
+            .fetch_update(Relaxed, Relaxed, |x| x.checked_add(n.1));
     }
 
     /// Add a DownUpOrder to the down and up values. The addition
     /// is checked, and will not occur if it would result in an overflow.
     pub fn checked_add(&self, n: DownUpOrder<u64>) {
-        let _ = self.down.fetch_update(Relaxed, Relaxed, |x| x.checked_add(n.down));
-        let _ = self.up.fetch_update(Relaxed, Relaxed, |x| x.checked_add(n.up));
+        let _ = self
+            .down
+            .fetch_update(Relaxed, Relaxed, |x| x.checked_add(n.down));
+        let _ = self
+            .up
+            .fetch_update(Relaxed, Relaxed, |x| x.checked_add(n.up));
     }
 
     /// Get the down value.
@@ -67,13 +75,10 @@ impl AtomicDownUp {
     pub fn set_up(&self, n: u64) {
         self.up.store(n, Relaxed);
     }
-    
+
     /// Transform the AtomicDownUp into a `DownUpOrder<u64>`.
     pub fn as_down_up(&self) -> DownUpOrder<u64> {
-        DownUpOrder::new(
-            self.get_down(),
-            self.get_up()
-        )
+        DownUpOrder::new(self.get_down(), self.get_up())
     }
 }
 

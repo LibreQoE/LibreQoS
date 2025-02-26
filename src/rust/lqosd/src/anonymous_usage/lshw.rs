@@ -28,9 +28,7 @@ pub(crate) fn get_nic_info() -> anyhow::Result<Vec<Nic>> {
     let mut current_nic = None;
     let mut result = Vec::new();
 
-    let output = Command::new("/bin/lshw")
-        .args(["-C", "network"])
-        .output()?;
+    let output = Command::new("/bin/lshw").args(["-C", "network"]).output()?;
     let stdout = String::from_utf8(output.stdout)?;
     let lines = stdout.split('\n');
     for line in lines {

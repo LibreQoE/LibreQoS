@@ -1,7 +1,7 @@
-use std::ffi::CString;
+use crate::sanity_checks::SanityCheck;
 use anyhow::Error;
 use lqos_config::load_config;
-use crate::sanity_checks::SanityCheck;
+use std::ffi::CString;
 
 fn interface_name_to_index(interface_name: &str) -> anyhow::Result<u32> {
     use nix::libc::if_nametoindex;

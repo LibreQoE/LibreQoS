@@ -20,22 +20,22 @@ pub struct RouteOverride {
 /// Attempts to load integrationUISProutes.csv to use for
 /// route overrides. Returns an empty set if not found.
 /// Returns an error if the file is found but cannot be read.
-/// 
+///
 /// The file should be a CSV with the following columns:
-/// 
+///
 /// | From Site | To Site | Cost |
 /// |-----------|---------|------|
 /// | Site1     | Site2   | 100  |
 /// | Site2     | Site3   | 200  |
-/// 
+///
 /// The From Site and To Site should match the name of the site in UISP.
-/// 
+///
 /// If the file is found, the overrides will be applied to the routes
 /// in the `UispSite` array by the `apply_route_overrides` function.
-/// 
+///
 /// # Arguments
 /// * `config` - The configuration
-/// 
+///
 /// # Returns
 /// * An `Ok(Vec)` of `RouteOverride` objects
 /// * An `Err` if the file is found but cannot be read
@@ -85,7 +85,10 @@ pub fn get_route_overrides(config: &Config) -> Result<Vec<RouteOverride>, UispIn
 }
 
 #[allow(dead_code)]
-pub fn write_routing_overrides_template(config: Arc<Config>, natural_routes: &[RouteOverride]) -> anyhow::Result<()> {
+pub fn write_routing_overrides_template(
+    config: Arc<Config>,
+    natural_routes: &[RouteOverride],
+) -> anyhow::Result<()> {
     let file_path = Path::new(&config.lqos_directory).join("integrationUISProutes.template.csv");
     let mut writer = csv::Writer::from_path(file_path)?;
     writer.write_record(&["From Site", "To Site", "Cost"])?;

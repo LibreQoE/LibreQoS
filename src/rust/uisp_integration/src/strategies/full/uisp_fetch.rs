@@ -1,6 +1,6 @@
-use std::sync::Arc;
 use crate::errors::UispIntegrationError;
 use lqos_config::Config;
+use std::sync::Arc;
 use tokio::join;
 use tracing::{error, info};
 use uisp::{DataLink, Device, Site};
@@ -43,7 +43,10 @@ pub async fn load_uisp_data(
     devices.retain(|dev| {
         if let Some(site_id) = dev.get_site_id() {
             if let Some(site) = sites.iter().find(|site| site.id == site_id) {
-                !config.uisp_integration.exclude_sites.contains(&site.name_or_blank())
+                !config
+                    .uisp_integration
+                    .exclude_sites
+                    .contains(&site.name_or_blank())
             } else {
                 true
             }

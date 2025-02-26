@@ -14,19 +14,19 @@ pub struct NetworkTreeEntry {
 impl From<&NetworkJsonNode> for NetworkTreeEntry {
     fn from(value: &NetworkJsonNode) -> Self {
         let mut max = 0;
-        let mut min = if value.rtts.is_empty() {
-            0
-        } else {
-            u64::MAX
-        };
+        let mut min = if value.rtts.is_empty() { 0 } else { u64::MAX };
         let mut sum: u64 = 0;
         let mut count = 0;
         for n in value.rtts.iter() {
             let n = *n as u64;
             if n > 0 {
                 sum += n;
-                if n < min { min = n; }
-                if n > max { max = n; }
+                if n < min {
+                    min = n;
+                }
+                if n > max {
+                    max = n;
+                }
                 count += 1;
             }
         }

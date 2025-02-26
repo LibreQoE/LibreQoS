@@ -1,11 +1,21 @@
-use dryoc::{dryocbox::{Nonce, DryocBox}, types::{NewByteArray, ByteArray}};
+use super::keys::{KEYPAIR, SERVER_PUBLIC_KEY};
+use crate::{
+    submission_queue::queue::QueueError,
+    transport_data::{HelloVersion2, LtsCommand, NodeIdAndLicense},
+};
+use dryoc::{
+    dryocbox::{DryocBox, Nonce},
+    types::{ByteArray, NewByteArray},
+};
 use lqos_config::load_config;
 use thiserror::Error;
 use tracing::error;
-use crate::{transport_data::{LtsCommand, NodeIdAndLicense, HelloVersion2}, submission_queue::queue::QueueError};
-use super::keys::{SERVER_PUBLIC_KEY, KEYPAIR};
 
-pub(crate) async fn encode_submission_hello(license_key: &str, node_id: &str, node_name: &str) -> Result<Vec<u8>, QueueError> {
+pub(crate) async fn encode_submission_hello(
+    license_key: &str,
+    node_id: &str,
+    node_name: &str,
+) -> Result<Vec<u8>, QueueError> {
     let mut result = Vec::new();
 
     // Build the body
@@ -46,7 +56,9 @@ pub enum SubmissionDecodeError {
 }
 
 #[allow(dead_code)]
-pub(crate) fn decode_submission_hello(bytes: &[u8]) -> Result<HelloVersion2, SubmissionDecodeError> {
+pub(crate) fn decode_submission_hello(
+    bytes: &[u8],
+) -> Result<HelloVersion2, SubmissionDecodeError> {
     let version = u16::from_be_bytes([bytes[0], bytes[1]]);
     if version != 2 {
         error!("Received an invalid version from the server: {}", version);
@@ -57,9 +69,12 @@ pub(crate) fn decode_submission_hello(bytes: &[u8]) -> Result<HelloVersion2, Sub
         error!("Received an invalid padding from the server: {}", padding);
         return Err(SubmissionDecodeError::InvalidPadding);
     }
-    let size = u64::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9], bytes[10], bytes[11]]);
+    let size = u64::from_be_bytes([
+        bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9], bytes[10], bytes[11],
+    ]);
     let hello_bytes = &bytes[12..12 + size as usize];
-    let hello: HelloVersion2 = serde_cbor::from_slice(hello_bytes).map_err(|_| SubmissionDecodeError::Deserialize)?;
+    let hello: HelloVersion2 =
+        serde_cbor::from_slice(hello_bytes).map_err(|_| SubmissionDecodeError::Deserialize)?;
 
     Ok(hello)
 }
@@ -84,16 +99,12 @@ pub(crate) async fn encode_submission(submission: &LtsCommand) -> Result<Vec<u8>
 
     // TODO: Compress it?
     let payload_bytes = miniz_oxide::deflate::compress_to_vec(&payload_bytes, 8);
-    
+
     // Encrypt it
     let remote_public = SERVER_PUBLIC_KEY.read().await.clone().unwrap();
     let my_private = KEYPAIR.read().await.secret_key.clone();
-    let dryocbox = DryocBox::encrypt_to_vecbox(
-        &payload_bytes,
-        &nonce,
-        &remote_public,
-        &my_private,
-    ).map_err(|_| QueueError::SendFail)?;
+    let dryocbox = DryocBox::encrypt_to_vecbox(&payload_bytes, &nonce, &remote_public, &my_private)
+        .map_err(|_| QueueError::SendFail)?;
     let encrypted_bytes = dryocbox.to_vec();
 
     // Store the size of the submission
@@ -123,7 +134,9 @@ mod test {
         let license_key = "1234567890";
         let node_id = "node_id";
         let node_name = "node_name";
-        let hello = super::encode_submission_hello(license_key, node_id, node_name).await.unwrap();
+        let hello = super::encode_submission_hello(license_key, node_id, node_name)
+            .await
+            .unwrap();
         let hello = super::decode_submission_hello(&hello).unwrap();
         assert_eq!(hello.license_key, license_key);
         assert_eq!(hello.node_id, node_id);

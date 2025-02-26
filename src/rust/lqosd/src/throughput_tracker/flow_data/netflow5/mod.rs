@@ -1,20 +1,20 @@
 //! Support for the Netflow 5 protocol
 //! Mostly taken from: https://netflow.caligare.com/netflow_v5.htm
 mod protocol;
-use super::{FlowAnalysis, FlowbeeLocalData, };
+use super::{FlowAnalysis, FlowbeeLocalData};
+use crossbeam_channel::Sender;
 use lqos_sys::flowbee_data::FlowbeeKey;
 pub(crate) use protocol::*;
-use std::{
-    net::UdpSocket,
-    sync::atomic::AtomicU32,
-};
-use crossbeam_channel::Sender;
+use std::{net::UdpSocket, sync::atomic::AtomicU32};
 
 pub(crate) struct Netflow5 {}
 
 impl Netflow5 {
-    pub(crate) fn new(target: String) -> anyhow::Result<Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>> {
-        let (tx, rx) = crossbeam_channel::bounded::<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>(65535);
+    pub(crate) fn new(
+        target: String,
+    ) -> anyhow::Result<Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>> {
+        let (tx, rx) =
+            crossbeam_channel::bounded::<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>(65535);
 
         std::thread::Builder::new()
             .name("Netflow5".to_string())

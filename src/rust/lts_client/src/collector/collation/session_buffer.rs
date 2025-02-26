@@ -1,6 +1,6 @@
+use crate::collector::{ThroughputSummary, network_tree::NetworkTreeEntry};
 use once_cell::sync::Lazy;
 use tokio::sync::Mutex;
-use crate::collector::{ThroughputSummary, network_tree::NetworkTreeEntry};
 
 pub(crate) static SESSION_BUFFER: Lazy<Mutex<Vec<StatsSession>>> =
     Lazy::new(|| Mutex::new(Vec::new()));

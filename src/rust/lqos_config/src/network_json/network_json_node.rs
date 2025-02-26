@@ -1,7 +1,7 @@
-use std::collections::HashSet;
+use crate::NetworkJsonTransport;
 use allocative_derive::Allocative;
 use lqos_utils::units::DownUpOrder;
-use crate::NetworkJsonTransport;
+use std::collections::HashSet;
 
 /// Describes a node in the network map tree.
 #[derive(Debug, Clone, Allocative)]
@@ -83,14 +83,8 @@ impl NetworkJsonNode {
                 self.current_tcp_retransmits.get_down(),
                 self.current_tcp_retransmits.get_up(),
             ),
-            current_marks: (
-                self.current_marks.get_down(),
-                self.current_marks.get_up(),
-            ),
-            current_drops: (
-                self.current_drops.get_down(),
-                self.current_drops.get_up(),
-            ),
+            current_marks: (self.current_marks.get_down(), self.current_marks.get_up()),
+            current_drops: (self.current_drops.get_down(), self.current_drops.get_up()),
             rtts: self.rtts.iter().map(|n| *n as f32 / 100.0).collect(),
             parents: self.parents.clone(),
             immediate_parent: self.immediate_parent,

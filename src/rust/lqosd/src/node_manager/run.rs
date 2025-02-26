@@ -1,27 +1,30 @@
-use std::path::Path;
-use axum::Router;
-use tracing::info;
-use tokio::net::TcpListener;
-use anyhow::{bail, Result};
-use axum::response::Redirect;
-use axum::routing::{get, post};
-use tokio::sync::mpsc::Sender;
-use tower_http::services::ServeDir;
-use lqos_bus::BusRequest;
-use lqos_config::load_config;
-use crate::node_manager::{auth, static_pages::{static_routes, vendor_route}, ws::websocket_router};
 use crate::node_manager::local_api::local_api;
 use crate::node_manager::shaper_queries_actor::shaper_queries_actor;
+use crate::node_manager::{
+    auth,
+    static_pages::{static_routes, vendor_route},
+    ws::websocket_router,
+};
 use crate::system_stats::SystemStats;
+use anyhow::{Result, bail};
+use axum::Router;
+use axum::response::Redirect;
+use axum::routing::{get, post};
+use lqos_bus::BusRequest;
+use lqos_config::load_config;
+use std::path::Path;
+use tokio::net::TcpListener;
+use tokio::sync::mpsc::Sender;
+use tower_http::services::ServeDir;
+use tracing::info;
 
 /// Launches the Axum webserver to take over node manager duties.
 /// This is designed to be run as an independent Tokio future,
 /// with tokio::spawn unless you want it to block execution.
 pub async fn spawn_webserver(
     bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
-    system_usage_tx: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>
-) -> Result<()>  {
-
+    system_usage_tx: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
+) -> Result<()> {
     // Check that static content is available and set up the path
     let config = load_config()?;
     let static_path = Path::new(&config.lqos_directory)
@@ -33,7 +36,10 @@ pub async fn spawn_webserver(
     }
 
     // Listen for net connections
-    let listen_address = config.webserver_listen.clone().unwrap_or(":::9123".to_string());
+    let listen_address = config
+        .webserver_listen
+        .clone()
+        .unwrap_or(":::9123".to_string());
     let listener = TcpListener::bind(&listen_address).await?;
 
     // Setup shaper queries
@@ -44,7 +50,10 @@ pub async fn spawn_webserver(
         .route("/", get(redirect_to_index))
         .route("/doLogin", post(auth::try_login))
         .route("/firstLogin", post(auth::first_user))
-        .nest("/websocket/", websocket_router(bus_tx.clone(), system_usage_tx.clone()))
+        .nest(
+            "/websocket/",
+            websocket_router(bus_tx.clone(), system_usage_tx.clone()),
+        )
         .nest("/vendor", vendor_route()?) // Serve /vendor as purely static
         .nest("/", static_routes()?)
         .nest("/local-api", local_api(shaper_tx))

@@ -2,14 +2,14 @@
 
 mod etclqos_migration;
 
-use std::path::Path;
 use self::migration::migrate_if_needed;
 pub use self::v15::Config;
-pub use etclqos_migration::*;
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::AtomicBool;
 use arc_swap::ArcSwap;
+pub use etclqos_migration::*;
 use once_cell::sync::Lazy;
+use std::path::Path;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 use thiserror::Error;
 use tracing::{debug, error, info};
 
@@ -18,19 +18,17 @@ mod python_migration;
 #[cfg(test)]
 pub mod test_data;
 mod v15;
-pub use v15::{Tunables, BridgeConfig};
+pub use v15::{BridgeConfig, Tunables};
 
 static CONFIG_LOADED: AtomicBool = AtomicBool::new(false);
-static CONFIG: Lazy<ArcSwap<Config>> = Lazy::new(|| {
-    match load_config() {
-        Ok(config) => {
-            CONFIG_LOADED.store(true, std::sync::atomic::Ordering::SeqCst);
-            ArcSwap::new(config)
-        },
-        Err(e) => {
-            error!("Unable to load configuration: {:?}", e);
-            ArcSwap::new(Arc::new(Config::default()))
-        }
+static CONFIG: Lazy<ArcSwap<Config>> = Lazy::new(|| match load_config() {
+    Ok(config) => {
+        CONFIG_LOADED.store(true, std::sync::atomic::Ordering::SeqCst);
+        ArcSwap::new(config)
+    }
+    Err(e) => {
+        error!("Unable to load configuration: {:?}", e);
+        ArcSwap::new(Arc::new(Config::default()))
     }
 });
 
@@ -52,7 +50,7 @@ pub fn load_config() -> Result<Arc<Config>, LibreQoSConfigError> {
     } else {
         "/etc/lqos.conf".to_string()
     };
-    
+
     debug!("Loading configuration file {config_location}");
     migrate_if_needed().map_err(|e| {
         error!("Unable to migrate configuration: {:?}", e);
@@ -119,24 +117,21 @@ pub fn update_config(new_config: &Config) -> Result<(), LibreQoSConfigError> {
     let config_path = Path::new("/etc/lqos.conf");
     if config_path.exists() {
         let backup_path = Path::new("/etc/lqos.conf.webbackup");
-        std::fs::copy(config_path, backup_path)
-            .map_err(|e| {
-                error!("Unable to create backup configuration: {e:?}");
-                LibreQoSConfigError::CannotCopy
-            })?;
+        std::fs::copy(config_path, backup_path).map_err(|e| {
+            error!("Unable to create backup configuration: {e:?}");
+            LibreQoSConfigError::CannotCopy
+        })?;
     }
-    
+
     // Serialize the new one
-    let serialized = toml::to_string_pretty(new_config)
-        .map_err(|e| {
-            error!("Unable to serialize new configuration to TOML: {e:?}");
-            LibreQoSConfigError::SerializeError
-        })?;
-    std::fs::write(config_path, serialized)
-        .map_err(|e| {
-            error!("Unable to write new configuration: {e:?}");
-            LibreQoSConfigError::CannotWrite
-        })?;
+    let serialized = toml::to_string_pretty(new_config).map_err(|e| {
+        error!("Unable to serialize new configuration to TOML: {e:?}");
+        LibreQoSConfigError::SerializeError
+    })?;
+    std::fs::write(config_path, serialized).map_err(|e| {
+        error!("Unable to write new configuration: {e:?}");
+        LibreQoSConfigError::CannotWrite
+    })?;
 
     Ok(())
 }
@@ -163,7 +158,9 @@ pub fn disable_xdp_bridge() -> Result<(), LibreQoSConfigError> {
 pub enum LibreQoSConfigError {
     #[error("Unable to read /etc/lqos.conf. See other errors for details.")]
     CannotOpenEtcLqos,
-    #[error("Unable to locate (path to LibreQoS)/ispConfig.py. Check your path and that you have configured it.")]
+    #[error(
+        "Unable to locate (path to LibreQoS)/ispConfig.py. Check your path and that you have configured it."
+    )]
     FileNotFoud,
     #[error("Unable to read the contents of ispConfig.py. Check file permissions.")]
     CannotReadFile,
@@ -182,4 +179,3 @@ pub enum LibreQoSConfigError {
     #[error("Unable to serialize config")]
     SerializeError,
 }
-

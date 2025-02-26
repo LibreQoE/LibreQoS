@@ -1,8 +1,12 @@
+use crate::{
+    collector::collection_manager::DEVICE_ID_LIST,
+    submission_queue::{comm_channel::SenderChannelMessage, new_submission},
+    transport_data::{StatsSubmission, UispExtDevice},
+};
 use lqos_config::load_config;
 use lqos_utils::unix_time::unix_now;
 use tokio::sync::mpsc::Sender;
 use tracing::{info, warn};
-use crate::{submission_queue::{comm_channel::SenderChannelMessage, new_submission}, transport_data::{StatsSubmission, UispExtDevice}, collector::collection_manager::DEVICE_ID_LIST};
 
 pub(crate) async fn gather_uisp_data(comm_tx: Sender<SenderChannelMessage>) {
     info!("Gathering UISP Data for Long-Term Stats");

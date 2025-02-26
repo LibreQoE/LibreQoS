@@ -1,4 +1,8 @@
-use ratatui::{style::{Color, Style}, text::Text, widgets::{Block, Borders, Cell, Row, Table}};
+use ratatui::{
+    style::{Color, Style},
+    text::Text,
+    widgets::{Block, Borders, Cell, Row, Table},
+};
 
 /// A helper for building Ratatui tables
 pub struct TableHelper<const N_COLS: usize> {
@@ -6,14 +10,14 @@ pub struct TableHelper<const N_COLS: usize> {
     rows: Vec<[String; N_COLS]>,
 }
 
-impl <const N: usize> TableHelper<N> {
+impl<const N: usize> TableHelper<N> {
     pub fn new<S: ToString>(raw_headers: [S; N]) -> Self {
         const ARRAY_REPEAT_VALUE: String = String::new();
         let mut headers = [ARRAY_REPEAT_VALUE; N];
         for i in 0..N {
             headers[i] = raw_headers[i].to_string();
         }
-        
+
         let headers = headers.try_into().unwrap();
         Self {
             headers,
@@ -26,15 +30,18 @@ impl <const N: usize> TableHelper<N> {
     }
 
     pub fn to_table(&self) -> Table {
-        let header_cells: Vec<_> = self.headers.
-            iter()
+        let header_cells: Vec<_> = self
+            .headers
+            .iter()
             .map(|h| Cell::from(Text::from(h.clone())))
             .collect();
 
-        let rows: Vec<_> = self.rows
+        let rows: Vec<_> = self
+            .rows
             .iter()
             .map(|row| {
-                let cells = row.iter()
+                let cells = row
+                    .iter()
                     .map(|cell| Cell::from(Text::from(cell.clone())))
                     .collect::<Vec<Cell>>();
                 Row::new(cells)

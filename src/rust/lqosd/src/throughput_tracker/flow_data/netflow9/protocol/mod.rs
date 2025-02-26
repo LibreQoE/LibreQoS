@@ -31,7 +31,11 @@ pub(crate) fn to_netflow_9(
     }
 }
 
-fn ipv4_record(key: &FlowbeeKey, data: &FlowbeeLocalData, direction: usize) -> anyhow::Result<Vec<u8>> {
+fn ipv4_record(
+    key: &FlowbeeKey,
+    data: &FlowbeeLocalData,
+    direction: usize,
+) -> anyhow::Result<Vec<u8>> {
     let field_bytes = field_encoder::encode_fields_from_template(
         &template_ipv4::FIELDS_IPV4,
         direction,
@@ -65,7 +69,11 @@ fn ipv4_record(key: &FlowbeeKey, data: &FlowbeeLocalData, direction: usize) -> a
     Ok(bytes)
 }
 
-fn ipv6_record(key: &FlowbeeKey, data: &FlowbeeLocalData, direction: usize) -> anyhow::Result<Vec<u8>> {
+fn ipv6_record(
+    key: &FlowbeeKey,
+    data: &FlowbeeLocalData,
+    direction: usize,
+) -> anyhow::Result<Vec<u8>> {
     let field_bytes = field_encoder::encode_fields_from_template(
         &template_ipv6::FIELDS_IPV6,
         direction,

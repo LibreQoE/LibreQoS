@@ -16,7 +16,6 @@ fn main() -> Result<()> {
         rt.block_on(async move { bus::bus_loop(rx).await });
     });
 
-
     // Initialize the UI
     let mut ui = UiBase::new(tx)?;
     ui.event_loop()?;

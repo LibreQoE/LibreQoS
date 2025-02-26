@@ -1,7 +1,7 @@
-use std::path::Path;
-use lqos_config::load_config;
 use crate::console::{error, success};
 use crate::support_info::SupportInfo;
+use lqos_config::load_config;
+use std::path::Path;
 
 #[derive(Default)]
 pub struct ServiceConfig {

@@ -1,11 +1,11 @@
+mod auth;
+mod local_api;
 mod run;
+mod shaper_queries_actor;
 mod static_pages;
 mod template;
-mod ws;
-mod local_api;
-mod auth;
 mod warnings;
-mod shaper_queries_actor;
+mod ws;
 
 pub use run::spawn_webserver;
-pub use warnings::{add_global_warning, WarningLevel};
+pub use warnings::{WarningLevel, add_global_warning};

@@ -1,5 +1,5 @@
-use tracing::{debug, warn};
 use crate::lts2_sys::RemoteCommand;
+use tracing::{debug, warn};
 
 pub fn start_remote_commands() {
     debug!("Starting remote commands system");

@@ -1,6 +1,6 @@
-use std::process::Command;
 use crate::console::success;
 use crate::support_info::SupportInfo;
+use std::process::Command;
 
 #[derive(Debug, Default)]
 pub struct DistroName {
@@ -21,9 +21,7 @@ impl SupportInfo for DistroName {
     }
 
     fn gather(&mut self) -> anyhow::Result<()> {
-        let output = Command::new("/bin/lsb_release")
-            .arg("-a")
-            .output()?;
+        let output = Command::new("/bin/lsb_release").arg("-a").output()?;
         let out_str = String::from_utf8_lossy(output.stdout.as_slice());
         self.output = out_str.to_string();
         success("Gathered distro info");

@@ -1,10 +1,13 @@
+use crate::node_manager::local_api::lts::{
+    AsnFlowSizeWeb, FlowCountViewWeb, FullPacketData, PercentShapedWeb, RecentMedians,
+    ShaperRttHistogramEntry, ThroughputData, Top10Circuit, Worst10RttCircuit, Worst10RxmitCircuit,
+};
+use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use serde::de::DeserializeOwned;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
-use crate::node_manager::local_api::lts::{AsnFlowSizeWeb, FlowCountViewWeb, FullPacketData, PercentShapedWeb, RecentMedians, ShaperRttHistogramEntry, ThroughputData, Top10Circuit, Worst10RttCircuit, Worst10RxmitCircuit};
 
 const CACHE_DURATION: Duration = Duration::from_secs(60 * 5);
 
@@ -48,10 +51,13 @@ pub struct Caches {
 impl Caches {
     pub fn new() -> (Arc<Self>, tokio::sync::broadcast::Receiver<CacheType>) {
         let (tx, rx) = tokio::sync::broadcast::channel(32);
-        (Arc::new(Self {
-            on_update: tx,
-            cache: Mutex::new(HashMap::new()),
-        }), rx)
+        (
+            Arc::new(Self {
+                on_update: tx,
+                cache: Mutex::new(HashMap::new()),
+            }),
+            rx,
+        )
     }
 
     pub async fn cleanup(&self) {
@@ -79,7 +85,12 @@ impl Caches {
             info!("Cache miss for {} seconds: {:?}", seconds, tag);
             return None;
         };
-        info!("Cache hit for {} seconds {:?}. Length: {}", seconds, tag, data.len());
+        info!(
+            "Cache hit for {} seconds {:?}. Length: {}",
+            seconds,
+            tag,
+            data.len()
+        );
         let deserialized = serde_cbor::from_slice(&data);
         drop(cache);
         if let Err(e) = deserialized {

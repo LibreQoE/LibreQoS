@@ -1,6 +1,9 @@
 use crate::lts2_sys::shared_types::{CircuitRetransmits, IngestSession};
 
-pub(crate) fn add_circuit_retransmits(message: &mut IngestSession, queue: &mut Vec<CircuitRetransmits>) {
+pub(crate) fn add_circuit_retransmits(
+    message: &mut IngestSession,
+    queue: &mut Vec<CircuitRetransmits>,
+) {
     while let Some(msg) = queue.pop() {
         message.circuit_retransmits.push(CircuitRetransmits {
             timestamp: msg.timestamp,

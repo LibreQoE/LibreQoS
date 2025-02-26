@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 /// respect to the order of the requests.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BusReply {
-  /// A list of `BusResponse` objects generated in response to the
-  /// requests that started the session.
-  pub responses: Vec<BusResponse>,
+    /// A list of `BusResponse` objects generated in response to the
+    /// requests that started the session.
+    pub responses: Vec<BusResponse>,
 }

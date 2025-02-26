@@ -8,7 +8,6 @@ use uisp::Device;
 pub struct Ipv4ToIpv6 {
     pub ipv4: String,
     pub ipv6: String,
-
 }
 
 /// Trimmed UISP device for easy use
@@ -25,12 +24,17 @@ pub struct UispDevice {
 
 impl UispDevice {
     /// Creates a new UispDevice from a UISP device
-    /// 
+    ///
     /// # Arguments
     /// * `device` - The device to convert
     /// * `config` - The configuration
     /// * `ip_ranges` - The IP ranges to use for the network
-    pub fn from_uisp(device: &Device, config: &Config, ip_ranges: &IpRanges, ipv4_to_v6: &[Ipv4ToIpv6]) -> Self {
+    pub fn from_uisp(
+        device: &Device,
+        config: &Config,
+        ip_ranges: &IpRanges,
+        ipv4_to_v6: &[Ipv4ToIpv6],
+    ) -> Self {
         let mut ipv4 = HashSet::new();
         let mut ipv6 = HashSet::new();
         let mac = if let Some(id) = &device.identification.mac {
@@ -65,16 +69,20 @@ impl UispDevice {
                                 if address.contains('/') {
                                     let splits: Vec<_> = address.split('/').collect();
                                     ipv4.insert(format!("{}/32", splits[0]));
-                                    
+
                                     // Check for a Mikrotik Mapping
-                                    if let Some(mapping) = ipv4_to_v6.iter().find(|m| m.ipv4 == splits[0]) {
+                                    if let Some(mapping) =
+                                        ipv4_to_v6.iter().find(|m| m.ipv4 == splits[0])
+                                    {
                                         ipv6.insert(mapping.ipv6.clone());
                                     }
                                 } else {
                                     ipv4.insert(format!("{address}/32"));
 
                                     // Check for a Mikrotik Mapping
-                                    if let Some(mapping) = ipv4_to_v6.iter().find(|m| m.ipv4 == address.as_str()) {
+                                    if let Some(mapping) =
+                                        ipv4_to_v6.iter().find(|m| m.ipv4 == address.as_str())
+                                    {
                                         ipv6.insert(mapping.ipv6.clone());
                                     }
                                 }

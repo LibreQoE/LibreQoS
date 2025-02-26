@@ -24,7 +24,7 @@ struct ShapedDevice {
 }
 
 /// Writes the ShapedDevices.csv file for UISP
-/// 
+///
 /// # Arguments
 /// * `config` - The configuration
 /// * `sites` - The list of sites

@@ -1,8 +1,8 @@
+use crate::tracking::TrackedQueue;
+use lqos_utils::units::{AtomicDownUp, DownUpOrder};
+use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::Mutex;
-use once_cell::sync::Lazy;
-use lqos_utils::units::{AtomicDownUp, DownUpOrder};
-use crate::tracking::TrackedQueue;
 
 /// Holds all of the CAKE queue summaries being tracked by the system.
 pub static ALL_QUEUE_SUMMARY: Lazy<AllQueueData> = Lazy::new(|| AllQueueData::new());
@@ -45,7 +45,9 @@ pub struct AllQueueData {
 
 impl AllQueueData {
     pub fn new() -> Self {
-        Self { data: Mutex::new(HashMap::new()) }
+        Self {
+            data: Mutex::new(HashMap::new()),
+        }
     }
 
     pub fn clear(&self) {
@@ -134,8 +136,7 @@ impl AllQueueData {
         let mut drops = DownUpOrder::zeroed();
         let mut marks = DownUpOrder::zeroed();
 
-        lock
-            .iter()
+        lock.iter()
             .filter(|(_, q)| q.prev_drops.is_some() && q.prev_marks.is_some())
             .for_each(|(_, q)| {
                 drops += q.drops.checked_sub_or_zero(q.prev_drops.unwrap());

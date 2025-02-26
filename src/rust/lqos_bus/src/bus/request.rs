@@ -7,263 +7,263 @@ use serde::{Deserialize, Serialize};
 /// or data.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum BusRequest {
-  /// A generic "is it alive?" test. Returns an `Ack`.
-  Ping,
+    /// A generic "is it alive?" test. Returns an `Ack`.
+    Ping,
 
-  /// Request total current throughput. Returns a
-  /// `BusResponse::CurrentThroughput` value.
-  GetCurrentThroughput,
+    /// Request total current throughput. Returns a
+    /// `BusResponse::CurrentThroughput` value.
+    GetCurrentThroughput,
 
-  /// Retrieve the top N downloads by bandwidth use.
-  GetTopNDownloaders {
-    /// First row to retrieve (usually 0 unless you are paging)
-    start: u32,
-    /// Last row to retrieve (10 for top-10 starting at 0)
-    end: u32,
-  },
+    /// Retrieve the top N downloads by bandwidth use.
+    GetTopNDownloaders {
+        /// First row to retrieve (usually 0 unless you are paging)
+        start: u32,
+        /// Last row to retrieve (10 for top-10 starting at 0)
+        end: u32,
+    },
 
-  /// Retrieves the TopN hosts with the worst RTT, sorted by RTT descending.
-  GetWorstRtt {
-    /// First row to retrieve (usually 0 unless you are paging)
-    start: u32,
-    /// Last row to retrieve (10 for top-10 starting at 0)
-    end: u32,
-  },
+    /// Retrieves the TopN hosts with the worst RTT, sorted by RTT descending.
+    GetWorstRtt {
+        /// First row to retrieve (usually 0 unless you are paging)
+        start: u32,
+        /// Last row to retrieve (10 for top-10 starting at 0)
+        end: u32,
+    },
 
-  /// Retrieves the TopN hosts with the worst Retransmits, sorted by Retransmits descending.
-  GetWorstRetransmits {
-    /// First row to retrieve (usually 0 unless you are paging)
-    start: u32,
-    /// Last row to retrieve (10 for top-10 starting at 0)
-    end: u32,
-  },
+    /// Retrieves the TopN hosts with the worst Retransmits, sorted by Retransmits descending.
+    GetWorstRetransmits {
+        /// First row to retrieve (usually 0 unless you are paging)
+        start: u32,
+        /// Last row to retrieve (10 for top-10 starting at 0)
+        end: u32,
+    },
 
-  /// Retrieves the TopN hosts with the best RTT, sorted by RTT descending.
-  GetBestRtt {
-    /// First row to retrieve (usually 0 unless you are paging)
-    start: u32,
-    /// Last row to retrieve (10 for top-10 starting at 0)
-    end: u32,
-  },
+    /// Retrieves the TopN hosts with the best RTT, sorted by RTT descending.
+    GetBestRtt {
+        /// First row to retrieve (usually 0 unless you are paging)
+        start: u32,
+        /// Last row to retrieve (10 for top-10 starting at 0)
+        end: u32,
+    },
 
-  /// Retrieves current byte counters for all hosts.
-  GetHostCounter,
+    /// Retrieves current byte counters for all hosts.
+    GetHostCounter,
 
-  /// Requests that the XDP back-end associate an IP address with a
-  /// TC (traffic control) handle, and CPU. The "upload" flag indicates
-  /// that this is a second channel applied to the SAME network interface,
-  /// used for "on-a-stick" mode upload channels.
-  MapIpToFlow {
-    /// The IP address to map, as a string. It can be IPv4 or IPv6,
-    /// and supports CIDR notation for subnets. "192.168.1.1",
-    /// "192.168.1.0/24", are both valid.
-    ip_address: String,
+    /// Requests that the XDP back-end associate an IP address with a
+    /// TC (traffic control) handle, and CPU. The "upload" flag indicates
+    /// that this is a second channel applied to the SAME network interface,
+    /// used for "on-a-stick" mode upload channels.
+    MapIpToFlow {
+        /// The IP address to map, as a string. It can be IPv4 or IPv6,
+        /// and supports CIDR notation for subnets. "192.168.1.1",
+        /// "192.168.1.0/24", are both valid.
+        ip_address: String,
 
-    /// The TC Handle to which the IP address should be mapped.
-    tc_handle: TcHandle,
+        /// The TC Handle to which the IP address should be mapped.
+        tc_handle: TcHandle,
 
-    /// The CPU on which the TC handle should be shaped.
-    cpu: u32,
+        /// The CPU on which the TC handle should be shaped.
+        cpu: u32,
 
-    /// If true, this is a *second* flow for the same IP range on
-    /// the same NIC. Used for handling "on a stick" configurations.
-    upload: bool,
-  },
+        /// If true, this is a *second* flow for the same IP range on
+        /// the same NIC. Used for handling "on a stick" configurations.
+        upload: bool,
+    },
 
-  /// After a batch of `MapIpToFlow` requests, this command will
-  /// clear the hot cache, forcing the XDP program to re-read the
-  /// mapping table.
-  ClearHotCache,
+    /// After a batch of `MapIpToFlow` requests, this command will
+    /// clear the hot cache, forcing the XDP program to re-read the
+    /// mapping table.
+    ClearHotCache,
 
-  /// Requests that the XDP program unmap an IP address/subnet from
-  /// the traffic management system.
-  DelIpFlow {
-    /// The IP address to unmap. It can be an IPv4, IPv6 or CIDR
-    /// subnet.
-    ip_address: String,
+    /// Requests that the XDP program unmap an IP address/subnet from
+    /// the traffic management system.
+    DelIpFlow {
+        /// The IP address to unmap. It can be an IPv4, IPv6 or CIDR
+        /// subnet.
+        ip_address: String,
 
-    /// Should we delete a secondary mapping (for upload)?
-    upload: bool,
-  },
+        /// Should we delete a secondary mapping (for upload)?
+        upload: bool,
+    },
 
-  /// Clear all XDP IP/TC/CPU mappings.
-  ClearIpFlow,
+    /// Clear all XDP IP/TC/CPU mappings.
+    ClearIpFlow,
 
-  /// Retreieve list of all current IP/TC/CPU mappings.
-  ListIpFlow,
+    /// Retreieve list of all current IP/TC/CPU mappings.
+    ListIpFlow,
 
-  /// Simulate the previous version's `xdp_pping` command, returning
-  /// RTT data for all mapped flows by TC handle.
-  XdpPping,
+    /// Simulate the previous version's `xdp_pping` command, returning
+    /// RTT data for all mapped flows by TC handle.
+    XdpPping,
 
-  /// Divide current RTT data into histograms and return the data for
-  /// rendering.
-  RttHistogram,
+    /// Divide current RTT data into histograms and return the data for
+    /// rendering.
+    RttHistogram,
 
-  /// Cound the number of mapped and unmapped hosts detected by the
-  /// system.
-  HostCounts,
+    /// Cound the number of mapped and unmapped hosts detected by the
+    /// system.
+    HostCounts,
 
-  /// Retrieve a list of all unmapped IPs that have been detected
-  /// carrying traffic.
-  AllUnknownIps,
+    /// Retrieve a list of all unmapped IPs that have been detected
+    /// carrying traffic.
+    AllUnknownIps,
 
-  /// Reload the `LibreQoS.py` program and return details of the
-  /// reload run.
-  ReloadLibreQoS,
+    /// Reload the `LibreQoS.py` program and return details of the
+    /// reload run.
+    ReloadLibreQoS,
 
-  /// Retrieve raw queue data for a given circuit ID.
-  GetRawQueueData(String), // The string is the circuit ID
+    /// Retrieve raw queue data for a given circuit ID.
+    GetRawQueueData(String), // The string is the circuit ID
 
-  /// Requests a real-time adjustment of the `lqosd` tuning settings
-  UpdateLqosDTuning(u64, Tunables),
+    /// Requests a real-time adjustment of the `lqosd` tuning settings
+    UpdateLqosDTuning(u64, Tunables),
 
-  /// Requests that the configuration be updated
-  UpdateLqosdConfig(Box<lqos_config::Config>),
+    /// Requests that the configuration be updated
+    UpdateLqosdConfig(Box<lqos_config::Config>),
 
-  /// Request that we start watching a circuit's queue
-  WatchQueue(String),
+    /// Request that we start watching a circuit's queue
+    WatchQueue(String),
 
-  /// Request that the Rust side of things validate the CSV
-  ValidateShapedDevicesCsv,
+    /// Request that the Rust side of things validate the CSV
+    ValidateShapedDevicesCsv,
 
-  /// Request details of part of the network tree
-  GetNetworkMap {
-    /// The parent of the map to retrieve
-    parent: usize,
-  },
-  
-  /// Request the full network tree
-  GetFullNetworkMap,
+    /// Request details of part of the network tree
+    GetNetworkMap {
+        /// The parent of the map to retrieve
+        parent: usize,
+    },
 
-  /// Retrieves the top N queues from the root level, and summarizes
-  /// the others as "other"
-  TopMapQueues(usize),
+    /// Request the full network tree
+    GetFullNetworkMap,
 
-  /// Retrieve node names from network.json
-  GetNodeNamesFromIds(Vec<usize>),
-  
-  /// Get all circuits and usage statistics
-  GetAllCircuits,
+    /// Retrieves the top N queues from the root level, and summarizes
+    /// the others as "other"
+    TopMapQueues(usize),
 
-  /// Retrieve stats for all queues above a named circuit id
-  GetFunnel {
-    /// Circuit being analyzed, as the named circuit id
-    target: String,
-  },
+    /// Retrieve node names from network.json
+    GetNodeNamesFromIds(Vec<usize>),
 
-  /// Obtain the lqosd statistics
-  GetLqosStats,
+    /// Get all circuits and usage statistics
+    GetAllCircuits,
 
-  /// Tell Heimdall to hyper-focus on an IP address for a bit
-  GatherPacketData(String),
+    /// Retrieve stats for all queues above a named circuit id
+    GetFunnel {
+        /// Circuit being analyzed, as the named circuit id
+        target: String,
+    },
 
-  /// Give me a dump of the last 10 seconds of packet headers
-  GetPacketHeaderDump(usize),
+    /// Obtain the lqosd statistics
+    GetLqosStats,
 
-  /// Give me a libpcap format packet dump (shortened) of the last 10 seconds
-  GetPcapDump(usize),
+    /// Tell Heimdall to hyper-focus on an IP address for a bit
+    GatherPacketData(String),
 
-  /// Request data from the long-term stats system
-  GetLongTermStats(StatsRequest),
+    /// Give me a dump of the last 10 seconds of packet headers
+    GetPacketHeaderDump(usize),
 
-  /// If running on Equinix (the `equinix_test` feature is enabled),
-  /// display a "run bandwidht test" link.
-  #[cfg(feature = "equinix_tests")]
-  RequestLqosEquinixTest,
+    /// Give me a libpcap format packet dump (shortened) of the last 10 seconds
+    GetPcapDump(usize),
 
-  /// Request a dump of all active flows. This can be a lot of data.
-  /// so this is intended for debugging
-  DumpActiveFlows,
+    /// Request data from the long-term stats system
+    GetLongTermStats(StatsRequest),
 
-  /// Count the nubmer of active flows.
-  CountActiveFlows,
+    /// If running on Equinix (the `equinix_test` feature is enabled),
+    /// display a "run bandwidht test" link.
+    #[cfg(feature = "equinix_tests")]
+    RequestLqosEquinixTest,
 
-  /// Top Flows Reports
-  TopFlows{ 
-    /// The type of top report to request
-    flow_type: TopFlowType,
-    /// The number of flows to return
-    n: u32 
-  },
+    /// Request a dump of all active flows. This can be a lot of data.
+    /// so this is intended for debugging
+    DumpActiveFlows,
 
-  /// Flows by IP Address
-  FlowsByIp(String),
+    /// Count the nubmer of active flows.
+    CountActiveFlows,
 
-  /// Current Endpoints by Country
-  CurrentEndpointsByCountry,
+    /// Top Flows Reports
+    TopFlows {
+        /// The type of top report to request
+        flow_type: TopFlowType,
+        /// The number of flows to return
+        n: u32,
+    },
 
-  /// Lat/Lon of Endpoints
-  CurrentEndpointLatLon,
+    /// Flows by IP Address
+    FlowsByIp(String),
 
-  /// Duration of flows
-  FlowDuration,
+    /// Current Endpoints by Country
+    CurrentEndpointsByCountry,
 
-  /// Ether Protocol Summary
-  EtherProtocolSummary,
+    /// Lat/Lon of Endpoints
+    CurrentEndpointLatLon,
 
-  /// IP Protocol Summary
-  IpProtocolSummary,
+    /// Duration of flows
+    FlowDuration,
 
-  /// Submit a piece of information to the blackboard
-  BlackboardData {
-    /// The subsystem to which the data applies
-    subsystem: BlackboardSystem,
-    /// The key for the data
-    key: String,
-    /// The value for the data
-    value: String,
-  },
+    /// Ether Protocol Summary
+    EtherProtocolSummary,
 
-  /// Submit binary data to the blackboard
-  BlackboardBlob {
-    /// The subsystem to which the data applies
-    tag: String,
-    /// The part of the data being submitted
-    part: usize,
-    /// The binary data
-    blob: Vec<u8>,
-  },
+    /// IP Protocol Summary
+    IpProtocolSummary,
 
-  /// Finish a blackboard session
-  BlackboardFinish,
+    /// Submit a piece of information to the blackboard
+    BlackboardData {
+        /// The subsystem to which the data applies
+        subsystem: BlackboardSystem,
+        /// The key for the data
+        key: String,
+        /// The value for the data
+        value: String,
+    },
+
+    /// Submit binary data to the blackboard
+    BlackboardBlob {
+        /// The subsystem to which the data applies
+        tag: String,
+        /// The part of the data being submitted
+        part: usize,
+        /// The binary data
+        blob: Vec<u8>,
+    },
+
+    /// Finish a blackboard session
+    BlackboardFinish,
 }
 
 /// Defines the parts of the blackboard
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy)]
 pub enum BlackboardSystem {
-  /// The system as a whole
-  System,
-  /// A specific site
-  Site,
-  /// A specific circuit
-  Circuit,
-  /// A specific device
-  Device,
+    /// The system as a whole
+    System,
+    /// A specific site
+    Site,
+    /// A specific circuit
+    Circuit,
+    /// A specific device
+    Device,
 }
 
 /// Defines the type of "top" flow being requested
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy)]
 pub enum TopFlowType {
-  /// Top flows by current estimated bandwidth use
-  RateEstimate,
-  /// Top flows by total bytes transferred
-  Bytes,
-  /// Top flows by total packets transferred
-  Packets,
-  /// Top flows by total drops
-  Drops,
-  /// Top flows by round-trip time estimate
-  RoundTripTime,
+    /// Top flows by current estimated bandwidth use
+    RateEstimate,
+    /// Top flows by total bytes transferred
+    Bytes,
+    /// Top flows by total packets transferred
+    Packets,
+    /// Top flows by total drops
+    Drops,
+    /// Top flows by round-trip time estimate
+    RoundTripTime,
 }
 
 /// Specific requests from the long-term stats system
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum StatsRequest {
-  /// Retrieve the current totals for all hosts
-  CurrentTotals,
-  /// Retrieve the values for all hosts
-  AllHosts,
-  /// Get the network tree
-  Tree,
+    /// Retrieve the current totals for all hosts
+    CurrentTotals,
+    /// Retrieve the values for all hosts
+    AllHosts,
+    /// Get the network tree
+    Tree,
 }

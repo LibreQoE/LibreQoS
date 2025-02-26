@@ -1,10 +1,9 @@
 //! Obtain ASN and geo mappings from IP addresses for flow
 //! analysis.
 
-
-use std::{io::Read, net::IpAddr, path::Path};
 use fxhash::FxHashMap;
 use serde::Deserialize;
+use std::{io::Read, net::IpAddr, path::Path};
 use tracing::{debug, info};
 
 #[derive(Deserialize, Clone, Debug)]
@@ -34,7 +33,6 @@ impl GeoIpLocation {
             .trim()
             .to_string()
     }
-
 }
 
 #[derive(Deserialize)]
@@ -53,12 +51,16 @@ impl GeoTable {
     const FILENAME: &'static str = "geo2.bin";
 
     pub fn len(&self) -> (usize, usize, usize, usize) {
-        (self.asn_trie.len().1, self.geo_trie.len().1, self.asn_lookup.len(), self.asn_lookup.capacity())
+        (
+            self.asn_trie.len().1,
+            self.geo_trie.len().1,
+            self.asn_lookup.len(),
+            self.asn_lookup.capacity(),
+        )
     }
 
     fn file_path() -> std::path::PathBuf {
-        Path::new(&lqos_config::load_config().unwrap().lqos_directory)
-            .join(Self::FILENAME)
+        Path::new(&lqos_config::load_config().unwrap().lqos_directory).join(Self::FILENAME)
     }
 
     fn download() -> anyhow::Result<()> {
@@ -74,13 +76,14 @@ impl GeoTable {
     }
 
     fn is_file_uptodate() -> anyhow::Result<bool> {
-        let bytes = std::fs::read(&Self::file_path())?;  // Vec<u8>
+        let bytes = std::fs::read(&Self::file_path())?; // Vec<u8>
         let hash = sha256::digest(&bytes);
 
         // Using blocking reqwest, retrieve the checksum as a string from https://insight.libreqos.com/geo/checksum
-        let checksum = reqwest::blocking::get("https://insight.libreqos.com/geo/checksum")?.text()?;
+        let checksum =
+            reqwest::blocking::get("https://insight.libreqos.com/geo/checksum")?.text()?;
         if checksum == hash {
-            return Ok(true)
+            return Ok(true);
         }
 
         Ok(false)
@@ -112,7 +115,7 @@ impl GeoTable {
         for entry in geobin.asn {
             asn_lookup.insert(entry.asn, entry.organization.clone());
             let (ip, prefix) = match entry.network {
-                IpAddr::V4(ip) => (ip.to_ipv6_mapped(), entry.prefix+96 ),
+                IpAddr::V4(ip) => (ip.to_ipv6_mapped(), entry.prefix + 96),
                 IpAddr::V6(ip) => (ip, entry.prefix),
             };
             if let Ok(ip) = ip_network::Ipv6Network::new(ip, prefix) {
@@ -125,7 +128,7 @@ impl GeoTable {
         let mut geo_trie = ip_network_table::IpNetworkTable::<GeoIpLocation>::new();
         for entry in geobin.geo {
             let (ip, prefix) = match entry.network {
-                IpAddr::V4(ip) => (ip.to_ipv6_mapped(), entry.prefix+96 ),
+                IpAddr::V4(ip) => (ip.to_ipv6_mapped(), entry.prefix + 96),
                 IpAddr::V6(ip) => (ip, entry.prefix),
             };
             if let Ok(ip) = ip_network::Ipv6Network::new(ip, prefix) {
@@ -133,7 +136,11 @@ impl GeoTable {
             }
         }
 
-        debug!("GeoTables loaded, {}-{} records.", asn_trie.len().1, geo_trie.len().1);
+        debug!(
+            "GeoTables loaded, {}-{} records.",
+            asn_trie.len().1,
+            geo_trie.len().1
+        );
 
         Ok(Self {
             asn_trie,
@@ -157,7 +164,7 @@ impl GeoTable {
         }
     }
 
-    pub fn find_owners_by_ip(&self, ip: IpAddr) -> AsnNameCountryFlag{
+    pub fn find_owners_by_ip(&self, ip: IpAddr) -> AsnNameCountryFlag {
         debug!("Looking up ASN for IP: {:?}", ip);
         let ip = match ip {
             IpAddr::V4(ip) => ip.to_ipv6_mapped(),
@@ -200,7 +207,10 @@ impl GeoTable {
     }
 
     pub fn find_name_by_id(&self, id: u32) -> String {
-        self.asn_lookup.get(&id).cloned().unwrap_or_else(|| "Unknown".to_string())
+        self.asn_lookup
+            .get(&id)
+            .cloned()
+            .unwrap_or_else(|| "Unknown".to_string())
     }
 }
 

@@ -1,14 +1,14 @@
-/// Provides support for migration from older versions of the configuration file.
-use std::path::Path;
 use super::{
+    EtcLqos, EtcLqosError,
     python_migration::{PythonMigration, PythonMigrationError},
     v15::{BridgeConfig, Config, SingleInterfaceConfig},
-    EtcLqosError, EtcLqos,
 };
+use crate::etc::v15::influxdb::InfluxDbConfig;
+/// Provides support for migration from older versions of the configuration file.
+use std::path::Path;
 use thiserror::Error;
 use toml_edit::DocumentMut;
 use tracing::{debug, error, info};
-use crate::etc::v15::influxdb::InfluxDbConfig;
 
 #[derive(Debug, Error)]
 pub enum MigrationError {
@@ -33,12 +33,18 @@ pub fn migrate_if_needed() -> Result<(), MigrationError> {
         .parse::<DocumentMut>()
         .map_err(|e| MigrationError::ParseError(e))?;
     if let Some((_key, version)) = doc.get_key_value("version") {
-        debug!("Configuration file is at version {}", version.as_str().unwrap());
+        debug!(
+            "Configuration file is at version {}",
+            version.as_str().unwrap()
+        );
         if version.as_str().unwrap().trim() == "1.5" {
             debug!("Configuration file is already at version 1.5, no migration needed");
             return Ok(());
         } else {
-            error!("Configuration file is at version {}, but this version of lqos only supports version 1.5", version.as_str().unwrap());
+            error!(
+                "Configuration file is at version {}, but this version of lqos only supports version 1.5",
+                version.as_str().unwrap()
+            );
             return Err(MigrationError::UnknownVersion(
                 version.as_str().unwrap().to_string(),
             ));
@@ -90,7 +96,7 @@ fn do_migration_14_to_15(
     migrate_uisp(python_config, &mut new_config)?;
     migrate_powercode(python_config, &mut new_config)?;
     migrate_sonar(python_config, &mut new_config)?;
-    migrate_queues( python_config, &mut new_config)?;
+    migrate_queues(python_config, &mut new_config)?;
     migrate_influx(python_config, &mut new_config)?;
 
     new_config.validate().unwrap(); // Left as an upwrap because this should *never* happen
@@ -172,7 +178,8 @@ fn migrate_queues(
 ) -> Result<(), MigrationError> {
     new_config.queues.default_sqm = python_config.sqm.clone();
     new_config.queues.monitor_only = python_config.monitor_only_mode;
-    new_config.queues.uplink_bandwidth_mbps = python_config.upstream_bandwidth_capacity_upload_mbps as u32;
+    new_config.queues.uplink_bandwidth_mbps =
+        python_config.upstream_bandwidth_capacity_upload_mbps as u32;
     new_config.queues.downlink_bandwidth_mbps =
         python_config.upstream_bandwidth_capacity_download_mbps as u32;
     new_config.queues.generated_pn_upload_mbps = python_config.generated_pnupload_mbps as u32;
@@ -182,7 +189,8 @@ fn migrate_queues(
     if python_config.queues_available_override == 0 {
         new_config.queues.override_available_queues = None;
     } else {
-        new_config.queues.override_available_queues = Some(python_config.queues_available_override as u32);
+        new_config.queues.override_available_queues =
+            Some(python_config.queues_available_override as u32);
     }
     new_config.queues.use_binpacking = python_config.use_bin_packing_to_balance_cpu;
     Ok(())
@@ -268,7 +276,8 @@ fn migrate_uisp(
     new_config.uisp_integration.ltu_capacity = python_config.ltu_capacity as f32;
     new_config.uisp_integration.exclude_sites = python_config.exclude_sites.clone();
     new_config.uisp_integration.ipv6_with_mikrotik = python_config.find_ipv6using_mikrotik_api;
-    new_config.uisp_integration.bandwidth_overhead_factor = python_config.bandwidth_overhead_factor as f32;
+    new_config.uisp_integration.bandwidth_overhead_factor =
+        python_config.bandwidth_overhead_factor as f32;
     new_config.uisp_integration.commit_bandwidth_multiplier =
         python_config.committed_bandwidth_multiplier as f32;
     // TODO: ExceptionCPEs is going to require some real work

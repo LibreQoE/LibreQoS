@@ -1,8 +1,8 @@
-use std::sync::{mpsc, OnceLock};
-use anyhow::{bail, Result};
-use tokio::sync::oneshot;
 use crate::lts2_sys::lts2_client::ingestor;
 use crate::lts2_sys::shared_types::FreeTrialDetails;
+use anyhow::{Result, bail};
+use std::sync::{OnceLock, mpsc};
+use tokio::sync::oneshot;
 
 /// Commands that can be sent to the LTS client.
 pub(crate) enum LtsClientCommand {

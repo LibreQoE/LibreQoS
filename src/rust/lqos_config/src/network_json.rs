@@ -1,17 +1,18 @@
 mod network_json_node;
 mod network_json_transport;
 
-use tracing::{debug, error, warn};
-use serde_json::{Map, Value};
-use std::{
-    fs, path::{Path, PathBuf},
-};
-use std::collections::HashSet;
 use allocative_derive::Allocative;
-use thiserror::Error;
 use lqos_utils::units::DownUpOrder;
 pub use network_json_node::NetworkJsonNode;
 pub use network_json_transport::NetworkJsonTransport;
+use serde_json::{Map, Value};
+use std::collections::HashSet;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+use thiserror::Error;
+use tracing::{debug, error, warn};
 
 /// Holder for the network.json representation.
 /// This is condensed into a single level vector with index-based referencing
@@ -44,8 +45,7 @@ impl NetworkJson {
     /// by acquiring the prefix from the `/etc/lqos.conf` configuration
     /// file.
     pub fn path() -> Result<PathBuf, NetworkJsonError> {
-        let cfg =
-            crate::load_config().map_err(|_| NetworkJsonError::ConfigLoadError)?;
+        let cfg = crate::load_config().map_err(|_| NetworkJsonError::ConfigLoadError)?;
         let base_path = Path::new(&cfg.lqos_directory);
         Ok(base_path.join("network.json"))
     }
@@ -81,10 +81,9 @@ impl NetworkJson {
             return Err(NetworkJsonError::FileNotFound);
         }
         let path = Self::path()?;
-        let raw = fs::read_to_string(path)
-            .map_err(|_| NetworkJsonError::ConfigLoadError)?;
-        let json: Value = serde_json::from_str(&raw)
-            .map_err(|_| NetworkJsonError::ConfigLoadError)?;
+        let raw = fs::read_to_string(path).map_err(|_| NetworkJsonError::ConfigLoadError)?;
+        let json: Value =
+            serde_json::from_str(&raw).map_err(|_| NetworkJsonError::ConfigLoadError)?;
 
         // Start reading from the top. We are at the root node.
         let parents = vec![0];
@@ -106,21 +105,14 @@ impl NetworkJson {
 
     /// Retrieve a cloned copy of a NetworkJsonNode entry, or None if there isn't
     /// an entry at that index.
-    pub fn get_cloned_entry_by_index(
-        &self,
-        index: usize,
-    ) -> Option<NetworkJsonTransport> {
+    pub fn get_cloned_entry_by_index(&self, index: usize) -> Option<NetworkJsonTransport> {
         self.nodes.get(index).map(|n| n.clone_to_transit())
     }
 
     /// Retrieve a cloned copy of all children with a parent containing a specific
     /// node index.
-    pub fn get_cloned_children(
-        &self,
-        index: usize,
-    ) -> Vec<(usize, NetworkJsonTransport)> {
-        self
-            .nodes
+    pub fn get_cloned_children(&self, index: usize) -> Vec<(usize, NetworkJsonTransport)> {
+        self.nodes
             .iter()
             .enumerate()
             .filter(|(_i, n)| n.immediate_parent == Some(index))
@@ -130,13 +122,9 @@ impl NetworkJson {
 
     /// Find a circuit_id, and if it exists return its list of parent nodes
     /// as indices within the network_json layout.
-    pub fn get_parents_for_circuit_id(
-        &self,
-        circuit_id: &str,
-    ) -> Option<Vec<usize>> {
+    pub fn get_parents_for_circuit_id(&self, circuit_id: &str) -> Option<Vec<usize>> {
         //println!("Looking for parents of {circuit_id}");
-        self
-            .nodes
+        self.nodes
             .iter()
             .find(|n| n.name == circuit_id)
             .map(|node| node.parents.clone())
@@ -218,7 +206,12 @@ impl NetworkJson {
     }
 
     /// Adds a series of CAKE marks and drops to the tree structure.
-    pub fn add_queue_cycle(&mut self, targets: &[usize], marks: &DownUpOrder<u64>, drops: &DownUpOrder<u64>) {
+    pub fn add_queue_cycle(
+        &mut self,
+        targets: &[usize],
+        marks: &DownUpOrder<u64>,
+        drops: &DownUpOrder<u64>,
+    ) {
         for idx in targets {
             // Safety first; use "get" to ensure that the node exists
             if let Some(node) = self.nodes.get_mut(*idx) {

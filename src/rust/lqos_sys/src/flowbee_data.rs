@@ -2,8 +2,8 @@
 
 use allocative_derive::Allocative;
 use lqos_utils::XdpIpAddress;
-use zerocopy::FromBytes;
 use lqos_utils::units::DownUpOrder;
+use zerocopy::FromBytes;
 
 /// Representation of the eBPF `flow_key_t` type.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, FromBytes, Allocative)]

@@ -1,12 +1,15 @@
 #![allow(dead_code)]
 use std::{
-    ffi::{c_void, CString},
+    ffi::{CString, c_void},
     marker::PhantomData,
     ptr::null_mut,
 };
 
 use anyhow::{Error, Result};
-use libbpf_sys::{bpf_map_delete_elem, bpf_map_get_next_key, bpf_map_lookup_elem, bpf_map_update_elem, BPF_NOEXIST, bpf_obj_get};
+use libbpf_sys::{
+    BPF_NOEXIST, bpf_map_delete_elem, bpf_map_get_next_key, bpf_map_lookup_elem,
+    bpf_map_update_elem, bpf_obj_get,
+};
 
 use crate::lqos_kernel::bpf::bpf_map_delete_batch;
 
@@ -35,7 +38,11 @@ where
         if fd < 0 {
             Err(Error::msg("Unable to open BPF map"))
         } else {
-            Ok(Self { fd, _key_phantom: PhantomData, _val_phantom: PhantomData })
+            Ok(Self {
+                fd,
+                _key_phantom: PhantomData,
+                _val_phantom: PhantomData,
+            })
         }
     }
 
@@ -53,17 +60,10 @@ where
         let value_ptr: *mut V = &mut value;
 
         unsafe {
-            while bpf_map_get_next_key(
-                self.fd,
-                prev_key as *mut c_void,
-                key_ptr as *mut c_void,
-            ) == 0
+            while bpf_map_get_next_key(self.fd, prev_key as *mut c_void, key_ptr as *mut c_void)
+                == 0
             {
-                bpf_map_lookup_elem(
-                    self.fd,
-                    key_ptr as *mut c_void,
-                    value_ptr as *mut c_void,
-                );
+                bpf_map_lookup_elem(self.fd, key_ptr as *mut c_void, value_ptr as *mut c_void);
                 result.push((key.clone(), value.clone()));
                 prev_key = key_ptr;
             }
@@ -118,12 +118,7 @@ where
         let key_ptr: *mut K = key;
         let val_ptr: *mut V = value;
         let err = unsafe {
-            bpf_map_update_elem(
-                self.fd,
-                key_ptr as *mut c_void,
-                val_ptr as *mut c_void,
-                0,
-            )
+            bpf_map_update_elem(self.fd, key_ptr as *mut c_void, val_ptr as *mut c_void, 0)
         };
         if err != 0 {
             Err(Error::msg(format!("Unable to insert into map ({err})")))
@@ -167,11 +162,8 @@ where
             let mut prev_key: *mut K = null_mut();
             unsafe {
                 let key_ptr: *mut K = &mut key;
-                while bpf_map_get_next_key(
-                    self.fd,
-                    prev_key as *mut c_void,
-                    key_ptr as *mut c_void,
-                ) == 0
+                while bpf_map_get_next_key(self.fd, prev_key as *mut c_void, key_ptr as *mut c_void)
+                    == 0
                 {
                     bpf_map_delete_elem(self.fd, key_ptr as *mut c_void);
                     prev_key = key_ptr;
@@ -182,11 +174,8 @@ where
             prev_key = null_mut();
             unsafe {
                 let key_ptr: *mut K = &mut key;
-                if bpf_map_get_next_key(
-                    self.fd,
-                    prev_key as *mut c_void,
-                    key_ptr as *mut c_void,
-                ) != 0
+                if bpf_map_get_next_key(self.fd, prev_key as *mut c_void, key_ptr as *mut c_void)
+                    != 0
                 {
                     break;
                 }
@@ -208,11 +197,8 @@ where
         let mut prev_key: *mut K = null_mut();
         unsafe {
             let key_ptr: *mut K = &mut key;
-            while bpf_map_get_next_key(
-                self.fd,
-                prev_key as *mut c_void,
-                key_ptr as *mut c_void,
-            ) == 0
+            while bpf_map_get_next_key(self.fd, prev_key as *mut c_void, key_ptr as *mut c_void)
+                == 0
             {
                 bpf_map_delete_elem(self.fd, key_ptr as *mut c_void);
                 prev_key = key_ptr;
@@ -224,13 +210,16 @@ where
     /// Clears an eBPF map using `bpf_map_delete_batch`, which
     /// has better locking semantics than per-row.
     pub fn clear_bulk(&mut self) -> Result<()> {
-        let mut keys: Vec<K> = self.dump_vec().iter().map(|(k, _)| {
-            k.clone()
-        }).collect();
+        let mut keys: Vec<K> = self.dump_vec().iter().map(|(k, _)| k.clone()).collect();
         let mut count = keys.len() as u32;
         loop {
             let ret = unsafe {
-                bpf_map_delete_batch(self.fd, keys.as_mut_ptr() as *mut c_void, &mut count, null_mut())
+                bpf_map_delete_batch(
+                    self.fd,
+                    keys.as_mut_ptr() as *mut c_void,
+                    &mut count,
+                    null_mut(),
+                )
             };
             if ret != 0 || count == 0 {
                 break;
@@ -244,7 +233,12 @@ where
         let mut count = keys.len() as u32;
         loop {
             let ret = unsafe {
-                bpf_map_delete_batch(self.fd, keys.as_mut_ptr() as *mut c_void, &mut count, null_mut())
+                bpf_map_delete_batch(
+                    self.fd,
+                    keys.as_mut_ptr() as *mut c_void,
+                    &mut count,
+                    null_mut(),
+                )
             };
             if ret != 0 || count == 0 {
                 break;

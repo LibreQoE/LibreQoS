@@ -1,7 +1,7 @@
-use std::net::IpAddr;
 use crate::TcHandle;
-use serde::{Deserialize, Serialize};
 use lqos_utils::units::DownUpOrder;
+use serde::{Deserialize, Serialize};
+use std::net::IpAddr;
 
 /// Transmission representation of IP statistics associated
 /// with a host.

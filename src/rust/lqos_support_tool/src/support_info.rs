@@ -1,17 +1,17 @@
+use crate::console::error;
+use crate::sanity_checks::{SanityChecks, run_sanity_checks};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
-use crate::console::error;
-use crate::sanity_checks::{run_sanity_checks, SanityChecks};
 
-mod ip_link;
-mod systemctl_services;
-mod systemctl_service_single;
-mod lqos_config;
-mod task_journal;
-mod service_config;
-mod ip_addr;
-mod kernel_info;
 mod distro_name;
+mod ip_addr;
+mod ip_link;
+mod kernel_info;
+mod lqos_config;
+mod service_config;
+mod systemctl_service_single;
+mod systemctl_services;
+mod task_journal;
 
 pub trait SupportInfo {
     fn get_string(&self) -> String;
@@ -26,7 +26,7 @@ pub struct SupportDump {
     pub comment: String,
     pub lts_key: String,
     pub sanity_checks: SanityChecks,
-    pub entries: Vec<DumpEntry>
+    pub entries: Vec<DumpEntry>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -50,7 +50,11 @@ impl SupportDump {
     }
 }
 
-pub fn gather_all_support_info(sender: &str, comments: &str, lts_key: &str) -> anyhow::Result<SupportDump> {
+pub fn gather_all_support_info(
+    sender: &str,
+    comments: &str,
+    lts_key: &str,
+) -> anyhow::Result<SupportDump> {
     let sanity_checks = run_sanity_checks(false)?;
 
     let mut data_targets: Vec<Box<dyn SupportInfo>> = vec![
@@ -71,10 +75,7 @@ pub fn gather_all_support_info(sender: &str, comments: &str, lts_key: &str) -> a
     ];
 
     for target in data_targets.iter_mut() {
-        println!("{} : {}",
-                 "TASK-GATHER".cyan(),
-                 target.get_name().yellow()
-        );
+        println!("{} : {}", "TASK-GATHER".cyan(), target.get_name().yellow());
         if let Err(e) = target.gather() {
             error(&e.to_string());
         }
@@ -108,13 +109,11 @@ mod tests {
     #[test]
     fn round_trip() {
         let original = SupportDump {
-            entries: vec![
-                DumpEntry {
-                    name: "Test".to_string(),
-                    filename: None,
-                    contents: "BLAH".to_string(),                    
-                }
-            ],
+            entries: vec![DumpEntry {
+                name: "Test".to_string(),
+                filename: None,
+                contents: "BLAH".to_string(),
+            }],
             ..Default::default()
         };
         let bytes = original.serialize_and_compress().unwrap();

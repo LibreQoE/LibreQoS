@@ -5,15 +5,15 @@
 mod publisher_channel;
 mod subscriber;
 
-use std::sync::Arc;
-use arc_swap::ArcSwap;
-use fxhash::FxHashSet;
-use strum::IntoEnumIterator;
-use tokio::sync::mpsc::Sender;
-use tokio::sync::Mutex;
-use tracing::warn;
 use crate::node_manager::ws::publish_subscribe::publisher_channel::PublisherChannel;
 use crate::node_manager::ws::published_channels::PublishedChannels;
+use arc_swap::ArcSwap;
+use fxhash::FxHashSet;
+use std::sync::Arc;
+use strum::IntoEnumIterator;
+use tokio::sync::Mutex;
+use tokio::sync::mpsc::Sender;
+use tracing::warn;
 
 /// Represents a PubSub structure intended to be wrapped in
 /// an Arc, and used from within the websocket system.
@@ -32,9 +32,7 @@ impl PubSub {
     pub(super) fn new() -> Arc<Self> {
         let mut channels = Vec::new();
         for c in PublishedChannels::iter() {
-            channels.push(
-                PublisherChannel::new(c)
-            );
+            channels.push(PublisherChannel::new(c));
         }
 
         let result = Self {
@@ -52,7 +50,10 @@ impl PubSub {
         if let Some(channel) = channels.iter_mut().find(|c| c.channel_type == channel) {
             channel.subscribe(sender).await;
         } else {
-            warn!("Tried to subscribe to channel {:?}, which doesn't exist", channel);
+            warn!(
+                "Tried to subscribe to channel {:?}, which doesn't exist",
+                channel
+            );
         }
     }
 

@@ -1,20 +1,20 @@
-use super::{get_asn_lat_lon, get_asn_name_and_country, FlowAnalysis, get_asn_name_by_id};
+use super::{FlowAnalysis, get_asn_lat_lon, get_asn_name_and_country, get_asn_name_by_id};
+use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use crate::throughput_tracker::flow_data::FlowbeeLocalData;
-use fxhash::FxHashMap;
-use lqos_bus::BusResponse;
-use lqos_sys::flowbee_data::FlowbeeKey;
-use once_cell::sync::Lazy;
-use std::sync::Mutex;
-use std::time::Duration;
 use allocative_derive::Allocative;
 use crossbeam_channel::Sender;
+use fxhash::FxHashMap;
 use itertools::Itertools;
-use serde::Serialize;
-use tracing::debug;
+use lqos_bus::BusResponse;
 use lqos_config::load_config;
+use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::{boot_time_nanos_to_unix_now, unix_now};
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
+use once_cell::sync::Lazy;
+use serde::Serialize;
+use std::sync::Mutex;
+use std::time::Duration;
+use tracing::debug;
 
 #[derive(Allocative)]
 pub struct TimeBuffer {
@@ -82,7 +82,13 @@ impl TimeBuffer {
                 let (key, data, _analysis) = &v.data;
                 let (lat, lon) = get_asn_lat_lon(key.remote_ip.as_ip());
                 let geo = get_asn_name_and_country(key.remote_ip.as_ip());
-                (lat, lon, geo.country, data.bytes_sent.down, data.rtt[0].as_nanos() as f32)
+                (
+                    lat,
+                    lon,
+                    geo.country,
+                    data.bytes_sent.down,
+                    data.rtt[0].as_nanos() as f32,
+                )
             })
             .filter(|(lat, lon, ..)| *lat != 0.0 && *lon != 0.0)
             .collect::<Vec<(f64, f64, String, u64, f32)>>();
@@ -103,10 +109,7 @@ impl TimeBuffer {
             .map(|v| {
                 let (key, data, _analysis) = &v.data;
                 let geo = get_asn_name_and_country(key.remote_ip.as_ip());
-                let rtt = [
-                    data.rtt[0].as_nanos() as f32,
-                    data.rtt[1].as_nanos() as f32,
-                ];
+                let rtt = [data.rtt[0].as_nanos() as f32, data.rtt[1].as_nanos() as f32];
                 (geo.country, data.bytes_sent, rtt, geo.flag)
             })
             .collect::<Vec<(String, DownUpOrder<u64>, [f32; 2], String)>>();
@@ -123,7 +126,6 @@ impl TimeBuffer {
         let mut total_bytes = DownUpOrder::zeroed();
         for (country, bytes, rtt, flag) in my_buffer.iter() {
             if last_country != *country {
-
                 // Store progress (but not the first one)
                 if !last_country.is_empty() {
                     country_summary.push((
@@ -134,8 +136,7 @@ impl TimeBuffer {
                             Self::median_f32(&rtt_buffer[1]),
                         ],
                         last_flag.clone(),
-                    )
-                    );
+                    ));
                 }
 
                 // Clear accumulated stats
@@ -204,42 +205,33 @@ impl TimeBuffer {
         let mut v4_rtt = [Vec::new(), Vec::new()];
         let mut v6_rtt = [Vec::new(), Vec::new()];
 
-        buffer
-            .iter()
-            .for_each(|v| {
-                let (key, data, _analysis) = &v.data;
-                if key.local_ip.is_v4() {
-                    // It's V4
-                    v4_bytes_sent.checked_add(data.bytes_sent);
-                    v4_packets_sent.checked_add(data.packets_sent);
-                    if data.rtt[0].as_nanos() > 0 {
-                        v4_rtt[0].push(data.rtt[0].as_nanos());
-                    }
-                    if data.rtt[1].as_nanos() > 0 {
-                        v4_rtt[1].push(data.rtt[1].as_nanos());
-                    }
-                } else {
-                    // It's V6
-                    v6_bytes_sent.checked_add(data.bytes_sent);
-                    v6_packets_sent.checked_add(data.packets_sent);
-                    if data.rtt[0].as_nanos() > 0 {
-                        v6_rtt[0].push(data.rtt[0].as_nanos());
-                    }
-                    if data.rtt[1].as_nanos() > 0 {
-                        v6_rtt[1].push(data.rtt[1].as_nanos());
-                    }
-
+        buffer.iter().for_each(|v| {
+            let (key, data, _analysis) = &v.data;
+            if key.local_ip.is_v4() {
+                // It's V4
+                v4_bytes_sent.checked_add(data.bytes_sent);
+                v4_packets_sent.checked_add(data.packets_sent);
+                if data.rtt[0].as_nanos() > 0 {
+                    v4_rtt[0].push(data.rtt[0].as_nanos());
                 }
-            });
-        
-        let v4_rtt = DownUpOrder::new(
-            Self::median(&v4_rtt[0]),
-            Self::median(&v4_rtt[1]),
-        );
-        let v6_rtt = DownUpOrder::new(
-            Self::median(&v6_rtt[0]),
-            Self::median(&v6_rtt[1]),
-        );
+                if data.rtt[1].as_nanos() > 0 {
+                    v4_rtt[1].push(data.rtt[1].as_nanos());
+                }
+            } else {
+                // It's V6
+                v6_bytes_sent.checked_add(data.bytes_sent);
+                v6_packets_sent.checked_add(data.packets_sent);
+                if data.rtt[0].as_nanos() > 0 {
+                    v6_rtt[0].push(data.rtt[0].as_nanos());
+                }
+                if data.rtt[1].as_nanos() > 0 {
+                    v6_rtt[1].push(data.rtt[1].as_nanos());
+                }
+            }
+        });
+
+        let v4_rtt = DownUpOrder::new(Self::median(&v4_rtt[0]), Self::median(&v4_rtt[1]));
+        let v6_rtt = DownUpOrder::new(Self::median(&v6_rtt[0]), Self::median(&v6_rtt[1]));
 
         BusResponse::EtherProtocols {
             v4_bytes: v4_bytes_sent,
@@ -256,16 +248,16 @@ impl TimeBuffer {
 
         let mut results = FxHashMap::default();
 
-        buffer
-            .iter()
-            .for_each(|v| {
-                let (_key, data, analysis) = &v.data;
-                let proto = analysis.protocol_analysis.to_string();
-                let entry = results.entry(proto).or_insert(DownUpOrder::zeroed());
-                entry.checked_add(data.bytes_sent);
-            });
+        buffer.iter().for_each(|v| {
+            let (_key, data, analysis) = &v.data;
+            let proto = analysis.protocol_analysis.to_string();
+            let entry = results.entry(proto).or_insert(DownUpOrder::zeroed());
+            entry.checked_add(data.bytes_sent);
+        });
 
-        let mut results = results.into_iter().collect::<Vec<(String, DownUpOrder<u64>)>>();
+        let mut results = results
+            .into_iter()
+            .collect::<Vec<(String, DownUpOrder<u64>)>>();
         results.sort_by(|a, b| b.1.down.cmp(&a.1.down));
         // Keep only the top 10
         results.truncate(10);
@@ -289,12 +281,15 @@ impl TimeBuffer {
         let buffer = self.buffer.lock().unwrap();
         buffer
             .iter()
-            .filter(|flow| flow.data.2.asn_id.0 == id )
+            .filter(|flow| flow.data.2.asn_id.0 == id)
             .map(|flow| flow.data.clone())
             .collect()
     }
 
-    pub fn all_flows_for_country(&self, iso_code: &str) -> Vec<(FlowbeeKey, FlowbeeLocalData, FlowAnalysis)> {
+    pub fn all_flows_for_country(
+        &self,
+        iso_code: &str,
+    ) -> Vec<(FlowbeeKey, FlowbeeLocalData, FlowAnalysis)> {
         let buffer = self.buffer.lock().unwrap();
         buffer
             .iter()
@@ -306,13 +301,14 @@ impl TimeBuffer {
             .collect()
     }
 
-    pub fn all_flows_for_protocol(&self, protocol_name: &str) -> Vec<(FlowbeeKey, FlowbeeLocalData, FlowAnalysis)> {
+    pub fn all_flows_for_protocol(
+        &self,
+        protocol_name: &str,
+    ) -> Vec<(FlowbeeKey, FlowbeeLocalData, FlowAnalysis)> {
         let buffer = self.buffer.lock().unwrap();
         buffer
             .iter()
-            .filter(|flow| {
-                flow.data.2.protocol_analysis.to_string() == protocol_name
-            })
+            .filter(|flow| flow.data.2.protocol_analysis.to_string() == protocol_name)
             .map(|flow| flow.data.clone())
             .collect()
     }
@@ -403,9 +399,7 @@ impl TimeBuffer {
                 // Total flow time > 3 seconds
                 flow.data.1.last_seen - flow.data.1.start_time > 3_000_000_000
             })
-            .map(|flow| {
-                flow.data.2.protocol_analysis.to_string()
-            })
+            .map(|flow| flow.data.2.protocol_analysis.to_string())
             .collect();
 
         // Sort the buffer
@@ -416,10 +410,7 @@ impl TimeBuffer {
             .into_iter()
             .sorted()
             .dedup_with_count()
-            .map(|(count, protocol)| AsnProtocolListEntry {
-                count,
-                protocol,
-            })
+            .map(|(count, protocol)| AsnProtocolListEntry { count, protocol })
             .collect()
     }
 
@@ -436,18 +427,25 @@ pub struct FinishedFlowAnalysis {}
 impl FinishedFlowAnalysis {
     pub fn new() -> Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))> {
         debug!("Created Flow Analysis Endpoint");
-        let (tx, rx) = crossbeam_channel::bounded::<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>(65535);
+        let (tx, rx) =
+            crossbeam_channel::bounded::<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>(65535);
 
-        let _ = std::thread::Builder::new().name("Flow Expiration".to_string()).spawn(|| loop {
-            RECENT_FLOWS.expire_over_one_minutes();
-            std::thread::sleep(std::time::Duration::from_secs(60));
-        });
-        let _ = std::thread::Builder::new().name("Flow Analysis".to_string()).spawn(move || {
-            while let Ok((key, (data, analysis))) = rx.recv() {
-                enqueue(key, data, analysis);
-            }
-            tracing::error!("Flow Analysis thread died");
-        });
+        let _ = std::thread::Builder::new()
+            .name("Flow Expiration".to_string())
+            .spawn(|| {
+                loop {
+                    RECENT_FLOWS.expire_over_one_minutes();
+                    std::thread::sleep(std::time::Duration::from_secs(60));
+                }
+            });
+        let _ = std::thread::Builder::new()
+            .name("Flow Analysis".to_string())
+            .spawn(move || {
+                while let Ok((key, (data, analysis))) = rx.recv() {
+                    enqueue(key, data, analysis);
+                }
+                tracing::error!("Flow Analysis thread died");
+            });
 
         tx
     }
@@ -478,8 +476,14 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
             data.bytes_sent.up,
             data.packets_sent.down as i64,
             data.packets_sent.up as i64,
-            data.retry_times_down.iter().map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64).collect(),
-            data.retry_times_up.iter().map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64).collect(),
+            data.retry_times_down
+                .iter()
+                .map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64)
+                .collect(),
+            data.retry_times_up
+                .iter()
+                .map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64)
+                .collect(),
             data.rtt[0].as_micros() as f32,
             data.rtt[1].as_micros() as f32,
             circuit_hash,
@@ -495,8 +499,12 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
         });
     } else {
         // We have a one-way flow!
-        let Ok(config) = load_config() else { return; };
-        if !config.long_term_stats.gather_stats { return; }
+        let Ok(config) = load_config() else {
+            return;
+        };
+        if !config.long_term_stats.gather_stats {
+            return;
+        }
         if let Err(e) = crate::lts2_sys::one_way_flow(
             start_time,
             last_seen,

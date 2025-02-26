@@ -1,17 +1,21 @@
 use std::{path::Path, process::Command};
 
+use crate::node_manager::{WarningLevel, add_global_warning};
 use anyhow::Result;
-use tracing::{error, info, warn};
 use lqos_config::Config;
 use lqos_sys::interface_name_to_index;
-use crate::node_manager::{add_global_warning, WarningLevel};
+use tracing::{error, info, warn};
 
 fn check_queues(interface: &str) -> Result<()> {
     let path = format!("/sys/class/net/{interface}/queues/");
     let sys_path = Path::new(&path);
     if !sys_path.exists() {
-        error!("/sys/class/net/{interface}/queues/ does not exist. Does this card only support one queue (not supported)?");
-        return Err(anyhow::anyhow!("/sys/class/net/{interface}/queues/ does not exist. Does this card only support one queue (not supported)?"));
+        error!(
+            "/sys/class/net/{interface}/queues/ does not exist. Does this card only support one queue (not supported)?"
+        );
+        return Err(anyhow::anyhow!(
+            "/sys/class/net/{interface}/queues/ does not exist. Does this card only support one queue (not supported)?"
+        ));
     }
 
     let mut counts = (0, 0);
@@ -33,12 +37,24 @@ fn check_queues(interface: &str) -> Result<()> {
     }
 
     if counts.0 == 0 || counts.1 == 0 {
-        error!("Interface ({}) does not have both RX and TX queues.", interface);
-        return Err(anyhow::anyhow!("Interface {} does not have both RX and TX queues.", interface));
+        error!(
+            "Interface ({}) does not have both RX and TX queues.",
+            interface
+        );
+        return Err(anyhow::anyhow!(
+            "Interface {} does not have both RX and TX queues.",
+            interface
+        ));
     }
     if counts.0 == 1 || counts.1 == 1 {
-        error!("Interface ({}) only has one RX or TX queue. This is not supported.", interface);
-        return Err(anyhow::anyhow!("Interface {} only has one RX or TX queue. This is not supported.", interface));
+        error!(
+            "Interface ({}) only has one RX or TX queue. This is not supported.",
+            interface
+        );
+        return Err(anyhow::anyhow!(
+            "Interface {} only has one RX or TX queue. This is not supported.",
+            interface
+        ));
     }
 
     Ok(())
@@ -53,9 +69,7 @@ pub struct IpLinkInterface {
 }
 
 pub fn get_interfaces_from_ip_link() -> Result<Vec<IpLinkInterface>> {
-    let output = Command::new("/sbin/ip")
-        .args(["-j", "link"])
-        .output()?;
+    let output = Command::new("/sbin/ip").args(["-j", "link"]).output()?;
     let output = String::from_utf8(output.stdout)?;
     let output_json = serde_json::from_str::<serde_json::Value>(&output)?;
 
@@ -80,7 +94,10 @@ pub fn get_interfaces_from_ip_link() -> Result<Vec<IpLinkInterface>> {
 fn check_interface_status(config: &Config, interfaces: &[IpLinkInterface]) -> Result<()> {
     if let Some(stick) = &config.single_interface {
         if let Some(iface) = interfaces.iter().find(|i| i.name == stick.interface) {
-            info!("Interface {} is in status: {}", stick.interface, iface.operstate);
+            info!(
+                "Interface {} is in status: {}",
+                stick.interface, iface.operstate
+            );
         }
     } else if let Some(bridge) = &config.bridge {
         if let Some(iface) = interfaces.iter().find(|i| i.name == bridge.to_internet) {
@@ -90,8 +107,12 @@ fn check_interface_status(config: &Config, interfaces: &[IpLinkInterface]) -> Re
             info!("Interface {} is in status: {}", iface.name, iface.operstate);
         }
     } else {
-        error!("You MUST have either a single interface or a bridge defined in the configuration file.");
-        anyhow::bail!("You MUST have either a single interface or a bridge defined in the configuration file.");
+        error!(
+            "You MUST have either a single interface or a bridge defined in the configuration file."
+        );
+        anyhow::bail!(
+            "You MUST have either a single interface or a bridge defined in the configuration file."
+        );
     }
 
     Ok(())
@@ -99,7 +120,7 @@ fn check_interface_status(config: &Config, interfaces: &[IpLinkInterface]) -> Re
 
 fn check_bridge_status(config: &Config, interfaces: &[IpLinkInterface]) -> Result<()> {
     // On a stick mode is bridge-free
-    if config.on_a_stick_mode() {        
+    if config.on_a_stick_mode() {
         return Ok(());
     }
 
@@ -108,7 +129,7 @@ fn check_bridge_status(config: &Config, interfaces: &[IpLinkInterface]) -> Resul
         if bridge.use_xdp_bridge {
             for bridge_if in interfaces
                 .iter()
-                .filter(|bridge_if| bridge_if.link_type == "ether" && bridge_if.operstate == "UP") 
+                .filter(|bridge_if| bridge_if.link_type == "ether" && bridge_if.operstate == "UP")
             {
                 // We found a bridge. Check member interfaces to check that it does NOT include any XDP
                 // bridge members.
@@ -121,12 +142,21 @@ fn check_bridge_status(config: &Config, interfaces: &[IpLinkInterface]) -> Resul
                             false
                         }
                     })
-                    .filter(|member_if| member_if.name == config.internet_interface() || member_if.name == config.isp_interface())
+                    .filter(|member_if| {
+                        member_if.name == config.internet_interface()
+                            || member_if.name == config.isp_interface()
+                    })
                     .collect();
 
                 if in_bridge.len() == 2 {
-                    error!("Bridge ({}) contains both the internet and ISP interfaces, and you have the xdp_bridge enabled. This is not supported.", bridge_if.name);
-                    anyhow::bail!("Bridge {} contains both the internet and ISP interfaces. This is not supported.", bridge_if.name);                    
+                    error!(
+                        "Bridge ({}) contains both the internet and ISP interfaces, and you have the xdp_bridge enabled. This is not supported.",
+                        bridge_if.name
+                    );
+                    anyhow::bail!(
+                        "Bridge {} contains both the internet and ISP interfaces. This is not supported.",
+                        bridge_if.name
+                    );
                 }
             }
         }

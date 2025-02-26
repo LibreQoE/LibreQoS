@@ -4,7 +4,7 @@ pub struct StatsRingBuffer<T, const N: usize> {
     index: usize,
 }
 
-impl <T: Default + Clone, const N: usize> StatsRingBuffer<T, N> {
+impl<T: Default + Clone, const N: usize> StatsRingBuffer<T, N> {
     /// Creates an empty ringbuffer
     pub fn new() -> Self {
         Self {

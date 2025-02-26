@@ -1,7 +1,8 @@
-use super::{stats_ringbuffer::StatsRingBuffer, TopWidget};
+use super::{TopWidget, stats_ringbuffer::StatsRingBuffer};
 use crate::bus::BusMessage;
 use lqos_bus::BusResponse;
 use lqos_utils::packet_scale::scale_bits;
+use lqos_utils::units::DownUpOrder;
 use ratatui::{
     prelude::*,
     style::{Color, Style},
@@ -9,7 +10,6 @@ use ratatui::{
     widgets::*,
 };
 use std::sync::mpsc::{Receiver, Sender};
-use lqos_utils::units::DownUpOrder;
 
 pub struct NetworkSparkline {
     bus_link: tokio::sync::mpsc::Sender<crate::bus::BusMessage>,

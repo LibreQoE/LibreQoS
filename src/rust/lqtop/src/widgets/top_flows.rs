@@ -1,4 +1,4 @@
-use super::{table_helper::TableHelper, TopWidget};
+use super::{TopWidget, table_helper::TableHelper};
 use lqos_bus::{BusResponse, FlowbeeSummaryData};
 use lqos_utils::packet_scale::scale_bits;
 use ratatui::prelude::*;
@@ -55,7 +55,11 @@ impl TopWidget for TopFlows {
                 scale_bits(flow.bytes_sent.down),
                 scale_bits(flow.bytes_sent.up),
                 format!("{}/{}", flow.tcp_retransmits.down, flow.tcp_retransmits.up),
-                format!("{:.1}/{:.1}", flow.rtt_nanos.down as f64 / 1000000., flow.tcp_retransmits.up as f64 / 1000000.),
+                format!(
+                    "{:.1}/{:.1}",
+                    flow.rtt_nanos.down as f64 / 1000000.,
+                    flow.tcp_retransmits.up as f64 / 1000000.
+                ),
                 flow.remote_asn_name.to_string(),
             ]);
         }

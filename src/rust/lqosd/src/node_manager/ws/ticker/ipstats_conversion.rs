@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
+use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use lqos_bus::{IpStats, TcHandle};
 use lqos_utils::units::DownUpOrder;
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct IpStatsWithPlan {

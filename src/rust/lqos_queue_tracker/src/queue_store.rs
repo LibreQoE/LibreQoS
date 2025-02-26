@@ -1,140 +1,131 @@
 use crate::{
-  queue_diff::{make_queue_diff, CakeDiffTin, QueueDiff},
-  queue_types::{
-    QueueType,
-  },
-  NUM_QUEUE_HISTORY,
+    NUM_QUEUE_HISTORY,
+    queue_diff::{CakeDiffTin, QueueDiff, make_queue_diff},
+    queue_types::QueueType,
 };
-use lqos_bus::{
-  CakeDiffTinTransit, CakeDiffTransit, CakeTransit, QueueStoreTransit,
-};
+use lqos_bus::{CakeDiffTinTransit, CakeDiffTransit, CakeTransit, QueueStoreTransit};
 use serde::Serialize;
 
 #[derive(Debug, Serialize, Clone)]
 pub struct QueueStore {
-  history: Vec<(QueueDiff, QueueDiff)>,
-  history_head: usize,
-  prev_download: Option<QueueType>,
-  prev_upload: Option<QueueType>,
-  current_download: QueueType,
-  current_upload: QueueType,
+    history: Vec<(QueueDiff, QueueDiff)>,
+    history_head: usize,
+    prev_download: Option<QueueType>,
+    prev_upload: Option<QueueType>,
+    current_download: QueueType,
+    current_upload: QueueType,
 }
 
 impl QueueStore {
-  pub(crate) fn new(download: QueueType, upload: QueueType) -> Self {
-    Self {
-      history: vec![(QueueDiff::None, QueueDiff::None); NUM_QUEUE_HISTORY],
-      history_head: 0,
-      prev_upload: None,
-      prev_download: None,
-      current_download: download,
-      current_upload: upload,
+    pub(crate) fn new(download: QueueType, upload: QueueType) -> Self {
+        Self {
+            history: vec![(QueueDiff::None, QueueDiff::None); NUM_QUEUE_HISTORY],
+            history_head: 0,
+            prev_upload: None,
+            prev_download: None,
+            current_download: download,
+            current_upload: upload,
+        }
     }
-  }
 
-  pub(crate) fn update(&mut self, download: &QueueType, upload: &QueueType) {
-    self.prev_upload = Some(self.current_upload.clone());
-    self.prev_download = Some(self.current_download.clone());
-    self.current_download = download.clone();
-    self.current_upload = upload.clone();
-    let new_diff_up = make_queue_diff(
-      self.prev_upload.as_ref().unwrap(),
-      &self.current_upload,
-    );
-    let new_diff_dn = make_queue_diff(
-      self.prev_download.as_ref().unwrap(),
-      &self.current_download,
-    );
+    pub(crate) fn update(&mut self, download: &QueueType, upload: &QueueType) {
+        self.prev_upload = Some(self.current_upload.clone());
+        self.prev_download = Some(self.current_download.clone());
+        self.current_download = download.clone();
+        self.current_upload = upload.clone();
+        let new_diff_up = make_queue_diff(self.prev_upload.as_ref().unwrap(), &self.current_upload);
+        let new_diff_dn =
+            make_queue_diff(self.prev_download.as_ref().unwrap(), &self.current_download);
 
-    if let (Ok(new_diff_dn), Ok(new_diff_up)) = (new_diff_dn, new_diff_up) {
-      self.history[self.history_head] = (new_diff_dn, new_diff_up);
-      self.history_head += 1;
-      if self.history_head >= NUM_QUEUE_HISTORY {
-        self.history_head = 0;
-      }
+        if let (Ok(new_diff_dn), Ok(new_diff_up)) = (new_diff_dn, new_diff_up) {
+            self.history[self.history_head] = (new_diff_dn, new_diff_up);
+            self.history_head += 1;
+            if self.history_head >= NUM_QUEUE_HISTORY {
+                self.history_head = 0;
+            }
+        }
     }
-  }
 }
 
 // Note: I'm overriding the warning because the "from only" behaviour
 // is actually what we want here.
 #[allow(clippy::from_over_into)]
 impl Into<QueueStoreTransit> for QueueStore {
-  fn into(self) -> QueueStoreTransit {
-    QueueStoreTransit {
-      history: self
-        .history
-        .iter()
-        .cloned()
-        .map(|(a, b)| (a.into(), b.into()))
-        .collect(),
-      history_head: self.history_head,
-      //prev_download: self.prev_download.map(|d| d.into()),
-      //prev_upload: self.prev_upload.map(|u| u.into()),
-      current_download: self.current_download.into(),
-      current_upload: self.current_upload.into(),
+    fn into(self) -> QueueStoreTransit {
+        QueueStoreTransit {
+            history: self
+                .history
+                .iter()
+                .cloned()
+                .map(|(a, b)| (a.into(), b.into()))
+                .collect(),
+            history_head: self.history_head,
+            //prev_download: self.prev_download.map(|d| d.into()),
+            //prev_upload: self.prev_upload.map(|u| u.into()),
+            current_download: self.current_download.into(),
+            current_upload: self.current_upload.into(),
+        }
     }
-  }
 }
 
 #[allow(clippy::from_over_into)]
 impl Into<CakeDiffTransit> for QueueDiff {
-  fn into(self) -> CakeDiffTransit {
-    if let QueueDiff::Cake(c) = &self {
-      CakeDiffTransit {
-        bytes: c.bytes,
-        packets: c.packets,
-        qlen: c.qlen,
-        tins: c.tins.iter().cloned().map(|t| t.into()).collect(),
-      }
-    } else {
-      CakeDiffTransit::default()
+    fn into(self) -> CakeDiffTransit {
+        if let QueueDiff::Cake(c) = &self {
+            CakeDiffTransit {
+                bytes: c.bytes,
+                packets: c.packets,
+                qlen: c.qlen,
+                tins: c.tins.iter().cloned().map(|t| t.into()).collect(),
+            }
+        } else {
+            CakeDiffTransit::default()
+        }
     }
-  }
 }
 
 #[allow(clippy::from_over_into)]
 impl Into<CakeDiffTinTransit> for CakeDiffTin {
-  fn into(self) -> CakeDiffTinTransit {
-    CakeDiffTinTransit {
-      sent_bytes: self.sent_bytes,
-      backlog_bytes: self.backlog_bytes,
-      drops: self.drops,
-      marks: self.marks,
-      base_delay_us: self.base_delay_us,
+    fn into(self) -> CakeDiffTinTransit {
+        CakeDiffTinTransit {
+            sent_bytes: self.sent_bytes,
+            backlog_bytes: self.backlog_bytes,
+            drops: self.drops,
+            marks: self.marks,
+            base_delay_us: self.base_delay_us,
+        }
     }
-  }
 }
 
 #[allow(clippy::from_over_into)]
 impl Into<CakeTransit> for QueueType {
-  fn into(self) -> CakeTransit {
-    if let QueueType::Cake(c) = self {
-      CakeTransit {
-        //handle: c.handle,
-        //parent: c.parent,
-        //options: c.options.into(),
-        //bytes: c.bytes,
-        //packets: c.packets,
-        //overlimits: c.overlimits,
-        //requeues: c.requeues,
-        //backlog: c.backlog,
-        //qlen: c.qlen,
-        memory_used: c.memory_used,
-        //memory_limit: c.memory_limit,
-        //capacity_estimate: c.capacity_estimate,
-        //min_network_size: c.min_network_size,
-        //max_network_size: c.max_network_size,
-        //min_adj_size: c.min_adj_size,
-        //max_adj_size: c.max_adj_size,
-        //avg_hdr_offset: c.avg_hdr_offset,
-        //tins: c.tins.iter().cloned().map(|t| t.into()).collect(),
-        //drops: c.drops,
-      }
-    } else {
-      CakeTransit::default()
+    fn into(self) -> CakeTransit {
+        if let QueueType::Cake(c) = self {
+            CakeTransit {
+                //handle: c.handle,
+                //parent: c.parent,
+                //options: c.options.into(),
+                //bytes: c.bytes,
+                //packets: c.packets,
+                //overlimits: c.overlimits,
+                //requeues: c.requeues,
+                //backlog: c.backlog,
+                //qlen: c.qlen,
+                memory_used: c.memory_used,
+                //memory_limit: c.memory_limit,
+                //capacity_estimate: c.capacity_estimate,
+                //min_network_size: c.min_network_size,
+                //max_network_size: c.max_network_size,
+                //min_adj_size: c.min_adj_size,
+                //max_adj_size: c.max_adj_size,
+                //avg_hdr_offset: c.avg_hdr_offset,
+                //tins: c.tins.iter().cloned().map(|t| t.into()).collect(),
+                //drops: c.drops,
+            }
+        } else {
+            CakeTransit::default()
+        }
     }
-  }
 }
 
 /*

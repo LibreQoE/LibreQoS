@@ -1,15 +1,15 @@
 //! Provides a support library for the support tool system.
-mod support_info;
 pub mod console;
 mod sanity_checks;
+mod support_info;
 
-use std::io::Write;
-use std::net::TcpStream;
-pub use support_info::gather_all_support_info;
-pub use support_info::SupportDump;
-pub use sanity_checks::run_sanity_checks;
 use crate::console::{error, success};
 pub use sanity_checks::SanityChecks;
+pub use sanity_checks::run_sanity_checks;
+use std::io::Write;
+use std::net::TcpStream;
+pub use support_info::SupportDump;
+pub use support_info::gather_all_support_info;
 
 const REMOTE_SYSTEM: &str = "stats.libreqos.io:9200";
 

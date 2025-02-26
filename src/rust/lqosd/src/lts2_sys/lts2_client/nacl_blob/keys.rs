@@ -10,7 +10,7 @@ impl KeyStore {
             keys: KeyPair::r#gen(),
         }
     }
-    
+
     pub fn public_key_as_cbor_bytes(&self) -> Vec<u8> {
         serde_cbor::to_vec(&self.keys.public_key).unwrap()
     }
@@ -32,7 +32,7 @@ mod test {
             &recipient_keypair.public_key,
             &sender_keypair.secret_key,
         )
-            .expect("unable to encrypt");
+        .expect("unable to encrypt");
 
         let sodium_box = dryocbox.to_vec();
         let dryocbox = DryocBox::from_bytes(&sodium_box).expect("failed to read box");
@@ -51,7 +51,7 @@ mod test {
     fn test_serialize_keypair() {
         let keypair = KeyPair::r#gen();
         let serialized = serde_cbor::to_vec(&keypair).unwrap();
-        let deserialized : KeyPair = serde_cbor::from_slice(&serialized).unwrap();
+        let deserialized: KeyPair = serde_cbor::from_slice(&serialized).unwrap();
         assert_eq!(keypair, deserialized);
     }
 }

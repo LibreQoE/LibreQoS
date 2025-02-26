@@ -1,6 +1,6 @@
 //! Queue Generation definitions (originally from ispConfig.py)
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct QueueConfig {
