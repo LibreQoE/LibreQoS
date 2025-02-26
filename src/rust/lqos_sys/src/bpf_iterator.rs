@@ -2,7 +2,6 @@ use crate::{
   bpf_map::BpfMap, flowbee_data::{FlowbeeData, FlowbeeKey}, kernel_wrapper::BPF_SKELETON, lqos_kernel::bpf, HostCounter
 };
 use lqos_utils::XdpIpAddress;
-use once_cell::sync::Lazy;
 use std::{
   fmt::Debug, fs::File, io::Read, marker::PhantomData, os::fd::FromRawFd,
 };
@@ -216,7 +215,7 @@ pub unsafe fn iterate_throughput(
     Mutex::new(iter)
   });
 
-  if let Ok(mut iter) = traffic_map.lock() {
+  if let Ok(iter) = traffic_map.lock() {
     let _ = iter.for_each_per_cpu(callback);
   }
 }
@@ -225,7 +224,7 @@ pub unsafe fn iterate_throughput(
 pub fn iterate_flows(
   callback: &mut dyn FnMut(&FlowbeeKey, &FlowbeeData)
 ) {
-  let mut flowbee_tracker = FLOWBEE_TRACKER.get_or_init(|| {
+  let flowbee_tracker = FLOWBEE_TRACKER.get_or_init(|| {
     let lock = BPF_SKELETON.lock().unwrap();
     let Some(skeleton) = lock.as_ref() else {
         panic!("Failed to create flowbee iterator");

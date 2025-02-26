@@ -94,8 +94,10 @@ fn set_strict_mode() -> Result<()> {
   }
 }
 
+/// Safety: This function is unsafe because it is directly calling into the
+/// C library to open the kernel.
 unsafe fn open_kernel() -> Result<*mut bpf::lqos_kern> {
-  let result = bpf::lqos_kern_open();
+  let result = unsafe { bpf::lqos_kern_open() };
   if result.is_null() {
     Err(Error::msg("Unable to open LibreQoS XDP/TC Kernel"))
   } else {
@@ -104,7 +106,7 @@ unsafe fn open_kernel() -> Result<*mut bpf::lqos_kern> {
 }
 
 unsafe fn load_kernel(skeleton: *mut bpf::lqos_kern) -> Result<()> {
-  let error = bpf::lqos_kern_load(skeleton);
+  let error = unsafe { bpf::lqos_kern_load(skeleton) };
   if error != 0 {
     let error = format!("Unable to load the XDP/TC kernel ({error})");
     Err(Error::msg(error))
@@ -295,19 +297,19 @@ unsafe fn attach_xdp_best_available(
   prog_fd: i32,
 ) -> Result<()> {
   // Try hardware offload first
-  if try_xdp_attach(interface_index, prog_fd, XDP_FLAGS_HW_MODE).is_err() {
+  if unsafe { try_xdp_attach(interface_index, prog_fd, XDP_FLAGS_HW_MODE).is_err() } {
     // Try driver attach
-    if try_xdp_attach(interface_index, prog_fd, XDP_FLAGS_DRV_MODE).is_err() {
+    if unsafe { try_xdp_attach(interface_index, prog_fd, XDP_FLAGS_DRV_MODE).is_err() } {
       // Try SKB mode
-      if try_xdp_attach(interface_index, prog_fd, XDP_FLAGS_SKB_MODE).is_err()
+      if unsafe { try_xdp_attach(interface_index, prog_fd, XDP_FLAGS_SKB_MODE).is_err() }
       {
         // Try no flags
-        let error = bpf_xdp_attach(
+        let error = unsafe { bpf_xdp_attach(
           interface_index.try_into().unwrap(),
           prog_fd,
           XDP_FLAGS_UPDATE_IF_NOEXIST,
           std::ptr::null(),
-        );
+        ) };
         if error != 0 {
           return Err(Error::msg("Unable to attach to interface"));
         }
@@ -328,12 +330,12 @@ unsafe fn try_xdp_attach(
   prog_fd: i32,
   connect_mode: u32,
 ) -> Result<()> {
-  let error = bpf_xdp_attach(
+  let error = unsafe { bpf_xdp_attach(
     interface_index.try_into().unwrap(),
     prog_fd,
     XDP_FLAGS_UPDATE_IF_NOEXIST | connect_mode,
     std::ptr::null(),
-  );
+  ) };
   if error != 0 {
     return Err(Error::msg("Unable to attach to interface"));
   }
