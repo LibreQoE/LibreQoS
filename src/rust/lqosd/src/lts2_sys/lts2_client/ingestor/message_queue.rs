@@ -153,7 +153,7 @@ impl MessageQueue {
             warn!("Failed to serialize hello message");
             return Ok(());
         };
-        if let Err(e) = socket.send(tungstenite::Message::Binary(magic_to_send)) {
+        if let Err(e) = socket.send(tungstenite::Message::Binary(magic_to_send.into())) {
             warn!("Failed to send hello message to server: {}", e);
             return Ok(());
         }
@@ -197,7 +197,7 @@ impl MessageQueue {
             warn!("Failed to serialize license message");
             return Ok(());
         };
-        if let Err(e) = socket.send(tungstenite::Message::Binary(license_to_send)) {
+        if let Err(e) = socket.send(tungstenite::Message::Binary(license_to_send.into())) {
             warn!("Failed to send license message to server: {}", e);
             return Ok(());
         }
@@ -256,7 +256,7 @@ impl MessageQueue {
                 warn!("Failed to serialize data message");
                 return Ok(());
             };
-            if let Err(e) = socket.send(tungstenite::Message::Binary(data_to_send)) {
+            if let Err(e) = socket.send(tungstenite::Message::Binary(data_to_send.into())) {
                 warn!("Failed to send data message to server: {}", e);
                 return Ok(());
             }
@@ -267,7 +267,7 @@ impl MessageQueue {
             warn!("Failed to serialize request remote commands message");
             return Ok(());
         };
-        if let Err(e) = socket.send(tungstenite::Message::Binary(request_remote_commands)) {
+        if let Err(e) = socket.send(tungstenite::Message::Binary(request_remote_commands.into())) {
             warn!("Failed to send request remote commands message to server: {}", e);
             return Ok(());
         }

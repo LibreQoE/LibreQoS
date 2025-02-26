@@ -13,6 +13,7 @@ use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use tracing::{debug, info, warn};
+use tungstenite::Bytes;
 
 const TCP_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -164,43 +165,43 @@ async fn run_remote_insight(
                     }
                     Some(RemoteInsightCommand::ShaperThroughput { seconds }) => {
                         let msg = WsMessage::ShaperThroughput { seconds }.to_bytes()?;
-                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                        tx.send(tungstenite::Message::Binary(Bytes::from(msg))).await?;
                     }
                     Some(RemoteInsightCommand::ShaperPackets { seconds }) => {
                         let msg = WsMessage::ShaperPackets { seconds }.to_bytes()?;
-                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                        tx.send(tungstenite::Message::Binary(Bytes::from(msg))).await?;
                     }
                     Some(RemoteInsightCommand::ShaperPercent { seconds }) => {
                         let msg = WsMessage::ShaperPercent { seconds }.to_bytes()?;
-                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                        tx.send(tungstenite::Message::Binary(Bytes::from(msg))).await?;
                     }
                     Some(RemoteInsightCommand::ShaperFlows { seconds }) => {
                         let msg = WsMessage::ShaperFlows { seconds }.to_bytes()?;
-                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                        tx.send(tungstenite::Message::Binary(Bytes::from(msg))).await?;
                     }
                     Some(RemoteInsightCommand::ShaperRttHistogram { seconds }) => {
                         let msg = WsMessage::ShaperRttHistogram { seconds }.to_bytes()?;
-                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                        tx.send(tungstenite::Message::Binary(Bytes::from(msg))).await?;
                     }
                     Some(RemoteInsightCommand::ShaperTopDownloaders { seconds }) => {
                         let msg = WsMessage::ShaperTopDownloaders { seconds }.to_bytes()?;
-                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                        tx.send(tungstenite::Message::Binary(Bytes::from(msg))).await?;
                     }
                     Some(RemoteInsightCommand::ShaperWorstRtt { seconds }) => {
                         let msg = WsMessage::ShaperWorstRtt { seconds }.to_bytes()?;
-                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                        tx.send(tungstenite::Message::Binary(Bytes::from(msg))).await?;
                     }
                     Some(RemoteInsightCommand::ShaperWorstRxmit { seconds }) => {
                         let msg = WsMessage::ShaperWorstRxmit { seconds }.to_bytes()?;
-                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                        tx.send(tungstenite::Message::Binary(Bytes::from(msg))).await?;
                     }
                     Some(RemoteInsightCommand::ShaperTopFlows { seconds }) => {
                         let msg = WsMessage::ShaperTopFlows { seconds }.to_bytes()?;
-                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                        tx.send(tungstenite::Message::Binary(Bytes::from(msg))).await?;
                     }
                     Some(RemoteInsightCommand::ShaperRecentMedians) => {
                         let msg = WsMessage::ShaperRecentMedian.to_bytes()?;
-                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                        tx.send(tungstenite::Message::Binary(Bytes::from(msg))).await?;
                     }
                 }
             }
@@ -213,7 +214,7 @@ async fn run_remote_insight(
                 };
                 match msg {
                     tungstenite::Message::Ping(_) => {
-                        write.send(tokio_tungstenite::tungstenite::Message::Pong(vec![])).await?;
+                        write.send(tokio_tungstenite::tungstenite::Message::Pong(Bytes::new())).await?;
                     }
                     tungstenite::Message::Pong(_) => {
                         // Ignore
@@ -319,7 +320,7 @@ async fn send_hello(write: &mut SplitSink<WebSocketStream<tokio_tungstenite::May
         node_id: config.node_id.to_string(),
     }.to_bytes()?;
     //tx.send(tungstenite::Message::Binary(msg)).await?;
-    write.send(tungstenite::Message::Binary(msg)).await?;
+    write.send(tungstenite::Message::Binary(msg.into())).await?;
 
     Ok(())
 }
