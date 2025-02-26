@@ -75,5 +75,5 @@ crossbeam-queue = "0.3.11"
 arc-swap = "1.7.1"
 
 # May have to change this one for ARM?
-jemallocator = "0.5"
+#jemallocator = "0.5"
 mimalloc = "0.1.43"

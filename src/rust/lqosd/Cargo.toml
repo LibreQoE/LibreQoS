@@ -67,4 +67,3 @@ allocative_derive = "0.3.3"
 #jemallocator = {  workspace = true }
 mimalloc = { workspace = true }
 futures-util = "0.3.31"
-log = "0.4.22"
