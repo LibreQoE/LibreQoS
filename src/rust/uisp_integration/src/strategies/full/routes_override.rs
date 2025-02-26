@@ -84,6 +84,7 @@ pub fn get_route_overrides(config: &Config) -> Result<Vec<RouteOverride>, UispIn
     }
 }
 
+#[allow(dead_code)]
 pub fn write_routing_overrides_template(config: Arc<Config>, natural_routes: &[RouteOverride]) -> anyhow::Result<()> {
     let file_path = Path::new(&config.lqos_directory).join("integrationUISProutes.template.csv");
     let mut writer = csv::Writer::from_path(file_path)?;

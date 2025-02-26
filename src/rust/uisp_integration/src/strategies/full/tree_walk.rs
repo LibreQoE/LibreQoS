@@ -1,9 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::io::Write;
 use std::sync::Arc;
 use lqos_config::Config;
 use crate::errors::UispIntegrationError;
-use crate::strategies::full::routes_override::{write_routing_overrides_template, RouteOverride};
+use crate::strategies::full::routes_override::RouteOverride;
 use crate::uisp_types::{UispSite, UispSiteType};
 
 /// Walks the tree to determine the best route for each site
@@ -15,7 +15,7 @@ use crate::uisp_types::{UispSite, UispSiteType};
 /// * `root_site` - The name of the root site
 /// * `overrides` - The list of route overrides
 pub fn walk_tree_for_routing(
-    config: Arc<Config>,
+    _config: Arc<Config>,
     sites: &mut Vec<UispSite>,
     root_site: &str,
     overrides: &Vec<RouteOverride>,
@@ -33,7 +33,7 @@ pub fn walk_tree_for_routing(
     // Now we iterate through every node that ISN'T the root
     for i in 0..sites.len() {
         // Skip the root. It's not going anywhere.
-        if (i == root_idx) {
+        if i == root_idx {
             continue;
         }
 

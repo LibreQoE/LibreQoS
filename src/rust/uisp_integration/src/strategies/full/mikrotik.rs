@@ -1,4 +1,4 @@
-use std::{fs::read_to_string, path::Path};
+use std::path::Path;
 use std::process::Command;
 use lqos_config::Config;
 use crate::uisp_types::Ipv4ToIpv6;
