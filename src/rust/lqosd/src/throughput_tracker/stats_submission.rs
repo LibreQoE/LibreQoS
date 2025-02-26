@@ -1,14 +1,16 @@
 use std::fs::read_to_string;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::path::Path;
+use std::sync::Mutex;
 use fxhash::{FxHashMap, FxHashSet};
+use once_cell::sync::Lazy;
 use tokio::sync::mpsc::Sender;
 use tokio::time::Instant;
 use tracing::debug;
 use tracing::log::warn;
 use lqos_config::load_config;
 use lqos_queue_tracker::{ALL_QUEUE_SUMMARY, TOTAL_QUEUE_STATS};
-use lqos_utils::hash_to_i64;
+use lqos_utils::{hash_to_i64, XdpIpAddress};
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::unix_now;
 use crate::lts2_sys::shared_types::{CircuitCakeDrops, CircuitCakeMarks};
@@ -46,6 +48,8 @@ impl LtsSubmitMetrics {
         }
     }
 }
+
+static UNIQUE_DEVICE_MAP: Lazy<Mutex<FxHashMap<XdpIpAddress, u64>>> = Lazy::new(|| Mutex::new(FxHashMap::default()));
 
 pub(crate) fn submit_throughput_stats(
     long_term_stats_tx: Sender<StatsUpdateMessage>,
@@ -293,7 +297,6 @@ pub(crate) fn submit_throughput_stats(
             icmp_packets: DownUpOrder<u64>,
         }
 
-        let mut unique_devices = FxHashSet::default();
         let mut crazy_values: FxHashSet<i64> = FxHashSet::default(); // Circuits to skip because the numbers are too high
         let mut circuit_throughput: FxHashMap<i64, CircuitThroughputTemp> = FxHashMap::default();
         let mut circuit_retransmits: FxHashMap<i64, DownUpOrder<u64>> = FxHashMap::default();
@@ -308,13 +311,14 @@ pub(crate) fn submit_throughput_stats(
             .map(|d| (d.circuit_hash, (d.download_max_mbps as u64 * 1_000_000 * CRAZY_LIMIT, d.upload_max_mbps as u64 * 1_000_000 * CRAZY_LIMIT)))
             .collect();
 
+        let mut unique_lock = UNIQUE_DEVICE_MAP.lock().unwrap();
         THROUGHPUT_TRACKER
             .raw_data
             .lock().unwrap()
             .iter()
             .filter(|(_k,h)| h.circuit_id.is_some() && h.bytes_per_second.not_zero())
             .for_each(|(k,h)| {
-                unique_devices.insert(*k);
+                unique_lock.insert(*k, now);
 
                 let mut crazy = false;
                 if let Some((dl,ul)) = plan_lookup.get(&h.circuit_hash.unwrap_or(0)) {
@@ -346,6 +350,7 @@ pub(crate) fn submit_throughput_stats(
                     });
                 }
             });
+        drop(unique_lock);
 
         THROUGHPUT_TRACKER
             .raw_data
@@ -550,10 +555,15 @@ pub(crate) fn submit_throughput_stats(
             }
         }
 
-        if crate::lts2_sys::device_count(now, unique_devices.len() as u64).is_err() {
-            warn!("Error sending message to LTS2.");
+        // Unique Devices
+        if counter % 60*30 == 0 {
+            let mut unique_devices = UNIQUE_DEVICE_MAP.lock().unwrap();
+            // Remove anything older than 30 minutes
+            unique_devices.retain(|_k,v| now - *v < 60*30);
+            if crate::lts2_sys::device_count(now, unique_devices.len() as u64).is_err() {
+                warn!("Error sending message to LTS2.");
+            }
         }
-
 
         // Shaper utilization
         if counter % 60 == 0 {
