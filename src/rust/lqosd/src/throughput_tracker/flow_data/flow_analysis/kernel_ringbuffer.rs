@@ -244,7 +244,7 @@ pub struct FlowbeeEvent {
     effective_direction: u32,
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn flowbee_handle_events(
     _ctx: *mut c_void,
     data: *mut c_void,

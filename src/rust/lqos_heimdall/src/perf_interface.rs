@@ -60,7 +60,7 @@ if (hdr->cwr) flags |= 128;
 ///
 /// This function is inherently unsafe, because it interfaces directly with
 /// C and the Linux-kernel eBPF system.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn heimdall_handle_events(
   _ctx: *mut c_void,
   data: *mut c_void,
