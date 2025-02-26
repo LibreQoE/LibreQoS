@@ -7,7 +7,7 @@ pub struct KeyStore {
 impl KeyStore {
     pub fn new() -> Self {
         Self {
-            keys: KeyPair::gen(),
+            keys: KeyPair::r#gen(),
         }
     }
     
@@ -22,9 +22,9 @@ mod test {
 
     #[test]
     fn test_sealed_box_roundtrip() {
-        let sender_keypair = KeyPair::gen();
-        let recipient_keypair = KeyPair::gen();
-        let nonce = Nonce::gen();
+        let sender_keypair = KeyPair::r#gen();
+        let recipient_keypair = KeyPair::r#gen();
+        let nonce = Nonce::r#gen();
         let message = b"Once upon a time, there was a man with a dream.";
         let dryocbox = DryocBox::encrypt_to_vecbox(
             message,
@@ -49,7 +49,7 @@ mod test {
 
     #[test]
     fn test_serialize_keypair() {
-        let keypair = KeyPair::gen();
+        let keypair = KeyPair::r#gen();
         let serialized = serde_cbor::to_vec(&keypair).unwrap();
         let deserialized : KeyPair = serde_cbor::from_slice(&serialized).unwrap();
         assert_eq!(keypair, deserialized);

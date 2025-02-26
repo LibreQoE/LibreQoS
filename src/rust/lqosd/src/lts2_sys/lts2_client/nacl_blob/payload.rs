@@ -14,7 +14,7 @@ pub fn transmit_payload<T: Serialize>(
     let mut size_info = SizeInfo::default();
 
     // Make the nonce, serialize it
-    let nonce = Nonce::gen();
+    let nonce = Nonce::r#gen();
     let serialized_nonce = serde_cbor::to_vec(&nonce)?;
     let compressed_nonce = miniz_oxide::deflate::compress_to_vec(&serialized_nonce, 10);
     // Transmit the nonce size, then the nonce
