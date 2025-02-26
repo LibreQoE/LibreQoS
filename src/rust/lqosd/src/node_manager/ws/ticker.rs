@@ -1,34 +1,34 @@
 use std::sync::Arc;
 
+use crate::node_manager::ws::publish_subscribe::PubSub;
+use lqos_bus::BusRequest;
 use tokio::join;
 use tokio::sync::mpsc::Sender;
 use tracing::debug;
-use lqos_bus::BusRequest;
-use crate::node_manager::ws::publish_subscribe::PubSub;
 mod cadence;
-mod throughput;
-mod rtt_histogram;
-mod flow_counter;
-mod top_10;
-mod ipstats_conversion;
-mod top_flows;
-mod flow_endpoints;
-pub mod system_info;
-mod tree_summary;
-mod queue_stats_total;
-mod network_tree;
 mod circuit_capacity;
-mod tree_capacity;
+mod flow_counter;
+mod flow_endpoints;
+mod ipstats_conversion;
+mod network_tree;
+mod queue_stats_total;
 mod retransmits;
+mod rtt_histogram;
+pub mod system_info;
+mod throughput;
+mod top_10;
+mod top_flows;
+mod tree_capacity;
+mod tree_summary;
 
-pub use network_tree::all_circuits;
 use crate::system_stats::SystemStats;
+pub use network_tree::all_circuits;
 
 /// Runs a periodic tick to feed data to the node manager.
 pub(super) async fn channel_ticker(
     channels: Arc<PubSub>,
     bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
-    system_usage_tx: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>
+    system_usage_tx: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
 ) {
     debug!("Starting channel tickers");
     one_second_cadence(channels.clone(), bus_tx.clone(), system_usage_tx.clone()).await;
@@ -37,7 +37,7 @@ pub(super) async fn channel_ticker(
 async fn one_second_cadence(
     channels: Arc<PubSub>,
     bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
-    system_usage_tx: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>
+    system_usage_tx: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
 ) {
     let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);

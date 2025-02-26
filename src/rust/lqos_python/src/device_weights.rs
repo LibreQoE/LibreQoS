@@ -1,9 +1,9 @@
 //! This module is responsible for getting the device weights from the Long Term Stats API
 //! and the ShapedDevices.csv file. It will merge the two sources of weights and return the
 //! result as a Vec<DeviceWeightResponse>.
-//! 
+//!
 //! # Example
-//! 
+//!
 //! ```python
 //! from liblqos_python import get_weights;
 //! weights = get_weights();
@@ -12,7 +12,7 @@
 //! ```
 
 use anyhow::Result;
-use lqos_config::{load_config, ConfigShapedDevices, ShapedDevice};
+use lqos_config::{ConfigShapedDevices, ShapedDevice, load_config};
 use pyo3::pyclass;
 use serde::{Deserialize, Serialize};
 
@@ -68,7 +68,7 @@ fn get_weights_from_lts(
 /// This function is used to get the device weights from the ShapedDevices.csv file
 fn get_weights_from_shaped_devices() -> Result<Vec<DeviceWeightResponse>> {
     let mut devices_list = ConfigShapedDevices::load()?.devices;
-    devices_list.sort_by(|a,b| a.circuit_id.cmp(&b.circuit_id));
+    devices_list.sort_by(|a, b| a.circuit_id.cmp(&b.circuit_id));
     let mut result = vec![];
     let mut prev_id = String::new();
     for device in devices_list {
@@ -77,7 +77,10 @@ fn get_weights_from_shaped_devices() -> Result<Vec<DeviceWeightResponse>> {
             continue;
         }
         let weight = device.download_max_mbps as i64 / 2;
-        result.push(DeviceWeightResponse { circuit_id: circuit_id.clone(), weight });
+        result.push(DeviceWeightResponse {
+            circuit_id: circuit_id.clone(),
+            weight,
+        });
         prev_id = circuit_id.clone();
     }
 
@@ -92,7 +95,7 @@ fn use_lts_weights() -> bool {
 
 /// This function is used to get the device weights from the Long Term Stats API and the ShapedDevices.csv file
 /// It will merge the two sources of weights and return the result as a Vec<DeviceWeightResponse>.
-/// 
+///
 /// It serves as the Rust-side implementation of the `get_weights` function in the Python module.
 pub(crate) fn get_weights_rust() -> Result<Vec<DeviceWeightResponse>> {
     let mut shaped_devices_weights = get_weights_from_shaped_devices()?;
@@ -111,14 +114,17 @@ pub(crate) fn get_weights_rust() -> Result<Vec<DeviceWeightResponse>> {
 
         let duration_seconds = 60 * 60 * 24; // 1 day
         let percentile = 0.95;
-    
+
         eprintln!("Getting weights from LTS");
         let weights = get_weights_from_lts(&org_key, &node_id, start, duration_seconds, percentile);
         if let Ok(weights) = weights {
             eprintln!("Retrieved {} weights from LTS", weights.len());
             // Merge them
             for weight in weights.iter() {
-                if let Some(existing) = shaped_devices_weights.iter_mut().find(|d| d.circuit_id == weight.circuit_id) {                    
+                if let Some(existing) = shaped_devices_weights
+                    .iter_mut()
+                    .find(|d| d.circuit_id == weight.circuit_id)
+                {
                     existing.weight = weight.weight;
                 }
             }
@@ -152,10 +158,11 @@ fn recurse_weights(
         });
     //println!("     Weight: {}", weight);
 
-    for (i, _n) in network.get_nodes_when_ready()
+    for (i, _n) in network
+        .get_nodes_when_ready()
         .iter()
         .enumerate()
-        .filter(|(_i, n)| n.immediate_parent == Some(node_index)) 
+        .filter(|(_i, n)| n.immediate_parent == Some(node_index))
     {
         //println!("     Child: {}", n.name);
         weight += recurse_weights(device_list, device_weights, network, i)?;
@@ -177,7 +184,11 @@ pub(crate) fn calculate_tree_weights() -> Result<Vec<NetworkNodeWeight>> {
     let device_list = ConfigShapedDevices::load()?.devices;
     let device_weights = get_weights_rust()?;
     let network = lqos_config::NetworkJson::load()?;
-    let root_index = network.get_nodes_when_ready().iter().position(|n| n.immediate_parent.is_none()).unwrap();
+    let root_index = network
+        .get_nodes_when_ready()
+        .iter()
+        .position(|n| n.immediate_parent.is_none())
+        .unwrap();
     let mut result = Vec::new();
     //println!("Root index is: {}", root_index);
 
@@ -186,14 +197,17 @@ pub(crate) fn calculate_tree_weights() -> Result<Vec<NetworkNodeWeight>> {
         .get_nodes_when_ready()
         .iter()
         .enumerate()
-        .filter(|(_,n)| n.immediate_parent.is_some() && n.immediate_parent.unwrap() == root_index)
+        .filter(|(_, n)| n.immediate_parent.is_some() && n.immediate_parent.unwrap() == root_index)
         .for_each(|(idx, n)| {
             //println!("Node: {} ", n.name);
             let weight = recurse_weights(&device_list, &device_weights, &network, idx).unwrap();
             //println!("Node: {} : {weight}", n.name);
-            result.push(NetworkNodeWeight { name: n.name.clone(), weight });
+            result.push(NetworkNodeWeight {
+                name: n.name.clone(),
+                weight,
+            });
         });
 
-    result.sort_by(|a,b| b.weight.cmp(&a.weight));
+    result.sort_by(|a, b| b.weight.cmp(&a.weight));
     Ok(result)
 }

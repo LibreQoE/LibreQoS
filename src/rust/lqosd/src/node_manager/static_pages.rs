@@ -1,10 +1,10 @@
-use std::path::Path;
-use axum::Router;
-use tower_http::services::{ServeDir, ServeFile};
-use lqos_config::load_config;
-use anyhow::{bail, Result};
 use crate::node_manager::auth::auth_layer;
 use crate::node_manager::template::apply_templates;
+use anyhow::{Result, bail};
+use axum::Router;
+use lqos_config::load_config;
+use std::path::Path;
+use tower_http::services::{ServeDir, ServeFile};
 
 pub(super) fn vendor_route() -> Result<Router> {
     let config = load_config()?;
@@ -17,8 +17,7 @@ pub(super) fn vendor_route() -> Result<Router> {
         bail!("Vendor path not found for webserver (bin/static2/vendor/");
     }
 
-    let router = Router::new()
-        .nest_service("/", ServeDir::new(vendor_path));
+    let router = Router::new().nest_service("/", ServeDir::new(vendor_path));
 
     Ok(router)
 }
@@ -29,10 +28,18 @@ pub(super) fn static_routes() -> Result<Router> {
     // Add HTML pages to serve directly to this list, otherwise
     // they won't have template + authentication applied to them.
     let html_pages = [
-        "index.html", "shaped_devices.html", "tree.html",
-        "help.html", "unknown_ips.html", "configuration.html",
-        "circuit.html", "flow_map.html", "all_tree_sankey.html",
-        "asn_explorer.html", "lts_trial.html", "lts_trial_success.html",
+        "index.html",
+        "shaped_devices.html",
+        "tree.html",
+        "help.html",
+        "unknown_ips.html",
+        "configuration.html",
+        "circuit.html",
+        "flow_map.html",
+        "all_tree_sankey.html",
+        "asn_explorer.html",
+        "lts_trial.html",
+        "lts_trial_success.html",
         "lts_trial_fail.html",
         "config_general.html",
         "config_anon.html",

@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 #[derive(Default, Debug, Serialize, Deserialize)]
 
 /// Defines data to be submitted if anonymous usage submission is
@@ -65,7 +65,6 @@ pub struct AnonymousUsageV1 {
     /// Peak number of bits/s passing through the shaper
     pub high_watermark_bps: (u64, u64),
 }
-
 
 /// Description of installed NIC (version 1 data)
 #[derive(Default, Debug, Serialize, Deserialize)]

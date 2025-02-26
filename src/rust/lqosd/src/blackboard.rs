@@ -1,9 +1,9 @@
+use crossbeam_channel::Sender;
+use lqos_bus::BlackboardSystem;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::OnceLock;
-use crossbeam_channel::Sender;
-use serde::Serialize;
 use tracing::{info, warn};
-use lqos_bus::BlackboardSystem;
 
 pub static BLACKBOARD_SENDER: OnceLock<Sender<BlackboardCommand>> = OnceLock::new();
 
@@ -45,7 +45,11 @@ pub fn start_blackboard() {
             match rx.recv() {
                 Ok(BlackboardCommand::FinishSession) => {
                     // If empty, do nothing
-                    if board.circuits.is_empty() && board.sites.is_empty() && board.system.is_empty() && board.blobs.is_empty() {
+                    if board.circuits.is_empty()
+                        && board.sites.is_empty()
+                        && board.system.is_empty()
+                        && board.blobs.is_empty()
+                    {
                         continue;
                     }
 
@@ -67,7 +71,11 @@ pub fn start_blackboard() {
                     board.devices.clear();
                     board.blobs.clear();
                 }
-                Ok(BlackboardCommand::BlackboardData { subsystem, key, value }) => {
+                Ok(BlackboardCommand::BlackboardData {
+                    subsystem,
+                    key,
+                    value,
+                }) => {
                     info!("Received data: {} = {}", key, value);
                     match subsystem {
                         BlackboardSystem::System => {

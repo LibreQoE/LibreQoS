@@ -1,13 +1,13 @@
 use super::PREALLOCATE_CLIENT_BUFFER_BYTES;
 use crate::{
-    bus::BusClientError, decode_response, encode_request, BusRequest, BusResponse, BusSession,
-    BUS_SOCKET_PATH,
+    BUS_SOCKET_PATH, BusRequest, BusResponse, BusSession, bus::BusClientError, decode_response,
+    encode_request,
 };
-use tracing::error;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::UnixStream,
 };
+use tracing::error;
 
 /// Convenient wrapper for accessing the bus
 ///

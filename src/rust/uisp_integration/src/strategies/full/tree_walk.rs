@@ -1,26 +1,25 @@
-use std::collections::{HashMap, HashSet};
+use crate::errors::UispIntegrationError;
+use crate::strategies::full::routes_override::RouteOverride;
+use crate::uisp_types::{UispSite, UispSiteType};
+use lqos_config::Config;
+use std::collections::HashSet;
 use std::io::Write;
 use std::sync::Arc;
-use lqos_config::Config;
-use crate::errors::UispIntegrationError;
-use crate::strategies::full::routes_override::{write_routing_overrides_template, RouteOverride};
-use crate::uisp_types::{UispSite, UispSiteType};
 
 /// Walks the tree to determine the best route for each site
-/// 
+///
 /// This function will walk the tree to determine the best route for each site.
-/// 
+///
 /// # Arguments
 /// * `sites` - The list of sites
 /// * `root_site` - The name of the root site
 /// * `overrides` - The list of route overrides
 pub fn walk_tree_for_routing(
-    config: Arc<Config>,
+    _config: Arc<Config>,
     sites: &mut Vec<UispSite>,
     root_site: &str,
     overrides: &Vec<RouteOverride>,
 ) -> Result<(), UispIntegrationError> {
-
     // Initialize the visualization
     let mut dot_graph = "digraph G {\n  graph [ ranksep=2.0 overlap=false ]\n".to_string();
 
@@ -33,7 +32,7 @@ pub fn walk_tree_for_routing(
     // Now we iterate through every node that ISN'T the root
     for i in 0..sites.len() {
         // Skip the root. It's not going anywhere.
-        if (i == root_idx) {
+        if i == root_idx {
             continue;
         }
 
@@ -41,8 +40,13 @@ pub fn walk_tree_for_routing(
         let parents = sites[i].parent_indices.clone();
         for destination_idx in parents {
             // Is there a route override?
-            if let Some(route_override) = overrides.iter().find(|o| o.from_site == sites[i].name && o.to_site == sites[destination_idx].name) {
-                sites[i].route_weights.push((destination_idx, route_override.cost));
+            if let Some(route_override) = overrides
+                .iter()
+                .find(|o| o.from_site == sites[i].name && o.to_site == sites[destination_idx].name)
+            {
+                sites[i]
+                    .route_weights
+                    .push((destination_idx, route_override.cost));
                 continue;
             }
 
@@ -54,14 +58,8 @@ pub fn walk_tree_for_routing(
             // There's no direct route, so we want to evaluate the shortest path
             let mut visited = std::collections::HashSet::new();
             visited.insert(i); // Don't go back to where we came from
-            let weight = find_shortest_path(
-                destination_idx,
-                root_idx,
-                visited,
-                sites,
-                overrides,
-                10,
-            );
+            let weight =
+                find_shortest_path(destination_idx, root_idx, visited, sites, overrides, 10);
             if let Some(shortest) = weight {
                 sites[i].route_weights.push((destination_idx, shortest));
             }
@@ -82,16 +80,21 @@ pub fn walk_tree_for_routing(
         }
 
         // Plot it
-        for (i,(idx, weight)) in site.route_weights.iter().enumerate() {
+        for (i, (idx, weight)) in site.route_weights.iter().enumerate() {
             let from = site_index.get(&idx).unwrap().clone();
             let to = site.name.clone();
             if i == 0 {
-                dot_graph.push_str(&format!("\"{}\" -> \"{}\" [label=\"{}\" color=\"red\"] \n", from, to, weight));
+                dot_graph.push_str(&format!(
+                    "\"{}\" -> \"{}\" [label=\"{}\" color=\"red\"] \n",
+                    from, to, weight
+                ));
             } else {
-                dot_graph.push_str(&format!("\"{}\" -> \"{}\" [label=\"{}\"] \n", from, to, weight));
+                dot_graph.push_str(&format!(
+                    "\"{}\" -> \"{}\" [label=\"{}\"] \n",
+                    from, to, weight
+                ));
             }
         }
-
     }
 
     dot_graph.push_str("}\n");
@@ -101,7 +104,6 @@ pub fn walk_tree_for_routing(
             let _ = file.write_all(dot_graph.as_bytes());
         }
     }
-
 
     Ok(())
 }
@@ -123,7 +125,9 @@ fn find_shortest_path(
     let destinations = sites[from_idx].parent_indices.clone();
     for destination_idx in destinations {
         // Is there a route override?
-        if let Some(route_override) = overrides.iter().find(|o| o.from_site == sites[from_idx].name && o.to_site == sites[destination_idx].name) {
+        if let Some(route_override) = overrides.iter().find(|o| {
+            o.from_site == sites[from_idx].name && o.to_site == sites[destination_idx].name
+        }) {
             return Some(route_override.cost);
         }
         // If there's a direct route, go that way
@@ -135,7 +139,14 @@ fn find_shortest_path(
             continue;
         }
         // Calculate the route
-        let new_weight = find_shortest_path(destination_idx, root_idx, visited.clone(), sites, overrides, weight + 10);
+        let new_weight = find_shortest_path(
+            destination_idx,
+            root_idx,
+            visited.clone(),
+            sites,
+            overrides,
+            weight + 10,
+        );
         if let Some(new_weight) = new_weight {
             return Some(new_weight);
         }

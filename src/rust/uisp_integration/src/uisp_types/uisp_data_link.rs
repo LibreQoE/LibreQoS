@@ -24,7 +24,7 @@ impl UispDataLink {
     }
 
     /// Converts a UISP DataLink into a UispDataLink.
-    /// 
+    ///
     /// # Arguments
     /// * `value` - The UISP DataLink to convert
     pub fn from_uisp(value: &DataLink) -> Option<Self> {

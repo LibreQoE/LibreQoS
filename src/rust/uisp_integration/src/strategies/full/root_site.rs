@@ -67,7 +67,7 @@ fn handle_multiple_internet_connected_sites(
 
 /// Sets the root site in the site list.
 /// If there are multiple root sites, it will return an error.
-/// 
+///
 /// # Arguments
 /// * `sites` - The list of sites
 /// * `root_site` - The name of the root site

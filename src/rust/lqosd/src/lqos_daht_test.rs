@@ -6,23 +6,27 @@ use tracing::log::warn;
 static TEST_BUSY: AtomicBool = AtomicBool::new(false);
 
 pub fn lqos_daht_test() -> BusResponse {
-  spawn_blocking(|| {
-    if TEST_BUSY.compare_exchange(
-      false,
-      true,
-      std::sync::atomic::Ordering::Relaxed,
-      std::sync::atomic::Ordering::Relaxed,
-    ) == Ok(false)
-    {
-      let result = Command::new("/bin/ssh")
-        .args(["-t", "lqtest@lqos.taht.net", "\"/home/lqtest/bin/v6vsv4.sh\""])
-        .output();
-      if result.is_err() {
-        warn!("Unable to call dtaht test: {:?}", result);
-      }
+    spawn_blocking(|| {
+        if TEST_BUSY.compare_exchange(
+            false,
+            true,
+            std::sync::atomic::Ordering::Relaxed,
+            std::sync::atomic::Ordering::Relaxed,
+        ) == Ok(false)
+        {
+            let result = Command::new("/bin/ssh")
+                .args([
+                    "-t",
+                    "lqtest@lqos.taht.net",
+                    "\"/home/lqtest/bin/v6vsv4.sh\"",
+                ])
+                .output();
+            if result.is_err() {
+                warn!("Unable to call dtaht test: {:?}", result);
+            }
 
-      TEST_BUSY.store(false, std::sync::atomic::Ordering::Relaxed);
-    }
-  });
-  BusResponse::Ack
+            TEST_BUSY.store(false, std::sync::atomic::Ordering::Relaxed);
+        }
+    });
+    BusResponse::Ack
 }

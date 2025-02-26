@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Default)]
@@ -30,7 +30,7 @@ pub struct IngestSession {
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub enum RemoteCommand {
-    Log(String)
+    Log(String),
 }
 
 #[repr(C)]

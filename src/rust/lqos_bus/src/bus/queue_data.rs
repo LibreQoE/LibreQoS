@@ -1,36 +1,35 @@
-use serde::{Serialize, Deserialize};
-
+use serde::{Deserialize, Serialize};
 
 /// Type used for *displaying* the queue store data. It deliberately
 /// doesn't include data that we aren't going to display in a GUI.
 #[allow(missing_docs)]
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub struct QueueStoreTransit {
-  pub history: Vec<(CakeDiffTransit, CakeDiffTransit)>,
-  pub history_head: usize,
-  //pub prev_download: Option<CakeTransit>,
-  //pub prev_upload: Option<CakeTransit>,
-  pub current_download: CakeTransit,
-  pub current_upload: CakeTransit,
+    pub history: Vec<(CakeDiffTransit, CakeDiffTransit)>,
+    pub history_head: usize,
+    //pub prev_download: Option<CakeTransit>,
+    //pub prev_upload: Option<CakeTransit>,
+    pub current_download: CakeTransit,
+    pub current_upload: CakeTransit,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 #[allow(missing_docs)]
 pub struct CakeDiffTransit {
-  pub bytes: u64,
-  pub packets: u32,
-  pub qlen: u32,
-  pub tins: Vec<CakeDiffTinTransit>,
+    pub bytes: u64,
+    pub packets: u32,
+    pub qlen: u32,
+    pub tins: Vec<CakeDiffTinTransit>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 #[allow(missing_docs)]
 pub struct CakeDiffTinTransit {
-  pub sent_bytes: u64,
-  pub backlog_bytes: u32,
-  pub drops: u32,
-  pub marks: u32,
-  pub base_delay_us: u32,
+    pub sent_bytes: u64,
+    pub backlog_bytes: u32,
+    pub drops: u32,
+    pub marks: u32,
+    pub base_delay_us: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]

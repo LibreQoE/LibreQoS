@@ -1,15 +1,15 @@
-use std::ffi::c_void;
-use libbpf_sys::bpf_map_update_elem;
-use tracing::error;
-use thiserror::Error;
 use crate::num_possible_cpus;
+use libbpf_sys::bpf_map_update_elem;
+use std::ffi::c_void;
+use thiserror::Error;
+use tracing::error;
 
 #[derive(Default)]
 #[repr(C)]
 struct TxqConfig {
-	/* lookup key: __u32 cpu; */
-	queue_mapping: u16,
-	htb_major: u16,
+    /* lookup key: __u32 cpu; */
+    queue_mapping: u16,
+    htb_major: u16,
 }
 
 pub fn map_txq_config_base_setup(map_fd: i32) -> Result<(), MapTxqConfigError> {
@@ -20,10 +20,10 @@ pub fn map_txq_config_base_setup(map_fd: i32) -> Result<(), MapTxqConfigError> {
     }
 
     let mut txq_cfg = TxqConfig::default();
-    for cpu in 0 .. possible_cpus {
+    for cpu in 0..possible_cpus {
         let cpu_u16: u16 = cpu as u16;
         txq_cfg.queue_mapping = cpu_u16 + 1;
-		txq_cfg.htb_major     = cpu_u16 + 1;
+        txq_cfg.htb_major = cpu_u16 + 1;
 
         let key_ptr: *const u32 = &cpu;
         let val_ptr: *const TxqConfig = &txq_cfg;

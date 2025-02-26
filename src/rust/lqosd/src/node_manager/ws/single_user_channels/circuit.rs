@@ -1,9 +1,9 @@
-use std::time::Duration;
+use crate::node_manager::ws::ticker::all_circuits;
+use lqos_bus::{BusRequest, Circuit};
 use serde::Serialize;
+use std::time::Duration;
 use tokio::time::MissedTickBehavior;
 use tracing::info;
-use lqos_bus::{BusRequest, Circuit};
-use crate::node_manager::ws::ticker::all_circuits;
 
 #[derive(Serialize)]
 pub struct Devices {
@@ -11,14 +11,22 @@ pub struct Devices {
     pub devices: Vec<Circuit>,
 }
 
-pub(super) async fn circuit_watcher(circuit: String, tx: tokio::sync::mpsc::Sender<String>, bus_tx: tokio::sync::mpsc::Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>) {
+pub(super) async fn circuit_watcher(
+    circuit: String,
+    tx: tokio::sync::mpsc::Sender<String>,
+    bus_tx: tokio::sync::mpsc::Sender<(
+        tokio::sync::oneshot::Sender<lqos_bus::BusReply>,
+        BusRequest,
+    )>,
+) {
     let mut ticker = tokio::time::interval(Duration::from_secs(1));
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
     loop {
         ticker.tick().await;
 
         // Get all circuits and filter them
-        let devices_for_circuit: Vec<_> = all_circuits(bus_tx.clone()).await
+        let devices_for_circuit: Vec<_> = all_circuits(bus_tx.clone())
+            .await
             .into_iter()
             .filter(|c| {
                 if let Some(c) = c.circuit_id.as_ref() {

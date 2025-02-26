@@ -1,15 +1,17 @@
-use axum::http::StatusCode;
-use axum::Json;
-use serde::Deserialize;
-use lqos_config::ShapedDevice;
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
+use axum::Json;
+use axum::http::StatusCode;
+use lqos_config::ShapedDevice;
+use serde::Deserialize;
 
 #[derive(Deserialize)]
 pub struct CircuitId {
-    id: String
+    id: String,
 }
 
-pub async fn get_circuit_by_id(Json(id) : Json<CircuitId>) -> Result<Json<Vec<ShapedDevice>>, StatusCode> {
+pub async fn get_circuit_by_id(
+    Json(id): Json<CircuitId>,
+) -> Result<Json<Vec<ShapedDevice>>, StatusCode> {
     let safe_id = id.id.to_lowercase().trim().to_string();
     let reader = SHAPED_DEVICES.load();
     let devices: Vec<ShapedDevice> = reader

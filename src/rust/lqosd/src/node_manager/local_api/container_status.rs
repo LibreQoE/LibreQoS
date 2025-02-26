@@ -2,11 +2,11 @@
 //! data containers. Designed to help identify/diagnose RAM
 //! usage issues.
 
+use crate::shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES};
+use crate::throughput_tracker::THROUGHPUT_TRACKER;
+use crate::throughput_tracker::flow_data::{ALL_FLOWS, FlowAnalysisSystem, RECENT_FLOWS};
 use axum::Json;
 use serde::Serialize;
-use crate::shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES};
-use crate::throughput_tracker::flow_data::{FlowAnalysisSystem, ALL_FLOWS, RECENT_FLOWS};
-use crate::throughput_tracker::THROUGHPUT_TRACKER;
 
 #[derive(Debug, Serialize, Default)]
 pub struct ContainerSize {
@@ -59,7 +59,10 @@ fn asn_analysis() -> (usize, usize, ContainerSize) {
     (
         asn_trie,
         geo_trie,
-        ContainerSize { size: lookup_len, capacity: lookup_capacity }
+        ContainerSize {
+            size: lookup_len,
+            capacity: lookup_capacity,
+        },
     )
 }
 

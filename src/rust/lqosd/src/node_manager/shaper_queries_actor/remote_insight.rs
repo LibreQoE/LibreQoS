@@ -1,12 +1,11 @@
 use crate::node_manager::shaper_queries_actor::caches::Caches;
 use crate::node_manager::shaper_queries_actor::ws_message::WsMessage;
 use anyhow::{anyhow, bail};
-use futures_util::stream::{SplitSink, StreamExt};
 use futures_util::SinkExt;
+use futures_util::stream::{SplitSink, StreamExt};
 use lqos_config::load_config;
 use std::net::ToSocketAddrs;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::select;
@@ -14,6 +13,7 @@ use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use tracing::{debug, info, warn};
+use tungstenite::Bytes;
 
 const TCP_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -39,7 +39,10 @@ pub struct RemoteInsight {
 
 impl RemoteInsight {
     pub fn new(caches: Arc<Caches>) -> Self {
-        Self { tx: Mutex::new(None), caches }
+        Self {
+            tx: Mutex::new(None),
+            caches,
+        }
     }
 
     async fn connect(&self) {
@@ -53,8 +56,7 @@ impl RemoteInsight {
         info!("Connected to remote insight (processor layer)");
     }
 
-    pub async fn command(&self, command: RemoteInsightCommand) -> bool
-    {
+    pub async fn command(&self, command: RemoteInsightCommand) -> bool {
         info!("RICMD - Sending command: {command:?}");
         let lock_exists = self.tx.lock().await.is_some();
         if !lock_exists {
@@ -87,7 +89,7 @@ async fn run_remote_insight(
     ready: tokio::sync::oneshot::Sender<()>,
     caches: Arc<Caches>,
 ) -> anyhow::Result<()> {
-    let mut socket = connect().await?;
+    let socket = connect().await?;
     let (mut write, mut read) = socket.split();
     let (tx, mut rx) = tokio::sync::mpsc::channel(128);
 
@@ -142,7 +144,9 @@ async fn run_remote_insight(
 
     // Ready
     debug!("Ready to receive commands");
-    ready.send(()).map_err(|_| anyhow!("Failed to send ready message"))?;
+    ready
+        .send(())
+        .map_err(|_| anyhow!("Failed to send ready message"))?;
 
     let timeout = Duration::from_secs(10);
     let mut ticker = tokio::time::interval(timeout);
@@ -165,43 +169,43 @@ async fn run_remote_insight(
                     }
                     Some(RemoteInsightCommand::ShaperThroughput { seconds }) => {
                         let msg = WsMessage::ShaperThroughput { seconds }.to_bytes()?;
-                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                        tx.send(tungstenite::Message::Binary(Bytes::from(msg))).await?;
                     }
                     Some(RemoteInsightCommand::ShaperPackets { seconds }) => {
                         let msg = WsMessage::ShaperPackets { seconds }.to_bytes()?;
-                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                        tx.send(tungstenite::Message::Binary(Bytes::from(msg))).await?;
                     }
                     Some(RemoteInsightCommand::ShaperPercent { seconds }) => {
                         let msg = WsMessage::ShaperPercent { seconds }.to_bytes()?;
-                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                        tx.send(tungstenite::Message::Binary(Bytes::from(msg))).await?;
                     }
                     Some(RemoteInsightCommand::ShaperFlows { seconds }) => {
                         let msg = WsMessage::ShaperFlows { seconds }.to_bytes()?;
-                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                        tx.send(tungstenite::Message::Binary(Bytes::from(msg))).await?;
                     }
                     Some(RemoteInsightCommand::ShaperRttHistogram { seconds }) => {
                         let msg = WsMessage::ShaperRttHistogram { seconds }.to_bytes()?;
-                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                        tx.send(tungstenite::Message::Binary(Bytes::from(msg))).await?;
                     }
                     Some(RemoteInsightCommand::ShaperTopDownloaders { seconds }) => {
                         let msg = WsMessage::ShaperTopDownloaders { seconds }.to_bytes()?;
-                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                        tx.send(tungstenite::Message::Binary(Bytes::from(msg))).await?;
                     }
                     Some(RemoteInsightCommand::ShaperWorstRtt { seconds }) => {
                         let msg = WsMessage::ShaperWorstRtt { seconds }.to_bytes()?;
-                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                        tx.send(tungstenite::Message::Binary(Bytes::from(msg))).await?;
                     }
                     Some(RemoteInsightCommand::ShaperWorstRxmit { seconds }) => {
                         let msg = WsMessage::ShaperWorstRxmit { seconds }.to_bytes()?;
-                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                        tx.send(tungstenite::Message::Binary(Bytes::from(msg))).await?;
                     }
                     Some(RemoteInsightCommand::ShaperTopFlows { seconds }) => {
                         let msg = WsMessage::ShaperTopFlows { seconds }.to_bytes()?;
-                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                        tx.send(tungstenite::Message::Binary(Bytes::from(msg))).await?;
                     }
                     Some(RemoteInsightCommand::ShaperRecentMedians) => {
                         let msg = WsMessage::ShaperRecentMedian.to_bytes()?;
-                        tx.send(tungstenite::Message::Binary(msg)).await?;
+                        tx.send(tungstenite::Message::Binary(Bytes::from(msg))).await?;
                     }
                 }
             }
@@ -214,7 +218,7 @@ async fn run_remote_insight(
                 };
                 match msg {
                     tungstenite::Message::Ping(_) => {
-                        write.send(tokio_tungstenite::tungstenite::Message::Pong(vec![])).await?;
+                        write.send(tokio_tungstenite::tungstenite::Message::Pong(Bytes::new())).await?;
                     }
                     tungstenite::Message::Pong(_) => {
                         // Ignore
@@ -271,7 +275,9 @@ async fn connect() -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>>
     let target = format!("wss://{}:443/shaper_api/shaperWs", remote_host);
     debug!("Connecting to shaper query server: {target}");
     let mut addresses = format!("{}:443", remote_host).to_socket_addrs()?;
-    let addr = addresses.next().ok_or_else(|| anyhow!("Failed to resolve remote host"))?;
+    let addr = addresses
+        .next()
+        .ok_or_else(|| anyhow!("Failed to resolve remote host"))?;
 
     // TCP Stream
     let Ok(Ok(stream)) = timeout(TCP_TIMEOUT, TcpStream::connect(&addr)).await else {
@@ -284,8 +290,8 @@ async fn connect() -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>>
     let Ok(connector) = native_tls::TlsConnector::builder()
         .danger_accept_invalid_certs(true)
         .danger_accept_invalid_hostnames(true)
-        .build() else
-    {
+        .build()
+    else {
         warn!("Failed to create TLS connector");
         bail!("Failed to create TLS connector");
     };
@@ -293,7 +299,9 @@ async fn connect() -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>>
 
     // Tungstenite Client
     debug!("Connecting tungstenite client to shaper query server: {target}");
-    let result = tokio_tungstenite::client_async_tls_with_config(target, stream, None, Some(t_connector)).await;
+    let result =
+        tokio_tungstenite::client_async_tls_with_config(target, stream, None, Some(t_connector))
+            .await;
     if result.is_err() {
         bail!("Failed to connect to shaper query server. {result:?}");
     }
@@ -308,7 +316,12 @@ async fn connect() -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>>
     Ok(socket)
 }
 
-async fn send_hello(write: &mut SplitSink<WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>, tungstenite::Message>) -> anyhow::Result<()> {
+async fn send_hello(
+    write: &mut SplitSink<
+        WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+        tungstenite::Message,
+    >,
+) -> anyhow::Result<()> {
     let config = load_config()?;
     let Some(license_key) = &config.long_term_stats.license_key else {
         warn!("No license key found in config");
@@ -318,9 +331,10 @@ async fn send_hello(write: &mut SplitSink<WebSocketStream<tokio_tungstenite::May
     let msg = WsMessage::Hello {
         license_key: license_key.to_string(),
         node_id: config.node_id.to_string(),
-    }.to_bytes()?;
+    }
+    .to_bytes()?;
     //tx.send(tungstenite::Message::Binary(msg)).await?;
-    write.send(tungstenite::Message::Binary(msg)).await?;
+    write.send(tungstenite::Message::Binary(msg.into())).await?;
 
     Ok(())
 }

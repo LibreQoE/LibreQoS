@@ -1,8 +1,12 @@
-mod circuit;
-mod ping_monitor;
-mod flows_by_circuit;
 mod cake_watcher;
+mod circuit;
+mod flows_by_circuit;
+mod ping_monitor;
 
+use crate::node_manager::ws::single_user_channels::cake_watcher::cake_watcher;
+use crate::node_manager::ws::single_user_channels::circuit::circuit_watcher;
+use crate::node_manager::ws::single_user_channels::flows_by_circuit::flows_by_circuit;
+use crate::node_manager::ws::single_user_channels::ping_monitor::ping_monitor;
 use axum::Extension;
 use axum::extract::WebSocketUpgrade;
 use axum::extract::ws::{Message, WebSocket};
@@ -10,10 +14,6 @@ use axum::response::IntoResponse;
 use serde::{Deserialize, Serialize};
 use tokio::spawn;
 use tracing::{debug, info};
-use crate::node_manager::ws::single_user_channels::cake_watcher::cake_watcher;
-use crate::node_manager::ws::single_user_channels::circuit::circuit_watcher;
-use crate::node_manager::ws::single_user_channels::flows_by_circuit::flows_by_circuit;
-use crate::node_manager::ws::single_user_channels::ping_monitor::ping_monitor;
 
 #[derive(Serialize, Deserialize)]
 enum PrivateChannel {
@@ -25,7 +25,12 @@ enum PrivateChannel {
 
 pub(super) async fn private_channel_ws_handler(
     ws: WebSocketUpgrade,
-    Extension(bus_tx): Extension<tokio::sync::mpsc::Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, lqos_bus::BusRequest)>>,
+    Extension(bus_tx): Extension<
+        tokio::sync::mpsc::Sender<(
+            tokio::sync::oneshot::Sender<lqos_bus::BusReply>,
+            lqos_bus::BusRequest,
+        )>,
+    >,
 ) -> impl IntoResponse {
     info!("WS Upgrade Called");
     let my_bus = bus_tx.clone();
@@ -36,7 +41,10 @@ pub(super) async fn private_channel_ws_handler(
 
 async fn handle_socket(
     mut socket: WebSocket,
-    bus_tx: tokio::sync::mpsc::Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, lqos_bus::BusRequest)>,
+    bus_tx: tokio::sync::mpsc::Sender<(
+        tokio::sync::oneshot::Sender<lqos_bus::BusReply>,
+        lqos_bus::BusRequest,
+    )>,
 ) {
     debug!("Websocket connected");
 

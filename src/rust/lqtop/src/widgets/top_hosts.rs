@@ -1,7 +1,7 @@
+use super::{TopWidget, table_helper::TableHelper};
 use lqos_bus::{BusResponse, IpStats};
 use lqos_utils::packet_scale::{scale_bits, scale_packets};
 use ratatui::prelude::*;
-use super::{table_helper::TableHelper, TopWidget};
 
 pub struct TopHosts {
     bus_link: tokio::sync::mpsc::Sender<crate::bus::BusMessage>,

@@ -1,6 +1,6 @@
+use lqos_utils::unix_time::time_since_boot;
 use std::time::Duration;
 use tracing::{debug, error, info};
-use lqos_utils::unix_time::time_since_boot;
 
 /// Starts a periodic garbage collector that will run every hour.
 /// This is used to clean up old eBPF map entries to limit memory usage.
@@ -33,7 +33,6 @@ fn throughput_garbage_collect() {
     let now = Duration::from(now).as_nanos() as u64;
     let period_nanos = EXPIRY_TIME * 1_000_000_000;
     let period_ago = now - period_nanos;
-
 
     let mut expired = Vec::new();
     unsafe {

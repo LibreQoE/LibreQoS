@@ -1,8 +1,8 @@
-use axum::http::StatusCode;
 use axum::Json;
-use tracing::error;
-use serde::{Deserialize, Serialize};
+use axum::http::StatusCode;
 use lqos_config::load_config;
+use serde::{Deserialize, Serialize};
+use tracing::error;
 
 #[derive(Serialize, Deserialize)]
 pub struct ShaperStatus {
@@ -12,7 +12,14 @@ pub struct ShaperStatus {
 
 pub async fn shaper_status_from_lts() -> Result<Json<Vec<ShaperStatus>>, StatusCode> {
     let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let url = format!("https://{}/shaper_api/status", config.long_term_stats.clone().lts_url.unwrap_or("insight.libreqos.com".to_string()));
+    let url = format!(
+        "https://{}/shaper_api/status",
+        config
+            .long_term_stats
+            .clone()
+            .lts_url
+            .unwrap_or("insight.libreqos.com".to_string())
+    );
     println!("URL: {}", url);
 
     let client = reqwest::Client::builder()
@@ -25,7 +32,14 @@ pub async fn shaper_status_from_lts() -> Result<Json<Vec<ShaperStatus>>, StatusC
 
     let shapers = client
         .get(&url)
-        .header("x-license-key", config.long_term_stats.clone().license_key.unwrap_or("".to_string()))
+        .header(
+            "x-license-key",
+            config
+                .long_term_stats
+                .clone()
+                .license_key
+                .unwrap_or("".to_string()),
+        )
         .header("x-node-id", config.node_id.to_string())
         .send()
         .await

@@ -5,104 +5,102 @@ use tracing::debug;
 #[repr(C)]
 #[derive(Default, Clone, Debug)]
 struct BifrostInterface {
-  redirect_to: u32,
-  scan_vlans: u32,
+    redirect_to: u32,
+    scan_vlans: u32,
 }
 
 #[repr(C)]
 #[derive(Default, Clone, Debug)]
 struct BifrostVlan {
-  redirect_to: u32,
+    redirect_to: u32,
 }
 
 const INTERFACE_PATH: &str = "/sys/fs/bpf/bifrost_interface_map";
 const VLAN_PATH: &str = "/sys/fs/bpf/bifrost_vlan_map";
 
 pub(crate) fn clear_bifrost() -> Result<()> {
-  debug!("Clearing bifrost maps");
-  let mut interface_map =
-    BpfMap::<u32, BifrostInterface>::from_path(INTERFACE_PATH)?;
-  let mut vlan_map = BpfMap::<u32, BifrostVlan>::from_path(VLAN_PATH)?;
-  debug!("Clearing VLANs");
-  vlan_map.clear_no_repeat()?;
-  debug!("Clearing Interfaces");
-  interface_map.clear_no_repeat()?;
-  Ok(())
+    debug!("Clearing bifrost maps");
+    let mut interface_map = BpfMap::<u32, BifrostInterface>::from_path(INTERFACE_PATH)?;
+    let mut vlan_map = BpfMap::<u32, BifrostVlan>::from_path(VLAN_PATH)?;
+    debug!("Clearing VLANs");
+    vlan_map.clear_no_repeat()?;
+    debug!("Clearing Interfaces");
+    interface_map.clear_no_repeat()?;
+    Ok(())
 }
 
-pub(crate) fn map_multi_interface_mode(
-  to_internet: &str,
-  to_lan: &str,  
-) -> Result<()> {
-  debug!("Interface maps (multi-interface)");
-  let mut interface_map =
-    BpfMap::<u32, BifrostInterface>::from_path(INTERFACE_PATH)?;
+pub(crate) fn map_multi_interface_mode(to_internet: &str, to_lan: &str) -> Result<()> {
+    debug!("Interface maps (multi-interface)");
+    let mut interface_map = BpfMap::<u32, BifrostInterface>::from_path(INTERFACE_PATH)?;
 
-  // Internet
-  let mut from = interface_name_to_index(to_internet)?;
-  let redirect_to = interface_name_to_index(to_lan)?;
-  let mut mapping = BifrostInterface {
-    redirect_to,
-    scan_vlans: 0,
-  };
-  interface_map.insert(&mut from, &mut mapping)?;
-  debug!("Mapped bifrost interface {}->{}", from, redirect_to);
+    // Internet
+    let mut from = interface_name_to_index(to_internet)?;
+    let redirect_to = interface_name_to_index(to_lan)?;
+    let mut mapping = BifrostInterface {
+        redirect_to,
+        scan_vlans: 0,
+    };
+    interface_map.insert(&mut from, &mut mapping)?;
+    debug!("Mapped bifrost interface {}->{}", from, redirect_to);
 
-  // LAN
-  let mut from = interface_name_to_index(to_lan)?;
-  let redirect_to = interface_name_to_index(to_internet)?;
-  let mut mapping = BifrostInterface {
-    redirect_to,
-    scan_vlans: 0,
-  };
-  interface_map.insert(&mut from, &mut mapping)?;
-  debug!("Mapped bifrost interface {}->{}", from, redirect_to);
+    // LAN
+    let mut from = interface_name_to_index(to_lan)?;
+    let redirect_to = interface_name_to_index(to_internet)?;
+    let mut mapping = BifrostInterface {
+        redirect_to,
+        scan_vlans: 0,
+    };
+    interface_map.insert(&mut from, &mut mapping)?;
+    debug!("Mapped bifrost interface {}->{}", from, redirect_to);
 
-  Ok(())
+    Ok(())
 }
 
 pub(crate) fn map_single_interface_mode(
-  interface: &str,
-  internet_vlan: u32,
-  lan_vlan: u32,
+    interface: &str,
+    internet_vlan: u32,
+    lan_vlan: u32,
 ) -> Result<()> {
-  debug!("Interface maps (single interface)");
-  let mut interface_map =
-    BpfMap::<u32, BifrostInterface>::from_path(INTERFACE_PATH)?;
+    debug!("Interface maps (single interface)");
+    let mut interface_map = BpfMap::<u32, BifrostInterface>::from_path(INTERFACE_PATH)?;
 
-  let mut vlan_map = BpfMap::<u32, BifrostVlan>::from_path(VLAN_PATH)?;
+    let mut vlan_map = BpfMap::<u32, BifrostVlan>::from_path(VLAN_PATH)?;
 
-  // Internet
-  let mut from = interface_name_to_index(interface)?;
-  let redirect_to = interface_name_to_index(interface)?;
-  let mut mapping = BifrostInterface {
-    redirect_to,
-    scan_vlans: 1,
-  };
-  interface_map.insert(&mut from, &mut mapping)?;
-  debug!("Mapped bifrost interface {}->{}", from, redirect_to);
+    // Internet
+    let mut from = interface_name_to_index(interface)?;
+    let redirect_to = interface_name_to_index(interface)?;
+    let mut mapping = BifrostInterface {
+        redirect_to,
+        scan_vlans: 1,
+    };
+    interface_map.insert(&mut from, &mut mapping)?;
+    debug!("Mapped bifrost interface {}->{}", from, redirect_to);
 
-  // VLANs - Internet
-  let mut key: u32 = (interface_name_to_index(&interface)? << 16) | internet_vlan;
-  let mut val = BifrostVlan { redirect_to: lan_vlan };
-  vlan_map.insert(&mut key, &mut val)?;
-  debug!(
-    "Mapped bifrost VLAN: {}:{} => {}",
-    interface, internet_vlan, lan_vlan
-  );
-  debug!("{key}");
+    // VLANs - Internet
+    let mut key: u32 = (interface_name_to_index(&interface)? << 16) | internet_vlan;
+    let mut val = BifrostVlan {
+        redirect_to: lan_vlan,
+    };
+    vlan_map.insert(&mut key, &mut val)?;
+    debug!(
+        "Mapped bifrost VLAN: {}:{} => {}",
+        interface, internet_vlan, lan_vlan
+    );
+    debug!("{key}");
 
-  // VLANs - LAN
-  let mut key: u32 = (interface_name_to_index(&interface)? << 16) | lan_vlan;
-  let mut val = BifrostVlan { redirect_to: internet_vlan };
-  vlan_map.insert(&mut key, &mut val)?;
-  debug!(
-    "Mapped bifrost VLAN: {}:{} => {}",
-    interface, lan_vlan, internet_vlan
-  );
-  debug!("{key}");
+    // VLANs - LAN
+    let mut key: u32 = (interface_name_to_index(&interface)? << 16) | lan_vlan;
+    let mut val = BifrostVlan {
+        redirect_to: internet_vlan,
+    };
+    vlan_map.insert(&mut key, &mut val)?;
+    debug!(
+        "Mapped bifrost VLAN: {}:{} => {}",
+        interface, lan_vlan, internet_vlan
+    );
+    debug!("{key}");
 
-  Ok(())
+    Ok(())
 }
 
 /*pub(crate) fn map_interfaces(mappings: &[&str]) -> Result<()> {

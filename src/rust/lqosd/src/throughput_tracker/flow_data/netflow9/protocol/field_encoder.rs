@@ -1,11 +1,24 @@
-use std::net::IpAddr;
-use lqos_sys::flowbee_data::FlowbeeKey;
-use crate::throughput_tracker::flow_data::FlowbeeLocalData;
 use super::field_types::*;
+use crate::throughput_tracker::flow_data::FlowbeeLocalData;
+use lqos_sys::flowbee_data::FlowbeeKey;
+use std::net::IpAddr;
 
-pub(crate) fn encode_fields_from_template(template: &[(u16, u16)], direction: usize, key: &FlowbeeKey, data: &FlowbeeLocalData) -> anyhow::Result<Vec<u8>> {
-    let src_port = if direction == 0 { key.src_port } else { key.dst_port };
-    let dst_port = if direction == 0 { key.dst_port } else { key.src_port };
+pub(crate) fn encode_fields_from_template(
+    template: &[(u16, u16)],
+    direction: usize,
+    key: &FlowbeeKey,
+    data: &FlowbeeLocalData,
+) -> anyhow::Result<Vec<u8>> {
+    let src_port = if direction == 0 {
+        key.src_port
+    } else {
+        key.dst_port
+    };
+    let dst_port = if direction == 0 {
+        key.dst_port
+    } else {
+        key.src_port
+    };
 
     let total_size: u16 = template.iter().map(|(_, size)| size).sum();
     let mut result = Vec::with_capacity(total_size as usize);

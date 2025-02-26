@@ -1,5 +1,5 @@
-use crate::uisp_types::uisp_site_type::UispSiteType;
 use crate::uisp_types::DetectedAccessPoint;
+use crate::uisp_types::uisp_site_type::UispSiteType;
 use lqos_config::Config;
 use std::collections::HashSet;
 use tracing::warn;

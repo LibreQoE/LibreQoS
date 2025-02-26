@@ -3,8 +3,8 @@
 use super::anonymous_stats::UsageStats;
 use super::tuning::Tunables;
 use serde::{Deserialize, Serialize};
-use sha2::digest::Update;
 use sha2::Digest;
+use sha2::digest::Update;
 use uuid::Uuid;
 
 /// Top-level configuration file for LibreQoS.
@@ -117,7 +117,8 @@ impl Config {
     /// Loads a config file from a string (used for testing only)
     #[allow(dead_code)]
     pub fn load_from_string(s: &str) -> Result<Self, String> {
-        let config: Config = toml::from_str(s).map_err(|e| format!("Error parsing config: {}", e))?;
+        let config: Config =
+            toml::from_str(s).map_err(|e| format!("Error parsing config: {}", e))?;
         config.validate()?;
         Ok(config)
     }
@@ -129,7 +130,7 @@ impl Default for Config {
             version: "1.5".to_string(),
             lqos_directory: "/opt/libreqos/src".to_string(),
             node_id: Self::calculate_node_id(),
-            node_name: "LibreQoS".to_string(),            
+            node_name: "LibreQoS".to_string(),
             usage_stats: UsageStats::default(),
             tuning: Tunables::default(),
             bridge: Some(super::bridge::BridgeConfig::default()),

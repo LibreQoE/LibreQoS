@@ -1,11 +1,14 @@
-use lqos_queue_tracker::TOTAL_QUEUE_STATS;
-use std::sync::Arc;
-use serde_json::json;
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
+use lqos_queue_tracker::TOTAL_QUEUE_STATS;
+use serde_json::json;
+use std::sync::Arc;
 
 pub async fn queue_stats_totals(channels: Arc<PubSub>) {
-    if !channels.is_channel_alive(PublishedChannels::QueueStatsTotal).await {
+    if !channels
+        .is_channel_alive(PublishedChannels::QueueStatsTotal)
+        .await
+    {
         return;
     }
 
@@ -21,6 +24,9 @@ pub async fn queue_stats_totals(channels: Arc<PubSub>) {
                 "up" : TOTAL_QUEUE_STATS.drops.get_up(),
             },
         }
-    ).to_string();
-    channels.send(PublishedChannels::QueueStatsTotal, message).await;
+    )
+    .to_string();
+    channels
+        .send(PublishedChannels::QueueStatsTotal, message)
+        .await;
 }

@@ -1,13 +1,18 @@
-mod session_buffer;
 mod min_max;
+mod session_buffer;
 mod system_stats;
-use crate::{transport_data::{StatsHost, StatsSummary, StatsRttSummary, StatsTreeNode, StatsSubmission, StatsTotals}, submission_queue::{new_submission, comm_channel::SenderChannelMessage}};
-use self::min_max::{MinMaxAvgPair, MinMaxAvg};
-pub(crate) use session_buffer::{StatsSession, SESSION_BUFFER};
-use lqos_utils::unix_time::unix_now;
-use tokio::sync::mpsc::Sender;
-use std::{collections::HashMap, net::IpAddr};
+use self::min_max::{MinMaxAvg, MinMaxAvgPair};
 use super::{HostSummary, NetworkTreeEntry};
+use crate::{
+    submission_queue::{comm_channel::SenderChannelMessage, new_submission},
+    transport_data::{
+        StatsHost, StatsRttSummary, StatsSubmission, StatsSummary, StatsTotals, StatsTreeNode,
+    },
+};
+use lqos_utils::unix_time::unix_now;
+pub(crate) use session_buffer::{SESSION_BUFFER, StatsSession};
+use std::{collections::HashMap, net::IpAddr};
+use tokio::sync::mpsc::Sender;
 
 pub(crate) async fn collate_stats(comm_tx: Sender<SenderChannelMessage>) {
     let timestamp = unix_now().unwrap_or(0);
@@ -77,8 +82,16 @@ pub(crate) async fn collate_stats(comm_tx: Sender<SenderChannelMessage>) {
         let sh = StatsHost {
             ip_address: ip.to_string(),
             circuit_id: host[0].circuit_id.clone(),
-            bits: StatsSummary{ min: (bits.down.min, bits.up.min), max: (bits.down.max, bits.up.max), avg: (bits.down.avg, bits.up.avg) },
-            rtt: StatsRttSummary{ min: rtt.min, max: rtt.max, avg: rtt.avg },
+            bits: StatsSummary {
+                min: (bits.down.min, bits.up.min),
+                max: (bits.down.max, bits.up.max),
+                avg: (bits.down.avg, bits.up.avg),
+            },
+            rtt: StatsRttSummary {
+                min: rtt.min,
+                max: rtt.max,
+                avg: rtt.avg,
+            },
         };
         stats_hosts.push(sh);
     }
@@ -103,8 +116,16 @@ pub(crate) async fn collate_stats(comm_tx: Sender<SenderChannelMessage>) {
             index: nodes[0].0,
             name: name.to_string(),
             max_throughput: nodes[0].1.max_throughput,
-            current_throughput: StatsSummary{ min: (bits.down.min.into(), bits.up.min.into()), max: (bits.down.max.into(), bits.up.max.into()), avg: (bits.down.avg.into(), bits.up.avg.into()) },
-            rtt: StatsRttSummary{ min: rtt.min, max: rtt.max, avg: rtt.avg },
+            current_throughput: StatsSummary {
+                min: (bits.down.min.into(), bits.up.min.into()),
+                max: (bits.down.max.into(), bits.up.max.into()),
+                avg: (bits.down.avg.into(), bits.up.avg.into()),
+            },
+            rtt: StatsRttSummary {
+                min: rtt.min,
+                max: rtt.max,
+                avg: rtt.avg,
+            },
             parents: nodes[0].1.parents.clone(),
             immediate_parent: nodes[0].1.immediate_parent,
             node_type: nodes[0].1.node_type.clone(),
@@ -116,31 +137,44 @@ pub(crate) async fn collate_stats(comm_tx: Sender<SenderChannelMessage>) {
     let (cpu, ram) = system_stats::get_cpu_ram().await;
 
     // Add to the submissions queue
-    new_submission(StatsSubmission {
-        timestamp,
-        totals: Some(StatsTotals {
-            bits: StatsSummary {
-                min: (bits_per_second.down.min, bits_per_second.up.min),
-                max: (bits_per_second.down.max, bits_per_second.up.max),
-                avg: (bits_per_second.down.avg, bits_per_second.up.avg),
-            },
-            shaped_bits: StatsSummary {
-                min: (shaped_bits_per_second.down.min, shaped_bits_per_second.up.min),
-                max: (shaped_bits_per_second.down.max, shaped_bits_per_second.up.max),
-                avg: (shaped_bits_per_second.down.avg, shaped_bits_per_second.up.avg),
-            },
-            packets: StatsSummary {
-                min: (packets_per_second.down.min, packets_per_second.up.min),
-                max: (packets_per_second.down.max, packets_per_second.up.max),
-                avg: (packets_per_second.down.avg, packets_per_second.up.avg),
-            },
-        }),
-        cpu_usage: Some(cpu),
-        ram_percent: Some(ram),
-        hosts: Some(stats_hosts),
-        tree: Some(tree_entries),
-        uisp_devices: None,
-    }, comm_tx).await;
+    new_submission(
+        StatsSubmission {
+            timestamp,
+            totals: Some(StatsTotals {
+                bits: StatsSummary {
+                    min: (bits_per_second.down.min, bits_per_second.up.min),
+                    max: (bits_per_second.down.max, bits_per_second.up.max),
+                    avg: (bits_per_second.down.avg, bits_per_second.up.avg),
+                },
+                shaped_bits: StatsSummary {
+                    min: (
+                        shaped_bits_per_second.down.min,
+                        shaped_bits_per_second.up.min,
+                    ),
+                    max: (
+                        shaped_bits_per_second.down.max,
+                        shaped_bits_per_second.up.max,
+                    ),
+                    avg: (
+                        shaped_bits_per_second.down.avg,
+                        shaped_bits_per_second.up.avg,
+                    ),
+                },
+                packets: StatsSummary {
+                    min: (packets_per_second.down.min, packets_per_second.up.min),
+                    max: (packets_per_second.down.max, packets_per_second.up.max),
+                    avg: (packets_per_second.down.avg, packets_per_second.up.avg),
+                },
+            }),
+            cpu_usage: Some(cpu),
+            ram_percent: Some(ram),
+            hosts: Some(stats_hosts),
+            tree: Some(tree_entries),
+            uisp_devices: None,
+        },
+        comm_tx,
+    )
+    .await;
 
     // Clear the collection buffer
     writer.clear();

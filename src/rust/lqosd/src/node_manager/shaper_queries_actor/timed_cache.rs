@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
@@ -39,6 +41,7 @@ where
 
     pub fn cleanup(&mut self) {
         let now = Instant::now();
-        self.cache.retain(|_, (_, time)| now.duration_since(*time) < self.ttl);
+        self.cache
+            .retain(|_, (_, time)| now.duration_since(*time) < self.ttl);
     }
 }

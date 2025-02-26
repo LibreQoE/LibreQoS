@@ -1,7 +1,7 @@
 [package]
 name = "lqosd"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 license = "GPL-2.0-only"
 
 [features]
@@ -67,4 +67,3 @@ allocative_derive = "0.3.3"
 #jemallocator = {  workspace = true }
 mimalloc = { workspace = true }
 futures-util = "0.3.31"
-log = "0.4.22"

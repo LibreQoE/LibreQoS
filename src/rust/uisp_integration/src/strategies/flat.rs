@@ -1,3 +1,4 @@
+use crate::blackboard_blob;
 use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
 use crate::uisp_types::UispDevice;
@@ -7,7 +8,6 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use tracing::{error, info, warn};
-use crate::blackboard_blob;
 
 /// Represents a shaped device in the ShapedDevices.csv file.
 #[derive(Serialize, Debug)]
@@ -28,7 +28,7 @@ struct ShapedDevice {
 }
 
 /// Builds a flat network for UISP
-/// 
+///
 /// # Arguments
 /// * `config` - The configuration
 /// * `ip_ranges` - The IP ranges to use for the network
@@ -49,11 +49,13 @@ pub async fn build_flat_network(
         error!("{e:?}");
         UispIntegrationError::UispConnectError
     })?;
-    let data_links = uisp::load_all_data_links(config.clone()).await.map_err(|e| {
-        error!("Unable to load device list from UISP");
-        error!("{e:?}");
-        UispIntegrationError::UispConnectError
-    })?;
+    let data_links = uisp::load_all_data_links(config.clone())
+        .await
+        .map_err(|e| {
+            error!("Unable to load device list from UISP");
+            error!("{e:?}");
+            UispIntegrationError::UispConnectError
+        })?;
 
     if let Err(e) = blackboard_blob("uisp_sites", &sites).await {
         warn!("Unable to write sites to blackboard: {e:?}");
@@ -84,10 +86,8 @@ pub async fn build_flat_network(
                         config.queues.generated_pn_download_mbps,
                         config.queues.generated_pn_upload_mbps,
                     );
-                    let download_min = 1
-                        as u64;
-                    let upload_min = 1
-                        as u64;
+                    let download_min = 1 as u64;
+                    let upload_min = 1 as u64;
                     for device in devices.iter() {
                         let dev = UispDevice::from_uisp(device, &config, &ip_ranges, &ipv4_to_v6);
                         if dev.site_id == site.id {

@@ -1,14 +1,14 @@
+mod cpu;
 mod stats_ringbuffer;
 mod table_helper;
-mod cpu;
 pub use cpu::cpu_display;
 mod network_sparkline;
 pub use network_sparkline::*;
-use ratatui::{layout::Rect, Frame};
-pub mod top_hosts;
-pub mod top_flows;
+use ratatui::{Frame, layout::Rect};
 pub mod help;
 pub mod latency_histogram;
+pub mod top_flows;
+pub mod top_hosts;
 
 pub enum MainWidget {
     Hosts,

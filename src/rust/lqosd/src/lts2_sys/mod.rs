@@ -1,11 +1,11 @@
 use std::net::IpAddr;
 use std::sync::Mutex;
-pub mod shared_types;
 pub(crate) mod lts2_client;
+pub mod shared_types;
 
+use crate::lts2_sys::shared_types::{FreeTrialDetails, LtsStatus};
 use anyhow::Result;
 use once_cell::sync::Lazy;
-use crate::lts2_sys::shared_types::{FreeTrialDetails, LtsStatus};
 pub use shared_types::RemoteCommand;
 
 pub fn start_lts2() -> Result<()> {
@@ -80,8 +80,18 @@ pub fn total_throughput(
     )?)
 }
 
-pub fn shaper_utilization(tick: u64, average_cpu: f32, peak_cpu: f32, memory_percent: f32) -> Result<()> {
-    Ok(lts2_client::submit_shaper_utilization(tick, average_cpu, peak_cpu, memory_percent)?)
+pub fn shaper_utilization(
+    tick: u64,
+    average_cpu: f32,
+    peak_cpu: f32,
+    memory_percent: f32,
+) -> Result<()> {
+    Ok(lts2_client::submit_shaper_utilization(
+        tick,
+        average_cpu,
+        peak_cpu,
+        memory_percent,
+    )?)
 }
 
 pub fn circuit_throughput(data: &[shared_types::CircuitThroughput]) -> Result<()> {
@@ -131,8 +141,12 @@ pub fn get_lts_license_status() -> (LtsStatus, i32) {
 }
 
 pub async fn get_lts_license_status_async() -> (LtsStatus, i32) {
-    let remaining = lts2_client::get_lts_license_trial_remaining_async().await.unwrap_or(0);
-    let status = lts2_client::get_lts_license_status_async().await.unwrap_or(-1);
+    let remaining = lts2_client::get_lts_license_trial_remaining_async()
+        .await
+        .unwrap_or(0);
+    let status = lts2_client::get_lts_license_status_async()
+        .await
+        .unwrap_or(-1);
     (LtsStatus::from_i32(status), remaining)
 }
 
@@ -181,8 +195,7 @@ pub fn two_way_flow(
     rtt1: f32,
     rtt2: f32,
     circuit_hash: Option<i64>,
-) -> Result<()>
-{
+) -> Result<()> {
     Ok(lts2_client::two_way_flow(
         start_time,
         end_time,
@@ -203,10 +216,7 @@ pub fn two_way_flow(
     )?)
 }
 
-pub fn ip_policies(
-    allow_subnets: &Vec<String>,
-    ignore_subnets: &Vec<String>,
-) -> Result<()> {
+pub fn ip_policies(allow_subnets: &Vec<String>, ignore_subnets: &Vec<String>) -> Result<()> {
     for subnet in allow_subnets {
         lts2_client::allow_subnet(subnet.to_string())?;
     }
@@ -221,7 +231,7 @@ pub fn blackboard(json: &[u8]) -> Result<()> {
     Ok(())
 }
 
-pub fn flow_count(timestamp:u64, count: u64) -> Result<()> {
+pub fn flow_count(timestamp: u64, count: u64) -> Result<()> {
     Ok(lts2_client::flow_count(timestamp, count)?)
 }
 
@@ -236,7 +246,8 @@ fn command_callback(buffer: Vec<u8>) {
     lock.extend(commands);
 }
 
-static COMMANDS: Lazy<Mutex<Vec<shared_types::RemoteCommand>>> = Lazy::new(|| Mutex::new(Vec::new()));
+static COMMANDS: Lazy<Mutex<Vec<shared_types::RemoteCommand>>> =
+    Lazy::new(|| Mutex::new(Vec::new()));
 
 pub fn remote_commands() -> Vec<shared_types::RemoteCommand> {
     lts2_client::get_commands(command_callback);

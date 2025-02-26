@@ -1,6 +1,6 @@
 //! Provides a set of types for representing round-trip time (RTT) data,
 //! as produced by the eBPF system and consumed in different ways.
-//! 
+//!
 //! Adopting strong-typing is an attempt to reduce confusion with
 //! multipliers, divisors, etc. It is intended to become pervasive
 //! throughout the system.

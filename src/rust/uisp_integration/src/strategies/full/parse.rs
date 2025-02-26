@@ -5,14 +5,14 @@ use tracing::info;
 use uisp::{DataLink, Device, Site};
 
 /// Parses the UISP datasets into a more usable format.
-/// 
+///
 /// # Arguments
 /// * `sites_raw` - The raw site data
 /// * `data_links_raw` - The raw data link data
 /// * `devices_raw` - The raw device data
 /// * `config` - The configuration
 /// * `ip_ranges` - The IP ranges to use for the network
-/// 
+///
 /// # Returns
 /// * A tuple containing the parsed sites, data links, and devices
 pub fn parse_uisp_datasets(
@@ -70,7 +70,12 @@ fn parse_data_links(data_links_raw: &[DataLink]) -> Vec<UispDataLink> {
     data_links
 }
 
-fn parse_devices(devices_raw: &[Device], config: &Config, ip_ranges: &IpRanges, ipv4_to_v6: Vec<Ipv4ToIpv6>) -> Vec<UispDevice> {
+fn parse_devices(
+    devices_raw: &[Device],
+    config: &Config,
+    ip_ranges: &IpRanges,
+    ipv4_to_v6: Vec<Ipv4ToIpv6>,
+) -> Vec<UispDevice> {
     let devices: Vec<UispDevice> = devices_raw
         .iter()
         .map(|d| UispDevice::from_uisp(d, config, ip_ranges, &ipv4_to_v6))

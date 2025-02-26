@@ -1,10 +1,10 @@
 //! Handles the communication loop with lqosd.
 
 use crate::ui_base::SHOULD_EXIT;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use lqos_bus::{BusClient, BusRequest, BusResponse};
-use tokio::sync::mpsc::Receiver;
 use std::sync::atomic::Ordering;
+use tokio::sync::mpsc::Receiver;
 pub mod cpu_ram;
 
 /// Communications with the bus via channels
@@ -87,7 +87,10 @@ async fn main_loop(mut rx: Receiver<BusMessage>) -> Result<()> {
             commands.push(BusRequest::GetTopNDownloaders { start: 0, end: 100 });
         }
         if collect_top_flows.is_some() {
-            commands.push(BusRequest::TopFlows { flow_type: lqos_bus::TopFlowType::Bytes, n: 100 });
+            commands.push(BusRequest::TopFlows {
+                flow_type: lqos_bus::TopFlowType::Bytes,
+                n: 100,
+            });
         }
         if collect_latency_histogram.is_some() {
             commands.push(BusRequest::RttHistogram);

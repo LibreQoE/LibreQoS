@@ -3,13 +3,17 @@ use crate::throughput_tracker::flow_data::flow_analysis::rtt_types::RttData;
 use fxhash::FxHashMap;
 use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::unix_time::time_since_boot;
-use std::{
-    ffi::c_void, net::{IpAddr, Ipv4Addr, Ipv6Addr}, slice, sync::atomic::AtomicU64, time::Duration
-};
-use tracing::{warn, error};
-use zerocopy::FromBytes;
-use std::sync::OnceLock;
 use once_cell::sync::Lazy;
+use std::sync::OnceLock;
+use std::{
+    ffi::c_void,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    slice,
+    sync::atomic::AtomicU64,
+    time::Duration,
+};
+use tracing::{error, warn};
+use zerocopy::FromBytes;
 
 static EVENT_COUNT: AtomicU64 = AtomicU64::new(0);
 static EVENTS_PER_SECOND: AtomicU64 = AtomicU64::new(0);
@@ -58,7 +62,10 @@ impl RttBuffer {
             // Reject with no new data
             return RttData::from_nanos(0);
         }
-        let mut sorted = self.buffer[direction].iter().filter(|x| x.as_nanos() > 0).collect::<Vec<_>>();
+        let mut sorted = self.buffer[direction]
+            .iter()
+            .filter(|x| x.as_nanos() > 0)
+            .collect::<Vec<_>>();
         if sorted.is_empty() {
             return RttData::from_nanos(0);
         }
@@ -107,9 +114,8 @@ impl FlowTracker {
                         ignore_subnets.insert(addr, true);
                     } else {
                         error!("Invalid subnet: {}", subnet);
-                        continue;                    
+                        continue;
                     }
-
                 }
             }
         }
@@ -131,7 +137,8 @@ const EVENT_SIZE: usize = size_of::<FlowbeeEvent>();
 
 static FLOW_BYTES_SENDER: OnceLock<crossbeam_channel::Sender<()>> = OnceLock::new();
 static FLOW_COMMAND_SENDER: OnceLock<crossbeam_channel::Sender<FlowCommands>> = OnceLock::new();
-static FLOW_BYTES: Lazy<crossbeam_queue::ArrayQueue<[u8; EVENT_SIZE]>> = Lazy::new(|| crossbeam_queue::ArrayQueue::new(65536*32));
+static FLOW_BYTES: Lazy<crossbeam_queue::ArrayQueue<[u8; EVENT_SIZE]>> =
+    Lazy::new(|| crossbeam_queue::ArrayQueue::new(65536 * 32));
 
 #[derive(Debug)]
 enum FlowCommands {
@@ -170,7 +177,7 @@ impl FlowActor {
                                     let result = flows.flow_rtt.iter()
                                         .map(|(k, v)| (k.clone(), [v.median_new_data(0), v.median_new_data(1)]))
                                         .collect();
-                                
+
                                     // Clear all fresh data labeling
                                     flows.flow_rtt.iter_mut().for_each(|(_, v)| {
                                         v.has_new_data = [false, false];
@@ -197,7 +204,7 @@ impl FlowActor {
             error!("Unable to setup flow tracking channel. {e:?}");
             anyhow::bail!("Unable to setup flow tracking channel.");
         }
-        
+
         // Store the command sender
         if let Err(e) = FLOW_COMMAND_SENDER.set(cmd_tx) {
             error!("Unable to setup flow tracking command channel. {e:?}");
@@ -211,7 +218,7 @@ impl FlowActor {
     fn receive_flow(flows: &mut FlowTracker, message: &[u8]) {
         if let Ok(incoming) = FlowbeeEvent::read_from_bytes(message) {
             EVENT_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-             if let Ok(now) = time_since_boot() {
+            if let Ok(now) = time_since_boot() {
                 let since_boot = Duration::from(now);
                 if incoming.rtt == 0 {
                     return;
@@ -228,9 +235,16 @@ impl FlowActor {
                 }
 
                 // Insert it
-                let entry = flows.flow_rtt.entry(incoming.key)
-                    .or_insert(RttBuffer::new(incoming.rtt, incoming.effective_direction, since_boot.as_nanos() as u64));
-                entry.push(incoming.rtt, incoming.effective_direction, since_boot.as_nanos() as u64);
+                let entry = flows.flow_rtt.entry(incoming.key).or_insert(RttBuffer::new(
+                    incoming.rtt,
+                    incoming.effective_direction,
+                    since_boot.as_nanos() as u64,
+                ));
+                entry.push(
+                    incoming.rtt,
+                    incoming.effective_direction,
+                    since_boot.as_nanos() as u64,
+                );
             }
         }
     }
@@ -244,7 +258,7 @@ pub struct FlowbeeEvent {
     effective_direction: u32,
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn flowbee_handle_events(
     _ctx: *mut c_void,
     data: *mut c_void,
@@ -259,7 +273,7 @@ pub unsafe extern "C" fn flowbee_handle_events(
 
         // Copy the bytes (to free the ringbuffer slot)
         let data_u8 = data as *const u8;
-        let data_slice: &[u8] = slice::from_raw_parts(data_u8, EVENT_SIZE);
+        let data_slice: &[u8] = unsafe { slice::from_raw_parts(data_u8, EVENT_SIZE) };
         if let Ok(_) = FLOW_BYTES.push(data_slice.try_into().unwrap()) {
             if tx.try_send(()).is_err() {
                 warn!("Could not submit flow event - buffer full");

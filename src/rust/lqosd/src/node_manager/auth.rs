@@ -3,19 +3,19 @@
 //! cookie-based system, but now uses an Axum layer to be largely
 //! invisible.
 
-use axum::http::StatusCode;
 use axum::Json;
+use axum::http::StatusCode;
 use axum::response::{Html, Response};
-use axum_extra::extract::cookie::Cookie;
 use axum_extra::extract::CookieJar;
+use axum_extra::extract::cookie::Cookie;
+use lqos_config::{UserRole, WebUsers};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
-use lqos_config::{UserRole, WebUsers};
 
 const COOKIE_PATH: &str = "User-Token";
 
-static WEB_USERS : Lazy<Mutex<Option<WebUsers>>> = Lazy::new(|| Mutex::new(None));
+static WEB_USERS: Lazy<Mutex<Option<WebUsers>>> = Lazy::new(|| Mutex::new(None));
 
 pub async fn get_username(jar: &CookieJar) -> String {
     let lock = WEB_USERS.lock().await;
@@ -42,7 +42,7 @@ async fn check_login(jar: &CookieJar, users: &WebUsers) -> LoginResult {
             Ok(UserRole::ReadOnly) => LoginResult::ReadOnly,
             Ok(UserRole::Admin) => LoginResult::Admin,
             Err(_e) => LoginResult::Denied,
-        }
+        };
     }
     LoginResult::Denied
 }
@@ -58,8 +58,10 @@ pub async fn auth_layer(
     mut req: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Result<Response, Html<&'static str>> {
-    const BOUNCE: &str = "<html><body><script>window.location.href = 'login.html';</script></body></html>";
-    const FIRST_RUN: &str = "<html><body><script>window.location.href = 'first-run.html';</script></body></html>";
+    const BOUNCE: &str =
+        "<html><body><script>window.location.href = 'login.html';</script></body></html>";
+    const FIRST_RUN: &str =
+        "<html><body><script>window.location.href = 'first-run.html';</script></body></html>";
 
     let mut lock = WEB_USERS.lock().await;
     if lock.is_none() {
@@ -89,7 +91,7 @@ pub async fn auth_layer(
                 } else {
                     Err(Html(BOUNCE))
                 }
-            },
+            }
         };
     }
     Err(Html(BOUNCE))
@@ -103,14 +105,12 @@ pub struct LoginAttempt {
 
 pub async fn try_login(
     jar: CookieJar,
-    Json(login) : Json<LoginAttempt>,
+    Json(login): Json<LoginAttempt>,
 ) -> Result<(CookieJar, StatusCode), StatusCode> {
     let users = WEB_USERS.lock().await;
     if let Some(users) = &*users {
         return match users.login(&login.username, &login.password) {
-            Ok(token) => {
-                Ok((jar.add(Cookie::new(COOKIE_PATH, token)), StatusCode::OK))
-            }
+            Ok(token) => Ok((jar.add(Cookie::new(COOKIE_PATH, token)), StatusCode::OK)),
             Err(..) => {
                 if users.do_we_allow_anonymous() {
                     Ok((jar, StatusCode::OK))
@@ -118,7 +118,7 @@ pub async fn try_login(
                     Err(StatusCode::UNAUTHORIZED)
                 }
             }
-        }
+        };
     }
     Err(StatusCode::UNAUTHORIZED)
 }
@@ -127,20 +127,19 @@ pub async fn try_login(
 pub struct FirstUser {
     username: String,
     password: String,
-    allow_anonymous: bool
+    allow_anonymous: bool,
 }
 
 pub async fn first_user(
     jar: CookieJar,
-    Json(new_user) : Json<FirstUser>
+    Json(new_user): Json<FirstUser>,
 ) -> (CookieJar, StatusCode) {
     let mut users = WebUsers::load_or_create().unwrap();
     users.allow_anonymous(new_user.allow_anonymous).unwrap();
-    let token = users.add_or_update_user(&new_user.username, &new_user.password, UserRole::Admin).unwrap();
+    let token = users
+        .add_or_update_user(&new_user.username, &new_user.password, UserRole::Admin)
+        .unwrap();
     let mut lock = WEB_USERS.lock().await;
     *lock = Some(users);
-    (
-        jar.add(Cookie::new(COOKIE_PATH, token)),
-        StatusCode::OK
-    )
+    (jar.add(Cookie::new(COOKIE_PATH, token)), StatusCode::OK)
 }

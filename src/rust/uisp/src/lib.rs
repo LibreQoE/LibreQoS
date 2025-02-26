@@ -16,7 +16,7 @@ use self::rest::nms_request_get_vec;
 use anyhow::Result;
 pub use data_link::*;
 pub use device::Device;
-pub use site::{Site, SiteId, Description};
+pub use site::{Description, Site, SiteId};
 
 /// Loads a complete list of all sites from UISP
 pub async fn load_all_sites(config: Arc<Config>) -> Result<Vec<Site>> {
@@ -28,13 +28,13 @@ pub async fn load_all_sites(config: Arc<Config>) -> Result<Vec<Site>> {
     .await?;
 
     // Do not load sites from the excluded sites list.
-    raw_sites.retain(|site: &Site|
+    raw_sites.retain(|site: &Site| {
         if let Some(name) = &site.name() {
             !config.uisp_integration.exclude_sites.contains(name)
         } else {
             true
         }
-    );
+    });
 
     Ok(raw_sites)
 }

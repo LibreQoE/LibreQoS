@@ -6,20 +6,45 @@ pub enum WsMessage {
     IdentifyYourself,
     InvalidToken,
     TokenAccepted,
-    ShaperThroughput { seconds: i32 },
-    ShaperPackets { seconds: i32 },
-    ShaperPercent { seconds: i32 },
-    ShaperFlows { seconds: i32 },
-    ShaperRttHistogram { seconds: i32 },
-    ShaperTopDownloaders { seconds: i32 },
-    ShaperWorstRtt { seconds: i32 },
-    ShaperWorstRxmit { seconds: i32 },
-    ShaperTopFlows { seconds: i32 },
+    ShaperThroughput {
+        seconds: i32,
+    },
+    ShaperPackets {
+        seconds: i32,
+    },
+    ShaperPercent {
+        seconds: i32,
+    },
+    ShaperFlows {
+        seconds: i32,
+    },
+    ShaperRttHistogram {
+        seconds: i32,
+    },
+    ShaperTopDownloaders {
+        seconds: i32,
+    },
+    ShaperWorstRtt {
+        seconds: i32,
+    },
+    ShaperWorstRxmit {
+        seconds: i32,
+    },
+    ShaperTopFlows {
+        seconds: i32,
+    },
     ShaperRecentMedian,
 
     // Responses
-    Hello { license_key: String, node_id: String },
-    QueryResult { tag: String, seconds: i32, data: Vec<u8> },
+    Hello {
+        license_key: String,
+        node_id: String,
+    },
+    QueryResult {
+        tag: String,
+        seconds: i32,
+        data: Vec<u8>,
+    },
     Tick,
 }
 

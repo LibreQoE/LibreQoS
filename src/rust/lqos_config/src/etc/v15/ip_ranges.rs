@@ -1,7 +1,7 @@
-use std::net::{Ipv4Addr, Ipv6Addr};
 use ip_network::IpNetwork;
 use ip_network_table::IpNetworkTable;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use std::net::{Ipv4Addr, Ipv6Addr};
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct IpRanges {
@@ -19,7 +19,7 @@ impl Default for IpRanges {
                 "172.16.0.0/12".to_string(),
                 "10.0.0.0/8".to_string(),
                 "100.64.0.0/10".to_string(),
-                "192.168.0.0/16".to_string(),                
+                "192.168.0.0/16".to_string(),
             ],
             unknown_ip_honors_ignore: Some(true),
             unknown_ip_honors_allow: Some(true),

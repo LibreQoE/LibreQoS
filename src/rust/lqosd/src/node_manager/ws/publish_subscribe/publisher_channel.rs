@@ -1,12 +1,12 @@
-use std::sync::Arc;
-use serde_json::json;
-use tokio::sync::mpsc::Sender;
 use crate::node_manager::ws::publish_subscribe::subscriber::Subscriber;
 use crate::node_manager::ws::published_channels::PublishedChannels;
+use serde_json::json;
+use std::sync::Arc;
+use tokio::sync::mpsc::Sender;
 
 pub(super) struct PublisherChannel {
     pub(super) channel_type: PublishedChannels,
-    subscribers: Vec<Subscriber>
+    subscribers: Vec<Subscriber>,
 }
 
 impl PublisherChannel {
@@ -16,22 +16,25 @@ impl PublisherChannel {
             subscribers: vec![],
         }
     }
-    
+
     pub(super) fn has_subscribers(&self) -> bool {
         !self.subscribers.is_empty()
     }
-    
+
     pub(super) async fn subscribe(&mut self, sender: Sender<Arc<String>>) {
-        self.subscribers.push(Subscriber{
+        self.subscribers.push(Subscriber {
             is_alive: true,
             sender: sender.clone(),
         });
-        let welcome = Arc::new(json!(
-            {
-                "event" : "join",
-                "channel" : self.channel_type.to_string(),
-            }
-        ).to_string());
+        let welcome = Arc::new(
+            json!(
+                {
+                    "event" : "join",
+                    "channel" : self.channel_type.to_string(),
+                }
+            )
+            .to_string(),
+        );
         let _ = sender.send(welcome).await;
     }
 

@@ -1,17 +1,17 @@
-mod shaper_status;
 mod last_24_hours;
 mod rest_client;
+mod shaper_status;
 
-use std::ops::Deref;
-use axum::{Form, Json};
-use axum::response::Redirect;
-use tracing::{info, warn};
-use serde::Serialize;
-use lqos_bus::{bus_request, BusRequest};
-use lqos_config::load_config;
-pub use shaper_status::shaper_status_from_lts;
-pub use last_24_hours::*;
 use crate::lts2_sys::shared_types::FreeTrialDetails;
+use axum::response::Redirect;
+use axum::{Form, Json};
+pub use last_24_hours::*;
+use lqos_bus::{BusRequest, bus_request};
+use lqos_config::load_config;
+use serde::Serialize;
+pub use shaper_status::shaper_status_from_lts;
+use std::ops::Deref;
+use tracing::{info, warn};
 
 #[derive(Serialize)]
 pub enum StatsCheckResponse {
@@ -56,9 +56,7 @@ pub async fn stats_check() -> Json<StatsCheckAction> {
     Json(response)
 }
 
-pub async fn lts_trial_signup(
-    details: Form<FreeTrialDetails>,
-) -> Redirect {
+pub async fn lts_trial_signup(details: Form<FreeTrialDetails>) -> Redirect {
     let license_key = crate::lts2_sys::request_free_trial((*details).clone()).unwrap();
 
     info!("Received license key, enabling free trial: {}", license_key);

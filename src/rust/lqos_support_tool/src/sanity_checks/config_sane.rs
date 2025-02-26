@@ -1,6 +1,6 @@
-use std::path::Path;
-use lqos_config::load_config;
 use crate::sanity_checks::SanityCheck;
+use lqos_config::load_config;
+use std::path::Path;
 
 pub fn config_exists(results: &mut Vec<SanityCheck>) {
     let path = Path::new("/etc/lqos.conf");

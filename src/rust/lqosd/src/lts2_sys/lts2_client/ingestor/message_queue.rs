@@ -1,26 +1,29 @@
-mod general;
-mod circuit_throughput;
-mod circuit_retransmits;
-mod circuit_rtt;
 mod circuit_cake_drops;
 mod circuit_cake_marks;
-mod site_throughput;
-mod site_retransmits;
-mod site_rtt;
+mod circuit_retransmits;
+mod circuit_rtt;
+mod circuit_throughput;
+mod general;
 mod site_cake_drops;
 mod site_cake_marks;
+mod site_retransmits;
+mod site_rtt;
+mod site_throughput;
 
-use std::net::{TcpStream, ToSocketAddrs};
-use std::time::Duration;
-use anyhow::{anyhow, Result};
-use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
-use uuid::Uuid;
-use lqos_config::load_config;
+use crate::lts2_sys::RemoteCommand;
 use crate::lts2_sys::lts2_client::ingestor::commands::IngestorCommand;
 use crate::lts2_sys::lts2_client::{get_remote_host, remote_commands};
-use crate::lts2_sys::RemoteCommand;
-use crate::lts2_sys::shared_types::{CircuitCakeDrops, CircuitCakeMarks, CircuitRetransmits, CircuitRtt, CircuitThroughput, IngestSession, SiteCakeDrops, SiteCakeMarks, SiteRetransmits, SiteRtt, SiteThroughput};
+use crate::lts2_sys::shared_types::{
+    CircuitCakeDrops, CircuitCakeMarks, CircuitRetransmits, CircuitRtt, CircuitThroughput,
+    IngestSession, SiteCakeDrops, SiteCakeMarks, SiteRetransmits, SiteRtt, SiteThroughput,
+};
+use anyhow::{Result, anyhow};
+use lqos_config::load_config;
+use serde::{Deserialize, Serialize};
+use std::net::{TcpStream, ToSocketAddrs};
+use std::time::Duration;
+use tracing::{info, warn};
+use uuid::Uuid;
 
 /// Provides holders for messages that have been received from the ingestor,
 /// and not yet submitted to the LTS2 server. It divides many message types by
@@ -59,10 +62,17 @@ impl MessageQueue {
     }
 
     pub(crate) fn is_empty(&self) -> bool {
-        self.general_queue.is_empty() && self.circuit_throughput.is_empty() && self.circuit_retransmits.is_empty()
-            && self.circuit_rtt.is_empty() && self.circuit_cake_drops.is_empty() && self.circuit_cake_marks.is_empty()
-            && self.site_throughput.is_empty() && self.site_retransmits.is_empty() && self.site_cake_drops.is_empty()
-            && self.site_cake_marks.is_empty() && self.site_rtt.is_empty()
+        self.general_queue.is_empty()
+            && self.circuit_throughput.is_empty()
+            && self.circuit_retransmits.is_empty()
+            && self.circuit_rtt.is_empty()
+            && self.circuit_cake_drops.is_empty()
+            && self.circuit_cake_marks.is_empty()
+            && self.site_throughput.is_empty()
+            && self.site_retransmits.is_empty()
+            && self.site_cake_drops.is_empty()
+            && self.site_cake_marks.is_empty()
+            && self.site_rtt.is_empty()
     }
 
     pub(crate) fn ingest(&mut self, command: IngestorCommand) {
@@ -113,7 +123,9 @@ impl MessageQueue {
         info!("Sending messages to {}", target);
 
         let mut addresses = format!("{}:443", remote_host).to_socket_addrs()?;
-        let addr = addresses.next().ok_or_else(|| anyhow!("Failed to resolve remote host"))?;
+        let addr = addresses
+            .next()
+            .ok_or_else(|| anyhow!("Failed to resolve remote host"))?;
         let Ok(stream) = TcpStream::connect_timeout(&addr, Duration::from_secs(10)) else {
             warn!("Failed to connect to ingestion server");
             return Ok(());
@@ -122,8 +134,8 @@ impl MessageQueue {
         let Ok(connector) = native_tls::TlsConnector::builder()
             .danger_accept_invalid_certs(true)
             .danger_accept_invalid_hostnames(true)
-            .build() else
-        {
+            .build()
+        else {
             warn!("Failed to create TLS connector");
             return Ok(());
         };
@@ -153,7 +165,7 @@ impl MessageQueue {
             warn!("Failed to serialize hello message");
             return Ok(());
         };
-        if let Err(e) = socket.send(tungstenite::Message::Binary(magic_to_send)) {
+        if let Err(e) = socket.send(tungstenite::Message::Binary(magic_to_send.into())) {
             warn!("Failed to send hello message to server: {}", e);
             return Ok(());
         }
@@ -184,7 +196,10 @@ impl MessageQueue {
         let (license_key, node_id, node_name) = {
             let lock = load_config().unwrap();
             (
-                lock.long_term_stats.license_key.clone().unwrap_or("".to_string()),
+                lock.long_term_stats
+                    .license_key
+                    .clone()
+                    .unwrap_or("".to_string()),
                 lock.node_id.clone(),
                 lock.node_name.clone(),
             )
@@ -193,11 +208,14 @@ impl MessageQueue {
             warn!("Failed to parse license key");
             return Ok(());
         };
-        let Ok((_, _, license_to_send)) = (WsMessage::License { license: license_uuid }).to_bytes() else {
+        let Ok((_, _, license_to_send)) = (WsMessage::License {
+            license: license_uuid,
+        })
+        .to_bytes() else {
             warn!("Failed to serialize license message");
             return Ok(());
         };
-        if let Err(e) = socket.send(tungstenite::Message::Binary(license_to_send)) {
+        if let Err(e) = socket.send(tungstenite::Message::Binary(license_to_send.into())) {
             warn!("Failed to send license message to server: {}", e);
             return Ok(());
         }
@@ -251,24 +269,33 @@ impl MessageQueue {
         let n_chunks = message_chunks.len();
 
         // Submit the chunks
-        for (i,chunk) in message_chunks.into_iter().enumerate() {
-            let Ok((_, _, data_to_send)) = (WsMessage::DataDump { chunk: i+1, n_chunks, data: chunk.to_vec() }).to_bytes() else {
+        for (i, chunk) in message_chunks.into_iter().enumerate() {
+            let Ok((_, _, data_to_send)) = (WsMessage::DataDump {
+                chunk: i + 1,
+                n_chunks,
+                data: chunk.to_vec(),
+            })
+            .to_bytes() else {
                 warn!("Failed to serialize data message");
                 return Ok(());
             };
-            if let Err(e) = socket.send(tungstenite::Message::Binary(data_to_send)) {
+            if let Err(e) = socket.send(tungstenite::Message::Binary(data_to_send.into())) {
                 warn!("Failed to send data message to server: {}", e);
                 return Ok(());
             }
         }
 
         // Remote Commands
-        let Ok((_, _, request_remote_commands)) = (WsMessage::RequestRemoteCommands ).to_bytes() else {
+        let Ok((_, _, request_remote_commands)) = (WsMessage::RequestRemoteCommands).to_bytes()
+        else {
             warn!("Failed to serialize request remote commands message");
             return Ok(());
         };
-        if let Err(e) = socket.send(tungstenite::Message::Binary(request_remote_commands)) {
-            warn!("Failed to send request remote commands message to server: {}", e);
+        if let Err(e) = socket.send(tungstenite::Message::Binary(request_remote_commands.into())) {
+            warn!(
+                "Failed to send request remote commands message to server: {}",
+                e
+            );
             return Ok(());
         }
 
@@ -317,14 +344,24 @@ impl MessageQueue {
 #[derive(Serialize, Deserialize)]
 enum WsMessage {
     // Request messages
-    Hello { magic: u32 },
-    License { license: Uuid },
-    DataDump { chunk: usize, n_chunks: usize, data: Vec<u8> },
+    Hello {
+        magic: u32,
+    },
+    License {
+        license: Uuid,
+    },
+    DataDump {
+        chunk: usize,
+        n_chunks: usize,
+        data: Vec<u8>,
+    },
     RequestRemoteCommands,
 
     // Response messages
     CanSubmit,
-    RemoteCommands { commands: Vec<RemoteCommand> },
+    RemoteCommands {
+        commands: Vec<RemoteCommand>,
+    },
 }
 
 impl WsMessage {

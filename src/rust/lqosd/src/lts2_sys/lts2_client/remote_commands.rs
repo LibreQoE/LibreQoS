@@ -1,6 +1,6 @@
-use std::sync::Mutex;
-use once_cell::sync::Lazy;
 use crate::lts2_sys::RemoteCommand;
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
 
 static COMMAND_LIST: Lazy<Mutex<Vec<RemoteCommand>>> = Lazy::new(|| Mutex::new(Vec::new()));
 

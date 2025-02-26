@@ -1,7 +1,7 @@
 //! Provides an interface for collecting data from the throughput
 //! tracker in `lqosd` and submitting it into the long-term stats
 //! system.
-//! 
+//!
 //! Note that ThroughputSummary should be boxed, to avoid copying
 
 use std::net::IpAddr;

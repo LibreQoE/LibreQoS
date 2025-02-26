@@ -1,8 +1,13 @@
-use dryoc::dryocbox::PublicKey;
-use crate::lts2_sys::lts2_client::nacl_blob::{initial_exchange, KeyStore};
 use crate::lts2_sys::lts2_client::nacl_blob::size_info::SizeInfo;
+use crate::lts2_sys::lts2_client::nacl_blob::{KeyStore, initial_exchange};
+use dryoc::dryocbox::PublicKey;
 
-pub fn transmit_hello(keys: &KeyStore, magic_number: u16, version: u16, tcp_stream: &mut std::net::TcpStream) -> anyhow::Result<SizeInfo> {
+pub fn transmit_hello(
+    keys: &KeyStore,
+    magic_number: u16,
+    version: u16,
+    tcp_stream: &mut std::net::TcpStream,
+) -> anyhow::Result<SizeInfo> {
     use std::io::Write;
     let mut size_info = SizeInfo::default();
     let key_bytes = keys.public_key_as_cbor_bytes();
@@ -25,7 +30,9 @@ pub fn transmit_hello(keys: &KeyStore, magic_number: u16, version: u16, tcp_stre
     Ok(size_info)
 }
 
-pub fn receive_hello(tcp_stream: &mut std::net::TcpStream) -> anyhow::Result<(initial_exchange::InitialExchange, SizeInfo)> {
+pub fn receive_hello(
+    tcp_stream: &mut std::net::TcpStream,
+) -> anyhow::Result<(initial_exchange::InitialExchange, SizeInfo)> {
     use std::io::Read;
     let mut size_info = SizeInfo::default();
 
@@ -56,11 +63,14 @@ pub fn receive_hello(tcp_stream: &mut std::net::TcpStream) -> anyhow::Result<(in
     size_info.raw_size += 8 + key_len as u64;
     size_info.final_size += 8 + key_len as u64;
 
-    Ok((InitialExchange {
-        magic_number,
-        version,
-        public_key,
-    }, size_info))
+    Ok((
+        InitialExchange {
+            magic_number,
+            version,
+            public_key,
+        },
+        size_info,
+    ))
 }
 
 #[allow(dead_code)]

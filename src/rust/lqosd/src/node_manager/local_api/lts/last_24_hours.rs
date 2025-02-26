@@ -1,15 +1,13 @@
+use crate::node_manager::local_api::lts::rest_client::lts_query;
+use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 use axum::extract::Path;
 use axum::http::StatusCode;
 use axum::{Extension, Json};
-use serde::{Deserialize, Serialize};
-use tracing::info;
-use tracing::log::warn;
 use lqos_config::load_config;
-use crate::node_manager::local_api::lts::rest_client::lts_query;
-use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
+use serde::{Deserialize, Serialize};
+use tracing::warn;
 
-#[derive(Serialize, Deserialize, Copy, Clone)]
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Copy, Clone, Debug)]
 pub struct ThroughputData {
     time: i64, // Unix timestamp
     max_down: i64,
@@ -153,10 +151,17 @@ pub struct RecentMedians {
     pub last_week: (i64, i64),
 }
 
-pub async fn last_24_hours()-> Result<Json<Vec<ThroughputData>>, StatusCode> {
+pub async fn last_24_hours() -> Result<Json<Vec<ThroughputData>>, StatusCode> {
     let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let seconds = 24 * 60 * 60;
-    let url = format!("https://{}/shaper_api/totalThroughput/{seconds}", config.long_term_stats.clone().lts_url.unwrap_or("insight.libreqos.com".to_string()));
+    let url = format!(
+        "https://{}/shaper_api/totalThroughput/{seconds}",
+        config
+            .long_term_stats
+            .clone()
+            .lts_url
+            .unwrap_or("insight.libreqos.com".to_string())
+    );
     let throughput = lts_query(&url).await?;
     Ok(Json(throughput))
 }
@@ -164,9 +169,12 @@ pub async fn last_24_hours()-> Result<Json<Vec<ThroughputData>>, StatusCode> {
 pub async fn throughput_period(
     Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
     Path(seconds): Path<i32>,
-)-> Result<Json<Vec<ThroughputData>>, StatusCode> {
+) -> Result<Json<Vec<ThroughputData>>, StatusCode> {
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query.send(ShaperQueryCommand::ShaperThroughput { seconds, reply: tx }).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    shaper_query
+        .send(ShaperQueryCommand::ShaperThroughput { seconds, reply: tx })
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let throughput = rx.await.map_err(|e| {
         warn!("Error getting total throughput: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
@@ -177,12 +185,15 @@ pub async fn throughput_period(
 pub async fn packets_period(
     Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
     Path(seconds): Path<i32>,
-)-> Result<Json<Vec<FullPacketData>>, StatusCode> {
+) -> Result<Json<Vec<FullPacketData>>, StatusCode> {
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query.send(ShaperQueryCommand::ShaperPackets { seconds, reply: tx }).await.map_err(|_| {
-        warn!("Error sending packets period");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    shaper_query
+        .send(ShaperQueryCommand::ShaperPackets { seconds, reply: tx })
+        .await
+        .map_err(|_| {
+            warn!("Error sending packets period");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     let throughput = rx.await.map_err(|e| {
         warn!("Error getting packets period: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
@@ -193,12 +204,15 @@ pub async fn packets_period(
 pub async fn percent_shaped_period(
     Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
     Path(seconds): Path<i32>,
-)-> Result<Json<Vec<PercentShapedWeb>>, StatusCode> {
+) -> Result<Json<Vec<PercentShapedWeb>>, StatusCode> {
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query.send(ShaperQueryCommand::ShaperPercent { seconds, reply: tx }).await.map_err(|_| {
-        warn!("Error sending percent shaped period");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    shaper_query
+        .send(ShaperQueryCommand::ShaperPercent { seconds, reply: tx })
+        .await
+        .map_err(|_| {
+            warn!("Error sending percent shaped period");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     let throughput = rx.await.map_err(|e| {
         warn!("Error getting percent shaped: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
@@ -209,12 +223,15 @@ pub async fn percent_shaped_period(
 pub async fn percent_flows_period(
     Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
     Path(seconds): Path<i32>,
-)-> Result<Json<Vec<FlowCountViewWeb>>, StatusCode> {
+) -> Result<Json<Vec<FlowCountViewWeb>>, StatusCode> {
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query.send(ShaperQueryCommand::ShaperFlows { seconds, reply: tx }).await.map_err(|_| {
-        warn!("Error sending flows period");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    shaper_query
+        .send(ShaperQueryCommand::ShaperFlows { seconds, reply: tx })
+        .await
+        .map_err(|_| {
+            warn!("Error sending flows period");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     let throughput = rx.await.map_err(|e| {
         warn!("Error getting flows: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
@@ -225,13 +242,16 @@ pub async fn percent_flows_period(
 pub async fn rtt_histo_period(
     Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
     Path(seconds): Path<i32>,
-)-> Result<Json<Vec<ShaperRttHistogramEntry>>, StatusCode> {
+) -> Result<Json<Vec<ShaperRttHistogramEntry>>, StatusCode> {
     tracing::error!("rtt_histo_period");
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query.send(ShaperQueryCommand::ShaperRttHistogram { seconds, reply: tx }).await.map_err(|_| {
-        warn!("Error sending flows period");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    shaper_query
+        .send(ShaperQueryCommand::ShaperRttHistogram { seconds, reply: tx })
+        .await
+        .map_err(|_| {
+            warn!("Error sending flows period");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     let throughput = rx.await.map_err(|e| {
         warn!("Error getting flows: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
@@ -242,13 +262,16 @@ pub async fn rtt_histo_period(
 pub async fn top10_downloaders_period(
     Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
     Path(seconds): Path<i32>,
-)-> Result<Json<Vec<Top10Circuit>>, StatusCode> {
+) -> Result<Json<Vec<Top10Circuit>>, StatusCode> {
     tracing::error!("rtt_histo_period");
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query.send(ShaperQueryCommand::ShaperTopDownloaders { seconds, reply: tx }).await.map_err(|_| {
-        warn!("Error sending flows period");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    shaper_query
+        .send(ShaperQueryCommand::ShaperTopDownloaders { seconds, reply: tx })
+        .await
+        .map_err(|_| {
+            warn!("Error sending flows period");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     let throughput = rx.await.map_err(|e| {
         warn!("Error getting flows: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
@@ -259,13 +282,16 @@ pub async fn top10_downloaders_period(
 pub async fn worst10_rtt_period(
     Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
     Path(seconds): Path<i32>,
-)-> Result<Json<Vec<Worst10RttCircuit>>, StatusCode> {
+) -> Result<Json<Vec<Worst10RttCircuit>>, StatusCode> {
     tracing::error!("rtt_histo_period");
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query.send(ShaperQueryCommand::ShaperWorstRtt { seconds, reply: tx }).await.map_err(|_| {
-        warn!("Error sending flows period");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    shaper_query
+        .send(ShaperQueryCommand::ShaperWorstRtt { seconds, reply: tx })
+        .await
+        .map_err(|_| {
+            warn!("Error sending flows period");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     let throughput = rx.await.map_err(|e| {
         warn!("Error getting flows: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
@@ -276,13 +302,16 @@ pub async fn worst10_rtt_period(
 pub async fn worst10_rxmit_period(
     Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
     Path(seconds): Path<i32>,
-)-> Result<Json<Vec<Worst10RxmitCircuit>>, StatusCode> {
+) -> Result<Json<Vec<Worst10RxmitCircuit>>, StatusCode> {
     tracing::error!("rtt_histo_period");
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query.send(ShaperQueryCommand::ShaperWorstRxmit { seconds, reply: tx }).await.map_err(|_| {
-        warn!("Error sending flows period");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    shaper_query
+        .send(ShaperQueryCommand::ShaperWorstRxmit { seconds, reply: tx })
+        .await
+        .map_err(|_| {
+            warn!("Error sending flows period");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     let throughput = rx.await.map_err(|e| {
         warn!("Error getting flows: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
@@ -293,13 +322,16 @@ pub async fn worst10_rxmit_period(
 pub async fn top10_flows_period(
     Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
     Path(seconds): Path<i32>,
-)-> Result<Json<Vec<AsnFlowSizeWeb>>, StatusCode> {
+) -> Result<Json<Vec<AsnFlowSizeWeb>>, StatusCode> {
     tracing::error!("rtt_histo_period");
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query.send(ShaperQueryCommand::ShaperTopFlows { seconds, reply: tx }).await.map_err(|_| {
-        warn!("Error sending flows period");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    shaper_query
+        .send(ShaperQueryCommand::ShaperTopFlows { seconds, reply: tx })
+        .await
+        .map_err(|_| {
+            warn!("Error sending flows period");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     let throughput = rx.await.map_err(|e| {
         warn!("Error getting flows: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
@@ -309,13 +341,16 @@ pub async fn top10_flows_period(
 
 pub async fn recent_medians(
     Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
-)-> Result<Json<Vec<RecentMedians>>, StatusCode> {
+) -> Result<Json<Vec<RecentMedians>>, StatusCode> {
     tracing::error!("rtt_histo_period");
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query.send(ShaperQueryCommand::ShaperRecentMedian { reply: tx }).await.map_err(|_| {
-        warn!("Error sending flows period");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    shaper_query
+        .send(ShaperQueryCommand::ShaperRecentMedian { reply: tx })
+        .await
+        .map_err(|_| {
+            warn!("Error sending flows period");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     let throughput = rx.await.map_err(|e| {
         warn!("Error getting flows: {:?}", e);
         StatusCode::INTERNAL_SERVER_ERROR
@@ -323,16 +358,32 @@ pub async fn recent_medians(
     Ok(Json(throughput))
 }
 
-pub async fn retransmits_period(Path(seconds): Path<i32>)-> Result<Json<Vec<RetransmitData>>, StatusCode> {
+pub async fn retransmits_period(
+    Path(seconds): Path<i32>,
+) -> Result<Json<Vec<RetransmitData>>, StatusCode> {
     let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let url = format!("https://{}/shaper_api/totalRetransmits/{seconds}", config.long_term_stats.lts_url.clone().unwrap_or("insight.libreqos.com".to_string()));
+    let url = format!(
+        "https://{}/shaper_api/totalRetransmits/{seconds}",
+        config
+            .long_term_stats
+            .lts_url
+            .clone()
+            .unwrap_or("insight.libreqos.com".to_string())
+    );
     let throughput = lts_query(&url).await?;
     Ok(Json(throughput))
 }
 
-pub async fn cake_period(Path(seconds): Path<i32>)-> Result<Json<Vec<CakeData>>, StatusCode> {
+pub async fn cake_period(Path(seconds): Path<i32>) -> Result<Json<Vec<CakeData>>, StatusCode> {
     let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let url = format!("https://{}/shaper_api/totalCake/{seconds}", config.long_term_stats.lts_url.clone().unwrap_or("insight.libreqos.com".to_string()));
+    let url = format!(
+        "https://{}/shaper_api/totalCake/{seconds}",
+        config
+            .long_term_stats
+            .lts_url
+            .clone()
+            .unwrap_or("insight.libreqos.com".to_string())
+    );
     let throughput = lts_query(&url).await?;
     Ok(Json(throughput))
 }

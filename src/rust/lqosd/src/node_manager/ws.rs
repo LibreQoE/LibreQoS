@@ -15,21 +15,29 @@ use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use axum::{Extension, extract::{WebSocketUpgrade, ws::{Message, WebSocket}}, response::IntoResponse, Router, routing::get};
-use serde::Deserialize;
-use tokio::sync::mpsc::Sender;
-use tracing::debug;
-use lqos_bus::BusRequest;
 use crate::node_manager::auth::auth_layer;
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
 use crate::node_manager::ws::ticker::channel_ticker;
 use crate::system_stats::SystemStats;
+use axum::{
+    Extension, Router,
+    extract::{
+        WebSocketUpgrade,
+        ws::{Message, WebSocket},
+    },
+    response::IntoResponse,
+    routing::get,
+};
+use lqos_bus::BusRequest;
+use serde::Deserialize;
+use tokio::sync::mpsc::Sender;
+use tracing::debug;
 
 mod publish_subscribe;
 mod published_channels;
-mod ticker;
 mod single_user_channels;
+mod ticker;
 
 /// Provides an Axum router for the websocket system. Exposes two routes:
 /// * /ws: A general websocket route that allows for subscribing to multiple channels
@@ -41,9 +49,16 @@ pub fn websocket_router(
     system_usage_tx: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
 ) -> Router {
     let channels = PubSub::new();
-    tokio::spawn(channel_ticker(channels.clone(), bus_tx.clone(), system_usage_tx.clone()));
+    tokio::spawn(channel_ticker(
+        channels.clone(),
+        bus_tx.clone(),
+        system_usage_tx.clone(),
+    ));
     Router::new()
-        .route("/private_ws", get(single_user_channels::private_channel_ws_handler))
+        .route(
+            "/private_ws",
+            get(single_user_channels::private_channel_ws_handler),
+        )
         .route("/ws", get(ws_handler))
         .route_layer(axum::middleware::from_fn(auth_layer))
         .layer(Extension(channels))
@@ -102,7 +117,12 @@ async fn handle_socket(mut socket: WebSocket, channels: Arc<PubSub>) {
     debug!("Websocket disconnected");
 }
 
-async fn receive_channel_message(msg: Message, channels: Arc<PubSub>, tx: Sender<Arc<String>>, subscribed_channels: &mut HashSet<PublishedChannels>) {
+async fn receive_channel_message(
+    msg: Message,
+    channels: Arc<PubSub>,
+    tx: Sender<Arc<String>>,
+    subscribed_channels: &mut HashSet<PublishedChannels>,
+) {
     if let Ok(text) = msg.to_text() {
         if let Ok(sub) = serde_json::from_str::<Subscribe>(text) {
             if let Ok(channel) = PublishedChannels::from_str(&sub.channel) {

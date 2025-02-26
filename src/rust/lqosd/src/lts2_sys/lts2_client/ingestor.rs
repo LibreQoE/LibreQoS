@@ -1,16 +1,16 @@
 pub(crate) mod commands;
-mod permission;
 mod message_queue;
+mod permission;
 
-use std::sync::{Arc, Mutex};
-use std::sync::mpsc::Sender;
-use std::time::Duration;
-use timerfd::{SetTimeFlags, TimerFd, TimerState};
-use tracing::info;
-pub(crate) use permission::check_submit_permission;
 use crate::lts2_sys::lts2_client::ingestor::commands::IngestorCommand;
 use crate::lts2_sys::lts2_client::ingestor::message_queue::MessageQueue;
 use crate::lts2_sys::lts2_client::ingestor::permission::is_allowed_to_submit;
+pub(crate) use permission::check_submit_permission;
+use std::sync::mpsc::Sender;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use timerfd::{SetTimeFlags, TimerFd, TimerState};
+use tracing::info;
 
 pub fn start_ingestor() -> Sender<IngestorCommand> {
     println!("Starting ingestor");
@@ -20,9 +20,7 @@ pub fn start_ingestor() -> Sender<IngestorCommand> {
     tx
 }
 
-fn ingestor_loop(
-    rx: std::sync::mpsc::Receiver<IngestorCommand>,
-) {
+fn ingestor_loop(rx: std::sync::mpsc::Receiver<IngestorCommand>) {
     let message_queue = Arc::new(Mutex::new(MessageQueue::new()));
     let my_message_queue = message_queue.clone();
     std::thread::spawn(move || ticker_timer(my_message_queue));
@@ -38,12 +36,14 @@ fn ingestor_loop(
 fn ticker_timer(message_queue: Arc<Mutex<MessageQueue>>) {
     let mut tfd = TimerFd::new().unwrap();
     assert_eq!(tfd.get_state(), TimerState::Disarmed);
-    tfd.set_state(TimerState::Periodic{
-        current: Duration::from_secs(60),
-        interval: Duration::from_secs(60)}
-                  , SetTimeFlags::Default
+    tfd.set_state(
+        TimerState::Periodic {
+            current: Duration::from_secs(60),
+            interval: Duration::from_secs(60),
+        },
+        SetTimeFlags::Default,
     );
-    
+
     loop {
         let missed_ticks = tfd.read();
         if missed_ticks > 1 {

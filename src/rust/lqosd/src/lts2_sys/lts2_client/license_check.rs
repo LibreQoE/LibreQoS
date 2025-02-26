@@ -1,13 +1,13 @@
-use std::sync::Arc;
+use crate::lts2_sys::lts2_client::get_remote_host;
+use lqos_config::load_config;
+use native_tls::TlsConnector;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
-use native_tls::TlsConnector;
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
 use tracing::{error, info, warn};
 use uuid::Uuid;
-use lqos_config::load_config;
-use crate::lts2_sys::lts2_client::get_remote_host;
 
 pub(crate) struct LicenseStatus {
     pub(crate) valid: bool,
@@ -37,20 +37,25 @@ pub struct LicenseResponse {
     pub expiration_date: i64,
 }
 
-pub(crate) fn license_check_loop(
-    license_status: Arc<Mutex<LicenseStatus>>,
-) {
+pub(crate) fn license_check_loop(license_status: Arc<Mutex<LicenseStatus>>) {
     let mut tfd = TimerFd::new().unwrap();
     assert_eq!(tfd.get_state(), TimerState::Disarmed);
-    tfd.set_state(TimerState::Periodic{
-        current: Duration::new(60 * 15, 0),
-        interval: Duration::new(60 * 15, 0)}
-                  , SetTimeFlags::Default
+    tfd.set_state(
+        TimerState::Periodic {
+            current: Duration::new(60 * 15, 0),
+            interval: Duration::new(60 * 15, 0),
+        },
+        SetTimeFlags::Default,
     );
-    
+
     loop {
-        let license_key = load_config().unwrap().long_term_stats.license_key.clone().unwrap_or_default();
-        
+        let license_key = load_config()
+            .unwrap()
+            .long_term_stats
+            .license_key
+            .clone()
+            .unwrap_or_default();
+
         if !license_key.is_empty() {
             if let Ok(lic) = Uuid::parse_str(&license_key) {
                 let remote_host = get_remote_host();
@@ -63,11 +68,7 @@ pub(crate) fn license_check_loop(
     }
 }
 
-fn remote_license_check(
-    remote_host: String,
-    lic: Uuid,
-    license_status: Arc<Mutex<LicenseStatus>>,
-) {
+fn remote_license_check(remote_host: String, lic: Uuid, license_status: Arc<Mutex<LicenseStatus>>) {
     info!("Checking license key with remote host: {}", remote_host);
     let url = format!("https://{}/license/license_check", remote_host);
     info!("License Check URL: {}", url);
@@ -76,9 +77,10 @@ fn remote_license_check(
     let Ok(tls) = TlsConnector::builder()
         .danger_accept_invalid_certs(true)
         .danger_accept_invalid_hostnames(true)
-        .build() else {
-            error!("Failed to build TLS connector.");
-            return;
+        .build()
+    else {
+        error!("Failed to build TLS connector.");
+        return;
     };
     let tls = Arc::new(tls);
 
@@ -91,7 +93,9 @@ fn remote_license_check(
         .post(&url)
         .send_json(serde_json::json!(&LicenseRequest { license: lic }));
     if result.is_err() {
-        warn!("Failed to connect to license server. This is not fatal - we'll try again. {result:?}");
+        warn!(
+            "Failed to connect to license server. This is not fatal - we'll try again. {result:?}"
+        );
         return;
     }
     let Ok(response) = result else {

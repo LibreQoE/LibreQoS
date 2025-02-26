@@ -2,17 +2,30 @@
 //! We frequently order things down and then up in kernel maps, keeping the ordering explicit
 //! helps reduce directional confusion/bugs.
 
-use std::ops::AddAssign;
+use crate::units::UpDownOrder;
 use allocative_derive::Allocative;
 use serde::{Deserialize, Serialize};
+use std::ops::AddAssign;
 use zerocopy::FromBytes;
-use crate::units::UpDownOrder;
 
 /// Provides strong download/upload separation for
 /// stored statistics to eliminate confusion. This is a generic
 /// type: you can control the type stored inside.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize, FromBytes, Default, Ord, PartialOrd, Allocative)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    FromBytes,
+    Default,
+    Ord,
+    PartialOrd,
+    Allocative,
+)]
 pub struct DownUpOrder<T> {
     /// The down value
     pub down: T,
@@ -20,16 +33,23 @@ pub struct DownUpOrder<T> {
     pub up: T,
 }
 
-impl <T> DownUpOrder<T>
-where T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedSub
-    + num_traits::CheckedAdd + num_traits::SaturatingSub + num_traits::SaturatingMul
-    + num_traits::FromPrimitive + num_traits::SaturatingAdd
+impl<T> DownUpOrder<T>
+where
+    T: std::cmp::Ord
+        + num_traits::Zero
+        + Copy
+        + num_traits::CheckedSub
+        + num_traits::CheckedAdd
+        + num_traits::SaturatingSub
+        + num_traits::SaturatingMul
+        + num_traits::FromPrimitive
+        + num_traits::SaturatingAdd,
 {
     /// Create a new DownUpOrder with the given down and up values.
     pub fn new(down: T, up: T) -> Self {
         Self { down, up }
     }
-    
+
     /// In the C code, it's common to refer to a "direction" byte:
     ///
     /// * 0: down
@@ -39,16 +59,15 @@ where T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedSub
     /// This is a helper function to translate that byte into the
     /// appropriate value.
     pub fn dir(&self, direction: usize) -> T {
-        if direction == 0 {
-            self.down
-        } else {
-            self.up
-        }
+        if direction == 0 { self.down } else { self.up }
     }
 
     /// Return a new DownUpOrder with both down and up set to zero.
     pub fn zeroed() -> Self {
-        Self { down: T::zero(), up: T::zero() }
+        Self {
+            down: T::zero(),
+            up: T::zero(),
+        }
     }
 
     /// Check if both down and up are less than the given limit.
@@ -61,7 +80,7 @@ where T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedSub
     pub fn sum_exceeds(&self, limit: T) -> bool {
         self.down + self.up > limit
     }
-    
+
     /// Subtract the given DownUpOrder from this one, returning a new DownUpOrder.
     /// If the result would be negative, it is clamped to zero.
     pub fn checked_sub_or_zero(&self, rhs: DownUpOrder<T>) -> DownUpOrder<T> {
@@ -127,17 +146,18 @@ where T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedSub
     }
 }
 
-impl <T> Into<UpDownOrder<T>> for DownUpOrder<T> {
+impl<T> Into<UpDownOrder<T>> for DownUpOrder<T> {
     fn into(self) -> UpDownOrder<T> {
         UpDownOrder {
             up: self.down,
-            down: self.up
+            down: self.up,
         }
     }
 }
 
-impl <T> AddAssign for DownUpOrder<T>
-where T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedAdd
+impl<T> AddAssign for DownUpOrder<T>
+where
+    T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedAdd,
 {
     fn add_assign(&mut self, rhs: Self) {
         self.down = self.down.checked_add(&rhs.down).unwrap_or(T::zero());
@@ -156,7 +176,7 @@ pub fn down_up_divide(left: DownUpOrder<u64>, right: DownUpOrder<u64>) -> (f64, 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_reverse() {
         let a = UpDownOrder::new(1, 2);
@@ -167,12 +187,12 @@ mod tests {
     #[test]
     fn test_checked_sub() {
         let a = DownUpOrder::new(1u64, 1);
-        let b= DownUpOrder::new(1, 1);
+        let b = DownUpOrder::new(1, 1);
         let c = a.checked_sub_or_zero(b);
         assert_eq!(c.up, 0);
         assert_eq!(c.down, 0);
 
-        let b= DownUpOrder::new(2, 2);
+        let b = DownUpOrder::new(2, 2);
         let c = a.checked_sub_or_zero(b);
         assert_eq!(c.up, 0);
         assert_eq!(c.down, 0);

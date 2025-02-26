@@ -2,11 +2,12 @@
 //! appropriate settings enabled for the Insight API.
 
 use axum::http::StatusCode;
-use tracing::error;
 use lqos_config::load_config;
+use tracing::error;
 
 pub(crate) async fn lts_query<T>(url: &str) -> Result<Vec<T>, StatusCode>
-where T: serde::de::DeserializeOwned
+where
+    T: serde::de::DeserializeOwned,
 {
     let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -20,7 +21,14 @@ where T: serde::de::DeserializeOwned
 
     let received_data = client
         .get(url)
-        .header("x-license-key", config.long_term_stats.license_key.clone().unwrap_or("".to_string()))
+        .header(
+            "x-license-key",
+            config
+                .long_term_stats
+                .license_key
+                .clone()
+                .unwrap_or("".to_string()),
+        )
         .header("x-node-id", config.node_id.to_string())
         .send()
         .await

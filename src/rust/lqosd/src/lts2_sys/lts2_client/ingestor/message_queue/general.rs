@@ -1,5 +1,8 @@
 use crate::lts2_sys::lts2_client::ingestor::commands::IngestorCommand;
-use crate::lts2_sys::shared_types::{FlowCount, IngestSession, NetworkTree, OneWayFlow, ShapedDevices, ShaperThroughput, ShaperUtilization, TwoWayFlow};
+use crate::lts2_sys::shared_types::{
+    FlowCount, IngestSession, NetworkTree, OneWayFlow, ShapedDevices, ShaperThroughput,
+    ShaperUtilization, TwoWayFlow,
+};
 
 pub(crate) fn add_general(message: &mut IngestSession, queue: &mut Vec<IngestorCommand>) {
     while let Some(msg) = queue.pop() {
@@ -65,7 +68,12 @@ pub(crate) fn add_general(message: &mut IngestSession, queue: &mut Vec<IngestorC
                     blob: tree,
                 });
             }
-            IngestorCommand::ShaperUtilization { tick, average_cpu, peak_cpu, memory_percent } => {
+            IngestorCommand::ShaperUtilization {
+                tick,
+                average_cpu,
+                peak_cpu,
+                memory_percent,
+            } => {
                 if message.shaper_utilization.is_none() {
                     message.shaper_utilization = Some(Vec::new());
                 }
@@ -78,7 +86,17 @@ pub(crate) fn add_general(message: &mut IngestSession, queue: &mut Vec<IngestorC
                     });
                 }
             }
-            IngestorCommand::OneWayFlow { start_time, end_time, local_ip, remote_ip, dst_port, src_port, bytes, protocol, circuit_hash } => {
+            IngestorCommand::OneWayFlow {
+                start_time,
+                end_time,
+                local_ip,
+                remote_ip,
+                dst_port,
+                src_port,
+                bytes,
+                protocol,
+                circuit_hash,
+            } => {
                 if message.one_way_flows.is_none() {
                     message.one_way_flows = Some(Vec::new());
                 }
@@ -96,7 +114,24 @@ pub(crate) fn add_general(message: &mut IngestSession, queue: &mut Vec<IngestorC
                     });
                 }
             }
-            IngestorCommand::TwoWayFlow { start_time, end_time, local_ip, remote_ip, dst_port, src_port, bytes_down, bytes_up, retransmit_times_down, retransmit_times_up, protocol, rtt1, rtt2, circuit_hash, packets_down, packets_up } => {
+            IngestorCommand::TwoWayFlow {
+                start_time,
+                end_time,
+                local_ip,
+                remote_ip,
+                dst_port,
+                src_port,
+                bytes_down,
+                bytes_up,
+                retransmit_times_down,
+                retransmit_times_up,
+                protocol,
+                rtt1,
+                rtt2,
+                circuit_hash,
+                packets_down,
+                packets_up,
+            } => {
                 if message.two_way_flows.is_none() {
                     message.two_way_flows = Some(Vec::new());
                 }
@@ -113,7 +148,7 @@ pub(crate) fn add_general(message: &mut IngestSession, queue: &mut Vec<IngestorC
                         retransmit_times_down,
                         retransmit_times_up,
                         protocol,
-                        rtt: [ rtt1, rtt2 ],
+                        rtt: [rtt1, rtt2],
                         circuit_hash,
                         packets_down: Some(packets_down),
                         packets_up: Some(packets_up),
@@ -139,7 +174,10 @@ pub(crate) fn add_general(message: &mut IngestSession, queue: &mut Vec<IngestorC
             IngestorCommand::BlackboardJson(json) => {
                 message.blackboard_json = Some(json);
             }
-            IngestorCommand::FlowCount{ timestamp, flow_count} => {
+            IngestorCommand::FlowCount {
+                timestamp,
+                flow_count,
+            } => {
                 if message.flow_count.is_none() {
                     message.flow_count = Some(Vec::new());
                 }
