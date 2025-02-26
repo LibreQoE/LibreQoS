@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use lqos_bus::{BlackboardSystem, BusRequest, BusResponse, TcHandle};
 use lqos_utils::hex_string::read_hex_string;
 use nix::libc::getpid;
