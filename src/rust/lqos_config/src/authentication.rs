@@ -53,11 +53,16 @@ impl Display for UserRole {
   }
 }
 
+/// A user of the web UI.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WebUser {
+  /// The user's username.
   pub username: String,
+  /// The user's password hash.
   pub password_hash: String,
+  /// The user's role.
   pub role: UserRole,
+  /// The user's token.
   pub token: String,
 }
 
