@@ -28,3 +28,11 @@ $("#btnLogin").on('click', () => {
         }
     })
 });
+
+// Add keypress handler for Enter key
+$('#username, #password').on('keypress', function(e) {
+    if (e.which === 13) { // 13 is Enter key code
+        e.preventDefault();
+        $('#btnLogin').click();
+    }
+});
