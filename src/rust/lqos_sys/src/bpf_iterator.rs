@@ -6,6 +6,7 @@ use once_cell::sync::Lazy;
 use std::{
   fmt::Debug, fs::File, io::Read, marker::PhantomData, os::fd::FromRawFd,
 };
+use std::sync::{Mutex, OnceLock};
 use thiserror::Error;
 use tracing::error;
 use zerocopy::FromBytes;
@@ -189,33 +190,33 @@ enum BpfIteratorError {
   UnableToCreateIterator,
 }
 
-static mut MAP_TRAFFIC: Lazy<
-  Option<BpfMapIterator<XdpIpAddress, HostCounter>>,
-> = Lazy::new(|| None);
+static MAP_TRAFFIC: OnceLock<Mutex<BpfMapIterator<XdpIpAddress, HostCounter>>> =
+  OnceLock::new();
 
-static mut FLOWBEE_TRACKER: Lazy<
-  Option<BpfMapIterator<FlowbeeKey, FlowbeeData>>,
-> = Lazy::new(|| None);
+static FLOWBEE_TRACKER: OnceLock<Mutex<BpfMapIterator<FlowbeeKey, FlowbeeData>>> =
+  OnceLock::new();
 
 pub unsafe fn iterate_throughput(
   callback: &mut dyn FnMut(&XdpIpAddress, &[HostCounter]),
 ) {
-  if MAP_TRAFFIC.is_none() {
+  let traffic_map = MAP_TRAFFIC.get_or_init(|| {
     let lock = BPF_SKELETON.lock().unwrap();
-    if let Some(skeleton) = lock.as_ref() {
-      let skeleton = skeleton.get_ptr();
-      if let Ok(iter) = unsafe {
-        BpfMapIterator::new(
-          (*skeleton).progs.throughput_reader,
-          (*skeleton).maps.map_traffic,
-        )
-      } {
-        *MAP_TRAFFIC = Some(iter);
-      }
-    }
-  }
+    let Some(skeleton) = lock.as_ref() else {
+      panic!("Failed to create throughput iterator");
+    };
+    let skeleton = skeleton.get_ptr();
+    let Ok(iter) = (unsafe {
+      BpfMapIterator::new(
+        (*skeleton).progs.throughput_reader,
+        (*skeleton).maps.map_traffic,
+      )
+    }) else {
+        panic!("Failed to create throughput iterator");
+    };
+    Mutex::new(iter)
+  });
 
-  if let Some(iter) = MAP_TRAFFIC.as_mut() {
+  if let Ok(mut iter) = traffic_map.lock() {
     let _ = iter.for_each_per_cpu(callback);
   }
 }
@@ -224,25 +225,25 @@ pub unsafe fn iterate_throughput(
 pub fn iterate_flows(
   callback: &mut dyn FnMut(&FlowbeeKey, &FlowbeeData)
 ) {
-  unsafe {
-    if FLOWBEE_TRACKER.is_none() {
-      let lock = BPF_SKELETON.lock().unwrap();
-      if let Some(skeleton) = lock.as_ref() {
-        let skeleton = skeleton.get_ptr();
-        if let Ok(iter) = {
-          BpfMapIterator::new(
-            (*skeleton).progs.flow_reader,
-            (*skeleton).maps.flowbee,
-          )
-        } {
-          *FLOWBEE_TRACKER = Some(iter);
-        }
-      }
-    }
+  let mut flowbee_tracker = FLOWBEE_TRACKER.get_or_init(|| {
+    let lock = BPF_SKELETON.lock().unwrap();
+    let Some(skeleton) = lock.as_ref() else {
+        panic!("Failed to create flowbee iterator");
+    };
+    let skeleton = skeleton.get_ptr();
+    let Ok(iter) = (unsafe {
+      BpfMapIterator::new(
+        (*skeleton).progs.flow_reader,
+        (*skeleton).maps.flowbee,
+      )
+    }) else {
+        panic!("Failed to create flowbee iterator");
+    };
+    Mutex::new(iter)
+  });
   
-    if let Some(iter) = FLOWBEE_TRACKER.as_mut() {
-      let _ = iter.for_each(callback);
-    }
+  if let Ok(iter) = flowbee_tracker.lock() {
+    let _ = iter.for_each(callback);
   }
 }
 
