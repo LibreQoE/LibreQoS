@@ -21,7 +21,7 @@ mod version_checks;
 #[cfg(feature = "flamegraphs")]
 use std::io::Write;
 use std::net::IpAddr;
-
+use std::process::Command;
 #[cfg(feature = "flamegraphs")]
 use allocative::Allocative;
 use crate::{
@@ -99,6 +99,26 @@ pub fn set_console_logging() -> anyhow::Result<()> {
   tracing::subscriber::set_global_default(subscriber)?;
   Ok(())
 }
+
+#[cfg(feature = "docker")]
+fn launch_scheduler() {
+  info!("Launching scheduler");
+  std::thread::Builder::new().name("Scheduler".to_string()).spawn(move || {
+    let child = Command::new("/usr/bin/python3")
+        .args(&["/opt/libreqos/src/scheduler.py"])
+        .spawn();
+    if let Err(e) = child {
+      error!("Unable to launch scheduler: {:?}", e);
+    }
+  }).unwrap();
+  info!("Scheduler launched");
+}
+
+#[cfg(not(feature = "docker"))]
+fn launch_scheduler() {
+  // Do nothing
+}
+
 
 fn main() -> Result<()> {
   // Set up logging
@@ -229,6 +249,10 @@ fn main() -> Result<()> {
       server.listen(handle_bus_requests, bus_rx).await.unwrap();
     });
   })?;
+
+  // Launch the Scheduler process if we're in Docker
+  launch_scheduler();
+
   let _ = handle.join();
   warn!("Main thread exiting");
   Ok(())

@@ -24,7 +24,7 @@ COPY ./requirements.txt .
 COPY --from=builder_bpf /out/linux/amd64/bin/bpftool /sbin/bpftool
 RUN /sbin/bpftool --version
 WORKDIR /usr/src/app/rust
-RUN cargo build --release --package lqosd
+RUN cargo build --release --package lqosd --features "docker"
 RUN cargo build --release --package lqtop
 RUN cargo build --release --package xdp_iphash_to_cpu_cmdline
 RUN cargo build --release --package xdp_pping

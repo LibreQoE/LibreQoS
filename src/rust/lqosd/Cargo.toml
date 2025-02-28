@@ -8,6 +8,7 @@ license = "GPL-2.0-only"
 default = ["equinix_tests"]
 equinix_tests = []
 flamegraphs = []
+docker = []
 
 [dependencies]
 anyhow = { workspace = true }
