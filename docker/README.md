@@ -10,7 +10,7 @@ and supported NICs.
 ## Setup
 
 1. Go into the `docker/cfg` directory and copy `lqos.conf` into there. The interface names are the same. Configure any integrations - only the default ones are supported, currently.
-2. Make sure that `ShapedDevices.csv` and `network.json` are as you want them (or in default state - they MUST exist).
+2. Make sure that `ShapedDevices.csv` and `network.json` are as you want them (or in default state - they MUST exist in the `cfg` directory).
 
 ## Launch
 
