@@ -76,7 +76,7 @@ fn main() {
   // bpftool gen skeleton ../bin/libre_xdp_kern.o > libre_xdp_skel.h
   let skel_target = format!("{}/lqos_kern_skel.h", out_dir.to_str().unwrap());
   let skel_result =
-    Command::new("bpftool").args(["gen", "skeleton", &link_target]).output();
+    Command::new("/sbin/bpftool").args(["gen", "skeleton", &link_target]).output();
   command_warnings_errors_only("bpf skel", &skel_result);
   let header_file = String::from_utf8(skel_result.unwrap().stdout).unwrap();
   std::fs::write(skel_target, header_file).unwrap();

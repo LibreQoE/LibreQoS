@@ -1,0 +1,23 @@
+services:
+  libreqos:
+    privileged: true
+    network_mode: "host"
+    pid: "host"
+    cap_add:
+      - NET_ADMIN
+      - BPF
+    build:
+      dockerfile: Dockerfile
+      network: "host"
+      context: ../
+    restart: no
+    ports:
+      - "9123:9123"
+    volumes:
+      - ./cfg/lqos.conf:/etc/lqos.conf
+      - ./cfg/ShapedDevices.csv:/opt/libreqos/src/ShapedDevices.csv
+      - ./cfg/network.json:/opt/libreqos/src/network.json
+      - /sys/class/net:/sys/class/net:ro
+      - /sys/fs/bpf:/sys/fs/bpf
+    environment:
+      RUST_LOG: "info"

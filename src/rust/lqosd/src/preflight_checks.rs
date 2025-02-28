@@ -1,7 +1,7 @@
 use std::{path::Path, process::Command};
 
 use anyhow::Result;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use lqos_config::Config;
 use lqos_sys::interface_name_to_index;
 use crate::node_manager::{add_global_warning, WarningLevel};
@@ -58,6 +58,7 @@ pub fn get_interfaces_from_ip_link() -> Result<Vec<IpLinkInterface>> {
         .output()?;
     let output = String::from_utf8(output.stdout)?;
     let output_json = serde_json::from_str::<serde_json::Value>(&output)?;
+    debug!("ip link output: {:?}", output_json);
 
     let mut interfaces = Vec::new();
     for interface in output_json.as_array().unwrap() {
@@ -141,6 +142,8 @@ pub fn preflight_checks() -> Result<()> {
         error!("Failed to load configuration file - /etc/lqos.conf");
         anyhow::anyhow!("Failed to load configuration file")
     })?;
+
+    let interfaces = get_interfaces_from_ip_link()?;
 
     // Do the interfaces exist?
     if config.on_a_stick_mode() {
