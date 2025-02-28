@@ -16,7 +16,7 @@ and supported NICs.
 
 ```bash
 cd docker
-docker compose up
+sudo docker compose up
 ```
 
 You can now go to `http://localhost:9123` to see the dashboard system. Currently, logins are NOT
