@@ -105,6 +105,7 @@ fn launch_scheduler() {
   info!("Launching scheduler");
   std::thread::Builder::new().name("Scheduler".to_string()).spawn(move || {
     let child = Command::new("/usr/bin/python3")
+        .current_dir("/opt/libreqos/src")
         .args(&["/opt/libreqos/src/scheduler.py"])
         .spawn();
     if let Err(e) = child {
