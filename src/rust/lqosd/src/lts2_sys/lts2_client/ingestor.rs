@@ -59,7 +59,9 @@ fn ticker_timer(message_queue: Arc<Mutex<MessageQueue>>) {
             }
             info!("Queue send took: {:?}s", start.elapsed().as_secs_f32());
         } else {
-            info!("Queue is empty or not permitted to send - nothing to do");
+            if !permitted {
+                message_queue_lock.clear();
+            }
         }
     }
 }
