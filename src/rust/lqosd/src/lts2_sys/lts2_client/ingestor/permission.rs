@@ -35,6 +35,11 @@ pub(crate) fn check_submit_permission() {
 fn check_permission() {
     println!("Checking for permission to submit");
     let config = load_config().unwrap();
+    if config.long_term_stats.gather_stats == false {
+        info!("Long term stats are disabled. Not checking license.");
+        ALLOWED_TO_SUBMIT.store(false, Ordering::Relaxed);
+        return;
+    }
     let remote_host = {
         config.long_term_stats.lts_url.clone().unwrap_or("insight.libreqos.com".to_string())
     };
