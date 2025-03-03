@@ -2,6 +2,7 @@ use anyhow::Result;
 use serde::de::DeserializeOwned;
 
 fn url_fixup(base: &str) -> String {
+    let base = base.trim();
     if base.contains("/nms/api/v2.1") {
         base.to_string()
     } else {
