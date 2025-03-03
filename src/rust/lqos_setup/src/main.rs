@@ -154,7 +154,7 @@ fn write_combined_config(
     config.node_id = lqos_config::Config::calculate_node_id();
     config.single_interface = None;
     config.bridge = Some(lqos_config::BridgeConfig {
-        use_xdp_bridge: true,
+        use_xdp_bridge: false,
         to_internet: to_internet.to_string(),
         to_network: to_network.to_string(),
     });
