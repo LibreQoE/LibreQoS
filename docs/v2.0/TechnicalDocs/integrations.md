@@ -149,7 +149,9 @@ And edit the CSV using LibreOffice or your preferred CSV editor.
 
 #### UISP Route Overrides
 
-The default cost between nodes is 10.
+The default cost between nodes is typically 10. The integration creates a dot graph file `/opt/libreqos/src/graph.dot` which can be rendered using [Graphviz](https://dreampuf.github.io/GraphvizOnline/). This renders a map with the associated costs of all links.
+
+![image](https://github.com/user-attachments/assets/4edba4b5-c377-4659-8798-dfc40d50c859)
 
 Say you have Site 1, Site 2, and Site 3.
 A backup path exists between Site 1 and Site 3, but is not the preferred path.
@@ -158,6 +160,7 @@ Your preference is Site 1 > Site 2 > Site 3, but the integration by default conn
 To fix this, add a cost above the default for the path between Site 1 and Site 3.
 ```
 Site 1, Site 3, 100
+Site 3, Site 1, 100
 ```
 With this, data will flow Site 1 > Site 2 > Site 3.
 
