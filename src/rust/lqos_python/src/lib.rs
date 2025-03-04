@@ -74,6 +74,7 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(automatic_import_uisp))?;
     m.add_wrapped(wrap_pyfunction!(automatic_import_splynx))?;
     m.add_wrapped(wrap_pyfunction!(queue_refresh_interval_mins))?;
+    m.add_wrapped(wrap_pyfunction!(webhook_enable))?;
     m.add_wrapped(wrap_pyfunction!(automatic_import_powercode))?;
     m.add_wrapped(wrap_pyfunction!(powercode_api_key))?;
     m.add_wrapped(wrap_pyfunction!(powercode_api_url))?;
@@ -574,6 +575,12 @@ fn automatic_import_splynx() -> PyResult<bool> {
 fn queue_refresh_interval_mins() -> PyResult<u32> {
     let config = lqos_config::load_config().unwrap();
     Ok(config.integration_common.queue_refresh_interval_mins)
+}
+
+#[pyfunction]
+fn webhook_enable() -> PyResult<bool> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config.integration_common.webhook_enable)
 }
 
 #[pyfunction]

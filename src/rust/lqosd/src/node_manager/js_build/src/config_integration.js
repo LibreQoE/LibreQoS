@@ -15,7 +15,8 @@ function updateConfig() {
     window.config.integration_common = {
         circuit_name_as_address: document.getElementById("circuitNameAsAddress").checked,
         always_overwrite_network_json: document.getElementById("alwaysOverwriteNetworkJson").checked,
-        queue_refresh_interval_mins: parseInt(document.getElementById("queueRefreshInterval").value)
+        queue_refresh_interval_mins: parseInt(document.getElementById("queueRefreshInterval").value),
+        webhook_enable: document.getElementById("webhookEnable").checked,
     };
 }
 
@@ -30,6 +31,8 @@ loadConfig(() => {
             integration.circuit_name_as_address ?? false;
         document.getElementById("alwaysOverwriteNetworkJson").checked = 
             integration.always_overwrite_network_json ?? false;
+        document.getElementById("webhookEnable").checked = 
+            integration.webhook_enable ?? false;
 
         // Numeric field
         document.getElementById("queueRefreshInterval").value = 

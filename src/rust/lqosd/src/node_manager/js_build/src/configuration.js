@@ -73,6 +73,7 @@ const bindings = [
     { field: "bindCircuitNameAsAddress", path: ".integration_common.circuit_name_as_address", data: "bool", editable: true },
     { field: "bindOverwriteNetJson", path: ".integration_common.always_overwrite_network_json", data: "bool", editable: true },
     { field: "bindQueueRefreshInterval", path: ".integration_common.queue_refresh_interval_mins", data: "integer", editable: true },
+    { field: "bindWebhookEnable", path: ".integration_common.webhook_enable", data: "bool", editable: true },
 
     // Splynx
     { field: "bindSplynxEnable", path: ".spylnx_integration.enable_spylnx", data: "bool", editable: true },

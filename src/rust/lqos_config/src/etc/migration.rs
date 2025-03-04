@@ -227,6 +227,7 @@ fn migrate_integration_common(
         python_config.overwrite_network_jsonalways;
     new_config.integration_common.queue_refresh_interval_mins =
         python_config.queue_refresh_interval_mins as u32;
+    new_config.integration_common.webhook_enable = false;
     Ok(())
 }
 

@@ -66,6 +66,7 @@ do_not_track_subnets = [ "192.168.66.0/24" ]
 circuit_name_as_address = false
 always_overwrite_network_json = false
 queue_refresh_interval_mins = 30
+webhook_enable = false
 
 [spylnx_integration]
 enable_spylnx = false
