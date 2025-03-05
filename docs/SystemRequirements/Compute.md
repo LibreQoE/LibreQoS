@@ -1,11 +1,11 @@
 ## System Requirements
 ### Physical server
-* LibreQoS requires a dedicated, physical x86_64 device.
-* While it is technically possible to run LibreQoS in  VM, it is not officially supported, and comes at a significant 30% performance penalty (even when using NIC passthrough). For VMs, NIC passthrough is required for throughput above 1 Gbps (XDP vs generic XDP).
+* LibreQoS works best on a dedicated, physical x86_64 device.
+* While it is possible to run LibreQoS in  VM, it comes at a significant 30% performance penalty (even when using NIC passthrough). For VMs, NIC passthrough is required to achieve throughput above 10 Gbps (XDP vs generic XDP).
 
 ### CPU
-* 2 or more CPU cores
-* A CPU with solid [single-thread performance](https://www.cpubenchmark.net/singleThread.html#server-thread) within your budget. Queuing is very CPU-intensive, and requires high single-thread performance.
+* 2 or more CPU cores are required
+* Choose a CPU with high [single-thread performance](https://www.cpubenchmark.net/singleThread.html#server-thread) within your budget. Queuing is CPU-intensive, and requires high single-thread performance.
 
 Single-thread CPU performance will determine the maximum capacity of a single HTB (cpu core), and in turn, the maximum capacity of any top level node in the network hierarchy (for example, top-level sites in your network). This also impacts the maximum speed plan you can offer customers within safe margins.
 
