@@ -83,8 +83,12 @@ export function openDashboardEditor(initialElements, availableElements, callback
             return acc;
         }, {});
 
-        // Build accordion HTML
+        // Build accordion HTML with instructions
         const accordionHTML = `
+            <div class="alert alert-info d-flex align-items-center gap-2 mb-3" role="alert">
+                <i class="bi bi-info-circle"></i>
+                Drag new widgets to the dashboard
+            </div>
             <div class="accordion" id="availableAccordion">
                 ${Object.entries(categories).map(([category, items], index) => `
                     <div class="accordion-item">
