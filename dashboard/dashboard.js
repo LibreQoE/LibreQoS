@@ -154,18 +154,25 @@ export class Dashboard {
         editDiv.onclick = () => {
             // New Editor
             let initialElements = [];
-            this.dashlets.forEach((e) => {
+            console.log("Layout", this.layout);
+            for (let i=0; i<this.dashletIdentities.length; i++) {
+                let e = this.dashletIdentities[i];
                 initialElements.push({
                     size: e.size,
-                    name: e.title(),
+                    name: this.dashlets[i].title(),
+                    tag: e.tag,
                 });
-            });
+            }
 
             let availableElements = [];
             this.dashletMenu.forEach((d) => {
+                let category = "Uncategorized";
+                if (d.category !== null) category = d.category;
                 availableElements.push({
                     name: d.name,
                     size: d.size,
+                    tag: d.tag,
+                    category,
                 });
             });
 
