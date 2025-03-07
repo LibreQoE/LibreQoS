@@ -25,7 +25,19 @@ Note: If you find that traffic is not being shaped when it should, please make s
 
 After changing any part of `/etc/lqos.conf` it is highly recommended to always restart lqosd, using `sudo systemctl restart lqosd`. This re-parses any new values in lqos.conf, making those new values accessible to both the Rust and Python sides of the code.
 
-### Integrations
+### Netflow (optional)
+To enable netflow, add the following `[flows]` section to the `/etc/lqos.conf` configuration file, setting the appropriate `netflow_ip`:
+```
+[flows]
+flow_timeout_seconds = 30
+netflow_enabled = true
+netflow_port = 2055
+netflow_ip = "100.100.100.100"
+netflow_version = 5
+do_not_track_subnets = ["192.168.0.0/16"]
+```
+
+### CRM/NMS Integrations
 
 Learn more about [configuring integrations here](../TechnicalDocs/integrations.md).
 
