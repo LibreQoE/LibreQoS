@@ -51,7 +51,7 @@ export function openDashboardEditor(initialElements, availableElements, callback
         $grid.empty();
         initialElements.forEach(function(item, index) {
             var itemHtml = `
-      <div class="dashboard-item col-${item.size}" data-index="${index}" data-size="${item.size}" data-name="${item.name}">
+      <div class="dashboard-item col-${item.size}" data-index="${index}" data-size="${item.size}" data-name="${item.name}" data-tag="${item.tag}">
         <div class="card">
           <div class="card-body p-2">
             <div class="d-flex justify-content-between align-items-center">
@@ -213,7 +213,8 @@ export function openDashboardEditor(initialElements, availableElements, callback
             var $el = $(this);
             newElements.push({
                 name: $el.data('name'),
-                size: parseInt($el.data('size'), 10)
+                size: parseInt($el.data('size'), 10),
+                tag: $el.data('tag'),
             });
         });
         // Hide and remove the modal.
