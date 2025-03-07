@@ -151,6 +151,28 @@ export class Dashboard {
         editDiv.id = this.divName + "_edit";
         editDiv.innerHTML = "<button type='button' class='btn btn-secondary btn-sm' id='btnEditDash'><i class='fa fa-pencil'></i> Edit</button>";
         editDiv.onclick = () => {
+            // New Editor
+            let initialElements = [];
+            this.dashlets.forEach((e) => {
+                initialElements.push({
+                    size: e.size,
+                    name: e.title(),
+                });
+            });
+
+            let availableElements = [];
+            this.dashletMenu.forEach((d) => {
+                availableElements.push({
+                    name: d.name,
+                    size: d.size,
+                });
+            });
+
+            openDashboardEditor(initialElements, availableElements, function(newLayout) {
+                console.log("New dashboard layout:", newLayout);
+            });
+
+            // Old Editor
             if (this.editingDashboard) {
                 let e = document.getElementById("btnEditDash");
                 e.innerHTML = "<i class='fa fa-pencil'></i> Edit";
