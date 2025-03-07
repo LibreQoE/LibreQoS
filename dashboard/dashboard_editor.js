@@ -89,15 +89,17 @@ export function openDashboardEditor(initialElements, availableElements, callback
                 ${Object.entries(categories).map(([category, items], index) => `
                     <div class="accordion-item">
                         <h2 class="accordion-header">
-                            <button class="accordion-button collapsed" type="button" 
+                            <button class="accordion-button ${index === 0 ? '' : 'collapsed'}" 
+                                type="button" 
                                 data-bs-toggle="collapse" 
                                 data-bs-target="#cat-${index}" 
-                                aria-expanded="false" 
+                                aria-expanded="${index === 0 ? 'true' : 'false'}" 
                                 aria-controls="cat-${index}">
                                 ${category}
                             </button>
                         </h2>
-                        <div id="cat-${index}" class="accordion-collapse collapse" 
+                        <div id="cat-${index}" 
+                            class="accordion-collapse collapse ${index === 0 ? 'show' : ''}" 
                             data-bs-parent="#availableAccordion">
                             <div class="accordion-body p-0">
                                 <ul class="list-group">
