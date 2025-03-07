@@ -12,6 +12,9 @@ export function openDashboardEditor(initialElements, availableElements, callback
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title" id="dashboardEditorModalLabel">Dashboard Editor</h5>
+          <button type="button" class="btn btn-danger btn-sm ms-3" id="clearAllButton">
+            <i class="fas fa-trash me-1"></i>Clear All
+          </button>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
@@ -176,6 +179,12 @@ export function openDashboardEditor(initialElements, availableElements, callback
     // Handle delete action for dashboard items.
     $('#dashboardGrid').on('click', '.delete-item', function() {
         $(this).closest('.dashboard-item').remove();
+    });
+
+    // Handle clear all action
+    $('#clearAllButton').on('click', function() {
+        initialElements = [];
+        renderDashboard();
     });
 
     // Allow increasing the width of an item (up to 12).
