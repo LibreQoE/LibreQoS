@@ -7,6 +7,14 @@
 export function openDashboardEditor(initialElements, availableElements, callback) {
     // Build modal HTML with a fullscreen modal, a grid area and an available panel.
     var modalHtml = `
+  <style>
+    .border-dashed {
+        border: 2px dashed #dee2e6 !important;
+    }
+    .card.h-100 {
+        min-height: 100px;
+    }
+  </style>
   <div class="modal fade" id="dashboardEditorModal" tabindex="-1" aria-labelledby="dashboardEditorModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-fullscreen">
       <div class="modal-content">
@@ -51,6 +59,21 @@ export function openDashboardEditor(initialElements, availableElements, callback
     function renderDashboard() {
         var $grid = $('#dashboardGrid');
         $grid.empty();
+        
+        // Add placeholder if empty
+        if (initialElements.length === 0) {
+            $grid.append(`
+                <div class="dashboard-item col-12" data-size="12" data-name="placeholder">
+                    <div class="card border-dashed h-100">
+                        <div class="card-body d-flex justify-content-center align-items-center">
+                            <span class="text-muted">Drag widgets here to start building your dashboard</span>
+                        </div>
+                    </div>
+                </div>
+            `);
+        }
+        
+        // Existing item rendering
         initialElements.forEach(function(item, index) {
             var itemHtml = `
       <div class="dashboard-item col-${item.size}" data-index="${index}" data-size="${item.size}" data-name="${item.name}" data-tag="${item.tag}">
