@@ -11,6 +11,7 @@ export class Dashboard {
     constructor(divName, cookieName, defaultLayout, widgetFactory, dashletMenu, hasCadence = true, savedDashUrl = "/local-api/dashletThemes") {
         this.divName = divName;
         this.cookieName = cookieName;
+        window.cookieName = cookieName;
         this.widgetFactory = widgetFactory;
         this.dashletMenu = dashletMenu;
         this.savedDashUrl = savedDashUrl;
@@ -179,7 +180,7 @@ export class Dashboard {
             openDashboardEditor(initialElements, availableElements, function(newLayout) {
                 console.log("New dashboard layout:", newLayout);
                 let template = JSON.stringify(newLayout);
-                localStorage.setItem(this.cookieName, template);
+                localStorage.setItem(window.cookieName, template);
                 window.location.reload();
             });
 
