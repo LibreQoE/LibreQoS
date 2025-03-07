@@ -5,10 +5,11 @@ from typing import List, Any
 from liblqos_python import allowed_subnets, ignore_subnets, generated_pn_download_mbps, generated_pn_upload_mbps, \
 	circuit_name_use_address, upstream_bandwidth_capacity_download_mbps, upstream_bandwidth_capacity_upload_mbps, \
 	find_ipv6_using_mikrotik, exclude_sites, bandwidth_overhead_factor, committed_bandwidth_multiplier, \
-	exception_cpes
+	exception_cpes, blackboard_submit, blackboard_finish
 import ipaddress
 import enum
 import os
+import json
 
 def isInAllowedSubnets(inputIP):
 	# Check whether an IP address occurs inside the allowedSubnets list
@@ -320,7 +321,8 @@ class NetworkGraph:
 						if 'children' in data[node]:
 							inheritBandwidthMaxes(data[node]['children'], data[node]['downloadBandwidthMbps'], data[node]['uploadBandwidthMbps'])
 		inheritBandwidthMaxes(topLevelNode, parentMaxDL=upstream_bandwidth_capacity_download_mbps(), parentMaxUL=upstream_bandwidth_capacity_upload_mbps())
-		
+
+		blackboard_submit("site", "detected_network", json.dumps(topLevelNode))
 		with open('network.json', 'w') as f:
 			json.dump(topLevelNode, f, indent=4)
 
@@ -425,6 +427,7 @@ class NetworkGraph:
 							int(float(circuit["upload"]) * bandwidth_overhead_factor()),
 							""
 						]
+						blackboard_submit("circuit", device["id"], json.dumps(row))
 						wr.writerow(row)
 				
 				# If we have an "appendToShapedDevices.csv" file, it gets appended to the end of the file.
@@ -435,6 +438,7 @@ class NetworkGraph:
 						reader = csv.reader(f)
 						for row in reader:
 							wr.writerow(row)
+				blackboard_finish()
 
 	def plotNetworkGraph(self, showClients=False):
 		# Requires `pip install graphviz` to function.
