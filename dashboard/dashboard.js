@@ -2,6 +2,7 @@
 import {DashboardLayout} from "./layout";
 import {resetWS, subscribeWS} from "./ws";
 import {heading5Icon} from "../helpers/content_builders";
+import {openDashboardEditor} from "./dashboard_editor";
 
 export class Dashboard {
     // Takes the target DIV in which to build the dashboard,
