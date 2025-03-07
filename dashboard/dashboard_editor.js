@@ -70,14 +70,52 @@ export function openDashboardEditor(initialElements, availableElements, callback
         });
     }
 
-    // Render available elements in the side panel.
+    // Render available elements in the side panel with accordion
     function renderAvailable() {
         var $available = $('#availableList');
         $available.empty();
-        availableElements.forEach(function(item, index) {
-            var listItem = `<li class="list-group-item available-item" data-name="${item.name}" data-size="${item.size}">${item.name}</li>`;
-            $available.append(listItem);
-        });
+
+        // Group elements by category
+        const categories = availableElements.reduce((acc, item) => {
+            const category = item.category || 'Uncategorized';
+            if (!acc[category]) acc[category] = [];
+            acc[category].push(item);
+            return acc;
+        }, {});
+
+        // Build accordion HTML
+        const accordionHTML = `
+            <div class="accordion" id="availableAccordion">
+                ${Object.entries(categories).map(([category, items], index) => `
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed" type="button" 
+                                data-bs-toggle="collapse" 
+                                data-bs-target="#cat-${index}" 
+                                aria-expanded="false" 
+                                aria-controls="cat-${index}">
+                                ${category}
+                            </button>
+                        </h2>
+                        <div id="cat-${index}" class="accordion-collapse collapse" 
+                            data-bs-parent="#availableAccordion">
+                            <div class="accordion-body p-0">
+                                <ul class="list-group">
+                                    ${items.map(item => `
+                                        <li class="list-group-item available-item" 
+                                            data-name="${item.name}" 
+                                            data-size="${item.size}">
+                                            ${item.name}
+                                        </li>
+                                    `).join('')}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        $available.html(accordionHTML);
     }
 
     renderDashboard();
@@ -117,16 +155,17 @@ export function openDashboardEditor(initialElements, availableElements, callback
         }
     });
 
-    // Initialize SortableJS for the available elements list.
-    // Items here are cloned (so the available list remains unchanged).
-    var availableSortable = new Sortable(document.getElementById('availableList'), {
-        animation: 150,
-        group: {
-            name: 'shared',
-            pull: 'clone',
-            put: false
-        },
-        sort: false
+    // Initialize SortableJS for all available elements lists in the accordion
+    document.querySelectorAll('.accordion-body .list-group').forEach(list => {
+        new Sortable(list, {
+            animation: 150,
+            group: {
+                name: 'shared',
+                pull: 'clone',
+                put: false
+            },
+            sort: false
+        });
     });
 
     // Handle delete action for dashboard items.
