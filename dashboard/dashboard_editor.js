@@ -25,7 +25,6 @@ export function openDashboardEditor(initialElements, availableElements, callback
               </div>
               <!-- Panel for available elements -->
               <div class="col-md-3 border-start">
-                <h6>Available Elements</h6>
                 <ul id="availableList" class="list-group">
                   <!-- Available elements will be injected here -->
                 </ul>
@@ -87,7 +86,7 @@ export function openDashboardEditor(initialElements, availableElements, callback
         const accordionHTML = `
             <div class="alert alert-info d-flex align-items-center gap-2 mb-3" role="alert">
                 <i class="bi bi-info-circle"></i>
-                Drag new widgets to the dashboard
+                <i class="fa fa-info"></i> Drag new widgets to the dashboard
             </div>
             <div class="accordion" id="availableAccordion">
                 ${Object.entries(categories).map(([category, items], index) => `

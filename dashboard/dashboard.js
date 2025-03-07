@@ -178,6 +178,9 @@ export class Dashboard {
 
             openDashboardEditor(initialElements, availableElements, function(newLayout) {
                 console.log("New dashboard layout:", newLayout);
+                let template = JSON.stringify(newLayout);
+                localStorage.setItem(this.cookieName, template);
+                window.location.reload();
             });
 
             // Old Editor
