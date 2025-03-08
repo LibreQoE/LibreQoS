@@ -57,6 +57,7 @@ allow_subnets = [ "172.16.0.0/12", "10.0.0.0/8", "100.64.0.0/16", "192.168.0.0/1
 circuit_name_as_address = false
 always_overwrite_network_json = false
 queue_refresh_interval_mins = 30
+webhook_enable = false
 
 [spylnx_integration]
 enable_spylnx = false

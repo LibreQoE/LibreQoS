@@ -19,6 +19,8 @@ pub static SHAPED_DEVICES: Lazy<ArcSwap<ConfigShapedDevices>> =
     Lazy::new(|| ArcSwap::new(Arc::new(ConfigShapedDevices::default())));
 pub static STATS_NEEDS_NEW_SHAPED_DEVICES: AtomicBool = AtomicBool::new(true);
 
+pub static WEBHOOK_REFRESH_COMPLETED: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(false));
+
 fn load_shaped_devices() {
     debug!("ShapedDevices.csv has changed. Attempting to load it.");
     let shaped_devices = ConfigShapedDevices::load();
@@ -28,6 +30,7 @@ fn load_shaped_devices() {
         let nj = NETWORK_JSON.read().unwrap();
         crate::throughput_tracker::THROUGHPUT_TRACKER.refresh_circuit_ids(&nj);
         STATS_NEEDS_NEW_SHAPED_DEVICES.store(true, std::sync::atomic::Ordering::Relaxed);
+        WEBHOOK_REFRESH_COMPLETED.store(true, std::sync::atomic::Ordering::Relaxed);
     } else {
         warn!(
             "ShapedDevices.csv failed to load, see previous error messages. Reverting to empty set."

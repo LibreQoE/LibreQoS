@@ -15,6 +15,7 @@
   - Every X minutes: Update queues, pulling new configuration from CRM integration, if enabled.
     - The default minute interval is 30, so the refresh occurs every 30 minutes by default.
     - The minute interval is adjustable with the setting `queue_refresh_interval_mins` in `/etc/lqos.conf`.
+  - If webhook_enable in `/etc/lqos.conf` is true, a webhook sent to `/refresh-webhook` that has valid event data will cause a CRM import and queue update.
 
 ## Checking service status
 
