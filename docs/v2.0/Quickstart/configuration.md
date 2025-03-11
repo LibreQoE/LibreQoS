@@ -97,9 +97,19 @@ LibreQoS knows how to shape these devices, and what Node (AP, Site, etc) they ar
 The ShapedDevices.csv file correlates device IP addresses to Circuits (each internet subscriber's unique service).
 
 Here is an example of an entry in the ShapedDevices.csv file:
-| Circuit ID | Circuit Name | Device ID | Device Name | Parent Node | MAC | IPv4                      | IPv6                 | Download Min Mbps | Upload Min Mbps | Download Max Mbps | Upload Max Mbps | Comment |
-|------------|--------------|-----------|-------------|-------------|-----|---------------------------|----------------------|-------------------|-----------------|-------------------|-----------------|---------|
-| 10001      | Person Name  | 10001     | Device 1    | AP_A        |     | 100.64.0.2, 100.64.0.8/29 | fdd7:b724:0:100::/56 | 25                | 5               | 155               | 20              |         |
+| Circuit ID | Circuit Name                                        | Device ID | Device Name | Parent Node | MAC | IPv4                    | IPv6                 | Download Min Mbps | Upload Min Mbps | Download Max Mbps | Upload Max Mbps | Comment |
+|------------|-----------------------------------------------------|-----------|-------------|-------------|-----|-------------------------|----------------------|-------------------|-----------------|-------------------|-----------------|---------|
+| 1          | 968 Circle St., Gurnee, IL 60031                    | 1         | Device 1    | AP_A        |     | 100.64.0.1, 100.64.0.14 | fdd7:b724:0:100::/56 | 1                 | 1               | 155               | 20              |         |
+| 2          | 31 Marconi Street, Lake In The Hills, IL 60156      | 2         | Device 2    | AP_A        |     | 100.64.0.2              | fdd7:b724:0:200::/56 | 1                 | 1               | 105               | 18              |         |
+| 3          | 255 NW. Newport Ave., Jamestown, NY 14701           | 3         | Device 3    | AP_9        |     | 100.64.0.3              | fdd7:b724:0:300::/56 | 1                 | 1               | 105               | 18              |         |
+| 4          | 8493 Campfire Street, Peabody, MA 01960             | 4         | Device 4    | AP_9        |     | 100.64.0.4              | fdd7:b724:0:400::/56 | 1                 | 1               | 105               | 18              |         |
+| 2794       | 6 Littleton Drive, Ringgold, GA 30736               | 5         | Device 5    | AP_11       |     | 100.64.0.5              | fdd7:b724:0:500::/56 | 1                 | 1               | 105               | 18              |         |
+| 2794       | 6 Littleton Drive, Ringgold, GA 30736               | 6         | Device 6    | AP_11       |     | 100.64.0.6              | fdd7:b724:0:600::/56 | 1                 | 1               | 105               | 18              |         |
+| 5          | 93 Oklahoma Ave., Parsippany, NJ 07054              | 7         | Device 7    | AP_1        |     | 100.64.0.7              | fdd7:b724:0:700::/56 | 1                 | 1               | 155               | 20              |         |
+| 6          | 74 Bishop Ave., Bakersfield, CA 93306               | 8         | Device 8    | AP_1        |     | 100.64.0.8              | fdd7:b724:0:800::/56 | 1                 | 1               | 105               | 18              |         |
+| 7          | 9598 Peg Shop Drive, Lutherville Timonium, MD 21093 | 9         | Device 9    | AP_7        |     | 100.64.0.9              | fdd7:b724:0:900::/56 | 1                 | 1               | 105               | 18              |         |
+| 8          | 115 Gartner Rd., Gettysburg, PA 17325               | 10        | Device 10   | AP_7        |     | 100.64.0.10             | fdd7:b724:0:a00::/56 | 1                 | 1               | 105               | 18              |         |
+| 9          | 525 Birchpond St., Romulus, MI 48174                | 11        | Device 11   | Site_1      |     | 100.64.0.11             | fdd7:b724:0:b00::/56 | 1                 | 1               | 105               | 18              |         |
 
 If you are using one of our CRM integrations, this file will be automatically generated. If you are not using an integration, you can manually edit the file using either the WebUI or by directly editing the ShapedDevices.csv file through the CLI.
 
@@ -109,17 +119,17 @@ Navigate to the LibreQoS WebUI (http://a.b.c.d:9123) and select Configuration > 
 #### Manual Editing by CLI
 
 - Modify the ShapedDevices.csv file using your preferred spreadsheet editor (LibreOffice Calc, Excel, etc), following the template file - ShapedDevices.example.csv
-- Circuit ID is required. Must be a string of some sort (int is fine, gets parsed as string). Must NOT include any number symbols (#). Every circuit needs a unique CircuitID - they cannot be reused. Here, circuit essentially means customer location. If a customer has multiple locations on different parts of your network, use a unique CircuitID for each of those locations.
+- Circuit ID is required. The Circuit ID can be a number or string. This field must NOT include any number symbols (#). Every circuit requires a unique CircuitID - they cannot be reused. Here, circuit essentially refers to a customer's service. If a customer has multiple locations on different parts of your network, use a unique CircuitID for each of those locations.
 - At least one IPv4 address or IPv6 address is required for each entry.
 - The Access Point or Site name should be set in the Parent Node field. Parent Node can be left blank for flat networks.
-- The ShapedDevices.csv file allows you to set minimum guaranteed, and maximum allowed bandwidth per subscriber.
-- The minimum allowed plan rates for Circuits are 2Mbit. Bandwidth min and max should both be above that threshold.
-- Recommendation: set the min bandwidth to something like 25/10 and max to 1.15X advertised plan rate by using bandwidthOverheadFactor = 1.15
+- The ShapedDevices.csv file allows you to set minimum (guaranteed), and maximum allowed bandwidth per subscriber.
+- The Download Min and Upload Min for each Circuit must be 1 Mbps or greater. Generally, these should be set to 1 Mbps by default.
+- The Download Max and Upload Max for each Circuit must be 2 Mbps or greater. Generally, these correspond to the customer's speed plan.
+- Recommendation: set the min bandwidth to 1/1 and max to 1.15X advertised plan rate:
   - This way, when an AP hits its ceiling, users have any remaining AP capacity fairly distributed between them.
-  - Ensure a reasonable minimum bandwidth minimum for every subscriber, allowing them to utilize up to the maximum provided when AP utilization is below 100%.
+  - By setting the max to 1.15X the speed plan, this makes it more likely that the subscriber will see a satisfactory speed test result, even if there is some small light traffic on their circuit running in the background - such as an HD video stream, software updates, etc.
+  - This allows subscribers to utilize up to the maximum rate when AP has the capacity to allow that.
 
-Note regarding SLAs: For customers with SLA contracts that guarantee them a minimum bandwidth, set their plan rate as the minimum bandwidth. That way when an AP approaches its ceiling, SLA customers will always get that amount.
+Note regarding SLAs: For customers with SLA contracts that guarantee them a minimum bandwidth, you can set their plan rate as the minimum bandwidth. That way when an AP approaches its ceiling, SLA customers will always see that rate available. Make sure that the combined minimum rates for circuits connected to a parent node do not exceed the rate of the parent node. If that happens, LibreQoS has a fail-safe that will [reduce the minimums to 1/1](https://github.com/LibreQoE/LibreQoS/pull/643) for all affected circuits. 
 
-![image](https://user-images.githubusercontent.com/22501920/200134960-28709d0f-48fe-4129-b4fd-70b204cade2c.png)
-
-Once your configuration is complete. You're ready to run the application and start the [Deamons](./services-and-run.md)
+Once your configuration is complete. You're ready to run the application and start the [systemd services](./services-and-run.md)
