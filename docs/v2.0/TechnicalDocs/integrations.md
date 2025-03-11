@@ -1,5 +1,15 @@
 # Integrations
 
+  * [Splynx Integration](#splynx-integration)
+    + [Splynx API Access](#splynx-api-access)
+    + [Splynx Overrides](#splynx-overrides)
+  * [UISP Integration](#uisp-integration)
+    + [UISP Overrides](#uisp-overrides)
+      - [UISP Route Overrides](#uisp-route-overrides)
+  * [WISPGate Integration](#wispgate-integration)
+  * [Powercode Integration](#powercode-integration)
+  * [Sonar Integration](#sonar-integration)
+
 ## Splynx Integration
 
 First, set the relevant parameters for Splynx (splynx_api_key, splynx_api_secret, etc.) in `/etc/lqos.conf`.
