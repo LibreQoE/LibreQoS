@@ -237,3 +237,16 @@ table tr td a {
     width: 1px;
     background-color: var(--bs-border-color);
 }
+.dashgraphZoomed {
+    width: 100%;
+    height: 100%;
+}
+.zoomed {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 10000;
+    background: var(--bs-body-bg);
+}

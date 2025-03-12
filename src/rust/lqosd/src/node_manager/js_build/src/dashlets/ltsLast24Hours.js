@@ -1,4 +1,4 @@
-import {BaseDashlet} from "./base_dashlet";
+import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {LtsLast24Hours_graph} from "../graphs/ltsLast24Hours_graph";
 
 export class LtsLast24Hours extends BaseDashlet {
