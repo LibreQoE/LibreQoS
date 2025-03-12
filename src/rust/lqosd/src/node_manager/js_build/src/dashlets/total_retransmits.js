@@ -1,4 +1,4 @@
-import {BaseDashlet} from "./base_dashlet";
+import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {periodNameToSeconds} from "../helpers/time_periods";
 import {RetransmitsGraph} from "../graphs/retransmits_graph";
 import {LtsRetransmitsGraph} from "../graphs/lts_retransmits";

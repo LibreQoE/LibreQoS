@@ -1,4 +1,4 @@
-import {BaseDashlet} from "./base_dashlet";
+import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {scaleNumber} from "../lq_js_common/helpers/scaling";
 
 export class ThroughputBpsDash extends BaseDashlet{

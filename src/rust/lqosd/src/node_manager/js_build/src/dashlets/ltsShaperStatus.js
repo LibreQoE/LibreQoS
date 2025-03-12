@@ -1,4 +1,4 @@
-import {BaseDashlet} from "./base_dashlet";
+import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {clearDiv, simpleRow, simpleRowHtml, theading} from "../helpers/builders";
 
 export class LtsShaperStatus extends BaseDashlet {

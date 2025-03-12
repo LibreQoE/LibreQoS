@@ -1,4 +1,4 @@
-import {BaseDashlet} from "./base_dashlet";
+import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {ThroughputRingBufferGraph} from "../graphs/throughput_ring_graph";
 import {ThroughputRingBufferGraphTimescale} from "../graphs/throughput_ring_graph_timescale";
 
@@ -9,7 +9,7 @@ export class ThroughputRingDash extends BaseDashlet{
     }
 
     title() {
-        return "Last 5 Minutes Throughput";
+        return "Last 5 Minutes Traffic";
     }
 
     tooltip() {

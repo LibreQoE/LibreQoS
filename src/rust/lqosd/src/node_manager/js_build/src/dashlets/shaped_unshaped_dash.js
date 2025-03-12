@@ -1,4 +1,4 @@
-import {BaseDashlet} from "./base_dashlet";
+import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {ShapedUnshapedPie} from "../graphs/shaped_unshaped_pie";
 import {ShapedUnshapedTimescale} from "../graphs/shaped_unshaped_timescale";
 
@@ -33,6 +33,10 @@ export class ShapedUnshapedDash extends BaseDashlet{
             let unshaped = msg.data.bps.down + msg.data.bps.up;
             this.graph.update(shaped, unshaped);
         }
+    }
+
+    supportsZoom() {
+        return true;
     }
 
     onTimeChange() {
