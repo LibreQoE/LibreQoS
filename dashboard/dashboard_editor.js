@@ -135,7 +135,8 @@ export function openDashboardEditor(initialElements, availableElements, callback
                                     ${items.map(item => `
                                         <li class="list-group-item available-item" 
                                             data-name="${item.name}" 
-                                            data-size="${item.size}">
+                                            data-size="${item.size}"
+                                            data-tag="${item.tag}">
                                             ${item.name}
                                         </li>
                                     `).join('')}
@@ -167,8 +168,9 @@ export function openDashboardEditor(initialElements, availableElements, callback
             var $item = $(evt.item);
             var name = $item.data('name');
             var size = $item.data('size');
+            var tag = $item.data('tag');
             $item.replaceWith(`
-        <div class="dashboard-item col-${size}" data-size="${size}" data-name="${name}">
+        <div class="dashboard-item col-${size}" data-size="${size}" data-name="${name}" data-tag="${tag}">
           <div class="card">
             <div class="card-body p-2">
               <div class="d-flex justify-content-between align-items-center">
