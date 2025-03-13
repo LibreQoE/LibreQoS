@@ -589,8 +589,15 @@ function onTreeEvent(msg) {
         let rxmitGraph = funnelGraphs[parent].rxmit;
         let rttGraph = funnelGraphs[parent].rtt;
 
-        tpGraph.update(myMessage.current_throughput[0] * 8, myMessage.current_throughput[0] *8);
-        rxmitGraph.update(myMessage.current_retransmits[0], myMessage.current_retransmits[1]);
+        tpGraph.update(myMessage.current_throughput[0] * 8, myMessage.current_throughput[1] *8);
+        let rxmit = [0, 0];
+        if (myMessage.current_retransmits[0] > 0) {
+            rxmit[0] = (myMessage.current_retransmits[0] / myMessage.current_tcp_packets[0]) * 100.0;
+        }
+        if (myMessage.current_retransmits[1] > 0) {
+            rxmit[1] = (myMessage.current_retransmits[1] / myMessage.current_tcp_packets[1]) * 100.0;
+        }
+        rxmitGraph.update(rxmit[0], rxmit[1]);
         myMessage.rtts.forEach((rtt) => {
             rttGraph.updateMs(rtt);
         });
