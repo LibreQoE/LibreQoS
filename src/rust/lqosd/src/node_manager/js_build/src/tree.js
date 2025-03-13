@@ -218,7 +218,7 @@ function buildRow(i, depth=0) {
 
     col = document.createElement("td");
     col.id = "ecn-down-" + nodeId;
-    col.style.width = "4%";
+    col.style.width = "6%";
     if (node.current_marks[0] !== undefined) {
         col.innerHTML = formatCakeStatPercent(node.current_marks[0], node.current_packets[0]);
     } else {
@@ -228,7 +228,7 @@ function buildRow(i, depth=0) {
 
     col = document.createElement("td");
     col.id = "ecn-up-" + nodeId;
-    col.style.width = "4%";
+    col.style.width = "6%";
     if (node.current_marks[1] !== undefined) {
         col.innerHTML = formatCakeStatPercent(node.current_marks[1], node.current_packets[1]);
     } else {
@@ -238,7 +238,7 @@ function buildRow(i, depth=0) {
 
     col = document.createElement("td");
     col.id = "drops-down-" + nodeId;
-    col.style.width = "4%";
+    col.style.width = "6%";
     if (node.current_drops[0] !== undefined) {
         col.innerHTML = formatCakeStatPercent(node.current_drops[0], node.current_packets[0]);
     } else {
@@ -248,7 +248,7 @@ function buildRow(i, depth=0) {
 
     col = document.createElement("td");
     col.id = "drops-up-" + nodeId;
-    col.style.width = "4%";
+    //col.style.width = "6%";
     if (node.current_drops[1] !== undefined) {
         col.innerHTML = formatCakeStat(node.current_drops[1], node.current_packets[1]);
     } else {
