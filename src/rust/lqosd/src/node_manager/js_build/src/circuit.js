@@ -192,14 +192,14 @@ function updateTrafficTab(msg) {
         let opacity = Math.min(1, flow[0].last_seen_nanos / thirty_seconds_in_nanos);
         row.style.opacity = 1.0 - opacity;
         row.appendChild(simpleRow(flow[0].protocol_name));
-        row.appendChild(simpleRowHtml(formatThroughput(flow[1].rate_estimate_bps.down * 8, plan.down)));
-        row.appendChild(simpleRowHtml(formatThroughput(flow[1].rate_estimate_bps.up * 8, plan.up)));
+        row.appendChild(simpleRowHtml(formatThroughput(flow[1].rate_estimate_bps.down, plan.down)));
+        row.appendChild(simpleRowHtml(formatThroughput(flow[1].rate_estimate_bps.up, plan.up)));
         row.appendChild(simpleRow(scaleNumber(flow[1].bytes_sent.down)));
         row.appendChild(simpleRow(scaleNumber(flow[1].bytes_sent.up)));
         row.appendChild(simpleRow(scaleNumber(flow[1].packets_sent.down)));
         row.appendChild(simpleRow(scaleNumber(flow[1].packets_sent.up)));
-        row.appendChild(simpleRowHtml(formatRetransmit(flow[1].tcp_retransmits.down / 100.0)));
-        row.appendChild(simpleRowHtml(formatRetransmit(flow[1].tcp_retransmits.up / 100.0)));
+        row.appendChild(simpleRowHtml(formatRetransmit(flow[1].tcp_retransmits.down / 10000.0)));
+        row.appendChild(simpleRowHtml(formatRetransmit(flow[1].tcp_retransmits.up / 10000.0)));
         row.appendChild(simpleRow(scaleNanos(flow[1].rtt[0].nanoseconds)));
         row.appendChild(simpleRow(scaleNanos(flow[1].rtt[1].nanoseconds)));
         row.appendChild(simpleRow(flow[0].asn_name));
