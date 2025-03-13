@@ -82,6 +82,22 @@ export function formatCakeStat(n) {
     return html;
 }
 
+export function formatCakeStatPercent(n, packets) {
+    if (packets === 0) {
+        n = 0;
+    } else {
+        n = (n / packets) * 100;
+    }
+    let percent = Math.min(100, n) / 100;
+    let color = lerpGreenToRedViaOrange(100-percent, 100);
+    let html = "<span class='muted' class='retransmits' style='color: " + color + "'>";
+    html += "■";
+    html += "</span>";
+    html += n.toFixed(2);
+    html += "%";
+    return html;
+}
+
 export function lerpColor(color1, color2, weight) {
     var r = Math.round(color1[0] + (color2[0] - color1[0]) * weight);
     var g = Math.round(color1[1] + (color2[1] - color1[1]) * weight);

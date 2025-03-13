@@ -1,6 +1,6 @@
 import {clearDiv, clientTableHeader, formatLastSeen, simpleRow, simpleRowHtml, theading} from "./helpers/builders";
 import {
-    formatCakeStat,
+    formatCakeStat, formatCakeStatPercent,
     formatRetransmit, formatRetransmitRaw,
     formatRtt,
     formatThroughput,
@@ -218,9 +218,9 @@ function buildRow(i, depth=0) {
 
     col = document.createElement("td");
     col.id = "ecn-down-" + nodeId;
-    col.style.width = "6%";
+    col.style.width = "4%";
     if (node.current_marks[0] !== undefined) {
-        col.innerHTML = formatCakeStat(node.current_marks[0]);
+        col.innerHTML = formatCakeStatPercent(node.current_marks[0], node.current_packets[0]);
     } else {
         col.textContent = "-";
     }
@@ -228,9 +228,9 @@ function buildRow(i, depth=0) {
 
     col = document.createElement("td");
     col.id = "ecn-up-" + nodeId;
-    col.style.width = "6%";
+    col.style.width = "4%";
     if (node.current_marks[1] !== undefined) {
-        col.innerHTML = formatCakeStat(node.current_marks[1]);
+        col.innerHTML = formatCakeStatPercent(node.current_marks[1], node.current_packets[1]);
     } else {
         col.textContent = "-";
     }
@@ -238,9 +238,9 @@ function buildRow(i, depth=0) {
 
     col = document.createElement("td");
     col.id = "drops-down-" + nodeId;
-    col.style.width = "6%";
+    col.style.width = "4%";
     if (node.current_drops[0] !== undefined) {
-        col.innerHTML = formatCakeStat(node.current_drops[0]);
+        col.innerHTML = formatCakeStatPercent(node.current_drops[0], node.current_packets[0]);
     } else {
         col.textContent = "-";
     }
@@ -248,9 +248,9 @@ function buildRow(i, depth=0) {
 
     col = document.createElement("td");
     col.id = "drops-up-" + nodeId;
-    //col.style.width = "6%";
+    col.style.width = "4%";
     if (node.current_drops[1] !== undefined) {
-        col.innerHTML = formatCakeStat(node.current_drops[1]);
+        col.innerHTML = formatCakeStat(node.current_drops[1], node.current_packets[1]);
     } else {
         col.textContent = "-";
     }
@@ -312,7 +312,7 @@ function treeUpdate(msg) {
         col = document.getElementById("ecn-down-" + nodeId);
         if (col !== null) {
             if (node.current_marks[0] !== undefined) {
-                col.textContent = node.current_marks[0];
+                col.innerHTML = formatCakeStatPercent(node.current_marks[0], node.current_packets[0]);
             } else {
                 col.textContent = "-";
             }
@@ -320,7 +320,7 @@ function treeUpdate(msg) {
         col = document.getElementById("ecn-up-" + nodeId);
         if (col !== null) {
             if (node.current_marks[1] !== undefined) {
-                col.textContent = node.current_marks[1];
+                col.innerHTML = formatCakeStatPercent(node.current_marks[1], node.current_packets[1]);
             } else {
                 col.textContent = "-";
             }
@@ -328,7 +328,7 @@ function treeUpdate(msg) {
         col = document.getElementById("drops-down-" + nodeId);
         if (col !== null) {
             if (node.current_drops[0] !== undefined) {
-                col.textContent = node.current_drops[0];
+                col.innerHTML = formatCakeStatPercent(node.current_drops[0], node.current_packets[0]);
             } else {
                 col.textContent = "-";
             }
@@ -336,7 +336,7 @@ function treeUpdate(msg) {
         col = document.getElementById("drops-up-" + nodeId);
         if (col !== null) {
             if (node.current_drops[1] !== undefined) {
-                col.textContent = node.current_drops[1];
+                col.innerHTML = formatCakeStatPercent(node.current_drops[1], node.current_packets[1]);
             } else {
                 col.textContent = "-";
             }
