@@ -340,7 +340,7 @@ function clientsUpdate(msg) {
             circuitLink.innerText = device.circuit_name;
             linkTd.appendChild(circuitLink);
             tr.appendChild(linkTd);
-            tr.appendChild(simpleRow(device.device_name));
+            tr.appendChild(simpleRow(device.device_name, true));
             tr.appendChild(simpleRow(device.plan.down + " / " + device.plan.up));
             tr.appendChild(simpleRow(device.parent_node));
             tr.appendChild(simpleRow(device.ip));
