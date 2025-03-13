@@ -146,13 +146,13 @@ function buildRow(i, depth=0) {
     if (node.max_throughput[0] === 0) {
         limit = "Unlimited";
     } else {
-        limit = scaleNumber(node.max_throughput[0] * 1000 * 1000, 0);
+        limit = scaleNumber(node.max_throughput[0] * 1000 * 1000, 1);
     }
     limit += " / ";
     if (node.max_throughput[1] === 0) {
         limit += "Unlimited";
     } else {
-        limit += scaleNumber(node.max_throughput[1] * 1000 * 1000, 0);
+        limit += scaleNumber(node.max_throughput[1] * 1000 * 1000, 1);
     }
     col.textContent = limit;
     row.appendChild(col);
@@ -265,7 +265,11 @@ function treeUpdate(msg) {
         col = document.getElementById("re-xmit-down-" + nodeId);
         if (col !== null) {
             if (node.current_retransmits[0] !== undefined) {
-                col.innerHTML = formatRetransmitRaw(node.current_retransmits[0]);
+                let retr = 0;
+                if (node.current_tcp_packets[0] > 0) {
+                    retr = node.current_retransmits[0] / node.current_tcp_packets[0];
+                }
+                col.innerHTML = formatRetransmit(retr);
             } else {
                 col.textContent = "-";
             }
@@ -273,7 +277,11 @@ function treeUpdate(msg) {
         col = document.getElementById("re-xmit-up-" + nodeId);
         if (col !== null) {
             if (node.current_retransmits[1] !== undefined) {
-                col.innerHTML = formatRetransmitRaw(node.current_retransmits[1]);
+                let retr = 0;
+                if (node.current_tcp_packets[1] > 0) {
+                    retr = node.current_retransmits[1] / node.current_tcp_packets[1];
+                }
+                col.innerHTML = formatRetransmit(retr);
             } else {
                 col.textContent = "-";
             }
@@ -346,8 +354,16 @@ function clientsUpdate(msg) {
                 tr.appendChild(simpleRow("-"));
                 tr.appendChild(simpleRow("-"));
             }
-            tr.appendChild(simpleRowHtml(formatRetransmit(device.tcp_retransmits.down)));
-            tr.appendChild(simpleRowHtml(formatRetransmit(device.tcp_retransmits.up)));
+            let retr = 0;
+            if (device.tcp_packets.down > 0) {
+                retr = device.tcp_retransmits.down / device.tcp_packets.down;
+            }
+            tr.appendChild(simpleRowHtml(formatRetransmit(retr)));
+            retr = 0;
+            if (device.tcp_packets.up > 0) {
+                retr = device.tcp_retransmits.up / device.tcp_packets.up;
+            }
+            tr.appendChild(simpleRowHtml(formatRetransmit(retr)));
 
             // Add it
             tbody.appendChild(tr);
