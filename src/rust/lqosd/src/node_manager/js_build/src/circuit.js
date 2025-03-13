@@ -200,6 +200,8 @@ function updateTrafficTab(msg) {
             down = (flow[1].bytes_sent.down - prevFlowBytes.get(flowKey)[0]) * 8;
             up = (flow[1].bytes_sent.up - prevFlowBytes.get(flowKey)[1]) * 8;
         }
+        if (down < 0) down = 0;
+        if (up < 0) up = 0;
         prevFlowBytes.set(flowKey, [ flow[1].bytes_sent.down, flow[1].bytes_sent.up ]);
 
         if (flow[0].last_seen_nanos > thirty_seconds_in_nanos) return;
