@@ -17,6 +17,11 @@ const COOKIE_PATH: &str = "User-Token";
 
 static WEB_USERS: Lazy<Mutex<Option<WebUsers>>> = Lazy::new(|| Mutex::new(None));
 
+pub async fn invalidate_user_cache() {
+    let mut lock = WEB_USERS.lock().await;
+    *lock = None;
+}
+
 pub async fn get_username(jar: &CookieJar) -> String {
     let lock = WEB_USERS.lock().await;
     if let Some(users) = &*lock {

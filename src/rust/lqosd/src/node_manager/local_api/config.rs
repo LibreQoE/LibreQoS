@@ -1,4 +1,4 @@
-use crate::node_manager::auth::LoginResult;
+use crate::node_manager::auth::{invalidate_user_cache, LoginResult};
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use axum::http::StatusCode;
 use axum::{Extension, Json};
@@ -152,6 +152,7 @@ pub async fn add_user(
     users
         .add_or_update_user(&data.username.trim(), &data.password, data.role.into())
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    invalidate_user_cache().await;
     Ok(format!("User '{}' added", data.username))
 }
 
@@ -166,6 +167,7 @@ pub async fn update_user(
     users
         .add_or_update_user(&data.username, &data.password, data.role.into())
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    invalidate_user_cache().await;
     Ok("User updated".to_string())
 }
 
@@ -185,5 +187,6 @@ pub async fn delete_user(
     users
         .remove_user(&data.username)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    invalidate_user_cache().await;
     Ok("User deleted".to_string())
 }
