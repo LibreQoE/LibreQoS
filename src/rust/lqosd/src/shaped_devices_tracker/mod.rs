@@ -239,6 +239,7 @@ pub fn get_all_circuits() -> BusResponse {
                     bytes_per_second: v.bytes_per_second,
                     median_latency: v.median_latency(),
                     tcp_retransmits: v.tcp_retransmits,
+                    tcp_packets: v.tcp_packets.checked_sub_or_zero(v.prev_tcp_packets),
                     circuit_id,
                     device_id,
                     circuit_name,

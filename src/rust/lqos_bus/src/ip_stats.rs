@@ -195,6 +195,8 @@ pub struct Circuit {
     pub median_latency: Option<f32>,
     /// TCP Retransmits for this host at the current time.
     pub tcp_retransmits: DownUpOrder<u64>,
+    /// The number of TCP packets per second.
+    pub tcp_packets: DownUpOrder<u64>,
     /// The mapped circuit ID
     pub circuit_id: Option<String>,
     /// The mapped device ID
