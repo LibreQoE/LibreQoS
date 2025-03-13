@@ -12,13 +12,21 @@ use lqos_config::{UserRole, WebUsers};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
+use tracing::info;
 
 const COOKIE_PATH: &str = "User-Token";
 
 static WEB_USERS: Lazy<Mutex<Option<WebUsers>>> = Lazy::new(|| Mutex::new(None));
 
 pub async fn invalidate_user_cache() {
+    info!("Invalidating user cache");
     let mut lock = WEB_USERS.lock().await;
+    *lock = None;
+}
+
+pub fn invalidate_user_cache_blocking() {
+    info!("Invalidating user cache");
+    let mut lock = WEB_USERS.blocking_lock();
     *lock = None;
 }
 

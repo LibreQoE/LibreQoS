@@ -2170,7 +2170,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "lqos_bus",
  "lqos_config",
+ "tokio",
 ]
 
 [[package]]
