@@ -86,7 +86,7 @@ export function formatCakeStatPercent(n, packets) {
     if (packets === 0) {
         n = 0;
     } else {
-        n = (n / packets) * 100;
+        n = (n / packets);
     }
     let percent = Math.min(100, n) / 100;
     let color = lerpGreenToRedViaOrange(100-percent, 100);
