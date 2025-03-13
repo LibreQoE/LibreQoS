@@ -198,13 +198,18 @@ function updateTrafficTab(msg) {
         let down = flow[1].rate_estimate_bps.down;
         let up = flow[1].rate_estimate_bps.up;
 
-        console.log(flow);
+        //console.log(flow);
         if (prevFlowBytes.has(flowKey)) {
             let ticks = tickCount - prevFlowBytes.get(flowKey)[2];
-            down = (flow[1].bytes_sent.down - prevFlowBytes.get(flowKey)[0]) * 8;
-            up = (flow[1].bytes_sent.up - prevFlowBytes.get(flowKey)[1]) * 8;
-            down = down / ticks;
-            up = up / ticks;
+            if (ticks === 1) {
+                down = (flow[1].bytes_sent.down - prevFlowBytes.get(flowKey)[0]) * 8;
+                up = (flow[1].bytes_sent.up - prevFlowBytes.get(flowKey)[1]) * 8;
+            } else if (ticks > 1) {
+                down = (flow[1].bytes_sent.down - prevFlowBytes.get(flowKey)[0]) * 8;
+                up = (flow[1].bytes_sent.up - prevFlowBytes.get(flowKey)[1]) * 8;
+                down = down / ticks;
+                up = up / ticks;
+            }
         }
         if (down < 0) down = 0;
         if (up < 0) up = 0;
