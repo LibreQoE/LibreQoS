@@ -12,7 +12,7 @@ use lqos_config::{UserRole, WebUsers};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
-use tracing::info;
+use tracing::{debug, info};
 
 const COOKIE_PATH: &str = "User-Token";
 
@@ -110,7 +110,7 @@ pub async fn auth_layer(
     Err(Html(BOUNCE))
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct LoginAttempt {
     pub username: String,
     pub password: String,
@@ -120,7 +120,19 @@ pub async fn try_login(
     jar: CookieJar,
     Json(login): Json<LoginAttempt>,
 ) -> Result<(CookieJar, StatusCode), StatusCode> {
-    let users = WEB_USERS.lock().await;
+    debug!("Attempting login for {:?}", login);
+    let mut users = WEB_USERS.lock().await;
+
+    if users.is_none() {
+        debug!("No users file loaded - attempting to load");
+        // No lock - let's see if there's a file to use?
+        if WebUsers::does_users_file_exist().unwrap() {
+            // It exists - we load it
+            let new_users = WebUsers::load_or_create().unwrap();
+            *users = Some(new_users);
+        }
+    }
+
     if let Some(users) = &*users {
         return match users.login(&login.username, &login.password) {
             Ok(token) => Ok((jar.add(Cookie::new(COOKIE_PATH, token)), StatusCode::OK)),
