@@ -3,19 +3,19 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to the LibreQoS documentation!
+Welcome to the LibreQoS documentation
 ====================================
 
 .. toctree::
    :maxdepth: 1
-   :caption: Read me first!
+   :caption: Getting Started
 
    docs/Quickstart/networkdesignassumptions
    docs/SystemRequirements/Compute
 
 .. toctree::
    :maxdepth: 1
-   :caption: v1.5/v2.0:
+   :caption: Deploying LibreQoS (v1.5 to v2.0):
 
    docs/v2.0/Quickstart/quickstart-prereq   
    docs/v2.0/Quickstart/quickstart-libreqos-2.0
@@ -33,7 +33,7 @@ Welcome to the LibreQoS documentation!
 
 .. toctree::
    :maxdepth: 1
-   :caption: v1.4:
+   :caption: Legacy Documentation (v1.4):
 
    docs/v1.4/Quickstart/quickstart-prereq
    docs/v1.4/Quickstart/quickstart-libreqos-1.4
