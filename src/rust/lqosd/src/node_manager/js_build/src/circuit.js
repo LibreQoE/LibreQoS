@@ -142,6 +142,7 @@ function connectFlowChannel() {
 
 let movingAverages = new Map();
 let prevFlowBytes = new Map();
+let tickCount = 0;
 
 function updateTrafficTab(msg) {
     let target = document.getElementById("allTraffic");
@@ -161,6 +162,7 @@ function updateTrafficTab(msg) {
     table.appendChild(thead);
     let tbody = document.createElement("tbody");
     const thirty_seconds_in_nanos = 30000000000; // For display filtering
+    tickCount++;
 
     msg.flows.forEach((flow) => {
         let flowKey = flow[0].protocol_name + flow[0].row_id;
@@ -196,13 +198,17 @@ function updateTrafficTab(msg) {
         let down = flow[1].rate_estimate_bps.down;
         let up = flow[1].rate_estimate_bps.up;
 
+        console.log(flow);
         if (prevFlowBytes.has(flowKey)) {
+            let ticks = tickCount - prevFlowBytes.get(flowKey)[2];
             down = (flow[1].bytes_sent.down - prevFlowBytes.get(flowKey)[0]) * 8;
             up = (flow[1].bytes_sent.up - prevFlowBytes.get(flowKey)[1]) * 8;
+            down = down / ticks;
+            up = up / ticks;
         }
         if (down < 0) down = 0;
         if (up < 0) up = 0;
-        prevFlowBytes.set(flowKey, [ flow[1].bytes_sent.down, flow[1].bytes_sent.up ]);
+        prevFlowBytes.set(flowKey, [ flow[1].bytes_sent.down, flow[1].bytes_sent.up, tickCount ]);
 
         if (flow[0].last_seen_nanos > thirty_seconds_in_nanos) return;
         let row = document.createElement("tr");
