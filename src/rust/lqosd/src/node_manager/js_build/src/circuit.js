@@ -198,8 +198,18 @@ function updateTrafficTab(msg) {
         row.appendChild(simpleRow(scaleNumber(flow[1].bytes_sent.up)));
         row.appendChild(simpleRow(scaleNumber(flow[1].packets_sent.down)));
         row.appendChild(simpleRow(scaleNumber(flow[1].packets_sent.up)));
-        row.appendChild(simpleRowHtml(formatRetransmit(flow[1].tcp_retransmits.down / 10000.0)));
-        row.appendChild(simpleRowHtml(formatRetransmit(flow[1].tcp_retransmits.up / 10000.0)));
+        if (flow[1].tcp_retransmits.down > 0) {
+            let pct = flow[1].tcp_retransmits.down / flow[1].packets_sent.down;
+            row.appendChild(simpleRowHtml(formatRetransmit(pct)));
+        } else {
+            row.appendChild(simpleRow("-"));
+        }
+        if (flow[1].tcp_retransmits.up > 0) {
+            let pct = flow[1].tcp_retransmits.up / flow[1].packets_sent.up;
+            row.appendChild(simpleRowHtml(formatRetransmit(pct)));
+        } else {
+            row.appendChild(simpleRow("-"));
+        }
         row.appendChild(simpleRow(scaleNanos(flow[1].rtt[0].nanoseconds)));
         row.appendChild(simpleRow(scaleNanos(flow[1].rtt[1].nanoseconds)));
         row.appendChild(simpleRow(flow[0].asn_name));
