@@ -82,24 +82,35 @@ function getInitialTree() {
 function fillHeader(node) {
     //console.log("Header");
     $("#nodeName").text(node.name);
-    let limit = "";
+    let limitD = "";
     if (node.max_throughput[0] === 0) {
-        limit = "Unlimited";
+        limitD = "Unlimited";
     } else {
-        limit = scaleNumber(node.max_throughput[0] * 1000 * 1000, 0);
+        limitD = scaleNumber(node.max_throughput[0] * 1000 * 1000, 0);
     }
-    limit += " / ";
+    let limitU = "";
     if (node.max_throughput[1] === 0) {
-        limit += "Unlimited";
+        limitU = "Unlimited";
     } else {
-        limit += scaleNumber(node.max_throughput[1] * 1000 * 1000, 0);
+        limitU = scaleNumber(node.max_throughput[1] * 1000 * 1000, 0);
     }
-    $("#parentLimits").text(limit);
+    $("#parentLimitsD").text(limitD);
+    $("#parentLimitsU").text(limitU);
     $("#parentTpD").html(formatThroughput(node.current_throughput[0] * 8, node.max_throughput[0]));
     $("#parentTpU").html(formatThroughput(node.current_throughput[1] * 8, node.max_throughput[1]));
     //console.log(node);
     $("#parentRttD").html(formatRtt(node.rtts[0]));
     $("#parentRttU").html(formatRtt(node.rtts[1]));
+    let retr = 0;
+    if (node.current_tcp_packets[0] > 0) {
+        retr = node.current_retransmits[0] / node.current_tcp_packets[0];
+    }
+    $("#parentRxmitD").html(formatRetransmit(retr));
+    retr = 0;
+    if (node.current_tcp_packets[1] > 0) {
+        retr = node.current_retransmits[1] / node.current_tcp_packets[1];
+    }
+    $("#parentRxmitU").html(formatRetransmit(retr));
 }
 
 function iterateChildren(idx, tBody, depth) {
@@ -121,6 +132,7 @@ function buildRow(i, depth=0) {
     let row = document.createElement("tr");
     row.classList.add("small");
     let col = document.createElement("td");
+    col.style.textOverflow = "ellipsis";
     let nodeName = "";
     if (depth > 0) {
         nodeName += "└";
@@ -142,6 +154,7 @@ function buildRow(i, depth=0) {
     col = document.createElement("td");
     col.id = "limit-" + nodeId;
     col.classList.add("small");
+    col.style.width = "8%";
     let limit = "";
     if (node.max_throughput[0] === 0) {
         limit = "Unlimited";
@@ -160,27 +173,32 @@ function buildRow(i, depth=0) {
     col = document.createElement("td");
     col.id = "down-" + nodeId;
     col.classList.add("small");
+    col.style.width = "6%";
     col.innerHTML = formatThroughput(node.current_throughput[0] * 8, node.max_throughput[0]);
     row.appendChild(col);
 
     col = document.createElement("td");
     col.id = "up-" + nodeId;
     col.classList.add("small");
+    col.style.width = "6%";
     col.innerHTML = formatThroughput(node.current_throughput[1] * 8, node.max_throughput[1]);
     row.appendChild(col);
 
     col = document.createElement("td");
     col.id = "rtt-down-" + nodeId;
+    col.style.width = "6%";
     col.innerHTML = formatRtt(node.rtts[0]);
     row.appendChild(col);
 
     col = document.createElement("td");
     col.id = "rtt-up-" + nodeId;
+    col.style.width = "6%";
     col.innerHTML = formatRtt(node.rtts[1]);
     row.appendChild(col);
 
     col = document.createElement("td");
     col.id = "re-xmit-down-" + nodeId;
+    col.style.width = "6%";
     if (node.current_retransmits[0] !== undefined) {
         col.innerHTML = formatRetransmitRaw(node.current_retransmits[0]);
     } else {
@@ -190,6 +208,7 @@ function buildRow(i, depth=0) {
 
     col = document.createElement("td");
     col.id = "re-xmit-up-" + nodeId;
+    col.style.width = "6%";
     if (node.current_retransmits[1] !== undefined) {
         col.innerHTML = formatRetransmitRaw(node.current_retransmits[1]);
     } else {
@@ -199,6 +218,7 @@ function buildRow(i, depth=0) {
 
     col = document.createElement("td");
     col.id = "ecn-down-" + nodeId;
+    col.style.width = "6%";
     if (node.current_marks[0] !== undefined) {
         col.innerHTML = formatCakeStat(node.current_marks[0]);
     } else {
@@ -208,6 +228,7 @@ function buildRow(i, depth=0) {
 
     col = document.createElement("td");
     col.id = "ecn-up-" + nodeId;
+    col.style.width = "6%";
     if (node.current_marks[1] !== undefined) {
         col.innerHTML = formatCakeStat(node.current_marks[1]);
     } else {
@@ -217,6 +238,7 @@ function buildRow(i, depth=0) {
 
     col = document.createElement("td");
     col.id = "drops-down-" + nodeId;
+    col.style.width = "6%";
     if (node.current_drops[0] !== undefined) {
         col.innerHTML = formatCakeStat(node.current_drops[0]);
     } else {
@@ -226,6 +248,7 @@ function buildRow(i, depth=0) {
 
     col = document.createElement("td");
     col.id = "drops-up-" + nodeId;
+    //col.style.width = "6%";
     if (node.current_drops[1] !== undefined) {
         col.innerHTML = formatCakeStat(node.current_drops[1]);
     } else {
@@ -334,6 +357,7 @@ function clientsUpdate(msg) {
     msg.data.forEach((device) => {
         if (device.parent_node === myName) {
             let tr = document.createElement("tr");
+            tr.classList.add("small");
             let linkTd = document.createElement("td");
             let circuitLink = document.createElement("a");
             circuitLink.href = "/circuit.html?id=" + device.circuit_id;
