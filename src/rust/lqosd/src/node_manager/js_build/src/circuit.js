@@ -141,6 +141,7 @@ function connectFlowChannel() {
 }
 
 let movingAverages = new Map();
+let prevFlowBytes = new Map();
 
 function updateTrafficTab(msg) {
     let target = document.getElementById("allTraffic");
@@ -164,6 +165,11 @@ function updateTrafficTab(msg) {
     msg.flows.forEach((flow) => {
         let flowKey = flow[0].protocol_name + flow[0].row_id;
         let rate = flow[1].rate_estimate_bps.down + flow[1].rate_estimate_bps.up;
+        if (prevFlowBytes.has(flowKey)) {
+            let down = flow[1].bytes_sent.down - prevFlowBytes.get(flowKey)[0];
+            let up = flow[1].bytes_sent.up - prevFlowBytes.get(flowKey)[1];
+            rate = down + up;
+        }
         if (movingAverages.has(flowKey)) {
             let avg = movingAverages.get(flowKey);
             avg.push(rate);
@@ -186,14 +192,24 @@ function updateTrafficTab(msg) {
     });
 
     msg.flows.forEach((flow) => {
+        let flowKey = flow[0].protocol_name + flow[0].row_id;
+        let down = flow[1].rate_estimate_bps.down;
+        let up = flow[1].rate_estimate_bps.up;
+
+        if (prevFlowBytes.has(flowKey)) {
+            down = (flow[1].bytes_sent.down - prevFlowBytes.get(flowKey)[0]) * 8;
+            up = (flow[1].bytes_sent.up - prevFlowBytes.get(flowKey)[1]) * 8;
+        }
+        prevFlowBytes.set(flowKey, [ flow[1].bytes_sent.down, flow[1].bytes_sent.up ]);
+
         if (flow[0].last_seen_nanos > thirty_seconds_in_nanos) return;
         let row = document.createElement("tr");
         row.classList.add("small");
         let opacity = Math.min(1, flow[0].last_seen_nanos / thirty_seconds_in_nanos);
         row.style.opacity = 1.0 - opacity;
         row.appendChild(simpleRow(flow[0].protocol_name));
-        row.appendChild(simpleRowHtml(formatThroughput(flow[1].rate_estimate_bps.down * 8, plan.down)));
-        row.appendChild(simpleRowHtml(formatThroughput(flow[1].rate_estimate_bps.up * 8, plan.up)));
+        row.appendChild(simpleRowHtml(formatThroughput(down, plan.down)));
+        row.appendChild(simpleRowHtml(formatThroughput(up, plan.up)));
         row.appendChild(simpleRow(scaleNumber(flow[1].bytes_sent.down)));
         row.appendChild(simpleRow(scaleNumber(flow[1].bytes_sent.up)));
         row.appendChild(simpleRow(scaleNumber(flow[1].packets_sent.down)));
