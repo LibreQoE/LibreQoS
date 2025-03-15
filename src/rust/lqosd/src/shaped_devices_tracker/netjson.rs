@@ -4,6 +4,7 @@ use lqos_utils::file_watcher::FileWatcher;
 use once_cell::sync::Lazy;
 use std::sync::RwLock;
 use tracing::{debug, error, info, warn};
+use crate::shaped_devices_tracker::WEBHOOK_REFRESH_COMPLETED;
 
 pub static NETWORK_JSON: Lazy<RwLock<NetworkJson>> =
     Lazy::new(|| RwLock::new(NetworkJson::default()));
@@ -12,7 +13,7 @@ pub fn network_json_watcher() -> Result<()> {
     std::thread::Builder::new()
         .name("NetJson Watcher".to_string())
         .spawn(|| {
-            debug!("Watching for network.kson changes");
+            debug!("Watching for network.json changes");
             if let Err(e) = watch_for_network_json_changing() {
                 error!("Error watching for network.json changes: {:?}", e);
             }
@@ -46,6 +47,7 @@ fn load_network_json() {
         let mut nj = NETWORK_JSON.write().unwrap();
         *nj = njs;
         crate::throughput_tracker::THROUGHPUT_TRACKER.refresh_circuit_ids(&nj);
+        WEBHOOK_REFRESH_COMPLETED.store(true, std::sync::atomic::Ordering::Relaxed);
     } else {
         warn!("Unable to load network.json");
     }
