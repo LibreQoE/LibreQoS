@@ -12,6 +12,10 @@ pub struct IntegrationConfig {
 
     /// Queue refresh interval in minutes
     pub queue_refresh_interval_mins: u32,
+
+    /// Webhook refesh toggle to allow webhooks 
+    /// to start a partial intergration refresh.
+    pub webhook_enable: bool,
 }
 
 impl Default for IntegrationConfig {
@@ -20,6 +24,7 @@ impl Default for IntegrationConfig {
             circuit_name_as_address: false,
             always_overwrite_network_json: false,
             queue_refresh_interval_mins: 30,
+            webhook_enable: false,
         }
     }
 }

@@ -4,6 +4,7 @@ use crate::node_manager::{
     auth,
     static_pages::{static_routes, vendor_route},
     ws::websocket_router,
+    webhook_handler::WebhookManager,
 };
 use crate::system_stats::SystemStats;
 use anyhow::{Result, bail};
@@ -44,9 +45,12 @@ pub async fn spawn_webserver(
 
     // Setup shaper queries
     let shaper_tx = shaper_queries_actor().await;
+    
+    // Initialize webhook manager
+    let webhook_manager = WebhookManager::new().await;
 
     // Construct the router from parts
-    let router = Router::new()
+    let mut router = Router::new()
         .route("/", get(redirect_to_index))
         .route("/doLogin", post(auth::try_login))
         .route("/firstLogin", post(auth::first_user))
@@ -58,6 +62,19 @@ pub async fn spawn_webserver(
         .nest("/", static_routes()?)
         .nest("/local-api", local_api(shaper_tx))
         .fallback_service(ServeDir::new(static_path));
+
+    // Conditionally add the webhook route if enabled
+    if config.integration_common.webhook_enable {
+        router = router.route(
+            "/refresh-webhook",
+            post({
+                let webhook_manager = webhook_manager.clone();
+                move |payload| async move {
+                    webhook_manager.get_state().handle_webhook(payload).await
+                }
+            })
+        );
+    }
 
     info!("Webserver listening on: [{listen_address}]");
     axum::serve(listener, router).await?;
