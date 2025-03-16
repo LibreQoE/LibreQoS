@@ -1,4 +1,4 @@
-import {BaseDashlet} from "./base_dashlet";
+import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {lerpGreenToRedViaOrange} from "../helpers/scaling";
 import {DashboardGraph} from "../graphs/dashboard_graph";
 import {isRedacted} from "../helpers/redact";

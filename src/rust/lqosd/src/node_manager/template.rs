@@ -47,6 +47,8 @@ fn js_tf(b: bool) -> &'static str {
     if b { "true" } else { "false" }
 }
 
+static GIT_HASH: &str = env!("GIT_HASH");
+
 pub async fn apply_templates(
     jar: CookieJar,
     req: Request<axum::body::Body>,
@@ -133,6 +135,8 @@ pub async fn apply_templates(
             .replace("%%TITLE%%", &title)
             .replace("%%LTS_LINK%%", &trial_link)
             .replace("%%%LTS_SCRIPT%%%", &lts_script);
+        let byte_string = byte_string
+            .replace("%CACHEBUSTERS%", &format!("?gh={}", GIT_HASH));
         if let Some(length) = res_parts.headers.get_mut("content-length") {
             *length = HeaderValue::from(byte_string.len());
         }

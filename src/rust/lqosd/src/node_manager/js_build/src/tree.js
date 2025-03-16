@@ -1,6 +1,6 @@
 import {clearDiv, clientTableHeader, formatLastSeen, simpleRow, simpleRowHtml, theading} from "./helpers/builders";
 import {
-    formatCakeStat,
+    formatCakeStat, formatCakeStatPercent,
     formatRetransmit, formatRetransmitRaw,
     formatRtt,
     formatThroughput,
@@ -82,24 +82,35 @@ function getInitialTree() {
 function fillHeader(node) {
     //console.log("Header");
     $("#nodeName").text(node.name);
-    let limit = "";
+    let limitD = "";
     if (node.max_throughput[0] === 0) {
-        limit = "Unlimited";
+        limitD = "Unlimited";
     } else {
-        limit = scaleNumber(node.max_throughput[0] * 1000 * 1000, 0);
+        limitD = scaleNumber(node.max_throughput[0] * 1000 * 1000, 0);
     }
-    limit += " / ";
+    let limitU = "";
     if (node.max_throughput[1] === 0) {
-        limit += "Unlimited";
+        limitU = "Unlimited";
     } else {
-        limit += scaleNumber(node.max_throughput[1] * 1000 * 1000, 0);
+        limitU = scaleNumber(node.max_throughput[1] * 1000 * 1000, 0);
     }
-    $("#parentLimits").text(limit);
+    $("#parentLimitsD").text(limitD);
+    $("#parentLimitsU").text(limitU);
     $("#parentTpD").html(formatThroughput(node.current_throughput[0] * 8, node.max_throughput[0]));
     $("#parentTpU").html(formatThroughput(node.current_throughput[1] * 8, node.max_throughput[1]));
     //console.log(node);
     $("#parentRttD").html(formatRtt(node.rtts[0]));
     $("#parentRttU").html(formatRtt(node.rtts[1]));
+    let retr = 0;
+    if (node.current_tcp_packets[0] > 0) {
+        retr = node.current_retransmits[0] / node.current_tcp_packets[0];
+    }
+    $("#parentRxmitD").html(formatRetransmit(retr));
+    retr = 0;
+    if (node.current_tcp_packets[1] > 0) {
+        retr = node.current_retransmits[1] / node.current_tcp_packets[1];
+    }
+    $("#parentRxmitU").html(formatRetransmit(retr));
 }
 
 function iterateChildren(idx, tBody, depth) {
@@ -121,6 +132,7 @@ function buildRow(i, depth=0) {
     let row = document.createElement("tr");
     row.classList.add("small");
     let col = document.createElement("td");
+    col.style.textOverflow = "ellipsis";
     let nodeName = "";
     if (depth > 0) {
         nodeName += "└";
@@ -142,17 +154,18 @@ function buildRow(i, depth=0) {
     col = document.createElement("td");
     col.id = "limit-" + nodeId;
     col.classList.add("small");
+    col.style.width = "8%";
     let limit = "";
     if (node.max_throughput[0] === 0) {
         limit = "Unlimited";
     } else {
-        limit = scaleNumber(node.max_throughput[0] * 1000 * 1000, 0);
+        limit = scaleNumber(node.max_throughput[0] * 1000 * 1000, 1);
     }
     limit += " / ";
     if (node.max_throughput[1] === 0) {
         limit += "Unlimited";
     } else {
-        limit += scaleNumber(node.max_throughput[1] * 1000 * 1000, 0);
+        limit += scaleNumber(node.max_throughput[1] * 1000 * 1000, 1);
     }
     col.textContent = limit;
     row.appendChild(col);
@@ -160,27 +173,32 @@ function buildRow(i, depth=0) {
     col = document.createElement("td");
     col.id = "down-" + nodeId;
     col.classList.add("small");
+    col.style.width = "6%";
     col.innerHTML = formatThroughput(node.current_throughput[0] * 8, node.max_throughput[0]);
     row.appendChild(col);
 
     col = document.createElement("td");
     col.id = "up-" + nodeId;
     col.classList.add("small");
+    col.style.width = "6%";
     col.innerHTML = formatThroughput(node.current_throughput[1] * 8, node.max_throughput[1]);
     row.appendChild(col);
 
     col = document.createElement("td");
     col.id = "rtt-down-" + nodeId;
+    col.style.width = "6%";
     col.innerHTML = formatRtt(node.rtts[0]);
     row.appendChild(col);
 
     col = document.createElement("td");
     col.id = "rtt-up-" + nodeId;
+    col.style.width = "6%";
     col.innerHTML = formatRtt(node.rtts[1]);
     row.appendChild(col);
 
     col = document.createElement("td");
     col.id = "re-xmit-down-" + nodeId;
+    col.style.width = "6%";
     if (node.current_retransmits[0] !== undefined) {
         col.innerHTML = formatRetransmitRaw(node.current_retransmits[0]);
     } else {
@@ -190,6 +208,7 @@ function buildRow(i, depth=0) {
 
     col = document.createElement("td");
     col.id = "re-xmit-up-" + nodeId;
+    col.style.width = "6%";
     if (node.current_retransmits[1] !== undefined) {
         col.innerHTML = formatRetransmitRaw(node.current_retransmits[1]);
     } else {
@@ -199,8 +218,9 @@ function buildRow(i, depth=0) {
 
     col = document.createElement("td");
     col.id = "ecn-down-" + nodeId;
+    col.style.width = "6%";
     if (node.current_marks[0] !== undefined) {
-        col.innerHTML = formatCakeStat(node.current_marks[0]);
+        col.innerHTML = formatCakeStatPercent(node.current_marks[0], node.current_packets[0]);
     } else {
         col.textContent = "-";
     }
@@ -208,8 +228,9 @@ function buildRow(i, depth=0) {
 
     col = document.createElement("td");
     col.id = "ecn-up-" + nodeId;
+    col.style.width = "6%";
     if (node.current_marks[1] !== undefined) {
-        col.innerHTML = formatCakeStat(node.current_marks[1]);
+        col.innerHTML = formatCakeStatPercent(node.current_marks[1], node.current_packets[1]);
     } else {
         col.textContent = "-";
     }
@@ -217,8 +238,9 @@ function buildRow(i, depth=0) {
 
     col = document.createElement("td");
     col.id = "drops-down-" + nodeId;
+    col.style.width = "6%";
     if (node.current_drops[0] !== undefined) {
-        col.innerHTML = formatCakeStat(node.current_drops[0]);
+        col.innerHTML = formatCakeStatPercent(node.current_drops[0], node.current_packets[0]);
     } else {
         col.textContent = "-";
     }
@@ -226,8 +248,9 @@ function buildRow(i, depth=0) {
 
     col = document.createElement("td");
     col.id = "drops-up-" + nodeId;
+    //col.style.width = "6%";
     if (node.current_drops[1] !== undefined) {
-        col.innerHTML = formatCakeStat(node.current_drops[1]);
+        col.innerHTML = formatCakeStat(node.current_drops[1], node.current_packets[1]);
     } else {
         col.textContent = "-";
     }
@@ -265,7 +288,11 @@ function treeUpdate(msg) {
         col = document.getElementById("re-xmit-down-" + nodeId);
         if (col !== null) {
             if (node.current_retransmits[0] !== undefined) {
-                col.innerHTML = formatRetransmitRaw(node.current_retransmits[0]);
+                let retr = 0;
+                if (node.current_tcp_packets[0] > 0) {
+                    retr = node.current_retransmits[0] / node.current_tcp_packets[0];
+                }
+                col.innerHTML = formatRetransmit(retr);
             } else {
                 col.textContent = "-";
             }
@@ -273,7 +300,11 @@ function treeUpdate(msg) {
         col = document.getElementById("re-xmit-up-" + nodeId);
         if (col !== null) {
             if (node.current_retransmits[1] !== undefined) {
-                col.innerHTML = formatRetransmitRaw(node.current_retransmits[1]);
+                let retr = 0;
+                if (node.current_tcp_packets[1] > 0) {
+                    retr = node.current_retransmits[1] / node.current_tcp_packets[1];
+                }
+                col.innerHTML = formatRetransmit(retr);
             } else {
                 col.textContent = "-";
             }
@@ -281,7 +312,7 @@ function treeUpdate(msg) {
         col = document.getElementById("ecn-down-" + nodeId);
         if (col !== null) {
             if (node.current_marks[0] !== undefined) {
-                col.textContent = node.current_marks[0];
+                col.innerHTML = formatCakeStatPercent(node.current_marks[0], node.current_packets[0]);
             } else {
                 col.textContent = "-";
             }
@@ -289,7 +320,7 @@ function treeUpdate(msg) {
         col = document.getElementById("ecn-up-" + nodeId);
         if (col !== null) {
             if (node.current_marks[1] !== undefined) {
-                col.textContent = node.current_marks[1];
+                col.innerHTML = formatCakeStatPercent(node.current_marks[1], node.current_packets[1]);
             } else {
                 col.textContent = "-";
             }
@@ -297,7 +328,7 @@ function treeUpdate(msg) {
         col = document.getElementById("drops-down-" + nodeId);
         if (col !== null) {
             if (node.current_drops[0] !== undefined) {
-                col.textContent = node.current_drops[0];
+                col.innerHTML = formatCakeStatPercent(node.current_drops[0], node.current_packets[0]);
             } else {
                 col.textContent = "-";
             }
@@ -305,7 +336,7 @@ function treeUpdate(msg) {
         col = document.getElementById("drops-up-" + nodeId);
         if (col !== null) {
             if (node.current_drops[1] !== undefined) {
-                col.textContent = node.current_drops[1];
+                col.innerHTML = formatCakeStatPercent(node.current_drops[1], node.current_packets[1]);
             } else {
                 col.textContent = "-";
             }
@@ -326,13 +357,14 @@ function clientsUpdate(msg) {
     msg.data.forEach((device) => {
         if (device.parent_node === myName) {
             let tr = document.createElement("tr");
+            tr.classList.add("small");
             let linkTd = document.createElement("td");
             let circuitLink = document.createElement("a");
             circuitLink.href = "/circuit.html?id=" + device.circuit_id;
             circuitLink.innerText = device.circuit_name;
             linkTd.appendChild(circuitLink);
             tr.appendChild(linkTd);
-            tr.appendChild(simpleRow(device.device_name));
+            tr.appendChild(simpleRow(device.device_name, true));
             tr.appendChild(simpleRow(device.plan.down + " / " + device.plan.up));
             tr.appendChild(simpleRow(device.parent_node));
             tr.appendChild(simpleRow(device.ip));
@@ -346,8 +378,16 @@ function clientsUpdate(msg) {
                 tr.appendChild(simpleRow("-"));
                 tr.appendChild(simpleRow("-"));
             }
-            tr.appendChild(simpleRowHtml(formatRetransmit(device.tcp_retransmits.down)));
-            tr.appendChild(simpleRowHtml(formatRetransmit(device.tcp_retransmits.up)));
+            let retr = 0;
+            if (device.tcp_packets.down > 0) {
+                retr = device.tcp_retransmits.down / device.tcp_packets.down;
+            }
+            tr.appendChild(simpleRowHtml(formatRetransmit(retr)));
+            retr = 0;
+            if (device.tcp_packets.up > 0) {
+                retr = device.tcp_retransmits.up / device.tcp_packets.up;
+            }
+            tr.appendChild(simpleRowHtml(formatRetransmit(retr)));
 
             // Add it
             tbody.appendChild(tr);

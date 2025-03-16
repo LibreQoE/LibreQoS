@@ -1,4 +1,4 @@
-import {BaseDashlet} from "./base_dashlet";
+import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {scaleNumber} from "../lq_js_common/helpers/scaling";
 
 export class ThroughputBpsDash extends BaseDashlet{
@@ -40,7 +40,7 @@ export class ThroughputBpsDash extends BaseDashlet{
         // LEFT COLUMN
         // ---------------------
         const colLeft = document.createElement("div");
-        colLeft.classList.add("col-auto", "text-center");
+        colLeft.classList.add("col-5", "text-center");
 
         // Recent
         const recentWrapper = document.createElement("div");
@@ -120,7 +120,7 @@ export class ThroughputBpsDash extends BaseDashlet{
 
             const yestValue = document.createElement("span");
             yestValue.classList.add("fw-bold", "text-secondary");
-            yestValue.innerHTML = "<i class=\"fa fa-fw fa-centerline fa-line-chart nav-icon\"></i> Requires Insight";
+            yestValue.innerHTML = "<i class=\"fa fa-fw fa-centerline fa-line-chart nav-icon small\"></i> History<br />Requires Insight";
 
             yestWrapper.appendChild(yestHeader);
             yestWrapper.appendChild(yestValue);
@@ -264,15 +264,15 @@ export class ThroughputBpsDash extends BaseDashlet{
 
             // Big numbers are smoothed medians
             let dl = document.getElementById(this.id + "_dl_bps");
-            dl.textContent = scaleNumber(dlMedian, 0);
+            dl.textContent = scaleNumber(dlMedian, 1);
             let ul = document.getElementById(this.id + "_up_bps");
-            ul.textContent = scaleNumber(upMedian, 0);
+            ul.textContent = scaleNumber(upMedian, 1);
 
             // Small numbers are current (jittery)
             let cdl = document.getElementById(this.id + "_cdl_bps");
-            cdl.textContent = scaleNumber(msg.data.bps.down, 0);
+            cdl.textContent = scaleNumber(msg.data.bps.down, 1);
             let cul = document.getElementById(this.id + "_cul_bps");
-            cul.textContent = scaleNumber(msg.data.bps.up, 0);
+            cul.textContent = scaleNumber(msg.data.bps.up, 1);
 
             // Update the yesterday values
             if (this.medians !== null) {

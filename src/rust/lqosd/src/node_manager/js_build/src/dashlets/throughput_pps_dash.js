@@ -1,15 +1,18 @@
-import {BaseDashlet} from "./base_dashlet";
+import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {PacketsPerSecondBar} from "../graphs/packets_bar";
-import {clearDiv} from "../helpers/builders";
 import {PacketsPerSecondTimescale} from "../graphs/packets_bar_insight";
 
 export class ThroughputPpsDash extends BaseDashlet{
     title() {
-        return "Throughput Packets/Second";
+        return "Throughput PPS";
     }
 
     tooltip() {
         return "<h5>Throughput Packets/Second</h5><p>Shows the current throughput in packets per second. Traffic is divided between upload (from the ISP) and download (to the ISP) traffic.</p>";
+    }
+
+    supportsZoom() {
+        return true;
     }
 
     subscribeTo() {

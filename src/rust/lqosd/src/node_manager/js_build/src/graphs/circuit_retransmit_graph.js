@@ -51,7 +51,7 @@ export class CircuitRetransmitGraph extends DashboardGraph {
                 type: 'value',
                 axisLabel: {
                     formatter: (val) => {
-                        return scaleNumber(Math.abs(val), 1);
+                        return scaleNumber(Math.abs(val), 1) + "%";
                     },
                 }
             },

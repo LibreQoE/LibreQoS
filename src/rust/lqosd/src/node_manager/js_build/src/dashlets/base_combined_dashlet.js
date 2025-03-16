@@ -1,4 +1,4 @@
-import {BaseDashlet} from "./base_dashlet";
+import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 
 export class BaseCombinedDashlet extends BaseDashlet {
     constructor(slotNumber, dashlets) {

@@ -1,5 +1,4 @@
-import {BaseDashlet} from "./base_dashlet";
-import {RttHistogram} from "../graphs/rtt_histo";
+import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {RamPie} from "../graphs/ram_pie";
 
 export class RamDash extends BaseDashlet{
@@ -13,6 +12,10 @@ export class RamDash extends BaseDashlet{
 
     tooltip() {
         return "<h5>RAM Utilization</h5><p>Percentage of RAM used and free. This includes both LibreQoS and anything else running on the server.</p>";
+    }
+
+    supportsZoom() {
+        return true;
     }
 
     subscribeTo() {

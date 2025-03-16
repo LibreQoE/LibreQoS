@@ -1,4 +1,4 @@
-import {BaseDashlet} from "./base_dashlet";
+import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {RttHistogram} from "../graphs/rtt_histo";
 import {RttHistogramTimeseries} from "../graphs/rtt_histo_timeseries";
 
@@ -13,6 +13,10 @@ export class RttHistoDash extends BaseDashlet{
 
     tooltip() {
         return "<h5>Round-Trip Time Histogram</h5><p>Round-Trip Time Histogram, showing the distribution of round-trip times for packets in real-time.</p>";
+    }
+
+    supportsZoom() {
+        return true;
     }
 
     subscribeTo() {

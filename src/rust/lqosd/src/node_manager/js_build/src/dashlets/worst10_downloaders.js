@@ -1,5 +1,5 @@
-import {BaseDashlet} from "./base_dashlet";
-import {clearDashDiv, clearDiv, simpleRow, simpleRowHtml, theading, TopNTableFromMsgData} from "../helpers/builders";
+import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
+import {clearDashDiv, simpleRow, simpleRowHtml, theading, TopNTableFromMsgData} from "../helpers/builders";
 import {TimedCache} from "../lq_js_common/helpers/timed_cache";
 import {periodNameToSeconds} from "../helpers/time_periods";
 import {formatRetransmit, formatRtt} from "../helpers/scaling";

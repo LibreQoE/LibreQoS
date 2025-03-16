@@ -1,4 +1,4 @@
-import {BaseDashlet} from "./base_dashlet";
+import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {clearDiv, simpleRowHtml, theading} from "../helpers/builders";
 import {formatThroughput, formatRetransmit, formatCakeStat} from "../helpers/scaling";
 

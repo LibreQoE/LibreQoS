@@ -2,6 +2,7 @@
 import {DashboardLayout} from "./layout";
 import {resetWS, subscribeWS} from "./ws";
 import {heading5Icon} from "../helpers/content_builders";
+import {openDashboardEditor} from "./dashboard_editor";
 
 export class Dashboard {
     // Takes the target DIV in which to build the dashboard,
@@ -10,6 +11,7 @@ export class Dashboard {
     constructor(divName, cookieName, defaultLayout, widgetFactory, dashletMenu, hasCadence = true, savedDashUrl = "/local-api/dashletThemes") {
         this.divName = divName;
         this.cookieName = cookieName;
+        window.cookieName = cookieName;
         this.widgetFactory = widgetFactory;
         this.dashletMenu = dashletMenu;
         this.savedDashUrl = savedDashUrl;
@@ -21,7 +23,6 @@ export class Dashboard {
         }
 
         // Editor Support
-        this.editingDashboard = false;
         this.#editButton(hasCadence);
         if (localStorage.getItem("forceEditMode")) {
             localStorage.removeItem("forceEditMode");
@@ -151,15 +152,36 @@ export class Dashboard {
         editDiv.id = this.divName + "_edit";
         editDiv.innerHTML = "<button type='button' class='btn btn-secondary btn-sm' id='btnEditDash'><i class='fa fa-pencil'></i> Edit</button>";
         editDiv.onclick = () => {
-            if (this.editingDashboard) {
-                let e = document.getElementById("btnEditDash");
-                e.innerHTML = "<i class='fa fa-pencil'></i> Edit";
-                this.closeEditMode();
-            } else {
-                let e = document.getElementById("btnEditDash");
-                e.innerHTML = "<i class='fa fa-close'></i> Finish Edit";
-                this.editMode();
+            // New Editor
+            let initialElements = [];
+            console.log("Layout", this.layout);
+            for (let i=0; i<this.dashletIdentities.length; i++) {
+                let e = this.dashletIdentities[i];
+                initialElements.push({
+                    size: e.size,
+                    name: this.dashlets[i].title(),
+                    tag: e.tag,
+                });
             }
+
+            let availableElements = [];
+            this.dashletMenu.forEach((d) => {
+                let category = "Uncategorized";
+                if (d.category !== null) category = d.category;
+                availableElements.push({
+                    name: d.name,
+                    size: d.size,
+                    tag: d.tag,
+                    category,
+                });
+            });
+
+            openDashboardEditor(initialElements, availableElements, function(newLayout) {
+                console.log("New dashboard layout:", newLayout);
+                let template = JSON.stringify(newLayout);
+                localStorage.setItem(window.cookieName, template);
+                window.location.reload();
+            });
         };
 
         // Cadence Picker
