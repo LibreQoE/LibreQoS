@@ -31,6 +31,8 @@ fn run_command(command: RemoteCommand) {
                 if let Err(e) = lqos_config::update_config(&config) {
                     tracing::error!("Failed to update config: {}", e);
                 }
+                let _ = crate::scheduler_control::enable_scheduler();
+                let _ = crate::scheduler_control::restart_scheduler();
             }
         }
         RemoteCommand::SetInsightRole { role } => {
@@ -40,6 +42,8 @@ fn run_command(command: RemoteCommand) {
                 if let Err(e) = lqos_config::update_config(&config) {
                     tracing::error!("Failed to update config: {}", e);
                 }
+                let _ = crate::scheduler_control::enable_scheduler();
+                let _ = crate::scheduler_control::restart_scheduler();
             }
         }
     }
