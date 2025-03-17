@@ -72,15 +72,15 @@ impl Site {
         false
     }
 
-    pub fn qos(&self, default_download_mbps: u32, default_upload_mbps: u32) -> (u32, u32) {
+    pub fn qos(&self, default_download_mbps: u64, default_upload_mbps: u64) -> (u64, u64) {
         let mut down = default_download_mbps;
         let mut up = default_upload_mbps;
         if let Some(qos) = &self.qos {
             if let Some(d) = &qos.downloadSpeed {
-                down = *d as u32 / 1_000_000;
+                down = *d / 1_000_000;
             }
             if let Some(u) = &qos.uploadSpeed {
-                up = *u as u32 / 1_000_000;
+                up = *u / 1_000_000;
             }
         }
         if down == 0 {
@@ -146,8 +146,8 @@ pub struct Location {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Qos {
     pub enabled: bool,
-    pub downloadSpeed: Option<usize>,
-    pub uploadSpeed: Option<usize>,
+    pub downloadSpeed: Option<u64>,
+    pub uploadSpeed: Option<u64>,
 }
 
 #[allow(non_snake_case)]
