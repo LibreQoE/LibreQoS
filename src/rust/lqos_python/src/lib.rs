@@ -98,6 +98,8 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(automatic_import_wispgate))?;
     m.add_wrapped(wrap_pyfunction!(wispgate_api_token))?;
     m.add_wrapped(wrap_pyfunction!(wispgate_api_url))?;
+    m.add_wrapped(wrap_pyfunction!(enable_insight_topology))?;
+    m.add_wrapped(wrap_pyfunction!(insight_topology_role))?;
 
     Ok(())
 }
@@ -772,4 +774,16 @@ fn wispgate_api_url() -> PyResult<String> {
         return Ok(String::new());
     };
     Ok(wisp_gate.wispgate_api_url.clone())
+}
+
+#[pyfunction]
+fn enable_insight_topology() -> PyResult<bool> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config.long_term_stats.enable_insight_topology.unwrap_or(false))
+}
+
+#[pyfunction]
+fn insight_topology_role() -> PyResult<String> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config.long_term_stats.insight_topology_role.clone().unwrap_or("None".to_string()))
 }

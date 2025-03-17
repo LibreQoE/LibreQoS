@@ -28,6 +28,17 @@ pub struct LongTermStats {
     /// If enabled, Insight (LTS2) will be used in addition to the normal
     /// LTS system. This system is in alpha and is invite only for now.
     pub use_insight: Option<bool>,
+
+    /// If enabled, the Insight topology will be used to determine the
+    /// topology of the network. This is in alpha and may not work
+    /// as expected. It is disabled by default. NONE and FALSE are
+    /// equivalent.
+    pub enable_insight_topology: Option<bool>,
+
+    /// If set, this will be the role of the node in the Insight topology.
+    /// "Primary", "None" are the only valid values for now. This is in alpha
+    /// and may not work as expected. It is disabled by default.
+    pub insight_topology_role: Option<String>,
 }
 
 impl Default for LongTermStats {
@@ -39,6 +50,8 @@ impl Default for LongTermStats {
             uisp_reporting_interval_seconds: Some(300),
             lts_url: None,
             use_insight: None,
+            enable_insight_topology: None,
+            insight_topology_role: None,
         }
     }
 }

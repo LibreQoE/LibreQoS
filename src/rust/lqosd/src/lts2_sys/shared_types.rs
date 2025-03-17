@@ -31,6 +31,8 @@ pub struct IngestSession {
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub enum RemoteCommand {
     Log(String),
+    SetInsightControlledTopology { enabled: bool },
+    SetInsightRole { role: String },
 }
 
 #[repr(C)]
