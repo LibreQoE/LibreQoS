@@ -348,13 +348,13 @@ fn sqm() -> PyResult<String> {
 #[pyfunction]
 fn upstream_bandwidth_capacity_download_mbps() -> PyResult<u32> {
     let config = lqos_config::load_config().unwrap();
-    Ok(config.queues.uplink_bandwidth_mbps)
+    Ok(config.queues.uplink_bandwidth_mbps as u32)
 }
 
 #[pyfunction]
 fn upstream_bandwidth_capacity_upload_mbps() -> PyResult<u32> {
     let config = lqos_config::load_config().unwrap();
-    Ok(config.queues.uplink_bandwidth_mbps)
+    Ok(config.queues.uplink_bandwidth_mbps as u32)
 }
 
 #[pyfunction]
@@ -396,13 +396,13 @@ fn run_shell_commands_as_sudo() -> PyResult<bool> {
 #[pyfunction]
 fn generated_pn_download_mbps() -> PyResult<u32> {
     let config = lqos_config::load_config().unwrap();
-    Ok(config.queues.generated_pn_download_mbps)
+    Ok(config.queues.generated_pn_download_mbps as u32)
 }
 
 #[pyfunction]
 fn generated_pn_upload_mbps() -> PyResult<u32> {
     let config = lqos_config::load_config().unwrap();
-    Ok(config.queues.generated_pn_upload_mbps)
+    Ok(config.queues.generated_pn_upload_mbps as u32)
 }
 
 #[pyfunction]

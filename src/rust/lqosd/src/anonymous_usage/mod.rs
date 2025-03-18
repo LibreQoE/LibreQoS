@@ -59,12 +59,12 @@ fn anonymous_usage_dump() -> anyhow::Result<()> {
         data.sqm = cfg.queues.default_sqm.clone();
         data.monitor_mode = cfg.queues.monitor_only;
         data.total_capacity = (
-            cfg.queues.downlink_bandwidth_mbps,
-            cfg.queues.uplink_bandwidth_mbps,
+            cfg.queues.downlink_bandwidth_mbps as u32,
+            cfg.queues.uplink_bandwidth_mbps as u32,
         );
         data.generated_pdn_capacity = (
-            cfg.queues.generated_pn_download_mbps,
-            cfg.queues.generated_pn_upload_mbps,
+            cfg.queues.generated_pn_download_mbps as u32,
+            cfg.queues.generated_pn_upload_mbps as u32,
         );
         data.on_a_stick = cfg.on_a_stick_mode();
 

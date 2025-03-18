@@ -98,8 +98,8 @@ pub fn apply_bandwidth_overrides(sites: &mut [UispSite], bandwidth_overrides: &B
     for site in sites.iter_mut() {
         if let Some((down, up)) = bandwidth_overrides.get(&site.name) {
             // Apply the overrides
-            site.max_down_mbps = *down as u32;
-            site.max_up_mbps = *up as u32;
+            site.max_down_mbps = *down as u64;
+            site.max_up_mbps = *up as u64;
             info!(
                 "Bandwidth override for {} applied ({} / {})",
                 &site.name, site.max_down_mbps, site.max_up_mbps
