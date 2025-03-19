@@ -1,6 +1,6 @@
 //! Queue Generation definitions (originally from ispConfig.py)
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct QueueConfig {
@@ -11,16 +11,16 @@ pub struct QueueConfig {
     pub monitor_only: bool,
 
     /// Upstream bandwidth total - download
-    pub uplink_bandwidth_mbps: u32,
+    pub uplink_bandwidth_mbps: u64,
 
     /// Downstream bandwidth total - upload
-    pub downlink_bandwidth_mbps: u32,
+    pub downlink_bandwidth_mbps: u64,
 
     /// Upstream bandwidth per interface queue
-    pub generated_pn_download_mbps: u32,
+    pub generated_pn_download_mbps: u64,
 
     /// Downstream bandwidth per interface queue
-    pub generated_pn_upload_mbps: u32,
+    pub generated_pn_upload_mbps: u64,
 
     /// Should shell commands actually execute, or just be printed?
     pub dry_run: bool,

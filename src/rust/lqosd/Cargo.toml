@@ -1,7 +1,7 @@
 [package]
 name = "lqosd"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 license = "GPL-2.0-only"
 
 [features]
@@ -52,6 +52,11 @@ sha256 = "1.5.0"
 uuid = { version = "1.10.0", features = ["v4", "fast-rng", "serde"] }
 dryoc = {  version ="0.6.0", features = ["serde"] }
 miniz_oxide = "0.8.0"
+tungstenite = { version = "0", features = [ "native-tls" ] } # For WebSockets
+tokio-tungstenite = { version = "0", features = [ "native-tls" ] }
+native-tls = "0.2"
+ureq = { version = "2.12.1", features = ["json", "native-tls"] }
+
 
 # For memory debugging
 allocative = {  version = "0.3.3", features = [ "dashmap" ] }
@@ -61,4 +66,4 @@ allocative_derive = "0.3.3"
 #[target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]
 #jemallocator = {  workspace = true }
 mimalloc = { workspace = true }
-ureq = { version = "2.12.1", features = ["json"] }
+futures-util = "0.3.31"

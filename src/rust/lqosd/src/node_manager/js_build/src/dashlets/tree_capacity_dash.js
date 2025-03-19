@@ -1,4 +1,4 @@
-import {BaseDashlet} from "./base_dashlet";
+import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {clearDashDiv, simpleRowHtml, theading} from "../helpers/builders";
 import {formatRtt, formatPercent} from "../helpers/scaling";
 

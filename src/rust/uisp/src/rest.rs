@@ -2,10 +2,72 @@ use anyhow::Result;
 use serde::de::DeserializeOwned;
 
 fn url_fixup(base: &str) -> String {
+    let base = base.trim().trim_end_matches('/');
     if base.contains("/nms/api/v2.1") {
         base.to_string()
     } else {
         format!("{base}/nms/api/v2.1")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_url_fixup_adds_path_when_missing() {
+        assert_eq!(
+            url_fixup("https://example.com"),
+            "https://example.com/nms/api/v2.1"
+        );
+    }
+
+    #[test]
+    fn test_url_fixup_removes_trailing_slash() {
+        assert_eq!(
+            url_fixup("https://example.com/"),
+            "https://example.com/nms/api/v2.1"
+        );
+    }
+
+    #[test]
+    fn test_url_fixup_keeps_existing_path() {
+        assert_eq!(
+            url_fixup("https://example.com/nms/api/v2.1"),
+            "https://example.com/nms/api/v2.1"
+        );
+    }
+
+    #[test]
+    fn test_url_fixup_removes_slash_before_existing_path() {
+        assert_eq!(
+            url_fixup("https://example.com/nms/api/v2.1/"),
+            "https://example.com/nms/api/v2.1"
+        );
+    }
+
+    #[test]
+    fn test_url_fixup_trims_whitespace() {
+        assert_eq!(
+            url_fixup("   https://example.com   "),
+            "https://example.com/nms/api/v2.1"
+        );
+    }
+
+    #[test]
+    fn test_url_fixup_handles_subpath_correctly() {
+        assert_eq!(
+            url_fixup("https://example.com/nms/api/v2.1/devices"),
+            "https://example.com/nms/api/v2.1/devices"
+        );
+    }
+
+    #[test]
+    fn test_url_fixup_removes_multiple_trailing_slashes() {
+        assert_eq!(
+            url_fixup("https://example.com////"),
+            "https://example.com/nms/api/v2.1"
+        );
     }
 }
 

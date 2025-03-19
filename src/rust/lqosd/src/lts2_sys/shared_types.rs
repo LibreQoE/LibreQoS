@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Default)]
@@ -30,7 +30,7 @@ pub struct IngestSession {
 
 #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
 pub enum RemoteCommand {
-    Log(String)
+    Log(String),
 }
 
 #[repr(C)]
@@ -259,4 +259,6 @@ pub struct TwoWayFlow {
     pub retransmit_times_up: Vec<i64>,
     pub rtt: [f32; 2],
     pub circuit_hash: i64,
+    pub packets_down: Option<i64>,
+    pub packets_up: Option<i64>,
 }

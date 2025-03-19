@@ -1,9 +1,9 @@
-use std::sync::atomic::AtomicU64;
 use axum::Json;
-use serde::{Deserialize, Serialize};
-use tracing::error;
 use lqos_config::load_config;
 use lqos_utils::unix_time::unix_now;
+use serde::{Deserialize, Serialize};
+use std::sync::atomic::AtomicU64;
+use tracing::error;
 
 static LAST_VERSION_CHECK: AtomicU64 = AtomicU64::new(0);
 const ONE_HOUR_SECONDS: u64 = 60 * 60;

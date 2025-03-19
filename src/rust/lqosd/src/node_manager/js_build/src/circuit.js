@@ -141,6 +141,8 @@ function connectFlowChannel() {
 }
 
 let movingAverages = new Map();
+let prevFlowBytes = new Map();
+let tickCount = 0;
 
 function updateTrafficTab(msg) {
     let target = document.getElementById("allTraffic");
@@ -160,10 +162,16 @@ function updateTrafficTab(msg) {
     table.appendChild(thead);
     let tbody = document.createElement("tbody");
     const thirty_seconds_in_nanos = 30000000000; // For display filtering
+    tickCount++;
 
     msg.flows.forEach((flow) => {
         let flowKey = flow[0].protocol_name + flow[0].row_id;
         let rate = flow[1].rate_estimate_bps.down + flow[1].rate_estimate_bps.up;
+        if (prevFlowBytes.has(flowKey)) {
+            let down = flow[1].bytes_sent.down - prevFlowBytes.get(flowKey)[0];
+            let up = flow[1].bytes_sent.up - prevFlowBytes.get(flowKey)[1];
+            rate = down + up;
+        }
         if (movingAverages.has(flowKey)) {
             let avg = movingAverages.get(flowKey);
             avg.push(rate);
@@ -186,20 +194,51 @@ function updateTrafficTab(msg) {
     });
 
     msg.flows.forEach((flow) => {
+        let flowKey = flow[0].protocol_name + flow[0].row_id;
+        let down = flow[1].rate_estimate_bps.down;
+        let up = flow[1].rate_estimate_bps.up;
+
+        //console.log(flow);
+        if (prevFlowBytes.has(flowKey)) {
+            let ticks = tickCount - prevFlowBytes.get(flowKey)[2];
+            if (ticks === 1) {
+                down = (flow[1].bytes_sent.down - prevFlowBytes.get(flowKey)[0]) * 8;
+                up = (flow[1].bytes_sent.up - prevFlowBytes.get(flowKey)[1]) * 8;
+            } else if (ticks > 1) {
+                down = (flow[1].bytes_sent.down - prevFlowBytes.get(flowKey)[0]) * 8;
+                up = (flow[1].bytes_sent.up - prevFlowBytes.get(flowKey)[1]) * 8;
+                down = down / ticks;
+                up = up / ticks;
+            }
+        }
+        if (down < 0) down = 0;
+        if (up < 0) up = 0;
+        prevFlowBytes.set(flowKey, [ flow[1].bytes_sent.down, flow[1].bytes_sent.up, tickCount ]);
+
         if (flow[0].last_seen_nanos > thirty_seconds_in_nanos) return;
         let row = document.createElement("tr");
         row.classList.add("small");
         let opacity = Math.min(1, flow[0].last_seen_nanos / thirty_seconds_in_nanos);
         row.style.opacity = 1.0 - opacity;
         row.appendChild(simpleRow(flow[0].protocol_name));
-        row.appendChild(simpleRowHtml(formatThroughput(flow[1].rate_estimate_bps.down * 8, plan.down)));
-        row.appendChild(simpleRowHtml(formatThroughput(flow[1].rate_estimate_bps.up * 8, plan.up)));
+        row.appendChild(simpleRowHtml(formatThroughput(down, plan.down)));
+        row.appendChild(simpleRowHtml(formatThroughput(up, plan.up)));
         row.appendChild(simpleRow(scaleNumber(flow[1].bytes_sent.down)));
         row.appendChild(simpleRow(scaleNumber(flow[1].bytes_sent.up)));
         row.appendChild(simpleRow(scaleNumber(flow[1].packets_sent.down)));
         row.appendChild(simpleRow(scaleNumber(flow[1].packets_sent.up)));
-        row.appendChild(simpleRowHtml(formatRetransmit(flow[1].tcp_retransmits.down / 100.0)));
-        row.appendChild(simpleRowHtml(formatRetransmit(flow[1].tcp_retransmits.up / 100.0)));
+        if (flow[1].tcp_retransmits.down > 0) {
+            let pct = flow[1].tcp_retransmits.down / flow[1].packets_sent.down;
+            row.appendChild(simpleRowHtml(formatRetransmit(pct)));
+        } else {
+            row.appendChild(simpleRow("-"));
+        }
+        if (flow[1].tcp_retransmits.up > 0) {
+            let pct = flow[1].tcp_retransmits.up / flow[1].packets_sent.up;
+            row.appendChild(simpleRowHtml(formatRetransmit(pct)));
+        } else {
+            row.appendChild(simpleRow("-"));
+        }
         row.appendChild(simpleRow(scaleNanos(flow[1].rtt[0].nanoseconds)));
         row.appendChild(simpleRow(scaleNanos(flow[1].rtt[1].nanoseconds)));
         row.appendChild(simpleRow(flow[0].asn_name));
@@ -579,8 +618,15 @@ function onTreeEvent(msg) {
         let rxmitGraph = funnelGraphs[parent].rxmit;
         let rttGraph = funnelGraphs[parent].rtt;
 
-        tpGraph.update(myMessage.current_throughput[0] * 8, myMessage.current_throughput[0] *8);
-        rxmitGraph.update(myMessage.current_retransmits[0], myMessage.current_retransmits[1]);
+        tpGraph.update(myMessage.current_throughput[0] * 8, myMessage.current_throughput[1] *8);
+        let rxmit = [0, 0];
+        if (myMessage.current_retransmits[0] > 0) {
+            rxmit[0] = (myMessage.current_retransmits[0] / myMessage.current_tcp_packets[0]) * 100.0;
+        }
+        if (myMessage.current_retransmits[1] > 0) {
+            rxmit[1] = (myMessage.current_retransmits[1] / myMessage.current_tcp_packets[1]) * 100.0;
+        }
+        rxmitGraph.update(rxmit[0], rxmit[1]);
         myMessage.rtts.forEach((rtt) => {
             rttGraph.updateMs(rtt);
         });

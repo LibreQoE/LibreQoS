@@ -3,11 +3,9 @@
 //! for version 1.5.
 
 use super::EtcLqos;
-use std::{
-    path::{Path, PathBuf},
-};
-use std::process::Command;
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use thiserror::Error;
 use tracing::error;
 
@@ -141,8 +139,7 @@ impl PythonMigration {
                 return Err(PythonMigrationError::ConfigFileNotFound);
             }
 
-            let migrator_path = Path::new(&cfg.lqos_directory)
-                .join("configMigrator.py");
+            let migrator_path = Path::new(&cfg.lqos_directory).join("configMigrator.py");
             if !migrator_path.exists() {
                 return Err(PythonMigrationError::ConfigFileNotFound);
             }
@@ -165,4 +162,3 @@ impl PythonMigration {
         }
     }
 }
-

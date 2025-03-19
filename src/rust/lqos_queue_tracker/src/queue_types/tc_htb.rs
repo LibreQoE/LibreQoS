@@ -12,82 +12,80 @@ use tracing::info;
 
 #[derive(Default, Clone, Debug, Serialize)]
 pub struct TcHtb {
-  handle: TcHandle,
-  parent: TcHandle,
-  bytes: u64,
-  packets: u32,
-  drops: u32,
-  overlimits: u32,
-  requeues: u32,
-  backlog: u32,
-  qlen: u32,
-  options: TcHtbOptions,
+    handle: TcHandle,
+    parent: TcHandle,
+    bytes: u64,
+    packets: u32,
+    drops: u32,
+    overlimits: u32,
+    requeues: u32,
+    backlog: u32,
+    qlen: u32,
+    options: TcHtbOptions,
 }
 
 #[derive(Default, Clone, Debug, Serialize)]
 struct TcHtbOptions {
-  default: TcHandle,
-  r2q: u32,
-  direct_qlen: u32,
-  direct_packets_stat: u32,
+    default: TcHandle,
+    r2q: u32,
+    direct_qlen: u32,
+    direct_packets_stat: u32,
 }
 
 impl TcHtb {
-  pub(crate) fn from_json(
-    map: &serde_json::Map<std::string::String, Value>,
-  ) -> Result<Self, QDiscError> {
-    let mut result = Self::default();
-    for (key, value) in map.iter() {
-      match key.as_str() {
-        "handle" => {
-          parse_tc_handle!(result.handle, value);
+    pub(crate) fn from_json(
+        map: &serde_json::Map<std::string::String, Value>,
+    ) -> Result<Self, QDiscError> {
+        let mut result = Self::default();
+        for (key, value) in map.iter() {
+            match key.as_str() {
+                "handle" => {
+                    parse_tc_handle!(result.handle, value);
+                }
+                "parent" => {
+                    parse_tc_handle!(result.parent, value);
+                }
+                "bytes" => result.bytes = value.as_u64().unwrap_or(0),
+                "packets" => result.packets = value.as_u64().unwrap_or(0) as u32,
+                "drops" => result.drops = value.as_u64().unwrap_or(0) as u32,
+                "overlimits" => result.overlimits = value.as_u64().unwrap_or(0) as u32,
+                "requeues" => result.requeues = value.as_u64().unwrap_or(0) as u32,
+                "backlog" => result.backlog = value.as_u64().unwrap_or(0) as u32,
+                "qlen" => result.qlen = value.as_u64().unwrap_or(0) as u32,
+                "options" => result.options = TcHtbOptions::from_json(value)?,
+                "kind" => {}
+                _ => {
+                    info!("Unknown entry in tc-HTB json decoder: {key}");
+                }
+            }
         }
-        "parent" => {
-          parse_tc_handle!(result.parent, value);
-        }
-        "bytes" => result.bytes = value.as_u64().unwrap_or(0),
-        "packets" => result.packets = value.as_u64().unwrap_or(0) as u32,
-        "drops" => result.drops = value.as_u64().unwrap_or(0) as u32,
-        "overlimits" => result.overlimits = value.as_u64().unwrap_or(0) as u32,
-        "requeues" => result.requeues = value.as_u64().unwrap_or(0) as u32,
-        "backlog" => result.backlog = value.as_u64().unwrap_or(0) as u32,
-        "qlen" => result.qlen = value.as_u64().unwrap_or(0) as u32,
-        "options" => result.options = TcHtbOptions::from_json(value)?,
-        "kind" => {}
-        _ => {
-          info!("Unknown entry in tc-HTB json decoder: {key}");
-        }
-      }
+        Ok(result)
     }
-    Ok(result)
-  }
 }
 
 impl TcHtbOptions {
-  fn from_json(value: &Value) -> Result<Self, QDiscError> {
-    match value {
-      Value::Object(map) => {
-        let mut result = Self::default();
-        for (key, value) in map.iter() {
-          match key.as_str() {
-            "r2q" => result.r2q = value.as_u64().unwrap_or(0) as u32,
-            "default" => {
-              parse_tc_handle!(result.default, value);
+    fn from_json(value: &Value) -> Result<Self, QDiscError> {
+        match value {
+            Value::Object(map) => {
+                let mut result = Self::default();
+                for (key, value) in map.iter() {
+                    match key.as_str() {
+                        "r2q" => result.r2q = value.as_u64().unwrap_or(0) as u32,
+                        "default" => {
+                            parse_tc_handle!(result.default, value);
+                        }
+                        "direct_packets_stat" => {
+                            result.direct_packets_stat = value.as_u64().unwrap_or(0) as u32
+                        }
+                        "direct_qlen" => result.direct_qlen = value.as_u64().unwrap_or(0) as u32,
+                        _ => {
+                            info!("Unknown entry in tc-HTB json decoder: {key}");
+                        }
+                    }
+                }
+                Ok(result)
             }
-            "direct_packets_stat" => {
-              result.direct_packets_stat = value.as_u64().unwrap_or(0) as u32
-            }
-            "direct_qlen" => {
-              result.direct_qlen = value.as_u64().unwrap_or(0) as u32
-            }
-            _ => {
-              info!("Unknown entry in tc-HTB json decoder: {key}");
-            }
-          }
+            _ => Err(QDiscError::HtbOpts),
         }
-        Ok(result)
-      }
-      _ => Err(QDiscError::HtbOpts),
     }
-  }
 }

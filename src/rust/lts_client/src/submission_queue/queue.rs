@@ -1,12 +1,22 @@
+use super::{
+    comm_channel::{SenderChannelMessage, encode_submission},
+    licensing::{LicenseState, get_license_status},
+};
+use crate::transport_data::{LtsCommand, StatsSubmission};
 use lqos_config::ShapedDevice;
 use once_cell::sync::Lazy;
 use thiserror::Error;
-use tokio::{sync::{Mutex, mpsc::Sender}, net::TcpStream, io::AsyncWriteExt};
+use tokio::{
+    io::AsyncWriteExt,
+    net::TcpStream,
+    sync::{Mutex, mpsc::Sender},
+};
 use tracing::{error, info};
-use crate::transport_data::{StatsSubmission, LtsCommand};
-use super::{licensing::{LicenseState, get_license_status}, comm_channel::{SenderChannelMessage, encode_submission}};
 
-pub(crate) async fn enqueue_if_allowed(data: StatsSubmission, comm_tx: Sender<SenderChannelMessage>) {
+pub(crate) async fn enqueue_if_allowed(
+    data: StatsSubmission,
+    comm_tx: Sender<SenderChannelMessage>,
+) {
     let license = get_license_status().await;
     match license {
         LicenseState::Unknown => {
@@ -15,7 +25,7 @@ pub(crate) async fn enqueue_if_allowed(data: StatsSubmission, comm_tx: Sender<Se
         LicenseState::Denied => {
             error!("Your license is invalid. Please contact support.");
         }
-        LicenseState::Valid{ .. } => {
+        LicenseState::Valid { .. } => {
             info!("Sending data to the queue.");
             QUEUE.push(LtsCommand::Submit(Box::new(data))).await;
             if let Err(e) = comm_tx.send(SenderChannelMessage::QueueReady).await {
@@ -25,7 +35,10 @@ pub(crate) async fn enqueue_if_allowed(data: StatsSubmission, comm_tx: Sender<Se
     }
 }
 
-pub(crate) async fn enqueue_shaped_devices_if_allowed(devices: Vec<ShapedDevice>, comm_tx: Sender<SenderChannelMessage>) {
+pub(crate) async fn enqueue_shaped_devices_if_allowed(
+    devices: Vec<ShapedDevice>,
+    comm_tx: Sender<SenderChannelMessage>,
+) {
     let license = get_license_status().await;
     match license {
         LicenseState::Unknown => {
@@ -34,7 +47,7 @@ pub(crate) async fn enqueue_shaped_devices_if_allowed(devices: Vec<ShapedDevice>
         LicenseState::Denied => {
             error!("Your license is invalid. Please contact support.");
         }
-        LicenseState::Valid{ .. } => {
+        LicenseState::Valid { .. } => {
             QUEUE.push(LtsCommand::Devices(devices)).await;
             let _ = comm_tx.send(SenderChannelMessage::QueueReady).await;
         }

@@ -1,4 +1,4 @@
-import {enableTooltips} from "../helpers/builders";
+import {enableTooltips} from "../helpers/content_builders";
 
 export class BaseDashlet {
     constructor(slotNumber) {
@@ -10,6 +10,7 @@ export class BaseDashlet {
         this.buttons = [];
         this.graphs = [];
         this.graphDivs = [];
+        this.zoomed = false;
     }
 
     canBeSlowedDown() {
@@ -61,7 +62,11 @@ export class BaseDashlet {
     setup() {}
 
     graphDivId() {
-        return this.id + "_graph";
+        if (this.zoomed) {
+            return this.id + "_zoomed_graph";
+        } else {
+            return this.id + "_graph";
+        }
     }
 
     graphDiv() {
@@ -106,6 +111,43 @@ export class BaseDashlet {
             let button = document.createElement("a");
             button.title = "Zoom";
             button.innerHTML = "<i class='fas fa-search-plus'></i>";
+            button.onclick = () => {
+                if (!this.zoomed) {
+                    let zoomDiv = document.createElement("div");
+                    zoomDiv.classList.add("zoomed");
+                    zoomDiv.id = this.id + "_zoomed";
+                    zoomDiv.classList.add("dashbox");
+
+                    let title = document.createElement("h5");
+                    title.classList.add("dashbox-title");
+                    title.innerText = this.title();
+
+                    let button = document.createElement("a");
+                    button.title = "Zoom";
+                    button.innerHTML = "<i class='fas fa-search-minus'></i>";
+                    button.style.marginLeft = "5px";
+                    button.onclick = () => {
+                        document.getElementById(zoomDiv.id).remove();
+                        this.zoomed = !this.zoomed;
+                    };
+                    title.appendChild(button);
+
+                    zoomDiv.appendChild(title);
+
+                    let graphDiv = document.createElement("div");
+                    graphDiv.id = zoomDiv.id + "_graph";
+                    graphDiv.classList.add("dashgraphZoomed");
+                    zoomDiv.appendChild(graphDiv);
+
+                    document.getElementById("content").insertBefore(zoomDiv, document.getElementById("content").firstChild);
+
+                    requestAnimationFrame(() => {
+                        this.setup();
+                        zoomDiv.scrollIntoView({behavior: "smooth"});
+                    });
+                }
+                this.zoomed = !this.zoomed;
+            }
             zoom.appendChild(button);
             title.appendChild(zoom);
         }

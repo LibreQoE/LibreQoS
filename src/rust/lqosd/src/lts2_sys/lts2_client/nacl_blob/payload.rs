@@ -1,8 +1,8 @@
+use crate::lts2_sys::lts2_client::nacl_blob::KeyStore;
+use crate::lts2_sys::lts2_client::nacl_blob::size_info::SizeInfo;
 use dryoc::dryocbox::{NewByteArray, Nonce, PublicKey};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use crate::lts2_sys::lts2_client::nacl_blob::KeyStore;
-use crate::lts2_sys::lts2_client::nacl_blob::size_info::SizeInfo;
 
 pub fn transmit_payload<T: Serialize>(
     our_keys: &KeyStore,
@@ -14,7 +14,7 @@ pub fn transmit_payload<T: Serialize>(
     let mut size_info = SizeInfo::default();
 
     // Make the nonce, serialize it
-    let nonce = Nonce::gen();
+    let nonce = Nonce::r#gen();
     let serialized_nonce = serde_cbor::to_vec(&nonce)?;
     let compressed_nonce = miniz_oxide::deflate::compress_to_vec(&serialized_nonce, 10);
     // Transmit the nonce size, then the nonce
@@ -49,7 +49,7 @@ pub fn receive_payload<T: DeserializeOwned>(
     tcp_stream: &mut std::net::TcpStream,
 ) -> anyhow::Result<(T, SizeInfo)> {
     use std::io::Read;
-    
+
     let mut size_info = SizeInfo::default();
     // Receive the size of the nonce (u32)
     let mut nonce_size_bytes = [0; 4];
@@ -58,8 +58,8 @@ pub fn receive_payload<T: DeserializeOwned>(
     // Receive the nonce
     let mut nonce_bytes = vec![0; nonce_size as usize];
     tcp_stream.read_exact(&mut nonce_bytes)?;
-    let decompressed_nonce = miniz_oxide::inflate::decompress_to_vec(&nonce_bytes)
-        .map_err(|e| {
+    let decompressed_nonce =
+        miniz_oxide::inflate::decompress_to_vec(&nonce_bytes).map_err(|e| {
             println!("Failed to decompress nonce: {:?}", e);
             anyhow::Error::msg("Failed to decompress nonce")
         })?;
@@ -75,13 +75,10 @@ pub fn receive_payload<T: DeserializeOwned>(
     let mut encrypted_bytes = vec![0; encrypted_size as usize];
     tcp_stream.read_exact(&mut encrypted_bytes)?;
     let salted_box = dryoc::dryocbox::DryocBox::from_bytes(&encrypted_bytes)?;
-    let decrypted_bytes = salted_box.decrypt_to_vec(
-        &nonce,
-        their_public_key,
-        &our_keys.keys.secret_key,
-    )?;
-    let decompressed_bytes = miniz_oxide::inflate::decompress_to_vec(&decrypted_bytes)
-        .map_err(|e| {
+    let decrypted_bytes =
+        salted_box.decrypt_to_vec(&nonce, their_public_key, &our_keys.keys.secret_key)?;
+    let decompressed_bytes =
+        miniz_oxide::inflate::decompress_to_vec(&decrypted_bytes).map_err(|e| {
             println!("Failed to decompress nonce: {:?}", e);
             anyhow::Error::msg("Failed to decompress nonce")
         })?;

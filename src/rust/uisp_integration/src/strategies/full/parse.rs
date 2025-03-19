@@ -5,14 +5,14 @@ use tracing::info;
 use uisp::{DataLink, Device, Site};
 
 /// Parses the UISP datasets into a more usable format.
-/// 
+///
 /// # Arguments
 /// * `sites_raw` - The raw site data
 /// * `data_links_raw` - The raw data link data
 /// * `devices_raw` - The raw device data
 /// * `config` - The configuration
 /// * `ip_ranges` - The IP ranges to use for the network
-/// 
+///
 /// # Returns
 /// * A tuple containing the parsed sites, data links, and devices
 pub fn parse_uisp_datasets(
@@ -53,18 +53,29 @@ fn parse_sites(sites_raw: &[Site], config: &Config) -> Vec<UispSite> {
 }
 
 fn parse_data_links(data_links_raw: &[DataLink]) -> Vec<UispDataLink> {
-    let data_links: Vec<UispDataLink> = data_links_raw
-        .iter()
-        .filter_map(UispDataLink::from_uisp)
-        .collect();
+    // We need to preserve symmetry, so each link is added twice
+    let mut data_links = Vec::with_capacity(data_links_raw.len() * 2);
+    for link in data_links_raw {
+        let uisp_link = UispDataLink::from_uisp(link);
+        if let Some(link) = uisp_link {
+            data_links.push(link.invert());
+            data_links.push(link);
+        }
+    }
+
     info!(
-        "{} data-links have been successfully parsed",
+        "{} data-links have been successfully parsed (doubled)",
         data_links.len()
     );
     data_links
 }
 
-fn parse_devices(devices_raw: &[Device], config: &Config, ip_ranges: &IpRanges, ipv4_to_v6: Vec<Ipv4ToIpv6>) -> Vec<UispDevice> {
+fn parse_devices(
+    devices_raw: &[Device],
+    config: &Config,
+    ip_ranges: &IpRanges,
+    ipv4_to_v6: Vec<Ipv4ToIpv6>,
+) -> Vec<UispDevice> {
     let devices: Vec<UispDevice> = devices_raw
         .iter()
         .map(|d| UispDevice::from_uisp(d, config, ip_ranges, &ipv4_to_v6))

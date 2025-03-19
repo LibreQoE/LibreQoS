@@ -1,7 +1,7 @@
 //! Data-types used for license key exchange and lookup.
 
-use serde::{Serialize, Deserialize};
 use dryoc::dryocbox::PublicKey;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Network-transmitted query to ask the status of a license
@@ -28,7 +28,7 @@ pub enum LicenseRequest {
     PendingLicenseRequest {
         /// The local node id
         node_id: String,
-    }
+    },
 }
 
 /// License server responses for a key
@@ -52,7 +52,7 @@ pub enum LicenseReply {
     NewActivation {
         /// The license key to apply
         license_key: String,
-    }
+    },
 }
 
 /// Errors that can occur when checking licenses

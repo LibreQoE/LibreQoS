@@ -1,26 +1,38 @@
 <div class="row">
     <div class="col-4">
         <h5><i class="fa fa-tree"></i> Network Tree (<span id="nodeName" class="redactable"></span>)</h5>
-        <table class="table">
-            <tr>
-                <td style="font-weight: bold;">Limits:</td>
-                <td class="small"><span id="parentLimits"></span></td>
-                <td></td>
-            </tr>
-            <tr>
-                <td style="font-weight: bold;">Throughput:</td>
-                <td><span id="parentTpD"></span></td>
-                <td><span id="parentTpU"></span></td>
-            </tr>
-            <tr>
-                <td style="font-weight: bold;">RTT:</td>
-                <td><span id="parentRttD"></span></td>
-                <td><span id="parentRttU"></span></td>
-            </tr>
+        <table class="table table-sm">
+            <thead>
+                <th></th>
+                <th>Download</th>
+                <th>Upload</th>
+            </thead>
+            <tbody>
+                <tr class="small">
+                    <td style="font-weight: bold;">Limits:</td>
+                    <td class="small"><span id="parentLimitsD"></span></td>
+                    <td class="small"><span id="parentLimitsU"></span></td>
+                </tr>
+                <tr class="small">
+                    <td style="font-weight: bold;">Throughput:</td>
+                    <td><span id="parentTpD"></span></td>
+                    <td><span id="parentTpU"></span></td>
+                </tr>
+                <tr class="small">
+                    <td style="font-weight: bold;">RTT:</td>
+                    <td><span id="parentRttD"></span></td>
+                    <td><span id="parentRttU"></span></td>
+                </tr>
+                <tr class="small">
+                    <td style="font-weight: bold;">TCP Retransmits:</td>
+                    <td><span id="parentRxmitD"></span></td>
+                    <td><span id="parentRxmitU"></span></td>
+                </tr>
+            </tbody>
         </table>
     </div>
     <div class="col-2">
-        <label for="maxDepth">Max Depth:</label>
+        <label for="maxDepth">Display Depth:</label>
         <input type="number" id="maxDepth" class="form-control" value="2" min="1" max="10">
     </div>
 </div>
@@ -34,4 +46,4 @@
     </div>
 </div>
 
-<script src="tree.js"></script>
+<script src="tree.js%CACHEBUSTERS%"></script>

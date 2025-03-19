@@ -48,7 +48,7 @@ fn iterate_child_sites(sites: &[UispSite], parent: usize, indent: usize) {
 
 /// Warns if there are any sites with no parents, and promotes them to be parented off of the root
 /// site.
-/// 
+///
 /// # Arguments
 /// * `sites` - The list of sites
 /// * `devices_raw` - The raw device data

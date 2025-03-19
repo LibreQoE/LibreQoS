@@ -20,11 +20,27 @@ $("#btnLogin").on('click', () => {
         url: "/doLogin",
         data: JSON.stringify(login),
         contentType: 'application/json',
+        beforeSend: () => {
+            $("#loginError").removeClass("show").addClass("d-none");
+        },
         success: () => {
             window.location.href = "/index.html";
         },
         error: () => {
-            alert("Login Incorrect");
+            $("#loginError").removeClass("d-none").addClass("show");
         }
     })
+});
+
+// Add keypress handler for Enter key
+$('#username, #password').on('keypress', function(e) {
+    if (e.which === 13) {
+        e.preventDefault();
+        $('#btnLogin').click();
+    }
+});
+
+// Hide error when typing
+$('#username, #password').on('input', function() {
+    $("#loginError").fadeOut();
 });

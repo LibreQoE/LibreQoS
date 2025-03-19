@@ -2,10 +2,10 @@
 //! own module/thread/actor. This removes any delay when the
 //! web system is running without Internet access.
 
-use std::sync::atomic::AtomicBool;
-use std::thread;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::AtomicBool;
+use std::thread;
 
 const VERSION_STRING: &str = include_str!("../../../VERSION_STRING");
 
@@ -58,8 +58,9 @@ pub fn new_version_available() -> bool {
 }
 
 fn check_version(request: VersionCheckRequest) -> Result<bool> {
-    let response: VersionCheckResponse = ureq::post("https://insight.libreqos.com/shaper_api/version_check")
-        .send_json(serde_json::to_value(&request)?)?
-        .into_json()?;
+    let response: VersionCheckResponse =
+        ureq::post("https://insight.libreqos.com/shaper_api/version_check")
+            .send_json(serde_json::to_value(&request)?)?
+            .into_json()?;
     Ok(response.update_available)
 }

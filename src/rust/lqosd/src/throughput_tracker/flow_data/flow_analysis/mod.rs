@@ -1,23 +1,23 @@
-use std::{net::IpAddr, sync::Mutex};
 use allocative_derive::Allocative;
 use lqos_sys::flowbee_data::FlowbeeKey;
 use once_cell::sync::Lazy;
 use serde::Serialize;
+use std::{net::IpAddr, sync::Mutex};
 use tracing::error;
 
 mod asn;
 mod protocol;
-pub use protocol::FlowProtocol;
 use super::AsnId;
+pub use protocol::FlowProtocol;
 mod finished_flows;
 pub use finished_flows::FinishedFlowAnalysis;
 pub use finished_flows::RECENT_FLOWS;
 mod kernel_ringbuffer;
 pub use kernel_ringbuffer::*;
 mod rtt_types;
-pub use rtt_types::RttData;
-pub use finished_flows::{AsnListEntry, AsnCountryListEntry, AsnProtocolListEntry};
 use crate::throughput_tracker::flow_data::flow_analysis::asn::AsnNameCountryFlag;
+pub use finished_flows::{AsnCountryListEntry, AsnListEntry, AsnProtocolListEntry};
+pub use rtt_types::RttData;
 
 static ANALYSIS: Lazy<FlowAnalysisSystem> = Lazy::new(|| FlowAnalysisSystem::new());
 
@@ -28,17 +28,22 @@ pub struct FlowAnalysisSystem {
 impl FlowAnalysisSystem {
     pub fn new() -> Self {
         // Moved from being periodically updated to being updated on startup
-        let _ = std::thread::Builder::new().name("GeoTable Updater".to_string()).spawn(|| {
-            let result = asn::GeoTable::load();
-            match result {
-                Ok(table) => {
-                    ANALYSIS.asn_table.lock().unwrap().replace(table);
+        let _ = std::thread::Builder::new()
+            .name("GeoTable Updater".to_string())
+            .spawn(|| {
+                loop {
+                    let result = asn::GeoTable::load();
+                    match result {
+                        Ok(table) => {
+                            ANALYSIS.asn_table.lock().unwrap().replace(table);
+                        }
+                        Err(e) => {
+                            error!("Failed to update ASN table: {e}");
+                        }
+                    }
+                    std::thread::sleep(std::time::Duration::from_secs(60 * 60));
                 }
-                Err(e) => {
-                    error!("Failed to update ASN table: {e}");
-                }
-            }
-        });
+            });
 
         Self {
             asn_table: Mutex::new(None),
@@ -84,7 +89,6 @@ impl FlowAnalysis {
         }
     }
 }
-
 
 pub fn lookup_asn_id(ip: IpAddr) -> Option<u32> {
     if let Ok(table_lock) = ANALYSIS.asn_table.lock() {

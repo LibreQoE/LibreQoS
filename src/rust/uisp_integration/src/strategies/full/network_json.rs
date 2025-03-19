@@ -6,12 +6,12 @@ use std::path::Path;
 use tracing::{error, info};
 
 /// Writes the network.json file for UISP
-/// 
+///
 /// # Arguments
 /// * `config` - The configuration
 /// * `sites` - The list of sites
 /// * `root_idx` - The index of the root site
-/// 
+///
 /// # Returns
 /// * An `Ok` if the operation was successful
 /// * An `Err` if the operation failed
@@ -22,7 +22,9 @@ pub fn write_network_file(
 ) -> Result<(), UispIntegrationError> {
     let network_path = Path::new(&config.lqos_directory).join("network.json");
     if network_path.exists() && !config.integration_common.always_overwrite_network_json {
-        tracing::warn!("Network.json exists, and always overwrite network json is not true - not writing network.json");
+        tracing::warn!(
+            "Network.json exists, and always overwrite network json is not true - not writing network.json"
+        );
         return Ok(());
     }
 

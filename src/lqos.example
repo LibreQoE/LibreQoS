@@ -21,7 +21,7 @@ disable_offload = [ "gso", "tso", "lro", "sg", "gro" ]
 
 # EITHER:
 [bridge]
-use_xdp_bridge = true
+use_xdp_bridge = false
 to_internet = "eth0"
 to_network = "eth1"
 

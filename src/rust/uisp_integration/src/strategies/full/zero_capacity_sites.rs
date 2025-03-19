@@ -3,7 +3,7 @@ use lqos_config::Config;
 
 /// Corrects zero capacity sites by setting their capacity to the parent's capacity.
 /// If the site has no parent, the capacity is set to the default generated capacity.
-/// 
+///
 /// # Arguments
 /// * `sites` - The list of sites to correct
 /// * `config` - The configuration

@@ -1,6 +1,6 @@
-use std::fmt::Display;
 use allocative_derive::Allocative;
 use serde::Serialize;
+use std::fmt::Display;
 
 use lqos_sys::flowbee_data::FlowbeeKey;
 
@@ -17,7 +17,11 @@ pub enum FlowProtocol {
     Dns,
     Pop3,
     Quic,
-    Other { proto: u8, src_port: u16, dst_port: u16 }
+    Other {
+        proto: u8,
+        src_port: u16,
+        dst_port: u16,
+    },
 }
 
 impl FlowProtocol {
@@ -25,11 +29,11 @@ impl FlowProtocol {
         match key.ip_protocol {
             6 => Self::tcp(key),
             17 => Self::udp(key),
-            _ => Self::Other { 
-                proto: key.ip_protocol, 
-                src_port: key.src_port, 
-                dst_port: key.dst_port, 
-            }
+            _ => Self::Other {
+                proto: key.ip_protocol,
+                src_port: key.src_port,
+                dst_port: key.dst_port,
+            },
         }
     }
 
@@ -45,23 +49,23 @@ impl FlowProtocol {
             143 => Self::Imap,
             53 => Self::Dns,
             110 => Self::Pop3,
-            _ => Self::Other { 
-                proto: key.ip_protocol, 
-                src_port: key.src_port, 
-                dst_port: key.dst_port, 
-            }
+            _ => Self::Other {
+                proto: key.ip_protocol,
+                src_port: key.src_port,
+                dst_port: key.dst_port,
+            },
         }
     }
 
     fn udp(key: &FlowbeeKey) -> Self {
         match key.src_port {
             53 => Self::Dns,
-            80 | 443 => Self::Quic,            
-            _ => Self::Other { 
-                proto: key.ip_protocol, 
-                src_port: key.src_port, 
-                dst_port: key.dst_port, 
-            }
+            80 | 443 => Self::Quic,
+            _ => Self::Other {
+                proto: key.ip_protocol,
+                src_port: key.src_port,
+                dst_port: key.dst_port,
+            },
         }
     }
 }
@@ -80,7 +84,11 @@ impl Display for FlowProtocol {
             Self::Dns => write!(f, "DNS"),
             Self::Pop3 => write!(f, "POP3"),
             Self::Quic => write!(f, "QUIC"),
-            Self::Other { proto, src_port, dst_port } => write!(f, "{} {}/{}", proto_name(proto), src_port, dst_port),
+            Self::Other {
+                proto,
+                src_port,
+                dst_port,
+            } => write!(f, "{} {}/{}", proto_name(proto), src_port, dst_port),
         }
     }
 }

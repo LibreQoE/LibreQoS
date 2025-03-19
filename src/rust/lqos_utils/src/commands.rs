@@ -64,33 +64,33 @@ macro_rules! run_or_panic {
 
 #[cfg(test)]
 mod test {
-  use crate::run_success;
+    use crate::run_success;
 
-  #[test]
-  fn test_true() {
-    assert!(run_success!("/bin/true"));
-  }
+    #[test]
+    fn test_true() {
+        assert!(run_success!("/bin/true"));
+    }
 
-  #[test]
-  fn test_echo() {
-    assert!(run_success!("/bin/echo", "Hello World"));
-    assert!(run_success!("/bin/echo", "Hello", "World"));
-  }
+    #[test]
+    fn test_echo() {
+        assert!(run_success!("/bin/echo", "Hello World"));
+        assert!(run_success!("/bin/echo", "Hello", "World"));
+    }
 
-  #[test]
-  fn test_expressions() {
-    const ECHO: &str = "/bin/echo";
-    const HELLO_WORLD: &str = "Hello World";
-    assert!(run_success!(ECHO, HELLO_WORLD));
-  }
+    #[test]
+    fn test_expressions() {
+        const ECHO: &str = "/bin/echo";
+        const HELLO_WORLD: &str = "Hello World";
+        assert!(run_success!(ECHO, HELLO_WORLD));
+    }
 
-  #[test]
-  fn test_true_not_panic() {
-    run_or_panic!("/bin/true", !"It's not true");
-  }
+    #[test]
+    fn test_true_not_panic() {
+        run_or_panic!("/bin/true", !"It's not true");
+    }
 
-  #[test]
-  fn test_echo_not_panic() {
-    run_or_panic!("/bin/echo", "Hello", "World", ?"Echo isn't working");
-  }
+    #[test]
+    fn test_echo_not_panic() {
+        run_or_panic!("/bin/echo", "Hello", "World", ?"Echo isn't working");
+    }
 }

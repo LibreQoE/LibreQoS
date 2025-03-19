@@ -11,23 +11,23 @@ pub type BandwidthOverrides = HashMap<String, (f32, f32)>;
 /// Attempts to load integrationUISPbandwidths.csv to use for
 /// bandwidth overrides. Returns an empty set if not found.
 /// Returns an error if the file is found but cannot be read.
-/// 
+///
 /// The file should be a CSV with the following columns:
-/// 
+///
 /// | Parent Node | Down | Up |
 /// |-------------|------|----|
 /// | Site1       | 100  | 10 |
 /// | Site2       | 200  | 20 |
-/// 
+///
 /// The Parent Node should match the name of the site in UISP.
 /// The Down and Up columns should be the desired bandwidth in Mbps.
-/// 
+///
 /// If the file is found, the overrides will be applied to the sites
 /// in the `UispSite` array by the `apply_bandwidth_overrides` function.
-/// 
+///
 /// # Arguments
 /// * `config` - The configuration
-/// 
+///
 /// # Returns
 /// * A `BandwidthOverrides` map of site names to bandwidth overrides
 pub fn get_site_bandwidth_overrides(
@@ -90,7 +90,7 @@ fn numeric_string_to_f32(text: &str) -> Option<f32> {
 }
 
 /// Applies the bandwidth overrides to the sites in the array.
-/// 
+///
 /// # Arguments
 /// * `sites` - The list of sites to modify
 /// * `bandwidth_overrides` - The bandwidth overrides to apply
@@ -98,8 +98,8 @@ pub fn apply_bandwidth_overrides(sites: &mut [UispSite], bandwidth_overrides: &B
     for site in sites.iter_mut() {
         if let Some((down, up)) = bandwidth_overrides.get(&site.name) {
             // Apply the overrides
-            site.max_down_mbps = *down as u32;
-            site.max_up_mbps = *up as u32;
+            site.max_down_mbps = *down as u64;
+            site.max_up_mbps = *up as u64;
             info!(
                 "Bandwidth override for {} applied ({} / {})",
                 &site.name, site.max_down_mbps, site.max_up_mbps

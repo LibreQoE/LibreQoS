@@ -1,9 +1,11 @@
-import {BaseDashlet} from "./base_dashlet";
+import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {TopNSankey} from "../graphs/top_n_sankey";
+import {TimedCache} from "../lq_js_common/helpers/timed_cache";
 
 export class Top10DownloadersVisual extends BaseDashlet {
     constructor(slot) {
         super(slot);
+        this.timeCache = new TimedCache(10);
     }
 
     title() {
@@ -35,8 +37,13 @@ export class Top10DownloadersVisual extends BaseDashlet {
 
     onMessage(msg) {
         if (msg.event === "TopDownloads") {
-            //console.log(msg);
-            this.graph.processMessage(msg);
+            msg.data.forEach((r) => {
+                let key = r.circuit_id;
+                this.timeCache.addOrUpdate(key, r, r.bits_per_second.down);
+            });
+            this.timeCache.tick();
+            let items = this.timeCache.get();
+            this.graph.processMessage({ data: items });
         }
     }
 }

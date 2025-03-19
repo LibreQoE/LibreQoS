@@ -14,7 +14,7 @@ pub mod submission_queue;
 
 /// Re-export bincode
 pub mod bincode {
-  pub use bincode::*;
+    pub use bincode::*;
 }
 
 /// Re-export CBOR
@@ -24,5 +24,5 @@ pub mod cbor {
 
 /// Re-export dryocbox
 pub mod dryoc {
-  pub use dryoc::*;
+    pub use dryoc::*;
 }

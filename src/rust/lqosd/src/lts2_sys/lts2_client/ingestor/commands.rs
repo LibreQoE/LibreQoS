@@ -1,5 +1,8 @@
+use crate::lts2_sys::shared_types::{
+    CircuitCakeDrops, CircuitCakeMarks, CircuitRetransmits, CircuitRtt, CircuitThroughput,
+    SiteCakeDrops, SiteCakeMarks, SiteRetransmits, SiteRtt, SiteThroughput,
+};
 use std::net::IpAddr;
-use crate::lts2_sys::shared_types::{CircuitCakeDrops, CircuitCakeMarks, CircuitRetransmits, CircuitRtt, CircuitThroughput, SiteCakeDrops, SiteCakeMarks, SiteRetransmits, SiteRtt, SiteThroughput};
 
 #[derive(Debug, Clone)]
 pub(crate) enum IngestorCommand {
@@ -72,6 +75,8 @@ pub(crate) enum IngestorCommand {
         src_port: u16,
         bytes_down: u64,
         bytes_up: u64,
+        packets_down: i64,
+        packets_up: i64,
         retransmit_times_down: Vec<i64>,
         retransmit_times_up: Vec<i64>,
         rtt1: f32,

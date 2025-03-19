@@ -1,6 +1,6 @@
+use crate::node_manager::WarningLevel;
 use axum::Json;
 use tracing::{error, info};
-use crate::node_manager::WarningLevel;
 
 pub async fn get_global_warnings() -> Json<Vec<(WarningLevel, String)>> {
     let mut warnings = crate::node_manager::warnings::get_global_warnings();

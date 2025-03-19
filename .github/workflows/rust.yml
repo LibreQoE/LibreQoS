@@ -10,7 +10,7 @@ jobs:
     runs-on: [ lq_run ]
     
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Set Version ENV
       run: pushd src; echo "::set-env name=VERSION::$(cat VERSION_STRING)"
       env:
@@ -19,16 +19,17 @@ jobs:
       run: |
          echo ${{ env.VERSION }}
     - name: Install dependencies
-      run: sudo /bin/apt-get update; sudo /bin/apt-get install --no-install-recommends python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`/bin/uname r` libbpf-dev mold
+      run: sudo /bin/apt-get update; sudo /bin/apt-get install --no-install-recommends python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz esbuild curl screen llvm pkg-config linux-tools-common linux-tools-`/bin/uname r` libbpf-dev mold
       if: matrix.os == 'ubuntu-latest'
     - name: Build
       run: pushd src/rust; cargo build --verbose --all; popd
     - name: Run tests
       run: pushd src/rust; cargo test --verbose --all; popd
     - name: Build .deb file
-      run: pushd src; ./build_dpkg.sh --nostamp; popd
+      run: ./build_dpkg.sh --nostamp
+      working-directory: src/
     - name: Archive .deb file
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: libreqos_${{ env.VERSION }}.-1_amd64.deb
         path: src/dist/libreqos_${{ env.VERSION }}.-1_amd64.deb

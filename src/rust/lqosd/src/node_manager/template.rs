@@ -1,15 +1,15 @@
 //! Provides an Axum layer that applies templates to static HTML
 //! files.
 
-use std::path::Path;
+use crate::lts2_sys::shared_types::LtsStatus;
+use crate::node_manager::auth::get_username;
 use axum::body::{Body, to_bytes};
 use axum::http::{HeaderValue, Request, Response, StatusCode};
 use axum::middleware::Next;
 use axum::response::IntoResponse;
 use axum_extra::extract::CookieJar;
 use lqos_config::load_config;
-use crate::lts2_sys::shared_types::LtsStatus;
-use crate::node_manager::auth::get_username;
+use std::path::Path;
 
 const VERSION_STRING: &str = include_str!("../../../../VERSION_STRING");
 
@@ -44,12 +44,10 @@ const LTS1_LINK_OFFER_TRIAL: &str = r#"
 "#;
 
 fn js_tf(b: bool) -> &'static str {
-    if b {
-        "true"
-    } else {
-        "false"
-    }
+    if b { "true" } else { "false" }
 }
+
+static GIT_HASH: &str = env!("GIT_HASH");
 
 pub async fn apply_templates(
     jar: CookieJar,
@@ -108,9 +106,8 @@ pub async fn apply_templates(
             } else {
                 trial_link = LTS1_LINK_OFFER_TRIAL.replace(
                     "%%LTS_TRIAL_LINK%%",
-                    &format!("https://stats.libreqos.io/trial1/{}", config.node_id)
+                    &format!("https://stats.libreqos.io/trial1/{}", config.node_id),
                 );
-                script_has_insight = false;
                 script_has_insight = false;
             }
         }
@@ -122,8 +119,12 @@ pub async fn apply_templates(
         }
 
         // "LTS script" - which is increasingly becoming a misnomer
-        let lts_script = format!("<script>window.hasLts = {}; window.hasInsight = {}; window.newVersion = {};</script>",
-            js_tf(script_has_lts), js_tf(script_has_insight), js_tf(new_version));
+        let lts_script = format!(
+            "<script>window.hasLts = {}; window.hasInsight = {}; window.newVersion = {};</script>",
+            js_tf(script_has_lts),
+            js_tf(script_has_insight),
+            js_tf(new_version)
+        );
 
         let (mut res_parts, res_body) = res.into_parts();
         let bytes = to_bytes(res_body, 1_000_000).await.unwrap();
@@ -134,6 +135,8 @@ pub async fn apply_templates(
             .replace("%%TITLE%%", &title)
             .replace("%%LTS_LINK%%", &trial_link)
             .replace("%%%LTS_SCRIPT%%%", &lts_script);
+        let byte_string = byte_string
+            .replace("%CACHEBUSTERS%", &format!("?gh={}", GIT_HASH));
         if let Some(length) = res_parts.headers.get_mut("content-length") {
             *length = HeaderValue::from(byte_string.len());
         }

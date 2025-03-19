@@ -7,16 +7,16 @@ mod config;
 pub mod perf_interface;
 pub mod stats;
 
-use std::time::Duration;
-use tracing::{debug, error, warn};
-use timerfd::{SetTimeFlags, TimerFd, TimerState};
 pub use config::{HeimdalConfig, HeimdallMode};
+use std::time::Duration;
+use timerfd::{SetTimeFlags, TimerFd, TimerState};
+use tracing::{debug, error, warn};
 mod timeline;
-pub use timeline::{n_second_packet_dump, n_second_pcap, hyperfocus_on_target};
+pub use timeline::{hyperfocus_on_target, n_second_packet_dump, n_second_pcap};
 mod pcap;
 mod watchlist;
-pub use watchlist::{heimdall_expire, heimdall_watch_ip, set_heimdall_mode};
 use anyhow::Result;
+pub use watchlist::{heimdall_expire, heimdall_watch_ip, set_heimdall_mode};
 
 use crate::timeline::expire_timeline;
 
@@ -34,37 +34,37 @@ const SESSION_EXPIRE_SECONDS: u64 = 600;
 
 /// Interface to running Heimdall (start this when lqosd starts)
 pub fn start_heimdall() -> Result<()> {
-  if set_heimdall_mode(HeimdallMode::WatchOnly).is_err() {
-    error!(
-      "Unable to set Heimdall Mode. Packet watching will be unavailable."
-    );
-    anyhow::bail!("Unable to set Heimdall Mode.");
-  }
+    if set_heimdall_mode(HeimdallMode::WatchOnly).is_err() {
+        error!("Unable to set Heimdall Mode. Packet watching will be unavailable.");
+        anyhow::bail!("Unable to set Heimdall Mode.");
+    }
 
-  let interval_ms = 1000; // 1 second
-  debug!("Heimdall check period set to {interval_ms} ms.");
+    let interval_ms = 1000; // 1 second
+    debug!("Heimdall check period set to {interval_ms} ms.");
 
-  std::thread::Builder::new()
+    std::thread::Builder::new()
         .name("Heimdall Packet Watcher".to_string())
         .spawn(move || {
-    let mut tfd = TimerFd::new().unwrap();
-    assert_eq!(tfd.get_state(), TimerState::Disarmed);
-    tfd.set_state(TimerState::Periodic{
-      current: Duration::from_millis(interval_ms),
-      interval: Duration::from_millis(interval_ms) }
-                  , SetTimeFlags::Default
-    );
+            let mut tfd = TimerFd::new().unwrap();
+            assert_eq!(tfd.get_state(), TimerState::Disarmed);
+            tfd.set_state(
+                TimerState::Periodic {
+                    current: Duration::from_millis(interval_ms),
+                    interval: Duration::from_millis(interval_ms),
+                },
+                SetTimeFlags::Default,
+            );
 
-    loop {
-      heimdall_expire();
-      expire_timeline();
+            loop {
+                heimdall_expire();
+                expire_timeline();
 
-      let missed_ticks = tfd.read();
-      if missed_ticks > 1 {
-        warn!("Heimdall Missed {} ticks", missed_ticks - 1);
-      }
-    }
-  })?;
+                let missed_ticks = tfd.read();
+                if missed_ticks > 1 {
+                    warn!("Heimdall Missed {} ticks", missed_ticks - 1);
+                }
+            }
+        })?;
 
-  Ok(())
+    Ok(())
 }

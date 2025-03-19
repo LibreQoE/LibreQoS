@@ -1,27 +1,28 @@
-mod dashboard_themes;
-mod version_check;
-mod device_counts;
-mod shaped_device_api;
-mod network_tree;
-mod support;
-mod lts;
-mod search;
-mod unknown_ips;
-mod reload_libreqos;
-mod config;
 mod circuit;
-mod packet_analysis;
-mod flow_map;
-mod warnings;
-mod flow_explorer;
+mod config;
 mod container_status;
+mod dashboard_themes;
+mod device_counts;
+mod flow_explorer;
+mod flow_map;
+pub mod lts;
+mod network_tree;
+mod packet_analysis;
+mod reload_libreqos;
+mod search;
+mod shaped_device_api;
+mod support;
+mod unknown_ips;
+mod version_check;
+mod warnings;
 
-use axum::Router;
-use axum::routing::{get, post};
 use crate::node_manager::auth::auth_layer;
+use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
+use axum::routing::{get, post};
+use axum::{Extension, Router};
 use tower_http::cors::CorsLayer;
 
-pub fn local_api() -> Router {
+pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) -> Router {
     Router::new()
         .route("/dashletThemes", get(dashboard_themes::list_themes))
         .route("/dashletSave", post(dashboard_themes::save_theme))
@@ -45,9 +46,19 @@ pub fn local_api() -> Router {
         .route("/networkJson", get(config::network_json))
         .route("/allShapedDevices", get(config::all_shaped_devices))
         .route("/updateConfig", post(config::update_lqosd_config))
-        .route("/updateNetworkAndDevices", post(config::update_network_and_devices))
+        .route(
+            "/updateNetworkAndDevices",
+            post(config::update_network_and_devices),
+        )
+        .route("/getUsers", get(config::get_users))
+        .route("/addUser", post(config::add_user))
+        .route("/updateUser", post(config::update_user))
+        .route("/deleteUser", post(config::delete_user))
         .route("/circuitById", post(circuit::get_circuit_by_id))
-        .route("/requestAnalysis/:ip", get(packet_analysis::request_analysis))
+        .route(
+            "/requestAnalysis/:ip",
+            get(packet_analysis::request_analysis),
+        )
         .route("/pcapDump/:id", get(packet_analysis::pcap_dump))
         .route("/flowMap", get(flow_map::flow_lat_lon))
         .route("/globalWarnings", get(warnings::get_global_warnings))
@@ -55,15 +66,37 @@ pub fn local_api() -> Router {
         .route("/countryList", get(flow_explorer::country_list))
         .route("/protocolList", get(flow_explorer::protocol_list))
         .route("/flowTimeline/:asn_id", get(flow_explorer::flow_timeline))
-        .route("/countryTimeline/:iso_code", get(flow_explorer::country_timeline))
-        .route("/protocolTimeline/:protocol", get(flow_explorer::protocol_timeline))
+        .route(
+            "/countryTimeline/:iso_code",
+            get(flow_explorer::country_timeline),
+        )
+        .route(
+            "/protocolTimeline/:protocol",
+            get(flow_explorer::protocol_timeline),
+        )
         .route("/containerStatus", get(container_status::container_status))
         .route("/ltsSignUp", post(lts::lts_trial_signup))
         .route("/ltsShaperStatus", get(lts::shaper_status_from_lts))
         .route("/lts24", get(lts::last_24_hours))
         .route("/ltsThroughput/:seconds", get(lts::throughput_period))
+        .route("/ltsPackets/:seconds", get(lts::packets_period))
+        .route(
+            "/ltsPercentShaped/:seconds",
+            get(lts::percent_shaped_period),
+        )
+        .route("/ltsFlows/:seconds", get(lts::percent_flows_period))
         .route("/ltsRetransmits/:seconds", get(lts::retransmits_period))
         .route("/ltsCake/:seconds", get(lts::cake_period))
+        .route("/ltsRttHisto/:seconds", get(lts::rtt_histo_period))
+        .route(
+            "/ltsTop10Downloaders/:seconds",
+            get(lts::top10_downloaders_period),
+        )
+        .route("/ltsWorst10Rtt/:seconds", get(lts::worst10_rtt_period))
+        .route("/ltsWorst10Rxmit/:seconds", get(lts::worst10_rxmit_period))
+        .route("/ltsTopFlows/:seconds", get(lts::top10_flows_period))
+        .route("/ltsRecentMedian", get(lts::recent_medians))
+        .layer(Extension(shaper_query))
         .layer(CorsLayer::very_permissive())
         .route_layer(axum::middleware::from_fn(auth_layer))
 }

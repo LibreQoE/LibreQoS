@@ -1,13 +1,11 @@
-import {BaseDashlet} from "./base_dashlet";
-import {RttHistogram} from "../graphs/rtt_histo";
-import {clearDashDiv, theading, TopNTableFromMsgData, topNTableHeader, topNTableRow} from "../helpers/builders";
-import {scaleNumber, rttCircleSpan, formatRtt, formatThroughput} from "../helpers/scaling";
-import {redactCell} from "../helpers/redact";
+import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {TopNSankey} from "../graphs/top_n_sankey";
+import {TimedCache} from "../lq_js_common/helpers/timed_cache";
 
 export class Worst10RetransmitsVisual extends BaseDashlet {
     constructor(slot) {
         super(slot);
+        this.timeCache = new TimedCache(10);
     }
 
     canBeSlowedDown() {
@@ -39,7 +37,14 @@ export class Worst10RetransmitsVisual extends BaseDashlet {
 
     onMessage(msg) {
         if (msg.event === "WorstRetransmits") {
-            this.graph.processMessage(msg);
+            msg.data.forEach((r) => {
+                let key = r.circuit_id;
+                this.timeCache.addOrUpdate(key, r, r.tcp_retransmits[0]);
+            });
+            this.timeCache.tick();
+
+            let items = this.timeCache.get();
+            this.graph.processMessage({ data: items });
         }
     }
 }

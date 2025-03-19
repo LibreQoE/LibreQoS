@@ -5,16 +5,16 @@
 use crate::{bus::BusMessage, top_level_ui::TopUi};
 use anyhow::Result;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind},
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen},
     ExecutableCommand,
+    event::{self, Event, KeyCode, KeyEventKind},
+    terminal::{EnterAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::{backend::CrosstermBackend, Terminal};
-use tokio::sync::mpsc::Sender;
+use ratatui::{Terminal, backend::CrosstermBackend};
 use std::{
     io::stdout,
     sync::atomic::{AtomicBool, Ordering},
 };
+use tokio::sync::mpsc::Sender;
 
 pub static SHOULD_EXIT: AtomicBool = AtomicBool::new(false);
 

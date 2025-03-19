@@ -9,12 +9,12 @@
 use super::StatsUpdateMessage;
 use crate::{
     collector::{
-        collation::{collate_stats, StatsSession},
-        uisp_ext::gather_uisp_data,
         SESSION_BUFFER,
+        collation::{StatsSession, collate_stats},
+        uisp_ext::gather_uisp_data,
     },
     submission_queue::{
-        comm_channel::{start_communication_channel, SenderChannelMessage},
+        comm_channel::{SenderChannelMessage, start_communication_channel},
         enqueue_shaped_devices_if_allowed,
     },
 };
@@ -39,13 +39,15 @@ pub fn start_long_term_stats() -> Sender<StatsUpdateMessage> {
         mpsc::channel(1024);
 
     let cloned_update_tx = update_tx.clone();
-    let _ = std::thread::Builder::new().name("LTS1 Collector".to_string()).spawn(move || {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(startup(update_rx, comm_tx, cloned_update_tx, comm_rx));
-    });
+    let _ = std::thread::Builder::new()
+        .name("LTS1 Collector".to_string())
+        .spawn(move || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(startup(update_rx, comm_tx, cloned_update_tx, comm_rx));
+        });
 
     // Return the channel, for notifications
     update_tx
@@ -65,7 +67,9 @@ async fn startup(
                 while let Some(_msg) = update_rx.recv().await {
                     // Do nothing
                 }
-            }).await.unwrap();
+            })
+            .await
+            .unwrap();
             warn!("Long-term stats gathering is disabled in the configuration. Exiting.");
             return;
         }
@@ -152,7 +156,9 @@ fn get_collation_period() -> Duration {
 fn get_uisp_collation_period() -> Option<Duration> {
     if let Ok(cfg) = load_config() {
         return Some(Duration::from_secs(
-            cfg.long_term_stats.uisp_reporting_interval_seconds.unwrap_or(300),
+            cfg.long_term_stats
+                .uisp_reporting_interval_seconds
+                .unwrap_or(300),
         ));
     }
 

@@ -1,16 +1,16 @@
+use rand::random;
+use serde::Serialize;
 use std::net::IpAddr;
 use std::time::Duration;
 use surge_ping::{Client, Config, ICMP, IcmpPacket, PingIdentifier, PingSequence};
 use tokio::time::MissedTickBehavior;
-use rand::random;
-use serde::Serialize;
 use tracing::{debug, error, info};
 
 #[derive(Serialize)]
 enum PingState {
     ChannelTest,
     NoResponse,
-    Ping { time_nanos: u64, label: String }
+    Ping { time_nanos: u64, label: String },
 }
 
 #[derive(Serialize)]
@@ -19,7 +19,10 @@ struct PingResult {
     result: PingState,
 }
 
-pub(super) async fn ping_monitor(ip_addresses: Vec<(String, String)>, tx: tokio::sync::mpsc::Sender<String>) {
+pub(super) async fn ping_monitor(
+    ip_addresses: Vec<(String, String)>,
+    tx: tokio::sync::mpsc::Sender<String>,
+) {
     let mut ticker = tokio::time::interval(Duration::from_secs(1));
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
     loop {
@@ -37,12 +40,18 @@ pub(super) async fn ping_monitor(ip_addresses: Vec<(String, String)>, tx: tokio:
         let mut tasks = Vec::new();
         for (ip, label) in ip_addresses.iter() {
             match ip.parse() {
-                Ok(IpAddr::V4(addr)) => {
-                    tasks.push(tokio::spawn(ping(client_v4.clone(), IpAddr::V4(addr), tx.clone(), label.clone())))
-                }
-                Ok(IpAddr::V6(addr)) => {
-                    tasks.push(tokio::spawn(ping(client_v6.clone(), IpAddr::V6(addr), tx.clone(), label.clone())))
-                }
+                Ok(IpAddr::V4(addr)) => tasks.push(tokio::spawn(ping(
+                    client_v4.clone(),
+                    IpAddr::V4(addr),
+                    tx.clone(),
+                    label.clone(),
+                ))),
+                Ok(IpAddr::V6(addr)) => tasks.push(tokio::spawn(ping(
+                    client_v6.clone(),
+                    IpAddr::V6(addr),
+                    tx.clone(),
+                    label.clone(),
+                ))),
                 Err(e) => error!("{} parse to ipaddr error: {}", ip, e),
             }
         }
@@ -79,7 +88,12 @@ async fn send_timeout(tx: tokio::sync::mpsc::Sender<String>, ip: String) {
     }
 }
 
-async fn send_alive(tx: tokio::sync::mpsc::Sender<String>, ip: String, ping_time: Duration, label: String) {
+async fn send_alive(
+    tx: tokio::sync::mpsc::Sender<String>,
+    ip: String,
+    ping_time: Duration,
+    label: String,
+) {
     let result = PingResult {
         ip,
         result: PingState::Ping {
@@ -101,13 +115,13 @@ async fn ping(client: Client, addr: IpAddr, tx: tokio::sync::mpsc::Sender<String
     match pinger.ping(PingSequence(0), &payload).await {
         Ok((IcmpPacket::V4(..), dur)) => {
             send_alive(tx, addr.to_string(), dur, label.clone()).await;
-        },
+        }
         Ok((IcmpPacket::V6(..), dur)) => {
             send_alive(tx, addr.to_string(), dur, label.clone()).await;
-        },
+        }
         _ => {
             send_timeout(tx, addr.to_string()).await;
             return;
-        },
+        }
     }
 }

@@ -16,19 +16,20 @@ pub struct UpDownOrder<T> {
 }
 
 impl<T> UpDownOrder<T>
-where T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedSub
-    + num_traits::CheckedAdd
+where
+    T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedSub + num_traits::CheckedAdd,
 {
     /// Create a new UpDownOrder with the given up and down values.
     pub fn new(up: T, down: T) -> Self {
-        Self {
-            up, down
-        }
+        Self { up, down }
     }
 
     /// Return a new UpDownOrder with both up and down set to zero.
     pub fn zeroed() -> Self {
-        Self { down: T::zero(), up: T::zero() }
+        Self {
+            down: T::zero(),
+            up: T::zero(),
+        }
     }
 
     /// Check if both up and down are less than the given limit.
@@ -52,7 +53,7 @@ where T: std::cmp::Ord + num_traits::Zero + Copy + num_traits::CheckedSub
     }
 }
 
-impl <T> Into<DownUpOrder<T>> for UpDownOrder<T> {
+impl<T> Into<DownUpOrder<T>> for UpDownOrder<T> {
     fn into(self) -> DownUpOrder<T> {
         DownUpOrder {
             up: self.down,
@@ -75,12 +76,12 @@ mod tests {
     #[test]
     fn test_checked_sub() {
         let a = UpDownOrder::new(1u64, 1);
-        let b= UpDownOrder::new(1, 1);
+        let b = UpDownOrder::new(1, 1);
         let c = a.checked_sub_or_zero(b);
         assert_eq!(c.up, 0);
         assert_eq!(c.down, 0);
 
-        let b= UpDownOrder::new(2, 2);
+        let b = UpDownOrder::new(2, 2);
         let c = a.checked_sub_or_zero(b);
         assert_eq!(c.up, 0);
         assert_eq!(c.down, 0);

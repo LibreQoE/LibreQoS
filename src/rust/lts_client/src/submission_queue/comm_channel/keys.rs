@@ -1,11 +1,17 @@
-use crate::{pki::generate_new_keypair, dryoc::dryocbox::{KeyPair, PublicKey}, transport_data::{exchange_keys_with_license_server, LicenseReply}};
+use crate::{
+    dryoc::dryocbox::{KeyPair, PublicKey},
+    pki::generate_new_keypair,
+    transport_data::{LicenseReply, exchange_keys_with_license_server},
+};
 use lqos_config::load_config;
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
-pub(crate) static KEYPAIR: Lazy<RwLock<KeyPair>> = Lazy::new(|| RwLock::new(generate_new_keypair()));
-pub(crate) static SERVER_PUBLIC_KEY: Lazy<RwLock<Option<PublicKey>>> = Lazy::new(|| RwLock::new(None));
+pub(crate) static KEYPAIR: Lazy<RwLock<KeyPair>> =
+    Lazy::new(|| RwLock::new(generate_new_keypair()));
+pub(crate) static SERVER_PUBLIC_KEY: Lazy<RwLock<Option<PublicKey>>> =
+    Lazy::new(|| RwLock::new(None));
 
 pub(crate) async fn store_server_public_key(key: &PublicKey) {
     *SERVER_PUBLIC_KEY.write().await = Some(key.clone());
@@ -21,7 +27,14 @@ pub(crate) async fn key_exchange() -> bool {
     };
     let license_key = cfg.long_term_stats.license_key.clone().unwrap();
     let keypair = (KEYPAIR.read().await).clone();
-    match exchange_keys_with_license_server(node_id, node_name, license_key, keypair.public_key.clone()).await {
+    match exchange_keys_with_license_server(
+        node_id,
+        node_name,
+        license_key,
+        keypair.public_key.clone(),
+    )
+    .await
+    {
         Ok(LicenseReply::MyPublicKey { public_key }) => {
             store_server_public_key(&public_key).await;
             info!("Received a public key for the server");

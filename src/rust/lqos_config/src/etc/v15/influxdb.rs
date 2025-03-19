@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct InfluxDbConfig {
@@ -16,7 +16,7 @@ impl Default for InfluxDbConfig {
             url: "http://localhost:8086".to_string(),
             bucket: "libreqos".to_string(),
             org: "Your ISP Name".to_string(),
-            token: "".to_string()
+            token: "".to_string(),
         }
     }
 }

@@ -2,7 +2,7 @@
 //!
 //! You can enable them by adding a `[flows]` section to your configuration file.
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct FlowConfig {

@@ -1,12 +1,12 @@
 //! Provides the start of a text-mode support tool for LibreQoS. It will double as
 //! a library (see `lib.rs`) to provide similar functionality from the GUI.
 
-use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
 use clap::{Parser, Subcommand};
 use colored::Colorize;
 use lqos_config::load_config;
-use lqos_support_tool::{gather_all_support_info, run_sanity_checks, SupportDump};
+use lqos_support_tool::{SupportDump, gather_all_support_info, run_sanity_checks};
+use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Parser)]
 #[command(version = "1.0", about = "LibreQoS Support Tool", long_about = None, arg_required_else_help = true)]
@@ -26,7 +26,7 @@ enum Commands {
     /// Summarize the contents of a support dump
     Summarize {
         /// The filename to read
-        filename: String
+        filename: String,
     },
     /// Expand all submitted data from a support dump into a given directory
     Expand {
@@ -34,13 +34,15 @@ enum Commands {
         filename: String,
         /// The target directory
         target: String,
-    }
+    },
 }
 
 fn read_line() -> String {
     use std::io::stdin;
     let mut s = String::new();
-    stdin().read_line(&mut s).expect("Did not enter a correct string");
+    stdin()
+        .read_line(&mut s)
+        .expect("Did not enter a correct string");
     s.trim().to_string()
 }
 
@@ -61,7 +63,9 @@ fn get_lts_key() -> String {
 fn get_name() -> String {
     let mut candidate = String::new();
     while candidate.is_empty() {
-        println!("Please enter your name, email address and Zulip handle in a single line (ENTER when done).");
+        println!(
+            "Please enter your name, email address and Zulip handle in a single line (ENTER when done)."
+        );
         candidate = read_line();
     }
     candidate
@@ -78,7 +82,10 @@ fn gather_dump() {
     let comments = get_comments();
 
     let dump = gather_all_support_info(&name, &comments, &lts_key).unwrap();
-    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
     let filename = format!("/tmp/libreqos_{}.support", timestamp);
     let path = Path::new(&filename);
     std::fs::write(&path, dump.serialize_and_compress().unwrap()).unwrap();
@@ -104,7 +111,12 @@ fn summarize(filename: &str) {
 
             println!("{:40} {:10} : {:40?}", "ENTRY", "SIZE", "FILENAME");
             for entry in decoded.entries.iter() {
-                println!("{:40} {:10} : {:40?}", entry.name, entry.contents.len(), entry.filename);
+                println!(
+                    "{:40} {:10} : {:40?}",
+                    entry.name,
+                    entry.contents.len(),
+                    entry.filename
+                );
             }
         } else {
             println!("Dump did not decode");
@@ -139,21 +151,33 @@ fn expand(filename: &str, target: &str) {
     let bytes = std::fs::read(&in_path).unwrap();
     if let Ok(decoded) = SupportDump::from_bytes(&bytes) {
         // Save the header
-        let header = format!("From: {}\nComment: {}\nLTS Key: {}\n", decoded.sender, decoded.comment, decoded.lts_key);
+        let header = format!(
+            "From: {}\nComment: {}\nLTS Key: {}\n",
+            decoded.sender, decoded.comment, decoded.lts_key
+        );
         let header_path = out_path.join("header.txt");
         std::fs::write(header_path, header.as_bytes()).unwrap();
 
         // Save the sanity check results
         let mut sanity = String::new();
         for check in decoded.sanity_checks.results.iter() {
-            sanity += &format!("{} - Success? {}: {}\n", check.name, check.success, check.comments);
+            sanity += &format!(
+                "{} - Success? {}: {}\n",
+                check.name, check.success, check.comments
+            );
         }
         let sanity_path = out_path.join("sanity_checks.txt");
         std::fs::write(sanity_path, sanity.as_bytes()).unwrap();
 
         // Save the files
         for (idx, dump) in decoded.entries.iter().enumerate() {
-            let trimmed = dump.name.trim().replace(' ', "").to_lowercase().replace('(', "").replace(')', "");
+            let trimmed = dump
+                .name
+                .trim()
+                .replace(' ', "")
+                .to_lowercase()
+                .replace('(', "")
+                .replace(')', "");
             let dump_path = out_path.join(&format!("{idx:0>2}_{}", trimmed));
             std::fs::write(dump_path, dump.contents.as_bytes()).unwrap();
         }
@@ -176,7 +200,7 @@ fn submit() {
 }
 
 fn main() {
-     let cli = Cli::parse();
+    let cli = Cli::parse();
 
     match cli.command {
         Some(Commands::Sanity) => sanity_checks(),

@@ -1,12 +1,12 @@
+mod bridge;
 mod config_sane;
 mod interfaces;
-mod queues;
-mod bridge;
 mod net_json;
+mod queues;
 mod shaped_devices;
 
-use serde::{Deserialize, Serialize};
 use crate::console::{error, success};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct SanityChecks {
@@ -21,7 +21,9 @@ pub struct SanityCheck {
 }
 
 pub fn run_sanity_checks(echo: bool) -> anyhow::Result<SanityChecks> {
-    if echo { println!("Running Sanity Checks"); }
+    if echo {
+        println!("Running Sanity Checks");
+    }
     let mut results = Vec::new();
 
     // Run the checks
@@ -42,15 +44,21 @@ pub fn run_sanity_checks(echo: bool) -> anyhow::Result<SanityChecks> {
     let mut any_errors = false;
     for s in results.iter() {
         if s.success {
-            if echo { success(&format!("{} {}", s.name, s.comments)); }
+            if echo {
+                success(&format!("{} {}", s.name, s.comments));
+            }
         } else {
             error(&format!("{}: {}", s.name, s.comments));
-            if echo { any_errors = true; }
+            if echo {
+                any_errors = true;
+            }
         }
     }
 
     if any_errors {
-        if echo { error("ERRORS FOUND DURING SANITY CHECK"); }
+        if echo {
+            error("ERRORS FOUND DURING SANITY CHECK");
+        }
     }
 
     Ok(SanityChecks { results })

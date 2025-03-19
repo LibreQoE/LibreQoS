@@ -1,4 +1,4 @@
-import {BaseDashlet} from "./base_dashlet";
+import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {QueueStatsTotalGraph} from "../graphs/queue_stats_total_graph";
 import {periodNameToSeconds} from "../helpers/time_periods";
 import {LtsCakeGraph} from "../graphs/lts_cake_stats_graph";

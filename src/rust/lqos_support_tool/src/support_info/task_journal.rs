@@ -1,6 +1,6 @@
-use std::process::Command;
 use crate::console::success;
 use crate::support_info::SupportInfo;
+use std::process::Command;
 
 #[derive(Default)]
 pub struct TaskJournal {

@@ -1,17 +1,15 @@
-use std::sync::Arc;
-use axum::{Extension, Json};
-use axum::http::StatusCode;
-use lqos_config::{Config, ConfigShapedDevices, ShapedDevice};
 use crate::node_manager::auth::LoginResult;
-use default_net::get_interfaces;
-use serde::Deserialize;
-use serde_json::Value;
-use lqos_bus::{bus_request, BusRequest};
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
+use axum::http::StatusCode;
+use axum::{Extension, Json};
+use default_net::get_interfaces;
+use lqos_bus::{BusRequest, bus_request};
+use lqos_config::{Config, ConfigShapedDevices, ShapedDevice, WebUser, WebUsers};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::sync::Arc;
 
-pub async fn admin_check(
-    Extension(login): Extension<LoginResult>
-) -> Json<bool> {
+pub async fn admin_check(Extension(login): Extension<LoginResult>) -> Json<bool> {
     match login {
         LoginResult::Admin => Json(true),
         _ => Json(false),
@@ -19,7 +17,7 @@ pub async fn admin_check(
 }
 
 pub async fn get_config(
-    Extension(login): Extension<LoginResult>
+    Extension(login): Extension<LoginResult>,
 ) -> Result<Json<Config>, StatusCode> {
     if login != LoginResult::Admin {
         return Err(StatusCode::FORBIDDEN);
@@ -29,7 +27,7 @@ pub async fn get_config(
 }
 
 pub async fn list_nics(
-    Extension(login): Extension<LoginResult>
+    Extension(login): Extension<LoginResult>,
 ) -> Result<Json<Vec<(String, String, String)>>, StatusCode> {
     if login != LoginResult::Admin {
         return Err(StatusCode::FORBIDDEN);
@@ -48,7 +46,7 @@ pub async fn list_nics(
     Ok(Json(result))
 }
 
-pub async fn network_json()-> Json<Value> {
+pub async fn network_json() -> Json<Value> {
     if let Ok(config) = lqos_config::load_config() {
         let path = std::path::Path::new(&config.lqos_directory).join("network.json");
         if path.exists() {
@@ -67,7 +65,7 @@ pub async fn all_shaped_devices() -> Json<Vec<ShapedDevice>> {
 
 pub async fn update_lqosd_config(
     Extension(login): Extension<LoginResult>,
-    data: Json<Config>
+    data: Json<Config>,
 ) -> String {
     if login != LoginResult::Admin {
         return "Unauthorized".to_string();
@@ -87,7 +85,7 @@ pub struct NetworkAndDevices {
 
 pub async fn update_network_and_devices(
     Extension(login): Extension<LoginResult>,
-    data: Json<NetworkAndDevices>
+    data: Json<NetworkAndDevices>,
 ) -> String {
     if login != LoginResult::Admin {
         return "Unauthorized".to_string();
@@ -98,7 +96,8 @@ pub async fn update_network_and_devices(
     // Save network.json
     let serialized_string = serde_json::to_string_pretty(&data.network_json).unwrap();
     let net_json_path = std::path::Path::new(&config.lqos_directory).join("network.json");
-    let net_json_backup_path = std::path::Path::new(&config.lqos_directory).join("network.json.backup");
+    let net_json_backup_path =
+        std::path::Path::new(&config.lqos_directory).join("network.json.backup");
     if net_json_path.exists() {
         // Make a backup
         std::fs::copy(&net_json_path, net_json_backup_path).unwrap();
@@ -107,14 +106,84 @@ pub async fn update_network_and_devices(
 
     // Save the Shaped Devices
     let sd_path = std::path::Path::new(&config.lqos_directory).join("ShapedDevices.csv");
-    let sd_backup_path = std::path::Path::new(&config.lqos_directory).join("ShapedDevices.csv.backup");
+    let sd_backup_path =
+        std::path::Path::new(&config.lqos_directory).join("ShapedDevices.csv.backup");
     if sd_path.exists() {
         std::fs::copy(&sd_path, sd_backup_path).unwrap();
     }
     let mut copied = ConfigShapedDevices::default();
     copied.replace_with_new_data(data.shaped_devices.clone());
-    copied.write_csv(&format!("{}/ShapedDevices.csv", config.lqos_directory)).unwrap();
+    copied
+        .write_csv(&format!("{}/ShapedDevices.csv", config.lqos_directory))
+        .unwrap();
     SHAPED_DEVICES.store(Arc::new(copied));
 
     "Ok".to_string()
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct UserRequest {
+    pub username: String,
+    pub password: String,
+    pub role: String,
+}
+
+pub async fn get_users(
+    Extension(login): Extension<LoginResult>,
+) -> Result<Json<Vec<WebUser>>, StatusCode> {
+    if login != LoginResult::Admin {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let users = WebUsers::load_or_create().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(users.get_users()))
+}
+
+pub async fn add_user(
+    Extension(login): Extension<LoginResult>,
+    Json(data): Json<UserRequest>,
+) -> Result<String, StatusCode> {
+    if login != LoginResult::Admin {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    if data.username.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let mut users = WebUsers::load_or_create().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    users
+        .add_or_update_user(&data.username.trim(), &data.password, data.role.into())
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(format!("User '{}' added", data.username))
+}
+
+pub async fn update_user(
+    Extension(login): Extension<LoginResult>,
+    Json(data): Json<UserRequest>,
+) -> Result<String, StatusCode> {
+    if login != LoginResult::Admin {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let mut users = WebUsers::load_or_create().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    users
+        .add_or_update_user(&data.username, &data.password, data.role.into())
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok("User updated".to_string())
+}
+
+#[derive(Deserialize)]
+pub struct DeleteUserRequest {
+    pub username: String,
+}
+
+pub async fn delete_user(
+    Extension(login): Extension<LoginResult>,
+    Json(data): Json<DeleteUserRequest>,
+) -> Result<String, StatusCode> {
+    if login != LoginResult::Admin {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let mut users = WebUsers::load_or_create().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    users
+        .remove_user(&data.username)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok("User deleted".to_string())
 }

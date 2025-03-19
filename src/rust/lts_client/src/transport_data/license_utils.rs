@@ -1,17 +1,20 @@
 //! Functions for talking to the license server
-//! 
+//!
 //! License requests use the following format:
 //! `u16` containing the version number (currently 1), in big-endian (network order)
 //! `u64` containing the size of the payload, in big-endian (network order)
 //! `payload` containing the actual payload. The payload is a CBOR-encoded.
-//! 
+//!
 //! License requests are not expected to be frequent, and the connection is
 //! not reused. We use a simple framing protocol, and terminate the connection
 //! after use.
 
-use super::{LicenseCheckError, LicenseRequest, LicenseReply, LICENSE_SERVER};
+use super::{LICENSE_SERVER, LicenseCheckError, LicenseReply, LicenseRequest};
 use dryoc::dryocbox::PublicKey;
-use tokio::{net::TcpStream, io::{AsyncReadExt, AsyncWriteExt}};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+};
 use tracing::{error, warn};
 
 fn build_license_request(key: String) -> Result<Vec<u8>, LicenseCheckError> {
@@ -36,7 +39,7 @@ fn build_license_request(key: String) -> Result<Vec<u8>, LicenseCheckError> {
 
 fn build_activation_query(node_id: String) -> Result<Vec<u8>, LicenseCheckError> {
     let mut result = Vec::new();
-    let payload = serde_cbor::to_vec(&LicenseRequest::PendingLicenseRequest { node_id } );
+    let payload = serde_cbor::to_vec(&LicenseRequest::PendingLicenseRequest { node_id });
     if let Err(e) = payload {
         warn!("Unable to serialize license request. Not sending them.");
         warn!("{e:?}");
@@ -84,7 +87,6 @@ fn build_key_exchange_request(
     Ok(result)
 }
 
-
 /// Ask the license server if the license is valid
 ///
 /// # Arguments
@@ -95,7 +97,9 @@ pub async fn ask_license_server(key: String) -> Result<LicenseReply, LicenseChec
         let stream = TcpStream::connect(LICENSE_SERVER).await;
         if let Err(e) = &stream {
             if e.kind() == std::io::ErrorKind::NotFound {
-                error!("Unable to access {LICENSE_SERVER}. Check that lqosd is running and you have appropriate permissions.");
+                error!(
+                    "Unable to access {LICENSE_SERVER}. Check that lqosd is running and you have appropriate permissions."
+                );
                 return Err(LicenseCheckError::SendFail);
             }
         }
@@ -130,13 +134,14 @@ pub async fn ask_license_server(key: String) -> Result<LicenseReply, LicenseChec
 
 pub async fn ask_license_server_for_new_account(
     node_id: String,
-) -> Result<LicenseReply, LicenseCheckError>
-{
+) -> Result<LicenseReply, LicenseCheckError> {
     if let Ok(buffer) = build_activation_query(node_id) {
         let stream = TcpStream::connect(LICENSE_SERVER).await;
         if let Err(e) = &stream {
             if e.kind() == std::io::ErrorKind::NotFound {
-                error!("Unable to access {LICENSE_SERVER}. Check that lqosd is running and you have appropriate permissions.");
+                error!(
+                    "Unable to access {LICENSE_SERVER}. Check that lqosd is running and you have appropriate permissions."
+                );
                 return Err(LicenseCheckError::SendFail);
             }
         }
@@ -180,7 +185,9 @@ pub async fn exchange_keys_with_license_server(
         let stream = TcpStream::connect(LICENSE_SERVER).await;
         if let Err(e) = &stream {
             if e.kind() == std::io::ErrorKind::NotFound {
-                error!("Unable to access {LICENSE_SERVER}. Check that lqosd is running and you have appropriate permissions.");
+                error!(
+                    "Unable to access {LICENSE_SERVER}. Check that lqosd is running and you have appropriate permissions."
+                );
                 return Err(LicenseCheckError::SendFail);
             }
         }

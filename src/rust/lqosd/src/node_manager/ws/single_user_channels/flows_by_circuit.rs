@@ -1,22 +1,27 @@
+use crate::shaped_devices_tracker::SHAPED_DEVICES;
+use crate::throughput_tracker::flow_data::{
+    ALL_FLOWS, FlowAnalysis, FlowbeeLocalData, get_asn_name_and_country,
+};
+use lqos_utils::unix_time::time_since_boot;
+use serde::Serialize;
 use std::net::IpAddr;
 use std::time::Duration;
-use serde::Serialize;
 use tokio::time::MissedTickBehavior;
 use tracing::debug;
-use lqos_utils::unix_time::time_since_boot;
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
-use crate::throughput_tracker::flow_data::{ALL_FLOWS, FlowAnalysis, FlowbeeLocalData, get_asn_name_and_country};
 
 const FIVE_MINUTES_AS_NANOS: u64 = 300 * 1_000_000_000;
 
-fn recent_flows_by_circuit(circuit_id: &str) -> Vec<(FlowbeeKeyTransit, FlowbeeLocalData, FlowAnalysis)> {
+fn recent_flows_by_circuit(
+    circuit_id: &str,
+) -> Vec<(FlowbeeKeyTransit, FlowbeeLocalData, FlowAnalysis)> {
     let device_reader = SHAPED_DEVICES.load();
     if let Ok(now) = time_since_boot() {
         let now_as_nanos = Duration::from(now).as_nanos() as u64;
         let five_minutes_ago = now_as_nanos - FIVE_MINUTES_AS_NANOS;
 
         if let Ok(all_flows) = ALL_FLOWS.lock() {
-            let result: Vec<(FlowbeeKeyTransit, FlowbeeLocalData, FlowAnalysis)> = all_flows.flow_data
+            let result: Vec<(FlowbeeKeyTransit, FlowbeeLocalData, FlowAnalysis)> = all_flows
+                .flow_data
                 .iter()
                 .filter_map(|(key, (local, analysis))| {
                     // Don't show older flows
@@ -64,18 +69,22 @@ fn recent_flows_by_circuit(circuit_id: &str) -> Vec<(FlowbeeKeyTransit, FlowbeeL
                         return None;
                     }
 
-                    Some((FlowbeeKeyTransit {
-                        remote_ip: remote_ip_str,
-                        local_ip: local_ip_str,
-                        src_port: key.src_port,
-                        dst_port: key.dst_port,
-                        ip_protocol: key.ip_protocol,
-                        device_name,
-                        asn_name,
-                        asn_country,
-                        protocol_name: analysis.protocol_analysis.to_string(),
-                        last_seen_nanos: now_as_nanos.saturating_sub(local.last_seen),
-                    }, local.clone(), analysis.clone()))
+                    Some((
+                        FlowbeeKeyTransit {
+                            remote_ip: remote_ip_str,
+                            local_ip: local_ip_str,
+                            src_port: key.src_port,
+                            dst_port: key.dst_port,
+                            ip_protocol: key.ip_protocol,
+                            device_name,
+                            asn_name,
+                            asn_country,
+                            protocol_name: analysis.protocol_analysis.to_string(),
+                            last_seen_nanos: now_as_nanos.saturating_sub(local.last_seen),
+                        },
+                        local.clone(),
+                        analysis.clone(),
+                    ))
                 })
                 .collect();
             return result;
@@ -118,12 +127,11 @@ pub(super) async fn flows_by_circuit(circuit: String, tx: tokio::sync::mpsc::Sen
     let mut ticker = tokio::time::interval(Duration::from_secs(1));
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
     loop {
-        let flows: Vec<(FlowbeeKeyTransit, FlowbeeLocalData, FlowAnalysis)> = recent_flows_by_circuit(&circuit)
-            .into_iter()
-            .map(|(key, local, analysis)| {
-                (key.into(), local, analysis)
-            })
-            .collect();
+        let flows: Vec<(FlowbeeKeyTransit, FlowbeeLocalData, FlowAnalysis)> =
+            recent_flows_by_circuit(&circuit)
+                .into_iter()
+                .map(|(key, local, analysis)| (key.into(), local, analysis))
+                .collect();
 
         if !flows.is_empty() {
             let result = FlowData {

@@ -1,13 +1,13 @@
-use std::process::Command;
-use lqos_config::load_config;
 use crate::sanity_checks::SanityCheck;
+use lqos_config::load_config;
+use std::process::Command;
 
 pub fn check_bridge(results: &mut Vec<SanityCheck>) {
     if let Ok(cfg) = load_config() {
         if let Ok(interfaces) = get_interfaces_from_ip_link() {
             // On a stick mode is bridge-free
             if cfg.on_a_stick_mode() {
-                results.push(SanityCheck{
+                results.push(SanityCheck {
                     name: format!("Single Interface Mode: Bridges Ignored"),
                     success: true,
                     comments: "".to_string(),
@@ -18,10 +18,9 @@ pub fn check_bridge(results: &mut Vec<SanityCheck>) {
             // Is the XDP bridge enabled?
             if let Some(bridge) = &cfg.bridge {
                 if bridge.use_xdp_bridge {
-                    for bridge_if in interfaces
-                        .iter()
-                        .filter(|bridge_if| bridge_if.link_type == "ether" && bridge_if.operational_state == "UP")
-                    {
+                    for bridge_if in interfaces.iter().filter(|bridge_if| {
+                        bridge_if.link_type == "ether" && bridge_if.operational_state == "UP"
+                    }) {
                         // We found a bridge. Check member interfaces to check that it does NOT include any XDP
                         // bridge members.
                         let in_bridge: Vec<&IpLinkInterface> = interfaces
@@ -33,7 +32,10 @@ pub fn check_bridge(results: &mut Vec<SanityCheck>) {
                                     false
                                 }
                             })
-                            .filter(|member_if| member_if.name == cfg.internet_interface() || member_if.name == cfg.isp_interface())
+                            .filter(|member_if| {
+                                member_if.name == cfg.internet_interface()
+                                    || member_if.name == cfg.isp_interface()
+                            })
                             .collect();
 
                         if in_bridge.len() == 2 {
@@ -43,7 +45,7 @@ pub fn check_bridge(results: &mut Vec<SanityCheck>) {
                                 comments: format!("Bridge ({}) contains both the internet and ISP interfaces, and you have the xdp_bridge enabled. This is not supported.", bridge_if.name),
                             });
                         } else {
-                            results.push(SanityCheck{
+                            results.push(SanityCheck {
                                 name: format!("Bridge Membership Check ({})", bridge_if.name),
                                 success: true,
                                 comments: "".to_string(),
@@ -61,23 +63,32 @@ pub fn check_interface_status(results: &mut Vec<SanityCheck>) {
         if let Ok(interfaces) = get_interfaces_from_ip_link() {
             if let Some(stick) = &cfg.single_interface {
                 if let Some(iface) = interfaces.iter().find(|i| i.name == stick.interface) {
-                    results.push(SanityCheck{
-                        name: format!("Interface {} in state {}", iface.name, iface.operational_state),
+                    results.push(SanityCheck {
+                        name: format!(
+                            "Interface {} in state {}",
+                            iface.name, iface.operational_state
+                        ),
                         success: true,
                         comments: "".to_string(),
                     });
                 }
             } else if let Some(bridge) = &cfg.bridge {
                 if let Some(iface) = interfaces.iter().find(|i| i.name == bridge.to_internet) {
-                    results.push(SanityCheck{
-                        name: format!("Interface {} in state {}", iface.name, iface.operational_state),
+                    results.push(SanityCheck {
+                        name: format!(
+                            "Interface {} in state {}",
+                            iface.name, iface.operational_state
+                        ),
                         success: true,
                         comments: "".to_string(),
                     });
                 }
                 if let Some(iface) = interfaces.iter().find(|i| i.name == bridge.to_network) {
-                    results.push(SanityCheck{
-                        name: format!("Interface {} in state {}", iface.name, iface.operational_state),
+                    results.push(SanityCheck {
+                        name: format!(
+                            "Interface {} in state {}",
+                            iface.name, iface.operational_state
+                        ),
                         success: true,
                         comments: "".to_string(),
                     });
@@ -96,9 +107,7 @@ struct IpLinkInterface {
 }
 
 fn get_interfaces_from_ip_link() -> anyhow::Result<Vec<IpLinkInterface>> {
-    let output = Command::new("/sbin/ip")
-        .args(["-j", "link"])
-        .output()?;
+    let output = Command::new("/sbin/ip").args(["-j", "link"]).output()?;
     let output = String::from_utf8(output.stdout)?;
     let output_json = serde_json::from_str::<serde_json::Value>(&output)?;
 

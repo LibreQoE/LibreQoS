@@ -1,18 +1,21 @@
+use self::protocol::to_netflow_9;
+use super::{FlowAnalysis, FlowbeeLocalData};
 use crate::throughput_tracker::flow_data::netflow9::protocol::{
     header::Netflow9Header, template_ipv4::template_data_ipv4, template_ipv6::template_data_ipv6,
 };
+use crossbeam_channel::Sender;
 use lqos_sys::flowbee_data::FlowbeeKey;
 use std::{net::UdpSocket, sync::atomic::AtomicU32};
-use crossbeam_channel::Sender;
-use self::protocol::to_netflow_9;
-use super::{FlowAnalysis, FlowbeeLocalData};
 mod protocol;
 
 pub(crate) struct Netflow9 {}
 
 impl Netflow9 {
-    pub(crate) fn new(target: String) -> anyhow::Result<Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>> {
-        let (tx, rx) = crossbeam_channel::bounded::<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>(65535);
+    pub(crate) fn new(
+        target: String,
+    ) -> anyhow::Result<Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>> {
+        let (tx, rx) =
+            crossbeam_channel::bounded::<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>(65535);
         let socket = UdpSocket::bind("0.0.0.0:12212")?;
 
         std::thread::Builder::new()
@@ -37,7 +40,7 @@ impl Netflow9 {
                         accumulator.clear();
                         last_sent = std::time::Instant::now();
                     }
-                };
+                }
             })?;
 
         Ok(tx)
@@ -52,10 +55,17 @@ impl Netflow9 {
         let num_records = (accumulator.len() * 2) as u16 + 2; // +2 to include templates
         let sequence_num = sequence.load(std::sync::atomic::Ordering::Relaxed);
         let header = Netflow9Header::new(sequence_num, num_records);
-        let header_bytes = unsafe { std::slice::from_raw_parts(&header as *const _ as *const u8, std::mem::size_of::<Netflow9Header>()) };
+        let header_bytes = unsafe {
+            std::slice::from_raw_parts(
+                &header as *const _ as *const u8,
+                std::mem::size_of::<Netflow9Header>(),
+            )
+        };
         let template1 = template_data_ipv4();
         let template2 = template_data_ipv6();
-        let mut buffer = Vec::with_capacity(header_bytes.len() + template1.len() + template2.len() + (num_records as usize * 140));
+        let mut buffer = Vec::with_capacity(
+            header_bytes.len() + template1.len() + template2.len() + (num_records as usize * 140),
+        );
         buffer.extend_from_slice(header_bytes);
         buffer.extend_from_slice(&template1);
         buffer.extend_from_slice(&template2);

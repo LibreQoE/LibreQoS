@@ -1,7 +1,11 @@
+import {createBootstrapToast} from "../lq_js_common/helpers/toasts";
+
 export function globalWarningToasts() {
     $.get("/local-api/globalWarnings", (warnings) => {
         let parent = document.getElementById("toasts");
+        let i = 0;
         warnings.forEach(warning => {
+            console.log(warning);
             let div = document.createElement("div");
             div.classList.add("alert");
             let message = warning[1];
@@ -24,7 +28,13 @@ export function globalWarningToasts() {
                 } break;
             }
             div.innerHTML = badge + " " + message;
-            parent.appendChild(div);
+            //parent.appendChild(div);
+            let headerSpan = document.createElement("span");
+            headerSpan.innerHTML = badge + " " + warning[0];
+            let bodyDiv = document.createElement("div");
+            bodyDiv.innerHTML = message;
+            createBootstrapToast("global-warning-" + i, headerSpan, bodyDiv);
+            i++;
         });
     })
 }

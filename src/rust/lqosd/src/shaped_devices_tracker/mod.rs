@@ -1,19 +1,19 @@
-use std::net::IpAddr;
 use anyhow::Result;
-use tracing::{debug, error, info, warn};
+use arc_swap::ArcSwap;
 use lqos_bus::{BusResponse, Circuit};
 use lqos_config::{ConfigShapedDevices, NetworkJsonTransport};
 use lqos_utils::file_watcher::FileWatcher;
-use once_cell::sync::Lazy;
-use std::sync::{atomic::AtomicBool, Arc};
-use std::time::Duration;
-use arc_swap::ArcSwap;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::time_since_boot;
+use once_cell::sync::Lazy;
+use std::net::IpAddr;
+use std::sync::{Arc, atomic::AtomicBool};
+use std::time::Duration;
+use tracing::{debug, error, info, warn};
 
 mod netjson;
-pub use netjson::*;
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
+pub use netjson::*;
 
 pub static SHAPED_DEVICES: Lazy<ArcSwap<ConfigShapedDevices>> =
     Lazy::new(|| ArcSwap::new(Arc::new(ConfigShapedDevices::default())));
@@ -29,7 +29,9 @@ fn load_shaped_devices() {
         crate::throughput_tracker::THROUGHPUT_TRACKER.refresh_circuit_ids(&nj);
         STATS_NEEDS_NEW_SHAPED_DEVICES.store(true, std::sync::atomic::Ordering::Relaxed);
     } else {
-        warn!("ShapedDevices.csv failed to load, see previous error messages. Reverting to empty set.");
+        warn!(
+            "ShapedDevices.csv failed to load, see previous error messages. Reverting to empty set."
+        );
         SHAPED_DEVICES.store(Arc::new(ConfigShapedDevices::default()));
     }
 }
@@ -37,12 +39,12 @@ fn load_shaped_devices() {
 pub fn shaped_devices_watcher() -> Result<()> {
     std::thread::Builder::new()
         .name("ShapedDevices Watcher".to_string())
-    .spawn(|| {
-        debug!("Watching for ShapedDevices.csv changes");
-        if let Err(e) = watch_for_shaped_devices_changing() {
-            error!("Error watching for ShapedDevices.csv: {:?}", e);
-        }
-    })?;
+        .spawn(|| {
+            debug!("Watching for ShapedDevices.csv changes");
+            if let Err(e) = watch_for_shaped_devices_changing() {
+                error!("Error watching for ShapedDevices.csv: {:?}", e);
+            }
+        })?;
     Ok(())
 }
 
@@ -81,14 +83,16 @@ pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
 
 pub fn get_full_network_map() -> BusResponse {
     let data = {
-            NETWORK_JSON.read().unwrap()
-                .get_nodes_when_ready()
-                .iter()
-                .enumerate()
-                .map(|(i, n)| (i, n.clone_to_transit()))
-                .collect::<Vec<(usize, NetworkJsonTransport)>>()
+        NETWORK_JSON
+            .read()
+            .unwrap()
+            .get_nodes_when_ready()
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (i, n.clone_to_transit()))
+            .collect::<Vec<(usize, NetworkJsonTransport)>>()
     };
-    
+
     BusResponse::NetworkMap(data)
 }
 
@@ -176,7 +180,12 @@ pub fn get_funnel(circuit_id: &str) -> BusResponse {
     if let Some(index) = reader.get_index_for_name(circuit_id) {
         // Reverse the scanning order and skip the last entry (the parent)
         let mut result = Vec::new();
-        for idx in reader.get_nodes_when_ready()[index].parents.iter().rev().skip(1) {
+        for idx in reader.get_nodes_when_ready()[index]
+            .parents
+            .iter()
+            .rev()
+            .skip(1)
+        {
             result.push((*idx, reader.get_nodes_when_ready()[*idx].clone_to_transit()));
         }
         return BusResponse::NetworkMap(result);
@@ -188,10 +197,12 @@ pub fn get_funnel(circuit_id: &str) -> BusResponse {
 pub fn get_all_circuits() -> BusResponse {
     if let Ok(kernel_now) = time_since_boot() {
         let devices = SHAPED_DEVICES.load();
-            let data = THROUGHPUT_TRACKER.
-            raw_data.lock().unwrap()
+        let data = THROUGHPUT_TRACKER
+            .raw_data
+            .lock()
+            .unwrap()
             .iter()
-            .map(|(k,v)| {
+            .map(|(k, v)| {
                 let ip = k.as_ip();
                 let last_seen_nanos = if v.last_seen > 0 {
                     let last_seen_nanos = v.last_seen as u128;
@@ -228,6 +239,7 @@ pub fn get_all_circuits() -> BusResponse {
                     bytes_per_second: v.bytes_per_second,
                     median_latency: v.median_latency(),
                     tcp_retransmits: v.tcp_retransmits,
+                    tcp_packets: v.tcp_packets.checked_sub_or_zero(v.prev_tcp_packets),
                     circuit_id,
                     device_id,
                     circuit_name,
@@ -236,7 +248,8 @@ pub fn get_all_circuits() -> BusResponse {
                     plan,
                     last_seen_nanos,
                 }
-            }).collect();
+            })
+            .collect();
         BusResponse::CircuitData(data)
     } else {
         BusResponse::CircuitData(Vec::new())

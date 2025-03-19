@@ -1,11 +1,14 @@
 mod lshw;
 mod version;
-use std::{time::Duration, net::TcpStream, io::Write};
+use crate::{
+    shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES},
+    stats::HIGH_WATERMARK,
+};
 use lqos_bus::anonymous::{AnonymousUsageV1, build_stats};
 use lqos_sys::num_possible_cpus;
+use std::{io::Write, net::TcpStream, time::Duration};
 use sysinfo::System;
 use tracing::{debug, warn};
-use crate::{shaped_devices_tracker::{SHAPED_DEVICES, NETWORK_JSON}, stats::HIGH_WATERMARK};
 
 const SLOW_START_SECS: u64 = 1;
 const INTERVAL_SECS: u64 = 60 * 60 * 24;
@@ -15,13 +18,13 @@ pub fn start_anonymous_usage() {
         if cfg.usage_stats.send_anonymous {
             let _ = std::thread::Builder::new()
                 .name("Anonymous Usage Collector".to_string())
-            .spawn(|| {
-                std::thread::sleep(Duration::from_secs(SLOW_START_SECS));
-                loop {
-                    let _ = anonymous_usage_dump();
-                    std::thread::sleep(Duration::from_secs(INTERVAL_SECS));
-                }
-            });
+                .spawn(|| {
+                    std::thread::sleep(Duration::from_secs(SLOW_START_SECS));
+                    loop {
+                        let _ = anonymous_usage_dump();
+                        std::thread::sleep(Duration::from_secs(INTERVAL_SECS));
+                    }
+                });
         }
     }
 }
@@ -56,12 +59,12 @@ fn anonymous_usage_dump() -> anyhow::Result<()> {
         data.sqm = cfg.queues.default_sqm.clone();
         data.monitor_mode = cfg.queues.monitor_only;
         data.total_capacity = (
-            cfg.queues.downlink_bandwidth_mbps,
-            cfg.queues.uplink_bandwidth_mbps,
+            cfg.queues.downlink_bandwidth_mbps as u32,
+            cfg.queues.uplink_bandwidth_mbps as u32,
         );
         data.generated_pdn_capacity = (
-            cfg.queues.generated_pn_download_mbps,
-            cfg.queues.generated_pn_upload_mbps,
+            cfg.queues.generated_pn_download_mbps as u32,
+            cfg.queues.generated_pn_upload_mbps as u32,
         );
         data.on_a_stick = cfg.on_a_stick_mode();
 
@@ -76,11 +79,7 @@ fn anonymous_usage_dump() -> anyhow::Result<()> {
     data.shaped_device_count = SHAPED_DEVICES.load().devices.len();
     data.net_json_len = NETWORK_JSON.read().unwrap().get_nodes_when_ready().len();
 
-    data.high_watermark_bps = (
-        HIGH_WATERMARK.get_down(),
-        HIGH_WATERMARK.get_up(),
-    );
-
+    data.high_watermark_bps = (HIGH_WATERMARK.get_down(), HIGH_WATERMARK.get_up());
 
     send_stats(data, &server);
     Ok(())

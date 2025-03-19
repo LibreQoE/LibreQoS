@@ -1,9 +1,9 @@
 //! Definitions for the actual netflow 5 protocol
 
-use std::net::IpAddr;
 use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::unix_time::{time_since_boot, unix_now};
 use nix::sys::time::TimeValLike;
+use std::net::IpAddr;
 
 use crate::throughput_tracker::flow_data::FlowbeeLocalData;
 
@@ -67,7 +67,10 @@ pub(crate) struct Netflow5Record {
 }
 
 /// Convert a Flowbee key and data to a pair of Netflow 5 records
-pub(crate) fn to_netflow_5(key: &FlowbeeKey, data: &FlowbeeLocalData) -> anyhow::Result<(Netflow5Record, Netflow5Record)> {
+pub(crate) fn to_netflow_5(
+    key: &FlowbeeKey,
+    data: &FlowbeeLocalData,
+) -> anyhow::Result<(Netflow5Record, Netflow5Record)> {
     // TODO: Detect overflow
     let local = key.local_ip.as_ip();
     let remote = key.remote_ip.as_ip();
@@ -88,8 +91,8 @@ pub(crate) fn to_netflow_5(key: &FlowbeeKey, data: &FlowbeeLocalData) -> anyhow:
             output: (1u16).to_be(),
             d_pkts,
             d_octets,
-            first: ((data.start_time  / 1_000_000) as u32).to_be(), // Convert to milliseconds
-            last: ((data.last_seen / 1_000_000) as u32).to_be(), // Convert to milliseconds
+            first: ((data.start_time / 1_000_000) as u32).to_be(), // Convert to milliseconds
+            last: ((data.last_seen / 1_000_000) as u32).to_be(),   // Convert to milliseconds
             src_port: key.src_port.to_be(),
             dst_port: key.dst_port.to_be(),
             pad1: 0,
@@ -112,7 +115,7 @@ pub(crate) fn to_netflow_5(key: &FlowbeeKey, data: &FlowbeeLocalData) -> anyhow:
             d_pkts: d_pkts2,
             d_octets: d_octets2,
             first: data.start_time as u32, // Convert to milliseconds
-            last: data.last_seen as u32, // Convert to milliseconds
+            last: data.last_seen as u32,   // Convert to milliseconds
             src_port: key.dst_port.to_be(),
             dst_port: key.src_port.to_be(),
             pad1: 0,

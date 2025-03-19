@@ -1,19 +1,19 @@
 //! Most of this functionality is now in the` lts_stats` crate.
 use crate::shaped_devices_tracker::NETWORK_JSON;
 use lqos_bus::BusResponse;
-use lts_client::{
-    collector::NetworkTreeEntry, submission_queue::get_current_stats
-};
+use lts_client::{collector::NetworkTreeEntry, submission_queue::get_current_stats};
 
 pub(crate) fn get_network_tree() -> Vec<(usize, NetworkTreeEntry)> {
-        let result = NETWORK_JSON.read().unwrap()
-            .get_nodes_when_ready()
-            .iter()
-            .enumerate()
-            .map(|(idx, n)| (idx, n.into()))
-            .collect::<Vec<(usize, NetworkTreeEntry)>>();
-        //println!("{result:#?}");
-        result
+    let result = NETWORK_JSON
+        .read()
+        .unwrap()
+        .get_nodes_when_ready()
+        .iter()
+        .enumerate()
+        .map(|(idx, n)| (idx, n.into()))
+        .collect::<Vec<(usize, NetworkTreeEntry)>>();
+    //println!("{result:#?}");
+    result
 }
 
 pub fn get_stats_totals() -> BusResponse {

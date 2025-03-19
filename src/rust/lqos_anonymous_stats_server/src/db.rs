@@ -1,10 +1,9 @@
-use std::{path::Path, sync::atomic::AtomicI64, time::SystemTime};
 use lqos_bus::anonymous::AnonymousUsageV1;
-use sqlite::{Value, State};
+use sqlite::{State, Value};
+use std::{path::Path, sync::atomic::AtomicI64, time::SystemTime};
 const DBPATH: &str = "anonymous.sqlite";
 
-const SETUP_QUERY: &str = 
-"CREATE TABLE nodes (
+const SETUP_QUERY: &str = "CREATE TABLE nodes (
     node_id TEXT PRIMARY KEY,
     last_seen INTEGER NOT NULL
 );
@@ -78,20 +77,20 @@ pub fn check_id() {
                     if let Some(val) = value {
                         if let Ok(n) = val.parse::<i64>() {
                             log::info!("Last id: {n}");
-                            SUBMISSION_ID.store(n+1, std::sync::atomic::Ordering::Relaxed);
+                            SUBMISSION_ID.store(n + 1, std::sync::atomic::Ordering::Relaxed);
                         }
                     }
                 }
             }
             true
-        }).unwrap();
+        })
+        .unwrap();
     } else {
         panic!("Unable to connect to database");
     }
 }
 
-const INSERT_STATS: &str =
-"INSERT INTO submissions VALUES (
+const INSERT_STATS: &str = "INSERT INTO submissions VALUES (
     :id, :date, :node_id, :ip_address, :git_hash, :using_xdp_bridge, :on_a_stick,
     :total_memory, :available_memory, :kernel_version, :distro, :usable_cores,
     :cpu_brand, :cpu_vendor, :cpu_frequency, :sqm, :monitor_mode, :capcity_down,
@@ -99,19 +98,14 @@ const INSERT_STATS: &str =
     :net_json_len, :peak_down, :peak_up
 );";
 
-const INSERT_NIC: &str =
-"INSERT INTO nics 
+const INSERT_NIC: &str = "INSERT INTO nics 
 (parent, description, product, vendor, clock, capacity)
 VALUES (
     :parent, :description, :product, :vendor, :clock, :capacity
 );";
 
 fn bool_to_n(x: bool) -> i64 {
-    if x {
-        1
-    } else {
-        0
-    }
+    if x { 1 } else { 0 }
 }
 
 fn get_sys_time_in_secs() -> u64 {
@@ -132,7 +126,10 @@ pub fn insert_stats_dump(stats: &AnonymousUsageV1, ip: &str) -> anyhow::Result<(
         (":node_id", stats.node_id.clone().into()),
         (":ip_address", ip.into()),
         (":git_hash", stats.git_hash.clone().into()),
-        (":using_xdp_bridge", bool_to_n(stats.using_xdp_bridge).into()),
+        (
+            ":using_xdp_bridge",
+            bool_to_n(stats.using_xdp_bridge).into(),
+        ),
         (":on_a_stick", bool_to_n(stats.on_a_stick).into()),
         (":total_memory", (stats.total_memory as i64).into()),
         (":available_memory", (stats.available_memory as i64).into()),
@@ -146,9 +143,18 @@ pub fn insert_stats_dump(stats: &AnonymousUsageV1, ip: &str) -> anyhow::Result<(
         (":monitor_mode", bool_to_n(stats.monitor_mode).into()),
         (":capcity_down", (stats.total_capacity.0 as i64).into()),
         (":capacity_up", (stats.total_capacity.1 as i64).into()),
-        (":genereated_pdn_down", (stats.generated_pdn_capacity.0 as i64).into()),
-        (":generated_pdn_up", (stats.generated_pdn_capacity.1 as i64).into()),
-        (":shaped_device_count", (stats.shaped_device_count as i64).into()),
+        (
+            ":genereated_pdn_down",
+            (stats.generated_pdn_capacity.0 as i64).into(),
+        ),
+        (
+            ":generated_pdn_up",
+            (stats.generated_pdn_capacity.1 as i64).into(),
+        ),
+        (
+            ":shaped_device_count",
+            (stats.shaped_device_count as i64).into(),
+        ),
         (":net_json_len", (stats.net_json_len as i64).into()),
         (":peak_down", (stats.high_watermark_bps.0 as i64).into()),
         (":peak_up", (stats.high_watermark_bps.0 as i64).into()),
@@ -171,9 +177,7 @@ pub fn insert_stats_dump(stats: &AnonymousUsageV1, ip: &str) -> anyhow::Result<(
     // Find out if its a new host
     let mut found = false;
     let mut statement = cn.prepare("SELECT * FROM nodes WHERE node_id=:id")?;
-    statement.bind_iter::<_, (_, Value)>([
-        (":id", stats.node_id.clone().into()),
-    ])?;
+    statement.bind_iter::<_, (_, Value)>([(":id", stats.node_id.clone().into())])?;
     while let Ok(State::Row) = statement.next() {
         found = true;
     }
@@ -187,7 +191,8 @@ pub fn insert_stats_dump(stats: &AnonymousUsageV1, ip: &str) -> anyhow::Result<(
         statement.next()?;
     } else {
         log::info!("New host: {}", stats.node_id);
-        let mut statement = cn.prepare("INSERT INTO nodes (node_id, last_seen) VALUES(:id, :date)")?;
+        let mut statement =
+            cn.prepare("INSERT INTO nodes (node_id, last_seen) VALUES(:id, :date)")?;
         statement.bind_iter::<_, (_, Value)>([
             (":id", stats.node_id.clone().into()),
             (":date", date.into()),
@@ -210,23 +215,28 @@ pub fn dump_all_to_string() -> anyhow::Result<String> {
         }
         result += "\n";
         true
-    }).unwrap();
+    })
+    .unwrap();
     Ok(result)
 }
 
 pub fn count_unique_node_ids() -> anyhow::Result<u64> {
     let mut result = 0;
     let cn = sqlite::open(DBPATH)?;
-    cn.iterate("SELECT COUNT(DISTINCT node_id) AS count FROM nodes;", |pairs| {
-        for &(_name, value) in pairs.iter() {
-            if let Some(val) = value {
-                if let Ok(val) = val.parse::<u64>() {
-                    result = val;
+    cn.iterate(
+        "SELECT COUNT(DISTINCT node_id) AS count FROM nodes;",
+        |pairs| {
+            for &(_name, value) in pairs.iter() {
+                if let Some(val) = value {
+                    if let Ok(val) = val.parse::<u64>() {
+                        result = val;
+                    }
                 }
             }
-        }
-        true
-    }).unwrap();
+            true
+        },
+    )
+    .unwrap();
     Ok(result)
 }
 
@@ -234,16 +244,22 @@ pub fn count_unique_node_ids_this_week() -> anyhow::Result<u64> {
     let mut result = 0;
     let cn = sqlite::open(DBPATH)?;
     let last_week = (get_sys_time_in_secs() - 604800).to_string();
-    cn.iterate(format!("SELECT COUNT(DISTINCT node_id) AS count FROM nodes WHERE last_seen > {last_week};"), |pairs| {
-        for &(_name, value) in pairs.iter() {
-            if let Some(val) = value {
-                if let Ok(val) = val.parse::<u64>() {
-                    result = val;
+    cn.iterate(
+        format!(
+            "SELECT COUNT(DISTINCT node_id) AS count FROM nodes WHERE last_seen > {last_week};"
+        ),
+        |pairs| {
+            for &(_name, value) in pairs.iter() {
+                if let Some(val) = value {
+                    if let Ok(val) = val.parse::<u64>() {
+                        result = val;
+                    }
                 }
             }
-        }
-        true
-    }).unwrap();
+            true
+        },
+    )
+    .unwrap();
     Ok(result)
 }
 

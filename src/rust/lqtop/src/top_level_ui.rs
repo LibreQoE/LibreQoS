@@ -5,12 +5,12 @@
 //! It's designed to be the manager from which specific UI
 //! components are managed.
 
-use crate::{bus::BusMessage, widgets::*};
-use ratatui::prelude::*;
-use tokio::sync::mpsc::Sender;
-use std::io::Stdout;
 use crate::widgets::help::help_display;
 use crate::widgets::latency_histogram::LatencyHistogram;
+use crate::{bus::BusMessage, widgets::*};
+use ratatui::prelude::*;
+use std::io::Stdout;
+use tokio::sync::mpsc::Sender;
 
 use self::{top_flows::TopFlows, top_hosts::TopHosts};
 
@@ -85,7 +85,7 @@ impl TopUi {
             next_region += 1;
             next_region - 1
         };
-        
+
         let cpu_region = if self.show_cpus {
             constraints.push(Constraint::Length(1));
             next_region += 1;

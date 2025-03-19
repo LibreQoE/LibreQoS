@@ -1,12 +1,14 @@
-use axum::http::StatusCode;
 use axum::Json;
+use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
 
 use lqos_config::load_config;
 
 pub async fn list_themes() -> Json<Vec<String>> {
     if let Ok(config) = load_config() {
-        let base_path = std::path::Path::new(&config.lqos_directory).join("bin").join("dashboards");
+        let base_path = std::path::Path::new(&config.lqos_directory)
+            .join("bin")
+            .join("dashboards");
         if !base_path.exists() {
             std::fs::create_dir(&base_path).unwrap();
         }
@@ -40,7 +42,9 @@ pub struct DashletIdentity {
 
 pub async fn save_theme(Json(data): Json<DashletSave>) -> StatusCode {
     if let Ok(config) = load_config() {
-        let base_path = std::path::Path::new(&config.lqos_directory).join("bin").join("dashboards");
+        let base_path = std::path::Path::new(&config.lqos_directory)
+            .join("bin")
+            .join("dashboards");
         if !base_path.exists() {
             std::fs::create_dir(&base_path).unwrap();
         }
@@ -62,7 +66,10 @@ pub struct ThemeSelector {
 
 pub async fn delete_theme(Json(f): Json<ThemeSelector>) -> StatusCode {
     if let Ok(config) = load_config() {
-        let base_path = std::path::Path::new(&config.lqos_directory).join("bin").join("dashboards").join(&f.theme);
+        let base_path = std::path::Path::new(&config.lqos_directory)
+            .join("bin")
+            .join("dashboards")
+            .join(&f.theme);
         if base_path.exists() {
             std::fs::remove_file(base_path).unwrap();
         }
@@ -73,7 +80,10 @@ pub async fn delete_theme(Json(f): Json<ThemeSelector>) -> StatusCode {
 
 pub async fn get_theme(Json(f): Json<ThemeSelector>) -> Json<Vec<DashletIdentity>> {
     if let Ok(config) = load_config() {
-        let base_path = std::path::Path::new(&config.lqos_directory).join("bin").join("dashboards").join(&f.theme);
+        let base_path = std::path::Path::new(&config.lqos_directory)
+            .join("bin")
+            .join("dashboards")
+            .join(&f.theme);
         if base_path.exists() {
             let raw = std::fs::read_to_string(&base_path).unwrap();
             let result: DashletSave = serde_json::from_str(&raw).unwrap();

@@ -49,7 +49,7 @@ impl UispSiteType {
     pub fn as_network_json_string(&self) -> String {
         match &self {
             Self::AccessPoint => "AP".to_string(),
-            _ => "Site".to_string()
+            _ => "Site".to_string(),
         }
     }
 }

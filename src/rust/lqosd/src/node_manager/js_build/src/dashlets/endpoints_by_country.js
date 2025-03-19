@@ -1,4 +1,4 @@
-import {BaseDashlet} from "./base_dashlet";
+import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {clearDashDiv, theading} from "../helpers/builders";
 import {scaleNumber} from "../lq_js_common/helpers/scaling";
 import {rttNanosAsSpan} from "../helpers/scaling";

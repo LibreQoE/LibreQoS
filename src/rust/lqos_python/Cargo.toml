@@ -1,7 +1,7 @@
 [package]
 name = "lqos_python"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 license = "GPL-2.0-only"
 
 [lib]
@@ -9,7 +9,7 @@ name = "lqos_python"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = {  workspace = true }
+pyo3 = {  workspace = true, features = ["extension-module"] }
 lqos_bus = { path = "../lqos_bus" }
 lqos_utils = { path = "../lqos_utils" }
 lqos_config = { path = "../lqos_config" }

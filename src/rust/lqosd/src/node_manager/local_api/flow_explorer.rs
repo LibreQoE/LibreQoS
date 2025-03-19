@@ -1,13 +1,15 @@
-use std::time::Duration;
-use axum::extract::Path;
+use crate::shaped_devices_tracker::SHAPED_DEVICES;
+use crate::throughput_tracker::flow_data::{
+    AsnCountryListEntry, AsnListEntry, AsnProtocolListEntry, FlowAnalysis, FlowbeeLocalData,
+    RECENT_FLOWS, RttData,
+};
 use axum::Json;
-use serde::Serialize;
+use axum::extract::Path;
 use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::{time_since_boot, unix_now};
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
-use crate::throughput_tracker::flow_data::{AsnListEntry, AsnCountryListEntry, AsnProtocolListEntry,
-   RECENT_FLOWS, RttData, FlowbeeLocalData, FlowAnalysis};
+use serde::Serialize;
+use std::time::Duration;
 
 pub async fn asn_list() -> Json<Vec<AsnListEntry>> {
     Json(RECENT_FLOWS.asn_list())
@@ -50,7 +52,10 @@ pub async fn flow_timeline(Path(asn_id): Path<u32>) -> Json<Vec<FlowTimeline>> {
     Json(flows)
 }
 
-fn all_flows_to_transport(boot_time: u64, all_flows_for_asn: Vec<(FlowbeeKey, FlowbeeLocalData, FlowAnalysis)>) -> Vec<FlowTimeline> {
+fn all_flows_to_transport(
+    boot_time: u64,
+    all_flows_for_asn: Vec<(FlowbeeKey, FlowbeeLocalData, FlowAnalysis)>,
+) -> Vec<FlowTimeline> {
     all_flows_for_asn
         .iter()
         .filter(|flow| {
@@ -60,7 +65,8 @@ fn all_flows_to_transport(boot_time: u64, all_flows_for_asn: Vec<(FlowbeeKey, Fl
         .map(|flow| {
             let (circuit_id, mut circuit_name) = {
                 let sd = SHAPED_DEVICES.load();
-                sd.get_circuit_id_and_name_from_ip(&flow.0.local_ip).unwrap_or((String::new(), String::new()))
+                sd.get_circuit_id_and_name_from_ip(&flow.0.local_ip)
+                    .unwrap_or((String::new(), String::new()))
             };
             if circuit_name.is_empty() {
                 circuit_name = flow.0.local_ip.as_ip().to_string();
@@ -73,11 +79,15 @@ fn all_flows_to_transport(boot_time: u64, all_flows_for_asn: Vec<(FlowbeeKey, Fl
                 tcp_retransmits: flow.1.tcp_retransmits.clone(),
                 throughput: vec![],
                 rtt: flow.1.rtt.clone(),
-                retransmit_times_down: flow.1.retry_times_down
+                retransmit_times_down: flow
+                    .1
+                    .retry_times_down
                     .iter()
                     .map(|t| boot_time + Duration::from_nanos(*t).as_secs())
                     .collect(),
-                retransmit_times_up: flow.1.retry_times_up
+                retransmit_times_up: flow
+                    .1
+                    .retry_times_up
                     .iter()
                     .map(|t| boot_time + Duration::from_nanos(*t).as_secs())
                     .collect(),

@@ -1,20 +1,19 @@
 //! Provides a globally accessible vector of all flows. This is used to store
 //! all flows for the purpose of tracking and data-services.
 
-use super::{flow_analysis::FlowAnalysis, RttData};
-use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
-use once_cell::sync::Lazy;
-use std::sync::Mutex;
+use super::{RttData, flow_analysis::FlowAnalysis};
 use allocative_derive::Allocative;
 use fxhash::FxHashMap;
-use serde::Serialize;
+use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
 use lqos_utils::units::DownUpOrder;
+use once_cell::sync::Lazy;
+use serde::Serialize;
+use std::sync::Mutex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Allocative)]
 pub struct AsnId(pub u32);
 
-pub static ALL_FLOWS: Lazy<Mutex<FlowTracker>> =
-    Lazy::new(|| Mutex::new(FlowTracker::default()));
+pub static ALL_FLOWS: Lazy<Mutex<FlowTracker>> = Lazy::new(|| Mutex::new(FlowTracker::default()));
 
 #[derive(Default, Allocative)]
 pub struct FlowTracker {

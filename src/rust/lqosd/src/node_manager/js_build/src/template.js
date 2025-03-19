@@ -76,6 +76,14 @@ function setupSearch() {
         const search = $("#txtSearch").val();
         doSearch(search);
     });
+    
+    // Add this new key handler for '/' to focus search
+    $(document).on('keydown', (e) => {
+        if (e.key === '/' && !$(e.target).is('input, textarea, select')) {
+            e.preventDefault();
+            $('#txtSearch').focus();
+        }
+    });
 }
 
 function setupReload() {

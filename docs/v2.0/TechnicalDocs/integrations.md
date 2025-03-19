@@ -1,5 +1,15 @@
 # Integrations
 
+  * [Splynx Integration](#splynx-integration)
+    + [Splynx API Access](#splynx-api-access)
+    + [Splynx Overrides](#splynx-overrides)
+  * [UISP Integration](#uisp-integration)
+    + [UISP Overrides](#uisp-overrides)
+      - [UISP Route Overrides](#uisp-route-overrides)
+  * [WISPGate Integration](#wispgate-integration)
+  * [Powercode Integration](#powercode-integration)
+  * [Sonar Integration](#sonar-integration)
+
 ## Splynx Integration
 
 First, set the relevant parameters for Splynx (splynx_api_key, splynx_api_secret, etc.) in `/etc/lqos.conf`.
@@ -149,7 +159,9 @@ And edit the CSV using LibreOffice or your preferred CSV editor.
 
 #### UISP Route Overrides
 
-The default cost between nodes is 10.
+The default cost between nodes is typically 10. The integration creates a dot graph file `/opt/libreqos/src/graph.dot` which can be rendered using [Graphviz](https://dreampuf.github.io/GraphvizOnline/). This renders a map with the associated costs of all links.
+
+![image](https://github.com/user-attachments/assets/4edba4b5-c377-4659-8798-dfc40d50c859)
 
 Say you have Site 1, Site 2, and Site 3.
 A backup path exists between Site 1 and Site 3, but is not the preferred path.
@@ -158,10 +170,42 @@ Your preference is Site 1 > Site 2 > Site 3, but the integration by default conn
 To fix this, add a cost above the default for the path between Site 1 and Site 3.
 ```
 Site 1, Site 3, 100
+Site 3, Site 1, 100
 ```
 With this, data will flow Site 1 > Site 2 > Site 3.
 
 To make the change, perform a reload of the integration with ```sudo systemctl restart lqos_scheduler```.
+
+## WISPGate Integration
+
+First, set the relevant parameters for WISPGate in `/etc/lqos.conf`.
+There should be a section as follows:
+
+```
+[wispgate_integration]
+enable_wispgate = false
+wispgate_api_token = "token"
+wispgate_api_url = "https://your_wispgate_url.com"
+```
+
+If the section is missing, you can add it by copying the section above.
+Set the appropriate values for wispgate_api_token and wispgate_api_url, then save the file.
+
+To test the WISPGate Integration, use
+
+```shell
+python3 integrationWISPGate.py
+```
+
+On the first successful run, it will create a ShapedDevices.csv file and network.json.
+ShapedDevices.csv will be overwritten every time the WISPGate integration is run.
+
+To ensure the network.json is always overwritten with the newest version pulled in by the integration, please edit `/etc/lqos.conf` with the command `sudo nano /etc/lqos.conf`.
+Edit the file to set the value of `always_overwrite_network_json` to `true`.
+Then, run `sudo systemctl restart lqosd`.
+
+You have the option to run integrationWISPGate.py automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_wispgate = true``` in `/etc/lqos.conf`.
+Once set, run `sudo systemctl restart lqos_scheduler`.
 
 ## Powercode Integration
 

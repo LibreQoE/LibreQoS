@@ -1,0 +1,69 @@
+<div class="row">
+    <div class="col-12">
+        <ul class="config-menu">
+        <li class="config-menu-item"><a href="config_general.html" class="text-decoration-none"><i class="fa fa-server"></i> General</a></li>
+        <li class="config-menu-item"><a href="config_anon.html" class="text-decoration-none"><i class="fa fa-user-secret"></i> Anonymous Usage Stats</a></li>
+        <li class="config-menu-item"><a href="config_tuning.html" class="text-decoration-none"><i class="fa fa-warning"></i> Tuning</a></li>
+        <li class="config-menu-item"><a href="config_interface.html" class="text-decoration-none"><i class="fa fa-chain"></i> Network Mode</a></li>
+        <li class="config-menu-item"><a href="config_queues.html" class="text-decoration-none"><i class="fa fa-car"></i> Queues</a></li>
+        <li class="config-menu-item active"><a href="config_lts.html" class="text-decoration-none"><i class="fa fa-line-chart"></i> Long-Term Stats</a></li>
+        <li class="config-menu-item"><a href="config_iprange.html" class="text-decoration-none"><i class="fa fa-address-card"></i> IP Ranges</a></li>
+        <li class="config-menu-item"><a href="config_flows.html" class="text-decoration-none"><i class="fa fa-arrow-circle-down"></i> Flow Tracking</a></li>
+        <li class="config-menu-item"><a href="config_integration.html" class="text-decoration-none"><i class="fa fa-link"></i> Integration - Common</a></li>
+        <li class="config-menu-item"><a href="config_spylnx.html" class="text-decoration-none"><i class="fa fa-link"></i> Splynx</a></li>
+        <li class="config-menu-item"><a href="config_uisp.html" class="text-decoration-none"><i class="fa fa-link"></i> UISP</a></li>
+        <li class="config-menu-item"><a href="config_powercode.html" class="text-decoration-none"><i class="fa fa-link"></i> Powercode</a></li>
+        <li class="config-menu-item"><a href="config_sonar.html" class="text-decoration-none"><i class="fa fa-link"></i> Sonar</a></li>
+        <li class="config-menu-item"><a href="config_wispgate.html" class="text-decoration-none"><i class="fa fa-link"></i> WispGate</a></li>
+        <li class="config-menu-item"><a href="config_network.html" class="text-decoration-none"><i class="fa fa-map"></i> Network Layout</a></li>
+        <li class="config-menu-item"><a href="config_devices.html" class="text-decoration-none"><i class="fa fa-table"></i> Shaped Devices</a></li>
+        <li class="config-menu-item"><a href="config_users.html" class="text-decoration-none"><i class="fa fa-users"></i> LibreQoS Users</a></li>
+        </ul>
+        <hr class="mt-3 mb-3" />
+    </div>
+</div>
+<div class="row">
+    <div class="col-12">
+        <form>
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="gatherStats">
+                <label class="form-check-label" for="gatherStats">Gather Long-Term Statistics</label>
+                <div class="form-text">Enable collection of long-term performance data</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="collationPeriod" class="form-label">Collation Period (seconds)</label>
+                <input type="number" class="form-control" id="collationPeriod" min="1">
+                <div class="form-text">How frequently to aggregate statistics into long-term records</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="licenseKey" class="form-label">License Key</label>
+                <input type="text" class="form-control" id="licenseKey">
+                <div class="form-text">License key for LibreQoS hosted statistics (if applicable)</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="uispInterval" class="form-label">UISP Reporting Interval (seconds)</label>
+                <input type="number" class="form-control" id="uispInterval" min="1">
+                <div class="form-text">How frequently to query UISP for updates (set 0 to disable)</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="ltsUrl" class="form-label">Custom LTS Server URL</label>
+                <input type="text" class="form-control" id="ltsUrl">
+                <div class="form-text">URL for self-hosted LTS server (leave blank for default)</div>
+            </div>
+
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="useInsight">
+                <label class="form-check-label" for="useInsight">Enable Insight (LTS2)</label>
+                <div class="form-text">Experimental next-gen statistics system (alpha)</div>
+            </div>
+
+            <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
+        </form>
+    </div>
+</div>
+
+<script src="config_lts.js%CACHEBUSTERS%"></script>

@@ -1,7 +1,7 @@
 //! A place to store warnings from sanity checks, the need to reload LibreQoS and similar.
 
-use std::sync::Mutex;
 use serde::Serialize;
+use std::sync::Mutex;
 
 #[allow(dead_code)]
 #[derive(Serialize, Copy, Clone)]

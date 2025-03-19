@@ -1,0 +1,80 @@
+<div class="row">
+    <div class="col-12">
+        <ul class="config-menu">
+        <li class="config-menu-item"><a href="config_general.html" class="text-decoration-none"><i class="fa fa-server"></i> General</a></li>
+        <li class="config-menu-item"><a href="config_anon.html" class="text-decoration-none"><i class="fa fa-user-secret"></i> Anonymous Usage Stats</a></li>
+        <li class="config-menu-item"><a href="config_tuning.html" class="text-decoration-none"><i class="fa fa-warning"></i> Tuning</a></li>
+        <li class="config-menu-item"><a href="config_interface.html" class="text-decoration-none"><i class="fa fa-chain"></i> Network Mode</a></li>
+        <li class="config-menu-item"><a href="config_queues.html" class="text-decoration-none"><i class="fa fa-car"></i> Queues</a></li>
+        <li class="config-menu-item"><a href="config_lts.html" class="text-decoration-none"><i class="fa fa-line-chart"></i> Long-Term Stats</a></li>
+        <li class="config-menu-item"><a href="config_iprange.html" class="text-decoration-none"><i class="fa fa-address-card"></i> IP Ranges</a></li>
+        <li class="config-menu-item active"><a href="config_flows.html" class="text-decoration-none"><i class="fa fa-arrow-circle-down"></i> Flow Tracking</a></li>
+        <li class="config-menu-item"><a href="config_integration.html" class="text-decoration-none"><i class="fa fa-link"></i> Integration - Common</a></li>
+        <li class="config-menu-item"><a href="config_spylnx.html" class="text-decoration-none"><i class="fa fa-link"></i> Splynx</a></li>
+        <li class="config-menu-item"><a href="config_uisp.html" class="text-decoration-none"><i class="fa fa-link"></i> UISP</a></li>
+        <li class="config-menu-item"><a href="config_powercode.html" class="text-decoration-none"><i class="fa fa-link"></i> Powercode</a></li>
+        <li class="config-menu-item"><a href="config_sonar.html" class="text-decoration-none"><i class="fa fa-link"></i> Sonar</a></li>
+        <li class="config-menu-item"><a href="config_wispgate.html" class="text-decoration-none"><i class="fa fa-link"></i> WispGate</a></li>
+        <li class="config-menu-item"><a href="config_network.html" class="text-decoration-none"><i class="fa fa-map"></i> Network Layout</a></li>
+        <li class="config-menu-item"><a href="config_devices.html" class="text-decoration-none"><i class="fa fa-table"></i> Shaped Devices</a></li>
+        <li class="config-menu-item"><a href="config_users.html" class="text-decoration-none"><i class="fa fa-users"></i> LibreQoS Users</a></li>
+        </ul>
+        <hr class="mt-3 mb-3" />
+    </div>
+</div>
+<div class="row">
+    <div class="col-12">
+        <form>
+            <div class="mb-3">
+                <label for="flowTimeout" class="form-label">Flow Timeout (seconds)</label>
+                <input type="number" class="form-control" id="flowTimeout" min="1">
+                <div class="form-text">How long to keep flow records before expiring them</div>
+            </div>
+
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="enableNetflow">
+                <label class="form-check-label" for="enableNetflow">Enable Netflow</label>
+                <div class="form-text">Enable Netflow export of flow data</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="netflowPort" class="form-label">Netflow Port</label>
+                <input type="number" class="form-control" id="netflowPort" min="1" max="65535">
+                <div class="form-text">Port to send Netflow data to (optional)</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="netflowIP" class="form-label">Netflow IP Address</label>
+                <input type="text" class="form-control" id="netflowIP">
+                <div class="form-text">IP address to send Netflow data to (optional)</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="netflowVersion" class="form-label">Netflow Version</label>
+                <select class="form-select" id="netflowVersion">
+                    <option value="5">Version 5</option>
+                    <option value="9">Version 9</option>
+                </select>
+                <div class="form-text">Netflow protocol version to use</div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header">Do Not Track Subnets</div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <select class="form-select" id="doNotTrackSubnets" size="5">
+                        </select>
+                    </div>
+                    <div class="input-group mb-3">
+                        <input type="text" class="form-control" id="newDoNotTrackSubnet" placeholder="Enter IP/CIDR (e.g. 192.168.1.0/24)">
+                        <button class="btn btn-outline-secondary" type="button" id="addDoNotTrackSubnet">Add</button>
+                    </div>
+                    <button class="btn btn-outline-danger" type="button" id="removeDoNotTrackSubnet">Remove Selected</button>
+                </div>
+            </div>
+
+            <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
+        </form>
+    </div>
+</div>
+<script src="config_flows.js%CACHEBUSTERS%"></script>

@@ -11,13 +11,14 @@
 
 ## Step 3 - Install LibreQoS
 
-### Download .DEB Package (Recommended Method)
+### Use .DEB Package (Recommended Method)
 
-Donwload the latest .deb from [https://libreqos.io/download/](https://libreqos.io/download/).
-
-Unzip the .zip file and transfer the .deb to your LibreQoS box, installing with:
 ```
-sudo apt install ./deb_file_name.deb
+cd ~
+wget https://libreqos.io/wp-content/uploads/2025/03/libreqos_1.5-BETA10_amd64.zip
+sudo apt-get install unzip
+unzip libreqos_1.5-BETA10_amd64.zip
+sudo apt install ./libreqos_1.5-BETA10_amd64.deb
 ```
 
 ### Git Install (For Developers Only - Not Recommended)

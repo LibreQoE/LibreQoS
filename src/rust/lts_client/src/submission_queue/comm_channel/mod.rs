@@ -1,10 +1,15 @@
-use std::time::Duration;
-use lqos_config::load_config;
-use tokio::{sync::mpsc::Receiver, time::sleep, net::TcpStream, io::{AsyncWriteExt, AsyncReadExt}};
-use tracing::{error, info, warn};
-use crate::submission_queue::comm_channel::keys::store_server_public_key;
 use self::encode::encode_submission_hello;
-use super::queue::{send_queue, QueueError};
+use super::queue::{QueueError, send_queue};
+use crate::submission_queue::comm_channel::keys::store_server_public_key;
+use lqos_config::load_config;
+use std::time::Duration;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+    sync::mpsc::Receiver,
+    time::sleep,
+};
+use tracing::{error, info, warn};
 mod keys;
 pub(crate) use keys::key_exchange;
 mod encode;
@@ -16,8 +21,8 @@ pub(crate) enum SenderChannelMessage {
 }
 
 pub(crate) async fn start_communication_channel(mut rx: Receiver<SenderChannelMessage>) {
-//    let mut connected = false;
-//    let mut stream: Option<TcpStream> = None;
+    //    let mut connected = false;
+    //    let mut stream: Option<TcpStream> = None;
     loop {
         match rx.try_recv() {
             Ok(SenderChannelMessage::QueueReady) => {
@@ -64,29 +69,26 @@ async fn connect_if_permitted() -> Result<TcpStream, QueueError> {
         warn!("No license key configured.");
         QueueError::NoLocalLicenseKey
     })?;
-    
+
     // Connect
     let host = "stats.libreqos.io:9128";
-    let mut stream = TcpStream::connect(&host).await
-        .map_err(|e| {
-            error!("Unable to connect to {host}: {e:?}");
-            QueueError::SendFail
-        })?;
+    let mut stream = TcpStream::connect(&host).await.map_err(|e| {
+        error!("Unable to connect to {host}: {e:?}");
+        QueueError::SendFail
+    })?;
 
     // Send Hello
     let bytes = encode_submission_hello(&license_key, &node_id, &node_name).await?;
-    stream.write_all(&bytes).await
-        .map_err(|e| {
-            error!("Unable to write to {host}: {e:?}");
-            QueueError::SendFail
-        })?;
+    stream.write_all(&bytes).await.map_err(|e| {
+        error!("Unable to write to {host}: {e:?}");
+        QueueError::SendFail
+    })?;
 
     // Receive Server Public Key or Denied
-    let result = stream.read_u16().await
-        .map_err(|e| {
-            error!("Unable to read reply from {host}, {e:?}");
-            QueueError::SendFail
-        })?;
+    let result = stream.read_u16().await.map_err(|e| {
+        error!("Unable to read reply from {host}, {e:?}");
+        QueueError::SendFail
+    })?;
     match result {
         0 => {
             error!("License validation failure.");
@@ -94,23 +96,20 @@ async fn connect_if_permitted() -> Result<TcpStream, QueueError> {
         }
         1 => {
             // We received validation. Now to decode the public key.
-            let key_size = stream.read_u64().await
-                .map_err(|e| {
-                    error!("Unable to read reply from {host}, {e:?}");
-                    QueueError::SendFail
-                })?;
+            let key_size = stream.read_u64().await.map_err(|e| {
+                error!("Unable to read reply from {host}, {e:?}");
+                QueueError::SendFail
+            })?;
             let mut key_buffer = vec![0u8; key_size as usize];
-            stream.read_exact(&mut key_buffer).await
-                .map_err(|e| {
-                    error!("Unable to read reply from {host}, {e:?}");
-                    QueueError::SendFail
-                })?;
-            let server_public_key = serde_cbor::from_slice(&key_buffer)
-                .map_err(|e| {
-                    error!("Unable to decode key from {host}, {e:?}");
-                    QueueError::SendFail
-                })?;
-                store_server_public_key(&server_public_key).await;
+            stream.read_exact(&mut key_buffer).await.map_err(|e| {
+                error!("Unable to read reply from {host}, {e:?}");
+                QueueError::SendFail
+            })?;
+            let server_public_key = serde_cbor::from_slice(&key_buffer).map_err(|e| {
+                error!("Unable to decode key from {host}, {e:?}");
+                QueueError::SendFail
+            })?;
+            store_server_public_key(&server_public_key).await;
             info!("Received server public key.");
         }
         _ => {

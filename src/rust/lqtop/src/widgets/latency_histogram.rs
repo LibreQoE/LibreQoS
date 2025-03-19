@@ -13,7 +13,9 @@ pub struct LatencyHistogram {
 impl TopWidget for LatencyHistogram {
     fn enable(&mut self) {
         self.bus_link
-            .blocking_send(crate::bus::BusMessage::EnableLatencyHistogram(self.tx.clone()))
+            .blocking_send(crate::bus::BusMessage::EnableLatencyHistogram(
+                self.tx.clone(),
+            ))
             .unwrap();
     }
 
@@ -36,13 +38,13 @@ impl TopWidget for LatencyHistogram {
     }
 
     fn render_to_frame(&mut self, frame: &mut Frame) {
-        let bars: Vec<(String, u64)> = self.histogram.iter()
+        let bars: Vec<(String, u64)> = self
+            .histogram
+            .iter()
             .enumerate()
             .map(|(i, v)| (i.to_string(), *v as u64))
             .collect();
-        let bars_mangled: Vec<_> = bars.iter().map(|(s,n)| {
-            (s.as_str(), *n)
-        }).collect();
+        let bars_mangled: Vec<_> = bars.iter().map(|(s, n)| (s.as_str(), *n)).collect();
         let bar = ratatui::widgets::BarChart::default()
             .bar_width(5)
             .bar_gap(1)

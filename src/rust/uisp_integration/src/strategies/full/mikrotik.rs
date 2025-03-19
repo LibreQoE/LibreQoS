@@ -1,7 +1,7 @@
-use std::{fs::read_to_string, path::Path};
-use std::process::Command;
-use lqos_config::Config;
 use crate::uisp_types::Ipv4ToIpv6;
+use lqos_config::Config;
+use std::path::Path;
+use std::process::Command;
 
 pub async fn mikrotik_data(config: &Config) -> anyhow::Result<Vec<Ipv4ToIpv6>> {
     if config.uisp_integration.ipv6_with_mikrotik {
@@ -17,14 +17,23 @@ async fn fetch_mikrotik_data(config: &Config) -> anyhow::Result<Vec<Ipv4ToIpv6>>
     let mikrotik_script_path = base_path.join("mikrotikFindIPv6.py");
     if !mikrotik_script_path.exists() {
         tracing::error!("Mikrotik script not found at {:?}", mikrotik_script_path);
-        return Err(anyhow::anyhow!("Mikrotik script not found at {:?}", mikrotik_script_path));
+        return Err(anyhow::anyhow!(
+            "Mikrotik script not found at {:?}",
+            mikrotik_script_path
+        ));
     }
 
     // Find the `mikrotikDHCPRouterList.csv` file.
     let mikrotik_dhcp_router_list_path = base_path.join("mikrotikDHCPRouterList.csv");
     if !mikrotik_dhcp_router_list_path.exists() {
-        tracing::error!("Mikrotik DHCP router list not found at {:?}", mikrotik_dhcp_router_list_path);
-        return Err(anyhow::anyhow!("Mikrotik DHCP router list not found at {:?}", mikrotik_dhcp_router_list_path));
+        tracing::error!(
+            "Mikrotik DHCP router list not found at {:?}",
+            mikrotik_dhcp_router_list_path
+        );
+        return Err(anyhow::anyhow!(
+            "Mikrotik DHCP router list not found at {:?}",
+            mikrotik_dhcp_router_list_path
+        ));
     }
 
     // Load the script
@@ -33,7 +42,7 @@ async fn fetch_mikrotik_data(config: &Config) -> anyhow::Result<Vec<Ipv4ToIpv6>>
 
     // Get the Python environment going
     let output = Command::new("/usr/bin/python3")
-        .args(&[ &code, &csv_path ])
+        .args(&[&code, &csv_path])
         .output();
     if let Err(e) = output {
         tracing::error!("Python error: {:?}", e);

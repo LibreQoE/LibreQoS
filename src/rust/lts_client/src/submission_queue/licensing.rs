@@ -1,4 +1,4 @@
-use crate::transport_data::{ask_license_server, LicenseReply, ask_license_server_for_new_account};
+use crate::transport_data::{LicenseReply, ask_license_server, ask_license_server_for_new_account};
 use lqos_config::load_config;
 use lqos_utils::unix_time::unix_now;
 use once_cell::sync::Lazy;
@@ -31,10 +31,10 @@ static LICENSE_STATUS: Lazy<RwLock<LicenseStatus>> =
 pub(crate) async fn get_license_status() -> LicenseState {
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     if let Ok(unix_time) = unix_now() {
-        let license_status = {
-            LICENSE_STATUS.read().await.clone()
-        };
-        if license_status.state == LicenseState::Unknown || license_status.last_check < unix_time - (60 * 60) {
+        let license_status = { LICENSE_STATUS.read().await.clone() };
+        if license_status.state == LicenseState::Unknown
+            || license_status.last_check < unix_time - (60 * 60)
+        {
             return check_license(unix_time).await;
         }
         return license_status.state;
@@ -53,8 +53,13 @@ async fn check_license(unix_time: u64) -> LicenseState {
         if cfg.long_term_stats.gather_stats && cfg.long_term_stats.license_key.is_some() {
             if let Some(key) = &cfg.long_term_stats.license_key {
                 if key == MISERLY_NO_KEY {
-                    warn!("You are using the self-hosting license key. We'd be happy to sell you a real one.");
-                    return LicenseState::Valid { expiry: 0, stats_host: "192.168.100.11:9127".to_string() }
+                    warn!(
+                        "You are using the self-hosting license key. We'd be happy to sell you a real one."
+                    );
+                    return LicenseState::Valid {
+                        expiry: 0,
+                        stats_host: "192.168.100.11:9127".to_string(),
+                    };
                 }
 
                 let mut lock = LICENSE_STATUS.write().await;
@@ -65,17 +70,15 @@ async fn check_license(unix_time: u64) -> LicenseState {
                         match state {
                             LicenseReply::Denied => {
                                 warn!("License is in state: DENIED.");
-                                lock.state = LicenseState::Denied;                                
+                                lock.state = LicenseState::Denied;
                             }
-                            LicenseReply::Valid{expiry, stats_host} => {
+                            LicenseReply::Valid { expiry, stats_host } => {
                                 info!("License is in state: VALID.");
-                                lock.state = LicenseState::Valid{
-                                    expiry, stats_host
-                                };
+                                lock.state = LicenseState::Valid { expiry, stats_host };
                             }
                             _ => {
                                 warn!("Unexpected type of data received. Denying to be safe.");
-                                lock.state = LicenseState::Denied; 
+                                lock.state = LicenseState::Denied;
                             }
                         }
                         return lock.state.clone();
