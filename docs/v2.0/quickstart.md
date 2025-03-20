@@ -8,7 +8,7 @@
 ## Step 2 - Complete The Installation Prerequisites
 
 - [Server Setup - Prerequisites](prereq.md)
-- [Install Ubuntu Server 24.04](bridge.md)
+- [Install Ubuntu Server 24.04](ubuntu-server.md)
 
 ## Step 3 - Install LibreQoS
 
