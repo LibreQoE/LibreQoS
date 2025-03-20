@@ -17,7 +17,7 @@ Welcome to the LibreQoS documentation
    :maxdepth: 1
    :caption: Deploying LibreQoS (v1.5 to v2.0):
    docs/v2.0/prereq
-   docs/v2.0/ubuntu-server.md
+   docs/v2.0/ubuntu-server
    docs/v2.0/quickstart
    docs/v2.0/configuration
    docs/v2.0/services
