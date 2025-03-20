@@ -69,7 +69,7 @@ sudo cp lqos.example /etc/lqos.conf
 
 ## Configuration
 
-Proceed to configure settings [following this guide](../Quickstart/configuration.md).
+Proceed to configure settings [following this guide](../configuration.md).
 
 ## Daemon setup
 

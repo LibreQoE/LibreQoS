@@ -23,7 +23,7 @@ sudo apt install ./libreqos_1.5-BETA10_amd64.deb
 
 ### Git Install (For Developers Only - Not Recommended)
 
-[Complex Installation](../TechnicalDocs/git-install.md)
+[Complex Installation](../git-install.md)
 
 ## Step 4 - Configure LibreQoS
 
