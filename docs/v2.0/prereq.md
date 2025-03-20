@@ -1,4 +1,4 @@
-# Server Setup - Pre-requisites
+# Server Setup - Prerequisites
 
 ## Disable Hyper-Threading
 Disable hyperthreading on the BIOS/UEFI of your host system. Hyperthreaading is also known as Simultaneous Multi Threading (SMT) on AMD systems. Disabling this is very important for optimal performance of the XDP cpumap filtering and, in turn, throughput and latency.
