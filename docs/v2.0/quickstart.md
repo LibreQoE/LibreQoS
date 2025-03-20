@@ -2,8 +2,8 @@
 
 ## Step 1 - Validate Network Design Assumptions and Hardware Selection
 
-- [Network Design Assumptions](../design.md)
-- [System Requirements](../requirements.md)
+- [Network Design Assumptions](design.md)
+- [System Requirements](requirements.md)
 
 ## Step 2 - Complete The Installation Prerequisites
 
@@ -23,8 +23,8 @@ sudo apt install ./libreqos_1.5-BETA10_amd64.deb
 
 ### Git Install (For Developers Only - Not Recommended)
 
-[Complex Installation](../git-install.md)
+[Complex Installation](git-install.md)
 
 ## Step 4 - Configure LibreQoS
 
-You are now ready to [Configure](./configuration.md) LibreQoS!
+You are now ready to [Configure](configuration.md) LibreQoS!

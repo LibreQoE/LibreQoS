@@ -10,7 +10,7 @@ Disable hyperthreading on the BIOS/UEFI of your host system. Hyperthreaading is 
 
 ## Install Ubuntu Server 24.04
 
-- [Install Ubuntu Server 24.04](../ubuntu-server.md)
+- [Install Ubuntu Server 24.04](ubuntu-server.md)
 
 ## Set up Bridge
 

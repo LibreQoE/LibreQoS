@@ -39,7 +39,7 @@ do_not_track_subnets = ["192.168.0.0/16"]
 
 ### CRM/NMS Integrations
 
-Learn more about [configuring integrations here](../integrations.md).
+Learn more about [configuring integrations here](integrations.md).
 
 ## Network Hierarchy
 ### Network.json

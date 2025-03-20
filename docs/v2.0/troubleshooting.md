@@ -55,7 +55,7 @@ At the command-line, run ```sudo RUST_LOG=info /opt/libreqos/src/bin/lqosd``` wh
 
 ### RTNETLINK answers: Invalid argument
 
-This tends to show up when the MQ qdisc cannot be added correctly to the NIC interface. This would suggest the NIC has insufficient RX/TX queues. Please make sure you are using the [recommended NICs](../../SystemRequirements/Compute.md#network-interface-requirements).
+This tends to show up when the MQ qdisc cannot be added correctly to the NIC interface. This would suggest the NIC has insufficient RX/TX queues. Please make sure you are using the [recommended NICs](requirements.md).
 
 ### Python ModuleNotFoundError in Ubuntu 24.04
 ```
