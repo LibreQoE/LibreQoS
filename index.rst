@@ -22,7 +22,7 @@ Welcome to the LibreQoS documentation
    docs/v2.0/bridge
    docs/v2.0/quickstart
    docs/v2.0/configuration
-   docs/v2.0/services
+   docs/v2.0/components
    docs/v2.0/update
    docs/v2.0/integrations
    docs/v2.0/troubleshooting
