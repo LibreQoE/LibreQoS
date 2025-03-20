@@ -2,12 +2,12 @@
 
 ## Step 1 - Validate Network Design Assumptions and Hardware Selection
 
-- [Network Design Assumptions](../../Quickstart/networkdesignassumptions.md)
-- [System Requirements](../../SystemRequirements/Compute.md)
+- [Network Design Assumptions](../design.md)
+- [System Requirements](../requirements.md)
 
 ## Step 2 - Complete The Installation Prerequisites
 
-[LibreQoS Installation Prerequisites](quickstart-prereq.md)
+[LibreQoS Installation Prerequisites](prereq.md)
 
 ## Step 3 - Install LibreQoS
 

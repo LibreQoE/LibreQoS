@@ -10,26 +10,24 @@ Welcome to the LibreQoS documentation
    :maxdepth: 1
    :caption: Getting Started
 
-   docs/Quickstart/networkdesignassumptions
-   docs/SystemRequirements/Compute
+   docs/v2.0/design
+   docs/v2.0/requirements
 
 .. toctree::
    :maxdepth: 1
    :caption: Deploying LibreQoS (v1.5 to v2.0):
 
-   docs/v2.0/Quickstart/quickstart-prereq   
-   docs/v2.0/Quickstart/quickstart-libreqos-2.0
+   docs/v2.0/quickstart-prereq   
+   docs/v2.0/quickstart-libreqos-2.0
    
-   docs/v2.0/Quickstart/configuration
-   docs/v2.0/Quickstart/services-and-run
-   docs/v2.0/Quickstart/share
+   docs/v2.0/configuration
 
-   docs/v2.0/Updates/update
+   docs/v2.0/services
 
-   docs/v2.0/TechnicalDocs/complex-install
-   docs/v2.0/TechnicalDocs/troubleshooting
-   docs/v2.0/TechnicalDocs/integrations
-   docs/v2.0/TechnicalDocs/extras
+   docs/v2.0/update
+   docs/v2.0/integrations
+   docs/v2.0/troubleshooting
+   docs/v2.0/extras
 
 .. toctree::
    :maxdepth: 1

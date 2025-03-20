@@ -64,11 +64,8 @@ If you will not be using an integration, you can manually define the network.jso
 ```
 
 For networks with no Parent Nodes (no strictly defined Access Points or Sites) edit the network.json to use a Flat Network Topology with
-```nano network.json```
-setting the following file content:
-
-```json
-{}
+```
+echo "{}" > network.json
 ```
 
 #### CSV to JSON conversion helper
