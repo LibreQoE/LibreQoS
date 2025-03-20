@@ -16,14 +16,11 @@ Welcome to the LibreQoS documentation
 .. toctree::
    :maxdepth: 1
    :caption: Deploying LibreQoS (v1.5 to v2.0):
-
-   docs/v2.0/quickstart-prereq   
-   docs/v2.0/quickstart-libreqos-2.0
-   
+   docs/v2.0/prereq
+   docs/v2.0/ubuntu-server.md
+   docs/v2.0/quickstart
    docs/v2.0/configuration
-
    docs/v2.0/services
-
    docs/v2.0/update
    docs/v2.0/integrations
    docs/v2.0/troubleshooting
