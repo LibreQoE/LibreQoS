@@ -19,6 +19,7 @@ Welcome to the LibreQoS documentation
    
    docs/v2.0/prereq
    docs/v2.0/ubuntu-server
+   docs/v2.0/bridge
    docs/v2.0/quickstart
    docs/v2.0/configuration
    docs/v2.0/services
