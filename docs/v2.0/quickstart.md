@@ -1,4 +1,4 @@
-# Install LibreQoS (1.5 to 2.0)
+# Install LibreQoS
 
 ## Step 1 - Validate Network Design Assumptions and Hardware Selection
 
@@ -10,7 +10,7 @@
 - [Server Setup - Prerequisites](prereq.md)
 - [Install Ubuntu Server 24.04](ubuntu-server.md)
 
-## Step 3 - Install LibreQoS
+## Step 3 - Install LibreQoS v1.5
 
 ### Use .DEB Package (Recommended Method)
 
