@@ -1,4 +1,4 @@
-# Install LibreQoS 1.5/2.0
+# Install LibreQoS (1.5 to 2.0)
 
 ## Step 1 - Validate Network Design Assumptions and Hardware Selection
 
@@ -7,7 +7,7 @@
 
 ## Step 2 - Complete The Installation Prerequisites
 
-[LibreQoS Installation Prerequisites](prereq.md)
+- [Server Setup - Prerequisites](prereq.md)
 
 ## Step 3 - Install LibreQoS
 
