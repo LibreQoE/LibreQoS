@@ -1,4 +1,4 @@
-# Integrations
+# CRM/NMS Integrations
 
   * [Splynx Integration](#splynx-integration)
     + [Splynx API Access](#splynx-api-access)

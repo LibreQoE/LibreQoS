@@ -1,4 +1,4 @@
-# Updating To The Latest Version
+# Upgrading
 
 ```{warning}
 If you use the XDP bridge, traffic will briefly stop passing through the bridge when lqosd restarts (XDP bridge is only operating while lqosd runs).

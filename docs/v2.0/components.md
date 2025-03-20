@@ -1,4 +1,4 @@
-# LibreQoS System Components
+# LibreQoS Software Components
 
 ## Systemd Services
 ### lqosd
