@@ -6,7 +6,7 @@ If you use the XDP bridge, traffic will briefly stop passing through the bridge 
 
 ## If you installed the .deb
 
-Donwload the latest .deb from [libreqos.io/#download](https://libreqos.io/#download).
+Donwload the latest .deb [here](quickstart.md).
 
 Unzip the .zip file and transfer the .deb to your LibreQoS box, installing with:
 ```

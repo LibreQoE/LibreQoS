@@ -51,7 +51,11 @@ Lqosd will provide specific reasons it failed, such as an interface not being up
 
 ### Advanced lqosd debug
 
-At the command-line, run ```sudo RUST_LOG=info /opt/libreqos/src/bin/lqosd``` which runs lqosd manually, and will provide specifics regarding why it failed to start.
+At the command-line, run:
+```
+sudo RUST_LOG=info /opt/libreqos/src/bin/lqosd
+```
+which runs lqosd in debug mode, and will provide specifics regarding why it failed to start.
 
 ### RTNETLINK answers: Invalid argument
 
