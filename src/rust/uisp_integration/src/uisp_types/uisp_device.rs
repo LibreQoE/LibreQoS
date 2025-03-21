@@ -108,16 +108,16 @@ impl UispDevice {
         });
 
         // Handle any "exception CPE" entries
-        let mut site_id = device.get_site_id().unwrap_or("".to_string());
+        let mut site_id = device.get_site_id().unwrap_or_default();
         for exception in config.uisp_integration.exception_cpes.iter() {
-            if exception.cpe == device.get_name().unwrap() {
+            if exception.cpe == device.get_name().unwrap_or_default() {
                 site_id = exception.parent.clone();
             }
         }
 
         Self {
             id: device.get_id(),
-            name: device.get_name().unwrap(),
+            name: device.get_name().unwrap_or_default(),
             mac,
             site_id,
             upload,
