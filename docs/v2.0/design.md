@@ -41,4 +41,4 @@ Most of the same considerations apply to the alternate configuration as they do 
 
 Keep in mind that if you use different bandwidth links, for example, 10 Gbps through LibreQoS, and 1 Gbps between core switch and edge router, you may need to be more intentional with your STP costs.
 
-![Alternate Configuration](../stp-diagram.png)
+![image](https://github.com/user-attachments/assets/39247655-3bcf-4a0c-8cfb-1ed1a96d3c2d)

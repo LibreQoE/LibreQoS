@@ -1,6 +1,6 @@
-# LibreQoS systemd services
+# LibreQoS Software Components
 
-## What each service does
+## Systemd Services
 ### lqosd
 
 - Manages actual XDP code.
@@ -16,7 +16,7 @@
     - The default minute interval is 30, so the refresh occurs every 30 minutes by default.
     - The minute interval is adjustable with the setting `queue_refresh_interval_mins` in `/etc/lqos.conf`.
 
-## Checking service status
+### Checking service status
 
 ```
 sudo systemctl status lqosd lqos_scheduler
@@ -30,7 +30,7 @@ Press the End key on the keyboard to take you to the bottom of the log to see th
 
 Lqosd will provide specific reasons it failed, such as an interface not being up, an interface lacking multi-queue, or other cocnerns.
 
-## Debugging lqos_scheduler
+### Debugging lqos_scheduler
 
 In the background, lqos_scheduler runs the Python script scheduler.py, which in turn runs the Python script LibreQoS.py
 

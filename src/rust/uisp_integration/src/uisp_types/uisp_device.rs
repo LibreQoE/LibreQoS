@@ -16,8 +16,8 @@ pub struct UispDevice {
     pub name: String,
     pub mac: String,
     pub site_id: String,
-    pub download: u32,
-    pub upload: u32,
+    pub download: u64,
+    pub upload: u64,
     pub ipv4: HashSet<String>,
     pub ipv6: HashSet<String>,
 }
@@ -47,10 +47,10 @@ impl UispDevice {
         let mut upload = config.queues.generated_pn_upload_mbps;
         if let Some(overview) = &device.overview {
             if let Some(dl) = overview.downlinkCapacity {
-                download = dl as u32 / 1000000;
+                download = dl as u64 / 1000000;
             }
             if let Some(ul) = overview.uplinkCapacity {
-                upload = ul as u32 / 1000000;
+                upload = ul as u64 / 1000000;
             }
         }
 
