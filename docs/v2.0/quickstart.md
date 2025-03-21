@@ -9,6 +9,7 @@
 
 - [Server Setup - Prerequisites](prereq.md)
 - [Install Ubuntu Server 24.04](ubuntu-server.md)
+- [Configure Shaping Bridge](bridge.md)
 
 ## Step 3 - Install LibreQoS v1.5
 
