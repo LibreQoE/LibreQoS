@@ -14,7 +14,7 @@ LibreQoS code is Open Source. It improves Quality of Experience by implementing 
 
 To learn more, please visit [LibreQoS.io](https://libreqos.io/).
 
-<img alt="LibreQoS" src="https://i0.wp.com/libreqos.io/wp-content/uploads/2024/12/v1.5-BETA-4-3.jpg?w=3698&ssl=1"></a>
+<a href="https://libreqos.io/"><img alt="LibreQoS" src="https://i0.wp.com/libreqos.io/wp-content/uploads/2024/12/v1.5-BETA-4-3.jpg?w=3698&ssl=1"></a></a>
 
 ## Sponsors
 
@@ -47,7 +47,7 @@ LibreQoS Long-Term Stats (LTS) is an analytics service that overhauls the way yo
 We provide a free 30-day trial of LTS, after which the rate is $0.30 USD per shaped subscriber per month.
 You can enroll in the 30-day free trial by [upgrading to the latest version of LibreQoS v1.5](https://libreqos.io/#get-started) and following the [LTS setup documentation](https://libreqos.readthedocs.io/en/latest/docs/v2.0/lts.html).
 
-<img alt="LibreQoS Long Term Stats" src="https://i0.wp.com/libreqos.io/wp-content/uploads/2023/11/01-Dashboard.png"></a>
+<a href="https://libreqos.io/"><img alt="LibreQoS Long Term Stats" src="https://i0.wp.com/libreqos.io/wp-content/uploads/2023/11/01-Dashboard.png"></a></a>
 
 ## External Pull Request Policy
 
