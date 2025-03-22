@@ -1,6 +1,6 @@
-<a href="https://libreqos.io/"><img alt="LibreQoS" src="https://user-images.githubusercontent.com/22501920/202913614-4ff2e506-e645-4a94-9918-d512905ab290.png"></a>
+<a href="https://libreqos.io/"><img alt="LibreQoS" src="https://github.com/user-attachments/assets/6277d475-3d80-4e6c-adaa-6983b4b93348"></a>
 
-LibreQoS is software used by Internet Service Providers (ISPs) and companies to improve the Quality of Experience (QoE) of end-users on their networks. 
+LibreQoS is software used by Internet Service Providers (ISPs) and Enterprises to improve the Quality of Experience (QoE) of end-users on their networks. 
 
 LibreQoS works by monitoring network performance and reducing latency for interactive online applications. ISPs regularly report that trouble calls reduce substantially after deploying LibreQoS on networks.
 
@@ -14,7 +14,7 @@ LibreQoS code is Open Source. It improves Quality of Experience by implementing 
 
 To learn more, please visit [LibreQoS.io](https://libreqos.io/).
 
-<img alt="LibreQoS" src="https://user-images.githubusercontent.com/22501920/223866474-603e1112-e2e6-4c67-93e4-44c17b1b7c43.png"></a>
+<img alt="LibreQoS" src="https://i0.wp.com/libreqos.io/wp-content/uploads/2024/12/v1.5-BETA-4-3.jpg?w=3698&ssl=1"></a>
 
 ## Sponsors
 
@@ -25,17 +25,13 @@ LibreQoS has been funded through the NGI0 Entrust Fund, a fund established by NL
 Equinix supports LibreQoS through its Open Source program – providing access to hardware resources on its Equinix Metal infrastructure. Equinix’ support has been crucial for LibreQoS to scale past 10Gbps for higher-bandwidth networks. Learn more about Equinix Metal here.
 Learn more about [Equinix Metal here](https://deploy.equinix.com/metal/).
 
-## Support LibreQoS
-
-Please support the continued development of LibreQoS by sponsoring us via [GitHub Sponsors](https://github.com/sponsors/LibreQoE) or [Patreon](https://patreon.com/libreqos).
-
 ## Documentation / Get Started / System Requirements
 
 [ReadTheDocs](https://libreqos.readthedocs.io/en/latest/)
 
 ## LibreQoS Chat
 
-Our Zulip chat server is available at [https://chat.libreqos.io/join/fvu3cerayyaumo377xwvpev6/](https://chat.libreqos.io/join/fvu3cerayyaumo377xwvpev6/).
+Our chat server is available at [https://chat.libreqos.io/](https://chat.libreqos.io/).
 
 ## LibreQoS Social
 - https://www.youtube.com/@LibreQoS
@@ -49,7 +45,7 @@ Our Zulip chat server is available at [https://chat.libreqos.io/join/fvu3cerayya
 LibreQoS Long-Term Stats (LTS) is an analytics service that overhauls the way you track and analyze your network. With flexible time window views ranging from 5 minutes to 1 month, LTS gives you  comprehensive insights into your network’s performance. Built from the ground-up for performance and efficiency, LTS greatly outperforms other solutions, and gives you rapidly rendered data to help you maximize your network performance.
 
 We provide a free 30-day trial of LTS, after which the rate is $0.30 USD per shaped subscriber per month.
-You can enroll in the 30-day free trial by [upgrading to the latest version of LibreQoS v1.4](https://libreqos.readthedocs.io/en/latest/docs/Updates/update.html) and selecting "Start Stats Free Trial" in the top-right corner of the local LibreQoS WebUI.
+You can enroll in the 30-day free trial by [upgrading to the latest version of LibreQoS v1.5](https://libreqos.io/#get-started) and following the [LTS setup documentation](https://libreqos.readthedocs.io/en/latest/docs/v2.0/lts.html).
 
 <img alt="LibreQoS Long Term Stats" src="https://i0.wp.com/libreqos.io/wp-content/uploads/2023/11/01-Dashboard.png"></a>
 
