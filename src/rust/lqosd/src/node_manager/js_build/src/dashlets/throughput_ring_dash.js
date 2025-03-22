@@ -1,8 +1,8 @@
-import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {ThroughputRingBufferGraph} from "../graphs/throughput_ring_graph";
 import {ThroughputRingBufferGraphTimescale} from "../graphs/throughput_ring_graph_timescale";
+import {DashletBaseInsight} from "./insight_dashlet_base";
 
-export class ThroughputRingDash extends BaseDashlet{
+export class ThroughputRingDash extends DashletBaseInsight{
     constructor(slot) {
         super(slot);
         this.counter = 0;

@@ -1,8 +1,8 @@
-import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {TopNSankey} from "../graphs/top_n_sankey";
 import {TimedCache} from "../lq_js_common/helpers/timed_cache";
+import {DashletBaseInsight} from "./insight_dashlet_base";
 
-export class Worst10RetransmitsVisual extends BaseDashlet {
+export class Worst10RetransmitsVisual extends DashletBaseInsight {
     constructor(slot) {
         super(slot);
         this.timeCache = new TimedCache(10);
