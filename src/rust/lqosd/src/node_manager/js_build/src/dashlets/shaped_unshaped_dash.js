@@ -1,8 +1,8 @@
-import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {ShapedUnshapedPie} from "../graphs/shaped_unshaped_pie";
 import {ShapedUnshapedTimescale} from "../graphs/shaped_unshaped_timescale";
+import {DashletBaseInsight} from "./insight_dashlet_base";
 
-export class ShapedUnshapedDash extends BaseDashlet{
+export class ShapedUnshapedDash extends DashletBaseInsight {
     title() {
         return "Shaped/Unshaped Traffic";
     }

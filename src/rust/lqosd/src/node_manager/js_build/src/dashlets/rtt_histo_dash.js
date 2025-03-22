@@ -1,8 +1,8 @@
-import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {RttHistogram} from "../graphs/rtt_histo";
 import {RttHistogramTimeseries} from "../graphs/rtt_histo_timeseries";
+import {DashletBaseInsight} from "./insight_dashlet_base";
 
-export class RttHistoDash extends BaseDashlet{
+export class RttHistoDash extends DashletBaseInsight {
     constructor(slot) {
         super(slot);
     }

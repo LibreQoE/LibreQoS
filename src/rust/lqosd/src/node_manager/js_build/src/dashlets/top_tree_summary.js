@@ -1,8 +1,8 @@
-import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {clearDiv, simpleRowHtml, theading} from "../helpers/builders";
 import {formatThroughput, formatRetransmit, formatCakeStat} from "../helpers/scaling";
+import {DashletBaseInsight} from "./insight_dashlet_base";
 
-export class TopTreeSummary extends BaseDashlet {
+export class TopTreeSummary extends DashletBaseInsight {
     constructor(slot) {
         super(slot);
     }

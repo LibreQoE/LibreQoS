@@ -1,11 +1,11 @@
-import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {clearDashDiv, theading} from "../helpers/builders";
 import {formatRetransmit, rttNanosAsSpan} from "../helpers/scaling";
 import {RttCache} from "../helpers/rtt_cache";
 import {scaleNumber} from "../lq_js_common/helpers/scaling";
 import {TrimToFit} from "../lq_js_common/helpers/text_utils";
+import {DashletBaseInsight} from "./insight_dashlet_base";
 
-export class Top10FlowsRate extends BaseDashlet {
+export class Top10FlowsRate extends DashletBaseInsight {
     constructor(slot) {
         super(slot);
         this.rttCache = new RttCache();

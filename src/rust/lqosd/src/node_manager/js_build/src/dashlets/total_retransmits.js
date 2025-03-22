@@ -1,9 +1,9 @@
-import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {periodNameToSeconds} from "../helpers/time_periods";
 import {RetransmitsGraph} from "../graphs/retransmits_graph";
 import {LtsRetransmitsGraph} from "../graphs/lts_retransmits";
+import {DashletBaseInsight} from "./insight_dashlet_base";
 
-export class TcpRetransmitsDash extends BaseDashlet{
+export class TcpRetransmitsDash extends DashletBaseInsight{
     constructor(slot) {
         super(slot);
         this.counter = 0;

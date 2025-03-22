@@ -1,8 +1,8 @@
-import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {FlowCountGraph} from "../graphs/flows_graph";
 import {FlowCountGraphTimescale} from "../graphs/flows_graph_timeseries";
+import {DashletBaseInsight} from "./insight_dashlet_base";
 
-export class TrackedFlowsCount extends BaseDashlet{
+export class TrackedFlowsCount extends DashletBaseInsight{
     title() {
         return "Tracked Flows";
     }
