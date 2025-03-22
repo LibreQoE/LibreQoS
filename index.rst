@@ -24,6 +24,7 @@ Welcome to the LibreQoS documentation
    docs/v2.0/configuration
    docs/v2.0/components
    docs/v2.0/integrations
+   docs/v2.0/lts
    docs/v2.0/update
    docs/v2.0/troubleshooting
    docs/v2.0/extras
