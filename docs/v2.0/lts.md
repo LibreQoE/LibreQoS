@@ -1,4 +1,4 @@
-# LibreQoS Long Term Stats (LTS)
+# LibreQoS Long-Term Stats (LTS)
 ## Signup
 Find your LibreQoS Node ID by logging into your LibreQoS Shaper Box by SSH, and running:
 ```
