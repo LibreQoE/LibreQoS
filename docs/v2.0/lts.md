@@ -1,4 +1,8 @@
 # LibreQoS Long-Term Stats (LTS)
+
+## About LTS
+Learn more about LTS on our website, [here](https://libreqos.io/lts/).
+
 ## Signup
 Find your LibreQoS Node ID by logging into your LibreQoS Shaper Box by SSH, and running:
 ```
