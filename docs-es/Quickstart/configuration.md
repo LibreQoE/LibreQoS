@@ -1,4 +1,4 @@
-# Configure LibreQoS
+# Configure LibreQoS    ESPAÑOL!!!!!
 
 ## Configure lqos.conf
 
