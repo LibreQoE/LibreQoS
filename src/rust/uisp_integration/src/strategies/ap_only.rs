@@ -155,6 +155,10 @@ pub async fn build_ap_only_network(
             ap_object.insert("downloadBandwidthMbps".to_string(), serde_json::Value::Number(ap_device.download.into()));
             ap_object.insert("uploadBandwidthMbps".to_string(), serde_json::Value::Number(ap_device.upload.into()));
 
+            // Metadata
+            ap_object.insert("type".to_string(), "AP".to_string().into());
+            ap_object.insert("uisp_device".to_string(), ap_device.id.clone().into());
+
             // Save the entry
             root.insert(ap.to_string(), ap_object.into());
         }
