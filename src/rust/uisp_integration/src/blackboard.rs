@@ -1,0 +1,43 @@
+//! Collects the blackboard functionality together
+
+use serde::Serialize;
+use tracing::info;
+use lqos_bus::BlackboardSystem;
+
+pub async fn blackboard(subsystem: BlackboardSystem, key: &str, value: &str) {
+    let Ok(config) = lqos_config::load_config() else {
+        return;
+    };
+    if !config.long_term_stats.use_insight.unwrap_or(false) {
+        return;
+    }
+    let req = vec![lqos_bus::BusRequest::BlackboardData {
+        subsystem,
+        key: key.to_string(),
+        value: value.to_string(),
+    }];
+    let _ = lqos_bus::bus_request(req).await;
+}
+
+pub async fn blackboard_blob<T: Serialize>(key: &str, value: T) -> anyhow::Result<()> {
+    let config = lqos_config::load_config()?;
+    if !config.long_term_stats.use_insight.unwrap_or(false) {
+        return Ok(());
+    }
+    let blob = serde_cbor::to_vec(&value)?;
+    let chunks = blob.chunks(1024 * 16);
+    info!(
+        "Blob {key} is {} bytes long, split into {} chunks",
+        blob.len(),
+        chunks.len()
+    );
+    for (i, chunk) in chunks.enumerate() {
+        let req = vec![lqos_bus::BusRequest::BlackboardBlob {
+            tag: key.to_string(),
+            part: i,
+            blob: chunk.to_vec(),
+        }];
+        let _ = lqos_bus::bus_request(req).await;
+    }
+    Ok(())
+}
