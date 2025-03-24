@@ -1,5 +1,6 @@
 mod flat;
 mod full;
+mod ap_only;
 
 use crate::blackboard;
 use crate::errors::UispIntegrationError;
@@ -30,6 +31,11 @@ pub async fn build_with_strategy(
         "full" => {
             info!("Strategy selected: full");
             full::build_full_network(config, ip_ranges).await?;
+            Ok(())
+        }
+        "ap_only" => {
+            info!("Strategy selected: ap_only");
+            ap_only::build_ap_only_network(config, ip_ranges).await?;
             Ok(())
         }
         _ => {
