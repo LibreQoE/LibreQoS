@@ -1,6 +1,8 @@
 mod flat;
 mod full;
 mod ap_only;
+mod ap_site;
+mod common;
 
 use crate::blackboard;
 use crate::errors::UispIntegrationError;
@@ -36,6 +38,11 @@ pub async fn build_with_strategy(
         "ap_only" => {
             info!("Strategy selected: ap_only");
             ap_only::build_ap_only_network(config, ip_ranges).await?;
+            Ok(())
+        }
+        "ap_site" => {
+            info!("Strategy selected: ap_site");
+            ap_site::build_ap_site_network(config, ip_ranges).await?;
             Ok(())
         }
         _ => {

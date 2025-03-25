@@ -7,6 +7,7 @@ use lqos_config::Config;
 use crate::blackboard_blob;
 use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
+use crate::strategies::common::UispData;
 use crate::strategies::full::shaped_devices_writer::ShapedDevice;
 use crate::uisp_types::UispSiteType;
 
@@ -16,125 +17,10 @@ pub async fn build_ap_only_network(
     config: Arc<Config>,
     ip_ranges: IpRanges,
 ) -> Result<(), UispIntegrationError> {
-    // Obtain the UISP data and transform it into easier to work with types
-    let (sites_raw, devices_raw, data_links_raw) = crate::strategies::full::uisp_fetch::load_uisp_data(config.clone()).await?;
-
-    if let Err(e) = blackboard_blob("uisp_sites", &sites_raw).await {
-        warn!("Unable to write sites to blackboard: {e:?}");
-    }
-    if let Err(e) = blackboard_blob("uisp_devices", &devices_raw).await {
-        warn!("Unable to write devices to blackboard: {e:?}");
-    }
-    if let Err(e) = blackboard_blob("uisp_data_links", &data_links_raw).await {
-        warn!("Unable to write data links to blackboard: {e:?}");
-    }
-
-    // If Mikrotik is enabled, we need to fetch the Mikrotik data
-    let ipv4_to_v6 = crate::strategies::full::mikrotik::mikrotik_data(&config)
-        .await
-        .unwrap_or_else(|_| Vec::new());
-
-    // Parse the UISP data into a more usable format
-    let (sites, _data_links, devices) = crate::strategies::full::parse::parse_uisp_datasets(
-        &sites_raw,
-        &data_links_raw,
-        &devices_raw,
-        &config,
-        &ip_ranges,
-        ipv4_to_v6,
-    );
+    let uisp_data = UispData::fetch_uisp_data(config.clone(), ip_ranges).await?;
 
     // Find the clients
-    let mut mappings = HashMap::new();
-    for client in sites.iter().filter(|s| s.site_type == UispSiteType::Client) {
-        let mut found = false;
-        let mut parent = None;
-        for device in devices_raw.iter().filter(|d| d.get_site_id().unwrap_or_default() == client.id) {
-            //println!("Client {} has a device {:?}", client.name, device.get_name());
-            // Look for Parent AP attributes
-            if let Some(attr) = &device.attributes {
-                if let Some(ap) = &attr.apDevice {
-                    if let Some(ap_id) = &ap.id {
-                        //println!("AP ID: {}", ap_id);
-                        if let Some(apdev) = devices_raw.iter().find(|d| d.identification.id == *ap_id) {
-                            //println!("AP Device: {:?}", apdev.get_name());
-                            parent = Some(("AP", apdev.get_name().unwrap_or_default()));
-                            found = true;
-                        }
-                    }
-                }
-            }
-
-            // Look for data links with this device
-            if !found {
-                for link in data_links_raw.iter() {
-                    // Check the FROM side
-                    if let Some(from_device) = &link.from.device {
-                        if from_device.identification.id == device.identification.id {
-                            if let Some(to_device) = &link.to.device {
-                                if let Some(apdev) = devices_raw.iter().find(|d| d.identification.id == to_device.identification.id) {
-                                    parent = Some(("AP", apdev.get_name().unwrap_or_default()));
-                                    found = true;
-                                }
-                            }
-                        }
-                    }
-                    // Check the TO side
-                    if let Some(to_device) = &link.to.device {
-                        if to_device.identification.id == device.identification.id {
-                            if let Some(from_device) = &link.from.device {
-                                if let Some(apdev) = devices_raw.iter().find(|d| d.identification.id == from_device.identification.id) {
-                                    parent = Some(("AP", apdev.get_name().unwrap_or_default()));
-                                    found = true;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // If we still haven't found anything, let's try data links to the client site as a whole
-        if !found {
-            for link in data_links_raw.iter() {
-                if let Some(from_site) = &link.from.site {
-                    if from_site.identification.id == client.id {
-                        if let Some(to_device) = &link.to.device {
-                            if let Some(apdev) = devices_raw.iter().find(|d| d.identification.id == to_device.identification.id) {
-                                parent = Some(("AP", apdev.get_name().unwrap_or_default()));
-                                found = true;
-                            }
-                        }
-                    }
-                }
-                if let Some(to_site) = &link.to.site {
-                    if to_site.identification.id == client.id {
-                        if let Some(from_device) = &link.from.device {
-                            if let Some(apdev) = devices_raw.iter().find(|d| d.identification.id == from_device.identification.id) {
-                                parent = Some(("AP", apdev.get_name().unwrap_or_default()));
-                                found = true;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if !found {
-            //println!("Client {} has no obvious parent AP", client.name);
-            let entry = mappings.entry("Orphans".to_string()).or_insert_with(Vec::new);
-            entry.push(client.id.clone());
-        } else {
-            //info!("Client {} is connected to {:?}", client.name, parent);
-            if let Some((_, parent)) = &parent {
-                let entry = mappings.entry(parent.to_string()).or_insert_with(Vec::new);
-                entry.push(client.id.clone());
-            }
-        }
-    }
-
-    // We now have enough to build the network
-    //println!("{:#?}", mappings);
+    let mappings = uisp_data.map_clients_to_aps();
 
     // Write network.json
     let network_path = Path::new(&config.lqos_directory).join("network.json");
@@ -146,7 +32,7 @@ pub async fn build_ap_only_network(
     }
     let mut root = serde_json::Map::new();
     for ap in mappings.keys() {
-        if let Some(ap_device) = devices.iter().find(|d| d.name == *ap) {
+        if let Some(ap_device) = uisp_data.devices.iter().find(|d| d.name == *ap) {
             let mut ap_object = serde_json::Map::new();
             // Empy children
             ap_object.insert("children".to_string(), serde_json::Map::new().into());
@@ -176,8 +62,8 @@ pub async fn build_ap_only_network(
     let mut shaped_devices = Vec::new();
     for (parent, client_ids) in mappings.iter() {
         for client_id in client_ids {
-            let site = sites.iter().find(|s| *client_id == s.id).unwrap();
-            let devices = devices.iter().filter(|d| d.site_id == *client_id).collect::<Vec<_>>();
+            let site = uisp_data.sites.iter().find(|s| *client_id == s.id).unwrap();
+            let devices = uisp_data.devices.iter().filter(|d| d.site_id == *client_id).collect::<Vec<_>>();
             for device in devices.iter().filter(|d| d.has_address()) {
                 let sd = ShapedDevice {
                     circuit_id: site.id.clone(),
