@@ -74,6 +74,10 @@ impl UispData {
         self.devices_raw.iter().find(|d| d.identification.id == device_id)
     }
 
+    pub fn find_device_by_name(&self, device_name: &str) -> Option<&Device> {
+        self.devices_raw.iter().find(|d| d.get_name().unwrap_or_default() == device_name)
+    }
+
     pub fn find_data_links_featuring_device(&self, device_id: &str) -> Vec<&DataLink> {
         self.
             data_links_raw.
@@ -120,8 +124,10 @@ impl UispData {
                             //println!("AP ID: {}", ap_id);
                             if let Some(apdev) = self.find_device_by_id(ap_id) {
                                 //println!("AP Device: {:?}", apdev.get_name());
-                                parent = Some(("AP", apdev.get_name().unwrap_or_default()));
-                                found = true;
+                                if apdev.get_site_id().unwrap_or_default() != client.id {
+                                    parent = Some(("AP", apdev.get_name().unwrap_or_default()));
+                                    found = true;
+                                }
                             }
                         }
                     }
@@ -135,8 +141,10 @@ impl UispData {
                             if from_device.identification.id == device.identification.id {
                                 if let Some(to_device) = &link.to.device {
                                     if let Some(apdev) = self.find_device_by_id(&to_device.identification.id) {
-                                        parent = Some(("AP", apdev.get_name().unwrap_or_default()));
-                                        found = true;
+                                        if apdev.get_site_id().unwrap_or_default() != client.id {
+                                            parent = Some(("AP", apdev.get_name().unwrap_or_default()));
+                                            found = true;
+                                        }
                                     }
                                 }
                             }
@@ -146,8 +154,10 @@ impl UispData {
                             if to_device.identification.id == device.identification.id {
                                 if let Some(from_device) = &link.from.device {
                                     if let Some(apdev) = self.find_device_by_id(&from_device.identification.id) {
-                                        parent = Some(("AP", apdev.get_name().unwrap_or_default()));
-                                        found = true;
+                                        if apdev.get_site_id().unwrap_or_default() != client.id {
+                                            parent = Some(("AP", apdev.get_name().unwrap_or_default()));
+                                            found = true;
+                                        }
                                     }
                                 }
                             }
@@ -163,8 +173,10 @@ impl UispData {
                         if from_site.identification.id == client.id {
                             if let Some(to_device) = &link.to.device {
                                 if let Some(apdev) = self.find_device_by_id(&to_device.identification.id) {
-                                    parent = Some(("AP", apdev.get_name().unwrap_or_default()));
-                                    found = true;
+                                    if apdev.get_site_id().unwrap_or_default() != client.id {
+                                        parent = Some(("AP", apdev.get_name().unwrap_or_default()));
+                                        found = true;
+                                    }
                                 }
                             }
                         }
@@ -173,8 +185,10 @@ impl UispData {
                         if to_site.identification.id == client.id {
                             if let Some(from_device) = &link.from.device {
                                 if let Some(apdev) = self.find_device_by_id(&from_device.identification.id) {
-                                    parent = Some(("AP", apdev.get_name().unwrap_or_default()));
-                                    found = true;
+                                    if apdev.get_site_id().unwrap_or_default() != client.id {
+                                        parent = Some(("AP", apdev.get_name().unwrap_or_default()));
+                                        found = true;
+                                    }
                                 }
                             }
                         }
