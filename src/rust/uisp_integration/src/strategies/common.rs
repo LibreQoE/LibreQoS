@@ -78,6 +78,14 @@ impl UispData {
         self.devices_raw.iter().find(|d| d.get_name().unwrap_or_default() == device_name)
     }
 
+    pub fn find_site_by_name(&self, site_name: &str) -> Option<&Site> {
+        self.sites_raw.iter().find(|s| s.name().unwrap_or_default() == site_name)
+    }
+
+    pub fn find_site_by_id(&self, site_id: &str) -> Option<&Site> {
+        self.sites_raw.iter().find(|s| s.id == site_id)
+    }
+
     pub fn find_data_links_featuring_device(&self, device_id: &str) -> Vec<&DataLink> {
         self.
             data_links_raw.
@@ -133,9 +141,24 @@ impl UispData {
                     }
                 }
 
+                // Look in Site-DeviceSite
+                if !found {
+                    if let Some(device_site) = &device.identification.site {
+                        if let Some(apdev) = self.find_device_by_id(&device_site.id) {
+                            if apdev.get_site_id().unwrap_or_default() != client.id {
+                                parent = Some(("AP", apdev.get_name().unwrap_or_default()));
+                                found = true;
+                            }
+                        }
+                    }
+                }
+
                 // Look for data links with this device
                 if !found {
-                    for link in self.find_data_links_featuring_device(&device.identification.id) {
+                    if client.name.contains("Dunlap") {
+                        println!("{:#?}", self.find_data_links_featuring_device(&device.identification.id));
+                    }
+                    for link in self.data_links_raw.iter() {
                         // Check the FROM side
                         if let Some(from_device) = &link.from.device {
                             if from_device.identification.id == device.identification.id {
@@ -168,7 +191,7 @@ impl UispData {
 
             // If we still haven't found anything, let's try data links to the client site as a whole
             if !found {
-                for link in self.find_data_links_featuring_site(&client.id) {
+                for link in self.data_links_raw.iter() {
                     if let Some(from_site) = &link.from.site {
                         if from_site.identification.id == client.id {
                             if let Some(to_device) = &link.to.device {
