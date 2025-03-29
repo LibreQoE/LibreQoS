@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::write;
 use std::path::Path;
 use std::sync::Arc;
@@ -27,6 +27,14 @@ pub async fn build_ap_site_network(
     ip_ranges: IpRanges,
 ) -> Result<(), UispIntegrationError> {
     let uisp_data = UispData::fetch_uisp_data(config.clone(), ip_ranges).await?;
+
+    // Find trouble-spots!
+    find_troublesome_sites(&uisp_data)
+        .map_err(|e|{
+            error!("Error finding troublesome sites");
+            error!("{e:?}");
+            UispIntegrationError::UnknownSiteType
+        })?;
 
     // Find the clients
     let ap_mappings = uisp_data.map_clients_to_aps();
@@ -81,7 +89,7 @@ pub async fn build_ap_site_network(
         id: GraphMapping::Root,
         children: sites.values().cloned().collect(),
     };
-    println!("{:#?}", root);
+    //println!("{:#?}", root);
 
     let mut shaped_devices = Vec::new();
     let net_json = root.walk_children(None, &uisp_data, &mut shaped_devices, &config);
@@ -148,7 +156,7 @@ impl Layer {
                 | GraphMapping::GeneratedSiteByName(name) => {
                     children.insert(name.clone(), child.walk_children(Some(&parent_name), uisp_data, shaped_devices, config).into());
                 }
-                GraphMapping::ClientById(client_id) => {
+                GraphMapping::ClientById(_client_id) => {
                     let _ = child.walk_children(Some(&parent_name), uisp_data, shaped_devices, config);
                 }
                 _ => {}
@@ -223,4 +231,64 @@ impl Layer {
         root.insert("children".to_string(), serde_json::to_value(children).unwrap());
         root
     }
+}
+
+fn find_troublesome_sites(
+    data: &UispData,
+) -> anyhow::Result<()> {
+    find_clients_with_multiple_entry_points(data)?;
+    find_clients_linked_from_other_clients(data)?;
+    Ok(())
+}
+
+fn find_clients_with_multiple_entry_points(
+    data: &UispData,
+) -> anyhow::Result<()> {
+    for client in data.find_client_sites() {
+        let mut links_to_client = HashSet::new();
+        for link in data.data_links_raw.iter() {
+            if let (Some(from_site), Some(to_site)) = (&link.from.site, &link.to.site) {
+                if from_site.identification.id == client.id && to_site.identification.id != client.id {
+                    links_to_client.insert(to_site.identification.id.clone());
+                } else if from_site.identification.id != client.id && to_site.identification.id == client.id {
+                    links_to_client.insert(from_site.identification.id.clone());
+                }
+            }
+        }
+        if links_to_client.len() > 1 {
+            warn!(
+                "Client {} has multiple entry points: {:?}",
+                client.name, links_to_client
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn find_clients_linked_from_other_clients(
+    data: &UispData
+) -> anyhow::Result<()> {
+    let all_clients = data.find_client_sites();
+    for client in &all_clients {
+        for link in data.data_links_raw.iter() {
+            if let (Some(from_site), Some(to_site)) = (&link.from.site, &link.to.site) {
+                if from_site.identification.id == client.id && to_site.identification.id != client.id
+                    && all_clients.iter().any(|c| c.id == to_site.identification.id) {
+                    warn!(
+                        "Client {} is linked from another client: {}",
+                        client.name, to_site.identification.id
+                    );
+                }
+                if from_site.identification.id != client.id && to_site.identification.id == client.id
+                    && all_clients.iter().any(|c| c.id == from_site.identification.id) {
+                    warn!(
+                        "Client {} is linked to another client: {}",
+                        client.name, from_site.identification.id
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
 }
