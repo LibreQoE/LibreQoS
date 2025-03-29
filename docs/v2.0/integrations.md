@@ -243,4 +243,4 @@ This script automates the synchronization of MikroTik PPP secrets (e.g., PPPoE u
 
 The script is designed to run as a background service using systemd, ensuring it starts automatically on boot and restarts in case of failures.
 
-https://github.com/Kintoyyy/MikroTik-LibreQos-Integration
+[https://github.com/Kintoyyy/MikroTik-LibreQos-Integration](https://github.com/Kintoyyy/MikroTik-LibreQos-Integration)
