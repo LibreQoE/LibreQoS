@@ -19,6 +19,18 @@ pub enum GraphMapping {
     ClientById(String),
 }
 
+impl GraphMapping {
+    pub(crate) fn name(&self) -> String {
+        match self {
+            GraphMapping::SiteByName(name) => name.clone(),
+            GraphMapping::AccessPointByName(name) => name.clone(),
+            GraphMapping::GeneratedSiteByName(name) => name.clone(),
+            GraphMapping::ClientById(client_id) => client_id.clone(),
+            _ => "".to_string()
+        }
+    }
+}
+
 /// Creates a network with APs detected from clients,
 /// and then a single site above them (shared if the site
 /// matches).
@@ -70,6 +82,13 @@ pub async fn build_ap_site_network(
     })?;
     info!("Written network.json");
 
+    let _ = write_shaped_devices(&config, &mut shaped_devices);
+    info!("Wrote {} lines to ShapedDevices.csv", shaped_devices.len());
+
+    Ok(())
+}
+
+pub(crate) fn write_shaped_devices(config: &Arc<Config>, shaped_devices: &mut Vec<ShapedDevice>) -> Result<(), UispIntegrationError> {
     let file_path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
     let mut writer = csv::WriterBuilder::new()
         .has_headers(true)
@@ -85,7 +104,6 @@ pub async fn build_ap_site_network(
         UispIntegrationError::CsvError
     })?;
     info!("Wrote {} lines to ShapedDevices.csv", shaped_devices.len());
-
     Ok(())
 }
 
@@ -147,7 +165,17 @@ pub(crate) struct Layer {
 }
 
 impl Layer {
-    fn walk_children(
+    pub fn name(&self) -> String {
+        match &self.id {
+            GraphMapping::SiteByName(name) => name.clone(),
+            GraphMapping::AccessPointByName(name) => name.clone(),
+            GraphMapping::GeneratedSiteByName(name) => name.clone(),
+            GraphMapping::ClientById(client_id) => client_id.clone(),
+            _ => "".to_string()
+        }
+    }
+
+    pub(crate) fn walk_children(
         &self,
         parent: Option<&str>,
         uisp_data: &UispData,
