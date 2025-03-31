@@ -40,51 +40,12 @@ pub async fn build_ap_site_network(
     let ap_mappings = uisp_data.map_clients_to_aps();
 
     // Make AP Layer entries
-    let mut access_points = HashMap::new();
-    for (ap_name, client_ids) in ap_mappings.iter() {
-        let mut ap_layer = Layer {
-            id: GraphMapping::AccessPointByName(ap_name.clone()),
-            children: Vec::new(),
-        };
-        for client_id in client_ids.iter() {
-            ap_layer.children.push(Layer {
-                id: GraphMapping::ClientById(client_id.clone()),
-                children: Vec::new(),
-            });
-        }
-        access_points.insert(ap_name.clone(), ap_layer);
-    }
+    let access_points = get_ap_layer(&ap_mappings);
 
     // Site mappings
-    let mut sites = HashMap::new();
-    for (ap_name, client_ids) in ap_mappings.iter() {
-        if let Some(device) = uisp_data.find_device_by_name(ap_name) {
-            if let Some(device_site_id) = device.get_site_id() {
-                if let Some(device_site) = uisp_data.sites.iter().find(|s| s.id == device_site_id) {
-                    let site_entry = sites.entry(device_site.name.clone()).or_insert_with(|| {
-                        Layer {
-                            id: GraphMapping::SiteByName(device_site.name.clone()),
-                            children: Vec::new(),
-                        }
-                    });
-                    let ap_map = access_points.get(ap_name).unwrap().clone();
-                    site_entry.children.push(ap_map);
-                }
-            }
-        } else {
-            let mut detached = Layer {
-                id: GraphMapping::SiteByName(ap_name.clone()),
-                children: vec![],
-            };
-            for client_id in client_ids.iter() {
-                detached.children.push(Layer {
-                    id: GraphMapping::ClientById(client_id.clone()),
-                    children: vec![],
-                });
-            }
-            sites.insert(ap_name.clone(), detached);
-        }
-    }
+    let sites = map_sites_above_aps(&uisp_data, ap_mappings, access_points);
+
+    // Insert the root
     let mut root = Layer {
         id: GraphMapping::Root,
         children: sites.values().cloned().collect(),
@@ -128,10 +89,61 @@ pub async fn build_ap_site_network(
     Ok(())
 }
 
+pub(crate) fn map_sites_above_aps(uisp_data: &UispData, ap_mappings: HashMap<String, Vec<String>>, access_points: HashMap<String, Layer>) -> HashMap<String, Layer> {
+    let mut sites = HashMap::new();
+    for (ap_name, client_ids) in ap_mappings.iter() {
+        if let Some(device) = uisp_data.find_device_by_name(ap_name) {
+            if let Some(device_site_id) = device.get_site_id() {
+                if let Some(device_site) = uisp_data.sites.iter().find(|s| s.id == device_site_id) {
+                    let site_entry = sites.entry(device_site.name.clone()).or_insert_with(|| {
+                        Layer {
+                            id: GraphMapping::SiteByName(device_site.name.clone()),
+                            children: Vec::new(),
+                        }
+                    });
+                    let ap_map = access_points.get(ap_name).unwrap().clone();
+                    site_entry.children.push(ap_map);
+                }
+            }
+        } else {
+            let mut detached = Layer {
+                id: GraphMapping::SiteByName(ap_name.clone()),
+                children: vec![],
+            };
+            for client_id in client_ids.iter() {
+                detached.children.push(Layer {
+                    id: GraphMapping::ClientById(client_id.clone()),
+                    children: vec![],
+                });
+            }
+            sites.insert(ap_name.clone(), detached);
+        }
+    }
+    sites
+}
+
+pub(crate) fn get_ap_layer(ap_mappings: &HashMap<String, Vec<String>>) -> HashMap<String, Layer> {
+    let mut access_points = HashMap::new();
+    for (ap_name, client_ids) in ap_mappings.iter() {
+        let mut ap_layer = Layer {
+            id: GraphMapping::AccessPointByName(ap_name.clone()),
+            children: Vec::new(),
+        };
+        for client_id in client_ids.iter() {
+            ap_layer.children.push(Layer {
+                id: GraphMapping::ClientById(client_id.clone()),
+                children: Vec::new(),
+            });
+        }
+        access_points.insert(ap_name.clone(), ap_layer);
+    }
+    access_points
+}
+
 #[derive(Debug, Clone)]
-struct Layer {
-    id: GraphMapping,
-    children: Vec<Layer>,
+pub(crate) struct Layer {
+    pub(crate) id: GraphMapping,
+    pub(crate) children: Vec<Layer>,
 }
 
 impl Layer {
@@ -239,12 +251,12 @@ impl Layer {
     }
 }
 
-struct TroublesomeClients {
-    multi_entry_points: HashSet<String>,
-    client_of_clients: HashSet<String>,
+pub struct TroublesomeClients {
+    pub multi_entry_points: HashSet<String>,
+    pub client_of_clients: HashSet<String>,
 }
 
-fn find_troublesome_sites(
+pub(crate) fn find_troublesome_sites(
     data: &UispData,
 ) -> anyhow::Result<TroublesomeClients> {
     let multi_entry_points = find_clients_with_multiple_entry_points(data)?;
