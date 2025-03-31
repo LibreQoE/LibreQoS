@@ -29,7 +29,7 @@ pub async fn build_ap_site_network(
     let uisp_data = UispData::fetch_uisp_data(config.clone(), ip_ranges).await?;
 
     // Find trouble-spots!
-    let trouble = find_troublesome_sites(&uisp_data)
+    let _trouble = find_troublesome_sites(&uisp_data)
         .map_err(|e|{
             error!("Error finding troublesome sites");
             error!("{e:?}");
@@ -228,7 +228,13 @@ impl Layer {
                 _ => {}
             }
         }
-        root.insert("children".to_string(), serde_json::to_value(children).unwrap());
+        if parent.is_some() {
+            root.insert("children".to_string(), serde_json::to_value(children).unwrap());
+        } else {
+            for child in children {
+                root.insert(child.0, child.1);
+            }
+        }
         root
     }
 }
