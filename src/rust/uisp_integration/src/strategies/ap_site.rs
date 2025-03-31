@@ -29,7 +29,7 @@ pub async fn build_ap_site_network(
     let uisp_data = UispData::fetch_uisp_data(config.clone(), ip_ranges).await?;
 
     // Find trouble-spots!
-    find_troublesome_sites(&uisp_data)
+    let trouble = find_troublesome_sites(&uisp_data)
         .map_err(|e|{
             error!("Error finding troublesome sites");
             error!("{e:?}");
@@ -233,17 +233,26 @@ impl Layer {
     }
 }
 
+struct TroublesomeClients {
+    multi_entry_points: HashSet<String>,
+    client_of_clients: HashSet<String>,
+}
+
 fn find_troublesome_sites(
     data: &UispData,
-) -> anyhow::Result<()> {
-    find_clients_with_multiple_entry_points(data)?;
-    find_clients_linked_from_other_clients(data)?;
-    Ok(())
+) -> anyhow::Result<TroublesomeClients> {
+    let multi_entry_points = find_clients_with_multiple_entry_points(data)?;
+    let client_of_clients = find_clients_linked_from_other_clients(data)?;
+    Ok(TroublesomeClients {
+        multi_entry_points,
+        client_of_clients,
+    })
 }
 
 fn find_clients_with_multiple_entry_points(
     data: &UispData,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<HashSet<String>> {
+    let mut result = HashSet::new();
     for client in data.find_client_sites() {
         let mut links_to_client = HashSet::new();
         for link in data.data_links_raw.iter() {
@@ -260,16 +269,18 @@ fn find_clients_with_multiple_entry_points(
                 "Client {} has multiple entry points: {:?}",
                 client.name, links_to_client
             );
+            result.insert(client.id.clone());
         }
     }
 
-    Ok(())
+    Ok(result)
 }
 
 fn find_clients_linked_from_other_clients(
     data: &UispData
-) -> anyhow::Result<()> {
+) -> anyhow::Result<HashSet<String>> {
     let all_clients = data.find_client_sites();
+    let mut result = HashSet::new();
     for client in &all_clients {
         for link in data.data_links_raw.iter() {
             if let (Some(from_site), Some(to_site)) = (&link.from.site, &link.to.site) {
@@ -279,6 +290,7 @@ fn find_clients_linked_from_other_clients(
                         "Client {} is linked from another client: {}",
                         client.name, to_site.identification.id
                     );
+                    result.insert(client.id.clone());
                 }
                 if from_site.identification.id != client.id && to_site.identification.id == client.id
                     && all_clients.iter().any(|c| c.id == from_site.identification.id) {
@@ -286,9 +298,10 @@ fn find_clients_linked_from_other_clients(
                         "Client {} is linked to another client: {}",
                         client.name, from_site.identification.id
                     );
+                    result.insert(client.id.clone());
                 }
             }
         }
     }
-    Ok(())
+    Ok(result)
 }
