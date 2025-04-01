@@ -19,13 +19,22 @@ export function inMemoriam() {
                             </div>
                             <div class="row row-cols-1 row-cols-md-3 g-4">
                                 <div class="col">
-                                    <div class="ratio ratio-16x9 bg-secondary"></div>
+                                    <img src="dave/dave1.jpg" 
+                                         class="img-fluid rounded" 
+                                         style="object-fit: cover; width: 100%; height: 100%"
+                                         alt="Dave Taht speaking at a conference">
                                 </div>
                                 <div class="col">
-                                    <div class="ratio ratio-16x9 bg-secondary"></div>
+                                    <img src="dave/dave.jpg" 
+                                         class="img-fluid rounded" 
+                                         style="object-fit: cover; width: 100%; height: 100%"
+                                         alt="Dave Taht working on networking hardware">
                                 </div>
                                 <div class="col">
-                                    <div class="ratio ratio-16x9 bg-secondary"></div>
+                                    <img src="dave/dave3.jpg" 
+                                         class="img-fluid rounded" 
+                                         style="object-fit: cover; width: 100%; height: 100%"
+                                         alt="Dave Taht smiling with colleagues">
                                 </div>
                             </div>
                         </div>
