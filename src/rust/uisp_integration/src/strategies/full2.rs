@@ -86,7 +86,44 @@ pub async fn build_full_network_v2(
         }
     }
 
-
+    // Now we make a heroic effort to find sites that are linked through UISP's semi-broken
+    // API!
+    for graph_node in graph.node_indices() {
+        let name = graph[graph_node].name();
+        if let Some(site_info) = uisp_data.find_site_by_name(&name) {
+            let site_id = &site_info.id;
+            for device in uisp_data.devices_raw.iter() {
+                if let Some(site) = &device.identification.site {
+                    if site.id == *site_id {
+                        if let Some(attr) = &device.attributes {
+                            if let Some(ap) = &attr.apDevice {
+                                if let Some(ap_device_id) = &ap.id {
+                                    if let Some(ap_device) = uisp_data.devices_raw.iter().find(|d| d.get_id() == *ap_device_id) {
+                                        if ap_device.get_site_id().unwrap_or_default() != *site_id {
+                                            // After all this nesting, we have found a link
+                                            if let Some(other_site) = uisp_data.sites_raw.iter().find(|s| s.id == ap_device.get_site_id().unwrap_or_default()) {
+                                                if !other_site.is_client_site() {
+                                                    // Add the link
+                                                    //println!("Adding link from {} to {}", name, other_site.name_or_blank());
+                                                    add_link_if_new_from_ap_check(
+                                                        &site_info,
+                                                        other_site,
+                                                        device,
+                                                        ap_device,
+                                                        &mut graph,
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // Find the root
     let root_site_name = config.uisp_integration.site.clone();
@@ -180,10 +217,20 @@ pub async fn build_full_network_v2(
 
                 if route.1.is_empty() {
                     //println!("No path detected from {:?} to {}", graph[node], root_site_name);
-                    parents.insert(name, ("Orphans".to_owned(), (config.queues.generated_pn_download_mbps, config.queues.generated_pn_upload_mbps));
+                    parents.insert(name, ("Orphans".to_owned(), (config.queues.generated_pn_download_mbps, config.queues.generated_pn_upload_mbps)));
                 } else {
-                    let parent = graph[route.1[route.1.len() - 2]].name();
-                    parents.insert(name, (parent, network_json_capacity(&config)));
+                    let parent_node = route.1[route.1.len() - 2];
+                    // We need the weight from node to parent_node in the graph edges
+                    if let Some(edge) = graph.find_edge(parent_node, node) {
+                        // From EdgeIndex to LinkMapping
+                        let edge = graph[edge].clone();
+                        //println!("FOUND THE EDGE: {:?}", edge);
+
+                        let parent = graph[route.1[route.1.len() - 2]].name();
+                        parents.insert(name, (parent, network_json_capacity(&config, &edge, &uisp_data.devices)));
+                    } else {
+                        panic!("DID NOT FIND THE EDGE");
+                    }
                 }
 
                 //let parent_index = route.1.iter().last().unwrap();
@@ -193,14 +240,52 @@ pub async fn build_full_network_v2(
             _ => {}
         }
     }
-    println!("Parents: {:#?}", parents);
+    //println!("Parents: {:#?}", parents);
+
+    // Write the network.json file
+    let mut network_json = serde_json::Map::new();
+    for (name, (parent, (download, upload))) in parents.iter().filter(|(_, (parent, _))| *parent == root_site_name) {
+        network_json.insert(name.clone().into(), walk_parents().into());
+    }
 
     Ok(())
 }
 
+fn walk_parents() -> serde_json::Map<String, serde_json::Value> {
+
+}
+
 fn network_json_capacity(
-    config: &Arc<Config>
+    config: &Arc<Config>,
+    link: &LinkMapping,
+    devices: &[UispDevice],
 ) -> (u64, u64) {
+    // Handle ignoring capacity
+    if config.uisp_integration.ignore_calculated_capacity {
+        return (config.queues.generated_pn_download_mbps, config.queues.generated_pn_upload_mbps);
+    }
+
+    // Handle the link type
+    match link {
+        LinkMapping::Ethernet => {
+            return (config.queues.generated_pn_download_mbps, config.queues.generated_pn_upload_mbps);
+        }
+        LinkMapping::DevicePair(device_a, device_b) => {
+            // Find the devices
+            let device_a = devices.iter().find(|d| d.id == *device_a);
+            let device_b = devices.iter().find(|d| d.id == *device_b);
+
+            if let Some(device_a) = device_a {
+                if let Some(device_b) = device_b {
+                    return (
+                        device_a.download,
+                        device_b.upload,
+                    );
+                }
+            }
+        }
+    }
+
     (config.queues.generated_pn_download_mbps, config.queues.generated_pn_upload_mbps)
 }
 
@@ -220,6 +305,52 @@ fn link_capacity_mbps(link_mapping: &LinkMapping, devices: &[UispDevice]) -> u64
             capacity
         }
     }
+}
+
+fn add_link_if_new_from_ap_check(
+    site_a: &Site,
+    site_b: &Site,
+    device_a: &Device,
+    device_b: &Device,
+    graph: &mut petgraph::Graph<GraphMapping, LinkMapping>,
+) {
+    if site_a.id == site_b.id {
+        // If the sites are the same, we don't need to add an edge
+        return;
+    }
+    let Some(node_a) = graph
+        .node_indices()
+        .find(|n| graph[*n] == GraphMapping::SiteByName(site_a.name_or_blank()))
+    else {
+        return;
+    };
+    let Some(node_b) = graph
+        .node_indices()
+        .find(|n| graph[*n] == GraphMapping::SiteByName(site_b.name_or_blank()))
+    else {
+        return;
+    };
+
+    if graph.contains_edge(node_a, node_b) {
+        // If the edge already exists, we don't need to add it
+        return;
+    }
+    if graph.contains_edge(node_b, node_a) {
+        // If the edge already exists in the opposite direction, we don't need to add it
+        return;
+    }
+
+    // Try to figure out the type of link
+    let mut link_type = LinkMapping::Ethernet;
+
+    link_type = LinkMapping::DevicePair(
+        device_a.identification.id.clone(),
+        device_b.identification.id.clone(),
+    );
+
+    // Add the edge
+    println!("(AP Scan) Adding edge from {:?} to {:?}", graph[node_a], graph[node_b]);
+    graph.add_edge(node_a, node_b, link_type);
 }
 
 fn add_link_if_new(
