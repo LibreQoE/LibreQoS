@@ -12,7 +12,9 @@ export function inMemoriam() {
                         <div class="modal-body text-center">
                             <div class="row mb-4">
                                 <div class="col-12">
-                                    <p class="lead">Placeholder for memorial text</p>
+                                    <p class="lead">We're devastated to announce that Dave Taht's has passed away.</p>
+                                    <p>Dave was an amazing man, helping the world with FQ-CoDel and CAKE, fighting bufferbloat and trying to make the world a better place. Always willing to help, and without him - LibreQoS (and the other QoE solutions out there) wouldn't exist.</p>
+                                    <p>Dave was an inspiration, and we all miss him. We're reaching out to family and close friends to see if there's anything we can do to help.</p>
                                 </div>
                             </div>
                             <div class="row row-cols-1 row-cols-md-3 g-4">
