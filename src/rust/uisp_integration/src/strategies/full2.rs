@@ -207,9 +207,9 @@ pub async fn build_full_network_v2(
         to_remove.push(*ap_ref);
     }
     info!("Removing {} APs with no clients or only one link", to_remove.len());
-    for ap_ref in to_remove.iter() {
+    /*for ap_ref in to_remove.iter() {
         graph.remove_node(*ap_ref);
-    }
+    }*/
 
     // Visualizer
     save_dot_file(&graph)?;
