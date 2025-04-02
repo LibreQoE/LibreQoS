@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::fs::write;
+use std::path::Path;
 use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
 use crate::strategies::ap_site::GraphMapping;
@@ -245,14 +247,50 @@ pub async fn build_full_network_v2(
     // Write the network.json file
     let mut network_json = serde_json::Map::new();
     for (name, (parent, (download, upload))) in parents.iter().filter(|(_, (parent, _))| *parent == root_site_name) {
-        network_json.insert(name.clone().into(), walk_parents().into());
+        network_json.insert(name.clone().into(), walk_parents(&parents, name, &config, *download, *upload).into());
     }
+    let network_path = Path::new(&config.lqos_directory).join("network.json");
+    if network_path.exists() && !config.integration_common.always_overwrite_network_json {
+        warn!(
+            "Network.json exists, and always overwrite network json is not true - not writing network.json"
+        );
+        return Ok(());
+    }
+    let json = serde_json::to_string_pretty(&network_json).unwrap();
+    write(network_path, json).map_err(|e| {
+        error!("Unable to write network.json");
+        error!("{e:?}");
+        UispIntegrationError::WriteNetJson
+    })?;
+    info!("Written network.json");
 
     Ok(())
 }
 
-fn walk_parents() -> serde_json::Map<String, serde_json::Value> {
+fn walk_parents(
+    parents: &HashMap<&String, (String, (u64, u64))>,
+    name: &String,
+    config: &Arc<Config>,
+    download: u64,
+    upload: u64,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut map = serde_json::Map::new();
 
+    // Entries are name, type, uisp_device or site, downloadBandwidthMbps, uploadBandwidthMbps, children
+    map.insert("name".into(), name.clone().into());
+    map.insert("downloadBandwidthMbps".into(), download.into());
+    map.insert("uploadBandwidthMbps".into(), upload.into());
+
+    let mut children = serde_json::Map::new();
+    for (name, (parent, (download, upload))) in parents.iter().filter(|(_, (parent, _))|
+        *parent == *name) {
+        let child = walk_parents(parents, name, config, *download, *upload);
+        children.insert(name.clone().into(), child.into());
+    }
+
+    map.insert("children".into(), children.into());
+
+    map
 }
 
 fn network_json_capacity(
