@@ -155,9 +155,6 @@ impl UispData {
 
                 // Look for data links with this device
                 if !found {
-                    if client.name.contains("Dunlap") {
-                        println!("{:#?}", self.find_data_links_featuring_device(&device.identification.id));
-                    }
                     for link in self.data_links_raw.iter() {
                         // Check the FROM side
                         if let Some(from_device) = &link.from.device {

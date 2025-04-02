@@ -1,9 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::write;
 use std::path::Path;
 use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
-use crate::strategies::ap_site::GraphMapping;
 use crate::strategies::common::UispData;
 use crate::uisp_types::{UispDevice, UispSiteType};
 use lqos_config::Config;
@@ -11,12 +10,35 @@ use petgraph::data::Build;
 use std::sync::Arc;
 use tracing::{error, info, warn};
 use uisp::{DataLinkDevice, DataLinkSite, Device, Site};
+use petgraph::visit::EdgeRef;
+use crate::strategies::ap_site::Layer;
+
+#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone)]
+pub enum GraphMapping {
+    Root { name: String, id: String },
+    Site { name: String, id: String },
+    GeneratedSite { name: String },
+    AccessPoint { name: String, id: String },
+}
+
+impl GraphMapping {
+    pub fn name(&self) -> String {
+        match self {
+            GraphMapping::Root { name, .. } => name.clone(),
+            GraphMapping::Site { name, .. } => name.clone(),
+            GraphMapping::GeneratedSite { name } => name.clone(),
+            GraphMapping::AccessPoint { name, .. } => name.clone(),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum LinkMapping {
     Ethernet,
     DevicePair(String, String),
 }
+
+type GraphType = petgraph::Graph<GraphMapping, LinkMapping>;
 
 pub async fn build_full_network_v2(
     config: Arc<Config>,
@@ -32,106 +54,39 @@ pub async fn build_full_network_v2(
         UispIntegrationError::UnknownSiteType
     })?;
 
-    // Find the clients
-    let ap_mappings = uisp_data.map_clients_to_aps();
-
-    // Make AP Layer entries
-    let access_points = crate::strategies::ap_site::get_ap_layer(&ap_mappings);
-
-    // Site mappings
-    let sites =
-        crate::strategies::ap_site::map_sites_above_aps(&uisp_data, ap_mappings, access_points);
-
-    // Insert the root
-    let mut root = crate::strategies::ap_site::Layer {
-        id: GraphMapping::Root,
-        children: sites.values().cloned().collect(),
-    };
-
-    // Now transform this into a Petgraph graph
-    let mut graph = petgraph::Graph::<GraphMapping, LinkMapping>::new();
-    root.walk_site_ap_to_pet_graph(&mut graph, None);
-
-    // Then add other sites
-    for site in uisp_data.sites_raw.iter() {
-        // Skip clients
-        if site.is_client_site() {
-            continue;
-        }
-        // Find the node index of an entry in the graph if there is one
-        let mut node_index = graph
-            .node_indices()
-            .find(|i| graph[*i] == GraphMapping::SiteByName(site.name_or_blank()));
-
-        // If it already exists, then we're interested in finding links between it and other sites
-        if let Some(_node_index) = node_index {
-            // Do nothing
-        } else {
-            // If it doesn't exist, then we need to add it
-            graph.add_node(GraphMapping::SiteByName(site.name_or_blank()));
-        }
-    }
-
-    // Now iterate all the links!
-    for link in uisp_data.data_links_raw.iter() {
-        if let Some(from_site) = &link.from.site {
-            if let Some(to_site) = &link.to.site {
-                add_link_if_new(
-                    from_site,
-                    to_site,
-                    &link.from.device,
-                    &link.to.device,
-                    &mut graph,
-                    &uisp_data.sites_raw,
-                );
-            }
-        }
-    }
-
-    // Now we make a heroic effort to find sites that are linked through UISP's semi-broken
-    // API!
-    for graph_node in graph.node_indices() {
-        let name = graph[graph_node].name();
-        if let Some(site_info) = uisp_data.find_site_by_name(&name) {
-            let site_id = &site_info.id;
-            for device in uisp_data.devices_raw.iter() {
-                if let Some(site) = &device.identification.site {
-                    if site.id == *site_id {
-                        if let Some(attr) = &device.attributes {
-                            if let Some(ap) = &attr.apDevice {
-                                if let Some(ap_device_id) = &ap.id {
-                                    if let Some(ap_device) = uisp_data.devices_raw.iter().find(|d| d.get_id() == *ap_device_id) {
-                                        if ap_device.get_site_id().unwrap_or_default() != *site_id {
-                                            // After all this nesting, we have found a link
-                                            if let Some(other_site) = uisp_data.sites_raw.iter().find(|s| s.id == ap_device.get_site_id().unwrap_or_default()) {
-                                                if !other_site.is_client_site() {
-                                                    // Add the link
-                                                    //println!("Adding link from {} to {}", name, other_site.name_or_blank());
-                                                    add_link_if_new_from_ap_check(
-                                                        &site_info,
-                                                        other_site,
-                                                        device,
-                                                        ap_device,
-                                                        &mut graph,
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // Create a new graph
+    let mut graph = GraphType::new();
 
     // Find the root
     let root_site_name = config.uisp_integration.site.clone();
+
+    // Add all sites to the graph
+    let mut site_map = HashMap::new();
+    for site in uisp_data.sites_raw.iter().filter(|s| !s.is_client_site()) {
+        let site_name = site.name_or_blank();
+        let id = site.id.clone();
+        if site_name == root_site_name {
+            // Add the root site
+            let root_entry = GraphMapping::Root {
+                name: site_name,
+                id,
+            };
+            let root_ref = graph.add_node(root_entry);
+            site_map.insert(site.id.clone(), root_ref);
+            continue;
+        }
+        let site_entry = GraphMapping::Site {
+            name: site_name,
+            id,
+        };
+        let site_ref = graph.add_node(site_entry);
+        site_map.insert(site.id.clone(), site_ref);
+    }
+
+    // Locate the root site in the graph
     let Some(root_idx) = graph.node_indices().find(|n| {
-        if let GraphMapping::SiteByName(name) = &graph[*n] {
-            *name == root_site_name
+        if let GraphMapping::Root{name: _, id: _} = &graph[*n] {
+            true
         } else {
             false
         }
@@ -140,16 +95,65 @@ pub async fn build_full_network_v2(
         return Err(UispIntegrationError::NoRootSite);
     };
 
-    // Working up to adding the shaper to the detected (named) root
-    let mut orphans = None;
-    for node in graph.node_indices() {
-        if node == root_idx {
+    // Iterate all UISP devices and if their parent site is in the graph, add them
+    let mut device_map = HashMap::new();
+    for device in uisp_data.devices_raw.iter() {
+        let Some(site_id) = &device.identification.site else {
+            continue;
+        };
+        let site_id = &site_id.id;
+        let Some(site_ref) = site_map.get(site_id) else {
+            continue;
+        };
+        let device_entry = GraphMapping::AccessPoint {
+            name: device.get_name().unwrap_or_default(),
+            id: device.identification.id.clone(),
+        };
+        let device_ref = graph.add_node(device_entry);
+        device_map.insert(device.identification.id.clone(), device_ref);
+        graph.add_edge(*site_ref, device_ref, LinkMapping::Ethernet);
+    }
+
+    // Now we iterate all the data links looking for DEVICE linkage
+    for link in uisp_data.data_links_raw.iter() {
+        let Some(from_device) = &link.from.device else {
+            continue;
+        };
+        let Some(to_device) = &link.to.device else {
+            continue;
+        };
+        let Some(a_ref) = device_map.get(&from_device.identification.id) else {;
+            continue;
+        };
+        let Some(b_ref) = device_map.get(&to_device.identification.id) else {
+            continue;
+        };
+        if a_ref == b_ref {
+            // If the devices are the same, we don't need to add an edge
+            continue;
+        }
+        if graph.contains_edge(*a_ref, *b_ref) {
+            // If the edge already exists, we don't need to add it
+            continue;
+        }
+        if graph.contains_edge(*b_ref, *a_ref) {
+            // If the edge already exists in the opposite direction, we don't need to add it
+            continue;
+        }
+        graph.add_edge(*a_ref, *b_ref, LinkMapping::DevicePair(from_device.identification.id.clone(), to_device.identification.id.clone()));
+    }
+
+    // Now we iterate only sites, looking for connectivity to the root
+    let orphans = graph.add_node(GraphMapping::GeneratedSite{ name: "Orphans".to_string()});
+    graph.add_edge(root_idx, orphans, LinkMapping::Ethernet);
+    for (_, site_ref) in site_map.iter() {
+        if *site_ref == root_idx {
             continue;
         }
         let a_star_run = petgraph::algo::astar(
             &graph,
             root_idx,
-            |n| n == node,
+            |n| n == *site_ref,
             |e| (10_000u64).saturating_sub(link_capacity_mbps(&e.weight(), &uisp_data.devices)),
             |_| 0,
         );
@@ -157,41 +161,124 @@ pub async fn build_full_network_v2(
         if a_star_run.is_none() {
             warn!(
                 "No path is detected from {:?} to {}",
-                graph[node], root_site_name
+                graph[*site_ref], root_site_name
             );
-            if orphans.is_none() {
-                orphans =
-                    Some(graph.add_node(GraphMapping::GeneratedSiteByName("Orphans".to_string())));
-                graph.add_edge(root_idx, orphans.unwrap(), LinkMapping::Ethernet);
-            }
-            if let Some(orphans) = orphans {
-                graph.add_edge(node, orphans, LinkMapping::Ethernet);
-            }
-        } else {
-            let all_paths =
-                petgraph::algo::all_simple_paths::<Vec<_>, _>(&graph, node, root_idx, 0, None)
-                    .collect::<Vec<_>>();
-
-            //println!("Path detected from {:?} to {}", graph[node], root_site_name);
-            if all_paths.len() > 1 {
-                println!(
-                    "Multiple paths detected from {:?} to {}",
-                    graph[node], root_site_name
-                );
-            }
+            graph.add_edge(*site_ref, orphans, LinkMapping::Ethernet);
         }
     }
 
-    // Save the dot file
-    let dot_data = format!("{:?}", petgraph::dot::Dot::with_config(&graph, &[petgraph::dot::Config::EdgeNoLabel]));
-    let _ = std::fs::write("graph.dot", dot_data.as_bytes());
-    let _ = std::process::Command::new("dot")
-        .arg("-Tpng")
-        .arg("graph.dot")
-        .arg("-o")
-        .arg("graph.png")
-        .output();
+    // Client mapping
+    let client_mappings = uisp_data.map_clients_to_aps();
 
+    // Find the APs that have clients
+    let mut aps_with_clients = HashSet::new();
+    for (ap_name, _client_ids) in client_mappings.iter() {
+        let Some(ap_device) = uisp_data.devices_raw.iter().find(|d| d.get_name().unwrap_or_default() == *ap_name) else {
+            // Orphaning is already handled
+            continue;
+        };
+        aps_with_clients.insert(ap_device.identification.id.clone());
+    }
+
+    // Count linkages to APs
+    let mut ap_link_count = HashMap::<String, usize>::new();
+    for edge_ref in graph.edge_references() {
+        if let GraphMapping::AccessPoint{ref name, ref id} = graph[edge_ref.source()] {
+            let entry = ap_link_count.entry(id.clone()).or_insert(0);
+            *entry += 1;
+        };
+        if let GraphMapping::AccessPoint{ref name, ref id} = graph[edge_ref.target()] {
+            let entry = ap_link_count.entry(id.clone()).or_insert(0);
+            *entry += 1;
+        };
+    }
+
+    // Cull the APs that have no clients or only one link
+    let mut to_remove = Vec::new();
+    for (ap_id, ap_ref) in device_map.iter() {
+        if aps_with_clients.contains(ap_id) {
+            continue;
+        }
+        if let Some(link_count) = ap_link_count.get(ap_id) {
+            if *link_count > 1 {
+                continue;
+            }
+        }
+        to_remove.push(*ap_ref);
+    }
+    info!("Removing {} APs with no clients or only one link", to_remove.len());
+    for ap_ref in to_remove.iter() {
+        graph.remove_node(*ap_ref);
+    }
+
+    // Visualizer
+    save_dot_file(&graph)?;
+
+    // Figure out the network.json layers
+    let mut parents = HashMap::new();
+    for node in graph.node_indices() {
+        if node == root_idx {
+            continue;
+        }
+        match &graph[node] {
+            GraphMapping::GeneratedSite{name} | GraphMapping::Site{name, ..} |
+            GraphMapping::AccessPoint{name, ..} => {
+                let route = petgraph::algo::astar(
+                    &graph,
+                    root_idx,
+                    |n| n == node,
+                    |e| (10_000u64).saturating_sub(link_capacity_mbps(&e.weight(), &uisp_data.devices)),
+                    |_| 0,
+                ).unwrap_or((0, vec![]));
+
+                if route.1.is_empty() {
+                    //println!("No path detected from {:?} to {}", graph[node], root_site_name);
+                    parents.insert(name, ("Orphans".to_owned(), (config.queues.generated_pn_download_mbps, config.queues.generated_pn_upload_mbps)));
+                } else {
+                    let parent_node = route.1[route.1.len() - 2];
+                    // We need the weight from node to parent_node in the graph edges
+                    if let Some(edge) = graph.find_edge(parent_node, node) {
+                        // From EdgeIndex to LinkMapping
+                        let edge = graph[edge].clone();
+                        //println!("FOUND THE EDGE: {:?}", edge);
+
+                        let parent = graph[route.1[route.1.len() - 2]].name();
+                        parents.insert(name, (parent, network_json_capacity(&config, &edge, &uisp_data.devices)));
+                    } else {
+                        panic!("DID NOT FIND THE EDGE");
+                    }
+                }
+
+                //let parent_index = route.1.iter().last().unwrap();
+                //let parent = graph[*parent_index].clone();
+                //println!("Parent of {:?} is {:?}", graph[node], parent);
+            }
+            _ => {}
+        }
+    }
+    //println!("Parents: {:#?}", parents);
+
+    // Write the network.json file
+    let mut network_json = serde_json::Map::new();
+    for (name, (parent, (download, upload))) in parents.iter().filter(|(_, (parent, _))| *parent == root_site_name) {
+        network_json.insert(name.clone().into(), walk_parents(&parents, name, &config, *download, *upload).into());
+    }
+    let network_path = Path::new(&config.lqos_directory).join("network.json");
+    if network_path.exists() && !config.integration_common.always_overwrite_network_json {
+        warn!(
+            "Network.json exists, and always overwrite network json is not true - not writing network.json"
+        );
+        return Ok(());
+    }
+    let json = serde_json::to_string_pretty(&network_json).unwrap();
+    write(network_path, json).map_err(|e| {
+        error!("Unable to write network.json");
+        error!("{e:?}");
+        UispIntegrationError::WriteNetJson
+    })?;
+    info!("Written network.json");
+
+    /*
     // Build the output data
     let mut shaped_devices = Vec::new();
     let _ = root.walk_children(None, &uisp_data, &mut shaped_devices, &config);
@@ -262,8 +349,21 @@ pub async fn build_full_network_v2(
         error!("{e:?}");
         UispIntegrationError::WriteNetJson
     })?;
-    info!("Written network.json");
+    info!("Written network.json");*/
 
+    Ok(())
+}
+
+fn save_dot_file(graph: &GraphType) -> Result<(), UispIntegrationError> {
+    // Save the dot file
+    let dot_data = format!("{:?}", petgraph::dot::Dot::with_config(graph, &[petgraph::dot::Config::EdgeNoLabel]));
+    let _ = std::fs::write("graph.dot", dot_data.as_bytes());
+    let _ = std::process::Command::new("dot")
+        .arg("-Tpng")
+        .arg("graph.dot")
+        .arg("-o")
+        .arg("graph.png")
+        .output();
     Ok(())
 }
 
@@ -327,6 +427,7 @@ fn network_json_capacity(
     (config.queues.generated_pn_download_mbps, config.queues.generated_pn_upload_mbps)
 }
 
+
 fn link_capacity_mbps(link_mapping: &LinkMapping, devices: &[UispDevice]) -> u64 {
     match link_mapping {
         LinkMapping::Ethernet => 10_000,
@@ -345,6 +446,7 @@ fn link_capacity_mbps(link_mapping: &LinkMapping, devices: &[UispDevice]) -> u64
     }
 }
 
+/*
 fn add_link_if_new_from_ap_check(
     site_a: &Site,
     site_b: &Site,
@@ -484,3 +586,4 @@ impl crate::strategies::ap_site::Layer {
         }
     }
 }
+*/
