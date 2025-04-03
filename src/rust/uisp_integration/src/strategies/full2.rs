@@ -10,9 +10,12 @@ use std::sync::Arc;
 use petgraph::Undirected;
 use tracing::{error, info, warn};
 use petgraph::visit::{EdgeRef, NodeRef};
+use serde::Serialize;
+use crate::blackboard_blob;
+use crate::strategies::full::routes_override::RouteOverride;
 use crate::strategies::full::shaped_devices_writer::ShapedDevice;
 
-#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone)]
+#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone, Serialize)]
 pub enum GraphMapping {
     Root { name: String, id: String },
     Site { name: String, id: String },
@@ -31,7 +34,7 @@ impl GraphMapping {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum LinkMapping {
     Ethernet,
     DevicePair(String, String),
@@ -214,6 +217,7 @@ pub async fn build_full_network_v2(
 
     // Visualizer
     save_dot_file(&graph)?;
+    let _ = blackboard_blob("UISP-Graph", &graph).await;
 
     // Figure out the network.json layers
     let mut parents = HashMap::new();
@@ -228,7 +232,7 @@ pub async fn build_full_network_v2(
                     &graph,
                     root_idx,
                     |n| n == node,
-                    |e| (10_000u64).saturating_sub(link_capacity_mbps(&e.weight(), &uisp_data.devices)),
+                    |e| (10_000u64).saturating_sub(link_capacity_mbps(&e.weight(), &uisp_data.devices, &routing_overrides)),
                     |_| 0,
                 ).unwrap_or((0, vec![]));
 
@@ -418,15 +422,24 @@ fn network_json_capacity(
 }
 
 
-fn link_capacity_mbps(link_mapping: &LinkMapping, devices: &[UispDevice]) -> u64 {
+fn link_capacity_mbps(link_mapping: &LinkMapping, devices: &[UispDevice], route_overrides: &[RouteOverride]) -> u64 {
     match link_mapping {
         LinkMapping::Ethernet => 10_000,
         LinkMapping::DevicePair(device_a, device_b) => {
             let capacity ;
+
             if let Some(device_a) = devices.iter().find(|d| d.id == *device_a) {
-                capacity = device_a.download;
+                if let Some(override_a) = route_overrides.iter().find(|o| o.from_site == device_a.name) {
+                    capacity = override_a.cost as u64;
+                } else {
+                    capacity = device_a.download;
+                }
             } else if let Some(device_b) = devices.iter().find(|d| d.id == *device_b) {
-                capacity = device_b.download;
+                if let Some(override_b) = route_overrides.iter().find(|o| o.from_site == device_b.name) {
+                    capacity = override_b.cost as u64;
+                } else {
+                    capacity = device_b.download;
+                }
             } else {
                 capacity = 10_000;
             }

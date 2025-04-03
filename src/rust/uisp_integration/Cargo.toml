@@ -20,4 +20,4 @@ ip_network_table = {  workspace = true }
 ip_network = { workspace = true }
 serde_cbor = { workspace = true }
 lqos_bus = { path = "../lqos_bus" }
-petgraph = "0.7.1"
+petgraph = {  version = "0.7.1", features = ["serde-1"] }
