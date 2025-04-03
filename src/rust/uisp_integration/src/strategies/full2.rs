@@ -10,6 +10,7 @@ use std::sync::Arc;
 use petgraph::Undirected;
 use tracing::{error, info, warn};
 use petgraph::visit::{EdgeRef, NodeRef};
+use crate::strategies::full::shaped_devices_writer::ShapedDevice;
 
 #[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone)]
 pub enum GraphMapping {
@@ -274,7 +275,56 @@ pub async fn build_full_network_v2(
     })?;
     info!("Written network.json");
 
-    // TODO: ShapedDevices
+    // Shaped Devices
+    let mut shaped_devices = Vec::new();
+
+    println!("{client_mappings:?}");
+    for (ap_id, client_sites) in client_mappings.iter() {
+        for site_id in client_sites.iter() {
+            let Some(ap_device) = uisp_data.devices.iter().find(|d| d.name == *ap_id) else {
+                continue;
+            };
+            let Some(site) = uisp_data.sites.iter().find(|s| s.id == *site_id) else {
+                continue;
+            };
+            for device in uisp_data.devices.iter().filter(|d| d.site_id == *site_id) {
+                if !device.has_address() {
+                    continue;
+                }
+                let shaped_device = ShapedDevice {
+                    circuit_id: site.id.to_owned(),
+                    circuit_name: site.name.to_owned(),
+                    device_id: device.id.to_owned(),
+                    device_name: device.name.to_owned(),
+                    parent_node: ap_device.name.to_owned(),
+                    mac: device.mac.to_owned(),
+                    ipv4: device.ipv4_list(),
+                    ipv6: device.ipv6_list(),
+                    download_min: (config.uisp_integration.commit_bandwidth_multiplier * site.max_down_mbps as f32) as u64,
+                    upload_min: (config.uisp_integration.commit_bandwidth_multiplier * site.max_up_mbps as f32) as u64,
+                    download_max: site.max_down_mbps,
+                    upload_max: site.max_up_mbps,
+                    comment: "".to_string(),
+                };
+                shaped_devices.push(shaped_device);
+            }
+        }
+    }
+    let file_path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
+    let mut writer = csv::WriterBuilder::new()
+        .has_headers(true)
+        .from_path(file_path)
+        .unwrap();
+
+    for d in shaped_devices.iter() {
+        writer.serialize(d).unwrap();
+    }
+    writer.flush().map_err(|e| {
+        error!("Unable to flush CSV file");
+        error!("{e:?}");
+        UispIntegrationError::CsvError
+    })?;
+    info!("Wrote {} lines to ShapedDevices.csv", shaped_devices.len());
 
     Ok(())
 }
