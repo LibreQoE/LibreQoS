@@ -4,15 +4,12 @@ use std::path::Path;
 use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
 use crate::strategies::common::UispData;
-use crate::uisp_types::{UispDevice, UispSiteType};
+use crate::uisp_types::UispDevice;
 use lqos_config::Config;
-use petgraph::data::Build;
 use std::sync::Arc;
 use petgraph::Undirected;
 use tracing::{error, info, warn};
-use uisp::{DataLinkDevice, DataLinkSite, Device, Site};
 use petgraph::visit::{EdgeRef, NodeRef};
-use crate::strategies::ap_site::Layer;
 
 #[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone)]
 pub enum GraphMapping {
@@ -114,7 +111,7 @@ pub async fn build_full_network_v2(
         let Some(to_device) = &link.to.device else {
             continue;
         };
-        let Some(a_ref) = device_map.get(&from_device.identification.id) else {;
+        let Some(a_ref) = device_map.get(&from_device.identification.id) else {
             continue;
         };
         let Some(b_ref) = device_map.get(&to_device.identification.id) else {
@@ -153,7 +150,7 @@ pub async fn build_full_network_v2(
             |n| {
                 n.id() == root_idx.id()
             },
-            |e| 0,
+            |_| 0,
             |_| 0,
         );
 
@@ -182,11 +179,11 @@ pub async fn build_full_network_v2(
     // Count linkages to APs
     let mut ap_link_count = HashMap::<String, usize>::new();
     for edge_ref in graph.edge_references() {
-        if let GraphMapping::AccessPoint{ref name, ref id} = graph[edge_ref.source()] {
+        if let GraphMapping::AccessPoint{ref id, ..} = graph[edge_ref.source()] {
             let entry = ap_link_count.entry(id.clone()).or_insert(0);
             *entry += 1;
         };
-        if let GraphMapping::AccessPoint{ref name, ref id} = graph[edge_ref.target()] {
+        if let GraphMapping::AccessPoint{ref id, ..} = graph[edge_ref.target()] {
             let entry = ap_link_count.entry(id.clone()).or_insert(0);
             *entry += 1;
         };
@@ -259,8 +256,8 @@ pub async fn build_full_network_v2(
 
     // Write the network.json file
     let mut network_json = serde_json::Map::new();
-    for (name, (parent, (download, upload))) in parents.iter().filter(|(_, (parent, _))| *parent == root_site_name) {
-        network_json.insert(name.clone().into(), walk_parents(&parents, name, &config, *download, *upload).into());
+    for (name, (_parent, (download, upload))) in parents.iter().filter(|(_, (parent, _))| *parent == root_site_name) {
+        network_json.insert((*name).into(), walk_parents(&parents, name, &config, *download, *upload).into());
     }
     let network_path = Path::new(&config.lqos_directory).join("network.json");
     if network_path.exists() && !config.integration_common.always_overwrite_network_json {
@@ -277,78 +274,7 @@ pub async fn build_full_network_v2(
     })?;
     info!("Written network.json");
 
-    /*
-    // Build the output data
-    let mut shaped_devices = Vec::new();
-    let _ = root.walk_children(None, &uisp_data, &mut shaped_devices, &config);
-
-    // Write SD
-    let _ = crate::strategies::ap_site::write_shaped_devices(&config, &mut shaped_devices);
-    info!("Wrote {} lines to ShapedDevices.csv", shaped_devices.len());
-
-    // Figure out the network.json layers
-    let mut parents = HashMap::new();
-    for node in graph.node_indices() {
-        if node == root_idx {
-            continue;
-        }
-        match &graph[node] {
-            GraphMapping::GeneratedSiteByName(name) | GraphMapping::SiteByName(name) |
-            GraphMapping::AccessPointByName(name) => {
-                let route = petgraph::algo::astar(
-                    &graph,
-                    root_idx,
-                    |n| n == node,
-                    |e| (10_000u64).saturating_sub(link_capacity_mbps(&e.weight(), &uisp_data.devices)),
-                    |_| 0,
-                ).unwrap_or((0, vec![]));
-
-                if route.1.is_empty() {
-                    //println!("No path detected from {:?} to {}", graph[node], root_site_name);
-                    parents.insert(name, ("Orphans".to_owned(), (config.queues.generated_pn_download_mbps, config.queues.generated_pn_upload_mbps)));
-                } else {
-                    let parent_node = route.1[route.1.len() - 2];
-                    // We need the weight from node to parent_node in the graph edges
-                    if let Some(edge) = graph.find_edge(parent_node, node) {
-                        // From EdgeIndex to LinkMapping
-                        let edge = graph[edge].clone();
-                        //println!("FOUND THE EDGE: {:?}", edge);
-
-                        let parent = graph[route.1[route.1.len() - 2]].name();
-                        parents.insert(name, (parent, network_json_capacity(&config, &edge, &uisp_data.devices)));
-                    } else {
-                        panic!("DID NOT FIND THE EDGE");
-                    }
-                }
-
-                //let parent_index = route.1.iter().last().unwrap();
-                //let parent = graph[*parent_index].clone();
-                //println!("Parent of {:?} is {:?}", graph[node], parent);
-            }
-            _ => {}
-        }
-    }
-    //println!("Parents: {:#?}", parents);
-
-    // Write the network.json file
-    let mut network_json = serde_json::Map::new();
-    for (name, (parent, (download, upload))) in parents.iter().filter(|(_, (parent, _))| *parent == root_site_name) {
-        network_json.insert(name.clone().into(), walk_parents(&parents, name, &config, *download, *upload).into());
-    }
-    let network_path = Path::new(&config.lqos_directory).join("network.json");
-    if network_path.exists() && !config.integration_common.always_overwrite_network_json {
-        warn!(
-            "Network.json exists, and always overwrite network json is not true - not writing network.json"
-        );
-        return Ok(());
-    }
-    let json = serde_json::to_string_pretty(&network_json).unwrap();
-    write(network_path, json).map_err(|e| {
-        error!("Unable to write network.json");
-        error!("{e:?}");
-        UispIntegrationError::WriteNetJson
-    })?;
-    info!("Written network.json");*/
+    // TODO: ShapedDevices
 
     Ok(())
 }
@@ -381,10 +307,10 @@ fn walk_parents(
     map.insert("uploadBandwidthMbps".into(), upload.into());
 
     let mut children = serde_json::Map::new();
-    for (name, (parent, (download, upload))) in parents.iter().filter(|(_, (parent, _))|
+    for (name, (_parent, (download, upload))) in parents.iter().filter(|(_, (parent, _))|
         *parent == *name) {
         let child = walk_parents(parents, name, config, *download, *upload);
-        children.insert(name.clone().into(), child.into());
+        children.insert((*name).into(), child.into());
     }
 
     map.insert("children".into(), children.into());
@@ -431,7 +357,7 @@ fn link_capacity_mbps(link_mapping: &LinkMapping, devices: &[UispDevice]) -> u64
     match link_mapping {
         LinkMapping::Ethernet => 10_000,
         LinkMapping::DevicePair(device_a, device_b) => {
-            let mut capacity = 0;
+            let capacity ;
             if let Some(device_a) = devices.iter().find(|d| d.id == *device_a) {
                 capacity = device_a.download;
             } else if let Some(device_b) = devices.iter().find(|d| d.id == *device_b) {
@@ -444,145 +370,3 @@ fn link_capacity_mbps(link_mapping: &LinkMapping, devices: &[UispDevice]) -> u64
         }
     }
 }
-
-/*
-fn add_link_if_new_from_ap_check(
-    site_a: &Site,
-    site_b: &Site,
-    device_a: &Device,
-    device_b: &Device,
-    graph: &mut petgraph::Graph<GraphMapping, LinkMapping>,
-) {
-    if site_a.id == site_b.id {
-        // If the sites are the same, we don't need to add an edge
-        return;
-    }
-    let Some(node_a) = graph
-        .node_indices()
-        .find(|n| graph[*n] == GraphMapping::SiteByName(site_a.name_or_blank()))
-    else {
-        return;
-    };
-    let Some(node_b) = graph
-        .node_indices()
-        .find(|n| graph[*n] == GraphMapping::SiteByName(site_b.name_or_blank()))
-    else {
-        return;
-    };
-
-    if graph.contains_edge(node_a, node_b) {
-        // If the edge already exists, we don't need to add it
-        return;
-    }
-    if graph.contains_edge(node_b, node_a) {
-        // If the edge already exists in the opposite direction, we don't need to add it
-        return;
-    }
-
-    // Try to figure out the type of link
-    let mut link_type = LinkMapping::Ethernet;
-
-    link_type = LinkMapping::DevicePair(
-        device_a.identification.id.clone(),
-        device_b.identification.id.clone(),
-    );
-
-    // Add the edge
-    println!("(AP Scan) Adding edge from {:?} to {:?}", graph[node_a], graph[node_b]);
-    graph.add_edge(node_a, node_b, link_type);
-}
-
-fn add_link_if_new(
-    from_site: &DataLinkSite,
-    to_site: &DataLinkSite,
-    from_device: &Option<DataLinkDevice>,
-    to_device: &Option<DataLinkDevice>,
-    graph: &mut petgraph::Graph<GraphMapping, LinkMapping>,
-    sites_raw: &[Site],
-) {
-    if from_site.identification.id == to_site.identification.id {
-        // If the sites are the same, we don't need to add an edge
-        return;
-    }
-    let Some(site_a) = sites_raw
-        .iter()
-        .find(|s| s.id == from_site.identification.id)
-    else {
-        return;
-    };
-    if site_a.is_client_site() {
-        return;
-    }
-    let Some(node_a) = graph
-        .node_indices()
-        .find(|n| graph[*n] == GraphMapping::SiteByName(site_a.name_or_blank()))
-    else {
-        return;
-    };
-    let Some(site_b) = sites_raw.iter().find(|s| s.id == to_site.identification.id) else {
-        return;
-    };
-    if site_b.is_client_site() {
-        return;
-    }
-    let Some(node_b) = graph
-        .node_indices()
-        .find(|n| graph[*n] == GraphMapping::SiteByName(site_b.name_or_blank()))
-    else {
-        return;
-    };
-
-    if graph.contains_edge(node_a, node_b) {
-        // If the edge already exists, we don't need to add it
-        return;
-    }
-    if graph.contains_edge(node_b, node_a) {
-        // If the edge already exists in the opposite direction, we don't need to add it
-        return;
-    }
-
-    // Try to figure out the type of link
-    let mut link_type = LinkMapping::Ethernet;
-
-    if let Some(device_a) = &from_device {
-        if let Some(device_b) = &to_device {
-            link_type = LinkMapping::DevicePair(
-                device_a.identification.id.clone(),
-                device_b.identification.id.clone(),
-            );
-        }
-    }
-
-    // Add the edge
-    //println!("Adding edge from {:?} to {:?}", graph[node_a], graph[node_b]);
-    graph.add_edge(node_a, node_b, link_type);
-}
-
-impl crate::strategies::ap_site::Layer {
-    fn walk_site_ap_to_pet_graph(
-        &self,
-        graph: &mut petgraph::Graph<GraphMapping, LinkMapping>,
-        parent: Option<petgraph::graph::NodeIndex>,
-    ) {
-        // Add the current node
-        if let GraphMapping::ClientById(..) = self.id {
-            // If this is a client, we don't want to add it to the graph
-            return;
-        }
-        let node_index = if let GraphMapping::Root = self.id {
-            None
-        } else {
-            let node_index = graph.add_node(self.id.clone());
-            if let Some(parent_index) = parent {
-                graph.add_edge(parent_index, node_index, LinkMapping::Ethernet);
-            }
-            Some(node_index)
-        };
-
-        // Recursively walk to children
-        for child in &self.children {
-            child.walk_site_ap_to_pet_graph(graph, node_index);
-        }
-    }
-}
-*/
