@@ -429,13 +429,13 @@ fn link_capacity_mbps(link_mapping: &LinkMapping, devices: &[UispDevice], route_
             let capacity ;
 
             if let Some(device_a) = devices.iter().find(|d| d.id == *device_a) {
-                if let Some(override_a) = route_overrides.iter().find(|o| o.from_site == device_a.name) {
+                if let Some(override_a) = route_overrides.iter().find(|o| o.from_site == device_a.name || o.to_site == device_a.name) {
                     capacity = override_a.cost as u64;
                 } else {
                     capacity = device_a.download;
                 }
             } else if let Some(device_b) = devices.iter().find(|d| d.id == *device_b) {
-                if let Some(override_b) = route_overrides.iter().find(|o| o.from_site == device_b.name) {
+                if let Some(override_b) = route_overrides.iter().find(|o| o.from_site == device_b.name || o.to_site == device_b.name) {
                     capacity = override_b.cost as u64;
                 } else {
                     capacity = device_b.download;
