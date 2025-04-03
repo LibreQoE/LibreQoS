@@ -53,6 +53,10 @@ pub async fn build_full_network_v2(
         UispIntegrationError::UnknownSiteType
     })?;
 
+    // Load overrides
+    let bandwidth_overrides = crate::strategies::full::bandwidth_overrides::get_site_bandwidth_overrides(&config)?;
+    let routing_overrides = crate::strategies::full::routes_override::get_route_overrides(&config)?;
+
     // Create a new graph
     let mut graph = GraphType::new_undirected();
 
@@ -232,15 +236,27 @@ pub async fn build_full_network_v2(
                     //println!("No path detected from {:?} to {}", graph[node], root_site_name);
                     parents.insert(name, ("Orphans".to_owned(), (config.queues.generated_pn_download_mbps, config.queues.generated_pn_upload_mbps)));
                 } else {
+                    let mut capacity = (config.queues.generated_pn_download_mbps,config.queues.generated_pn_upload_mbps);
+                        if !config.uisp_integration.ignore_calculated_capacity {
+                            match &graph[node] {
+                                GraphMapping::AccessPoint { name, id } => {
+                                    if let Some(device) = uisp_data.devices.iter().find(|d| d.id == *id) {
+                                        println!("Device: {} / {}", device.download, device.upload);
+                                        capacity = (device.download, device.upload);
+                                        if let Some(bw_override) = bandwidth_overrides.get(&device.name) {
+                                            capacity = (bw_override.0 as u64, bw_override.1 as u64);
+                                        }
+                                    }
+                                }
+                            _ => {}
+                        }
+                    }
+
                     let parent_node = route.1[route.1.len() - 2];
                     // We need the weight from node to parent_node in the graph edges
                     if let Some(edge) = graph.find_edge(parent_node, node) {
-                        // From EdgeIndex to LinkMapping
-                        let edge = graph[edge].clone();
-                        //println!("FOUND THE EDGE: {:?}", edge);
-
                         let parent = graph[route.1[route.1.len() - 2]].name();
-                        parents.insert(name, (parent, network_json_capacity(&config, &edge, &uisp_data.devices)));
+                        parents.insert(name, (parent, capacity));
                     } else {
                         panic!("DID NOT FIND THE EDGE");
                     }
@@ -278,7 +294,6 @@ pub async fn build_full_network_v2(
     // Shaped Devices
     let mut shaped_devices = Vec::new();
 
-    println!("{client_mappings:?}");
     for (ap_id, client_sites) in client_mappings.iter() {
         for site_id in client_sites.iter() {
             let Some(ap_device) = uisp_data.devices.iter().find(|d| d.name == *ap_id) else {

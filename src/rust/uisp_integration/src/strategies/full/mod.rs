@@ -1,11 +1,11 @@
 mod ap_promotion;
-mod bandwidth_overrides;
+pub(crate) mod bandwidth_overrides;
 mod client_site_promotion;
 pub mod mikrotik;
 mod network_json;
 pub(crate) mod parse;
 mod root_site;
-mod routes_override;
+pub(crate) mod routes_override;
 pub mod shaped_devices_writer;
 mod squash_single_entry_aps;
 mod tree_walk;
