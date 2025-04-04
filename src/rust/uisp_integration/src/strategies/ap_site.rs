@@ -8,27 +8,14 @@ use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
 use crate::strategies::common::UispData;
 use crate::strategies::full::shaped_devices_writer::ShapedDevice;
-use crate::uisp_types::UispSiteType;
 
 #[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone)]
 pub enum GraphMapping {
     Root,
     SiteByName(String),
-    GeneratedSiteByName(String),
+    //GeneratedSiteByName(String),
     AccessPointByName(String),
     ClientById(String),
-}
-
-impl GraphMapping {
-    pub(crate) fn name(&self) -> String {
-        match self {
-            GraphMapping::SiteByName(name) => name.clone(),
-            GraphMapping::AccessPointByName(name) => name.clone(),
-            GraphMapping::GeneratedSiteByName(name) => name.clone(),
-            GraphMapping::ClientById(client_id) => client_id.clone(),
-            _ => "".to_string()
-        }
-    }
 }
 
 /// Creates a network with APs detected from clients,
@@ -58,7 +45,7 @@ pub async fn build_ap_site_network(
     let sites = map_sites_above_aps(&uisp_data, ap_mappings, access_points);
 
     // Insert the root
-    let mut root = Layer {
+    let root = Layer {
         id: GraphMapping::Root,
         children: sites.values().cloned().collect(),
     };
@@ -165,16 +152,6 @@ pub(crate) struct Layer {
 }
 
 impl Layer {
-    pub fn name(&self) -> String {
-        match &self.id {
-            GraphMapping::SiteByName(name) => name.clone(),
-            GraphMapping::AccessPointByName(name) => name.clone(),
-            GraphMapping::GeneratedSiteByName(name) => name.clone(),
-            GraphMapping::ClientById(client_id) => client_id.clone(),
-            _ => "".to_string()
-        }
-    }
-
     pub(crate) fn walk_children(
         &self,
         parent: Option<&str>,
@@ -184,16 +161,14 @@ impl Layer {
     ) -> serde_json::Map<String, serde_json::Value> {
         let mut children = serde_json::Map::new();
         let parent_name = match &self.id {
-            GraphMapping::SiteByName(name) | GraphMapping::AccessPointByName(name)
-            | GraphMapping::GeneratedSiteByName(name) => {
+            GraphMapping::SiteByName(name) | GraphMapping::AccessPointByName(name) => {
                 name.to_owned()
             }
             _ => "".to_owned()
         };
         for child in self.children.iter() {
             match &child.id {
-                GraphMapping::SiteByName(name) | GraphMapping::AccessPointByName(name)
-                | GraphMapping::GeneratedSiteByName(name) => {
+                GraphMapping::SiteByName(name) | GraphMapping::AccessPointByName(name) => {
                     children.insert(name.clone(), child.walk_children(Some(&parent_name), uisp_data, shaped_devices, config).into());
                 }
                 GraphMapping::ClientById(_client_id) => {
@@ -219,16 +194,6 @@ impl Layer {
                     root.insert("type".to_string(), "AP".into());
                     root.insert("name".to_string(), name.clone().into());
                     root.insert("parent_site".to_string(), parent.to_string().into());
-                    if let Some(device) = uisp_data.devices.iter().find(|d| d.name == *name) {
-                        root.insert("downloadBandwidthMbps".to_owned(), device.download.into());
-                        root.insert("uploadBandwidthMbps".to_owned(), device.upload.into());
-                        root.insert("uisp_device".to_string(), device.id.clone().into());
-                    }
-                }
-                GraphMapping::GeneratedSiteByName(name) => {
-                    root.insert("type".to_string(), "AP".into());
-                    root.insert("name".to_string(), name.clone().into());
-                    root.insert("parent_site".to_string(), name.to_string().into());
                     if let Some(device) = uisp_data.devices.iter().find(|d| d.name == *name) {
                         root.insert("downloadBandwidthMbps".to_owned(), device.download.into());
                         root.insert("uploadBandwidthMbps".to_owned(), device.upload.into());

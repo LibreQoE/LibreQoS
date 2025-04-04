@@ -78,46 +78,6 @@ impl UispData {
         self.devices_raw.iter().find(|d| d.get_name().unwrap_or_default() == device_name)
     }
 
-    pub fn find_site_by_name(&self, site_name: &str) -> Option<&Site> {
-        self.sites_raw.iter().find(|s| s.name().unwrap_or_default() == site_name)
-    }
-
-    pub fn find_site_by_id(&self, site_id: &str) -> Option<&Site> {
-        self.sites_raw.iter().find(|s| s.id == site_id)
-    }
-
-    pub fn find_data_links_featuring_device(&self, device_id: &str) -> Vec<&DataLink> {
-        self.
-            data_links_raw.
-            iter()
-            .filter(|dl| {
-                if let Some(from_device) = &dl.from.device {
-                    from_device.identification.id == device_id
-                } else if let Some(to_device) = &dl.to.device {
-                    to_device.identification.id == device_id
-                } else {
-                    false
-                }
-            })
-            .collect()
-    }
-
-    pub fn find_data_links_featuring_site(&self, site_id: &str) -> Vec<&DataLink> {
-        self.
-            data_links_raw.
-            iter()
-            .filter(|dl| {
-                if let Some(from_site) = &dl.from.site {
-                    from_site.identification.id == site_id
-                } else if let Some(to_site) = &dl.to.site {
-                    to_site.identification.id == site_id
-                } else {
-                    false
-                }
-            })
-            .collect()
-    }
-
     pub fn map_clients_to_aps(&self) -> HashMap<String, Vec<String>> {
         let mut mappings = HashMap::new();
         for client in self.find_client_sites() {

@@ -1,3 +1,8 @@
+mod graph_mapping;
+mod link_mapping;
+mod dot;
+mod net_json_parent;
+
 use std::collections::{HashMap, HashSet};
 use std::fs::write;
 use std::path::Path;
@@ -7,38 +12,17 @@ use crate::strategies::common::UispData;
 use crate::uisp_types::UispDevice;
 use lqos_config::Config;
 use std::sync::Arc;
-use petgraph::Undirected;
+use petgraph::{Graph, Undirected};
+use petgraph::graph::NodeIndex;
 use tracing::{error, info, warn};
 use petgraph::visit::{EdgeRef, NodeRef};
-use serde::Serialize;
 use crate::blackboard_blob;
+use crate::strategies::full2::dot::save_dot_file;
+use crate::strategies::full2::graph_mapping::GraphMapping;
+use crate::strategies::full2::link_mapping::LinkMapping;
+use crate::strategies::full2::net_json_parent::{walk_parents, NetJsonParent};
 use crate::strategies::full::routes_override::RouteOverride;
 use crate::strategies::full::shaped_devices_writer::ShapedDevice;
-
-#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone, Serialize)]
-pub enum GraphMapping {
-    Root { name: String, id: String },
-    Site { name: String, id: String },
-    GeneratedSite { name: String },
-    AccessPoint { name: String, id: String, site_name: String },
-}
-
-impl GraphMapping {
-    pub fn name(&self) -> String {
-        match self {
-            GraphMapping::Root { name, .. } => name.clone(),
-            GraphMapping::Site { name, .. } => name.clone(),
-            GraphMapping::GeneratedSite { name } => name.clone(),
-            GraphMapping::AccessPoint { name, .. } => name.clone(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub enum LinkMapping {
-    Ethernet,
-    DevicePair(String, String),
-}
 
 type GraphType = petgraph::Graph<GraphMapping, LinkMapping, Undirected>;
 
@@ -69,86 +53,19 @@ pub async fn build_full_network_v2(
     // Add all sites to the graph
     let mut site_map = HashMap::new();
     let mut root_idx = None;
-    for site in uisp_data.sites_raw.iter().filter(|s| !s.is_client_site()) {
-        let site_name = site.name_or_blank();
-        let id = site.id.clone();
-        if site_name == root_site_name {
-            // Add the root site
-            let root_entry = GraphMapping::Root {
-                name: site_name,
-                id,
-            };
-            let root_ref = graph.add_node(root_entry);
-            root_idx = Some(root_ref);
-            site_map.insert(site.id.clone(), root_ref);
-            continue;
-        }
-        let site_entry = GraphMapping::Site {
-            name: site_name,
-            id,
-        };
-        let site_ref = graph.add_node(site_entry);
-        site_map.insert(site.id.clone(), site_ref);
-    }
+    add_all_sites_to_graph(&uisp_data, &mut graph, &root_site_name, &mut site_map, &mut root_idx);
     let root_idx = root_idx.expect("Root site not found");
 
     // Iterate all UISP devices and if their parent site is in the graph, add them
     let mut device_map = HashMap::new();
-    for device in uisp_data.devices_raw.iter() {
-        let Some(site_id) = &device.identification.site else {
-            continue;
-        };
-        let site_id = &site_id.id;
-        let Some(site_ref) = site_map.get(site_id) else {
-            continue;
-        };
-        let device_entry = GraphMapping::AccessPoint {
-            name: device.get_name().unwrap_or_default(),
-            id: device.identification.id.clone(),
-            site_name: graph[*site_ref].name(),
-        };
-        let device_ref = graph.add_node(device_entry);
-        device_map.insert(device.identification.id.clone(), device_ref);
-        let _ = graph.add_edge(device_ref, *site_ref, LinkMapping::Ethernet);
-    }
+    add_devices_to_graph(&uisp_data, &mut graph, &mut site_map, &mut device_map);
 
     // Now we iterate all the data links looking for DEVICE linkage
-    for link in uisp_data.data_links_raw.iter() {
-        let Some(from_device) = &link.from.device else {
-            continue;
-        };
-        let Some(to_device) = &link.to.device else {
-            continue;
-        };
-        let Some(a_ref) = device_map.get(&from_device.identification.id) else {
-            continue;
-        };
-        let Some(b_ref) = device_map.get(&to_device.identification.id) else {
-            continue;
-        };
-        if a_ref == b_ref {
-            // If the devices are the same, we don't need to add an edge
-            continue;
-        }
-        if let Some(dev_a) = uisp_data.devices_raw.iter().find(|d| d.get_id() == from_device.identification.id) {
-            if let Some(dev_b) = uisp_data.devices_raw.iter().find(|d| d.get_id() == to_device.identification.id) {
-                if dev_a.get_site_id().unwrap_or_default() == dev_b.get_site_id().unwrap_or_default() {
-                    // If the devices are in the same site, we don't need to add an edge
-                    continue;
-                }
-            }
-        }
-        if graph.contains_edge(*a_ref, *b_ref) {
-            // If the edge already exists, we don't need to add it
-            continue;
-        }
-        graph.add_edge(*a_ref, *b_ref, LinkMapping::DevicePair(from_device.identification.id.clone(), to_device.identification.id.clone()));
-    }
+    add_device_links_to_graph(&uisp_data, &mut graph, &mut device_map);
 
     // Now we iterate only sites, looking for connectivity to the root
     let orphans = graph.add_node(GraphMapping::GeneratedSite{ name: "Orphans".to_string()});
     graph.add_edge(root_idx, orphans, LinkMapping::Ethernet);
-
     for (_, site_ref) in site_map.iter() {
         if *site_ref == root_idx {
             continue;
@@ -249,7 +166,7 @@ pub async fn build_full_network_v2(
                     let mut capacity = (config.queues.generated_pn_download_mbps,config.queues.generated_pn_upload_mbps);
                         if !config.uisp_integration.ignore_calculated_capacity {
                             match &graph[node] {
-                                GraphMapping::AccessPoint { name, id, .. } => {
+                                GraphMapping::AccessPoint { id, .. } => {
                                     if let Some(device) = uisp_data.devices.iter().find(|d| d.id == *id) {
                                         capacity = (device.download, device.upload);
                                         if let Some(bw_override) = bandwidth_overrides.get(&device.name) {
@@ -263,7 +180,7 @@ pub async fn build_full_network_v2(
 
                     let parent_node = route.1[route.1.len() - 2];
                     // We need the weight from node to parent_node in the graph edges
-                    if let Some(edge) = graph.find_edge(parent_node, node) {
+                    if let Some(_edge) = graph.find_edge(parent_node, node) {
                         let parent = graph[route.1[route.1.len() - 2]].name();
                         parents.insert(name.to_owned(), NetJsonParent {
                             parent_name: parent,
@@ -279,11 +196,10 @@ pub async fn build_full_network_v2(
             _ => {}
         }
     }
-    println!("{parents:?}");
 
     // Write the network.json file
     let mut network_json = serde_json::Map::new();
-    for (name, node_info) in parents.iter().filter(|(name, parent)| parent.parent_name == root_site_name) {
+    for (name, node_info) in parents.iter().filter(|(_name, parent)| parent.parent_name == root_site_name) {
         network_json.insert(name.into(), walk_parents(
             &parents,
             name,
@@ -360,101 +276,83 @@ pub async fn build_full_network_v2(
     Ok(())
 }
 
-#[derive(Debug)]
-struct NetJsonParent<'a> {
-    parent_name: String,
-    mapping: &'a GraphMapping,
-    download: u64,
-    upload: u64,
-}
-
-fn save_dot_file(graph: &GraphType) -> Result<(), UispIntegrationError> {
-    // Save the dot file
-    let dot_data = format!("{:?}", petgraph::dot::Dot::with_config(graph, &[petgraph::dot::Config::EdgeNoLabel]));
-    let _ = write("graph.dot", dot_data.as_bytes());
-    let _ = std::process::Command::new("dot")
-        .arg("-Tpng")
-        .arg("graph.dot")
-        .arg("-o")
-        .arg("graph.png")
-        .output();
-    Ok(())
-}
-
-fn walk_parents(
-    parents: &HashMap<String, NetJsonParent>,
-    name: &String,
-    node_info: &NetJsonParent,
-    config: &Arc<Config>,
-    graph: &GraphType,
-) -> serde_json::Map<String, serde_json::Value> {
-    let mut map = serde_json::Map::new();
-    // Entries are name, type, uisp_device or site, downloadBandwidthMbps, uploadBandwidthMbps, children
-    map.insert("name".into(), name.clone().into());
-    map.insert("downloadBandwidthMbps".into(), node_info.download.into());
-    map.insert("uploadBandwidthMbps".into(), node_info.upload.into());
-    match node_info.mapping {
-        GraphMapping::Root { id, .. } | GraphMapping::Site { id, .. } => {
-            map.insert("type".into(), "Site".into());
-            map.insert("uisp_site".into(), id.clone().into());
-            map.insert("parent_site".into(), name.clone().into());
+fn add_device_links_to_graph(uisp_data: &UispData, graph: &mut Graph<GraphMapping, LinkMapping, Undirected>, device_map: &mut HashMap<String, NodeIndex>) {
+    for link in uisp_data.data_links_raw.iter() {
+        let Some(from_device) = &link.from.device else {
+            continue;
+        };
+        let Some(to_device) = &link.to.device else {
+            continue;
+        };
+        let Some(a_ref) = device_map.get(&from_device.identification.id) else {
+            continue;
+        };
+        let Some(b_ref) = device_map.get(&to_device.identification.id) else {
+            continue;
+        };
+        if a_ref == b_ref {
+            // If the devices are the same, we don't need to add an edge
+            continue;
         }
-        GraphMapping::GeneratedSite { .. } => {
-            map.insert("type".into(), "Site".into());
-        }
-        GraphMapping::AccessPoint { name: _, id, site_name } => {
-            map.insert("type".into(), "AP".into());
-            map.insert("parent_site".into(), site_name.clone().into());
-            map.insert("uisp_device".into(), id.clone().into());
-        }
-    }
-
-    let mut children = serde_json::Map::new();
-    for (name, node_info) in parents.iter().filter(|(_, node_info)|
-        node_info.parent_name == *name) {
-        let child = walk_parents(parents, name, &node_info, config, graph);
-        children.insert(name.into(), child.into());
-    }
-
-    map.insert("children".into(), children.into());
-
-    map
-}
-
-fn network_json_capacity(
-    config: &Arc<Config>,
-    link: &LinkMapping,
-    devices: &[UispDevice],
-) -> (u64, u64) {
-    // Handle ignoring capacity
-    if config.uisp_integration.ignore_calculated_capacity {
-        return (config.queues.generated_pn_download_mbps, config.queues.generated_pn_upload_mbps);
-    }
-
-    // Handle the link type
-    match link {
-        LinkMapping::Ethernet => {
-            return (config.queues.generated_pn_download_mbps, config.queues.generated_pn_upload_mbps);
-        }
-        LinkMapping::DevicePair(device_a, device_b) => {
-            // Find the devices
-            let device_a = devices.iter().find(|d| d.id == *device_a);
-            let device_b = devices.iter().find(|d| d.id == *device_b);
-
-            if let Some(device_a) = device_a {
-                if let Some(device_b) = device_b {
-                    return (
-                        device_a.download,
-                        device_b.upload,
-                    );
+        if let Some(dev_a) = uisp_data.devices_raw.iter().find(|d| d.get_id() == from_device.identification.id) {
+            if let Some(dev_b) = uisp_data.devices_raw.iter().find(|d| d.get_id() == to_device.identification.id) {
+                if dev_a.get_site_id().unwrap_or_default() == dev_b.get_site_id().unwrap_or_default() {
+                    // If the devices are in the same site, we don't need to add an edge
+                    continue;
                 }
             }
         }
+        if graph.contains_edge(*a_ref, *b_ref) {
+            // If the edge already exists, we don't need to add it
+            continue;
+        }
+        graph.add_edge(*a_ref, *b_ref, LinkMapping::DevicePair(from_device.identification.id.clone(), to_device.identification.id.clone()));
     }
-
-    (config.queues.generated_pn_download_mbps, config.queues.generated_pn_upload_mbps)
 }
 
+fn add_devices_to_graph(uisp_data: &UispData, graph: &mut Graph<GraphMapping, LinkMapping, Undirected>, site_map: &mut HashMap<String, NodeIndex>, device_map: &mut HashMap<String, NodeIndex>) {
+    for device in uisp_data.devices_raw.iter() {
+        let Some(site_id) = &device.identification.site else {
+            continue;
+        };
+        let site_id = &site_id.id;
+        let Some(site_ref) = site_map.get(site_id) else {
+            continue;
+        };
+        let device_entry = GraphMapping::AccessPoint {
+            name: device.get_name().unwrap_or_default(),
+            id: device.identification.id.clone(),
+            site_name: graph[*site_ref].name(),
+        };
+        let device_ref = graph.add_node(device_entry);
+        device_map.insert(device.identification.id.clone(), device_ref);
+        let _ = graph.add_edge(device_ref, *site_ref, LinkMapping::Ethernet);
+    }
+}
+
+pub fn add_all_sites_to_graph(uisp_data: &UispData, graph: &mut Graph<GraphMapping, LinkMapping, Undirected>, root_site_name: &String, site_map: &mut HashMap<String, NodeIndex>, root_idx: &mut Option<NodeIndex>) {
+    for site in uisp_data.sites_raw.iter().filter(|s| !s.is_client_site()) {
+        let site_name = site.name_or_blank();
+        let id = site.id.clone();
+        if site_name == *root_site_name {
+            // Add the root site
+            let root_entry = GraphMapping::Root {
+                name: site_name,
+                id,
+            };
+            let root_ref = graph.add_node(root_entry);
+            *root_idx = Some(root_ref);
+            site_map.insert(site.id.clone(), root_ref);
+            continue;
+        }
+        let site_entry = GraphMapping::Site {
+            name: site_name,
+            id,
+        };
+        let site_ref = graph.add_node(site_entry);
+        site_map.insert(site.id.clone(), site_ref);
+    }
+}
 
 fn link_capacity_mbps(link_mapping: &LinkMapping, devices: &[UispDevice], route_overrides: &[RouteOverride]) -> u64 {
     match link_mapping {
