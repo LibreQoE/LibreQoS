@@ -20,7 +20,7 @@ pub enum GraphMapping {
     Root { name: String, id: String },
     Site { name: String, id: String },
     GeneratedSite { name: String },
-    AccessPoint { name: String, id: String },
+    AccessPoint { name: String, id: String, site_name: String },
 }
 
 impl GraphMapping {
@@ -105,6 +105,7 @@ pub async fn build_full_network_v2(
         let device_entry = GraphMapping::AccessPoint {
             name: device.get_name().unwrap_or_default(),
             id: device.identification.id.clone(),
+            site_name: graph[*site_ref].name(),
         };
         let device_ref = graph.add_node(device_entry);
         device_map.insert(device.identification.id.clone(), device_ref);
@@ -220,7 +221,7 @@ pub async fn build_full_network_v2(
     let _ = blackboard_blob("UISP-Graph", &graph).await;
 
     // Figure out the network.json layers
-    let mut parents = HashMap::new();
+    let mut parents = HashMap::<String, NetJsonParent>::new();
     for node in graph.node_indices() {
         if node == root_idx {
             continue;
@@ -238,14 +239,18 @@ pub async fn build_full_network_v2(
 
                 if route.1.is_empty() {
                     //println!("No path detected from {:?} to {}", graph[node], root_site_name);
-                    parents.insert(name, ("Orphans".to_owned(), (config.queues.generated_pn_download_mbps, config.queues.generated_pn_upload_mbps)));
+                    parents.insert(name.to_owned(), NetJsonParent {
+                        parent_name: "Orphans".to_string(),
+                        mapping: &graph[node],
+                        download: config.queues.generated_pn_download_mbps,
+                        upload: config.queues.generated_pn_upload_mbps,
+                    });
                 } else {
                     let mut capacity = (config.queues.generated_pn_download_mbps,config.queues.generated_pn_upload_mbps);
                         if !config.uisp_integration.ignore_calculated_capacity {
                             match &graph[node] {
-                                GraphMapping::AccessPoint { name, id } => {
+                                GraphMapping::AccessPoint { name, id, .. } => {
                                     if let Some(device) = uisp_data.devices.iter().find(|d| d.id == *id) {
-                                        println!("Device: {} / {}", device.download, device.upload);
                                         capacity = (device.download, device.upload);
                                         if let Some(bw_override) = bandwidth_overrides.get(&device.name) {
                                             capacity = (bw_override.0 as u64, bw_override.1 as u64);
@@ -260,25 +265,32 @@ pub async fn build_full_network_v2(
                     // We need the weight from node to parent_node in the graph edges
                     if let Some(edge) = graph.find_edge(parent_node, node) {
                         let parent = graph[route.1[route.1.len() - 2]].name();
-                        parents.insert(name, (parent, capacity));
+                        parents.insert(name.to_owned(), NetJsonParent {
+                            parent_name: parent,
+                            mapping: &graph[node],
+                            download: capacity.0,
+                            upload: capacity.1,
+                        });
                     } else {
                         panic!("DID NOT FIND THE EDGE");
                     }
                 }
-
-                //let parent_index = route.1.iter().last().unwrap();
-                //let parent = graph[*parent_index].clone();
-                //println!("Parent of {:?} is {:?}", graph[node], parent);
             }
             _ => {}
         }
     }
-    //println!("Parents: {:#?}", parents);
+    println!("{parents:?}");
 
     // Write the network.json file
     let mut network_json = serde_json::Map::new();
-    for (name, (_parent, (download, upload))) in parents.iter().filter(|(_, (parent, _))| *parent == root_site_name) {
-        network_json.insert((*name).into(), walk_parents(&parents, name, &config, *download, *upload).into());
+    for (name, node_info) in parents.iter().filter(|(name, parent)| parent.parent_name == root_site_name) {
+        network_json.insert(name.into(), walk_parents(
+            &parents,
+            name,
+            &node_info,
+            &config,
+            &graph,
+        ).into());
     }
     let network_path = Path::new(&config.lqos_directory).join("network.json");
     if network_path.exists() && !config.integration_common.always_overwrite_network_json {
@@ -348,10 +360,18 @@ pub async fn build_full_network_v2(
     Ok(())
 }
 
+#[derive(Debug)]
+struct NetJsonParent<'a> {
+    parent_name: String,
+    mapping: &'a GraphMapping,
+    download: u64,
+    upload: u64,
+}
+
 fn save_dot_file(graph: &GraphType) -> Result<(), UispIntegrationError> {
     // Save the dot file
     let dot_data = format!("{:?}", petgraph::dot::Dot::with_config(graph, &[petgraph::dot::Config::EdgeNoLabel]));
-    let _ = std::fs::write("graph.dot", dot_data.as_bytes());
+    let _ = write("graph.dot", dot_data.as_bytes());
     let _ = std::process::Command::new("dot")
         .arg("-Tpng")
         .arg("graph.dot")
@@ -362,24 +382,38 @@ fn save_dot_file(graph: &GraphType) -> Result<(), UispIntegrationError> {
 }
 
 fn walk_parents(
-    parents: &HashMap<&String, (String, (u64, u64))>,
+    parents: &HashMap<String, NetJsonParent>,
     name: &String,
+    node_info: &NetJsonParent,
     config: &Arc<Config>,
-    download: u64,
-    upload: u64,
+    graph: &GraphType,
 ) -> serde_json::Map<String, serde_json::Value> {
     let mut map = serde_json::Map::new();
-
     // Entries are name, type, uisp_device or site, downloadBandwidthMbps, uploadBandwidthMbps, children
     map.insert("name".into(), name.clone().into());
-    map.insert("downloadBandwidthMbps".into(), download.into());
-    map.insert("uploadBandwidthMbps".into(), upload.into());
+    map.insert("downloadBandwidthMbps".into(), node_info.download.into());
+    map.insert("uploadBandwidthMbps".into(), node_info.upload.into());
+    match node_info.mapping {
+        GraphMapping::Root { id, .. } | GraphMapping::Site { id, .. } => {
+            map.insert("type".into(), "Site".into());
+            map.insert("uisp_site".into(), id.clone().into());
+            map.insert("parent_site".into(), name.clone().into());
+        }
+        GraphMapping::GeneratedSite { .. } => {
+            map.insert("type".into(), "Site".into());
+        }
+        GraphMapping::AccessPoint { name: _, id, site_name } => {
+            map.insert("type".into(), "AP".into());
+            map.insert("parent_site".into(), site_name.clone().into());
+            map.insert("uisp_device".into(), id.clone().into());
+        }
+    }
 
     let mut children = serde_json::Map::new();
-    for (name, (_parent, (download, upload))) in parents.iter().filter(|(_, (parent, _))|
-        *parent == *name) {
-        let child = walk_parents(parents, name, config, *download, *upload);
-        children.insert((*name).into(), child.into());
+    for (name, node_info) in parents.iter().filter(|(_, node_info)|
+        node_info.parent_name == *name) {
+        let child = walk_parents(parents, name, &node_info, config, graph);
+        children.insert(name.into(), child.into());
     }
 
     map.insert("children".into(), children.into());

@@ -212,11 +212,13 @@ impl Layer {
                         root.insert("downloadBandwidthMbps".to_owned(), site.max_down_mbps.into());
                         root.insert("uploadBandwidthMbps".to_owned(), site.max_up_mbps.into());
                         root.insert("uisp_site".to_string(), site.id.clone().into());
+                        root.insert("parent_site".to_string(), name.to_string().into());
                     }
                 }
                 GraphMapping::AccessPointByName(name) => {
                     root.insert("type".to_string(), "AP".into());
                     root.insert("name".to_string(), name.clone().into());
+                    root.insert("parent_site".to_string(), parent.to_string().into());
                     if let Some(device) = uisp_data.devices.iter().find(|d| d.name == *name) {
                         root.insert("downloadBandwidthMbps".to_owned(), device.download.into());
                         root.insert("uploadBandwidthMbps".to_owned(), device.upload.into());
@@ -226,6 +228,7 @@ impl Layer {
                 GraphMapping::GeneratedSiteByName(name) => {
                     root.insert("type".to_string(), "AP".into());
                     root.insert("name".to_string(), name.clone().into());
+                    root.insert("parent_site".to_string(), name.to_string().into());
                     if let Some(device) = uisp_data.devices.iter().find(|d| d.name == *name) {
                         root.insert("downloadBandwidthMbps".to_owned(), device.download.into());
                         root.insert("uploadBandwidthMbps".to_owned(), device.upload.into());
