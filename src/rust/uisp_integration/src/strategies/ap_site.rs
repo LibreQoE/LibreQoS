@@ -4,6 +4,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tracing::{error, info, warn};
 use lqos_config::Config;
+use crate::blackboard_blob;
 use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
 use crate::strategies::common::UispData;
@@ -28,7 +29,7 @@ pub async fn build_ap_site_network(
     let uisp_data = UispData::fetch_uisp_data(config.clone(), ip_ranges).await?;
 
     // Find trouble-spots!
-    let _trouble = find_troublesome_sites(&uisp_data)
+    let _trouble = find_troublesome_sites(&uisp_data).await
         .map_err(|e|{
             error!("Error finding troublesome sites");
             error!("{e:?}");
@@ -252,11 +253,15 @@ pub struct TroublesomeClients {
     pub client_of_clients: HashSet<String>,
 }
 
-pub(crate) fn find_troublesome_sites(
+pub(crate) async fn find_troublesome_sites(
     data: &UispData,
 ) -> anyhow::Result<TroublesomeClients> {
     let multi_entry_points = find_clients_with_multiple_entry_points(data)?;
     let client_of_clients = find_clients_linked_from_other_clients(data)?;
+
+    let _ = blackboard_blob("UISP-Trouble-MultiEntry", multi_entry_points.clone()).await;
+    let _ = blackboard_blob("UISP-Trouble-ClientOfClient", client_of_clients.clone()).await;
+
     Ok(TroublesomeClients {
         multi_entry_points,
         client_of_clients,

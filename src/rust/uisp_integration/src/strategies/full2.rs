@@ -34,7 +34,8 @@ pub async fn build_full_network_v2(
     let uisp_data = UispData::fetch_uisp_data(config.clone(), ip_ranges).await?;
 
     // Report on obvious UISP errors that should be fixed
-    let _trouble = crate::strategies::ap_site::find_troublesome_sites(&uisp_data).map_err(|e| {
+    let _trouble = crate::strategies::ap_site::find_troublesome_sites(&uisp_data).await
+        .map_err(|e| {
         error!("Error finding troublesome sites");
         error!("{e:?}");
         UispIntegrationError::UnknownSiteType
