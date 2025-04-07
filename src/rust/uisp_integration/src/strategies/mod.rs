@@ -31,11 +31,11 @@ pub async fn build_with_strategy(
             flat::build_flat_network(config, ip_ranges).await?;
             Ok(())
         }
-        "full" => {
+        /*"full" => {
             info!("Strategy selected: full");
             full::build_full_network(config, ip_ranges).await?;
             Ok(())
-        }
+        }*/
         "ap_only" => {
             info!("Strategy selected: ap_only");
             ap_only::build_ap_only_network(config, ip_ranges).await?;
@@ -46,7 +46,7 @@ pub async fn build_with_strategy(
             ap_site::build_ap_site_network(config, ip_ranges).await?;
             Ok(())
         }
-        "full2" => {
+        "full" | "full2" => {
             info!("Strategy selected: full2");
             full2::build_full_network_v2(config, ip_ranges).await?;
             Ok(())
