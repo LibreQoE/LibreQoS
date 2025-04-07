@@ -53,6 +53,12 @@ impl UispDevice {
                 upload = ul as u64 / 1000000;
             }
         }
+        if download == 0 {
+            download = config.queues.generated_pn_download_mbps;
+        }
+        if upload == 0 {
+            upload = config.queues.generated_pn_upload_mbps;
+        }
 
         // Accumulate IP address listings
         if let Some(interfaces) = &device.interfaces {
