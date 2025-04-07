@@ -238,6 +238,14 @@ pub async fn build_full_network_v2(
                 if !device.has_address() {
                     continue;
                 }
+
+                let download = (site.max_down_mbps as f32) * config.uisp_integration.bandwidth_overhead_factor;
+                let upload = (site.max_up_mbps as f32) * config.uisp_integration.bandwidth_overhead_factor;
+                let download_min = (download * config.uisp_integration.commit_bandwidth_multiplier) as u64;
+                let upload_min = (upload * config.uisp_integration.commit_bandwidth_multiplier) as u64;
+                let download_max = download as u64;
+                let upload_max = upload as u64;
+
                 let shaped_device = ShapedDevice {
                     circuit_id: site.id.to_owned(),
                     circuit_name: site.name.to_owned(),
@@ -247,10 +255,10 @@ pub async fn build_full_network_v2(
                     mac: device.mac.to_owned(),
                     ipv4: device.ipv4_list(),
                     ipv6: device.ipv6_list(),
-                    download_min: (config.uisp_integration.commit_bandwidth_multiplier * site.max_down_mbps as f32) as u64,
-                    upload_min: (config.uisp_integration.commit_bandwidth_multiplier * site.max_up_mbps as f32) as u64,
-                    download_max: site.max_down_mbps,
-                    upload_max: site.max_up_mbps,
+                    download_min,
+                    upload_min,
+                    download_max,
+                    upload_max,
                     comment: "".to_string(),
                 };
                 shaped_devices.push(shaped_device);
