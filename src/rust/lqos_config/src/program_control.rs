@@ -45,19 +45,20 @@ pub fn load_libreqos() -> Result<String, ProgramControlError> {
     let stderr =
         String::from_utf8(result.stderr).map_err(|_| ProgramControlError::StdInErrAccess)?;
 
+    // Also reload the scheduler service
     let mut result_display = stdout + &stderr + "\n\nReloading Scheduler\n";
     let result = Command::new("/bin/systemctl")
         .arg("restart")
         .arg("lqos_scheduler")
         .output()
         .map_err(|_| ProgramControlError::CommandFailed)?;
-    let stdout =
+    let restart_stdout =
         String::from_utf8(result.stdout).map_err(|_| ProgramControlError::StdInErrAccess)?;
-    let stderr =
+    let restart_stderr =
         String::from_utf8(result.stderr).map_err(|_| ProgramControlError::StdInErrAccess)?;
 
-    result_display += &stdout;
-    result_display += &stderr;
+    result_display += &restart_stdout;
+    result_display += &restart_stderr;
 
     Ok(result_display)
 }
