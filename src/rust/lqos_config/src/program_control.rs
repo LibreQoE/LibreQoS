@@ -35,27 +35,27 @@ pub fn load_libreqos() -> Result<String, ProgramControlError> {
         return Err(ProgramControlError::PythonNotFound);
     }
 
-    let result = Command::new(PYTHON_PATH)
+    let reload_result = Command::new(PYTHON_PATH)
         .current_dir(working_directory()?)
         .arg("LibreQoS.py")
         .output()
         .map_err(|_| ProgramControlError::CommandFailed)?;
-    let stdout =
-        String::from_utf8(result.stdout).map_err(|_| ProgramControlError::StdInErrAccess)?;
-    let stderr =
-        String::from_utf8(result.stderr).map_err(|_| ProgramControlError::StdInErrAccess)?;
+    let reload_stdout =
+        String::from_utf8(reload_result.stdout).map_err(|_| ProgramControlError::StdInErrAccess)?;
+    let reload_stderr =
+        String::from_utf8(reload_result.stderr).map_err(|_| ProgramControlError::StdInErrAccess)?;
 
     // Also reload the scheduler service
-    let mut result_display = stdout + &stderr + "\n\nReloading Scheduler\n";
-    let result = Command::new("/bin/systemctl")
+    let mut result_display = reload_stdout + &reload_stderr + "\n\nReloading Scheduler\n";
+    let restart_result = Command::new("/bin/systemctl")
         .arg("restart")
         .arg("lqos_scheduler")
         .output()
         .map_err(|_| ProgramControlError::CommandFailed)?;
     let restart_stdout =
-        String::from_utf8(result.stdout).map_err(|_| ProgramControlError::StdInErrAccess)?;
+        String::from_utf8(restart_result.stdout).map_err(|_| ProgramControlError::StdInErrAccess)?;
     let restart_stderr =
-        String::from_utf8(result.stderr).map_err(|_| ProgramControlError::StdInErrAccess)?;
+        String::from_utf8(restart_result.stderr).map_err(|_| ProgramControlError::StdInErrAccess)?;
 
     result_display += &restart_stdout;
     result_display += &restart_stderr;
