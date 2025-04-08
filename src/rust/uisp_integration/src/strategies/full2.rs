@@ -156,7 +156,7 @@ pub async fn build_full_network_v2(
 
     // Visualizer
     save_dot_file(&graph)?;
-    let _ = blackboard_blob("uisp-graph", &graph).await;
+    let _ = blackboard_blob("uisp-graph", vec![graph.clone()]).await;
 
     // Figure out the network.json layers
     let mut parents = HashMap::<String, NetJsonParent>::new();
