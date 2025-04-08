@@ -1,55 +1,59 @@
-# Configure LibreQoS    ESPAÑOL!!!!! Hola Mundooooooo
+# Configure LibreQoS
 
-## Configure lqos.conf
+## Configuración de lqos.conf
 
-Copy the lqosd daemon configuration file to `/etc`:
+Copie la configuración archivo del demonio lqosd en `/etc`:
 
 ```shell
 cd /opt/libreqos/src
 sudo cp lqos.example /etc/lqos.conf
 ```
 
-Now edit the file to match your setup with
+Ahora edite el archivo para igualar su configuración con
 
 ```shell
 sudo nano /etc/lqos.conf
 ```
 
-Change `eth0` and `eth1` to match your network interfaces. The interface facing the Internet should be specified in `to_internet`. The interfacing facing your ISP network should be in `to_network`.
+Cambie `enp1s0f1` y `enp1s0f2` para coincidir con sus interfaces de red. No importa cuál sea cuál. Tenga en cuenta que está emparejando las interfaces, por lo que cuando ingresa por primera vez  enps0f<ins>**1**</ins>  en la primera línea, el parámetro es enp1s0f<ins>**2**</ins> (reemplace con los nombres de interfaz reales).
 
-Then, if using Bifrost/XDP set `use_xdp_bridge = true` under that same `[bridge]` section.
+- Primera Línea: `name = "enp1s0f1", redirect_to = "enp1s0f2"`
+- Segunda Línea: `name = "enp1s0f2", redirect_to = "enp1s0f1"`
 
-For example:
+Luego, si estará usando Bifrost/XDP, configure `use_xdp_bridge = true` bajo la misma sección `[bridge]`.
 
-```toml
-[bridge]
-use_xdp_bridge = true
-to_internet = "eth0"
-to_network = "eth1"
+## Configuración de ispConfig.py
+
+Copie ispConfig.example.py a ispConfig.py y edite según necesidad
+
+```shell
+cd /opt/libreqos/src/
+cp ispConfig.example.py ispConfig.py
+nano ispConfig.py
 ```
 
-## Configure Your Network Settings
-
-- Set `uplink_bandwidth_mbps` and `downlink_bandwidth_mbps` to match the bandwidth in Mbps of your network's upstream / WAN internet connection. The same can be done for `generated_pn_download_mbps` and `generated_pn_upload_mbps`.
-- Set ```dry_run = false``` to allow the program to actually run the commands.
+- Configure upstreamBandwidthCapacityDownloadMbps y upstreamBandwidthCapacityUploadMbps para que coincidan con el ancho de banda de subida de su red/WAN o conexión a Internet. Lo mismo puede hacerse para generatedPNDownloadMbps y generatedPNUploadMbps.
+- Estableza la interfaceA en la interfaz orientada a su router principal (o red interna en puente si su red está en esa modalidad)
+- Estableza la interfaceB en la interfaz orientada hacia su enrutador de borde.
+- Establezca ```enableActualShellCommands = True```  para permitir que el programa ejecute los comandos propiamente tal.
 
 ## Network.json
 
-Network.json allows ISP operators to define a Hierarchical Network Topology, or Flat Network Topology.
+Network.json permite a los operadores de ISP definir una Topología de Red Jerárquica, o una Topología de Red Plana.
 
-For networks with no Parent Nodes (no strictly defined Access Points or Sites) edit the network.json to use a Flat Network Topology with
+Para redes sin Nodos Principales (sin Puntos de Acceso ni Sitios definidos estrictamentens) edite el archivo network.json para usar una Topología de Red Plana con
 ```nano network.json```
-setting the following file content:
+configurando el siguiente contenido de archivo:
 
 ```json
 {}
 ```
 
-If you plan to use the built-in UISP or Splynx integrations, you do not need to create a network.json file quite yet.
+Si planea usar las integraciones  UISP o Splynx incorporadas, todavía no es necesario crear un archivo network.json.
 
-If you plan to use the built-in UISP integration, it will create this automatically on its first run (assuming network.json is not already present). You can then modify the network.json to more accurately reflect your topology.
+Si planea usar las integraciones UISP incorporadas, este se creará automáticamente en su primera ejecución (asumiendo que  network.json no esté ya presente). Después puede modificar network.json para que refleje más ajustadamente su topología.
 
-If you will not be using an integration, you can manually define the network.json following the template file - network.example.json
+Si no usará una integración, puede definirlo manualmente en  network.json siguiendo el archiv plantilla - network.example.json
 
 ```text
 +-----------------------------------------------------------------------+
@@ -63,37 +67,37 @@ If you will not be using an integration, you can manually define the network.jso
 +-------+-------+-------+-----------------------+-------+-------+-------+
 ```
 
-## Manual Setup
+## Configuración Manual
 
-You can use
+Usted puede usar
 
 ```shell
 python3 csvToNetworkJSON.py
 ```
 
-to convert manualNetwork.csv to a network.json file.
-manualNetwork.csv can be copied from the template file, manualNetwork.template.csv
+Para convertir manualNetwork.csv como un archivo network.json.
+manualNetwork.csv puede ser copiado desde un archivo plantilla, manualNetwork.template.csv
 
-Note: The parent node name must match that used for clients in ShapedDevices.csv
+Nota: El nombre del nodo principal debe coincidir con el utilizado para los clientes en ShapedDevices.csv
 
 ## ShapedDevices.csv
 
-If you are using an integration, this file will be automatically generated. If you are not using an integration, you can manually edit the file.
+Si está realizando una integración, este archivo será generado automáticamente. Si no está haciendo una integración, puede editar manualmente el archivo.
 
-### Manual Editing
+### Edición Manual
 
-- Modify the ShapedDevices.csv file using your preferred spreadsheet editor (LibreOffice Calc, Excel, etc), following the template file - ShapedDevices.example.csv
-- Circuit ID is required. Must be a string of some sort (int is fine, gets parsed as string). Must NOT include any number symbols (#). Every circuit needs a unique CircuitID - they cannot be reused. Here, circuit essentially means customer location. If a customer has multiple locations on different parts of your network, use a unique CircuitID for each of those locations.
-- At least one IPv4 address or IPv6 address is required for each entry.
-- The Access Point or Site name should be set in the Parent Node field. Parent Node can be left blank for flat networks.
-- The ShapedDevices.csv file allows you to set minimum guaranteed, and maximum allowed bandwidth per subscriber.
-- The minimum allowed plan rates for Circuits are 2Mbit. Bandwidth min and max should both be above that threshold.
-- Recommendation: set the min bandwidth to something like 25/10 and max to 1.15X advertised plan rate by using bandwidthOverheadFactor = 1.15
-  - This way, when an AP hits its ceiling, users have any remaining AP capacity fairly distributed between them.
-  - Ensure a reasonable minimum bandwidth minimum for every subscriber, allowing them to utilize up to the maximum provided when AP utilization is below 100%.
+- Modifique el archivo ShapedDevices.csv su editor de planillas electrónicas preferido (LibreOffice Calc, Excel, etc), siguiendo el archivo de plantilla - ShapedDevices.example.csv
+- Se requiere ID Circuit. Este debe ser una cadena de algún tipo (un entero es suficiente, se analiza como cadena). NO debe incluir símbolos numéricos (#). Cada circuito necesita un CircuitID único, el que no se puede reutilizar. Aquí, un circuito significa básicamente la ubicación del cliente. Si un cliente tiene múltiples ubicaciones en diferentes partes de la red, utilice un ID de circuito único para cada una de ellas.
+- Al menos una dirección IPv4 o IPv6 se requiere para cada entrada.
+- El nombre del Punto de Acceso o Sitio debe configurarse en el campo de "Nodo Principal". Este campo puede quedar en blanco para redes planas.
+- El archivo ShapedDevices.csv permite establecer un ancho de banda mínimo garantizado y un máximo permitido por suscriptor.
+- La velocidad mínima permitida para los circuitos es de 2 Mbit. El ancho de banda mínimo de ser superior a ese umbral.
+- Recomendación: establezca el ancho de banda mínimo en algo así como 25/10 y un máximo de 1.15X en base a la tarifa del plan publicitado utilizando  bandwidthOverheadFactor = 1.15
+  - De esta manera, cuando un AP alcanza su límite, los usuarios tienen toda la capacidad de AP restante distribuida equitativamente entre ellos.
+  - Garantice un ancho de banda mínimo para cada suscriptor, permitiéndoles utilizar el máximo proporcionado cuando la utilización del AP sea inferior al 100%.
 
-Note regarding SLAs: For customers with SLA contracts that guarantee them a minimum bandwidth, set their plan rate as the minimum bandwidth. That way when an AP approaches its ceiling, SLA customers will always get that amount.
+Nota acerca de los SLAs: Para los clientes que tienen contratos de  SLA que les garanticen un ancho de banda mínimo, establezcan la tarifa de su plan como el ancho de banda mínimo. De esta manera, cuando un punto de acceso se acerque a su límite, los clientes con SLA siempre recibirán esa cantidad.
 
 ![image](https://user-images.githubusercontent.com/22501920/200134960-28709d0f-48fe-4129-b4fd-70b204cade2c.png)
 
-Once your configuration is complete. You're ready to run the application and start the [Deamons](./services-and-run.md)
+Una vez completada la configuración, estará listo para ejecutar la aplicación e iniciar  [Deamons](./services-and-run.md)
