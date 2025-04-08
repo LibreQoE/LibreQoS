@@ -197,6 +197,7 @@ pub async fn build_full_network_v2(
                                     capacity = (device.download, device.upload);
                                     if let Some(bw_override) = bandwidth_overrides.get(&device.name)
                                     {
+                                        info!("Applying bandwidth override for {}", device.name);
                                         capacity = (bw_override.0 as u64, bw_override.1 as u64);
                                     }
                                 }
