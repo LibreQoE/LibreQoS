@@ -201,6 +201,14 @@ pub async fn build_full_network_v2(
                     );
                     if !config.uisp_integration.ignore_calculated_capacity {
                         match &graph[node] {
+                            GraphMapping::Site { name, .. } => {
+                                if let Some(bw_override) = bandwidth_overrides.get(name) {
+                                    info!("Applying bandwidth override for {}", name);
+                                    info!("Capacity was: {} / {}", capacity.0, capacity.1);
+                                    capacity = (bw_override.0 as u64, bw_override.1 as u64);
+                                    info!("Capacity is now: {} / {}", capacity.0, capacity.1);
+                                }
+                            }
                             GraphMapping::AccessPoint { id, .. } => {
                                 if let Some(device) = uisp_data.devices.iter().find(|d| d.id == *id)
                                 {
