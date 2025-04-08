@@ -2,10 +2,22 @@ use serde::Serialize;
 
 #[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone, Serialize)]
 pub enum GraphMapping {
-    Root { name: String, id: String },
-    Site { name: String, id: String },
-    GeneratedSite { name: String },
-    AccessPoint { name: String, id: String, site_name: String },
+    Root {
+        name: String,
+        id: String,
+    },
+    Site {
+        name: String,
+        id: String,
+    },
+    GeneratedSite {
+        name: String,
+    },
+    AccessPoint {
+        name: String,
+        id: String,
+        site_name: String,
+    },
 }
 
 impl GraphMapping {

@@ -1,28 +1,28 @@
+mod dot;
 mod graph_mapping;
 mod link_mapping;
-mod dot;
 mod net_json_parent;
 
-use std::collections::{HashMap, HashSet};
-use std::fs::write;
-use std::path::Path;
+use crate::blackboard_blob;
 use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
 use crate::strategies::common::UispData;
-use crate::uisp_types::UispDevice;
-use lqos_config::Config;
-use std::sync::Arc;
-use petgraph::{Graph, Undirected};
-use petgraph::graph::NodeIndex;
-use tracing::{error, info, warn};
-use petgraph::visit::{EdgeRef, NodeRef};
-use crate::blackboard_blob;
+use crate::strategies::full::routes_override::RouteOverride;
+use crate::strategies::full::shaped_devices_writer::ShapedDevice;
 use crate::strategies::full2::dot::save_dot_file;
 use crate::strategies::full2::graph_mapping::GraphMapping;
 use crate::strategies::full2::link_mapping::LinkMapping;
-use crate::strategies::full2::net_json_parent::{walk_parents, NetJsonParent};
-use crate::strategies::full::routes_override::RouteOverride;
-use crate::strategies::full::shaped_devices_writer::ShapedDevice;
+use crate::strategies::full2::net_json_parent::{NetJsonParent, walk_parents};
+use crate::uisp_types::UispDevice;
+use lqos_config::Config;
+use petgraph::graph::NodeIndex;
+use petgraph::visit::{EdgeRef, NodeRef};
+use petgraph::{Graph, Undirected};
+use std::collections::{HashMap, HashSet};
+use std::fs::write;
+use std::path::Path;
+use std::sync::Arc;
+use tracing::{error, info, warn};
 
 type GraphType = petgraph::Graph<GraphMapping, LinkMapping, Undirected>;
 
@@ -34,15 +34,17 @@ pub async fn build_full_network_v2(
     let uisp_data = UispData::fetch_uisp_data(config.clone(), ip_ranges).await?;
 
     // Report on obvious UISP errors that should be fixed
-    let _trouble = crate::strategies::ap_site::find_troublesome_sites(&uisp_data).await
+    let _trouble = crate::strategies::ap_site::find_troublesome_sites(&uisp_data)
+        .await
         .map_err(|e| {
-        error!("Error finding troublesome sites");
-        error!("{e:?}");
-        UispIntegrationError::UnknownSiteType
-    })?;
+            error!("Error finding troublesome sites");
+            error!("{e:?}");
+            UispIntegrationError::UnknownSiteType
+        })?;
 
     // Load overrides
-    let bandwidth_overrides = crate::strategies::full::bandwidth_overrides::get_site_bandwidth_overrides(&config)?;
+    let bandwidth_overrides =
+        crate::strategies::full::bandwidth_overrides::get_site_bandwidth_overrides(&config)?;
     let routing_overrides = crate::strategies::full::routes_override::get_route_overrides(&config)?;
 
     // Create a new graph
@@ -54,7 +56,13 @@ pub async fn build_full_network_v2(
     // Add all sites to the graph
     let mut site_map = HashMap::new();
     let mut root_idx = None;
-    add_all_sites_to_graph(&uisp_data, &mut graph, &root_site_name, &mut site_map, &mut root_idx);
+    add_all_sites_to_graph(
+        &uisp_data,
+        &mut graph,
+        &root_site_name,
+        &mut site_map,
+        &mut root_idx,
+    );
     let root_idx = root_idx.expect("Root site not found");
 
     // Iterate all UISP devices and if their parent site is in the graph, add them
@@ -65,21 +73,16 @@ pub async fn build_full_network_v2(
     add_device_links_to_graph(&uisp_data, &mut graph, &mut device_map);
 
     // Now we iterate only sites, looking for connectivity to the root
-    let orphans = graph.add_node(GraphMapping::GeneratedSite{ name: "Orphans".to_string()});
+    let orphans = graph.add_node(GraphMapping::GeneratedSite {
+        name: "Orphans".to_string(),
+    });
     graph.add_edge(root_idx, orphans, LinkMapping::Ethernet);
     for (_, site_ref) in site_map.iter() {
         if *site_ref == root_idx {
             continue;
         }
-        let a_star_run = petgraph::algo::astar(
-            &graph,
-            *site_ref,
-            |n| {
-                n.id() == root_idx.id()
-            },
-            |_| 0,
-            |_| 0,
-        );
+        let a_star_run =
+            petgraph::algo::astar(&graph, *site_ref, |n| n.id() == root_idx.id(), |_| 0, |_| 0);
 
         if a_star_run.is_none() {
             warn!(
@@ -96,7 +99,11 @@ pub async fn build_full_network_v2(
     // Find the APs that have clients
     let mut aps_with_clients = HashSet::new();
     for (ap_name, _client_ids) in client_mappings.iter() {
-        let Some(ap_device) = uisp_data.devices_raw.iter().find(|d| d.get_name().unwrap_or_default() == *ap_name) else {
+        let Some(ap_device) = uisp_data
+            .devices_raw
+            .iter()
+            .find(|d| d.get_name().unwrap_or_default() == *ap_name)
+        else {
             // Orphaning is already handled
             continue;
         };
@@ -106,11 +113,11 @@ pub async fn build_full_network_v2(
     // Count linkages to APs
     let mut ap_link_count = HashMap::<String, usize>::new();
     for edge_ref in graph.edge_references() {
-        if let GraphMapping::AccessPoint{ref id, ..} = graph[edge_ref.source()] {
+        if let GraphMapping::AccessPoint { ref id, .. } = graph[edge_ref.source()] {
             let entry = ap_link_count.entry(id.clone()).or_insert(0);
             *entry += 1;
         };
-        if let GraphMapping::AccessPoint{ref id, ..} = graph[edge_ref.target()] {
+        if let GraphMapping::AccessPoint { ref id, .. } = graph[edge_ref.target()] {
             let entry = ap_link_count.entry(id.clone()).or_insert(0);
             *entry += 1;
         };
@@ -129,7 +136,10 @@ pub async fn build_full_network_v2(
         }
         to_remove.push(*ap_ref);
     }
-    info!("Removing {} APs with no clients or only one link", to_remove.len());
+    info!(
+        "Removing {} APs with no clients or only one link",
+        to_remove.len()
+    );
     for ap_ref in to_remove.iter() {
         graph.remove_node(*ap_ref);
     }
@@ -145,36 +155,52 @@ pub async fn build_full_network_v2(
             continue;
         }
         match &graph[node] {
-            GraphMapping::GeneratedSite{name} | GraphMapping::Site{name, ..} |
-            GraphMapping::AccessPoint{name, ..} => {
+            GraphMapping::GeneratedSite { name }
+            | GraphMapping::Site { name, .. }
+            | GraphMapping::AccessPoint { name, .. } => {
                 let route = petgraph::algo::astar(
                     &graph,
                     root_idx,
                     |n| n == node,
-                    |e| (10_000u64).saturating_sub(link_capacity_mbps(&e.weight(), &uisp_data.devices, &routing_overrides)),
+                    |e| {
+                        (10_000u64).saturating_sub(link_capacity_mbps(
+                            &e.weight(),
+                            &uisp_data.devices,
+                            &routing_overrides,
+                        ))
+                    },
                     |_| 0,
-                ).unwrap_or((0, vec![]));
+                )
+                .unwrap_or((0, vec![]));
 
                 if route.1.is_empty() {
                     //println!("No path detected from {:?} to {}", graph[node], root_site_name);
-                    parents.insert(name.to_owned(), NetJsonParent {
-                        parent_name: "Orphans".to_string(),
-                        mapping: &graph[node],
-                        download: config.queues.generated_pn_download_mbps,
-                        upload: config.queues.generated_pn_upload_mbps,
-                    });
+                    parents.insert(
+                        name.to_owned(),
+                        NetJsonParent {
+                            parent_name: "Orphans".to_string(),
+                            mapping: &graph[node],
+                            download: config.queues.generated_pn_download_mbps,
+                            upload: config.queues.generated_pn_upload_mbps,
+                        },
+                    );
                 } else {
-                    let mut capacity = (config.queues.generated_pn_download_mbps,config.queues.generated_pn_upload_mbps);
-                        if !config.uisp_integration.ignore_calculated_capacity {
-                            match &graph[node] {
-                                GraphMapping::AccessPoint { id, .. } => {
-                                    if let Some(device) = uisp_data.devices.iter().find(|d| d.id == *id) {
-                                        capacity = (device.download, device.upload);
-                                        if let Some(bw_override) = bandwidth_overrides.get(&device.name) {
-                                            capacity = (bw_override.0 as u64, bw_override.1 as u64);
-                                        }
+                    let mut capacity = (
+                        config.queues.generated_pn_download_mbps,
+                        config.queues.generated_pn_upload_mbps,
+                    );
+                    if !config.uisp_integration.ignore_calculated_capacity {
+                        match &graph[node] {
+                            GraphMapping::AccessPoint { id, .. } => {
+                                if let Some(device) = uisp_data.devices.iter().find(|d| d.id == *id)
+                                {
+                                    capacity = (device.download, device.upload);
+                                    if let Some(bw_override) = bandwidth_overrides.get(&device.name)
+                                    {
+                                        capacity = (bw_override.0 as u64, bw_override.1 as u64);
                                     }
                                 }
+                            }
                             _ => {}
                         }
                     }
@@ -183,12 +209,15 @@ pub async fn build_full_network_v2(
                     // We need the weight from node to parent_node in the graph edges
                     if let Some(_edge) = graph.find_edge(parent_node, node) {
                         let parent = graph[route.1[route.1.len() - 2]].name();
-                        parents.insert(name.to_owned(), NetJsonParent {
-                            parent_name: parent,
-                            mapping: &graph[node],
-                            download: capacity.0,
-                            upload: capacity.1,
-                        });
+                        parents.insert(
+                            name.to_owned(),
+                            NetJsonParent {
+                                parent_name: parent,
+                                mapping: &graph[node],
+                                download: capacity.0,
+                                upload: capacity.1,
+                            },
+                        );
                     } else {
                         panic!("DID NOT FIND THE EDGE");
                     }
@@ -200,14 +229,14 @@ pub async fn build_full_network_v2(
 
     // Write the network.json file
     let mut network_json = serde_json::Map::new();
-    for (name, node_info) in parents.iter().filter(|(_name, parent)| parent.parent_name == root_site_name) {
-        network_json.insert(name.into(), walk_parents(
-            &parents,
-            name,
-            &node_info,
-            &config,
-            &graph,
-        ).into());
+    for (name, node_info) in parents
+        .iter()
+        .filter(|(_name, parent)| parent.parent_name == root_site_name)
+    {
+        network_json.insert(
+            name.into(),
+            walk_parents(&parents, name, &node_info, &config, &graph).into(),
+        );
     }
     let network_path = Path::new(&config.lqos_directory).join("network.json");
     if network_path.exists() && !config.integration_common.always_overwrite_network_json {
@@ -240,10 +269,14 @@ pub async fn build_full_network_v2(
                     continue;
                 }
 
-                let download = (site.max_down_mbps as f32) * config.uisp_integration.bandwidth_overhead_factor;
-                let upload = (site.max_up_mbps as f32) * config.uisp_integration.bandwidth_overhead_factor;
-                let download_min = (download * config.uisp_integration.commit_bandwidth_multiplier) as u64;
-                let upload_min = (upload * config.uisp_integration.commit_bandwidth_multiplier) as u64;
+                let download =
+                    (site.max_down_mbps as f32) * config.uisp_integration.bandwidth_overhead_factor;
+                let upload =
+                    (site.max_up_mbps as f32) * config.uisp_integration.bandwidth_overhead_factor;
+                let download_min =
+                    (download * config.uisp_integration.commit_bandwidth_multiplier) as u64;
+                let upload_min =
+                    (upload * config.uisp_integration.commit_bandwidth_multiplier) as u64;
                 let download_max = download as u64;
                 let upload_max = upload as u64;
 
@@ -285,7 +318,11 @@ pub async fn build_full_network_v2(
     Ok(())
 }
 
-fn add_device_links_to_graph(uisp_data: &UispData, graph: &mut Graph<GraphMapping, LinkMapping, Undirected>, device_map: &mut HashMap<String, NodeIndex>) {
+fn add_device_links_to_graph(
+    uisp_data: &UispData,
+    graph: &mut Graph<GraphMapping, LinkMapping, Undirected>,
+    device_map: &mut HashMap<String, NodeIndex>,
+) {
     for link in uisp_data.data_links_raw.iter() {
         let Some(from_device) = &link.from.device else {
             continue;
@@ -303,9 +340,19 @@ fn add_device_links_to_graph(uisp_data: &UispData, graph: &mut Graph<GraphMappin
             // If the devices are the same, we don't need to add an edge
             continue;
         }
-        if let Some(dev_a) = uisp_data.devices_raw.iter().find(|d| d.get_id() == from_device.identification.id) {
-            if let Some(dev_b) = uisp_data.devices_raw.iter().find(|d| d.get_id() == to_device.identification.id) {
-                if dev_a.get_site_id().unwrap_or_default() == dev_b.get_site_id().unwrap_or_default() {
+        if let Some(dev_a) = uisp_data
+            .devices_raw
+            .iter()
+            .find(|d| d.get_id() == from_device.identification.id)
+        {
+            if let Some(dev_b) = uisp_data
+                .devices_raw
+                .iter()
+                .find(|d| d.get_id() == to_device.identification.id)
+            {
+                if dev_a.get_site_id().unwrap_or_default()
+                    == dev_b.get_site_id().unwrap_or_default()
+                {
                     // If the devices are in the same site, we don't need to add an edge
                     continue;
                 }
@@ -315,11 +362,23 @@ fn add_device_links_to_graph(uisp_data: &UispData, graph: &mut Graph<GraphMappin
             // If the edge already exists, we don't need to add it
             continue;
         }
-        graph.add_edge(*a_ref, *b_ref, LinkMapping::DevicePair(from_device.identification.id.clone(), to_device.identification.id.clone()));
+        graph.add_edge(
+            *a_ref,
+            *b_ref,
+            LinkMapping::DevicePair(
+                from_device.identification.id.clone(),
+                to_device.identification.id.clone(),
+            ),
+        );
     }
 }
 
-fn add_devices_to_graph(uisp_data: &UispData, graph: &mut Graph<GraphMapping, LinkMapping, Undirected>, site_map: &mut HashMap<String, NodeIndex>, device_map: &mut HashMap<String, NodeIndex>) {
+fn add_devices_to_graph(
+    uisp_data: &UispData,
+    graph: &mut Graph<GraphMapping, LinkMapping, Undirected>,
+    site_map: &mut HashMap<String, NodeIndex>,
+    device_map: &mut HashMap<String, NodeIndex>,
+) {
     for device in uisp_data.devices_raw.iter() {
         let Some(site_id) = &device.identification.site else {
             continue;
@@ -339,7 +398,13 @@ fn add_devices_to_graph(uisp_data: &UispData, graph: &mut Graph<GraphMapping, Li
     }
 }
 
-pub fn add_all_sites_to_graph(uisp_data: &UispData, graph: &mut Graph<GraphMapping, LinkMapping, Undirected>, root_site_name: &String, site_map: &mut HashMap<String, NodeIndex>, root_idx: &mut Option<NodeIndex>) {
+pub fn add_all_sites_to_graph(
+    uisp_data: &UispData,
+    graph: &mut Graph<GraphMapping, LinkMapping, Undirected>,
+    root_site_name: &String,
+    site_map: &mut HashMap<String, NodeIndex>,
+    root_idx: &mut Option<NodeIndex>,
+) {
     for site in uisp_data.sites_raw.iter().filter(|s| !s.is_client_site()) {
         let site_name = site.name_or_blank();
         let id = site.id.clone();
@@ -363,20 +428,30 @@ pub fn add_all_sites_to_graph(uisp_data: &UispData, graph: &mut Graph<GraphMappi
     }
 }
 
-fn link_capacity_mbps(link_mapping: &LinkMapping, devices: &[UispDevice], route_overrides: &[RouteOverride]) -> u64 {
+fn link_capacity_mbps(
+    link_mapping: &LinkMapping,
+    devices: &[UispDevice],
+    route_overrides: &[RouteOverride],
+) -> u64 {
     match link_mapping {
         LinkMapping::Ethernet => 10_000,
         LinkMapping::DevicePair(device_a, device_b) => {
-            let capacity ;
+            let capacity;
 
             if let Some(device_a) = devices.iter().find(|d| d.id == *device_a) {
-                if let Some(override_a) = route_overrides.iter().find(|o| o.from_site == device_a.name || o.to_site == device_a.name) {
+                if let Some(override_a) = route_overrides
+                    .iter()
+                    .find(|o| o.from_site == device_a.name || o.to_site == device_a.name)
+                {
                     capacity = override_a.cost as u64;
                 } else {
                     capacity = device_a.download;
                 }
             } else if let Some(device_b) = devices.iter().find(|d| d.id == *device_b) {
-                if let Some(override_b) = route_overrides.iter().find(|o| o.from_site == device_b.name || o.to_site == device_b.name) {
+                if let Some(override_b) = route_overrides
+                    .iter()
+                    .find(|o| o.from_site == device_b.name || o.to_site == device_b.name)
+                {
                     capacity = override_b.cost as u64;
                 } else {
                     capacity = device_b.download;

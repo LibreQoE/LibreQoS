@@ -1,14 +1,14 @@
+use crate::blackboard_blob;
+use crate::errors::UispIntegrationError;
+use crate::ip_ranges::IpRanges;
+use crate::strategies::full::parse::parse_uisp_datasets;
+use crate::strategies::full::uisp_fetch::load_uisp_data;
+use crate::uisp_types::{UispDataLink, UispDevice, UispSite, UispSiteType};
+use lqos_config::Config;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::warn;
-use lqos_config::Config;
 use uisp::{DataLink, Device, Site};
-use crate::blackboard_blob;
-use crate::ip_ranges::IpRanges;
-use crate::strategies::full::uisp_fetch::load_uisp_data;
-use crate::errors::UispIntegrationError;
-use crate::strategies::full::parse::parse_uisp_datasets;
-use crate::uisp_types::{UispDataLink, UispDevice, UispSite, UispSiteType};
 
 pub(crate) struct UispData {
     pub sites_raw: Vec<Site>,
@@ -63,19 +63,29 @@ impl UispData {
     }
 
     pub fn find_client_sites(&self) -> Vec<&UispSite> {
-        self.sites.iter().filter(|s| s.site_type == UispSiteType::Client).collect()
+        self.sites
+            .iter()
+            .filter(|s| s.site_type == UispSiteType::Client)
+            .collect()
     }
 
     pub fn find_devices_in_site(&self, site_id: &str) -> Vec<&Device> {
-        self.devices_raw.iter().filter(|d| d.get_site_id().unwrap_or_default() == site_id).collect()
+        self.devices_raw
+            .iter()
+            .filter(|d| d.get_site_id().unwrap_or_default() == site_id)
+            .collect()
     }
 
     pub fn find_device_by_id(&self, device_id: &str) -> Option<&Device> {
-        self.devices_raw.iter().find(|d| d.identification.id == device_id)
+        self.devices_raw
+            .iter()
+            .find(|d| d.identification.id == device_id)
     }
 
     pub fn find_device_by_name(&self, device_name: &str) -> Option<&Device> {
-        self.devices_raw.iter().find(|d| d.get_name().unwrap_or_default() == device_name)
+        self.devices_raw
+            .iter()
+            .find(|d| d.get_name().unwrap_or_default() == device_name)
     }
 
     pub fn map_clients_to_aps(&self) -> HashMap<String, Vec<String>> {
@@ -120,9 +130,12 @@ impl UispData {
                         if let Some(from_device) = &link.from.device {
                             if from_device.identification.id == device.identification.id {
                                 if let Some(to_device) = &link.to.device {
-                                    if let Some(apdev) = self.find_device_by_id(&to_device.identification.id) {
+                                    if let Some(apdev) =
+                                        self.find_device_by_id(&to_device.identification.id)
+                                    {
                                         if apdev.get_site_id().unwrap_or_default() != client.id {
-                                            parent = Some(("AP", apdev.get_name().unwrap_or_default()));
+                                            parent =
+                                                Some(("AP", apdev.get_name().unwrap_or_default()));
                                             found = true;
                                         }
                                     }
@@ -133,9 +146,12 @@ impl UispData {
                         if let Some(to_device) = &link.to.device {
                             if to_device.identification.id == device.identification.id {
                                 if let Some(from_device) = &link.from.device {
-                                    if let Some(apdev) = self.find_device_by_id(&from_device.identification.id) {
+                                    if let Some(apdev) =
+                                        self.find_device_by_id(&from_device.identification.id)
+                                    {
                                         if apdev.get_site_id().unwrap_or_default() != client.id {
-                                            parent = Some(("AP", apdev.get_name().unwrap_or_default()));
+                                            parent =
+                                                Some(("AP", apdev.get_name().unwrap_or_default()));
                                             found = true;
                                         }
                                     }
@@ -152,7 +168,9 @@ impl UispData {
                     if let Some(from_site) = &link.from.site {
                         if from_site.identification.id == client.id {
                             if let Some(to_device) = &link.to.device {
-                                if let Some(apdev) = self.find_device_by_id(&to_device.identification.id) {
+                                if let Some(apdev) =
+                                    self.find_device_by_id(&to_device.identification.id)
+                                {
                                     if apdev.get_site_id().unwrap_or_default() != client.id {
                                         parent = Some(("AP", apdev.get_name().unwrap_or_default()));
                                         found = true;
@@ -164,7 +182,9 @@ impl UispData {
                     if let Some(to_site) = &link.to.site {
                         if to_site.identification.id == client.id {
                             if let Some(from_device) = &link.from.device {
-                                if let Some(apdev) = self.find_device_by_id(&from_device.identification.id) {
+                                if let Some(apdev) =
+                                    self.find_device_by_id(&from_device.identification.id)
+                                {
                                     if apdev.get_site_id().unwrap_or_default() != client.id {
                                         parent = Some(("AP", apdev.get_name().unwrap_or_default()));
                                         found = true;
@@ -178,7 +198,9 @@ impl UispData {
 
             if !found {
                 //println!("Client {} has no obvious parent AP", client.name);
-                let entry = mappings.entry("Orphans".to_string()).or_insert_with(Vec::new);
+                let entry = mappings
+                    .entry("Orphans".to_string())
+                    .or_insert_with(Vec::new);
                 entry.push(client.id.clone());
             } else {
                 //info!("Client {} is connected to {:?}", client.name, parent);
@@ -191,4 +213,3 @@ impl UispData {
         mappings
     }
 }
-

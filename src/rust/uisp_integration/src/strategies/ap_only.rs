@@ -1,12 +1,12 @@
-use std::fs::write;
-use std::path::Path;
-use std::sync::Arc;
-use tracing::{error, info, warn};
-use lqos_config::Config;
 use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
 use crate::strategies::common::UispData;
 use crate::strategies::full::shaped_devices_writer::ShapedDevice;
+use lqos_config::Config;
+use std::fs::write;
+use std::path::Path;
+use std::sync::Arc;
+use tracing::{error, info, warn};
 
 /// Creates a network with only APs detected
 /// from clients.
@@ -35,8 +35,14 @@ pub async fn build_ap_only_network(
             ap_object.insert("children".to_string(), serde_json::Map::new().into());
 
             // Limits
-            ap_object.insert("downloadBandwidthMbps".to_string(), serde_json::Value::Number(ap_device.download.into()));
-            ap_object.insert("uploadBandwidthMbps".to_string(), serde_json::Value::Number(ap_device.upload.into()));
+            ap_object.insert(
+                "downloadBandwidthMbps".to_string(),
+                serde_json::Value::Number(ap_device.download.into()),
+            );
+            ap_object.insert(
+                "uploadBandwidthMbps".to_string(),
+                serde_json::Value::Number(ap_device.upload.into()),
+            );
 
             // Metadata
             ap_object.insert("type".to_string(), "AP".to_string().into());
@@ -60,7 +66,11 @@ pub async fn build_ap_only_network(
     for (parent, client_ids) in mappings.iter() {
         for client_id in client_ids {
             let site = uisp_data.sites.iter().find(|s| *client_id == s.id).unwrap();
-            let devices = uisp_data.devices.iter().filter(|d| d.site_id == *client_id).collect::<Vec<_>>();
+            let devices = uisp_data
+                .devices
+                .iter()
+                .filter(|d| d.site_id == *client_id)
+                .collect::<Vec<_>>();
             for device in devices.iter().filter(|d| d.has_address()) {
                 let sd = ShapedDevice {
                     circuit_id: site.id.clone(),

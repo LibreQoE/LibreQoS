@@ -1,8 +1,8 @@
 //! Collects the blackboard functionality together
 
+use lqos_bus::BlackboardSystem;
 use serde::Serialize;
 use tracing::info;
-use lqos_bus::BlackboardSystem;
 
 pub async fn blackboard(subsystem: BlackboardSystem, key: &str, value: &str) {
     let Ok(config) = lqos_config::load_config() else {

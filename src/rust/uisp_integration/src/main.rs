@@ -2,19 +2,19 @@
 //! be ported back to Python, with Rust support structures - but I'll iterate
 //! faster in Rust.
 
+mod blackboard;
 #[warn(missing_docs)]
 mod errors;
 pub mod ip_ranges;
 mod strategies;
 pub mod uisp_types;
-mod blackboard;
 
 use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
+pub use blackboard::*;
 use lqos_config::Config;
 use tokio::time::Instant;
 use tracing::{error, info};
-pub use blackboard::*;
 
 /// Start the tracing/logging system
 fn init_tracing() {
@@ -34,7 +34,6 @@ fn check_enabled_status(config: &Config) -> Result<(), UispIntegrationError> {
         Ok(())
     }
 }
-
 
 #[tokio::main]
 async fn main() -> Result<(), UispIntegrationError> {

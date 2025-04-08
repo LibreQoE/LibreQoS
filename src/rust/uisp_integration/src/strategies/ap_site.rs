@@ -1,14 +1,14 @@
-use std::collections::{HashMap, HashSet};
-use std::fs::write;
-use std::path::Path;
-use std::sync::Arc;
-use tracing::{error, info, warn};
-use lqos_config::Config;
 use crate::blackboard_blob;
 use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
 use crate::strategies::common::UispData;
 use crate::strategies::full::shaped_devices_writer::ShapedDevice;
+use lqos_config::Config;
+use std::collections::{HashMap, HashSet};
+use std::fs::write;
+use std::path::Path;
+use std::sync::Arc;
+use tracing::{error, info, warn};
 
 #[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone)]
 pub enum GraphMapping {
@@ -29,12 +29,11 @@ pub async fn build_ap_site_network(
     let uisp_data = UispData::fetch_uisp_data(config.clone(), ip_ranges).await?;
 
     // Find trouble-spots!
-    let _trouble = find_troublesome_sites(&uisp_data).await
-        .map_err(|e|{
-            error!("Error finding troublesome sites");
-            error!("{e:?}");
-            UispIntegrationError::UnknownSiteType
-        })?;
+    let _trouble = find_troublesome_sites(&uisp_data).await.map_err(|e| {
+        error!("Error finding troublesome sites");
+        error!("{e:?}");
+        UispIntegrationError::UnknownSiteType
+    })?;
 
     // Find the clients
     let ap_mappings = uisp_data.map_clients_to_aps();
@@ -76,7 +75,10 @@ pub async fn build_ap_site_network(
     Ok(())
 }
 
-pub(crate) fn write_shaped_devices(config: &Arc<Config>, shaped_devices: &mut Vec<ShapedDevice>) -> Result<(), UispIntegrationError> {
+pub(crate) fn write_shaped_devices(
+    config: &Arc<Config>,
+    shaped_devices: &mut Vec<ShapedDevice>,
+) -> Result<(), UispIntegrationError> {
     let file_path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
     let mut writer = csv::WriterBuilder::new()
         .has_headers(true)
@@ -95,18 +97,23 @@ pub(crate) fn write_shaped_devices(config: &Arc<Config>, shaped_devices: &mut Ve
     Ok(())
 }
 
-pub(crate) fn map_sites_above_aps(uisp_data: &UispData, ap_mappings: HashMap<String, Vec<String>>, access_points: HashMap<String, Layer>) -> HashMap<String, Layer> {
+pub(crate) fn map_sites_above_aps(
+    uisp_data: &UispData,
+    ap_mappings: HashMap<String, Vec<String>>,
+    access_points: HashMap<String, Layer>,
+) -> HashMap<String, Layer> {
     let mut sites = HashMap::new();
     for (ap_name, client_ids) in ap_mappings.iter() {
         if let Some(device) = uisp_data.find_device_by_name(ap_name) {
             if let Some(device_site_id) = device.get_site_id() {
                 if let Some(device_site) = uisp_data.sites.iter().find(|s| s.id == device_site_id) {
-                    let site_entry = sites.entry(device_site.name.clone()).or_insert_with(|| {
-                        Layer {
-                            id: GraphMapping::SiteByName(device_site.name.clone()),
-                            children: Vec::new(),
-                        }
-                    });
+                    let site_entry =
+                        sites
+                            .entry(device_site.name.clone())
+                            .or_insert_with(|| Layer {
+                                id: GraphMapping::SiteByName(device_site.name.clone()),
+                                children: Vec::new(),
+                            });
                     let ap_map = access_points.get(ap_name).unwrap().clone();
                     site_entry.children.push(ap_map);
                 }
@@ -165,15 +172,21 @@ impl Layer {
             GraphMapping::SiteByName(name) | GraphMapping::AccessPointByName(name) => {
                 name.to_owned()
             }
-            _ => "".to_owned()
+            _ => "".to_owned(),
         };
         for child in self.children.iter() {
             match &child.id {
                 GraphMapping::SiteByName(name) | GraphMapping::AccessPointByName(name) => {
-                    children.insert(name.clone(), child.walk_children(Some(&parent_name), uisp_data, shaped_devices, config).into());
+                    children.insert(
+                        name.clone(),
+                        child
+                            .walk_children(Some(&parent_name), uisp_data, shaped_devices, config)
+                            .into(),
+                    );
                 }
                 GraphMapping::ClientById(_client_id) => {
-                    let _ = child.walk_children(Some(&parent_name), uisp_data, shaped_devices, config);
+                    let _ =
+                        child.walk_children(Some(&parent_name), uisp_data, shaped_devices, config);
                 }
                 _ => {}
             }
@@ -185,7 +198,10 @@ impl Layer {
                     root.insert("type".to_string(), "Site".into());
                     root.insert("name".to_string(), name.clone().into());
                     if let Some(site) = uisp_data.sites.iter().find(|s| s.name == *name) {
-                        root.insert("downloadBandwidthMbps".to_owned(), site.max_down_mbps.into());
+                        root.insert(
+                            "downloadBandwidthMbps".to_owned(),
+                            site.max_down_mbps.into(),
+                        );
                         root.insert("uploadBandwidthMbps".to_owned(), site.max_up_mbps.into());
                         root.insert("uisp_site".to_string(), site.id.clone().into());
                         root.insert("parent_site".to_string(), name.to_string().into());
@@ -203,7 +219,11 @@ impl Layer {
                 }
                 GraphMapping::ClientById(client_id) => {
                     if let Some(site) = uisp_data.sites.iter().find(|c| c.id == *client_id) {
-                        let devices = uisp_data.devices.iter().filter(|d| d.site_id == *client_id).collect::<Vec<_>>();
+                        let devices = uisp_data
+                            .devices
+                            .iter()
+                            .filter(|d| d.site_id == *client_id)
+                            .collect::<Vec<_>>();
                         for device in devices.iter().filter(|d| d.has_address()) {
                             let sd = ShapedDevice {
                                 circuit_id: site.id.clone(),
@@ -238,7 +258,10 @@ impl Layer {
             }
         }
         if parent.is_some() {
-            root.insert("children".to_string(), serde_json::to_value(children).unwrap());
+            root.insert(
+                "children".to_string(),
+                serde_json::to_value(children).unwrap(),
+            );
         } else {
             for child in children {
                 root.insert(child.0, child.1);
@@ -253,9 +276,7 @@ pub struct TroublesomeClients {
     pub client_of_clients: HashSet<String>,
 }
 
-pub(crate) async fn find_troublesome_sites(
-    data: &UispData,
-) -> anyhow::Result<TroublesomeClients> {
+pub(crate) async fn find_troublesome_sites(data: &UispData) -> anyhow::Result<TroublesomeClients> {
     let multi_entry_points = find_clients_with_multiple_entry_points(data)?;
     let client_of_clients = find_clients_linked_from_other_clients(data)?;
 
@@ -268,17 +289,19 @@ pub(crate) async fn find_troublesome_sites(
     })
 }
 
-fn find_clients_with_multiple_entry_points(
-    data: &UispData,
-) -> anyhow::Result<HashSet<String>> {
+fn find_clients_with_multiple_entry_points(data: &UispData) -> anyhow::Result<HashSet<String>> {
     let mut result = HashSet::new();
     for client in data.find_client_sites() {
         let mut links_to_client = HashSet::new();
         for link in data.data_links_raw.iter() {
             if let (Some(from_site), Some(to_site)) = (&link.from.site, &link.to.site) {
-                if from_site.identification.id == client.id && to_site.identification.id != client.id {
+                if from_site.identification.id == client.id
+                    && to_site.identification.id != client.id
+                {
                     links_to_client.insert(to_site.identification.id.clone());
-                } else if from_site.identification.id != client.id && to_site.identification.id == client.id {
+                } else if from_site.identification.id != client.id
+                    && to_site.identification.id == client.id
+                {
                     links_to_client.insert(from_site.identification.id.clone());
                 }
             }
@@ -295,24 +318,30 @@ fn find_clients_with_multiple_entry_points(
     Ok(result)
 }
 
-fn find_clients_linked_from_other_clients(
-    data: &UispData
-) -> anyhow::Result<HashSet<String>> {
+fn find_clients_linked_from_other_clients(data: &UispData) -> anyhow::Result<HashSet<String>> {
     let all_clients = data.find_client_sites();
     let mut result = HashSet::new();
     for client in &all_clients {
         for link in data.data_links_raw.iter() {
             if let (Some(from_site), Some(to_site)) = (&link.from.site, &link.to.site) {
-                if from_site.identification.id == client.id && to_site.identification.id != client.id
-                    && all_clients.iter().any(|c| c.id == to_site.identification.id) {
+                if from_site.identification.id == client.id
+                    && to_site.identification.id != client.id
+                    && all_clients
+                        .iter()
+                        .any(|c| c.id == to_site.identification.id)
+                {
                     warn!(
                         "Client {} is linked from another client: {}",
                         client.name, to_site.identification.id
                     );
                     result.insert(client.id.clone());
                 }
-                if from_site.identification.id != client.id && to_site.identification.id == client.id
-                    && all_clients.iter().any(|c| c.id == from_site.identification.id) {
+                if from_site.identification.id != client.id
+                    && to_site.identification.id == client.id
+                    && all_clients
+                        .iter()
+                        .any(|c| c.id == from_site.identification.id)
+                {
                     warn!(
                         "Client {} is linked to another client: {}",
                         client.name, from_site.identification.id

@@ -1,8 +1,8 @@
+use crate::strategies::full2::GraphType;
+use crate::strategies::full2::graph_mapping::GraphMapping;
+use lqos_config::Config;
 use std::collections::HashMap;
 use std::sync::Arc;
-use lqos_config::Config;
-use crate::strategies::full2::graph_mapping::GraphMapping;
-use crate::strategies::full2::GraphType;
 
 #[derive(Debug)]
 pub struct NetJsonParent<'a> {
@@ -33,7 +33,11 @@ pub fn walk_parents(
         GraphMapping::GeneratedSite { .. } => {
             map.insert("type".into(), "Site".into());
         }
-        GraphMapping::AccessPoint { name: _, id, site_name } => {
+        GraphMapping::AccessPoint {
+            name: _,
+            id,
+            site_name,
+        } => {
             map.insert("type".into(), "AP".into());
             map.insert("parent_site".into(), site_name.clone().into());
             map.insert("uisp_device".into(), id.clone().into());
@@ -41,8 +45,10 @@ pub fn walk_parents(
     }
 
     let mut children = serde_json::Map::new();
-    for (name, node_info) in parents.iter().filter(|(_, node_info)|
-        node_info.parent_name == *name) {
+    for (name, node_info) in parents
+        .iter()
+        .filter(|(_, node_info)| node_info.parent_name == *name)
+    {
         let child = walk_parents(parents, name, &node_info, config, graph);
         children.insert(name.into(), child.into());
     }
