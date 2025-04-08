@@ -33,6 +33,16 @@ pub async fn build_full_network_v2(
     // Fetch the data
     let uisp_data = UispData::fetch_uisp_data(config.clone(), ip_ranges).await?;
 
+    if let Err(e) = blackboard_blob("uisp_sites", &uisp_data.sites_raw).await {
+        warn!("Unable to write sites to blackboard: {e:?}");
+    }
+    if let Err(e) = blackboard_blob("uisp_devices", &uisp_data.devices_raw).await {
+        warn!("Unable to write devices to blackboard: {e:?}");
+    }
+    if let Err(e) = blackboard_blob("uisp_data_links", &uisp_data.data_links_raw).await {
+        warn!("Unable to write data links to blackboard: {e:?}");
+    }
+
     // Report on obvious UISP errors that should be fixed
     let _trouble = crate::strategies::ap_site::find_troublesome_sites(&uisp_data)
         .await
@@ -146,7 +156,7 @@ pub async fn build_full_network_v2(
 
     // Visualizer
     save_dot_file(&graph)?;
-    let _ = blackboard_blob("UISP-Graph", &graph).await;
+    let _ = blackboard_blob("uisp-graph", &graph).await;
 
     // Figure out the network.json layers
     let mut parents = HashMap::<String, NetJsonParent>::new();

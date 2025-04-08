@@ -280,8 +280,8 @@ pub(crate) async fn find_troublesome_sites(data: &UispData) -> anyhow::Result<Tr
     let multi_entry_points = find_clients_with_multiple_entry_points(data)?;
     let client_of_clients = find_clients_linked_from_other_clients(data)?;
 
-    let _ = blackboard_blob("UISP-Trouble-MultiEntry", multi_entry_points.clone()).await;
-    let _ = blackboard_blob("UISP-Trouble-ClientOfClient", client_of_clients.clone()).await;
+    let _ = blackboard_blob("uisp-trouble-multi-entry", multi_entry_points.clone()).await;
+    let _ = blackboard_blob("uisp-trouble-client-of-client", client_of_clients.clone()).await;
 
     Ok(TroublesomeClients {
         multi_entry_points,
