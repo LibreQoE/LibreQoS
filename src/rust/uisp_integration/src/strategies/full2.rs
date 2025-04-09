@@ -77,7 +77,7 @@ pub async fn build_full_network_v2(
 
     // Iterate all UISP devices and if their parent site is in the graph, add them
     let mut device_map = HashMap::new();
-    add_devices_to_graph(&uisp_data, &mut graph, &mut site_map, &mut device_map, &config);
+    add_devices_to_graph(&uisp_data, &mut graph, &mut site_map, &mut device_map, &config, &bandwidth_overrides);
 
     // Now we iterate all the data links looking for DEVICE linkage
     add_device_links_to_graph(&uisp_data, &mut graph, &mut device_map, &config);
@@ -224,6 +224,14 @@ pub async fn build_full_network_v2(
                     // Obtain capacities from route traversal
                     let mut download_capacity = min_capacity_along_route(&graph, &route_from_root_to_node.1);
                     let mut upload_capacity = min_capacity_along_route(&graph, &route_from_node_to_root.1);
+
+                    // Apply AP capacities
+                    if let GraphMapping::AccessPoint { download_mbps, upload_mbps, .. } = &graph[node] {
+                        //println!("AP device capacity: {download_mbps}/{upload_mbps} (prev {download_capacity}/{upload_capacity})");
+                        download_capacity = u64::min(download_capacity, *download_mbps);
+                        upload_capacity = u64::min(upload_capacity, *upload_mbps);
+                        //println!("Now: {download_capacity}/{upload_capacity}");
+                    }
 
                     // 0 isn't possible
                     if download_capacity < 1 {
@@ -465,19 +473,45 @@ fn add_devices_to_graph(
     site_map: &mut HashMap<String, NodeIndex>,
     device_map: &mut HashMap<String, NodeIndex>,
     config: &Arc<Config>,
+    bandwidth_overrides: &BandwidthOverrides,
 ) {
     for device in uisp_data.devices_raw.iter() {
         let Some(site_id) = &device.identification.site else {
             continue;
         };
         let site_id = &site_id.id;
+        let Some(device_details) = uisp_data.devices.iter().find(|d| d.id == device.identification.id) else {
+            continue;
+        };
         let Some(site_ref) = site_map.get(site_id) else {
             continue;
         };
+        let mut download_mbps = device_details.download;
+        let mut upload_mbps = device_details.upload;
+
+        if download_mbps < 1 {
+            download_mbps = config.queues.generated_pn_download_mbps;
+        }
+        if upload_mbps < 1 {
+            upload_mbps = config.queues.generated_pn_upload_mbps;
+        }
+
+        if config.uisp_integration.ignore_calculated_capacity {
+            download_mbps = config.queues.generated_pn_download_mbps;
+            upload_mbps = config.queues.generated_pn_upload_mbps;
+        }
+
+        if let Some(bw_override) = bandwidth_overrides.get(&device.get_name().unwrap_or_default()) {
+            download_mbps = bw_override.0 as u64;
+            upload_mbps = bw_override.1 as u64;
+        }
+
         let device_entry = GraphMapping::AccessPoint {
             name: device.get_name().unwrap_or_default(),
             id: device.identification.id.clone(),
             site_name: graph[*site_ref].name(),
+            download_mbps,
+            upload_mbps,
         };
         let device_ref = graph.add_node(device_entry);
         device_map.insert(device.identification.id.clone(), device_ref);
@@ -558,6 +592,7 @@ fn link_capacity_mbps_for_routing(
 }
 
 use petgraph::prelude::*;
+use crate::strategies::full::bandwidth_overrides::BandwidthOverrides;
 
 fn edges_from_node_path(
     graph: &GraphType,

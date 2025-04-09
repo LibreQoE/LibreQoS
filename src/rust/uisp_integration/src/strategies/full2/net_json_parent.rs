@@ -37,6 +37,7 @@ pub fn walk_parents(
             name: _,
             id,
             site_name,
+            ..
         } => {
             map.insert("type".into(), "AP".into());
             map.insert("parent_site".into(), site_name.clone().into());

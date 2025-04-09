@@ -17,6 +17,8 @@ pub enum GraphMapping {
         name: String,
         id: String,
         site_name: String,
+        download_mbps: u64,
+        upload_mbps: u64,
     },
 }
 
