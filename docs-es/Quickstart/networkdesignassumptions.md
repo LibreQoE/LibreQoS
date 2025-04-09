@@ -1,46 +1,46 @@
-# Network Design Assumptions
+# Supuestos de Diseño de Red
 
-## Officially supported configuration
+## Configuraciones oficialmente soportadas  
 
-- LibreQoS placed inline in network, usually between an edge router (NAT, firewall) and core router (distribution to sites across network).
-  - If you use NAT/CG-NAT, place LibreQoS inline south of where NAT is applied, as LibreQoS needs to shape internal addresses (100.64.0.0/12) not public post-NAT IPs.
-- Edge and Core routers should have 1500 MTU on links between them
-- If you use MPLS, you would terminate MPLS traffic at the core router. LibreQoS cannot decapsulate MPLS on its own.
-- OSPF primary link (low cost) through the server running LibreQoS
-- OSPF backup link (high cost, maybe 200 for example)
+- LibreQoS se ubica dentro de una red, generalmente entre un enrutador de borde (NAT, firewall) y un enrutador central (distribución a sitios a través de la red).
+  - Si usa NAT/CG-NAT, coloque LibreQoS en lpínea al sur de donde se aplica NAT, debido a que  LibreQoS necesita dar formar a direcciones internas (100.64.0.0/12), no a IP públicas posteriores a NAT.
+- - Los enrutadores de borde y de núcleo deben tener 1500 MTU en los enlaces entre ellos
+- Si usa MPLS, debería terminar el tráfico MPLS en el enrutador principal. LibreQoS no puede desencapsular MPLS por sí solo.
+- Enlace principal OSPF (bajo costo) a través del servidor que ejecuta LibreQoS
+- Enlace de respaldo OSPF (alto costo, quizás 200 por ejemplo)
 
-![Offical Configuration](https://raw.githubusercontent.com/LibreQoE/LibreQoS/main/docs/design.png)
+![Configuración oficial](https://raw.githubusercontent.com/LibreQoE/LibreQoS/main/docs/design.png)
 
-## Testbed configuration
-When you are first testing out LibreQoS, we recommend deploying a small-scale testbed to see it in action.
+## Configuración del banco de pruebas
+Cuando pruebe LibreQoS por primera vez,  recomendamos implementar un banco de pruebas a pequeña escala para verlo en acción.
 ![image](https://github.com/user-attachments/assets/6174bd29-112d-4b00-bea8-41314983d37a)
 
-### Network Interface Card
+### Tarjeta de Interfaz de Red
 
 ```{note}
-You must have one of these:
-- single NIC with two interfaces,
-- two NICs with single interface,
-- 2x VLANs interface (using one or two NICs).
+Debe tener algouno de estos:
+- Una sola NIC con dos interfaces,
+- dos NIC con una sola interfaz,
+- Interfaz 2x VLANs interface (utilizando una o dos NIC).
 ```
 
-LibreQoS requires NICs to have 2 or more RX/TX queues and XDP support. While many cards theoretically meet these requirements, less commonly used cards tend to have unreported driver bugs which impede XDP functionality and make them unusable for our purposes. At this time we recommend the Intel x520, Intel x710, and Nvidia (ConnectX-5 or newer) NICs. We cannot guarantee compatibility with other cards.
+LibreQoS requiere que las tarjetas de red (NIC) tengan dos o más colas RX/TX y compatibilidad con XDP. Si bien muchas tarjetas cumplen teóricamente estos requisitos, las tarjetas menos utilizadas suelen presentar errores de controlador no reportados que impiden la funcionalidad XDP y las inutilizan para nuestros propósitos. Actualmente, recomendamos las tarjetas de red (NIC) Intel x520, Intel x710 y Nvidia (ConnectX-5 o posterior). No podemos garantizar la compatibilidad con otras tarjetas.
 
-## Alternate configuration (Not officially supported)
 
-This alternate configuration uses Spanning Tree Protocol (STP) to modify the data path in the event the LibreQoS device is offline for maintenance or another problem.
+## Configuración alternativa (no compatible oficialmente) 
+
+Esta configuración alternativa utiliza el Protocolo de árbol de expansión (STP) para modificar la ruta de datos en caso de que el dispositivo LibreQoS esté fuera de línea por mantenimiento u otro problema.
 
 ```{note}
-Most of the same considerations apply to the alternate configuration as they do to the officially supported configuation
-```
+La mayoría de estas consideraciones se aplican a la configuración alternativa y a la configuración admitida oficialmente.```
 
-- LibreQoS placed inline in network, usually between an edge router (NAT, firewall) and core router (distribution to sites across network).
-  - If you use NAT/CG-NAT, place LibreQoS inline south of where NAT is applied, as LibreQoS needs to shape internal addresses (100.64.0.0/12) not public post-NAT IPs.
-- Edge router and Core switch should have 1500 MTU on links between them
-- If you use MPLS, you would terminate MPLS traffic somewhere south of the core/distribution switch. LibreQoS cannot decapsulate MPLS on its own.
-- Spanning Tree primary link (low cost) through the server running LibreQoS
-- Spanning Tree backup link (high cost, maybe 80 for example)
+- LibreQoS se coloca en línea en la red, generalmente entre un enrutador de borde (NAT, firewall) y un enrutador central (distribución a sitios a través de la red).
+  - Si usa NAT/CG-NAT, coloque LibreQoS en línea al sur de donde se aplica NAT, ya que LibreQoS necesita dar forma a direcciones internas (100.64.0.0/12), no a IP públicas posteriores a NAT.
+- El enrutador de borde y el conmutador central deben tener 1500 MTU en los enlaces entre ellos
+- Si usa MPLS, debería terminar el tráfico MPLS en algún lugar al sur del conmutador central/distribuidor. LibreQoS no puede desencapsular MPLS por sí solo. 
+- Enlace principal de Spanning Tree (bajo costo) a través del servidor que ejecuta LibreQoS
+- Enlace de respaldo de Spanning Tree (alto costo, quizás 80 por ejemplo)
 
-Keep in mind that if you use different bandwidth links, for example, 10 Gbps through LibreQoS, and 1 Gbps between core switch and edge router, you may need to be more intentional with your STP costs.
+Tenga en cuenta que si utiliza enlaces con diferentes anchos de banda, por ejemplo, 10 Gbps a través de LibreQoS y 1 Gbps entre el conmutador central y el enrutador de borde, es posible que deba ser más intencional con los costos de STP.
 
-![Alternate Configuration](../stp-diagram.png)
+![Configuración Alternativa](../stp-diagram.png)
