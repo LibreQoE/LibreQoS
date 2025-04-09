@@ -17,14 +17,14 @@ use crate::uisp_types::UispDevice;
 use lqos_config::Config;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::{EdgeRef, NodeRef};
-use petgraph::{Graph, Undirected};
+use petgraph::{Directed, Graph, Undirected};
 use std::collections::{HashMap, HashSet};
 use std::fs::write;
 use std::path::Path;
 use std::sync::Arc;
 use tracing::{error, info, warn};
 
-type GraphType = petgraph::Graph<GraphMapping, LinkMapping, Undirected>;
+type GraphType = petgraph::Graph<GraphMapping, LinkMapping, Directed>;
 
 pub async fn build_full_network_v2(
     config: Arc<Config>,
@@ -58,7 +58,7 @@ pub async fn build_full_network_v2(
     let routing_overrides = crate::strategies::full::routes_override::get_route_overrides(&config)?;
 
     // Create a new graph
-    let mut graph = GraphType::new_undirected();
+    let mut graph = GraphType::new();
 
     // Find the root
     let root_site_name = config.uisp_integration.site.clone();
@@ -77,16 +77,17 @@ pub async fn build_full_network_v2(
 
     // Iterate all UISP devices and if their parent site is in the graph, add them
     let mut device_map = HashMap::new();
-    add_devices_to_graph(&uisp_data, &mut graph, &mut site_map, &mut device_map);
+    add_devices_to_graph(&uisp_data, &mut graph, &mut site_map, &mut device_map, &config);
 
     // Now we iterate all the data links looking for DEVICE linkage
-    add_device_links_to_graph(&uisp_data, &mut graph, &mut device_map);
+    add_device_links_to_graph(&uisp_data, &mut graph, &mut device_map, &config);
 
     // Now we iterate only sites, looking for connectivity to the root
     let orphans = graph.add_node(GraphMapping::GeneratedSite {
         name: "Orphans".to_string(),
     });
-    graph.add_edge(root_idx, orphans, LinkMapping::Ethernet);
+    graph.add_edge(root_idx, orphans, LinkMapping::ethernet(config.queues.generated_pn_download_mbps));
+    graph.add_edge(orphans, root_idx, LinkMapping::ethernet(config.queues.generated_pn_upload_mbps));
     for (_, site_ref) in site_map.iter() {
         if *site_ref == root_idx {
             continue;
@@ -99,7 +100,8 @@ pub async fn build_full_network_v2(
                 "No path is detected from {:?} to {}",
                 graph[*site_ref], root_site_name
             );
-            graph.add_edge(*site_ref, orphans, LinkMapping::Ethernet);
+            graph.add_edge(*site_ref, orphans, LinkMapping::ethernet(config.queues.generated_pn_download_mbps));
+            graph.add_edge(orphans, *site_ref, LinkMapping::ethernet(config.queues.generated_pn_upload_mbps));
         }
     }
 
@@ -168,12 +170,13 @@ pub async fn build_full_network_v2(
             GraphMapping::GeneratedSite { name }
             | GraphMapping::Site { name, .. }
             | GraphMapping::AccessPoint { name, .. } => {
-                let route = petgraph::algo::astar(
+                // Generate two routes - one per direction
+                let route_from_root_to_node = petgraph::algo::astar(
                     &graph,
                     root_idx,
                     |n| n == node,
                     |e| {
-                        (10_000u64).saturating_sub(link_capacity_mbps(
+                        (10_000u64).saturating_sub(link_capacity_mbps_for_routing(
                             &e.weight(),
                             &uisp_data.devices,
                             &routing_overrides,
@@ -183,7 +186,30 @@ pub async fn build_full_network_v2(
                 )
                 .unwrap_or((0, vec![]));
 
-                if route.1.is_empty() {
+                let route_from_node_to_root = petgraph::algo::astar(
+                    &graph,
+                    node,
+                    |n| n == root_idx,
+                    |e| {
+                        (10_000u64).saturating_sub(link_capacity_mbps_for_routing(
+                            &e.weight(),
+                            &uisp_data.devices,
+                            &routing_overrides,
+                        ))
+                    },
+                    |_| 0,
+                )
+                    .unwrap_or((0, vec![]));
+
+                // println!("From node to root:");
+                // println!("{:?}", route_from_node_to_root);
+                // println!("{:?}", edges_from_node_path(&graph, &route_from_node_to_root.1));
+                //
+                // println!("From root to node:");
+                // println!("{:?}", route_from_root_to_node);
+                // println!("{:?}", edges_from_node_path(&graph, &route_from_root_to_node.1));
+
+                if route_from_root_to_node.1.is_empty() {
                     //println!("No path detected from {:?} to {}", graph[node], root_site_name);
                     parents.insert(
                         name.to_owned(),
@@ -195,48 +221,46 @@ pub async fn build_full_network_v2(
                         },
                     );
                 } else {
-                    let mut capacity = (
-                        config.queues.generated_pn_download_mbps,
-                        config.queues.generated_pn_upload_mbps,
-                    );
-                    if !config.uisp_integration.ignore_calculated_capacity {
-                        match &graph[node] {
-                            GraphMapping::Site { name, .. } => {
-                                if let Some(bw_override) = bandwidth_overrides.get(name) {
-                                    info!("Applying bandwidth override for {}", name);
-                                    info!("Capacity was: {} / {}", capacity.0, capacity.1);
-                                    capacity = (bw_override.0 as u64, bw_override.1 as u64);
-                                    info!("Capacity is now: {} / {}", capacity.0, capacity.1);
-                                }
-                            }
-                            GraphMapping::AccessPoint { id, .. } => {
-                                if let Some(device) = uisp_data.devices.iter().find(|d| d.id == *id)
-                                {
-                                    capacity = (device.download, device.upload);
-                                    if let Some(bw_override) = bandwidth_overrides.get(&device.name)
-                                    {
-                                        info!("Applying bandwidth override for {}", device.name);
-                                        info!("Capacity was: {} / {}", capacity.0, capacity.1);
-                                        capacity = (bw_override.0 as u64, bw_override.1 as u64);
-                                        info!("Capacity is now: {} / {}", capacity.0, capacity.1);
-                                    }
-                                }
-                            }
-                            _ => {}
+                    // Obtain capacities from route traversal
+                    let mut download_capacity = min_capacity_along_route(&graph, &route_from_root_to_node.1);
+                    let mut upload_capacity = min_capacity_along_route(&graph, &route_from_node_to_root.1);
+
+                    // 0 isn't possible
+                    if download_capacity < 1 {
+                        download_capacity = config.queues.generated_pn_download_mbps;
+                    }
+                    if upload_capacity < 1 {
+                        upload_capacity = config.queues.generated_pn_upload_mbps;
+                    }
+
+                    // Ignore option
+                    if config.uisp_integration.ignore_calculated_capacity {
+                        download_capacity = config.queues.generated_pn_download_mbps;
+                        upload_capacity = config.queues.generated_pn_upload_mbps;
+                    }
+
+                    // Overrides
+                    if !bandwidth_overrides.is_empty() {
+                        if let Some(bw_override) = bandwidth_overrides.get(name) {
+                            info!("Applying bandwidth override for {}", name);
+                            info!("Capacity was: {} / {}", download_capacity, upload_capacity);
+                            download_capacity = bw_override.0 as u64;
+                            upload_capacity = bw_override.1 as u64;
+                            info!("Capacity is now: {} / {}", download_capacity, upload_capacity);
                         }
                     }
 
-                    let parent_node = route.1[route.1.len() - 2];
+                    let parent_node = route_from_root_to_node.1[route_from_root_to_node.1.len() - 2];
                     // We need the weight from node to parent_node in the graph edges
                     if let Some(_edge) = graph.find_edge(parent_node, node) {
-                        let parent = graph[route.1[route.1.len() - 2]].name();
+                        let parent = graph[route_from_root_to_node.1[route_from_root_to_node.1.len() - 2]].name();
                         parents.insert(
                             name.to_owned(),
                             NetJsonParent {
                                 parent_name: parent,
                                 mapping: &graph[node],
-                                download: capacity.0,
-                                upload: capacity.1,
+                                download: download_capacity,
+                                upload: upload_capacity,
                             },
                         );
                     } else {
@@ -301,12 +325,20 @@ pub async fn build_full_network_v2(
                 let download_max = download as u64;
                 let upload_max = upload as u64;
 
+                let parent_node = {
+                    if parents.get(&ap_device.name).is_some() {
+                        ap_device.name.clone()
+                    } else {
+                        "Orphans".to_string()
+                    }
+                };
+
                 let shaped_device = ShapedDevice {
                     circuit_id: site.id.to_owned(),
                     circuit_name: site.name.to_owned(),
                     device_id: device.id.to_owned(),
                     device_name: device.name.to_owned(),
-                    parent_node: ap_device.name.to_owned(),
+                    parent_node,
                     mac: device.mac.to_owned(),
                     ipv4: device.ipv4_list(),
                     ipv6: device.ipv6_list(),
@@ -341,8 +373,9 @@ pub async fn build_full_network_v2(
 
 fn add_device_links_to_graph(
     uisp_data: &UispData,
-    graph: &mut Graph<GraphMapping, LinkMapping, Undirected>,
+    graph: &mut GraphType,
     device_map: &mut HashMap<String, NodeIndex>,
+    config: &Arc<Config>,
 ) {
     for link in uisp_data.data_links_raw.iter() {
         let Some(from_device) = &link.from.device else {
@@ -383,22 +416,55 @@ fn add_device_links_to_graph(
             // If the edge already exists, we don't need to add it
             continue;
         }
+        if graph.contains_edge(*b_ref, *a_ref) {
+            // If the edge already exists, we don't need to add it
+            continue;
+        }
+
+        let (down, up) = get_capacity_from_datalink_device(
+            &from_device.identification.id,
+            &uisp_data.devices,
+            &config,
+        );
         graph.add_edge(
             *a_ref,
             *b_ref,
-            LinkMapping::DevicePair(
-                from_device.identification.id.clone(),
-                to_device.identification.id.clone(),
-            ),
+            LinkMapping::DevicePair {
+                device_a: from_device.identification.id.clone(),
+                device_b: to_device.identification.id.clone(),
+                speed_mbps: down,
+            },
+        );
+        graph.add_edge(
+            *b_ref,
+            *a_ref,
+            LinkMapping::DevicePair {
+                device_b: from_device.identification.id.clone(),
+                device_a: to_device.identification.id.clone(),
+                speed_mbps: up,
+            },
         );
     }
 }
 
+fn get_capacity_from_datalink_device(
+    device_id: &str,
+    devices: &[UispDevice],
+    config: &Arc<Config>,
+) -> (u64, u64) {
+    if let Some(device) = devices.iter().find(|d| d.id == device_id) {
+        return (device.download, device.upload);
+    }
+
+    (config.queues.generated_pn_download_mbps, config.queues.generated_pn_upload_mbps)
+}
+
 fn add_devices_to_graph(
     uisp_data: &UispData,
-    graph: &mut Graph<GraphMapping, LinkMapping, Undirected>,
+    graph: &mut GraphType,
     site_map: &mut HashMap<String, NodeIndex>,
     device_map: &mut HashMap<String, NodeIndex>,
+    config: &Arc<Config>,
 ) {
     for device in uisp_data.devices_raw.iter() {
         let Some(site_id) = &device.identification.site else {
@@ -415,13 +481,14 @@ fn add_devices_to_graph(
         };
         let device_ref = graph.add_node(device_entry);
         device_map.insert(device.identification.id.clone(), device_ref);
-        let _ = graph.add_edge(device_ref, *site_ref, LinkMapping::Ethernet);
+        let _ = graph.add_edge(device_ref, *site_ref, LinkMapping::ethernet(config.queues.generated_pn_download_mbps));
+        let _ = graph.add_edge(*site_ref, device_ref, LinkMapping::ethernet(config.queues.generated_pn_upload_mbps));
     }
 }
 
 pub fn add_all_sites_to_graph(
     uisp_data: &UispData,
-    graph: &mut Graph<GraphMapping, LinkMapping, Undirected>,
+    graph: &mut GraphType,
     root_site_name: &String,
     site_map: &mut HashMap<String, NodeIndex>,
     root_idx: &mut Option<NodeIndex>,
@@ -449,39 +516,76 @@ pub fn add_all_sites_to_graph(
     }
 }
 
-fn link_capacity_mbps(
+fn link_capacity_mbps_for_routing(
     link_mapping: &LinkMapping,
     devices: &[UispDevice],
     route_overrides: &[RouteOverride],
 ) -> u64 {
     match link_mapping {
-        LinkMapping::Ethernet => 10_000,
-        LinkMapping::DevicePair(device_a, device_b) => {
-            let capacity;
+        LinkMapping::Ethernet { speed_mbps } => *speed_mbps,
+        LinkMapping::DevicePair { speed_mbps, device_a, device_b } => {
+            // Check for overrides: make sure we have both devices (we need names, are storing IDs)
+            let Some(device_a) = devices.iter().find(|d| d.id == *device_a) else {
+                return *speed_mbps;
+            };
+            let Some(device_b) = devices.iter().find(|d| d.id == *device_b) else {
+                return *speed_mbps;
+            };
 
-            if let Some(device_a) = devices.iter().find(|d| d.id == *device_a) {
-                if let Some(override_a) = route_overrides
-                    .iter()
-                    .find(|o| o.from_site == device_a.name || o.to_site == device_a.name)
-                {
-                    capacity = override_a.cost as u64;
-                } else {
-                    capacity = device_a.download;
-                }
-            } else if let Some(device_b) = devices.iter().find(|d| d.id == *device_b) {
-                if let Some(override_b) = route_overrides
-                    .iter()
-                    .find(|o| o.from_site == device_b.name || o.to_site == device_b.name)
-                {
-                    capacity = override_b.cost as u64;
-                } else {
-                    capacity = device_b.download;
-                }
-            } else {
-                capacity = 10_000;
+            // Check for the direct direction
+            if let Some(route_override) = route_overrides
+                .iter()
+                .find(|route_override|
+                    (route_override.from_site == device_a.name || route_override.to_site == device_a.name)
+                        && (route_override.from_site == device_b.name || route_override.to_site == device_b.name)
+                ) {
+                return route_override.cost as u64;
             }
 
-            capacity
+            // Check for the reverse direction
+            if let Some(route_override) = route_overrides
+                .iter()
+                .find(|route_override|
+                    (route_override.from_site == device_b.name || route_override.to_site == device_b.name)
+                        && (route_override.from_site == device_a.name || route_override.to_site == device_a.name)
+                ) {
+                return route_override.cost as u64;
+            }
+
+            *speed_mbps
         }
     }
+}
+
+use petgraph::prelude::*;
+
+fn edges_from_node_path(
+    graph: &GraphType,
+    path: &[NodeIndex],
+) -> Vec<EdgeIndex>
+{
+    let mut edge_ids = Vec::new();
+    for window in path.windows(2) {
+        let source = window[0];
+        let target = window[1];
+        // This assumes a directed graph; if undirected, you might need to check both directions
+        if let Some(edge) = graph.find_edge(source, target) {
+            edge_ids.push(edge);
+        } else {
+            // Handle case where no edge is found (could be error or special case)
+            panic!("No edge found between {:?} and {:?}", source, target);
+        }
+    }
+    edge_ids
+}
+
+fn min_capacity_along_route(
+    graph: &GraphType,
+    path: &[NodeIndex],
+) -> u64 {
+    edges_from_node_path(graph, path)
+        .iter()
+        .map(|edge| graph[*edge].capacity_mbps())
+        .min()
+        .unwrap_or(0)
 }
