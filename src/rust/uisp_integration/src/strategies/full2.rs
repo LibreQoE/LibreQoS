@@ -282,13 +282,14 @@ pub async fn build_full_network_v2(
 
     // Write the network.json file
     let mut network_json = serde_json::Map::new();
+    let mut visited = HashSet::new();
     for (name, node_info) in parents
         .iter()
         .filter(|(_name, parent)| parent.parent_name == root_site_name)
     {
         network_json.insert(
             name.into(),
-            walk_parents(&parents, name, &node_info, &config, &graph).into(),
+            walk_parents(&parents, name, &node_info, &config, &graph, &mut visited).into(),
         );
     }
     let network_path = Path::new(&config.lqos_directory).join("network.json");

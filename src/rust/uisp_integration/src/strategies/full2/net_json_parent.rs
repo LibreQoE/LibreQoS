@@ -1,7 +1,7 @@
 use crate::strategies::full2::GraphType;
 use crate::strategies::full2::graph_mapping::GraphMapping;
 use lqos_config::Config;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -18,6 +18,7 @@ pub fn walk_parents(
     node_info: &NetJsonParent,
     config: &Arc<Config>,
     graph: &GraphType,
+    visited: &mut HashSet<String>,
 ) -> serde_json::Map<String, serde_json::Value> {
     let mut map = serde_json::Map::new();
     // Entries are name, type, uisp_device or site, downloadBandwidthMbps, uploadBandwidthMbps, children
@@ -48,9 +49,13 @@ pub fn walk_parents(
     let mut children = serde_json::Map::new();
     for (name, node_info) in parents
         .iter()
-        .filter(|(_, node_info)| node_info.parent_name == *name)
+        .filter(|(_node_name, node_info)| node_info.parent_name == *name)
     {
-        let child = walk_parents(parents, name, &node_info, config, graph);
+        if visited.contains(name) {
+            continue;
+        }
+        visited.insert(name.to_string());
+        let child = walk_parents(parents, name, &node_info, config, graph, visited);
         children.insert(name.into(), child.into());
     }
 
