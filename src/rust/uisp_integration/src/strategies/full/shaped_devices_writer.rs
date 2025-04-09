@@ -7,7 +7,7 @@ use tracing::{error, info};
 
 /// Represents a shaped device in the ShapedDevices.csv file.
 #[derive(Serialize, Debug)]
-struct ShapedDevice {
+pub struct ShapedDevice {
     pub circuit_id: String,
     pub circuit_name: String,
     pub device_id: String,

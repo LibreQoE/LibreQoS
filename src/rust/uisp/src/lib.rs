@@ -42,7 +42,7 @@ pub async fn load_all_sites(config: Arc<Config>) -> Result<Vec<Site>> {
 /// Load all devices from UISP that are authorized, and include their full interface definitions
 pub async fn load_all_devices_with_interfaces(config: Arc<Config>) -> Result<Vec<Device>> {
     Ok(nms_request_get_vec(
-        "devices?withInterfaces=true&authorized=true",
+        "devices?withInterfaces=true",
         &config.uisp_integration.token,
         &config.uisp_integration.url,
     )

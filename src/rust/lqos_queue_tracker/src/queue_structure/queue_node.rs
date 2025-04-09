@@ -3,7 +3,7 @@ use lqos_bus::TcHandle;
 use lqos_utils::hash_to_i64;
 use lqos_utils::hex_string::read_hex_string;
 use serde_json::Value;
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 #[derive(Default, Clone, Debug)]
 pub struct QueueNode {
@@ -238,7 +238,7 @@ impl QueueNode {
                     "idForCircuitsWithoutParentNodes" | "type" => {
                         // Ignore
                     }
-                    _ => error!("I don't know how to parse key: [{key}]"),
+                    _ => info!("I don't know how to parse key: [{key}]"),
                 }
             }
         } else {
