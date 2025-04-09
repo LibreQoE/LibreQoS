@@ -736,9 +736,9 @@ def refreshShapers():
 						if (circuit_min_down_combined_by_parent_node[node] > data[node]['downloadBandwidthMbpsMin']) or (circuit_min_up_combined_by_parent_node[node] > data[node]['uploadBandwidthMbpsMin']):
 							override_min_down = 1
 							override_min_up = 1
-							warnings.warn("The combined minimums of circuits in Parent Node [" + node + "] exceeded that of the parent node. Reducing these circuits' minimums to 1 now.", stacklevel=2)
+							logging.info("The combined minimums of circuits in Parent Node [" + node + "] exceeded that of the parent node. Reducing these circuits' minimums to 1 now.", stacklevel=2)
 							if ((override_min_down * len(circuits_by_parent_node[node])) > data[node]['downloadBandwidthMbpsMin']) or ((override_min_up * len(circuits_by_parent_node[node])) > data[node]['uploadBandwidthMbpsMin']):
-								warnings.warn("Even with this change, minimums will exceed the min rate of the parent node. Using 10 kbps as the minimum for these circuits instead.", stacklevel=2)
+								logging.info("Even with this change, minimums will exceed the min rate of the parent node. Using 10 kbps as the minimum for these circuits instead.", stacklevel=2)
 								nodes_requiring_min_squashing[node] = True
 					for circuit in circuits_by_parent_node[node]:
 						if node == circuit['ParentNode']:
