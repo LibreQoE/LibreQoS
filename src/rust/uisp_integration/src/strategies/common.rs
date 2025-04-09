@@ -3,7 +3,7 @@ use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
 use crate::strategies::full::parse::parse_uisp_datasets;
 use crate::strategies::full::uisp_fetch::load_uisp_data;
-use crate::uisp_types::{UispDataLink, UispDevice, UispSite, UispSiteType};
+use crate::uisp_types::{UispDevice, UispSite, UispSiteType};
 use lqos_config::Config;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -16,7 +16,7 @@ pub(crate) struct UispData {
     pub data_links_raw: Vec<DataLink>,
     pub sites: Vec<UispSite>,
     pub devices: Vec<UispDevice>,
-    pub data_links: Vec<UispDataLink>,
+    //pub data_links: Vec<UispDataLink>,
 }
 
 impl UispData {
@@ -58,7 +58,7 @@ impl UispData {
             data_links_raw,
             sites,
             devices,
-            data_links: _data_links,
+            //data_links: _data_links,
         })
     }
 

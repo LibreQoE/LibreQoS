@@ -272,7 +272,9 @@ impl Layer {
 }
 
 pub struct TroublesomeClients {
+    #[allow(dead_code)] // Used in serialization
     pub multi_entry_points: HashSet<String>,
+    #[allow(dead_code)] // Used in serialization
     pub client_of_clients: HashSet<String>,
 }
 

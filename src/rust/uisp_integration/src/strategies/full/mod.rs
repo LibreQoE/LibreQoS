@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 mod ap_promotion;
 pub(crate) mod bandwidth_overrides;
 mod client_site_promotion;

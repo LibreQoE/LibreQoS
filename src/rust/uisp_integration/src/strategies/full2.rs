@@ -17,7 +17,7 @@ use crate::uisp_types::UispDevice;
 use lqos_config::Config;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::{EdgeRef, NodeRef};
-use petgraph::{Directed, Graph, Undirected};
+use petgraph::Directed;
 use std::collections::{HashMap, HashSet};
 use std::fs::write;
 use std::path::Path;
