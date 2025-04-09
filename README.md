@@ -49,6 +49,9 @@ You can enroll in the 30-day free trial by [upgrading to the latest version of L
 
 <a href="https://libreqos.io/"><img alt="LibreQoS Long Term Stats" src="https://i0.wp.com/libreqos.io/wp-content/uploads/2023/11/01-Dashboard.png"></a></a>
 
+## In memory of Dave Täht
+It is with heavy hearts that we share that Dave Täht has passed away. Dave served as LibreQoS' Chief Science Officer and championed the global fight against bufferbloat. You can learn more about [Dave's incredible legacy here](https://libreqos.io/2025/04/01/in-loving-memory-of-dave/), and learn how our team is working to [carry on his mission here](https://libreqos.io/company/).
+
 ## External Pull Request Policy
 
 We can only accept PRs that address one specific change or topic each. We ask that you keep all changes small and focused per-PR to help our review and testing process.
