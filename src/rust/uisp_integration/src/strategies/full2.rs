@@ -333,6 +333,11 @@ pub async fn build_full_network_v2(
                 let download_max = download as u64;
                 let upload_max = upload as u64;
 
+                let download_min = u64::max(1, download_min);
+                let upload_min = u64::max(1, upload_min);
+                let download_max = u64::max(4, download_max);
+                let upload_max = u64::max(4, upload_max);
+
                 let parent_node = {
                     if parents.get(&ap_device.name).is_some() {
                         ap_device.name.clone()
