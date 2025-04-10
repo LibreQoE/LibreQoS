@@ -1,21 +1,21 @@
-# Install LibreQoS 1.4
+# Instalar LibreQoS 1.4
 
-## Updating from v1.3
+## Actualización desde la versión v1.3
 
-### Remove offloadOff.service
+### Eliminar offloadOff.service
 
 ```shell
 sudo systemctl disable offloadOff.service
 sudo rm /usr/local/sbin/offloadOff.sh /etc/systemd/system/offloadOff.service
 ```
 
-### Remove cron tasks from v1.3
+### Eliminar las tareas cron de la versión v1.3
 
-Run ```sudo crontab -e``` and remove any entries pertaining to LibreQoS from v1.3.
+Ejecute ```sudo crontab -e``` y elimine cualquier entrada relacionada con LibreQoS desde v1.3.
 
-## Simple install via .Deb package (Recommended)
+## Instalación sencilla desde el paquete .Deb (recomendada)
 
-Use the deb package from the [latest v1.4 release](https://github.com/LibreQoE/LibreQoS/releases/).
+Utilice el paquete .deb de la [última versión v1.4 ](https://github.com/LibreQoE/LibreQoS/releases/).
 
 ```shell
 sudo echo "deb http://stats.libreqos.io/ubuntu jammy main" | sudo tee -a /etc/apt/sources.list.d/libreqos.list
@@ -24,14 +24,14 @@ apt-get update
 apt-get install libreqos
 ```
 
-You will be asked some questions about your configuration, and the management daemon and webserver will automatically start. Go to http://<your_ip>:9123/ to finish installation.
+Se le realizarán algunas preguntas sobre su configuración, y el demonio de administración y el servidor web se iniciarán automáticamente. Vaya a http://<your_ip>:9123/ para finalizar la instalación.
 
-## Complex Install (Not Reccomended)
+## Instalación compleja (no recomendada)
 
 ```{note}
-Use this install if you'd like to constantly deploy from the main branch on Github. For experienced users only!
+Use esta instalación si quiere implementar constantemente desde la rama principal en Github. ¡Solo para usuarios experimentados!
 ```
 
-[Complex Installation](../TechnicalDocs/complex-install.md)
+[Instalación Compleja](../TechnicalDocs/complex-install.md)
 
-You are now ready to [Configure](./configuration.md) LibreQoS!
+Ahora está listo para [Configurar](./configuration.md) LibreQoS!
