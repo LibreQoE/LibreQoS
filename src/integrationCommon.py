@@ -5,7 +5,7 @@ from typing import List, Any
 from liblqos_python import allowed_subnets, ignore_subnets, generated_pn_download_mbps, generated_pn_upload_mbps, \
 	circuit_name_use_address, upstream_bandwidth_capacity_download_mbps, upstream_bandwidth_capacity_upload_mbps, \
 	find_ipv6_using_mikrotik, exclude_sites, bandwidth_overhead_factor, committed_bandwidth_multiplier, \
-	exception_cpes
+	exception_cpes, promote_to_root_list
 import ipaddress
 import enum
 import os
@@ -183,10 +183,17 @@ class NetworkGraph:
 		# by name. Entries are re-mapped to match the named
 		# parents. You can use this to build a tree from a
 		# blob of raw data.
+		cached_root_list = promote_to_root_list()
 		for child in self.nodes:
 			if child.parentId != "":
 				for (i, node) in enumerate(self.nodes):
-					if node.id == child.parentId:
+					# If the node is in `promote_to_root_list`, the parent for
+					# the node is set to 0, which is the root node. Otherwise,
+					# the parent is set to the node with the same id as the
+					# parentId of the child node.
+					if self.nodes[self.findNodeIndexById(child.parentId)].displayName in cached_root_list:
+						child.parentIndex = 0
+					elif node.id == child.parentId:
 						child.parentIndex = i
 
 	def findNodeIndexById(self, id: str) -> int:

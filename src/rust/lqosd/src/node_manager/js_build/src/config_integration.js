@@ -7,6 +7,15 @@ function validateConfig() {
         alert("Queue Refresh Interval must be a number greater than 0");
         return false;
     }
+    
+    // Validate promote_to_root entries
+    const rawPromote = document.getElementById("promoteToRoot").value;
+    const hasInvalidEntries = rawPromote.split('\n')
+        .some(line => line.trim().length === 0 && rawPromote.trim().length > 0);
+    if (hasInvalidEntries) {
+        alert("Please remove empty lines from Promote to Root Nodes");
+        return false;
+    }
     return true;
 }
 
@@ -15,7 +24,14 @@ function updateConfig() {
     window.config.integration_common = {
         circuit_name_as_address: document.getElementById("circuitNameAsAddress").checked,
         always_overwrite_network_json: document.getElementById("alwaysOverwriteNetworkJson").checked,
-        queue_refresh_interval_mins: parseInt(document.getElementById("queueRefreshInterval").value)
+        queue_refresh_interval_mins: parseInt(document.getElementById("queueRefreshInterval").value),
+        promote_to_root: (() => {
+            const raw = document.getElementById("promoteToRoot").value;
+            const list = raw.split('\n')
+                .map(line => line.trim())
+                .filter(line => line.length > 0);
+            return list.length > 0 ? list : null;
+        })()
     };
 }
 
@@ -34,6 +50,10 @@ loadConfig(() => {
         // Numeric field
         document.getElementById("queueRefreshInterval").value = 
             integration.queue_refresh_interval_mins ?? 30;
+
+        // Promote to root field
+        const promoteRoot = integration.promote_to_root ? integration.promote_to_root.join('\n') : '';
+        document.getElementById("promoteToRoot").value = promoteRoot;
 
         // Add save button click handler
         document.getElementById('saveButton').addEventListener('click', () => {
