@@ -183,6 +183,7 @@ class NetworkGraph:
 		# by name. Entries are re-mapped to match the named
 		# parents. You can use this to build a tree from a
 		# blob of raw data.
+		cached_root_list = promote_to_root_list()
 		for child in self.nodes:
 			if child.parentId != "":
 				for (i, node) in enumerate(self.nodes):
@@ -190,7 +191,7 @@ class NetworkGraph:
 					# the node is set to 0, which is the root node. Otherwise,
 					# the parent is set to the node with the same id as the
 					# parentId of the child node.
-					if child.parentId in promote_to_root_list():
+					if self.nodes[self.findNodeIndexById(child.parentId)].displayName in cached_root_list:
 						child.parentIndex = 0
 					elif node.id == child.parentId:
 						child.parentIndex = i
