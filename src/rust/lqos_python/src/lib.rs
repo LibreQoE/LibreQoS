@@ -98,6 +98,7 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(automatic_import_wispgate))?;
     m.add_wrapped(wrap_pyfunction!(wispgate_api_token))?;
     m.add_wrapped(wrap_pyfunction!(wispgate_api_url))?;
+    m.add_wrapped(wrap_pyfunction!(promote_to_root_list))?;
 
     Ok(())
 }
@@ -772,4 +773,13 @@ fn wispgate_api_url() -> PyResult<String> {
         return Ok(String::new());
     };
     Ok(wisp_gate.wispgate_api_url.clone())
+}
+
+#[pyfunction]
+fn promote_to_root_list() -> PyResult<Vec<String>> {
+    let config = lqos_config::load_config().unwrap();
+    let Some(promote_to_root) = config.integration_common.promote_to_root.as_ref() else {
+        return Ok(vec![]);
+    };
+    Ok(promote_to_root.clone())
 }
