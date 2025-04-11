@@ -1,55 +1,55 @@
-# Server Setup - Pre-requisites
+# Configuración del servidor - Requisitos previos
 
-Disable hyperthreading on the BIOS/UEFI of your host system. Hyperthreaading is also known as Simultaneous Multi Threading (SMT) on AMD systems. Disabling this is very important for optimal performance of the XDP cpumap filtering and, in turn, throughput and latency.
+Desactive el hyperthreading en la BIOS/UEFI de su sistema host. El hyperthreading también se conoce como multihilo simultáneo (SMT) en sistemas AMD. Desactivarlo es fundamental para optimizar el filtrado de CPUmap de XDP y, por consiguiente, el rendimiento y la latencia.
 
-- Boot, pressing the appropriate key to enter the BIOS settings
-- For AMD systems, you will have to navigate the settings to find the "SMT Control" setting. Usually it is under something like ```Advanced -> AMD CBS -> CPU Common Options -> Thread Enablement -> SMT Control``` Once you find it, switch to "Disabled" or "Off"
-- For Intel systems, you will also have to navigate the settings to find the "hyperthrading" toggle option. On HP servers it's under ```System Configuration > BIOS/Platform Configuration (RBSU) > Processor Options > Intel (R) Hyperthreading Options.```
-- Save changes and reboot
+- Arranque, presionando la tecla apropiada para ingresar a la configuración del BIOS
+- En sistemas AMD, deberá navegar por la configuración para encontrar la opción "Control SMT". Normalmente se encuentra en ```Advanced -> AMD CBS -> CPU Common Options -> Thread Enablement -> SMT Control``` Una vez que lo encuentres, cambia a "Disabled" o "Off"
+- Para los sistemas Intel, también deberá navegar por la configuración para encontrar la opción de "hyperthreading". En los servidores HP, se encuentra en ```System Configuration > BIOS/Platform Configuration (RBSU) > Processor Options > Intel (R) Hyperthreading Options.```
+- Guardar cambios y reiniciar
 
-## Install Ubuntu Server
+## Instalar en servidor Ubuntu
 
-We recommend Ubuntu Server because its kernel version tends to track closely with the mainline Linux releases. Our current documentation assumes Ubuntu Server. To run LibreQoS v1.4, Linux kernel 5.11 or greater is required, as 5.11 includes some important XDP patches. Ubuntu Server 22.04 uses kernel 5.13, which meets that requirement.
+Recomendamos Ubuntu Server porque su versión de kernel suele coincidir estrechamente con las versiones principales de Linux. Nuestra documentación actual asume Ubuntu Server. Para ejecutar LibreQoS v1.4, se requiere el kernel de Linux 5.11 o superior, ya que incluye algunos parches importantes para XDP. Ubuntu Server 22.04 usa el kernel 5.13, que cumple con este requisito.
 
-You can download Ubuntu Server 22.04 from <a href="https://ubuntu.com/download/server">https://ubuntu.com/download/server</a>.
+Puede descargar Ubuntu Server 22.04 desde <a href="https://ubuntu.com/download/server">https://ubuntu.com/download/server</a>.
 
-1. Boot Ubuntu Server from USB.
-2. Follow the steps to install Ubuntu Server.
-3. If you use a Mellanox network card, the Ubuntu Server installer will ask you whether to install the mellanox/intel NIC drivers. Check the box to confirm. This extra driver is important.
-4. On the Networking settings step, it is recommended to assign a static IP address to the management NIC.
-5. Ensure SSH server is enabled so you can more easily log into the server later.
-6. You can use scp or sftp to access files from your LibreQoS server for easier file editing. Here's how to access via scp or sftp using an [Ubuntu](https://www.addictivetips.com/ubuntu-linux-tips/sftp-server-ubuntu/) or [Windows](https://winscp.net/eng/index.php) machine.
+1. Arrancar el servidor Ubuntu desde USB.
+2. Siga los pasos para instalar Ubuntu Server.
+3. Si usa una tarjeta de red Mellanox, el instalador de Ubuntu Server le preguntará si desea instalar los controladores de NIC Mellanox/Intel. Marque la casilla para confirmar. Este controlador adicional es importante.
+4. En el paso de configuración de red, se recomienda asignar una dirección IP estática a la NIC de administración.
+5. Asegúrese de que el servidor SSH esté habilitado para que pueda iniciar sesión en el servidor más fácilmente más tarde.
+6. Puedes usar SCP o SFTP para acceder a archivos desde tu servidor LibreQoS y facilitar su edición. Aquí te explicamos cómo acceder mediante SCP o SFTP usando una máquina[Ubuntu](https://www.addictivetips.com/ubuntu-linux-tips/sftp-server-ubuntu/) o [Windows](https://winscp.net/eng/index.php).
 
-### Choose Bridge Type
+### Elija el tipo de puente
 
-There are two options for the bridge to pass data through your two interfaces:
+Hay dos opciones para que el puente pase datos a través de sus dos interfaces:
 
-- Bifrost XDP-Accelerated Bridge
-- Regular Linux Bridge
+- Puente acelerado Bifrost XDP
+- Puente Linux regular
 
-The Bifrost Bridge is recommended for Intel NICs with XDP support, such as the X520 and X710.
-The regular Linux bridge is recommended for Nvidea/Mellanox NICs such as the ConnectX-5 series (which have superior bridge performance), and VM setups using virtualized NICs.
-To use the Bifrost bridge, skip the regular Linux bridge section below, and be sure to enable Bifrost/XDP in lqos.conf a few sections below.
+Se recomienda el puente Bifrost para NIC Intel con soporte XDP, como X520 y X710.Se recomienda el puente Linux normal para las NIC Nvidia/Mellanox como la serie ConnectX-5 (que tienen un rendimiento de puente superior) y configuraciones de VM que usan NIC virtualizadas.
+Para utilizar el puente Bifrost, omita la sección del puente de Linux normal a continuación y asegúrese de habilitar Bifrost/XDP en lqos.conf algunas secciones a continuación.
 
-### Adding a regular Linux bridge (if not using Bifrost XDP bridge)
+### Agregar un puente Linux normal (si no se utiliza el puente Bifrost XDP)
 
-From the Ubuntu VM, create a linux interface bridge - br0 - with the two shaping interfaces.
-Find your existing .yaml file in /etc/netplan/ with
+Desde la máquina virtual Ubuntu, cree un puente de interfaz Linux (br0) con las dos interfaces de modelado.
+Busque su archivo .yaml existente en /etc/netplan/ con
 
 ```shell
 cd /etc/netplan/
 ls
 ```
 
-Then edit the .yaml file there with
+Luego edite el archivo .yaml allí con
 
 ```shell
 sudo nano XX-cloud-init.yaml
 ```
 
-With XX corresponding to the name of the existing file.
+Con XX correspondiente al nombre del archivo existente.
 
-Editing the .yaml file, we need to define the shaping interfaces (here, ens19 and ens20) and add the bridge with those two interfaces. Assuming your interfaces are ens18, ens19, and ens20, here is what your file might look like:
+229 / 5.000
+Al editar el archivo .yaml, necesitamos definir las interfaces de modelado (en este caso, ens19 y ens20) y agregar el puente con estas dos interfaces. Suponiendo que las interfaces sean ens18, ens19 y ens20, el archivo podría verse así:
 
 ```yaml
 # This is the network config written by 'subiquity'
@@ -78,9 +78,9 @@ network:
         - ens20
 ```
 
-Make sure to replace 10.0.0.12/24 with your LibreQoS VM's address and subnet, and to replace the default gateway 10.0.0.1 with whatever your default gateway is.
+Asegúrese de reemplazar 10.0.0.12/24 con la dirección y subred de su VM LibreQoS, y de reemplazar la puerta de enlace predeterminada 10.0.0.1 con la que sea su puerta de enlace predeterminada.
 
-Then run
+Entonces ejecute
 
 ```shell
 sudo netplan apply
