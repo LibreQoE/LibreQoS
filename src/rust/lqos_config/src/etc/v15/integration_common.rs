@@ -15,6 +15,9 @@ pub struct IntegrationConfig {
 
     /// Root node promotion
     pub promote_to_root: Option<Vec<String>>,
+
+    /// Client bandwidth multiplier
+    pub client_bandwidth_multiplier: Option<f32>,
 }
 
 impl Default for IntegrationConfig {
@@ -24,6 +27,7 @@ impl Default for IntegrationConfig {
             always_overwrite_network_json: false,
             queue_refresh_interval_mins: 30,
             promote_to_root: None,
+            client_bandwidth_multiplier: None,
         }
     }
 }

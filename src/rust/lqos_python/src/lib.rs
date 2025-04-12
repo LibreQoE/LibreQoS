@@ -99,6 +99,7 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(wispgate_api_token))?;
     m.add_wrapped(wrap_pyfunction!(wispgate_api_url))?;
     m.add_wrapped(wrap_pyfunction!(promote_to_root_list))?;
+    m.add_wrapped(wrap_pyfunction!(client_bandwidth_multiplier))?;
 
     Ok(())
 }
@@ -782,4 +783,10 @@ fn promote_to_root_list() -> PyResult<Vec<String>> {
         return Ok(vec![]);
     };
     Ok(promote_to_root.clone())
+}
+
+#[pyfunction]
+fn client_bandwidth_multiplier() -> PyResult<f32> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config.integration_common.client_bandwidth_multiplier.unwrap_or(1.0))
 }

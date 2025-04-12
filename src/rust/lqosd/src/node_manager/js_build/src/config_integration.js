@@ -16,6 +16,14 @@ function validateConfig() {
         alert("Please remove empty lines from Promote to Root Nodes");
         return false;
     }
+    
+    // Validate multiplier
+    const multiplier = parseFloat(document.getElementById("clientBandwidthMultiplier").value);
+    if (isNaN(multiplier) || multiplier <= 0) {
+        alert("Client Bandwidth Multiplier must be a number greater than 0");
+        return false;
+    }
+    
     return true;
 }
 
@@ -31,6 +39,10 @@ function updateConfig() {
                 .map(line => line.trim())
                 .filter(line => line.length > 0);
             return list.length > 0 ? list : null;
+        })(),
+        client_bandwidth_multiplier: (() => {
+            const value = parseFloat(document.getElementById("clientBandwidthMultiplier").value);
+            return value === 1.0 ? null : value; // Store as null for default to save space
         })()
     };
 }
@@ -54,6 +66,8 @@ loadConfig(() => {
         // Promote to root field
         const promoteRoot = integration.promote_to_root ? integration.promote_to_root.join('\n') : '';
         document.getElementById("promoteToRoot").value = promoteRoot;
+        document.getElementById("clientBandwidthMultiplier").value = 
+            (integration.client_bandwidth_multiplier ?? 1.0).toFixed(1);
 
         // Add save button click handler
         document.getElementById('saveButton').addEventListener('click', () => {
