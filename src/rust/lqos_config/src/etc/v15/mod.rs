@@ -16,6 +16,7 @@ mod spylnx_integration;
 mod tuning;
 mod uisp_integration;
 mod wispgate;
+mod tornado;
 
 pub use bridge::*;
 pub use long_term_stats::LongTermStats;

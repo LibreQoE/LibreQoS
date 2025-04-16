@@ -2068,6 +2068,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "lqos_tornado"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "lqos_bus",
+ "lqos_config",
+ "lqos_queue_tracker",
+ "timerfd",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "lqos_utils"
 version = "0.1.0"
 dependencies = [

@@ -9,12 +9,12 @@ use std::sync::Arc;
 use thiserror::Error;
 use tracing::{debug, error, info};
 
-pub(crate) static QUEUE_STRUCTURE: Lazy<ArcSwap<QueueStructure>> =
+pub static QUEUE_STRUCTURE: Lazy<ArcSwap<QueueStructure>> =
     Lazy::new(|| ArcSwap::new(Arc::new(QueueStructure::new())));
 
 #[derive(Clone)]
-pub(crate) struct QueueStructure {
-    pub(crate) maybe_queues: Option<Vec<QueueNode>>,
+pub struct QueueStructure {
+    pub maybe_queues: Option<Vec<QueueNode>>,
 }
 
 impl QueueStructure {
