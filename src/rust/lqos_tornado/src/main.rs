@@ -10,6 +10,7 @@ mod console;
 mod config;
 mod queue_structure;
 mod site_state;
+mod datalog;
 
 use std::time::Duration;
 use anyhow::Result;
@@ -26,6 +27,7 @@ async fn main() -> Result<()> {
 
     info!("Starting LibreQoS Tornado...");
     let config = config::configure()?;
+    let log_sender = datalog::start_datalog(&config)?;
     let mut site_state_tracker = site_state::SiteStateTracker::from_config(&config);
 
     // Main Cycle
@@ -48,7 +50,7 @@ async fn main() -> Result<()> {
         site_state_tracker.moving_averages();
         let recommendations = site_state_tracker.recommendations();
         if !recommendations.is_empty() {
-            site_state_tracker.apply_recommendations(recommendations, &config);
+            site_state_tracker.apply_recommendations(recommendations, &config, log_sender.clone());
         }
 
         // Sleep until the next second

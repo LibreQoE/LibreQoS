@@ -12,3 +12,4 @@ timerfd.workspace = true
 lqos_bus = { path = "../lqos_bus" }
 tokio.workspace = true
 lqos_queue_tracker = { path = "../lqos_queue_tracker" }
+lqos_utils = { path = "../lqos_utils" }

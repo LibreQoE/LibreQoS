@@ -13,6 +13,7 @@ pub struct TornadoConfig {
     pub download_interface: String,
     pub upload_interface: String,
     pub dry_run: bool,
+    pub log_filename: Option<String>,
 }
 
 pub fn configure() -> anyhow::Result<TornadoConfig> {
@@ -50,6 +51,7 @@ pub fn configure() -> anyhow::Result<TornadoConfig> {
         download_interface: config.isp_interface().clone(),
         upload_interface: config.internet_interface().clone(),
         dry_run: tornado_config.dry_run,
+        log_filename: tornado_config.log_file.clone(),
     };
 
     Ok(result)

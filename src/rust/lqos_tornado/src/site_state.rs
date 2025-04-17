@@ -7,6 +7,7 @@ use tracing::{debug, info, warn};
 use lqos_bus::{BusRequest, BusResponse};
 use lqos_queue_tracker::QUEUE_STRUCTURE;
 use crate::config::TornadoConfig;
+use crate::datalog::LogCommand;
 use crate::site_state::ring_buffer::RingBuffer;
 use crate::site_state::tornado_state::TornadoState;
 
@@ -300,7 +301,12 @@ impl SiteStateTracker {
         recommendations
     }
 
-    pub fn apply_recommendations(&mut self, recommendations: Vec<Recommendation>, config: &TornadoConfig) {
+    pub fn apply_recommendations(
+        &mut self, 
+        recommendations: Vec<Recommendation>, 
+        config: &TornadoConfig,
+        log_sender: std::sync::mpsc::Sender<LogCommand>,
+    ) {
         // We'll need the queues to apply HTB commands
         let Some(queues) = &QUEUE_STRUCTURE.load().maybe_queues else {
             info!("No queue structure - cannot get stats");
@@ -370,6 +376,11 @@ impl SiteStateTracker {
                 current_rate,
                 new_rate
             );
+            let _ = log_sender.send(LogCommand::SpeedChange {
+                site: recommendation.site.clone(),
+                download: site.queue_download_mbps,
+                upload: site.queue_upload_mbps,
+            });
 
             // Build the HTB command
             let args = vec![

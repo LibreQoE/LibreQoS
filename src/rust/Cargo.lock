@@ -2081,6 +2081,7 @@ dependencies = [
  "lqos_bus",
  "lqos_config",
  "lqos_queue_tracker",
+ "lqos_utils",
  "timerfd",
  "tokio",
  "tracing",
