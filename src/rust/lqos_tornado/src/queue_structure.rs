@@ -1,5 +1,4 @@
 use anyhow::{bail, Result};
-use tracing::info;
 use lqos_queue_tracker::QUEUE_STRUCTURE;
 
 pub fn find_queue_bandwidth(name: &str) -> Result<(u64, u64)> {

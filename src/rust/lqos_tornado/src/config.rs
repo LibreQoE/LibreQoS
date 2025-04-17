@@ -1,9 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use tracing::{debug, error, info};
 use crate::queue_structure::find_queue_bandwidth;
 
 pub struct WatchingSite {
-    pub name: String,
     pub max_download_mbps: u64,
     pub max_upload_mbps: u64,
 }
@@ -38,7 +37,6 @@ pub fn configure() -> anyhow::Result<TornadoConfig> {
     for target in &tornado_config.targets {
         let (down, up) = find_queue_bandwidth(&target)?;
         let site = WatchingSite {
-            name: target.clone(),
             max_download_mbps: down,
             max_upload_mbps: up,
         };

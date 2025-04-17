@@ -15,8 +15,7 @@ mod datalog;
 use std::time::Duration;
 use anyhow::Result;
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
-use tracing::{debug, error, info};
-use lqos_bus::BusResponse;
+use tracing::{debug, info};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
@@ -59,6 +58,5 @@ async fn main() -> Result<()> {
             debug!("Missed {} ticks", missed_ticks);
         }
     }
-
-    Ok(())
+    // Unreachable
 }
