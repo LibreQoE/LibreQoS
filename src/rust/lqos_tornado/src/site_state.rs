@@ -165,7 +165,7 @@ impl SiteStateTracker {
             let change_rate = f64::max(1.0, match recommendation.direction {
                 RecommendationDirection::Download => site.max_download_mbps as f64 / 10.0,
                 RecommendationDirection::Upload => site.max_upload_mbps as f64 / 10.0,
-            } as f64 / 100.0);
+            });
             let new_rate = match recommendation.action {
                 RecommendationAction::IncreaseFast => current_rate + (change_rate * 2.0),
                 RecommendationAction::Increase => current_rate + change_rate,
