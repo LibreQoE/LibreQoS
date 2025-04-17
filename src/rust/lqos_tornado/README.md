@@ -17,14 +17,38 @@ Add the following to your `lqos.conf`:
 enabled = true
 targets = [ "SITENAME" ]
 dry_run = true
+# Optional
+log_file = "/tmp/tornado.csv"
 ```
+
+| **Entry Name** | **Description**                                                                                           |
+|----------------|-----------------------------------------------------------------------------------------------------------|
+| `enabled`      | Enable or disable Tornado. Default: `false`                                                               |
+| `targets`      | A list of sites to monitor. Tornado will adjust the rate for each site separately. Default: `[]`          |
+| `dry_run`      | If true, Tornado will not change the rate. It will only log what it *would* have done. Default: `false`   |
+| `log_file`     | If set, a CSV will be appended with time (unix secs), download rate, upload rate entries. Default: absent |
 
 You can list as many sites as you want in the `targets` array. I strongly recommend `dry_run` for now, which just
 emits what it *would* have done to the console!
 
 ## How it works
 
-Tornado watches throughput, TCP retransmits and round-trip time going through each target site. 
-It currently only uses retransmits --- more is coming. If retransmits are worsening, it slows
-the site down. If they are improving (by 20% or so), it speeds the site up. There's a cooldown period between
-changes to reduce oscillation.
+Tornado maintains a ring-buffer of recent throughput, TCP retransmits and TCP round-trip times for each target site.
+These are updated once per second, when `lqosd` "ticks". A second buffer maintains a moving average of a larger time period.
+
+Each circuit also maintains a "current queue bandwidth", which is adjusted dynamically. If `dry_run` is not set,
+this is applied directly to the HTB queue associated with the monitoring.
+
+> *Warning*: Do not apply this to HTB circuits that have a directly attached CAKE instance.
+
+Periodically:
+
+* Saturation is calculated as current throughput / max throughput.
+* Live saturation is calculated as current throughput / current queue bandwidth.
+* Retransmits are set to either High, RisingFast, Rising, Stable, Falling, FallingFast.
+* RTT is set to either Rising, Stable or Falling.
+
+These are fed through a decision matrix to determine if the queue bandwidth should be increased or decreased.
+
+Changes have a "cool-down" following their application, during which monitoring will continue but no changes will be made.
+This is to prevent oscillation between two states.
