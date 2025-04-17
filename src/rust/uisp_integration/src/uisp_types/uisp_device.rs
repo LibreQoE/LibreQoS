@@ -52,6 +52,20 @@ impl UispDevice {
             if let Some(ul) = overview.uplinkCapacity {
                 upload = ul as u64 / 1000000;
             }
+            if device.get_model().unwrap_or_default().contains("5AC") {
+                download = ((download as f64) * config.uisp_integration.airmax_capacity as f64) as u64;
+                upload = ((upload as f64) * config.uisp_integration.airmax_capacity as f64) as u64;
+            }
+            if device.get_model().unwrap_or_default().contains("LTU") {
+                download = ((download as f64) * config.uisp_integration.ltu_capacity as f64) as u64;
+                upload = ((upload as f64) * config.uisp_integration.ltu_capacity as f64) as u64;
+            }
+        }
+        if download == 0 {
+            download = config.queues.generated_pn_download_mbps;
+        }
+        if upload == 0 {
+            upload = config.queues.generated_pn_upload_mbps;
         }
 
         // Accumulate IP address listings

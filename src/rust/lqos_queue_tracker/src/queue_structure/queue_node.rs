@@ -3,11 +3,10 @@ use lqos_bus::TcHandle;
 use lqos_utils::hash_to_i64;
 use lqos_utils::hex_string::read_hex_string;
 use serde_json::Value;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 #[derive(Default, Clone, Debug)]
 pub struct QueueNode {
-    pub name: Option<String>,
     pub download_bandwidth_mbps: u64,
     pub upload_bandwidth_mbps: u64,
     pub download_bandwidth_mbps_min: u64,
@@ -239,14 +238,11 @@ impl QueueNode {
                     "idForCircuitsWithoutParentNodes" | "type" => {
                         // Ignore
                     }
-                    "name" => {
-                        grab_string_option!(result.name, key.as_str(), value);
-                    },
-                    _ => debug!("I don't know how to parse key: [{key}]"),
+                    _ => error!("I don't know how to parse key: [{key}]"),
                 }
             }
         } else {
-            //warn!("Unable to parse node structure for [{key}]");
+            warn!("Unable to parse node structure for [{key}]");
         }
         Ok(result)
     }

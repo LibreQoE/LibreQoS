@@ -1,15 +1,16 @@
+#![allow(dead_code)]
 mod ap_promotion;
-mod bandwidth_overrides;
+pub(crate) mod bandwidth_overrides;
 mod client_site_promotion;
-mod mikrotik;
+pub mod mikrotik;
 mod network_json;
-mod parse;
+pub(crate) mod parse;
 mod root_site;
-mod routes_override;
-mod shaped_devices_writer;
+pub(crate) mod routes_override;
+pub mod shaped_devices_writer;
 mod squash_single_entry_aps;
 mod tree_walk;
-mod uisp_fetch;
+pub(crate) mod uisp_fetch;
 mod utils;
 mod zero_capacity_sites;
 
