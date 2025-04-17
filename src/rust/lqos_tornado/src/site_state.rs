@@ -227,6 +227,8 @@ impl SiteStateTracker {
                 class_id.to_string(),
                 "htb".to_string(),
                 "rate".to_string(),
+                format!("{}mbit",new_rate-1),
+                "ceil".to_string(),
                 format!("{}mbit",new_rate),
             ];
             if config.dry_run {
