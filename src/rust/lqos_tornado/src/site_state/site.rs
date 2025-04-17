@@ -99,40 +99,49 @@ impl SiteState {
         if saturation_current == SaturationLevel::High || saturation_max == SaturationLevel::High {
             if retransmit_state == RetransmitState::High || retransmit_state == RetransmitState::RisingFast {
                 recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::DecreaseFast));
+                info!("High saturation, high/fast rising retransmits - decrease fast");
                 return; // Only 1 recommendation!
             }
             if retransmit_state == RetransmitState::Rising {
+                info!("High saturation, rising retransmits - decrease fast");
                 recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::Decrease));
                 return; // Only 1 recommendation!
             }
             if retransmit_state == RetransmitState::FallingFast || retransmit_state == RetransmitState::Falling {
+                info!("High saturation, falling/fast falling retransmits - increase");
                 recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::Increase));
                 return; // Only 1 recommendation!
             }
             if rtt_state == RttState::Rising {
+                info!("High saturation, rising RTT - decrease");
                 recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::Decrease));
                 return; // Only 1 recommendation!
             }
             if rtt_state == RttState::Falling {
+                info!("High saturation, falling RTT - increase");
                 recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::Increase));
                 return; // Only 1 recommendation!
             }
         } else if saturation_current == SaturationLevel::Medium || saturation_max == SaturationLevel::Medium {
             if retransmit_state == RetransmitState::High || retransmit_state == RetransmitState::RisingFast {
+                info!("Medium saturation, high/fast rising retransmits - decrease");
                 recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::Decrease));
                 return; // Only 1 recommendation!
             }
             if retransmit_state == RetransmitState::FallingFast || retransmit_state == RetransmitState::Falling {
+                info!("Medium saturation, falling/fast falling retransmits - increase");
                 recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::Increase));
                 return; // Only 1 recommendation!
             }
         } else {
             // We're in Low saturation
             if retransmit_state == RetransmitState::Low || retransmit_state == RetransmitState::Falling || retransmit_state == RetransmitState::FallingFast {
+                info!("Low saturation, low/falling/fast falling retransmits - increase");
                 recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::Increase));
                 return; // Only 1 recommendation!
             }
             if retransmit_state == RetransmitState::High || retransmit_state == RetransmitState::Rising || retransmit_state == RetransmitState::RisingFast {
+                info!("Low saturation, high/rising/fast rising retransmits - decrease");
                 recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::Decrease));
                 return; // Only 1 recommendation!
             }

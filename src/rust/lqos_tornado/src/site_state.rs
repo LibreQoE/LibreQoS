@@ -173,6 +173,15 @@ impl SiteStateTracker {
                 RecommendationAction::DecreaseFast => current_rate - (change_rate * 2.0),
             };
 
+            // Are we allowed to do it?
+            let max_rate = match recommendation.direction {
+                RecommendationDirection::Download => site.max_download_mbps,
+                RecommendationDirection::Upload => site.max_upload_mbps,
+            } as f64;
+            if new_rate > max_rate {
+                continue;
+            }
+
             // Apply the new rate to the QUEUE object
             let new_rate = u64::max(4, new_rate as u64);
             match recommendation.direction {
