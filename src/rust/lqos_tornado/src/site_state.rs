@@ -349,7 +349,7 @@ impl SiteStateTracker {
             };
 
             // Apply the new rate to the QUEUE object
-            let new_rate = new_rate as u64;
+            let new_rate = u64::max(4, new_rate as u64);
             match recommendation.direction {
                 RecommendationDirection::Download => {
                     site.queue_download_mbps = new_rate;
@@ -357,6 +357,10 @@ impl SiteStateTracker {
                 RecommendationDirection::Upload => {
                     site.queue_upload_mbps = new_rate;
                 }
+            }
+            if new_rate == current_rate as u64 {
+                // No change
+                continue;
             }
             
             // Report
