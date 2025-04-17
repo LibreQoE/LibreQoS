@@ -309,6 +309,7 @@ pub async fn build_full_network_v2(
 
     // Shaped Devices
     let mut shaped_devices = Vec::new();
+    let mut circuit_parents: HashMap<String, String> = HashMap::new();
 
     for (ap_id, client_sites) in client_mappings.iter() {
         for site_id in client_sites.iter() {
@@ -339,13 +340,19 @@ pub async fn build_full_network_v2(
                 let download_max = u64::max(4, download_max);
                 let upload_max = u64::max(4, upload_max);
 
-                let parent_node = {
+                let mut parent_node = {
                     if parents.get(&ap_device.name).is_some() {
                         ap_device.name.clone()
                     } else {
                         "Orphans".to_string()
                     }
                 };
+
+                if let Some(previous) = circuit_parents.get(&site.name) {
+                    parent_node = previous.clone();
+                } else {
+                    circuit_parents.insert(site.name.clone(), parent_node.clone());
+                }
 
                 let shaped_device = ShapedDevice {
                     circuit_id: site.id.to_owned(),
