@@ -40,9 +40,9 @@ impl RetransmitState {
         let tcp_retransmits_relative = tcp_retransmits_avg / tcp_retransmits_ma;
         
         // Determine State
-        if tcp_retransmits_avg < 0.03 {
+        if tcp_retransmits_avg < 0.001 {
             RetransmitState::Low
-        } else if tcp_retransmits_avg > 0.05 {
+        } else if tcp_retransmits_avg > 0.02 {
             RetransmitState::High
         } else if tcp_retransmits_relative < 0.4 {
             RetransmitState::FallingFast
