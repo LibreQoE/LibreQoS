@@ -4,5 +4,5 @@ use std::time::Instant;
 pub enum TornadoState {
     Warmup,
     Running,
-    Cooldown(Instant)
+    Cooldown{ start: Instant, duration_secs: f32 },
 }

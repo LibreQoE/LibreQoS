@@ -188,6 +188,13 @@ impl SiteStateTracker {
                 continue;
             }
             
+            let cooldown_secs = match recommendation.action {
+                RecommendationAction::IncreaseFast => 5.0,
+                RecommendationAction::Increase => 10.0,
+                RecommendationAction::Decrease => 20.0,
+                RecommendationAction::DecreaseFast => 10.0,
+            };
+            
             // Report
             info!("Changing rate for site {}/{} from {:.2} mbps to {} mbps",
                 recommendation.site,
@@ -235,7 +242,10 @@ impl SiteStateTracker {
 
             // Finish Up by entering cooldown
             debug!("Recommendation applied: entering cooldown");
-            site.state = TornadoState::Cooldown(std::time::Instant::now());
+            site.state = TornadoState::Cooldown {
+                start: std::time::Instant::now(),
+                duration_secs: cooldown_secs,
+            };
         }
     }
 }

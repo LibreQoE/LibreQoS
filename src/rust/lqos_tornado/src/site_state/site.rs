@@ -49,12 +49,12 @@ impl SiteState {
                 self.moving_averages();
                 return;
             }
-            TornadoState::Cooldown(start) => {
+            TornadoState::Cooldown{ start, duration_secs } => {
                 self.moving_averages();
 
                 // Check if cooldown period is over
                 let now = std::time::Instant::now();
-                if now.duration_since(start).as_secs() > 5 {
+                if now.duration_since(start).as_secs_f32() > duration_secs {
                     debug!("Site {} has completed cooldown.", self.name);
                     self.state = TornadoState::Running;
                     return;
