@@ -89,6 +89,7 @@ impl SiteState {
     fn recommend(
         &self,
         below_max: bool,
+        above_min: bool,
         current_throughput: f64,
         max_mbps: f64,
         recommendations: &mut Vec<Recommendation>,
@@ -96,7 +97,7 @@ impl SiteState {
     ) {
         if current_throughput < f64::min(max_mbps / 10.0, 10.0) {
             if below_max {
-                info!("{} is below 10% of max bandwidth ({}), try increase", direction, current_throughput);
+                //info!("{} is below 10% of max bandwidth ({}), try increase", direction, current_throughput);
                 recommendations.push(
                     Recommendation {
                         site: self.name.clone(),
@@ -110,18 +111,15 @@ impl SiteState {
         let tcp_retransmits_ma = self.retransmits_up_moving_average.average().unwrap_or(1.0);
         let tcp_retransmits_avg = self.retransmits_up.average().unwrap_or(1.0);
         let tcp_retransmits_relative = tcp_retransmits_avg / tcp_retransmits_ma;
-        if tcp_retransmits_relative < 0.8 {
-            //info!("TCP Retransmits ({}) are Improving! Magnitude {:.2}", direction, tcp_retransmits_relative);
-            if below_max {
-                recommendations.push(
-                    Recommendation {
-                        site: self.name.clone(),
-                        direction,
-                        action: RecommendationAction::Increase,
-                    }
-                );
-            }
-        } else if tcp_retransmits_relative > 1.2 {
+        if tcp_retransmits_relative < 0.8 && below_max {
+            recommendations.push(
+                Recommendation {
+                    site: self.name.clone(),
+                    direction,
+                    action: RecommendationAction::Increase,
+                }
+            );
+        } else if tcp_retransmits_relative > 1.2 && above_min {
             //info!("TCP Retransmits ({}) are Deteriorating! Magnitude {:.2}", direction, tcp_retransmits_relative);
             recommendations.push(
                 Recommendation {
@@ -136,6 +134,7 @@ impl SiteState {
     fn recommendations_download(&self, recommendations: &mut Vec<Recommendation>) {
         self.recommend(
             self.queue_download_mbps < self.max_download_mbps,
+            self.queue_download_mbps > 4,
             self.throughput_down_moving_average.average().unwrap_or(0.0),
             self.max_download_mbps as f64,
             recommendations,
@@ -146,6 +145,7 @@ impl SiteState {
     fn recommendations_upload(&self, recommendations: &mut Vec<Recommendation>) {
         self.recommend(
             self.queue_upload_mbps < self.max_upload_mbps,
+            self.queue_upload_mbps > 4,
             self.throughput_up_moving_average.average().unwrap_or(0.0),
             self.max_upload_mbps as f64,
             recommendations,
