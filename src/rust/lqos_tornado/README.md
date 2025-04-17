@@ -52,3 +52,8 @@ These are fed through a decision matrix to determine if the queue bandwidth shou
 
 Changes have a "cool-down" following their application, during which monitoring will continue but no changes will be made.
 This is to prevent oscillation between two states.
+
+## Running Tornado
+
+Currently `lqos_tornado` is a separate binary. It requires that `lqosd` is running (it'll idle if it isn't), and
+it requires root --- to update the HTB queue bandwidths.
