@@ -57,7 +57,7 @@ fn run_datalog(rx: std::sync::mpsc::Receiver<LogCommand>, path: Option<String>) 
                             eprintln!("Failed to get current time");
                             continue; 
                         };
-                        if let Err(e) = writeln!(file, "{},{},{},{}\n", date_time, site, download, upload) {
+                        if let Err(e) = writeln!(file, "{},{},{},{}", date_time, site, download, upload) {
                             eprintln!("Failed to write to log file: {}", e);
                         }
                     }
