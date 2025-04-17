@@ -129,7 +129,7 @@ impl SiteState {
         } else {
             // We're in Low saturation
             if retransmit_state == RetransmitState::Low || retransmit_state == RetransmitState::Falling || retransmit_state == RetransmitState::FallingFast {
-                recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::IncreaseFast));
+                recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::Increase));
                 return; // Only 1 recommendation!
             }
             if retransmit_state == RetransmitState::High || retransmit_state == RetransmitState::Rising || retransmit_state == RetransmitState::RisingFast {
