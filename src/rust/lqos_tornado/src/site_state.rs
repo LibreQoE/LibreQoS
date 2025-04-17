@@ -2,6 +2,7 @@ mod tornado_state;
 mod ring_buffer;
 mod recommendation;
 mod site;
+mod analysis;
 
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
@@ -166,8 +167,10 @@ impl SiteStateTracker {
                 RecommendationDirection::Upload => site.max_upload_mbps,
             } as f64 / 100.0);
             let new_rate = match recommendation.action {
+                RecommendationAction::IncreaseFast => current_rate + (change_rate * 2.0),
                 RecommendationAction::Increase => current_rate + change_rate,
                 RecommendationAction::Decrease => current_rate - change_rate,
+                RecommendationAction::DecreaseFast => current_rate - (change_rate * 2.0),
             };
 
             // Apply the new rate to the QUEUE object

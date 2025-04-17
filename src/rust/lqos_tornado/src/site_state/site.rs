@@ -1,4 +1,5 @@
 use tracing::{debug, info};
+use crate::site_state::analysis::{RetransmitState, RttState, SaturationLevel};
 use crate::site_state::recommendation::{Recommendation, RecommendationAction, RecommendationDirection};
 use crate::site_state::ring_buffer::RingBuffer;
 use crate::site_state::tornado_state::TornadoState;
@@ -86,70 +87,111 @@ impl SiteState {
         }
     }
 
-    fn recommend(
+    fn recommendation_matrix(
         &self,
-        below_max: bool,
-        above_min: bool,
-        current_throughput: f64,
-        max_mbps: f64,
         recommendations: &mut Vec<Recommendation>,
         direction: RecommendationDirection,
+        saturation_max: SaturationLevel, // Saturation relative to the max bandwidth
+        saturation_current: SaturationLevel, // Saturation relative to the current bandwidth
+        retransmit_state: RetransmitState,
+        rtt_state: RttState,
     ) {
-        if current_throughput < f64::min(max_mbps / 10.0, 10.0) {
-            if below_max {
-                //info!("{} is below 10% of max bandwidth ({}), try increase", direction, current_throughput);
-                recommendations.push(
-                    Recommendation {
-                        site: self.name.clone(),
-                        direction,
-                        action: RecommendationAction::Increase,
-                    }
-                );
+        if saturation_current == SaturationLevel::High || saturation_max == SaturationLevel::High {
+            if retransmit_state == RetransmitState::High || retransmit_state == RetransmitState::RisingFast {
+                recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::DecreaseFast));
+                return; // Only 1 recommendation!
             }
-            return;
-        }
-        let tcp_retransmits_ma = self.retransmits_up_moving_average.average().unwrap_or(1.0);
-        let tcp_retransmits_avg = self.retransmits_up.average().unwrap_or(1.0);
-        let tcp_retransmits_relative = tcp_retransmits_avg / tcp_retransmits_ma;
-        if tcp_retransmits_relative < 0.8 && below_max {
-            recommendations.push(
-                Recommendation {
-                    site: self.name.clone(),
-                    direction,
-                    action: RecommendationAction::Increase,
-                }
-            );
-        } else if tcp_retransmits_relative > 1.2 && above_min {
-            //info!("TCP Retransmits ({}) are Deteriorating! Magnitude {:.2}", direction, tcp_retransmits_relative);
-            recommendations.push(
-                Recommendation {
-                    site: self.name.clone(),
-                    direction,
-                    action: RecommendationAction::Decrease,
-                }
-            );
+            if retransmit_state == RetransmitState::Rising {
+                recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::Decrease));
+                return; // Only 1 recommendation!
+            }
+            if retransmit_state == RetransmitState::FallingFast || retransmit_state == RetransmitState::Falling {
+                recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::Increase));
+                return; // Only 1 recommendation!
+            }
+            if rtt_state == RttState::Rising {
+                recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::Decrease));
+                return; // Only 1 recommendation!
+            }
+            if rtt_state == RttState::Falling {
+                recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::Increase));
+                return; // Only 1 recommendation!
+            }
+        } else if saturation_current == SaturationLevel::Medium || saturation_max == SaturationLevel::Medium {
+            if retransmit_state == RetransmitState::High || retransmit_state == RetransmitState::RisingFast {
+                recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::Decrease));
+                return; // Only 1 recommendation!
+            }
+            if retransmit_state == RetransmitState::FallingFast || retransmit_state == RetransmitState::Falling {
+                recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::Increase));
+                return; // Only 1 recommendation!
+            }
+        } else {
+            // We're in Low saturation
+            if retransmit_state == RetransmitState::Low || retransmit_state == RetransmitState::Falling || retransmit_state == RetransmitState::FallingFast {
+                recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::IncreaseFast));
+                return; // Only 1 recommendation!
+            }
+            if retransmit_state == RetransmitState::High || retransmit_state == RetransmitState::Rising || retransmit_state == RetransmitState::RisingFast {
+                recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::Decrease));
+                return; // Only 1 recommendation!
+            }
         }
     }
 
     fn recommendations_download(&self, recommendations: &mut Vec<Recommendation>) {
-        self.recommend(
-            self.queue_download_mbps < self.max_download_mbps,
-            self.queue_download_mbps > 4,
-            self.throughput_down_moving_average.average().unwrap_or(0.0),
+        let saturation_max = SaturationLevel::from_throughput(
+            self.current_throughput.0,
             self.max_download_mbps as f64,
+        );
+        let saturation_current = SaturationLevel::from_throughput(
+            self.current_throughput.0,
+            self.queue_download_mbps as f64,
+        );
+        let retransmit_state = RetransmitState::new(
+            &self.retransmits_down_moving_average,
+            &self.retransmits_down,
+        );
+        let rtt_state = RttState::new(
+            &self.round_trip_time_moving_average,
+            &self.round_trip_time,
+        );
+
+        self.recommendation_matrix(
             recommendations,
             RecommendationDirection::Download,
+            saturation_max,
+            saturation_current,
+            retransmit_state,
+            rtt_state,
         );
     }
 
     fn recommendations_upload(&self, recommendations: &mut Vec<Recommendation>) {
-        self.recommend(
-            self.queue_upload_mbps < self.max_upload_mbps,
-            self.queue_upload_mbps > 4,
-            self.throughput_up_moving_average.average().unwrap_or(0.0),
+        let saturation_max = SaturationLevel::from_throughput(
+            self.current_throughput.1,
             self.max_upload_mbps as f64,
+        );
+        let saturation_current = SaturationLevel::from_throughput(
+            self.current_throughput.1,
+            self.queue_upload_mbps as f64,
+        );
+        let retransmit_state = RetransmitState::new(
+            &self.retransmits_up_moving_average,
+            &self.retransmits_up,
+        );
+        let rtt_state = RttState::new(
+            &self.round_trip_time_moving_average,
+            &self.round_trip_time,
+        );
+
+        self.recommendation_matrix(
             recommendations,
             RecommendationDirection::Upload,
+            saturation_max,
+            saturation_current,
+            retransmit_state,
+            rtt_state,
         );
     }
 
