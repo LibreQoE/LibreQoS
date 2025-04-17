@@ -7,6 +7,7 @@ use tracing::{debug, error, info, warn};
 
 #[derive(Default, Clone, Debug)]
 pub struct QueueNode {
+    pub name: Option<String>,
     pub download_bandwidth_mbps: u64,
     pub upload_bandwidth_mbps: u64,
     pub download_bandwidth_mbps_min: u64,
@@ -117,6 +118,9 @@ impl QueueNode {
         if let Value::Object(map) = value {
             for (key, value) in map.iter() {
                 match key.as_str() {
+                    "name" => {
+                        grab_string_option!(result.name, key.as_str(), value);
+                    }
                     "downloadBandwidthMbps" | "maxDownload" => {
                         grab_u64!(result.download_bandwidth_mbps, key.as_str(), value);
                     }
