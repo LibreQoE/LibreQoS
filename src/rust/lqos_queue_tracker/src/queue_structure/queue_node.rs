@@ -242,7 +242,7 @@ impl QueueNode {
                     "idForCircuitsWithoutParentNodes" | "type" => {
                         // Ignore
                     }
-                    _ => error!("I don't know how to parse key: [{key}]"),
+                    _ => debug!("I don't know how to parse key: [{key}]"),
                 }
             }
         } else {
