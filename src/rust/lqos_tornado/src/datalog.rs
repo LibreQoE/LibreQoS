@@ -1,5 +1,6 @@
 use crate::config::TornadoConfig;
 use std::io::Write;
+use tracing::debug;
 use lqos_utils::unix_time::unix_now;
 
 pub enum LogCommand {
@@ -24,15 +25,34 @@ pub fn start_datalog(
     Ok(tx)
 }
 
+/// This thread will receive messages from the main thread and log them
 fn run_datalog(rx: std::sync::mpsc::Receiver<LogCommand>, path: Option<String>) {
-    // This thread will receive messages from the main thread and log them
+    let Some(path) = &path else {
+        // If no path is provided, exit the thread
+        debug!("No log path provided, exiting datalog thread.");
+        return;
+    };
+    
+    // If the log file exists, delete it
+    if std::path::Path::new(path).exists() {
+        if let Err(e) = std::fs::remove_file(path) {
+            eprintln!("Failed to delete existing log file: {}", e);
+        }
+    }
+    
+    // Create the log file if it doesn't exist with the header
+    if let Err(e) = std::fs::File::create(path) {
+        eprintln!("Failed to create log file: {}", e);
+    } else {
+        // Write the header to the file
+        if let Err(e) = std::fs::write(path, "Time,Site,Download,Upload\n") {
+            eprintln!("Failed to write header to log file: {}", e);
+        }
+    }
+
     loop {
         match rx.recv() {
             Ok(message) => {
-                let Some(path) = &path else {
-                    // Silently ignore if no path is provided
-                    continue;
-                };
                 // Open for append
                 let mut file = match std::fs::OpenOptions::new()
                     .append(true)

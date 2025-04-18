@@ -18,13 +18,13 @@ enabled = true
 dry_run = true
 log_file = "/tmp/tornado.csv" # Optional
 
-[[targets]]
+[[tornado.targets]]
 name = "CALVIN 1"
 max_mbps = [ 150, 150 ]
 min_mbps = [ 100, 100 ]
 step_mbps = [ 2, 2 ]
 
-# You can add as many targets as you want
+# You can add as many targets as you want, each starting with `[[tornado.targets]]`
 ```
 
 | **Entry Name** | **Description**                                                                                           |
