@@ -27,6 +27,27 @@ pub struct SiteState<'a> {
     pub retransmits_down_moving_average: RingBuffer,
     pub retransmits_up_moving_average: RingBuffer,
     pub round_trip_time_moving_average: RingBuffer,
+    
+    // Increase Ticker
+    pub ticks_since_last_probe_download: u32,
+    pub ticks_since_last_probe_upload: u32,
+}
+
+struct RecommendationParams {
+    direction: RecommendationDirection,
+    can_increase: bool,
+    can_decrease: bool,
+    saturation_max: SaturationLevel,
+    saturation_current: SaturationLevel,
+    retransmit_state: RetransmitState,
+    rtt_state: RttState,
+}
+
+impl RecommendationParams {
+    fn summary_string(&self) -> String {
+        format!("{:?},{:?},{},{},{},{}",
+                self.can_increase, self.can_decrease, self.saturation_max, self.saturation_current, self.retransmit_state, self.rtt_state)
+    }
 }
 
 impl<'a> SiteState<'a> {
@@ -85,69 +106,92 @@ impl<'a> SiteState<'a> {
             self.round_trip_time_moving_average.add(round_trip_time);
         }
     }
-
+    
     fn recommendation_matrix(
-        &self,
-        recommendations: &mut Vec<Recommendation>,
-        direction: RecommendationDirection,
-        saturation_max: SaturationLevel, // Saturation relative to the max bandwidth
-        saturation_current: SaturationLevel, // Saturation relative to the current bandwidth
-        retransmit_state: RetransmitState,
-        rtt_state: RttState,
+        &mut self,
+        recommendations: &mut Vec<(Recommendation, String)>,
+        params: &RecommendationParams,
     ) {
-        if saturation_current == SaturationLevel::High || saturation_max == SaturationLevel::High {
-            if retransmit_state == RetransmitState::RisingFast {
-                recommendations.push(Recommendation::new(&self.config.name, direction, RecommendationAction::DecreaseFast));
-                info!("High saturation, high/fast rising retransmits - decrease fast");
-                return; // Only 1 recommendation!
+        if !params.can_increase && !params.can_decrease {
+            return; // No recommendations possible
+        }
+        
+        let (rtt_weight, retransmit_weight, score_bias) = match params.saturation_current {
+            SaturationLevel::High => (2.0, 1.0, 0.0),
+            SaturationLevel::Medium => (1.0, 1.5, 0.0),
+            SaturationLevel::Low => (1.0, 2.0, -1.0),
+        };
+        
+        // Calculate the score based on the recommendation parameters
+        let mut score = score_bias;
+        
+        match &params.rtt_state {
+            RttState::Rising { magnitude } => {
+                score += magnitude.abs() * rtt_weight;
             }
-            if retransmit_state == RetransmitState::Rising {
-                info!("High saturation, rising retransmits - decrease fast");
-                recommendations.push(Recommendation::new(&self.config.name, direction, RecommendationAction::Decrease));
-                return; // Only 1 recommendation!
+            RttState::Flat => {} // No change
+            RttState::Falling { magnitude } => {
+                score -= magnitude.abs() * rtt_weight;
             }
-            if retransmit_state == RetransmitState::FallingFast || retransmit_state == RetransmitState::Falling {
-                info!("High saturation, falling/fast falling retransmits - increase");
-                recommendations.push(Recommendation::new(&self.config.name, direction, RecommendationAction::Increase));
-                return; // Only 1 recommendation!
+        }
+        
+        match &params.retransmit_state {
+            RetransmitState::RisingFast => {
+                score += 1.5 * retransmit_weight;
             }
-            if rtt_state == RttState::Rising {
-                info!("High saturation, rising RTT - decrease");
-                recommendations.push(Recommendation::new(&self.config.name, direction, RecommendationAction::Decrease));
-                return; // Only 1 recommendation!
+            RetransmitState::Rising => {
+                score += 1.0 * retransmit_weight;
             }
-            if rtt_state == RttState::Falling {
-                info!("High saturation, falling RTT - increase");
-                recommendations.push(Recommendation::new(&self.config.name, direction, RecommendationAction::Increase));
-                return; // Only 1 recommendation!
+            RetransmitState::Stable => {} // No change
+            RetransmitState::Falling => {
+                score -= 1.0 * retransmit_weight;
             }
-        } else if saturation_current == SaturationLevel::Medium || saturation_max == SaturationLevel::Medium {
-            if retransmit_state == RetransmitState::RisingFast {
-                info!("Medium saturation, high/fast rising retransmits - decrease");
-                recommendations.push(Recommendation::new(&self.config.name, direction, RecommendationAction::Decrease));
-                return; // Only 1 recommendation!
+            RetransmitState::FallingFast => {
+                score -= 1.5 * retransmit_weight;
             }
-            if retransmit_state == RetransmitState::FallingFast || retransmit_state == RetransmitState::Falling {
-                info!("Medium saturation, falling/fast falling retransmits - increase");
-                recommendations.push(Recommendation::new(&self.config.name, direction, RecommendationAction::Increase));
-                return; // Only 1 recommendation!
-            }
-        } else {
-            // We're in Low saturation
-            if retransmit_state == RetransmitState::Falling || retransmit_state == RetransmitState::FallingFast {
-                info!("Low saturation, low/falling/fast falling retransmits - increase");
-                recommendations.push(Recommendation::new(&self.config.name, direction, RecommendationAction::Increase));
-                return; // Only 1 recommendation!
-            }
-            if retransmit_state == RetransmitState::Rising || retransmit_state == RetransmitState::RisingFast {
-                info!("Low saturation, high/rising/fast rising retransmits - decrease");
-                recommendations.push(Recommendation::new(&self.config.name, direction, RecommendationAction::Decrease));
-                return; // Only 1 recommendation!
+        }
+        
+        // Upwards Tick Bias
+        let tick_bias = match params.direction {
+            RecommendationDirection::Download => self.ticks_since_last_probe_download as f32,
+            RecommendationDirection::Upload => self.ticks_since_last_probe_upload as f32,
+        };
+        score += f32::max(10.0, tick_bias / 10.0);
+        
+        // Determine the recommendation action
+        let action = match score {
+            score if score < -2.0 => Some(RecommendationAction::IncreaseFast),
+            score if score < -1.0 => Some(RecommendationAction::Increase),
+            score if score > 2.0 => Some(RecommendationAction::DecreaseFast),
+            score if score > 1.0 => Some(RecommendationAction::Decrease),
+            _ => None,
+        };
+        
+        if let Some(action) = action {
+            match action {
+                RecommendationAction::IncreaseFast | RecommendationAction::Increase => {
+                    if params.can_increase {
+                        recommendations.push((Recommendation {
+                            site: self.config.name.to_owned(),
+                            action,
+                            direction: params.direction,
+                        }, params.summary_string()));
+                    }
+                }
+                RecommendationAction::DecreaseFast | RecommendationAction::Decrease => {
+                    if params.can_decrease {
+                        recommendations.push((Recommendation {
+                            site: self.config.name.to_owned(),
+                            action,
+                            direction: params.direction,
+                        }, params.summary_string()));
+                    }
+                }
             }
         }
     }
 
-    fn recommendations_download(&self, recommendations: &mut Vec<Recommendation>) {
+    fn recommendations_download(&mut self, recommendations: &mut Vec<(Recommendation, String)>) {
         let saturation_max = SaturationLevel::from_throughput(
             self.current_throughput.0,
             self.config.max_download_mbps as f64,
@@ -164,18 +208,24 @@ impl<'a> SiteState<'a> {
             &self.round_trip_time_moving_average,
             &self.round_trip_time,
         );
-
-        self.recommendation_matrix(
-            recommendations,
-            RecommendationDirection::Download,
+        
+        let params = RecommendationParams {
+            direction: RecommendationDirection::Download,
+            can_increase: self.queue_download_mbps < self.config.max_download_mbps,
+            can_decrease: self.queue_download_mbps > self.config.min_download_mbps,
             saturation_max,
             saturation_current,
             retransmit_state,
             rtt_state,
+        };
+
+        self.recommendation_matrix(
+            recommendations,
+            &params,
         );
     }
 
-    fn recommendations_upload(&self, recommendations: &mut Vec<Recommendation>) {
+    fn recommendations_upload(&mut self, recommendations: &mut Vec<(Recommendation, String)>) {
         let saturation_max = SaturationLevel::from_throughput(
             self.current_throughput.1,
             self.config.max_upload_mbps as f64,
@@ -192,22 +242,30 @@ impl<'a> SiteState<'a> {
             &self.round_trip_time_moving_average,
             &self.round_trip_time,
         );
-
-        self.recommendation_matrix(
-            recommendations,
-            RecommendationDirection::Upload,
+        
+        let params = RecommendationParams {
+            direction: RecommendationDirection::Upload,
+            can_increase: self.queue_upload_mbps < self.config.max_upload_mbps,
+            can_decrease: self.queue_upload_mbps > self.config.min_upload_mbps,
             saturation_max,
             saturation_current,
             retransmit_state,
             rtt_state,
+        };
+
+        self.recommendation_matrix(
+            recommendations,
+            &params,
         );
     }
 
-    pub fn recommendations(&self, recommendations: &mut Vec<Recommendation>) {
+    pub fn recommendations(&mut self, recommendations: &mut Vec<(Recommendation, String)>) {
         if self.state != TornadoState::Running {
             return;
         }
         self.recommendations_download(recommendations);
         self.recommendations_upload(recommendations);
+        self.ticks_since_last_probe_download += 1;
+        self.ticks_since_last_probe_upload += 1;
     }
 }

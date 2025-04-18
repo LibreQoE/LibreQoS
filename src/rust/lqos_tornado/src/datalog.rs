@@ -8,6 +8,7 @@ pub enum LogCommand {
         site: String,
         download: u64,
         upload: u64,
+        state: String,
     },
 }
 
@@ -45,7 +46,7 @@ fn run_datalog(rx: std::sync::mpsc::Receiver<LogCommand>, path: Option<String>) 
         eprintln!("Failed to create log file: {}", e);
     } else {
         // Write the header to the file
-        if let Err(e) = std::fs::write(path, "Time,Site,Download,Upload\n") {
+        if let Err(e) = std::fs::write(path, "Time,Site,Download,Upload,CanIncrease,CanDecrease,SaturationMax,SaturationCurrent,RetransmitState,RttState\n") {
             eprintln!("Failed to write header to log file: {}", e);
         }
     }
@@ -71,13 +72,14 @@ fn run_datalog(rx: std::sync::mpsc::Receiver<LogCommand>, path: Option<String>) 
                         site,
                         download,
                         upload,
+                        state,
                     } => {
                         // Append the line to the file
                         let Ok(date_time) = unix_now() else {
                             eprintln!("Failed to get current time");
                             continue; 
                         };
-                        if let Err(e) = writeln!(file, "{},{},{},{}", date_time, site, download, upload) {
+                        if let Err(e) = writeln!(file, "{},{},{},{},{}", date_time, site, download, upload, state) {
                             eprintln!("Failed to write to log file: {}", e);
                         }
                     }

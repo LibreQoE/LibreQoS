@@ -22,7 +22,7 @@ impl Recommendation {
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum RecommendationDirection {
     Download,
     Upload,

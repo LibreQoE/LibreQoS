@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use crate::site_state::ring_buffer::RingBuffer;
 
 #[derive(PartialEq)]
@@ -5,6 +6,16 @@ pub enum SaturationLevel {
     Low,
     Medium,
     High,
+}
+
+impl Display for SaturationLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SaturationLevel::Low => write!(f, "Low"),
+            SaturationLevel::Medium => write!(f, "Medium"),
+            SaturationLevel::High => write!(f, "High"),
+        }
+    }
 }
 
 impl SaturationLevel {
@@ -26,6 +37,18 @@ pub enum RetransmitState {
     Stable,
     Falling,
     FallingFast,
+}
+
+impl Display for RetransmitState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RetransmitState::RisingFast => write!(f, "RisingFast"),
+            RetransmitState::Rising => write!(f, "Rising"),
+            RetransmitState::Stable => write!(f, "Stable"),
+            RetransmitState::Falling => write!(f, "Falling"),
+            RetransmitState::FallingFast => write!(f, "FallingFast"),
+        }
+    }
 }
 
 impl RetransmitState {
@@ -54,9 +77,19 @@ impl RetransmitState {
 
 #[derive(PartialEq)]
 pub enum RttState {
-    Rising,
+    Rising{magnitude: f32},
     Flat,
-    Falling,
+    Falling{magnitude: f32},
+}
+
+impl Display for RttState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RttState::Rising{magnitude} => write!(f, "Rising ({magnitude:.2})"),
+            RttState::Flat => write!(f, "Flat"),
+            RttState::Falling{magnitude} => write!(f, "Falling ({magnitude:.2})"),
+        }
+    }
 }
 
 impl RttState {
@@ -73,9 +106,9 @@ impl RttState {
 
         // Determine State
         if rtt_relative > 1.2 {
-            RttState::Rising
+            RttState::Rising {magnitude: rtt_relative as f32}
         } else if rtt_relative < 0.8 {
-            RttState::Falling
+            RttState::Falling { magnitude: rtt_relative as f32}
         } else {
             RttState::Flat
         }

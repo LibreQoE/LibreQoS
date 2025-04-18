@@ -12,6 +12,9 @@ mod queue_structure;
 mod site_state;
 mod datalog;
 
+const READING_ACCUMULATOR_SIZE: usize = 30;
+const MOVING_AVERAGE_BUFFER_SIZE: usize = 120;
+
 use std::time::Duration;
 use anyhow::Result;
 use timerfd::{SetTimeFlags, TimerFd, TimerState};

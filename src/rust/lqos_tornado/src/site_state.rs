@@ -10,6 +10,7 @@ use lqos_bus::{BusRequest, BusResponse};
 use lqos_queue_tracker::QUEUE_STRUCTURE;
 use crate::config::TornadoConfig;
 use crate::datalog::LogCommand;
+use crate::{MOVING_AVERAGE_BUFFER_SIZE, READING_ACCUMULATOR_SIZE};
 use crate::site_state::recommendation::{Recommendation, RecommendationAction, RecommendationDirection};
 use crate::site_state::ring_buffer::RingBuffer;
 use crate::site_state::site::SiteState;
@@ -21,8 +22,6 @@ pub struct SiteStateTracker<'a> {
 
 impl<'a> SiteStateTracker<'a> {
     pub fn from_config(config: &'a TornadoConfig) -> Self {
-        const SHORT_BUFFER_SIZE: usize = 30;
-        const LONG_BUFFER_SIZE: usize = 120;
         let mut sites = HashMap::new();
         for (name, site) in &config.sites {
             sites.insert(
@@ -30,19 +29,21 @@ impl<'a> SiteStateTracker<'a> {
                 SiteState {
                     config: site,
                     state: TornadoState::Warmup,
-                    throughput_down: RingBuffer::new(SHORT_BUFFER_SIZE),
-                    throughput_up: RingBuffer::new(SHORT_BUFFER_SIZE),
-                    retransmits_down: RingBuffer::new(SHORT_BUFFER_SIZE),
-                    retransmits_up: RingBuffer::new(SHORT_BUFFER_SIZE),
-                    round_trip_time: RingBuffer::new(SHORT_BUFFER_SIZE),
-                    throughput_down_moving_average: RingBuffer::new(LONG_BUFFER_SIZE),
-                    throughput_up_moving_average: RingBuffer::new(LONG_BUFFER_SIZE),
-                    retransmits_down_moving_average: RingBuffer::new(LONG_BUFFER_SIZE),
-                    retransmits_up_moving_average: RingBuffer::new(LONG_BUFFER_SIZE),
-                    round_trip_time_moving_average: RingBuffer::new(LONG_BUFFER_SIZE),
+                    throughput_down: RingBuffer::new(READING_ACCUMULATOR_SIZE),
+                    throughput_up: RingBuffer::new(READING_ACCUMULATOR_SIZE),
+                    retransmits_down: RingBuffer::new(READING_ACCUMULATOR_SIZE),
+                    retransmits_up: RingBuffer::new(READING_ACCUMULATOR_SIZE),
+                    round_trip_time: RingBuffer::new(READING_ACCUMULATOR_SIZE),
+                    throughput_down_moving_average: RingBuffer::new(MOVING_AVERAGE_BUFFER_SIZE),
+                    throughput_up_moving_average: RingBuffer::new(MOVING_AVERAGE_BUFFER_SIZE),
+                    retransmits_down_moving_average: RingBuffer::new(MOVING_AVERAGE_BUFFER_SIZE),
+                    retransmits_up_moving_average: RingBuffer::new(MOVING_AVERAGE_BUFFER_SIZE),
+                    round_trip_time_moving_average: RingBuffer::new(MOVING_AVERAGE_BUFFER_SIZE),
                     queue_download_mbps: site.max_download_mbps,
                     queue_upload_mbps: site.max_upload_mbps,
                     current_throughput: (0.0, 0.0),
+                    ticks_since_last_probe_download: 0,
+                    ticks_since_last_probe_upload: 0,
                 },
             );
         }
@@ -110,15 +111,15 @@ impl<'a> SiteStateTracker<'a> {
         self.sites.iter_mut().for_each(|(_,s)| s.moving_averages());
     }
 
-    pub fn recommendations(&self) -> Vec<Recommendation> {
+    pub fn recommendations(&mut self) -> Vec<(Recommendation, String)> {
         let mut recommendations = Vec::new();
-        self.sites.iter().for_each(|(_,s)| s.recommendations(&mut recommendations));
+        self.sites.iter_mut().for_each(|(_,s)| s.recommendations(&mut recommendations));
         recommendations
     }
 
     pub fn apply_recommendations(
         &mut self,
-        recommendations: Vec<Recommendation>,
+        recommendations: Vec<(Recommendation, String)>,
         config: &TornadoConfig,
         log_sender: std::sync::mpsc::Sender<LogCommand>,
     ) {
@@ -128,7 +129,7 @@ impl<'a> SiteStateTracker<'a> {
             return;
         };
 
-        for recommendation in recommendations {
+        for (recommendation, summary) in recommendations {
             // Find the Site Object
             let Some(site) = self.sites.get_mut(&recommendation.site) else {
                 continue;
@@ -164,7 +165,7 @@ impl<'a> SiteStateTracker<'a> {
                 RecommendationDirection::Download => site.queue_download_mbps,
                 RecommendationDirection::Upload => site.queue_upload_mbps,
             } as f64;
-            
+
             let change_rate = match recommendation.direction {
                 RecommendationDirection::Download => site_config.step_download_mbps,
                 RecommendationDirection::Upload => site_config.step_upload_mbps,
@@ -174,7 +175,7 @@ impl<'a> SiteStateTracker<'a> {
                 RecommendationDirection::Download => site_config.max_download_mbps,
                 RecommendationDirection::Upload => site_config.max_upload_mbps,
             } as f64;
-            
+
             let new_rate = match recommendation.action {
                 RecommendationAction::IncreaseFast => current_rate + (change_rate * 2.0),
                 RecommendationAction::Increase => current_rate + change_rate,
@@ -203,10 +204,10 @@ impl<'a> SiteStateTracker<'a> {
             }
             
             let cooldown_secs = match recommendation.action {
-                RecommendationAction::IncreaseFast => 5.0,
-                RecommendationAction::Increase => 10.0,
-                RecommendationAction::Decrease => 20.0,
-                RecommendationAction::DecreaseFast => 10.0,
+                RecommendationAction::IncreaseFast => READING_ACCUMULATOR_SIZE as f32 * 2.0,
+                RecommendationAction::Increase => READING_ACCUMULATOR_SIZE as f32,
+                RecommendationAction::Decrease => READING_ACCUMULATOR_SIZE as f32,
+                RecommendationAction::DecreaseFast => READING_ACCUMULATOR_SIZE as f32 * 2.0,
             };
             
             // Report
@@ -220,6 +221,7 @@ impl<'a> SiteStateTracker<'a> {
                 site: recommendation.site.clone(),
                 download: site.queue_download_mbps,
                 upload: site.queue_upload_mbps,
+                state: summary,
             });
 
             // Build the HTB command
