@@ -22,7 +22,7 @@ impl SaturationLevel {
     pub fn from_throughput(value: f64, max: f64) -> Self {
         if value < max * 0.25 {
             SaturationLevel::Low
-        } else if value < max * 0.75 {
+        } else if value < max * 0.5 {
             SaturationLevel::Medium
         } else {
             SaturationLevel::High

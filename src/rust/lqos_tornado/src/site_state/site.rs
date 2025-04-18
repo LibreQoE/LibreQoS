@@ -144,8 +144,8 @@ impl<'a> SiteState<'a> {
 
         let (rtt_weight, retransmit_weight, score_bias) = match params.saturation_current {
             SaturationLevel::High => (3.0, 1.0, 1.0),
-            SaturationLevel::Medium => (2.0, 1.5, 0.0),
-            SaturationLevel::Low => (1.5, 2.0, -1.0),
+            SaturationLevel::Medium => (2.0, 1.0, 0.0),
+            SaturationLevel::Low => (1.5, 1.0, -1.0),
         };
 
         // Calculate the score based on the recommendation parameters
@@ -189,8 +189,8 @@ impl<'a> SiteState<'a> {
         };
 
         let score = score_base + score_rtt + score_retransmit + score_tick;
-        info!("{} : {}", params.direction, params.summary_string());
-        info!("Score {}: {score_base:.1}(base) + {score_rtt:1}(rtt) + {score_retransmit:.1}(retransmit) + {score_tick:.1}(tick)) = {score:.1}", params.direction);
+        debug!("{} : {}", params.direction, params.summary_string());
+        debug!("Score {}: {score_base:.1}(base) + {score_rtt:1}(rtt) + {score_retransmit:.1}(retransmit) + {score_tick:.1}(tick)) = {score:.1}", params.direction);
 
         // Determine the recommendation action
         let action = match score {
