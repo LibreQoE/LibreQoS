@@ -184,7 +184,7 @@ impl<'a> SiteState<'a> {
             SaturationLevel::Low => f32::min(5.0, tick_bias),
         };
 
-        let probe_bonus = if tick_bias >= 10 && params.saturation_current == SaturationLevel::High {
+        let probe_bonus = if tick_bias >= 10.0 && params.saturation_current == SaturationLevel::High {
             1.5 // Force probe after 10s of high saturation
         } else {
             0.0
