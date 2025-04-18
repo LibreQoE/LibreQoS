@@ -52,7 +52,7 @@ pub fn load_config() -> Result<Arc<Config>, LibreQoSConfigError> {
     };
 
     debug!("Loading configuration file {config_location}");
-    migrate_if_needed().map_err(|e| {
+    migrate_if_needed(&config_location).map_err(|e| {
         error!("Unable to migrate configuration: {:?}", e);
         LibreQoSConfigError::FileNotFoud
     })?;
