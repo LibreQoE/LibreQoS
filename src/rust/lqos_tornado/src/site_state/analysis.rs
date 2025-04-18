@@ -65,9 +65,9 @@ impl RetransmitState {
             RetransmitState::FallingFast
         } else if tcp_retransmits_relative < 0.8 {
             RetransmitState::Falling
-        }  else if tcp_retransmits_relative > 1.8 {
+        }  else if tcp_retransmits_relative > 1.4 {
             RetransmitState::RisingFast
-        } else if tcp_retransmits_relative > 1.2 {
+        } else if tcp_retransmits_relative > 1.1 {
             RetransmitState::Rising
         } else {
             RetransmitState::Stable
