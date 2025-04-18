@@ -49,7 +49,6 @@ async fn main() -> Result<()> {
 
         // Check for state changes
         site_state_tracker.check_state();
-        site_state_tracker.moving_averages();
         let recommendations = site_state_tracker.recommendations();
         if !recommendations.is_empty() {
             site_state_tracker.apply_recommendations(recommendations, &config, log_sender.clone());

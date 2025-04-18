@@ -7,7 +7,8 @@ use crate::site_state::tornado_state::TornadoState;
 
 pub struct SiteState<'a> {
     pub config: &'a WatchingSite,
-    pub state: TornadoState,
+    pub download_state: TornadoState,
+    pub upload_state: TornadoState,
 
     // Queue Bandwidth
     pub queue_download_mbps: u64,
@@ -52,58 +53,88 @@ impl RecommendationParams {
 
 impl<'a> SiteState<'a> {
     pub fn check_state(&mut self) {
-        match self.state {
+        match self.download_state {
             TornadoState::Warmup => {
                 // Do we have enough data to consider ourselves functional?
                 let throughput_down_count = self.throughput_down.count();
-                let throughput_up_count = self.throughput_up.count();
                 let retransmits_down_count = self.retransmits_down.count();
-                let retransmits_up_count = self.retransmits_up.count();
-                if throughput_down_count > 10 && throughput_up_count > 10 && retransmits_down_count > 10 && retransmits_up_count > 10 {
-                    info!("Site {} has completed warm-up.", self.config.name);
-                    self.state = TornadoState::Running;
+                if throughput_down_count > 10 && retransmits_down_count > 10 {
+                    info!("Site {} has completed download warm-up.", self.config.name);
+                    self.download_state = TornadoState::Running;
                 }
                 return;
             }
             TornadoState::Running => {
-                self.moving_averages();
+                self.moving_averages_down();
                 return;
             }
             TornadoState::Cooldown{ start, duration_secs } => {
-                self.moving_averages();
+                self.moving_averages_down();
+
+                // Check if cooldown period is over
+                let now = std::time::Instant::now();
+                if now.duration_since(start).as_secs_f32() > duration_secs {
+                    debug!("Site {} has completed download cooldown.", self.config.name);
+                    self.download_state = TornadoState::Running;
+                    return;
+                }
+            }
+        }
+
+        match self.upload_state {
+            TornadoState::Warmup => {
+                // Do we have enough data to consider ourselves functional?
+                let throughput_up_count = self.throughput_up.count();
+                let retransmits_up_count = self.retransmits_up.count();
+                if throughput_up_count > 10 && retransmits_up_count > 10 {
+                    info!("Site {} has completed upload warm-up.", self.config.name);
+                    self.upload_state = TornadoState::Running;
+                }
+                return;
+            }
+            TornadoState::Running => {
+                self.moving_averages_up();
+                return;
+            }
+            TornadoState::Cooldown{ start, duration_secs } => {
+                self.moving_averages_up();
 
                 // Check if cooldown period is over
                 let now = std::time::Instant::now();
                 if now.duration_since(start).as_secs_f32() > duration_secs {
                     debug!("Site {} has completed cooldown.", self.config.name);
-                    self.state = TornadoState::Running;
+                    self.upload_state = TornadoState::Running;
                     return;
                 }
             }
         }
     }
 
-    pub fn moving_averages(&mut self) {
+    pub fn moving_averages_down(&mut self) {
         let throughput_down = self.throughput_down.average();
-        let throughput_up = self.throughput_up.average();
         let retransmits_down = self.retransmits_down.average();
-        let retransmits_up = self.retransmits_up.average();
         let round_trip_time = self.round_trip_time.average();
 
         if let Some(throughput_down) = throughput_down {
             self.throughput_down_moving_average.add(throughput_down);
         }
-        if let Some(throughput_up) = throughput_up {
-            self.throughput_up_moving_average.add(throughput_up);
-        }
         if let Some(retransmits_down) = retransmits_down {
             self.retransmits_down_moving_average.add(retransmits_down);
         }
-        if let Some(retransmits_up) = retransmits_up {
-            self.retransmits_up_moving_average.add(retransmits_up);
-        }
         if let Some(round_trip_time) = round_trip_time {
             self.round_trip_time_moving_average.add(round_trip_time);
+        }
+    }
+
+    pub fn moving_averages_up(&mut self) {
+        let throughput_up = self.throughput_up.average();
+        let retransmits_up = self.retransmits_up.average();
+
+        if let Some(throughput_up) = throughput_up {
+            self.throughput_up_moving_average.add(throughput_up);
+        }
+        if let Some(retransmits_up) = retransmits_up {
+            self.retransmits_up_moving_average.add(retransmits_up);
         }
     }
 
@@ -269,12 +300,13 @@ impl<'a> SiteState<'a> {
     }
 
     pub fn recommendations(&mut self, recommendations: &mut Vec<(Recommendation, String)>) {
-        if self.state != TornadoState::Running {
-            return;
+        if self.download_state == TornadoState::Running {
+            self.recommendations_download(recommendations);
+            self.ticks_since_last_probe_download += 1;
         }
-        self.recommendations_download(recommendations);
-        self.recommendations_upload(recommendations);
-        self.ticks_since_last_probe_download += 1;
-        self.ticks_since_last_probe_upload += 1;
+        if self.upload_state == TornadoState::Running {
+            self.recommendations_upload(recommendations);
+            self.ticks_since_last_probe_upload += 1;
+        }
     }
 }

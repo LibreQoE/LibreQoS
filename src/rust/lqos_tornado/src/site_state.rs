@@ -28,7 +28,8 @@ impl<'a> SiteStateTracker<'a> {
                 name.clone(),
                 SiteState {
                     config: site,
-                    state: TornadoState::Warmup,
+                    download_state: TornadoState::Warmup,
+                    upload_state: TornadoState::Warmup,
                     throughput_down: RingBuffer::new(READING_ACCUMULATOR_SIZE),
                     throughput_up: RingBuffer::new(READING_ACCUMULATOR_SIZE),
                     retransmits_down: RingBuffer::new(READING_ACCUMULATOR_SIZE),
@@ -105,10 +106,6 @@ impl<'a> SiteStateTracker<'a> {
 
     pub fn check_state(&mut self) {
         self.sites.iter_mut().for_each(|(_,s)| s.check_state());
-    }
-
-    pub fn moving_averages(&mut self) {
-        self.sites.iter_mut().for_each(|(_,s)| s.moving_averages());
     }
 
     pub fn recommendations(&mut self) -> Vec<(Recommendation, String)> {
@@ -264,10 +261,20 @@ impl<'a> SiteStateTracker<'a> {
 
             // Finish Up by entering cooldown
             debug!("Recommendation applied: entering cooldown");
-            site.state = TornadoState::Cooldown {
-                start: std::time::Instant::now(),
-                duration_secs: cooldown_secs,
-            };
+            match recommendation.direction {
+                RecommendationDirection::Download => {
+                    site.download_state = TornadoState::Cooldown {
+                        start: std::time::Instant::now(),
+                        duration_secs: cooldown_secs,
+                    };
+                }
+                RecommendationDirection::Upload => {
+                    site.upload_state = TornadoState::Cooldown {
+                        start: std::time::Instant::now(),
+                        duration_secs: cooldown_secs,
+                    };
+                }
+            }
         }
     }
 }
