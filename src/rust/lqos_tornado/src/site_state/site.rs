@@ -62,11 +62,9 @@ impl<'a> SiteState<'a> {
                     info!("Site {} has completed download warm-up.", self.config.name);
                     self.download_state = TornadoState::Running;
                 }
-                return;
             }
             TornadoState::Running => {
                 self.moving_averages_down();
-                return;
             }
             TornadoState::Cooldown{ start, duration_secs } => {
                 self.moving_averages_down();
@@ -90,11 +88,9 @@ impl<'a> SiteState<'a> {
                     info!("Site {} has completed upload warm-up.", self.config.name);
                     self.upload_state = TornadoState::Running;
                 }
-                return;
             }
             TornadoState::Running => {
                 self.moving_averages_up();
-                return;
             }
             TornadoState::Cooldown{ start, duration_secs } => {
                 self.moving_averages_up();
@@ -104,7 +100,6 @@ impl<'a> SiteState<'a> {
                 if now.duration_since(start).as_secs_f32() > duration_secs {
                     debug!("Site {} has completed cooldown.", self.config.name);
                     self.upload_state = TornadoState::Running;
-                    return;
                 }
             }
         }
@@ -188,13 +183,12 @@ impl<'a> SiteState<'a> {
             RecommendationDirection::Upload => self.ticks_since_last_probe_upload as f32,
         };
         let score_tick = match params.saturation_current {
-            SaturationLevel::High => 0.0 - f32::min(0.0, tick_bias / 10.0),
+            SaturationLevel::High => 0.0 - f32::min(0.0, tick_bias),
             SaturationLevel::Medium => 0.0,
-            SaturationLevel::Low => f32::min(0.0, tick_bias / 10.0),
+            SaturationLevel::Low => f32::min(0.0, tick_bias),
         };
 
         let score = score_base + score_rtt + score_retransmit + score_tick;
-        // TODO: This needs to become a debug log
         info!("{} : {}", params.direction, params.summary_string());
         info!("Score {}: {score_base:.1}(base) + {score_rtt:1}(rtt) + {score_retransmit:.1}(retransmit) + {score_tick:.1}(tick)) = {score:.1}", params.direction);
 
@@ -206,6 +200,7 @@ impl<'a> SiteState<'a> {
             score if score > 1.0 => Some(RecommendationAction::Decrease),
             _ => None,
         };
+        println!("Score: {score}, recommendation: {:?}", action);
 
         if let Some(action) = action {
             match action {
