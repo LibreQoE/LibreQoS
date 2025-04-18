@@ -156,17 +156,7 @@ impl<'a> SiteState<'a> {
             RecommendationDirection::Download => self.ticks_since_last_probe_download as f32,
             RecommendationDirection::Upload => self.ticks_since_last_probe_upload as f32,
         };
-        match params.saturation_current {
-            SaturationLevel::High => { // High saturation, Bias towards increasing
-                score -= f32::max(10.0, tick_bias / 10.0);
-            },
-            SaturationLevel::Medium => { // Medium saturation, Bias towards decreasing
-                score -= f32::max(5.0, tick_bias / 10.0);
-            }
-            SaturationLevel::Low => { // Low saturation, Bias towards decreasing
-                score += f32::max(5.0, tick_bias / 10.0);
-            }
-        };
+        score -= f32::max(10.0, tick_bias % 10.0);
 
         // Determine the recommendation action
         let action = match score {
@@ -199,6 +189,8 @@ impl<'a> SiteState<'a> {
                 }
             }
         }
+
+        info!("{}: {score:.2}", params.direction);
     }
 
     fn recommendations_download(&mut self, recommendations: &mut Vec<(Recommendation, String)>) {
