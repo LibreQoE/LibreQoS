@@ -1,13 +1,12 @@
 use tracing::{debug, info};
+use crate::config::WatchingSite;
 use crate::site_state::analysis::{RetransmitState, RttState, SaturationLevel};
 use crate::site_state::recommendation::{Recommendation, RecommendationAction, RecommendationDirection};
 use crate::site_state::ring_buffer::RingBuffer;
 use crate::site_state::tornado_state::TornadoState;
 
-pub struct SiteState {
-    pub name: String,
-    pub max_download_mbps: u64,
-    pub max_upload_mbps: u64,
+pub struct SiteState<'a> {
+    pub config: &'a WatchingSite,
     pub state: TornadoState,
 
     // Queue Bandwidth
@@ -30,7 +29,7 @@ pub struct SiteState {
     pub round_trip_time_moving_average: RingBuffer,
 }
 
-impl SiteState {
+impl<'a> SiteState<'a> {
     pub fn check_state(&mut self) {
         match self.state {
             TornadoState::Warmup => {
@@ -40,7 +39,7 @@ impl SiteState {
                 let retransmits_down_count = self.retransmits_down.count();
                 let retransmits_up_count = self.retransmits_up.count();
                 if throughput_down_count > 10 && throughput_up_count > 10 && retransmits_down_count > 10 && retransmits_up_count > 10 {
-                    info!("Site {} has completed warm-up.", self.name);
+                    info!("Site {} has completed warm-up.", self.config.name);
                     self.state = TornadoState::Running;
                 }
                 return;
@@ -55,7 +54,7 @@ impl SiteState {
                 // Check if cooldown period is over
                 let now = std::time::Instant::now();
                 if now.duration_since(start).as_secs_f32() > duration_secs {
-                    debug!("Site {} has completed cooldown.", self.name);
+                    debug!("Site {} has completed cooldown.", self.config.name);
                     self.state = TornadoState::Running;
                     return;
                 }
@@ -98,51 +97,51 @@ impl SiteState {
     ) {
         if saturation_current == SaturationLevel::High || saturation_max == SaturationLevel::High {
             if retransmit_state == RetransmitState::High || retransmit_state == RetransmitState::RisingFast {
-                recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::DecreaseFast));
+                recommendations.push(Recommendation::new(&self.config.name, direction, RecommendationAction::DecreaseFast));
                 info!("High saturation, high/fast rising retransmits - decrease fast");
                 return; // Only 1 recommendation!
             }
             if retransmit_state == RetransmitState::Rising {
                 info!("High saturation, rising retransmits - decrease fast");
-                recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::Decrease));
+                recommendations.push(Recommendation::new(&self.config.name, direction, RecommendationAction::Decrease));
                 return; // Only 1 recommendation!
             }
             if retransmit_state == RetransmitState::FallingFast || retransmit_state == RetransmitState::Falling {
                 info!("High saturation, falling/fast falling retransmits - increase");
-                recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::Increase));
+                recommendations.push(Recommendation::new(&self.config.name, direction, RecommendationAction::Increase));
                 return; // Only 1 recommendation!
             }
             if rtt_state == RttState::Rising {
                 info!("High saturation, rising RTT - decrease");
-                recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::Decrease));
+                recommendations.push(Recommendation::new(&self.config.name, direction, RecommendationAction::Decrease));
                 return; // Only 1 recommendation!
             }
             if rtt_state == RttState::Falling {
                 info!("High saturation, falling RTT - increase");
-                recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::Increase));
+                recommendations.push(Recommendation::new(&self.config.name, direction, RecommendationAction::Increase));
                 return; // Only 1 recommendation!
             }
         } else if saturation_current == SaturationLevel::Medium || saturation_max == SaturationLevel::Medium {
             if retransmit_state == RetransmitState::High || retransmit_state == RetransmitState::RisingFast {
                 info!("Medium saturation, high/fast rising retransmits - decrease");
-                recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::Decrease));
+                recommendations.push(Recommendation::new(&self.config.name, direction, RecommendationAction::Decrease));
                 return; // Only 1 recommendation!
             }
             if retransmit_state == RetransmitState::FallingFast || retransmit_state == RetransmitState::Falling {
                 info!("Medium saturation, falling/fast falling retransmits - increase");
-                recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::Increase));
+                recommendations.push(Recommendation::new(&self.config.name, direction, RecommendationAction::Increase));
                 return; // Only 1 recommendation!
             }
         } else {
             // We're in Low saturation
             if retransmit_state == RetransmitState::Low || retransmit_state == RetransmitState::Falling || retransmit_state == RetransmitState::FallingFast {
                 info!("Low saturation, low/falling/fast falling retransmits - increase");
-                recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::Increase));
+                recommendations.push(Recommendation::new(&self.config.name, direction, RecommendationAction::Increase));
                 return; // Only 1 recommendation!
             }
             if retransmit_state == RetransmitState::High || retransmit_state == RetransmitState::Rising || retransmit_state == RetransmitState::RisingFast {
                 info!("Low saturation, high/rising/fast rising retransmits - decrease");
-                recommendations.push(Recommendation::new(&self.name, direction, RecommendationAction::Decrease));
+                recommendations.push(Recommendation::new(&self.config.name, direction, RecommendationAction::Decrease));
                 return; // Only 1 recommendation!
             }
         }
@@ -151,7 +150,7 @@ impl SiteState {
     fn recommendations_download(&self, recommendations: &mut Vec<Recommendation>) {
         let saturation_max = SaturationLevel::from_throughput(
             self.current_throughput.0,
-            self.max_download_mbps as f64,
+            self.config.max_download_mbps as f64,
         );
         let saturation_current = SaturationLevel::from_throughput(
             self.current_throughput.0,
@@ -179,7 +178,7 @@ impl SiteState {
     fn recommendations_upload(&self, recommendations: &mut Vec<Recommendation>) {
         let saturation_max = SaturationLevel::from_throughput(
             self.current_throughput.1,
-            self.max_upload_mbps as f64,
+            self.config.max_upload_mbps as f64,
         );
         let saturation_current = SaturationLevel::from_throughput(
             self.current_throughput.1,

@@ -3,8 +3,13 @@ use tracing::{debug, error, info};
 use crate::queue_structure::find_queue_bandwidth;
 
 pub struct WatchingSite {
+    pub name: String,
     pub max_download_mbps: u64,
     pub max_upload_mbps: u64,
+    pub min_download_mbps: u64,
+    pub min_upload_mbps: u64,
+    pub step_download_mbps: u64,
+    pub step_upload_mbps: u64,
 }
 
 pub struct TornadoConfig {
@@ -35,13 +40,19 @@ pub fn configure() -> anyhow::Result<TornadoConfig> {
 
     let mut sites = HashMap::new();
     for target in &tornado_config.targets {
-        let (down, up) = find_queue_bandwidth(&target)?;
+        let _ = find_queue_bandwidth(&target.name).inspect_err(|e| {
+            error!("Error finding queue bandwidth for {}: {:?}", target.name, e);
+        })?;
         let site = WatchingSite {
-            max_download_mbps: down,
-            max_upload_mbps: up,
+            name: target.name.to_owned(),
+            max_download_mbps: target.max_mbps[0],
+            max_upload_mbps: target.max_mbps[1],
+            min_download_mbps: target.min_mbps[0],
+            min_upload_mbps: target.min_mbps[1],
+            step_download_mbps: target.step_mbps[0],
+            step_upload_mbps: target.step_mbps[1],
         };
-        info!("Found site: {} with download: {} and upload: {}", target, down, up);
-        sites.insert(target.clone(), site);
+        sites.insert(target.name.to_owned(), site);
     }
 
     let result = TornadoConfig {

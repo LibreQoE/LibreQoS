@@ -15,18 +15,33 @@ Add the following to your `lqos.conf`:
 ```toml
 [tornado]
 enabled = true
-targets = [ "SITENAME" ]
 dry_run = true
-# Optional
-log_file = "/tmp/tornado.csv"
+log_file = "/tmp/tornado.csv" # Optional
+
+[[targets]]
+name = "CALVIN 1"
+max_mbps = [ 150, 150 ]
+min_mbps = [ 100, 100 ]
+step_mbps = [ 2, 2 ]
+
+# You can add as many targets as you want
 ```
 
 | **Entry Name** | **Description**                                                                                           |
 |----------------|-----------------------------------------------------------------------------------------------------------|
 | `enabled`      | Enable or disable Tornado. Default: `false`                                                               |
-| `targets`      | A list of sites to monitor. Tornado will adjust the rate for each site separately. Default: `[]`          |
 | `dry_run`      | If true, Tornado will not change the rate. It will only log what it *would* have done. Default: `false`   |
 | `log_file`     | If set, a CSV will be appended with time (unix secs), download rate, upload rate entries. Default: absent |
+
+For the targets:
+| **Entry Name** | **Description**                                                                                           |
+|----------------|-----------------------------------------------------------------------------------------------------------|
+| `name`         | The name of the target. This is used for logging and debugging, and must match network.json.              |
+| `max_mbps`     | The maximum bandwidth for the target. This is a list of two values, one for download and one for upload.  |
+| `min_mbps`     | The minimum bandwidth for the target. This is a list of two values, one for download and one for upload.  |
+| `step_mbps`    | The step size for the target. This is a list of two values, one for download and one for upload.          |
+
+Changes will be made in increments of the `step_mbps` value. For example, if the current bandwidth is 100/100 and the max is 150/150, and the step is 2/2, then the bandwidth will be increased to 102/102, then 104/104, etc.
 
 You can list as many sites as you want in the `targets` array. I strongly recommend `dry_run` for now, which just
 emits what it *would* have done to the console!

@@ -15,12 +15,12 @@ use crate::site_state::ring_buffer::RingBuffer;
 use crate::site_state::site::SiteState;
 use crate::site_state::tornado_state::TornadoState;
 
-pub struct SiteStateTracker {
-    sites: HashMap<String, SiteState>,
+pub struct SiteStateTracker<'a> {
+    sites: HashMap<String, SiteState<'a>>,
 }
 
-impl SiteStateTracker {
-    pub fn from_config(config: &TornadoConfig) -> Self {
+impl<'a> SiteStateTracker<'a> {
+    pub fn from_config(config: &'a TornadoConfig) -> Self {
         const SHORT_BUFFER_SIZE: usize = 30;
         const LONG_BUFFER_SIZE: usize = 120;
         let mut sites = HashMap::new();
@@ -28,9 +28,7 @@ impl SiteStateTracker {
             sites.insert(
                 name.clone(),
                 SiteState {
-                    name: name.clone(),
-                    max_download_mbps: site.max_download_mbps,
-                    max_upload_mbps: site.max_upload_mbps,
+                    config: site,
                     state: TornadoState::Warmup,
                     throughput_down: RingBuffer::new(SHORT_BUFFER_SIZE),
                     throughput_up: RingBuffer::new(SHORT_BUFFER_SIZE),
@@ -48,7 +46,7 @@ impl SiteStateTracker {
                 },
             );
         }
-        SiteStateTracker { sites }
+        Self { sites }
     }
 
 
@@ -135,6 +133,10 @@ impl SiteStateTracker {
             let Some(site) = self.sites.get_mut(&recommendation.site) else {
                 continue;
             };
+            // Find the Site Config
+            let Some(site_config) = config.sites.get(&recommendation.site) else {
+                continue;
+            };
 
             // Find the Queue Object
             let Some(queue) = queues.iter().find(|n| {
@@ -162,10 +164,17 @@ impl SiteStateTracker {
                 RecommendationDirection::Download => site.queue_download_mbps,
                 RecommendationDirection::Upload => site.queue_upload_mbps,
             } as f64;
-            let change_rate = f64::max(1.0, match recommendation.direction {
-                RecommendationDirection::Download => site.queue_download_mbps as f64 / 20.0,
-                RecommendationDirection::Upload => site.queue_upload_mbps as f64 / 20.0,
-            });
+            
+            let change_rate = match recommendation.direction {
+                RecommendationDirection::Download => site_config.step_download_mbps,
+                RecommendationDirection::Upload => site_config.step_upload_mbps,
+            } as f64;
+
+            let max_rate = match recommendation.direction {
+                RecommendationDirection::Download => site_config.max_download_mbps,
+                RecommendationDirection::Upload => site_config.max_upload_mbps,
+            } as f64;
+            
             let new_rate = match recommendation.action {
                 RecommendationAction::IncreaseFast => current_rate + (change_rate * 2.0),
                 RecommendationAction::Increase => current_rate + change_rate,
@@ -174,10 +183,6 @@ impl SiteStateTracker {
             };
 
             // Are we allowed to do it?
-            let max_rate = match recommendation.direction {
-                RecommendationDirection::Download => site.max_download_mbps,
-                RecommendationDirection::Upload => site.max_upload_mbps,
-            } as f64;
             if new_rate > max_rate {
                 continue;
             }
