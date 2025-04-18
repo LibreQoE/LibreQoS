@@ -156,10 +156,15 @@ impl<'a> SiteState<'a> {
             RecommendationDirection::Download => self.ticks_since_last_probe_download as f32,
             RecommendationDirection::Upload => self.ticks_since_last_probe_upload as f32,
         };
-        // TODO: This needs to become a debug
-        let score_tick = 0.0 - f32::max(10.0, tick_bias % 10.0);
+        let score_tick = match params.saturation_current {
+            SaturationLevel::High => 0.0 - f32::min(10.0, tick_bias / 10.0),
+            SaturationLevel::Medium => f32::min(10.0, tick_bias / 10.0) - 5.0,
+            SaturationLevel::Low => f32::min(10.0, tick_bias / 10.0),
+        };
+
         let score = score_base + score_rtt + score_retransmit + score_tick;
-        info!("Score: {score_base:.1}(base) + {score_rtt:1}(rtt) + {score_retransmit:.1}(retransmit) + {tick_bias:.1}(tick)) = {score:.1}");
+        // TODO: This needs to become a debug log
+        info!("Score {}: {score_base:.1}(base) + {score_rtt:1}(rtt) + {score_retransmit:.1}(retransmit) + {tick_bias:.1}(tick)) = {score:.1}", params.direction);
 
         // Determine the recommendation action
         let action = match score {
