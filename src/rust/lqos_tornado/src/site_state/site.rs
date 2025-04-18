@@ -143,8 +143,8 @@ impl<'a> SiteState<'a> {
         }
 
         let (rtt_weight, retransmit_weight, score_bias) = match params.saturation_current {
-            SaturationLevel::High => (3.0, 1.0, 2.0),
-            SaturationLevel::Medium => (2.0, 1.0, 1.0),
+            SaturationLevel::High => (3.0, 1.0, 0.0),
+            SaturationLevel::Medium => (2.0, 1.0, 0.0),
             SaturationLevel::Low => (1.5, 1.0, 0.0),
         };
 

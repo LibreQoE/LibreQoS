@@ -56,7 +56,7 @@ async fn main() -> Result<()> {
 
         // Sleep until the next second
         let missed_ticks = tfd.read();
-        if missed_ticks > 0 {
+        if missed_ticks > 1 {
             debug!("Missed {} ticks", missed_ticks);
         }
     }
