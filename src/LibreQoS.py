@@ -379,7 +379,7 @@ def loadSubscriberCircuits(shapedDevicesFile):
 					knownCircuitIDs.append(circuitID)
 					if ParentNode == "":
 						ParentNode = "none"
-					ParentNode = ParentNode.strip()
+					#ParentNode = ParentNode.strip()
 					deviceListForCircuit = []
 					thisDevice = 	{
 									  "deviceID": deviceID,
@@ -414,7 +414,7 @@ def loadSubscriberCircuits(shapedDevicesFile):
 					circuitName = deviceName
 				if ParentNode == "":
 					ParentNode = "none"
-				ParentNode = ParentNode.strip()
+				#ParentNode = ParentNode.strip()
 				deviceListForCircuit = []
 				thisDevice = 	{
 								  "deviceID": deviceID,
