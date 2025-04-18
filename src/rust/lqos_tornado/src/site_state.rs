@@ -198,20 +198,6 @@ impl<'a> SiteStateTracker<'a> {
                 RecommendationAction::Decrease => READING_ACCUMULATOR_SIZE as f32 * 0.5,
                 RecommendationAction::DecreaseFast => READING_ACCUMULATOR_SIZE as f32,
             };
-            
-            // Report
-            info!("Changing rate for site {}/{} from {:.2} mbps to {} mbps",
-                recommendation.site,
-                recommendation.direction,
-                current_rate,
-                new_rate
-            );
-            let _ = log_sender.send(LogCommand::SpeedChange {
-                site: recommendation.site.clone(),
-                download: site.queue_download_mbps,
-                upload: site.queue_upload_mbps,
-                state: summary,
-            });
 
             // Apply to the site
             match recommendation.direction {
@@ -275,6 +261,14 @@ impl<'a> SiteStateTracker<'a> {
                     };
                 }
             }
+
+            // Report
+            let _ = log_sender.send(LogCommand::SpeedChange {
+                site: recommendation.site.clone(),
+                download: site.queue_download_mbps,
+                upload: site.queue_upload_mbps,
+                state: summary,
+            });
         }
     }
 }
