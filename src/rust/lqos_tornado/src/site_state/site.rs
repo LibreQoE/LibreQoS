@@ -123,40 +123,43 @@ impl<'a> SiteState<'a> {
         };
 
         // Calculate the score based on the recommendation parameters
-        let mut score = score_bias;
+        let score_base = score_bias;
 
-        match &params.rtt_state {
+        let score_rtt = match &params.rtt_state {
             RttState::Rising { magnitude } => {
-                score += magnitude.abs() * rtt_weight;
+                magnitude.abs() * rtt_weight
             }
-            RttState::Flat => {} // No change
+            RttState::Flat => 0.0, // No change
             RttState::Falling { magnitude } => {
-                score -= magnitude.abs() * rtt_weight;
+                magnitude.abs() * rtt_weight
             }
-        }
+        };
 
-        match &params.retransmit_state {
+        let score_retransmit = match &params.retransmit_state {
             RetransmitState::RisingFast => {
-                score += 1.5 * retransmit_weight;
+                1.5 * retransmit_weight
             }
             RetransmitState::Rising => {
-                score += 1.0 * retransmit_weight;
+                1.0 * retransmit_weight
             }
-            RetransmitState::Stable => {} // No change
+            RetransmitState::Stable => 0.0, // No change
             RetransmitState::Falling => {
-                score -= 1.0 * retransmit_weight;
+                -1.0 * retransmit_weight
             }
             RetransmitState::FallingFast => {
-                score -= 1.5 * retransmit_weight;
+                -1.5 * retransmit_weight
             }
-        }
+        };
 
         // Tick Bias
         let tick_bias = match params.direction {
             RecommendationDirection::Download => self.ticks_since_last_probe_download as f32,
             RecommendationDirection::Upload => self.ticks_since_last_probe_upload as f32,
         };
-        score -= f32::max(10.0, tick_bias % 10.0);
+        // TODO: This needs to become a debug
+        let score_tick = 0.0 - f32::max(10.0, tick_bias % 10.0);
+        let score = score_base + score_rtt + score_retransmit + score_tick;
+        info!("Score: {score_base:.1}(base) + {score_rtt:1}(rtt) + {score_retransmit:.1}(retransmit) + {tick_bias:.1}(tick)) = {score:.1}");
 
         // Determine the recommendation action
         let action = match score {
@@ -189,8 +192,6 @@ impl<'a> SiteState<'a> {
                 }
             }
         }
-
-        info!("{}: {score:.2}", params.direction);
     }
 
     fn recommendations_download(&mut self, recommendations: &mut Vec<(Recommendation, String)>) {
