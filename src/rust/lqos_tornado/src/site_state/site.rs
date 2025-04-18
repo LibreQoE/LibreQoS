@@ -188,9 +188,9 @@ impl<'a> SiteState<'a> {
             RecommendationDirection::Upload => self.ticks_since_last_probe_upload as f32,
         };
         let score_tick = match params.saturation_current {
-            SaturationLevel::High => 0.0 - f32::min(10.0, tick_bias / 10.0),
-            SaturationLevel::Medium => f32::min(10.0, tick_bias / 10.0) - 5.0,
-            SaturationLevel::Low => f32::min(10.0, tick_bias / 10.0),
+            SaturationLevel::High => 0.0 - f32::min(0.0, tick_bias / 10.0),
+            SaturationLevel::Medium => 0.0,
+            SaturationLevel::Low => f32::min(0.0, tick_bias / 10.0),
         };
 
         let score = score_base + score_rtt + score_retransmit + score_tick;
@@ -201,8 +201,8 @@ impl<'a> SiteState<'a> {
         // Determine the recommendation action
         let action = match score {
             score if score < -2.0 => Some(RecommendationAction::IncreaseFast),
-            score if score < -1.0 => Some(RecommendationAction::Increase),
             score if score > 2.0 => Some(RecommendationAction::DecreaseFast),
+            score if score < -1.0 => Some(RecommendationAction::Increase),
             score if score > 1.0 => Some(RecommendationAction::Decrease),
             _ => None,
         };
@@ -303,10 +303,12 @@ impl<'a> SiteState<'a> {
         if self.download_state == TornadoState::Running {
             self.recommendations_download(recommendations);
             self.ticks_since_last_probe_download += 1;
+            self.ticks_since_last_probe_download = u32::min(20, self.ticks_since_last_probe_download);
         }
         if self.upload_state == TornadoState::Running {
             self.recommendations_upload(recommendations);
             self.ticks_since_last_probe_upload += 1;
+            self.ticks_since_last_probe_upload = u32::min(20, self.ticks_since_last_probe_upload);
         }
     }
 }
