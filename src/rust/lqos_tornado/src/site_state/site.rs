@@ -200,7 +200,7 @@ impl<'a> SiteState<'a> {
             score if score > 1.0 => Some(RecommendationAction::Decrease),
             _ => None,
         };
-        println!("Score: {score}, recommendation: {:?}", action);
+        //println!("Score: {score}, recommendation: {:?}", action);
 
         if let Some(action) = action {
             match action {
