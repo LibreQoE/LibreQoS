@@ -190,14 +190,6 @@ impl<'a> SiteStateTracker<'a> {
 
             // Apply the new rate to the QUEUE object
             let new_rate = u64::max(4, new_rate as u64);
-            match recommendation.direction {
-                RecommendationDirection::Download => {
-                    site.queue_download_mbps = new_rate;
-                }
-                RecommendationDirection::Upload => {
-                    site.queue_upload_mbps = new_rate;
-                }
-            }
             if new_rate == current_rate as u64 {
                 // No change
                 continue;
@@ -223,6 +215,18 @@ impl<'a> SiteStateTracker<'a> {
                 upload: site.queue_upload_mbps,
                 state: summary,
             });
+
+            // Apply to the site
+            match recommendation.direction {
+                RecommendationDirection::Download => {
+                    site.queue_download_mbps = new_rate;
+                    site.ticks_since_last_probe_download = 0;
+                }
+                RecommendationDirection::Upload => {
+                    site.queue_upload_mbps = new_rate;
+                    site.ticks_since_last_probe_upload = 0;
+                }
+            }
 
             // Build the HTB command
             let args = vec![

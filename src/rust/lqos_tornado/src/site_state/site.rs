@@ -164,7 +164,7 @@ impl<'a> SiteState<'a> {
 
         let score = score_base + score_rtt + score_retransmit + score_tick;
         // TODO: This needs to become a debug log
-        info!("Score {}: {score_base:.1}(base) + {score_rtt:1}(rtt) + {score_retransmit:.1}(retransmit) + {tick_bias:.1}(tick)) = {score:.1}", params.direction);
+        info!("Score {}: {score_base:.1}(base) + {score_rtt:1}(rtt) + {score_retransmit:.1}(retransmit) + {score_tick:.1}(tick)) = {score:.1}", params.direction);
 
         // Determine the recommendation action
         let action = match score {
