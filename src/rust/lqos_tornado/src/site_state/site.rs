@@ -27,7 +27,7 @@ pub struct SiteState<'a> {
     pub retransmits_down_moving_average: RingBuffer,
     pub retransmits_up_moving_average: RingBuffer,
     pub round_trip_time_moving_average: RingBuffer,
-    
+
     // Increase Ticker
     pub ticks_since_last_probe_download: u32,
     pub ticks_since_last_probe_upload: u32,
@@ -106,7 +106,7 @@ impl<'a> SiteState<'a> {
             self.round_trip_time_moving_average.add(round_trip_time);
         }
     }
-    
+
     fn recommendation_matrix(
         &mut self,
         recommendations: &mut Vec<(Recommendation, String)>,
@@ -115,16 +115,16 @@ impl<'a> SiteState<'a> {
         if !params.can_increase && !params.can_decrease {
             return; // No recommendations possible
         }
-        
+
         let (rtt_weight, retransmit_weight, score_bias) = match params.saturation_current {
             SaturationLevel::High => (2.0, 1.0, 0.0),
             SaturationLevel::Medium => (1.0, 1.5, 0.0),
             SaturationLevel::Low => (1.0, 2.0, -1.0),
         };
-        
+
         // Calculate the score based on the recommendation parameters
         let mut score = score_bias;
-        
+
         match &params.rtt_state {
             RttState::Rising { magnitude } => {
                 score += magnitude.abs() * rtt_weight;
@@ -134,7 +134,7 @@ impl<'a> SiteState<'a> {
                 score -= magnitude.abs() * rtt_weight;
             }
         }
-        
+
         match &params.retransmit_state {
             RetransmitState::RisingFast => {
                 score += 1.5 * retransmit_weight;
@@ -150,14 +150,24 @@ impl<'a> SiteState<'a> {
                 score -= 1.5 * retransmit_weight;
             }
         }
-        
-        // Upwards Tick Bias
+
+        // Tick Bias
         let tick_bias = match params.direction {
             RecommendationDirection::Download => self.ticks_since_last_probe_download as f32,
             RecommendationDirection::Upload => self.ticks_since_last_probe_upload as f32,
         };
-        score += f32::max(10.0, tick_bias / 10.0);
-        
+        match params.saturation_current {
+            SaturationLevel::High => { // High saturation, Bias towards increasing
+                score -= f32::max(10.0, tick_bias / 10.0);
+            },
+            SaturationLevel::Medium => { // Medium saturation, Bias towards decreasing
+                score -= f32::max(5.0, tick_bias / 10.0);
+            }
+            SaturationLevel::Low => { // Low saturation, Bias towards decreasing
+                score += f32::max(5.0, tick_bias / 10.0);
+            }
+        };
+
         // Determine the recommendation action
         let action = match score {
             score if score < -2.0 => Some(RecommendationAction::IncreaseFast),
@@ -166,7 +176,7 @@ impl<'a> SiteState<'a> {
             score if score > 1.0 => Some(RecommendationAction::Decrease),
             _ => None,
         };
-        
+
         if let Some(action) = action {
             match action {
                 RecommendationAction::IncreaseFast | RecommendationAction::Increase => {
@@ -208,7 +218,7 @@ impl<'a> SiteState<'a> {
             &self.round_trip_time_moving_average,
             &self.round_trip_time,
         );
-        
+
         let params = RecommendationParams {
             direction: RecommendationDirection::Download,
             can_increase: self.queue_download_mbps < self.config.max_download_mbps,
@@ -242,7 +252,7 @@ impl<'a> SiteState<'a> {
             &self.round_trip_time_moving_average,
             &self.round_trip_time,
         );
-        
+
         let params = RecommendationParams {
             direction: RecommendationDirection::Upload,
             can_increase: self.queue_upload_mbps < self.config.max_upload_mbps,
