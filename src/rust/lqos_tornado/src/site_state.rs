@@ -205,8 +205,8 @@ impl<'a> SiteStateTracker<'a> {
             }
             
             let cooldown_secs = match recommendation.action {
-                RecommendationAction::IncreaseFast => READING_ACCUMULATOR_SIZE as f32,
-                RecommendationAction::Increase => READING_ACCUMULATOR_SIZE as f32 * 0.5,
+                RecommendationAction::IncreaseFast => (READING_ACCUMULATOR_SIZE as f32 * 0.3).max(5.0),
+                RecommendationAction::Increase => (READING_ACCUMULATOR_SIZE as f32 * 0.2).max(3.0),
                 RecommendationAction::Decrease => READING_ACCUMULATOR_SIZE as f32 * 0.5,
                 RecommendationAction::DecreaseFast => READING_ACCUMULATOR_SIZE as f32,
             };

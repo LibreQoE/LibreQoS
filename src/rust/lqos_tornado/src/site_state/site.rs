@@ -179,29 +179,36 @@ impl<'a> SiteState<'a> {
             RecommendationDirection::Upload => self.ticks_since_last_probe_upload as f32,
         };
         let score_tick = match params.saturation_current {
-            SaturationLevel::High => 0.0 - f32::min(5.0, tick_bias),
+            SaturationLevel::High => f32::min(2.0, tick_bias * 0.4), // Positive bias that grows with time
             SaturationLevel::Medium => 0.0,
             SaturationLevel::Low => f32::min(5.0, tick_bias),
+        };
+
+        let probe_bonus = if tick_bias >= 10 && params.saturation_current == SaturationLevel::High {
+            1.5 // Force probe after 10s of high saturation
+        } else {
+            0.0
         };
 
         let score_stability_bonus = if matches!(params.rtt_state, RttState::Flat | RttState::Falling { .. })
             && matches!(params.retransmit_state, RetransmitState::Stable | RetransmitState::Falling | RetransmitState::FallingFast)
             && params.saturation_current == SaturationLevel::Low
         {
-            -0.3
+            -1.5  // Stronger bonus for stable operation
         } else { 0.0 };
 
 
-        let score = score_base + score_rtt + score_retransmit + score_stability_bonus + score_tick;
+        let score = score_base + score_rtt + score_retransmit + score_stability_bonus + score_tick + probe_bonus;
         debug!("{} : {}", params.direction, params.summary_string());
-        debug!("Score {}: {score_base:.1}(base) + {score_rtt:1}(rtt) + {score_retransmit:.1}(retransmit) {score_stability_bonus:.2}(stable) + {score_tick:.1}(tick)) = {score:.1}", params.direction);
+        debug!("Score {}: {score_base:.1}(base) + {score_rtt:1}(rtt) + {score_retransmit:.1}(retransmit) {score_stability_bonus:.2}(stable) + {score_tick:.1}(tick) + {probe_bonus:.1}(probe) = {score:.1}", params.direction);
+        debug!("HIGH_SAT_DEBUG: tick_bias={tick_bias} score_tick={score_tick} probe_bonus={probe_bonus} stability={score_stability_bonus}");
 
         // Determine the recommendation action
         let action = match score {
-            score if score < -1.5 => Some(RecommendationAction::IncreaseFast),
-            score if score > 2.0 => Some(RecommendationAction::DecreaseFast),
-            score if score < -0.5 => Some(RecommendationAction::Increase),
-            score if score > 1.0 => Some(RecommendationAction::Decrease),
+            score if score < -1.0 => Some(RecommendationAction::IncreaseFast),  // Easier to increase
+            score if score > 3.0 => Some(RecommendationAction::DecreaseFast), // Harder to decrease
+            score if score < 0.0 => Some(RecommendationAction::Increase),     // Wider increase band
+            score if score > 2.0 => Some(RecommendationAction::Decrease),     // Narrower decrease band
             _ => None,
         };
         //println!("Score: {score}, recommendation: {:?}", action);
