@@ -143,22 +143,18 @@ impl<'a> SiteState<'a> {
         }
 
         let (rtt_weight, retransmit_weight, score_bias) = match params.saturation_current {
-            SaturationLevel::High => (3.0, 1.0, 1.0),
-            SaturationLevel::Medium => (2.0, 1.0, 0.0),
-            SaturationLevel::Low => (1.5, 1.0, -1.0),
+            SaturationLevel::High => (3.0, 1.0, 2.0),
+            SaturationLevel::Medium => (2.0, 1.0, 1.0),
+            SaturationLevel::Low => (1.5, 1.0, 0.0),
         };
 
         // Calculate the score based on the recommendation parameters
         let score_base = score_bias;
 
         let score_rtt = match &params.rtt_state {
-            RttState::Rising { magnitude } => {
-                magnitude.abs() * rtt_weight
-            }
-            RttState::Flat => 0.0, // No change
-            RttState::Falling { magnitude } => {
-                magnitude.abs() * rtt_weight
-            }
+            RttState::Rising  { magnitude } =>  magnitude.abs() * rtt_weight,  // punish
+            RttState::Flat                       => 0.0,
+            RttState::Falling { magnitude } => -magnitude.abs() * rtt_weight,  // reward
         };
 
         let score_retransmit = match &params.retransmit_state {
@@ -183,14 +179,22 @@ impl<'a> SiteState<'a> {
             RecommendationDirection::Upload => self.ticks_since_last_probe_upload as f32,
         };
         let score_tick = match params.saturation_current {
-            SaturationLevel::High => 0.0 - f32::min(0.0, tick_bias),
+            SaturationLevel::High => 0.0 - f32::min(5.0, tick_bias),
             SaturationLevel::Medium => 0.0,
-            SaturationLevel::Low => f32::min(0.0, tick_bias),
+            SaturationLevel::Low => f32::min(5.0, tick_bias),
         };
 
-        let score = score_base + score_rtt + score_retransmit + score_tick;
+        let score_stability_bonus = if matches!(params.rtt_state, RttState::Flat | RttState::Falling { .. })
+            && matches!(params.retransmit_state, RetransmitState::Stable | RetransmitState::Falling | RetransmitState::FallingFast)
+            && params.saturation_current == SaturationLevel::Low
+        {
+            -0.3
+        } else { 0.0 };
+
+
+        let score = score_base + score_rtt + score_retransmit + score_stability_bonus + score_tick;
         debug!("{} : {}", params.direction, params.summary_string());
-        debug!("Score {}: {score_base:.1}(base) + {score_rtt:1}(rtt) + {score_retransmit:.1}(retransmit) + {score_tick:.1}(tick)) = {score:.1}", params.direction);
+        debug!("Score {}: {score_base:.1}(base) + {score_rtt:1}(rtt) + {score_retransmit:.1}(retransmit) {score_stability_bonus:.2}(stable) + {score_tick:.1}(tick)) = {score:.1}", params.direction);
 
         // Determine the recommendation action
         let action = match score {
