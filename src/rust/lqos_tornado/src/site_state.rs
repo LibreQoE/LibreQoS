@@ -172,16 +172,28 @@ impl<'a> SiteStateTracker<'a> {
                 RecommendationDirection::Download => site_config.max_download_mbps,
                 RecommendationDirection::Upload => site_config.max_upload_mbps,
             } as f64;
+            let min_rate = match recommendation.direction {
+                RecommendationDirection::Download => site_config.min_download_mbps,
+                RecommendationDirection::Upload => site_config.min_upload_mbps,
+            } as f64;
 
-            let new_rate = match recommendation.action {
-                RecommendationAction::IncreaseFast => current_rate + (change_rate * 2.0),
-                RecommendationAction::Increase => current_rate + change_rate,
-                RecommendationAction::Decrease => current_rate - change_rate,
-                RecommendationAction::DecreaseFast => current_rate - (change_rate * 2.0),
+            let new_rate_multiplier = match recommendation.action {
+                RecommendationAction::Increase => 1.05,
+                RecommendationAction::IncreaseFast => 1.12,
+                RecommendationAction::Decrease => 0.95,
+                RecommendationAction::DecreaseFast => 0.88,
             };
+            let new_rate = match recommendation.direction {
+                RecommendationDirection::Download => site.queue_download_mbps,
+                RecommendationDirection::Upload => site.queue_upload_mbps,
+            } as f64 * new_rate_multiplier;
+            let new_rate = new_rate.round();
 
             // Are we allowed to do it?
             if new_rate > max_rate {
+                continue;
+            }
+            if new_rate < min_rate {
                 continue;
             }
 
