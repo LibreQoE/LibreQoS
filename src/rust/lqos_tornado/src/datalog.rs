@@ -46,7 +46,7 @@ fn run_datalog(rx: std::sync::mpsc::Receiver<LogCommand>, path: Option<String>) 
         eprintln!("Failed to create log file: {}", e);
     } else {
         // Write the header to the file
-        if let Err(e) = std::fs::write(path, "Time,Site,Download,Upload,CanIncrease,CanDecrease,SaturationMax,SaturationCurrent,RetransmitState,RttState\n") {
+        if let Err(e) = std::fs::write(path, "Time,Site,Download,Upload,DirectionChanged,CanIncrease,CanDecrease,SaturationMax,SaturationCurrent,RetransmitState,RttState\n") {
             eprintln!("Failed to write header to log file: {}", e);
         }
     }

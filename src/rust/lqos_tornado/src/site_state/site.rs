@@ -46,8 +46,8 @@ struct RecommendationParams {
 
 impl RecommendationParams {
     fn summary_string(&self) -> String {
-        format!("{:?},{:?},{},{},{},{}",
-                self.can_increase, self.can_decrease, self.saturation_max, self.saturation_current, self.retransmit_state, self.rtt_state)
+        format!("{},{:?},{:?},{},{},{},{}",
+                self.direction,self.can_increase, self.can_decrease, self.saturation_max, self.saturation_current, self.retransmit_state, self.rtt_state)
     }
 }
 
