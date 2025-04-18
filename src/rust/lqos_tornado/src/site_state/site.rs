@@ -194,9 +194,9 @@ impl<'a> SiteState<'a> {
 
         // Determine the recommendation action
         let action = match score {
-            score if score < -2.0 => Some(RecommendationAction::IncreaseFast),
+            score if score < -1.5 => Some(RecommendationAction::IncreaseFast),
             score if score > 2.0 => Some(RecommendationAction::DecreaseFast),
-            score if score < -1.0 => Some(RecommendationAction::Increase),
+            score if score < -0.5 => Some(RecommendationAction::Increase),
             score if score > 1.0 => Some(RecommendationAction::Decrease),
             _ => None,
         };
