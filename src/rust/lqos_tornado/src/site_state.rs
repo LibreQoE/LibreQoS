@@ -196,10 +196,10 @@ impl<'a> SiteStateTracker<'a> {
             }
             
             let cooldown_secs = match recommendation.action {
-                RecommendationAction::IncreaseFast => READING_ACCUMULATOR_SIZE as f32 * 2.0,
-                RecommendationAction::Increase => READING_ACCUMULATOR_SIZE as f32,
-                RecommendationAction::Decrease => READING_ACCUMULATOR_SIZE as f32,
-                RecommendationAction::DecreaseFast => READING_ACCUMULATOR_SIZE as f32 * 2.0,
+                RecommendationAction::IncreaseFast => READING_ACCUMULATOR_SIZE as f32,
+                RecommendationAction::Increase => READING_ACCUMULATOR_SIZE as f32 * 0.5,
+                RecommendationAction::Decrease => READING_ACCUMULATOR_SIZE as f32 * 0.5,
+                RecommendationAction::DecreaseFast => READING_ACCUMULATOR_SIZE as f32,
             };
             
             // Report
