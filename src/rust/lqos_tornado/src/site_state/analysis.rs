@@ -20,9 +20,9 @@ impl Display for SaturationLevel {
 
 impl SaturationLevel {
     pub fn from_throughput(value: f64, max: f64) -> Self {
-        if value < max * 0.25 {
+        if value < max * 0.5 {
             SaturationLevel::Low
-        } else if value < max * 0.5 {
+        } else if value < max * 0.85 {
             SaturationLevel::Medium
         } else {
             SaturationLevel::High
@@ -65,9 +65,9 @@ impl RetransmitState {
             RetransmitState::FallingFast
         } else if tcp_retransmits_relative < 0.8 {
             RetransmitState::Falling
-        }  else if tcp_retransmits_relative > 1.8 {
+        }  else if tcp_retransmits_relative > 2.0 {
             RetransmitState::RisingFast
-        } else if tcp_retransmits_relative > 1.2 {
+        } else if tcp_retransmits_relative > 1.4 {
             RetransmitState::Rising
         } else {
             RetransmitState::Stable
@@ -103,12 +103,13 @@ impl RttState {
         let rtt_ma = moving_average.average().unwrap_or(1.0);
         let rtt_avg = recent.average().unwrap_or(1.0);
         let rtt_relative = rtt_avg / rtt_ma;
+        let delta = (rtt_relative - 1.0).abs() as f32;
 
         // Determine State
         if rtt_relative > 1.2 {
-            RttState::Rising {magnitude: rtt_relative as f32}
+            RttState::Rising {magnitude: delta}
         } else if rtt_relative < 0.8 {
-            RttState::Falling { magnitude: rtt_relative as f32}
+            RttState::Falling { magnitude: delta}
         } else {
             RttState::Flat
         }
