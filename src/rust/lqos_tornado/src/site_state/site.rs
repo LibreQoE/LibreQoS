@@ -96,7 +96,7 @@ impl<'a> SiteState<'a> {
         rtt_state: RttState,
     ) {
         if saturation_current == SaturationLevel::High || saturation_max == SaturationLevel::High {
-            if retransmit_state == RetransmitState::High || retransmit_state == RetransmitState::RisingFast {
+            if retransmit_state == RetransmitState::RisingFast {
                 recommendations.push(Recommendation::new(&self.config.name, direction, RecommendationAction::DecreaseFast));
                 info!("High saturation, high/fast rising retransmits - decrease fast");
                 return; // Only 1 recommendation!
@@ -122,7 +122,7 @@ impl<'a> SiteState<'a> {
                 return; // Only 1 recommendation!
             }
         } else if saturation_current == SaturationLevel::Medium || saturation_max == SaturationLevel::Medium {
-            if retransmit_state == RetransmitState::High || retransmit_state == RetransmitState::RisingFast {
+            if retransmit_state == RetransmitState::RisingFast {
                 info!("Medium saturation, high/fast rising retransmits - decrease");
                 recommendations.push(Recommendation::new(&self.config.name, direction, RecommendationAction::Decrease));
                 return; // Only 1 recommendation!
@@ -134,12 +134,12 @@ impl<'a> SiteState<'a> {
             }
         } else {
             // We're in Low saturation
-            if retransmit_state == RetransmitState::Low || retransmit_state == RetransmitState::Falling || retransmit_state == RetransmitState::FallingFast {
+            if retransmit_state == RetransmitState::Falling || retransmit_state == RetransmitState::FallingFast {
                 info!("Low saturation, low/falling/fast falling retransmits - increase");
                 recommendations.push(Recommendation::new(&self.config.name, direction, RecommendationAction::Increase));
                 return; // Only 1 recommendation!
             }
-            if retransmit_state == RetransmitState::High || retransmit_state == RetransmitState::Rising || retransmit_state == RetransmitState::RisingFast {
+            if retransmit_state == RetransmitState::Rising || retransmit_state == RetransmitState::RisingFast {
                 info!("Low saturation, high/rising/fast rising retransmits - decrease");
                 recommendations.push(Recommendation::new(&self.config.name, direction, RecommendationAction::Decrease));
                 return; // Only 1 recommendation!

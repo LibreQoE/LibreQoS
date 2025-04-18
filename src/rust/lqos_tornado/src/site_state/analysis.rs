@@ -21,13 +21,11 @@ impl SaturationLevel {
 
 #[derive(PartialEq)]
 pub enum RetransmitState {
-    High,
     RisingFast,
     Rising,
     Stable,
     Falling,
     FallingFast,
-    Low,
 }
 
 impl RetransmitState {
@@ -40,11 +38,7 @@ impl RetransmitState {
         let tcp_retransmits_relative = tcp_retransmits_avg / tcp_retransmits_ma;
         
         // Determine State
-        if tcp_retransmits_avg < 0.001 {
-            RetransmitState::Low
-        } else if tcp_retransmits_avg > 0.02 {
-            RetransmitState::High
-        } else if tcp_retransmits_relative < 0.4 {
+        if tcp_retransmits_relative < 0.4 {
             RetransmitState::FallingFast
         } else if tcp_retransmits_relative < 0.8 {
             RetransmitState::Falling
