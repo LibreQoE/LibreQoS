@@ -205,11 +205,12 @@ impl<'a> SiteStateTracker<'a> {
             }
             
             let cooldown_secs = match recommendation.action {
-                RecommendationAction::IncreaseFast => (READING_ACCUMULATOR_SIZE as f32 * 0.3).max(5.0),
-                RecommendationAction::Increase => (READING_ACCUMULATOR_SIZE as f32 * 0.2).max(3.0),
+                RecommendationAction::IncreaseFast => (READING_ACCUMULATOR_SIZE as f32 * 0.1).max(2.0),
+                RecommendationAction::Increase => (READING_ACCUMULATOR_SIZE as f32 * 0.05).max(1.0),
                 RecommendationAction::Decrease => READING_ACCUMULATOR_SIZE as f32 * 0.5,
                 RecommendationAction::DecreaseFast => READING_ACCUMULATOR_SIZE as f32,
             };
+            debug!("Cooldown for {:?} set to {:.1}s", recommendation.action, cooldown_secs);
 
             // Apply to the site
             match recommendation.direction {
