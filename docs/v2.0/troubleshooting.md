@@ -84,3 +84,35 @@ The console output from running LibreQoS.py directly provides more specific erro
 Once you have identified the error and fixed ShapedDevices.csv and/or Network.json, please then run
 
 ```sudo systemctl start lqos_scheduler```
+
+### Systemd segfault
+
+If you experience a segfault in systemd, this is a known issue in systemd [1](https://github.com/systemd/systemd/issues/36031) [2](https://github.com/systemd/systemd/issues/33643).
+To work around it, you can compile systemd from scratch:
+
+### Install build dependencies
+
+```
+sudo apt update
+sudo apt install build-essential git meson libcap-dev libmount-dev libseccomp-dev \
+libblkid-dev libacl1-dev libattr1-dev libcryptsetup-dev libaudit-dev \
+libpam0g-dev libselinux1-dev libzstd-dev libcurl4-openssl-dev
+```
+
+#### Clone systemd repository from github
+
+```
+git clone https://github.com/systemd/systemd.git
+cd systemd
+git checkout v257.5
+meson setup build
+meson compile -C build
+sudo meson install -C build
+```
+
+Then, reboot, and confirm the systemd version with `systemctl --version`
+
+```
+libreqos@libreqos:~$ systemctl --version
+systemd 257 (257.5)
+```
