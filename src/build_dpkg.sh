@@ -104,7 +104,7 @@ sudo PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install -r src/requirements.txt
 # - Setup Python dependencies as a post-install task - handle issue with packages on Ubuntu Server 24.04
 sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip uninstall binpacking apscheduler deepdiff --yes
 PIP_BREAK_SYSTEM_PACKAGES=1 pip uninstall binpacking apscheduler deepdiff --yes
-sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip install binpacking apscheduler deepdiff --yes
+sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip install binpacking apscheduler deepdiff
 
 # Ensure folder permissions are correct post-install
 sudo chown -R $USER /opt/libreqos
