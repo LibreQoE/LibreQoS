@@ -1,23 +1,23 @@
-# LibreQoS daemons
+# Demonios de LibreQoS 
 
 lqosd
 
-- Manages actual XDP code. Build with Rust.
+- Gestiona el código XDP. Construido en Rust.
 
 lqos_node_manager
 
-- Runs the GUI available at http://a.b.c.d:9123
+- Ejecuta la GUI disponible en http://a.b.c.d:9123
 
 lqos_scheduler
 
-- lqos_scheduler handles statistics and performs continuous refreshes of LibreQoS' shapers, including pulling from any enabled CRM Integrations (UISP, Splynx).
-- On start: Run a full setup of queues
-- Every 10 seconds: Graph bandwidth and latency stats
-- Every 30 minutes: Update queues, pulling new configuration from CRM integration if enabled
+- lqos_scheduler maneja estadísticas y realiza actualizaciones continuas de los modeladores de LibreQoS, incluida la extracción de cualquier integración de CRM habilitada (UISP, Splynx).
+- Al iniciar: ejecuta una configuración completa de colas
+- Cada 10 segundos: Grafica estadísticas de ancho de banda y latencia
+- Cada 30 segundos: Actualiza colas, extrayendo nueva configuración de la integración de CRM si está habilitada
 
-## Run daemons with systemd
+## Ejecutar daemons con systemd
 
-You can setup `lqosd`, `lqos_node_manager`, and `lqos_scheduler` as systemd services.
+Puede configurar `lqosd`, `lqos_node_manager`, y `lqos_scheduler` como servicios systemd.
 
 ```shell
 sudo cp /opt/libreqos/src/bin/lqos_node_manager.service.example /etc/systemd/system/lqos_node_manager.service
@@ -25,46 +25,46 @@ sudo cp /opt/libreqos/src/bin/lqosd.service.example /etc/systemd/system/lqosd.se
 sudo cp /opt/libreqos/src/bin/lqos_scheduler.service.example /etc/systemd/system/lqos_scheduler.service
 ```
 
-Finally, run
+Finalmente, correr
 
 ```shell
 sudo systemctl daemon-reload
 sudo systemctl enable lqosd lqos_node_manager lqos_scheduler
 ```
 
-You can now point a web browser at `http://a.b.c.d:9123` (replace `a.b.c.d` with the management IP address of your shaping server) and enjoy a real-time view of your network.
+Ahora puede apuntar un navegador web a `http://a.b.c.d:9123` (reemplazar `a.b.c.d` con la dirección IP de administración de su servidor de modelado) y disfrute de una vista en tiempo real de su red.
 
-## Debugging lqos_scheduler
+## Depuración lqos_scheduler
 
-In the background, lqos_scheduler runs scheduler.py, which in turn runs LibreQoS.py
+En el fondo, lqos_scheduler corre scheduler.py, que a su vez corre LibreQoS.py
 
-One-time runs of these individual components can be very helpful for debugging and to make sure everything is correctly configured.
+Las ejecuciones únicas de estos componentes individuales pueden ser muy útiles para la depuración y para asegurarse de que todo esté configurado correctamente.
 
-First, stop lqos_scheduler
+Primero, detener lqos_scheduler
 
 ```shell
 sudo systemctl stop lqos_scheduler
 ```
 
-For one-time runs of LibreQoS.py, use
+Para ejecuciones iniciales de of LibreQoS.py, utilice
 
 ```shell
 sudo ./LibreQoS.py
 ```
 
-- To use the debug mode with more verbose output, use:
+- Para utilizar el modo de depuración con una salida más detallada, utilice:
 
 ```shell
 sudo ./LibreQoS.py --debug
 ```
 
-To confirm that lqos_scheduler (scheduler.py) is able to work correctly, run:
+Para confirmar que lqos_scheduler (scheduler.py) puede funcionar correctamente, ejecute:
 
 ```shell
 sudo python3 scheduler.py
 ```
 
-Once you have any errors eliminated, restart lqos_scheduler with
+Una vez que haya eliminado todos los errores, reinicie lqos_scheduler con
 
 ```shell
 sudo systemctl start lqos_scheduler

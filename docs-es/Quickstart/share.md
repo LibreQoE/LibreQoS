@@ -1,14 +1,15 @@
-# Share your before and after
+# Comparte tu antes y después
 
-We ask that you please share an anonymized screenshot of your LibreQoS deployment before (monitor only mode) and after (queuing enabled) to the [LibreQoS Chat](https://chat.libreqos.io/join/fvu3cerayyaumo377xwvpev6/). This helps us gauge the impact of our software. It also makes us smile.
+Le pedimos que comparta una captura de pantalla anónima de su implementación de LibreQoS antes (modo de solo monitor) y después (cola habilitada) en el[Chat LibreQoS ](https://chat.libreqos.io/join/fvu3cerayyaumo377xwvpev6/). T
+Esto nos ayuda a evaluar el impacto de nuestro software. Y también nos alegra.
 
-1. Enable monitor only mode
-2. Klingon mode (Redact customer info)
-3. Screenshot
-4. Resume regular queuing
-5. Screenshot
+1. Habilitar el modo de solo monitor
+2. Modo Klingon (Redactar información del cliente)
+3. Captura de pantalla
+4. Reanudar las colas regulares
+5. Captura de pantalla
 
-## Enable monitor only mode
+## Habilitar el modo de solo monitor
 
 ```shell
 sudo systemctl stop lqos_scheduler
@@ -16,16 +17,16 @@ sudo systemctl restart lqosd
 sudo systemctl restart lqos_node_manager
 ```
 
-## Klingon mode
+## Modo Klingon 
 
-Please go to the Web UI and click Configuration. Toggle Redact Customer Information (screenshot mode) and then Apply Changes.
+Vaya a la interfaz web y haga clic en Configuración. Active la opción "Redactar información del cliente" (modo de captura de pantalla) y luego "Aplicar cambios".
 
-## Resume regular queuing
+## Reanudar la cola normal
 
 ```shell
 sudo systemctl start lqos_scheduler
 ```
 
-## Screenshot
+## Captura de pantalla
 
-To generate a screenshot - please go to the Web UI and click Configuration. Toggle Redact Customer Information (screenshot mode), Apply Changes, and then return to the dashboard to take a screenshot.
+Para generar una captura de pantalla, acceda a la interfaz web y haga clic en Configuración. Active "Ocultar información del cliente" (modo de captura de pantalla), "Aplicar cambios" y, a continuación, vuelva al panel de control para tomar una captura de pantalla.
