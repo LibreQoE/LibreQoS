@@ -9,7 +9,7 @@ use std::thread;
 
 const VERSION_STRING: &str = include_str!("../../../VERSION_STRING");
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 struct VersionCheckRequest {
     current_git_hash: String,
     version_string: String,
@@ -40,8 +40,17 @@ pub fn start_version_check() -> Result<()> {
                     node_id: cfg.node_id.to_string(),
                 };
 
-                let update_available = check_version(request).unwrap_or(false);
-                NEW_VERSION_AVAILABLE.store(update_available, std::sync::atomic::Ordering::Relaxed);
+                let update_available = check_version(request);
+                match update_available {
+                    Err(e) => {
+                        tracing::error!("Failed to check for version update: {}", e);
+                        thread::sleep(std::time::Duration::from_secs(60));
+                        continue;
+                    }
+                    Ok(update_available) => {
+                        NEW_VERSION_AVAILABLE.store(update_available, std::sync::atomic::Ordering::Relaxed);
+                    }
+                }
 
                 // Sleep for 12 hours
                 thread::sleep(std::time::Duration::from_secs(12 * 60 * 60));

@@ -1,7 +1,7 @@
-import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {FlowDurationsGraph} from "../graphs/flow_durations_graph";
+import {DashletBaseInsight} from "./insight_dashlet_base";
 
-export class FlowDurationDash extends BaseDashlet{
+export class FlowDurationDash extends DashletBaseInsight{
     constructor(slot) {
         super(slot);
     }

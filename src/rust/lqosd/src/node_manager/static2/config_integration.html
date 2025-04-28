@@ -43,6 +43,18 @@
                 <div class="form-text">How frequently to refresh queue data from the integration</div>
             </div>
 
+            <div class="mb-3">
+                <label for="promoteToRoot" class="form-label">Promote to Root Nodes</label>
+                <textarea class="form-control" id="promoteToRoot" rows="3"></textarea>
+                <div class="form-text">Enter one circuit ID per line to promote to root nodes</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="clientBandwidthMultiplier" class="form-label">Client Bandwidth Multiplier</label>
+                <input type="number" class="form-control" id="clientBandwidthMultiplier" step="0.1" min="0.1" value="1.0">
+                <div class="form-text">Multiplier applied to client bandwidth values (1.0 = 100%)</div>
+            </div>
+
             <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
         </form>
     </div>

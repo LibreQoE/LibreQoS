@@ -179,11 +179,11 @@ fn migrate_queues(
     new_config.queues.default_sqm = python_config.sqm.clone();
     new_config.queues.monitor_only = python_config.monitor_only_mode;
     new_config.queues.uplink_bandwidth_mbps =
-        python_config.upstream_bandwidth_capacity_upload_mbps as u32;
+        python_config.upstream_bandwidth_capacity_upload_mbps as u64;
     new_config.queues.downlink_bandwidth_mbps =
-        python_config.upstream_bandwidth_capacity_download_mbps as u32;
-    new_config.queues.generated_pn_upload_mbps = python_config.generated_pnupload_mbps as u32;
-    new_config.queues.generated_pn_download_mbps = python_config.generated_pndownload_mbps as u32;
+        python_config.upstream_bandwidth_capacity_download_mbps as u64;
+    new_config.queues.generated_pn_upload_mbps = python_config.generated_pnupload_mbps as u64;
+    new_config.queues.generated_pn_download_mbps = python_config.generated_pndownload_mbps as u64;
     new_config.queues.dry_run = !python_config.enable_actual_shell_commands;
     new_config.queues.sudo = python_config.run_shell_commands_as_sudo;
     if python_config.queues_available_override == 0 {

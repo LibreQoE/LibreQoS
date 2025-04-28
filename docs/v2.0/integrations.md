@@ -1,4 +1,4 @@
-# Integrations
+# CRM/NMS Integrations
 
   * [Splynx Integration](#splynx-integration)
     + [Splynx API Access](#splynx-api-access)
@@ -237,3 +237,17 @@ If a network.json file exists, it will not be overwritten, unless you set ```alw
 You can modify the network.json file to more accurately reflect bandwidth limits.
 ShapedDevices.csv will be overwritten every time the Sonar integration is run.
 You have the option to run integrationSonar.py automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_sonar = true``` in `/etc/lqos.conf`.
+
+## Third-Party Tools
+
+### Jesync UI Tool Dashboard
+Jesync UI Tool Dashboard is a modern, web-based control panel designed to make managing LibreQoS and its integration files easier, faster, and more user-friendly.
+
+[https://github.com/jesienazareth/jesync_dashboard](https://github.com/jesienazareth/jesync_dashboard)
+
+### MikroTik PPPoE Integration
+This script automates the synchronization of MikroTik PPP secrets (e.g., PPPoE users) and active hotspot users with a LibreQoS-compatible CSV file (ShapedDevices.csv). It continuously monitors the MikroTik router for changes to PPP secrets and active hotspot users, such as additions, updates, or deletions, and updates the CSV file accordingly. The script also calculates rate limits (download/upload speeds) based on the assigned PPP profile and ensures the CSV file is always up-to-date.
+
+The script is designed to run as a background service using systemd, ensuring it starts automatically on boot and restarts in case of failures.
+
+[https://github.com/Kintoyyy/MikroTik-LibreQos-Integration](https://github.com/Kintoyyy/MikroTik-LibreQos-Integration)

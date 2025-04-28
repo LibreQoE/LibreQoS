@@ -16,8 +16,8 @@ pub struct UispDevice {
     pub name: String,
     pub mac: String,
     pub site_id: String,
-    pub download: u32,
-    pub upload: u32,
+    pub download: u64,
+    pub upload: u64,
     pub ipv4: HashSet<String>,
     pub ipv6: HashSet<String>,
 }
@@ -47,11 +47,25 @@ impl UispDevice {
         let mut upload = config.queues.generated_pn_upload_mbps;
         if let Some(overview) = &device.overview {
             if let Some(dl) = overview.downlinkCapacity {
-                download = dl as u32 / 1000000;
+                download = dl as u64 / 1000000;
             }
             if let Some(ul) = overview.uplinkCapacity {
-                upload = ul as u32 / 1000000;
+                upload = ul as u64 / 1000000;
             }
+            if device.get_model().unwrap_or_default().contains("5AC") {
+                download = ((download as f64) * config.uisp_integration.airmax_capacity as f64) as u64;
+                upload = ((upload as f64) * config.uisp_integration.airmax_capacity as f64) as u64;
+            }
+            if device.get_model().unwrap_or_default().contains("LTU") {
+                download = ((download as f64) * config.uisp_integration.ltu_capacity as f64) as u64;
+                upload = ((upload as f64) * config.uisp_integration.ltu_capacity as f64) as u64;
+            }
+        }
+        if download == 0 {
+            download = config.queues.generated_pn_download_mbps;
+        }
+        if upload == 0 {
+            upload = config.queues.generated_pn_upload_mbps;
         }
 
         // Accumulate IP address listings
@@ -108,16 +122,16 @@ impl UispDevice {
         });
 
         // Handle any "exception CPE" entries
-        let mut site_id = device.get_site_id().unwrap_or("".to_string());
+        let mut site_id = device.get_site_id().unwrap_or_default();
         for exception in config.uisp_integration.exception_cpes.iter() {
-            if exception.cpe == device.get_name().unwrap() {
+            if exception.cpe == device.get_name().unwrap_or_default() {
                 site_id = exception.parent.clone();
             }
         }
 
         Self {
             id: device.get_id(),
-            name: device.get_name().unwrap(),
+            name: device.get_name().unwrap_or_default(),
             mac,
             site_id,
             upload,

@@ -229,12 +229,10 @@ def createShaper():
 			else:
 				hardware_type[monitored_device['id']] = 'Site'
 	for device_num in hardware_name:
-		# Find parent name of hardware
-		parent_name = ''
 		parent_id = None	
 		if device_num in hardware_parent.keys():
-			parent_id = hardware_parent[device_num]
-			parent_name = hardware_name_extended[parent_id]
+			if hardware_parent[device_num] != 0:
+				parent_id = hardware_parent[device_num]
 		download = 10000
 		upload = 10000
 		nodeName = hardware_name_extended[device_num]

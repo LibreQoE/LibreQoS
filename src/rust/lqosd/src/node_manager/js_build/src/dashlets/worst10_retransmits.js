@@ -1,11 +1,11 @@
-import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {clearDashDiv, simpleRow, simpleRowHtml, theading, TopNTableFromMsgData} from "../helpers/builders";
 import {TimedCache} from "../lq_js_common/helpers/timed_cache";
 import {periodNameToSeconds} from "../helpers/time_periods";
 import {formatRetransmit, formatRtt} from "../helpers/scaling";
 import {scaleNumber} from "../lq_js_common/helpers/scaling";
+import {DashletBaseInsight} from "./insight_dashlet_base";
 
-export class Worst10Retransmits extends BaseDashlet {
+export class Worst10Retransmits extends DashletBaseInsight {
     constructor(slot) {
         super(slot);
         this.timeCache = new TimedCache(10);

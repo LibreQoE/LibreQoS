@@ -1,8 +1,8 @@
-import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {clearDashDiv, simpleRow, theading} from "../helpers/builders";
 import {scaleNumber, scaleNanos} from "../lq_js_common/helpers/scaling";
+import {DashletBaseInsight} from "./insight_dashlet_base";
 
-export class EtherProtocols extends BaseDashlet {
+export class EtherProtocols extends DashletBaseInsight {
     constructor(slot) {
         super(slot);
     }

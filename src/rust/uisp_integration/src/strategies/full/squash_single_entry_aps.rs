@@ -38,8 +38,8 @@ pub fn squash_single_aps(sites: &mut [UispSite]) -> Result<(), UispIntegrationEr
                 s.parent_indices.remove(&squash_idx);
                 s.parent_indices.insert(new_parent);
                 if s.site_type == UispSiteType::Client {
-                    s.max_up_mbps = u32::min(up, s.max_up_mbps);
-                    s.max_down_mbps = u32::min(down, s.max_down_mbps);
+                    s.max_up_mbps = u64::min(up, s.max_up_mbps);
+                    s.max_down_mbps = u64::min(down, s.max_down_mbps);
                 }
             }
         });

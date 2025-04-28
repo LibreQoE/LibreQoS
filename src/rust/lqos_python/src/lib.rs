@@ -100,6 +100,8 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(wispgate_api_url))?;
     m.add_wrapped(wrap_pyfunction!(enable_insight_topology))?;
     m.add_wrapped(wrap_pyfunction!(insight_topology_role))?;
+    m.add_wrapped(wrap_pyfunction!(promote_to_root_list))?;
+    m.add_wrapped(wrap_pyfunction!(client_bandwidth_multiplier))?;
 
     Ok(())
 }
@@ -350,13 +352,13 @@ fn sqm() -> PyResult<String> {
 #[pyfunction]
 fn upstream_bandwidth_capacity_download_mbps() -> PyResult<u32> {
     let config = lqos_config::load_config().unwrap();
-    Ok(config.queues.uplink_bandwidth_mbps)
+    Ok(config.queues.uplink_bandwidth_mbps as u32)
 }
 
 #[pyfunction]
 fn upstream_bandwidth_capacity_upload_mbps() -> PyResult<u32> {
     let config = lqos_config::load_config().unwrap();
-    Ok(config.queues.uplink_bandwidth_mbps)
+    Ok(config.queues.uplink_bandwidth_mbps as u32)
 }
 
 #[pyfunction]
@@ -776,6 +778,20 @@ fn wispgate_api_url() -> PyResult<String> {
     Ok(wisp_gate.wispgate_api_url.clone())
 }
 
+#[pyfunction]
+fn promote_to_root_list() -> PyResult<Vec<String>> {
+    let config = lqos_config::load_config().unwrap();
+    let Some(promote_to_root) = config.integration_common.promote_to_root.as_ref() else {
+        return Ok(vec![]);
+    };
+    Ok(promote_to_root.clone())
+}
+
+#[pyfunction]
+fn client_bandwidth_multiplier() -> PyResult<f32> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config.integration_common.client_bandwidth_multiplier.unwrap_or(1.0))
+}
 #[pyfunction]
 fn enable_insight_topology() -> PyResult<bool> {
     let config = lqos_config::load_config().unwrap();

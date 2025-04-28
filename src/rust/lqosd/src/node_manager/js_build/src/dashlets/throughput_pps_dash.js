@@ -1,8 +1,8 @@
-import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {PacketsPerSecondBar} from "../graphs/packets_bar";
 import {PacketsPerSecondTimescale} from "../graphs/packets_bar_insight";
+import {DashletBaseInsight} from "./insight_dashlet_base";
 
-export class ThroughputPpsDash extends BaseDashlet{
+export class ThroughputPpsDash extends DashletBaseInsight{
     title() {
         return "Throughput PPS";
     }

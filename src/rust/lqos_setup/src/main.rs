@@ -40,10 +40,10 @@ pub fn read_line() -> String {
     guess.trim().to_string()
 }
 
-pub fn read_line_as_number() -> u32 {
+pub fn read_line_as_number() -> u64 {
     loop {
         let str = read_line();
-        if let Ok(n) = str::parse::<u32>(&str) {
+        if let Ok(n) = str::parse::<u64>(&str) {
             return n;
         }
         println!("Could not parse [{str}] as a number. Try again.");
@@ -87,7 +87,7 @@ fn get_isp_interface(interfaces: &Vec<Interface>, if_isp: &mut Option<String>) {
     }
 }
 
-fn get_bandwidth(up: bool) -> u32 {
+fn get_bandwidth(up: bool) -> u64 {
     loop {
         match up {
             true => println!(
@@ -146,8 +146,8 @@ fn anonymous() -> bool {
 fn write_combined_config(
     to_internet: &str,
     to_network: &str,
-    download: u32,
-    upload: u32,
+    download: u64,
+    upload: u64,
     allow_anonymous: bool,
 ) {
     let mut config = lqos_config::Config::default();

@@ -1,7 +1,7 @@
-import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {scaleNumber} from "../lq_js_common/helpers/scaling";
+import {DashletBaseInsight} from "./insight_dashlet_base";
 
-export class ThroughputBpsDash extends BaseDashlet{
+export class ThroughputBpsDash extends DashletBaseInsight{
     title() {
         return "Throughput Bits/Second";
     }

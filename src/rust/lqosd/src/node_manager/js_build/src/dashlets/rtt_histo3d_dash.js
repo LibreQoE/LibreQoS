@@ -1,7 +1,7 @@
-import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {RttHistogram3D} from "../graphs/rtt_histo_3d";
+import {DashletBaseInsight} from "./insight_dashlet_base";
 
-export class RttHisto3dDash extends BaseDashlet{
+export class RttHisto3dDash extends DashletBaseInsight{
     constructor(slot) {
         super(slot);
     }
