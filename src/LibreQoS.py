@@ -34,19 +34,25 @@ MIN_QUANTUM = 1522
 
 def get_shaped_devices_path():
 	base_dir = get_libreqos_directory()
+
 	if enable_insight_topology():
-		filename = "ShapedDevices.insight.csv"
-	else:
-		filename = "ShapedDevices.csv"
-	return os.path.join(base_dir, filename)
+		insight_path = os.path.join(base_dir, "ShapedDevices.insight.csv")
+		if os.path.exists(insight_path):
+			return insight_path
+
+	# Either insight not enabled, or file doesn't exist
+	return os.path.join(base_dir, "ShapedDevices.csv")
 
 def get_network_json_path():
 	base_dir = get_libreqos_directory()
+
 	if enable_insight_topology():
-		filename = "network.insight.json"
-	else:
-		filename = "network.json"
-	return os.path.join(base_dir, filename)
+		insight_path = os.path.join(base_dir, "network.insight.json")
+		if os.path.exists(insight_path):
+			return insight_path
+
+	# Either insight not enabled, or file doesn't exist
+	return os.path.join(base_dir, "network.json")
 
 def calculateR2q(maxRateInMbps):
 	# So we've learned that r2q defaults to 10, and is used to calculate quantum. Quantum is rateInBytes/r2q by
