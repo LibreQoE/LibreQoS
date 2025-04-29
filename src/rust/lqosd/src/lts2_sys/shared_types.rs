@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -33,6 +34,7 @@ pub enum RemoteCommand {
     Log(String),
     SetInsightControlledTopology { enabled: bool },
     SetInsightRole { role: String },
+    RestartLqosd,
 }
 
 #[repr(C)]
@@ -263,4 +265,34 @@ pub struct TwoWayFlow {
     pub circuit_hash: i64,
     pub packets_down: Option<i64>,
     pub packets_up: Option<i64>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ShapedDevice {
+    pub circuit_id: String,
+    pub circuit_name: String,
+    pub device_id: String,
+    pub device_name: String,
+    pub parent_node: String,
+    pub mac_address: String,
+    pub ipv4: String,
+    pub ipv6: String,
+    pub download_min_mbps: i32,
+    pub upload_min_mbps: i32,
+    pub download_max_mbps: i32,
+    pub upload_max_mbps: i32,
+    pub comment: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ShaperNetwork {
+    pub network_json: serde_json::Value,
+    pub hash: i64,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct NetworkAndDevicesAll {
+    pub shapers: HashMap<i64, ShaperNetwork>,
+    pub shaped_devices: Vec<ShapedDevice>,
+    pub shaped_devices_hash: i64,
 }
