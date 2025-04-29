@@ -21,13 +21,13 @@ ads = BlockingScheduler(executors={'default': ThreadPoolExecutor(1)})
 
 def importFromCRM():
 	# Check Insight Topology Status
-	runCrm = True
+	run_crm = True
 	if enable_insight_topology() and not insight_topology_role == "Primary":
 		# This node is not the primary Insight Topology node, skip CRM import
 		print("Skipping CRM import as this node is not the primary Insight Topology node.")
-		runCrm = False
+		run_crm = False
 		return
-	if not runCrm:
+	if not run_crm:
 		return
 
 	# CRM Hooks
@@ -67,7 +67,8 @@ def importFromCRM():
 
 def importAndShapeFullReload():
 	importFromCRM()
-	refreshShapers()
+	if not enable_insight_topology():
+		refreshShapers()
 
 def importAndShapePartialReload():
 	importFromCRM()

@@ -25,12 +25,28 @@ from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping,
 	check_config, sqm, upstream_bandwidth_capacity_download_mbps, upstream_bandwidth_capacity_upload_mbps, \
 	interface_a, interface_b, enable_actual_shell_commands, use_bin_packing_to_balance_cpu, monitor_mode_only, \
 	run_shell_commands_as_sudo, generated_pn_download_mbps, generated_pn_upload_mbps, queues_available_override, \
-	on_a_stick, get_tree_weights, get_weights, is_network_flat
+	on_a_stick, get_tree_weights, get_weights, is_network_flat, get_libreqos_directory, enable_insight_topology
 
 R2Q = 10
 #MAX_R2Q = 200_000
 MAX_R2Q = 60_000 # See https://lartc.vger.kernel.narkive.com/NKaH1ZNG/htb-quantum-of-class-100001-is-small-consider-r2q-change
 MIN_QUANTUM = 1522
+
+def get_shaped_devices_path():
+	base_dir = get_libreqos_directory()
+	if enable_insight_topology():
+		filename = "ShapedDevices.insight.csv"
+	else:
+		filename = "ShapedDevices.csv"
+	return os.path.join(base_dir, filename)
+
+def get_network_json_path():
+	base_dir = get_libreqos_directory()
+	if enable_insight_topology():
+		filename = "network.insight.json"
+	else:
+		filename = "network.json"
+	return os.path.join(base_dir, filename)
 
 def calculateR2q(maxRateInMbps):
 	# So we've learned that r2q defaults to 10, and is used to calculate quantum. Quantum is rateInBytes/r2q by
@@ -159,7 +175,7 @@ def validateNetworkAndDevices():
 		warnings.warn("Rust failed to validate ShapedDevices.csv", stacklevel=2)
 		warnings.warn(rustValid, stacklevel=2)
 		devicesValidatedOrNot = False
-	with open('network.json') as file:
+	with open(get_network_json_path()) as file:
 		try:
 			data = json.load(file) # put JSON-data to a variable
 			if data != {}:
@@ -184,7 +200,7 @@ def validateNetworkAndDevices():
 			warnings.warn("network.json is an invalid JSON file", stacklevel=2) # in case json is invalid
 			networkValidatedOrNot = False
 	rowNum = 2
-	with open('ShapedDevices.csv') as csv_file:
+	with open(get_shaped_devices_path()) as csv_file:
 		csv_reader = csv.reader(csv_file, delimiter=',')
 		#Remove comments if any
 		commentsRemoved = []
@@ -463,8 +479,8 @@ def refreshShapers():
 	
 	
 	# Files
-	shapedDevicesFile = 'ShapedDevices.csv'
-	networkJSONfile = 'network.json'
+	shapedDevicesFile = get_shaped_devices_path()
+	networkJSONfile = get_network_json_path()
 	
 	
 	# Check validation
