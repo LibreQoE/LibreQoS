@@ -1,31 +1,58 @@
 #!/usr/bin/python3
 from pythonCheck import checkPythonVersion
 checkPythonVersion()
+
+# --- Standard library ---
+import argparse
 import csv
+from datetime import datetime, timedelta
 import io
 import ipaddress
 import json
+import logging
 import math
+import multiprocessing
 import os
 import os.path
+import shutil
 import subprocess
 from subprocess import PIPE, STDOUT
-from datetime import datetime, timedelta
-import multiprocessing
 import warnings
-import psutil
-import argparse
-import logging
-import shutil
+
+# --- Third-party libraries ---
 import binpacking
+import psutil
 from deepdiff import DeepDiff
 
-from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping, validate_shaped_devices, \
-	is_libre_already_running, create_lock_file, free_lock_file, add_ip_mapping, BatchedCommands, \
-	check_config, sqm, upstream_bandwidth_capacity_download_mbps, upstream_bandwidth_capacity_upload_mbps, \
-	interface_a, interface_b, enable_actual_shell_commands, use_bin_packing_to_balance_cpu, monitor_mode_only, \
-	run_shell_commands_as_sudo, generated_pn_download_mbps, generated_pn_upload_mbps, queues_available_override, \
-	on_a_stick, get_tree_weights, get_weights, is_network_flat
+# --- Local application imports ---
+from liblqos_python import (
+    BatchedCommands,
+    add_ip_mapping,
+    check_config,
+    clear_ip_mappings,
+    create_lock_file,
+    delete_ip_mapping,
+    enable_actual_shell_commands,
+    free_lock_file,
+    generated_pn_download_mbps,
+    generated_pn_upload_mbps,
+    get_tree_weights,
+    get_weights,
+    interface_a,
+    interface_b,
+    is_libre_already_running,
+    is_lqosd_alive,
+    is_network_flat,
+    monitor_mode_only,
+    on_a_stick,
+    queues_available_override,
+    run_shell_commands_as_sudo,
+    sqm,
+    upstream_bandwidth_capacity_download_mbps,
+    upstream_bandwidth_capacity_upload_mbps,
+    use_bin_packing_to_balance_cpu,
+    validate_shaped_devices,
+)
 
 R2Q = 10
 #MAX_R2Q = 200_000
