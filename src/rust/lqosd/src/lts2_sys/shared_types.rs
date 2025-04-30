@@ -35,6 +35,7 @@ pub enum RemoteCommand {
     SetInsightControlledTopology { enabled: bool },
     SetInsightRole { role: String },
     RestartLqosd,
+    RestartScheduler,
 }
 
 #[repr(C)]

@@ -49,5 +49,8 @@ fn run_command(command: RemoteCommand) {
         RemoteCommand::RestartLqosd => {
             std::process::exit(0);
         }
+        RemoteCommand::RestartScheduler => {
+            let _ = crate::scheduler_control::restart_scheduler();
+        }
     }
 }

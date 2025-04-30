@@ -28,6 +28,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
 use tracing::{error, info, warn};
 use uuid::Uuid;
+use crate::program_control;
 
 static NETWORK_JSON_HASH: AtomicI64 = AtomicI64::new(0);
 static SHAPED_DEVICES_HASH: AtomicI64 = AtomicI64::new(0);
@@ -403,7 +404,8 @@ impl MessageQueue {
                             }
                             writer.flush()?;
 
-                            // TODO: Trigger a reload
+                            // Trigger a reload
+                            let _ = program_control::reload_libre_qos();
                         }
                     }
                 }
