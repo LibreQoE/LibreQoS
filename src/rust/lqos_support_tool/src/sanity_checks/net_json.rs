@@ -1,11 +1,11 @@
 use crate::sanity_checks::SanityCheck;
-use lqos_config::load_config;
+use lqos_config::{load_config, NetworkJson};
 use serde_json::Value;
 use std::path::Path;
 
 pub fn check_net_json_exists(results: &mut Vec<SanityCheck>) {
     if let Ok(cfg) = load_config() {
-        let path = Path::new(&cfg.lqos_directory).join("network.json");
+        let path = NetworkJson::path().unwrap();
         if path.exists() {
             results.push(SanityCheck {
                 name: "network.json exists".to_string(),

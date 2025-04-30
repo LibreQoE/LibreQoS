@@ -37,7 +37,16 @@ impl ConfigShapedDevices {
     pub fn path() -> Result<PathBuf, ShapedDevicesError> {
         let cfg = crate::load_config().map_err(|_| ShapedDevicesError::ConfigLoadError)?;
         let base_path = Path::new(&cfg.lqos_directory);
-        let full_path = base_path.join("ShapedDevices.csv");
+        let full_path = if cfg.long_term_stats.enable_insight_topology.unwrap_or(false) {
+            let tmp_path = base_path.join("ShapedDevices.insight.csv");
+            if tmp_path.exists() {
+                tmp_path
+            } else {
+                base_path.join("ShapedDevices.csv")
+            }
+        } else {
+            base_path.join("ShapedDevices.csv")
+        };
         debug!("ShapedDevices.csv path: {:?}", full_path);
         Ok(full_path)
     }
