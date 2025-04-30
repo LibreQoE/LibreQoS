@@ -177,6 +177,7 @@ pub(crate) fn submit_throughput_stats(
     if let Ok(now) = unix_now() {
         // LTS2 Shaped Devices
         if lts2_needs_shaped_devices() {
+            tracing::warn!("Sending topology to Insight");
             // Send the topology tree
             {
                 if let Ok(config) = load_config() {
@@ -204,7 +205,9 @@ pub(crate) fn submit_throughput_stats(
 
             // Send the shaped devices
             let shaped_devices = load_local_shaped_devices();
+            tracing::info!("Loaded local shaped devices");
             if let Ok(shaped_devices) = shaped_devices {
+                tracing::info!("And they are good");
                 let mut circuit_map: FxHashMap<String, Lts2Circuit> = FxHashMap::default();
                 for device in shaped_devices.into_iter() {
                     if let Some(circuit) = circuit_map.get_mut(&device.circuit_id) {
@@ -230,6 +233,7 @@ pub(crate) fn submit_throughput_stats(
                                 download_max_mbps: device.download_max_mbps,
                                 upload_max_mbps: device.upload_max_mbps,
                                 parent_node: device.parent_hash,
+                                parent_node_name: Some(device.parent_node),
                                 devices: vec![Lts2Device {
                                     device_hash: device.device_hash,
                                     device_id: device.device_id,
@@ -644,6 +648,7 @@ fn combined_devices_network_hash() -> anyhow::Result<i64> {
 fn lts2_needs_shaped_devices() -> bool {
     let stored_hash = LTS2_HASH.load(std::sync::atomic::Ordering::Relaxed);
     let new_hash = combined_devices_network_hash().unwrap_or(-1);
+    LTS2_HASH.store(new_hash, std::sync::atomic::Ordering::Relaxed);
     stored_hash != new_hash
 }
 

@@ -985,6 +985,7 @@ pub struct Lts2Circuit {
     pub download_max_mbps: u32,
     pub upload_max_mbps: u32,
     pub parent_node: i64,
+    pub parent_node_name: Option<String>,
     pub devices: Vec<Lts2Device>,
 }
 

@@ -405,6 +405,7 @@ impl MessageQueue {
                             writer.flush()?;
 
                             // Trigger a reload
+                            info!("Triggering LibreQoS Reload");
                             let _ = program_control::reload_libre_qos();
                         }
                     }
