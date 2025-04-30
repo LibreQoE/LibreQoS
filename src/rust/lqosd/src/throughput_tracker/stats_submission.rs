@@ -8,7 +8,7 @@ use crate::throughput_tracker::{
     min_max_median_tcp_retransmits,
 };
 use fxhash::{FxHashMap, FxHashSet};
-use lqos_config::load_config;
+use lqos_config::{load_config, ShapedDevice};
 use lqos_queue_tracker::{ALL_QUEUE_SUMMARY, TOTAL_QUEUE_STATS};
 use lqos_utils::hash_to_i64;
 use lqos_utils::units::DownUpOrder;
@@ -18,9 +18,11 @@ use lts_client::collector::{HostSummary, ThroughputSummary};
 use std::fs::read_to_string;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::path::Path;
+use std::sync::atomic::AtomicI64;
+use csv::ReaderBuilder;
 use tokio::sync::mpsc::Sender;
 use tokio::time::Instant;
-use tracing::debug;
+use tracing::{debug, error};
 use tracing::log::warn;
 
 fn scale_u64_by_f64(value: u64, scale: f64) -> u64 {
@@ -69,7 +71,6 @@ pub(crate) fn submit_throughput_stats(
     }
 
     let mut metrics = LtsSubmitMetrics::new();
-    let mut lts2_needs_shaped_devices = false;
     // If ShapedDevices has changed, notify the stats thread
     if let Ok(changed) = STATS_NEEDS_NEW_SHAPED_DEVICES.compare_exchange(
         true,
@@ -81,7 +82,6 @@ pub(crate) fn submit_throughput_stats(
             let shaped_devices = SHAPED_DEVICES.load().devices.clone();
             let _ = long_term_stats_tx
                 .blocking_send(StatsUpdateMessage::ShapedDevicesChanged(shaped_devices));
-            lts2_needs_shaped_devices = true;
         }
     }
     metrics.shaped_devices = metrics.start.elapsed().as_secs_f64();
@@ -176,7 +176,7 @@ pub(crate) fn submit_throughput_stats(
     // Insight Block
     if let Ok(now) = unix_now() {
         // LTS2 Shaped Devices
-        if lts2_needs_shaped_devices {
+        if lts2_needs_shaped_devices() {
             // Send the topology tree
             {
                 if let Ok(config) = load_config() {
@@ -203,51 +203,53 @@ pub(crate) fn submit_throughput_stats(
             }
 
             // Send the shaped devices
-            let shaped_devices = SHAPED_DEVICES.load().devices.clone();
-            let mut circuit_map: FxHashMap<String, Lts2Circuit> = FxHashMap::default();
-            for device in shaped_devices.into_iter() {
-                if let Some(circuit) = circuit_map.get_mut(&device.circuit_id) {
-                    circuit.devices.push(Lts2Device {
-                        device_hash: device.device_hash,
-                        device_id: device.device_id,
-                        device_name: device.device_name,
-                        mac: device.mac,
-                        ipv4: device.ipv4.into_iter().map(ip4_to_bytes).collect(),
-                        ipv6: device.ipv6.into_iter().map(ip6_to_bytes).collect(),
-                        comment: device.comment,
-                    })
-                } else {
-                    let circuit_hash = device.circuit_hash;
-                    circuit_map.insert(
-                        device.circuit_id.clone(),
-                        Lts2Circuit {
-                            circuit_id: device.circuit_id,
-                            circuit_name: device.circuit_name,
-                            circuit_hash,
-                            download_min_mbps: device.download_min_mbps,
-                            upload_min_mbps: device.upload_min_mbps,
-                            download_max_mbps: device.download_max_mbps,
-                            upload_max_mbps: device.upload_max_mbps,
-                            parent_node: device.parent_hash,
-                            devices: vec![Lts2Device {
-                                device_hash: device.device_hash,
-                                device_id: device.device_id,
-                                device_name: device.device_name,
-                                mac: device.mac,
-                                ipv4: device.ipv4.into_iter().map(ip4_to_bytes).collect(),
-                                ipv6: device.ipv6.into_iter().map(ip6_to_bytes).collect(),
-                                comment: device.comment,
-                            }],
-                        },
-                    );
+            let shaped_devices = load_local_shaped_devices();
+            if let Ok(shaped_devices) = shaped_devices {
+                let mut circuit_map: FxHashMap<String, Lts2Circuit> = FxHashMap::default();
+                for device in shaped_devices.into_iter() {
+                    if let Some(circuit) = circuit_map.get_mut(&device.circuit_id) {
+                        circuit.devices.push(Lts2Device {
+                            device_hash: device.device_hash,
+                            device_id: device.device_id,
+                            device_name: device.device_name,
+                            mac: device.mac,
+                            ipv4: device.ipv4.into_iter().map(ip4_to_bytes).collect(),
+                            ipv6: device.ipv6.into_iter().map(ip6_to_bytes).collect(),
+                            comment: device.comment,
+                        })
+                    } else {
+                        let circuit_hash = device.circuit_hash;
+                        circuit_map.insert(
+                            device.circuit_id.clone(),
+                            Lts2Circuit {
+                                circuit_id: device.circuit_id,
+                                circuit_name: device.circuit_name,
+                                circuit_hash,
+                                download_min_mbps: device.download_min_mbps,
+                                upload_min_mbps: device.upload_min_mbps,
+                                download_max_mbps: device.download_max_mbps,
+                                upload_max_mbps: device.upload_max_mbps,
+                                parent_node: device.parent_hash,
+                                devices: vec![Lts2Device {
+                                    device_hash: device.device_hash,
+                                    device_id: device.device_id,
+                                    device_name: device.device_name,
+                                    mac: device.mac,
+                                    ipv4: device.ipv4.into_iter().map(ip4_to_bytes).collect(),
+                                    ipv6: device.ipv6.into_iter().map(ip6_to_bytes).collect(),
+                                    comment: device.comment,
+                                }],
+                            },
+                        );
+                    }
                 }
-            }
-            let devices_as_vec: Vec<Lts2Circuit> =
-                circuit_map.into_iter().map(|(_, v)| v).collect();
-            // Serialize via cbor
-            if let Ok(bytes) = serde_cbor::to_vec(&devices_as_vec) {
-                if crate::lts2_sys::shaped_devices(now, &bytes).is_err() {
-                    warn!("Error sending message to LTS2.");
+                let devices_as_vec: Vec<Lts2Circuit> =
+                    circuit_map.into_iter().map(|(_, v)| v).collect();
+                // Serialize via cbor
+                if let Ok(bytes) = serde_cbor::to_vec(&devices_as_vec) {
+                    if crate::lts2_sys::shaped_devices(now, &bytes).is_err() {
+                        warn!("Error sending message to LTS2.");
+                    }
                 }
             }
 
@@ -620,4 +622,54 @@ fn ip4_to_bytes(ip: (Ipv4Addr, u32)) -> ([u8; 4], u8) {
 fn ip6_to_bytes(ip: (Ipv6Addr, u32)) -> ([u8; 16], u8) {
     let bytes = ip.0.octets();
     (bytes, ip.1 as u8)
+}
+
+/// Calculates a hash of the combination of network.json and shaped devices.
+/// This uses the NON-INSIGHT version, always - this is deliberate. If Insight
+/// is updating, but integrations are changing the original, we want to use
+/// the original.
+fn combined_devices_network_hash() -> anyhow::Result<i64> {
+    let cfg = load_config()?;
+    let nj_path = Path::new(&cfg.lqos_directory).join("network.json");
+    let sd_path = Path::new(&cfg.lqos_directory).join("ShapedDevices.csv");
+
+    let nj_as_string = read_to_string(nj_path)?;
+    let sd_as_string = read_to_string(sd_path)?;
+    let combined = format!("{}\n{}", nj_as_string, sd_as_string);
+    let hash = hash_to_i64(&combined);
+
+    Ok(hash)
+}
+
+fn lts2_needs_shaped_devices() -> bool {
+    let stored_hash = LTS2_HASH.load(std::sync::atomic::Ordering::Relaxed);
+    let new_hash = combined_devices_network_hash().unwrap_or(-1);
+    stored_hash != new_hash
+}
+
+static LTS2_HASH: AtomicI64 = AtomicI64::new(0);
+
+/// Loads the local-only (not Insight) Shaped Devices for
+/// transmission to Insight
+fn load_local_shaped_devices() -> anyhow::Result<Vec<ShapedDevice>> {
+    let cfg = load_config()?;
+    let sd_path = Path::new(&cfg.lqos_directory).join("ShapedDevices.csv");
+    if !sd_path.exists() {
+        anyhow::bail!("ShapedDevices.csv does not exist");
+    }
+    let mut reader = ReaderBuilder::new()
+        .comment(Some(b'#'))
+        .trim(csv::Trim::All)
+        .from_path(sd_path)?;
+    let mut devices = Vec::new(); // Note that this used to be supported_customers, but we're going to let it grow organically
+
+    for result in reader.records() {
+        if let Ok(result) = result {
+            let device = ShapedDevice::from_csv(&result)?;
+            devices.push(device);
+        } else {
+            anyhow::bail!("Error reading ShapedDevices.csv");
+        }
+    }
+    Ok(devices)
 }
