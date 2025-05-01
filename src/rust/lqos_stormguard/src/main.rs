@@ -25,7 +25,7 @@ async fn main() -> Result<()> {
     console::set_console_logging()?;
     info!("Watching for queue structure changes...");
     lqos_queue_tracker::spawn_queue_structure_monitor()?;
-    let _ = tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    let _ = tokio::time::sleep(Duration::from_secs(1)).await;
 
     info!("Starting LibreQoS Tornado...");
     let config = config::configure()?;
