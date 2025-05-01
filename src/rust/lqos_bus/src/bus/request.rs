@@ -227,6 +227,9 @@ pub enum BusRequest {
 
     /// Finish a blackboard session
     BlackboardFinish,
+
+    /// Request that the user cache be invalidated
+    InvalidateUserCache,
 }
 
 /// Defines the parts of the blackboard
