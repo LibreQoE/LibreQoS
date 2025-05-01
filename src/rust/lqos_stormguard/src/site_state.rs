@@ -163,11 +163,6 @@ impl<'a> SiteStateTracker<'a> {
                 RecommendationDirection::Upload => site.queue_upload_mbps,
             } as f64;
 
-            let change_rate = match recommendation.direction {
-                RecommendationDirection::Download => site_config.step_download_mbps,
-                RecommendationDirection::Upload => site_config.step_upload_mbps,
-            } as f64;
-
             let max_rate = match recommendation.direction {
                 RecommendationDirection::Download => site_config.max_download_mbps,
                 RecommendationDirection::Upload => site_config.max_upload_mbps,

@@ -1,10 +1,8 @@
-# LibreQoS Tornado
+# LibreQoS StormGuard
 
 **WARNING**: This is extremely experimental. Don't try this on anyone you like.
 
-> The name is a bit of a joke, and will change. I kept thinking people said "autorotate", and decided to name it "Tornado" because it was a tornado of autorotate. I don't know why I thought that, but it stuck.
-
-LibreQoS Tornado. Automatic top-level HTB rate adjustment, based on capacity monitoring.
+LibreQoS StormGuard. Automatic top-level HTB rate adjustment, based on capacity monitoring.
 
 Heavily inspired by LynxTheCat's Cake AutoRate project. https://github.com/lynxthecat/cake-autorate
 
@@ -13,18 +11,13 @@ Heavily inspired by LynxTheCat's Cake AutoRate project. https://github.com/lynxt
 Add the following to your `lqos.conf`:
 
 ```toml
-[tornado]
+[stormguard]
 enabled = true
 dry_run = true
-log_file = "/tmp/tornado.csv" # Optional
-
-[[tornado.targets]]
-name = "CALVIN 1"
-max_mbps = [ 150, 150 ]
-min_mbps = [ 100, 100 ]
-step_mbps = [ 2, 2 ]
-
-# You can add as many targets as you want, each starting with `[[tornado.targets]]`
+log_file = "/tmp/stormguard.csv" # Optional
+targets = [ "CALVIN 1" ]
+minimum_download_percentage = 0.5 # For 50% of download as minimum
+minimum_upload_percentage = 0.5 # For 50% of upload as minimum
 ```
 
 | **Entry Name** | **Description**                                                                                           |
@@ -33,22 +26,12 @@ step_mbps = [ 2, 2 ]
 | `dry_run`      | If true, Tornado will not change the rate. It will only log what it *would* have done. Default: `false`   |
 | `log_file`     | If set, a CSV will be appended with time (unix secs), download rate, upload rate entries. Default: absent |
 
-For the targets:
-| **Entry Name** | **Description**                                                                                           |
-|----------------|-----------------------------------------------------------------------------------------------------------|
-| `name`         | The name of the target. This is used for logging and debugging, and must match network.json.              |
-| `max_mbps`     | The maximum bandwidth for the target. This is a list of two values, one for download and one for upload.  |
-| `min_mbps`     | The minimum bandwidth for the target. This is a list of two values, one for download and one for upload.  |
-| `step_mbps`    | The step size for the target. This is a list of two values, one for download and one for upload.          |
-
-Changes will be made in increments of the `step_mbps` value. For example, if the current bandwidth is 100/100 and the max is 150/150, and the step is 2/2, then the bandwidth will be increased to 102/102, then 104/104, etc.
-
 You can list as many sites as you want in the `targets` array. I strongly recommend `dry_run` for now, which just
 emits what it *would* have done to the console!
 
 ## How it works
 
-Tornado maintains a ring-buffer of recent throughput, TCP retransmits and TCP round-trip times for each target site.
+StormGuard maintains a ring-buffer of recent throughput, TCP retransmits and TCP round-trip times for each target site.
 These are updated once per second, when `lqosd` "ticks". A second buffer maintains a moving average of a larger time period.
 
 Each circuit also maintains a "current queue bandwidth", which is adjusted dynamically. If `dry_run` is not set,
@@ -68,7 +51,7 @@ These are fed through a decision matrix to determine if the queue bandwidth shou
 Changes have a "cool-down" following their application, during which monitoring will continue but no changes will be made.
 This is to prevent oscillation between two states.
 
-## Running Tornado
+## Running StormGuard
 
-Currently `lqos_tornado` is a separate binary. It requires that `lqosd` is running (it'll idle if it isn't), and
+Currently `lqos_stormguard` is a separate binary. It requires that `lqosd` is running (it'll idle if it isn't), and
 it requires root --- to update the HTB queue bandwidths.

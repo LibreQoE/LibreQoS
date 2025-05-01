@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use tracing::{debug, error, info};
+use tracing::{debug, error};
 use crate::queue_structure::find_queue_bandwidth;
 
 pub struct WatchingSite {
@@ -8,8 +8,6 @@ pub struct WatchingSite {
     pub max_upload_mbps: u64,
     pub min_download_mbps: u64,
     pub min_upload_mbps: u64,
-    pub step_download_mbps: u64,
-    pub step_upload_mbps: u64,
 }
 
 pub struct TornadoConfig {
@@ -40,19 +38,19 @@ pub fn configure() -> anyhow::Result<TornadoConfig> {
 
     let mut sites = HashMap::new();
     for target in &tornado_config.targets {
-        let _ = find_queue_bandwidth(&target.name).inspect_err(|e| {
-            error!("Error finding queue bandwidth for {}: {:?}", target.name, e);
+        let (max_down, max_up) = find_queue_bandwidth(&target).inspect_err(|e| {
+            error!("Error finding queue bandwidth for {}: {:?}", target, e);
         })?;
+        let min_down = (max_down as f32 * tornado_config.minimum_download_percentage) as u64;
+        let min_up = (max_up as f32 * tornado_config.minimum_upload_percentage) as u64;
         let site = WatchingSite {
-            name: target.name.to_owned(),
-            max_download_mbps: target.max_mbps[0],
-            max_upload_mbps: target.max_mbps[1],
-            min_download_mbps: target.min_mbps[0],
-            min_upload_mbps: target.min_mbps[1],
-            step_download_mbps: target.step_mbps[0],
-            step_upload_mbps: target.step_mbps[1],
+            name: target.to_owned(),
+            max_download_mbps: max_down,
+            max_upload_mbps: max_up,
+            min_download_mbps: min_down,
+            min_upload_mbps: min_up,
         };
-        sites.insert(target.name.to_owned(), site);
+        sites.insert(target.to_owned(), site);
     }
 
     let result = TornadoConfig {

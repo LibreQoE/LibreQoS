@@ -35,7 +35,7 @@ members = [
     "uisp", # REST support for the UISP API
     "uisp_integration", # UISP Integration in Rust
     "lqos_support_tool", # A Helper tool to make it easier to request/receive support
-    "lqos_tornado", # An implementation of CAKE AutoRotate using dynamic bus information. EXPERIMENTAL.
+    "lqos_stormguard", # An implementation of CAKE AutoRotate using dynamic bus information. EXPERIMENTAL.
 ]
 
 [dependencies]

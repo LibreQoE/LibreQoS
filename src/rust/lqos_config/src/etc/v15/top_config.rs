@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use sha2::digest::Update;
 use uuid::Uuid;
-use crate::etc::v15::tornado;
+use crate::etc::v15::stormguard;
 
 /// Top-level configuration file for LibreQoS.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -83,7 +83,7 @@ pub struct Config {
     pub webserver_listen: Option<String>,
     
     /// Support for Tornado/Auto-rate.
-    pub tornado: Option<tornado::TornadoConfig>,
+    pub tornado: Option<stormguard::StormguardConfig>,
 }
 
 impl Config {

@@ -7,20 +7,6 @@ pub struct Recommendation {
     pub action: RecommendationAction,
 }
 
-impl Recommendation {
-    pub fn new(
-        site: &str,
-        direction: RecommendationDirection,
-        action: RecommendationAction,
-    ) -> Self {
-        Self {
-            site: site.to_string(),
-            direction,
-            action,
-        }
-    }
-}
-
 
 #[derive(Debug, Copy, Clone)]
 pub enum RecommendationDirection {

@@ -9,6 +9,7 @@ use std::sync::Arc;
 use thiserror::Error;
 use tracing::{debug, error, info};
 
+/// Global queue structure (from `queueingStructure.json`)
 pub static QUEUE_STRUCTURE: Lazy<ArcSwap<QueueStructure>> =
     Lazy::new(|| ArcSwap::new(Arc::new(QueueStructure::new())));
 

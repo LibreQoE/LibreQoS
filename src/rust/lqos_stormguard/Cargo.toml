@@ -1,5 +1,5 @@
 [package]
-name = "lqos_tornado"
+name = "lqos_stormguard"
 version = "0.1.0"
 edition = "2024"
 
