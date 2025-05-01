@@ -8,7 +8,7 @@
 - OSPF primary link (low cost) through the server running LibreQoS
 - OSPF backup link (high cost, maybe 200 for example)
 
-![Offical Configuration](https://raw.githubusercontent.com/LibreQoE/LibreQoS/main/docs/design.png)
+![Offical Configuration](https://github.com/user-attachments/assets/ae0ff660-8de0-413e-a83a-d62c173447a4)
 
 ## Testbed configuration
 When you are first testing out LibreQoS, we recommend deploying a small-scale testbed to see it in action.
