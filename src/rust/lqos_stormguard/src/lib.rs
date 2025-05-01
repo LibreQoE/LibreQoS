@@ -6,7 +6,10 @@
 //!
 //! Copyright (C) 2025 LibreQoS. GPLv2 licensed.
 
-mod console;
+use std::time::Duration;
+use timerfd::{SetTimeFlags, TimerFd, TimerState};
+use tracing::{debug, info};
+
 mod config;
 mod queue_structure;
 mod site_state;
@@ -15,16 +18,9 @@ mod datalog;
 const READING_ACCUMULATOR_SIZE: usize = 15;
 const MOVING_AVERAGE_BUFFER_SIZE: usize = 15;
 
-use std::time::Duration;
-use anyhow::Result;
-use timerfd::{SetTimeFlags, TimerFd, TimerState};
-use tracing::{debug, info};
-
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<()> {
-    console::set_console_logging()?;
-    info!("Watching for queue structure changes...");
-    lqos_queue_tracker::spawn_queue_structure_monitor()?;
+/// Launches the StormGuard component. Will exit if there's
+/// nothing to do.
+pub async fn start_stormguard() -> anyhow::Result<()> {
     let _ = tokio::time::sleep(Duration::from_secs(1)).await;
 
     info!("Starting LibreQoS StormGuard...");
@@ -60,5 +56,4 @@ async fn main() -> Result<()> {
             debug!("Missed {} ticks", missed_ticks);
         }
     }
-    // Unreachable
 }

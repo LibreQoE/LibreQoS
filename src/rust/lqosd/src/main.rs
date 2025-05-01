@@ -222,6 +222,10 @@ fn main() -> Result<()> {
                 .build()
                 .unwrap()
                 .block_on(async {
+                    tokio::spawn(async {
+                        let _ = lqos_stormguard::start_stormguard().await;
+                    });
+
                     let (bus_tx, bus_rx) = tokio::sync::mpsc::channel::<(
                         tokio::sync::oneshot::Sender<lqos_bus::BusReply>,
                         BusRequest,

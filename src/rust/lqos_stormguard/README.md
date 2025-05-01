@@ -53,5 +53,4 @@ This is to prevent oscillation between two states.
 
 ## Running StormGuard
 
-Currently `lqos_stormguard` is a separate binary. It requires that `lqosd` is running (it'll idle if it isn't), and
-it requires root --- to update the HTB queue bandwidths.
+StormGuard is integrated into `lqosd`. If it is enabled, it will run automatically when `lqosd` is started.
