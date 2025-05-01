@@ -1,6 +1,6 @@
 # System Requirements
 
-LibreQoS can be run either on a dedicated physical server (bare metal) or as a VM.
+LibreQoS can be run either on a dedicated physical server (bare metal) or as a VM. Ubuntu Server 24.04 is the supported operating system.
 
 ## Physical Server (Bare Metal)
 
@@ -8,16 +8,20 @@ LibreQoS can be run either on a dedicated physical server (bare metal) or as a V
 * 2 or more CPU cores are required
 * Choose a CPU with high [single-thread performance](https://www.cpubenchmark.net/singleThread.html#server-thread) within your budget. Queuing is CPU-intensive, and requires high single-thread performance.
 
-Single-thread CPU performance will determine the maximum capacity of a single HTB (cpu core), and in turn, the maximum capacity of any top level node in the network hierarchy (for example, top-level sites in your network). This also impacts the maximum speed plan you can offer customers within safe margins.
+Single-thread CPU performance determines the maximum capacity of a single HTB (CPU core). This, in turn, affects the maximum capacity of any top-level node in the network hierarchy (e.g., top-level sites in your network). This also impacts the maximum speed plan you can offer customers within safe margins.
 
-| Top Level Node Max  | Single-Thread Score      |
+Top-Level Node Max
+
+| Throughput          | Single-Thread Score      |
 | --------------------| ------------------------ |
 | 1 Gbps              | 1000                     |
 | 2 Gbps              | 1500                     |
 | 3 Gbps              | 2000                     |
 | 5 Gbps              | 4000                     |
 
-| Customer Max Plan   | Single-Thread Score      |
+Customer Plan Maximum
+
+| Throughput          | Single-Thread Score      |
 | --------------------| ------------------------ |
 | 100 Mbps            | 1000                     |
 | 250 Mbps            | 1250                     |
@@ -26,7 +30,7 @@ Single-thread CPU performance will determine the maximum capacity of a single HT
 | 2.5 Gbps            | 2000                     |
 | 5 Gbps              | 4000                     |
 
-Below is a table of approximate aggregate capacity, assuming a a CPU with a [single thread](https://www.cpubenchmark.net/singleThread.html#server-thread) performance of 1000, 2000, 3000, or 4000:
+Below is a table of approximate aggregate capacity, assuming a CPU with a [single thread](https://www.cpubenchmark.net/singleThread.html#server-thread) performance of 1000, 2000, 3000, or 4000:
 
 | CPU Cores | Single-Thread Score: 1000 | Single-Thread Score: 2000 | Single-Thread Score: 3000 | Single-Thread Score: 4000 |
 |:---------:|:-------------------------:|:-------------------------:|:-------------------------:|:-------------------------:|
@@ -38,6 +42,10 @@ Below is a table of approximate aggregate capacity, assuming a a CPU with a [sin
 | 32        | 21 Gbps                   | 42 Gbps                   | 72 Gbps                   | 108 Gbps                  |
 | 64        | 42 Gbps                   | 84 Gbps                   | 144 Gbps                  | 216 Gbps                  |
 | 128       | 84 Gbps                   | 168 Gbps                  | 288 Gbps                  |                           |
+
+### Hyper-threading
+
+It is recommended to disable Hyper-Threading (Simultaneous Multi-Threading) in the BIOS/UEFI settings, as it can interfere with XDP processing.
 
 ### Memory
 * Recommended RAM:
@@ -103,7 +111,6 @@ Officially supported Network Interface Cards for the two shaping interfaces are 
 | Intel XXV710           | 10 / 25 Gbps     | [XXV710 25G](https://www.fs.com/products/75604.html?attribute=67774&id=1709896)         | Module compatibility*                                                                         |
 | Intel XL710            | 10 / 40 Gbps     | [XL710-BM2 40G](https://www.fs.com/products/75604.html?attribute=67774&id=1709896 )     | Module compatibility*                                                                         |
 | Mellanox ConnectX-4 Lx | 10/25/40/50 Gbps |                                                                                         | No known issues.                                                                              |
-| Mellanox ConnectX-5    | 100 Gbps         | [MCX516A-CCAT 100G](https://www.fs.com/products/119647.html?attribute=67743&id=3746410) | Extreme heat at high load (50+ Gbps). Use Liquid CPU Cooler kit on chip to avoid overheating. |
 | Mellanox ConnectX-6    | 10/25 Gbps       | [MCX631102AN-ADAT](https://www.fs.com/products/212177.html?now_cid=4014)                | No known issues.                                                                              |
 | Mellanox ConnectX-6    | 100 Gbps         | [MCX623106AN-CDAT 100G](https://www.fs.com/products/119646.html?now_cid=4014)           | No known issues.                                                                              |
 | Mellanox ConnectX-7    | 200 Gbps         | [MCX755106AS-HEAT 200G](https://www.fs.com/products/242589.html?now_cid=4014)           | No known issues.                                                                              |
@@ -118,7 +125,7 @@ If you discover that a card not listed in the table above is compatible, please 
 
 ## Virtual Machine
 LibreQoS can be run as a VM, although this comes at a performance penalty of 30%. For VMs, NIC passthrough is required to achieve throughput above 10 Gbps (XDP vs generic XDP).
-LibreQoS requires 2 or more RX/TX queues, so when using a virtualization platform such as Proxmox, be sure to set enable [Multiqueue](https://forum.proxmox.com/threads/where-is-multiqueue.146783/) for the shaping interfaces assigned to the VM. Multiqueue should be set equal to the number of vCPU cores assigned to the VM.
+LibreQoS requires 2 or more RX/TX queues, so when using a virtualization platform such as Proxmox, be sure to enable [Multiqueue](https://forum.proxmox.com/threads/where-is-multiqueue.146783/) for the shaping interfaces assigned to the VM. Multiqueue should be set equal to the number of vCPU cores assigned to the VM.
 
 | Throughput | vCPU* |  RAM  |  Disk |
 |:-------:|:-----:|:-----:|:-----:|
