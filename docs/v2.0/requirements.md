@@ -10,27 +10,15 @@ LibreQoS can be run either on a dedicated physical server (bare metal) or as a V
 
 Single-thread CPU performance determines the maximum capacity of a single HTB (CPU core). This, in turn, affects the maximum capacity of any top-level node in the network hierarchy (e.g., top-level sites in your network). This also impacts the maximum speed plan you can offer customers within safe margins.
 
-Top-Level Node Max
+| Single-Thread Score | Top-Level Node Max | Customer Plan Max |
+|:-------------------:|:------------------:|:-----------------:|
+| 1000                | 1 Gbps             | 100 Mbps          |
+| 1500                | 2 Gbps             | 500 Mbps          |
+| 2000                | 3 Gbps             | 1 Gbps            |
+| 3000                | 4 Gbps             | 2 Gbps            |
+| 4000                | 5 Gbps             | 3 Gbps            |
 
-| Throughput          | Single-Thread Score      |
-| --------------------| ------------------------ |
-| 1 Gbps              | 1000                     |
-| 2 Gbps              | 1500                     |
-| 3 Gbps              | 2000                     |
-| 5 Gbps              | 4000                     |
-
-Customer Plan Maximum
-
-| Throughput          | Single-Thread Score      |
-| --------------------| ------------------------ |
-| 100 Mbps            | 1000                     |
-| 250 Mbps            | 1250                     |
-| 500 Mbps            | 1500                     |
-| 1 Gbps              | 1750                     |
-| 2.5 Gbps            | 2000                     |
-| 5 Gbps              | 4000                     |
-
-Below is a table of approximate aggregate capacity, assuming a CPU with a [single thread](https://www.cpubenchmark.net/singleThread.html#server-thread) performance of 1000, 2000, 3000, or 4000:
+Below is a table of approximate aggregate capacity, assuming a CPU with a [single thread](https://www.cpubenchmark.net/singleThread.html#server-thread) performance rating of 1000, 2000, 3000, or 4000:
 
 | CPU Cores | Single-Thread Score: 1000 | Single-Thread Score: 2000 | Single-Thread Score: 3000 | Single-Thread Score: 4000 |
 |:---------:|:-------------------------:|:-------------------------:|:-------------------------:|:-------------------------:|
