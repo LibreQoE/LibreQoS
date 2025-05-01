@@ -219,39 +219,22 @@ impl<'a> SiteStateTracker<'a> {
                 }
             }
 
-            // Build the HTB command
-            let args = vec![
-                "class".to_string(),
-                "change".to_string(),
-                "dev".to_string(),
-                interface_name,
-                "classid".to_string(),
-                class_id.to_string(),
-                "htb".to_string(),
-                "rate".to_string(),
-                format!("{}mbit",new_rate-1),
-                "ceil".to_string(),
-                format!("{}mbit",new_rate),
-            ];
-            if config.dry_run {
-                warn!("DRY RUN: /sbin/tc {}", args.join(" "));
-            } else {
-                let output = std::process::Command::new("/sbin/tc")
-                    .args(&args)
-                    .output();
-                match output {
-                    Err(e) => {
-                        warn!("Failed to run tc command: {}", e);
-                    }
-                    Ok(out) => {
-                        if !out.status.success() {
-                            warn!("tc command failed: {}", String::from_utf8_lossy(&out.stderr));
-                        } else {
-                            info!("tc command succeeded: {}", String::from_utf8_lossy(&out.stdout));
-                        }
-                    }
+            // Apply for dependents
+            for dependent in &site.config.dependent_nodes {
+                let max_rate = match recommendation.direction {
+                    RecommendationDirection::Download => dependent.original_max_download_mbps,
+                    RecommendationDirection::Upload => dependent.original_max_upload_mbps,
+                };
+                if max_rate < new_rate {
+                    continue;
                 }
+                let class_id = dependent.class_id.to_string();
+                info!("Applying rate change to dependent {}: {} -> {}", dependent.name, dependent.original_max_download_mbps, new_rate);
+                Self::apply_htb_change(config, &interface_name, class_id, new_rate);
             }
+
+            // Actually make the change
+            Self::apply_htb_change(config, &interface_name, class_id, new_rate);
 
             // Finish Up by entering cooldown
             debug!("Recommendation applied: entering cooldown");
@@ -277,6 +260,42 @@ impl<'a> SiteStateTracker<'a> {
                 upload: site.queue_upload_mbps,
                 state: summary,
             });
+        }
+    }
+
+    fn apply_htb_change(config: &StormguardConfig, interface_name: &str, class_id: String, new_rate: u64) {
+        // Build the HTB command
+        let args = vec![
+            "class".to_string(),
+            "change".to_string(),
+            "dev".to_string(),
+            interface_name.to_string(),
+            "classid".to_string(),
+            class_id.to_string(),
+            "htb".to_string(),
+            "rate".to_string(),
+            format!("{}mbit", new_rate - 1),
+            "ceil".to_string(),
+            format!("{}mbit", new_rate),
+        ];
+        if config.dry_run {
+            warn!("DRY RUN: /sbin/tc {}", args.join(" "));
+        } else {
+            let output = std::process::Command::new("/sbin/tc")
+                .args(&args)
+                .output();
+            match output {
+                Err(e) => {
+                    warn!("Failed to run tc command: {}", e);
+                }
+                Ok(out) => {
+                    if !out.status.success() {
+                        warn!("tc command failed: {}", String::from_utf8_lossy(&out.stderr));
+                    } else {
+                        info!("tc command succeeded: {}", String::from_utf8_lossy(&out.stdout));
+                    }
+                }
+            }
         }
     }
 }

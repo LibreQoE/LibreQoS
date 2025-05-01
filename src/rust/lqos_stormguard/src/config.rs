@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use tracing::{debug, error};
-use crate::queue_structure::find_queue_bandwidth;
+use lqos_bus::TcHandle;
+use crate::queue_structure::{find_queue_bandwidth, find_queue_dependents};
 
 pub struct WatchingSite {
     pub name: String,
@@ -8,6 +9,14 @@ pub struct WatchingSite {
     pub max_upload_mbps: u64,
     pub min_download_mbps: u64,
     pub min_upload_mbps: u64,
+    pub dependent_nodes: Vec<WatchingSiteDependency>,
+}
+
+pub struct WatchingSiteDependency {
+    pub name: String,
+    pub class_id: TcHandle,
+    pub original_max_download_mbps: u64,
+    pub original_max_upload_mbps: u64,
 }
 
 pub struct StormguardConfig {
@@ -41,6 +50,9 @@ pub fn configure() -> anyhow::Result<StormguardConfig> {
         let (max_down, max_up) = find_queue_bandwidth(&target).inspect_err(|e| {
             error!("Error finding queue bandwidth for {}: {:?}", target, e);
         })?;
+        let dependencies = find_queue_dependents(&target).inspect_err(|e| {
+            error!("Error finding queue dependencies for {}: {:?}", target, e);
+        })?;
         let min_down = (max_down as f32 * sg_config.minimum_download_percentage) as u64;
         let min_up = (max_up as f32 * sg_config.minimum_upload_percentage) as u64;
         let site = WatchingSite {
@@ -49,6 +61,7 @@ pub fn configure() -> anyhow::Result<StormguardConfig> {
             max_upload_mbps: max_up,
             min_download_mbps: min_down,
             min_upload_mbps: min_up,
+            dependent_nodes: dependencies,
         };
         sites.insert(target.to_owned(), site);
     }
