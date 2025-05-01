@@ -1,4 +1,4 @@
-//! LibreQoS Tornado. Automatic top-level HTB rate adjustment,
+//! LibreQoS StormGuard. Automatic top-level HTB rate adjustment,
 //! based on capacity monitoring.
 //!
 //! Heavily inspired by LynxTheCat's Cake AutoRate project.
@@ -27,7 +27,7 @@ async fn main() -> Result<()> {
     lqos_queue_tracker::spawn_queue_structure_monitor()?;
     let _ = tokio::time::sleep(Duration::from_secs(1)).await;
 
-    info!("Starting LibreQoS Tornado...");
+    info!("Starting LibreQoS StormGuard...");
     let config = config::configure()?;
     let log_sender = datalog::start_datalog(&config)?;
     let mut site_state_tracker = site_state::SiteStateTracker::from_config(&config);

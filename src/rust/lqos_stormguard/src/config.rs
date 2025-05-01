@@ -10,7 +10,7 @@ pub struct WatchingSite {
     pub min_upload_mbps: u64,
 }
 
-pub struct TornadoConfig {
+pub struct StormguardConfig {
     pub sites: HashMap<String, WatchingSite>,
     pub download_interface: String,
     pub upload_interface: String,
@@ -18,31 +18,31 @@ pub struct TornadoConfig {
     pub log_filename: Option<String>,
 }
 
-pub fn configure() -> anyhow::Result<TornadoConfig> {
-    debug!("Configuring LibreQoS Tornado...");
+pub fn configure() -> anyhow::Result<StormguardConfig> {
+    debug!("Configuring LibreQoS StormGuard...");
     let config = lqos_config::load_config()?;
 
     if config.on_a_stick_mode() {
-        error!("LibreQoS Tornado is not supported in 'on-a-stick' mode.");
-        return Err(anyhow::anyhow!("LibreQoS Tornado is not supported in 'on-a-stick' mode."));
+        error!("LibreQoS StormGuard is not supported in 'on-a-stick' mode.");
+        return Err(anyhow::anyhow!("LibreQoS StormGuard is not supported in 'on-a-stick' mode."));
     }
 
-    let Some(tornado_config) = &config.tornado else {
-        error!("Tornado is not enabled in the configuration.");
-        return Err(anyhow::anyhow!("Tornado is not enabled in the configuration."));
+    let Some(sg_config) = &config.stormguard else {
+        error!("StormGuard is not enabled in the configuration.");
+        return Err(anyhow::anyhow!("StormGuard is not enabled in the configuration."));
     };
-    if !tornado_config.enabled {
-        error!("Tornado is not enabled in the configuration.");
-        return Err(anyhow::anyhow!("Tornado is not enabled in the configuration."));
+    if !sg_config.enabled {
+        error!("StormGuard is not enabled in the configuration.");
+        return Err(anyhow::anyhow!("StormGuard is not enabled in the configuration."));
     }
 
     let mut sites = HashMap::new();
-    for target in &tornado_config.targets {
+    for target in &sg_config.targets {
         let (max_down, max_up) = find_queue_bandwidth(&target).inspect_err(|e| {
             error!("Error finding queue bandwidth for {}: {:?}", target, e);
         })?;
-        let min_down = (max_down as f32 * tornado_config.minimum_download_percentage) as u64;
-        let min_up = (max_up as f32 * tornado_config.minimum_upload_percentage) as u64;
+        let min_down = (max_down as f32 * sg_config.minimum_download_percentage) as u64;
+        let min_up = (max_up as f32 * sg_config.minimum_upload_percentage) as u64;
         let site = WatchingSite {
             name: target.to_owned(),
             max_download_mbps: max_down,
@@ -53,12 +53,12 @@ pub fn configure() -> anyhow::Result<TornadoConfig> {
         sites.insert(target.to_owned(), site);
     }
 
-    let result = TornadoConfig {
+    let result = StormguardConfig {
         sites,
         download_interface: config.isp_interface().clone(),
         upload_interface: config.internet_interface().clone(),
-        dry_run: tornado_config.dry_run,
-        log_filename: tornado_config.log_file.clone(),
+        dry_run: sg_config.dry_run,
+        log_filename: sg_config.log_file.clone(),
     };
 
     Ok(result)

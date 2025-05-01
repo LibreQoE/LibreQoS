@@ -1,4 +1,4 @@
-//! Tornado definitions (originally from ispConfig.py)
+//! StormGuard definitions (originally from ispConfig.py)
 
 use serde::{Deserialize, Serialize};
 

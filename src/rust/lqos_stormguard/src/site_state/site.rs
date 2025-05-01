@@ -3,12 +3,12 @@ use crate::config::WatchingSite;
 use crate::site_state::analysis::{RetransmitState, RttState, SaturationLevel};
 use crate::site_state::recommendation::{Recommendation, RecommendationAction, RecommendationDirection};
 use crate::site_state::ring_buffer::RingBuffer;
-use crate::site_state::tornado_state::TornadoState;
+use crate::site_state::stormguard_state::StormguardState;
 
 pub struct SiteState<'a> {
     pub config: &'a WatchingSite,
-    pub download_state: TornadoState,
-    pub upload_state: TornadoState,
+    pub download_state: StormguardState,
+    pub upload_state: StormguardState,
 
     // Queue Bandwidth
     pub queue_download_mbps: u64,
@@ -54,52 +54,52 @@ impl RecommendationParams {
 impl<'a> SiteState<'a> {
     pub fn check_state(&mut self) {
         match self.download_state {
-            TornadoState::Warmup => {
+            StormguardState::Warmup => {
                 // Do we have enough data to consider ourselves functional?
                 let throughput_down_count = self.throughput_down.count();
                 let retransmits_down_count = self.retransmits_down.count();
                 if throughput_down_count > 10 && retransmits_down_count > 10 {
                     info!("Site {} has completed download warm-up.", self.config.name);
-                    self.download_state = TornadoState::Running;
+                    self.download_state = StormguardState::Running;
                 }
             }
-            TornadoState::Running => {
+            StormguardState::Running => {
                 self.moving_averages_down();
             }
-            TornadoState::Cooldown{ start, duration_secs } => {
+            StormguardState::Cooldown{ start, duration_secs } => {
                 self.moving_averages_down();
 
                 // Check if cooldown period is over
                 let now = std::time::Instant::now();
                 if now.duration_since(start).as_secs_f32() > duration_secs {
                     debug!("Site {} has completed download cooldown.", self.config.name);
-                    self.download_state = TornadoState::Running;
+                    self.download_state = StormguardState::Running;
                     return;
                 }
             }
         }
 
         match self.upload_state {
-            TornadoState::Warmup => {
+            StormguardState::Warmup => {
                 // Do we have enough data to consider ourselves functional?
                 let throughput_up_count = self.throughput_up.count();
                 let retransmits_up_count = self.retransmits_up.count();
                 if throughput_up_count > 10 && retransmits_up_count > 10 {
                     info!("Site {} has completed upload warm-up.", self.config.name);
-                    self.upload_state = TornadoState::Running;
+                    self.upload_state = StormguardState::Running;
                 }
             }
-            TornadoState::Running => {
+            StormguardState::Running => {
                 self.moving_averages_up();
             }
-            TornadoState::Cooldown{ start, duration_secs } => {
+            StormguardState::Cooldown{ start, duration_secs } => {
                 self.moving_averages_up();
 
                 // Check if cooldown period is over
                 let now = std::time::Instant::now();
                 if now.duration_since(start).as_secs_f32() > duration_secs {
                     debug!("Site {} has completed cooldown.", self.config.name);
-                    self.upload_state = TornadoState::Running;
+                    self.upload_state = StormguardState::Running;
                 }
             }
         }
@@ -300,12 +300,12 @@ impl<'a> SiteState<'a> {
     }
 
     pub fn recommendations(&mut self, recommendations: &mut Vec<(Recommendation, String)>) {
-        if self.download_state == TornadoState::Running {
+        if self.download_state == StormguardState::Running {
             self.recommendations_download(recommendations);
             self.ticks_since_last_probe_download += 1;
             self.ticks_since_last_probe_download = u32::min(20, self.ticks_since_last_probe_download);
         }
-        if self.upload_state == TornadoState::Running {
+        if self.upload_state == StormguardState::Running {
             self.recommendations_upload(recommendations);
             self.ticks_since_last_probe_upload += 1;
             self.ticks_since_last_probe_upload = u32::min(20, self.ticks_since_last_probe_upload);

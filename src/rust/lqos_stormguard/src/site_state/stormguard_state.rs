@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 #[derive(PartialEq, Debug)]
-pub enum TornadoState {
+pub enum StormguardState {
     Warmup,
     Running,
     Cooldown{ start: Instant, duration_secs: f32 },

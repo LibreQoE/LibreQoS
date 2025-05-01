@@ -83,7 +83,7 @@ pub struct Config {
     pub webserver_listen: Option<String>,
     
     /// Support for Tornado/Auto-rate.
-    pub tornado: Option<stormguard::StormguardConfig>,
+    pub stormguard: Option<stormguard::StormguardConfig>,
 }
 
 impl Config {
@@ -154,7 +154,7 @@ impl Default for Config {
             flows: None,
             disable_webserver: None,
             webserver_listen: None,
-            tornado: None,
+            stormguard: None,
         }
     }
 }

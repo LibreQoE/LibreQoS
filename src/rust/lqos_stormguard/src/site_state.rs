@@ -1,4 +1,4 @@
-mod tornado_state;
+mod stormguard_state;
 mod ring_buffer;
 mod recommendation;
 mod site;
@@ -8,28 +8,28 @@ use std::collections::HashMap;
 use tracing::{debug, info, warn};
 use lqos_bus::{BusRequest, BusResponse};
 use lqos_queue_tracker::QUEUE_STRUCTURE;
-use crate::config::TornadoConfig;
+use crate::config::StormguardConfig;
 use crate::datalog::LogCommand;
 use crate::{MOVING_AVERAGE_BUFFER_SIZE, READING_ACCUMULATOR_SIZE};
 use crate::site_state::recommendation::{Recommendation, RecommendationAction, RecommendationDirection};
 use crate::site_state::ring_buffer::RingBuffer;
 use crate::site_state::site::SiteState;
-use crate::site_state::tornado_state::TornadoState;
+use crate::site_state::stormguard_state::StormguardState;
 
 pub struct SiteStateTracker<'a> {
     sites: HashMap<String, SiteState<'a>>,
 }
 
 impl<'a> SiteStateTracker<'a> {
-    pub fn from_config(config: &'a TornadoConfig) -> Self {
+    pub fn from_config(config: &'a StormguardConfig) -> Self {
         let mut sites = HashMap::new();
         for (name, site) in &config.sites {
             sites.insert(
                 name.clone(),
                 SiteState {
                     config: site,
-                    download_state: TornadoState::Warmup,
-                    upload_state: TornadoState::Warmup,
+                    download_state: StormguardState::Warmup,
+                    upload_state: StormguardState::Warmup,
                     throughput_down: RingBuffer::new(READING_ACCUMULATOR_SIZE),
                     throughput_up: RingBuffer::new(READING_ACCUMULATOR_SIZE),
                     retransmits_down: RingBuffer::new(READING_ACCUMULATOR_SIZE),
@@ -117,7 +117,7 @@ impl<'a> SiteStateTracker<'a> {
     pub fn apply_recommendations(
         &mut self,
         recommendations: Vec<(Recommendation, String)>,
-        config: &TornadoConfig,
+        config: &StormguardConfig,
         log_sender: std::sync::mpsc::Sender<LogCommand>,
     ) {
         // We'll need the queues to apply HTB commands
@@ -257,13 +257,13 @@ impl<'a> SiteStateTracker<'a> {
             debug!("Recommendation applied: entering cooldown");
             match recommendation.direction {
                 RecommendationDirection::Download => {
-                    site.download_state = TornadoState::Cooldown {
+                    site.download_state = StormguardState::Cooldown {
                         start: std::time::Instant::now(),
                         duration_secs: cooldown_secs,
                     };
                 }
                 RecommendationDirection::Upload => {
-                    site.upload_state = TornadoState::Cooldown {
+                    site.upload_state = StormguardState::Cooldown {
                         start: std::time::Instant::now(),
                         duration_secs: cooldown_secs,
                     };

@@ -1,4 +1,4 @@
-use crate::config::TornadoConfig;
+use crate::config::StormguardConfig;
 use std::io::Write;
 use tracing::debug;
 use lqos_utils::unix_time::unix_now;
@@ -13,13 +13,13 @@ pub enum LogCommand {
 }
 
 pub fn start_datalog(
-    config: &TornadoConfig,
+    config: &StormguardConfig,
 ) -> anyhow::Result<std::sync::mpsc::Sender<LogCommand>> {
     // Initialize the datalog system
     let (tx, rx) = std::sync::mpsc::channel();
     let log_path = config.log_filename.clone();
     std::thread::Builder::new()
-        .name("TornadoLogger".to_string())
+        .name("StormguardLogger".to_string())
         .spawn(move || {
             run_datalog(rx, log_path);
         })?;
