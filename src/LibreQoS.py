@@ -13,7 +13,6 @@ import logging
 import math
 import multiprocessing
 import os
-import os.path
 import shutil
 import subprocess
 from subprocess import PIPE, STDOUT
