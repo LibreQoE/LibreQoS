@@ -1,9 +1,9 @@
-# Complex install (Not Recommended)
+# Instalación compleja (no recomendada)
 
-## Clone the repo
+## Clonar el repositorio
 
-The recommended install location is `/opt/libreqos`
-Go to the install location, and clone the repo:
+La ubicación de instalación recomendada es `/opt/libreqos`
+Vaya a la ubicación de instalación y clone el repositorio.:
 
 ```shell
 cd /opt/
@@ -11,17 +11,17 @@ git clone https://github.com/LibreQoE/LibreQoS.git libreqos
 sudo chown -R YOUR_USER /opt/libreqos
 ```
 
-By specifying `libreqos` at the end, git will ensure the folder name is lowercase.
+Al especificar `libreqos` al final, git se asegurará que el nombre de la carpeta esté en minúsculas.
 
-## Install Dependencies from apt and pip
+## Instalar dependencias desde apt y pip
 
-You need to have a few packages from `apt` installed:
+Necesitas tener algunos paquetes de `apt` instalados:
 
 ```shell
 sudo apt-get install -y python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname -r` libbpf-dev libssl-dev
 ```
 
-Then you need to install some Python dependencies:
+Luego necesitas instalar algunas dependencias de Python:
 
 ```shell
 cd /opt/libreqos
@@ -29,26 +29,26 @@ python3 -m pip install -r requirements.txt
 sudo python3 -m pip install -r requirements.txt
 ```
 
-## Install the Rust development system
+## Instalar el sistema de desarrollo Rust
 
-Go to [RustUp](https://rustup.rs) and follow the instructions. Basically, run the following:
+Ve a [RustUp](https://rustup.rs) y sigue las instrucciones. Básicamente, ejecuta lo siguiente:
 
 ```shell
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-When Rust finishes installing, it will tell you to execute a command to place the Rust build tools into your path. You need to either execute this command or logout and back in again.
+Cuando Rust termine de instalarse, te pedirá que ejecutes un comando para instalar las herramientas de compilación de Rust en tu ruta. Debes ejecutar este comando o cerrar sesión y volver a iniciarla.
 
-Once that's done, please run:
+Una vez hecho esto, por favor, ejecute:
 
 ```shell
 cd /opt/libreqos/src/
 ./build_rust.sh
 ```
 
-This will take a while the first time, but it puts everything in the right place.
+La primera vez, esto llevará un tiempo, pero pondrá todo en el lugar correcto.
 
-Now, to build rust crates, run:
+Ahora, para construir cajas de rust, corre:
 
 ```shell
 cd rust
