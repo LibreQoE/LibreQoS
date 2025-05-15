@@ -2,18 +2,18 @@
 
 By default, LibreQoS uses Common Applications Kept Enhanced (CAKE) using the diffserv4 parameter.
 
-# DSCP
+## DSCP
 
 [https://www.iana.org/assignments/dscp-registry/dscp-registry.xhtml](https://www.iana.org/assignments/dscp-registry/dscp-registry.xhtml)
 
-## Traffic Classes and DSCP Tags for Diffserv4
+### Traffic Classes and DSCP Tags for Diffserv4
 
  * Latency Sensitive  (CS7, CS6, EF, VA, CS5, CS4)
  * Streaming Media    (AF4x, AF3x, CS3, AF2x, TOS4, CS2, TOS1)
  * Best Effort        (CS0, AF1x, TOS2, and those not specified)
  * Background Traffic (CS1)
 
-## List of known Diffserv codepoints:
+### List of known Diffserv codepoints:
 
  *  Least Effort (CS1)
  *  Best Effort (CS0)
@@ -34,7 +34,7 @@ By default, LibreQoS uses Common Applications Kept Enhanced (CAKE) using the dif
  *  Voice Admit (VA)
  *  Expedited Forwarding (EF)
 
-## List of traffic classes in RFC 4594:
+### List of traffic classes in RFC 4594:
 
 (roughly descending order of contended priority)
 
