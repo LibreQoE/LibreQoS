@@ -2,7 +2,7 @@
 
 LibreQoS es un software utilizado por proveedores de servicios de internet (ISP) y empresas para mejorar la calidad de la experiencia (QoE) de los usuarios finales en sus redes.
 
-LibreQoS monitoriza el rendimiento de la red y reduce la latencia de las aplicaciones interactivas en línea. Los ISP informan regularmente que las llamadas por problemas se reducen considerablemente tras la implementación de LibreQoS en sus redes.
+LibreQoS monitorea el rendimiento de la red y reduce la latencia de las aplicaciones interactivas en línea. Los ISP informan regularmente que las llamadas por problemas se reducen considerablemente tras la implementación de LibreQoS en sus redes.
 
 Para que un ISP u otra empresa implemente LibreQoS, no se requieren cambios en los routers, switches ni puntos de acceso existentes: LibreQoS se ejecuta en un servidor que actúa como un puente gestionado entre el router de borde y el núcleo de la red. Los servidores LibreQoS pueden gestionar el tráfico de decenas de miles de clientes.
 
