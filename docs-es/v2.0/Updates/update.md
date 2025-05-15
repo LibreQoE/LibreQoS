@@ -1,33 +1,33 @@
-# Updating To The Latest Version
+# Actualización a la última versión
 
 ```{warning}
-If you use the XDP bridge, traffic will briefly stop passing through the bridge when lqosd restarts (XDP bridge is only operating while lqosd runs).
+Si usa el puente XDP, el tráfico dejará de pasar brevemente a través del puente cuando se reinicie lqosd (el puente XDP solo funciona mientras se ejecuta lqosd).
 ```
 
-## If you installed the .deb
+## Si instaló el .deb
 
-Donwload the latest .deb from [libreqos.io/#download](https://libreqos.io/#download).
+Descargue el último .deb desde [libreqos.io/#download](https://libreqos.io/#download).
 
-Unzip the .zip file and transfer the .deb to your LibreQoS box, installing with:
+Descomprima el archivo .zip y transfiera el .deb a su caja LibreQoS, instalándolo con:
 ```
 sudo apt install ./[deb file name]
 ```
 
-Now reboot the LibreQoS box with:
+Ahora reinicie el servidor LibreQoS con:
 ```
 sudo reboot
 ```
-This will flush the old eBPF maps and load the latest LibreQoS version.
+Esto eliminará los mapas eBPF antiguos y cargará la última versión de LibreQoS..
 
-## If you installed with Git
+## Si lo instalaste con Git
 
-1. Change to your `LibreQoS` directory (e.g. `cd /opt/LibreQoS`)
-2. Update from Git: `git pull`
+1. Cambie a su directorio `LibreQoS`(e.g. `cd /opt/LibreQoS`)
+2.Actualización desde Git: `git pull`
 3. ```git switch develop```
 5. Recompile: `./build-rust.sh`
 6. `sudo rust/remove_pinned_maps.sh`
 
-Run the following commands to reload the LibreQoS services.
+Ejecute los siguientes comandos para recargar los servicios de LibreQoS.
 
 ```shell
 sudo systemctl restart lqosd lqos_scheduler
