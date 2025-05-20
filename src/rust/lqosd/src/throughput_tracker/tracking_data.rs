@@ -61,6 +61,9 @@ impl ThroughputTracker {
             if v.first_cycle < self_cycle {
                 v.bytes_per_second = v.bytes.checked_sub_or_zero(v.prev_bytes);
                 v.packets_per_second = v.packets.checked_sub_or_zero(v.prev_packets);
+                v.tcp_packets = v.tcp_packets.checked_sub_or_zero(v.prev_tcp_packets);
+                v.udp_packets = v.udp_packets.checked_sub_or_zero(v.prev_udp_packets);
+                v.icmp_packets = v.icmp_packets.checked_sub_or_zero(v.prev_icmp_packets);
             }
             v.prev_bytes = v.bytes;
             v.prev_packets = v.packets;
