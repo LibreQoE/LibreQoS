@@ -98,6 +98,8 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(automatic_import_wispgate))?;
     m.add_wrapped(wrap_pyfunction!(wispgate_api_token))?;
     m.add_wrapped(wrap_pyfunction!(wispgate_api_url))?;
+    m.add_wrapped(wrap_pyfunction!(enable_insight_topology))?;
+    m.add_wrapped(wrap_pyfunction!(insight_topology_role))?;
     m.add_wrapped(wrap_pyfunction!(promote_to_root_list))?;
     m.add_wrapped(wrap_pyfunction!(client_bandwidth_multiplier))?;
 
@@ -789,4 +791,15 @@ fn promote_to_root_list() -> PyResult<Vec<String>> {
 fn client_bandwidth_multiplier() -> PyResult<f32> {
     let config = lqos_config::load_config().unwrap();
     Ok(config.integration_common.client_bandwidth_multiplier.unwrap_or(1.0))
+}
+#[pyfunction]
+fn enable_insight_topology() -> PyResult<bool> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config.long_term_stats.enable_insight_topology.unwrap_or(false))
+}
+
+#[pyfunction]
+fn insight_topology_role() -> PyResult<String> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config.long_term_stats.insight_topology_role.clone().unwrap_or("None".to_string()))
 }

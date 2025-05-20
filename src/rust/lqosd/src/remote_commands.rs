@@ -24,5 +24,33 @@ fn run_command(command: RemoteCommand) {
         RemoteCommand::Log(msg) => {
             warn!("Message from Insight: {}", msg);
         }
+        RemoteCommand::SetInsightControlledTopology { enabled } => {
+            if let Ok(config) = lqos_config::load_config() {
+                let mut config = (*config).clone();
+                config.long_term_stats.enable_insight_topology = Some(enabled);
+                if let Err(e) = lqos_config::update_config(&config) {
+                    tracing::error!("Failed to update config: {}", e);
+                }
+                let _ = crate::scheduler_control::enable_scheduler();
+                let _ = crate::scheduler_control::restart_scheduler();
+            }
+        }
+        RemoteCommand::SetInsightRole { role } => {
+            if let Ok(config) = lqos_config::load_config() {
+                let mut config = (*config).clone();
+                config.long_term_stats.insight_topology_role = Some(role);
+                if let Err(e) = lqos_config::update_config(&config) {
+                    tracing::error!("Failed to update config: {}", e);
+                }
+                let _ = crate::scheduler_control::enable_scheduler();
+                let _ = crate::scheduler_control::restart_scheduler();
+            }
+        }
+        RemoteCommand::RestartLqosd => {
+            std::process::exit(0);
+        }
+        RemoteCommand::RestartScheduler => {
+            let _ = crate::scheduler_control::restart_scheduler();
+        }
     }
 }

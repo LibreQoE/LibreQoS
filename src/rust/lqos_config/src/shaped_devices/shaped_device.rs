@@ -70,7 +70,7 @@ pub struct ShapedDevice {
 }
 
 impl ShapedDevice {
-    pub(crate) fn from_csv(record: &StringRecord) -> Result<Self, ShapedDevicesError> {
+    pub fn from_csv(record: &StringRecord) -> Result<Self, ShapedDevicesError> {
         Ok(Self {
             circuit_id: record[0].to_string(),
             circuit_name: record[1].to_string(),

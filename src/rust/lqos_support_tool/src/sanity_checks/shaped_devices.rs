@@ -1,10 +1,10 @@
 use crate::sanity_checks::SanityCheck;
-use lqos_config::load_config;
+use lqos_config::{load_config, ConfigShapedDevices};
 use std::path::Path;
 
 pub fn shaped_devices_exists(results: &mut Vec<SanityCheck>) {
     if let Ok(cfg) = load_config() {
-        let path = Path::new(&cfg.lqos_directory).join("ShapedDevices.csv");
+        let path = ConfigShapedDevices::path().unwrap();
         if path.exists() {
             results.push(SanityCheck {
                 name: "ShapedDevices.csv exists".to_string(),

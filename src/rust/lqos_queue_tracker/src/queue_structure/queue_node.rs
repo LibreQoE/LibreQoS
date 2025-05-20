@@ -3,7 +3,7 @@ use lqos_bus::TcHandle;
 use lqos_utils::hash_to_i64;
 use lqos_utils::hex_string::read_hex_string;
 use serde_json::Value;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 #[derive(Default, Clone, Debug)]
 pub struct QueueNode {

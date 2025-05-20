@@ -17,6 +17,7 @@ mod throughput_tracker;
 mod tuning;
 mod validation;
 mod version_checks;
+mod scheduler_control;
 
 #[cfg(feature = "flamegraphs")]
 use std::io::Write;

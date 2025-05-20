@@ -57,6 +57,7 @@ tungstenite = { version = "0", features = [ "native-tls" ] } # For WebSockets
 tokio-tungstenite = { version = "0", features = [ "native-tls" ] }
 native-tls = "0.2"
 ureq = { version = "2.12.1", features = ["json", "native-tls"] }
+csv = { workspace = true }
 
 # For memory debugging
 allocative = {  version = "0.3.3", features = [ "dashmap" ] }

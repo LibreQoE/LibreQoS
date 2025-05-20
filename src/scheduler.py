@@ -4,7 +4,7 @@ from LibreQoS import refreshShapers, refreshShapersUpdateOnly
 import subprocess
 from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue_refresh_interval_mins, \
 	automatic_import_powercode, automatic_import_sonar, influx_db_enabled, get_libreqos_directory, \
-	blackboard_finish, blackboard_submit, automatic_import_wispgate
+	blackboard_finish, blackboard_submit, automatic_import_wispgate, enable_insight_topology, insight_topology_role
 if automatic_import_splynx():
 	from integrationSplynx import importFromSplynx
 if automatic_import_powercode():
@@ -20,6 +20,17 @@ import os.path
 ads = BlockingScheduler(executors={'default': ThreadPoolExecutor(1)})
 
 def importFromCRM():
+	# Check Insight Topology Status
+	run_crm = True
+	if enable_insight_topology() and not insight_topology_role == "Primary":
+		# This node is not the primary Insight Topology node, skip CRM import
+		print("Skipping CRM import as this node is not the primary Insight Topology node.")
+		run_crm = False
+		return
+	if not run_crm:
+		return
+
+	# CRM Hooks
 	if automatic_import_uisp():
 		try:
 			# Call bin/uisp_integration
@@ -56,7 +67,8 @@ def importFromCRM():
 
 def importAndShapeFullReload():
 	importFromCRM()
-	refreshShapers()
+	if not enable_insight_topology():
+		refreshShapers()
 
 def importAndShapePartialReload():
 	importFromCRM()

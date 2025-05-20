@@ -2118,6 +2118,7 @@ dependencies = [
  "bincode",
  "crossbeam-channel",
  "crossbeam-queue",
+ "csv",
  "default-net",
  "dryoc 0.6.2",
  "flate2",
