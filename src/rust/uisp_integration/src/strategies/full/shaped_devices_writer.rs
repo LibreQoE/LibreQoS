@@ -106,10 +106,10 @@ fn traverse(
                         mac: device.mac.clone(),
                         ipv4: device.ipv4_list(),
                         ipv6: device.ipv6_list(),
-                        download_min: u64::min(1, download_min),
-                        download_max: u64::max(3, download_max),
-                        upload_min: u64::min(1, upload_min),
-                        upload_max: u64::max(3, upload_max),
+                        download_min: u64::max(1, download_min),
+                        download_max: u64::max(3, download_max as u64),
+                        upload_min: u64::max(1, upload_min),
+                        upload_max: u64::max(3, upload_max as u64),
                         comment: "".to_string(),
                     };
                     shaped_devices.push(sd);

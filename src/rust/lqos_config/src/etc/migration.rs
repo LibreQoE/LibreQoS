@@ -24,10 +24,10 @@ pub enum MigrationError {
     PythonLoadError(#[from] PythonMigrationError),
 }
 
-pub fn migrate_if_needed() -> Result<(), MigrationError> {
+pub fn migrate_if_needed(config_location: &str) -> Result<(), MigrationError> {
     debug!("Checking config file version");
     let raw =
-        std::fs::read_to_string("/etc/lqos.conf").map_err(|e| MigrationError::ReadError(e))?;
+        std::fs::read_to_string(&config_location).map_err(|e| MigrationError::ReadError(e))?;
 
     let doc = raw
         .parse::<DocumentMut>()

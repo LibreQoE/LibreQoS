@@ -3,12 +3,22 @@
 ## Officially supported configuration
 
 - LibreQoS is placed inline at the edge of your network, usually between the network's border router (NAT, firewall) and the core distribution router / switch.
-- If you use NAT/CG-NAT, place LibreQoS inline prior to where NAT is applied, as LibreQoS needs to shape pre-NAT addresses (100.64.0.0/12) not public post-NAT IPs.
-- For networks using MPLS: LibreQoS can parse MPLS traffic, but the traffic must follow the standard pattern (mpls tags)(optional vlan tags)(ip header). If you use MPLS with a different pattern, you would ideally want to terminate MPLS traffic at the core distribution router / switch, before it reaches LibreQoS.
-- OSPF primary link (low cost) through the server running LibreQoS
-- OSPF backup link (high cost, maybe 200 for example)
 
-![Offical Configuration](https://raw.githubusercontent.com/LibreQoE/LibreQoS/main/docs/design.png)
+![Offical Configuration](https://github.com/user-attachments/assets/e5914a58-3ec6-4eb1-b016-8a57582dd082)
+
+### Primary and Backup Paths
+
+We recommend using dynamic routing protocols such as OSPF to create a high cost and low cost path between the edge router and core distribution router/switch. The low cost path should pass "through" the LibreQoS shaper bridge interfaces to allow LibreQoS to observe and shape traffic. For example, a low cost OSPF path may be set to a value of 1. The high-cost (backup) link would completely bypass LibreQoS, being set to a higher cost (perhaps 100 for OSPF) to ensure that traffic only takes that path when the LibreQoS shaper bridge is not operational.
+
+### NAT/CG-NAT
+If you use NAT/CG-NAT, please place LibreQoS inline prior to where NAT is applied, as LibreQoS needs to shape pre-NAT addresses (100.64.0.0/12) not public post-NAT IPs.
+
+### MPLS/VPLS
+LibreQoS can parse MPLS traffic, however the traffic must follow the standard pattern:
+```
+(mpls tags)(optional vlan tags)(ip header)
+```
+If you use MPLS with a different tag pattern, you would ideally want to terminate MPLS traffic at the core distribution router / switch, before it reaches LibreQoS.
 
 ## Testbed configuration
 When you are first testing out LibreQoS, we recommend deploying a small-scale testbed to see it in action.

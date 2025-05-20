@@ -18,6 +18,7 @@ lqos_utils = { path = "../lqos_utils" }
 lqos_heimdall = { path = "../lqos_heimdall" }
 lts_client = { path = "../lts_client" }
 lqos_support_tool = { path = "../lqos_support_tool" }
+lqos_stormguard = { path = "../lqos_stormguard" }
 tokio = { version = "1", features = [ "full" ] }
 once_cell = { workspace = true}
 lqos_bus = { path = "../lqos_bus" }

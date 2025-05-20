@@ -2039,6 +2039,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "lqos_stormguard"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "lqos_bus",
+ "lqos_config",
+ "lqos_queue_tracker",
+ "lqos_utils",
+ "timerfd",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "lqos_support_tool"
 version = "0.1.0"
 dependencies = [
@@ -2116,6 +2131,7 @@ dependencies = [
  "lqos_config",
  "lqos_heimdall",
  "lqos_queue_tracker",
+ "lqos_stormguard",
  "lqos_support_tool",
  "lqos_sys",
  "lqos_utils",
