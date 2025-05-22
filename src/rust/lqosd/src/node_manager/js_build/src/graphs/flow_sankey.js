@@ -28,7 +28,18 @@ export class FlowsSankey extends DashboardGraph {
 
         // Iterate over each flow and accumulate traffic.
         let flowCount = 0;
-        flows.flows.forEach((flow) => {
+        
+        // Sort flows by total rate (down + up) descending, then take top 20
+        let sortedTopFlows = flows.flows
+            .slice() // copy to avoid mutating original
+            .sort((a, b) => {
+                const rateA = (a[1]?.rate_estimate_bps?.down || 0) + (a[1]?.rate_estimate_bps?.up || 0);
+                const rateB = (b[1]?.rate_estimate_bps?.down || 0) + (b[1]?.rate_estimate_bps?.up || 0);
+                return rateB - rateA;
+            })
+            .slice(0, 20);
+        
+        sortedTopFlows.forEach((flow) => {
             if (flow[0].last_seen_nanos > ten_second_in_nanos) return;
             flowCount++;
             let localDevice = flow[0].device_name;
@@ -36,7 +47,7 @@ export class FlowsSankey extends DashboardGraph {
             let asn = "ASN: " + flow[2].asn_id;
             if (flow[0].asn_name !== "") asn += " " + flow[0].asn_name;
             let remoteDevice = flow[0].remote_ip;
-
+        
             // Ensure all members are present. The arrays hold links to subsequent
             // columns.
             if (localDevices[localDevice] === undefined) {
@@ -51,7 +62,7 @@ export class FlowsSankey extends DashboardGraph {
             if (remoteDevices[remoteDevice] === undefined) {
                 remoteDevices[remoteDevice] = 0;
             }
-
+        
             // Accumulate traffic.
             let currentRate = flow[1].rate_estimate_bps.down + flow[1].rate_estimate_bps.up;
             if (localDevices[localDevice][proto] === undefined) {
