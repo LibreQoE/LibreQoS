@@ -1,5 +1,28 @@
 import { DashboardGraph } from "./graphs/dashboard_graph";
-import {lerpGreenToRedViaOrange} from "./helpers/scaling";
+/**
+ * Viridis color scale interpolation (0-1 input).
+ * Returns hex color string.
+ */
+function lerpViridis(t) {
+    // Viridis colormap sampled at 6 points, interpolated linearly
+    const stops = [
+        [68, 1, 84],    // #440154
+        [59, 82, 139],  // #3B528B
+        [33, 145, 140], // #21918C
+        [94, 201, 98],  // #5EC962
+        [253, 231, 37]  // #FDE725
+    ];
+    if (t <= 0) return "#440154";
+    if (t >= 1) return "#FDE725";
+    let idx = t * (stops.length - 1);
+    let i = Math.floor(idx);
+    let frac = idx - i;
+    let c0 = stops[i], c1 = stops[i + 1];
+    let r = Math.round(c0[0] + frac * (c1[0] - c0[0]));
+    let g = Math.round(c0[1] + frac * (c1[1] - c0[1]));
+    let b = Math.round(c0[2] + frac * (c1[2] - c0[2]));
+    return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+}
 import {isRedacted} from "./helpers/redact";
 import {GenericRingBuffer} from "./helpers/ringbuffer";
 import {trimStringWithElipsis} from "./helpers/strings_help";
@@ -38,9 +61,11 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
                 let bytesAsMegabits = bytes / 1000000;
                 let maxBytes = head[i][1].max_throughput[0] / 8;
                 let percent = Math.min(100, (bytesAsMegabits / maxBytes) * 100);
-                let capacityColor = lerpGreenToRedViaOrange(100 - percent, 100);
+                // Use Viridis color scale for capacity
+                let capacityColor = lerpViridis(percent / 100);
 
-                let color = lerpGreenToRedViaOrange(200 - lastRtt[name], 200);
+                // Use Viridis color scale for node RTT (if applicable)
+                let color = lerpViridis(percent / 100);
 
                 let label = {
                     fontSize: 10,
@@ -99,9 +124,26 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
                 links[i].value /= links[i].n;
                 let bytesAsMegabits = links[i].value / 1000000;
                 let percent = Math.min(100, (bytesAsMegabits / links[i].maxBytes) * 100);
-                let capacityColor = lerpGreenToRedViaOrange(100 - percent, 100);
+                let capacityColor = lerpViridis(percent / 100);
                 links[i].lineStyle.color = capacityColor;
             }
+
+            // Filter links with <1 Mbps average throughput
+            links = links.filter(link => link.value >= 1000000);
+
+            // Collect node names that are still referenced by links
+            const referenced = new Set();
+            links.forEach(link => {
+                referenced.add(link.source);
+                referenced.add(link.target);
+            });
+
+            // Always keep the root node
+            let rootName = nodes.length > 0 ? nodes[0].name : null;
+            if (rootName) referenced.add(rootName);
+
+            // Filter nodes to only those referenced
+            nodes = nodes.filter(node => referenced.has(node.name));
 
             // Update the graph
             graph.update(nodes, links);
