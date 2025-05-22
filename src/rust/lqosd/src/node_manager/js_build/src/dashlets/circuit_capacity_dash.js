@@ -43,6 +43,9 @@ export class CircuitCapacityDash extends BaseDashlet {
 
             // Update TimedCache with incoming data
             msg.data.forEach((c) => {
+                if (c.capacity[0] < 0.9 && c.capacity[1] < 0.9) {
+                    return;
+                }
                 this.timeCache.addOrUpdate(
                     c.circuit_id,
                     c,
@@ -71,7 +74,9 @@ export class CircuitCapacityDash extends BaseDashlet {
                 if (count >= 7) {
                     break;
                 }
+                let opacity = (10.0 - c.lastSeen) / 10.0;
                 let row = document.createElement("tr");
+                row.style.opacity = opacity.toFixed(1);
                 row.classList.add("small");
 
                 let linkCol = document.createElement("td");
