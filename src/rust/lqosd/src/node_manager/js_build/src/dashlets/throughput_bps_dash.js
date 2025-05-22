@@ -16,8 +16,8 @@ export class ThroughputBpsDash extends DashletBaseInsight{
 
     buildContainer() {
         let base = super.buildContainer();
-        base.style.height = "270px";
-        base.style.overflow = "auto";
+        base.style.height = "283px";
+        base.style.overflow = "hidden";
         return base;
     }
 
@@ -35,6 +35,11 @@ export class ThroughputBpsDash extends DashletBaseInsight{
         const row = document.createElement("div");
         row.classList.add("row");
         row.style.height = "100%";
+        row.style.display = "flex";
+        row.style.flexDirection = "row";
+        row.style.flexWrap = "nowrap";
+        row.style.alignItems = "stretch";
+        row.style.justifyContent = "space-between";
 
         // ---------------------
         // LEFT COLUMN
@@ -44,7 +49,7 @@ export class ThroughputBpsDash extends DashletBaseInsight{
 
         // Recent
         const recentWrapper = document.createElement("div");
-        recentWrapper.classList.add("mb-3");
+        //recentWrapper.classList.add("mb-3");
 
         const recentDlHeader = document.createElement("div");
         recentDlHeader.classList.add("stat-header");
@@ -54,6 +59,8 @@ export class ThroughputBpsDash extends DashletBaseInsight{
         recentDlValue.classList.add("stat-value-big");
         recentDlValue.textContent = "-";
         recentDlValue.id = this.id + "_dl_bps";
+        recentDlValue.style.fontSize = "1.1rem";
+        recentDlValue.style.fontWeight = "500";
 
         const recentUp = document.createElement("div");
         recentUp.classList.add("stat-header");
@@ -63,6 +70,8 @@ export class ThroughputBpsDash extends DashletBaseInsight{
         recentUpValue.classList.add("stat-value-big");
         recentUpValue.textContent = "-";
         recentUpValue.id = this.id + "_up_bps";
+        recentUpValue.style.fontSize = "1.1rem";
+        recentUpValue.style.fontWeight = "500";
 
         recentWrapper.appendChild(recentDlHeader);
         recentWrapper.appendChild(recentDlValue);
@@ -94,15 +103,6 @@ export class ThroughputBpsDash extends DashletBaseInsight{
         colLeft.appendChild(currentWrapper);
 
         // ---------------------
-        // DIVIDER COLUMN
-        // ---------------------
-        const colDivider = document.createElement("div");
-        colDivider.classList.add("col-auto", "px-3");
-
-        const divider = document.createElement("div");
-        divider.classList.add("vertical-divider", "h-100");
-
-        colDivider.appendChild(divider);
 
         // ---------------------
         // RIGHT COLUMN
@@ -113,14 +113,14 @@ export class ThroughputBpsDash extends DashletBaseInsight{
         if (!window.hasLts) {
             // No LTS for you
             const yestWrapper = document.createElement("div");
-            yestWrapper.classList.add("mb-3");
+            //yestWrapper.classList.add("mb-3");
 
             const yestHeader = document.createElement("div");
             yestHeader.classList.add("stat-header");
 
             const yestValue = document.createElement("span");
             yestValue.classList.add("fw-bold", "text-secondary");
-            yestValue.innerHTML = "<i class=\"fa fa-fw fa-centerline fa-line-chart nav-icon small\"></i> History<br />Requires Insight";
+            yestValue.innerHTML = "<i class=\"fa fa-fw fa-centerline fa-line-chart nav-icon small\"></i> History<br />Requires<br />Insight<br />License";
 
             yestWrapper.appendChild(yestHeader);
             yestWrapper.appendChild(yestValue);
@@ -129,7 +129,7 @@ export class ThroughputBpsDash extends DashletBaseInsight{
 
             // Yesterday
             const yestWrapper = document.createElement("div");
-            yestWrapper.classList.add("mb-3");
+            //yestWrapper.classList.add("mb-3");
 
             const yestHeader = document.createElement("div");
             yestHeader.classList.add("stat-header");
@@ -214,7 +214,6 @@ export class ThroughputBpsDash extends DashletBaseInsight{
         // ASSEMBLE
         // ---------------------
         row.appendChild(colLeft);
-        row.appendChild(colDivider);
         row.appendChild(colRight);
 
         // Add it all
@@ -264,20 +263,20 @@ export class ThroughputBpsDash extends DashletBaseInsight{
 
             // Big numbers are smoothed medians
             let dl = document.getElementById(this.id + "_dl_bps");
-            dl.textContent = scaleNumber(dlMedian, 1);
+            dl.textContent = Number(scaleNumber(dlMedian, 1)).toFixed(2);
             let ul = document.getElementById(this.id + "_up_bps");
-            ul.textContent = scaleNumber(upMedian, 1);
+            ul.textContent = Number(scaleNumber(upMedian, 1)).toFixed(2);
 
             // Small numbers are current (jittery)
             let cdl = document.getElementById(this.id + "_cdl_bps");
-            cdl.textContent = scaleNumber(msg.data.bps.down, 1);
+            cdl.textContent = Number(scaleNumber(msg.data.bps.down, 1)).toFixed(2);
             let cul = document.getElementById(this.id + "_cul_bps");
-            cul.textContent = scaleNumber(msg.data.bps.up, 1);
+            cul.textContent = Number(scaleNumber(msg.data.bps.up, 1)).toFixed(2);
 
             // Update the yesterday values
             if (this.medians !== null) {
-                document.getElementById(this.id + "_yest_dl_bps").textContent = scaleNumber(this.medians.yesterday[0], 0);
-                document.getElementById(this.id + "_yest_ul_bps").textContent = scaleNumber(this.medians.yesterday[1], 0);
+                document.getElementById(this.id + "_yest_dl_bps").textContent = Number(scaleNumber(this.medians.yesterday[0], 1)).toFixed(2);
+                document.getElementById(this.id + "_yest_ul_bps").textContent = Number(scaleNumber(this.medians.yesterday[1], 1)).toFixed(2);
 
                 let [yest_dl_color, yest_dl_icon, yest_dl_percent] = this.priorComparision(dlMedian, this.medians.yesterday[0]);
                 if (yest_dl_percent === null) {
@@ -296,8 +295,8 @@ export class ThroughputBpsDash extends DashletBaseInsight{
 
             // Update the last week values
             if (this.medians !== null) {
-                document.getElementById(this.id + "_last_dl_bps").textContent = scaleNumber(this.medians.last_week[0], 0);
-                document.getElementById(this.id + "_last_ul_bps").textContent = scaleNumber(this.medians.last_week[1], 0);
+                document.getElementById(this.id + "_last_dl_bps").textContent = Number(scaleNumber(this.medians.last_week[0], 1)).toFixed(2);
+                document.getElementById(this.id + "_last_ul_bps").textContent = Number(scaleNumber(this.medians.last_week[1], 1)).toFixed(2);
 
                 let [last_dl_color, last_dl_icon, last_dl_percent] = this.priorComparision(dlMedian, this.medians.last_week[0]);
                 if (last_dl_percent === null) {
