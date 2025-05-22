@@ -52,10 +52,7 @@ export class CircuitTotalGraph extends DashboardGraph {
             },
             xAxis: {
                 type: 'category',
-                data: [], // will be set in update()
-                axisPointer: {
-                    type: 'cross'
-                }
+                data: [] // will be set in update()
             },
             yAxis: {
                 type: 'value',
@@ -89,18 +86,18 @@ export class CircuitTotalGraph extends DashboardGraph {
                 trigger: 'axis',
                 axisPointer: {
                     type: 'cross',
-                    link: [{ xAxisIndex: 'all' }],
                     label: {
                         backgroundColor: '#6a7985'
                     }
                 },
                 formatter: function(params) {
+                    console.log(params);
                     if (!params || params.length === 0) return '';
                     const idx = params[0].dataIndex;
                     const ts = ringbuffer.getTimestamp(idx);
                     let s = `<div><b>Time:</b> ${formatTimeRef(ts)}</div>`;
                     for (const p of params) {
-                        s += `<div><span style="display:inline-block;margin-right:5px;border-radius:10px;width:9px;height:9px;background-color:${p.color};"></span>${p.seriesName}: <b>${scaleNumber(Math.abs(p.value))}</b></div>`;
+                        s += `<div><span style="display:inline-block;margin-right:5px;border-radius:10px;width:9px;height:9px;background-color:${p.color};"></span>${p.seriesName}: <b>${scaleNumber(Math.abs(p.value), 1)}</b></div>`;
                     }
                     return s;
                 }
