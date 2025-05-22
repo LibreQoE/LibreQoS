@@ -13,6 +13,37 @@ export class PacketsPerSecondBar extends DashboardGraph {
             .build();
         this.option.legend = { data: [] };
 
+        // Enable axisPointer and custom tooltip
+        this.option.tooltip = {
+            trigger: 'axis',
+            axisPointer: {
+                type: 'cross',
+                link: { xAxisIndex: 'all' },
+                label: {
+                    backgroundColor: '#6a7985'
+                }
+            },
+            formatter: (params) => {
+                // params is an array of series data at the hovered index
+                let lines = [];
+                params.forEach(param => {
+                    if (param.data && typeof param.data === 'object') {
+                        let val = param.data.value;
+                        let ts = param.data.timestamp;
+                        let dateStr = ts ? new Date(ts).toLocaleTimeString('en-US', { hour12: false }) : '';
+                        lines.push(
+                            param.marker + param.seriesName + ': ' + val + ' @ ' + dateStr
+                        );
+                    } else {
+                        lines.push(
+                            param.marker + param.seriesName + ': ' + param.data
+                        );
+                    }
+                });
+                return lines.join('<br>');
+            }
+        };
+
         let n = 1;
         let seriesTcpDown = {
             type: 'line',
@@ -105,23 +136,24 @@ export class PacketsPerSecondBar extends DashboardGraph {
     update(down, up, tcp, udp, icmp) {
         this.chart.hideLoading();
 
-        this.option.series[0].data.push(tcp.down);
+        const now = Date.now();
+        this.option.series[0].data.push({ value: tcp.down, timestamp: now });
         if (this.option.series[0].data.length > 300) {
             this.option.series[0].data.shift();
         }
-        this.option.series[1].data.push(-tcp.up);
+        this.option.series[1].data.push({ value: -tcp.up, timestamp: now });
         if (this.option.series[1].data.length > 300) {
             this.option.series[1].data.shift();
         }
-        this.option.series[2].data.push(udp.down);
+        this.option.series[2].data.push({ value: udp.down, timestamp: now });
         if (this.option.series[2].data.length > 300) {
             this.option.series[2].data.shift();
         }
-        this.option.series[3].data.push(-udp.up);
+        this.option.series[3].data.push({ value: -udp.up, timestamp: now });
         if (this.option.series[3].data.length > 300) {
             this.option.series[3].data.shift();
         }
-        this.option.series[4].data.push(icmp.down);
+        this.option.series[4].data.push({ value: icmp.down, timestamp: now });
         if (this.option.series[4].data.length > 300) {
             this.option.series[4].data.shift();
         }
