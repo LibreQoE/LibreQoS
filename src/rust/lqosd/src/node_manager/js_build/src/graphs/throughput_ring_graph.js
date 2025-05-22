@@ -1,5 +1,6 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {GraphOptionsBuilder} from "../lq_js_common/e_charts/chart_builder";
+import {scaleNumber} from "../lq_js_common/helpers/scaling";
 
 const RING_SIZE = 60 * 5; // 5 Minutes
 
@@ -110,7 +111,7 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
                 const ts = this.ringbuffer.getTimestamp(idx);
                 let s = `<div><b>Time:</b> ${formatTime(ts)}</div>`;
                 for (const p of params) {
-                    s += `<div><span style="display:inline-block;margin-right:5px;border-radius:10px;width:9px;height:9px;background-color:${p.color};"></span>${p.seriesName}: <b>${p.value}</b></div>`;
+                    s += `<div><span style="display:inline-block;margin-right:5px;border-radius:10px;width:9px;height:9px;background-color:${p.color};"></span>${p.seriesName}: <b>${scaleNumber(Math.abs(p.value))}</b></div>`;
                 }
                 return s;
             }
