@@ -107,21 +107,23 @@ export class TopTreeSankey extends BaseDashlet {
                 }
                 let color = lerpGreenToRedViaOrange(200 - lastRtt[name], 200);
 
-                nodes.push({
-                    name: r[1].name,
-                    label: label,
-                    itemStyle: {
-                        color: color
-                    }
-                });
-                links.push({
-                    source: "Root",
-                    target: r[1].name,
-                    value: r[1].current_throughput[0] + r[1].current_throughput[1],
-                    lineStyle: {
-                        color: capacityColor,
-                    }
-                });
+                if (bytesAsMegabits > 0) {
+                    nodes.push({
+                        name: r[1].name,
+                        label: label,
+                        itemStyle: {
+                            color: color
+                        }
+                    });
+                    links.push({
+                        source: "Root",
+                        target: r[1].name,
+                        value: r[1].current_throughput[0] + r[1].current_throughput[1],
+                        lineStyle: {
+                            color: capacityColor,
+                        }
+                    });
+                }
             });
             this.graph.update(nodes, links);
         }
