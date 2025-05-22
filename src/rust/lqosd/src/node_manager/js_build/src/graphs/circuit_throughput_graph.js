@@ -16,6 +16,11 @@ export class CircuitTotalGraph extends DashboardGraph {
         this.title = title;
         this.ringbuffer = new RingBuffer(RING_SIZE);
 
+        // Capture references for closure
+        const ringbuffer = this.ringbuffer;
+        const formatTimeRef = formatTime;
+        const scaleNumberRef = scaleNumber;
+
         this.option = {
             title: {
                 text: this.title,
@@ -89,11 +94,11 @@ export class CircuitTotalGraph extends DashboardGraph {
                         backgroundColor: '#6a7985'
                     }
                 },
-                formatter: (params) => {
+                formatter: function(params) {
                     if (!params || params.length === 0) return '';
                     const idx = params[0].dataIndex;
-                    const ts = this.ringbuffer.getTimestamp(idx);
-                    let s = `<div><b>Time:</b> ${formatTime(ts)}</div>`;
+                    const ts = ringbuffer.getTimestamp(idx);
+                    let s = `<div><b>Time:</b> ${formatTimeRef(ts)}</div>`;
                     for (const p of params) {
                         s += `<div><span style="display:inline-block;margin-right:5px;border-radius:10px;width:9px;height:9px;background-color:${p.color};"></span>${p.seriesName}: <b>${scaleNumber(Math.abs(p.value))}</b></div>`;
                     }
