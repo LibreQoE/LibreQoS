@@ -2,10 +2,12 @@ import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {clearDashDiv, simpleRowHtml, theading} from "../helpers/builders";
 import {formatRtt, formatPercent} from "../helpers/scaling";
 import {redactCell} from "../helpers/redact";
+import {TimedCache} from "../lq_js_common/helpers/timed_cache";
 
 export class CircuitCapacityDash extends BaseDashlet {
     constructor(slot) {
         super(slot);
+        this.timeCache = new TimedCache(10);
     }
 
     canBeSlowedDown() {
@@ -39,10 +41,16 @@ export class CircuitCapacityDash extends BaseDashlet {
         if (msg.event === "CircuitCapacity") {
             let target = document.getElementById(this.id);
 
-            // Sort msg.data by capacity[0]
-            msg.data.sort((a, b) => {
-                return b.capacity[0] - a.capacity[0];
+            // Update TimedCache with incoming data
+            msg.data.forEach((c) => {
+                this.timeCache.addOrUpdate(
+                    c.circuit_id,
+                    c,
+                    Math.max(c.capacity[0], c.capacity[1])
+                );
             });
+            this.timeCache.tick();
+            const cached = this.timeCache.get();
 
             let table = document.createElement("table");
             table.classList.add("dash-table", "table-sm", "small");
@@ -55,12 +63,13 @@ export class CircuitCapacityDash extends BaseDashlet {
             table.appendChild(thead);
             let tbody = document.createElement("tbody");
             let count = 0;
-            msg.data.forEach((c) => {
+            for (let i = 0; i < cached.length; i++) {
+                const c = cached[i];
                 if (c.capacity[0] < 0.9 && c.capacity[1] < 0.9) {
-                    return;
+                    continue;
                 }
                 if (count >= 7) {
-                    return;
+                    break;
                 }
                 let row = document.createElement("tr");
                 row.classList.add("small");
@@ -79,7 +88,7 @@ export class CircuitCapacityDash extends BaseDashlet {
                 tbody.appendChild(row);
 
                 count++;
-            })
+            }
             table.appendChild(tbody);
 
             // Display it
