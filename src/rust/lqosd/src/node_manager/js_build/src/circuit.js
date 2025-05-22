@@ -149,13 +149,14 @@ function updateTrafficTab(msg) {
 
     let table = document.createElement("table");
     table.classList.add("table", "table-sm", "table-striped");
-    let thead = document.createElement("thead");
+    let thead = document.createElement("thead", "small");
+    thead.style.fontSize = "0.8em";
     thead.appendChild(theading("Protocol"));
-    thead.appendChild(theading("Current Rate (⬇️/⬆️)", 2));
-    thead.appendChild(theading("Total Bytes (⬇️/⬆️)", 2));
-    thead.appendChild(theading("Total Packets (⬇️/⬆️)", 2));
-    thead.appendChild(theading("TCP Retransmits (⬇️/⬆️)", 2));
-    thead.appendChild(theading("RTT (⬇️/⬆️)", 2));
+    thead.appendChild(theading("Current Rate (d/u)", 2));
+    thead.appendChild(theading("Total Bytes (d/u)", 2));
+    thead.appendChild(theading("Total Packets (d/u)", 2));
+    thead.appendChild(theading("TCP Retransmits (d/u)", 2));
+    thead.appendChild(theading("RTT (d/u)", 2));
     thead.appendChild(theading("ASN"));
     thead.appendChild(theading("Country"));
     thead.appendChild(theading("Remote IP"));
@@ -193,6 +194,7 @@ function updateTrafficTab(msg) {
         return bRate - aRate;
     });
 
+    let hideSmallFlows = document.getElementById("hideSmallFlows").checked;
     msg.flows.forEach((flow) => {
         let flowKey = flow[0].protocol_name + flow[0].row_id;
         let down = flow[1].rate_estimate_bps.down;
@@ -245,7 +247,9 @@ function updateTrafficTab(msg) {
         row.appendChild(simpleRow(flow[0].asn_country));
         row.appendChild(simpleRow(flow[0].remote_ip));
 
-        tbody.appendChild(row);
+        if (!hideSmallFlows || (down > 1024*1024 || up > 1024*1024)) {
+            tbody.appendChild(row);
+        }
     });
 
     table.appendChild(tbody);
