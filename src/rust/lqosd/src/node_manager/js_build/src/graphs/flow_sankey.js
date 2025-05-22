@@ -20,8 +20,8 @@ export class FlowsSankey extends DashboardGraph {
     update(flows) {
         // Store keyed objects to accumulate traffic for each column.
         let localDevices = {};
-        let protocols = {};
         let asns = {};
+        let protocols = {};
         let remoteDevices = {};
 
         const ten_second_in_nanos = 10000000000;
@@ -51,34 +51,34 @@ export class FlowsSankey extends DashboardGraph {
             // Ensure all members are present. The arrays hold links to subsequent
             // columns.
             if (localDevices[localDevice] === undefined) {
-                localDevices[localDevice] = {}
-            }
-            if (protocols[proto] === undefined) {
-                protocols[proto] = {};
+                localDevices[localDevice] = {};
             }
             if (asns[asn] === undefined) {
                 asns[asn] = {};
             }
+            if (protocols[proto] === undefined) {
+                protocols[proto] = {};
+            }
             if (remoteDevices[remoteDevice] === undefined) {
                 remoteDevices[remoteDevice] = 0;
             }
-        
+
             // Accumulate traffic.
             let currentRate = flow[1].rate_estimate_bps.down + flow[1].rate_estimate_bps.up;
-            if (localDevices[localDevice][proto] === undefined) {
-                localDevices[localDevice][proto] = currentRate;
+            if (localDevices[localDevice][asn] === undefined) {
+                localDevices[localDevice][asn] = currentRate;
             } else {
-                localDevices[localDevice][proto] += currentRate;
+                localDevices[localDevice][asn] += currentRate;
             }
-            if (protocols[proto][asn] === undefined) {
-                protocols[proto][asn] = currentRate;
+            if (asns[asn][proto] === undefined) {
+                asns[asn][proto] = currentRate;
             } else {
-                protocols[proto][asn] += currentRate;
+                asns[asn][proto] += currentRate;
             }
-            if (asns[asn][remoteDevice] === undefined) {
-                asns[asn][remoteDevice] = currentRate;
+            if (protocols[proto][remoteDevice] === undefined) {
+                protocols[proto][remoteDevice] = currentRate;
             } else {
-                asns[asn][remoteDevice] += currentRate;
+                protocols[proto][remoteDevice] += currentRate;
             }
         });
 
@@ -94,25 +94,12 @@ export class FlowsSankey extends DashboardGraph {
                     color: 'magenta'
                 }
             });
-            for (let proto in localDevices[localDevice]) {
-                links.push({source: localDevice, target: proto, value: localDevices[localDevice][proto]});
+            for (let asn in localDevices[localDevice]) {
+                links.push({source: localDevice, target: asn, value: localDevices[localDevice][asn]});
             }
         }
 
         // For each key/value pair in the protocols object, create a node.
-        for (let proto in protocols) {
-            data.push({
-                name: proto,
-                label: {
-                    color: 'green'
-                }
-            });
-            for (let asn in protocols[proto]) {
-                links.push({source: proto, target: asn, value: protocols[proto][asn]});
-            }
-        }
-
-        // For each key/value pair in the asns object, create a node.
         for (let asn in asns) {
             data.push({
                 name: asn,
@@ -120,8 +107,21 @@ export class FlowsSankey extends DashboardGraph {
                     color: 'red'
                 }
             });
-            for (let remoteDevice in asns[asn]) {
-                links.push({source: asn, target: remoteDevice, value: asns[asn][remoteDevice]});
+            for (let proto in asns[asn]) {
+                links.push({source: asn, target: proto, value: asns[asn][proto]});
+            }
+        }
+
+        // For each key/value pair in the asns object, create a node.
+        for (let proto in protocols) {
+            data.push({
+                name: proto,
+                label: {
+                    color: 'green'
+                }
+            });
+            for (let remoteDevice in protocols[proto]) {
+                links.push({source: proto, target: remoteDevice, value: protocols[proto][remoteDevice]});
             }
         }
 
