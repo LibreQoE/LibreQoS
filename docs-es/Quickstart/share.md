@@ -1,6 +1,6 @@
 # Comparte tu antes y después
 
-Le pedimos que comparta una captura de pantalla anónima de su implementación de LibreQoS antes (modo de solo monitor) y después (cola habilitada) en el[Chat LibreQoS ](https://chat.libreqos.io/join/fvu3cerayyaumo377xwvpev6/). T
+Le pedimos que comparta una captura de pantalla anónima de su implementación de LibreQoS antes (modo de solo monitor) y después (cola habilitada) en el [Chat LibreQoS ](https://chat.libreqos.io/join/fvu3cerayyaumo377xwvpev6/). T
 Esto nos ayuda a evaluar el impacto de nuestro software. Y también nos alegra.
 
 1. Habilitar el modo de solo monitor
@@ -29,4 +29,4 @@ sudo systemctl start lqos_scheduler
 
 ## Captura de pantalla
 
-Para generar una captura de pantalla, acceda a la interfaz web y haga clic en Configuración. Active "Ocultar información del cliente" (modo de captura de pantalla), "Aplicar cambios" y, a continuación, vuelva al panel de control para tomar una captura de pantalla.
+Para generar una captura de pantalla, acceda a la interfaz web y haga clic en Configuración. Active "Ocultar información del cliente" (modo de captura de pantalla), "Aplicar cambios" y, a continuación, vuelva al panel de control para realizar una captura de pantalla.
