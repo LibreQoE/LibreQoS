@@ -229,7 +229,7 @@ table tr td a {
     margin-bottom: 0.3rem;
 }
 .stat-value-big {
-    font-size: 2rem;
+    font-size: 1rem;
     font-weight: 700;
     color: var(--bs-secondary);
 }
