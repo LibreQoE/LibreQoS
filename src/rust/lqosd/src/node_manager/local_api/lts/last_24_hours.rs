@@ -342,7 +342,7 @@ pub async fn top10_flows_period(
 pub async fn recent_medians(
     Extension(shaper_query): Extension<tokio::sync::mpsc::Sender<ShaperQueryCommand>>,
 ) -> Result<Json<Vec<RecentMedians>>, StatusCode> {
-    tracing::error!("rtt_histo_period");
+    tracing::debug!("rtt_histo_period");
     let (tx, rx) = tokio::sync::oneshot::channel();
     shaper_query
         .send(ShaperQueryCommand::ShaperRecentMedian { reply: tx })
