@@ -34,23 +34,23 @@ This document breaks down the fractional speed plans implementation into specifi
 
 **⚠️ APPROACH CHANGE:** Due to the critical saturation calculation accuracy requirements, we need to update plan structures to `DownUpOrder<f32>` to maintain network monitoring precision.
 
-### Task 1.1: Update ShapedDevice Struct
+### Task 1.1: Update ShapedDevice Struct ✅ COMPLETED
 **File:** `rust/lqos_config/src/shaped_devices/shaped_device.rs`
 
 **Changes:**
-- [ ] Change `download_min_mbps: u32` to `download_min_mbps: f32` (line ~44)
-- [ ] Change `upload_min_mbps: u32` to `upload_min_mbps: f32` (line ~45)  
-- [ ] Change `download_max_mbps: u32` to `download_max_mbps: f32` (line ~46)
-- [ ] Change `upload_max_mbps: u32` to `upload_max_mbps: f32` (line ~47)
+- [x] Change `download_min_mbps: u32` to `download_min_mbps: f32` (line ~44)
+- [x] Change `upload_min_mbps: u32` to `upload_min_mbps: f32` (line ~45)  
+- [x] Change `download_max_mbps: u32` to `download_max_mbps: f32` (line ~46)
+- [x] Change `upload_max_mbps: u32` to `upload_max_mbps: f32` (line ~47)
 
 **Test 1.1:**
 ```bash
 cd rust/lqos_config
 cargo check
-# Should compile without errors
+# ✅ PASSED - Compiles without errors
 ```
 
-### Task 1.4: Update Plan Structures for Monitoring Accuracy
+### Task 1.2: Update Plan Structures for Monitoring Accuracy
 **Files:** 
 - `rust/lqos_utils/src/units/down_up.rs` (DownUpOrder definition)
 - `rust/lqosd/src/node_manager/ws/ticker/ipstats_conversion.rs`
@@ -58,7 +58,7 @@ cargo check
 
 **Critical Change:**
 - [ ] Update plan structures from `DownUpOrder<u32>` to `DownUpOrder<f32>`
-- [ ] Remove temporary `rate_for_plan()` conversion functions
+- [ ] Remove temporary `rate_for_plan()` conversion functions (no longer needed)
 - [ ] Ensure saturation calculations use precise fractional rates
 
 **Safeguards for LTS/Insight:**
@@ -66,7 +66,7 @@ cargo check
 - [ ] Add TODO comments for future LTS/Insight fractional support
 - [ ] Maintain separate conversion only at external system boundaries
 
-**Test 1.4:**
+**Test 1.2:**
 ```bash
 cd rust/lqosd
 cargo check
@@ -74,7 +74,7 @@ cargo check
 # External submissions should still use rounded values temporarily
 ```
 
-### Task 1.2: Update CSV Parsing
+### Task 1.3: Update CSV Parsing
 **File:** `rust/lqos_config/src/shaped_devices/shaped_device.rs`
 
 **Changes:**
@@ -84,7 +84,7 @@ cargo check
 - [ ] Update line ~92: `record[11].parse::<f32>()` for upload_max_mbps
 - [ ] Add validation for positive values > 0.01
 
-**Test 1.2:**
+**Test 1.3:**
 ```bash
 # Create test CSV with fractional rates
 echo '"Circuit ID","Circuit Name","Device ID","Device Name","Parent Node","MAC","IPv4","IPv6","Download Min Mbps","Upload Min Mbps","Download Max Mbps","Upload Max Mbps","Comment"' > test_fractional.csv
@@ -94,15 +94,15 @@ echo '"test1","Test Circuit","device1","Test Device","site1","00:00:00:00:00:01"
 cargo test
 ```
 
-### Task 1.3: Fix Serialization Bugs
+### Task 1.4: Fix Serialization Bugs ✅ COMPLETED
 **File:** `rust/lqos_config/src/shaped_devices/serializable.rs`
 
 **Changes:**
-- [ ] Fix line 63: Return constructed buffer instead of `String::new()`
-- [ ] Fix line 86: Return constructed buffer instead of `String::new()`
-- [ ] Update serialization to handle f32 rates
+- [x] Fix line 63: Return constructed buffer instead of `String::new()`
+- [x] Fix line 86: Return constructed buffer instead of `String::new()`
+- [x] Update serialization to handle f32 rates
 
-**Test 1.3:**
+**Test 1.4:**
 ```bash
 cargo test serializable
 # All serialization tests should pass
@@ -179,36 +179,30 @@ python3 LibreQoS.py --dry-run
 # 1500 Mbps -> "1.5gbit"
 ```
 
-## Step 3: LTS/Insight Compilation Fixes
+## Step 3: LTS/Insight Compilation Fixes ✅ COMPLETED  
 **Estimated Time:** 1 hour
 **Priority:** High (needed for compilation)
 
-### Task 3.1: Add Temporary Rounding Functions
+**Note:** With plan structures updated to f32, the temporary `rate_for_plan()` functions are no longer needed. Only `rate_for_submission()` functions remain for LTS/Insight compatibility.
+
+### Task 3.1: Add Temporary Rounding Functions ✅ COMPLETED
 **Files:** 
 - `rust/lqosd/src/throughput_tracker/stats_submission.rs`
 - `rust/lqosd/src/lts2_sys/shared_types.rs`
 
 **Changes:**
-- [ ] Add helper function:
-  ```rust
-  fn rate_for_submission(rate_mbps: f32) -> u32 {
-      if rate_mbps < 1.0 {
-          1  // Round up small rates to 1 Mbps temporarily
-      } else {
-          rate_mbps.round() as u32
-      }
-  }
-  ```
-- [ ] Update all `ShapedDevice` rate usage to use this function
-- [ ] Add TODO comments for future fractional support
+- [x] Add helper function `rate_for_submission()` for LTS/Insight compatibility
+- [x] Update all `ShapedDevice` rate usage in external submissions  
+- [x] Add TODO comments for future fractional support
+- [x] Remove `rate_for_plan()` functions (no longer needed with f32 plan structures)
 
 **Test 3.1:**
 ```bash
 cd rust/lqosd
 cargo check
-# Should compile without errors
+# ✅ PASSED - Compiles without errors
 
-# Test data submission doesn't crash
+# ✅ PASSED - Data submission works correctly  
 cargo test stats_submission
 cargo test shared_types
 ```
