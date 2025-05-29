@@ -2,6 +2,32 @@
 
 This document breaks down the fractional speed plans implementation into specific tasks with tests for tracking progress.
 
+## Development Guidelines
+
+### Git Workflow
+- **Current branch:** `fractional_speed_plans` - All work should remain in this branch
+- **Commit frequency:** Make git commits after each feature is added and tested
+- **Commit messages:** Use descriptive messages for easy rollback if needed
+- **Example:** `git commit -m "feat: Update ShapedDevice struct to use f32 rates"`
+
+### Build and Test Commands
+- **Rust compilation:** Use `cargo check` and `cargo build` in relevant crate directories
+- **Rust testing:** Use `cargo test` for unit tests
+- **JavaScript building:** Run `./copy_files.sh` to trigger JavaScript builds when working on UI
+- **Manual testing:** Request user to run `lqosd` and `LibreQoS.py` as needed for integration testing
+
+### Testing Protocol
+- Test after each step before moving to the next
+- Request user assistance for manual `lqosd` and `LibreQoS.py` runs
+- Ask for specific output/logs when debugging issues
+- Use browser testing for UI components
+
+### Directory Context
+- **Working directory:** `/home/herbert/Rust/LibreQoS/libreqos/LibreQoS/src`
+- **Rust crates:** Located in `rust/` subdirectory
+- **Main Python:** `LibreQoS.py` in current directory
+- **UI files:** Located in `rust/lqosd/src/node_manager/`
+
 ## Step 1: Core Rust Data Structure Changes
 **Estimated Time:** 2 hours  
 **Priority:** Critical (blocks all other work)
