@@ -1,5 +1,6 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {GraphOptionsBuilder} from "../lq_js_common/e_charts/chart_builder";
+import {scaleNumber} from "../lq_js_common/helpers/scaling";
 
 export class PacketsPerSecondBar extends DashboardGraph {
     constructor(id) {
@@ -28,15 +29,15 @@ export class PacketsPerSecondBar extends DashboardGraph {
                 let lines = [];
                 params.forEach(param => {
                     if (param.data && typeof param.data === 'object') {
-                        let val = param.data.value;
+                        let val = Math.abs(param.data.value);
                         let ts = param.data.timestamp;
                         let dateStr = ts ? new Date(ts).toLocaleTimeString('en-US', { hour12: false }) : '';
                         lines.push(
-                            param.marker + param.seriesName + ': ' + val + ' @ ' + dateStr
+                            param.marker + param.seriesName + ': ' + scaleNumber(val) + ' @ ' + dateStr
                         );
                     } else {
                         lines.push(
-                            param.marker + param.seriesName + ': ' + param.data
+                            param.marker + param.seriesName + ': ' + scaleNumber(Math.abs(param.data))
                         );
                     }
                 });
