@@ -1,5 +1,7 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {DashboardGraph} from "../graphs/dashboard_graph";
+import {lerpGreenToRedViaOrange} from "../helpers/scaling";
+import {isColorBlindMode} from "../helpers/colorblind";
 
 /**
  * Viridis color scale interpolation (0-1 input).
@@ -122,14 +124,19 @@ export class TopTreeSankey extends BaseDashlet {
                 let bytesAsMegabits = bytes / 1000000;
                 let maxBytes = r[1].max_throughput[0] / 8;
                 let percent = Math.min(100, (bytesAsMegabits / maxBytes) * 100);
-                let capacityColor = lerpViridis(percent / 100);
+                let capacityColor = isColorBlindMode()
+                    ? lerpViridis(percent / 100)
+                    : lerpGreenToRedViaOrange(100 - percent, 100);
 
                 if (r[1].rtts.length > 0) {
                     lastRtt[name] = r[1].rtts[0];
                 } else {
                     lastRtt[name] = 0;
                 }
-                let color = lerpViridis(percent / 100);
+                let rttPercent = Math.min(100, (lastRtt[name] / 200) * 100);
+                let color = isColorBlindMode()
+                    ? lerpViridis(rttPercent / 100)
+                    : lerpGreenToRedViaOrange(200 - lastRtt[name], 200);
 
                 if (bytesAsMegabits > 0) {
                     nodes.push({

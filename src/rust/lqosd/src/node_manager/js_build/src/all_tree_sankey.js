@@ -1,4 +1,6 @@
 import { DashboardGraph } from "./graphs/dashboard_graph";
+import {lerpGreenToRedViaOrange} from "./helpers/scaling";
+import {isColorBlindMode} from "./helpers/colorblind";
 /**
  * Viridis color scale interpolation (0-1 input).
  * Returns hex color string.
@@ -61,11 +63,13 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
                 let bytesAsMegabits = bytes / 1000000;
                 let maxBytes = head[i][1].max_throughput[0] / 8;
                 let percent = Math.min(100, (bytesAsMegabits / maxBytes) * 100);
-                // Use Viridis color scale for capacity
-                let capacityColor = lerpViridis(percent / 100);
+                // Use appropriate color scale based on color blind mode
+                let capacityColor = isColorBlindMode() 
+                    ? lerpViridis(percent / 100)
+                    : lerpGreenToRedViaOrange(100 - percent, 100);
 
-                // Use Viridis color scale for node RTT (if applicable)
-                let color = lerpViridis(percent / 100);
+                // Use appropriate color scale for node
+                let color = capacityColor;
 
                 let label = {
                     fontSize: 10,
@@ -124,7 +128,9 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
                 links[i].value /= links[i].n;
                 let bytesAsMegabits = links[i].value / 1000000;
                 let percent = Math.min(100, (bytesAsMegabits / links[i].maxBytes) * 100);
-                let capacityColor = lerpViridis(percent / 100);
+                let capacityColor = isColorBlindMode()
+                    ? lerpViridis(percent / 100)
+                    : lerpGreenToRedViaOrange(100 - percent, 100);
                 links[i].lineStyle.color = capacityColor;
             }
 

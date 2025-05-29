@@ -1,4 +1,6 @@
 import {DashboardGraph} from "./dashboard_graph";
+import {lerpColor, lerpGreenToRedViaOrange} from "../helpers/scaling";
+import {isColorBlindMode} from "../helpers/colorblind";
 /**
  * Viridis color scale interpolation (0-1 input).
  * Returns hex color string.
@@ -74,7 +76,7 @@ export class TopNSankey extends DashboardGraph {
             name: "Root",
             label: "Root",
             itemStyle: {
-                color: "#440154",
+                color: isColorBlindMode() ? "#440154" : "green",
                 borderWidth: 1,
             }
         });
@@ -94,13 +96,19 @@ export class TopNSankey extends DashboardGraph {
             let bytesAsMegabits = bytes / 1000000;
             let maxBytes = r.plan.down / 8;
             let percent = Math.min(100, (bytesAsMegabits / maxBytes) * 100);
-            let capacityColor = lerpViridis(percent / 100);
+            let capacityColor = isColorBlindMode()
+                ? lerpViridis(percent / 100)
+                : lerpGreenToRedViaOrange(100 - percent, 100);
             
             let rtt = Math.max(Math.min(r.median_tcp_rtt, 200), 0);
-            let rttColor = lerpViridis(rtt / 200);
+            let rttColor = isColorBlindMode()
+                ? lerpViridis(rtt / 200)
+                : lerpGreenToRedViaOrange(200 - rtt, 200);
             
             let percentRxmit = Math.min(100, r.tcp_retransmits[0] + r.tcp_retransmits[1]) / 100;
-            let rxmitColor = lerpViridis(percentRxmit);
+            let rxmitColor = isColorBlindMode()
+                ? lerpViridis(percentRxmit)
+                : lerpColor([0, 255, 0], [255, 0, 0], percentRxmit);
             
             nodes.push({
                 name: name,
