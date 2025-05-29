@@ -265,3 +265,48 @@ pub fn get_all_circuits() -> BusResponse {
         BusResponse::CircuitData(Vec::new())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rate_for_plan_small_rates() {
+        // Small fractional rates should round up to 1
+        assert_eq!(rate_for_plan(0.1), 1);
+        assert_eq!(rate_for_plan(0.5), 1);
+        assert_eq!(rate_for_plan(0.9), 1);
+    }
+
+    #[test]
+    fn test_rate_for_plan_edge_case_one() {
+        // Exactly 1.0 should stay 1
+        assert_eq!(rate_for_plan(1.0), 1);
+    }
+
+    #[test]
+    fn test_rate_for_plan_normal_rates() {
+        // Normal rates should round to nearest integer
+        assert_eq!(rate_for_plan(1.1), 1);
+        assert_eq!(rate_for_plan(1.4), 1);
+        assert_eq!(rate_for_plan(1.5), 2);
+        assert_eq!(rate_for_plan(1.6), 2);
+        assert_eq!(rate_for_plan(2.3), 2);
+        assert_eq!(rate_for_plan(2.7), 3);
+    }
+
+    #[test]
+    fn test_rate_for_plan_prevents_zero() {
+        // Should never return 0, even for very small inputs
+        assert_eq!(rate_for_plan(0.01), 1);
+        assert_eq!(rate_for_plan(0.001), 1);
+    }
+
+    #[test]
+    fn test_rate_for_plan_preserves_integers() {
+        // Integer inputs should be preserved exactly
+        assert_eq!(rate_for_plan(5.0), 5);
+        assert_eq!(rate_for_plan(10.0), 10);
+        assert_eq!(rate_for_plan(100.0), 100);
+    }
+}
