@@ -157,6 +157,11 @@ This document outlines the plan to implement fractional speed plans in LibreQoS,
 - `rust/lqosd/src/node_manager/js_build/src/graphs/top_n_sankey.js` (lines 96-101) - **CRITICAL: Saturation calculation**
 - `rust/lqosd/src/node_manager/js_build/src/helpers/builders.js` (lines 148-152) - Table rows with saturation indicators
 
+**Worst N Widgets with Performance Indicators:**
+- `rust/lqosd/src/node_manager/js_build/src/dashlets/worst10_downloaders.js` - Worst RTT with saturation context
+- `rust/lqosd/src/node_manager/js_build/src/dashlets/worst10_retransmits.js` - Worst retransmits with saturation context
+- `rust/lqosd/src/node_manager/js_build/src/helpers/scaling.js` - **Core formatting functions for all indicators**
+
 **Changes:**
 - Update all hardcoded "Mbps" strings to handle decimal display
 - Ensure `scaleNumber()` and `formatThroughput()` preserve decimal precision
@@ -363,6 +368,14 @@ ShapedDeviceConfig {
 - `rust/lqosd/src/node_manager/js_build/src/dashlets/top_tree_summary.js` - Tree summary
 - `rust/lqosd/src/node_manager/js_build/src/graphs/bits_gauge.js` - Rate gauges
 - `rust/lqosd/src/node_manager/js_build/src/helpers/builders.js` - Table builders
+
+**Performance Monitoring Components (CRITICAL for accurate saturation):**
+- `rust/lqosd/src/node_manager/js_build/src/dashlets/top10_downloaders.js` - Top N widgets
+- `rust/lqosd/src/node_manager/js_build/src/dashlets/top10_downloads_graphic.js` - Sankey diagrams
+- `rust/lqosd/src/node_manager/js_build/src/dashlets/worst10_downloaders.js` - Worst N RTT
+- `rust/lqosd/src/node_manager/js_build/src/dashlets/worst10_retransmits.js` - Worst N retransmits
+- `rust/lqosd/src/node_manager/js_build/src/graphs/top_n_sankey.js` - Core saturation calculation
+- `rust/lqosd/src/node_manager/js_build/src/helpers/scaling.js` - Core formatting functions
 
 ### Low Priority (Future/Optional)
 - `ShapedDevices.example.csv` - Documentation

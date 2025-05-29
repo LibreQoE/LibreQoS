@@ -338,31 +338,38 @@ console.log(scaleNumber(2.5, 1)); // Should preserve decimal
 
 **Note:** Backend `circuit_capacity.rs` already handles f32→f64 conversion correctly
 
-### Task 6.6: Top N Widgets with Saturation Indicators ⚠️ CRITICAL
+### Task 6.6: Top N & Worst N Widgets with Saturation Indicators ⚠️ CRITICAL
 **Files:**
 - `rust/lqosd/src/node_manager/js_build/src/dashlets/top10_downloaders.js`
 - `rust/lqosd/src/node_manager/js_build/src/dashlets/top10_downloads_graphic.js`
 - `rust/lqosd/src/node_manager/js_build/src/graphs/top_n_sankey.js`
+- `rust/lqosd/src/node_manager/js_build/src/dashlets/worst10_downloaders.js`
+- `rust/lqosd/src/node_manager/js_build/src/dashlets/worst10_retransmits.js`
 - `rust/lqosd/src/node_manager/js_build/src/helpers/builders.js`
+- `rust/lqosd/src/node_manager/js_build/src/helpers/scaling.js`
 
 **Critical Issue:**
-Top N saturation indicators use `r.plan.down` from `DownUpOrder<u32>` which receives rounded values from `rate_for_plan()`. This causes **incorrect saturation percentages** that could mask network congestion.
+Top N and Worst N widgets use `r.plan.down` from `DownUpOrder<u32>` which receives rounded values from `rate_for_plan()`. This causes **incorrect saturation percentages** that could mask network congestion in performance monitoring.
 
 **Changes:**
 - [ ] **HIGH PRIORITY:** Investigate updating plan structures to support f32 rates
 - [ ] **Alternative:** Add separate fractional rate fields for saturation calculations
 - [ ] Update saturation calculation in `top_n_sankey.js` (lines 96-101)
-- [ ] Ensure colored indicators reflect accurate utilization
+- [ ] Ensure colored indicators reflect accurate utilization in both Top N and Worst N widgets
 - [ ] Update table row builders to use precise saturation
+- [ ] Verify `formatThroughput()` and `scaling.js` functions handle fractional rates correctly
 
 **Test 6.6:**
 ```javascript
-// Critical saturation test:
+// Critical saturation test for Top N and Worst N widgets:
 // 1. Create circuit with 2.5 Mbps limit
 // 2. Generate 2.3 Mbps usage 
 // 3. Verify saturation shows 92% (red warning), not 77% (safe)
-// 4. Check Sankey diagram ribbons turn red appropriately
-// 5. Verify colored squares (■) show correct saturation levels
+// 4. Check Top N downloaders show correct colored indicators
+// 5. Check Sankey diagram ribbons turn red appropriately
+// 6. Verify Worst N RTT/retransmits show accurate saturation context
+// 7. Verify colored squares (■) show correct saturation levels across all widgets
+// 8. Test formatThroughput() function with fractional rate limits
 ```
 
 **Decision Required:**
