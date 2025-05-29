@@ -22,7 +22,7 @@ use std::sync::atomic::AtomicI64;
 use csv::ReaderBuilder;
 use tokio::sync::mpsc::Sender;
 use tokio::time::Instant;
-use tracing::{debug, error};
+use tracing::debug;
 use tracing::log::warn;
 
 fn scale_u64_by_f64(value: u64, scale: f64) -> u64 {
@@ -648,7 +648,7 @@ fn combined_devices_network_hash() -> anyhow::Result<i64> {
 fn lts2_needs_shaped_devices() -> bool {
     let stored_hash = LTS2_HASH.load(std::sync::atomic::Ordering::Relaxed);
     let new_hash = combined_devices_network_hash().unwrap_or(-1);
-    tracing::info!("Stored Hash: {}, New Hash: {}", stored_hash, new_hash);
+    tracing::debug!("Stored Hash: {}, New Hash: {}", stored_hash, new_hash);
     LTS2_HASH.store(new_hash, std::sync::atomic::Ordering::Relaxed);
     stored_hash != new_hash
 }

@@ -11,7 +11,6 @@ mod site_rtt;
 mod site_throughput;
 
 use std::fs::File;
-use std::io::Write;
 use crate::lts2_sys::RemoteCommand;
 use crate::lts2_sys::lts2_client::ingestor::commands::IngestorCommand;
 use crate::lts2_sys::lts2_client::{get_remote_host, remote_commands};
@@ -26,7 +25,7 @@ use std::net::{TcpStream, ToSocketAddrs};
 use std::path::Path;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 use uuid::Uuid;
 use crate::program_control;
 
