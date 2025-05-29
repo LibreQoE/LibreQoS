@@ -29,6 +29,16 @@ fn scale_u64_by_f64(value: u64, scale: f64) -> u64 {
     (value as f64 * scale) as u64
 }
 
+/// Temporary conversion function for LTS/Insight compatibility
+/// TODO: Remove when LTS/Insight support fractional rates
+fn rate_for_submission(rate_mbps: f32) -> u32 {
+    if rate_mbps < 1.0 {
+        1  // Round up small fractional rates to 1 Mbps for now
+    } else {
+        rate_mbps.round() as u32  // Round to nearest integer
+    }
+}
+
 #[derive(Debug)]
 struct LtsSubmitMetrics {
     start: Instant,
@@ -228,10 +238,10 @@ pub(crate) fn submit_throughput_stats(
                                 circuit_id: device.circuit_id,
                                 circuit_name: device.circuit_name,
                                 circuit_hash,
-                                download_min_mbps: device.download_min_mbps,
-                                upload_min_mbps: device.upload_min_mbps,
-                                download_max_mbps: device.download_max_mbps,
-                                upload_max_mbps: device.upload_max_mbps,
+                                download_min_mbps: rate_for_submission(device.download_min_mbps),
+                                upload_min_mbps: rate_for_submission(device.upload_min_mbps),
+                                download_max_mbps: rate_for_submission(device.download_max_mbps),
+                                upload_max_mbps: rate_for_submission(device.upload_max_mbps),
                                 parent_node: device.parent_hash,
                                 parent_node_name: Some(device.parent_node),
                                 devices: vec![Lts2Device {

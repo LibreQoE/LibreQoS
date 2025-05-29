@@ -3,6 +3,16 @@ use lqos_bus::{IpStats, TcHandle};
 use lqos_utils::units::DownUpOrder;
 use serde::{Deserialize, Serialize};
 
+/// Temporary conversion function for plan compatibility
+/// TODO: Remove when plan structures support fractional rates
+fn rate_for_plan(rate_mbps: f32) -> u32 {
+    if rate_mbps < 1.0 {
+        1  // Round up small fractional rates to 1 Mbps for now
+    } else {
+        rate_mbps.round() as u32  // Round to nearest integer
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct IpStatsWithPlan {
     pub ip_address: String,
@@ -41,7 +51,7 @@ impl From<&IpStats> for IpStatsWithPlan {
                     &circuit.circuit_name
                 };
                 result.ip_address = format!("{}", name);
-                result.plan = DownUpOrder::new(circuit.download_max_mbps, circuit.upload_max_mbps);
+                result.plan = DownUpOrder::new(rate_for_plan(circuit.download_max_mbps), rate_for_plan(circuit.upload_max_mbps));
             }
         }
 
