@@ -318,6 +318,26 @@ console.log(scaleNumber(2.5, 1)); // Should preserve decimal
 // 3. Tooltips should show decimal precision
 ```
 
+### Task 6.5: Capacity Dashboard Component Updates
+**Files:**
+- `rust/lqosd/src/node_manager/js_build/src/dashlets/circuit_capacity_dash.js`
+- `rust/lqosd/src/node_manager/js_build/src/dashlets/tree_capacity_dash.js`
+
+**Changes:**
+- [ ] Verify capacity percentage calculations work with fractional rates
+- [ ] Ensure utilization thresholds (>90%, >75%) work correctly 
+- [ ] Update any hardcoded rate displays to show decimals
+
+**Test 6.5:**
+```javascript
+// Browser test:
+// 1. Check circuit capacity dashboard shows correct utilization %
+// 2. Tree capacity dashboard calculates correctly with fractional max rates
+// 3. Capacity thresholds trigger properly (circuits >90%, nodes >75%)
+```
+
+**Note:** Backend `circuit_capacity.rs` already handles f32→f64 conversion correctly
+
 ## Step 7: Integration Updates
 **Estimated Time:** 2 hours
 **Priority:** Medium
