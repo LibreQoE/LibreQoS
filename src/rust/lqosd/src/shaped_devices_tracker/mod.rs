@@ -11,6 +11,16 @@ use std::sync::{Arc, atomic::AtomicBool};
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
+/// Temporary conversion function for plan compatibility
+/// TODO: Remove when plan structures support fractional rates
+fn rate_for_plan(rate_mbps: f32) -> u32 {
+    if rate_mbps < 1.0 {
+        1  // Round up small fractional rates to 1 Mbps for now
+    } else {
+        rate_mbps.round() as u32  // Round to nearest integer
+    }
+}
+
 mod netjson;
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
 pub use netjson::*;
@@ -230,8 +240,8 @@ pub fn get_all_circuits() -> BusResponse {
                     device_id = Some(devices.devices[*c.1].device_id.clone());
                     device_name = Some(devices.devices[*c.1].device_name.clone());
                     parent_node = Some(devices.devices[*c.1].parent_node.clone());
-                    plan.down = devices.devices[*c.1].download_max_mbps;
-                    plan.up = devices.devices[*c.1].upload_max_mbps;
+                    plan.down = rate_for_plan(devices.devices[*c.1].download_max_mbps);
+                    plan.up = rate_for_plan(devices.devices[*c.1].upload_max_mbps);
                 }
 
                 Circuit {
