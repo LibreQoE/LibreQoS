@@ -1,6 +1,32 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
-import {lerpGreenToRedViaOrange} from "../helpers/scaling";
 import {DashboardGraph} from "../graphs/dashboard_graph";
+import {lerpGreenToRedViaOrange} from "../helpers/scaling";
+import {isColorBlindMode} from "../helpers/colorblind";
+
+/**
+ * Viridis color scale interpolation (0-1 input).
+ * Returns hex color string.
+ */
+function lerpViridis(t) {
+    // Viridis colormap sampled at 6 points, interpolated linearly
+    const stops = [
+        [68, 1, 84],    // #440154
+        [59, 82, 139],  // #3B528B
+        [33, 145, 140], // #21918C
+        [94, 201, 98],  // #5EC962
+        [253, 231, 37]  // #FDE725
+    ];
+    if (t <= 0) return "#440154";
+    if (t >= 1) return "#FDE725";
+    let idx = t * (stops.length - 1);
+    let i = Math.floor(idx);
+    let frac = idx - i;
+    let c0 = stops[i], c1 = stops[i + 1];
+    let r = Math.round(c0[0] + frac * (c1[0] - c0[0]));
+    let g = Math.round(c0[1] + frac * (c1[1] - c0[1]));
+    let b = Math.round(c0[2] + frac * (c1[2] - c0[2]));
+    return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+}
 import {isRedacted} from "../helpers/redact";
 
 let lastRtt = {};
@@ -98,30 +124,37 @@ export class TopTreeSankey extends BaseDashlet {
                 let bytesAsMegabits = bytes / 1000000;
                 let maxBytes = r[1].max_throughput[0] / 8;
                 let percent = Math.min(100, (bytesAsMegabits / maxBytes) * 100);
-                let capacityColor = lerpGreenToRedViaOrange(100 - percent, 100);
+                let capacityColor = isColorBlindMode()
+                    ? lerpViridis(percent / 100)
+                    : lerpGreenToRedViaOrange(100 - percent, 100);
 
                 if (r[1].rtts.length > 0) {
                     lastRtt[name] = r[1].rtts[0];
                 } else {
                     lastRtt[name] = 0;
                 }
-                let color = lerpGreenToRedViaOrange(200 - lastRtt[name], 200);
+                let rttPercent = Math.min(100, (lastRtt[name] / 200) * 100);
+                let color = isColorBlindMode()
+                    ? lerpViridis(rttPercent / 100)
+                    : lerpGreenToRedViaOrange(200 - lastRtt[name], 200);
 
-                nodes.push({
-                    name: r[1].name,
-                    label: label,
-                    itemStyle: {
-                        color: color
-                    }
-                });
-                links.push({
-                    source: "Root",
-                    target: r[1].name,
-                    value: r[1].current_throughput[0] + r[1].current_throughput[1],
-                    lineStyle: {
-                        color: capacityColor,
-                    }
-                });
+                if (bytesAsMegabits > 0) {
+                    nodes.push({
+                        name: r[1].name,
+                        label: label,
+                        itemStyle: {
+                            color: color
+                        }
+                    });
+                    links.push({
+                        source: "Root",
+                        target: r[1].name,
+                        value: r[1].current_throughput[0] + r[1].current_throughput[1],
+                        lineStyle: {
+                            color: capacityColor,
+                        }
+                    });
+                }
             });
             this.graph.update(nodes, links);
         }

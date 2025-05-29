@@ -1,6 +1,7 @@
 import {clearDiv} from "./helpers/builders";
 import {initRedact} from "./helpers/redact";
 import {initDayNightMode} from "./helpers/dark_mode";
+import {initColorBlind} from "./helpers/colorblind";
 
 function getDeviceCounts() {
     $.get("/local-api/deviceCount", (data) => {
@@ -101,6 +102,7 @@ function setupReload() {
 initLogout();
 initDayNightMode();
 initRedact();
+initColorBlind();
 getDeviceCounts();
 setupSearch();
 setupReload();
