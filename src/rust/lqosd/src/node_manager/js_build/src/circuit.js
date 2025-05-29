@@ -143,6 +143,8 @@ function connectFlowChannel() {
 let movingAverages = new Map();
 let prevFlowBytes = new Map();
 let tickCount = 0;
+let trafficSortColumn = 'rate'; // Default sort by rate
+let trafficSortDirection = 'desc'; // 'asc' or 'desc'
 
 function updateTrafficTab(msg) {
     let target = document.getElementById("allTraffic");
@@ -151,19 +153,42 @@ function updateTrafficTab(msg) {
     table.classList.add("table", "table-sm", "table-striped");
     let thead = document.createElement("thead", "small");
     thead.style.fontSize = "0.8em";
-    thead.appendChild(theading("Protocol"));
-    thead.appendChild(theading("Current Rate (d/u)", 2));
-    thead.appendChild(theading("Total Bytes (d/u)", 2));
-    thead.appendChild(theading("Total Packets (d/u)", 2));
-    thead.appendChild(theading("TCP Retransmits (d/u)", 2));
-    thead.appendChild(theading("RTT (d/u)", 2));
-    thead.appendChild(theading("ASN"));
-    thead.appendChild(theading("Country"));
-    thead.appendChild(theading("Remote IP"));
+    
+    // Create clickable headers
+    const createSortableHeader = (text, sortKey, colspan = 1) => {
+        let th = theading(text, colspan);
+        th.style.cursor = "pointer";
+        th.onclick = () => {
+            if (trafficSortColumn === sortKey) {
+                trafficSortDirection = trafficSortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                trafficSortColumn = sortKey;
+                trafficSortDirection = 'desc';
+            }
+        };
+        // Add sort indicator
+        if (trafficSortColumn === sortKey) {
+            th.innerHTML += trafficSortDirection === 'asc' ? ' ▲' : ' ▼';
+        }
+        return th;
+    };
+    
+    thead.appendChild(createSortableHeader("Protocol", "protocol"));
+    thead.appendChild(createSortableHeader("Current Rate (d/u)", "rate", 2));
+    thead.appendChild(createSortableHeader("Total Bytes (d/u)", "bytes", 2));
+    thead.appendChild(createSortableHeader("Total Packets (d/u)", "packets", 2));
+    thead.appendChild(createSortableHeader("TCP Retransmits (d/u)", "retransmits", 2));
+    thead.appendChild(createSortableHeader("RTT (d/u)", "rtt", 2));
+    thead.appendChild(createSortableHeader("ASN", "asn"));
+    thead.appendChild(createSortableHeader("Country", "country"));
+    thead.appendChild(createSortableHeader("Remote IP", "ip"));
     table.appendChild(thead);
     let tbody = document.createElement("tbody");
     const thirty_seconds_in_nanos = 30000000000; // For display filtering
     tickCount++;
+    
+    let hideSmallFlows = document.getElementById("hideSmallFlows").checked;
+    let tableRows = [];
 
     msg.flows.forEach((flow) => {
         let flowKey = flow[0].protocol_name + flow[0].row_id;
@@ -185,16 +210,7 @@ function updateTrafficTab(msg) {
         }
     });
 
-    // Sort msg.flows by flows[0].rate_estimate_bps.down + flows[0].rate_estimate_bps.up descending
-    msg.flows.sort((a, b) => {
-        let flowKeyA = a[0].protocol_name + a[0].row_id;
-        let flowKeyB = b[0].protocol_name + b[0].row_id;
-        let aRate = movingAverages.get(flowKeyA).reduce((a, b) => a + b, 0) / movingAverages.get(flowKeyA).length;
-        let bRate = movingAverages.get(flowKeyB).reduce((a, b) => a + b, 0) / movingAverages.get(flowKeyB).length;
-        return bRate - aRate;
-    });
-
-    let hideSmallFlows = document.getElementById("hideSmallFlows").checked;
+    // Process flows and collect data
     msg.flows.forEach((flow) => {
         let flowKey = flow[0].protocol_name + flow[0].row_id;
         let down = flow[1].rate_estimate_bps.down;
@@ -218,38 +234,102 @@ function updateTrafficTab(msg) {
         prevFlowBytes.set(flowKey, [ flow[1].bytes_sent.down, flow[1].bytes_sent.up, tickCount ]);
 
         if (flow[0].last_seen_nanos > thirty_seconds_in_nanos) return;
-        let row = document.createElement("tr");
-        row.classList.add("small");
+        
         let opacity = Math.min(1, flow[0].last_seen_nanos / thirty_seconds_in_nanos);
-        row.style.opacity = 1.0 - opacity;
-        row.appendChild(simpleRow(flow[0].protocol_name));
-        row.appendChild(simpleRowHtml(formatThroughput(down, plan.down)));
-        row.appendChild(simpleRowHtml(formatThroughput(up, plan.up)));
-        row.appendChild(simpleRow(scaleNumber(flow[1].bytes_sent.down)));
-        row.appendChild(simpleRow(scaleNumber(flow[1].bytes_sent.up)));
-        row.appendChild(simpleRow(scaleNumber(flow[1].packets_sent.down)));
-        row.appendChild(simpleRow(scaleNumber(flow[1].packets_sent.up)));
+        let visible = !hideSmallFlows || (down > 1024*1024 || up > 1024*1024);
+        
+        // Calculate retransmit percentages
+        let retransmitDown = "-";
+        let retransmitUp = "-";
+        let retransmitDownPct = 0;
+        let retransmitUpPct = 0;
+        
         if (flow[1].tcp_retransmits.down > 0) {
-            let pct = flow[1].tcp_retransmits.down / flow[1].packets_sent.down;
-            row.appendChild(simpleRowHtml(formatRetransmit(pct)));
-        } else {
-            row.appendChild(simpleRow("-"));
+            retransmitDownPct = flow[1].tcp_retransmits.down / flow[1].packets_sent.down;
+            retransmitDown = formatRetransmit(retransmitDownPct);
         }
         if (flow[1].tcp_retransmits.up > 0) {
-            let pct = flow[1].tcp_retransmits.up / flow[1].packets_sent.up;
-            row.appendChild(simpleRowHtml(formatRetransmit(pct)));
+            retransmitUpPct = flow[1].tcp_retransmits.up / flow[1].packets_sent.up;
+            retransmitUp = formatRetransmit(retransmitUpPct);
+        }
+        
+        // Get average rate for sorting
+        let avgRate = down + up;
+        if (movingAverages.has(flowKey)) {
+            avgRate = movingAverages.get(flowKey).reduce((a, b) => a + b, 0) / movingAverages.get(flowKey).length;
+        }
+        
+        // Collect row data
+        tableRows.push({
+            sortKeys: {
+                protocol: flow[0].protocol_name,
+                rate: avgRate,
+                bytes: flow[1].bytes_sent.down + flow[1].bytes_sent.up,
+                packets: flow[1].packets_sent.down + flow[1].packets_sent.up,
+                retransmits: retransmitDownPct + retransmitUpPct,
+                rtt: flow[1].rtt[0].nanoseconds + flow[1].rtt[1].nanoseconds,
+                asn: flow[0].asn_name || "",
+                country: flow[0].asn_country || "",
+                ip: flow[0].remote_ip
+            },
+            columns: [
+                flow[0].protocol_name,
+                formatThroughput(down, plan.down),
+                formatThroughput(up, plan.up),
+                scaleNumber(flow[1].bytes_sent.down),
+                scaleNumber(flow[1].bytes_sent.up),
+                scaleNumber(flow[1].packets_sent.down),
+                scaleNumber(flow[1].packets_sent.up),
+                retransmitDown,
+                retransmitUp,
+                scaleNanos(flow[1].rtt[0].nanoseconds),
+                scaleNanos(flow[1].rtt[1].nanoseconds),
+                flow[0].asn_name,
+                flow[0].asn_country,
+                flow[0].remote_ip
+            ],
+            opacity: 1.0 - opacity,
+            visible: visible
+        });
+    });
+    
+    // Sort tableRows based on current sort preferences
+    tableRows.sort((a, b) => {
+        let aVal = a.sortKeys[trafficSortColumn];
+        let bVal = b.sortKeys[trafficSortColumn];
+        
+        // Handle string vs number comparison
+        if (typeof aVal === 'string' && typeof bVal === 'string') {
+            aVal = aVal.toLowerCase();
+            bVal = bVal.toLowerCase();
+        }
+        
+        if (trafficSortDirection === 'asc') {
+            return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
         } else {
-            row.appendChild(simpleRow("-"));
+            return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
         }
-        row.appendChild(simpleRow(scaleNanos(flow[1].rtt[0].nanoseconds)));
-        row.appendChild(simpleRow(scaleNanos(flow[1].rtt[1].nanoseconds)));
-        row.appendChild(simpleRow(flow[0].asn_name));
-        row.appendChild(simpleRow(flow[0].asn_country));
-        row.appendChild(simpleRow(flow[0].remote_ip));
-
-        if (!hideSmallFlows || (down > 1024*1024 || up > 1024*1024)) {
-            tbody.appendChild(row);
-        }
+    });
+    
+    // Render the sorted table
+    tableRows.forEach((rowData) => {
+        if (!rowData.visible) return;
+        
+        let row = document.createElement("tr");
+        row.classList.add("small");
+        row.style.opacity = rowData.opacity;
+        
+        // Add columns
+        rowData.columns.forEach((col, index) => {
+            if (index === 1 || index === 2 || index === 7 || index === 8) {
+                // These columns have HTML formatting
+                row.appendChild(simpleRowHtml(col));
+            } else {
+                row.appendChild(simpleRow(col));
+            }
+        });
+        
+        tbody.appendChild(row);
     });
 
     table.appendChild(tbody);
