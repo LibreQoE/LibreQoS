@@ -151,11 +151,27 @@ This document outlines the plan to implement fractional speed plans in LibreQoS,
 - `rust/lqosd/src/node_manager/js_build/src/dashlets/tree_capacity_dash.js` (lines 58-59, 61, 77-78)
 - `rust/lqosd/src/node_manager/ws/ticker/circuit_capacity.rs` (lines 71, 73) - **Already handles f32 correctly**
 
+**Top N Widgets with Saturation Indicators:**
+- `rust/lqosd/src/node_manager/js_build/src/dashlets/top10_downloaders.js` - Top downloaders with colored indicators
+- `rust/lqosd/src/node_manager/js_build/src/dashlets/top10_downloads_graphic.js` - Sankey diagram with saturation ribbons
+- `rust/lqosd/src/node_manager/js_build/src/graphs/top_n_sankey.js` (lines 96-101) - **CRITICAL: Saturation calculation**
+- `rust/lqosd/src/node_manager/js_build/src/helpers/builders.js` (lines 148-152) - Table rows with saturation indicators
+
 **Changes:**
 - Update all hardcoded "Mbps" strings to handle decimal display
 - Ensure `scaleNumber()` and `formatThroughput()` preserve decimal precision
 - Update gauge max value calculations for fractional rates
 - Format rate displays to show decimals when present (e.g., "2.5 / 1.0 Mbps")
+
+**⚠️ CRITICAL ISSUE - Saturation Calculation Precision:**
+The Top N saturation indicators (`top_n_sankey.js` lines 96-101) use `r.plan.down` which comes from `DownUpOrder<u32>` plan structures. These currently receive rounded integer values from `rate_for_plan()`, causing **incorrect saturation percentages**:
+
+- **Example:** 2.5 Mbps limit → rounded to 3 Mbps → 2.3 Mbps usage shows as 77% (safe) instead of 92% (warning)
+- **Impact:** Critically saturated circuits may appear safe, masking network congestion
+- **Solution Options:**
+  1. **High Priority:** Update plan structures to support f32 rates (requires broader changes)
+  2. **Alternative:** Pass separate fractional rate fields for saturation calculations
+  3. **Temporary:** Accept reduced precision during transition period
 
 ### Phase 4: Integration & Testing
 

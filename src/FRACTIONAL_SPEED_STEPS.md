@@ -338,6 +338,36 @@ console.log(scaleNumber(2.5, 1)); // Should preserve decimal
 
 **Note:** Backend `circuit_capacity.rs` already handles f32→f64 conversion correctly
 
+### Task 6.6: Top N Widgets with Saturation Indicators ⚠️ CRITICAL
+**Files:**
+- `rust/lqosd/src/node_manager/js_build/src/dashlets/top10_downloaders.js`
+- `rust/lqosd/src/node_manager/js_build/src/dashlets/top10_downloads_graphic.js`
+- `rust/lqosd/src/node_manager/js_build/src/graphs/top_n_sankey.js`
+- `rust/lqosd/src/node_manager/js_build/src/helpers/builders.js`
+
+**Critical Issue:**
+Top N saturation indicators use `r.plan.down` from `DownUpOrder<u32>` which receives rounded values from `rate_for_plan()`. This causes **incorrect saturation percentages** that could mask network congestion.
+
+**Changes:**
+- [ ] **HIGH PRIORITY:** Investigate updating plan structures to support f32 rates
+- [ ] **Alternative:** Add separate fractional rate fields for saturation calculations
+- [ ] Update saturation calculation in `top_n_sankey.js` (lines 96-101)
+- [ ] Ensure colored indicators reflect accurate utilization
+- [ ] Update table row builders to use precise saturation
+
+**Test 6.6:**
+```javascript
+// Critical saturation test:
+// 1. Create circuit with 2.5 Mbps limit
+// 2. Generate 2.3 Mbps usage 
+// 3. Verify saturation shows 92% (red warning), not 77% (safe)
+// 4. Check Sankey diagram ribbons turn red appropriately
+// 5. Verify colored squares (■) show correct saturation levels
+```
+
+**Decision Required:**
+This issue may require prioritizing plan structure updates (changing `DownUpOrder<u32>` to `DownUpOrder<f32>`) to maintain accurate network monitoring capabilities.
+
 ## Step 7: Integration Updates
 **Estimated Time:** 2 hours
 **Priority:** Medium
