@@ -146,6 +146,11 @@ This document outlines the plan to implement fractional speed plans in LibreQoS,
 - `rust/lqosd/src/node_manager/js_build/src/dashlets/top_tree_summary.js`
 - `rust/lqosd/src/node_manager/js_build/src/graphs/bits_gauge.js` (lines 48, 52, 108, 112, 139-141)
 
+**Capacity Dashboard Components:**
+- `rust/lqosd/src/node_manager/js_build/src/dashlets/circuit_capacity_dash.js` (lines 46, 71, 90-91)
+- `rust/lqosd/src/node_manager/js_build/src/dashlets/tree_capacity_dash.js` (lines 58-59, 61, 77-78)
+- `rust/lqosd/src/node_manager/ws/ticker/circuit_capacity.rs` (lines 71, 73) - **Already handles f32 correctly**
+
 **Changes:**
 - Update all hardcoded "Mbps" strings to handle decimal display
 - Ensure `scaleNumber()` and `formatThroughput()` preserve decimal precision
