@@ -2,11 +2,11 @@
 
 ## Time Estimate (Human Hours)
 
-**Total Estimated Time: 16-20 hours** (for a 10x developer)
+**Total Estimated Time: 20-24 hours** (for a 10x developer)
 
 ### Phase Breakdown:
-- **Phase 1 (Core Backend):** 4-5 hours
-  - Rust data structure changes: 2 hours
+- **Phase 1 (Core Backend):** 6-8 hours (increased)
+  - Rust data structure changes: 4-5 hours (includes plan structure updates)
   - Python parsing & TC logic: 2-3 hours
 - **Phase 2 (TC Commands):** 1-2 hours  
   - Smart unit selection logic: 1-2 hours
@@ -19,7 +19,7 @@
   - Weight calculations: 1 hour
   - LTS/Insight compilation fixes: 1 hour
 
-### Risk Buffer: +25% (4-5 additional hours)
+### Risk Buffer: +25% (5-6 additional hours)
 - Debugging edge cases with small fractional rates
 - UI testing across different rate ranges
 - Ensuring TC command compatibility
@@ -168,15 +168,19 @@ This document outlines the plan to implement fractional speed plans in LibreQoS,
 - Update gauge max value calculations for fractional rates
 - Format rate displays to show decimals when present (e.g., "2.5 / 1.0 Mbps")
 
-**⚠️ CRITICAL ISSUE - Saturation Calculation Precision:**
-The Top N saturation indicators (`top_n_sankey.js` lines 96-101) use `r.plan.down` which comes from `DownUpOrder<u32>` plan structures. These currently receive rounded integer values from `rate_for_plan()`, causing **incorrect saturation percentages**:
+**✅ ARCHITECTURAL DECISION - Plan Structure Updates:**
+The network monitoring accuracy requirements necessitate updating plan structures from `DownUpOrder<u32>` to `DownUpOrder<f32>` to maintain precise saturation calculations:
 
+- **Problem:** Top N saturation indicators using rounded rates show incorrect percentages
 - **Example:** 2.5 Mbps limit → rounded to 3 Mbps → 2.3 Mbps usage shows as 77% (safe) instead of 92% (warning)
-- **Impact:** Critically saturated circuits may appear safe, masking network congestion
-- **Solution Options:**
-  1. **High Priority:** Update plan structures to support f32 rates (requires broader changes)
-  2. **Alternative:** Pass separate fractional rate fields for saturation calculations
-  3. **Temporary:** Accept reduced precision during transition period
+- **Impact:** Critical network congestion could go undetected across all monitoring widgets
+- **Solution:** Update plan structures while maintaining LTS/Insight compatibility via conversion functions
+
+**Implementation Strategy:**
+1. **Update core plan structures:** `DownUpOrder<u32>` → `DownUpOrder<f32>`
+2. **Maintain monitoring precision:** All saturation calculations use exact fractional rates
+3. **Preserve external compatibility:** Keep `rate_for_submission()` for LTS/Insight systems
+4. **Future-proof architecture:** Ready for full fractional support when external systems update
 
 ### Phase 4: Integration & Testing
 
