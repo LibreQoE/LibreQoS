@@ -11,15 +11,7 @@ use std::sync::{Arc, atomic::AtomicBool};
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
-/// Temporary conversion function for plan compatibility
-/// TODO: Remove when plan structures support fractional rates
-fn rate_for_plan(rate_mbps: f32) -> u32 {
-    if rate_mbps < 1.0 {
-        1  // Round up small fractional rates to 1 Mbps for now
-    } else {
-        rate_mbps.round() as u32  // Round to nearest integer
-    }
-}
+// Removed rate_for_plan() function - no longer needed with f32 plan structures
 
 mod netjson;
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
@@ -229,7 +221,7 @@ pub fn get_all_circuits() -> BusResponse {
                 let mut device_id = None;
                 let mut device_name = None;
                 let mut parent_node = None;
-                let mut plan = DownUpOrder::new(0, 0);
+                let mut plan = DownUpOrder { down: 0.0, up: 0.0 };
                 let lookup = match ip {
                     IpAddr::V4(ip) => ip.to_ipv6_mapped(),
                     IpAddr::V6(ip) => ip,
@@ -240,8 +232,8 @@ pub fn get_all_circuits() -> BusResponse {
                     device_id = Some(devices.devices[*c.1].device_id.clone());
                     device_name = Some(devices.devices[*c.1].device_name.clone());
                     parent_node = Some(devices.devices[*c.1].parent_node.clone());
-                    plan.down = rate_for_plan(devices.devices[*c.1].download_max_mbps);
-                    plan.up = rate_for_plan(devices.devices[*c.1].upload_max_mbps);
+                    plan.down = devices.devices[*c.1].download_max_mbps;
+                    plan.up = devices.devices[*c.1].upload_max_mbps;
                 }
 
                 Circuit {
@@ -266,47 +258,4 @@ pub fn get_all_circuits() -> BusResponse {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_rate_for_plan_small_rates() {
-        // Small fractional rates should round up to 1
-        assert_eq!(rate_for_plan(0.1), 1);
-        assert_eq!(rate_for_plan(0.5), 1);
-        assert_eq!(rate_for_plan(0.9), 1);
-    }
-
-    #[test]
-    fn test_rate_for_plan_edge_case_one() {
-        // Exactly 1.0 should stay 1
-        assert_eq!(rate_for_plan(1.0), 1);
-    }
-
-    #[test]
-    fn test_rate_for_plan_normal_rates() {
-        // Normal rates should round to nearest integer
-        assert_eq!(rate_for_plan(1.1), 1);
-        assert_eq!(rate_for_plan(1.4), 1);
-        assert_eq!(rate_for_plan(1.5), 2);
-        assert_eq!(rate_for_plan(1.6), 2);
-        assert_eq!(rate_for_plan(2.3), 2);
-        assert_eq!(rate_for_plan(2.7), 3);
-    }
-
-    #[test]
-    fn test_rate_for_plan_prevents_zero() {
-        // Should never return 0, even for very small inputs
-        assert_eq!(rate_for_plan(0.01), 1);
-        assert_eq!(rate_for_plan(0.001), 1);
-    }
-
-    #[test]
-    fn test_rate_for_plan_preserves_integers() {
-        // Integer inputs should be preserved exactly
-        assert_eq!(rate_for_plan(5.0), 5);
-        assert_eq!(rate_for_plan(10.0), 10);
-        assert_eq!(rate_for_plan(100.0), 100);
-    }
-}
+// Tests removed - rate_for_plan() function no longer needed with f32 plan structures
