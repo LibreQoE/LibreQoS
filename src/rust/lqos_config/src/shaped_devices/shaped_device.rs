@@ -41,17 +41,17 @@ pub struct ShapedDevice {
 
     /// Minimum download: this is the bandwidth level the shaper will try
     /// to ensure is always available.
-    pub download_min_mbps: u32,
+    pub download_min_mbps: f32,
 
     /// Minimum upload: this is the bandwidth level the shaper will try to
     /// ensure is always available.
-    pub upload_min_mbps: u32,
+    pub upload_min_mbps: f32,
 
     /// Maximum download speed, when possible.
-    pub download_max_mbps: u32,
+    pub download_max_mbps: f32,
 
     /// Maximum upload speed when possible.
-    pub upload_max_mbps: u32,
+    pub upload_max_mbps: f32,
 
     /// Generic comments field, does nothing.
     pub comment: String,
