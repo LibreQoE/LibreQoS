@@ -1,5 +1,6 @@
 :root {
     --redact: none;
+    --redact-font-family: inherit;
 }
 body {
     margin: 0;
@@ -86,6 +87,7 @@ body {
 .dashEditButton { }
 .redactable {
     filter: var(--redact);
+    font-family: var(--redact-font-family, inherit);
 }
 .small {
     font-size: 9pt;
@@ -249,4 +251,8 @@ table tr td a {
     height: 100%;
     z-index: 10000;
     background: var(--bs-body-bg);
+}
+@font-face {
+    font-family: Klingon;
+    src: url(/vendor/klingon.ttf);
 }
