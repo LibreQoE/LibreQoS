@@ -29,8 +29,10 @@ This document breaks down the fractional speed plans implementation into specifi
 - **UI files:** Located in `rust/lqosd/src/node_manager/`
 
 ## Step 1: Core Rust Data Structure Changes
-**Estimated Time:** 2 hours  
+**Estimated Time:** 4-5 hours (increased due to plan structure updates)
 **Priority:** Critical (blocks all other work)
+
+**⚠️ APPROACH CHANGE:** Due to the critical saturation calculation accuracy requirements, we need to update plan structures to `DownUpOrder<f32>` to maintain network monitoring precision.
 
 ### Task 1.1: Update ShapedDevice Struct
 **File:** `rust/lqos_config/src/shaped_devices/shaped_device.rs`
@@ -46,6 +48,30 @@ This document breaks down the fractional speed plans implementation into specifi
 cd rust/lqos_config
 cargo check
 # Should compile without errors
+```
+
+### Task 1.4: Update Plan Structures for Monitoring Accuracy
+**Files:** 
+- `rust/lqos_utils/src/units/down_up.rs` (DownUpOrder definition)
+- `rust/lqosd/src/node_manager/ws/ticker/ipstats_conversion.rs`
+- `rust/lqosd/src/shaped_devices_tracker/mod.rs`
+
+**Critical Change:**
+- [ ] Update plan structures from `DownUpOrder<u32>` to `DownUpOrder<f32>`
+- [ ] Remove temporary `rate_for_plan()` conversion functions
+- [ ] Ensure saturation calculations use precise fractional rates
+
+**Safeguards for LTS/Insight:**
+- [ ] Keep `rate_for_submission()` functions for external system compatibility
+- [ ] Add TODO comments for future LTS/Insight fractional support
+- [ ] Maintain separate conversion only at external system boundaries
+
+**Test 1.4:**
+```bash
+cd rust/lqosd
+cargo check
+# Plan structures should accept f32 rates directly
+# External submissions should still use rounded values temporarily
 ```
 
 ### Task 1.2: Update CSV Parsing
@@ -372,8 +398,13 @@ Top N and Worst N widgets use `r.plan.down` from `DownUpOrder<u32>` which receiv
 // 8. Test formatThroughput() function with fractional rate limits
 ```
 
-**Decision Required:**
-This issue may require prioritizing plan structure updates (changing `DownUpOrder<u32>` to `DownUpOrder<f32>`) to maintain accurate network monitoring capabilities.
+**✅ DECISION MADE:**
+Plan structures will be updated to `DownUpOrder<f32>` to maintain accurate network monitoring capabilities. This approach:
+
+1. **Maintains monitoring accuracy:** Saturation calculations use precise fractional rates
+2. **Preserves LTS/Insight compatibility:** External submissions continue using `rate_for_submission()` 
+3. **Enables true fractional plans:** Full precision throughout the monitoring system
+4. **Future-proofs architecture:** Ready for LTS/Insight fractional support when available
 
 ## Step 7: Integration Updates
 **Estimated Time:** 2 hours
