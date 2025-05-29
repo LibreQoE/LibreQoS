@@ -689,3 +689,57 @@ fn load_local_shaped_devices() -> anyhow::Result<Vec<ShapedDevice>> {
     }
     Ok(devices)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rate_for_submission_small_rates() {
+        // Small fractional rates should round up to 1
+        assert_eq!(rate_for_submission(0.1), 1);
+        assert_eq!(rate_for_submission(0.5), 1);
+        assert_eq!(rate_for_submission(0.9), 1);
+    }
+
+    #[test]
+    fn test_rate_for_submission_edge_case_one() {
+        // Exactly 1.0 should stay 1
+        assert_eq!(rate_for_submission(1.0), 1);
+    }
+
+    #[test]
+    fn test_rate_for_submission_normal_rates() {
+        // Normal rates should round to nearest integer
+        assert_eq!(rate_for_submission(1.1), 1);
+        assert_eq!(rate_for_submission(1.4), 1);
+        assert_eq!(rate_for_submission(1.5), 2);
+        assert_eq!(rate_for_submission(1.6), 2);
+        assert_eq!(rate_for_submission(2.3), 2);
+        assert_eq!(rate_for_submission(2.7), 3);
+    }
+
+    #[test]
+    fn test_rate_for_submission_large_rates() {
+        // Large rates should round normally
+        assert_eq!(rate_for_submission(100.4), 100);
+        assert_eq!(rate_for_submission(100.5), 101);
+        assert_eq!(rate_for_submission(1000.2), 1000);
+        assert_eq!(rate_for_submission(1000.8), 1001);
+    }
+
+    #[test]
+    fn test_rate_for_submission_prevents_zero() {
+        // Should never return 0, even for very small inputs
+        assert_eq!(rate_for_submission(0.01), 1);
+        assert_eq!(rate_for_submission(0.001), 1);
+    }
+
+    #[test]
+    fn test_rate_for_submission_preserves_integers() {
+        // Integer inputs should be preserved exactly
+        assert_eq!(rate_for_submission(5.0), 5);
+        assert_eq!(rate_for_submission(10.0), 10);
+        assert_eq!(rate_for_submission(100.0), 100);
+    }
+}
