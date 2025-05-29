@@ -18,9 +18,18 @@ This document breaks down the fractional speed plans implementation into specifi
 
 ### Testing Protocol
 - Test after each step before moving to the next
+- **After any Rust changes:** Always run `cargo check` and `cargo test` on `lqosd`
 - Request user assistance for manual `lqosd` and `LibreQoS.py` runs
 - Ask for specific output/logs when debugging issues
 - Use browser testing for UI components
+
+### Standard Rust Testing Commands
+After any changes to Rust code, always run:
+```bash
+cd /home/herbert/Rust/LibreQoS/libreqos/LibreQoS/src/rust/lqosd
+cargo check    # Verify compilation
+cargo test --quiet    # Run unit tests
+```
 
 ### Directory Context
 - **Working directory:** `/home/herbert/Rust/LibreQoS/libreqos/LibreQoS/src`
@@ -68,9 +77,9 @@ cargo check
 
 **Test 1.2:**
 ```bash
-cd rust/lqosd
-cargo check
-# Plan structures should accept f32 rates directly
+cd /home/herbert/Rust/LibreQoS/libreqos/LibreQoS/src/rust/lqosd
+cargo check    # ✅ PASSED - Plan structures accept f32 rates directly
+cargo test --quiet    # ✅ PASSED - All tests pass
 # External submissions should still use rounded values temporarily
 ```
 
@@ -90,8 +99,10 @@ cargo check
 echo '"Circuit ID","Circuit Name","Device ID","Device Name","Parent Node","MAC","IPv4","IPv6","Download Min Mbps","Upload Min Mbps","Download Max Mbps","Upload Max Mbps","Comment"' > test_fractional.csv
 echo '"test1","Test Circuit","device1","Test Device","site1","00:00:00:00:00:01","192.168.1.1","","0.5","1.0","2.5","3.0","Test"' >> test_fractional.csv
 
-# Test parsing (create small Rust test)
-cargo test
+# Standard Rust testing
+cd /home/herbert/Rust/LibreQoS/libreqos/LibreQoS/src/rust/lqosd
+cargo check    # Verify compilation
+cargo test --quiet    # Run all tests
 ```
 
 ### Task 1.4: Fix Serialization Bugs ✅ COMPLETED
@@ -104,8 +115,9 @@ cargo test
 
 **Test 1.4:**
 ```bash
-cargo test serializable
-# All serialization tests should pass
+cd /home/herbert/Rust/LibreQoS/libreqos/LibreQoS/src/rust/lqosd
+cargo check    # ✅ PASSED - Compiles successfully
+cargo test --quiet    # ✅ PASSED - All tests pass
 ```
 
 ## Step 2: Python LibreQoS.py Changes
@@ -198,13 +210,10 @@ python3 LibreQoS.py --dry-run
 
 **Test 3.1:**
 ```bash
-cd rust/lqosd
-cargo check
-# ✅ PASSED - Compiles without errors
-
-# ✅ PASSED - Data submission works correctly  
-cargo test stats_submission
-cargo test shared_types
+cd /home/herbert/Rust/LibreQoS/libreqos/LibreQoS/src/rust/lqosd
+cargo check    # ✅ PASSED - Compiles without errors
+cargo test --quiet    # ✅ PASSED - All tests pass
+# Data submission works correctly with rate_for_submission() conversion
 ```
 
 ## Step 4: Core UI Input Changes
