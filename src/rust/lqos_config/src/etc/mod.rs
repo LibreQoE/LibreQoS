@@ -18,7 +18,7 @@ mod python_migration;
 #[cfg(test)]
 pub mod test_data;
 mod v15;
-pub use v15::{BridgeConfig, Tunables};
+pub use v15::{BridgeConfig, Tunables, SingleInterfaceConfig};
 
 static CONFIG_LOADED: AtomicBool = AtomicBool::new(false);
 static CONFIG: Lazy<ArcSwap<Config>> = Lazy::new(|| match load_config() {

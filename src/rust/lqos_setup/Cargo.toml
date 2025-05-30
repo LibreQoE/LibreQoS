@@ -5,7 +5,9 @@ edition = "2024"
 license = "GPL-2.0-only"
 
 [dependencies]
-colored = { workspace = true  }
-default-net = { workspace = true }
+cursive = "0.21.1"
 lqos_config = { path = "../lqos_config" }
-toml = {  workspace = true }
+nix.workspace = true
+anyhow.workspace = true
+once_cell = { workspace = true}
+ip_network = { workspace = true }
