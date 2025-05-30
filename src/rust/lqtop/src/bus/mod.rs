@@ -1,8 +1,8 @@
 //! Handles the communication loop with lqosd.
 
 use crate::ui_base::SHOULD_EXIT;
-use anyhow::{Result, bail};
-use lqos_bus::{BusClient, BusRequest, BusResponse};
+use anyhow::Result;
+use lqos_bus::{LibreqosBusClient, BusRequest, BusResponse};
 use std::sync::atomic::Ordering;
 use tokio::sync::mpsc::Receiver;
 pub mod cpu_ram;
@@ -41,10 +41,7 @@ async fn main_loop(mut rx: Receiver<BusMessage>) -> Result<()> {
     let mut collect_top_flows = None;
     let mut collect_latency_histogram = None;
 
-    let mut bus_client = BusClient::new().await?;
-    if !bus_client.is_connected() {
-        bail!("Failed to connect to the bus");
-    }
+    let mut bus_client = LibreqosBusClient::new().await?;
 
     loop {
         // See if there are any messages

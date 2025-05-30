@@ -18,10 +18,9 @@ pub use ip_stats::{
 };
 mod tc_handle;
 pub use bus::{
-    BUS_SOCKET_PATH, BlackboardSystem, BusClient, BusReply, BusRequest, BusResponse, BusSession,
+    BUS_SOCKET_PATH, BlackboardSystem, BusReply, BusRequest, BusResponse, BusSession,
     CakeDiffTinTransit, CakeDiffTransit, CakeTransit, QueueStoreTransit, StatsRequest, TopFlowType,
-    UnixSocketServer, bus_request, decode_request, decode_response, encode_request,
-    encode_response,
+    UnixSocketServer, bus_request, LibreqosBusClient,
 };
 pub use tc_handle::TcHandle;
 
