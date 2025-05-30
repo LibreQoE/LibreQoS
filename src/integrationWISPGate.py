@@ -33,8 +33,8 @@ def buildSiteBandwidths():
 			next(csv_reader)
 			for row in csv_reader:
 				name, download, upload = row
-				download = int(float(download))
-				upload = int(float(upload))
+				download = float(download)
+				upload = float(upload)
 				siteBandwidth[name] = {"download": download, "upload": upload}
 	return siteBandwidth
 

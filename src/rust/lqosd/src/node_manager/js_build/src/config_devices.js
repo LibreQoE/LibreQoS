@@ -33,7 +33,7 @@ function makeSheetBox(rowId, boxId, value, small=false) {
 }
 
 function makeSheetNumberBox(rowId, boxId, value) {
-    let html = "<td style='padding: 0px'><input id='" + rowPrefix(rowId, boxId) + "' type=\"number\" value=\"" + value + "\" style='width: 100px; font-size: 8pt;'></input></td>"
+    let html = "<td style='padding: 0px'><input id='" + rowPrefix(rowId, boxId) + "' type=\"number\" value=\"" + value + "\" style='width: 100px; font-size: 8pt;' step=\"0.1\"></input></td>"
     return html;
 }
 
@@ -164,10 +164,10 @@ function start() {
             row.mac = $("#" + rowPrefix(i, "mac")).val();
             row.ipv4 = ipAddressesToTuple($("#" + rowPrefix(i, "ipv4")).val());
             row.ipv6 = ipAddressesToTuple($("#" + rowPrefix(i, "ipv6")).val());
-            row.download_min_mbps = parseInt($("#" + rowPrefix(i, "download_min_mbps")).val());
-            row.upload_min_mbps = parseInt($("#" + rowPrefix(i, "upload_min_mbps")).val());
-            row.download_max_mbps = parseInt($("#" + rowPrefix(i, "download_max_mbps")).val());
-            row.upload_max_mbps = parseInt($("#" + rowPrefix(i, "upload_max_mbps")).val());
+            row.download_min_mbps = parseFloat($("#" + rowPrefix(i, "download_min_mbps")).val());
+            row.upload_min_mbps = parseFloat($("#" + rowPrefix(i, "upload_min_mbps")).val());
+            row.download_max_mbps = parseFloat($("#" + rowPrefix(i, "download_max_mbps")).val());
+            row.upload_max_mbps = parseFloat($("#" + rowPrefix(i, "upload_max_mbps")).val());
             row.comment = $("#" + rowPrefix(i, "comment")).val();
         }
 
@@ -346,56 +346,56 @@ function validateSd() {
         // Download Min
         controlId = "#" + rowPrefix(i, "download_min_mbps");
         let download_min = $(controlId).val();
-        download_min = parseInt(download_min);
+        download_min = parseFloat(download_min);
         if (isNaN(download_min)) {
             valid = false;
             errors.push("Download min is not a valid number");
             $(controlId).addClass("invalid");
-        } else if (download_min < 1) {
+        } else if (download_min < 0.1) {
             valid = false;
-            errors.push("Download min must be 1 or more");
+            errors.push("Download min must be 0.1 or more");
             $(controlId).addClass("invalid");
         }
 
         // Upload Min
         controlId = "#" + rowPrefix(i, "upload_min_mbps");
         let upload_min = $(controlId).val();
-        upload_min = parseInt(upload_min);
+        upload_min = parseFloat(upload_min);
         if (isNaN(upload_min)) {
             valid = false;
             errors.push("Upload min is not a valid number");
             $(controlId).addClass("invalid");
-        } else if (upload_min < 1) {
+        } else if (upload_min < 0.1) {
             valid = false;
-            errors.push("Upload min must be 1 or more");
+            errors.push("Upload min must be 0.1 or more");
             $(controlId).addClass("invalid");
         }
 
         // Download Max
         controlId = "#" + rowPrefix(i, "download_max_mbps");
         let download_max = $(controlId).val();
-        upload_min = parseInt(download_max);
+        download_max = parseFloat(download_max);
         if (isNaN(download_max)) {
             valid = false;
             errors.push("Download Max is not a valid number");
             $(controlId).addClass("invalid");
-        } else if (download_max < 1) {
+        } else if (download_max < 0.2) {
             valid = false;
-            errors.push("Download Max must be 1 or more");
+            errors.push("Download Max must be 0.2 or more");
             $(controlId).addClass("invalid");
         }
 
         // Upload Max
         controlId = "#" + rowPrefix(i, "upload_max_mbps");
         let upload_max = $(controlId).val();
-        upload_min = parseInt(upload_max);
+        upload_max = parseFloat(upload_max);
         if (isNaN(upload_max)) {
             valid = false;
             errors.push("Upload Max is not a valid number");
             $(controlId).addClass("invalid");
-        } else if (upload_max < 1) {
+        } else if (upload_max < 0.2) {
             valid = false;
-            errors.push("Upload Max must be 1 or more");
+            errors.push("Upload Max must be 0.2 or more");
             $(controlId).addClass("invalid");
         }
     }

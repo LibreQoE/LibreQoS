@@ -324,21 +324,21 @@ pub async fn build_full_network_v2(
                     continue;
                 }
 
-                let download =
+                // Calculate fractional rates preserving decimal precision
+                let download_f32 =
                     (site.max_down_mbps as f32) * config.uisp_integration.bandwidth_overhead_factor;
-                let upload =
+                let upload_f32 =
                     (site.max_up_mbps as f32) * config.uisp_integration.bandwidth_overhead_factor;
-                let download_min =
-                    (download * config.uisp_integration.commit_bandwidth_multiplier) as u64;
-                let upload_min =
-                    (upload * config.uisp_integration.commit_bandwidth_multiplier) as u64;
-                let download_max = download as u64;
-                let upload_max = upload as u64;
+                let download_min_f32 =
+                    download_f32 * config.uisp_integration.commit_bandwidth_multiplier;
+                let upload_min_f32 =
+                    upload_f32 * config.uisp_integration.commit_bandwidth_multiplier;
 
-                let download_min = u64::max(1, download_min);
-                let upload_min = u64::max(1, upload_min);
-                let download_max = u64::max(4, download_max);
-                let upload_max = u64::max(4, upload_max);
+                // Apply minimum rate safeguards (0.1 Mbps minimum)
+                let download_min = f32::max(0.1, download_min_f32);
+                let upload_min = f32::max(0.1, upload_min_f32);
+                let download_max = f32::max(0.2, download_f32);
+                let upload_max = f32::max(0.2, upload_f32);
 
                 let mut parent_node = {
                     if parents.get(&ap_device.name).is_some() {
