@@ -78,6 +78,20 @@ def quantum(rateInMbps):
 	quantrumString = " quantum " + str(quantum)
 	return quantrumString
 
+def format_rate_for_tc(rate_mbps):
+	"""
+	Format a rate in Mbps for TC commands with smart unit selection.
+	- Rates >= 1000 Mbps use 'gbit' 
+	- Rates >= 1 Mbps use 'mbit'
+	- Rates < 1 Mbps use 'kbit'
+	"""
+	if rate_mbps >= 1000:
+		return f"{rate_mbps/1000:.1f}gbit"
+	elif rate_mbps >= 1:
+		return f"{rate_mbps:.1f}mbit"
+	else:
+		return f"{rate_mbps*1000:.0f}kbit"
+
 def shell(command):
 	if enable_actual_shell_commands():
 		if run_shell_commands_as_sudo():
@@ -270,44 +284,44 @@ def validateNetworkAndDevices():
 						warnings.warn("Provided IPv6 '" + ipv6_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.", stacklevel=2)
 						devicesValidatedOrNot = False
 			try:
-				a = int(downloadMin)
-				if a < 1:
-					warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 1 Mbps.", stacklevel=2)
+				a = float(downloadMin)
+				if a < 0.1:
+					warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 0.1 Mbps.", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
-				warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.", stacklevel=2)
+				warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid number.", stacklevel=2)
 				devicesValidatedOrNot = False
 			try:
-				a = int(uploadMin)
-				if a < 1:
-					warnings.warn("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 1 Mbps.", stacklevel=2)
+				a = float(uploadMin)
+				if a < 0.1:
+					warnings.warn("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 0.1 Mbps.", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
-				warnings.warn("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.", stacklevel=2)
+				warnings.warn("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid number.", stacklevel=2)
 				devicesValidatedOrNot = False
 			try:
-				a = int(downloadMax)
-				if a < 2:
-					warnings.warn("Provided downloadMax '" + downloadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 2 Mbps.", stacklevel=2)
+				a = float(downloadMax)
+				if a < 0.2:
+					warnings.warn("Provided downloadMax '" + downloadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 0.2 Mbps.", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
-				warnings.warn("Provided downloadMax '" + downloadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.", stacklevel=2)
+				warnings.warn("Provided downloadMax '" + downloadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid number.", stacklevel=2)
 				devicesValidatedOrNot = False
 			try:
-				a = int(uploadMax)
-				if a < 2:
-					warnings.warn("Provided uploadMax '" + uploadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 2 Mbps.", stacklevel=2)
+				a = float(uploadMax)
+				if a < 0.2:
+					warnings.warn("Provided uploadMax '" + uploadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 0.2 Mbps.", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
-				warnings.warn("Provided uploadMax '" + uploadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.", stacklevel=2)
+				warnings.warn("Provided uploadMax '" + uploadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid number.", stacklevel=2)
 				devicesValidatedOrNot = False
 			
 			try:
-				if int(downloadMin) > int(downloadMax):
+				if float(downloadMin) > float(downloadMax):
 					warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is greater than downloadMax", stacklevel=2)
 					devicesValidatedOrNot = False
-				if int(uploadMin) > int(uploadMax):
-					warnings.warn("Provided uploadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is greater than uploadMax", stacklevel=2)
+				if float(uploadMin) > float(uploadMax):
+					warnings.warn("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is greater than uploadMax", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
 				devicesValidatedOrNot = False
@@ -417,16 +431,16 @@ def loadSubscriberCircuits(shapedDevicesFile):
 					  "circuitName": circuitName,
 					  "ParentNode": ParentNode,
 					  "devices": deviceListForCircuit,
-					  "minDownload": int(downloadMin),
-					  "minUpload": int(uploadMin),
-					  "maxDownload": int(downloadMax),
-					  "maxUpload": int(uploadMax),
+					  "minDownload": float(downloadMin),
+					  "minUpload": float(uploadMin),
+					  "maxDownload": float(downloadMax),
+					  "maxUpload": float(uploadMax),
 					  "classid": '',
 					  "comment": comment
 					}
 					if thisCircuit['ParentNode'] == 'none':
 						thisCircuit['idForCircuitsWithoutParentNodes'] = counterForCircuitsWithoutParentNodes
-						dictForCircuitsWithoutParentNodes[counterForCircuitsWithoutParentNodes] = ((int(downloadMax))+(int(uploadMax))) 
+						dictForCircuitsWithoutParentNodes[counterForCircuitsWithoutParentNodes] = ((float(downloadMax))+(float(uploadMax))) 
 						counterForCircuitsWithoutParentNodes += 1
 					subscriberCircuits.append(thisCircuit)
 			# If there is nothing in the circuit ID field
@@ -451,16 +465,16 @@ def loadSubscriberCircuits(shapedDevicesFile):
 				  "circuitName": circuitName,
 				  "ParentNode": ParentNode,
 				  "devices": deviceListForCircuit,
-				  "minDownload": int(downloadMin),
-				  "minUpload": int(uploadMin),
-				  "maxDownload": int(downloadMax),
-				  "maxUpload": int(uploadMax),
+				  "minDownload": float(downloadMin),
+				  "minUpload": float(uploadMin),
+				  "maxDownload": float(downloadMax),
+				  "maxUpload": float(uploadMax),
 				  "classid": '',
 				  "comment": comment
 				}
 				if thisCircuit['ParentNode'] == 'none':
 					thisCircuit['idForCircuitsWithoutParentNodes'] = counterForCircuitsWithoutParentNodes
-					dictForCircuitsWithoutParentNodes[counterForCircuitsWithoutParentNodes] = ((int(downloadMax))+(int(uploadMax)))
+					dictForCircuitsWithoutParentNodes[counterForCircuitsWithoutParentNodes] = ((float(downloadMax))+(float(uploadMax)))
 					counterForCircuitsWithoutParentNodes += 1
 				subscriberCircuits.append(thisCircuit)
 	return (subscriberCircuits,	dictForCircuitsWithoutParentNodes)
@@ -870,14 +884,14 @@ def refreshShapers():
 		for queue in range(queuesAvailable):
 			command = 'qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2'
 			linuxTCcommands.append(command)
-			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ str(upstream_bandwidth_capacity_download_mbps()) + 'mbit ceil ' + str(upstream_bandwidth_capacity_download_mbps()) + 'mbit' + quantum(upstream_bandwidth_capacity_download_mbps())
+			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ format_rate_for_tc(upstream_bandwidth_capacity_download_mbps()) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_download_mbps()) + quantum(upstream_bandwidth_capacity_download_mbps())
 			linuxTCcommands.append(command)
 			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + sqm()
 			linuxTCcommands.append(command)
 			# Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
 			# Technically, that should not even happen. So don't expect much if any traffic in this default class.
 			# Only 1/4 of defaultClassCapacity is guaranteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
-			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(round((upstream_bandwidth_capacity_download_mbps()-1)/4)) + 'mbit ceil ' + str(upstream_bandwidth_capacity_download_mbps()-1) + 'mbit prio 5' + quantum(upstream_bandwidth_capacity_download_mbps())
+			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + format_rate_for_tc(round((upstream_bandwidth_capacity_download_mbps()-1)/4)) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_download_mbps()-1) + ' prio 5' + quantum(upstream_bandwidth_capacity_download_mbps())
 			linuxTCcommands.append(command)
 			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + sqm()
 			linuxTCcommands.append(command)
@@ -891,14 +905,14 @@ def refreshShapers():
 		for queue in range(queuesAvailable):
 			command = 'qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+stickOffset+1) + ' handle ' + hex(queue+stickOffset+1) + ': htb default 2'
 			linuxTCcommands.append(command)
-			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ': classid ' + hex(queue+stickOffset+1) + ':1 htb rate '+ str(upstream_bandwidth_capacity_upload_mbps()) + 'mbit ceil ' + str(upstream_bandwidth_capacity_upload_mbps()) + 'mbit' + quantum(upstream_bandwidth_capacity_upload_mbps())
+			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ': classid ' + hex(queue+stickOffset+1) + ':1 htb rate '+ format_rate_for_tc(upstream_bandwidth_capacity_upload_mbps()) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_upload_mbps()) + quantum(upstream_bandwidth_capacity_upload_mbps())
 			linuxTCcommands.append(command)
 			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 ' + sqm()
 			linuxTCcommands.append(command)
 			# Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
 			# Technically, that should not even happen. So don't expect much if any traffic in this default class.
 			# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
-			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 classid ' + hex(queue+stickOffset+1) + ':2 htb rate ' + str(round((upstream_bandwidth_capacity_upload_mbps()-1)/4)) + 'mbit ceil ' + str(upstream_bandwidth_capacity_upload_mbps()-1) + 'mbit prio 5' + quantum(upstream_bandwidth_capacity_upload_mbps())
+			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 classid ' + hex(queue+stickOffset+1) + ':2 htb rate ' + format_rate_for_tc(round((upstream_bandwidth_capacity_upload_mbps()-1)/4)) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_upload_mbps()-1) + ' prio 5' + quantum(upstream_bandwidth_capacity_upload_mbps())
 			linuxTCcommands.append(command)
 			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':2 ' + sqm()
 			linuxTCcommands.append(command)
@@ -930,11 +944,11 @@ def refreshShapers():
 					case _: return sqm
 
 			for node in data:
-				command = 'class add dev ' + interface_a() + ' parent ' + data[node]['parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ str(data[node]['downloadBandwidthMbpsMin']) + 'mbit ceil '+ str(data[node]['downloadBandwidthMbps']) + 'mbit prio 3' + quantum(data[node]['downloadBandwidthMbps'])
+				command = 'class add dev ' + interface_a() + ' parent ' + data[node]['parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ format_rate_for_tc(data[node]['downloadBandwidthMbpsMin']) + ' ceil '+ format_rate_for_tc(data[node]['downloadBandwidthMbps']) + ' prio 3' + quantum(data[node]['downloadBandwidthMbps'])
 				linuxTCcommands.append(command)
 				logging.info("Up ParentClassID: " + data[node]['up_parentClassID'])
 				logging.info("ClassMinor: " + data[node]['classMinor'])
-				command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ str(data[node]['uploadBandwidthMbpsMin']) + 'mbit ceil '+ str(data[node]['uploadBandwidthMbps']) + 'mbit prio 3' + quantum(data[node]['uploadBandwidthMbps'])
+				command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ format_rate_for_tc(data[node]['uploadBandwidthMbpsMin']) + ' ceil '+ format_rate_for_tc(data[node]['uploadBandwidthMbps']) + ' prio 3' + quantum(data[node]['uploadBandwidthMbps'])
 				linuxTCcommands.append(command)
 				if 'circuits' in data[node]:
 					for circuit in data[node]['circuits']:
@@ -955,7 +969,7 @@ def refreshShapers():
 							if 'comment' in circuit['devices'][0]:
 								tcComment = '' # tcComment + '| Comment: ' + circuit['devices'][0]['comment']
 						tcComment = tcComment.replace("\n", "")
-						command = 'class add dev ' + interface_a() + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ str(min_down) + 'mbit ceil '+ str(circuit['maxDownload']) + 'mbit prio 3' + quantum(circuit['maxDownload']) + tcComment
+						command = 'class add dev ' + interface_a() + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ format_rate_for_tc(min_down) + ' ceil '+ format_rate_for_tc(circuit['maxDownload']) + ' prio 3' + quantum(circuit['maxDownload']) + tcComment
 						linuxTCcommands.append(command)
 						# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
 						if monitor_mode_only() == False:
@@ -963,7 +977,7 @@ def refreshShapers():
 							useSqm = sqmFixupRate(circuit['maxDownload'], sqm())
 							command = 'qdisc add dev ' + interface_a() + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
 							linuxTCcommands.append(command)
-						command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ str(min_up) + 'mbit ceil '+ str(circuit['maxUpload']) + 'mbit prio 3' + quantum(circuit['maxUpload'])
+						command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ format_rate_for_tc(min_up) + ' ceil '+ format_rate_for_tc(circuit['maxUpload']) + ' prio 3' + quantum(circuit['maxUpload'])
 						linuxTCcommands.append(command)
 						# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
 						if monitor_mode_only() == False:
