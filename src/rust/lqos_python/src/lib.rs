@@ -807,12 +807,18 @@ fn insight_topology_role() -> PyResult<String> {
 
 #[pyfunction]
 fn calculate_hash() -> PyResult<i64> {
-    let config = lqos_config::load_config().unwrap();
+    let Ok(config) = lqos_config::load_config() else {
+        return Ok(0);
+    };
     let nj_path = Path::new(&config.lqos_directory).join("network.json");
     let sd_path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
 
-    let nj_as_string = read_to_string(nj_path)?;
-    let sd_as_string = read_to_string(sd_path)?;
+    let Ok(nj_as_string) = read_to_string(nj_path) else {
+        return Ok(0);
+    };
+    let Ok(sd_as_string) = read_to_string(sd_path) else {
+        return Ok(0);
+    };
     let combined = format!("{}\n{}", nj_as_string, sd_as_string);
     let hash = hash_to_i64(&combined);
 
