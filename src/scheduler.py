@@ -4,7 +4,8 @@ from LibreQoS import refreshShapers, refreshShapersUpdateOnly
 import subprocess
 from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue_refresh_interval_mins, \
 	automatic_import_powercode, automatic_import_sonar, influx_db_enabled, get_libreqos_directory, \
-	blackboard_finish, blackboard_submit, automatic_import_wispgate, enable_insight_topology, insight_topology_role
+	blackboard_finish, blackboard_submit, automatic_import_wispgate, enable_insight_topology, insight_topology_role, \
+	calculate_hash
 if automatic_import_splynx():
 	from integrationSplynx import importFromSplynx
 if automatic_import_powercode():
@@ -18,6 +19,7 @@ from apscheduler.executors.pool import ThreadPoolExecutor
 import os.path
 
 ads = BlockingScheduler(executors={'default': ThreadPoolExecutor(1)})
+network_hash = 0
 
 def importFromCRM():
 	# Check Insight Topology Status
@@ -71,11 +73,20 @@ def importAndShapeFullReload():
 		refreshShapers()
 
 def importAndShapePartialReload():
+	global network_hash
+
 	importFromCRM()
-	refreshShapersUpdateOnly()
+	# Calculate if the network.json or ShapedDevices.csv has changed and reload only if it has.
+	new_hash = calculate_hash()
+	if new_hash != network_hash:		
+		refreshShapersUpdateOnly()
+		network_hash = new_hash
+	else:
+		print("No changes detected in network.json or ShapedDevices.csv, skipping shaper refresh.")
 
 if __name__ == '__main__':
 	importAndShapeFullReload()
+	network_hash = calculate_hash()
 
 	ads.add_job(importAndShapePartialReload, 'interval', minutes=queue_refresh_interval_mins(), max_instances=1)
 
