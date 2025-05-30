@@ -81,18 +81,14 @@ pub async fn build_ap_only_network(
                     mac: device.mac.clone(),
                     ipv4: device.ipv4_list(),
                     ipv6: device.ipv6_list(),
-                    download_min: (site.max_down_mbps as f32
-                        * config.uisp_integration.commit_bandwidth_multiplier)
-                        as u64,
-                    upload_min: (site.max_up_mbps as f32
-                        * config.uisp_integration.commit_bandwidth_multiplier)
-                        as u64,
-                    download_max: (site.max_down_mbps as f32
-                        * config.uisp_integration.bandwidth_overhead_factor)
-                        as u64,
-                    upload_max: (site.max_up_mbps as f32
-                        * config.uisp_integration.bandwidth_overhead_factor)
-                        as u64,
+                    download_min: f32::max(0.1, site.max_down_mbps as f32
+                        * config.uisp_integration.commit_bandwidth_multiplier),
+                    upload_min: f32::max(0.1, site.max_up_mbps as f32
+                        * config.uisp_integration.commit_bandwidth_multiplier),
+                    download_max: f32::max(0.1, site.max_down_mbps as f32
+                        * config.uisp_integration.bandwidth_overhead_factor),
+                    upload_max: f32::max(0.1, site.max_up_mbps as f32
+                        * config.uisp_integration.bandwidth_overhead_factor),
                     comment: "".to_string(),
                 };
                 shaped_devices.push(sd);

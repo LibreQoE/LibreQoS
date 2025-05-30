@@ -76,7 +76,8 @@ fn get_weights_from_shaped_devices() -> Result<Vec<DeviceWeightResponse>> {
         if circuit_id == prev_id {
             continue;
         }
-        let weight = device.download_max_mbps as i64 / 2;
+        // Convert f32 to weight with proper rounding and minimum safeguards
+        let weight = f32::max(1.0, device.download_max_mbps / 2.0).round() as i64;
         result.push(DeviceWeightResponse {
             circuit_id: circuit_id.clone(),
             weight,

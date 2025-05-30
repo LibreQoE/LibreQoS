@@ -86,13 +86,13 @@ function fillHeader(node) {
     if (node.max_throughput[0] === 0) {
         limitD = "Unlimited";
     } else {
-        limitD = scaleNumber(node.max_throughput[0] * 1000 * 1000, 0);
+        limitD = scaleNumber(node.max_throughput[0] * 1000 * 1000, 1);
     }
     let limitU = "";
     if (node.max_throughput[1] === 0) {
         limitU = "Unlimited";
     } else {
-        limitU = scaleNumber(node.max_throughput[1] * 1000 * 1000, 0);
+        limitU = scaleNumber(node.max_throughput[1] * 1000 * 1000, 1);
     }
     $("#parentLimitsD").text(limitD);
     $("#parentLimitsU").text(limitU);
