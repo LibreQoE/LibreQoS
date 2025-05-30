@@ -11,7 +11,7 @@ use tokio::{
     net::TcpStream,
     sync::{Mutex, mpsc::Sender},
 };
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 pub(crate) async fn enqueue_if_allowed(
     data: StatsSubmission,
@@ -26,7 +26,7 @@ pub(crate) async fn enqueue_if_allowed(
             error!("Your license is invalid. Please contact support.");
         }
         LicenseState::Valid { .. } => {
-            info!("Sending data to the queue.");
+            debug!("Sending data to the queue.");
             QUEUE.push(LtsCommand::Submit(Box::new(data))).await;
             if let Err(e) = comm_tx.send(SenderChannelMessage::QueueReady).await {
                 error!("Unable to send queue ready message: {}", e);
@@ -91,7 +91,7 @@ pub(crate) async fn send_queue(stream: &mut TcpStream) -> Result<(), QueueError>
         message.attempts += 1;
         let submission_buffer = encode_submission(&message.body).await?;
         let ret = stream.write_all(&submission_buffer).await;
-        info!("Sent submission: {} bytes.", submission_buffer.len());
+        debug!("Sent submission: {} bytes.", submission_buffer.len());
         if ret.is_err() {
             error!("Unable to write to TCP stream.");
             error!("{:?}", ret);

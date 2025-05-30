@@ -70,6 +70,40 @@ pub struct ShapedDevice {
 }
 
 impl ShapedDevice {
+    /// Creates a new `ShapedDevice` instance from a CSV string record.
+    ///
+    /// This function parses a CSV record containing device configuration data and constructs
+    /// a `ShapedDevice` with all necessary fields populated. The CSV record must contain
+    /// exactly 13 fields in the following order:
+    ///
+    /// 1. Circuit ID
+    /// 2. Circuit Name
+    /// 3. Device ID
+    /// 4. Device Name
+    /// 5. Parent Node
+    /// 6. MAC Address
+    /// 7. IPv4 Addresses (comma-separated, CIDR notation supported)
+    /// 8. IPv6 Addresses (comma-separated, CIDR notation supported)
+    /// 9. Download Min Mbps
+    /// 10. Upload Min Mbps
+    /// 11. Download Max Mbps
+    /// 12. Upload Max Mbps
+    /// 13. Comment
+    ///
+    /// # Arguments
+    ///
+    /// * `record` - A reference to a CSV `StringRecord` containing the device data
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(ShapedDevice)` - Successfully parsed device configuration
+    /// * `Err(ShapedDevicesError)` - If parsing fails due to invalid data format
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// * The bandwidth values (min/max upload/download) cannot be parsed as unsigned integers
+    /// * The CSV record doesn't contain the expected number of fields
     pub fn from_csv(record: &StringRecord) -> Result<Self, ShapedDevicesError> {
         Ok(Self {
             circuit_id: record[0].to_string(),
