@@ -1,13 +1,13 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use lqos_bus::{BlackboardSystem, BusRequest, BusResponse, TcHandle};
-use lqos_utils::hex_string::read_hex_string;
+use lqos_utils::{hash_to_i64, hex_string::read_hex_string};
 use nix::libc::getpid;
 use pyo3::{
     PyResult, Python, exceptions::PyOSError, pyclass, pyfunction, pymethods, pymodule,
     types::PyModule, wrap_pyfunction,
 };
 use std::{
-    fs::{File, remove_file},
+    fs::{read_to_string, remove_file, File},
     io::Write,
     path::Path,
 };
@@ -102,6 +102,7 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(insight_topology_role))?;
     m.add_wrapped(wrap_pyfunction!(promote_to_root_list))?;
     m.add_wrapped(wrap_pyfunction!(client_bandwidth_multiplier))?;
+    m.add_wrapped(wrap_pyfunction!(calculate_hash))?;
 
     Ok(())
 }
@@ -802,4 +803,18 @@ fn enable_insight_topology() -> PyResult<bool> {
 fn insight_topology_role() -> PyResult<String> {
     let config = lqos_config::load_config().unwrap();
     Ok(config.long_term_stats.insight_topology_role.clone().unwrap_or("None".to_string()))
+}
+
+#[pyfunction]
+fn calculate_hash() -> PyResult<i64> {
+    let config = lqos_config::load_config().unwrap();
+    let nj_path = Path::new(&config.lqos_directory).join("network.json");
+    let sd_path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
+
+    let nj_as_string = read_to_string(nj_path)?;
+    let sd_as_string = read_to_string(sd_path)?;
+    let combined = format!("{}\n{}", nj_as_string, sd_as_string);
+    let hash = hash_to_i64(&combined);
+
+    Ok(hash)
 }
