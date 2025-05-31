@@ -148,12 +148,17 @@ Phase 1 goal: Mirror the existing LibreQoS.py TC (Traffic Control) functionality
 1. ~~Python integration points (API comments in LibreQoS.py)~~ ✅
 2. ~~**BakeryCommands Implementation**~~ ✅
    - ~~Add new BakeryCommands to handle all integration points~~ ✅
+3. **lqosd Integration** 
+   - Add lqos_bakery dependency to lqosd Cargo.toml
+   - Start bakery in lqosd main.rs after preflight checks and XDP loading
+   - Pass bakery Sender into bus handling loop for command routing
+4. **Bus Communication System Implementation**
    - Add corresponding BusRequest variants for Python->Rust communication  
    - Add BusResponse variants if needed (most will use Ack)
    - Create Python bindings in lqos_python for bakery calls
-3. Integration testing comparing Python vs Rust TC output
-4. Documentation for using the Bakery in production
-5. Actual implementation of Python->Rust calls (Phase 1 deployment)
+5. Integration testing comparing Python vs Rust TC output
+6. Documentation for using the Bakery in production
+7. Actual implementation of Python->Rust calls (Phase 1 deployment)
 
 ## Bus Communication System Planning
 
@@ -203,6 +208,73 @@ Based on the 5 integration points identified in LibreQoS.py, all commands have b
      - `commands`: Vec<String> (all TC command args)
      - `force_mode`: bool (whether to use tc -f flag)
    - Function: Write to file and execute with `tc -b` like Python
+
+## lqosd Integration Requirements
+
+Before implementing the bus communication system, lqosd needs to be updated to integrate with the bakery:
+
+### 1. Cargo.toml Dependency
+Add lqos_bakery as a path dependency in `lqosd/Cargo.toml`:
+```toml
+[dependencies]
+lqos_bakery = { path = "../lqos_bakery" }
+```
+
+### 2. Bakery Startup in main.rs
+The bakery needs to be started in lqosd's main.rs after critical initialization:
+
+**Startup Order Requirements:**
+1. Preflight checks (config validation, interface checks, etc.)
+2. XDP program loading and interface setup
+3. **Bakery startup** ← New step
+4. Bus system startup
+5. Main event loop
+
+**Code Location:** After XDP setup but before bus system starts accepting connections.
+
+**Implementation Notes:**
+- Use `lqos_bakery::start_bakery()` to get the `Sender<BakeryCommands>`
+- Handle startup errors gracefully (bakery failure should not crash lqosd)
+- Log bakery startup success/failure
+
+### 3. Bus Handler Integration
+The bakery Sender needs to be passed into the bus handling loop:
+
+**Integration Points:**
+- Bus handler needs access to `Sender<BakeryCommands>`
+- Route incoming BusRequest bakery commands to the bakery
+- Handle bakery responses and convert to BusResponse
+- Maintain separation: bus handles communication, bakery handles TC execution
+
+**Design Pattern:**
+```rust
+// In bus handler
+match bus_request {
+    BusRequest::BakeryMqSetup => {
+        bakery_sender.send(BakeryCommands::MqSetup)?;
+        BusResponse::Ack
+    },
+    BusRequest::BakeryAddStructuralHTBClass { ... } => {
+        bakery_sender.send(BakeryCommands::AddStructuralHTBClass { ... })?;
+        BusResponse::Ack
+    },
+    // ... other bakery commands
+}
+```
+
+### 4. Error Handling Strategy
+- Bakery commands are fire-and-forget (use `send()` not request/response)
+- Bus responses are immediate (Ack/Fail based on send success)
+- Actual TC command failures are logged by bakery thread
+- Consider adding bakery health check mechanism
+
+### 5. Threading Considerations
+- Bakery runs in its own thread (via `start_bakery()`)
+- Bus handler sends commands via channel (thread-safe)
+- No blocking operations in bus handler
+- Bakery thread handles all TC command execution
+
+This integration makes the bakery available to all bus clients (including Python via lqos_python bindings).
 
 ### BusRequest Extensions Needed
 
