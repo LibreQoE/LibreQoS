@@ -175,6 +175,152 @@ pub fn make_default_class_sqm(interface: &str, queue: u32, sqm:&[&str]) -> anyho
     execute_tc_command(&args)
 }
 
+// === Circuit Management Functions ===
+
+/// Create an HTB class for a circuit or node
+pub fn add_htb_class(
+    interface: &str, 
+    parent: &str, 
+    classid: &str, 
+    rate_mbps: f64, 
+    ceil_mbps: f64, 
+    prio: u32,
+    r2q: u64,
+    circuit_hash: Option<i64>, // Optional - only for circuits, not nodes
+    comment: Option<&str>
+) -> anyhow::Result<()> {
+    // 'class add dev ' + interface + ' parent ' + parent + ' classid ' + classid + 
+    // ' htb rate '+ rate + ' ceil '+ ceil + ' prio ' + prio + quantum + comment
+    let rate_str = format_rate_for_tc(rate_mbps);
+    let ceil_str = format_rate_for_tc(ceil_mbps);
+    let quantum_val = quantum(ceil_mbps, r2q); // Use ceil for quantum like Python
+    let prio_str = prio.to_string();
+    let quantum_str = quantum_val.to_string();
+    
+    let args = vec![
+        "class", "add", "dev", interface, "parent", parent, "classid", classid,
+        "htb", "rate", &rate_str, "ceil", &ceil_str, "prio", &prio_str,
+        "quantum", &quantum_str
+    ];
+    
+    // Store circuit_hash for future use (Phase 2+)
+    if let Some(_hash) = circuit_hash {
+        // Will be used for tracking circuits in later phases
+    }
+    
+    // Add comment if provided (though TC doesn't actually support comments)
+    if let Some(_comment) = comment {
+        // TC doesn't support comments in the command, but we include this for compatibility
+    }
+    
+    execute_tc_command(&args)
+}
+
+/// Add a qdisc (CAKE/fq_codel) to a circuit class
+pub fn add_circuit_qdisc(
+    interface: &str,
+    parent_major: u32,
+    parent_minor: u32,
+    circuit_hash: i64, // Required for circuits
+    sqm_params: &[&str]
+) -> anyhow::Result<()> {
+    // 'qdisc add dev ' + interface + ' parent ' + major + ':' + minor + ' ' + sqm
+    let parent = format!("{:x}:{:x}", parent_major, parent_minor);
+    let mut args = vec!["qdisc", "add", "dev", interface, "parent", &parent];
+    args.extend_from_slice(sqm_params);
+    
+    // Store circuit_hash for future use (Phase 2+)
+    let _ = circuit_hash; // Will be used for tracking circuits in later phases
+    
+    execute_tc_command(&args)
+}
+
+/// Delete all queues on an interface (used in clearPriorSettings)
+pub fn delete_root_qdisc(interface: &str) -> anyhow::Result<()> {
+    // 'tc qdisc delete dev ' + interface + ' root'
+    execute_tc_command(&["qdisc", "delete", "dev", interface, "root"])
+}
+
+/// Check if MQ is installed on an interface (for clearPriorSettings logic)
+pub fn has_mq_qdisc(interface: &str) -> anyhow::Result<bool> {
+    // This is already implemented as is_mq_installed
+    is_mq_installed(interface)
+}
+
+/// Create an HTB class specifically for a circuit (convenience wrapper)
+pub fn add_circuit_htb_class(
+    interface: &str,
+    parent: &str,
+    classid: &str,
+    rate_mbps: f64,
+    ceil_mbps: f64,
+    circuit_hash: i64,
+    comment: Option<&str>,
+    r2q: u64,
+) -> anyhow::Result<()> {
+    add_htb_class(
+        interface,
+        parent,
+        classid,
+        rate_mbps,
+        ceil_mbps,
+        3, // Priority 3 for circuits (from Python)
+        r2q,
+        Some(circuit_hash),
+        comment,
+    )
+}
+
+/// Create an HTB class specifically for a node (convenience wrapper)
+pub fn add_node_htb_class(
+    interface: &str,
+    parent: &str,
+    classid: &str,
+    rate_mbps: f64,
+    ceil_mbps: f64,
+    r2q: u64,
+) -> anyhow::Result<()> {
+    add_htb_class(
+        interface,
+        parent,
+        classid,
+        rate_mbps,
+        ceil_mbps,
+        3, // Priority 3 for nodes (from Python)
+        r2q,
+        None, // No circuit hash for nodes
+        None, // No comment
+    )
+}
+
+/// Apply CAKE RTT adjustments for low bandwidth circuits
+/// This matches Python's sqmFixupRate function but handles fractional speeds
+pub fn sqm_fixup_rate(rate_mbps: f64, sqm: &str) -> String {
+    // If we aren't using cake, just return the sqm string
+    if !sqm.starts_with("cake") || sqm.contains("rtt") {
+        return sqm.to_string();
+    }
+    
+    // Based on: 1 MTU is 1500 bytes, or 12,000 bits.
+    // At 1 Mbps, (1,000 bits per ms) transmitting an MTU takes 12ms. Add 3ms for overhead, and we get 15ms.
+    // So 15ms divided by 5 (for 1%) multiplied by 100 yields 300ms.
+    
+    // Use ranges for fractional speed support
+    let rtt_suffix = if rate_mbps <= 1.5 {
+        " rtt 300ms"
+    } else if rate_mbps <= 2.5 {
+        " rtt 180ms" 
+    } else if rate_mbps <= 3.5 {
+        " rtt 140ms"
+    } else if rate_mbps <= 4.5 {
+        " rtt 120ms"
+    } else {
+        ""
+    };
+    
+    format!("{}{}", sqm, rtt_suffix)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -220,5 +366,61 @@ mod tests {
         // Test fractional rates
         assert_eq!(quantum(1.5, 10), 18750);
         assert_eq!(quantum(0.5, 10), 6250); // Python returns 6250, not MIN_QUANTUM
+    }
+    
+    #[test]
+    fn test_sqm_fixup_rate() {
+        // Test SQM fixup for CAKE at low rates
+        let cake_base = "cake bandwidth 5mbit";
+        
+        // Test exact and fractional rates
+        assert_eq!(sqm_fixup_rate(1.0, cake_base), "cake bandwidth 5mbit rtt 300ms");
+        assert_eq!(sqm_fixup_rate(1.5, cake_base), "cake bandwidth 5mbit rtt 300ms");
+        assert_eq!(sqm_fixup_rate(2.0, cake_base), "cake bandwidth 5mbit rtt 180ms");
+        assert_eq!(sqm_fixup_rate(2.5, cake_base), "cake bandwidth 5mbit rtt 180ms");
+        assert_eq!(sqm_fixup_rate(3.0, cake_base), "cake bandwidth 5mbit rtt 140ms");
+        assert_eq!(sqm_fixup_rate(3.5, cake_base), "cake bandwidth 5mbit rtt 140ms");
+        assert_eq!(sqm_fixup_rate(4.0, cake_base), "cake bandwidth 5mbit rtt 120ms");
+        assert_eq!(sqm_fixup_rate(4.5, cake_base), "cake bandwidth 5mbit rtt 120ms");
+        assert_eq!(sqm_fixup_rate(5.0, cake_base), "cake bandwidth 5mbit");
+        
+        // Test non-CAKE qdiscs (should return unchanged)
+        let fq_codel = "fq_codel";
+        assert_eq!(sqm_fixup_rate(1.0, fq_codel), "fq_codel");
+        
+        // Test CAKE with RTT already present (should return unchanged)
+        let cake_with_rtt = "cake bandwidth 5mbit rtt 100ms";
+        assert_eq!(sqm_fixup_rate(1.0, cake_with_rtt), "cake bandwidth 5mbit rtt 100ms");
+    }
+    
+    #[test]
+    fn test_circuit_creation_with_hash() {
+        // This test demonstrates that circuit_hash is accepted and will be used in Phase 2+
+        // For now, we're just testing the API works
+        
+        // Set WRITE_TC_TO_FILE to true to test without actually executing
+        // In a real test we'd use a const generic or env var, but for now we just verify compilation
+        
+        let circuit_hash: i64 = 1234567890;
+        
+        // These would normally execute TC commands, but we're just testing the API
+        let _ = add_circuit_htb_class(
+            "eth0",
+            "1:1",
+            "1:100",
+            10.5, // Fractional speed
+            15.0,
+            circuit_hash,
+            Some("Test Circuit"),
+            21,
+        );
+        
+        let _ = add_circuit_qdisc(
+            "eth0",
+            1,
+            100,
+            circuit_hash,
+            &["cake", "bandwidth", "15mbit"],
+        );
     }
 }

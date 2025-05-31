@@ -20,10 +20,21 @@
 
 mod tc_control;
 
+// Re-export commonly used TC control functions
+pub use tc_control::{
+    format_rate_for_tc,
+    quantum,
+    add_htb_class,
+    add_circuit_htb_class,
+    add_node_htb_class,
+    add_circuit_qdisc,
+    sqm_fixup_rate,
+};
+
 use std::path::Path;
 
 use crossbeam_channel::Receiver;
-use tracing::error;
+use tracing::{error, info};
 
 pub (crate) const CHANNEL_CAPACITY: usize = 1024;
 
@@ -67,10 +78,21 @@ fn bakery(rx: Receiver<BakeryCommands>) {
 
 fn clear_prior_settings() -> anyhow::Result<()> {
     let config = lqos_config::load_config()?;
-    tc_control::clear_all_queues(&config.internet_interface())?;
-    if !config.on_a_stick_mode() {
-        tc_control::clear_all_queues(&config.isp_interface())?;
+    
+    // Check if MQ is installed (Python checks for 'mq' in output)
+    if tc_control::has_mq_qdisc(&config.internet_interface())? {
+        info!("MQ detected. Will delete and recreate mq qdisc.");
+        
+        // Clear TC on interface A
+        tc_control::delete_root_qdisc(&config.internet_interface())?;
+        
+        // Clear TC on interface B if not on-a-stick mode
+        if !config.on_a_stick_mode() {
+            tc_control::delete_root_qdisc(&config.isp_interface())?;
+        }
     }
+    
+    // Note: Python also clears IP mappings here, but that's handled elsewhere in Rust
     Ok(())
 }
 
