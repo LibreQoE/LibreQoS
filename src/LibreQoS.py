@@ -132,6 +132,14 @@ def checkIfFirstRunSinceBoot():
 		return True
 	
 def clearPriorSettings(interfaceA, interfaceB):
+	# BAKERY INTEGRATION POINT: ClearPriorSettings
+	# Data needed:
+	#   - interfaceA: str (internet interface)
+	#   - interfaceB: str (ISP interface) 
+	#   - on_a_stick: bool
+	# Rust equivalent: BakeryCommands::ClearPriorSettings
+	# This will check for MQ and delete root qdiscs as needed
+	
 	if enable_actual_shell_commands():
 		if 'mq' in shellReturn('tc qdisc show dev ' + interfaceA + ' root'):
 			print('MQ detected. Will delete and recreate mq qdisc.')
@@ -873,6 +881,17 @@ def refreshShapers():
 		
 		linuxTCcommands = []
 		devicesShaped = []
+		
+		# BAKERY INTEGRATION POINT: MqSetup
+		# Data needed:
+		#   - interface config (from lqos_config)
+		#   - upstream/downstream bandwidth capacities
+		#   - queuesAvailable: int
+		#   - default_sqm: str
+		#   - on_a_stick_mode: bool
+		# Rust equivalent: BakeryCommands::MqSetup
+		# This creates the entire MQ + HTB hierarchy with default classes
+		
 		# Root HTB Setup
 		# Create MQ qdisc for each CPU core / rx-tx queue. Generate commands to create corresponding HTB and leaf classes. Prepare commands for execution later
 		thisInterface = interface_a()
@@ -944,6 +963,18 @@ def refreshShapers():
 					case _: return sqm
 
 			for node in data:
+				# BAKERY INTEGRATION POINT: AddStructuralHTBClass (for network.json nodes)
+				# Data needed:
+				#   - interface: str
+				#   - parent: str (e.g., data[node]['parentClassID'])
+				#   - classid: str (e.g., data[node]['classMinor'])
+				#   - rate_mbps: float (downloadBandwidthMbpsMin)
+				#   - ceil_mbps: float (downloadBandwidthMbps)
+				#   - site_hash: i64 (hash of node name)
+				#   - r2q: u64 (calculated from max bandwidth)
+				# Rust equivalent: add_structural_htb_class()
+				# Creates HTB class for site/AP - NO qdisc
+				
 				command = 'class add dev ' + interface_a() + ' parent ' + data[node]['parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ format_rate_for_tc(data[node]['downloadBandwidthMbpsMin']) + ' ceil '+ format_rate_for_tc(data[node]['downloadBandwidthMbps']) + ' prio 3' + quantum(data[node]['downloadBandwidthMbps'])
 				linuxTCcommands.append(command)
 				logging.info("Up ParentClassID: " + data[node]['up_parentClassID'])
@@ -961,6 +992,26 @@ def refreshShapers():
 								min_down = 0.01
 							if min_up == 1:
 								min_up = 0.01
+						# BAKERY INTEGRATION POINT: AddCircuitHTBClass + AddCircuitQdisc
+						# Data needed for HTB class:
+						#   - interface: str
+						#   - parent: str (e.g., data[node]['classid'])
+						#   - classid: str (e.g., circuit['classMinor'])
+						#   - rate_mbps: float (min_down)
+						#   - ceil_mbps: float (circuit['maxDownload'])
+						#   - circuit_hash: i64 (hash of circuit['circuitID'])
+						#   - comment: str (circuit info for debugging)
+						#   - r2q: u64
+						# Rust equivalent: add_circuit_htb_class()
+						#
+						# Data needed for qdisc:
+						#   - interface: str
+						#   - parent_major: u32 (circuit['classMajor'])
+						#   - parent_minor: u32 (circuit['classMinor'])
+						#   - circuit_hash: i64
+						#   - sqm_params: list[str] (from sqmFixupRate)
+						# Rust equivalent: add_circuit_qdisc()
+						
 						# Generate TC commands to be executed later
 						tcComment = " # CircuitID: " + circuit['circuitID'] + " DeviceIDs: "
 						for device in circuit['devices']:
@@ -977,6 +1028,7 @@ def refreshShapers():
 							useSqm = sqmFixupRate(circuit['maxDownload'], sqm())
 							command = 'qdisc add dev ' + interface_a() + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
 							linuxTCcommands.append(command)
+						# Same for upload direction
 						command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ format_rate_for_tc(min_up) + ' ceil '+ format_rate_for_tc(circuit['maxUpload']) + ' prio 3' + quantum(circuit['maxUpload'])
 						linuxTCcommands.append(command)
 						# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
@@ -1043,6 +1095,14 @@ def refreshShapers():
 		#shell('./cpumap-pping/src/tc_classify --dev-egress ' + interfaceB)	
 		xdpEndTime = datetime.now()
 		
+		
+		# BAKERY INTEGRATION POINT: ExecuteTCCommands (Phase 1 alternative)
+		# Instead of the code below, we could send all commands to Rust at once
+		# Data needed:
+		#   - commands: list[str] (all TC commands from linuxTCcommands)
+		#   - debug_mode: bool (whether to use --force flag)
+		# Rust could write to file and execute with tc -b like Python does
+		# This would be a single bulk operation for Phase 1
 		
 		# Execute actual Linux TC commands
 		tcStartTime = datetime.now()

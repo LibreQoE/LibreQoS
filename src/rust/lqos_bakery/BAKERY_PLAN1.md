@@ -64,10 +64,37 @@ Phase 1 goal: Mirror the existing LibreQoS.py TC (Traffic Control) functionality
   - Future enhancement
 - [x] This enables comparison testing between Python and Rust outputs
 
-### 5. Python Integration Points
-- [ ] Add comments to LibreQoS.py indicating future Rust API call locations
-- [ ] Document the expected API interface for each call
-- [ ] Do NOT implement actual calls - just mark the locations
+### 5. Python Integration Points ✅
+- [x] Add comments to LibreQoS.py indicating future Rust API call locations
+- [x] Document the expected API interface for each call
+- [x] Do NOT implement actual calls - just mark the locations
+
+#### Integration Points Identified:
+
+1. **ClearPriorSettings** (Line 134)
+   - Called before setting up new queues
+   - Data: interfaceA, interfaceB, on_a_stick flag
+   - Rust: `BakeryCommands::ClearPriorSettings`
+
+2. **MqSetup** (Line 885)
+   - Creates MQ root + HTB hierarchy with defaults
+   - Data: interface config, bandwidth caps, queuesAvailable, default_sqm
+   - Rust: `BakeryCommands::MqSetup`
+
+3. **AddStructuralHTBClass** (Line 966)
+   - Creates HTB classes for sites/APs (no qdisc)
+   - Data: interface, parent, classid, rate/ceil, site_hash, r2q
+   - Rust: `add_structural_htb_class()`
+
+4. **AddCircuitHTBClass + AddCircuitQdisc** (Line 995)
+   - Creates HTB class + CAKE qdisc for circuits
+   - Data: interface, parent, classid, rate/ceil, circuit_hash, sqm_params, r2q
+   - Rust: `add_circuit_htb_class()` + `add_circuit_qdisc()`
+
+5. **ExecuteTCCommands** (Line 1099) - Optional bulk approach
+   - Execute all commands at once via `tc -b`
+   - Data: list of all TC commands, debug flag
+   - Could be alternative to individual calls
 
 ## TC Command Categories to Mirror
 
@@ -110,9 +137,10 @@ Phase 1 goal: Mirror the existing LibreQoS.py TC (Traffic Control) functionality
 11. Complete TC command mirroring for all Phase 1 operations
 
 ### Still To Do
-1. Python integration points (API comments in LibreQoS.py)
+1. ~~Python integration points (API comments in LibreQoS.py)~~ ✅
 2. Integration testing comparing Python vs Rust TC output
 3. Documentation for using the Bakery in production
+4. Actual implementation of Python->Rust calls (Phase 1 deployment)
 
 ### Implementation Notes
 - Clear distinction between structural nodes (sites/APs) and circuits:
