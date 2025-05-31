@@ -47,6 +47,70 @@ pub enum BakeryCommands {
 
     /// Creates a new top-level MQ for a given interface, along with the default HTB hierarchy.
     MqSetup,
+
+    /// Add an HTB class for a structural node (site/AP from network.json).
+    /// These are intermediate nodes in the hierarchy, NOT leaf nodes.
+    AddStructuralHTBClass {
+        /// Network interface name (e.g., "eth0")
+        interface: String,
+        /// Parent class ID (e.g., "1:")
+        parent: String,
+        /// Class ID for this node (e.g., "1:10")
+        classid: String,
+        /// Minimum bandwidth in Mbps
+        rate_mbps: f64,
+        /// Maximum bandwidth in Mbps
+        ceil_mbps: f64,
+        /// Hash of site name for tracking
+        site_hash: i64,
+        /// R2Q value for quantum calculation
+        r2q: u64,
+    },
+
+    /// Add an HTB class for a circuit (customer circuit from ShapedDevices.csv).
+    /// These are leaf nodes that shape actual customer traffic.
+    AddCircuitHTBClass {
+        /// Network interface name (e.g., "eth0")
+        interface: String,
+        /// Parent class ID (e.g., "1:10")
+        parent: String,
+        /// Class ID for this circuit (e.g., "1:100")
+        classid: String,
+        /// Minimum bandwidth in Mbps
+        rate_mbps: f64,
+        /// Maximum bandwidth in Mbps
+        ceil_mbps: f64,
+        /// Hash of circuit ID for tracking
+        circuit_hash: i64,
+        /// Optional comment for debugging
+        comment: Option<String>,
+        /// R2Q value for quantum calculation
+        r2q: u64,
+    },
+
+    /// Add a qdisc (CAKE/fq_codel) to a circuit class.
+    /// This is ONLY for circuits (leaf nodes). Structural nodes do NOT get qdiscs.
+    AddCircuitQdisc {
+        /// Network interface name (e.g., "eth0")
+        interface: String,
+        /// Major part of parent class ID
+        parent_major: u32,
+        /// Minor part of parent class ID
+        parent_minor: u32,
+        /// Hash of circuit ID for tracking
+        circuit_hash: i64,
+        /// SQM parameters (split from sqm string)
+        sqm_params: Vec<String>,
+    },
+
+    /// Execute a batch of TC commands (alternative bulk approach).
+    /// Write commands to file and execute with `tc -b` like Python does.
+    ExecuteTCCommands {
+        /// Vector of TC command strings (without /sbin/tc prefix)
+        commands: Vec<String>,
+        /// Whether to use -f flag to force execution
+        force_mode: bool,
+    },
 }
 
 /// Starts the Bakery system, returning a channel sender for sending commands to the Bakery.
@@ -63,12 +127,35 @@ pub fn start_bakery() -> anyhow::Result<crossbeam_channel::Sender<BakeryCommands
 
 fn bakery(rx: Receiver<BakeryCommands>) {
     while let Ok(command) = rx.recv() {
-        if let Err(e) = match command {
+        if let Err(e) = match &command {
             BakeryCommands::ClearPriorSettings => clear_prior_settings(),
             BakeryCommands::MqSetup => mq_setup(),
-            _ => {
-                unimplemented!("Bakery command not implemented: {:?}", command);
-            }
+            BakeryCommands::AddStructuralHTBClass { 
+                interface, parent, classid, rate_mbps, ceil_mbps, site_hash, r2q 
+            } => {
+                tc_control::add_structural_htb_class(
+                    interface, parent, classid, *rate_mbps, *ceil_mbps, *site_hash, *r2q
+                )
+            },
+            BakeryCommands::AddCircuitHTBClass { 
+                interface, parent, classid, rate_mbps, ceil_mbps, circuit_hash, comment, r2q 
+            } => {
+                tc_control::add_circuit_htb_class(
+                    interface, parent, classid, *rate_mbps, *ceil_mbps, *circuit_hash, 
+                    comment.as_deref(), *r2q
+                )
+            },
+            BakeryCommands::AddCircuitQdisc { 
+                interface, parent_major, parent_minor, circuit_hash, sqm_params 
+            } => {
+                let sqm_strs: Vec<&str> = sqm_params.iter().map(|s| s.as_str()).collect();
+                tc_control::add_circuit_qdisc(
+                    interface, *parent_major, *parent_minor, *circuit_hash, &sqm_strs
+                )
+            },
+            BakeryCommands::ExecuteTCCommands { commands, force_mode } => {
+                execute_tc_commands_bulk(commands.clone(), *force_mode)
+            },
         } {
             error!("Bakery command failed: {:?}, error: {}", command, e);
         }
@@ -248,6 +335,53 @@ fn mq_setup() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Execute a batch of TC commands using tc -b (bulk mode) like Python does
+/// 
+/// # Arguments
+/// * `commands` - Vec of TC command strings (without /sbin/tc prefix)
+/// * `force_mode` - Whether to use -f flag to force execution and ignore errors
+/// 
+/// # Returns  
+/// * `Result<(), anyhow::Error>` - Returns Ok if successful, or an error if execution fails
+fn execute_tc_commands_bulk(commands: Vec<String>, force_mode: bool) -> anyhow::Result<()> {
+    use std::fs::File;
+    use std::io::Write;
+    
+    const TC_BULK_FILE: &str = "tc-bulk-rust.txt";
+    
+    // Write all commands to a temporary file
+    {
+        let mut file = File::create(TC_BULK_FILE)?;
+        for command in &commands {
+            writeln!(file, "{}", command)?;
+        }
+    }
+    
+    // Execute using tc -b (bulk mode)
+    let mut tc_command = std::process::Command::new("/sbin/tc");
+    
+    if force_mode {
+        tc_command.arg("-f"); // Force mode - ignore errors
+    }
+    
+    tc_command.arg("-b").arg(TC_BULK_FILE);
+    
+    let output = tc_command.output()?;
+    
+    // Clean up the temporary file
+    let _ = std::fs::remove_file(TC_BULK_FILE);
+    
+    if !output.status.success() {
+        return Err(anyhow::anyhow!(
+            "TC bulk command failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    
+    info!("Successfully executed {} TC commands in bulk mode", commands.len());
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -273,5 +407,50 @@ mod tests {
         // Test fractional values
         assert_eq!(calculate_r2q(1.5), 10);
         assert_eq!(calculate_r2q(999.9), 2084);
+    }
+    
+    #[test]
+    fn test_bakery_commands_creation() {
+        // Test that we can create all the new BakeryCommands variants
+        
+        let structural_cmd = BakeryCommands::AddStructuralHTBClass {
+            interface: "eth0".to_string(),
+            parent: "1:".to_string(),
+            classid: "1:10".to_string(),
+            rate_mbps: 100.0,
+            ceil_mbps: 200.0,
+            site_hash: 987654321,
+            r2q: 21,
+        };
+        
+        let circuit_cmd = BakeryCommands::AddCircuitHTBClass {
+            interface: "eth0".to_string(),
+            parent: "1:10".to_string(),
+            classid: "1:100".to_string(),
+            rate_mbps: 10.5,
+            ceil_mbps: 15.0,
+            circuit_hash: 1234567890,
+            comment: Some("Customer ABC".to_string()),
+            r2q: 21,
+        };
+        
+        let qdisc_cmd = BakeryCommands::AddCircuitQdisc {
+            interface: "eth0".to_string(),
+            parent_major: 1,
+            parent_minor: 100,
+            circuit_hash: 1234567890,
+            sqm_params: vec!["cake".to_string(), "bandwidth".to_string(), "15mbit".to_string()],
+        };
+        
+        let bulk_cmd = BakeryCommands::ExecuteTCCommands {
+            commands: vec!["class add dev eth0 parent 1: classid 1:1 htb rate 1000mbit".to_string()],
+            force_mode: false,
+        };
+        
+        // Verify we can format the commands for debugging
+        assert!(format!("{:?}", structural_cmd).contains("AddStructuralHTBClass"));
+        assert!(format!("{:?}", circuit_cmd).contains("AddCircuitHTBClass"));
+        assert!(format!("{:?}", qdisc_cmd).contains("AddCircuitQdisc"));
+        assert!(format!("{:?}", bulk_cmd).contains("ExecuteTCCommands"));
     }
 }

@@ -20,7 +20,7 @@ use std::fs::OpenOptions;
 use std::io::Write;
 
 const TC_COMMAND: &str = "/sbin/tc";
-const WRITE_TC_TO_FILE: bool = false; // Set to true for testing/comparison
+const WRITE_TC_TO_FILE: bool = true; // Set to true for testing/comparison
 const TC_OUTPUT_FILE: &str = "tc-rust.txt";
 
 /// Execute a TC command or write it to a file for testing

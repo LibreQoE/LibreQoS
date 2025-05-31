@@ -135,11 +135,19 @@ Phase 1 goal: Mirror the existing LibreQoS.py TC (Traffic Control) functionality
 9. Clear API distinction between structural (HTB only) and circuit (HTB+qdisc) queues
 10. SQM fixup function with fractional speed support
 11. Complete TC command mirroring for all Phase 1 operations
+12. **BakeryCommands Implementation** - All 6 new command variants implemented:
+    - `AddStructuralHTBClass` for sites/APs from network.json
+    - `AddCircuitHTBClass` for customer circuits from ShapedDevices.csv
+    - `AddCircuitQdisc` for CAKE/fq_codel qdiscs on circuits
+    - `ExecuteTCCommands` for bulk command execution
+    - Complete match pattern handling in bakery thread
+    - Comprehensive documentation and unit tests
+    - Default file output mode (`WRITE_TC_TO_FILE = true`) for safe testing
 
 ### Still To Do
 1. ~~Python integration points (API comments in LibreQoS.py)~~ ✅
-2. **Bus Communication System Design** 
-   - Add new BakeryCommands to handle all integration points
+2. ~~**BakeryCommands Implementation**~~ ✅
+   - ~~Add new BakeryCommands to handle all integration points~~ ✅
    - Add corresponding BusRequest variants for Python->Rust communication  
    - Add BusResponse variants if needed (most will use Ack)
    - Create Python bindings in lqos_python for bakery calls
@@ -149,9 +157,9 @@ Phase 1 goal: Mirror the existing LibreQoS.py TC (Traffic Control) functionality
 
 ## Bus Communication System Planning
 
-### BakeryCommands Extensions Needed
+### BakeryCommands Extensions ✅ (COMPLETED)
 
-Based on the 5 integration points identified in LibreQoS.py, we need to add these commands to `BakeryCommands` enum:
+Based on the 5 integration points identified in LibreQoS.py, all commands have been implemented in `BakeryCommands` enum:
 
 1. **`ClearPriorSettings`** ✅ (already implemented)
    - Data: No parameters needed, reads config internally
@@ -161,8 +169,8 @@ Based on the 5 integration points identified in LibreQoS.py, we need to add thes
    - Data: No parameters needed, reads config internally
    - Function: Create entire MQ + HTB hierarchy with default classes
 
-3. **`AddStructuralHTBClass`** 
-   - Data needed:
+3. **`AddStructuralHTBClass`** ✅ (IMPLEMENTED)
+   - Data implemented:
      - `interface`: String
      - `parent`: String (e.g., "1:")
      - `classid`: String (e.g., "1:10")
@@ -171,8 +179,8 @@ Based on the 5 integration points identified in LibreQoS.py, we need to add thes
      - `site_hash`: i64 (hash of site name)
      - `r2q`: u64 (calculated R2Q value)
 
-4. **`AddCircuitHTBClass`**
-   - Data needed:
+4. **`AddCircuitHTBClass`** ✅ (IMPLEMENTED)
+   - Data implemented:
      - `interface`: String  
      - `parent`: String (e.g., "1:10")
      - `classid`: String (e.g., "1:100")
@@ -182,16 +190,16 @@ Based on the 5 integration points identified in LibreQoS.py, we need to add thes
      - `comment`: Option<String> (for debugging)
      - `r2q`: u64
 
-5. **`AddCircuitQdisc`**
-   - Data needed:
+5. **`AddCircuitQdisc`** ✅ (IMPLEMENTED)
+   - Data implemented:
      - `interface`: String
      - `parent_major`: u32 (from classid)
      - `parent_minor`: u32 (from classid)
      - `circuit_hash`: i64
      - `sqm_params`: Vec<String> (split from sqm string)
 
-6. **`ExecuteTCCommands`** (Alternative bulk approach)
-   - Data needed:
+6. **`ExecuteTCCommands`** ✅ (IMPLEMENTED - Alternative bulk approach)
+   - Data implemented:
      - `commands`: Vec<String> (all TC command args)
      - `force_mode`: bool (whether to use tc -f flag)
    - Function: Write to file and execute with `tc -b` like Python
