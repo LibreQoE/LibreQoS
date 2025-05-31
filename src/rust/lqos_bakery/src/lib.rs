@@ -232,7 +232,7 @@ fn queues_available_on_interface(interface: &str) -> anyhow::Result<usize> {
 
 fn queues_available() -> anyhow::Result<usize> {
     let config = lqos_config::load_config()?;
-    let mut queues = 0;
+    let mut queues;
     if config.on_a_stick_mode() {
         queues = queues_available_on_interface(&config.internet_interface())?;
         queues /= 2;
