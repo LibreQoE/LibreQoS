@@ -138,9 +138,152 @@ Phase 1 goal: Mirror the existing LibreQoS.py TC (Traffic Control) functionality
 
 ### Still To Do
 1. ~~Python integration points (API comments in LibreQoS.py)~~ ✅
-2. Integration testing comparing Python vs Rust TC output
-3. Documentation for using the Bakery in production
-4. Actual implementation of Python->Rust calls (Phase 1 deployment)
+2. **Bus Communication System Design** 
+   - Add new BakeryCommands to handle all integration points
+   - Add corresponding BusRequest variants for Python->Rust communication  
+   - Add BusResponse variants if needed (most will use Ack)
+   - Create Python bindings in lqos_python for bakery calls
+3. Integration testing comparing Python vs Rust TC output
+4. Documentation for using the Bakery in production
+5. Actual implementation of Python->Rust calls (Phase 1 deployment)
+
+## Bus Communication System Planning
+
+### BakeryCommands Extensions Needed
+
+Based on the 5 integration points identified in LibreQoS.py, we need to add these commands to `BakeryCommands` enum:
+
+1. **`ClearPriorSettings`** ✅ (already implemented)
+   - Data: No parameters needed, reads config internally
+   - Function: Check for MQ, delete root qdiscs as needed
+
+2. **`MqSetup`** ✅ (already implemented)
+   - Data: No parameters needed, reads config internally
+   - Function: Create entire MQ + HTB hierarchy with default classes
+
+3. **`AddStructuralHTBClass`** 
+   - Data needed:
+     - `interface`: String
+     - `parent`: String (e.g., "1:")
+     - `classid`: String (e.g., "1:10")
+     - `rate_mbps`: f64 (min bandwidth)
+     - `ceil_mbps`: f64 (max bandwidth)
+     - `site_hash`: i64 (hash of site name)
+     - `r2q`: u64 (calculated R2Q value)
+
+4. **`AddCircuitHTBClass`**
+   - Data needed:
+     - `interface`: String  
+     - `parent`: String (e.g., "1:10")
+     - `classid`: String (e.g., "1:100")
+     - `rate_mbps`: f64 (min bandwidth)
+     - `ceil_mbps`: f64 (max bandwidth)
+     - `circuit_hash`: i64 (hash of circuit ID)
+     - `comment`: Option<String> (for debugging)
+     - `r2q`: u64
+
+5. **`AddCircuitQdisc`**
+   - Data needed:
+     - `interface`: String
+     - `parent_major`: u32 (from classid)
+     - `parent_minor`: u32 (from classid)
+     - `circuit_hash`: i64
+     - `sqm_params`: Vec<String> (split from sqm string)
+
+6. **`ExecuteTCCommands`** (Alternative bulk approach)
+   - Data needed:
+     - `commands`: Vec<String> (all TC command args)
+     - `force_mode`: bool (whether to use tc -f flag)
+   - Function: Write to file and execute with `tc -b` like Python
+
+### BusRequest Extensions Needed
+
+Add these new variants to `BusRequest` enum in `lqos_bus/src/bus/request.rs`:
+
+```rust
+// Bakery TC Commands
+BakeryMqSetup,
+
+BakeryAddStructuralHTBClass {
+    interface: String,
+    parent: String,
+    classid: String,
+    rate_mbps: f64,
+    ceil_mbps: f64,
+    site_hash: i64,
+    r2q: u64,
+},
+
+BakeryAddCircuitHTBClass {
+    interface: String,
+    parent: String,
+    classid: String,
+    rate_mbps: f64,
+    ceil_mbps: f64,
+    circuit_hash: i64,
+    comment: Option<String>,
+    r2q: u64,
+},
+
+BakeryAddCircuitQdisc {
+    interface: String,
+    parent_major: u32,
+    parent_minor: u32,
+    circuit_hash: i64,
+    sqm_params: Vec<String>,
+},
+
+BakeryExecuteTCCommands {
+    commands: Vec<String>,
+    force_mode: bool,
+},
+
+BakeryClearPriorSettings,
+```
+
+### BusResponse Extensions
+
+Most bakery commands will return `BusResponse::Ack` on success or `BusResponse::Fail(String)` on error. No new response variants needed.
+
+### Python Bindings (lqos_python) Extensions Needed
+
+Add these new functions to `lqos_python/src/lib.rs`:
+
+1. **Session-based approach** (preferred):
+   ```python
+   class BakerySession:
+       def __init__(self)
+       def mq_setup(self) -> bool
+       def clear_prior_settings(self) -> bool
+       def add_structural_htb_class(self, interface, parent, classid, rate_mbps, ceil_mbps, site_hash, r2q) -> bool
+       def add_circuit_htb_class(self, interface, parent, classid, rate_mbps, ceil_mbps, circuit_hash, comment, r2q) -> bool
+       def add_circuit_qdisc(self, interface, parent_major, parent_minor, circuit_hash, sqm_params) -> bool
+       def execute_tc_commands(self, commands, force_mode) -> bool
+   ```
+
+2. **Individual function approach** (alternative):
+   ```python
+   def bakery_mq_setup() -> bool
+   def bakery_clear_prior_settings() -> bool  
+   def bakery_add_structural_htb_class(...) -> bool
+   def bakery_add_circuit_htb_class(...) -> bool
+   def bakery_add_circuit_qdisc(...) -> bool
+   def bakery_execute_tc_commands(...) -> bool
+   ```
+
+### Integration with lqosd
+
+The Bakery runs as part of lqosd and receives commands via the bus. The flow will be:
+
+1. **LibreQoS.py** calls Python binding function
+2. **lqos_python** creates BusRequest and sends via bus  
+3. **lqosd** receives BusRequest and forwards to Bakery
+4. **Bakery** executes TC command and sends BusResponse
+5. **lqos_python** receives response and returns to Python
+
+### Bus Message Routing
+
+Add routing in lqosd's bus handler to forward bakery requests to the Bakery system.
 
 ### Implementation Notes
 - Clear distinction between structural nodes (sites/APs) and circuits:
