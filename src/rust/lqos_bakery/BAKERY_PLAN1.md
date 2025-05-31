@@ -5,28 +5,31 @@ Phase 1 goal: Mirror the existing LibreQoS.py TC (Traffic Control) functionality
 
 ## Immediate Tasks
 
-### 1. Verify and Update Helper Functions
-- [ ] Review `r2q_bandwidth()` function - verify it matches Python's `r2q()`
+### 1. Verify and Update Helper Functions ✅
+- [x] Review `r2q_bandwidth()` function - verify it matches Python's `r2q()`
   - **Finding**: Python's `calculateR2q()` IS still used (line 883 in LibreQoS.py)
   - **Issue**: Python sets a global R2Q variable used by quantum(), Rust calculates but doesn't use it
-- [ ] Review `quantum()` function - verify it matches Python's `quantum()`
-  - **Bug Found**: Rust hardcodes division by 8, Python uses dynamically calculated R2Q
-  - **Fix Needed**: Rust quantum() should use the calculated r2q value, not hardcoded 8
-- [ ] Update both functions to support fractional speeds (building on previous fractional speeds work)
-- [ ] **Create unit tests** to verify Rust matches Python exactly:
-  - Test `r2q_bandwidth()` with various bandwidth values (1, 10, 100, 1000, 10000 Mbps)
+  - **Fixed**: Renamed to `calculate_r2q()`, uses floating-point division to match Python exactly
+- [x] Review `quantum()` function - verify it matches Python's `quantum()`
+  - **Bug Found**: Rust hardcoded division by 8, Python uses dynamically calculated R2Q
+  - **Fixed**: Now accepts r2q as parameter and matches Python behavior
+- [x] Update both functions to support fractional speeds (building on previous fractional speeds work)
+  - Both functions now use `f64` for rates
+- [x] **Create unit tests** to verify Rust matches Python exactly:
+  - Test `calculate_r2q()` with various bandwidth values (1, 10, 100, 1000, 10000 Mbps)
   - Test `quantum()` with the same range of values
   - Include fractional speed tests (1.5, 10.5, 999.9 Mbps)
-  - Compare outputs with Python-calculated expected values
+  - All tests pass with Python-calculated expected values
 
-### 2. Fractional Speed Formatting
-- [ ] Create helper function to format bandwidth values with appropriate units (Mbit, Kbit, etc.)
-- [ ] Match Python's formatting behavior exactly (see `format_rate_for_tc()` at line 81)
+### 2. Fractional Speed Formatting ✅
+- [x] Create helper function to format bandwidth values with appropriate units (Mbit, Kbit, etc.)
+- [x] Match Python's formatting behavior exactly (see `format_rate_for_tc()` at line 81)
   - Rates ≥ 1000 Mbps → "X.Xgbit" (1 decimal place)
   - Rates ≥ 1 Mbps → "X.Xmbit" (1 decimal place)
   - Rates < 1 Mbps → "Xkbit" (0 decimal places)
-- [ ] Support fractional values (e.g., 1.5Mbit, 500.5Kbit)
-- [ ] Create unit tests for format_rate_for_tc() with edge cases
+- [x] Support fractional values (e.g., 1.5Mbit, 500.5Kbit)
+- [x] Create unit tests for format_rate_for_tc() with edge cases
+  - All tests pass with exact string matches
 
 ### 3. TC Command Mirroring
 - [ ] Identify all locations in LibreQoS.py where TC commands are executed
@@ -37,19 +40,22 @@ Phase 1 goal: Mirror the existing LibreQoS.py TC (Traffic Control) functionality
   - [ ] Queue statistics queries
 - [ ] Ensure all TC command builders support fractional speeds
 
-### 4. Centralized TC Command Execution
-- [ ] Create a single function to handle all TC command execution
-- [ ] Add compile-time constant `WRITE_TC_TO_FILE` to control behavior
-- [ ] When `WRITE_TC_TO_FILE` is true:
+### 4. Centralized TC Command Execution ✅
+- [x] Create a single function to handle all TC command execution
+  - Implemented `execute_tc_command()` in `tc_control.rs`
+- [x] Add compile-time constant `WRITE_TC_TO_FILE` to control behavior
+- [x] When `WRITE_TC_TO_FILE` is true:
   - Append commands to `tc-rust.txt` (similar to Python's `linux_tc.txt`)
   - Format: Just the TC arguments (no `/sbin/tc` prefix), one per line
   - Match Python's format exactly for easy comparison
-- [ ] When `WRITE_TC_TO_FILE` is false:
+- [x] When `WRITE_TC_TO_FILE` is false:
   - Execute commands via `std::process::Command`
   - Handle errors appropriately
-- [ ] Update all existing TC command calls to use this function
+- [x] Update all existing TC command calls to use this function
+  - All TC functions now use centralized execution
 - [ ] Consider batching commands like Python does (using `tc -b` with file)
-- [ ] This enables comparison testing between Python and Rust outputs
+  - Future enhancement
+- [x] This enables comparison testing between Python and Rust outputs
 
 ### 5. Python Integration Points
 - [ ] Add comments to LibreQoS.py indicating future Rust API call locations
@@ -59,21 +65,38 @@ Phase 1 goal: Mirror the existing LibreQoS.py TC (Traffic Control) functionality
 ## TC Command Categories to Mirror
 
 ### Queue Management
-- MQ (Multi-Queue) setup ✓ (partially done)
-- HTB hierarchy creation ✓ (partially done)
-- CAKE qdisc configuration
-- FQ-CoDel qdisc configuration (if used)
+- MQ (Multi-Queue) setup ✅ (complete)
+- HTB hierarchy creation ✅ (complete)
+- CAKE qdisc configuration ✅ (via SQM parameters)
+- FQ-CoDel qdisc configuration ✅ (via SQM parameters)
 
 ### Class Management
-- Root classes
-- Circuit classes
-- Default classes
-- Class modifications (bandwidth changes)
+- Root classes ✅ (make_parent_class)
+- Circuit classes (pending - need to implement circuit creation)
+- Default classes ✅ (make_default_class)
+- Class modifications (pending - bandwidth changes)
 
 ### Additional Operations
-- Queue deletion/cleanup
-- Statistics gathering
-- Error handling patterns
+- Queue deletion/cleanup ✅ (clear_all_queues)
+- Statistics gathering (pending)
+- Error handling patterns ✅ (via Result types)
+
+## Progress Summary
+
+### Completed ✅
+1. Centralized TC command execution with file logging option
+2. Fixed r2q/quantum calculations to match Python exactly
+3. Implemented fractional speed formatting (gbit/mbit/kbit)
+4. Created comprehensive unit tests verifying Python compatibility
+5. Updated all existing TC functions to support fractional speeds
+6. MQ setup and HTB hierarchy creation for default queues
+
+### Still To Do
+1. Circuit-specific queue creation
+2. Class modification operations (bandwidth updates)
+3. Statistics gathering operations
+4. Python integration points (API comments)
+5. Complete TC command mirroring for all operations
 
 ## Design Principles
 1. **Exact Behavioral Match**: Every TC command generated by Rust must match Python's output exactly

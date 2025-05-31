@@ -74,14 +74,16 @@ fn clear_prior_settings() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn r2q_bandwidth(max_rate_mbps: u64) -> u64 {
+/// Calculate the appropriate r2q value based on the maximum bandwidth.
+/// This matches Python's calculateR2q function.
+fn calculate_r2q(max_rate_mbps: f64) -> u64 {
     const MAX_R2Q: u64 = 60_000; // See https://lartc.vger.kernel.narkive.com/NKaH1ZNG/htb-quantum-of-class-100001-is-small-consider-r2q-change
-    let max_rate_bytes_per_second = max_rate_mbps * 125_000;
+    let max_rate_bytes_per_second = max_rate_mbps * 125_000.0;
     let mut r2q = 10;
-    let mut quantum = max_rate_bytes_per_second / r2q;
-    while quantum > MAX_R2Q {
+    
+    // Use floating point division to match Python's behavior exactly
+    while (max_rate_bytes_per_second / r2q as f64) > MAX_R2Q as f64 {
         r2q += 1;
-        quantum = max_rate_bytes_per_second / r2q;
     }
     r2q
 }
@@ -138,8 +140,10 @@ fn mq_setup() -> anyhow::Result<()> {
     let config = lqos_config::load_config()?;
 
     // Calculations
-    let max_bandwidth = u64::max(config.queues.downlink_bandwidth_mbps, config.queues.uplink_bandwidth_mbps);
-    let r2q = r2q_bandwidth(max_bandwidth); // Not sure we use this anymore?
+    let downlink_mbps = config.queues.downlink_bandwidth_mbps as f64;
+    let uplink_mbps = config.queues.uplink_bandwidth_mbps as f64;
+    let max_bandwidth = f64::max(downlink_mbps, uplink_mbps);
+    let r2q = calculate_r2q(max_bandwidth);
     let n_queues = queues_available()?;
     let sqm_chunks = config.queues.default_sqm.split(' ').collect::<Vec<&str>>();
 
@@ -166,13 +170,13 @@ fn mq_setup() -> anyhow::Result<()> {
         tc_control::make_top_htb(&config.internet_interface(), queue as u32,)?;
 
         // Make parent class
-        tc_control::make_parent_class(&config.internet_interface(), queue as u32, config.queues.downlink_bandwidth_mbps)?;
+        tc_control::make_parent_class(&config.internet_interface(), queue as u32, downlink_mbps, r2q)?;
 
         // Make default SQM bucket
         tc_control::make_default_sqm_bucket(&config.internet_interface(), queue as u32, &sqm_chunks)?;
 
         // Make default class
-        tc_control::make_default_class(&config.internet_interface(), queue as u32, config.queues.downlink_bandwidth_mbps)?;
+        tc_control::make_default_class(&config.internet_interface(), queue as u32, downlink_mbps, r2q)?;
 
         // Make the CAKE queue for the default class
         tc_control::make_default_class_sqm(&config.internet_interface(), queue as u32, &sqm_chunks)?;
@@ -207,17 +211,45 @@ fn mq_setup() -> anyhow::Result<()> {
         tc_control::make_top_htb(&this_interface, queue as u32 + stick_offset as u32)?;
 
         // Make parent class
-        tc_control::make_parent_class(&this_interface, queue as u32 + stick_offset as u32, config.queues.uplink_bandwidth_mbps)?;
+        tc_control::make_parent_class(&this_interface, queue as u32 + stick_offset as u32, uplink_mbps, r2q)?;
 
         // Make default SQM bucket
         tc_control::make_default_sqm_bucket(&this_interface, queue as u32 + stick_offset as u32, &sqm_chunks)?;
 
         // Make default class
-        tc_control::make_default_class(&this_interface, queue as u32 + stick_offset as u32, config.queues.uplink_bandwidth_mbps)?;
+        tc_control::make_default_class(&this_interface, queue as u32 + stick_offset as u32, uplink_mbps, r2q)?;
 
         // Make the CAKE queue for the default class
         tc_control::make_default_class_sqm(&this_interface, queue as u32 + stick_offset as u32, &sqm_chunks)?;
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_calculate_r2q() {
+        // Test values calculated from Python's calculateR2q function
+        // Python: calculateR2q(1) -> R2Q = 10
+        assert_eq!(calculate_r2q(1.0), 10);
+        
+        // Python: calculateR2q(10) -> R2Q = 21 
+        assert_eq!(calculate_r2q(10.0), 21);
+        
+        // Python: calculateR2q(100) -> R2Q = 209
+        assert_eq!(calculate_r2q(100.0), 209);
+        
+        // Python: calculateR2q(1000) -> R2Q = 2084
+        assert_eq!(calculate_r2q(1000.0), 2084);
+        
+        // Python: calculateR2q(10000) -> R2Q = 20834
+        assert_eq!(calculate_r2q(10000.0), 20834);
+        
+        // Test fractional values
+        assert_eq!(calculate_r2q(1.5), 10);
+        assert_eq!(calculate_r2q(999.9), 2084);
+    }
 }
