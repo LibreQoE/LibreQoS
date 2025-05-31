@@ -148,14 +148,16 @@ Phase 1 goal: Mirror the existing LibreQoS.py TC (Traffic Control) functionality
 1. ~~Python integration points (API comments in LibreQoS.py)~~ ✅
 2. ~~**BakeryCommands Implementation**~~ ✅
    - ~~Add new BakeryCommands to handle all integration points~~ ✅
-3. **lqosd Integration** 
-   - Add lqos_bakery dependency to lqosd Cargo.toml
-   - Start bakery in lqosd main.rs after preflight checks and XDP loading
-   - Pass bakery Sender into bus handling loop for command routing
-4. **Bus Communication System Implementation**
-   - Add corresponding BusRequest variants for Python->Rust communication  
-   - Add BusResponse variants if needed (most will use Ack)
-   - Create Python bindings in lqos_python for bakery calls
+3. **lqosd Integration** ✅
+   - [x] Add lqos_bakery dependency to lqosd Cargo.toml
+   - [x] Start bakery in lqosd main.rs after preflight checks and XDP loading
+   - [x] Pass bakery Sender into bus handling loop for command routing
+   - [x] Add BusRequest variants for all bakery commands
+   - [x] Implement command routing in handle_bus_requests function
+4. **Bus Communication System Implementation** ✅
+   - [x] Add corresponding BusRequest variants for Python->Rust communication  
+   - [x] Add BusResponse variants if needed (most will use Ack)
+   - [ ] Create Python bindings in lqos_python for bakery calls
 5. Integration testing comparing Python vs Rust TC output
 6. Documentation for using the Bakery in production
 7. Actual implementation of Python->Rust calls (Phase 1 deployment)

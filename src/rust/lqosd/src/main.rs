@@ -52,6 +52,9 @@ use tracing::{error, info, warn};
 use mimalloc::MiMalloc;
 
 use crate::blackboard::{BLACKBOARD_SENDER, BlackboardCommand};
+use std::sync::OnceLock;
+
+static BAKERY_SENDER: OnceLock<crossbeam_channel::Sender<lqos_bakery::BakeryCommands>> = OnceLock::new();
 use crate::remote_commands::start_remote_commands;
 #[cfg(feature = "flamegraphs")]
 use crate::shaped_devices_tracker::NETWORK_JSON;
@@ -143,6 +146,17 @@ fn main() -> Result<()> {
             Some(heimdall_handle_events),
             Some(flowbee_handle_events),
         )?
+    };
+
+    // Start the Bakery for TC command execution
+    match lqos_bakery::start_bakery() {
+        Ok(sender) => {
+            info!("Bakery started successfully");
+            let _ = BAKERY_SENDER.set(sender);
+        },
+        Err(e) => {
+            error!("Failed to start Bakery: {:?}", e);
+        }
     };
 
     // Spawn tracking sub-systems
@@ -413,6 +427,93 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                     });
                 }
                 BusResponse::Ack
+            }
+            // Bakery TC Commands
+            BusRequest::BakeryClearPriorSettings => {
+                if let Some(sender) = BAKERY_SENDER.get() {
+                    match sender.send(lqos_bakery::BakeryCommands::ClearPriorSettings) {
+                        Ok(_) => BusResponse::Ack,
+                        Err(e) => BusResponse::Fail(format!("Bakery command failed: {:?}", e))
+                    }
+                } else {
+                    BusResponse::Fail("Bakery not available".to_string())
+                }
+            }
+            BusRequest::BakeryMqSetup => {
+                if let Some(sender) = BAKERY_SENDER.get() {
+                    match sender.send(lqos_bakery::BakeryCommands::MqSetup) {
+                        Ok(_) => BusResponse::Ack,
+                        Err(e) => BusResponse::Fail(format!("Bakery command failed: {:?}", e))
+                    }
+                } else {
+                    BusResponse::Fail("Bakery not available".to_string())
+                }
+            }
+            BusRequest::BakeryAddStructuralHTBClass { interface, parent, classid, rate_mbps, ceil_mbps, site_hash, r2q } => {
+                if let Some(sender) = BAKERY_SENDER.get() {
+                    match sender.send(lqos_bakery::BakeryCommands::AddStructuralHTBClass {
+                        interface: interface.clone(),
+                        parent: parent.clone(),
+                        classid: classid.clone(),
+                        rate_mbps: *rate_mbps,
+                        ceil_mbps: *ceil_mbps,
+                        site_hash: *site_hash,
+                        r2q: *r2q,
+                    }) {
+                        Ok(_) => BusResponse::Ack,
+                        Err(e) => BusResponse::Fail(format!("Bakery command failed: {:?}", e))
+                    }
+                } else {
+                    BusResponse::Fail("Bakery not available".to_string())
+                }
+            }
+            BusRequest::BakeryAddCircuitHTBClass { interface, parent, classid, rate_mbps, ceil_mbps, circuit_hash, comment, r2q } => {
+                if let Some(sender) = BAKERY_SENDER.get() {
+                    match sender.send(lqos_bakery::BakeryCommands::AddCircuitHTBClass {
+                        interface: interface.clone(),
+                        parent: parent.clone(),
+                        classid: classid.clone(),
+                        rate_mbps: *rate_mbps,
+                        ceil_mbps: *ceil_mbps,
+                        circuit_hash: *circuit_hash,
+                        comment: comment.clone(),
+                        r2q: *r2q,
+                    }) {
+                        Ok(_) => BusResponse::Ack,
+                        Err(e) => BusResponse::Fail(format!("Bakery command failed: {:?}", e))
+                    }
+                } else {
+                    BusResponse::Fail("Bakery not available".to_string())
+                }
+            }
+            BusRequest::BakeryAddCircuitQdisc { interface, parent_major, parent_minor, circuit_hash, sqm_params } => {
+                if let Some(sender) = BAKERY_SENDER.get() {
+                    match sender.send(lqos_bakery::BakeryCommands::AddCircuitQdisc {
+                        interface: interface.clone(),
+                        parent_major: *parent_major,
+                        parent_minor: *parent_minor,
+                        circuit_hash: *circuit_hash,
+                        sqm_params: sqm_params.clone(),
+                    }) {
+                        Ok(_) => BusResponse::Ack,
+                        Err(e) => BusResponse::Fail(format!("Bakery command failed: {:?}", e))
+                    }
+                } else {
+                    BusResponse::Fail("Bakery not available".to_string())
+                }
+            }
+            BusRequest::BakeryExecuteTCCommands { commands, force_mode } => {
+                if let Some(sender) = BAKERY_SENDER.get() {
+                    match sender.send(lqos_bakery::BakeryCommands::ExecuteTCCommands {
+                        commands: commands.clone(),
+                        force_mode: *force_mode,
+                    }) {
+                        Ok(_) => BusResponse::Ack,
+                        Err(e) => BusResponse::Fail(format!("Bakery command failed: {:?}", e))
+                    }
+                } else {
+                    BusResponse::Fail("Bakery not available".to_string())
+                }
             }
         });
     }

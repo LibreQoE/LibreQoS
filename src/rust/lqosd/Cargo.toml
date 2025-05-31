@@ -22,6 +22,7 @@ lqos_stormguard = { path = "../lqos_stormguard" }
 tokio = { version = "1", features = [ "full" ] }
 once_cell = { workspace = true}
 lqos_bus = { path = "../lqos_bus" }
+lqos_bakery = { path = "../lqos_bakery" }
 signal-hook = "0.3"
 serde_json = { workspace = true }
 serde = { workspace = true }

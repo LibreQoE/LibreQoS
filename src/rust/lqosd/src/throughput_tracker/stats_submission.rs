@@ -118,11 +118,11 @@ pub(crate) fn submit_throughput_stats(
     metrics.total_throughput = metrics.start.elapsed().as_secs_f64();
 
     if let Ok(config) = load_config() {
-        if bits_per_second.down > (config.queues.downlink_bandwidth_mbps as u64 * 1_000_000) {
+        if bits_per_second.down > (config.queues.downlink_bandwidth_mbps * 1_000_000) {
             debug!("Spike detected - not submitting LTS");
             return; // Do not submit these stats
         }
-        if bits_per_second.up > (config.queues.uplink_bandwidth_mbps as u64 * 1_000_000) {
+        if bits_per_second.up > (config.queues.uplink_bandwidth_mbps * 1_000_000) {
             debug!("Spike detected - not submitting LTS");
             return; // Do not submit these stats
         }
@@ -349,8 +349,8 @@ pub(crate) fn submit_throughput_stats(
                 (
                     d.circuit_hash,
                     (
-                        d.download_max_mbps as u64 * 1_000_000 * CRAZY_LIMIT,
-                        d.upload_max_mbps as u64 * 1_000_000 * CRAZY_LIMIT,
+                        d.download_max_mbps.round() as u64 * 1_000_000 * CRAZY_LIMIT,
+                        d.upload_max_mbps.round() as u64 * 1_000_000 * CRAZY_LIMIT,
                     ),
                 )
             })
