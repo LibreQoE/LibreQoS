@@ -26,7 +26,7 @@ pub use tc_control::{
     quantum,
     add_htb_class,
     add_circuit_htb_class,
-    add_node_htb_class,
+    add_structural_htb_class,
     add_circuit_qdisc,
     sqm_fixup_rate,
 };

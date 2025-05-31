@@ -1,3 +1,21 @@
+//! Traffic Control (TC) command execution for LibreQoS
+//! 
+//! This module mirrors LibreQoS.py's TC functionality with two distinct queue types:
+//! 
+//! 1. **Structural Queues** (Sites/APs from network.json)
+//!    - Intermediate nodes in the HTB hierarchy
+//!    - Only have HTB classes, NO qdiscs
+//!    - Tracked by site_hash (i64 hash of site name)
+//!    - Created with `add_structural_htb_class()`
+//! 
+//! 2. **Circuit Queues** (Customer circuits)
+//!    - Leaf nodes that shape actual traffic
+//!    - Have both HTB class AND CAKE/fq_codel qdisc
+//!    - Tracked by circuit_hash (i64 hash of circuit ID)
+//!    - Created with `add_circuit_htb_class()` + `add_circuit_qdisc()`
+//! 
+//! The hashes are used for tracking in Phase 2+ but accepted/ignored in Phase 1.
+
 use std::fs::OpenOptions;
 use std::io::Write;
 
@@ -177,7 +195,12 @@ pub fn make_default_class_sqm(interface: &str, queue: u32, sqm:&[&str]) -> anyho
 
 // === Circuit Management Functions ===
 
-/// Create an HTB class for a circuit or node
+/// Generic HTB class creation (used by specific functions below)
+/// 
+/// Note: You should typically use one of:
+/// - `add_circuit_htb_class()` for circuits (leaf nodes with CAKE)
+/// - `add_structural_htb_class()` for sites/APs (intermediate nodes)
+/// - Direct calls only for special cases
 pub fn add_htb_class(
     interface: &str, 
     parent: &str, 
@@ -186,7 +209,7 @@ pub fn add_htb_class(
     ceil_mbps: f64, 
     prio: u32,
     r2q: u64,
-    circuit_hash: Option<i64>, // Optional - only for circuits, not nodes
+    circuit_hash: Option<i64>, // Some(hash) for circuits, None for structural nodes
     comment: Option<&str>
 ) -> anyhow::Result<()> {
     // 'class add dev ' + interface + ' parent ' + parent + ' classid ' + classid + 
@@ -217,6 +240,9 @@ pub fn add_htb_class(
 }
 
 /// Add a qdisc (CAKE/fq_codel) to a circuit class
+/// 
+/// This is ONLY for circuits (leaf nodes). Structural nodes (sites/APs) 
+/// do NOT get qdiscs - they only have HTB classes for hierarchy.
 pub fn add_circuit_qdisc(
     interface: &str,
     parent_major: u32,
@@ -247,7 +273,8 @@ pub fn has_mq_qdisc(interface: &str) -> anyhow::Result<bool> {
     is_mq_installed(interface)
 }
 
-/// Create an HTB class specifically for a circuit (convenience wrapper)
+/// Create an HTB class specifically for a circuit (with CAKE shaper)
+/// Circuits are leaf nodes that shape actual customer traffic
 pub fn add_circuit_htb_class(
     interface: &str,
     parent: &str,
@@ -271,24 +298,29 @@ pub fn add_circuit_htb_class(
     )
 }
 
-/// Create an HTB class specifically for a node (convenience wrapper)
-pub fn add_node_htb_class(
+/// Create an HTB class for a structural node (site/AP from network.json)
+/// These are intermediate nodes in the hierarchy, NOT leaf nodes
+pub fn add_structural_htb_class(
     interface: &str,
     parent: &str,
     classid: &str,
     rate_mbps: f64,
     ceil_mbps: f64,
+    site_hash: i64,  // Hash of site name from network.json
     r2q: u64,
 ) -> anyhow::Result<()> {
+    // Store site_hash for future tracking (Phase 2+)
+    let _ = site_hash;
+    
     add_htb_class(
         interface,
         parent,
         classid,
         rate_mbps,
         ceil_mbps,
-        3, // Priority 3 for nodes (from Python)
+        3, // Priority 3 for structural nodes (from Python)
         r2q,
-        None, // No circuit hash for nodes
+        None, // Not a circuit
         None, // No comment
     )
 }
@@ -394,27 +426,36 @@ mod tests {
     }
     
     #[test]
-    fn test_circuit_creation_with_hash() {
-        // This test demonstrates that circuit_hash is accepted and will be used in Phase 2+
-        // For now, we're just testing the API works
+    fn test_structural_vs_circuit_creation() {
+        // This test demonstrates the distinction between structural and circuit queues
         
-        // Set WRITE_TC_TO_FILE to true to test without actually executing
-        // In a real test we'd use a const generic or env var, but for now we just verify compilation
+        let site_hash: i64 = 987654321;  // Hash of "Site-A" or similar
+        let circuit_hash: i64 = 1234567890; // Hash of circuit ID
         
-        let circuit_hash: i64 = 1234567890;
-        
-        // These would normally execute TC commands, but we're just testing the API
-        let _ = add_circuit_htb_class(
+        // 1. Structural node (site/AP) - only HTB class, no qdisc
+        let _ = add_structural_htb_class(
             "eth0",
-            "1:1",
-            "1:100",
-            10.5, // Fractional speed
-            15.0,
-            circuit_hash,
-            Some("Test Circuit"),
+            "1:1",      // Parent is root or another structural node
+            "1:10",     // This site's class
+            100.0,      // Site's total bandwidth
+            100.0,
+            site_hash,
             21,
         );
         
+        // 2. Circuit (leaf) - HTB class + CAKE qdisc
+        let _ = add_circuit_htb_class(
+            "eth0",
+            "1:10",     // Parent is the site class above
+            "1:100",    // Circuit's class
+            10.5,       // Circuit rate (fractional)
+            15.0,       // Circuit ceil
+            circuit_hash,
+            Some("Customer ABC"),
+            21,
+        );
+        
+        // Only circuits get qdiscs (CAKE shaper)
         let _ = add_circuit_qdisc(
             "eth0",
             1,
@@ -422,5 +463,7 @@ mod tests {
             circuit_hash,
             &["cake", "bandwidth", "15mbit"],
         );
+        
+        // Structural nodes do NOT get qdiscs - they're just HTB hierarchy
     }
 }
