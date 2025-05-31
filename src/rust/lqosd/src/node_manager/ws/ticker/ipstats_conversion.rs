@@ -43,7 +43,7 @@ impl From<&IpStats> for IpStatsWithPlan {
                     &circuit.circuit_name
                 };
                 result.ip_address = format!("{}", name);
-                result.plan = DownUpOrder { down: circuit.download_max_mbps, up: circuit.upload_max_mbps };
+                result.plan = DownUpOrder { down: circuit.download_max_mbps as f32, up: circuit.upload_max_mbps as f32 };
             }
         }
 
