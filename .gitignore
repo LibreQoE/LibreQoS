@@ -127,4 +127,5 @@ src/bin/dashboards
 .aider*
 /src/geo2.bin
 src/bin/static2
+src/bin/static2/flags
 

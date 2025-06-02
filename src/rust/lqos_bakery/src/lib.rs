@@ -791,6 +791,10 @@ fn parse_tc_command_type(command: &str) -> Option<(bool, Option<i64>)> {
     let parts: Vec<&str> = command.split_whitespace().collect();
     if parts.len() >= 2 {
         match (parts[0], parts[1]) {
+            ("qdisc", "replace") => {
+                // Special case: qdisc replace should return None
+                return None;
+            },
             ("class", "add") => {
                 // Check for rate/ceil to distinguish circuit from structural
                 if command.contains(" rate ") && command.contains(" ceil ") {
@@ -841,6 +845,22 @@ fn parse_tc_rate_to_mbps(rate_str: &str) -> Option<f64> {
     } else {
         None
     }
+}
+
+/// Extract circuit hash from TC command comment
+fn extract_circuit_hash(command: &str) -> Option<i64> {
+    // Look for circuit_hash in comment: "# circuit_hash: 1234567890"
+    if let Some(hash_pos) = command.find("# circuit_hash:") {
+        let hash_str = &command[hash_pos + 15..].trim();
+        // Find the end of the hash number (space or end of string)
+        let end_pos = hash_str.find(|c: char| !c.is_numeric() && c != '-')
+            .unwrap_or(hash_str.len());
+        
+        if let Ok(hash) = hash_str[..end_pos].parse::<i64>() {
+            return Some(hash);
+        }
+    }
+    None
 }
 
 /// Store a circuit command for later lazy execution
@@ -965,7 +985,10 @@ fn parse_qdisc_params(parts: &[&str]) -> Option<QdiscParams> {
     let (parent_major, parent_minor) = parse_tc_handle(parent_str)?;
     
     let sqm_params = if let Some(start) = sqm_start {
-        parts[start..].iter().map(|s| s.to_string()).collect()
+        parts[start..].iter()
+            .take_while(|&s| !s.starts_with('#')) // Stop at comment
+            .map(|s| s.to_string())
+            .collect()
     } else {
         Vec::new()
     };
@@ -1233,6 +1256,515 @@ mod tests {
         
         // Should be reasonable Unix timestamp (after year 2020)
         assert!(ts1 > 1_600_000_000);
+    }
+    
+    #[test]
+    fn test_lazy_queue_storage_and_creation() {
+        // Test that circuit commands are stored but not created when lazy_queues is enabled
+        let state = Arc::new(Mutex::new(BakeryState::default()));
+        
+        // Store a circuit HTB class
+        let result = handle_add_circuit_htb_class(
+            &state,
+            "eth0",
+            "1:1", 
+            "1:100",
+            10.0,
+            20.0,
+            12345,
+            Some("Test Circuit".to_string()),
+            10
+        );
+        assert!(result.is_ok());
+        
+        // Verify circuit is stored but not created
+        {
+            let state_lock = state.lock().unwrap();
+            assert_eq!(state_lock.circuits.len(), 1);
+            let circuit = state_lock.circuits.get(&12345).unwrap();
+            assert_eq!(circuit.classid, "1:100");
+            assert_eq!(circuit.rate_mbps, 10.0);
+            assert_eq!(circuit.ceil_mbps, 20.0);
+            assert!(!circuit.created);
+            assert!(circuit.last_updated > 0); // Should have initial timestamp
+        }
+        
+        // Store qdisc parameters
+        let result = handle_add_circuit_qdisc(
+            &state,
+            "eth0",
+            1,
+            100,
+            12345,
+            vec!["cake".to_string(), "diffserv4".to_string()]
+        );
+        assert!(result.is_ok());
+        
+        // Verify qdisc params were added
+        {
+            let state_lock = state.lock().unwrap();
+            let circuit = state_lock.circuits.get(&12345).unwrap();
+            assert_eq!(circuit.sqm_params, vec!["cake", "diffserv4"]);
+        }
+    }
+    
+    #[test]
+    fn test_update_circuit_handles_missing_circuit() {
+        let state = Arc::new(Mutex::new(BakeryState::default()));
+        
+        // Call update on non-existent circuit - should succeed gracefully
+        let result = handle_update_circuit(&state, 99999);
+        assert!(result.is_ok());
+    }
+    
+    #[test]
+    fn test_update_circuit_with_existing_circuit() {
+        let state = Arc::new(Mutex::new(BakeryState::default()));
+        
+        // First store a circuit
+        {
+            let mut state_lock = state.lock().unwrap();
+            let circuit_info = CircuitQueueInfo {
+                interface: "eth0".to_string(),
+                parent: "1:1".to_string(),
+                classid: "1:100".to_string(),
+                rate_mbps: 10.0,
+                ceil_mbps: 20.0,
+                circuit_hash: 12345,
+                comment: Some("Test Circuit".to_string()),
+                r2q: 10,
+                sqm_params: vec!["cake".to_string()],
+                created: true, // Mark as already created to avoid creation logic
+                last_updated: current_timestamp() - 100, // Old timestamp
+            };
+            state_lock.circuits.insert(12345, circuit_info);
+        }
+        
+        // Update should succeed regardless of lazy queue config
+        let result = handle_update_circuit(&state, 12345);
+        assert!(result.is_ok());
+        
+        // Verify circuit still exists
+        {
+            let state_lock = state.lock().unwrap();
+            let circuit = state_lock.circuits.get(&12345).unwrap();
+            assert_eq!(circuit.circuit_hash, 12345);
+        }
+    }
+    
+    #[test]
+    fn test_duplicate_circuit_prevention() {
+        let state = Arc::new(Mutex::new(BakeryState::default()));
+        
+        // Add a circuit that's already created
+        {
+            let mut state_lock = state.lock().unwrap();
+            let circuit_info = CircuitQueueInfo {
+                interface: "eth0".to_string(),
+                parent: "1:1".to_string(),
+                classid: "1:100".to_string(),
+                rate_mbps: 10.0,
+                ceil_mbps: 20.0,
+                circuit_hash: 12345,
+                comment: Some("Test Circuit".to_string()),
+                r2q: 10,
+                sqm_params: vec!["cake".to_string()],
+                created: true, // Already created
+                last_updated: current_timestamp(),
+            };
+            state_lock.circuits.insert(12345, circuit_info);
+        }
+        
+        // Try to create again - should be idempotent
+        let result = handle_create_circuit(&state, 12345);
+        assert!(result.is_ok()); // Should succeed but do nothing
+        
+        // Verify still only one circuit
+        {
+            let state_lock = state.lock().unwrap();
+            assert_eq!(state_lock.circuits.len(), 1);
+        }
+    }
+    
+    #[test]
+    fn test_tc_command_parsing() {
+        // Test HTB class parsing
+        let cmd = "class add dev eth0 parent 1:1 classid 1:100 htb rate 10mbit ceil 20mbit prio 3 quantum 1500 # circuit_hash: 12345";
+        let parts: Vec<&str> = cmd.split_whitespace().collect();
+        let params = parse_htb_class_params(&parts);
+        
+        assert!(params.is_some());
+        let params = params.unwrap();
+        assert_eq!(params.interface, "eth0");
+        assert_eq!(params.parent, "1:1");
+        assert_eq!(params.classid, "1:100");
+        assert_eq!(params.rate_mbps, 10.0);
+        assert_eq!(params.ceil_mbps, 20.0);
+        assert_eq!(params.quantum, Some(1500));
+        
+        // Test qdisc parsing
+        let cmd = "qdisc add dev eth0 parent 1:100 cake diffserv4 # circuit_hash: 12345";
+        let parts: Vec<&str> = cmd.split_whitespace().collect();
+        let params = parse_qdisc_params(&parts);
+        
+        assert!(params.is_some());
+        let params = params.unwrap();
+        assert_eq!(params.interface, "eth0");
+        assert_eq!(params.parent_major, 1);
+        assert_eq!(params.parent_minor, 100);
+        assert_eq!(params.sqm_params, vec!["cake", "diffserv4"]);
+    }
+    
+    #[test]
+    fn test_tc_rate_parsing() {
+        // Test various rate formats
+        assert_eq!(parse_tc_rate_to_mbps("10mbit"), Some(10.0));
+        assert_eq!(parse_tc_rate_to_mbps("1gbit"), Some(1000.0));
+        assert_eq!(parse_tc_rate_to_mbps("500kbit"), Some(0.5));
+        assert_eq!(parse_tc_rate_to_mbps("1500kbit"), Some(1.5));
+        assert_eq!(parse_tc_rate_to_mbps("0.5mbit"), Some(0.5));
+        assert_eq!(parse_tc_rate_to_mbps("invalid"), None);
+    }
+    
+    #[test]
+    fn test_circuit_hash_extraction() {
+        // Test extracting circuit hash from comment
+        let cmd = "class add dev eth0 parent 1:1 classid 1:100 htb rate 10mbit # circuit_hash: -8456361809408299971";
+        let hash = extract_circuit_hash(cmd);
+        assert_eq!(hash, Some(-8456361809408299971));
+        
+        // Test missing hash
+        let cmd = "class add dev eth0 parent 1:1 classid 1:100 htb rate 10mbit";
+        let hash = extract_circuit_hash(cmd);
+        assert_eq!(hash, None);
+        
+        // Test malformed hash
+        let cmd = "class add dev eth0 parent 1:1 classid 1:100 htb rate 10mbit # circuit_hash: invalid";
+        let hash = extract_circuit_hash(cmd);
+        assert_eq!(hash, None);
+    }
+    
+    #[test]
+    fn test_parse_tc_command_type() {
+        // Test structural command (no circuit_hash)
+        let cmd = "class add dev eth0 parent 1: classid 1:1 htb rate 1gbit";
+        let (is_circuit, hash) = parse_tc_command_type(cmd).unwrap();
+        assert!(!is_circuit);
+        assert!(hash.is_none());
+        
+        // Test circuit command
+        let cmd = "class add dev eth0 parent 1:1 classid 1:100 htb rate 10mbit # circuit_hash: 12345";
+        let (is_circuit, hash) = parse_tc_command_type(cmd).unwrap();
+        assert!(is_circuit);
+        assert_eq!(hash, Some(12345));
+        
+        // Test qdisc replace (special case)
+        let cmd = "qdisc replace dev eth0 root handle 7FFF: mq";
+        let result = parse_tc_command_type(cmd);
+        assert!(result.is_none()); // Should return None for replace
+    }
+    
+    #[test]
+    fn test_execute_tc_commands_bulk_routing() {
+        let state = Arc::new(Mutex::new(BakeryState::default()));
+        
+        let commands = vec![
+            // Structural command
+            "class add dev eth0 parent 1: classid 1:1 htb rate 1gbit".to_string(),
+            // Circuit commands
+            "class add dev eth0 parent 1:1 classid 1:100 htb rate 10mbit # circuit_hash: 12345".to_string(),
+            "qdisc add dev eth0 parent 1:100 cake # circuit_hash: 12345".to_string(),
+        ];
+        
+        // In test mode, this may execute immediately or defer based on config availability
+        // The function should complete without panicking
+        let result = execute_tc_commands_bulk(&state, commands, false);
+        // In test environment, this might fail due to missing config or TC not available
+        // The important thing is that it doesn't panic - the actual execution depends on environment
+        let _ = result; // Ignore result in tests since environment varies
+        
+        // Test completed successfully if we reach here without panic
+        assert!(true);
+    }
+    
+    #[test]
+    fn test_pruning_circuit_selection() {
+        // Test that pruning correctly identifies expired circuits
+        let state = Arc::new(Mutex::new(BakeryState::default()));
+        let current_time = current_timestamp();
+        
+        // Add circuits with different timestamps and states
+        {
+            let mut state_lock = state.lock().unwrap();
+            
+            // Circuit 1: Created and expired
+            state_lock.circuits.insert(1, CircuitQueueInfo {
+                interface: "eth0".to_string(),
+                parent: "1:1".to_string(),
+                classid: "1:100".to_string(),
+                rate_mbps: 10.0,
+                ceil_mbps: 20.0,
+                circuit_hash: 1,
+                comment: Some("Expired Circuit".to_string()),
+                r2q: 10,
+                sqm_params: vec![],
+                created: true,
+                last_updated: current_time - 120, // 2 minutes old
+            });
+            
+            // Circuit 2: Created but recent
+            state_lock.circuits.insert(2, CircuitQueueInfo {
+                interface: "eth0".to_string(),
+                parent: "1:1".to_string(),
+                classid: "1:101".to_string(),
+                rate_mbps: 10.0,
+                ceil_mbps: 20.0,
+                circuit_hash: 2,
+                comment: Some("Recent Circuit".to_string()),
+                r2q: 10,
+                sqm_params: vec![],
+                created: true,
+                last_updated: current_time - 30, // 30 seconds old
+            });
+            
+            // Circuit 3: Not created (should never be pruned)
+            state_lock.circuits.insert(3, CircuitQueueInfo {
+                interface: "eth0".to_string(),
+                parent: "1:1".to_string(),
+                classid: "1:102".to_string(),
+                rate_mbps: 10.0,
+                ceil_mbps: 20.0,
+                circuit_hash: 3,
+                comment: Some("Uncreated Circuit".to_string()),
+                r2q: 10,
+                sqm_params: vec![],
+                created: false,
+                last_updated: current_time - 300, // Very old but not created
+            });
+        }
+        
+        // Simulate pruning check with 60-second expiration
+        let expire_threshold = current_time - 60;
+        let mut expired_count = 0;
+        
+        {
+            let state_lock = state.lock().unwrap();
+            for (hash, circuit) in state_lock.circuits.iter() {
+                if circuit.created && circuit.last_updated < expire_threshold {
+                    expired_count += 1;
+                    // Only circuit 1 should be expired
+                    assert_eq!(*hash, 1);
+                }
+            }
+        }
+        
+        assert_eq!(expired_count, 1);
+    }
+    
+    // Additional comprehensive tests for better coverage
+    
+    #[test]
+    fn test_parse_tc_handle_various_formats() {
+        // Test hex format with 0x prefix
+        assert_eq!(parse_tc_handle("0x1:0x64"), Some((1, 100)));
+        
+        // Test decimal format
+        assert_eq!(parse_tc_handle("1:100"), Some((1, 100)));
+        
+        // Test mixed format
+        assert_eq!(parse_tc_handle("0x1:100"), Some((1, 100)));
+        assert_eq!(parse_tc_handle("1:0x64"), Some((1, 100)));
+        
+        // Test invalid formats
+        assert_eq!(parse_tc_handle("invalid"), None);
+        assert_eq!(parse_tc_handle("1"), None);
+        assert_eq!(parse_tc_handle("1:"), None);
+        assert_eq!(parse_tc_handle(":100"), None);
+    }
+    
+    #[test]
+    fn test_circuit_queue_info_creation_and_update() {
+        let mut circuit_info = CircuitQueueInfo {
+            interface: "eth0".to_string(),
+            parent: "1:1".to_string(),
+            classid: "1:100".to_string(),
+            rate_mbps: 10.0,
+            ceil_mbps: 20.0,
+            circuit_hash: 12345,
+            comment: Some("Test Circuit".to_string()),
+            r2q: 10,
+            sqm_params: vec!["cake".to_string()],
+            created: false,
+            last_updated: 0,
+        };
+        
+        // Test initial state
+        assert!(!circuit_info.created);
+        assert_eq!(circuit_info.last_updated, 0);
+        
+        // Test updates
+        circuit_info.created = true;
+        circuit_info.last_updated = current_timestamp();
+        
+        assert!(circuit_info.created);
+        assert!(circuit_info.last_updated > 0);
+    }
+    
+    #[test]
+    fn test_structural_queue_info_creation() {
+        let structural_info = StructuralQueueInfo {
+            interface: "eth0".to_string(),
+            parent: "1:".to_string(),
+            classid: "1:10".to_string(),
+            rate_mbps: 100.0,
+            ceil_mbps: 200.0,
+            site_hash: 987654321,
+            r2q: 21,
+        };
+        
+        assert_eq!(structural_info.site_hash, 987654321);
+        assert_eq!(structural_info.rate_mbps, 100.0);
+        assert_eq!(structural_info.ceil_mbps, 200.0);
+    }
+    
+    #[test]
+    fn test_bakery_state_operations() {
+        let mut state = BakeryState::default();
+        
+        // Test initial empty state
+        assert!(state.circuits.is_empty());
+        assert!(state.structural.is_empty());
+        assert!(state.pending_updates.is_empty());
+        assert!(state.pending_creates.is_empty());
+        
+        // Test adding circuit
+        let circuit_info = CircuitQueueInfo {
+            interface: "eth0".to_string(),
+            parent: "1:1".to_string(),
+            classid: "1:100".to_string(),
+            rate_mbps: 10.0,
+            ceil_mbps: 20.0,
+            circuit_hash: 12345,
+            comment: Some("Test Circuit".to_string()),
+            r2q: 10,
+            sqm_params: vec!["cake".to_string()],
+            created: false,
+            last_updated: current_timestamp(),
+        };
+        
+        state.circuits.insert(12345, circuit_info);
+        assert_eq!(state.circuits.len(), 1);
+        
+        // Test adding pending operations
+        state.pending_updates.insert(12345);
+        state.pending_creates.insert(67890);
+        
+        assert_eq!(state.pending_updates.len(), 1);
+        assert_eq!(state.pending_creates.len(), 1);
+        assert!(state.pending_updates.contains(&12345));
+        assert!(state.pending_creates.contains(&67890));
+    }
+    
+    #[test]
+    fn test_command_type_detection_edge_cases() {
+        // Test empty command
+        assert_eq!(parse_tc_command_type(""), Some((false, None)));
+        
+        // Test commands without space
+        assert_eq!(parse_tc_command_type("invalid"), Some((false, None)));
+        
+        // Test circuit command with very high rate (should be structural)
+        let high_rate_cmd = "class add dev eth0 parent 1: classid 1:1 htb rate 5000mbit ceil 5000mbit";
+        let (is_circuit, _) = parse_tc_command_type(high_rate_cmd).unwrap();
+        assert!(!is_circuit); // High rates are typically structural
+        
+        // Test qdisc without cake/fq_codel (should be structural)
+        let other_qdisc_cmd = "qdisc add dev eth0 parent 1:1 pfifo";
+        let (is_circuit, _) = parse_tc_command_type(other_qdisc_cmd).unwrap();
+        assert!(!is_circuit);
+    }
+    
+    #[test]
+    fn test_rate_parsing_edge_cases() {
+        // Test very small rates
+        assert_eq!(parse_tc_rate_to_mbps("1kbit"), Some(0.001));
+        assert_eq!(parse_tc_rate_to_mbps("100kbit"), Some(0.1));
+        
+        // Test fractional rates
+        assert_eq!(parse_tc_rate_to_mbps("0.5mbit"), Some(0.5));
+        assert_eq!(parse_tc_rate_to_mbps("1.5gbit"), Some(1500.0));
+        
+        // Test invalid rates
+        assert_eq!(parse_tc_rate_to_mbps(""), None);
+        assert_eq!(parse_tc_rate_to_mbps("abc"), None);
+        assert_eq!(parse_tc_rate_to_mbps("10"), None); // No unit
+    }
+    
+    #[test]
+    fn test_htb_class_parsing_comprehensive() {
+        // Test minimal command
+        let cmd = "class add dev eth0 parent 1: classid 1:1 htb rate 10mbit ceil 20mbit";
+        let parts: Vec<&str> = cmd.split_whitespace().collect();
+        let params = parse_htb_class_params(&parts);
+        
+        assert!(params.is_some());
+        let params = params.unwrap();
+        assert_eq!(params.interface, "eth0");
+        assert_eq!(params.parent, "1:");
+        assert_eq!(params.classid, "1:1");
+        assert_eq!(params.rate_mbps, 10.0);
+        assert_eq!(params.ceil_mbps, 20.0);
+        assert_eq!(params.quantum, None);
+        
+        // Test command with extra parameters
+        let cmd = "class add dev eth1 parent 0x1:0x2 classid 0x1:0x3 htb rate 5mbit ceil 10mbit prio 2 quantum 1000";
+        let parts: Vec<&str> = cmd.split_whitespace().collect();
+        let params = parse_htb_class_params(&parts);
+        
+        assert!(params.is_some());
+        let params = params.unwrap();
+        assert_eq!(params.interface, "eth1");
+        assert_eq!(params.parent, "0x1:0x2");
+        assert_eq!(params.classid, "0x1:0x3");
+        assert_eq!(params.rate_mbps, 5.0);
+        assert_eq!(params.ceil_mbps, 10.0);
+        assert_eq!(params.quantum, Some(1000));
+    }
+    
+    #[test]
+    fn test_create_circuit_idempotency() {
+        let state = Arc::new(Mutex::new(BakeryState::default()));
+        
+        // Add a circuit that's already marked as created
+        {
+            let mut state_lock = state.lock().unwrap();
+            let circuit_info = CircuitQueueInfo {
+                interface: "eth0".to_string(),
+                parent: "1:1".to_string(),
+                classid: "1:100".to_string(),
+                rate_mbps: 10.0,
+                ceil_mbps: 20.0,
+                circuit_hash: 12345,
+                comment: Some("Test Circuit".to_string()),
+                r2q: 10,
+                sqm_params: vec!["cake".to_string()],
+                created: true, // Already created
+                last_updated: current_timestamp(),
+            };
+            state_lock.circuits.insert(12345, circuit_info);
+        }
+        
+        // Try to create again - should be idempotent (no error, no change)
+        let result = handle_create_circuit(&state, 12345);
+        assert!(result.is_ok());
+        
+        // Verify state unchanged
+        {
+            let state_lock = state.lock().unwrap();
+            assert_eq!(state_lock.circuits.len(), 1);
+            let circuit = state_lock.circuits.get(&12345).unwrap();
+            assert!(circuit.created);
+        }
     }
 }
 

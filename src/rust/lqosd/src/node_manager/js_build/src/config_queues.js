@@ -32,6 +32,13 @@ function validateConfig() {
         return false;
     }
 
+    // Validate lazy queue expiration seconds
+    const lazyExpireSeconds = document.getElementById("lazyExpireSeconds").value;
+    if (lazyExpireSeconds && (isNaN(lazyExpireSeconds) || lazyExpireSeconds < 30)) {
+        alert("Lazy Queue Expiration must be at least 30 seconds");
+        return false;
+    }
+
     return true;
 }
 
@@ -48,7 +55,10 @@ function updateConfig() {
         sudo: document.getElementById("sudo").checked,
         override_available_queues: document.getElementById("overrideQueues").value ? 
             parseInt(document.getElementById("overrideQueues").value) : null,
-        use_binpacking: document.getElementById("useBinpacking").checked
+        use_binpacking: document.getElementById("useBinpacking").checked,
+        lazy_queues: document.getElementById("lazyQueues").checked ? true : null,
+        lazy_expire_seconds: document.getElementById("lazyExpireSeconds").value ? 
+            parseInt(document.getElementById("lazyExpireSeconds").value) : null
     };
 }
 
@@ -66,6 +76,7 @@ loadConfig(() => {
         document.getElementById("dryRun").checked = queues.dry_run ?? false;
         document.getElementById("sudo").checked = queues.sudo ?? false;
         document.getElementById("useBinpacking").checked = queues.use_binpacking ?? false;
+        document.getElementById("lazyQueues").checked = queues.lazy_queues ?? false;
 
         // Numeric fields
         document.getElementById("uplinkBandwidth").value = queues.uplink_bandwidth_mbps ?? 1000;
@@ -73,8 +84,9 @@ loadConfig(() => {
         document.getElementById("generatedPnDownload").value = queues.generated_pn_download_mbps ?? 1000;
         document.getElementById("generatedPnUpload").value = queues.generated_pn_upload_mbps ?? 1000;
 
-        // Optional numeric field
+        // Optional numeric fields
         document.getElementById("overrideQueues").value = queues.override_available_queues ?? "";
+        document.getElementById("lazyExpireSeconds").value = queues.lazy_expire_seconds ?? "";
 
         // Add save button click handler
         document.getElementById('saveButton').addEventListener('click', () => {
