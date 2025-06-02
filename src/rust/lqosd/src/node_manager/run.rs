@@ -32,7 +32,7 @@ pub async fn spawn_webserver(
         .join("static2");
 
     if !static_path.exists() {
-        bail!("Static path not found for webserver (vin/static2/");
+        bail!("Static path not found for webserver (bin/static2/");
     }
 
     // Listen for net connections

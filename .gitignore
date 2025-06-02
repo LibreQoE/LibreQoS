@@ -126,3 +126,5 @@ src/rust/lqosd/src/node_manager/js_build/out
 src/bin/dashboards
 .aider*
 /src/geo2.bin
+src/bin/static2
+

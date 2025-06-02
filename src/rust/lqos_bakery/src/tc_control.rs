@@ -21,7 +21,7 @@ use std::io::Write;
 use std::path::Path;
 
 const TC_COMMAND: &str = "/sbin/tc";
-const WRITE_TC_TO_FILE: bool = true; // Set to true for testing/comparison
+const WRITE_TC_TO_FILE: bool = false; // Set to false for production execution (bulk execution only)
 const TC_OUTPUT_FILENAME: &str = "tc-rust.txt";
 
 /// Check if we're in write-to-file mode (for testing)

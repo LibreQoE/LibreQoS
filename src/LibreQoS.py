@@ -150,10 +150,10 @@ def clearPriorSettings(interfaceA, interfaceB):
 	# Rust equivalent: BakeryCommands::ClearPriorSettings
 	# This will check for MQ and delete root qdiscs as needed
 	
-	# Call bakery to clear prior settings
-	success = bakery_clear_prior_settings()
-	if not success:
-		logging.warning("Bakery failed to clear prior settings, falling back to shell commands")
+	# Call bakery to clear prior settings - COMMENTED OUT: Using bulk execution only
+	# success = bakery_clear_prior_settings()
+	# if not success:
+	# 	logging.warning("Bakery failed to clear prior settings, falling back to shell commands")
 	
 	if enable_actual_shell_commands():
 		if 'mq' in shellReturn('tc qdisc show dev ' + interfaceA + ' root'):
@@ -907,10 +907,10 @@ def refreshShapers():
 		# Rust equivalent: BakeryCommands::MqSetup
 		# This creates the entire MQ + HTB hierarchy with default classes
 		
-		# Call bakery to setup MQ and HTB hierarchy
-		mq_success = bakery_mq_setup()
-		if not mq_success:
-			logging.warning("Bakery failed to setup MQ, falling back to shell commands")
+		# Call bakery to setup MQ and HTB hierarchy - COMMENTED OUT: Using bulk execution only
+		# mq_success = bakery_mq_setup()
+		# if not mq_success:
+		# 	logging.warning("Bakery failed to setup MQ, falling back to shell commands")
 		
 		# Root HTB Setup
 		# Create MQ qdisc for each CPU core / rx-tx queue. Generate commands to create corresponding HTB and leaf classes. Prepare commands for execution later
@@ -995,37 +995,37 @@ def refreshShapers():
 				# Rust equivalent: add_structural_htb_class()
 				# Creates HTB class for site/AP - NO qdisc
 				
-				# Call bakery to add structural HTB class for download
+				# Call bakery to add structural HTB class for download - COMMENTED OUT: Using bulk execution only
 				site_hash = calculate_hash_for_bakery(node)
-				down_success = bakery_add_structural_htb_class(
-					interface=interface_a(),
-					parent=data[node]['parentClassID'],
-					classid=data[node]['classMinor'],
-					rate_mbps=float(data[node]['downloadBandwidthMbpsMin']),
-					ceil_mbps=float(data[node]['downloadBandwidthMbps']),
-					site_hash=site_hash,
-					r2q=R2Q
-				)
-				if not down_success:
-					logging.warning(f"Bakery failed to add structural HTB class for {node} (download)")
+				# down_success = bakery_add_structural_htb_class(
+				# 	interface=interface_a(),
+				# 	parent=data[node]['parentClassID'],
+				# 	classid=data[node]['classMinor'],
+				# 	rate_mbps=float(data[node]['downloadBandwidthMbpsMin']),
+				# 	ceil_mbps=float(data[node]['downloadBandwidthMbps']),
+				# 	site_hash=site_hash,
+				# 	r2q=R2Q
+				# )
+				# if not down_success:
+				# 	logging.warning(f"Bakery failed to add structural HTB class for {node} (download)")
 				
 				command = 'class add dev ' + interface_a() + ' parent ' + data[node]['parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ format_rate_for_tc(data[node]['downloadBandwidthMbpsMin']) + ' ceil '+ format_rate_for_tc(data[node]['downloadBandwidthMbps']) + ' prio 3' + quantum(data[node]['downloadBandwidthMbps'])
 				linuxTCcommands.append(command)
 				logging.info("Up ParentClassID: " + data[node]['up_parentClassID'])
 				logging.info("ClassMinor: " + data[node]['classMinor'])
 				
-				# Call bakery to add structural HTB class for upload
-				up_success = bakery_add_structural_htb_class(
-					interface=interface_b(),
-					parent=data[node]['up_parentClassID'],
-					classid=data[node]['classMinor'],
-					rate_mbps=float(data[node]['uploadBandwidthMbpsMin']),
-					ceil_mbps=float(data[node]['uploadBandwidthMbps']),
-					site_hash=site_hash,
-					r2q=R2Q
-				)
-				if not up_success:
-					logging.warning(f"Bakery failed to add structural HTB class for {node} (upload)")
+				# Call bakery to add structural HTB class for upload - COMMENTED OUT: Using bulk execution only
+				# up_success = bakery_add_structural_htb_class(
+				# 	interface=interface_b(),
+				# 	parent=data[node]['up_parentClassID'],
+				# 	classid=data[node]['classMinor'],
+				# 	rate_mbps=float(data[node]['uploadBandwidthMbpsMin']),
+				# 	ceil_mbps=float(data[node]['uploadBandwidthMbps']),
+				# 	site_hash=site_hash,
+				# 	r2q=R2Q
+				# )
+				# if not up_success:
+				# 	logging.warning(f"Bakery failed to add structural HTB class for {node} (upload)")
 				
 				command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ format_rate_for_tc(data[node]['uploadBandwidthMbpsMin']) + ' ceil '+ format_rate_for_tc(data[node]['uploadBandwidthMbps']) + ' prio 3' + quantum(data[node]['uploadBandwidthMbps'])
 				linuxTCcommands.append(command)
@@ -1063,20 +1063,20 @@ def refreshShapers():
 						# Calculate circuit hash
 						circuit_hash = calculate_hash_for_bakery(circuit['circuitID'])
 						
-						# Call bakery to add circuit HTB class for download
+						# Call bakery to add circuit HTB class for download - COMMENTED OUT: Using bulk execution only
 						circuit_comment = f"CircuitID: {circuit['circuitID']}"
-						down_htb_success = bakery_add_circuit_htb_class(
-							interface=interface_a(),
-							parent=data[node]['classid'],
-							classid=circuit['classMinor'],
-							rate_mbps=float(min_down),
-							ceil_mbps=float(circuit['maxDownload']),
-							circuit_hash=circuit_hash,
-							comment=circuit_comment,
-							r2q=R2Q
-						)
-						if not down_htb_success:
-							logging.warning(f"Bakery failed to add circuit HTB class for {circuit['circuitID']} (download)")
+						# down_htb_success = bakery_add_circuit_htb_class(
+						# 	interface=interface_a(),
+						# 	parent=data[node]['classid'],
+						# 	classid=circuit['classMinor'],
+						# 	rate_mbps=float(min_down),
+						# 	ceil_mbps=float(circuit['maxDownload']),
+						# 	circuit_hash=circuit_hash,
+						# 	comment=circuit_comment,
+						# 	r2q=R2Q
+						# )
+						# if not down_htb_success:
+						# 	logging.warning(f"Bakery failed to add circuit HTB class for {circuit['circuitID']} (download)")
 						
 						# Generate TC commands to be executed later
 						tcComment = " # CircuitID: " + circuit['circuitID'] + " DeviceIDs: "
@@ -1100,32 +1100,32 @@ def refreshShapers():
 							major_val = int(major_str, 16) if major_str.startswith('0x') else int(major_str)
 							minor_str = circuit['classMinor']
 							minor_val = int(minor_str, 16) if minor_str.startswith('0x') else int(minor_str)
-							down_qdisc_success = bakery_add_circuit_qdisc(
-								interface=interface_a(),
-								parent_major=major_val,
-								parent_minor=minor_val,
-								circuit_hash=circuit_hash,
-								sqm_params=sqm_params
-							)
-							if not down_qdisc_success:
-								logging.warning(f"Bakery failed to add circuit qdisc for {circuit['circuitID']} (download)")
+							# down_qdisc_success = bakery_add_circuit_qdisc(
+							# 	interface=interface_a(),
+							# 	parent_major=major_val,
+							# 	parent_minor=minor_val,
+							# 	circuit_hash=circuit_hash,
+							# 	sqm_params=sqm_params
+							# )
+							# if not down_qdisc_success:
+							# 	logging.warning(f"Bakery failed to add circuit qdisc for {circuit['circuitID']} (download)")
 							
 							command = 'qdisc add dev ' + interface_a() + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
 							linuxTCcommands.append(command)
 						# Same for upload direction
-						# Call bakery to add circuit HTB class for upload
-						up_htb_success = bakery_add_circuit_htb_class(
-							interface=interface_b(),
-							parent=data[node]['up_classid'],
-							classid=circuit['classMinor'],
-							rate_mbps=float(min_up),
-							ceil_mbps=float(circuit['maxUpload']),
-							circuit_hash=circuit_hash,
-							comment=circuit_comment,
-							r2q=R2Q
-						)
-						if not up_htb_success:
-							logging.warning(f"Bakery failed to add circuit HTB class for {circuit['circuitID']} (upload)")
+						# Call bakery to add circuit HTB class for upload - COMMENTED OUT: Using bulk execution only
+						# up_htb_success = bakery_add_circuit_htb_class(
+						# 	interface=interface_b(),
+						# 	parent=data[node]['up_classid'],
+						# 	classid=circuit['classMinor'],
+						# 	rate_mbps=float(min_up),
+						# 	ceil_mbps=float(circuit['maxUpload']),
+						# 	circuit_hash=circuit_hash,
+						# 	comment=circuit_comment,
+						# 	r2q=R2Q
+						# )
+						# if not up_htb_success:
+						# 	logging.warning(f"Bakery failed to add circuit HTB class for {circuit['circuitID']} (upload)")
 						
 						command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ format_rate_for_tc(min_up) + ' ceil '+ format_rate_for_tc(circuit['maxUpload']) + ' prio 3' + quantum(circuit['maxUpload'])
 						linuxTCcommands.append(command)
@@ -1141,15 +1141,15 @@ def refreshShapers():
 							up_major_val = int(up_major_str, 16) if up_major_str.startswith('0x') else int(up_major_str)
 							up_minor_str = circuit['classMinor']
 							up_minor_val = int(up_minor_str, 16) if up_minor_str.startswith('0x') else int(up_minor_str)
-							up_qdisc_success = bakery_add_circuit_qdisc(
-								interface=interface_b(),
-								parent_major=up_major_val,
-								parent_minor=up_minor_val,
-								circuit_hash=circuit_hash,
-								sqm_params=sqm_params
-							)
-							if not up_qdisc_success:
-								logging.warning(f"Bakery failed to add circuit qdisc for {circuit['circuitID']} (upload)")
+							# up_qdisc_success = bakery_add_circuit_qdisc(
+							# 	interface=interface_b(),
+							# 	parent_major=up_major_val,
+							# 	parent_minor=up_minor_val,
+							# 	circuit_hash=circuit_hash,
+							# 	sqm_params=sqm_params
+							# )
+							# if not up_qdisc_success:
+							# 	logging.warning(f"Bakery failed to add circuit qdisc for {circuit['circuitID']} (upload)")
 							
 							command = 'qdisc add dev ' + interface_b() + ' parent ' + circuit['up_classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
 							linuxTCcommands.append(command)
@@ -1229,19 +1229,19 @@ def refreshShapers():
 		if not bulk_success:
 			logging.warning("Bakery failed to execute TC commands in bulk, falling back to shell commands")
 		
-		# Execute actual Linux TC commands
+		# Execute actual Linux TC commands - COMMENTED OUT: Using Rust bakery instead
 		tcStartTime = datetime.now()
 		print("Executing linux TC class/qdisc commands")
-		tc_output_path = os.path.join(get_libreqos_directory(), 'linux_tc.txt')
-		with open(tc_output_path, 'w') as f:
-			for command in linuxTCcommands:
-				logging.info(command)
-				f.write(f"{command}\n")
-		if logging.DEBUG <= logging.root.level:
-			# Do not --force in debug mode, so we can see any errors 
-			shell(f"/sbin/tc -b {tc_output_path}")
-		else:
-			shell(f"/sbin/tc -f -b {tc_output_path}")
+		# tc_output_path = os.path.join(get_libreqos_directory(), 'linux_tc.txt')
+		# with open(tc_output_path, 'w') as f:
+		# 	for command in linuxTCcommands:
+		# 		logging.info(command)
+		# 		f.write(f"{command}\n")
+		# if logging.DEBUG <= logging.root.level:
+		# 	# Do not --force in debug mode, so we can see any errors 
+		# 	shell(f"/sbin/tc -b {tc_output_path}")
+		# else:
+		# 	shell(f"/sbin/tc -f -b {tc_output_path}")
 		tcEndTime = datetime.now()
 		print("Executed " + str(len(linuxTCcommands)) + " linux TC class/qdisc commands")
 		
