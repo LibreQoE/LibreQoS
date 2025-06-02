@@ -7,6 +7,32 @@ Phase 2 goal: Implement lazy queue creation where circuit queues are only create
 
 The lazy queue system operates on the principle of "create on demand, expire on idle." Structural queues (sites/APs) are built immediately since they form the network hierarchy, while circuit queues are stored as metadata and only created when traffic flows through them.
 
+## 🚀 Current Implementation Status
+
+### ✅ **COMPLETED (Steps 1-4, 7-8)**
+- **Configuration Extension**: Added `lazy_queues` and `lazy_expire_seconds` fields with backward compatibility
+- **Data Structures**: Complete `CircuitQueueInfo`, `StructuralQueueInfo`, and `BakeryState` implementation
+- **Enhanced Commands**: `UpdateCircuit` and `CreateCircuit` commands implemented
+- **Queue State Management**: Full lazy creation logic (Phase A/B/C) with backward compatibility
+- **Lazy Queue Control Logic**: Proper flag checking and behavior switching
+- **Thread Safety**: Single master lock, duplicate prevention, short critical sections
+
+### 🔄 **IN PROGRESS** 
+- **Thread Safety**: Update batching and pruning coordination (basic safety implemented)
+
+### ⏳ **TODO (Steps 5-6, 9-12)**
+- **Throughput Tracker Integration**: Connect bakery to traffic detection (Step 5)
+- **Queue Pruning System**: Background thread for expiration (Step 6)  
+- **Comprehensive Testing**: Full automated test suite (Step 9)
+- **Web UI Configuration**: HTML/JavaScript form integration (Step 10)
+- **Manual Testing**: System-level validation (Step 11)
+- **Documentation**: Comprehensive docs and logging (Step 12)
+
+### 🧪 **MANUAL TESTING RESULTS**
+- ✅ lqosd compiles successfully
+- ✅ lqosd loads without errors  
+- ⏳ Web UI configuration not yet available (expected - Step 10)
+
 ## ⚠️ Critical Pitfalls to Avoid
 
 ### 1. Duplicate Queue Creation Race
@@ -23,21 +49,21 @@ The lazy queue system operates on the principle of "create on demand, expire on 
 
 ## Implementation Order
 
-### 1. Configuration Extension
+### 1. Configuration Extension ✅
 **File:** `rust/lqos_config/src/etc/v15/queues.rs`
-- [ ] Add `lazy_queues: bool` field (default: false)
-- [ ] Add `lazy_expire_seconds: Option<u64>` field (default: Some(600) = 10 minutes)
-- [ ] Update serialization and validation logic
+- [x] Add `lazy_queues: Option<bool>` field (default: None for backward compatibility)
+- [x] Add `lazy_expire_seconds: Option<u64>` field (default: Some(600) = 10 minutes)
+- [x] Update serialization and validation logic
 
-### 2. Circuit Queue Data Structures
+### 2. Circuit Queue Data Structures ✅
 **File:** `rust/lqos_bakery/src/lib.rs` (new structures)
-- [ ] Create `CircuitQueueInfo` struct to store all queue creation parameters:
+- [x] Create `CircuitQueueInfo` struct to store all queue creation parameters:
   - Interface, parent, classid, rate/ceil, circuit_hash, sqm_params, r2q
-  - `last_updated: u64` timestamp (using `lqos_utils::unix_time` or `std::time`)
+  - `last_updated: u64` timestamp (using `std::time`)
   - `created: bool` flag to track if queue is actually built (prevents duplicates)
-- [ ] Create `StructuralQueueInfo` struct for hierarchy queues:
+- [x] Create `StructuralQueueInfo` struct for hierarchy queues:
   - Interface, parent, classid, rate/ceil, site_hash, r2q
-- [ ] Create unified state container (CRITICAL for race prevention):
+- [x] Create unified state container (CRITICAL for race prevention):
   ```rust
   struct BakeryState {
       circuits: HashMap<i64, CircuitQueueInfo>,
@@ -46,25 +72,26 @@ The lazy queue system operates on the principle of "create on demand, expire on 
       pending_creates: HashSet<i64>,  // Batch and deduplicate creates
   }
   ```
-- [ ] Wrap in single master lock: `Arc<Mutex<BakeryState>>` for ALL operations
+- [x] Wrap in single master lock: `Arc<Mutex<BakeryState>>` for ALL operations
 
-### 3. Enhanced Bakery Commands
+### 3. Enhanced Bakery Commands ✅
 **File:** `rust/lqos_bakery/src/lib.rs`
-- [ ] Add `BakeryCommands::UpdateCircuit { circuit_hash: i64 }` for "still alive" signals
-- [ ] Add `BakeryCommands::CreateCircuit { circuit_hash: i64 }` for explicit creation requests
-- [ ] Modify existing commands to work with the new data structures
+- [x] Add `BakeryCommands::UpdateCircuit { circuit_hash: i64 }` for "still alive" signals
+- [x] Add `BakeryCommands::CreateCircuit { circuit_hash: i64 }` for explicit creation requests
+- [x] Modify existing commands to work with the new data structures
 
-### 4. Queue State Management
+### 4. Queue State Management ✅
 **File:** `rust/lqos_bakery/src/lib.rs` (bakery thread logic)
-- [ ] **Phase A: Structural Queues First**
+- [x] **Phase A: Structural Queues First**
   - When `AddStructuralHTBClass` received: create immediately AND store in structural data
   - Build the complete hierarchy before any circuit queues
-- [ ] **Phase B: Circuit Storage**
+- [x] **Phase B: Circuit Storage**
   - When `AddCircuitHTBClass`/`AddCircuitQdisc` received: store in circuit data structure, do NOT create
   - Set `created: false` and `last_updated: 0`
-- [ ] **Phase C: Lazy Creation**
+- [x] **Phase C: Lazy Creation**
   - When `CreateCircuit` received: check if circuit exists in storage, create if not already created
   - When `UpdateCircuit` received: update `last_updated` timestamp, create if needed
+- [x] **Backward Compatibility**: When `lazy_queues = false`, create circuit queues immediately (Phase 1 behavior)
 
 ### 5. Throughput Tracker Integration
 **File:** `rust/lqosd/src/throughput_tracker/tracking_data.rs`
@@ -95,58 +122,46 @@ The lazy queue system operates on the principle of "create on demand, expire on 
   - Remove from circuit data structure
   - Log pruning actions for debugging
 
-### 7. Lazy Queue Control Logic
+### 7. Lazy Queue Control Logic ✅
 **File:** `rust/lqos_bakery/src/lib.rs` (bakery thread main loop)
-- [ ] Check `lazy_queues` config flag in all circuit operations
-- [ ] **If lazy_queues = false**: behave exactly like Phase 1 (immediate creation)
-- [ ] **If lazy_queues = true**: use lazy creation logic
-- [ ] Ensure backward compatibility - existing deployments should work unchanged
+- [x] Check `lazy_queues` config flag in all circuit operations (via `is_lazy_queues_enabled()`)
+- [x] **If lazy_queues = false**: behave exactly like Phase 1 (immediate creation)
+- [x] **If lazy_queues = true**: use lazy creation logic
+- [x] Ensure backward compatibility - existing deployments work unchanged
 
-### 8. Thread Safety and Critical Race Condition Prevention
+### 8. Thread Safety and Critical Race Condition Prevention ✅ (Partial)
 **File:** `rust/lqos_bakery/src/lib.rs`
 
-#### 8.1 Locking Strategy (CRITICAL)
-- [ ] **Single Master Lock**: Use one `Arc<Mutex<BakeryState>>` containing all shared data
+#### 8.1 Locking Strategy (CRITICAL) ✅
+- [x] **Single Master Lock**: Use one `Arc<Mutex<BakeryState>>` containing all shared data
   ```rust
   struct BakeryState {
       circuits: HashMap<i64, CircuitQueueInfo>,
       structural: HashMap<i64, StructuralQueueInfo>,
       pending_updates: HashSet<i64>,  // Batch update commands
+      pending_creates: HashSet<i64>,  // Batch create commands
   }
   ```
-- [ ] **Lock Order Enforcement**: Always acquire locks in same order to prevent deadlocks
-- [ ] **Short Critical Sections**: Minimize time holding locks
-- [ ] **Atomic Operations**: Never interleave create/update/remove operations
+- [x] **Lock Order Enforcement**: Always acquire locks in same order to prevent deadlocks
+- [x] **Short Critical Sections**: Minimize time holding locks (release before TC commands)
+- [x] **Atomic Operations**: Never interleave create/update/remove operations
 
-#### 8.2 Race Condition Prevention
-- [ ] **Duplicate Creation Protection**:
+#### 8.2 Race Condition Prevention ✅
+- [x] **Duplicate Creation Protection**:
   ```rust
   // Before creating any queue, check:
-  if circuit_exists && circuit.created {
-      return; // Already created, skip
+  if circuit_info.created {
+      return Ok(()); // Already created, skip
   }
   ```
-- [ ] **Update Batching**: Collect multiple UpdateCircuit calls per cycle:
-  ```rust
-  // Use HashSet to deduplicate circuit_hash values
-  let mut pending_updates = HashSet<i64>::new();
-  // Process all pending updates at once
-  ```
-- [ ] **Pruning Coordination**: Ensure pruning thread cannot remove while creating:
-  ```rust
-  // Pruning thread must acquire same master lock
-  // Check if circuit has recent activity before removal
-  ```
+- [ ] **Update Batching**: Collect multiple UpdateCircuit calls per cycle (TODO: Not yet implemented)
+- [ ] **Pruning Coordination**: Ensure pruning thread cannot remove while creating (TODO: Pruning not implemented yet)
 
-#### 8.3 Synchronization Patterns
-- [ ] **Command Processing Order**:
-  1. Batch all incoming commands per cycle
-  2. Acquire master lock once
-  3. Process all creates first
-  4. Process all updates second  
-  5. Release lock
-  6. Pruning thread operates separately with same lock
-- [ ] Handle poisoned mutexes gracefully with recovery logic
+#### 8.3 Synchronization Patterns 🔄 (Partial)
+- [x] **Basic Command Processing**: Each command handled individually with proper locking
+- [ ] **Batched Processing**: Batch commands per cycle (TODO: Future optimization)
+- [x] **Graceful Error Handling**: Handle lock poisoning with `map_err()` patterns
+- [ ] **Pruning Thread Coordination**: (TODO: Pruning thread not implemented yet)
 
 ### 9. Automated Testing Implementation
 **Files:** `rust/lqos_bakery/src/lib.rs` + `tests/` directory
