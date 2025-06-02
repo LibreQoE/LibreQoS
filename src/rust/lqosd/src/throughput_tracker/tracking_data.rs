@@ -169,7 +169,12 @@ impl ThroughputTracker {
                     entry.most_recent_cycle = self_cycle;
                     // Call to Bakery Update for existing traffic
                     if let (Some(sender), Some(circuit_hash)) = (bakery_sender, entry.circuit_hash) {
-                        let _ = sender.try_send(BakeryCommands::UpdateCircuit { circuit_hash });
+                        debug!("Sending UpdateCircuit for circuit_hash: {}", circuit_hash);
+                        if let Err(e) = sender.try_send(BakeryCommands::UpdateCircuit { circuit_hash }) {
+                            warn!("Failed to send UpdateCircuit command: {:?}", e);
+                        }
+                    } else if entry.circuit_hash.is_some() {
+                        debug!("No bakery sender available for UpdateCircuit (circuit_hash: {:?})", entry.circuit_hash);
                     }
 
                     if let Some(parents) = &entry.network_json_parents {
@@ -220,7 +225,13 @@ impl ThroughputTracker {
                 let (circuit_id, circuit_hash) = Self::lookup_circuit_id(xdp_ip);
                 // Call to Bakery Queue Creation for new circuits
                 if let (Some(sender), Some(circuit_hash)) = (bakery_sender, circuit_hash) {
-                    let _ = sender.try_send(BakeryCommands::CreateCircuit { circuit_hash });
+                    info!("NEW CIRCUIT DETECTED! Sending CreateCircuit for circuit_hash: {}", circuit_hash);
+                    if let Err(e) = sender.try_send(BakeryCommands::CreateCircuit { circuit_hash }) {
+                        warn!("Failed to send CreateCircuit command: {:?}", e);
+                    }
+                } else {
+                    debug!("No bakery sender or circuit_hash for new circuit (sender: {}, circuit_hash: {:?})", 
+                           bakery_sender.is_some(), circuit_hash);
                 }
                 let mut entry = ThroughputEntry {
                     circuit_id: circuit_id.clone(),

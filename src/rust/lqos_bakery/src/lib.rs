@@ -226,6 +226,7 @@ fn bakery(rx: Receiver<BakeryCommands>) {
     }
     
     while let Ok(command) = rx.recv() {
+        info!("🍞 Bakery received command: {:?}", command);
         if let Err(e) = match &command {
             BakeryCommands::ClearPriorSettings => clear_prior_settings(),
             BakeryCommands::MqSetup => mq_setup(),
@@ -264,7 +265,7 @@ fn bakery(rx: Receiver<BakeryCommands>) {
             },
             
             BakeryCommands::ExecuteTCCommands { commands, force_mode } => {
-                execute_tc_commands_bulk(commands.clone(), *force_mode)
+                execute_tc_commands_bulk(&state, commands.clone(), *force_mode)
             },
         } {
             error!("Bakery command failed: {:?}, error: {}", command, e);
@@ -276,8 +277,12 @@ fn bakery(rx: Receiver<BakeryCommands>) {
 /// Check if lazy queues are enabled in configuration
 fn is_lazy_queues_enabled() -> bool {
     if let Ok(config) = lqos_config::load_config() {
-        config.queues.lazy_queues.unwrap_or(false)
+        let lazy_enabled = config.queues.lazy_queues.unwrap_or(false);
+        info!("Lazy queues configuration check: lazy_queues = {:?}, enabled = {}", 
+              config.queues.lazy_queues, lazy_enabled);
+        lazy_enabled
     } else {
+        warn!("Failed to load config for lazy queues check");
         false
     }
 }
@@ -675,8 +680,33 @@ fn mq_setup() -> anyhow::Result<()> {
 /// 
 /// # Returns  
 /// * `Result<(), anyhow::Error>` - Returns Ok if successful, or an error if execution fails
-fn execute_tc_commands_bulk(commands: Vec<String>, force_mode: bool) -> anyhow::Result<()> {
-    info!("Executing {} TC commands in bulk mode", commands.len());
+fn execute_tc_commands_bulk(
+    _state: &Arc<Mutex<BakeryState>>,
+    commands: Vec<String>, 
+    force_mode: bool
+) -> anyhow::Result<()> {
+    info!("🍞 Processing {} TC commands in bulk mode", commands.len());
+    
+    // CRITICAL ISSUE IDENTIFIED: Cannot determine circuit_hash from bulk TC commands
+    // because circuit_hash is derived from circuit ID in ShapedDevices.csv, not from classid.
+    // Bulk TC commands only contain classids, not the original circuit IDs.
+    //
+    // For lazy queues to work, we need the individual BakeryCommands (AddCircuitHTBClass, etc.)
+    // which already have the correct circuit_hash passed from LibreQoS.py.
+    //
+    // Therefore: Always execute bulk commands immediately, regardless of lazy_queues setting.
+    // Individual circuit commands will still go through lazy queue logic via the proper handlers.
+    
+    execute_tc_commands_immediate(commands, force_mode)
+}
+
+// REMOVED: parse_and_route_tc_commands function
+// This approach was fundamentally flawed because we cannot determine 
+// circuit_hash from TC commands alone.
+
+/// Execute TC commands immediately (Phase 1 behavior)
+fn execute_tc_commands_immediate(commands: Vec<String>, force_mode: bool) -> anyhow::Result<()> {
+    info!("⚡ Executing {} TC commands immediately", commands.len());
     
     // If we're in write-to-file mode, just write all commands using our centralized function
     if tc_control::is_write_to_file_mode() {
@@ -726,6 +756,15 @@ fn execute_tc_commands_bulk(commands: Vec<String>, force_mode: bool) -> anyhow::
     info!("Successfully executed {} TC commands in bulk mode", commands.len());
     Ok(())
 }
+
+// REMOVED: All TC command parsing code
+// This approach was fundamentally flawed because:
+// 1. circuit_hash must be derived from circuit ID in ShapedDevices.csv
+// 2. TC commands only contain classids, not original circuit IDs
+// 3. Cannot reverse-engineer circuit ID from classid
+//
+// The correct approach is to use individual BakeryCommands which already
+// have the proper circuit_hash passed from LibreQoS.py
 
 #[cfg(test)]
 mod tests {
