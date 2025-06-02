@@ -743,11 +743,13 @@ fn parse_and_route_tc_commands(
 fn parse_tc_command_type(command: &str) -> Option<(bool, Option<i64>)> {
     // Look for circuit_hash in comment: "# circuit_hash: 1234567890"
     if let Some(hash_pos) = command.find("# circuit_hash:") {
-        let hash_str = &command[hash_pos + 15..];
-        if let Some(end_pos) = hash_str.find(' ').or_else(|| Some(hash_str.len())) {
-            if let Ok(hash) = hash_str[..end_pos].trim().parse::<i64>() {
-                return Some((true, Some(hash)));
-            }
+        let hash_str = &command[hash_pos + 15..].trim();
+        // Find the end of the hash number (space or end of string)
+        let end_pos = hash_str.find(|c: char| !c.is_numeric() && c != '-')
+            .unwrap_or(hash_str.len());
+        
+        if let Ok(hash) = hash_str[..end_pos].parse::<i64>() {
+            return Some((true, Some(hash)));
         }
     }
     
@@ -1027,6 +1029,9 @@ fn execute_tc_commands_immediate(commands: Vec<String>, force_mode: bool) -> any
 //
 // The correct approach is to use individual BakeryCommands which already
 // have the proper circuit_hash passed from LibreQoS.py
+
+#[cfg(test)]
+mod test_circuit_hash;
 
 #[cfg(test)]
 mod tests {
