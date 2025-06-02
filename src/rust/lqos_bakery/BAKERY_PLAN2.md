@@ -44,6 +44,8 @@ The lazy queue system operates on the principle of "create on demand, expire on 
 - ✅ **Lazy queue creation verified working** - circuit queues created on traffic detection
 - ✅ **Hash consistency fixed** - Python and Rust use same `hash_to_i64` function
 - ✅ **Fractional bandwidth rates working** - 0.3/1.0 Mbps rates handled correctly
+- ✅ **Queue pruning system working** - expired queues successfully removed after timeout
+- ✅ **Circuit recreation verified** - pruned circuits can be recreated on new traffic
 - ⏳ Web UI configuration not yet available (expected - Step 10)
 
 ## ⚠️ Critical Pitfalls to Avoid
@@ -541,3 +543,15 @@ Based on analysis of existing queue configuration patterns:
 - Updated LibreQoS.py to use the Rust hash function exclusively
 - Ensures both sides use identical hashing algorithm
 **Impact**: Circuit hashes now match perfectly, enabling lazy queue creation to work
+
+### 9. Queue Pruning Issues
+**Problem 1**: Circuits pruned immediately after creation
+**Symptoms**: Circuits created and then deleted within seconds
+**Root Cause**: `last_updated` initialized to 0 (Unix epoch) when storing circuits
+**Solution**: Set `last_updated = current_timestamp()` when creating CircuitQueueInfo
+
+**Problem 2**: TC delete commands failed with "No such file or directory"
+**Symptoms**: Pruning detected expired circuits but couldn't delete them
+**Root Cause**: LibreQoS.py was using `circuit['classMinor']` (e.g., "0x3b") instead of full classid
+**Solution**: Changed to use `circuit['classid']` (e.g., "0x1:0x3b") for proper TC handle format
+**Impact**: Pruning now successfully removes expired queues and circuits can be recreated on new traffic
