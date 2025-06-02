@@ -12,6 +12,7 @@ use crate::{
     throughput_tracker::tracking_data::ThroughputTracker,
 };
 use fxhash::FxHashMap;
+use lqos_bakery::BakeryCommands;
 use lqos_bus::{BusResponse, FlowbeeProtocol, IpStats, TcHandle, TopFlowType, XdpPpingResult};
 use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::units::{DownUpOrder, down_up_divide};
@@ -42,11 +43,12 @@ pub fn spawn_throughput_monitor(
     long_term_stats_tx: Sender<StatsUpdateMessage>,
     netflow_sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
     system_usage_actor: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
+    bakery_sender: Option<crossbeam_channel::Sender<lqos_bakery::BakeryCommands>>,
 ) -> anyhow::Result<()> {
     debug!("Starting the bandwidth monitor thread.");
     std::thread::Builder::new()
         .name("Throughput Monitor".to_string())
-        .spawn(|| throughput_task(long_term_stats_tx, netflow_sender, system_usage_actor))?;
+        .spawn(|| throughput_task(long_term_stats_tx, netflow_sender, system_usage_actor, bakery_sender))?;
 
     Ok(())
 }
@@ -104,6 +106,7 @@ fn throughput_task(
     long_term_stats_tx: Sender<StatsUpdateMessage>,
     netflow_sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
     system_usage_actor: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
+    bakery_sender: Option<crossbeam_channel::Sender<BakeryCommands>>,
 ) {
     // Obtain the flow timeout from the config, default to 30 seconds
     let timeout_seconds = if let Ok(config) = lqos_config::load_config() {
@@ -159,7 +162,7 @@ fn throughput_task(
             timer_metrics.zero_throughput_and_rtt = timer_metrics.start.elapsed().as_secs_f64();
             THROUGHPUT_TRACKER.copy_previous_and_reset_rtt();
             timer_metrics.copy_previous_and_reset_rtt = timer_metrics.start.elapsed().as_secs_f64();
-            THROUGHPUT_TRACKER.apply_new_throughput_counters(&mut net_json_calc);
+            THROUGHPUT_TRACKER.apply_new_throughput_counters(&mut net_json_calc, bakery_sender.as_ref());
             timer_metrics.apply_new_throughput_counters =
                 timer_metrics.start.elapsed().as_secs_f64();
             THROUGHPUT_TRACKER.apply_flow_data(

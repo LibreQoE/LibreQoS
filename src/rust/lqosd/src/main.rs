@@ -180,6 +180,7 @@ fn main() -> Result<()> {
         long_term_stats_tx.clone(),
         flow_tx,
         system_usage_tx.clone(),
+        BAKERY_SENDER.get().cloned(),
     )?;
     spawn_queue_monitor()?;
     lqos_sys::bpf_garbage_collector();
