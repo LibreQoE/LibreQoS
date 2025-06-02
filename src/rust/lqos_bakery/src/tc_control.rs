@@ -18,10 +18,16 @@
 
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::path::Path;
 
 const TC_COMMAND: &str = "/sbin/tc";
 const WRITE_TC_TO_FILE: bool = true; // Set to true for testing/comparison
-const TC_OUTPUT_FILE: &str = "tc-rust.txt";
+const TC_OUTPUT_FILENAME: &str = "tc-rust.txt";
+
+/// Check if we're in write-to-file mode (for testing)
+pub fn is_write_to_file_mode() -> bool {
+    WRITE_TC_TO_FILE
+}
 
 /// Execute a TC command or write it to a file for testing
 /// 
@@ -30,13 +36,17 @@ const TC_OUTPUT_FILE: &str = "tc-rust.txt";
 /// 
 /// # Returns
 /// * `Result<(), anyhow::Error>` - Returns Ok if successful, or an error if the command fails.
-fn execute_tc_command(args: &[&str]) -> anyhow::Result<()> {
+pub fn execute_tc_command(args: &[&str]) -> anyhow::Result<()> {
     if WRITE_TC_TO_FILE {
+        // Get the lqos_directory from config
+        let config = lqos_config::load_config()?;
+        let output_path = Path::new(&config.lqos_directory).join(TC_OUTPUT_FILENAME);
+        
         // Write to file for comparison testing
         let mut file = OpenOptions::new()
             .create(true)
             .append(true)
-            .open(TC_OUTPUT_FILE)?;
+            .open(&output_path)?;
         
         // Write just the arguments (no /sbin/tc prefix) to match Python format
         writeln!(file, "{}", args.join(" "))?;

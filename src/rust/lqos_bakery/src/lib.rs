@@ -34,7 +34,7 @@ pub use tc_control::{
 use std::path::Path;
 
 use crossbeam_channel::Receiver;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 pub (crate) const CHANNEL_CAPACITY: usize = 1024;
 
@@ -126,6 +126,21 @@ pub fn start_bakery() -> anyhow::Result<crossbeam_channel::Sender<BakeryCommands
 }
 
 fn bakery(rx: Receiver<BakeryCommands>) {
+    // Clear the TC output file when bakery starts (if in file mode)
+    #[cfg(not(test))]
+    if crate::tc_control::is_write_to_file_mode() {
+        if let Ok(config) = lqos_config::load_config() {
+            let output_path = std::path::Path::new(&config.lqos_directory).join("tc-rust.txt");
+            if output_path.exists() {
+                if let Err(e) = std::fs::remove_file(&output_path) {
+                    warn!("Failed to remove old TC output file: {}", e);
+                } else {
+                    info!("Cleared old TC output file: {:?}", output_path);
+                }
+            }
+        }
+    }
+    
     while let Ok(command) = rx.recv() {
         if let Err(e) = match &command {
             BakeryCommands::ClearPriorSettings => clear_prior_settings(),
@@ -344,6 +359,19 @@ fn mq_setup() -> anyhow::Result<()> {
 /// # Returns  
 /// * `Result<(), anyhow::Error>` - Returns Ok if successful, or an error if execution fails
 fn execute_tc_commands_bulk(commands: Vec<String>, force_mode: bool) -> anyhow::Result<()> {
+    info!("Executing {} TC commands in bulk mode", commands.len());
+    
+    // If we're in write-to-file mode, just write all commands using our centralized function
+    if tc_control::is_write_to_file_mode() {
+        for command in &commands {
+            let args: Vec<&str> = command.split_whitespace().collect();
+            tc_control::execute_tc_command(&args)?;
+        }
+        info!("Wrote {} TC commands to file", commands.len());
+        return Ok(());
+    }
+    
+    // Otherwise, execute using tc -b (bulk mode)
     use std::fs::File;
     use std::io::Write;
     

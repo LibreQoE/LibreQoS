@@ -1095,10 +1095,15 @@ def refreshShapers():
 							
 							# Call bakery to add circuit qdisc for download
 							sqm_params = useSqm.split()
+							# Parse classMajor (hex string like "0x1:") and classMinor (hex string like "0x10")
+							major_str = circuit['classMajor'].strip(':')
+							major_val = int(major_str, 16) if major_str.startswith('0x') else int(major_str)
+							minor_str = circuit['classMinor']
+							minor_val = int(minor_str, 16) if minor_str.startswith('0x') else int(minor_str)
 							down_qdisc_success = bakery_add_circuit_qdisc(
 								interface=interface_a(),
-								parent_major=int(circuit['classMajor'].strip(':')),
-								parent_minor=int(circuit['classMinor'].split(':')[1]),
+								parent_major=major_val,
+								parent_minor=minor_val,
 								circuit_hash=circuit_hash,
 								sqm_params=sqm_params
 							)
@@ -1131,10 +1136,15 @@ def refreshShapers():
 							
 							# Call bakery to add circuit qdisc for upload
 							sqm_params = useSqm.split()
+							# Parse up_classMajor (hex string like "0x1:") and classMinor (hex string like "0x10")
+							up_major_str = circuit['up_classMajor'].strip(':')
+							up_major_val = int(up_major_str, 16) if up_major_str.startswith('0x') else int(up_major_str)
+							up_minor_str = circuit['classMinor']
+							up_minor_val = int(up_minor_str, 16) if up_minor_str.startswith('0x') else int(up_minor_str)
 							up_qdisc_success = bakery_add_circuit_qdisc(
 								interface=interface_b(),
-								parent_major=int(circuit['up_classMajor'].strip(':')),
-								parent_minor=int(circuit['classMinor'].split(':')[1]),
+								parent_major=up_major_val,
+								parent_minor=up_minor_val,
 								circuit_hash=circuit_hash,
 								sqm_params=sqm_params
 							)
@@ -1222,15 +1232,16 @@ def refreshShapers():
 		# Execute actual Linux TC commands
 		tcStartTime = datetime.now()
 		print("Executing linux TC class/qdisc commands")
-		with open('linux_tc.txt', 'w') as f:
+		tc_output_path = os.path.join(get_libreqos_directory(), 'linux_tc.txt')
+		with open(tc_output_path, 'w') as f:
 			for command in linuxTCcommands:
 				logging.info(command)
 				f.write(f"{command}\n")
 		if logging.DEBUG <= logging.root.level:
 			# Do not --force in debug mode, so we can see any errors 
-			shell("/sbin/tc -b linux_tc.txt")
+			shell(f"/sbin/tc -b {tc_output_path}")
 		else:
-			shell("/sbin/tc -f -b linux_tc.txt")
+			shell(f"/sbin/tc -f -b {tc_output_path}")
 		tcEndTime = datetime.now()
 		print("Executed " + str(len(linuxTCcommands)) + " linux TC class/qdisc commands")
 		
