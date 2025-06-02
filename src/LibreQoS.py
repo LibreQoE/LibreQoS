@@ -19,7 +19,6 @@ import logging
 import shutil
 import binpacking
 from deepdiff import DeepDiff
-import hashlib
 
 from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping, validate_shaped_devices, \
 	is_libre_already_running, create_lock_file, free_lock_file, add_ip_mapping, BatchedCommands, \
@@ -28,7 +27,7 @@ from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping,
 	run_shell_commands_as_sudo, generated_pn_download_mbps, generated_pn_upload_mbps, queues_available_override, \
 	on_a_stick, get_tree_weights, get_weights, is_network_flat, get_libreqos_directory, enable_insight_topology, \
 	bakery_clear_prior_settings, bakery_mq_setup, bakery_add_structural_htb_class, \
-	bakery_add_circuit_htb_class, bakery_add_circuit_qdisc, bakery_execute_tc_commands
+	bakery_add_circuit_htb_class, bakery_add_circuit_qdisc, bakery_execute_tc_commands, hash_to_i64
 
 R2Q = 10
 #MAX_R2Q = 200_000
@@ -135,11 +134,12 @@ def checkIfFirstRunSinceBoot():
 		return True
 
 def calculate_hash_for_bakery(name: str) -> int:
-	"""Calculate a signed 64-bit hash from a string name for bakery tracking"""
-	hash_value = int(hashlib.sha256(name.encode()).hexdigest()[:16], 16)
-	if hash_value > 2**63 - 1:  # Convert to signed i64 range
-		hash_value = hash_value - 2**64
-	return hash_value
+	"""Calculate a signed 64-bit hash from a string name for bakery tracking
+	
+	Uses the Rust hash_to_i64 function to ensure consistency with
+	the hashing used throughout the Rust codebase.
+	"""
+	return hash_to_i64(name)
 	
 def clearPriorSettings(interfaceA, interfaceB):
 	# BAKERY INTEGRATION POINT: ClearPriorSettings
@@ -1079,13 +1079,8 @@ def refreshShapers():
 						# 	logging.warning(f"Bakery failed to add circuit HTB class for {circuit['circuitID']} (download)")
 						
 						# Generate TC commands to be executed later
-						tcComment = " # CircuitID: " + circuit['circuitID'] + " DeviceIDs: "
-						for device in circuit['devices']:
-							tcComment = '' #tcComment + device['deviceID'] + ', '
-						if 'devices' in circuit:
-							if 'comment' in circuit['devices'][0]:
-								tcComment = '' # tcComment + '| Comment: ' + circuit['devices'][0]['comment']
-						tcComment = tcComment.replace("\n", "")
+						# Include circuit_hash for bakery lazy queue tracking
+						tcComment = f" # circuit_hash: {circuit_hash}"
 						command = 'class add dev ' + interface_a() + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ format_rate_for_tc(min_down) + ' ceil '+ format_rate_for_tc(circuit['maxDownload']) + ' prio 3' + quantum(circuit['maxDownload']) + tcComment
 						linuxTCcommands.append(command)
 						# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
@@ -1110,7 +1105,7 @@ def refreshShapers():
 							# if not down_qdisc_success:
 							# 	logging.warning(f"Bakery failed to add circuit qdisc for {circuit['circuitID']} (download)")
 							
-							command = 'qdisc add dev ' + interface_a() + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
+							command = 'qdisc add dev ' + interface_a() + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm + tcComment
 							linuxTCcommands.append(command)
 						# Same for upload direction
 						# Call bakery to add circuit HTB class for upload - COMMENTED OUT: Using bulk execution only
@@ -1127,7 +1122,7 @@ def refreshShapers():
 						# if not up_htb_success:
 						# 	logging.warning(f"Bakery failed to add circuit HTB class for {circuit['circuitID']} (upload)")
 						
-						command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ format_rate_for_tc(min_up) + ' ceil '+ format_rate_for_tc(circuit['maxUpload']) + ' prio 3' + quantum(circuit['maxUpload'])
+						command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ format_rate_for_tc(min_up) + ' ceil '+ format_rate_for_tc(circuit['maxUpload']) + ' prio 3' + quantum(circuit['maxUpload']) + tcComment
 						linuxTCcommands.append(command)
 						# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
 						if monitor_mode_only() == False:
@@ -1151,7 +1146,7 @@ def refreshShapers():
 							# if not up_qdisc_success:
 							# 	logging.warning(f"Bakery failed to add circuit qdisc for {circuit['circuitID']} (upload)")
 							
-							command = 'qdisc add dev ' + interface_b() + ' parent ' + circuit['up_classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
+							command = 'qdisc add dev ' + interface_b() + ' parent ' + circuit['up_classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm + tcComment
 							linuxTCcommands.append(command)
 							pass
 						for device in circuit['devices']:

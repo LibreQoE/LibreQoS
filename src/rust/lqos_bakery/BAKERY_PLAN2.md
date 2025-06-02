@@ -20,6 +20,7 @@ The lazy queue system operates on the principle of "create on demand, expire on 
 - **Lazy Queue Control Logic**: Proper flag checking and behavior switching
 - **Thread Safety**: Single master lock, duplicate prevention, short critical sections
 - **ExecuteTCCommands Bulk Handler**: Modified to support lazy queues with TC command parsing
+- **Hash Function Consistency**: Fixed circuit hash mismatch by exposing Rust `hash_to_i64` to Python
 
 ### 🔄 **IN PROGRESS** 
 - **Thread Safety**: Update batching and pruning coordination (basic safety implemented)
@@ -37,6 +38,9 @@ The lazy queue system operates on the principle of "create on demand, expire on 
 - ✅ Backward compatibility with lazy_queues=false fixed (force_mode logic corrected)
 - ✅ TC bulk command execution working correctly
 - ✅ Queues created successfully with both lazy and non-lazy modes
+- ✅ **Lazy queue creation verified working** - circuit queues created on traffic detection
+- ✅ **Hash consistency fixed** - Python and Rust use same `hash_to_i64` function
+- ✅ **Fractional bandwidth rates working** - 0.3/1.0 Mbps rates handled correctly
 - ⏳ Web UI configuration not yet available (expected - Step 10)
 
 ## ⚠️ Critical Pitfalls to Avoid
@@ -512,3 +516,25 @@ Based on analysis of existing queue configuration patterns:
 - Execution permissions
 - Error handling and reporting
 - Maintaining exact backward compatibility
+
+### 7. TC Bulk Execution with Existing Queues
+**Problem**: When queues exist from a previous run, TC `add` commands fail but `-f` flag hides errors
+**Symptoms**: 
+- TC bulk execution returns status 0 (success)
+- Empty stdout/stderr due to `-f` flag
+- But queues aren't actually created
+**Root Cause**: The `-f` flag suppresses errors but doesn't fix them - `add` still fails on existing objects
+**Solution**: Clear prior settings before bulk execution when `qdisc replace` is detected (indicates full reload)
+
+### 8. Hash Function Consistency Between Python and Rust
+**Problem**: Circuit hash mismatch prevented lazy queue creation
+**Symptoms**:
+- Python calculated different hash than Rust for same circuit ID
+- Bakery stored circuits but couldn't match them when traffic arrived
+- Example: Python hash `-4663096281490929287` vs Rust hash `-8456361809408299971`
+**Root Cause**: Python used SHA256 while Rust used DefaultHasher
+**Solution**: 
+- Exposed Rust's `hash_to_i64` function to Python via `lqos_python` module
+- Updated LibreQoS.py to use the Rust hash function exclusively
+- Ensures both sides use identical hashing algorithm
+**Impact**: Circuit hashes now match perfectly, enabling lazy queue creation to work

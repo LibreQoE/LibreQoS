@@ -364,7 +364,7 @@ fn handle_add_circuit_htb_class(
             state_lock.circuits.insert(circuit_hash, circuit_info);
         }
         
-        info!("Stored circuit HTB class info for circuit_hash {}: {} (lazy creation)", circuit_hash, classid);
+        info!("📦 STORED (not created) circuit HTB class: {} (hash: {}) - will create on first traffic", classid, circuit_hash);
     } else {
         // Phase 1: Create circuit queue immediately (backward compatibility)
         tc_control::add_circuit_htb_class(
@@ -425,6 +425,9 @@ fn handle_update_circuit(
         
         // If not created yet, create it now
         if !circuit_info.created {
+            info!("🚀 TRAFFIC DETECTED for circuit {} (hash: {}) - triggering lazy queue creation!", 
+                  circuit_info.comment.as_deref().unwrap_or(&circuit_info.classid), 
+                  circuit_hash);
             drop(state_lock); // Release lock before creating queue
             handle_create_circuit(state, circuit_hash)?;
         }
@@ -467,6 +470,9 @@ fn handle_create_circuit(
         circuit_info.created = true;
         circuit_info.last_updated = current_timestamp();
         
+        // Store comment for logging (extract before dropping lock)
+        let log_comment = comment.as_deref().unwrap_or("Unknown").to_string();
+        
         // Release lock before executing TC commands
         drop(state_lock);
         
@@ -492,7 +498,12 @@ fn handle_create_circuit(
             }
         }
         
-        info!("Created circuit queue for circuit_hash {}: {}", circuit_hash, classid);
+        info!("🎉 LAZY QUEUE CREATED: Circuit {} (hash: {}) - HTB class {} with rate {}Mbps/ceil {}Mbps", 
+              log_comment, 
+              circuit_hash, 
+              classid, 
+              rate_mbps, 
+              ceil_mbps);
     } else {
         warn!("Create requested for unknown circuit_hash {}", circuit_hash);
     }
@@ -687,6 +698,18 @@ fn execute_tc_commands_bulk(
 ) -> anyhow::Result<()> {
     info!("🍞 Processing {} TC commands in bulk mode", commands.len());
     
+    // Check if the first command is a qdisc replace - this indicates we need to clear prior settings
+    let should_clear = commands.first()
+        .map(|cmd| cmd.starts_with("qdisc replace"))
+        .unwrap_or(false);
+    
+    if should_clear {
+        info!("Detected qdisc replace command - clearing prior settings first");
+        if let Err(e) = clear_prior_settings() {
+            warn!("Failed to clear prior settings: {}. Continuing anyway.", e);
+        }
+    }
+    
     if is_lazy_queues_enabled() {
         // NEW APPROACH: Parse commands and separate structural from circuit
         // LibreQoS.py needs to include circuit_hash in comments for this to work
@@ -703,6 +726,7 @@ fn parse_and_route_tc_commands(
     commands: Vec<String>,
     force_mode: bool,
 ) -> anyhow::Result<()> {
+    info!("🔍 Parsing {} TC commands for lazy queue routing", commands.len());
     let mut structural_commands = Vec::new();
     let mut deferred_count = 0;
     
@@ -712,6 +736,7 @@ fn parse_and_route_tc_commands(
             if is_circuit {
                 // This is a circuit command - defer for lazy creation
                 if let Some(hash) = circuit_hash {
+                    debug!("📝 Storing circuit command with hash {}: {}", hash, command);
                     store_circuit_command(state, command, hash)?;
                     deferred_count += 1;
                 } else {
@@ -733,6 +758,12 @@ fn parse_and_route_tc_commands(
         info!("⚡ Executing {} structural/other commands immediately", structural_commands.len());
         execute_tc_commands_immediate(structural_commands, force_mode)?;
     }
+    
+    // Log the current state of stored circuits
+    let state_lock = state.lock().map_err(|_| anyhow::anyhow!("Failed to acquire state lock"))?;
+    info!("📊 Bakery state after parsing: {} circuits stored, {} structural nodes", 
+          state_lock.circuits.len(), state_lock.structural.len());
+    drop(state_lock);
     
     info!("✅ Bulk command processing complete: {} circuit commands deferred for lazy creation", 
           deferred_count);
@@ -1008,19 +1039,25 @@ fn execute_tc_commands_immediate(commands: Vec<String>, force_mode: bool) -> any
     
     let output = tc_command.output()?;
     
-    // Clean up the temporary file
-    let _ = std::fs::remove_file(TC_BULK_FILE);
+    // Clean up the temporary file - DISABLED FOR DEBUGGING
+    // let _ = std::fs::remove_file(TC_BULK_FILE);
+    warn!("TC bulk file preserved at {} for debugging", TC_BULK_FILE);
     
     // Always log the output for debugging
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     
+    // Always log TC output for debugging
     if !stderr.is_empty() {
         warn!("TC stderr output: {}", stderr);
+    } else {
+        info!("TC stderr was empty");
     }
     
     if !stdout.is_empty() {
-        debug!("TC stdout output: {}", stdout);
+        info!("TC stdout output: {}", stdout);
+    } else {
+        info!("TC stdout was empty");
     }
     
     if !output.status.success() {

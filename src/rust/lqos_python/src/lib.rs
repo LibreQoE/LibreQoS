@@ -112,6 +112,9 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(bakery_add_circuit_htb_class))?;
     m.add_wrapped(wrap_pyfunction!(bakery_add_circuit_qdisc))?;
     m.add_wrapped(wrap_pyfunction!(bakery_execute_tc_commands))?;
+    
+    // Hash function for circuit IDs
+    m.add_wrapped(wrap_pyfunction!(hash_to_i64))?;
 
     Ok(())
 }
@@ -975,4 +978,12 @@ fn bakery_execute_tc_commands(
         }
     }
     Ok(false)
+}
+
+/// Calculate a 64-bit hash from a string using Rust's DefaultHasher
+/// This matches the hash function used in lqos_utils and throughout
+/// the Rust codebase for circuit and site hashes.
+#[pyfunction]
+fn hash_to_i64(text: &str) -> PyResult<i64> {
+    Ok(lqos_utils::hash_to_i64(text))
 }
