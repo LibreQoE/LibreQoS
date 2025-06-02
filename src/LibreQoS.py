@@ -19,13 +19,16 @@ import logging
 import shutil
 import binpacking
 from deepdiff import DeepDiff
+import hashlib
 
 from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping, validate_shaped_devices, \
 	is_libre_already_running, create_lock_file, free_lock_file, add_ip_mapping, BatchedCommands, \
 	check_config, sqm, upstream_bandwidth_capacity_download_mbps, upstream_bandwidth_capacity_upload_mbps, \
 	interface_a, interface_b, enable_actual_shell_commands, use_bin_packing_to_balance_cpu, monitor_mode_only, \
 	run_shell_commands_as_sudo, generated_pn_download_mbps, generated_pn_upload_mbps, queues_available_override, \
-	on_a_stick, get_tree_weights, get_weights, is_network_flat, get_libreqos_directory, enable_insight_topology
+	on_a_stick, get_tree_weights, get_weights, is_network_flat, get_libreqos_directory, enable_insight_topology, \
+	bakery_clear_prior_settings, bakery_mq_setup, bakery_add_structural_htb_class, \
+	bakery_add_circuit_htb_class, bakery_add_circuit_qdisc, bakery_execute_tc_commands
 
 R2Q = 10
 #MAX_R2Q = 200_000
@@ -130,6 +133,13 @@ def checkIfFirstRunSinceBoot():
 	else:
 		print("First time run since system boot.")
 		return True
+
+def calculate_hash_for_bakery(name: str) -> int:
+	"""Calculate a signed 64-bit hash from a string name for bakery tracking"""
+	hash_value = int(hashlib.sha256(name.encode()).hexdigest()[:16], 16)
+	if hash_value > 2**63 - 1:  # Convert to signed i64 range
+		hash_value = hash_value - 2**64
+	return hash_value
 	
 def clearPriorSettings(interfaceA, interfaceB):
 	# BAKERY INTEGRATION POINT: ClearPriorSettings
@@ -139,6 +149,11 @@ def clearPriorSettings(interfaceA, interfaceB):
 	#   - on_a_stick: bool
 	# Rust equivalent: BakeryCommands::ClearPriorSettings
 	# This will check for MQ and delete root qdiscs as needed
+	
+	# Call bakery to clear prior settings
+	success = bakery_clear_prior_settings()
+	if not success:
+		logging.warning("Bakery failed to clear prior settings, falling back to shell commands")
 	
 	if enable_actual_shell_commands():
 		if 'mq' in shellReturn('tc qdisc show dev ' + interfaceA + ' root'):
@@ -892,6 +907,11 @@ def refreshShapers():
 		# Rust equivalent: BakeryCommands::MqSetup
 		# This creates the entire MQ + HTB hierarchy with default classes
 		
+		# Call bakery to setup MQ and HTB hierarchy
+		mq_success = bakery_mq_setup()
+		if not mq_success:
+			logging.warning("Bakery failed to setup MQ, falling back to shell commands")
+		
 		# Root HTB Setup
 		# Create MQ qdisc for each CPU core / rx-tx queue. Generate commands to create corresponding HTB and leaf classes. Prepare commands for execution later
 		thisInterface = interface_a()
@@ -975,10 +995,38 @@ def refreshShapers():
 				# Rust equivalent: add_structural_htb_class()
 				# Creates HTB class for site/AP - NO qdisc
 				
+				# Call bakery to add structural HTB class for download
+				site_hash = calculate_hash_for_bakery(node)
+				down_success = bakery_add_structural_htb_class(
+					interface=interface_a(),
+					parent=data[node]['parentClassID'],
+					classid=data[node]['classMinor'],
+					rate_mbps=float(data[node]['downloadBandwidthMbpsMin']),
+					ceil_mbps=float(data[node]['downloadBandwidthMbps']),
+					site_hash=site_hash,
+					r2q=R2Q
+				)
+				if not down_success:
+					logging.warning(f"Bakery failed to add structural HTB class for {node} (download)")
+				
 				command = 'class add dev ' + interface_a() + ' parent ' + data[node]['parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ format_rate_for_tc(data[node]['downloadBandwidthMbpsMin']) + ' ceil '+ format_rate_for_tc(data[node]['downloadBandwidthMbps']) + ' prio 3' + quantum(data[node]['downloadBandwidthMbps'])
 				linuxTCcommands.append(command)
 				logging.info("Up ParentClassID: " + data[node]['up_parentClassID'])
 				logging.info("ClassMinor: " + data[node]['classMinor'])
+				
+				# Call bakery to add structural HTB class for upload
+				up_success = bakery_add_structural_htb_class(
+					interface=interface_b(),
+					parent=data[node]['up_parentClassID'],
+					classid=data[node]['classMinor'],
+					rate_mbps=float(data[node]['uploadBandwidthMbpsMin']),
+					ceil_mbps=float(data[node]['uploadBandwidthMbps']),
+					site_hash=site_hash,
+					r2q=R2Q
+				)
+				if not up_success:
+					logging.warning(f"Bakery failed to add structural HTB class for {node} (upload)")
+				
 				command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ format_rate_for_tc(data[node]['uploadBandwidthMbpsMin']) + ' ceil '+ format_rate_for_tc(data[node]['uploadBandwidthMbps']) + ' prio 3' + quantum(data[node]['uploadBandwidthMbps'])
 				linuxTCcommands.append(command)
 				if 'circuits' in data[node]:
@@ -1012,6 +1060,24 @@ def refreshShapers():
 						#   - sqm_params: list[str] (from sqmFixupRate)
 						# Rust equivalent: add_circuit_qdisc()
 						
+						# Calculate circuit hash
+						circuit_hash = calculate_hash_for_bakery(circuit['circuitID'])
+						
+						# Call bakery to add circuit HTB class for download
+						circuit_comment = f"CircuitID: {circuit['circuitID']}"
+						down_htb_success = bakery_add_circuit_htb_class(
+							interface=interface_a(),
+							parent=data[node]['classid'],
+							classid=circuit['classMinor'],
+							rate_mbps=float(min_down),
+							ceil_mbps=float(circuit['maxDownload']),
+							circuit_hash=circuit_hash,
+							comment=circuit_comment,
+							r2q=R2Q
+						)
+						if not down_htb_success:
+							logging.warning(f"Bakery failed to add circuit HTB class for {circuit['circuitID']} (download)")
+						
 						# Generate TC commands to be executed later
 						tcComment = " # CircuitID: " + circuit['circuitID'] + " DeviceIDs: "
 						for device in circuit['devices']:
@@ -1026,15 +1092,55 @@ def refreshShapers():
 						if monitor_mode_only() == False:
 							# SQM Fixup for lower rates
 							useSqm = sqmFixupRate(circuit['maxDownload'], sqm())
+							
+							# Call bakery to add circuit qdisc for download
+							sqm_params = useSqm.split()
+							down_qdisc_success = bakery_add_circuit_qdisc(
+								interface=interface_a(),
+								parent_major=int(circuit['classMajor'].strip(':')),
+								parent_minor=int(circuit['classMinor'].split(':')[1]),
+								circuit_hash=circuit_hash,
+								sqm_params=sqm_params
+							)
+							if not down_qdisc_success:
+								logging.warning(f"Bakery failed to add circuit qdisc for {circuit['circuitID']} (download)")
+							
 							command = 'qdisc add dev ' + interface_a() + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
 							linuxTCcommands.append(command)
 						# Same for upload direction
+						# Call bakery to add circuit HTB class for upload
+						up_htb_success = bakery_add_circuit_htb_class(
+							interface=interface_b(),
+							parent=data[node]['up_classid'],
+							classid=circuit['classMinor'],
+							rate_mbps=float(min_up),
+							ceil_mbps=float(circuit['maxUpload']),
+							circuit_hash=circuit_hash,
+							comment=circuit_comment,
+							r2q=R2Q
+						)
+						if not up_htb_success:
+							logging.warning(f"Bakery failed to add circuit HTB class for {circuit['circuitID']} (upload)")
+						
 						command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ format_rate_for_tc(min_up) + ' ceil '+ format_rate_for_tc(circuit['maxUpload']) + ' prio 3' + quantum(circuit['maxUpload'])
 						linuxTCcommands.append(command)
 						# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
 						if monitor_mode_only() == False:
 							# SQM Fixup for lower rates
 							useSqm = sqmFixupRate(circuit['maxUpload'], sqm())
+							
+							# Call bakery to add circuit qdisc for upload
+							sqm_params = useSqm.split()
+							up_qdisc_success = bakery_add_circuit_qdisc(
+								interface=interface_b(),
+								parent_major=int(circuit['up_classMajor'].strip(':')),
+								parent_minor=int(circuit['classMinor'].split(':')[1]),
+								circuit_hash=circuit_hash,
+								sqm_params=sqm_params
+							)
+							if not up_qdisc_success:
+								logging.warning(f"Bakery failed to add circuit qdisc for {circuit['circuitID']} (upload)")
+							
 							command = 'qdisc add dev ' + interface_b() + ' parent ' + circuit['up_classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
 							linuxTCcommands.append(command)
 							pass
@@ -1103,6 +1209,15 @@ def refreshShapers():
 		#   - debug_mode: bool (whether to use --force flag)
 		# Rust could write to file and execute with tc -b like Python does
 		# This would be a single bulk operation for Phase 1
+		
+		# Call bakery to execute all TC commands in bulk
+		force_mode = logging.DEBUG > logging.root.level  # Use force mode unless in debug
+		bulk_success = bakery_execute_tc_commands(
+			commands=linuxTCcommands,
+			force_mode=force_mode
+		)
+		if not bulk_success:
+			logging.warning("Bakery failed to execute TC commands in bulk, falling back to shell commands")
 		
 		# Execute actual Linux TC commands
 		tcStartTime = datetime.now()
