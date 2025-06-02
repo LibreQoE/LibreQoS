@@ -229,7 +229,7 @@ fn bakery(rx: Receiver<BakeryCommands>) {
     let _pruning_handle = spawn_pruning_thread(Arc::clone(&state));
     
     while let Ok(command) = rx.recv() {
-        info!("🍞 Bakery received command: {:?}", command);
+        debug!("🍞 Bakery received command: {:?}", command);
         if let Err(e) = match &command {
             BakeryCommands::ClearPriorSettings => clear_prior_settings(),
             BakeryCommands::MqSetup => mq_setup(),
@@ -281,7 +281,7 @@ fn bakery(rx: Receiver<BakeryCommands>) {
 fn is_lazy_queues_enabled() -> bool {
     if let Ok(config) = lqos_config::load_config() {
         let lazy_enabled = config.queues.lazy_queues.unwrap_or(false);
-        info!("Lazy queues configuration check: lazy_queues = {:?}, enabled = {}", 
+        debug!("Lazy queues configuration check: lazy_queues = {:?}, enabled = {}",
               config.queues.lazy_queues, lazy_enabled);
         lazy_enabled
     } else {
@@ -318,8 +318,8 @@ fn handle_add_structural_htb_class(
         r2q,
     };
     state_lock.structural.insert(site_hash, structural_info);
-    
-    info!("Created structural HTB class for site_hash {}: {}", site_hash, classid);
+
+    debug!("Created structural HTB class for site_hash {}: {}", site_hash, classid);
     Ok(())
 }
 
@@ -366,15 +366,15 @@ fn handle_add_circuit_htb_class(
             };
             state_lock.circuits.insert(circuit_hash, circuit_info);
         }
-        
-        info!("📦 STORED (not created) circuit HTB class: {} (hash: {}) - will create on first traffic", classid, circuit_hash);
+
+        debug!("📦 STORED (not created) circuit HTB class: {} (hash: {}) - will create on first traffic", classid, circuit_hash);
     } else {
         // Phase 1: Create circuit queue immediately (backward compatibility)
         tc_control::add_circuit_htb_class(
             interface, parent, classid, rate_mbps, ceil_mbps, circuit_hash, 
             comment.as_deref(), r2q
         )?;
-        info!("Created circuit HTB class immediately for circuit_hash {}: {}", circuit_hash, classid);
+        debug!("Created circuit HTB class immediately for circuit_hash {}: {}", circuit_hash, classid);
     }
     
     Ok(())
@@ -395,7 +395,7 @@ fn handle_add_circuit_qdisc(
         
         if let Some(circuit_info) = state_lock.circuits.get_mut(&circuit_hash) {
             circuit_info.sqm_params = sqm_params;
-            info!("Updated circuit qdisc info for circuit_hash {}: stored SQM params (lazy creation)", circuit_hash);
+            debug!("Updated circuit qdisc info for circuit_hash {}: stored SQM params (lazy creation)", circuit_hash);
         } else {
             warn!("Circuit qdisc command for unknown circuit_hash {}", circuit_hash);
         }
@@ -405,7 +405,7 @@ fn handle_add_circuit_qdisc(
         tc_control::add_circuit_qdisc(
             interface, parent_major, parent_minor, circuit_hash, &sqm_strs
         )?;
-        info!("Created circuit qdisc immediately for circuit_hash {}", circuit_hash);
+        debug!("Created circuit qdisc immediately for circuit_hash {}", circuit_hash);
     }
     
     Ok(())
@@ -428,7 +428,7 @@ fn handle_update_circuit(
         
         // If not created yet, create it now
         if !circuit_info.created {
-            info!("🚀 TRAFFIC DETECTED for circuit {} (hash: {}) - triggering lazy queue creation!", 
+            debug!("🚀 TRAFFIC DETECTED for circuit {} (hash: {}) - triggering lazy queue creation!",
                   circuit_info.comment.as_deref().unwrap_or(&circuit_info.classid), 
                   circuit_hash);
             drop(state_lock); // Release lock before creating queue
@@ -500,8 +500,8 @@ fn handle_create_circuit(
                 }
             }
         }
-        
-        info!("🎉 LAZY QUEUE CREATED: Circuit {} (hash: {}) - HTB class {} with rate {}Mbps/ceil {}Mbps", 
+
+        debug!("🎉 LAZY QUEUE CREATED: Circuit {} (hash: {}) - HTB class {} with rate {}Mbps/ceil {}Mbps",
               log_comment, 
               circuit_hash, 
               classid, 
@@ -887,7 +887,7 @@ fn store_circuit_command(
                     None,
                     params.quantum.unwrap_or(10), // Default r2q
                 )?;
-                info!("📝 Stored circuit HTB class for lazy creation: {} (hash: {})", 
+                debug!("📝 Stored circuit HTB class for lazy creation: {} (hash: {})",
                       params.classid, circuit_hash);
             }
         },
@@ -902,7 +902,7 @@ fn store_circuit_command(
                     circuit_hash,
                     params.sqm_params,
                 )?;
-                info!("📝 Stored circuit qdisc for lazy creation: {}:{} (hash: {})", 
+                debug!("📝 Stored circuit qdisc for lazy creation: {}:{} (hash: {})",
                       params.parent_major, params.parent_minor, circuit_hash);
             }
         },
@@ -1077,13 +1077,13 @@ fn execute_tc_commands_immediate(commands: Vec<String>, force_mode: bool) -> any
     if !stderr.is_empty() {
         warn!("TC stderr output: {}", stderr);
     } else {
-        info!("TC stderr was empty");
+        debug!("TC stderr was empty");
     }
     
     if !stdout.is_empty() {
         info!("TC stdout output: {}", stdout);
     } else {
-        info!("TC stdout was empty");
+        debug!("TC stdout was empty");
     }
     
     if !output.status.success() {
@@ -1098,7 +1098,7 @@ fn execute_tc_commands_immediate(commands: Vec<String>, force_mode: bool) -> any
     }
     
     info!("TC command completed with status: {:?}", output.status);
-    info!("Successfully executed {} TC commands in bulk mode", commands.len());
+    debug!("Successfully executed {} TC commands in bulk mode", commands.len());
     Ok(())
 }
 
@@ -1845,7 +1845,7 @@ fn pruning_thread_loop(state: Arc<Mutex<BakeryState>>, expire_seconds: u64) {
                 // Only prune circuits that have been created and are expired
                 if circuit_info.created && circuit_info.last_updated < expire_threshold {
                     let age_seconds = current_time.saturating_sub(circuit_info.last_updated);
-                    info!("🧹 Found expired circuit {} (hash: {}) - age: {} seconds, last_updated: {}", 
+                    debug!("🧹 Found expired circuit {} (hash: {}) - age: {} seconds, last_updated: {}",
                           circuit_info.comment.as_deref().unwrap_or(&circuit_info.classid),
                           circuit_hash,
                           age_seconds,
@@ -1869,8 +1869,8 @@ fn pruning_thread_loop(state: Arc<Mutex<BakeryState>>, expire_seconds: u64) {
 /// Prune a single expired circuit
 fn prune_circuit(state: &Arc<Mutex<BakeryState>>, circuit_hash: i64, circuit_info: &CircuitQueueInfo) -> anyhow::Result<()> {
     let log_comment = circuit_info.comment.as_deref().unwrap_or(&circuit_info.classid);
-    
-    info!("🧹 PRUNING EXPIRED CIRCUIT: {} (hash: {}) - removing HTB class {} and qdisc", 
+
+    debug!("🧹 PRUNING EXPIRED CIRCUIT: {} (hash: {}) - removing HTB class {} and qdisc",
           log_comment, circuit_hash, circuit_info.classid);
     
     debug!("🧹 Circuit details - interface: {}, parent: {}, classid: {}", 
@@ -1908,7 +1908,7 @@ fn prune_circuit(state: &Arc<Mutex<BakeryState>>, circuit_hash: i64, circuit_inf
             .map_err(|e| anyhow::anyhow!("Failed to lock state: {}", e))?;
         
         if let Some(removed) = state_guard.circuits.remove(&circuit_hash) {
-            info!("🧹 Successfully pruned circuit {} (hash: {}) from state", 
+            debug!("🧹 Successfully pruned circuit {} (hash: {}) from state",
                   removed.comment.as_deref().unwrap_or(&removed.classid),
                   circuit_hash);
         } else {
