@@ -362,7 +362,7 @@ fn handle_add_circuit_htb_class(
                 r2q,
                 sqm_params: Vec::new(), // Will be set by AddCircuitQdisc
                 created: false,
-                last_updated: 0,
+                last_updated: current_timestamp(), // Set initial timestamp to prevent immediate pruning
             };
             state_lock.circuits.insert(circuit_hash, circuit_info);
         }
@@ -1341,12 +1341,15 @@ fn prune_circuit(state: &Arc<Mutex<BakeryState>>, circuit_hash: i64, circuit_inf
     info!("🧹 PRUNING EXPIRED CIRCUIT: {} (hash: {}) - removing HTB class {} and qdisc", 
           log_comment, circuit_hash, circuit_info.classid);
     
+    debug!("🧹 Circuit details - interface: {}, parent: {}, classid: {}", 
+           circuit_info.interface, circuit_info.parent, circuit_info.classid);
+    
     // Delete the qdisc first (child before parent)
     let qdisc_cmd = format!("qdisc del dev {} parent {}", 
                             circuit_info.interface, 
                             circuit_info.classid);
     
-    // Delete the HTB class
+    // Delete the HTB class - need to use parent:classid format
     let class_cmd = format!("class del dev {} classid {}", 
                             circuit_info.interface, 
                             circuit_info.classid);
@@ -1356,10 +1359,12 @@ fn prune_circuit(state: &Arc<Mutex<BakeryState>>, circuit_hash: i64, circuit_inf
     let qdisc_args: Vec<&str> = qdisc_cmd.split_whitespace().collect();
     let class_args: Vec<&str> = class_cmd.split_whitespace().collect();
     
+    debug!("🧹 Executing qdisc delete: {}", qdisc_cmd);
     if let Err(e) = crate::tc_control::execute_tc_command(&qdisc_args) {
-        warn!("Failed to delete qdisc during pruning (may not exist): {}", e);
+        debug!("Failed to delete qdisc during pruning (may not exist): {}", e);
     }
     
+    debug!("🧹 Executing class delete: {}", class_cmd);
     if let Err(e) = crate::tc_control::execute_tc_command(&class_args) {
         error!("Failed to delete HTB class during pruning: {}", e);
         return Err(anyhow::anyhow!("Failed to delete HTB class: {}", e));
