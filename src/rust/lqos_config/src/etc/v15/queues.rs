@@ -34,6 +34,12 @@ pub struct QueueConfig {
     /// Should we invoke the binpacking algorithm to optimize flat
     /// networks?
     pub use_binpacking: bool,
+
+    /// Enable lazy queue creation (only create circuit queues when traffic is detected)
+    pub lazy_queues: Option<bool>,
+
+    /// Expiration time in seconds for unused lazy queues (None = never expire)
+    pub lazy_expire_seconds: Option<u64>,
 }
 
 impl Default for QueueConfig {
@@ -49,6 +55,8 @@ impl Default for QueueConfig {
             sudo: false,
             override_available_queues: None,
             use_binpacking: false,
+            lazy_queues: None, // Default to disabled for backward compatibility
+            lazy_expire_seconds: Some(600), // 10 minutes default
         }
     }
 }
