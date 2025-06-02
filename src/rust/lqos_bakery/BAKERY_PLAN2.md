@@ -9,7 +9,7 @@ The lazy queue system operates on the principle of "create on demand, expire on 
 
 ## 🚀 Current Implementation Status
 
-### ✅ **COMPLETED (Steps 1-5, 7-8)**
+### ✅ **COMPLETED (Steps 1-8)**
 - **Configuration Extension**: Added `lazy_queues` and `lazy_expire_seconds` fields with backward compatibility
 - **Data Structures**: Complete `CircuitQueueInfo`, `StructuralQueueInfo`, and `BakeryState` implementation
 - **Enhanced Commands**: `UpdateCircuit` and `CreateCircuit` commands implemented
@@ -17,6 +17,10 @@ The lazy queue system operates on the principle of "create on demand, expire on 
 - **Throughput Tracker Integration**: Connected bakery to traffic detection (Step 5)
   - UpdateCircuit integrated at line 171 for existing traffic
   - CreateCircuit integrated at line 223 for new circuits
+- **Queue Pruning System**: Background thread for expiration (Step 6)
+  - Spawns automatically when lazy queues enabled and expiration configured
+  - Checks every 30 seconds for expired circuits
+  - Removes expired queues with TC delete commands
 - **Lazy Queue Control Logic**: Proper flag checking and behavior switching
 - **Thread Safety**: Single master lock, duplicate prevention, short critical sections
 - **ExecuteTCCommands Bulk Handler**: Modified to support lazy queues with TC command parsing
@@ -25,8 +29,7 @@ The lazy queue system operates on the principle of "create on demand, expire on 
 ### 🔄 **IN PROGRESS** 
 - **Thread Safety**: Update batching and pruning coordination (basic safety implemented)
 
-### ⏳ **TODO (Steps 6, 9-12)**
-- **Queue Pruning System**: Background thread for expiration (Step 6)  
+### ⏳ **TODO (Steps 9-12)**
 - **Comprehensive Testing**: Full automated test suite (Step 9)
 - **Web UI Configuration**: HTML/JavaScript form integration (Step 10)
 - **Manual Testing**: System-level validation (Step 11)
@@ -125,12 +128,12 @@ The lazy queue system operates on the principle of "create on demand, expire on 
   }
   ```
 
-### 6. Queue Pruning System
+### 6. Queue Pruning System ✅
 **File:** `rust/lqos_bakery/src/lib.rs` (new background thread)
-- [ ] Create separate pruning thread spawned by bakery
-- [ ] Read `lazy_expire_seconds` from config
-- [ ] If expiration disabled (None), don't start pruning thread
-- [ ] Periodic check (every 30 seconds) for circuits older than threshold:
+- [x] Create separate pruning thread spawned by bakery
+- [x] Read `lazy_expire_seconds` from config
+- [x] If expiration disabled (None), don't start pruning thread
+- [x] Periodic check (every 30 seconds) for circuits older than threshold:
   - Compare `last_updated` against current time
   - Remove expired queues using TC delete commands
   - Remove from circuit data structure
@@ -169,13 +172,13 @@ The lazy queue system operates on the principle of "create on demand, expire on 
   }
   ```
 - [ ] **Update Batching**: Collect multiple UpdateCircuit calls per cycle (TODO: Not yet implemented)
-- [ ] **Pruning Coordination**: Ensure pruning thread cannot remove while creating (TODO: Pruning not implemented yet)
+- [x] **Pruning Coordination**: Ensure pruning thread cannot remove while creating (uses same mutex lock)
 
 #### 8.3 Synchronization Patterns 🔄 (Partial)
 - [x] **Basic Command Processing**: Each command handled individually with proper locking
 - [ ] **Batched Processing**: Batch commands per cycle (TODO: Future optimization)
 - [x] **Graceful Error Handling**: Handle lock poisoning with `map_err()` patterns
-- [ ] **Pruning Thread Coordination**: (TODO: Pruning thread not implemented yet)
+- [x] **Pruning Thread Coordination**: Uses single master lock to prevent races
 
 ### 9. Automated Testing Implementation
 **Files:** `rust/lqos_bakery/src/lib.rs` + `tests/` directory

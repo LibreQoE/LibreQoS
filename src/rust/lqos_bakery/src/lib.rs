@@ -225,6 +225,9 @@ fn bakery(rx: Receiver<BakeryCommands>) {
         }
     }
     
+    // Spawn pruning thread if lazy queues are enabled and expiration is configured
+    let _pruning_handle = spawn_pruning_thread(Arc::clone(&state));
+    
     while let Ok(command) = rx.recv() {
         info!("🍞 Bakery received command: {:?}", command);
         if let Err(e) = match &command {
@@ -1231,4 +1234,150 @@ mod tests {
         // Should be reasonable Unix timestamp (after year 2020)
         assert!(ts1 > 1_600_000_000);
     }
+}
+
+/// Spawn a background thread for pruning expired lazy queues
+/// Returns None if lazy queues or expiration is disabled
+fn spawn_pruning_thread(state: Arc<Mutex<BakeryState>>) -> Option<std::thread::JoinHandle<()>> {
+    // Check if lazy queues and expiration are enabled
+    let config = match lqos_config::load_config() {
+        Ok(c) => c,
+        Err(e) => {
+            warn!("Failed to load config for pruning thread: {}", e);
+            return None;
+        }
+    };
+    
+    let lazy_enabled = config.queues.lazy_queues.unwrap_or(false);
+    let expire_seconds = config.queues.lazy_expire_seconds;
+    
+    if !lazy_enabled {
+        info!("Lazy queues disabled, not starting pruning thread");
+        return None;
+    }
+    
+    let Some(expire_seconds) = expire_seconds else {
+        info!("Lazy queue expiration disabled (lazy_expire_seconds = None), not starting pruning thread");
+        return None;
+    };
+    
+    if expire_seconds == 0 {
+        warn!("Invalid lazy_expire_seconds = 0, not starting pruning thread");
+        return None;
+    }
+    
+    info!("🧹 Starting lazy queue pruning thread (expiration: {} seconds)", expire_seconds);
+    
+    // Spawn the pruning thread
+    let handle = std::thread::Builder::new()
+        .name("bakery_pruner".to_string())
+        .spawn(move || {
+            pruning_thread_loop(state, expire_seconds);
+        })
+        .map_err(|e| {
+            error!("Failed to spawn pruning thread: {}", e);
+        })
+        .ok()?;
+    
+    Some(handle)
+}
+
+/// Main loop for the pruning thread
+fn pruning_thread_loop(state: Arc<Mutex<BakeryState>>, expire_seconds: u64) {
+    info!("🧹 Pruning thread started, checking every 30 seconds for circuits older than {} seconds", expire_seconds);
+    
+    loop {
+        // Sleep for 30 seconds between checks
+        std::thread::sleep(std::time::Duration::from_secs(30));
+        
+        // Check for expired circuits
+        let current_time = current_timestamp();
+        let expire_threshold = current_time.saturating_sub(expire_seconds);
+        
+        debug!("🧹 Pruning check: current_time={}, threshold={}", current_time, expire_threshold);
+        
+        // Find expired circuits to prune
+        let mut circuits_to_prune = Vec::new();
+        
+        {
+            // Lock state to check for expired circuits
+            let state_guard = match state.lock() {
+                Ok(guard) => guard,
+                Err(e) => {
+                    error!("Failed to lock state in pruning thread: {}", e);
+                    continue;
+                }
+            };
+            
+            for (circuit_hash, circuit_info) in &state_guard.circuits {
+                // Only prune circuits that have been created and are expired
+                if circuit_info.created && circuit_info.last_updated < expire_threshold {
+                    let age_seconds = current_time.saturating_sub(circuit_info.last_updated);
+                    info!("🧹 Found expired circuit {} (hash: {}) - age: {} seconds, last_updated: {}", 
+                          circuit_info.comment.as_deref().unwrap_or(&circuit_info.classid),
+                          circuit_hash,
+                          age_seconds,
+                          circuit_info.last_updated);
+                    circuits_to_prune.push((*circuit_hash, circuit_info.clone()));
+                }
+            }
+        } // Release lock before doing TC operations
+        
+        // Prune expired circuits
+        for (circuit_hash, circuit_info) in circuits_to_prune {
+            if let Err(e) = prune_circuit(&state, circuit_hash, &circuit_info) {
+                error!("Failed to prune circuit {} (hash: {}): {}", 
+                       circuit_info.comment.as_deref().unwrap_or(&circuit_info.classid),
+                       circuit_hash, e);
+            }
+        }
+    }
+}
+
+/// Prune a single expired circuit
+fn prune_circuit(state: &Arc<Mutex<BakeryState>>, circuit_hash: i64, circuit_info: &CircuitQueueInfo) -> anyhow::Result<()> {
+    let log_comment = circuit_info.comment.as_deref().unwrap_or(&circuit_info.classid);
+    
+    info!("🧹 PRUNING EXPIRED CIRCUIT: {} (hash: {}) - removing HTB class {} and qdisc", 
+          log_comment, circuit_hash, circuit_info.classid);
+    
+    // Delete the qdisc first (child before parent)
+    let qdisc_cmd = format!("qdisc del dev {} parent {}", 
+                            circuit_info.interface, 
+                            circuit_info.classid);
+    
+    // Delete the HTB class
+    let class_cmd = format!("class del dev {} classid {}", 
+                            circuit_info.interface, 
+                            circuit_info.classid);
+    
+    // Execute TC commands to remove the queue
+    // Split commands into args for execute_tc_command
+    let qdisc_args: Vec<&str> = qdisc_cmd.split_whitespace().collect();
+    let class_args: Vec<&str> = class_cmd.split_whitespace().collect();
+    
+    if let Err(e) = crate::tc_control::execute_tc_command(&qdisc_args) {
+        warn!("Failed to delete qdisc during pruning (may not exist): {}", e);
+    }
+    
+    if let Err(e) = crate::tc_control::execute_tc_command(&class_args) {
+        error!("Failed to delete HTB class during pruning: {}", e);
+        return Err(anyhow::anyhow!("Failed to delete HTB class: {}", e));
+    }
+    
+    // Remove from state
+    {
+        let mut state_guard = state.lock()
+            .map_err(|e| anyhow::anyhow!("Failed to lock state: {}", e))?;
+        
+        if let Some(removed) = state_guard.circuits.remove(&circuit_hash) {
+            info!("🧹 Successfully pruned circuit {} (hash: {}) from state", 
+                  removed.comment.as_deref().unwrap_or(&removed.classid),
+                  circuit_hash);
+        } else {
+            warn!("Circuit hash {} not found in state during pruning", circuit_hash);
+        }
+    }
+    
+    Ok(())
 }
