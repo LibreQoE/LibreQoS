@@ -105,6 +105,14 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(client_bandwidth_multiplier))?;
     m.add_wrapped(wrap_pyfunction!(calculate_hash))?;
 
+    // Bakery TC Command Functions
+    m.add_wrapped(wrap_pyfunction!(bakery_clear_prior_settings))?;
+    m.add_wrapped(wrap_pyfunction!(bakery_mq_setup))?;
+    m.add_wrapped(wrap_pyfunction!(bakery_add_structural_htb_class))?;
+    m.add_wrapped(wrap_pyfunction!(bakery_add_circuit_htb_class))?;
+    m.add_wrapped(wrap_pyfunction!(bakery_add_circuit_qdisc))?;
+    m.add_wrapped(wrap_pyfunction!(bakery_execute_tc_commands))?;
+
     Ok(())
 }
 
@@ -824,4 +832,147 @@ fn calculate_hash() -> PyResult<i64> {
     let hash = hash_to_i64(&combined);
 
     Ok(hash)
+}
+
+// Bakery TC Command Functions
+
+/// Clear prior TC settings (deletes root qdiscs if MQ is installed)
+#[pyfunction]
+fn bakery_clear_prior_settings() -> PyResult<bool> {
+    if let Ok(reply) = run_query(vec![BusRequest::BakeryClearPriorSettings]) {
+        for resp in reply.iter() {
+            if let BusResponse::Ack = resp {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Set up MQ (Multi-Queue) and HTB hierarchy with default classes
+#[pyfunction]
+fn bakery_mq_setup() -> PyResult<bool> {
+    if let Ok(reply) = run_query(vec![BusRequest::BakeryMqSetup]) {
+        for resp in reply.iter() {
+            if let BusResponse::Ack = resp {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Add an HTB class for structural nodes (sites/APs from network.json)
+/// These nodes only get HTB classes, no qdiscs.
+#[pyfunction]
+fn bakery_add_structural_htb_class(
+    interface: String,
+    parent: String,
+    classid: String,
+    rate_mbps: f64,
+    ceil_mbps: f64,
+    site_hash: i64,
+    r2q: u64,
+) -> PyResult<bool> {
+    let request = BusRequest::BakeryAddStructuralHTBClass {
+        interface,
+        parent,
+        classid,
+        rate_mbps,
+        ceil_mbps,
+        site_hash,
+        r2q,
+    };
+
+    if let Ok(reply) = run_query(vec![request]) {
+        for resp in reply.iter() {
+            if let BusResponse::Ack = resp {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Add an HTB class for circuits (customer shapers from ShapedDevices.csv)
+/// These are leaf nodes that will also get qdiscs.
+#[pyfunction]
+#[pyo3(signature = (interface, parent, classid, rate_mbps, ceil_mbps, circuit_hash, comment=None, r2q=10))]
+fn bakery_add_circuit_htb_class(
+    interface: String,
+    parent: String,
+    classid: String,
+    rate_mbps: f64,
+    ceil_mbps: f64,
+    circuit_hash: i64,
+    comment: Option<String>,
+    r2q: u64,
+) -> PyResult<bool> {
+    let request = BusRequest::BakeryAddCircuitHTBClass {
+        interface,
+        parent,
+        classid,
+        rate_mbps,
+        ceil_mbps,
+        circuit_hash,
+        comment,
+        r2q,
+    };
+
+    if let Ok(reply) = run_query(vec![request]) {
+        for resp in reply.iter() {
+            if let BusResponse::Ack = resp {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Add a qdisc (CAKE/fq_codel) for a circuit
+#[pyfunction]
+fn bakery_add_circuit_qdisc(
+    interface: String,
+    parent_major: u32,
+    parent_minor: u32,
+    circuit_hash: i64,
+    sqm_params: Vec<String>,
+) -> PyResult<bool> {
+    let request = BusRequest::BakeryAddCircuitQdisc {
+        interface,
+        parent_major,
+        parent_minor,
+        circuit_hash,
+        sqm_params,
+    };
+
+    if let Ok(reply) = run_query(vec![request]) {
+        for resp in reply.iter() {
+            if let BusResponse::Ack = resp {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Execute TC commands in bulk mode using `tc -b`
+#[pyfunction]
+fn bakery_execute_tc_commands(
+    commands: Vec<String>,
+    force_mode: bool,
+) -> PyResult<bool> {
+    let request = BusRequest::BakeryExecuteTCCommands {
+        commands,
+        force_mode,
+    };
+
+    if let Ok(reply) = run_query(vec![request]) {
+        for resp in reply.iter() {
+            if let BusResponse::Ack = resp {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }

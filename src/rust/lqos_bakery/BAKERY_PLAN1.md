@@ -157,7 +157,7 @@ Phase 1 goal: Mirror the existing LibreQoS.py TC (Traffic Control) functionality
 4. **Bus Communication System Implementation** ✅
    - [x] Add corresponding BusRequest variants for Python->Rust communication  
    - [x] Add BusResponse variants if needed (most will use Ack)
-   - [ ] Create Python bindings in lqos_python for bakery calls
+   - [x] Create Python bindings in lqos_python for bakery calls
 5. Integration testing comparing Python vs Rust TC output
 6. Documentation for using the Bakery in production
 7. Actual implementation of Python->Rust calls (Phase 1 deployment)
