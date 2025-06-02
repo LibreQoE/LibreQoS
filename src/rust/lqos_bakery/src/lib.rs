@@ -681,28 +681,290 @@ fn mq_setup() -> anyhow::Result<()> {
 /// # Returns  
 /// * `Result<(), anyhow::Error>` - Returns Ok if successful, or an error if execution fails
 fn execute_tc_commands_bulk(
-    _state: &Arc<Mutex<BakeryState>>,
+    state: &Arc<Mutex<BakeryState>>,
     commands: Vec<String>, 
     force_mode: bool
 ) -> anyhow::Result<()> {
     info!("🍞 Processing {} TC commands in bulk mode", commands.len());
     
-    // CRITICAL ISSUE IDENTIFIED: Cannot determine circuit_hash from bulk TC commands
-    // because circuit_hash is derived from circuit ID in ShapedDevices.csv, not from classid.
-    // Bulk TC commands only contain classids, not the original circuit IDs.
-    //
-    // For lazy queues to work, we need the individual BakeryCommands (AddCircuitHTBClass, etc.)
-    // which already have the correct circuit_hash passed from LibreQoS.py.
-    //
-    // Therefore: Always execute bulk commands immediately, regardless of lazy_queues setting.
-    // Individual circuit commands will still go through lazy queue logic via the proper handlers.
-    
-    execute_tc_commands_immediate(commands, force_mode)
+    if is_lazy_queues_enabled() {
+        // NEW APPROACH: Parse commands and separate structural from circuit
+        // LibreQoS.py needs to include circuit_hash in comments for this to work
+        parse_and_route_tc_commands(state, commands, force_mode)
+    } else {
+        // Execute all commands immediately (Phase 1 behavior)
+        execute_tc_commands_immediate(commands, force_mode)
+    }
 }
 
-// REMOVED: parse_and_route_tc_commands function
-// This approach was fundamentally flawed because we cannot determine 
-// circuit_hash from TC commands alone.
+/// Parse TC commands and route circuit commands through lazy queue logic
+fn parse_and_route_tc_commands(
+    state: &Arc<Mutex<BakeryState>>,
+    commands: Vec<String>,
+    force_mode: bool,
+) -> anyhow::Result<()> {
+    let mut structural_commands = Vec::new();
+    let mut deferred_count = 0;
+    
+    // First pass: Execute all structural commands and defer circuit commands
+    for command in &commands {
+        if let Some((is_circuit, circuit_hash)) = parse_tc_command_type(command) {
+            if is_circuit {
+                // This is a circuit command - defer for lazy creation
+                if let Some(hash) = circuit_hash {
+                    store_circuit_command(state, command, hash)?;
+                    deferred_count += 1;
+                } else {
+                    warn!("Circuit command without hash, executing immediately: {}", command);
+                    structural_commands.push(command.clone());
+                }
+            } else {
+                // This is a structural command - execute immediately
+                structural_commands.push(command.clone());
+            }
+        } else {
+            // Unknown command type - execute immediately for safety
+            structural_commands.push(command.clone());
+        }
+    }
+    
+    // Execute all structural commands first to build the hierarchy
+    if !structural_commands.is_empty() {
+        info!("⚡ Executing {} structural/other commands immediately", structural_commands.len());
+        execute_tc_commands_immediate(structural_commands, force_mode)?;
+    }
+    
+    info!("✅ Bulk command processing complete: {} circuit commands deferred for lazy creation", 
+          deferred_count);
+    Ok(())
+}
+
+/// Determine if a TC command is for a circuit (vs structural) and extract circuit_hash if present
+fn parse_tc_command_type(command: &str) -> Option<(bool, Option<i64>)> {
+    // Look for circuit_hash in comment: "# circuit_hash: 1234567890"
+    if let Some(hash_pos) = command.find("# circuit_hash:") {
+        let hash_str = &command[hash_pos + 15..];
+        if let Some(end_pos) = hash_str.find(' ').or_else(|| Some(hash_str.len())) {
+            if let Ok(hash) = hash_str[..end_pos].trim().parse::<i64>() {
+                return Some((true, Some(hash)));
+            }
+        }
+    }
+    
+    // Check if this looks like a circuit command based on structure
+    let parts: Vec<&str> = command.split_whitespace().collect();
+    if parts.len() >= 2 {
+        match (parts[0], parts[1]) {
+            ("class", "add") => {
+                // Check for rate/ceil to distinguish circuit from structural
+                if command.contains(" rate ") && command.contains(" ceil ") {
+                    // Look at the rate to determine if it's likely a circuit
+                    if let Some(rate_mbps) = extract_rate_mbps(command) {
+                        // Heuristic: Circuit classes typically have rates < 1000 Mbps
+                        return Some((rate_mbps < 1000.0, None));
+                    }
+                }
+            },
+            ("qdisc", "add") => {
+                // CAKE/fq_codel qdiscs are typically for circuits
+                if command.contains(" cake ") || command.contains(" fq_codel ") {
+                    return Some((true, None));
+                }
+            },
+            _ => {}
+        }
+    }
+    
+    // Default: treat as structural
+    Some((false, None))
+}
+
+/// Extract rate in Mbps from a TC command
+fn extract_rate_mbps(command: &str) -> Option<f64> {
+    if let Some(rate_pos) = command.find(" rate ") {
+        let rate_str = &command[rate_pos + 6..];
+        if let Some(space_pos) = rate_str.find(' ') {
+            let rate_value = &rate_str[..space_pos];
+            return parse_tc_rate_to_mbps(rate_value);
+        }
+    }
+    None
+}
+
+/// Parse TC rate strings like "500kbit", "45mbit", "1gbit" to Mbps
+fn parse_tc_rate_to_mbps(rate_str: &str) -> Option<f64> {
+    if rate_str.ends_with("kbit") {
+        let value: f64 = rate_str.trim_end_matches("kbit").parse().ok()?;
+        Some(value / 1000.0)
+    } else if rate_str.ends_with("mbit") {
+        let value: f64 = rate_str.trim_end_matches("mbit").parse().ok()?;
+        Some(value)
+    } else if rate_str.ends_with("gbit") {
+        let value: f64 = rate_str.trim_end_matches("gbit").parse().ok()?;
+        Some(value * 1000.0)
+    } else {
+        None
+    }
+}
+
+/// Store a circuit command for later lazy execution
+fn store_circuit_command(
+    state: &Arc<Mutex<BakeryState>>,
+    command: &str,
+    circuit_hash: i64,
+) -> anyhow::Result<()> {
+    // Parse the command to extract parameters
+    let parts: Vec<&str> = command.split_whitespace().collect();
+    
+    match (parts.get(0), parts.get(1)) {
+        (Some(&"class"), Some(&"add")) => {
+            // Parse HTB class parameters
+            if let Some(params) = parse_htb_class_params(&parts) {
+                handle_add_circuit_htb_class(
+                    state,
+                    &params.interface,
+                    &params.parent,
+                    &params.classid,
+                    params.rate_mbps,
+                    params.ceil_mbps,
+                    circuit_hash,
+                    None,
+                    params.quantum.unwrap_or(10), // Default r2q
+                )?;
+                info!("📝 Stored circuit HTB class for lazy creation: {} (hash: {})", 
+                      params.classid, circuit_hash);
+            }
+        },
+        (Some(&"qdisc"), Some(&"add")) => {
+            // Parse qdisc parameters
+            if let Some(params) = parse_qdisc_params(&parts) {
+                handle_add_circuit_qdisc(
+                    state,
+                    &params.interface,
+                    params.parent_major,
+                    params.parent_minor,
+                    circuit_hash,
+                    params.sqm_params,
+                )?;
+                info!("📝 Stored circuit qdisc for lazy creation: {}:{} (hash: {})", 
+                      params.parent_major, params.parent_minor, circuit_hash);
+            }
+        },
+        _ => {
+            warn!("Unknown circuit command type: {}", command);
+        }
+    }
+    
+    Ok(())
+}
+
+struct HtbClassParams {
+    interface: String,
+    parent: String,
+    classid: String,
+    rate_mbps: f64,
+    ceil_mbps: f64,
+    quantum: Option<u64>,
+}
+
+fn parse_htb_class_params(parts: &[&str]) -> Option<HtbClassParams> {
+    let mut interface = None;
+    let mut parent = None;
+    let mut classid = None;
+    let mut rate = None;
+    let mut ceil = None;
+    let mut quantum = None;
+    
+    let mut i = 0;
+    while i < parts.len() - 1 {
+        match parts[i] {
+            "dev" => interface = Some(parts[i + 1].to_string()),
+            "parent" => parent = Some(parts[i + 1].to_string()),
+            "classid" => classid = Some(parts[i + 1].to_string()),
+            "rate" => rate = parse_tc_rate_to_mbps(parts[i + 1]),
+            "ceil" => ceil = parse_tc_rate_to_mbps(parts[i + 1]),
+            "quantum" => quantum = parts[i + 1].parse().ok(),
+            _ => {}
+        }
+        i += 1;
+    }
+    
+    Some(HtbClassParams {
+        interface: interface?,
+        parent: parent?,
+        classid: classid?,
+        rate_mbps: rate?,
+        ceil_mbps: ceil?,
+        quantum,
+    })
+}
+
+struct QdiscParams {
+    interface: String,
+    parent_major: u32,
+    parent_minor: u32,
+    sqm_params: Vec<String>,
+}
+
+fn parse_qdisc_params(parts: &[&str]) -> Option<QdiscParams> {
+    let mut interface = None;
+    let mut parent = None;
+    let mut sqm_start = None;
+    
+    let mut i = 0;
+    while i < parts.len() - 1 {
+        match parts[i] {
+            "dev" => interface = Some(parts[i + 1].to_string()),
+            "parent" => parent = Some(parts[i + 1]),
+            "cake" | "fq_codel" => {
+                sqm_start = Some(i);
+                break;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    
+    let parent_str = parent?;
+    let (parent_major, parent_minor) = parse_tc_handle(parent_str)?;
+    
+    let sqm_params = if let Some(start) = sqm_start {
+        parts[start..].iter().map(|s| s.to_string()).collect()
+    } else {
+        Vec::new()
+    };
+    
+    Some(QdiscParams {
+        interface: interface?,
+        parent_major,
+        parent_minor,
+        sqm_params,
+    })
+}
+
+/// Parse TC handle strings like "1:100" or "0x1:0x64" to (major, minor)
+fn parse_tc_handle(handle: &str) -> Option<(u32, u32)> {
+    if let Some(colon_pos) = handle.find(':') {
+        let major_str = &handle[..colon_pos];
+        let minor_str = &handle[colon_pos + 1..];
+        
+        let major = if major_str.starts_with("0x") {
+            u32::from_str_radix(&major_str[2..], 16).ok()?
+        } else {
+            major_str.parse().ok()?
+        };
+        
+        let minor = if minor_str.starts_with("0x") {
+            u32::from_str_radix(&minor_str[2..], 16).ok()?
+        } else {
+            minor_str.parse().ok()?
+        };
+        
+        Some((major, minor))
+    } else {
+        None
+    }
+}
 
 /// Execute TC commands immediately (Phase 1 behavior)
 fn execute_tc_commands_immediate(commands: Vec<String>, force_mode: bool) -> anyhow::Result<()> {
