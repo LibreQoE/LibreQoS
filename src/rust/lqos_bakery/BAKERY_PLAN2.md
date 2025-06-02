@@ -9,19 +9,22 @@ The lazy queue system operates on the principle of "create on demand, expire on 
 
 ## 🚀 Current Implementation Status
 
-### ✅ **COMPLETED (Steps 1-4, 7-8)**
+### ✅ **COMPLETED (Steps 1-5, 7-8)**
 - **Configuration Extension**: Added `lazy_queues` and `lazy_expire_seconds` fields with backward compatibility
 - **Data Structures**: Complete `CircuitQueueInfo`, `StructuralQueueInfo`, and `BakeryState` implementation
 - **Enhanced Commands**: `UpdateCircuit` and `CreateCircuit` commands implemented
 - **Queue State Management**: Full lazy creation logic (Phase A/B/C) with backward compatibility
+- **Throughput Tracker Integration**: Connected bakery to traffic detection (Step 5)
+  - UpdateCircuit integrated at line 171 for existing traffic
+  - CreateCircuit integrated at line 223 for new circuits
 - **Lazy Queue Control Logic**: Proper flag checking and behavior switching
 - **Thread Safety**: Single master lock, duplicate prevention, short critical sections
+- **ExecuteTCCommands Bulk Handler**: Modified to support lazy queues with TC command parsing
 
 ### 🔄 **IN PROGRESS** 
 - **Thread Safety**: Update batching and pruning coordination (basic safety implemented)
 
-### ⏳ **TODO (Steps 5-6, 9-12)**
-- **Throughput Tracker Integration**: Connect bakery to traffic detection (Step 5)
+### ⏳ **TODO (Steps 6, 9-12)**
 - **Queue Pruning System**: Background thread for expiration (Step 6)  
 - **Comprehensive Testing**: Full automated test suite (Step 9)
 - **Web UI Configuration**: HTML/JavaScript form integration (Step 10)
@@ -31,6 +34,9 @@ The lazy queue system operates on the principle of "create on demand, expire on 
 ### 🧪 **MANUAL TESTING RESULTS**
 - ✅ lqosd compiles successfully
 - ✅ lqosd loads without errors  
+- ✅ Backward compatibility with lazy_queues=false fixed (force_mode logic corrected)
+- ✅ TC bulk command execution working correctly
+- ✅ Queues created successfully with both lazy and non-lazy modes
 - ⏳ Web UI configuration not yet available (expected - Step 10)
 
 ## ⚠️ Critical Pitfalls to Avoid
@@ -93,21 +99,25 @@ The lazy queue system operates on the principle of "create on demand, expire on 
   - When `UpdateCircuit` received: update `last_updated` timestamp, create if needed
 - [x] **Backward Compatibility**: When `lazy_queues = false`, create circuit queues immediately (Phase 1 behavior)
 
-### 5. Throughput Tracker Integration
+### 5. Throughput Tracker Integration ✅
 **File:** `rust/lqosd/src/throughput_tracker/tracking_data.rs`
-- [ ] Clone bakery sender and pass to tracking functions (like other channels)
-- [ ] **Line 165 integration**: When packets change (existing traffic):
+- [x] Clone bakery sender and pass to tracking functions (like other channels)
+- [x] **Line 171 integration**: When packets change (existing traffic):
   ```rust
   // Call to Bakery Update Goes Here.
-  if let Some(circuit_hash) = entry.circuit_hash {
-      let _ = bakery_sender.send(BakeryCommands::UpdateCircuit { circuit_hash });
+  if let Some(bakery_sender) = &bakery_sender {
+      let _ = bakery_sender.send(BakeryCommands::UpdateCircuit { 
+          circuit_hash 
+      }).map_err(|e| warn!("Failed to send UpdateCircuit to bakery: {}", e));
   }
   ```
-- [ ] **Line 213 integration**: When new circuit detected:
+- [x] **Line 223 integration**: When new circuit detected:
   ```rust
   // Call to Bakery Queue Creation Goes Here.
-  if let Some(circuit_hash) = entry.circuit_hash {
-      let _ = bakery_sender.send(BakeryCommands::CreateCircuit { circuit_hash });
+  if let Some(bakery_sender) = &bakery_sender {
+      let _ = bakery_sender.send(BakeryCommands::CreateCircuit { 
+          circuit_hash 
+      }).map_err(|e| warn!("Failed to send CreateCircuit to bakery: {}", e));
   }
   ```
 
@@ -461,3 +471,44 @@ Based on analysis of existing queue configuration patterns:
 - Adaptive expiration times based on traffic patterns
 - Queue statistics and analytics
 - Hot queue migration for load balancing
+
+## 📚 Lessons Learned & Critical Fixes
+
+### 1. ExecuteTCCommands Bulk Handler Implementation
+**Problem**: LibreQoS.py uses bulk TC commands which bypassed lazy queue logic entirely.
+**Solution**: Implemented TC command parsing to:
+- Identify circuit vs structural commands
+- Route circuit commands through lazy handlers when lazy_queues enabled
+- Execute structural commands immediately
+
+### 2. Circuit Hash Integrity
+**Critical Issue**: Circuit hash must ALWAYS be derived from circuit ID in ShapedDevices.csv, NEVER calculated from classid or other sources.
+**Solution**: 
+- Removed dangerous `generate_circuit_hash_from_classid()` function
+- Added tests to ensure circuit_hash only comes from:
+  - BakeryCommands (passed by LibreQoS.py)
+  - TC command comments (parsed, not calculated)
+
+### 3. Force Mode Logic Fix
+**Problem**: TC bulk execution failed with "Operation not permitted" when lazy_queues=false
+**Root Cause**: Force mode logic was inverted: `force_mode = logging.DEBUG > logging.root.level`
+**Fix**: Corrected to `force_mode = logging.root.level > logging.DEBUG`
+**Impact**: This ensures `-f` flag is used for TC bulk execution, allowing queues to be created even when some already exist
+
+### 4. Backward Compatibility Testing
+**Key Insight**: Must test both scenarios:
+- Fresh boot (no queues exist) - uses `qdisc replace` + `add` commands
+- Reload (queues exist) - relies on `-f` flag to ignore duplicate errors
+**Verification**: Both scenarios now work correctly with the force mode fix
+
+### 5. TC Command Format for Bulk Files
+**Important**: TC bulk files should NOT include the `/sbin/tc` prefix
+**Correct**: `qdisc add dev eth0...`
+**Incorrect**: `/sbin/tc qdisc add dev eth0...`
+
+### 6. Integration Challenges
+**Finding**: Integrating with existing Python code requires careful attention to:
+- Command format differences
+- Execution permissions
+- Error handling and reporting
+- Maintaining exact backward compatibility

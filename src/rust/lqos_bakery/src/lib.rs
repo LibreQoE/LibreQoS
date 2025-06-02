@@ -36,7 +36,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use crossbeam_channel::Receiver;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 pub (crate) const CHANNEL_CAPACITY: usize = 1024;
 
@@ -986,7 +986,7 @@ fn execute_tc_commands_immediate(commands: Vec<String>, force_mode: bool) -> any
     use std::fs::File;
     use std::io::Write;
     
-    const TC_BULK_FILE: &str = "tc-bulk-rust.txt";
+    const TC_BULK_FILE: &str = "/tmp/tc-bulk-rust.txt";
     
     // Write all commands to a temporary file
     {
@@ -995,6 +995,7 @@ fn execute_tc_commands_immediate(commands: Vec<String>, force_mode: bool) -> any
             writeln!(file, "{}", command)?;
         }
     }
+    info!("Wrote {} TC commands to {}", commands.len(), TC_BULK_FILE);
     
     // Execute using tc -b (bulk mode)
     let mut tc_command = std::process::Command::new("/sbin/tc");
@@ -1010,13 +1011,30 @@ fn execute_tc_commands_immediate(commands: Vec<String>, force_mode: bool) -> any
     // Clean up the temporary file
     let _ = std::fs::remove_file(TC_BULK_FILE);
     
+    // Always log the output for debugging
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    
+    if !stderr.is_empty() {
+        warn!("TC stderr output: {}", stderr);
+    }
+    
+    if !stdout.is_empty() {
+        debug!("TC stdout output: {}", stdout);
+    }
+    
     if !output.status.success() {
+        error!("TC bulk command failed with status: {:?}", output.status);
+        error!("TC stderr: {}", stderr);
+        error!("TC stdout: {}", stdout);
         return Err(anyhow::anyhow!(
-            "TC bulk command failed: {}",
-            String::from_utf8_lossy(&output.stderr)
+            "TC bulk command failed with status {:?}: {}",
+            output.status,
+            stderr
         ));
     }
     
+    info!("TC command completed with status: {:?}", output.status);
     info!("Successfully executed {} TC commands in bulk mode", commands.len());
     Ok(())
 }

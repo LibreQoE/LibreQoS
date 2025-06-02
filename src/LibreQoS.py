@@ -1221,7 +1221,7 @@ def refreshShapers():
 		# This would be a single bulk operation for Phase 1
 		
 		# Call bakery to execute all TC commands in bulk
-		force_mode = logging.DEBUG > logging.root.level  # Use force mode unless in debug
+		force_mode = logging.root.level > logging.DEBUG  # Use force mode unless in debug
 		bulk_success = bakery_execute_tc_commands(
 			commands=linuxTCcommands,
 			force_mode=force_mode
