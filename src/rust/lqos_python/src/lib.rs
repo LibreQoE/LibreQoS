@@ -1,7 +1,7 @@
 #![allow(non_local_definitions)] // Temporary: rewrite required for much of this, for newer PyO3.
 #![allow(unsafe_op_in_unsafe_fn)]
 use lqos_bus::{BlackboardSystem, BusRequest, BusResponse, TcHandle};
-use lqos_utils::{hash_to_i64, hex_string::read_hex_string};
+use lqos_utils::{hex_string::read_hex_string};
 use nix::libc::getpid;
 use pyo3::{
     PyResult, Python, exceptions::PyOSError, pyclass, pyfunction, pymethods, pymodule,
@@ -832,7 +832,7 @@ fn calculate_hash() -> PyResult<i64> {
         return Ok(0);
     };
     let combined = format!("{}\n{}", nj_as_string, sd_as_string);
-    let hash = hash_to_i64(&combined);
+    let hash = lqos_utils::hash_to_i64(&combined);
 
     Ok(hash)
 }
