@@ -568,7 +568,7 @@ fn parse_and_route_tc_commands(
                     store_circuit_command(state, command, hash)?;
                     deferred_count += 1;
                 } else {
-                    warn!("Circuit command without hash, executing immediately: {}", command);
+                    debug!("Circuit command without hash, executing immediately: {}", command);
                     structural_commands.push(command.clone());
                 }
             } else {
@@ -799,8 +799,15 @@ fn parse_qdisc_params(parts: &[&str]) -> Option<QdiscParams> {
             .map(|s| s.to_string())
             .collect()
     } else {
+        // No qdisc type found - this would result in an incomplete command
+        warn!("No qdisc type (cake/fq_codel) found in command: {:?}", parts.join(" "));
         Vec::new()
     };
+    
+    // Additional validation - warn if sqm_params is empty
+    if sqm_params.is_empty() {
+        warn!("Empty SQM parameters parsed from qdisc command: {:?}", parts.join(" "));
+    }
     
     Some(QdiscParams {
         interface: interface?,
@@ -866,7 +873,7 @@ fn execute_tc_commands_immediate(commands: Vec<String>, force_mode: bool) -> any
     
     // Clean up the temporary file - DISABLED FOR DEBUGGING
     // let _ = std::fs::remove_file(TC_BULK_FILE);
-    warn!("TC bulk file preserved at {} for debugging", TC_BULK_FILE);
+    debug!("TC bulk file preserved at {} for debugging", TC_BULK_FILE);
     
     // Always log the output for debugging
     let stdout = String::from_utf8_lossy(&output.stdout);

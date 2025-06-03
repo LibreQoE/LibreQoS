@@ -1104,6 +1104,10 @@ def refreshShapers():
 							# if not down_qdisc_success:
 							# 	logging.warning(f"Bakery failed to add circuit qdisc for {circuit['circuitID']} (download)")
 							
+							# Ensure useSqm is not empty to avoid incomplete TC commands
+							if not useSqm or not useSqm.strip():
+								logging.error(f"Empty SQM string for circuit {circuit['circuitID']} - defaulting to 'cake diffserv4'")
+								useSqm = "cake diffserv4"
 							command = 'qdisc add dev ' + interface_a() + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm + tcComment
 							linuxTCcommands.append(command)
 						# Same for upload direction
@@ -1145,6 +1149,10 @@ def refreshShapers():
 							# if not up_qdisc_success:
 							# 	logging.warning(f"Bakery failed to add circuit qdisc for {circuit['circuitID']} (upload)")
 							
+							# Ensure useSqm is not empty to avoid incomplete TC commands
+							if not useSqm or not useSqm.strip():
+								logging.error(f"Empty SQM string for circuit {circuit['circuitID']} - defaulting to 'cake diffserv4'")
+								useSqm = "cake diffserv4"
 							command = 'qdisc add dev ' + interface_b() + ' parent ' + circuit['up_classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm + tcComment
 							linuxTCcommands.append(command)
 							pass
@@ -1214,14 +1222,31 @@ def refreshShapers():
 		# Rust could write to file and execute with tc -b like Python does
 		# This would be a single bulk operation for Phase 1
 		
-		# Call bakery to execute all TC commands in bulk
+		# Call bakery to execute TC commands in batches of 100 to avoid socket buffer issues
 		force_mode = logging.root.level > logging.DEBUG  # Use force mode unless in debug
-		bulk_success = bakery_execute_tc_commands(
-			commands=linuxTCcommands,
-			force_mode=force_mode
-		)
-		if not bulk_success:
-			logging.warning("Bakery failed to execute TC commands in bulk, falling back to shell commands")
+		batch_size = 100
+		total_commands = len(linuxTCcommands)
+		all_batches_successful = True
+		
+		print(f"Executing {total_commands} TC commands in batches of {batch_size}")
+		
+		for i in range(0, total_commands, batch_size):
+			batch = linuxTCcommands[i:i + batch_size]
+			batch_end = min(i + batch_size, total_commands)
+			print(f"  Executing batch {i // batch_size + 1} (commands {i + 1}-{batch_end} of {total_commands})")
+			
+			bulk_success = bakery_execute_tc_commands(
+				commands=batch,
+				force_mode=force_mode
+			)
+			
+			if not bulk_success:
+				logging.warning(f"Bakery failed to execute TC commands batch {i // batch_size + 1} (commands {i + 1}-{batch_end})")
+				all_batches_successful = False
+				# Continue with other batches even if one fails
+		
+		if not all_batches_successful:
+			logging.warning("Some TC command batches failed during execution")
 		
 		# Execute actual Linux TC commands - COMMENTED OUT: Using Rust bakery instead
 		tcStartTime = datetime.now()
@@ -1237,7 +1262,7 @@ def refreshShapers():
 		# else:
 		# 	shell(f"/sbin/tc -f -b {tc_output_path}")
 		tcEndTime = datetime.now()
-		print("Executed " + str(len(linuxTCcommands)) + " linux TC class/qdisc commands")
+		print(f"Executed {len(linuxTCcommands)} linux TC class/qdisc commands in {(len(linuxTCcommands) + batch_size - 1) // batch_size} batches")
 		
 		
 		# Execute actual XDP-CPUMAP-TC filter commands

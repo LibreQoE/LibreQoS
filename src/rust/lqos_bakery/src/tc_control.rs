@@ -227,6 +227,14 @@ pub fn add_circuit_qdisc(
     circuit_hash: i64, // Required for circuits
     sqm_params: &[&str]
 ) -> anyhow::Result<()> {
+    // Validate that sqm_params is not empty to prevent incomplete TC commands
+    if sqm_params.is_empty() || (sqm_params.len() == 1 && sqm_params[0].trim().is_empty()) {
+        return Err(anyhow::anyhow!(
+            "Empty SQM parameters for circuit {}. Cannot create qdisc without specifying type (e.g., 'cake' or 'fq_codel')",
+            circuit_hash
+        ));
+    }
+    
     // 'qdisc add dev ' + interface + ' parent ' + major + ':' + minor + ' ' + sqm
     let parent = format!("{:x}:{:x}", parent_major, parent_minor);
     let mut args = vec!["qdisc", "add", "dev", interface, "parent", &parent];
