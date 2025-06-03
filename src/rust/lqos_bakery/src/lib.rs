@@ -253,7 +253,7 @@ fn handle_update_circuit(
         
         // If not created yet, create it now
         if !circuit_info.created {
-            debug!("🚀 TRAFFIC DETECTED for circuit {} (hash: {}) - triggering lazy queue creation!",
+            debug!("TRAFFIC DETECTED for circuit {} (hash: {}) - triggering lazy queue creation!",
                   circuit_info.comment.as_deref().unwrap_or(&circuit_info.class_id),
                   circuit_hash);
             drop(state_lock); // Release lock before creating queue
