@@ -417,10 +417,10 @@ def loadSubscriberCircuits(shapedDevicesFile):
 									raise ValueError(errorMessageString)
 							# Check if bandwidth parameters match other cdevices of this same circuit ID, but only check if monitorOnlyMode is Off
 							if monitor_mode_only() == False:
-								if ((circuit['minDownload'] != int(downloadMin))
-									or (circuit['minUpload'] != int(uploadMin))
-									or (circuit['maxDownload'] != int(downloadMax))
-									or (circuit['maxUpload'] != int(uploadMax))):
+								if ((circuit['minDownload'] != float(downloadMin))
+									or (circuit['minUpload'] != float(uploadMin))
+									or (circuit['maxDownload'] != float(downloadMax))
+									or (circuit['maxUpload'] != float(uploadMax))):
 									warnings.warn("Device " + deviceName + " with ID " + deviceID + " had different bandwidth parameters than other devices on this circuit. Will instead use the bandwidth parameters defined by the first device added to its circuit.", stacklevel=2)
 							devicesListForCircuit = circuit['devices']
 							thisDevice = 	{
