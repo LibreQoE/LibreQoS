@@ -28,10 +28,8 @@ use std::sync::{Arc, Mutex};
 use crossbeam_channel::Receiver;
 use tracing::{debug, error, info, warn};
 use utils::current_timestamp;
-
 pub (crate) const CHANNEL_CAPACITY: usize = 65536; // 64k capacity for Bakery commands
 pub use commands::BakeryCommands;
-
 use crate::state::{BakeryState, CircuitQueueInfo, StructuralQueueInfo};
 
 
@@ -49,7 +47,7 @@ pub fn start_bakery() -> anyhow::Result<crossbeam_channel::Sender<BakeryCommands
 
 
 fn bakery_main(rx: Receiver<BakeryCommands>) {
-    // Initialize shared state for Phase 2 lazy queues
+    // Initialize shared state
     let state = Arc::new(Mutex::new(BakeryState::default()));
     
     // Spawn the pruning thread if lazy queues are enabled and expiration is configured
