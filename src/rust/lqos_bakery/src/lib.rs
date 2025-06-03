@@ -19,180 +19,21 @@
 #![deny(missing_docs)]
 
 mod tc_control;
-
-// Re-export commonly used TC control functions
-pub use tc_control::{
-    format_rate_for_tc,
-    quantum,
-    add_htb_class,
-    add_circuit_htb_class,
-    add_structural_htb_class,
-    add_circuit_qdisc,
-    sqm_fixup_rate,
-};
+mod utils;
+mod commands;
+mod state;
 
 use std::path::Path;
-use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
-
 use crossbeam_channel::Receiver;
 use tracing::{debug, error, info, warn};
+use utils::current_timestamp;
 
-pub (crate) const CHANNEL_CAPACITY: usize = 1024;
+pub (crate) const CHANNEL_CAPACITY: usize = 65536; // 64k capacity for Bakery commands
+pub use commands::BakeryCommands;
 
-/// Get the current Unix timestamp in seconds
-fn current_timestamp() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-}
+use crate::state::{BakeryState, CircuitQueueInfo, StructuralQueueInfo};
 
-/// List of commands that the Bakery system can handle.
-#[derive(Debug)]
-pub enum BakeryCommands {
-    /// Clears all queues for an interface and removes all IP mappings from the XDP system.
-    /// Use when replacing the entire hierarchy or at startup.
-    ClearPriorSettings,
-
-    /// Creates a new top-level MQ for a given interface, along with the default HTB hierarchy.
-    MqSetup,
-
-    /// Add an HTB class for a structural node (site/AP from network.json).
-    /// These are intermediate nodes in the hierarchy, NOT leaf nodes.
-    AddStructuralHTBClass {
-        /// Network interface name (e.g., "eth0")
-        interface: String,
-        /// Parent class ID (e.g., "1:")
-        parent: String,
-        /// Class ID for this node (e.g., "1:10")
-        classid: String,
-        /// Minimum bandwidth in Mbps
-        rate_mbps: f64,
-        /// Maximum bandwidth in Mbps
-        ceil_mbps: f64,
-        /// Hash of site name for tracking
-        site_hash: i64,
-        /// R2Q value for quantum calculation
-        r2q: u64,
-    },
-
-    /// Add an HTB class for a circuit (customer circuit from ShapedDevices.csv).
-    /// These are leaf nodes that shape actual customer traffic.
-    AddCircuitHTBClass {
-        /// Network interface name (e.g., "eth0")
-        interface: String,
-        /// Parent class ID (e.g., "1:10")
-        parent: String,
-        /// Class ID for this circuit (e.g., "1:100")
-        classid: String,
-        /// Minimum bandwidth in Mbps
-        rate_mbps: f64,
-        /// Maximum bandwidth in Mbps
-        ceil_mbps: f64,
-        /// Hash of circuit ID for tracking
-        circuit_hash: i64,
-        /// Optional comment for debugging
-        comment: Option<String>,
-        /// R2Q value for quantum calculation
-        r2q: u64,
-    },
-
-    /// Add a qdisc (CAKE/fq_codel) to a circuit class.
-    /// This is ONLY for circuits (leaf nodes). Structural nodes do NOT get qdiscs.
-    AddCircuitQdisc {
-        /// Network interface name (e.g., "eth0")
-        interface: String,
-        /// Major part of parent class ID
-        parent_major: u32,
-        /// Minor part of parent class ID
-        parent_minor: u32,
-        /// Hash of circuit ID for tracking
-        circuit_hash: i64,
-        /// SQM parameters (split from sqm string)
-        sqm_params: Vec<String>,
-    },
-
-    /// Execute a batch of TC commands (alternative bulk approach).
-    /// Write commands to file and execute with `tc -b` like Python does.
-    ExecuteTCCommands {
-        /// Vector of TC command strings (without /sbin/tc prefix)
-        commands: Vec<String>,
-        /// Whether to use -f flag to force execution
-        force_mode: bool,
-    },
-
-    /// Update circuit last activity timestamp (Phase 2 lazy queues)
-    UpdateCircuit {
-        /// Hash of circuit ID to update
-        circuit_hash: i64,
-    },
-
-    /// Create a circuit queue if not already created (Phase 2 lazy queues)
-    CreateCircuit {
-        /// Hash of circuit ID to create
-        circuit_hash: i64,
-    },
-}
-
-/// Information needed to create a circuit queue (Phase 2 lazy queues)
-#[derive(Debug, Clone)]
-pub struct CircuitQueueInfo {
-    /// Network interface name (e.g., "eth0")
-    pub interface: String,
-    /// Parent class ID (e.g., "1:10")
-    pub parent: String,
-    /// Class ID for this circuit (e.g., "1:100")
-    pub class_id: String,
-    /// Minimum bandwidth in Mbps
-    pub rate_mbps: f64,
-    /// Maximum bandwidth in Mbps
-    pub ceil_mbps: f64,
-    /// Hash of circuit ID for tracking
-    pub circuit_hash: i64,
-    /// Optional comment for debugging
-    pub comment: Option<String>,
-    /// R2Q value for quantum calculation
-    pub r2q: u64,
-    /// SQM parameters for the qdisc
-    pub sqm_params: Vec<String>,
-    /// Whether the queue has been actually created in TC
-    pub created: bool,
-    /// Last updated timestamp (unix time)
-    pub last_updated: u64,
-}
-
-/// Information about a structural queue node (Phase 2 lazy queues)
-#[derive(Debug, Clone)]
-pub struct StructuralQueueInfo {
-    /// Network interface name (e.g., "eth0")
-    pub interface: String,
-    /// Parent class ID (e.g., "1:")
-    pub parent: String,
-    /// Class ID for this node (e.g., "1:10")
-    pub classid: String,
-    /// Minimum bandwidth in Mbps
-    pub rate_mbps: f64,
-    /// Maximum bandwidth in Mbps
-    pub ceil_mbps: f64,
-    /// Hash of site name for tracking
-    pub site_hash: i64,
-    /// R2Q value for quantum calculation
-    pub r2q: u64,
-}
-
-/// Shared state for the Bakery system (Phase 2 lazy queues)
-#[derive(Debug, Default)]
-pub struct BakeryState {
-    /// Storage for circuit queue information, indexed by circuit_hash
-    pub circuits: HashMap<i64, CircuitQueueInfo>,
-    /// Storage for structural queue information, indexed by site_hash
-    pub structural: HashMap<i64, StructuralQueueInfo>,
-    /// Pending circuit updates to batch and deduplicate
-    pub pending_updates: HashSet<i64>,
-    /// Pending circuit creates to batch and deduplicate
-    pub pending_creates: HashSet<i64>,
-}
 
 /// Starts the Bakery system, returning a channel sender for sending commands to the Bakery.
 pub fn start_bakery() -> anyhow::Result<crossbeam_channel::Sender<BakeryCommands>> {
@@ -206,24 +47,10 @@ pub fn start_bakery() -> anyhow::Result<crossbeam_channel::Sender<BakeryCommands
     Ok(tx)
 }
 
+
 fn bakery_main(rx: Receiver<BakeryCommands>) {
     // Initialize shared state for Phase 2 lazy queues
     let state = Arc::new(Mutex::new(BakeryState::default()));
-    
-    // Clear the TC output file when bakery starts (if in file mode)
-    #[cfg(not(test))]
-    if crate::tc_control::is_write_to_file_mode() {
-        if let Ok(config) = lqos_config::load_config() {
-            let output_path = std::path::Path::new(&config.lqos_directory).join("tc-rust.txt");
-            if output_path.exists() {
-                if let Err(e) = std::fs::remove_file(&output_path) {
-                    warn!("Failed to remove old TC output file: {}", e);
-                } else {
-                    info!("Cleared old TC output file: {:?}", output_path);
-                }
-            }
-        }
-    }
     
     // Spawn the pruning thread if lazy queues are enabled and expiration is configured
     let _pruning_handle = spawn_pruning_thread(Arc::clone(&state));
@@ -278,7 +105,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>) {
 }
 
 /// Check if lazy queues are enabled in the configuration
-fn is_lazy_queues_enabled() -> bool {
+fn are_lazy_queues_enabled() -> bool {
     if let Ok(config) = lqos_config::load_config() {
         let lazy_enabled = config.queues.lazy_queues.unwrap_or(false);
         debug!("Lazy queues configuration check: lazy_queues = {:?}, enabled = {}",
@@ -335,7 +162,7 @@ fn handle_add_circuit_htb_class(
     comment: Option<String>,
     r2q: u64,
 ) -> anyhow::Result<()> {
-    if is_lazy_queues_enabled() {
+    if are_lazy_queues_enabled() {
         // Phase 2: Store circuit info but don't create queue yet
         let mut state_lock = state.lock().map_err(|_| anyhow::anyhow!("Failed to acquire state lock"))?;
         
@@ -389,7 +216,7 @@ fn handle_add_circuit_qdisc(
     circuit_hash: i64,
     sqm_params: Vec<String>,
 ) -> anyhow::Result<()> {
-    if is_lazy_queues_enabled() {
+    if are_lazy_queues_enabled() {
         // Phase 2: Update circuit info with SQM parameters but don't create qdisc yet
         let mut state_lock = state.lock().map_err(|_| anyhow::anyhow!("Failed to acquire state lock"))?;
         
@@ -416,7 +243,7 @@ fn handle_update_circuit(
     state: &Arc<Mutex<BakeryState>>,
     circuit_hash: i64,
 ) -> anyhow::Result<()> {
-    if !is_lazy_queues_enabled() {
+    if !are_lazy_queues_enabled() {
         // Lazy queues disabled, ignore update commands
         return Ok(());
     }
@@ -446,7 +273,7 @@ fn handle_create_circuit(
     state: &Arc<Mutex<BakeryState>>,
     circuit_hash: i64,
 ) -> anyhow::Result<()> {
-    if !is_lazy_queues_enabled() {
+    if !are_lazy_queues_enabled() {
         // Lazy queues disabled, ignore create commands
         return Ok(());
     }
@@ -713,7 +540,7 @@ fn execute_tc_commands_bulk(
         }
     }
     
-    if is_lazy_queues_enabled() {
+    if are_lazy_queues_enabled() {
         // NEW APPROACH: Parse commands and separate structural from circuit
         // LibreQoS.py needs to include circuit_hash in comments for this to work
         parse_and_route_tc_commands(state, commands, force_mode)
@@ -845,22 +672,6 @@ fn parse_tc_rate_to_mbps(rate_str: &str) -> Option<f64> {
     } else {
         None
     }
-}
-
-/// Extract circuit hash from TC command comment
-fn extract_circuit_hash(command: &str) -> Option<i64> {
-    // Look for circuit_hash in comment: "# circuit_hash: 1234567890"
-    if let Some(hash_pos) = command.find("# circuit_hash:") {
-        let hash_str = &command[hash_pos + 15..].trim();
-        // Find the end of the hash number (space or end of string)
-        let end_pos = hash_str.find(|c: char| !c.is_numeric() && c != '-')
-            .unwrap_or(hash_str.len());
-        
-        if let Ok(hash) = hash_str[..end_pos].parse::<i64>() {
-            return Some(hash);
-        }
-    }
-    None
 }
 
 /// Store a circuit command for later lazy execution
@@ -1029,16 +840,6 @@ fn parse_tc_handle(handle: &str) -> Option<(u32, u32)> {
 fn execute_tc_commands_immediate(commands: Vec<String>, force_mode: bool) -> anyhow::Result<()> {
     info!("⚡ Executing {} TC commands immediately", commands.len());
     
-    // If we're in write-to-file mode, just write all commands using our centralized function
-    if tc_control::is_write_to_file_mode() {
-        for command in &commands {
-            let args: Vec<&str> = command.split_whitespace().collect();
-            tc_control::execute_tc_command(&args)?;
-        }
-        info!("Wrote {} TC commands to file", commands.len());
-        return Ok(());
-    }
-    
     // Otherwise, execute using tc -b (bulk mode)
     use std::fs::File;
     use std::io::Write;
@@ -1175,49 +976,6 @@ mod tests {
         assert!(format!("{:?}", circuit_cmd).contains("AddCircuitHTBClass"));
         assert!(format!("{:?}", qdisc_cmd).contains("AddCircuitQdisc"));
         assert!(format!("{:?}", bulk_cmd).contains("ExecuteTCCommands"));
-    }
-    
-    #[test]
-    fn test_phase2_data_structures() {
-        // Test CircuitQueueInfo creation
-        let circuit_info = CircuitQueueInfo {
-            interface: "eth0".to_string(),
-            parent: "1:10".to_string(),
-            class_id: "1:100".to_string(),
-            rate_mbps: 10.5,
-            ceil_mbps: 15.0,
-            circuit_hash: 1234567890,
-            comment: Some("Test Circuit".to_string()),
-            r2q: 21,
-            sqm_params: vec!["cake".to_string(), "bandwidth".to_string(), "15mbit".to_string()],
-            created: false,
-            last_updated: 0,
-        };
-        
-        assert_eq!(circuit_info.circuit_hash, 1234567890);
-        assert_eq!(circuit_info.rate_mbps, 10.5);
-        assert!(!circuit_info.created);
-        
-        // Test StructuralQueueInfo creation
-        let structural_info = StructuralQueueInfo {
-            interface: "eth0".to_string(),
-            parent: "1:".to_string(),
-            classid: "1:10".to_string(),
-            rate_mbps: 100.0,
-            ceil_mbps: 200.0,
-            site_hash: 987654321,
-            r2q: 21,
-        };
-        
-        assert_eq!(structural_info.site_hash, 987654321);
-        assert_eq!(structural_info.rate_mbps, 100.0);
-        
-        // Test BakeryState creation
-        let state = BakeryState::default();
-        assert!(state.circuits.is_empty());
-        assert!(state.structural.is_empty());
-        assert!(state.pending_updates.is_empty());
-        assert!(state.pending_creates.is_empty());
     }
     
     #[test] 
@@ -1418,24 +1176,6 @@ mod tests {
     }
     
     #[test]
-    fn test_circuit_hash_extraction() {
-        // Test extracting circuit hash from comment
-        let cmd = "class add dev eth0 parent 1:1 classid 1:100 htb rate 10mbit # circuit_hash: -8456361809408299971";
-        let hash = extract_circuit_hash(cmd);
-        assert_eq!(hash, Some(-8456361809408299971));
-        
-        // Test missing hash
-        let cmd = "class add dev eth0 parent 1:1 classid 1:100 htb rate 10mbit";
-        let hash = extract_circuit_hash(cmd);
-        assert_eq!(hash, None);
-        
-        // Test malformed hash
-        let cmd = "class add dev eth0 parent 1:1 classid 1:100 htb rate 10mbit # circuit_hash: invalid";
-        let hash = extract_circuit_hash(cmd);
-        assert_eq!(hash, None);
-    }
-    
-    #[test]
     fn test_parse_tc_command_type() {
         // Test structural command (no circuit_hash)
         let cmd = "class add dev eth0 parent 1: classid 1:1 htb rate 1gbit";
@@ -1616,44 +1356,6 @@ mod tests {
         assert_eq!(structural_info.site_hash, 987654321);
         assert_eq!(structural_info.rate_mbps, 100.0);
         assert_eq!(structural_info.ceil_mbps, 200.0);
-    }
-    
-    #[test]
-    fn test_bakery_state_operations() {
-        let mut state = BakeryState::default();
-        
-        // Test initial empty state
-        assert!(state.circuits.is_empty());
-        assert!(state.structural.is_empty());
-        assert!(state.pending_updates.is_empty());
-        assert!(state.pending_creates.is_empty());
-        
-        // Test adding circuit
-        let circuit_info = CircuitQueueInfo {
-            interface: "eth0".to_string(),
-            parent: "1:1".to_string(),
-            class_id: "1:100".to_string(),
-            rate_mbps: 10.0,
-            ceil_mbps: 20.0,
-            circuit_hash: 12345,
-            comment: Some("Test Circuit".to_string()),
-            r2q: 10,
-            sqm_params: vec!["cake".to_string()],
-            created: false,
-            last_updated: current_timestamp(),
-        };
-        
-        state.circuits.insert(12345, circuit_info);
-        assert_eq!(state.circuits.len(), 1);
-        
-        // Test adding pending operations
-        state.pending_updates.insert(12345);
-        state.pending_creates.insert(67890);
-        
-        assert_eq!(state.pending_updates.len(), 1);
-        assert_eq!(state.pending_creates.len(), 1);
-        assert!(state.pending_updates.contains(&12345));
-        assert!(state.pending_creates.contains(&67890));
     }
     
     #[test]

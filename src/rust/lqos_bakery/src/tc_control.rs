@@ -16,18 +16,7 @@
 //! 
 //! The hashes are used for tracking in Phase 2+ but accepted/ignored in Phase 1.
 
-use std::fs::OpenOptions;
-use std::io::Write;
-use std::path::Path;
-
 const TC_COMMAND: &str = "/sbin/tc";
-const WRITE_TC_TO_FILE: bool = false; // Set to false for production execution (bulk execution only)
-const TC_OUTPUT_FILENAME: &str = "tc-rust.txt";
-
-/// Check if we're in write-to-file mode (for testing)
-pub fn is_write_to_file_mode() -> bool {
-    WRITE_TC_TO_FILE
-}
 
 /// Execute a TC command or write it to a file for testing
 /// 
@@ -37,34 +26,18 @@ pub fn is_write_to_file_mode() -> bool {
 /// # Returns
 /// * `Result<(), anyhow::Error>` - Returns Ok if successful, or an error if the command fails.
 pub fn execute_tc_command(args: &[&str]) -> anyhow::Result<()> {
-    if WRITE_TC_TO_FILE {
-        // Get the lqos_directory from config
-        let config = lqos_config::load_config()?;
-        let output_path = Path::new(&config.lqos_directory).join(TC_OUTPUT_FILENAME);
-        
-        // Write to file for comparison testing
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&output_path)?;
-        
-        // Write just the arguments (no /sbin/tc prefix) to match Python format
-        writeln!(file, "{}", args.join(" "))?;
-        Ok(())
-    } else {
-        // Execute the actual command
-        let output = std::process::Command::new(TC_COMMAND)
-            .args(args)
-            .output()?;
+    // Execute the actual command
+    let output = std::process::Command::new(TC_COMMAND)
+        .args(args)
+        .output()?;
 
-        if !output.status.success() {
-            return Err(anyhow::anyhow!(
-                "TC command failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
-        }
-        Ok(())
+    if !output.status.success() {
+        return Err(anyhow::anyhow!(
+            "TC command failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
     }
+    Ok(())
 }
 
 /// Clear all traffic control queues for a given network interface.
@@ -86,12 +59,6 @@ pub fn clear_all_queues(interface: &str) -> anyhow::Result<()> {
 /// # Returns
 /// * `Result<bool, anyhow::Error>` - Returns Ok(true) if MQ is installed, Ok(false) if not, or an error if the command fails.
 pub fn is_mq_installed(interface: &str) -> anyhow::Result<bool> {
-    // This function needs to read output, so it can't use execute_tc_command
-    if WRITE_TC_TO_FILE {
-        // In test mode, we can't actually check, so return a dummy value
-        return Ok(false);
-    }
-    
     let output = std::process::Command::new(TC_COMMAND)
         .arg("qdisc")
         .arg("show")
