@@ -1,7 +1,7 @@
 //! The Bakery is where CAKE is made!
 //! 
 //! More specifically, this crate provides a tracker of TC queues - described by the LibreQoS.py process,
-//! but tracked for changes.
+//! but tracked for changes. We're at phase 2.
 //! 
 //! In phase 1, the Bakery will build queues and a matching structure to track them. It will act exactly
 //! like the LibreQoS.py process.
@@ -40,7 +40,7 @@ use tracing::{debug, error, info, warn};
 
 pub (crate) const CHANNEL_CAPACITY: usize = 1024;
 
-/// Get current Unix timestamp in seconds
+/// Get the current Unix timestamp in seconds
 fn current_timestamp() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -128,7 +128,7 @@ pub enum BakeryCommands {
         circuit_hash: i64,
     },
 
-    /// Create circuit queue if not already created (Phase 2 lazy queues)
+    /// Create a circuit queue if not already created (Phase 2 lazy queues)
     CreateCircuit {
         /// Hash of circuit ID to create
         circuit_hash: i64,
@@ -143,7 +143,7 @@ pub struct CircuitQueueInfo {
     /// Parent class ID (e.g., "1:10")
     pub parent: String,
     /// Class ID for this circuit (e.g., "1:100")
-    pub classid: String,
+    pub class_id: String,
     /// Minimum bandwidth in Mbps
     pub rate_mbps: f64,
     /// Maximum bandwidth in Mbps
@@ -200,13 +200,13 @@ pub fn start_bakery() -> anyhow::Result<crossbeam_channel::Sender<BakeryCommands
     std::thread::Builder::new()
         .name("lqos_bakery".to_string())
         .spawn(move || {
-            bakery(rx);
+            bakery_main(rx);
         })
         .map_err(|e| anyhow::anyhow!("Failed to start Bakery thread: {}", e))?;
     Ok(tx)
 }
 
-fn bakery(rx: Receiver<BakeryCommands>) {
+fn bakery_main(rx: Receiver<BakeryCommands>) {
     // Initialize shared state for Phase 2 lazy queues
     let state = Arc::new(Mutex::new(BakeryState::default()));
     
@@ -225,7 +225,7 @@ fn bakery(rx: Receiver<BakeryCommands>) {
         }
     }
     
-    // Spawn pruning thread if lazy queues are enabled and expiration is configured
+    // Spawn the pruning thread if lazy queues are enabled and expiration is configured
     let _pruning_handle = spawn_pruning_thread(Arc::clone(&state));
     
     while let Ok(command) = rx.recv() {
@@ -277,7 +277,7 @@ fn bakery(rx: Receiver<BakeryCommands>) {
     error!("Bakery thread exited unexpectedly.");
 }
 
-/// Check if lazy queues are enabled in configuration
+/// Check if lazy queues are enabled in the configuration
 fn is_lazy_queues_enabled() -> bool {
     if let Ok(config) = lqos_config::load_config() {
         let lazy_enabled = config.queues.lazy_queues.unwrap_or(false);
@@ -344,7 +344,7 @@ fn handle_add_circuit_htb_class(
             // Update existing circuit info
             circuit_info.interface = interface.to_string();
             circuit_info.parent = parent.to_string();
-            circuit_info.classid = classid.to_string();
+            circuit_info.class_id = classid.to_string();
             circuit_info.rate_mbps = rate_mbps;
             circuit_info.ceil_mbps = ceil_mbps;
             circuit_info.comment = comment;
@@ -354,7 +354,7 @@ fn handle_add_circuit_htb_class(
             let circuit_info = CircuitQueueInfo {
                 interface: interface.to_string(),
                 parent: parent.to_string(),
-                classid: classid.to_string(),
+                class_id: classid.to_string(),
                 rate_mbps,
                 ceil_mbps,
                 circuit_hash,
@@ -362,7 +362,7 @@ fn handle_add_circuit_htb_class(
                 r2q,
                 sqm_params: Vec::new(), // Will be set by AddCircuitQdisc
                 created: false,
-                last_updated: current_timestamp(), // Set initial timestamp to prevent immediate pruning
+                last_updated: current_timestamp(), // Set the initial timestamp to prevent immediate pruning
             };
             state_lock.circuits.insert(circuit_hash, circuit_info);
         }
@@ -429,7 +429,7 @@ fn handle_update_circuit(
         // If not created yet, create it now
         if !circuit_info.created {
             debug!("🚀 TRAFFIC DETECTED for circuit {} (hash: {}) - triggering lazy queue creation!",
-                  circuit_info.comment.as_deref().unwrap_or(&circuit_info.classid), 
+                  circuit_info.comment.as_deref().unwrap_or(&circuit_info.class_id),
                   circuit_hash);
             drop(state_lock); // Release lock before creating queue
             handle_create_circuit(state, circuit_hash)?;
@@ -462,7 +462,7 @@ fn handle_create_circuit(
         // Clone data needed for creation (to release lock early)
         let interface = circuit_info.interface.clone();
         let parent = circuit_info.parent.clone();
-        let classid = circuit_info.classid.clone();
+        let class_id = circuit_info.class_id.clone();
         let rate_mbps = circuit_info.rate_mbps;
         let ceil_mbps = circuit_info.ceil_mbps;
         let comment = circuit_info.comment.clone();
@@ -481,17 +481,17 @@ fn handle_create_circuit(
         
         // Create HTB class
         tc_control::add_circuit_htb_class(
-            &interface, &parent, &classid, rate_mbps, ceil_mbps, circuit_hash, 
+            &interface, &parent, &class_id, rate_mbps, ceil_mbps, circuit_hash,
             comment.as_deref(), r2q
         )?;
         
         // Create qdisc if SQM params are available
         if !sqm_params.is_empty() {
             // Parse classid to get parent_major and parent_minor
-            if let Some(colon_pos) = classid.find(':') {
+            if let Some(colon_pos) = class_id.find(':') {
                 if let (Ok(major), Ok(minor)) = (
-                    classid[..colon_pos].parse::<u32>(),
-                    classid[colon_pos + 1..].parse::<u32>(),
+                    class_id[..colon_pos].parse::<u32>(),
+                    class_id[colon_pos + 1..].parse::<u32>(),
                 ) {
                     let sqm_strs: Vec<&str> = sqm_params.iter().map(|s| s.as_str()).collect();
                     tc_control::add_circuit_qdisc(
@@ -504,7 +504,7 @@ fn handle_create_circuit(
         debug!("🎉 LAZY QUEUE CREATED: Circuit {} (hash: {}) - HTB class {} with rate {}Mbps/ceil {}Mbps",
               log_comment, 
               circuit_hash, 
-              classid, 
+              class_id,
               rate_mbps, 
               ceil_mbps);
     } else {
@@ -635,7 +635,7 @@ fn mq_setup() -> anyhow::Result<()> {
         // Make default SQM bucket
         tc_control::make_default_sqm_bucket(&config.internet_interface(), queue as u32, &sqm_chunks)?;
 
-        // Make default class
+        // Make the default class
         tc_control::make_default_class(&config.internet_interface(), queue as u32, downlink_mbps, r2q)?;
 
         // Make the CAKE queue for the default class
@@ -1102,15 +1102,6 @@ fn execute_tc_commands_immediate(commands: Vec<String>, force_mode: bool) -> any
     Ok(())
 }
 
-// REMOVED: All TC command parsing code
-// This approach was fundamentally flawed because:
-// 1. circuit_hash must be derived from circuit ID in ShapedDevices.csv
-// 2. TC commands only contain classids, not original circuit IDs
-// 3. Cannot reverse-engineer circuit ID from classid
-//
-// The correct approach is to use individual BakeryCommands which already
-// have the proper circuit_hash passed from LibreQoS.py
-
 #[cfg(test)]
 mod test_circuit_hash;
 
@@ -1192,7 +1183,7 @@ mod tests {
         let circuit_info = CircuitQueueInfo {
             interface: "eth0".to_string(),
             parent: "1:10".to_string(),
-            classid: "1:100".to_string(),
+            class_id: "1:100".to_string(),
             rate_mbps: 10.5,
             ceil_mbps: 15.0,
             circuit_hash: 1234567890,
@@ -1282,7 +1273,7 @@ mod tests {
             let state_lock = state.lock().unwrap();
             assert_eq!(state_lock.circuits.len(), 1);
             let circuit = state_lock.circuits.get(&12345).unwrap();
-            assert_eq!(circuit.classid, "1:100");
+            assert_eq!(circuit.class_id, "1:100");
             assert_eq!(circuit.rate_mbps, 10.0);
             assert_eq!(circuit.ceil_mbps, 20.0);
             assert!(!circuit.created);
@@ -1327,7 +1318,7 @@ mod tests {
             let circuit_info = CircuitQueueInfo {
                 interface: "eth0".to_string(),
                 parent: "1:1".to_string(),
-                classid: "1:100".to_string(),
+                class_id: "1:100".to_string(),
                 rate_mbps: 10.0,
                 ceil_mbps: 20.0,
                 circuit_hash: 12345,
@@ -1362,7 +1353,7 @@ mod tests {
             let circuit_info = CircuitQueueInfo {
                 interface: "eth0".to_string(),
                 parent: "1:1".to_string(),
-                classid: "1:100".to_string(),
+                class_id: "1:100".to_string(),
                 rate_mbps: 10.0,
                 ceil_mbps: 20.0,
                 circuit_hash: 12345,
@@ -1501,7 +1492,7 @@ mod tests {
             state_lock.circuits.insert(1, CircuitQueueInfo {
                 interface: "eth0".to_string(),
                 parent: "1:1".to_string(),
-                classid: "1:100".to_string(),
+                class_id: "1:100".to_string(),
                 rate_mbps: 10.0,
                 ceil_mbps: 20.0,
                 circuit_hash: 1,
@@ -1516,7 +1507,7 @@ mod tests {
             state_lock.circuits.insert(2, CircuitQueueInfo {
                 interface: "eth0".to_string(),
                 parent: "1:1".to_string(),
-                classid: "1:101".to_string(),
+                class_id: "1:101".to_string(),
                 rate_mbps: 10.0,
                 ceil_mbps: 20.0,
                 circuit_hash: 2,
@@ -1531,7 +1522,7 @@ mod tests {
             state_lock.circuits.insert(3, CircuitQueueInfo {
                 interface: "eth0".to_string(),
                 parent: "1:1".to_string(),
-                classid: "1:102".to_string(),
+                class_id: "1:102".to_string(),
                 rate_mbps: 10.0,
                 ceil_mbps: 20.0,
                 circuit_hash: 3,
@@ -1587,7 +1578,7 @@ mod tests {
         let mut circuit_info = CircuitQueueInfo {
             interface: "eth0".to_string(),
             parent: "1:1".to_string(),
-            classid: "1:100".to_string(),
+            class_id: "1:100".to_string(),
             rate_mbps: 10.0,
             ceil_mbps: 20.0,
             circuit_hash: 12345,
@@ -1641,7 +1632,7 @@ mod tests {
         let circuit_info = CircuitQueueInfo {
             interface: "eth0".to_string(),
             parent: "1:1".to_string(),
-            classid: "1:100".to_string(),
+            class_id: "1:100".to_string(),
             rate_mbps: 10.0,
             ceil_mbps: 20.0,
             circuit_hash: 12345,
@@ -1741,7 +1732,7 @@ mod tests {
             let circuit_info = CircuitQueueInfo {
                 interface: "eth0".to_string(),
                 parent: "1:1".to_string(),
-                classid: "1:100".to_string(),
+                class_id: "1:100".to_string(),
                 rate_mbps: 10.0,
                 ceil_mbps: 20.0,
                 circuit_hash: 12345,
@@ -1846,7 +1837,7 @@ fn pruning_thread_loop(state: Arc<Mutex<BakeryState>>, expire_seconds: u64) {
                 if circuit_info.created && circuit_info.last_updated < expire_threshold {
                     let age_seconds = current_time.saturating_sub(circuit_info.last_updated);
                     debug!("🧹 Found expired circuit {} (hash: {}) - age: {} seconds, last_updated: {}",
-                          circuit_info.comment.as_deref().unwrap_or(&circuit_info.classid),
+                          circuit_info.comment.as_deref().unwrap_or(&circuit_info.class_id),
                           circuit_hash,
                           age_seconds,
                           circuit_info.last_updated);
@@ -1859,7 +1850,7 @@ fn pruning_thread_loop(state: Arc<Mutex<BakeryState>>, expire_seconds: u64) {
         for (circuit_hash, circuit_info) in circuits_to_prune {
             if let Err(e) = prune_circuit(&state, circuit_hash, &circuit_info) {
                 error!("Failed to prune circuit {} (hash: {}): {}", 
-                       circuit_info.comment.as_deref().unwrap_or(&circuit_info.classid),
+                       circuit_info.comment.as_deref().unwrap_or(&circuit_info.class_id),
                        circuit_hash, e);
             }
         }
@@ -1868,23 +1859,23 @@ fn pruning_thread_loop(state: Arc<Mutex<BakeryState>>, expire_seconds: u64) {
 
 /// Prune a single expired circuit
 fn prune_circuit(state: &Arc<Mutex<BakeryState>>, circuit_hash: i64, circuit_info: &CircuitQueueInfo) -> anyhow::Result<()> {
-    let log_comment = circuit_info.comment.as_deref().unwrap_or(&circuit_info.classid);
+    let log_comment = circuit_info.comment.as_deref().unwrap_or(&circuit_info.class_id);
 
     debug!("🧹 PRUNING EXPIRED CIRCUIT: {} (hash: {}) - removing HTB class {} and qdisc",
-          log_comment, circuit_hash, circuit_info.classid);
+          log_comment, circuit_hash, circuit_info.class_id);
     
     debug!("🧹 Circuit details - interface: {}, parent: {}, classid: {}", 
-           circuit_info.interface, circuit_info.parent, circuit_info.classid);
+           circuit_info.interface, circuit_info.parent, circuit_info.class_id);
     
     // Delete the qdisc first (child before parent)
     let qdisc_cmd = format!("qdisc del dev {} parent {}", 
                             circuit_info.interface, 
-                            circuit_info.classid);
+                            circuit_info.class_id);
     
     // Delete the HTB class - need to use parent:classid format
     let class_cmd = format!("class del dev {} classid {}", 
                             circuit_info.interface, 
-                            circuit_info.classid);
+                            circuit_info.class_id);
     
     // Execute TC commands to remove the queue
     // Split commands into args for execute_tc_command
@@ -1909,7 +1900,7 @@ fn prune_circuit(state: &Arc<Mutex<BakeryState>>, circuit_hash: i64, circuit_inf
         
         if let Some(removed) = state_guard.circuits.remove(&circuit_hash) {
             debug!("🧹 Successfully pruned circuit {} (hash: {}) from state",
-                  removed.comment.as_deref().unwrap_or(&removed.classid),
+                  removed.comment.as_deref().unwrap_or(&removed.class_id),
                   circuit_hash);
         } else {
             warn!("Circuit hash {} not found in state during pruning", circuit_hash);
