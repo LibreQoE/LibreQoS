@@ -646,7 +646,7 @@ def refreshShapers():
 				if 'downloadBandwidthMbpsMin' in data[elem]:
 					data[elem]['downloadBandwidthMbpsMin'] = max(data[elem]['downloadBandwidthMbpsMin'], minDownload)
 				else:
-					data[elem]['downloadBandwidthMbpsMin'] = max(data[elem]['downloadBandwidthMbps'], minUpload)
+					data[elem]['downloadBandwidthMbpsMin'] = max(data[elem]['downloadBandwidthMbps'], minDownload)
 				if 'uploadBandwidthMbpsMin' in data[elem]:
 					data[elem]['uploadBandwidthMbpsMin'] = max(data[elem]['uploadBandwidthMbpsMin'], minUpload)
 				else:
@@ -662,10 +662,10 @@ def refreshShapers():
 				if isinstance(node, str):
 					if (isinstance(data[node], dict)) and (node != 'children'):
 						# Cap based on this node's max bandwidth, or parent node's max bandwidth, whichever is lower
-						data[node]['downloadBandwidthMbps'] = min(int(data[node]['downloadBandwidthMbps']),int(parentMaxDL))
-						data[node]['uploadBandwidthMbps'] = min(int(data[node]['uploadBandwidthMbps']),int(parentMaxUL))
-						data[node]['downloadBandwidthMbpsMin'] = min(int(data[node]['downloadBandwidthMbpsMin']),int(data[node]['downloadBandwidthMbps']),int(parentMinDL))
-						data[node]['uploadBandwidthMbpsMin'] = min(int(data[node]['uploadBandwidthMbpsMin']),int(data[node]['uploadBandwidthMbps']),int(parentMinUL))
+						data[node]['downloadBandwidthMbps'] = min(float(data[node]['downloadBandwidthMbps']),float(parentMaxDL))
+						data[node]['uploadBandwidthMbps'] = min(float(data[node]['uploadBandwidthMbps']),float(parentMaxUL))
+						data[node]['downloadBandwidthMbpsMin'] = min(float(data[node]['downloadBandwidthMbpsMin']),float(data[node]['downloadBandwidthMbps']),float(parentMinDL))
+						data[node]['uploadBandwidthMbpsMin'] = min(float(data[node]['uploadBandwidthMbpsMin']),float(data[node]['uploadBandwidthMbps']),float(parentMinUL))
 						# Recursive call this function for children nodes attached to this node
 						if 'children' in data[node]:
 							# We need to keep tabs on the minor counter, because we can't have repeating class IDs. Here, we bring back the minor counter from the recursive function
@@ -930,7 +930,7 @@ def refreshShapers():
 			# Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
 			# Technically, that should not even happen. So don't expect much if any traffic in this default class.
 			# Only 1/4 of defaultClassCapacity is guaranteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
-			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + format_rate_for_tc(round((upstream_bandwidth_capacity_download_mbps()-1)/4)) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_download_mbps()-1) + ' prio 5' + quantum(upstream_bandwidth_capacity_download_mbps())
+			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + format_rate_for_tc((upstream_bandwidth_capacity_download_mbps()-1)/4) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_download_mbps()-1) + ' prio 5' + quantum(upstream_bandwidth_capacity_download_mbps())
 			linuxTCcommands.append(command)
 			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + sqm()
 			linuxTCcommands.append(command)
@@ -951,7 +951,7 @@ def refreshShapers():
 			# Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
 			# Technically, that should not even happen. So don't expect much if any traffic in this default class.
 			# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
-			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 classid ' + hex(queue+stickOffset+1) + ':2 htb rate ' + format_rate_for_tc(round((upstream_bandwidth_capacity_upload_mbps()-1)/4)) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_upload_mbps()-1) + ' prio 5' + quantum(upstream_bandwidth_capacity_upload_mbps())
+			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 classid ' + hex(queue+stickOffset+1) + ':2 htb rate ' + format_rate_for_tc((upstream_bandwidth_capacity_upload_mbps()-1)/4) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_upload_mbps()-1) + ' prio 5' + quantum(upstream_bandwidth_capacity_upload_mbps())
 			linuxTCcommands.append(command)
 			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':2 ' + sqm()
 			linuxTCcommands.append(command)
@@ -1032,7 +1032,6 @@ def refreshShapers():
 				if 'circuits' in data[node]:
 					for circuit in data[node]['circuits']:
 						# If circuit mins exceed node mins - handle low min rates of 1 to mean 10 kbps.
-						# Avoid changing minDownload or minUpload because they are used in queuingStructure.json, and must remain integers.
 						min_down = circuit['minDownload']
 						min_up = circuit['minUpload']
 						if node in nodes_requiring_min_squashing:
