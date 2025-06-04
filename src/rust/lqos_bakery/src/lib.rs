@@ -19,6 +19,7 @@
 mod utils;
 mod commands;
 
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
@@ -28,7 +29,8 @@ use tracing::{debug, error, info, warn};
 use utils::current_timestamp;
 pub (crate) const CHANNEL_CAPACITY: usize = 65536; // 64k capacity for Bakery commands
 pub use commands::BakeryCommands;
-use lqos_config::Config;
+use lqos_config::{Config, LazyQueueMode};
+use crate::commands::ExecutionMode;
 
 pub static BAKERY_SENDER: OnceLock<Sender<BakeryCommands>> = OnceLock::new();
 
@@ -51,6 +53,9 @@ pub fn start_bakery() -> anyhow::Result<crossbeam_channel::Sender<BakeryCommands
 fn bakery_main(rx: Receiver<BakeryCommands>) {
     // Current operation batch
     let mut batch = None;
+    let mut sites = HashMap::new();
+    let mut circuits = HashMap::new();
+    let mut live_circuits = HashMap::new();
 
     while let Ok(command) = rx.recv() {
         debug!("Bakery received command: {:?}", command);
@@ -65,9 +70,11 @@ fn bakery_main(rx: Receiver<BakeryCommands>) {
                     continue;
                 };
 
+                sites.clear();
+                circuits.clear();
                 let new_batch = batch.take(); // Take the batch to avoid cloning
                 if let Some(new_batch) = new_batch {
-                    process_batch(new_batch, &config);
+                    process_batch(new_batch, &config, &mut sites, &mut circuits);
                 }
                 batch = None; // Clear the batch after committing
             },
@@ -86,28 +93,143 @@ fn bakery_main(rx: Receiver<BakeryCommands>) {
                     batch.push(command.clone());
                 }
             }
+            BakeryCommands::OnCircuitActivity { circuit_ids } => {
+                let Ok(config) = lqos_config::load_config() else {
+                    error!("Failed to load configuration, exiting Bakery thread.");
+                    continue;
+                };
+                match config.queues.lazy_queues.as_ref() {
+                    None | Some(LazyQueueMode::No) => continue,
+                    _ => {}
+                }
+
+                let path = Path::new(&config.lqos_directory)
+                    .join("linux_tc_rust_live.txt");
+                let path_str = path.to_string_lossy().to_string();
+                let mut commands = Vec::new();
+                for circuit_id in circuit_ids {
+                    if let Some(circuit) = live_circuits.get_mut(&circuit_id) {
+                        *circuit = current_timestamp();
+                        continue;
+                    }
+
+                    if let Some(command) = circuits.get(&circuit_id) {
+                        let Some(cmd) = command.to_commands(&config, ExecutionMode::LiveUpdate) else {
+                            continue;
+                        };
+                        live_circuits.insert(circuit_id, current_timestamp());
+                        commands.extend(cmd);
+                    }
+                }
+                if commands.is_empty() {
+                    continue; // No commands to write
+                }
+                write_command_file(&path, commands);
+                info!("Bakery: Live Update Command file written successfully at {}", path_str);
+                std::process::Command::new("/sbin/tc")
+                    .arg("-f") // Force the command to run
+                    .arg("-b") // Batch mode
+                    .arg(path_str) // Path to the command file
+                    .spawn()
+                    .map_err(|e| error!("Failed to execute tc command: {}", e))
+                    .ok(); // Ignore errors, as we just want to run the command
+            }
+            BakeryCommands::Tick => {
+                // This is a periodic tick to expire lazy queues
+                let Ok(config) = lqos_config::load_config() else {
+                    error!("Failed to load configuration, exiting Bakery thread.");
+                    continue;
+                };
+                match config.queues.lazy_queues.as_ref() {
+                    None | Some(LazyQueueMode::No) => continue,
+                    _ => {}
+                }
+
+                // Now we know that lazy queues are enabled, we can expire them!
+                let max_age_seconds = config.queues.lazy_expire_seconds.unwrap_or(600);
+                if max_age_seconds == 0 {
+                    // If max_age_seconds is 0, we do not expire queues
+                    continue;
+                }
+
+                let mut to_destroy = Vec::new();
+                let now = current_timestamp();
+                for (circuit_id, last_activity) in live_circuits.iter() {
+                    if now - *last_activity > max_age_seconds {
+                        to_destroy.push(*circuit_id);
+                    }
+                }
+
+                if to_destroy.is_empty() {
+                    continue; // No queues to expire
+                }
+
+                let path = Path::new(&config.lqos_directory)
+                    .join("linux_tc_rust_prune.txt");
+                let path_str = path.to_string_lossy().to_string();
+                let mut commands = Vec::new();
+                for circuit_id in to_destroy {
+                    if let Some(command) = circuits.get(&circuit_id) {
+                        let Some(cmd) = command.to_prune(&config) else {
+                            continue;
+                        };
+                        live_circuits.remove(&circuit_id);
+                        commands.extend(cmd);
+                    }
+                }
+
+                if commands.is_empty() {
+                    continue; // No commands to write
+                }
+                write_command_file(&path, commands);
+                info!("Bakery: Live Update Prune Command file written successfully at {}", path_str);
+                std::process::Command::new("/sbin/tc")
+                    .arg("-f") // Force the command to run
+                    .arg("-b") // Batch mode
+                    .arg(path_str) // Path to the command file
+                    .spawn()
+                    .map_err(|e| error!("Failed to execute tc command: {}", e))
+                    .ok(); // Ignore errors, as we just want to run the command
+            }
         }
     }
     error!("Bakery thread exited unexpectedly.");
 }
 
-fn process_batch(batch: Vec<BakeryCommands>, config: &Arc<lqos_config::Config>) {
+fn process_batch(
+    batch: Vec<BakeryCommands>,
+    config: &Arc<lqos_config::Config>,
+    sites: &mut HashMap<i64, BakeryCommands>,
+    circuits: &mut HashMap<i64, BakeryCommands>,
+) {
     info!("Bakery: Processing batch of {} commands", batch.len());
     let commands = batch
         .into_iter()
-        .map(|b| b.to_commands(config))
+        .map(|b| {
+            // Ensure that our state map is up to date with the latest commands
+            match &b {
+                BakeryCommands::AddSite { site_hash, .. } => {
+                    sites.insert(*site_hash, b.clone());
+                }
+                BakeryCommands::AddCircuit { circuit_hash, .. } => {
+                    circuits.insert(*circuit_hash, b.clone());
+                }
+                _ => {}
+            }
+            b.to_commands(config, ExecutionMode::Builder)
+        })
         .flatten()
         .flatten()
         .collect::<Vec<Vec<String>>>();
 
-    if write_command_file(&config, commands) {
-        // Something bad happened while writing the command file
-        return;
-    }
-
     let path = Path::new(&config.lqos_directory)
         .join("linux_tc_rust.txt");
     let path_str = path.to_string_lossy().to_string();
+
+    if write_command_file(&path, commands) {
+        // Something bad happened while writing the command file
+        return;
+    }
 
     info!("Bakery: Command file written successfully at {}", path_str);
     // /sbin/tc -f -b linux_tc.txt
@@ -120,11 +242,8 @@ fn process_batch(batch: Vec<BakeryCommands>, config: &Arc<lqos_config::Config>) 
         .ok(); // Ignore errors, as we just want to run the command
 }
 
-fn write_command_file(config: &&Arc<Config>, commands: Vec<Vec<String>>) -> bool {
-    // Output file
-    let path = Path::new(&config.lqos_directory)
-        .join("linux_tc_rust.txt");
-    let Ok(f) = File::create(&path) else {
+fn write_command_file(path: &Path, commands: Vec<Vec<String>>) -> bool {
+    let Ok(f) = File::create(path) else {
         error!("Failed to create output file: {}", path.display());
         return true;
     };

@@ -19,7 +19,7 @@ use lqos_queue_tracker::ALL_QUEUE_SUMMARY;
 use lqos_sys::{flowbee_data::FlowbeeKey, iterate_flows, throughput_for_each};
 use lqos_utils::units::{AtomicDownUp, DownUpOrder};
 use lqos_utils::{XdpIpAddress, unix_time::time_since_boot};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use std::{sync::atomic::AtomicU64, time::Duration};
 use tracing::{debug, info, warn};
@@ -133,6 +133,8 @@ impl ThroughputTracker {
         net_json_calc: &mut NetworkJson,
         bakery_sender: crossbeam_channel::Sender<BakeryCommands>,
     ) {
+        let mut changed_circuits = HashSet::new();
+
         let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
         let mut raw_data = self.raw_data.lock().unwrap();
         throughput_for_each(&mut |xdp_ip, counts| {
@@ -169,10 +171,7 @@ impl ThroughputTracker {
                     entry.most_recent_cycle = self_cycle;
                     // Call to Bakery Update for existing traffic
                     if let Some(circuit_hash) = entry.circuit_hash {
-                        debug!("Sending UpdateCircuit for circuit_hash: {}", circuit_hash);
-                        // TODO: Update goes here
-                    } else if entry.circuit_hash.is_some() {
-                        debug!("No bakery sender available for UpdateCircuit (circuit_hash: {:?})", entry.circuit_hash);
+                        changed_circuits.insert(circuit_hash);
                     }
 
                     if let Some(parents) = &entry.network_json_parents {
@@ -221,12 +220,9 @@ impl ThroughputTracker {
                 }
             } else {
                 let (circuit_id, circuit_hash) = Self::lookup_circuit_id(xdp_ip);
-                // Call to Bakery Queue Creation for new circuits
+                // Call the Bakery Queue Creation for new circuits
                 if let Some(circuit_hash) = circuit_hash {
-                    info!("NEW CIRCUIT DETECTED! Sending CreateCircuit for circuit_hash: {}", circuit_hash);
-                    // TODO: Update goes here
-                } else {
-                    debug!("No bakery sender or circuit_hash for new circuit (circuit_hash: {:?})", circuit_hash);
+                    changed_circuits.insert(circuit_hash);
                 }
                 let mut entry = ThroughputEntry {
                     circuit_id: circuit_id.clone(),
@@ -277,6 +273,15 @@ impl ThroughputTracker {
                 raw_data.insert(*xdp_ip, entry);
             }
         });
+
+        if !changed_circuits.is_empty() {
+            if let Err(e) = bakery_sender.send(BakeryCommands::OnCircuitActivity { circuit_ids: changed_circuits }) {
+                warn!("Failed to send BakeryCommands::OnCircuitActivity: {:?}", e);
+            }
+        }
+        if let Err(e) = bakery_sender.send(BakeryCommands::Tick) {
+            warn!("Failed to send BakeryCommands::Tick: {:?}", e);
+        }
     }
 
     pub(crate) fn apply_queue_stats(&self, net_json_calc: &mut NetworkJson) {

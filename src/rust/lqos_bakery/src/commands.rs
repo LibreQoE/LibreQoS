@@ -1,8 +1,22 @@
+use std::collections::HashSet;
 use std::sync::Arc;
+use tracing::warn;
+use lqos_config::LazyQueueMode;
+
+/// Execution Mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionMode {
+    /// We're constructing the tree
+    Builder,
+    /// Live Update
+    LiveUpdate,
+}
 
 /// List of commands that the Bakery system can handle.
 #[derive(Debug, Clone)]
 pub enum BakeryCommands {
+    OnCircuitActivity { circuit_ids: HashSet<i64> },
+    Tick,
     StartBatch,
     CommitBatch,
     MqSetup { queues_available: usize, stick_offset: usize },
@@ -38,7 +52,7 @@ pub enum BakeryCommands {
 }
 
 impl BakeryCommands {
-    pub fn to_commands(&self, config: &Arc<lqos_config::Config>) -> Option<Vec<Vec<String>>> {
+    pub fn to_commands(&self, config: &Arc<lqos_config::Config>, execution_mode: ExecutionMode) -> Option<Vec<Vec<String>>> {
         match self {
             BakeryCommands::MqSetup { queues_available, stick_offset } => Self::mq_setup(config, *queues_available, *stick_offset),
             BakeryCommands::AddSite {
@@ -76,6 +90,7 @@ impl BakeryCommands {
                 sqm_up,
                 comment,
             } => Self::add_circuit(
+                execution_mode,
                 config, *circuit_hash, parent_class_id.clone(), up_parent_class_id.clone(),
                 class_minor.clone(), download_bandwidth_min.clone(),
                 upload_bandwidth_min.clone(), download_bandwidth_max.clone(),
@@ -359,6 +374,7 @@ command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_parentC
     }
 
     fn add_circuit(
+        execution_mode: ExecutionMode,
         config: &Arc<lqos_config::Config>,
         circuit_hash: i64,
         parent_class_id: String,
@@ -376,6 +392,44 @@ command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_parentC
         sqm_up: String,
         comment: String,
     ) -> Option<Vec<Vec<String>>> {
+        let mut do_htb = true;
+        let mut do_sqm = true;
+
+        if execution_mode == ExecutionMode::Builder {
+            // In builder mode, if we're fully lazy - we don't do anything.
+            match config.queues.lazy_queues.as_ref() {
+                None | Some(LazyQueueMode::No) => {
+                    do_htb = true;
+                    do_sqm = true;
+                },
+                Some(LazyQueueMode::Full) => return None,
+                Some(LazyQueueMode::Htb) => {
+                    do_htb = true;
+                    do_sqm = false; // Only HTB, no SQM
+                }
+            }
+        } else {
+            // We're in live update mode
+            match config.queues.lazy_queues.as_ref() {
+                None | Some(LazyQueueMode::No) => {
+                    warn!("Builder should not encounter lazy updates when lazy is disabled!");
+                    // Set both modes to false, avoiding clashes
+                    do_htb = false;
+                    do_sqm = false;
+                }
+                Some(LazyQueueMode::Htb) => {
+                    // The HTB will already have been created, so we're just making the SQM
+                    do_htb = false;
+                    do_sqm = true;
+                }
+                Some(LazyQueueMode::Full) => {
+                    // In full lazy mode, we only create the HTB and SQM if they don't exist
+                    do_htb = true;
+                    do_sqm = true;
+                }
+            }
+        }
+
         let mut result = Vec::new();
 /*
 bakery.add_circuit(data[node]['classid'], data[node]['up_classid'], circuit['classMinor'], format_rate_for_tc(min_down), format_rate_for_tc(min_up), format_rate_for_tc(circuit['maxDownload']), format_rate_for_tc(circuit['maxUpload']), quantum(circuit['maxDownload']), quantum(circuit['maxUpload']), circuit['classMajor'], circuit['up_classMajor'], sqmFixupRate(circuit['maxDownload'], sqm()), sqmFixupRate(circuit['maxUpload'], sqm()), tcComment)
@@ -397,17 +451,18 @@ if monitor_mode_only() == False:
     linuxTCcommands.append(command)
     pass
  */
-        result.push(vec![
-            "class".to_string(), "add".to_string(), "dev".to_string(), config.isp_interface(),
-            "parent".to_string(), parent_class_id.clone(),
-            "classid".to_string(), class_minor.clone(), "htb".to_string(),
-            "rate".to_string(), download_bandwidth_min.clone(),
-            "ceil".to_string(), download_bandwidth_max.clone(),
-            "prio".to_string(), "3".to_string(),
-            quantum_down.clone(),
-        ]);
-        if !config.queues.monitor_only {
-            let sqm = Self::sqm_as_vec(config);
+        if do_htb {
+            result.push(vec![
+                "class".to_string(), "add".to_string(), "dev".to_string(), config.isp_interface(),
+                "parent".to_string(), parent_class_id.clone(),
+                "classid".to_string(), class_minor.clone(), "htb".to_string(),
+                "rate".to_string(), download_bandwidth_min.clone(),
+                "ceil".to_string(), download_bandwidth_max.clone(),
+                "prio".to_string(), "3".to_string(),
+                quantum_down.clone(),
+            ]);
+        }
+        if !config.queues.monitor_only && do_sqm {
             let sqm_command = vec![
                 "qdisc".to_string(), "add".to_string(), "dev".to_string(),
                 config.isp_interface(),
@@ -417,17 +472,19 @@ if monitor_mode_only() == False:
             result.push(sqm_command);
         }
 
-        result.push(vec![
-            "class".to_string(), "add".to_string(), "dev".to_string(), config.internet_interface(),
-            "parent".to_string(), up_parent_class_id.clone(),
-            "classid".to_string(), class_minor.clone(),
-            "htb".to_string(), "rate".to_string(), upload_bandwidth_min.clone(),
-            "ceil".to_string(), upload_bandwidth_max.clone(),
-            "prio".to_string(), "3".to_string(),
-            quantum_up.clone(),
-        ]);
+        if do_htb {
+            result.push(vec![
+                "class".to_string(), "add".to_string(), "dev".to_string(), config.internet_interface(),
+                "parent".to_string(), up_parent_class_id.clone(),
+                "classid".to_string(), class_minor.clone(),
+                "htb".to_string(), "rate".to_string(), upload_bandwidth_min.clone(),
+                "ceil".to_string(), upload_bandwidth_max.clone(),
+                "prio".to_string(), "3".to_string(),
+                quantum_up.clone(),
+            ]);
+        }
 
-        if !config.queues.monitor_only {
+        if !config.queues.monitor_only && do_sqm {
             let sqm = Self::sqm_as_vec(config);
             let sqm_command = vec![
                 "qdisc".to_string(), "add".to_string(), "dev".to_string(),
@@ -436,6 +493,70 @@ if monitor_mode_only() == False:
                 sqm_up,
             ];
             result.push(sqm_command);
+        }
+
+        Some(result)
+    }
+
+    pub fn to_prune(
+        &self,
+        config: &Arc<lqos_config::Config>,
+    ) -> Option<Vec<Vec<String>>> {
+        let BakeryCommands::AddCircuit { circuit_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, quantum_down, quantum_up, class_major, up_class_major, sqm_down, sqm_up, comment } = self else {
+            warn!("to_prune called on non-circuit command!");
+            return None;
+        };
+
+        let mut prune_htb = false;
+        let mut prune_sqm = false;
+        let mut result = Vec::new();
+
+        match config.queues.lazy_queues.as_ref() {
+            None | Some(LazyQueueMode::No) => {
+                warn!("Builder should not encounter lazy updates when lazy is disabled!");
+                // Set both modes to false, avoiding clashes
+                prune_htb = false;
+                prune_htb = false;
+                return None;
+            }
+            Some(LazyQueueMode::Htb) => {
+                // The HTB will already have been created, so we're just making the SQM
+                prune_htb = false;
+                prune_sqm = true;
+            }
+            Some(LazyQueueMode::Full) => {
+                // In full lazy mode, we only create the HTB and SQM if they don't exist
+                prune_htb = true;
+                prune_sqm = true;
+            }
+        }
+
+        if prune_sqm {
+            // Prune the SQM qdisc
+            if !config.on_a_stick_mode() {
+                result.push(vec![
+                    "qdisc".to_string(), "del".to_string(), "dev".to_string(), config.internet_interface(),
+                    "parent".to_string(), format!("{}:{}", up_class_major, class_minor),
+                ]);
+            }
+            result.push(vec![
+                "qdisc".to_string(), "del".to_string(), "dev".to_string(), config.isp_interface(),
+                "parent".to_string(), format!("{}:{}", class_major, class_minor),
+            ]);
+        }
+
+        if prune_htb {
+            // Prune the HTB class
+            result.push(vec![
+                "class".to_string(), "del".to_string(), "dev".to_string(), config.isp_interface(),
+                "parent".to_string(), parent_class_id.clone(),
+                "classid".to_string(), class_minor.clone(),
+            ]);
+            result.push(vec![
+                "class".to_string(), "del".to_string(), "dev".to_string(), config.internet_interface(),
+                "parent".to_string(), up_parent_class_id.clone(),
+                "classid".to_string(), class_minor.clone(),
+            ]);
         }
 
         Some(result)

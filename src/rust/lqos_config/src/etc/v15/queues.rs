@@ -36,10 +36,18 @@ pub struct QueueConfig {
     pub use_binpacking: bool,
 
     /// Enable lazy queue creation (only create circuit queues when traffic is detected)
-    pub lazy_queues: Option<bool>,
+    pub lazy_queues: Option<LazyQueueMode>,
 
     /// Expiration time in seconds for unused lazy queues (None = never expire)
     pub lazy_expire_seconds: Option<u64>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Default)]
+pub enum LazyQueueMode {
+    #[default]
+    No,
+    Htb,
+    Full,
 }
 
 impl Default for QueueConfig {
