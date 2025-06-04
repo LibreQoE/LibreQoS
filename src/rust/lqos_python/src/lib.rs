@@ -105,6 +105,7 @@ fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(client_bandwidth_multiplier))?;
     m.add_wrapped(wrap_pyfunction!(calculate_hash))?;
 
+    m.add_class::<Bakery>()?;
     Ok(())
 }
 
@@ -824,4 +825,213 @@ fn calculate_hash() -> PyResult<i64> {
     let hash = lqos_utils::hash_to_i64(&combined);
 
     Ok(hash)
+}
+
+////////////////////////////// The Bakery class //////////////////////////////
+
+#[derive(Clone)]
+enum BakeryCommands {
+    StartBatch,
+    Commit,
+    MqSetup { queues_available: usize, stick_offset: usize },
+    AddSite {
+        site_hash: i64,
+        parent_class_id: String,
+        up_parent_class_id: String,
+        class_minor: String,
+        download_bandwidth_min: String,
+        upload_bandwidth_min: String,
+        download_bandwidth_max: String,
+        upload_bandwidth_max: String,
+        quantum_down: String,
+        quantum_up: String,
+    },
+    AddCircuit {
+        circuit_hash: i64,
+        parent_class_id: String,
+        up_parent_class_id: String,
+        class_minor: String,
+        download_bandwidth_min: String,
+        upload_bandwidth_min: String,
+        download_bandwidth_max: String,
+        upload_bandwidth_max: String,
+        quantum_down: String,
+        quantum_up: String,
+        class_major: String,
+        up_class_major: String,
+        sqm_down: String,
+        sqm_up: String,
+        comment: String,
+    }
+}
+
+#[pyclass]
+pub struct Bakery {
+    queue: Vec<BakeryCommands>,
+}
+
+#[pymethods]
+impl Bakery {
+    #[new]
+    pub fn new() -> PyResult<Self> {
+        Ok(Self {
+            queue: Vec::new(),
+        })
+    }
+
+    pub fn start_batch(&mut self) -> PyResult<()> {
+        self.queue.push(BakeryCommands::StartBatch);
+        Ok(())
+    }
+
+    pub fn commit(&mut self) -> PyResult<()> {
+        self.queue.push(BakeryCommands::Commit);
+
+        // Send the commands batched up to the bus
+        let queue = self.queue.clone();
+        let handle = std::thread::spawn(move || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build().unwrap()
+                .block_on(async {
+                    let mut bus = lqos_bus::LibreqosBusClient::new().await.unwrap();
+                    let chunks = queue.chunks(512);
+                    for chunk in chunks {
+                        let mut requests = Vec::new();
+                        for msg in chunk {
+                            match msg {
+                                BakeryCommands::StartBatch => requests.push(BusRequest::BakeryStart),
+                                BakeryCommands::Commit => requests.push(BusRequest::BakeryCommit),
+                                BakeryCommands::MqSetup { queues_available, stick_offset } => {
+                                    requests.push(BusRequest::BakeryMqSetup {
+                                        queues_available: *queues_available,
+                                        stick_offset: *stick_offset,
+                                    });
+                                },
+                                BakeryCommands::AddSite { site_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, quantum_down, quantum_up } => {
+                                    let command = BusRequest::BakeryAddSite {
+                                        site_hash: *site_hash,
+                                        parent_class_id: parent_class_id.clone(),
+                                        up_parent_class_id: up_parent_class_id.clone(),
+                                        class_minor: class_minor.clone(),
+                                        download_bandwidth_min: download_bandwidth_min.clone(),
+                                        upload_bandwidth_min: upload_bandwidth_min.clone(),
+                                        download_bandwidth_max: download_bandwidth_max.clone(),
+                                        upload_bandwidth_max: upload_bandwidth_max.clone(),
+                                        quantum_down: quantum_down.trim().to_string(),
+                                        quantum_up: quantum_up.trim().to_string(),
+                                    };
+                                    requests.push(command);
+                                }
+                                BakeryCommands::AddCircuit { circuit_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, quantum_down, quantum_up, class_major, up_class_major, sqm_down, sqm_up, comment } => {
+                                    let command = BusRequest::BakeryAddCircuit {
+                                        circuit_hash: *circuit_hash,
+                                        parent_class_id: parent_class_id.clone(),
+                                        up_parent_class_id: up_parent_class_id.clone(),
+                                        class_minor: class_minor.clone(),
+                                        download_bandwidth_min: download_bandwidth_min.clone(),
+                                        upload_bandwidth_min: upload_bandwidth_min.clone(),
+                                        download_bandwidth_max: download_bandwidth_max.clone(),
+                                        upload_bandwidth_max: upload_bandwidth_max.clone(),
+                                        quantum_down: quantum_down.trim().to_string(),
+                                        quantum_up: quantum_up.trim().to_string(),
+                                        class_major: class_major.trim().to_string(),
+                                        up_class_major: up_class_major.clone(),
+                                        sqm_down: sqm_down.clone(),
+                                        sqm_up: sqm_up.clone(),
+                                        comment: comment.clone(),
+                                    };
+                                    requests.push(command);
+                                }
+                            }
+                        }
+                        if let Err(e) = bus.request(requests).await {
+                            eprintln!("Failed to send batch commands: {}", e);
+                        } else {
+                            println!("Sent a batch of commands to Bakery");
+                        }
+                    }
+                });
+        });
+        let _ = handle.join();
+
+        Ok(())
+    }
+
+    pub fn setup_mq(&mut self, queues_available: usize, stick_offset: usize) -> PyResult<()> {
+        self.queue.push(BakeryCommands::MqSetup { queues_available, stick_offset });
+        Ok(())
+    }
+
+    pub fn add_site(
+        &mut self,
+        site_name: String,
+        parent_class_id: String,
+        up_parent_class_id: String,
+        class_minor: String,
+        download_bandwidth_min: String,
+        upload_bandwidth_min: String,
+        download_bandwidth_max: String,
+        upload_bandwidth_max: String,
+        quantum_down: String,
+        quantum_up: String,
+    ) -> PyResult<()> {
+        let site_hash = lqos_utils::hash_to_i64(&site_name);
+        //println!("Name hash for site {site_name} is {site_hash}");
+        let command = BakeryCommands::AddSite {
+            site_hash,
+            parent_class_id,
+            up_parent_class_id,
+            class_minor,
+            download_bandwidth_min,
+            upload_bandwidth_min,
+            download_bandwidth_max,
+            upload_bandwidth_max,
+            quantum_down,
+            quantum_up,
+        };
+        self.queue.push(command);
+        Ok(())
+    }
+
+    pub fn add_circuit(
+        &mut self,
+        circuit_name: String,
+        parent_class_id: String,
+        up_parent_class_id: String,
+        class_minor: String,
+        download_bandwidth_min: String,
+        upload_bandwidth_min: String,
+        download_bandwidth_max: String,
+        upload_bandwidth_max: String,
+        quantum_down: String,
+        quantum_up: String,
+        class_major: String,
+        up_class_major: String,
+        sqm_down: String,
+        sqm_up: String,
+        comment: String,
+    ) -> PyResult<()> {
+        let circuit_hash = lqos_utils::hash_to_i64(&circuit_name);
+        //println!("Name: {circuit_name}, hash: {circuit_hash}");
+        let command = BakeryCommands::AddCircuit {
+            circuit_hash,
+            parent_class_id,
+            up_parent_class_id,
+            class_minor,
+            download_bandwidth_min,
+            upload_bandwidth_min,
+            download_bandwidth_max,
+            upload_bandwidth_max,
+            quantum_down,
+            quantum_up,
+            class_major,
+            up_class_major,
+            sqm_down,
+            sqm_up,
+            comment,
+        };
+        self.queue.push(command);
+        Ok(())
+    }
 }

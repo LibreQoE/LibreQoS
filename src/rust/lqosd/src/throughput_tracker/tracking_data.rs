@@ -131,7 +131,7 @@ impl ThroughputTracker {
     pub(crate) fn apply_new_throughput_counters(
         &self, 
         net_json_calc: &mut NetworkJson,
-        bakery_sender: Option<&crossbeam_channel::Sender<BakeryCommands>>,
+        bakery_sender: crossbeam_channel::Sender<BakeryCommands>,
     ) {
         let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
         let mut raw_data = self.raw_data.lock().unwrap();
@@ -168,7 +168,7 @@ impl ThroughputTracker {
                 if entry.packets != entry.prev_packets {
                     entry.most_recent_cycle = self_cycle;
                     // Call to Bakery Update for existing traffic
-                    if let (Some(sender), Some(circuit_hash)) = (bakery_sender, entry.circuit_hash) {
+                    if let Some(circuit_hash) = entry.circuit_hash {
                         debug!("Sending UpdateCircuit for circuit_hash: {}", circuit_hash);
                         // TODO: Update goes here
                     } else if entry.circuit_hash.is_some() {
@@ -222,12 +222,11 @@ impl ThroughputTracker {
             } else {
                 let (circuit_id, circuit_hash) = Self::lookup_circuit_id(xdp_ip);
                 // Call to Bakery Queue Creation for new circuits
-                if let (Some(sender), Some(circuit_hash)) = (bakery_sender, circuit_hash) {
+                if let Some(circuit_hash) = circuit_hash {
                     info!("NEW CIRCUIT DETECTED! Sending CreateCircuit for circuit_hash: {}", circuit_hash);
                     // TODO: Update goes here
                 } else {
-                    debug!("No bakery sender or circuit_hash for new circuit (sender: {}, circuit_hash: {:?})", 
-                           bakery_sender.is_some(), circuit_hash);
+                    debug!("No bakery sender or circuit_hash for new circuit (circuit_hash: {:?})", circuit_hash);
                 }
                 let mut entry = ThroughputEntry {
                     circuit_id: circuit_id.clone(),

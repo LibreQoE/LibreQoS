@@ -135,3 +135,4 @@ src/bin/static2/flags
 /src/rust/lqosd/lqosd-output.log
 /src/bin/uisp_integration
 /src/xdp_iphash_output.log
+/src/linux_tc_rust.txt

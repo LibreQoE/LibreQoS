@@ -227,6 +227,46 @@ pub enum BusRequest {
 
     /// Finish a blackboard session
     BlackboardFinish,
+
+    // lqos_bakery requests
+
+    /// Start a bakery session
+    BakeryStart,
+    /// Request a bakery commit
+    BakeryCommit,
+    /// Setup the MQ top
+    BakeryMqSetup { queues_available: usize, stick_offset: usize },
+    /// Add a site to the bakery
+    BakeryAddSite {
+        site_hash: i64,
+        parent_class_id: String,
+        up_parent_class_id: String,
+        class_minor: String,
+        download_bandwidth_min: String,
+        upload_bandwidth_min: String,
+        download_bandwidth_max: String,
+        upload_bandwidth_max: String,
+        quantum_down: String,
+        quantum_up: String,
+    },
+    /// Add a circuit to the bakery
+    BakeryAddCircuit {
+        circuit_hash: i64,
+        parent_class_id: String,
+        up_parent_class_id: String,
+        class_minor: String,
+        download_bandwidth_min: String,
+        upload_bandwidth_min: String,
+        download_bandwidth_max: String,
+        upload_bandwidth_max: String,
+        quantum_down: String,
+        quantum_up: String,
+        class_major: String,
+        up_class_major: String,
+        sqm_down: String,
+        sqm_up: String,
+        comment: String,
+    },
 }
 
 /// Defines the parts of the blackboard

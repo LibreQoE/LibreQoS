@@ -1,4 +1,443 @@
+use std::sync::Arc;
+
 /// List of commands that the Bakery system can handle.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum BakeryCommands {
+    StartBatch,
+    CommitBatch,
+    MqSetup { queues_available: usize, stick_offset: usize },
+    AddSite {
+        site_hash: i64,
+        parent_class_id: String,
+        up_parent_class_id: String,
+        class_minor: String,
+        download_bandwidth_min: String,
+        upload_bandwidth_min: String,
+        download_bandwidth_max: String,
+        upload_bandwidth_max: String,
+        quantum_down: String,
+        quantum_up: String,
+    },
+    AddCircuit {
+        circuit_hash: i64,
+        parent_class_id: String,
+        up_parent_class_id: String,
+        class_minor: String,
+        download_bandwidth_min: String,
+        upload_bandwidth_min: String,
+        download_bandwidth_max: String,
+        upload_bandwidth_max: String,
+        quantum_down: String,
+        quantum_up: String,
+        class_major: String,
+        up_class_major: String,
+        sqm_down: String,
+        sqm_up: String,
+        comment: String,
+    }
+}
+
+impl BakeryCommands {
+    pub fn to_commands(&self, config: &Arc<lqos_config::Config>) -> Option<Vec<Vec<String>>> {
+        match self {
+            BakeryCommands::MqSetup { queues_available, stick_offset } => Self::mq_setup(config, *queues_available, *stick_offset),
+            BakeryCommands::AddSite {
+                site_hash,
+                parent_class_id,
+                up_parent_class_id,
+                class_minor,
+                download_bandwidth_min,
+                upload_bandwidth_min,
+                download_bandwidth_max,
+                upload_bandwidth_max,
+                quantum_down,
+                quantum_up,
+            } => Self::add_site(
+                config, *site_hash, parent_class_id.clone(), up_parent_class_id.clone(),
+                class_minor.clone(), download_bandwidth_min.clone(),
+                upload_bandwidth_min.clone(), download_bandwidth_max.clone(),
+                upload_bandwidth_max.clone(), quantum_down.clone(),
+                quantum_up.clone(),
+            ),
+            BakeryCommands::AddCircuit {
+                circuit_hash,
+                parent_class_id,
+                up_parent_class_id,
+                class_minor,
+                download_bandwidth_min,
+                upload_bandwidth_min,
+                download_bandwidth_max,
+                upload_bandwidth_max,
+                quantum_down,
+                quantum_up,
+                class_major,
+                up_class_major,
+                sqm_down,
+                sqm_up,
+                comment,
+            } => Self::add_circuit(
+                config, *circuit_hash, parent_class_id.clone(), up_parent_class_id.clone(),
+                class_minor.clone(), download_bandwidth_min.clone(),
+                upload_bandwidth_min.clone(), download_bandwidth_max.clone(),
+                upload_bandwidth_max.clone(), quantum_down.clone(),
+                quantum_up.clone(), class_major.clone(), up_class_major.clone(),
+                sqm_down.clone(), sqm_up.clone(), comment.clone(),
+            ),
+            _ => None,
+        }
+    }
+
+    fn sqm_as_vec(config: &Arc<lqos_config::Config>) -> Vec<String> {
+        config.queues.default_sqm.split(" ").map(|s| s.to_string()).collect()
+    }
+
+    fn format_rate_for_tc(rate: u64) -> String {
+	        // Format a rate in Mbps for TC commands with smart unit selection.
+	        // - Rates >= 1000 Mbps use 'gbit'
+	        // - Rates >= 1 Mbps use 'mbit'
+	        // - Rates < 1 Mbps use 'kbit'
+	        if rate >= 1000 {
+	            format!("{:.1}gbit", rate as f64 / 1000.0)
+	        } else if rate >= 1 {
+	            format!("{:.1}mbit", rate as f64)
+	        } else {
+	            format!("{:.0}kbit", rate as f64 * 1000.0)
+	        }
+    }
+    
+    fn r2q(max_rate_in_mbps: u64) -> u64 {
+        // Constants from Python implementation
+        const MAX_R2Q: f64 = 60_000.0; // From LibreQoS.py
+
+        // Convert rate in Mbps to bytes per second
+        let max_rate_in_bytes_per_second = (max_rate_in_mbps * 125000) as f64;
+
+        // Start with a default r2q value of 10
+        let mut r2q = 10u64;
+
+        // Calculate initial quantum using floating point division to match Python
+        let mut quantum = max_rate_in_bytes_per_second / r2q as f64;
+
+        // Increment r2q until quantum is below MAX_R2Q
+        // This matches Python's behavior of comparing float values
+        while quantum > MAX_R2Q {
+            r2q += 1;
+            quantum = max_rate_in_bytes_per_second / r2q as f64;
+        }
+
+        r2q
+    }
+
+    fn quantum(rate: u64, r2q: u64) -> String {
+        // Constants from Python implementation
+        const MIN_QUANTUM: u64 = 1522; // From LibreQoS.py
+
+        // Convert rate in Mbps to bytes per second
+        let rate_in_bytes_per_second = rate * 125000;
+
+        // Calculate quantum value using the same logic as Python
+        let quantum = std::cmp::max(MIN_QUANTUM, rate_in_bytes_per_second / r2q);
+
+        // Format and return the quantum string
+        quantum.to_string()
+    }
+
+    fn mq_setup(
+        config: &Arc<lqos_config::Config>,
+        queues_available: usize,
+        stick_offset: usize,
+    ) -> Option<Vec<Vec<String>>> {
+        // command = 'qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq'
+        let mut result = Vec::new();
+        let sqm_strings = Self::sqm_as_vec(config);
+        let r2q = Self::r2q(u64::max(config.queues.uplink_bandwidth_mbps, config.queues.downlink_bandwidth_mbps));
+
+        // ISP-facing interface (interface_a in Python)
+        result.push(vec![
+            "qdisc".to_string(), "replace".to_string(), "dev".to_string(),
+            config.isp_interface(),
+            "root".to_string(), "handle".to_string(), "7FFF:".to_string(),
+            "mq".to_string(),
+        ]);
+
+        /*
+        for queue in range(queuesAvailable):
+			command = 'qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2'
+			linuxTCcommands.append(command)
+			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ format_rate_for_tc(upstream_bandwidth_capacity_download_mbps()) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_download_mbps()) + quantum(upstream_bandwidth_capacity_download_mbps())
+			linuxTCcommands.append(command)
+			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + sqm()
+			linuxTCcommands.append(command)
+			# Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
+			# Technically, that should not even happen. So don't expect much if any traffic in this default class.
+			# Only 1/4 of defaultClassCapacity is guaranteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
+			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + format_rate_for_tc(round((upstream_bandwidth_capacity_download_mbps()-1)/4)) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_download_mbps()-1) + ' prio 5' + quantum(upstream_bandwidth_capacity_download_mbps())
+			linuxTCcommands.append(command)
+			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + sqm()
+			linuxTCcommands.append(command)
+         */
+
+        for queue in 0 .. queues_available {
+            // command = 'qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2'
+            result.push(vec![
+                "qdisc".to_string(), "add".to_string(), "dev".to_string(),
+                config.isp_interface(),
+                "parent".to_string(), format!("7FFF:0x{:x}", queue + 1),
+                "handle".to_string(), format!("0x{:x}:", queue + 1), "htb".to_string(),
+                "default".to_string(), "2".to_string(),
+            ]);
+            // command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ format_rate_for_tc(upstream_bandwidth_capacity_download_mbps()) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_download_mbps()) + quantum(upstream_bandwidth_capacity_download_mbps())
+            result.push(vec![
+                "class".to_string(), "add".to_string(), "dev".to_string(),
+                config.isp_interface(),
+                "parent".to_string(), format!("0x{:x}:", queue + 1),
+                "classid".to_string(), format!("0x{:x}:1", queue + 1), "htb".to_string(),
+                "rate".to_string(), Self::format_rate_for_tc(config.queues.uplink_bandwidth_mbps),
+                "ceil".to_string(), Self::format_rate_for_tc(config.queues.uplink_bandwidth_mbps),
+                "quantum".to_string(), Self::quantum(config.queues.uplink_bandwidth_mbps, r2q),
+            ]);
+            // command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + sqm()
+            let mut class = vec![
+                "qdisc".to_string(), "add".to_string(), "dev".to_string(),
+                config.isp_interface(),
+                "parent".to_string(), format!("0x{:x}:1", queue + 1),
+            ];
+            class.extend(sqm_strings.clone());
+            result.push(class);
+
+            // Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
+            // command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + format_rate_for_tc(round((upstream_bandwidth_capacity_download_mbps()-1)/4)) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_download_mbps()-1) + ' prio 5' + quantum(upstream_bandwidth_capacity_download_mbps())
+            let mbps = config.queues.uplink_bandwidth_mbps as f64;
+            let mbps_quarter = (mbps - 1.0) / 4.0;
+            let mbps_minus_one = mbps - 1.0;
+            result.push(vec![
+                "class".to_string(), "add".to_string(), "dev".to_string(),
+                config.isp_interface(),
+                "parent".to_string(), format!("0x{:x}:1", queue + 1),
+                "classid".to_string(), format!("0x{:x}:2", queue + 1), "htb".to_string(),
+                "rate".to_string(), Self::format_rate_for_tc(mbps_quarter as u64),
+                "ceil".to_string(), Self::format_rate_for_tc(mbps_minus_one as u64),
+                "prio".to_string(), "5".to_string(),
+                "quantum".to_string(), Self::quantum(config.queues.uplink_bandwidth_mbps, r2q),
+            ]);
+            // command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + sqm()
+            let mut default_class = vec![
+                "qdisc".to_string(), "add".to_string(), "dev".to_string(),
+                config.isp_interface(),
+                "parent".to_string(), format!("0x{:x}:2", queue + 1),
+            ];
+            default_class.extend(sqm_strings.clone());
+            result.push(default_class);
+        }
+
+        // Internet-facing interface (interface_b in Python)
+        if !config.on_a_stick_mode() {
+            result.push(vec![
+                "qdisc".to_string(), "replace".to_string(), "dev".to_string(),
+                config.internet_interface(),
+                "root".to_string(), "handle".to_string(), "7FFF:".to_string(),
+                "mq".to_string(),
+            ]);
+        }
+
+        /*
+        for queue in range(queuesAvailable):
+			command = 'qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+stickOffset+1) + ' handle ' + hex(queue+stickOffset+1) + ': htb default 2'
+			linuxTCcommands.append(command)
+			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ': classid ' + hex(queue+stickOffset+1) + ':1 htb rate '+ format_rate_for_tc(upstream_bandwidth_capacity_upload_mbps()) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_upload_mbps()) + quantum(upstream_bandwidth_capacity_upload_mbps())
+			linuxTCcommands.append(command)
+			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 ' + sqm()
+			linuxTCcommands.append(command)
+			# Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
+			# Technically, that should not even happen. So don't expect much if any traffic in this default class.
+			# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
+			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 classid ' + hex(queue+stickOffset+1) + ':2 htb rate ' + format_rate_for_tc(round((upstream_bandwidth_capacity_upload_mbps()-1)/4)) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_upload_mbps()-1) + ' prio 5' + quantum(upstream_bandwidth_capacity_upload_mbps())
+			linuxTCcommands.append(command)
+			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':2 ' + sqm()
+			linuxTCcommands.append(command)
+         */
+        for queue in 0 .. queues_available {
+            // command = 'qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+stickOffset+1) + ' handle ' + hex(queue+stickOffset+1) + ': htb default 2'
+            result.push(vec![
+                "qdisc".to_string(), "add".to_string(), "dev".to_string(),
+                config.internet_interface(),
+                "parent".to_string(), format!("7FFF:0x{:x}", queue + stick_offset + 1),
+                "handle".to_string(), format!("0x{:x}:", queue + stick_offset + 1), "htb".to_string(),
+                "default".to_string(), "2".to_string(),
+            ]);
+            // command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ': classid ' + hex(queue+stickOffset+1) + ':1 htb rate '+ format_rate_for_tc(upstream_bandwidth_capacity_upload_mbps()) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_upload_mbps()) + quantum(upstream_bandwidth_capacity_upload_mbps())
+            result.push(vec![
+                "class".to_string(), "add".to_string(), "dev".to_string(),
+                config.internet_interface(),
+                "parent".to_string(), format!("0x{:x}:", queue + stick_offset + 1),
+                "classid".to_string(), format!("0x{:x}:1", queue + stick_offset + 1), "htb".to_string(),
+                "rate".to_string(), Self::format_rate_for_tc(config.queues.downlink_bandwidth_mbps),
+                "ceil".to_string(), Self::format_rate_for_tc(config.queues.downlink_bandwidth_mbps),
+                "quantum".to_string(), Self::quantum(config.queues.downlink_bandwidth_mbps, r2q),
+            ]);
+            // command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 ' + sqm()
+            let mut class = vec![
+                "qdisc".to_string(), "add".to_string(), "dev".to_string(),
+                config.internet_interface(),
+                "parent".to_string(), format!("0x{:x}:1", queue + stick_offset + 1),
+            ];
+            class.extend(sqm_strings.clone());
+            result.push(class);
+            // Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
+            // command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 classid ' + hex(queue+stickOffset+1) + ':2 htb rate ' + format_rate_for_tc(round((upstream_bandwidth_capacity_upload_mbps()-1)/4)) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_upload_mbps()-1) + ' prio 5' + quantum(upstream_bandwidth_capacity_upload_mbps())
+            let mbps = config.queues.downlink_bandwidth_mbps as f64;
+            let mbps_quarter = (mbps - 1.0) / 4.0;
+            let mbps_minus_one = mbps - 1.0;
+            result.push(vec![
+                "class".to_string(), "add".to_string(), "dev".to_string(),
+                config.internet_interface(),
+                "parent".to_string(), format!("0x{:x}:1", queue + stick_offset + 1),
+                "classid".to_string(), format!("0x{:x}:2", queue + stick_offset + 1), "htb".to_string(),
+                "rate".to_string(), Self::format_rate_for_tc(mbps_quarter as u64),
+                "ceil".to_string(), Self::format_rate_for_tc(mbps_minus_one as u64),
+                "prio".to_string(), "5".to_string(),
+                "quantum".to_string(), Self::quantum(config.queues.downlink_bandwidth_mbps, r2q),
+            ]);
+            // command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':2 ' + sqm()
+            let mut default_class = vec![
+                "qdisc".to_string(), "add".to_string(), "dev".to_string(),
+                config.internet_interface(),
+                "parent".to_string(), format!("0x{:x}:2", queue + stick_offset + 1),
+            ];
+            default_class.extend(sqm_strings.clone());
+            result.push(default_class);
+        }
+
+        Some(result)
+    }
+
+    fn add_site(
+        config: &Arc<lqos_config::Config>,
+        site_hash: i64,
+        parent_class_id: String,
+        up_parent_class_id: String,
+        class_minor: String,
+        download_bandwidth_min: String,
+        upload_bandwidth_min: String,
+        download_bandwidth_max: String,
+        upload_bandwidth_max: String,
+        quantum_down: String,
+        quantum_up: String,
+    ) -> Option<Vec<Vec<String>>> {
+        let mut result = Vec::new();
+
+        /*
+bakery.add_site(data[node]['parentClassID'], data[node]['up_parentClassID'], data[node]['classMinor'], format_rate_for_tc(data[node]['downloadBandwidthMbpsMin']), format_rate_for_tc(data[node]['uploadBandwidthMbpsMin']), format_rate_for_tc(data[node]['downloadBandwidthMbps']), format_rate_for_tc(data[node]['uploadBandwidthMbps']), quantum(data[node]['downloadBandwidthMbps']), quantum(data[node]['uploadBandwidthMbps']))
+
+command = 'class add dev ' + interface_a() + ' parent ' + data[node]['parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ format_rate_for_tc(data[node]['downloadBandwidthMbpsMin']) + ' ceil '+ format_rate_for_tc(data[node]['downloadBandwidthMbps']) + ' prio 3' + quantum(data[node]['downloadBandwidthMbps'])
+linuxTCcommands.append(command)
+logging.info("Up ParentClassID: " + data[node]['up_parentClassID'])
+logging.info("ClassMinor: " + data[node]['classMinor'])
+command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ format_rate_for_tc(data[node]['uploadBandwidthMbpsMin']) + ' ceil '+ format_rate_for_tc(data[node]['uploadBandwidthMbps']) + ' prio 3' + quantum(data[node]['uploadBandwidthMbps'])
+         */
+
+        result.push(vec![
+            "class".to_string(), "add".to_string(), "dev".to_string(), config.isp_interface(),
+            "parent".to_string(), parent_class_id.clone(),
+            "classid".to_string(), class_minor.clone(), "htb".to_string(),
+            "rate".to_string(), download_bandwidth_min.clone(),
+            "ceil".to_string(), download_bandwidth_max.clone(),
+            "prio".to_string(), "3".to_string(),
+            quantum_down.clone(),
+        ]);
+        result.push(vec![
+            "class".to_string(), "add".to_string(), "dev".to_string(), config.internet_interface(),
+            "parent".to_string(), up_parent_class_id.clone(),
+            "classid".to_string(), class_minor.clone(),
+            "htb".to_string(), "rate".to_string(), upload_bandwidth_min.clone(),
+            "ceil".to_string(), upload_bandwidth_max.clone(),
+            "prio".to_string(), "3".to_string(),
+            quantum_up.clone(),
+        ]);
+
+        Some(result)
+    }
+
+    fn add_circuit(
+        config: &Arc<lqos_config::Config>,
+        circuit_hash: i64,
+        parent_class_id: String,
+        up_parent_class_id: String,
+        class_minor: String,
+        download_bandwidth_min: String,
+        upload_bandwidth_min: String,
+        download_bandwidth_max: String,
+        upload_bandwidth_max: String,
+        quantum_down: String,
+        quantum_up: String,
+        class_major: String,
+        up_class_major: String,
+        sqm_down: String,
+        sqm_up: String,
+        comment: String,
+    ) -> Option<Vec<Vec<String>>> {
+        let mut result = Vec::new();
+/*
+bakery.add_circuit(data[node]['classid'], data[node]['up_classid'], circuit['classMinor'], format_rate_for_tc(min_down), format_rate_for_tc(min_up), format_rate_for_tc(circuit['maxDownload']), format_rate_for_tc(circuit['maxUpload']), quantum(circuit['maxDownload']), quantum(circuit['maxUpload']), circuit['classMajor'], circuit['up_classMajor'], sqmFixupRate(circuit['maxDownload'], sqm()), sqmFixupRate(circuit['maxUpload'], sqm()), tcComment)
+command = 'class add dev ' + interface_a() + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ format_rate_for_tc(min_down) + ' ceil '+ format_rate_for_tc(circuit['maxDownload']) + ' prio 3' + quantum(circuit['maxDownload']) + tcComment
+linuxTCcommands.append(command)
+# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
+if monitor_mode_only() == False:
+    # SQM Fixup for lower rates
+    useSqm = sqmFixupRate(circuit['maxDownload'], sqm())
+    command = 'qdisc add dev ' + interface_a() + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
+    linuxTCcommands.append(command)
+command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ format_rate_for_tc(min_up) + ' ceil '+ format_rate_for_tc(circuit['maxUpload']) + ' prio 3' + quantum(circuit['maxUpload'])
+linuxTCcommands.append(command)
+# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
+if monitor_mode_only() == False:
+    # SQM Fixup for lower rates
+    useSqm = sqmFixupRate(circuit['maxUpload'], sqm())
+    command = 'qdisc add dev ' + interface_b() + ' parent ' + circuit['up_classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
+    linuxTCcommands.append(command)
+    pass
+ */
+        result.push(vec![
+            "class".to_string(), "add".to_string(), "dev".to_string(), config.isp_interface(),
+            "parent".to_string(), parent_class_id.clone(),
+            "classid".to_string(), class_minor.clone(), "htb".to_string(),
+            "rate".to_string(), download_bandwidth_min.clone(),
+            "ceil".to_string(), download_bandwidth_max.clone(),
+            "prio".to_string(), "3".to_string(),
+            quantum_down.clone(),
+        ]);
+        if !config.queues.monitor_only {
+            let sqm = Self::sqm_as_vec(config);
+            let sqm_command = vec![
+                "qdisc".to_string(), "add".to_string(), "dev".to_string(),
+                config.isp_interface(),
+                "parent".to_string(), format!("{}:{}", class_major, class_minor),
+                sqm_down,
+            ];
+            result.push(sqm_command);
+        }
+
+        result.push(vec![
+            "class".to_string(), "add".to_string(), "dev".to_string(), config.internet_interface(),
+            "parent".to_string(), up_parent_class_id.clone(),
+            "classid".to_string(), class_minor.clone(),
+            "htb".to_string(), "rate".to_string(), upload_bandwidth_min.clone(),
+            "ceil".to_string(), upload_bandwidth_max.clone(),
+            "prio".to_string(), "3".to_string(),
+            quantum_up.clone(),
+        ]);
+
+        if !config.queues.monitor_only {
+            let sqm = Self::sqm_as_vec(config);
+            let sqm_command = vec![
+                "qdisc".to_string(), "add".to_string(), "dev".to_string(),
+                config.internet_interface(),
+                "parent".to_string(), format!("{}:{}", up_class_major, class_minor),
+                sqm_up,
+            ];
+            result.push(sqm_command);
+        }
+
+        Some(result)
+    }
 }

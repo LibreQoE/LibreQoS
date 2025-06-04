@@ -25,7 +25,8 @@ from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping,
 	check_config, sqm, upstream_bandwidth_capacity_download_mbps, upstream_bandwidth_capacity_upload_mbps, \
 	interface_a, interface_b, enable_actual_shell_commands, use_bin_packing_to_balance_cpu, monitor_mode_only, \
 	run_shell_commands_as_sudo, generated_pn_download_mbps, generated_pn_upload_mbps, queues_available_override, \
-	on_a_stick, get_tree_weights, get_weights, is_network_flat, get_libreqos_directory, enable_insight_topology
+	on_a_stick, get_tree_weights, get_weights, is_network_flat, get_libreqos_directory, enable_insight_topology, \
+	Bakery
 
 R2Q = 10
 #MAX_R2Q = 200_000
@@ -870,7 +871,9 @@ def refreshShapers():
 		
 		# Here is the actual call to the recursive traverseNetwork() function. finalMinor is not used.
 		minorByCPU = traverseNetwork(network, 0, major=1, minorByCPU=minorByCPUpreloaded, queue=1, parentClassID=None, upParentClassID=None, parentMaxDL=upstream_bandwidth_capacity_download_mbps(), parentMaxUL=upstream_bandwidth_capacity_upload_mbps(), parentMinDL=upstream_bandwidth_capacity_download_mbps(), parentMinUL=upstream_bandwidth_capacity_upload_mbps())
-		
+
+		bakery = Bakery()
+		bakery.start_batch() # Initializes the bakery transaction
 		linuxTCcommands = []
 		devicesShaped = []
 		# Root HTB Setup
@@ -878,6 +881,7 @@ def refreshShapers():
 		thisInterface = interface_a()
 		logging.info("# MQ Setup for " + thisInterface)
 		command = 'qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq'
+		bakery.setup_mq(queuesAvailable, stickOffset)
 		linuxTCcommands.append(command)
 		maxBandwidth = max(upstream_bandwidth_capacity_upload_mbps(), upstream_bandwidth_capacity_download_mbps())
 		calculateR2q(maxBandwidth)
@@ -944,6 +948,8 @@ def refreshShapers():
 					case _: return sqm
 
 			for node in data:
+				site_name = data[node]['name'] if 'name' in data[node] else "root"
+				bakery.add_site(site_name, data[node]['parentClassID'], data[node]['up_parentClassID'], data[node]['classMinor'], format_rate_for_tc(data[node]['downloadBandwidthMbpsMin']), format_rate_for_tc(data[node]['uploadBandwidthMbpsMin']), format_rate_for_tc(data[node]['downloadBandwidthMbps']), format_rate_for_tc(data[node]['uploadBandwidthMbps']), quantum(data[node]['downloadBandwidthMbps']), quantum(data[node]['uploadBandwidthMbps']))
 				command = 'class add dev ' + interface_a() + ' parent ' + data[node]['parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ format_rate_for_tc(data[node]['downloadBandwidthMbpsMin']) + ' ceil '+ format_rate_for_tc(data[node]['downloadBandwidthMbps']) + ' prio 3' + quantum(data[node]['downloadBandwidthMbps'])
 				linuxTCcommands.append(command)
 				logging.info("Up ParentClassID: " + data[node]['up_parentClassID'])
@@ -969,6 +975,8 @@ def refreshShapers():
 							if 'comment' in circuit['devices'][0]:
 								tcComment = '' # tcComment + '| Comment: ' + circuit['devices'][0]['comment']
 						tcComment = tcComment.replace("\n", "")
+						circuit_name = circuit['circuitID'] if 'circuitID' in circuit else "unknown"
+						bakery.add_circuit(circuit_name, data[node]['classid'], data[node]['up_classid'], circuit['classMinor'], format_rate_for_tc(min_down), format_rate_for_tc(min_up), format_rate_for_tc(circuit['maxDownload']), format_rate_for_tc(circuit['maxUpload']), quantum(circuit['maxDownload']), quantum(circuit['maxUpload']), circuit['classMajor'], circuit['up_classMajor'], sqmFixupRate(circuit['maxDownload'], sqm()), sqmFixupRate(circuit['maxUpload'], sqm()), tcComment)
 						command = 'class add dev ' + interface_a() + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ format_rate_for_tc(min_down) + ' ceil '+ format_rate_for_tc(circuit['maxDownload']) + ' prio 3' + quantum(circuit['maxDownload']) + tcComment
 						linuxTCcommands.append(command)
 						# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
@@ -1046,19 +1054,19 @@ def refreshShapers():
 		
 		# Execute actual Linux TC commands
 		tcStartTime = datetime.now()
-		print("Executing linux TC class/qdisc commands")
+		# print("Executing linux TC class/qdisc commands")
 		with open('linux_tc.txt', 'w') as f:
 			for command in linuxTCcommands:
 				logging.info(command)
 				f.write(f"{command}\n")
-		if logging.DEBUG <= logging.root.level:
-			# Do not --force in debug mode, so we can see any errors 
-			shell("/sbin/tc -b linux_tc.txt")
-		else:
-			shell("/sbin/tc -f -b linux_tc.txt")
+		# if logging.DEBUG <= logging.root.level:
+		# 	# Do not --force in debug mode, so we can see any errors
+		# 	shell("/sbin/tc -b linux_tc.txt")
+		# else:
+		# 	shell("/sbin/tc -f -b linux_tc.txt")
+		bakery.commit()
 		tcEndTime = datetime.now()
-		print("Executed " + str(len(linuxTCcommands)) + " linux TC class/qdisc commands")
-		
+		# print("Executed " + str(len(linuxTCcommands)) + " linux TC class/qdisc commands")
 		
 		# Execute actual XDP-CPUMAP-TC filter commands
 		xdpFilterStartTime = datetime.now()

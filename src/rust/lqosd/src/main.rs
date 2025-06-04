@@ -54,7 +54,6 @@ use mimalloc::MiMalloc;
 use crate::blackboard::{BLACKBOARD_SENDER, BlackboardCommand};
 use std::sync::OnceLock;
 
-static BAKERY_SENDER: OnceLock<crossbeam_channel::Sender<lqos_bakery::BakeryCommands>> = OnceLock::new();
 use crate::remote_commands::start_remote_commands;
 #[cfg(feature = "flamegraphs")]
 use crate::shaped_devices_tracker::NETWORK_JSON;
@@ -149,14 +148,9 @@ fn main() -> Result<()> {
     };
 
     // Start the Bakery for TC command execution
-    match lqos_bakery::start_bakery() {
-        Ok(sender) => {
-            info!("Bakery started successfully");
-            let _ = BAKERY_SENDER.set(sender);
-        },
-        Err(e) => {
-            error!("Failed to start Bakery: {:?}", e);
-        }
+    let Ok(bakery_sender) = lqos_bakery::start_bakery() else {
+        error!("Failed to start Bakery, exiting.");
+        std::process::exit(1);
     };
 
     // Spawn tracking sub-systems
@@ -180,7 +174,7 @@ fn main() -> Result<()> {
         long_term_stats_tx.clone(),
         flow_tx,
         system_usage_tx.clone(),
-        BAKERY_SENDER.get().cloned(),
+        bakery_sender.clone(),
     )?;
     spawn_queue_monitor()?;
     lqos_sys::bpf_garbage_collector();
@@ -296,12 +290,15 @@ fn memory_debug() {
 #[cfg(not(feature = "flamegraphs"))]
 fn memory_debug() {}
 
-fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>) {
+fn handle_bus_requests(
+    requests: &[BusRequest],
+    responses: &mut Vec<BusResponse>,
+) {
     for req in requests.iter() {
         //println!("Request: {:?}", req);
         BUS_REQUESTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         responses.push(match req {
-            BusRequest::Ping => lqos_bus::BusResponse::Ack,
+            BusRequest::Ping => BusResponse::Ack,
             BusRequest::GetCurrentThroughput => throughput_tracker::current_throughput(),
             BusRequest::GetHostCounter => throughput_tracker::host_counters(),
             BusRequest::GetTopNDownloaders { start, end } => {
@@ -428,6 +425,92 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                     });
                 }
                 BusResponse::Ack
+            }
+            BusRequest::BakeryStart => {
+                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                    let sender = sender.clone();
+                    let _ = sender.send(lqos_bakery::BakeryCommands::StartBatch);
+                    BusResponse::Ack
+                } else {
+                    BusResponse::Fail("Bakery not initialized".to_string())
+                }
+            }
+            BusRequest::BakeryCommit => {
+                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                    let sender = sender.clone();
+                    let _ = sender.send(lqos_bakery::BakeryCommands::CommitBatch);
+                    BusResponse::Ack
+                } else {
+                    BusResponse::Fail("Bakery not initialized".to_string())
+                }
+            }
+            BusRequest::BakeryMqSetup { queues_available, stick_offset } => {
+                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                    let sender = sender.clone();
+                    let _ = sender.send(lqos_bakery::BakeryCommands::MqSetup {
+                        queues_available: *queues_available,
+                        stick_offset: *stick_offset
+                    });
+                    BusResponse::Ack
+                } else {
+                    BusResponse::Fail("Bakery not initialized".to_string())
+                }
+            }
+            BusRequest::BakeryAddSite {
+                site_hash,
+                parent_class_id,
+                up_parent_class_id,
+                class_minor,
+                download_bandwidth_min,
+                upload_bandwidth_min,
+                download_bandwidth_max,
+                upload_bandwidth_max,
+                quantum_down,
+                quantum_up,
+            } => {
+                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                    let sender = sender.clone();
+                    let _ = sender.send(lqos_bakery::BakeryCommands::AddSite {
+                        site_hash: *site_hash,
+                        parent_class_id: parent_class_id.clone(),
+                        up_parent_class_id: up_parent_class_id.clone(),
+                        class_minor: class_minor.clone(),
+                        download_bandwidth_min: download_bandwidth_min.clone(),
+                        upload_bandwidth_min: upload_bandwidth_min.clone(),
+                        download_bandwidth_max: download_bandwidth_max.clone(),
+                        upload_bandwidth_max: upload_bandwidth_max.clone(),
+                        quantum_down: quantum_down.clone(),
+                        quantum_up: quantum_up.clone(),
+                    });
+                    BusResponse::Ack
+                } else {
+                    BusResponse::Fail("Bakery not initialized".to_string())
+                }
+            }
+            BusRequest::BakeryAddCircuit { circuit_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, quantum_down, quantum_up, class_major, up_class_major, sqm_down, sqm_up, comment } => {
+                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                    let sender = sender.clone();
+                    let _ = sender.send(lqos_bakery::BakeryCommands::AddCircuit {
+                        circuit_hash: *circuit_hash,
+                        parent_class_id: parent_class_id.clone(),
+                        up_parent_class_id: up_parent_class_id.clone(),
+                        class_minor: class_minor.clone(),
+                        download_bandwidth_min: download_bandwidth_min.clone(),
+                        upload_bandwidth_min: upload_bandwidth_min.clone(),
+                        download_bandwidth_max: download_bandwidth_max.clone(),
+                        upload_bandwidth_max: upload_bandwidth_max.clone(),
+                        quantum_down: quantum_down.clone(),
+                        quantum_up: quantum_up.clone(),
+                        class_major: class_major.clone(),
+                        up_class_major: up_class_major.clone(),
+                        sqm_down: sqm_down.clone(),
+                        sqm_up: sqm_up.clone(),
+                        comment: comment.clone(),
+                    });
+                    BusResponse::Ack
+                } else {
+                    BusResponse::Fail("Bakery not initialized".to_string())
+                }
             }
         });
     }
