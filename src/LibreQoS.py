@@ -25,9 +25,7 @@ from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping,
 	check_config, sqm, upstream_bandwidth_capacity_download_mbps, upstream_bandwidth_capacity_upload_mbps, \
 	interface_a, interface_b, enable_actual_shell_commands, use_bin_packing_to_balance_cpu, monitor_mode_only, \
 	run_shell_commands_as_sudo, generated_pn_download_mbps, generated_pn_upload_mbps, queues_available_override, \
-	on_a_stick, get_tree_weights, get_weights, is_network_flat, get_libreqos_directory, enable_insight_topology, \
-	bakery_clear_prior_settings, bakery_mq_setup, bakery_add_structural_htb_class, \
-	bakery_add_circuit_htb_class, bakery_add_circuit_qdisc, bakery_execute_tc_commands, hash_to_i64
+	on_a_stick, get_tree_weights, get_weights, is_network_flat, get_libreqos_directory, enable_insight_topology
 
 R2Q = 10
 #MAX_R2Q = 200_000
@@ -132,29 +130,8 @@ def checkIfFirstRunSinceBoot():
 	else:
 		print("First time run since system boot.")
 		return True
-
-def calculate_hash_for_bakery(name: str) -> int:
-	"""Calculate a signed 64-bit hash from a string name for bakery tracking
-	
-	Uses the Rust hash_to_i64 function to ensure consistency with
-	the hashing used throughout the Rust codebase.
-	"""
-	return hash_to_i64(name)
 	
 def clearPriorSettings(interfaceA, interfaceB):
-	# BAKERY INTEGRATION POINT: ClearPriorSettings
-	# Data needed:
-	#   - interfaceA: str (internet interface)
-	#   - interfaceB: str (ISP interface) 
-	#   - on_a_stick: bool
-	# Rust equivalent: BakeryCommands::ClearPriorSettings
-	# This will check for MQ and delete root qdiscs as needed
-	
-	# Call bakery to clear prior settings - COMMENTED OUT: Using bulk execution only
-	# success = bakery_clear_prior_settings()
-	# if not success:
-	# 	logging.warning("Bakery failed to clear prior settings, falling back to shell commands")
-	
 	if enable_actual_shell_commands():
 		if 'mq' in shellReturn('tc qdisc show dev ' + interfaceA + ' root'):
 			print('MQ detected. Will delete and recreate mq qdisc.')
@@ -646,7 +623,7 @@ def refreshShapers():
 				if 'downloadBandwidthMbpsMin' in data[elem]:
 					data[elem]['downloadBandwidthMbpsMin'] = max(data[elem]['downloadBandwidthMbpsMin'], minDownload)
 				else:
-					data[elem]['downloadBandwidthMbpsMin'] = max(data[elem]['downloadBandwidthMbps'], minDownload)
+					data[elem]['downloadBandwidthMbpsMin'] = max(data[elem]['downloadBandwidthMbps'], minUpload)
 				if 'uploadBandwidthMbpsMin' in data[elem]:
 					data[elem]['uploadBandwidthMbpsMin'] = max(data[elem]['uploadBandwidthMbpsMin'], minUpload)
 				else:
@@ -662,10 +639,10 @@ def refreshShapers():
 				if isinstance(node, str):
 					if (isinstance(data[node], dict)) and (node != 'children'):
 						# Cap based on this node's max bandwidth, or parent node's max bandwidth, whichever is lower
-						data[node]['downloadBandwidthMbps'] = min(float(data[node]['downloadBandwidthMbps']),float(parentMaxDL))
-						data[node]['uploadBandwidthMbps'] = min(float(data[node]['uploadBandwidthMbps']),float(parentMaxUL))
-						data[node]['downloadBandwidthMbpsMin'] = min(float(data[node]['downloadBandwidthMbpsMin']),float(data[node]['downloadBandwidthMbps']),float(parentMinDL))
-						data[node]['uploadBandwidthMbpsMin'] = min(float(data[node]['uploadBandwidthMbpsMin']),float(data[node]['uploadBandwidthMbps']),float(parentMinUL))
+						data[node]['downloadBandwidthMbps'] = min(int(data[node]['downloadBandwidthMbps']),int(parentMaxDL))
+						data[node]['uploadBandwidthMbps'] = min(int(data[node]['uploadBandwidthMbps']),int(parentMaxUL))
+						data[node]['downloadBandwidthMbpsMin'] = min(int(data[node]['downloadBandwidthMbpsMin']),int(data[node]['downloadBandwidthMbps']),int(parentMinDL))
+						data[node]['uploadBandwidthMbpsMin'] = min(int(data[node]['uploadBandwidthMbpsMin']),int(data[node]['uploadBandwidthMbps']),int(parentMinUL))
 						# Recursive call this function for children nodes attached to this node
 						if 'children' in data[node]:
 							# We need to keep tabs on the minor counter, because we can't have repeating class IDs. Here, we bring back the minor counter from the recursive function
@@ -896,22 +873,6 @@ def refreshShapers():
 		
 		linuxTCcommands = []
 		devicesShaped = []
-		
-		# BAKERY INTEGRATION POINT: MqSetup
-		# Data needed:
-		#   - interface config (from lqos_config)
-		#   - upstream/downstream bandwidth capacities
-		#   - queuesAvailable: int
-		#   - default_sqm: str
-		#   - on_a_stick_mode: bool
-		# Rust equivalent: BakeryCommands::MqSetup
-		# This creates the entire MQ + HTB hierarchy with default classes
-		
-		# Call bakery to setup MQ and HTB hierarchy - COMMENTED OUT: Using bulk execution only
-		# mq_success = bakery_mq_setup()
-		# if not mq_success:
-		# 	logging.warning("Bakery failed to setup MQ, falling back to shell commands")
-		
 		# Root HTB Setup
 		# Create MQ qdisc for each CPU core / rx-tx queue. Generate commands to create corresponding HTB and leaf classes. Prepare commands for execution later
 		thisInterface = interface_a()
@@ -930,7 +891,7 @@ def refreshShapers():
 			# Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
 			# Technically, that should not even happen. So don't expect much if any traffic in this default class.
 			# Only 1/4 of defaultClassCapacity is guaranteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
-			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + format_rate_for_tc((upstream_bandwidth_capacity_download_mbps()-1)/4) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_download_mbps()-1) + ' prio 5' + quantum(upstream_bandwidth_capacity_download_mbps())
+			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + format_rate_for_tc(round((upstream_bandwidth_capacity_download_mbps()-1)/4)) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_download_mbps()-1) + ' prio 5' + quantum(upstream_bandwidth_capacity_download_mbps())
 			linuxTCcommands.append(command)
 			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + sqm()
 			linuxTCcommands.append(command)
@@ -951,7 +912,7 @@ def refreshShapers():
 			# Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
 			# Technically, that should not even happen. So don't expect much if any traffic in this default class.
 			# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
-			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 classid ' + hex(queue+stickOffset+1) + ':2 htb rate ' + format_rate_for_tc((upstream_bandwidth_capacity_upload_mbps()-1)/4) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_upload_mbps()-1) + ' prio 5' + quantum(upstream_bandwidth_capacity_upload_mbps())
+			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 classid ' + hex(queue+stickOffset+1) + ':2 htb rate ' + format_rate_for_tc(round((upstream_bandwidth_capacity_upload_mbps()-1)/4)) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_upload_mbps()-1) + ' prio 5' + quantum(upstream_bandwidth_capacity_upload_mbps())
 			linuxTCcommands.append(command)
 			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':2 ' + sqm()
 			linuxTCcommands.append(command)
@@ -983,55 +944,16 @@ def refreshShapers():
 					case _: return sqm
 
 			for node in data:
-				# BAKERY INTEGRATION POINT: AddStructuralHTBClass (for network.json nodes)
-				# Data needed:
-				#   - interface: str
-				#   - parent: str (e.g., data[node]['parentClassID'])
-				#   - classid: str (e.g., data[node]['classMinor'])
-				#   - rate_mbps: float (downloadBandwidthMbpsMin)
-				#   - ceil_mbps: float (downloadBandwidthMbps)
-				#   - site_hash: i64 (hash of node name)
-				#   - r2q: u64 (calculated from max bandwidth)
-				# Rust equivalent: add_structural_htb_class()
-				# Creates HTB class for site/AP - NO qdisc
-				
-				# Call bakery to add structural HTB class for download - COMMENTED OUT: Using bulk execution only
-				site_hash = calculate_hash_for_bakery(node)
-				# down_success = bakery_add_structural_htb_class(
-				# 	interface=interface_a(),
-				# 	parent=data[node]['parentClassID'],
-				# 	classid=data[node]['classMinor'],
-				# 	rate_mbps=float(data[node]['downloadBandwidthMbpsMin']),
-				# 	ceil_mbps=float(data[node]['downloadBandwidthMbps']),
-				# 	site_hash=site_hash,
-				# 	r2q=R2Q
-				# )
-				# if not down_success:
-				# 	logging.warning(f"Bakery failed to add structural HTB class for {node} (download)")
-				
 				command = 'class add dev ' + interface_a() + ' parent ' + data[node]['parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ format_rate_for_tc(data[node]['downloadBandwidthMbpsMin']) + ' ceil '+ format_rate_for_tc(data[node]['downloadBandwidthMbps']) + ' prio 3' + quantum(data[node]['downloadBandwidthMbps'])
 				linuxTCcommands.append(command)
 				logging.info("Up ParentClassID: " + data[node]['up_parentClassID'])
 				logging.info("ClassMinor: " + data[node]['classMinor'])
-				
-				# Call bakery to add structural HTB class for upload - COMMENTED OUT: Using bulk execution only
-				# up_success = bakery_add_structural_htb_class(
-				# 	interface=interface_b(),
-				# 	parent=data[node]['up_parentClassID'],
-				# 	classid=data[node]['classMinor'],
-				# 	rate_mbps=float(data[node]['uploadBandwidthMbpsMin']),
-				# 	ceil_mbps=float(data[node]['uploadBandwidthMbps']),
-				# 	site_hash=site_hash,
-				# 	r2q=R2Q
-				# )
-				# if not up_success:
-				# 	logging.warning(f"Bakery failed to add structural HTB class for {node} (upload)")
-				
 				command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ format_rate_for_tc(data[node]['uploadBandwidthMbpsMin']) + ' ceil '+ format_rate_for_tc(data[node]['uploadBandwidthMbps']) + ' prio 3' + quantum(data[node]['uploadBandwidthMbps'])
 				linuxTCcommands.append(command)
 				if 'circuits' in data[node]:
 					for circuit in data[node]['circuits']:
 						# If circuit mins exceed node mins - handle low min rates of 1 to mean 10 kbps.
+						# Avoid changing minDownload or minUpload because they are used in queuingStructure.json, and must remain integers.
 						min_down = circuit['minDownload']
 						min_up = circuit['minUpload']
 						if node in nodes_requiring_min_squashing:
@@ -1039,121 +961,29 @@ def refreshShapers():
 								min_down = 0.01
 							if min_up == 1:
 								min_up = 0.01
-						# BAKERY INTEGRATION POINT: AddCircuitHTBClass + AddCircuitQdisc
-						# Data needed for HTB class:
-						#   - interface: str
-						#   - parent: str (e.g., data[node]['classid'])
-						#   - classid: str (e.g., circuit['classMinor'])
-						#   - rate_mbps: float (min_down)
-						#   - ceil_mbps: float (circuit['maxDownload'])
-						#   - circuit_hash: i64 (hash of circuit['circuitID'])
-						#   - comment: str (circuit info for debugging)
-						#   - r2q: u64
-						# Rust equivalent: add_circuit_htb_class()
-						#
-						# Data needed for qdisc:
-						#   - interface: str
-						#   - parent_major: u32 (circuit['classMajor'])
-						#   - parent_minor: u32 (circuit['classMinor'])
-						#   - circuit_hash: i64
-						#   - sqm_params: list[str] (from sqmFixupRate)
-						# Rust equivalent: add_circuit_qdisc()
-						
-						# Calculate circuit hash
-						circuit_hash = calculate_hash_for_bakery(circuit['circuitID'])
-						
-						# Call bakery to add circuit HTB class for download - COMMENTED OUT: Using bulk execution only
-						circuit_comment = f"CircuitID: {circuit['circuitID']}"
-						# down_htb_success = bakery_add_circuit_htb_class(
-						# 	interface=interface_a(),
-						# 	parent=data[node]['classid'],
-						# 	classid=circuit['classMinor'],
-						# 	rate_mbps=float(min_down),
-						# 	ceil_mbps=float(circuit['maxDownload']),
-						# 	circuit_hash=circuit_hash,
-						# 	comment=circuit_comment,
-						# 	r2q=R2Q
-						# )
-						# if not down_htb_success:
-						# 	logging.warning(f"Bakery failed to add circuit HTB class for {circuit['circuitID']} (download)")
-						
 						# Generate TC commands to be executed later
-						# Include circuit_hash for bakery lazy queue tracking
-						tcComment = f" # circuit_hash: {circuit_hash}"
-						command = 'class add dev ' + interface_a() + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classid'] + ' htb rate '+ format_rate_for_tc(min_down) + ' ceil '+ format_rate_for_tc(circuit['maxDownload']) + ' prio 3' + quantum(circuit['maxDownload']) + tcComment
+						tcComment = " # CircuitID: " + circuit['circuitID'] + " DeviceIDs: "
+						for device in circuit['devices']:
+							tcComment = '' #tcComment + device['deviceID'] + ', '
+						if 'devices' in circuit:
+							if 'comment' in circuit['devices'][0]:
+								tcComment = '' # tcComment + '| Comment: ' + circuit['devices'][0]['comment']
+						tcComment = tcComment.replace("\n", "")
+						command = 'class add dev ' + interface_a() + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ format_rate_for_tc(min_down) + ' ceil '+ format_rate_for_tc(circuit['maxDownload']) + ' prio 3' + quantum(circuit['maxDownload']) + tcComment
 						linuxTCcommands.append(command)
 						# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
 						if monitor_mode_only() == False:
 							# SQM Fixup for lower rates
 							useSqm = sqmFixupRate(circuit['maxDownload'], sqm())
-							
-							# Call bakery to add circuit qdisc for download
-							sqm_params = useSqm.split()
-							# Parse classMajor (hex string like "0x1:") and classMinor (hex string like "0x10")
-							major_str = circuit['classMajor'].strip(':')
-							major_val = int(major_str, 16) if major_str.startswith('0x') else int(major_str)
-							minor_str = circuit['classMinor']
-							minor_val = int(minor_str, 16) if minor_str.startswith('0x') else int(minor_str)
-							# down_qdisc_success = bakery_add_circuit_qdisc(
-							# 	interface=interface_a(),
-							# 	parent_major=major_val,
-							# 	parent_minor=minor_val,
-							# 	circuit_hash=circuit_hash,
-							# 	sqm_params=sqm_params
-							# )
-							# if not down_qdisc_success:
-							# 	logging.warning(f"Bakery failed to add circuit qdisc for {circuit['circuitID']} (download)")
-							
-							# Ensure useSqm is not empty to avoid incomplete TC commands
-							if not useSqm or not useSqm.strip():
-								logging.error(f"Empty SQM string for circuit {circuit['circuitID']} - defaulting to 'cake diffserv4'")
-								useSqm = "cake diffserv4"
-							command = 'qdisc add dev ' + interface_a() + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm + tcComment
+							command = 'qdisc add dev ' + interface_a() + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
 							linuxTCcommands.append(command)
-						# Same for upload direction
-						# Call bakery to add circuit HTB class for upload - COMMENTED OUT: Using bulk execution only
-						# up_htb_success = bakery_add_circuit_htb_class(
-						# 	interface=interface_b(),
-						# 	parent=data[node]['up_classid'],
-						# 	classid=circuit['classMinor'],
-						# 	rate_mbps=float(min_up),
-						# 	ceil_mbps=float(circuit['maxUpload']),
-						# 	circuit_hash=circuit_hash,
-						# 	comment=circuit_comment,
-						# 	r2q=R2Q
-						# )
-						# if not up_htb_success:
-						# 	logging.warning(f"Bakery failed to add circuit HTB class for {circuit['circuitID']} (upload)")
-						
-						command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_classid'] + ' classid ' + circuit['up_classid'] + ' htb rate '+ format_rate_for_tc(min_up) + ' ceil '+ format_rate_for_tc(circuit['maxUpload']) + ' prio 3' + quantum(circuit['maxUpload']) + tcComment
+						command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ format_rate_for_tc(min_up) + ' ceil '+ format_rate_for_tc(circuit['maxUpload']) + ' prio 3' + quantum(circuit['maxUpload'])
 						linuxTCcommands.append(command)
 						# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
 						if monitor_mode_only() == False:
 							# SQM Fixup for lower rates
 							useSqm = sqmFixupRate(circuit['maxUpload'], sqm())
-							
-							# Call bakery to add circuit qdisc for upload
-							sqm_params = useSqm.split()
-							# Parse up_classMajor (hex string like "0x1:") and classMinor (hex string like "0x10")
-							up_major_str = circuit['up_classMajor'].strip(':')
-							up_major_val = int(up_major_str, 16) if up_major_str.startswith('0x') else int(up_major_str)
-							up_minor_str = circuit['classMinor']
-							up_minor_val = int(up_minor_str, 16) if up_minor_str.startswith('0x') else int(up_minor_str)
-							# up_qdisc_success = bakery_add_circuit_qdisc(
-							# 	interface=interface_b(),
-							# 	parent_major=up_major_val,
-							# 	parent_minor=up_minor_val,
-							# 	circuit_hash=circuit_hash,
-							# 	sqm_params=sqm_params
-							# )
-							# if not up_qdisc_success:
-							# 	logging.warning(f"Bakery failed to add circuit qdisc for {circuit['circuitID']} (upload)")
-							
-							# Ensure useSqm is not empty to avoid incomplete TC commands
-							if not useSqm or not useSqm.strip():
-								logging.error(f"Empty SQM string for circuit {circuit['circuitID']} - defaulting to 'cake diffserv4'")
-								useSqm = "cake diffserv4"
-							command = 'qdisc add dev ' + interface_b() + ' parent ' + circuit['up_classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm + tcComment
+							command = 'qdisc add dev ' + interface_b() + ' parent ' + circuit['up_classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
 							linuxTCcommands.append(command)
 							pass
 						for device in circuit['devices']:
@@ -1214,55 +1044,20 @@ def refreshShapers():
 		xdpEndTime = datetime.now()
 		
 		
-		# BAKERY INTEGRATION POINT: ExecuteTCCommands (Phase 1 alternative)
-		# Instead of the code below, we could send all commands to Rust at once
-		# Data needed:
-		#   - commands: list[str] (all TC commands from linuxTCcommands)
-		#   - debug_mode: bool (whether to use --force flag)
-		# Rust could write to file and execute with tc -b like Python does
-		# This would be a single bulk operation for Phase 1
-		
-		# Call bakery to execute TC commands in batches of 100 to avoid socket buffer issues
-		force_mode = logging.root.level > logging.DEBUG  # Use force mode unless in debug
-		batch_size = 100
-		total_commands = len(linuxTCcommands)
-		all_batches_successful = True
-		
-		print(f"Executing {total_commands} TC commands in batches of {batch_size}")
-		
-		for i in range(0, total_commands, batch_size):
-			batch = linuxTCcommands[i:i + batch_size]
-			batch_end = min(i + batch_size, total_commands)
-			print(f"  Executing batch {i // batch_size + 1} (commands {i + 1}-{batch_end} of {total_commands})")
-			
-			bulk_success = bakery_execute_tc_commands(
-				commands=batch,
-				force_mode=force_mode
-			)
-			
-			if not bulk_success:
-				logging.warning(f"Bakery failed to execute TC commands batch {i // batch_size + 1} (commands {i + 1}-{batch_end})")
-				all_batches_successful = False
-				# Continue with other batches even if one fails
-		
-		if not all_batches_successful:
-			logging.warning("Some TC command batches failed during execution")
-		
-		# Execute actual Linux TC commands - COMMENTED OUT: Using Rust bakery instead
+		# Execute actual Linux TC commands
 		tcStartTime = datetime.now()
 		print("Executing linux TC class/qdisc commands")
-		# tc_output_path = os.path.join(get_libreqos_directory(), 'linux_tc.txt')
-		# with open(tc_output_path, 'w') as f:
-		# 	for command in linuxTCcommands:
-		# 		logging.info(command)
-		# 		f.write(f"{command}\n")
-		# if logging.DEBUG <= logging.root.level:
-		# 	# Do not --force in debug mode, so we can see any errors 
-		# 	shell(f"/sbin/tc -b {tc_output_path}")
-		# else:
-		# 	shell(f"/sbin/tc -f -b {tc_output_path}")
+		with open('linux_tc.txt', 'w') as f:
+			for command in linuxTCcommands:
+				logging.info(command)
+				f.write(f"{command}\n")
+		if logging.DEBUG <= logging.root.level:
+			# Do not --force in debug mode, so we can see any errors 
+			shell("/sbin/tc -b linux_tc.txt")
+		else:
+			shell("/sbin/tc -f -b linux_tc.txt")
 		tcEndTime = datetime.now()
-		print(f"Executed {len(linuxTCcommands)} linux TC class/qdisc commands in {(len(linuxTCcommands) + batch_size - 1) // batch_size} batches")
+		print("Executed " + str(len(linuxTCcommands)) + " linux TC class/qdisc commands")
 		
 		
 		# Execute actual XDP-CPUMAP-TC filter commands

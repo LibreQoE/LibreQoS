@@ -170,9 +170,7 @@ impl ThroughputTracker {
                     // Call to Bakery Update for existing traffic
                     if let (Some(sender), Some(circuit_hash)) = (bakery_sender, entry.circuit_hash) {
                         debug!("Sending UpdateCircuit for circuit_hash: {}", circuit_hash);
-                        if let Err(e) = sender.try_send(BakeryCommands::UpdateCircuit { circuit_hash }) {
-                            warn!("Failed to send UpdateCircuit command: {:?}", e);
-                        }
+                        // TODO: Update goes here
                     } else if entry.circuit_hash.is_some() {
                         debug!("No bakery sender available for UpdateCircuit (circuit_hash: {:?})", entry.circuit_hash);
                     }
@@ -226,9 +224,7 @@ impl ThroughputTracker {
                 // Call to Bakery Queue Creation for new circuits
                 if let (Some(sender), Some(circuit_hash)) = (bakery_sender, circuit_hash) {
                     info!("NEW CIRCUIT DETECTED! Sending CreateCircuit for circuit_hash: {}", circuit_hash);
-                    if let Err(e) = sender.try_send(BakeryCommands::CreateCircuit { circuit_hash }) {
-                        warn!("Failed to send CreateCircuit command: {:?}", e);
-                    }
+                    // TODO: Update goes here
                 } else {
                     debug!("No bakery sender or circuit_hash for new circuit (sender: {}, circuit_hash: {:?})", 
                            bakery_sender.is_some(), circuit_hash);

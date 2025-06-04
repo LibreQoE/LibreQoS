@@ -227,51 +227,6 @@ pub enum BusRequest {
 
     /// Finish a blackboard session
     BlackboardFinish,
-
-    // Bakery TC Commands
-    /// Clear prior TC settings
-    BakeryClearPriorSettings,
-
-    /// Set up MQ and HTB hierarchy
-    BakeryMqSetup,
-
-    /// Add an HTB class for structural nodes (sites/APs from network.json)
-    BakeryAddStructuralHTBClass {
-        interface: String,
-        parent: String,
-        classid: String,
-        rate_mbps: f64,
-        ceil_mbps: f64,
-        site_hash: i64,
-        r2q: u64,
-    },
-
-    /// Add an HTB class for circuits (customer shapers from ShapedDevices.csv)
-    BakeryAddCircuitHTBClass {
-        interface: String,
-        parent: String,
-        classid: String,
-        rate_mbps: f64,
-        ceil_mbps: f64,
-        circuit_hash: i64,
-        comment: Option<String>,
-        r2q: u64,
-    },
-
-    /// Add a qdisc (CAKE/fq_codel) for circuits
-    BakeryAddCircuitQdisc {
-        interface: String,
-        parent_major: u32,
-        parent_minor: u32,
-        circuit_hash: i64,
-        sqm_params: Vec<String>,
-    },
-
-    /// Execute TC commands in bulk
-    BakeryExecuteTCCommands {
-        commands: Vec<String>,
-        force_mode: bool,
-    },
 }
 
 /// Defines the parts of the blackboard
