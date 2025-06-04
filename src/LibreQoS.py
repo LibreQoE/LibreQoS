@@ -51,12 +51,36 @@ from liblqos_python import (
     upstream_bandwidth_capacity_upload_mbps,
     use_bin_packing_to_balance_cpu,
     validate_shaped_devices,
+    get_libreqos_directory,
+    enable_insight_topology
 )
 
 R2Q = 10
 #MAX_R2Q = 200_000
 MAX_R2Q = 60_000 # See https://lartc.vger.kernel.narkive.com/NKaH1ZNG/htb-quantum-of-class-100001-is-small-consider-r2q-change
 MIN_QUANTUM = 1522
+
+def get_shaped_devices_path():
+	base_dir = get_libreqos_directory()
+
+	if enable_insight_topology():
+		insight_path = os.path.join(base_dir, "ShapedDevices.insight.csv")
+		if os.path.exists(insight_path):
+			return insight_path
+
+	# Either insight not enabled, or file doesn't exist
+	return os.path.join(base_dir, "ShapedDevices.csv")
+
+def get_network_json_path():
+	base_dir = get_libreqos_directory()
+
+	if enable_insight_topology():
+		insight_path = os.path.join(base_dir, "network.insight.json")
+		if os.path.exists(insight_path):
+			return insight_path
+
+	# Either insight not enabled, or file doesn't exist
+	return os.path.join(base_dir, "network.json")
 
 def calculateR2q(maxRateInMbps):
 	# So we've learned that r2q defaults to 10, and is used to calculate quantum. Quantum is rateInBytes/r2q by
@@ -185,7 +209,7 @@ def validateNetworkAndDevices():
 		warnings.warn("Rust failed to validate ShapedDevices.csv", stacklevel=2)
 		warnings.warn(rustValid, stacklevel=2)
 		devicesValidatedOrNot = False
-	with open('network.json') as file:
+	with open(get_network_json_path()) as file:
 		try:
 			data = json.load(file) # put JSON-data to a variable
 			if data != {}:
@@ -210,7 +234,7 @@ def validateNetworkAndDevices():
 			warnings.warn("network.json is an invalid JSON file", stacklevel=2) # in case json is invalid
 			networkValidatedOrNot = False
 	rowNum = 2
-	with open('ShapedDevices.csv') as csv_file:
+	with open(get_shaped_devices_path()) as csv_file:
 		csv_reader = csv.reader(csv_file, delimiter=',')
 		#Remove comments if any
 		commentsRemoved = []
@@ -489,8 +513,8 @@ def refreshShapers():
 	
 	
 	# Files
-	shapedDevicesFile = 'ShapedDevices.csv'
-	networkJSONfile = 'network.json'
+	shapedDevicesFile = get_shaped_devices_path()
+	networkJSONfile = get_network_json_path()
 	
 	
 	# Check validation

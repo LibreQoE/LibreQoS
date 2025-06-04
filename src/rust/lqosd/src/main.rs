@@ -17,6 +17,7 @@ mod throughput_tracker;
 mod tuning;
 mod validation;
 mod version_checks;
+mod scheduler_control;
 
 #[cfg(feature = "flamegraphs")]
 use std::io::Write;
@@ -222,6 +223,10 @@ fn main() -> Result<()> {
                 .build()
                 .unwrap()
                 .block_on(async {
+                    tokio::spawn(async {
+                        let _ = lqos_stormguard::start_stormguard().await;
+                    });
+
                     let (bus_tx, bus_rx) = tokio::sync::mpsc::channel::<(
                         tokio::sync::oneshot::Sender<lqos_bus::BusReply>,
                         BusRequest,

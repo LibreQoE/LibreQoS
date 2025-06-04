@@ -16,7 +16,28 @@ export class RttHistogram extends DashboardGraph {
             axis.push((i*10).toString());
         }
         this.max = 1;
+        this.rawCounts = []; // Store raw sample counts
         this.option = {
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: {
+                    type: 'cross',
+                    label: {
+                        backgroundColor: '#6a7985'
+                    }
+                },
+                formatter: (params) => {
+                    if (params && params[0]) {
+                        let index = params[0].dataIndex;
+                        let rttMs = index * 10;
+                        let rttRangeEnd = rttMs + 10;
+                        let samples = this.rawCounts[index] || 0;
+                        let percentage = params[0].value.toFixed(2);
+                        return `RTT: ${rttMs}-${rttRangeEnd} ms<br/>Samples: ${samples}<br/>Percentage: ${percentage}%`;
+                    }
+                    return '';
+                }
+            },
             xAxis: {
                 type: 'category',
                 data: axis,
@@ -43,6 +64,7 @@ export class RttHistogram extends DashboardGraph {
     update(rtt) {
         this.chart.hideLoading();
         let sum = 0;
+        this.rawCounts = [...rtt]; // Store raw counts
         rtt.forEach((v) => {
             if (v > this.max) {
                 this.max = v;

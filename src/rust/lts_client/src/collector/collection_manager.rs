@@ -23,7 +23,7 @@ use lqos_config::load_config;
 use once_cell::sync::Lazy;
 use std::{sync::atomic::AtomicU64, time::Duration};
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 static STATS_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub(crate) static DEVICE_ID_LIST: Lazy<DashSet<String>> = Lazy::new(DashSet::new);
@@ -85,16 +85,16 @@ async fn startup(
 }
 
 async fn collation_scheduler(tx: Sender<StatsUpdateMessage>) {
-    info!("Starting collation scheduler");
+    debug!("Starting collation scheduler");
     loop {
         let collation_period = get_collation_period();
         info!("Collation period: {}s", collation_period.as_secs());
         if tx.send(StatsUpdateMessage::CollationTime).await.is_err() {
             warn!("Unable to send collation time message");
         }
-        info!("Sent collation time message. Sleeping.");
+        debug!("Sent collation time message. Sleeping.");
         tokio::time::sleep(collation_period).await;
-        info!("Collation scheduler woke up.");
+        debug!("Collation scheduler woke up.");
     }
 }
 
@@ -106,7 +106,7 @@ async fn lts_manager(mut rx: Receiver<StatsUpdateMessage>, comm_tx: Sender<Sende
             Some(StatsUpdateMessage::ThroughputReady(throughput)) => {
                 let counter = STATS_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 if counter > 5 {
-                    info!("Enqueueing throughput data for collation");
+                    debug!("Enqueueing throughput data for collation");
                     SESSION_BUFFER.lock().await.push(StatsSession {
                         throughput: throughput.0,
                         network_tree: throughput.1,
@@ -114,7 +114,7 @@ async fn lts_manager(mut rx: Receiver<StatsUpdateMessage>, comm_tx: Sender<Sende
                 }
             }
             Some(StatsUpdateMessage::ShapedDevicesChanged(shaped_devices)) => {
-                info!("Enqueueing shaped devices for collation");
+                debug!("Enqueueing shaped devices for collation");
                 // Update the device id list
                 DEVICE_ID_LIST.clear();
                 shaped_devices.iter().for_each(|d| {
@@ -126,11 +126,11 @@ async fn lts_manager(mut rx: Receiver<StatsUpdateMessage>, comm_tx: Sender<Sende
                 ));
             }
             Some(StatsUpdateMessage::CollationTime) => {
-                info!("Collation time reached");
+                debug!("Collation time reached");
                 tokio::spawn(collate_stats(comm_tx.clone()));
             }
             Some(StatsUpdateMessage::UispCollationTime) => {
-                info!("UISP Collation time reached");
+                debug!("UISP Collation time reached");
                 tokio::spawn(gather_uisp_data(comm_tx.clone()));
             }
             Some(StatsUpdateMessage::Quit) => {

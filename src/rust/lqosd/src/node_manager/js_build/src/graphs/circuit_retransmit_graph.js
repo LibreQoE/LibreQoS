@@ -1,6 +1,13 @@
 import {DashboardGraph} from "./dashboard_graph";
 import {scaleNumber} from "../lq_js_common/helpers/scaling";
 
+// Simple time formatter (HH:MM:SS)
+function formatTime(ts) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    return d.toLocaleTimeString();
+}
+
 const RING_SIZE = 60 * 5; // 5 Minutes
 
 export class CircuitRetransmitGraph extends DashboardGraph {
@@ -75,8 +82,27 @@ export class CircuitRetransmitGraph extends DashboardGraph {
                     symbol: 'none',
                 },
             ],
+            axisPointer: {
+                type: 'cross'
+            },
             tooltip: {
-                trigger: 'item',
+                trigger: 'axis',
+                axisPointer: {
+                    type: 'cross',
+                    label: {
+                        backgroundColor: '#6a7985'
+                    }
+                },
+                formatter: (params) => {
+                    if (!params || params.length === 0) return '';
+                    const idx = params[0].dataIndex;
+                    const ts = this.ringbuffer.getTimestamp(idx);
+                    let s = `<div><b>Time:</b> ${formatTime(ts)}</div>`;
+                    for (const p of params) {
+                        s += `<div><span style="display:inline-block;margin-right:5px;border-radius:10px;width:9px;height:9px;background-color:${p.color};"></span>${p.seriesName}: <b>${Math.abs(p.value).toFixed(2)}%</b></div>`;
+                    }
+                    return s;
+                }
             },
         }
         this.option && this.chart.setOption(this.option);
@@ -108,7 +134,7 @@ class RingBuffer {
         this.size = size;
         let data = [];
         for (let i=0; i<size; i++) {
-            data.push([0, 0, 0, 0]);
+            data.push([0, 0, 0]);
         }
         this.head = 0;
         this.data = data;
@@ -117,10 +143,12 @@ class RingBuffer {
     push(download, upload) {
         this.data[this.head][0] = download;
         this.data[this.head][1] = 0.0 - upload;
+        this.data[this.head][2] = Date.now();
         this.head += 1;
         this.head %= this.size;
     }
 
+    // Returns [download[], upload[]]
     series() {
         let result = [
             [], []
@@ -136,5 +164,11 @@ class RingBuffer {
             }
         }
         return result;
+    }
+
+    // Returns the timestamp for the logical index (0 = oldest)
+    getTimestamp(idx) {
+        const bufferIdx = (this.head + idx) % this.size;
+        return this.data[bufferIdx][2];
     }
 }

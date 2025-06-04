@@ -9,7 +9,7 @@ use tokio::{
     sync::mpsc::Receiver,
     time::sleep,
 };
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 mod keys;
 pub(crate) use keys::key_exchange;
 mod encode;
@@ -53,7 +53,7 @@ pub(crate) async fn start_communication_channel(mut rx: Receiver<SenderChannelMe
 }
 
 async fn connect_if_permitted() -> Result<TcpStream, QueueError> {
-    info!("Connecting to stats.libreqos.io");
+    debug!("Connecting to stats.libreqos.io");
     // Check that we have a local license key and are enabled
     let cfg = load_config().map_err(|_| {
         error!("Unable to load config file.");
@@ -110,7 +110,7 @@ async fn connect_if_permitted() -> Result<TcpStream, QueueError> {
                 QueueError::SendFail
             })?;
             store_server_public_key(&server_public_key).await;
-            info!("Received server public key.");
+            debug!("Received server public key.");
         }
         _ => {
             error!("Unexpected reply from server.");

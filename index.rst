@@ -27,6 +27,7 @@ Welcome to the LibreQoS documentation
    docs/v2.0/lts
    docs/v2.0/update
    docs/v2.0/troubleshooting
+   docs/v2.0/cake
    docs/v2.0/extras
 
 .. toctree::

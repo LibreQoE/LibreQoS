@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 pub const OLD_CONFIG: &str = "
 # This file *must* be installed in `/etc/lqos.conf`.
 # Change the values to match your setup.
@@ -47,6 +48,7 @@ vlan_mapping = []
 # ]
 ";
 
+#[allow(dead_code)]
 pub const PYTHON_CONFIG : &str = "
 # 'fq_codel' or 'cake diffserv4'
 # 'cake diffserv4' is recommended
