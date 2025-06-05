@@ -30,7 +30,7 @@ impl Netflow5 {
 
                     accumulator.push((key, (data, analysis)));
 
-                    let Ok(socket) = UdpSocket::bind("0.0.0.0:12212") else {
+                    let Ok(socket) = UdpSocket::bind("0.0.0.0:0") else {
                         tracing::error!("Failed to bind to UDP socket");
                         continue;
                     };
