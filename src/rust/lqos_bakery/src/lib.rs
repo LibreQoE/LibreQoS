@@ -23,13 +23,13 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 use crossbeam_channel::{Receiver, Sender};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 use utils::current_timestamp;
 pub (crate) const CHANNEL_CAPACITY: usize = 65536; // 64k capacity for Bakery commands
 pub use commands::BakeryCommands;
-use lqos_config::{Config, LazyQueueMode};
+use lqos_config::LazyQueueMode;
 use crate::commands::ExecutionMode;
 
 pub static BAKERY_SENDER: OnceLock<Sender<BakeryCommands>> = OnceLock::new();

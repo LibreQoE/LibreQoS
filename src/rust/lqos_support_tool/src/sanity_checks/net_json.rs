@@ -4,21 +4,19 @@ use serde_json::Value;
 use std::path::Path;
 
 pub fn check_net_json_exists(results: &mut Vec<SanityCheck>) {
-    if let Ok(cfg) = load_config() {
-        let path = NetworkJson::path().unwrap();
-        if path.exists() {
-            results.push(SanityCheck {
-                name: "network.json exists".to_string(),
-                success: true,
-                comments: "".to_string(),
-            });
-        } else {
-            results.push(SanityCheck {
-                name: "network.json exists".to_string(),
-                success: false,
-                comments: format!("File not found at {:?}", path),
-            });
-        }
+    let path = NetworkJson::path().unwrap();
+    if path.exists() {
+        results.push(SanityCheck {
+            name: "network.json exists".to_string(),
+            success: true,
+            comments: "".to_string(),
+        });
+    } else {
+        results.push(SanityCheck {
+            name: "network.json exists".to_string(),
+            success: false,
+            comments: format!("File not found at {:?}", path),
+        });
     }
 }
 

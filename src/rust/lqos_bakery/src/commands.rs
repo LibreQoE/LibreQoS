@@ -360,7 +360,7 @@ impl BakeryCommands {
 
     fn add_site(
         config: &Arc<lqos_config::Config>,
-        site_hash: i64,
+        _site_hash: i64,
         parent_class_id: TcHandle,
         up_parent_class_id: TcHandle,
         class_minor: u16,
@@ -412,7 +412,7 @@ command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_parentC
     fn add_circuit(
         execution_mode: ExecutionMode,
         config: &Arc<lqos_config::Config>,
-        circuit_hash: i64,
+        _circuit_hash: i64,
         parent_class_id: TcHandle,
         up_parent_class_id: TcHandle,
         class_minor: u16,
@@ -423,8 +423,8 @@ command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_parentC
         class_major: u16,
         up_class_major: u16,
     ) -> Option<Vec<Vec<String>>> {
-        let mut do_htb = true;
-        let mut do_sqm = true;
+        let do_htb ;
+        let do_sqm ;
 
         if execution_mode == ExecutionMode::Builder {
             // In builder mode, if we're fully lazy - we don't do anything.
@@ -538,21 +538,19 @@ if monitor_mode_only() == False:
         &self,
         config: &Arc<lqos_config::Config>,
     ) -> Option<Vec<Vec<String>>> {
-        let BakeryCommands::AddCircuit { circuit_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, class_major, up_class_major } = self else {
+        let BakeryCommands::AddCircuit { parent_class_id, up_parent_class_id, class_minor, class_major, up_class_major, .. } = self else {
             warn!("to_prune called on non-circuit command!");
             return None;
         };
 
-        let mut prune_htb = false;
-        let mut prune_sqm = false;
+        let prune_htb;
+        let prune_sqm;
         let mut result = Vec::new();
 
         match config.queues.lazy_queues.as_ref() {
             None | Some(LazyQueueMode::No) => {
                 warn!("Builder should not encounter lazy updates when lazy is disabled!");
                 // Set both modes to false, avoiding clashes
-                prune_htb = false;
-                prune_htb = false;
                 return None;
             }
             Some(LazyQueueMode::Htb) => {

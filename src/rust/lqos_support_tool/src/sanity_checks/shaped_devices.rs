@@ -1,23 +1,20 @@
 use crate::sanity_checks::SanityCheck;
-use lqos_config::{load_config, ConfigShapedDevices};
-use std::path::Path;
+use lqos_config::ConfigShapedDevices;
 
 pub fn shaped_devices_exists(results: &mut Vec<SanityCheck>) {
-    if let Ok(cfg) = load_config() {
-        let path = ConfigShapedDevices::path().unwrap();
-        if path.exists() {
-            results.push(SanityCheck {
-                name: "ShapedDevices.csv exists".to_string(),
-                success: true,
-                comments: "".to_string(),
-            });
-        } else {
-            results.push(SanityCheck {
-                name: "ShapedDevices.csv exists".to_string(),
-                success: false,
-                comments: format!("File not found at {:?}", path),
-            });
-        }
+    let path = ConfigShapedDevices::path().unwrap();
+    if path.exists() {
+        results.push(SanityCheck {
+            name: "ShapedDevices.csv exists".to_string(),
+            success: true,
+            comments: "".to_string(),
+        });
+    } else {
+        results.push(SanityCheck {
+            name: "ShapedDevices.csv exists".to_string(),
+            success: false,
+            comments: format!("File not found at {:?}", path),
+        });
     }
 }
 
