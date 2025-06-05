@@ -484,7 +484,7 @@ if monitor_mode_only() == False:
  */
         if do_htb {
             result.push(vec![
-                "class".to_string(), "add".to_string(), "dev".to_string(), config.isp_interface(),
+                "class".to_string(), "replace".to_string(), "dev".to_string(), config.isp_interface(),
                 "parent".to_string(), parent_class_id.as_tc_string(),
                 "classid".to_string(), format!("0x{class_minor:x}"), "htb".to_string(),
                 "rate".to_string(), Self::format_rate_for_tc_f32(download_bandwidth_min),
@@ -498,7 +498,7 @@ if monitor_mode_only() == False:
         }
         if !config.queues.monitor_only && do_sqm {
             let mut sqm_command = vec![
-                "qdisc".to_string(), "add".to_string(), "dev".to_string(),
+                "qdisc".to_string(), "replace".to_string(), "dev".to_string(),
                 config.isp_interface(),
                 "parent".to_string(), format!("0x{:x}:0x{:x}", class_major, class_minor),
             ];
@@ -508,7 +508,7 @@ if monitor_mode_only() == False:
 
         if do_htb {
             result.push(vec![
-                "class".to_string(), "add".to_string(), "dev".to_string(), config.internet_interface(),
+                "class".to_string(), "replace".to_string(), "dev".to_string(), config.internet_interface(),
                 "parent".to_string(), up_parent_class_id.as_tc_string(),
                 "classid".to_string(), format!("0x{class_minor:x}"),
                 "htb".to_string(), "rate".to_string(), Self::format_rate_for_tc_f32(upload_bandwidth_min),
@@ -523,7 +523,7 @@ if monitor_mode_only() == False:
 
         if !config.queues.monitor_only && do_sqm {
             let mut sqm_command = vec![
-                "qdisc".to_string(), "add".to_string(), "dev".to_string(),
+                "qdisc".to_string(), "replace".to_string(), "dev".to_string(),
                 config.internet_interface(),
                 "parent".to_string(), format!("0x{:x}:0x{:x}", up_class_major, class_minor),
             ];
