@@ -953,13 +953,11 @@ def refreshShapers():
 					site_name,
 					data[node]['parentClassID'],
 					data[node]['up_parentClassID'],
-					data[node]['classMinor'],
+					int(data[node]['classMinor'], 16),
 					data[node]['downloadBandwidthMbpsMin'],
 					data[node]['uploadBandwidthMbpsMin'],
 					data[node]['downloadBandwidthMbps'],
 					data[node]['uploadBandwidthMbps'],
-					quantum(data[node]['downloadBandwidthMbps']),
-					quantum(data[node]['uploadBandwidthMbps'])
 				)
 				command = 'class add dev ' + interface_a() + ' parent ' + data[node]['parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ format_rate_for_tc(data[node]['downloadBandwidthMbpsMin']) + ' ceil '+ format_rate_for_tc(data[node]['downloadBandwidthMbps']) + ' prio 3' + quantum(data[node]['downloadBandwidthMbps'])
 				linuxTCcommands.append(command)
@@ -991,18 +989,13 @@ def refreshShapers():
 							circuit_name,
 							data[node]['classid'],
 							data[node]['up_classid'],
-							circuit['classMinor'],
+							int(circuit['classMinor'], 16),
 							min_down,
 							min_up,
 							circuit['maxDownload'],
 							circuit['maxUpload'],
-							quantum(circuit['maxDownload']),
-							quantum(circuit['maxUpload']),
-							circuit['classMajor'],
-							circuit['up_classMajor'],
-							sqmFixupRate(circuit['maxDownload'], sqm()),
-							sqmFixupRate(circuit['maxUpload'], sqm()),
-							tcComment
+							int(circuit['classMajor'], 16),
+							int(circuit['up_classMajor'], 16),
 						)
 						command = 'class add dev ' + interface_a() + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ format_rate_for_tc(min_down) + ' ceil '+ format_rate_for_tc(circuit['maxDownload']) + ' prio 3' + quantum(circuit['maxDownload']) + tcComment
 						linuxTCcommands.append(command)

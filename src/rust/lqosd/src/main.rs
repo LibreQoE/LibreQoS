@@ -465,8 +465,6 @@ fn handle_bus_requests(
                 upload_bandwidth_min,
                 download_bandwidth_max,
                 upload_bandwidth_max,
-                quantum_down,
-                quantum_up,
             } => {
                 if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
                     let sender = sender.clone();
@@ -479,34 +477,27 @@ fn handle_bus_requests(
                         upload_bandwidth_min: *upload_bandwidth_min,
                         download_bandwidth_max: *download_bandwidth_max,
                         upload_bandwidth_max: *upload_bandwidth_max,
-                        quantum_down: quantum_down.clone(),
-                        quantum_up: quantum_up.clone(),
                     });
                     BusResponse::Ack
                 } else {
                     BusResponse::Fail("Bakery not initialized".to_string())
                 }
             }
-            BusRequest::BakeryAddCircuit { circuit_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, quantum_down, quantum_up, class_major, up_class_major, sqm_down, sqm_up, comment } => {
+            BusRequest::BakeryAddCircuit { circuit_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, class_major, up_class_major} => {
                 if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
                     let sender = sender.clone();
                     let _ = sender.send(lqos_bakery::BakeryCommands::AddCircuit {
                         circuit_hash: *circuit_hash,
-                        parent_class_id: parent_class_id.clone(),
-                        up_parent_class_id: up_parent_class_id.clone(),
-                        class_minor: class_minor.clone(),
+                        parent_class_id: *parent_class_id,
+                        up_parent_class_id: *up_parent_class_id,
+                        class_minor: *class_minor,
                         download_bandwidth_min: download_bandwidth_min.clone(),
                         upload_bandwidth_min: upload_bandwidth_min.clone(),
                         download_bandwidth_max: download_bandwidth_max.clone(),
                         upload_bandwidth_max: upload_bandwidth_max.clone(),
-                        quantum_down: quantum_down.clone(),
-                        quantum_up: quantum_up.clone(),
                         class_major: class_major.clone(),
                         up_class_major: up_class_major.clone(),
-                        sqm_down: sqm_down.clone(),
-                        sqm_up: sqm_up.clone(),
-                        comment: comment.clone(),
-                    });
+                   });
                     BusResponse::Ack
                 } else {
                     BusResponse::Fail("Bakery not initialized".to_string())

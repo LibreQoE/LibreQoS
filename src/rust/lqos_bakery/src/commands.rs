@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 use tracing::warn;
+use lqos_bus::TcHandle;
 use lqos_config::LazyQueueMode;
 
 /// Execution Mode
@@ -22,32 +23,25 @@ pub enum BakeryCommands {
     MqSetup { queues_available: usize, stick_offset: usize },
     AddSite {
         site_hash: i64,
-        parent_class_id: String,
-        up_parent_class_id: String,
-        class_minor: String,
+        parent_class_id: TcHandle,
+        up_parent_class_id: TcHandle,
+        class_minor: u16,
         download_bandwidth_min: f32,
         upload_bandwidth_min: f32,
         download_bandwidth_max: f32,
         upload_bandwidth_max: f32,
-        quantum_down: String,
-        quantum_up: String,
     },
     AddCircuit {
         circuit_hash: i64,
-        parent_class_id: String,
-        up_parent_class_id: String,
-        class_minor: String,
+        parent_class_id: TcHandle,
+        up_parent_class_id: TcHandle,
+        class_minor: u16,
         download_bandwidth_min: f32,
         upload_bandwidth_min: f32,
         download_bandwidth_max: f32,
         upload_bandwidth_max: f32,
-        quantum_down: String,
-        quantum_up: String,
-        class_major: String,
-        up_class_major: String,
-        sqm_down: String,
-        sqm_up: String,
-        comment: String,
+        class_major: u16,
+        up_class_major: u16,
     }
 }
 
@@ -64,14 +58,11 @@ impl BakeryCommands {
                 upload_bandwidth_min,
                 download_bandwidth_max,
                 upload_bandwidth_max,
-                quantum_down,
-                quantum_up,
             } => Self::add_site(
-                config, *site_hash, parent_class_id.clone(), up_parent_class_id.clone(),
-                class_minor.clone(), *download_bandwidth_min,
+                config, *site_hash, *parent_class_id, *up_parent_class_id,
+                *class_minor, *download_bandwidth_min,
                 *upload_bandwidth_min, *download_bandwidth_max,
-                *upload_bandwidth_max, quantum_down.clone(),
-                quantum_up.clone(),
+                *upload_bandwidth_max,
             ),
             BakeryCommands::AddCircuit {
                 circuit_hash,
@@ -82,21 +73,14 @@ impl BakeryCommands {
                 upload_bandwidth_min,
                 download_bandwidth_max,
                 upload_bandwidth_max,
-                quantum_down,
-                quantum_up,
                 class_major,
                 up_class_major,
-                sqm_down,
-                sqm_up,
-                comment,
             } => Self::add_circuit(
                 execution_mode,
-                config, *circuit_hash, parent_class_id.clone(), up_parent_class_id.clone(),
-                class_minor.clone(), *download_bandwidth_min,
+                config, *circuit_hash, *parent_class_id, *up_parent_class_id,
+                *class_minor, *download_bandwidth_min,
                 *upload_bandwidth_min, *download_bandwidth_max,
-                *upload_bandwidth_max, quantum_down.clone(),
-                quantum_up.clone(), class_major.clone(), up_class_major.clone(),
-                sqm_down.clone(), sqm_up.clone(), comment.clone(),
+                *upload_bandwidth_max, *class_major, *up_class_major,
             ),
             _ => None,
         }
@@ -169,6 +153,40 @@ impl BakeryCommands {
 
         // Format and return the quantum string
         quantum.to_string()
+    }
+
+    fn sqm_rate_fixup(rate: f32, config: &Arc<lqos_config::Config>) -> Vec<String> {
+        // If we aren't using cake, just return the sqm string
+        let sqm = &config.queues.default_sqm;
+        if !sqm.starts_with("cake") || sqm.contains("rtt") {
+            return Self::sqm_as_vec(config);
+        }
+
+        let mut result = Self::sqm_as_vec(config);
+
+        // If we are using cake, we need to fixup the rate
+        // Based on: 1 MTU is 1500 bytes, or 12,000 bits.
+        // At 1 Mbps, (1,000 bits per ms) transmitting an MTU takes 12ms. Add 3ms for overhead, and we get 15ms.
+        //    So 15ms divided by 5 (for 1%) multiplied by 100 yields 300ms.
+        //    The same formula gives 180ms at 2Mbps
+        //    140ms at 3Mbps
+        //    120ms at 4Mbps
+        // We don't change anything for rates above 4Mbps, as the default is 100ms.
+
+        if rate <= 1.0 {
+            result.push("rtt".to_string());
+            result.push("300".to_string());
+        } else if rate <= 2.0 {
+            result.push("rtt".to_string());
+            result.push("180".to_string());
+        } else if rate <= 3.0 {
+            result.push("rtt".to_string());
+            result.push("140".to_string());
+        } else if rate <= 4.0 {
+            result.push("rtt".to_string());
+            result.push("120".to_string());
+        }
+        result
     }
 
     fn mq_setup(
@@ -343,15 +361,13 @@ impl BakeryCommands {
     fn add_site(
         config: &Arc<lqos_config::Config>,
         site_hash: i64,
-        parent_class_id: String,
-        up_parent_class_id: String,
-        class_minor: String,
+        parent_class_id: TcHandle,
+        up_parent_class_id: TcHandle,
+        class_minor: u16,
         download_bandwidth_min: f32,
         upload_bandwidth_min: f32,
         download_bandwidth_max: f32,
         upload_bandwidth_max: f32,
-        quantum_down: String,
-        quantum_up: String,
     ) -> Option<Vec<Vec<String>>> {
         let mut result = Vec::new();
 
@@ -367,21 +383,27 @@ command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_parentC
 
         result.push(vec![
             "class".to_string(), "add".to_string(), "dev".to_string(), config.isp_interface(),
-            "parent".to_string(), parent_class_id.clone(),
-            "classid".to_string(), class_minor.clone(), "htb".to_string(),
+            "parent".to_string(), parent_class_id.as_tc_string(),
+            "classid".to_string(), format!("0x{class_minor:x}"), "htb".to_string(),
             "rate".to_string(), Self::format_rate_for_tc_f32(download_bandwidth_min),
             "ceil".to_string(), Self::format_rate_for_tc_f32(download_bandwidth_max),
             "prio".to_string(), "3".to_string(),
-            quantum_down.clone(),
+            "quantum".to_string(), Self::quantum(
+                download_bandwidth_max as u64,
+                Self::r2q(config.queues.downlink_bandwidth_mbps),
+            ),
         ]);
         result.push(vec![
             "class".to_string(), "add".to_string(), "dev".to_string(), config.internet_interface(),
-            "parent".to_string(), up_parent_class_id.clone(),
-            "classid".to_string(), class_minor.clone(),
+            "parent".to_string(), up_parent_class_id.as_tc_string(),
+            "classid".to_string(), format!("0x{class_minor:x}"),
             "htb".to_string(), "rate".to_string(), Self::format_rate_for_tc_f32(upload_bandwidth_min),
             "ceil".to_string(), Self::format_rate_for_tc_f32(upload_bandwidth_max),
             "prio".to_string(), "3".to_string(),
-            quantum_up.clone(),
+            "quantum".to_string(), Self::quantum(
+                upload_bandwidth_max as u64,
+                Self::r2q(config.queues.uplink_bandwidth_mbps),
+            ),
         ]);
 
         Some(result)
@@ -391,20 +413,15 @@ command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_parentC
         execution_mode: ExecutionMode,
         config: &Arc<lqos_config::Config>,
         circuit_hash: i64,
-        parent_class_id: String,
-        up_parent_class_id: String,
-        class_minor: String,
+        parent_class_id: TcHandle,
+        up_parent_class_id: TcHandle,
+        class_minor: u16,
         download_bandwidth_min: f32,
         upload_bandwidth_min: f32,
         download_bandwidth_max: f32,
         upload_bandwidth_max: f32,
-        quantum_down: String,
-        quantum_up: String,
-        class_major: String,
-        up_class_major: String,
-        sqm_down: String,
-        sqm_up: String,
-        comment: String,
+        class_major: u16,
+        up_class_major: u16,
     ) -> Option<Vec<Vec<String>>> {
         let mut do_htb = true;
         let mut do_sqm = true;
@@ -468,44 +485,49 @@ if monitor_mode_only() == False:
         if do_htb {
             result.push(vec![
                 "class".to_string(), "add".to_string(), "dev".to_string(), config.isp_interface(),
-                "parent".to_string(), parent_class_id.clone(),
-                "classid".to_string(), class_minor.clone(), "htb".to_string(),
+                "parent".to_string(), parent_class_id.as_tc_string(),
+                "classid".to_string(), format!("0x{class_minor:x}"), "htb".to_string(),
                 "rate".to_string(), Self::format_rate_for_tc_f32(download_bandwidth_min),
                 "ceil".to_string(), Self::format_rate_for_tc_f32(download_bandwidth_max),
                 "prio".to_string(), "3".to_string(),
-                quantum_down.clone(),
+                "quantum".to_string(), Self::quantum(
+                    download_bandwidth_max as u64,
+                    Self::r2q(config.queues.downlink_bandwidth_mbps),
+                ),
             ]);
         }
         if !config.queues.monitor_only && do_sqm {
-            let sqm_command = vec![
+            let mut sqm_command = vec![
                 "qdisc".to_string(), "add".to_string(), "dev".to_string(),
                 config.isp_interface(),
-                "parent".to_string(), format!("{}:{}", class_major, class_minor),
-                sqm_down,
+                "parent".to_string(), format!("0x{:x}:0x{:x}", class_major, class_minor),
             ];
+            sqm_command.extend(Self::sqm_rate_fixup(download_bandwidth_max, config));
             result.push(sqm_command);
         }
 
         if do_htb {
             result.push(vec![
                 "class".to_string(), "add".to_string(), "dev".to_string(), config.internet_interface(),
-                "parent".to_string(), up_parent_class_id.clone(),
-                "classid".to_string(), class_minor.clone(),
+                "parent".to_string(), up_parent_class_id.as_tc_string(),
+                "classid".to_string(), format!("0x{class_minor:x}"),
                 "htb".to_string(), "rate".to_string(), Self::format_rate_for_tc_f32(upload_bandwidth_min),
                 "ceil".to_string(), Self::format_rate_for_tc_f32(upload_bandwidth_max),
                 "prio".to_string(), "3".to_string(),
-                quantum_up.clone(),
+                "quantum".to_string(), Self::quantum(
+                    upload_bandwidth_max as u64,
+                    Self::r2q(config.queues.uplink_bandwidth_mbps),
+                ),
             ]);
         }
 
         if !config.queues.monitor_only && do_sqm {
-            let sqm = Self::sqm_as_vec(config);
-            let sqm_command = vec![
+            let mut sqm_command = vec![
                 "qdisc".to_string(), "add".to_string(), "dev".to_string(),
                 config.internet_interface(),
-                "parent".to_string(), format!("{}:{}", up_class_major, class_minor),
-                sqm_up,
+                "parent".to_string(), format!("0x{:x}:0x{:x}", up_class_major, class_minor),
             ];
+            sqm_command.extend(Self::sqm_rate_fixup(upload_bandwidth_max, config));
             result.push(sqm_command);
         }
 
@@ -516,7 +538,7 @@ if monitor_mode_only() == False:
         &self,
         config: &Arc<lqos_config::Config>,
     ) -> Option<Vec<Vec<String>>> {
-        let BakeryCommands::AddCircuit { circuit_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, quantum_down, quantum_up, class_major, up_class_major, sqm_down, sqm_up, comment } = self else {
+        let BakeryCommands::AddCircuit { circuit_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, class_major, up_class_major } = self else {
             warn!("to_prune called on non-circuit command!");
             return None;
         };
@@ -550,12 +572,12 @@ if monitor_mode_only() == False:
             if !config.on_a_stick_mode() {
                 result.push(vec![
                     "qdisc".to_string(), "del".to_string(), "dev".to_string(), config.internet_interface(),
-                    "parent".to_string(), format!("{}:{}", up_class_major, class_minor),
+                    "parent".to_string(), format!("0x{:x}:0x{:x}", up_class_major, class_minor),
                 ]);
             }
             result.push(vec![
                 "qdisc".to_string(), "del".to_string(), "dev".to_string(), config.isp_interface(),
-                "parent".to_string(), format!("{}:{}", class_major, class_minor),
+                "parent".to_string(), format!("0x{:x}:0x{:x}", class_major, class_minor),
             ]);
         }
 
@@ -563,13 +585,13 @@ if monitor_mode_only() == False:
             // Prune the HTB class
             result.push(vec![
                 "class".to_string(), "del".to_string(), "dev".to_string(), config.isp_interface(),
-                "parent".to_string(), parent_class_id.clone(),
-                "classid".to_string(), class_minor.clone(),
+                "parent".to_string(), parent_class_id.as_tc_string(),
+                "classid".to_string(), format!("0x{class_minor:x}"),
             ]);
             result.push(vec![
                 "class".to_string(), "del".to_string(), "dev".to_string(), config.internet_interface(),
-                "parent".to_string(), up_parent_class_id.clone(),
-                "classid".to_string(), class_minor.clone(),
+                "parent".to_string(), up_parent_class_id.as_tc_string(),
+                "classid".to_string(), format!("0x{class_minor:x}"),
             ]);
         }
 

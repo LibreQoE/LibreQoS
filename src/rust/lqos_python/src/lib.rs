@@ -836,32 +836,25 @@ enum BakeryCommands {
     MqSetup { queues_available: usize, stick_offset: usize },
     AddSite {
         site_hash: i64,
-        parent_class_id: String,
-        up_parent_class_id: String,
-        class_minor: String,
+        parent_class_id: TcHandle,
+        up_parent_class_id: TcHandle,
+        class_minor: u16,
         download_bandwidth_min: f32,
         upload_bandwidth_min: f32,
         download_bandwidth_max: f32,
         upload_bandwidth_max: f32,
-        quantum_down: String,
-        quantum_up: String,
     },
     AddCircuit {
         circuit_hash: i64,
-        parent_class_id: String,
-        up_parent_class_id: String,
-        class_minor: String,
+        parent_class_id: TcHandle,
+        up_parent_class_id: TcHandle,
+        class_minor: u16,
         download_bandwidth_min: f32,
         upload_bandwidth_min: f32,
         download_bandwidth_max: f32,
         upload_bandwidth_max: f32,
-        quantum_down: String,
-        quantum_up: String,
-        class_major: String,
-        up_class_major: String,
-        sqm_down: String,
-        sqm_up: String,
-        comment: String,
+        class_major: u16,
+        up_class_major: u16,
     }
 }
 
@@ -895,7 +888,7 @@ impl Bakery {
                 .build().unwrap()
                 .block_on(async {
                     let mut bus = lqos_bus::LibreqosBusClient::new().await.unwrap();
-                    let chunks = queue.chunks(512);
+                    let chunks = queue.chunks(1024);
                     for chunk in chunks {
                         let mut requests = Vec::new();
                         for msg in chunk {
@@ -908,38 +901,31 @@ impl Bakery {
                                         stick_offset: *stick_offset,
                                     });
                                 },
-                                BakeryCommands::AddSite { site_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, quantum_down, quantum_up } => {
+                                BakeryCommands::AddSite { site_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max } => {
                                     let command = BusRequest::BakeryAddSite {
                                         site_hash: *site_hash,
-                                        parent_class_id: parent_class_id.clone(),
-                                        up_parent_class_id: up_parent_class_id.clone(),
-                                        class_minor: class_minor.clone(),
+                                        parent_class_id: *parent_class_id,
+                                        up_parent_class_id: *up_parent_class_id,
+                                        class_minor: *class_minor,
                                         download_bandwidth_min: *download_bandwidth_min,
                                         upload_bandwidth_min: *upload_bandwidth_min,
                                         download_bandwidth_max: *download_bandwidth_max,
                                         upload_bandwidth_max: *upload_bandwidth_max,
-                                        quantum_down: quantum_down.trim().to_string(),
-                                        quantum_up: quantum_up.trim().to_string(),
                                     };
                                     requests.push(command);
                                 }
-                                BakeryCommands::AddCircuit { circuit_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, quantum_down, quantum_up, class_major, up_class_major, sqm_down, sqm_up, comment } => {
+                                BakeryCommands::AddCircuit { circuit_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, class_major, up_class_major } => {
                                     let command = BusRequest::BakeryAddCircuit {
                                         circuit_hash: *circuit_hash,
-                                        parent_class_id: parent_class_id.clone(),
-                                        up_parent_class_id: up_parent_class_id.clone(),
-                                        class_minor: class_minor.clone(),
+                                        parent_class_id: *parent_class_id,
+                                        up_parent_class_id: *up_parent_class_id,
+                                        class_minor: *class_minor,
                                         download_bandwidth_min: *download_bandwidth_min,
                                         upload_bandwidth_min: *upload_bandwidth_min,
                                         download_bandwidth_max: *download_bandwidth_max,
                                         upload_bandwidth_max: *upload_bandwidth_max,
-                                        quantum_down: quantum_down.trim().to_string(),
-                                        quantum_up: quantum_up.trim().to_string(),
-                                        class_major: class_major.trim().to_string(),
-                                        up_class_major: up_class_major.clone(),
-                                        sqm_down: sqm_down.clone(),
-                                        sqm_up: sqm_up.clone(),
-                                        comment: comment.clone(),
+                                        class_major: *class_major,
+                                        up_class_major: *up_class_major,
                                     };
                                     requests.push(command);
                                 }
@@ -968,27 +954,23 @@ impl Bakery {
         site_name: String,
         parent_class_id: String,
         up_parent_class_id: String,
-        class_minor: String,
+        class_minor: u16,
         download_bandwidth_min: f32,
         upload_bandwidth_min: f32,
         download_bandwidth_max: f32,
         upload_bandwidth_max: f32,
-        quantum_down: String,
-        quantum_up: String,
     ) -> PyResult<()> {
         let site_hash = lqos_utils::hash_to_i64(&site_name);
         //println!("Name hash for site {site_name} is {site_hash}");
         let command = BakeryCommands::AddSite {
             site_hash,
-            parent_class_id,
-            up_parent_class_id,
+            parent_class_id: TcHandle::from_string(&parent_class_id).unwrap(),
+            up_parent_class_id: TcHandle::from_string(&up_parent_class_id).unwrap(),
             class_minor,
             download_bandwidth_min,
             upload_bandwidth_min,
             download_bandwidth_max,
             upload_bandwidth_max,
-            quantum_down,
-            quantum_up,
         };
         self.queue.push(command);
         Ok(())
@@ -999,37 +981,27 @@ impl Bakery {
         circuit_name: String,
         parent_class_id: String,
         up_parent_class_id: String,
-        class_minor: String,
+        class_minor: u16,
         download_bandwidth_min: f32,
         upload_bandwidth_min: f32,
         download_bandwidth_max: f32,
         upload_bandwidth_max: f32,
-        quantum_down: String,
-        quantum_up: String,
-        class_major: String,
-        up_class_major: String,
-        sqm_down: String,
-        sqm_up: String,
-        comment: String,
+        class_major: u16,
+        up_class_major: u16,
     ) -> PyResult<()> {
         let circuit_hash = lqos_utils::hash_to_i64(&circuit_name);
         //println!("Name: {circuit_name}, hash: {circuit_hash}");
         let command = BakeryCommands::AddCircuit {
             circuit_hash,
-            parent_class_id,
-            up_parent_class_id,
+            parent_class_id: TcHandle::from_string(&parent_class_id).unwrap(),
+            up_parent_class_id: TcHandle::from_string(&up_parent_class_id).unwrap(),
             class_minor,
             download_bandwidth_min,
             upload_bandwidth_min,
             download_bandwidth_max,
             upload_bandwidth_max,
-            quantum_down,
-            quantum_up,
             class_major,
             up_class_major,
-            sqm_down,
-            sqm_up,
-            comment,
         };
         self.queue.push(command);
         Ok(())
