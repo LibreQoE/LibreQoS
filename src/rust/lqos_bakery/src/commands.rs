@@ -3,6 +3,7 @@ use std::sync::Arc;
 use tracing::warn;
 use lqos_bus::TcHandle;
 use lqos_config::LazyQueueMode;
+use crate::queue_math::{format_rate_for_tc, format_rate_for_tc_f32, quantum, r2q, sqm_as_vec, sqm_rate_fixup};
 
 /// Execution Mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,109 +87,6 @@ impl BakeryCommands {
         }
     }
 
-    fn sqm_as_vec(config: &Arc<lqos_config::Config>) -> Vec<String> {
-        config.queues.default_sqm.split(" ").map(|s| s.to_string()).collect()
-    }
-
-    fn format_rate_for_tc(rate: u64) -> String {
-	        // Format a rate in Mbps for TC commands with smart unit selection.
-	        // - Rates >= 1000 Mbps use 'gbit'
-	        // - Rates >= 1 Mbps use 'mbit'
-	        // - Rates < 1 Mbps use 'kbit'
-	        if rate >= 1000 {
-	            format!("{:.1}gbit", rate as f64 / 1000.0)
-	        } else if rate >= 1 {
-	            format!("{:.1}mbit", rate as f64)
-	        } else {
-	            format!("{:.0}kbit", rate as f64 * 1000.0)
-	        }
-    }
-
-    fn format_rate_for_tc_f32(rate: f32) -> String {
-        // Format a rate in Mbps for TC commands with smart unit selection.
-        // - Rates >= 1000 Mbps use 'gbit'
-        // - Rates >= 1 Mbps use 'mbit'
-        // - Rates < 1 Mbps use 'kbit'
-        if rate >= 1000.0 {
-            format!("{:.1}gbit", rate as f64 / 1000.0)
-        } else if rate >= 1.0 {
-            format!("{:.1}mbit", rate as f64)
-        } else {
-            format!("{:.0}kbit", rate as f64 * 1000.0)
-        }
-    }
-    
-    fn r2q(max_rate_in_mbps: u64) -> u64 {
-        // Constants from Python implementation
-        const MAX_R2Q: f64 = 60_000.0; // From LibreQoS.py
-
-        // Convert rate in Mbps to bytes per second
-        let max_rate_in_bytes_per_second = (max_rate_in_mbps * 125000) as f64;
-
-        // Start with a default r2q value of 10
-        let mut r2q = 10u64;
-
-        // Calculate initial quantum using floating point division to match Python
-        let mut quantum = max_rate_in_bytes_per_second / r2q as f64;
-
-        // Increment r2q until quantum is below MAX_R2Q
-        // This matches Python's behavior of comparing float values
-        while quantum > MAX_R2Q {
-            r2q += 1;
-            quantum = max_rate_in_bytes_per_second / r2q as f64;
-        }
-
-        r2q
-    }
-
-    fn quantum(rate: u64, r2q: u64) -> String {
-        // Constants from Python implementation
-        const MIN_QUANTUM: u64 = 1522; // From LibreQoS.py
-
-        // Convert rate in Mbps to bytes per second
-        let rate_in_bytes_per_second = rate * 125000;
-
-        // Calculate quantum value using the same logic as Python
-        let quantum = std::cmp::max(MIN_QUANTUM, rate_in_bytes_per_second / r2q);
-
-        // Format and return the quantum string
-        quantum.to_string()
-    }
-
-    fn sqm_rate_fixup(rate: f32, config: &Arc<lqos_config::Config>) -> Vec<String> {
-        // If we aren't using cake, just return the sqm string
-        let sqm = &config.queues.default_sqm;
-        if !sqm.starts_with("cake") || sqm.contains("rtt") {
-            return Self::sqm_as_vec(config);
-        }
-
-        let mut result = Self::sqm_as_vec(config);
-
-        // If we are using cake, we need to fixup the rate
-        // Based on: 1 MTU is 1500 bytes, or 12,000 bits.
-        // At 1 Mbps, (1,000 bits per ms) transmitting an MTU takes 12ms. Add 3ms for overhead, and we get 15ms.
-        //    So 15ms divided by 5 (for 1%) multiplied by 100 yields 300ms.
-        //    The same formula gives 180ms at 2Mbps
-        //    140ms at 3Mbps
-        //    120ms at 4Mbps
-        // We don't change anything for rates above 4Mbps, as the default is 100ms.
-
-        if rate <= 1.0 {
-            result.push("rtt".to_string());
-            result.push("300".to_string());
-        } else if rate <= 2.0 {
-            result.push("rtt".to_string());
-            result.push("180".to_string());
-        } else if rate <= 3.0 {
-            result.push("rtt".to_string());
-            result.push("140".to_string());
-        } else if rate <= 4.0 {
-            result.push("rtt".to_string());
-            result.push("120".to_string());
-        }
-        result
-    }
-
     fn mq_setup(
         config: &Arc<lqos_config::Config>,
         queues_available: usize,
@@ -196,8 +94,8 @@ impl BakeryCommands {
     ) -> Option<Vec<Vec<String>>> {
         // command = 'qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq'
         let mut result = Vec::new();
-        let sqm_strings = Self::sqm_as_vec(config);
-        let r2q = Self::r2q(u64::max(config.queues.uplink_bandwidth_mbps, config.queues.downlink_bandwidth_mbps));
+        let sqm_strings = sqm_as_vec(config);
+        let r2q = r2q(u64::max(config.queues.uplink_bandwidth_mbps, config.queues.downlink_bandwidth_mbps));
 
         // ISP-facing interface (interface_a in Python)
         result.push(vec![
@@ -239,9 +137,9 @@ impl BakeryCommands {
                 config.isp_interface(),
                 "parent".to_string(), format!("0x{:x}:", queue + 1),
                 "classid".to_string(), format!("0x{:x}:1", queue + 1), "htb".to_string(),
-                "rate".to_string(), Self::format_rate_for_tc(config.queues.uplink_bandwidth_mbps),
-                "ceil".to_string(), Self::format_rate_for_tc(config.queues.uplink_bandwidth_mbps),
-                "quantum".to_string(), Self::quantum(config.queues.uplink_bandwidth_mbps, r2q),
+                "rate".to_string(), format_rate_for_tc(config.queues.uplink_bandwidth_mbps),
+                "ceil".to_string(), format_rate_for_tc(config.queues.uplink_bandwidth_mbps),
+                "quantum".to_string(), quantum(config.queues.uplink_bandwidth_mbps, r2q),
             ]);
             // command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + sqm()
             let mut class = vec![
@@ -262,10 +160,10 @@ impl BakeryCommands {
                 config.isp_interface(),
                 "parent".to_string(), format!("0x{:x}:1", queue + 1),
                 "classid".to_string(), format!("0x{:x}:2", queue + 1), "htb".to_string(),
-                "rate".to_string(), Self::format_rate_for_tc(mbps_quarter as u64),
-                "ceil".to_string(), Self::format_rate_for_tc(mbps_minus_one as u64),
+                "rate".to_string(), format_rate_for_tc(mbps_quarter as u64),
+                "ceil".to_string(), format_rate_for_tc(mbps_minus_one as u64),
                 "prio".to_string(), "5".to_string(),
-                "quantum".to_string(), Self::quantum(config.queues.uplink_bandwidth_mbps, r2q),
+                "quantum".to_string(), quantum(config.queues.uplink_bandwidth_mbps, r2q),
             ]);
             // command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + sqm()
             let mut default_class = vec![
@@ -318,9 +216,9 @@ impl BakeryCommands {
                 config.internet_interface(),
                 "parent".to_string(), format!("0x{:x}:", queue + stick_offset + 1),
                 "classid".to_string(), format!("0x{:x}:1", queue + stick_offset + 1), "htb".to_string(),
-                "rate".to_string(), Self::format_rate_for_tc(config.queues.downlink_bandwidth_mbps),
-                "ceil".to_string(), Self::format_rate_for_tc(config.queues.downlink_bandwidth_mbps),
-                "quantum".to_string(), Self::quantum(config.queues.downlink_bandwidth_mbps, r2q),
+                "rate".to_string(), format_rate_for_tc(config.queues.downlink_bandwidth_mbps),
+                "ceil".to_string(), format_rate_for_tc(config.queues.downlink_bandwidth_mbps),
+                "quantum".to_string(), quantum(config.queues.downlink_bandwidth_mbps, r2q),
             ]);
             // command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 ' + sqm()
             let mut class = vec![
@@ -340,10 +238,10 @@ impl BakeryCommands {
                 config.internet_interface(),
                 "parent".to_string(), format!("0x{:x}:1", queue + stick_offset + 1),
                 "classid".to_string(), format!("0x{:x}:2", queue + stick_offset + 1), "htb".to_string(),
-                "rate".to_string(), Self::format_rate_for_tc(mbps_quarter as u64),
-                "ceil".to_string(), Self::format_rate_for_tc(mbps_minus_one as u64),
+                "rate".to_string(), format_rate_for_tc(mbps_quarter as u64),
+                "ceil".to_string(), format_rate_for_tc(mbps_minus_one as u64),
                 "prio".to_string(), "5".to_string(),
-                "quantum".to_string(), Self::quantum(config.queues.downlink_bandwidth_mbps, r2q),
+                "quantum".to_string(), quantum(config.queues.downlink_bandwidth_mbps, r2q),
             ]);
             // command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':2 ' + sqm()
             let mut default_class = vec![
@@ -385,24 +283,24 @@ command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_parentC
             "class".to_string(), "add".to_string(), "dev".to_string(), config.isp_interface(),
             "parent".to_string(), parent_class_id.as_tc_string(),
             "classid".to_string(), format!("0x{class_minor:x}"), "htb".to_string(),
-            "rate".to_string(), Self::format_rate_for_tc_f32(download_bandwidth_min),
-            "ceil".to_string(), Self::format_rate_for_tc_f32(download_bandwidth_max),
+            "rate".to_string(), format_rate_for_tc_f32(download_bandwidth_min),
+            "ceil".to_string(), format_rate_for_tc_f32(download_bandwidth_max),
             "prio".to_string(), "3".to_string(),
-            "quantum".to_string(), Self::quantum(
+            "quantum".to_string(), quantum(
                 download_bandwidth_max as u64,
-                Self::r2q(config.queues.downlink_bandwidth_mbps),
+                r2q(config.queues.downlink_bandwidth_mbps),
             ),
         ]);
         result.push(vec![
             "class".to_string(), "add".to_string(), "dev".to_string(), config.internet_interface(),
             "parent".to_string(), up_parent_class_id.as_tc_string(),
             "classid".to_string(), format!("0x{class_minor:x}"),
-            "htb".to_string(), "rate".to_string(), Self::format_rate_for_tc_f32(upload_bandwidth_min),
-            "ceil".to_string(), Self::format_rate_for_tc_f32(upload_bandwidth_max),
+            "htb".to_string(), "rate".to_string(), format_rate_for_tc_f32(upload_bandwidth_min),
+            "ceil".to_string(), format_rate_for_tc_f32(upload_bandwidth_max),
             "prio".to_string(), "3".to_string(),
-            "quantum".to_string(), Self::quantum(
+            "quantum".to_string(), quantum(
                 upload_bandwidth_max as u64,
-                Self::r2q(config.queues.uplink_bandwidth_mbps),
+                r2q(config.queues.uplink_bandwidth_mbps),
             ),
         ]);
 
@@ -487,12 +385,12 @@ if monitor_mode_only() == False:
                 "class".to_string(), "replace".to_string(), "dev".to_string(), config.isp_interface(),
                 "parent".to_string(), parent_class_id.as_tc_string(),
                 "classid".to_string(), format!("0x{class_minor:x}"), "htb".to_string(),
-                "rate".to_string(), Self::format_rate_for_tc_f32(download_bandwidth_min),
-                "ceil".to_string(), Self::format_rate_for_tc_f32(download_bandwidth_max),
+                "rate".to_string(), format_rate_for_tc_f32(download_bandwidth_min),
+                "ceil".to_string(), format_rate_for_tc_f32(download_bandwidth_max),
                 "prio".to_string(), "3".to_string(),
-                "quantum".to_string(), Self::quantum(
+                "quantum".to_string(), quantum(
                     download_bandwidth_max as u64,
-                    Self::r2q(config.queues.downlink_bandwidth_mbps),
+                    r2q(config.queues.downlink_bandwidth_mbps),
                 ),
             ]);
         }
@@ -502,7 +400,7 @@ if monitor_mode_only() == False:
                 config.isp_interface(),
                 "parent".to_string(), format!("0x{:x}:0x{:x}", class_major, class_minor),
             ];
-            sqm_command.extend(Self::sqm_rate_fixup(download_bandwidth_max, config));
+            sqm_command.extend(sqm_rate_fixup(download_bandwidth_max, config));
             result.push(sqm_command);
         }
 
@@ -511,12 +409,12 @@ if monitor_mode_only() == False:
                 "class".to_string(), "replace".to_string(), "dev".to_string(), config.internet_interface(),
                 "parent".to_string(), up_parent_class_id.as_tc_string(),
                 "classid".to_string(), format!("0x{class_minor:x}"),
-                "htb".to_string(), "rate".to_string(), Self::format_rate_for_tc_f32(upload_bandwidth_min),
-                "ceil".to_string(), Self::format_rate_for_tc_f32(upload_bandwidth_max),
+                "htb".to_string(), "rate".to_string(), format_rate_for_tc_f32(upload_bandwidth_min),
+                "ceil".to_string(), format_rate_for_tc_f32(upload_bandwidth_max),
                 "prio".to_string(), "3".to_string(),
-                "quantum".to_string(), Self::quantum(
+                "quantum".to_string(), quantum(
                     upload_bandwidth_max as u64,
-                    Self::r2q(config.queues.uplink_bandwidth_mbps),
+                    r2q(config.queues.uplink_bandwidth_mbps),
                 ),
             ]);
         }
@@ -527,7 +425,7 @@ if monitor_mode_only() == False:
                 config.internet_interface(),
                 "parent".to_string(), format!("0x{:x}:0x{:x}", up_class_major, class_minor),
             ];
-            sqm_command.extend(Self::sqm_rate_fixup(upload_bandwidth_max, config));
+            sqm_command.extend(sqm_rate_fixup(upload_bandwidth_max, config));
             result.push(sqm_command);
         }
 
