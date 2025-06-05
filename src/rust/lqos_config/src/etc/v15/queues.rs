@@ -42,11 +42,15 @@ pub struct QueueConfig {
     pub lazy_expire_seconds: Option<u64>,
 }
 
+/// Lazy queue creation modes
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Default)]
 pub enum LazyQueueMode {
+    /// No lazy queue creation
     #[default]
     No,
+    /// HTB queues for circuits are created on build, but CAKE classes are created on demand
     Htb,
+    /// Full lazy queue creation, both HTB queues and CAKE classes are created on demand.
     Full,
 }
 
