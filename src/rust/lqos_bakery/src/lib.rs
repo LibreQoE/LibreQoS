@@ -71,6 +71,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>) {
 
                 sites.clear();
                 circuits.clear();
+                live_circuits.clear();
                 let new_batch = batch.take(); // Take the batch to avoid cloning
                 if let Some(new_batch) = new_batch {
                     process_batch(new_batch, &config, &mut sites, &mut circuits);
