@@ -212,6 +212,7 @@ fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str) {
                 error!("Failed to execute command: {:?}", line);
                 continue;
             };
+        //println!("/sbin/tc/{}", line.join(" "));
         let output_str = String::from_utf8_lossy(&output.stdout);
         if !output_str.is_empty() {
             println!("Executing command: {:?}", line);

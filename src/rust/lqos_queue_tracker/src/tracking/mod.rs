@@ -85,12 +85,17 @@ fn connect_queues_to_circuit(structure: &[QueueNode], queues: &[QueueType]) -> V
         .iter()
         .filter_map(|q| {
             if let QueueType::Cake(cake) = q {
-                let (major, minor) = cake.parent.get_major_minor();
+                //println!("{}", cake.parent.as_tc_string());
+                //let (major, minor) = cake.parent.get_major_minor();
+                //println!("{major:?}, {minor:?}");
                 if let Some(s) = structure
                     .iter()
-                    .find(|s| s.class_major == major as u32 && s.class_minor == minor as u32)
+                    //.find(|s| s.class_major == major as u32 && s.class_minor == minor as u32)
+                    .find(|s| cake.parent.as_tc_string() == s.class_id.as_tc_string())
                 {
+                    //println!("It matched!");
                     if let Some(circuit_hash) = &s.circuit_hash {
+                        //println!("Circuit hash: {:?}", circuit_hash);
                         let marks: u32 = cake.tins.iter().map(|tin| tin.ecn_marks).sum();
                         if cake.drops > 0 || marks > 0 {
                             return Some(TrackedQueue {
