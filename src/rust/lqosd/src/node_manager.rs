@@ -9,3 +9,4 @@ mod ws;
 
 pub use run::spawn_webserver;
 pub use warnings::{WarningLevel, add_global_warning};
+pub use auth::invalidate_user_cache_blocking;

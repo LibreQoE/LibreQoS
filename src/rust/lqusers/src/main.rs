@@ -35,7 +35,12 @@ enum Commands {
     List,
 }
 
-fn main() -> Result<()> {
+async fn invalidate_user_cache() {
+    let _ = lqos_bus::bus_request(vec![lqos_bus::BusRequest::InvalidateUserCache]).await;
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
     let cli = Args::parse();
     let mut users = WebUsers::load_or_create()?;
     match cli.command {
@@ -45,9 +50,11 @@ fn main() -> Result<()> {
             password,
         }) => {
             users.add_or_update_user(&username, &password, role)?;
+            invalidate_user_cache().await;
         }
         Some(Commands::Del { username }) => {
             users.remove_user(&username)?;
+            invalidate_user_cache().await;
         }
         Some(Commands::List) => {
             println!("All Users\n");
@@ -58,6 +65,5 @@ fn main() -> Result<()> {
             exit(0);
         }
     }
-
     Ok(())
 }

@@ -414,6 +414,12 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 }
                 BusResponse::Ack
             }
+            BusRequest::InvalidateUserCache => {
+                std::thread::spawn(|| {
+                    node_manager::invalidate_user_cache_blocking();
+                });
+                BusResponse::Ack
+            }
         });
     }
 }
