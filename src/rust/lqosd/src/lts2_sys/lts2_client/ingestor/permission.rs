@@ -35,7 +35,7 @@ pub(crate) fn check_submit_permission() {
 }
 
 fn check_permission() {
-    println!("Checking for permission to submit");
+    //println!("Checking for permission to submit");
     let config = load_config().unwrap();
     if config.long_term_stats.gather_stats == false {
         info!("Long term stats are disabled. Not checking license.");
