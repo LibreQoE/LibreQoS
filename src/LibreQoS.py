@@ -949,7 +949,18 @@ def refreshShapers():
 
 			for node in data:
 				site_name = data[node]['name'] if 'name' in data[node] else "root"
-				bakery.add_site(site_name, data[node]['parentClassID'], data[node]['up_parentClassID'], data[node]['classMinor'], format_rate_for_tc(data[node]['downloadBandwidthMbpsMin']), format_rate_for_tc(data[node]['uploadBandwidthMbpsMin']), format_rate_for_tc(data[node]['downloadBandwidthMbps']), format_rate_for_tc(data[node]['uploadBandwidthMbps']), quantum(data[node]['downloadBandwidthMbps']), quantum(data[node]['uploadBandwidthMbps']))
+				bakery.add_site(
+					site_name,
+					data[node]['parentClassID'],
+					data[node]['up_parentClassID'],
+					data[node]['classMinor'],
+					data[node]['downloadBandwidthMbpsMin'],
+					data[node]['uploadBandwidthMbpsMin'],
+					data[node]['downloadBandwidthMbps'],
+					data[node]['uploadBandwidthMbps'],
+					quantum(data[node]['downloadBandwidthMbps']),
+					quantum(data[node]['uploadBandwidthMbps'])
+				)
 				command = 'class add dev ' + interface_a() + ' parent ' + data[node]['parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ format_rate_for_tc(data[node]['downloadBandwidthMbpsMin']) + ' ceil '+ format_rate_for_tc(data[node]['downloadBandwidthMbps']) + ' prio 3' + quantum(data[node]['downloadBandwidthMbps'])
 				linuxTCcommands.append(command)
 				logging.info("Up ParentClassID: " + data[node]['up_parentClassID'])
@@ -976,7 +987,23 @@ def refreshShapers():
 								tcComment = '' # tcComment + '| Comment: ' + circuit['devices'][0]['comment']
 						tcComment = tcComment.replace("\n", "")
 						circuit_name = circuit['circuitID'] if 'circuitID' in circuit else "unknown"
-						bakery.add_circuit(circuit_name, data[node]['classid'], data[node]['up_classid'], circuit['classMinor'], format_rate_for_tc(min_down), format_rate_for_tc(min_up), format_rate_for_tc(circuit['maxDownload']), format_rate_for_tc(circuit['maxUpload']), quantum(circuit['maxDownload']), quantum(circuit['maxUpload']), circuit['classMajor'], circuit['up_classMajor'], sqmFixupRate(circuit['maxDownload'], sqm()), sqmFixupRate(circuit['maxUpload'], sqm()), tcComment)
+						bakery.add_circuit(
+							circuit_name,
+							data[node]['classid'],
+							data[node]['up_classid'],
+							circuit['classMinor'],
+							min_down,
+							min_up,
+							circuit['maxDownload'],
+							circuit['maxUpload'],
+							quantum(circuit['maxDownload']),
+							quantum(circuit['maxUpload']),
+							circuit['classMajor'],
+							circuit['up_classMajor'],
+							sqmFixupRate(circuit['maxDownload'], sqm()),
+							sqmFixupRate(circuit['maxUpload'], sqm()),
+							tcComment
+						)
 						command = 'class add dev ' + interface_a() + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ format_rate_for_tc(min_down) + ' ceil '+ format_rate_for_tc(circuit['maxDownload']) + ' prio 3' + quantum(circuit['maxDownload']) + tcComment
 						linuxTCcommands.append(command)
 						# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off

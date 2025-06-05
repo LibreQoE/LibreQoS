@@ -25,10 +25,10 @@ pub enum BakeryCommands {
         parent_class_id: String,
         up_parent_class_id: String,
         class_minor: String,
-        download_bandwidth_min: String,
-        upload_bandwidth_min: String,
-        download_bandwidth_max: String,
-        upload_bandwidth_max: String,
+        download_bandwidth_min: f32,
+        upload_bandwidth_min: f32,
+        download_bandwidth_max: f32,
+        upload_bandwidth_max: f32,
         quantum_down: String,
         quantum_up: String,
     },
@@ -37,10 +37,10 @@ pub enum BakeryCommands {
         parent_class_id: String,
         up_parent_class_id: String,
         class_minor: String,
-        download_bandwidth_min: String,
-        upload_bandwidth_min: String,
-        download_bandwidth_max: String,
-        upload_bandwidth_max: String,
+        download_bandwidth_min: f32,
+        upload_bandwidth_min: f32,
+        download_bandwidth_max: f32,
+        upload_bandwidth_max: f32,
         quantum_down: String,
         quantum_up: String,
         class_major: String,
@@ -68,9 +68,9 @@ impl BakeryCommands {
                 quantum_up,
             } => Self::add_site(
                 config, *site_hash, parent_class_id.clone(), up_parent_class_id.clone(),
-                class_minor.clone(), download_bandwidth_min.clone(),
-                upload_bandwidth_min.clone(), download_bandwidth_max.clone(),
-                upload_bandwidth_max.clone(), quantum_down.clone(),
+                class_minor.clone(), *download_bandwidth_min,
+                *upload_bandwidth_min, *download_bandwidth_max,
+                *upload_bandwidth_max, quantum_down.clone(),
                 quantum_up.clone(),
             ),
             BakeryCommands::AddCircuit {
@@ -92,9 +92,9 @@ impl BakeryCommands {
             } => Self::add_circuit(
                 execution_mode,
                 config, *circuit_hash, parent_class_id.clone(), up_parent_class_id.clone(),
-                class_minor.clone(), download_bandwidth_min.clone(),
-                upload_bandwidth_min.clone(), download_bandwidth_max.clone(),
-                upload_bandwidth_max.clone(), quantum_down.clone(),
+                class_minor.clone(), *download_bandwidth_min,
+                *upload_bandwidth_min, *download_bandwidth_max,
+                *upload_bandwidth_max, quantum_down.clone(),
                 quantum_up.clone(), class_major.clone(), up_class_major.clone(),
                 sqm_down.clone(), sqm_up.clone(), comment.clone(),
             ),
@@ -118,6 +118,20 @@ impl BakeryCommands {
 	        } else {
 	            format!("{:.0}kbit", rate as f64 * 1000.0)
 	        }
+    }
+
+    fn format_rate_for_tc_f32(rate: f32) -> String {
+        // Format a rate in Mbps for TC commands with smart unit selection.
+        // - Rates >= 1000 Mbps use 'gbit'
+        // - Rates >= 1 Mbps use 'mbit'
+        // - Rates < 1 Mbps use 'kbit'
+        if rate >= 1000.0 {
+            format!("{:.1}gbit", rate as f64 / 1000.0)
+        } else if rate >= 1.0 {
+            format!("{:.1}mbit", rate as f64)
+        } else {
+            format!("{:.0}kbit", rate as f64 * 1000.0)
+        }
     }
     
     fn r2q(max_rate_in_mbps: u64) -> u64 {
@@ -332,10 +346,10 @@ impl BakeryCommands {
         parent_class_id: String,
         up_parent_class_id: String,
         class_minor: String,
-        download_bandwidth_min: String,
-        upload_bandwidth_min: String,
-        download_bandwidth_max: String,
-        upload_bandwidth_max: String,
+        download_bandwidth_min: f32,
+        upload_bandwidth_min: f32,
+        download_bandwidth_max: f32,
+        upload_bandwidth_max: f32,
         quantum_down: String,
         quantum_up: String,
     ) -> Option<Vec<Vec<String>>> {
@@ -355,8 +369,8 @@ command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_parentC
             "class".to_string(), "add".to_string(), "dev".to_string(), config.isp_interface(),
             "parent".to_string(), parent_class_id.clone(),
             "classid".to_string(), class_minor.clone(), "htb".to_string(),
-            "rate".to_string(), download_bandwidth_min.clone(),
-            "ceil".to_string(), download_bandwidth_max.clone(),
+            "rate".to_string(), Self::format_rate_for_tc_f32(download_bandwidth_min),
+            "ceil".to_string(), Self::format_rate_for_tc_f32(download_bandwidth_max),
             "prio".to_string(), "3".to_string(),
             quantum_down.clone(),
         ]);
@@ -364,8 +378,8 @@ command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_parentC
             "class".to_string(), "add".to_string(), "dev".to_string(), config.internet_interface(),
             "parent".to_string(), up_parent_class_id.clone(),
             "classid".to_string(), class_minor.clone(),
-            "htb".to_string(), "rate".to_string(), upload_bandwidth_min.clone(),
-            "ceil".to_string(), upload_bandwidth_max.clone(),
+            "htb".to_string(), "rate".to_string(), Self::format_rate_for_tc_f32(upload_bandwidth_min),
+            "ceil".to_string(), Self::format_rate_for_tc_f32(upload_bandwidth_max),
             "prio".to_string(), "3".to_string(),
             quantum_up.clone(),
         ]);
@@ -380,10 +394,10 @@ command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_parentC
         parent_class_id: String,
         up_parent_class_id: String,
         class_minor: String,
-        download_bandwidth_min: String,
-        upload_bandwidth_min: String,
-        download_bandwidth_max: String,
-        upload_bandwidth_max: String,
+        download_bandwidth_min: f32,
+        upload_bandwidth_min: f32,
+        download_bandwidth_max: f32,
+        upload_bandwidth_max: f32,
         quantum_down: String,
         quantum_up: String,
         class_major: String,
@@ -456,8 +470,8 @@ if monitor_mode_only() == False:
                 "class".to_string(), "add".to_string(), "dev".to_string(), config.isp_interface(),
                 "parent".to_string(), parent_class_id.clone(),
                 "classid".to_string(), class_minor.clone(), "htb".to_string(),
-                "rate".to_string(), download_bandwidth_min.clone(),
-                "ceil".to_string(), download_bandwidth_max.clone(),
+                "rate".to_string(), Self::format_rate_for_tc_f32(download_bandwidth_min),
+                "ceil".to_string(), Self::format_rate_for_tc_f32(download_bandwidth_max),
                 "prio".to_string(), "3".to_string(),
                 quantum_down.clone(),
             ]);
@@ -477,8 +491,8 @@ if monitor_mode_only() == False:
                 "class".to_string(), "add".to_string(), "dev".to_string(), config.internet_interface(),
                 "parent".to_string(), up_parent_class_id.clone(),
                 "classid".to_string(), class_minor.clone(),
-                "htb".to_string(), "rate".to_string(), upload_bandwidth_min.clone(),
-                "ceil".to_string(), upload_bandwidth_max.clone(),
+                "htb".to_string(), "rate".to_string(), Self::format_rate_for_tc_f32(upload_bandwidth_min),
+                "ceil".to_string(), Self::format_rate_for_tc_f32(upload_bandwidth_max),
                 "prio".to_string(), "3".to_string(),
                 quantum_up.clone(),
             ]);
