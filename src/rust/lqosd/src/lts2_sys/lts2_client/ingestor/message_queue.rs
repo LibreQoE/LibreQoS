@@ -419,7 +419,7 @@ impl MessageQueue {
             return Ok(());
         }
         drop(socket);
-        println!("Finished sending messages to {}", remote_host);
+        info!("Finished sending messages to {}", remote_host);
         Ok(())
     }
 

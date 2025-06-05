@@ -187,7 +187,7 @@ pub(crate) fn submit_throughput_stats(
     if let Ok(now) = unix_now() {
         // LTS2 Shaped Devices
         if lts2_needs_shaped_devices() {
-            tracing::warn!("Sending topology to Insight");
+            tracing::info!("Sending topology to Insight");
             // Send the topology tree
             {
                 if let Ok(config) = load_config() {
