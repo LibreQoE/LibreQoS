@@ -1,3 +1,6 @@
+use std::fs::File;
+use std::io::{BufWriter, Write};
+use std::path::Path;
 use tracing::{error, info};
 
 /// Get the current Unix timestamp in seconds
@@ -74,30 +77,30 @@ pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str
     }*/
 }
 
-// pub(crate) fn write_command_file(path: &Path, commands: Vec<Vec<String>>) -> bool {
-//     let Ok(f) = File::create(path) else {
-//         error!("Failed to create output file: {}", path.display());
-//         return true;
-//     };
-//     let mut f = BufWriter::new(f);
-//     for line in commands {
-//         for (idx, entry) in line.iter().enumerate() {
-//             if let Err(e) = f.write_all(entry.as_bytes()) {
-//                 error!("Failed to write to output file: {}", e);
-//                 return true;
-//             }
-//             if idx < line.len() - 1 {
-//                 if let Err(e) = f.write_all(b" ") {
-//                     error!("Failed to write space to output file: {}", e);
-//                     return true;
-//                 }
-//             }
-//         }
-//         let newline = "\n";
-//         if let Err(e) = f.write_all(newline.as_bytes()) {
-//             error!("Failed to write newline to output file: {}", e);
-//             return true;
-//         }
-//     }
-//     false
-// }
+pub(crate) fn write_command_file(path: &Path, commands: &Vec<Vec<String>>) -> bool {
+    let Ok(f) = File::create(path) else {
+        error!("Failed to create output file: {}", path.display());
+        return true;
+    };
+    let mut f = BufWriter::new(f);
+    for line in commands {
+        for (idx, entry) in line.iter().enumerate() {
+            if let Err(e) = f.write_all(entry.as_bytes()) {
+                error!("Failed to write to output file: {}", e);
+                return true;
+            }
+            if idx < line.len() - 1 {
+                if let Err(e) = f.write_all(b" ") {
+                    error!("Failed to write space to output file: {}", e);
+                    return true;
+                }
+            }
+        }
+        let newline = "\n";
+        if let Err(e) = f.write_all(newline.as_bytes()) {
+            error!("Failed to write newline to output file: {}", e);
+            return true;
+        }
+    }
+    false
+}

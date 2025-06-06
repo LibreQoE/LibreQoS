@@ -22,6 +22,7 @@ mod queue_math;
 mod diff;
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::sync::{Arc, OnceLock};
 use std::sync::atomic::AtomicBool;
 use crossbeam_channel::{Receiver, Sender};
@@ -33,7 +34,7 @@ use lqos_config::{Config, LazyQueueMode};
 use crate::commands::ExecutionMode;
 use crate::diff::{diff_sites, SiteDiffResult};
 use crate::queue_math::format_rate_for_tc_f32;
-use crate::utils::execute_in_memory;
+use crate::utils::{execute_in_memory, write_command_file};
 
 pub static BAKERY_SENDER: OnceLock<Sender<BakeryCommands>> = OnceLock::new();
 static MQ_CREATED: AtomicBool = AtomicBool::new(false);
@@ -437,6 +438,8 @@ fn process_batch(
         .flatten()
         .collect::<Vec<Vec<String>>>();
 
+    let path = Path::new(&config.lqos_directory).join("linux_tc_rust.txt");
+    write_command_file(&path, &commands);
     execute_in_memory(&commands, "processing batch");
 }
 
