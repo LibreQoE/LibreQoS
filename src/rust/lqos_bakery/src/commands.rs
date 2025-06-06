@@ -132,7 +132,7 @@ impl BakeryCommands {
         for queue in 0 .. queues_available {
             // command = 'qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2'
             result.push(vec![
-                "qdisc".to_string(), "add".to_string(), "dev".to_string(),
+                "qdisc".to_string(), "replace".to_string(), "dev".to_string(),
                 config.isp_interface(),
                 "parent".to_string(), format!("7FFF:0x{:x}", queue + 1),
                 "handle".to_string(), format!("0x{:x}:", queue + 1), "htb".to_string(),
@@ -140,7 +140,7 @@ impl BakeryCommands {
             ]);
             // command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ format_rate_for_tc(upstream_bandwidth_capacity_download_mbps()) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_download_mbps()) + quantum(upstream_bandwidth_capacity_download_mbps())
             result.push(vec![
-                "class".to_string(), "add".to_string(), "dev".to_string(),
+                "class".to_string(), "replace".to_string(), "dev".to_string(),
                 config.isp_interface(),
                 "parent".to_string(), format!("0x{:x}:", queue + 1),
                 "classid".to_string(), format!("0x{:x}:1", queue + 1), "htb".to_string(),
@@ -150,7 +150,7 @@ impl BakeryCommands {
             ]);
             // command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + sqm()
             let mut class = vec![
-                "qdisc".to_string(), "add".to_string(), "dev".to_string(),
+                "qdisc".to_string(), "replace".to_string(), "dev".to_string(),
                 config.isp_interface(),
                 "parent".to_string(), format!("0x{:x}:1", queue + 1),
             ];
@@ -163,7 +163,7 @@ impl BakeryCommands {
             let mbps_quarter = (mbps - 1.0) / 4.0;
             let mbps_minus_one = mbps - 1.0;
             result.push(vec![
-                "class".to_string(), "add".to_string(), "dev".to_string(),
+                "class".to_string(), "replace".to_string(), "dev".to_string(),
                 config.isp_interface(),
                 "parent".to_string(), format!("0x{:x}:1", queue + 1),
                 "classid".to_string(), format!("0x{:x}:2", queue + 1), "htb".to_string(),
@@ -174,7 +174,7 @@ impl BakeryCommands {
             ]);
             // command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + sqm()
             let mut default_class = vec![
-                "qdisc".to_string(), "add".to_string(), "dev".to_string(),
+                "qdisc".to_string(), "replace".to_string(), "dev".to_string(),
                 config.isp_interface(),
                 "parent".to_string(), format!("0x{:x}:2", queue + 1),
             ];
@@ -211,7 +211,7 @@ impl BakeryCommands {
         for queue in 0 .. queues_available {
             // command = 'qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+stickOffset+1) + ' handle ' + hex(queue+stickOffset+1) + ': htb default 2'
             result.push(vec![
-                "qdisc".to_string(), "add".to_string(), "dev".to_string(),
+                "qdisc".to_string(), "replace".to_string(), "dev".to_string(),
                 config.internet_interface(),
                 "parent".to_string(), format!("7FFF:0x{:x}", queue + stick_offset + 1),
                 "handle".to_string(), format!("0x{:x}:", queue + stick_offset + 1), "htb".to_string(),
@@ -219,7 +219,7 @@ impl BakeryCommands {
             ]);
             // command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ': classid ' + hex(queue+stickOffset+1) + ':1 htb rate '+ format_rate_for_tc(upstream_bandwidth_capacity_upload_mbps()) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_upload_mbps()) + quantum(upstream_bandwidth_capacity_upload_mbps())
             result.push(vec![
-                "class".to_string(), "add".to_string(), "dev".to_string(),
+                "class".to_string(), "replace".to_string(), "dev".to_string(),
                 config.internet_interface(),
                 "parent".to_string(), format!("0x{:x}:", queue + stick_offset + 1),
                 "classid".to_string(), format!("0x{:x}:1", queue + stick_offset + 1), "htb".to_string(),
@@ -229,7 +229,7 @@ impl BakeryCommands {
             ]);
             // command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 ' + sqm()
             let mut class = vec![
-                "qdisc".to_string(), "add".to_string(), "dev".to_string(),
+                "qdisc".to_string(), "replace".to_string(), "dev".to_string(),
                 config.internet_interface(),
                 "parent".to_string(), format!("0x{:x}:1", queue + stick_offset + 1),
             ];
@@ -241,7 +241,7 @@ impl BakeryCommands {
             let mbps_quarter = (mbps - 1.0) / 4.0;
             let mbps_minus_one = mbps - 1.0;
             result.push(vec![
-                "class".to_string(), "add".to_string(), "dev".to_string(),
+                "class".to_string(), "replace".to_string(), "dev".to_string(),
                 config.internet_interface(),
                 "parent".to_string(), format!("0x{:x}:1", queue + stick_offset + 1),
                 "classid".to_string(), format!("0x{:x}:2", queue + stick_offset + 1), "htb".to_string(),
@@ -252,7 +252,7 @@ impl BakeryCommands {
             ]);
             // command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':2 ' + sqm()
             let mut default_class = vec![
-                "qdisc".to_string(), "add".to_string(), "dev".to_string(),
+                "qdisc".to_string(), "replace".to_string(), "dev".to_string(),
                 config.internet_interface(),
                 "parent".to_string(), format!("0x{:x}:2", queue + stick_offset + 1),
             ];
@@ -287,7 +287,7 @@ command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_parentC
          */
 
         result.push(vec![
-            "class".to_string(), "add".to_string(), "dev".to_string(), config.isp_interface(),
+            "class".to_string(), "replace".to_string(), "dev".to_string(), config.isp_interface(),
             "parent".to_string(), parent_class_id.as_tc_string(),
             "classid".to_string(), format!("0x{class_minor:x}"), "htb".to_string(),
             "rate".to_string(), format_rate_for_tc_f32(download_bandwidth_min),
@@ -299,7 +299,7 @@ command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_parentC
             ),
         ]);
         result.push(vec![
-            "class".to_string(), "add".to_string(), "dev".to_string(), config.internet_interface(),
+            "class".to_string(), "replace".to_string(), "dev".to_string(), config.internet_interface(),
             "parent".to_string(), up_parent_class_id.as_tc_string(),
             "classid".to_string(), format!("0x{class_minor:x}"),
             "htb".to_string(), "rate".to_string(), format_rate_for_tc_f32(upload_bandwidth_min),

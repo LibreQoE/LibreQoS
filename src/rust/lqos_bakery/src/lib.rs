@@ -140,13 +140,16 @@ fn handle_commit_batch(
     let has_mq_been_setup = MQ_CREATED.load(std::sync::atomic::Ordering::Relaxed);
     if !has_mq_been_setup {
         // If the MQ hasn't been created, we need to do this as a full, unadjusted run.
+        info!("MQ not created, performing full reload.");
         full_reload(batch, sites, circuits, live_circuits, &config, new_batch);
+        MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
         return;
     }
 
     let site_change_mode = diff_sites(&new_batch, &sites);
     if matches!(site_change_mode, SiteDiffResult::RebuildRequired) {
         // If the site structure has changed, we need to rebuild everything.
+        info!("Site structure has changed, performing full reload.");
         full_reload(batch, sites, circuits, live_circuits, &config, new_batch);
         return;
     }
@@ -227,6 +230,14 @@ fn handle_commit_batch(
                 debug!("No commands to execute for newly added circuits.");
             } else {
                 execute_in_memory(&commands, "adding new circuits");
+                // Update the circuits map with the newly added circuits
+                for command in newly_added {
+                    if let BakeryCommands::AddCircuit { circuit_hash, .. } = command {
+                        circuits.insert(circuit_hash, command);
+                    } else {
+                        warn!("AddCircuit received a non-circuit command: {:?}", command);
+                    }
+                }
             }
         }
     }
