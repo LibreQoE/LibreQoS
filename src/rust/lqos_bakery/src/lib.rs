@@ -62,6 +62,14 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
     let mut circuits = HashMap::new();
     let mut live_circuits = HashMap::new();
 
+    {
+        let Ok(config) = lqos_config::load_config() else {
+            error!("Failed to load configuration, exiting Bakery thread.");
+            return;
+        };
+        info!("Bakery thread starting. Mode: {:?}, expiration: {}s", config.queues.lazy_queues, config.queues.lazy_expire_seconds.unwrap_or(600));
+    }
+
     while let Ok(command) = rx.recv() {
         debug!("Bakery received command: {:?}", command);
 
@@ -140,7 +148,7 @@ fn handle_commit_batch(
     let has_mq_been_setup = MQ_CREATED.load(std::sync::atomic::Ordering::Relaxed);
     if !has_mq_been_setup {
         // If the MQ hasn't been created, we need to do this as a full, unadjusted run.
-        info!("MQ not created, performing full reload.");
+        warn!("MQ not created, performing full reload.");
         full_reload(batch, sites, circuits, live_circuits, &config, new_batch);
         MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
         return;
@@ -149,7 +157,7 @@ fn handle_commit_batch(
     let site_change_mode = diff_sites(&new_batch, &sites);
     if matches!(site_change_mode, SiteDiffResult::RebuildRequired) {
         // If the site structure has changed, we need to rebuild everything.
-        info!("Site structure has changed, performing full reload.");
+        warn!("Site structure has changed, performing full reload.");
         full_reload(batch, sites, circuits, live_circuits, &config, new_batch);
         return;
     }
@@ -163,11 +171,18 @@ fn handle_commit_batch(
         return;
     }
 
+    // TEST CODE.
+    if matches!(circuit_change_mode, diff::CircuitDiffResult::CircuitsChanged {..} ) {
+        warn!("Circuit changes detected, but Bakery is not yet fully implemented to handle them. Full rebuild required.");
+        full_reload(batch, sites, circuits, live_circuits, &config, new_batch);
+        return; // Skip the rest of this CommitBatch processing
+    }
+
     // Declare any site speed changes that need to be applied. We're sending them
     // to ourselves as future commands via the BakeryCommands channel.
     if let SiteDiffResult::SpeedChanges { changes } = site_change_mode {
         if changes.is_empty() {
-            debug!("No speed changes detected, skipping processing.");
+            warn!("No speed changes detected, skipping processing.");
             return;
         }
 
@@ -340,6 +355,7 @@ fn handle_change_site_speed_live(
         error!("Failed to load configuration, exiting Bakery thread.");
         return;
     };
+    warn!("ChangeSiteSpeedLive received for site: {}", site_hash);
     if let Some(site) = sites.get_mut(&site_hash) {
         let BakeryCommands::AddSite { site_hash: _, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min: site_dl_min, upload_bandwidth_min: site_ul_min, download_bandwidth_max: site_dl_max, upload_bandwidth_max: site_ul_max } = site else {
             warn!("ChangeSiteSpeedLive received a non-site command: {:?}", site);
@@ -394,7 +410,6 @@ fn full_reload(batch: &mut Option<Vec<BakeryCommands>>, sites: &mut HashMap<i64,
     live_circuits.clear();
     process_batch(new_batch, &config, sites, circuits);
     *batch = None;
-    MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
 fn process_batch(

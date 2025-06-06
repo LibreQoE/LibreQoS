@@ -18,15 +18,15 @@ pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str
             error!("Failed to execute command: {:?}", line);
             continue;
         };
-        println!("/sbin/tc/{}", line.join(" "));
+        //println!("/sbin/tc/{}", line.join(" "));
         let output_str = String::from_utf8_lossy(&output.stdout);
         if !output_str.is_empty() {
-            error!("Executing command: {:?}", line);
+            error!("Executing command: ({purpose}) {:?}", line);
             error!("Command result: {:?}", output_str.trim());
         }
         let error_str = String::from_utf8_lossy(&output.stderr);
         if !error_str.is_empty() {
-            error!("Executing command: {:?}", line);
+            error!("Executing command: ({purpose}) {:?}", line);
             error!("Command error: {:?}", error_str.trim());
         }
     }

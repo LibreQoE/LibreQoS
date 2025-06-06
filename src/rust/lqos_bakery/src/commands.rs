@@ -1,8 +1,9 @@
 use std::collections::HashSet;
 use std::sync::Arc;
-use tracing::warn;
+use tracing::{info, warn};
 use lqos_bus::TcHandle;
 use lqos_config::LazyQueueMode;
+use crate::MQ_CREATED;
 use crate::queue_math::{format_rate_for_tc, format_rate_for_tc_f32, quantum, r2q, sqm_as_vec, sqm_rate_fixup};
 
 /// Execution Mode
@@ -99,6 +100,7 @@ impl BakeryCommands {
         queues_available: usize,
         stick_offset: usize,
     ) -> Option<Vec<Vec<String>>> {
+        info!("Setting up MQ with {} queues and stick offset {}", queues_available, stick_offset);
         // command = 'qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq'
         let mut result = Vec::new();
         let sqm_strings = sqm_as_vec(config);
@@ -259,6 +261,7 @@ impl BakeryCommands {
             default_class.extend(sqm_strings.clone());
             result.push(default_class);
         }
+        MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
 
         Some(result)
     }
