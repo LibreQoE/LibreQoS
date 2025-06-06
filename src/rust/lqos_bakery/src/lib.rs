@@ -148,7 +148,7 @@ fn handle_commit_batch(
     let has_mq_been_setup = MQ_CREATED.load(std::sync::atomic::Ordering::Relaxed);
     if !has_mq_been_setup {
         // If the MQ hasn't been created, we need to do this as a full, unadjusted run.
-        warn!("MQ not created, performing full reload.");
+        info!("MQ not created, performing full reload.");
         full_reload(batch, sites, circuits, live_circuits, &config, new_batch);
         MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
         return;
@@ -157,7 +157,7 @@ fn handle_commit_batch(
     let site_change_mode = diff_sites(&new_batch, &sites);
     if matches!(site_change_mode, SiteDiffResult::RebuildRequired) {
         // If the site structure has changed, we need to rebuild everything.
-        warn!("Site structure has changed, performing full reload.");
+        info!("Site structure has changed, performing full reload.");
         full_reload(batch, sites, circuits, live_circuits, &config, new_batch);
         return;
     }
@@ -182,7 +182,7 @@ fn handle_commit_batch(
     // to ourselves as future commands via the BakeryCommands channel.
     if let SiteDiffResult::SpeedChanges { changes } = site_change_mode {
         if changes.is_empty() {
-            warn!("No speed changes detected, skipping processing.");
+            debug!("No speed changes detected, skipping processing.");
             return;
         }
 
@@ -355,7 +355,6 @@ fn handle_change_site_speed_live(
         error!("Failed to load configuration, exiting Bakery thread.");
         return;
     };
-    warn!("ChangeSiteSpeedLive received for site: {}", site_hash);
     if let Some(site) = sites.get_mut(&site_hash) {
         let BakeryCommands::AddSite { site_hash: _, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min: site_dl_min, upload_bandwidth_min: site_ul_min, download_bandwidth_max: site_dl_max, upload_bandwidth_max: site_ul_max } = site else {
             warn!("ChangeSiteSpeedLive received a non-site command: {:?}", site);
