@@ -223,6 +223,7 @@ fn main() -> Result<()> {
     // Memory Debugging
     memory_debug();
 
+    let bakery_sender_for_async = bakery_sender.clone();
     let handle = std::thread::Builder::new()
         .name("Async Bus/Web".to_string())
         .spawn(move || {
@@ -231,8 +232,8 @@ fn main() -> Result<()> {
                 .build()
                 .unwrap()
                 .block_on(async {
-                    tokio::spawn(async {
-                        let _ = lqos_stormguard::start_stormguard().await;
+                    tokio::spawn(async move {
+                        let _ = lqos_stormguard::start_stormguard(bakery_sender_for_async).await;
                     });
 
                     let (bus_tx, bus_rx) = tokio::sync::mpsc::channel::<(

@@ -8,6 +8,8 @@ use std::collections::HashMap;
 use tracing::{debug, info, warn};
 use lqos_bus::{BusRequest, BusResponse};
 use lqos_queue_tracker::QUEUE_STRUCTURE;
+use lqos_bakery::BakeryCommands;
+use lqos_utils::hash_to_i64;
 use crate::config::StormguardConfig;
 use crate::datalog::LogCommand;
 use crate::{MOVING_AVERAGE_BUFFER_SIZE, READING_ACCUMULATOR_SIZE};
@@ -119,6 +121,7 @@ impl<'a> SiteStateTracker<'a> {
         recommendations: Vec<(Recommendation, String)>,
         config: &StormguardConfig,
         log_sender: std::sync::mpsc::Sender<LogCommand>,
+        bakery_sender: crossbeam_channel::Sender<lqos_bakery::BakeryCommands>,
     ) {
         // We'll need the queues to apply HTB commands
         let Some(queues) = &QUEUE_STRUCTURE.load().maybe_queues else {
@@ -136,8 +139,8 @@ impl<'a> SiteStateTracker<'a> {
                 continue;
             };
 
-            // Find the Queue Object
-            let Some(queue) = queues.iter().find(|n| {
+            // Find the Queue Object to verify it exists
+            let Some(_queue) = queues.iter().find(|n| {
                 if let Some(q) = &n.name {
                     *q == recommendation.site
                 } else {
@@ -148,14 +151,7 @@ impl<'a> SiteStateTracker<'a> {
                 continue;
             };
 
-            // Find the interface
-            let interface_name = match recommendation.direction {
-                RecommendationDirection::Download => config.download_interface.clone(),
-                RecommendationDirection::Upload => config.upload_interface.clone(),
-            };
-
-            // Find the TC class
-            let class_id = queue.class_id.to_string();
+            // We no longer need interface or class_id since the bakery handles TC commands
 
             // Find the new bandwidth
             let current_rate = match recommendation.direction {
@@ -228,13 +224,43 @@ impl<'a> SiteStateTracker<'a> {
                 if max_rate < new_rate {
                     continue;
                 }
-                let class_id = dependent.class_id.to_string();
                 info!("Applying rate change to dependent {}: {} -> {}", dependent.name, dependent.original_max_download_mbps, new_rate);
-                Self::apply_htb_change(config, &interface_name, class_id, new_rate);
+                // Send bakery command for dependent site
+                let dependent_site_hash = hash_to_i64(&dependent.name);
+                let (download_min, upload_min, download_max, upload_max) = match recommendation.direction {
+                    RecommendationDirection::Download => (new_rate as f32 - 1.0, dependent.original_max_upload_mbps as f32 - 1.0, new_rate as f32, dependent.original_max_upload_mbps as f32),
+                    RecommendationDirection::Upload => (dependent.original_max_download_mbps as f32 - 1.0, new_rate as f32 - 1.0, dependent.original_max_download_mbps as f32, new_rate as f32),
+                };
+                if let Err(e) = bakery_sender.try_send(BakeryCommands::ChangeSiteSpeedLive {
+                    site_hash: dependent_site_hash,
+                    download_bandwidth_min: download_min,
+                    upload_bandwidth_min: upload_min,
+                    download_bandwidth_max: download_max,
+                    upload_bandwidth_max: upload_max,
+                }) {
+                    warn!("Failed to send bakery command for dependent {}: {}", dependent.name, e);
+                }
             }
 
-            // Actually make the change
-            Self::apply_htb_change(config, &interface_name, class_id, new_rate);
+            // Actually make the change via bakery
+            let site_hash = hash_to_i64(&recommendation.site);
+            let (download_min, upload_min, download_max, upload_max) = match recommendation.direction {
+                RecommendationDirection::Download => {
+                    (new_rate as f32 - 1.0, site.queue_upload_mbps as f32 - 1.0, new_rate as f32, site.queue_upload_mbps as f32)
+                },
+                RecommendationDirection::Upload => {
+                    (site.queue_download_mbps as f32 - 1.0, new_rate as f32 - 1.0, site.queue_download_mbps as f32, new_rate as f32)
+                },
+            };
+            if let Err(e) = bakery_sender.try_send(BakeryCommands::ChangeSiteSpeedLive {
+                site_hash,
+                download_bandwidth_min: download_min,
+                upload_bandwidth_min: upload_min,
+                download_bandwidth_max: download_max,
+                upload_bandwidth_max: upload_max,
+            }) {
+                warn!("Failed to send bakery command for site {}: {}", recommendation.site, e);
+            }
 
             // Finish Up by entering cooldown
             debug!("Recommendation applied: entering cooldown");
@@ -263,39 +289,4 @@ impl<'a> SiteStateTracker<'a> {
         }
     }
 
-    fn apply_htb_change(config: &StormguardConfig, interface_name: &str, class_id: String, new_rate: u64) {
-        // Build the HTB command
-        let args = vec![
-            "class".to_string(),
-            "change".to_string(),
-            "dev".to_string(),
-            interface_name.to_string(),
-            "classid".to_string(),
-            class_id.to_string(),
-            "htb".to_string(),
-            "rate".to_string(),
-            format!("{}mbit", new_rate - 1),
-            "ceil".to_string(),
-            format!("{}mbit", new_rate),
-        ];
-        if config.dry_run {
-            warn!("DRY RUN: /sbin/tc {}", args.join(" "));
-        } else {
-            let output = std::process::Command::new("/sbin/tc")
-                .args(&args)
-                .output();
-            match output {
-                Err(e) => {
-                    warn!("Failed to run tc command: {}", e);
-                }
-                Ok(out) => {
-                    if !out.status.success() {
-                        warn!("tc command failed: {}", String::from_utf8_lossy(&out.stderr));
-                    } else {
-                        info!("tc command succeeded: {}", String::from_utf8_lossy(&out.stdout));
-                    }
-                }
-            }
-        }
-    }
 }

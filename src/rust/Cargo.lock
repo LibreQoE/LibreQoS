@@ -2038,6 +2038,8 @@ name = "lqos_stormguard"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "crossbeam-channel",
+ "lqos_bakery",
  "lqos_bus",
  "lqos_config",
  "lqos_queue_tracker",
@@ -2045,7 +2047,6 @@ dependencies = [
  "timerfd",
  "tokio",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

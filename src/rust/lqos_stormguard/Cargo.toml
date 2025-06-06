@@ -5,7 +5,6 @@ edition = "2024"
 
 [dependencies]
 tracing.workspace = true
-tracing-subscriber.workspace = true
 anyhow.workspace = true
 lqos_config = { path = "../lqos_config" }
 timerfd.workspace = true
@@ -13,3 +12,5 @@ lqos_bus = { path = "../lqos_bus" }
 tokio.workspace = true
 lqos_queue_tracker = { path = "../lqos_queue_tracker" }
 lqos_utils = { path = "../lqos_utils" }
+lqos_bakery = { path = "../lqos_bakery" }
+crossbeam-channel.workspace = true
