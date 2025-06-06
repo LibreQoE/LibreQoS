@@ -156,7 +156,7 @@ fn handle_commit_batch(
     // If neither has changed, there's nothing to do.
     if matches!(site_change_mode, SiteDiffResult::NoChange) && matches!(circuit_change_mode, diff::CircuitDiffResult::NoChange) {
         // No changes detected, skip processing
-        debug!("No changes detected in batch, skipping processing.");
+        info!("No changes detected in batch, skipping processing.");
         return;
     }
 
