@@ -108,6 +108,19 @@ fn throughput_task(
     system_usage_actor: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
     bakery_sender: crossbeam_channel::Sender<BakeryCommands>,
 ) {
+    // Add diagnostic logging for time-related issues
+    tracing::info!("Throughput Monitor starting - checking system time");
+    if let Ok(now) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+        tracing::info!("System time since UNIX epoch: {:?}", now);
+    } else {
+        tracing::error!("System time is before UNIX epoch - this will cause duration overflow issues");
+    }
+    
+    if let Ok(boot_time) = lqos_utils::unix_time::time_since_boot() {
+        tracing::info!("Time since boot: {:?}", boot_time);
+    } else {
+        tracing::error!("Unable to get time since boot - this may cause timing issues");
+    }
     // Obtain the flow timeout from the config, default to 30 seconds
     let timeout_seconds = if let Ok(config) = lqos_config::load_config() {
         if let Some(flow_config) = &config.flows {
