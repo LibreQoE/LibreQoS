@@ -33,6 +33,15 @@ R2Q = 10
 MAX_R2Q = 60_000 # See https://lartc.vger.kernel.narkive.com/NKaH1ZNG/htb-quantum-of-class-100001-is-small-consider-r2q-change
 MIN_QUANTUM = 1522
 
+# Gap after each node's circuits for future additions
+# Can be overridden by setting CIRCUIT_PADDING in ispConfig.py
+# Setting to 0 disables padding (not recommended for production)
+# Higher values provide more room for growth but reduce total capacity
+try:
+	from ispConfig import CIRCUIT_PADDING
+except ImportError:
+	CIRCUIT_PADDING = 8  # Default value if not configured
+
 def get_shaped_devices_path():
 	base_dir = get_libreqos_directory()
 
@@ -709,10 +718,19 @@ def refreshShapers():
 		knownClassIDs = []
 		nodes_requiring_min_squashing = {}
 		# Track minor counter by CPU. This way we can have > 32000 hosts (htb has u16 limit to minor handle)
+		# Minor numbers start at 3 to reserve 1 for root qdisc and 2 for default class
+		# With CIRCUIT_PADDING, we leave gaps between nodes to allow future circuit additions
+		# without disrupting existing ClassID assignments. This maintains stability across reloads.
 		for x in range(queuesAvailable):
 			minorByCPUpreloaded[x+1] = 3
 		def traverseNetwork(data, depth, major, minorByCPU, queue, parentClassID, upParentClassID, parentMaxDL, parentMaxUL, parentMinDL, parentMinUL):
-			for node in data:
+			# ClassID Assignment Strategy:
+			# - Nodes and circuits are processed in alphabetical order for stability
+			# - Each node gets a unique minor number that increments sequentially
+			# - After processing all circuits for a node, we add CIRCUIT_PADDING to the minor counter
+			# - This creates gaps that allow adding new circuits without affecting other ClassIDs
+			# - Children are also sorted before recursive processing to ensure deterministic traversal
+			for node in sorted(data.keys()):
 				#if data[node]['type'] == "virtual":
 				#	print(node + " is a virtual node. Skipping.")
 				#	if depth == 0:
@@ -764,6 +782,10 @@ def refreshShapers():
 									}
 				parentNodes.append(thisParentNode)
 				minorByCPU[queue] = minorByCPU[queue] + 1
+				# Check for overflow - TC uses u16 for minor class ID (max 65535)
+				if minorByCPU[queue] > 0xFFFF:
+					logging.error(f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds TC's u16 limit (65535). Consider increasing queue count or restructuring network hierarchy.")
+					raise ValueError(f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds limit of 65535")
 				# If a device from ShapedDevices.csv lists this node as its Parent Node, attach it as a leaf to this node HTB
 				if node in circuits_by_parent_node:
 					# If mins of circuits combined exceed min of parent node - set to 1
@@ -777,7 +799,10 @@ def refreshShapers():
 							if ((override_min_down * len(circuits_by_parent_node[node])) > data[node]['downloadBandwidthMbpsMin']) or ((override_min_up * len(circuits_by_parent_node[node])) > data[node]['uploadBandwidthMbpsMin']):
 								logging.info("Even with this change, minimums will exceed the min rate of the parent node. Using 10 kbps as the minimum for these circuits instead.", stacklevel=2)
 								nodes_requiring_min_squashing[node] = True
-					for circuit in circuits_by_parent_node[node]:
+					# Sort circuits by name for stable ordering
+					sorted_circuits = sorted(circuits_by_parent_node[node], 
+					                       key=lambda c: c.get('circuitName', c.get('circuitID', '')))
+					for circuit in sorted_circuits:
 						if node == circuit['ParentNode']:
 							if monitor_mode_only() == False:
 								if circuit['maxDownload'] > data[node]['downloadBandwidthMbps']:
@@ -821,11 +846,22 @@ def refreshShapers():
 							minorByCPU[queue] = minorByCPU[queue] + 1
 				if len(circuitsForThisNetworkNode) > 0:
 					data[node]['circuits'] = circuitsForThisNetworkNode
+				
+				# Add padding for future circuit additions (applies to all nodes)
+				# This ensures space is reserved even for nodes without circuits
+				minorByCPU[queue] = minorByCPU[queue] + CIRCUIT_PADDING
+				
 				# Recursive call this function for children nodes attached to this node
 				if 'children' in data[node]:
+					# Sort children to ensure consistent traversal order
+					sorted_children = dict(sorted(data[node]['children'].items()))
 					# We need to keep tabs on the minor counter, because we can't have repeating class IDs. Here, we bring back the minor counter from the recursive function
 					minorByCPU[queue] = minorByCPU[queue] + 1
-					minorByCPU = traverseNetwork(data[node]['children'], depth+1, major, minorByCPU, queue, nodeClassID, upNodeClassID, data[node]['downloadBandwidthMbps'], data[node]['uploadBandwidthMbps'], data[node]['downloadBandwidthMbpsMin'], data[node]['uploadBandwidthMbpsMin'])
+					# Check for overflow - TC uses u16 for minor class ID (max 65535)
+					if minorByCPU[queue] > 0xFFFF:
+						logging.error(f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds TC's u16 limit (65535). Consider increasing queue count or restructuring network hierarchy.")
+						raise ValueError(f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds limit of 65535")
+					minorByCPU = traverseNetwork(sorted_children, depth+1, major, minorByCPU, queue, nodeClassID, upNodeClassID, data[node]['downloadBandwidthMbps'], data[node]['uploadBandwidthMbps'], data[node]['downloadBandwidthMbpsMin'], data[node]['uploadBandwidthMbpsMin'])
 				# If top level node, increment to next queue / cpu core
 				if depth == 0:
 					if queue >= queuesAvailable:
@@ -947,7 +983,7 @@ def refreshShapers():
 					case 4: return sqm + " rtt 120"
 					case _: return sqm
 
-			for node in data:
+			for node in sorted(data.keys()):
 				site_name = data[node]['name'] if 'name' in data[node] else "root"
 				bakery.add_site(
 					site_name,
@@ -966,7 +1002,10 @@ def refreshShapers():
 				command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ format_rate_for_tc(data[node]['uploadBandwidthMbpsMin']) + ' ceil '+ format_rate_for_tc(data[node]['uploadBandwidthMbps']) + ' prio 3' + quantum(data[node]['uploadBandwidthMbps'])
 				linuxTCcommands.append(command)
 				if 'circuits' in data[node]:
-					for circuit in data[node]['circuits']:
+					# Sort circuits by name for stable ordering
+					sorted_circuits = sorted(data[node]['circuits'], 
+					                       key=lambda c: c.get('circuitName', c.get('circuitID', '')))
+					for circuit in sorted_circuits:
 						# If circuit mins exceed node mins - handle low min rates of 1 to mean 10 kbps.
 						# Avoid changing minDownload or minUpload because they are used in queuingStructure.json, and must remain integers.
 						min_down = circuit['minDownload']
@@ -1033,7 +1072,9 @@ def refreshShapers():
 								devicesShaped.append(device['deviceName'])
 				# Recursive call this function for children nodes attached to this node
 				if 'children' in data[node]:
-					traverseNetwork(data[node]['children'])
+					# Sort children to ensure consistent traversal order
+					sorted_children = dict(sorted(data[node]['children'].items()))
+					traverseNetwork(sorted_children)
 		# Here is the actual call to the recursive traverseNetwork() function.
 		traverseNetwork(network)
 		
