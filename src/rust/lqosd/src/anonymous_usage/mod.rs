@@ -77,7 +77,17 @@ fn anonymous_usage_dump() -> anyhow::Result<()> {
 
     data.git_hash = env!("GIT_HASH").to_string();
     data.shaped_device_count = SHAPED_DEVICES.load().devices.len();
-    data.net_json_len = NETWORK_JSON.read().unwrap().get_nodes_when_ready().len();
+    
+    // Add error handling for mutex poisoning
+    match NETWORK_JSON.read() {
+        Ok(nj) => {
+            data.net_json_len = nj.get_nodes_when_ready().len();
+        },
+        Err(e) => {
+            tracing::error!("Failed to acquire NETWORK_JSON read lock in anonymous usage (possibly poisoned): {:?}", e);
+            data.net_json_len = 0; // Use default value
+        }
+    }
 
     data.high_watermark_bps = (HIGH_WATERMARK.get_down(), HIGH_WATERMARK.get_up());
 
