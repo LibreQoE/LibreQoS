@@ -172,11 +172,18 @@ fn handle_commit_batch(
         return;
     }
 
-    // TEST CODE.
-    if matches!(circuit_change_mode, diff::CircuitDiffResult::CircuitsChanged {..} ) {
-        warn!("Circuit changes detected, but Bakery is not yet fully implemented to handle them. Full rebuild required.");
-        full_reload(batch, sites, circuits, live_circuits, &config, new_batch);
-        return; // Skip the rest of this CommitBatch processing
+    // Check if we should do a full reload based on the number of circuit changes
+    if let diff::CircuitDiffResult::CircuitsChanged { newly_added, removed_circuits, updated_circuits } = &circuit_change_mode {
+        let total_changes = newly_added.len() + removed_circuits.len() + updated_circuits.len();
+        
+        if total_changes > 50 {
+            warn!("Large number of circuit changes detected ({}), performing full rebuild to prevent churning", total_changes);
+            full_reload(batch, sites, circuits, live_circuits, &config, new_batch);
+            return; // Skip the rest of this CommitBatch processing
+        } else {
+            info!("Processing {} circuit changes incrementally", total_changes);
+            // Continue with incremental processing below
+        }
     }
 
     // Declare any site speed changes that need to be applied. We're sending them

@@ -483,7 +483,7 @@ fn handle_bus_requests(
                     BusResponse::Fail("Bakery not initialized".to_string())
                 }
             }
-            BusRequest::BakeryAddCircuit { circuit_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, class_major, up_class_major} => {
+            BusRequest::BakeryAddCircuit { circuit_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, class_major, up_class_major, ip_addresses} => {
                 if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
                     let sender = sender.clone();
                     let _ = sender.send(lqos_bakery::BakeryCommands::AddCircuit {
@@ -497,6 +497,7 @@ fn handle_bus_requests(
                         upload_bandwidth_max: upload_bandwidth_max.clone(),
                         class_major: class_major.clone(),
                         up_class_major: up_class_major.clone(),
+                        ip_addresses: ip_addresses.clone(),
                    });
                     BusResponse::Ack
                 } else {

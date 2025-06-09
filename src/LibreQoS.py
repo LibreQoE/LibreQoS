@@ -1024,6 +1024,16 @@ def refreshShapers():
 								tcComment = '' # tcComment + '| Comment: ' + circuit['devices'][0]['comment']
 						tcComment = tcComment.replace("\n", "")
 						circuit_name = circuit['circuitID'] if 'circuitID' in circuit else "unknown"
+						# Collect all IP addresses for this circuit
+						ip_list = []
+						for device in circuit['devices']:
+							if device['ipv4s']:
+								ip_list.extend(device['ipv4s'])
+							if device['ipv6s']:
+								ip_list.extend(device['ipv6s'])
+						# Concatenate IPs with comma separator
+						ip_addresses_str = ','.join(ip_list)
+						
 						bakery.add_circuit(
 							circuit_name,
 							data[node]['classid'],
@@ -1035,6 +1045,7 @@ def refreshShapers():
 							circuit['maxUpload'],
 							int(circuit['classMajor'], 16),
 							int(circuit['up_classMajor'], 16),
+							ip_addresses_str,
 						)
 						command = 'class add dev ' + interface_a() + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ format_rate_for_tc(min_down) + ' ceil '+ format_rate_for_tc(circuit['maxDownload']) + ' prio 3' + quantum(circuit['maxDownload']) + tcComment
 						linuxTCcommands.append(command)

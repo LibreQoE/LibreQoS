@@ -282,6 +282,8 @@ pub enum BusRequest {
         class_major: u16,
         /// The upload class major version for the circuit
         up_class_major: u16,
+        /// Concatenated list of IP addresses for the circuit
+        ip_addresses: String,
     },
 }
 

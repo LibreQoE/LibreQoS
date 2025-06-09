@@ -1,4 +1,4 @@
-import {saveConfig, loadConfig} from "./config/config_helper";
+import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
 
 function validateConfig() {
     // Validate required fields
@@ -43,6 +43,9 @@ function updateConfig() {
     const webserverListen = document.getElementById("webserverListen").value.trim();
     window.config.webserver_listen = webserverListen ? webserverListen : null;
 }
+
+// Render the configuration menu
+renderConfigMenu('general');
 
 loadConfig(() => {
     // window.config now contains the configuration.

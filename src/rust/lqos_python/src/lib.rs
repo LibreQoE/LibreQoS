@@ -855,6 +855,7 @@ enum BakeryCommands {
         upload_bandwidth_max: f32,
         class_major: u16,
         up_class_major: u16,
+        ip_addresses: String,
     }
 }
 
@@ -914,7 +915,7 @@ impl Bakery {
                                     };
                                     requests.push(command);
                                 }
-                                BakeryCommands::AddCircuit { circuit_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, class_major, up_class_major } => {
+                                BakeryCommands::AddCircuit { circuit_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, class_major, up_class_major, ip_addresses } => {
                                     let command = BusRequest::BakeryAddCircuit {
                                         circuit_hash: *circuit_hash,
                                         parent_class_id: *parent_class_id,
@@ -926,6 +927,7 @@ impl Bakery {
                                         upload_bandwidth_max: *upload_bandwidth_max,
                                         class_major: *class_major,
                                         up_class_major: *up_class_major,
+                                        ip_addresses: ip_addresses.clone(),
                                     };
                                     requests.push(command);
                                 }
@@ -988,6 +990,7 @@ impl Bakery {
         upload_bandwidth_max: f32,
         class_major: u16,
         up_class_major: u16,
+        ip_addresses: String,
     ) -> PyResult<()> {
         let circuit_hash = lqos_utils::hash_to_i64(&circuit_name);
         //println!("Name: {circuit_name}, hash: {circuit_hash}");
@@ -1002,6 +1005,7 @@ impl Bakery {
             upload_bandwidth_max,
             class_major,
             up_class_major,
+            ip_addresses,
         };
         self.queue.push(command);
         Ok(())

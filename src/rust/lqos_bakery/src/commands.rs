@@ -51,6 +51,7 @@ pub enum BakeryCommands {
         upload_bandwidth_max: f32,
         class_major: u16,
         up_class_major: u16,
+        ip_addresses: String, // Concatenated list of all IPs for this circuit
     }
 }
 
@@ -84,6 +85,7 @@ impl BakeryCommands {
                 upload_bandwidth_max,
                 class_major,
                 up_class_major,
+                ip_addresses: _,
             } => Self::add_circuit(
                 execution_mode,
                 config, *circuit_hash, *parent_class_id, *up_parent_class_id,

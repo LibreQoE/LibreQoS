@@ -1,4 +1,4 @@
-import {saveConfig, loadConfig} from "./config/config_helper";
+import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
 
 function arrayToString(arr) {
     return arr ? arr.join(', ') : '';
@@ -50,6 +50,9 @@ function updateConfig() {
         active_status_ids: stringToArray(document.getElementById("activeStatusIds").value)
     };
 }
+
+// Render the configuration menu
+renderConfigMenu('sonar');
 
 loadConfig(() => {
     // window.config now contains the configuration.

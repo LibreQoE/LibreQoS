@@ -1,27 +1,4 @@
-<div class="row">
-    <div class="col-12">
-        <ul class="config-menu">
-        <li class="config-menu-item"><a href="config_general.html" class="text-decoration-none"><i class="fa fa-server"></i> General</a></li>
-        <li class="config-menu-item"><a href="config_anon.html" class="text-decoration-none"><i class="fa fa-user-secret"></i> Anonymous Usage Stats</a></li>
-        <li class="config-menu-item"><a href="config_tuning.html" class="text-decoration-none"><i class="fa fa-warning"></i> Tuning</a></li>
-        <li class="config-menu-item"><a href="config_interface.html" class="text-decoration-none"><i class="fa fa-chain"></i> Network Mode</a></li>
-        <li class="config-menu-item active"><a href="config_queues.html" class="text-decoration-none"><i class="fa fa-car"></i> Queues</a></li>
-        <li class="config-menu-item"><a href="config_lts.html" class="text-decoration-none"><i class="fa fa-line-chart"></i> Long-Term Stats</a></li>
-        <li class="config-menu-item"><a href="config_iprange.html" class="text-decoration-none"><i class="fa fa-address-card"></i> IP Ranges</a></li>
-        <li class="config-menu-item"><a href="config_flows.html" class="text-decoration-none"><i class="fa fa-arrow-circle-down"></i> Flow Tracking</a></li>
-        <li class="config-menu-item"><a href="config_integration.html" class="text-decoration-none"><i class="fa fa-link"></i> Integration - Common</a></li>
-        <li class="config-menu-item"><a href="config_spylnx.html" class="text-decoration-none"><i class="fa fa-link"></i> Splynx</a></li>
-        <li class="config-menu-item"><a href="config_uisp.html" class="text-decoration-none"><i class="fa fa-link"></i> UISP</a></li>
-        <li class="config-menu-item"><a href="config_powercode.html" class="text-decoration-none"><i class="fa fa-link"></i> Powercode</a></li>
-        <li class="config-menu-item"><a href="config_sonar.html" class="text-decoration-none"><i class="fa fa-link"></i> Sonar</a></li>
-        <li class="config-menu-item"><a href="config_wispgate.html" class="text-decoration-none"><i class="fa fa-link"></i> WispGate</a></li>
-        <li class="config-menu-item"><a href="config_network.html" class="text-decoration-none"><i class="fa fa-map"></i> Network Layout</a></li>
-        <li class="config-menu-item"><a href="config_devices.html" class="text-decoration-none"><i class="fa fa-table"></i> Shaped Devices</a></li>
-        <li class="config-menu-item"><a href="config_users.html" class="text-decoration-none"><i class="fa fa-users"></i> LibreQoS Users</a></li>
-        </ul>
-        <hr class="mt-3 mb-3" />
-    </div>
-</div>
+<div id="configMenuContainer"></div>
 <div class="row">
     <div class="col-12">
         <form>
@@ -89,10 +66,14 @@
                 <div class="form-text">Use binpacking algorithm to optimize flat networks</div>
             </div>
 
-            <div class="mb-3 form-check">
-                <input type="checkbox" class="form-check-input" id="lazyQueues">
-                <label class="form-check-label" for="lazyQueues">Enable Lazy Queues</label>
-                <div class="form-text">Create circuit queues only when traffic is detected (for fractional rate plans)</div>
+            <div class="mb-3">
+                <label for="lazyQueues" class="form-label">Lazy Queue Mode</label>
+                <select class="form-select" id="lazyQueues">
+                    <option value="No">No - Disabled</option>
+                    <option value="Htb">Htb - HTB queues on build, CAKE classes on demand</option>
+                    <option value="Full">Full - Both HTB and CAKE queues on demand</option>
+                </select>
+                <div class="form-text">Control how circuit queues are created for fractional rate plans</div>
             </div>
 
             <div class="mb-3">
