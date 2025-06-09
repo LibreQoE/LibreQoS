@@ -285,6 +285,12 @@ pub enum BusRequest {
         /// Concatenated list of IP addresses for the circuit
         ip_addresses: String,
     },
+    
+    /// Get current Stormguard statistics
+    GetStormguardStats,
+    
+    /// Get current Bakery statistics
+    GetBakeryStats,
 }
 
 /// Defines the parts of the blackboard

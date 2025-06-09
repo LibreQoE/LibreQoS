@@ -8,6 +8,45 @@ use lts_client::transport_data::{StatsHost, StatsTotals, StatsTreeNode};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
+/// Serializable snapshot of StormguardStats for bus transmission
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct StormguardStatsSnapshot {
+    // Per-cycle counters
+    pub adjustments_up: u64,
+    pub adjustments_down: u64,
+    pub sites_evaluated: u64,
+    
+    // Current state counters
+    pub sites_in_warmup: u64,
+    pub sites_in_cooldown: u64,
+    pub sites_active: u64,
+    pub total_sites_managed: u64,
+    
+    // Performance metrics
+    pub last_cycle_duration_ms: u64,
+    pub recommendations_generated: u64,
+}
+
+/// Serializable snapshot of BakeryStats for bus transmission
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BakeryStatsSnapshot {
+    // Per-cycle counters
+    pub queues_created: u64,
+    pub queues_expired: u64,
+    pub lazy_queues_activated: u64,
+    pub tc_commands_executed: u64,
+    
+    // Current state counters
+    pub total_sites: u64,
+    pub total_circuits: u64,
+    pub active_circuits: u64,
+    pub lazy_circuits: u64,
+    
+    // Performance metrics
+    pub last_batch_duration_ms: u64,
+    pub pending_commands: u64,
+}
+
 /// A `BusResponse` object represents a single
 /// reply generated from a `BusRequest`, and batched
 /// inside a `BusReply`.
@@ -172,4 +211,10 @@ pub enum BusResponse {
 
     /// Summary of IP Protocols
     IpProtocols(Vec<(String, DownUpOrder<u64>)>),
+    
+    /// Stormguard statistics
+    StormguardStats(StormguardStatsSnapshot),
+    
+    /// Bakery statistics
+    BakeryStats(BakeryStatsSnapshot),
 }

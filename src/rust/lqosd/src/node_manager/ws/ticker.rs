@@ -20,6 +20,8 @@ mod top_10;
 mod top_flows;
 mod tree_capacity;
 mod tree_summary;
+mod stormguard;
+mod bakery;
 
 use crate::system_stats::SystemStats;
 pub use network_tree::all_circuits;
@@ -67,6 +69,8 @@ async fn one_second_cadence(
             system_info::cpu_info(channels.clone(), system_usage_tx.clone()),
             system_info::ram_info(channels.clone(), system_usage_tx.clone()),
             retransmits::tcp_retransmits(channels.clone()),
+            stormguard::stormguard_ticker(channels.clone(), bus_tx.clone()),
+            bakery::bakery_ticker(channels.clone(), bus_tx.clone()),
         );
 
         channels.clean().await;

@@ -4,26 +4,35 @@ let networkData = null;
 let selectedTargets = [];
 
 // Load network.json for site dropdown
-async function loadNetworkData() {
-    try {
-        const response = await fetch('/local-api/networkJson', {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json',
-            },
-            credentials: 'same-origin'
-        });
-        
+function loadNetworkData() {
+    return fetch('/local-api/networkJson', {
+        method: 'GET',
+        headers: {
+            'Accept': 'application/json',
+        },
+        credentials: 'same-origin'
+    })
+    .then(response => {
         if (!response.ok) {
             throw new Error('Network response was not ok');
         }
-        
-        networkData = await response.json();
+        return response.json();
+    })
+    .then(data => {
+        // Check if we got the "Not done yet" response
+        if (typeof data === 'string' && data === 'Not done yet') {
+            console.error('Network.json file not found on server');
+            alert('Network configuration not found. Please ensure network.json exists.');
+            return;
+        }
+        networkData = data;
+        console.log('Network data loaded:', networkData);
         populateSiteSelector();
-    } catch (error) {
+    })
+    .catch(error => {
         console.error('Error loading network data:', error);
         alert('Failed to load network sites. Please refresh the page.');
-    }
+    });
 }
 
 // Build dropdown options from network tree
@@ -32,6 +41,12 @@ function populateSiteSelector() {
     selector.innerHTML = '<option value="">Select a site...</option>';
     
     function iterate(data, level = 0) {
+        // Handle case where data might be a string or other non-object
+        if (typeof data !== 'object' || data === null) {
+            console.warn('Data is not an object:', data);
+            return;
+        }
+        
         for (const [key, value] of Object.entries(data)) {
             const option = document.createElement('option');
             option.value = key;
@@ -46,14 +61,17 @@ function populateSiteSelector() {
             selector.appendChild(option);
             
             // Recursively add children
-            if (value.children != null) {
+            if (value && typeof value === 'object' && value.children != null) {
                 iterate(value.children, level + 1);
             }
         }
     }
     
     if (networkData) {
+        console.log('Populating site selector with:', networkData);
         iterate(networkData);
+    } else {
+        console.error('Network data is null or undefined');
     }
 }
 
@@ -160,11 +178,16 @@ function updateConfig() {
 // Initialize page
 renderConfigMenu('stormguard');
 
-// Load network data first
-loadNetworkData();
-
-// Load configuration
-loadConfig(() => {
+// Load both network data and configuration
+Promise.all([
+    loadNetworkData(),
+    new Promise((resolve) => {
+        loadConfig(() => resolve());
+    })
+]).then(() => {
+    console.log('Both network data and config loaded');
+    
+    // Now populate the UI with config data
     if (window.config && window.config.stormguard) {
         const sg = window.config.stormguard;
         

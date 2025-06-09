@@ -14,6 +14,9 @@ pub(crate) fn current_timestamp() -> u64 {
 
 pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str) {
     info!("Bakery: Executing in-memory commands: {} lines, for {purpose}", command_buffer.len());
+    
+    // Track TC commands executed
+    crate::BAKERY_STATS.tc_commands_executed.fetch_add(command_buffer.len() as u64, std::sync::atomic::Ordering::Relaxed);
 
     /*for line in command_buffer {
         let Ok(output) = std::process::Command::new("/sbin/tc")

@@ -22,6 +22,7 @@ pub use bus::{
     CakeDiffTinTransit, CakeDiffTransit, CakeTransit, QueueStoreTransit, StatsRequest, TopFlowType,
     UnixSocketServer, bus_request, LibreqosBusClient,
 };
+pub use bus::response::{StormguardStatsSnapshot, BakeryStatsSnapshot};
 pub use tc_handle::TcHandle;
 
 /// Anonymous Usage Statistics Data Types

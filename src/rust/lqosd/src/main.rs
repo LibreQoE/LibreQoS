@@ -504,6 +504,12 @@ fn handle_bus_requests(
                     BusResponse::Fail("Bakery not initialized".to_string())
                 }
             }
+            BusRequest::GetStormguardStats => {
+                BusResponse::StormguardStats(lqos_stormguard::STORMGUARD_STATS.snapshot())
+            }
+            BusRequest::GetBakeryStats => {
+                BusResponse::BakeryStats(lqos_bakery::BAKERY_STATS.snapshot())
+            }
         });
     }
 }
