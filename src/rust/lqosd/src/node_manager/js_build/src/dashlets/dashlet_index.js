@@ -62,8 +62,8 @@ export const DashletMenu = [
     { name: "Round-Trip Time Histogram 3D", tag: "rttHistogram3D", size: 12, category: "RTT" },
     { name: "(Insight) Shaper Status", tag: "ltsShaperStatus", size: 3, category: "Insight" },
     { name: "(Insight) Last 24 Hours", tag: "ltsLast24", size: 3, category: "Insight" },
-    { name: "Stormguard Status", tag: "stormguardStatus", size: 6, category: "Queue Management" },
-    { name: "Bakery Status", tag: "bakeryStatus", size: 6, category: "Queue Management" },
+    { name: "Stormguard Bandwidth Adjustments", tag: "stormguardStatus", size: 6, category: "Queue Management" },
+    { name: "Bakery Circuit Activity", tag: "bakeryStatus", size: 6, category: "Queue Management" },
 ];
 
 export function widgetFactory(widgetName, count) {

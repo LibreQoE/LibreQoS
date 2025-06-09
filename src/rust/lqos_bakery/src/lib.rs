@@ -227,6 +227,11 @@ fn handle_commit_batch(
     if matches!(site_change_mode, SiteDiffResult::NoChange) && matches!(circuit_change_mode, diff::CircuitDiffResult::NoChange) {
         // No changes detected, skip processing
         info!("No changes detected in batch, skipping processing.");
+        // Update statistics
+        BAKERY_STATS.total_sites.store(sites.len() as u64, Ordering::Relaxed);
+        BAKERY_STATS.total_circuits.store(circuits.len() as u64, Ordering::Relaxed);
+        BAKERY_STATS.active_circuits.store(live_circuits.len() as u64, Ordering::Relaxed);
+        BAKERY_STATS.lazy_circuits.store((circuits.len() - live_circuits.len()) as u64, Ordering::Relaxed);
         return;
     }
 
@@ -249,6 +254,11 @@ fn handle_commit_batch(
     if let SiteDiffResult::SpeedChanges { changes } = site_change_mode {
         if changes.is_empty() {
             debug!("No speed changes detected, skipping processing.");
+            // Update statistics
+            BAKERY_STATS.total_sites.store(sites.len() as u64, Ordering::Relaxed);
+            BAKERY_STATS.total_circuits.store(circuits.len() as u64, Ordering::Relaxed);
+            BAKERY_STATS.active_circuits.store(live_circuits.len() as u64, Ordering::Relaxed);
+            BAKERY_STATS.lazy_circuits.store((circuits.len() - live_circuits.len()) as u64, Ordering::Relaxed);
             return;
         }
 
@@ -491,6 +501,12 @@ fn full_reload(batch: &mut Option<Vec<BakeryCommands>>, sites: &mut HashMap<i64,
     live_circuits.clear();
     process_batch(new_batch, &config, sites, circuits);
     *batch = None;
+    
+    // Update statistics after full reload
+    BAKERY_STATS.total_sites.store(sites.len() as u64, Ordering::Relaxed);
+    BAKERY_STATS.total_circuits.store(circuits.len() as u64, Ordering::Relaxed);
+    BAKERY_STATS.active_circuits.store(live_circuits.len() as u64, Ordering::Relaxed);
+    BAKERY_STATS.lazy_circuits.store((circuits.len() - live_circuits.len()) as u64, Ordering::Relaxed);
 }
 
 fn process_batch(
@@ -500,6 +516,7 @@ fn process_batch(
     circuits: &mut HashMap<i64, BakeryCommands>,
 ) {
     info!("Bakery: Processing batch of {} commands", batch.len());
+    let mut circuit_count = 0u64;
     let commands = batch
         .into_iter()
         .map(|b| {
@@ -510,6 +527,7 @@ fn process_batch(
                 }
                 BakeryCommands::AddCircuit { circuit_hash, .. } => {
                     circuits.insert(*circuit_hash, b.clone());
+                    circuit_count += 1;
                 }
                 _ => {}
             }
@@ -518,6 +536,9 @@ fn process_batch(
         .flatten()
         .flatten()
         .collect::<Vec<Vec<String>>>();
+
+    // Track queue creation
+    BAKERY_STATS.queues_created.fetch_add(circuit_count, Ordering::Relaxed);
 
     let path = Path::new(&config.lqos_directory).join("linux_tc_rust.txt");
     write_command_file(&path, &commands);
