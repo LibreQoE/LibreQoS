@@ -14,6 +14,27 @@ pub(crate) fn current_timestamp() -> u64 {
 
 pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str) {
     info!("Bakery: Executing in-memory commands: {} lines, for {purpose}", command_buffer.len());
+
+    let path = Path::new("/tmp/lqos_bakery_commands.txt");
+    write_command_file(path, command_buffer);
+
+    let Ok(output) = std::process::Command::new("/sbin/tc")
+            .args(&["-f", "-batch", path.to_str().unwrap()])
+            .output()
+    else {
+        error!("Failed to execute tc batch command for {purpose}");
+        return;
+    };
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    if !output_str.is_empty() {
+        error!("Command output for ({purpose}): {:?}", output_str.trim());
+    }
+
+    let error_str = String::from_utf8_lossy(&output.stderr);
+    if !error_str.is_empty() {
+        error!("Command error for ({purpose}): {:?}", error_str.trim());
+    }
     
     // Track TC commands executed
     crate::BAKERY_STATS.tc_commands_executed.fetch_add(command_buffer.len() as u64, std::sync::atomic::Ordering::Relaxed);
@@ -38,7 +59,7 @@ pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str
         }
     }*/
 
-    let mut commands = String::new();
+    /*let mut commands = String::new();
     for line in command_buffer {
         for (idx, entry) in line.iter().enumerate() {
             commands.push_str(entry);
@@ -78,7 +99,7 @@ pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str
     };
     if !status.success() {
         eprintln!("tc command failed with status: {}", status);
-    }
+    }*/
 }
 
 pub(crate) fn write_command_file(path: &Path, commands: &Vec<Vec<String>>) -> bool {
