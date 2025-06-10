@@ -61,6 +61,8 @@ use crate::throughput_tracker::THROUGHPUT_TRACKER;
 #[cfg(feature = "flamegraphs")]
 use crate::throughput_tracker::flow_data::{ALL_FLOWS, RECENT_FLOWS};
 use tracing::level_filters::LevelFilter;
+use lqos_stormguard::STORMGUARD_STATS;
+
 // Use JemAllocator only on supported platforms
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[global_allocator]
@@ -505,7 +507,11 @@ fn handle_bus_requests(
                 }
             }
             BusRequest::GetStormguardStats => {
-                BusResponse::StormguardStats(lqos_stormguard::STORMGUARD_STATS.snapshot())
+                let cloned = {
+                    let lock = STORMGUARD_STATS.lock().unwrap();
+                    (*lock).clone()
+                };
+                BusResponse::StormguardStats(cloned)
             }
             BusRequest::GetBakeryStats => {
                 BusResponse::BakeryActiveCircuits(lqos_bakery::ACTIVE_CIRCUITS.load(std::sync::atomic::Ordering::Relaxed))

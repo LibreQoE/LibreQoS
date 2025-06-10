@@ -154,7 +154,7 @@ export class StormguardAdjustmentsGraph extends DashboardGraph {
         this.chart.setOption(this.option);
     }
 
-    update(adjustmentsUp, adjustmentsDown, sitesEvaluated) {
+    update(sites) {
         this.chart.hideLoading();
         this.ringbuffer.push(adjustmentsUp, adjustmentsDown, sitesEvaluated, Date.now());
 

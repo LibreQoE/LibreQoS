@@ -23,25 +23,9 @@ pub async fn stormguard_ticker(
                     // Format as JSON
                     let msg = json!({
                         "event": "StormguardStatus",
-                        "data": {
-                            "perCycle": {
-                                "adjustmentsUp": stats.adjustments_up,
-                                "adjustmentsDown": stats.adjustments_down,
-                                "sitesEvaluated": stats.sites_evaluated,
-                            },
-                            "currentState": {
-                                "sitesInWarmup": stats.sites_in_warmup,
-                                "sitesInCooldown": stats.sites_in_cooldown,
-                                "sitesActive": stats.sites_active,
-                                "totalSitesManaged": stats.total_sites_managed,
-                            },
-                            "performance": {
-                                "lastCycleDurationMs": stats.last_cycle_duration_ms,
-                                "recommendationsGenerated": stats.recommendations_generated,
-                            }
-                        }
+                        "data": stats,
                     });
-                    
+
                     pubsub.send(PublishedChannels::StormguardStatus, msg.to_string()).await;
                 }
             }

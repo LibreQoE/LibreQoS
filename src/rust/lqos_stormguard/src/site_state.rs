@@ -12,7 +12,7 @@ use lqos_bakery::BakeryCommands;
 use lqos_utils::hash_to_i64;
 use crate::config::StormguardConfig;
 use crate::datalog::LogCommand;
-use crate::{MOVING_AVERAGE_BUFFER_SIZE, READING_ACCUMULATOR_SIZE};
+use crate::{MOVING_AVERAGE_BUFFER_SIZE, READING_ACCUMULATOR_SIZE, STORMGUARD_STATS};
 use crate::site_state::recommendation::{Recommendation, RecommendationAction, RecommendationDirection};
 use crate::site_state::ring_buffer::RingBuffer;
 use crate::site_state::site::SiteState;
@@ -26,6 +26,11 @@ impl<'a> SiteStateTracker<'a> {
     pub fn from_config(config: &'a StormguardConfig) -> Self {
         let mut sites = HashMap::new();
         for (name, site) in &config.sites {
+            {
+                // Initialize the stats for this site
+                let mut lock = STORMGUARD_STATS.lock().unwrap();
+                lock.push((name.clone(), site.max_download_mbps, site.max_upload_mbps));
+            }
             sites.insert(
                 name.clone(),
                 SiteState {
@@ -106,29 +111,6 @@ impl<'a> SiteStateTracker<'a> {
         }
     }
 
-    pub fn check_state(&mut self, stats: &crate::StormguardStats) {
-        // Update total sites managed
-        stats.total_sites_managed.store(self.sites.len() as u64, std::sync::atomic::Ordering::Relaxed);
-        
-        // Reset state counters
-        stats.sites_in_warmup.store(0, std::sync::atomic::Ordering::Relaxed);
-        stats.sites_in_cooldown.store(0, std::sync::atomic::Ordering::Relaxed);
-        stats.sites_active.store(0, std::sync::atomic::Ordering::Relaxed);
-        
-        self.sites.iter_mut().for_each(|(_, s)| {
-            s.check_state();
-            stats.sites_evaluated.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            
-            // Count states
-            use crate::site_state::stormguard_state::StormguardState;
-            match &s.download_state {
-                StormguardState::Warmup => stats.sites_in_warmup.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-                StormguardState::Cooldown { .. } => stats.sites_in_cooldown.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-                StormguardState::Running => stats.sites_active.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-            };
-        });
-    }
-
     pub fn recommendations(&mut self) -> Vec<(Recommendation, String)> {
         let mut recommendations = Vec::new();
         self.sites.iter_mut().for_each(|(_,s)| s.recommendations(&mut recommendations));
@@ -141,7 +123,6 @@ impl<'a> SiteStateTracker<'a> {
         config: &StormguardConfig,
         log_sender: std::sync::mpsc::Sender<LogCommand>,
         bakery_sender: crossbeam_channel::Sender<lqos_bakery::BakeryCommands>,
-        stats: &crate::StormguardStats,
     ) {
         // We'll need the queues to apply HTB commands
         let Some(queues) = &QUEUE_STRUCTURE.load().maybe_queues else {
@@ -262,16 +243,6 @@ impl<'a> SiteStateTracker<'a> {
                 }
             }
 
-            // Track adjustment direction
-            match recommendation.action {
-                RecommendationAction::Increase | RecommendationAction::IncreaseFast => {
-                    stats.adjustments_up.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                }
-                RecommendationAction::Decrease | RecommendationAction::DecreaseFast => {
-                    stats.adjustments_down.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                }
-            }
-
             // Actually make the change via bakery
             let site_hash = hash_to_i64(&recommendation.site);
             let (download_min, upload_min, download_max, upload_max) = match recommendation.direction {
@@ -282,6 +253,14 @@ impl<'a> SiteStateTracker<'a> {
                     (site.queue_download_mbps as f32 - 1.0, new_rate as f32 - 1.0, site.queue_download_mbps as f32, new_rate as f32)
                 },
             };
+            {
+                // Update the stats for this site
+                let mut lock = STORMGUARD_STATS.lock().unwrap();
+                if let Some(entry) = lock.iter_mut().find(|e| e.0 == recommendation.site) {
+                    entry.1 = site.queue_download_mbps;
+                    entry.2 = site.queue_upload_mbps;
+                }
+            }
             if let Err(e) = bakery_sender.try_send(BakeryCommands::ChangeSiteSpeedLive {
                 site_hash,
                 download_bandwidth_min: download_min,
