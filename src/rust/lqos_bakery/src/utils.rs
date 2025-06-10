@@ -100,11 +100,11 @@ pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str
 }
 
 pub(crate) fn write_command_file(path: &Path, commands: &Vec<Vec<String>>) -> bool {
-    let Ok(f) = File::create(path) else {
+    let Ok(file) = File::create(path) else {
         error!("Failed to create output file: {}", path.display());
         return true;
     };
-    let mut f = BufWriter::new(f);
+    let mut f = BufWriter::new(file);
     for line in commands {
         for (idx, entry) in line.iter().enumerate() {
             if let Err(e) = f.write_all(entry.as_bytes()) {
@@ -123,6 +123,10 @@ pub(crate) fn write_command_file(path: &Path, commands: &Vec<Vec<String>>) -> bo
             error!("Failed to write newline to output file: {}", e);
             return true;
         }
+    }
+    if let Err(e) = f.flush() {
+        error!("Failed to flush output file: {}", e);
+        return true;
     }
     false
 }
