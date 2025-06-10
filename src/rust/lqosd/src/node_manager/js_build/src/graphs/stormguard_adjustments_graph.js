@@ -13,22 +13,24 @@ export class StormguardAdjustmentsGraph extends DashboardGraph {
     constructor(id) {
         super(id);
         this.ringbuffer = new StormguardRingBuffer(RING_SIZE);
+        this.siteColorMap = new Map(); // Track colors for consistent site coloring
+        this.colorIndex = 0;
 
         this.option = new GraphOptionsBuilder()
             .withSequenceAxis(0, RING_SIZE)
-            .withScaledAbsYAxis("Bandwidth Adjustments", 50)
+            .withScaledAbsYAxis("Bandwidth Limit (bps)", 40)
             .build();
 
-        // Custom Y-axis to show both positive and negative
+        // Customize Y-axis to handle both positive and negative values
         this.option.yAxis = {
             type: 'value',
-            name: 'Bandwidth Adjustments',
+            name: 'Bandwidth Limit (bps)',
             nameLocation: 'middle',
             nameGap: 50,
             axisLabel: {
                 formatter: (val) => {
                     if (val === 0) return '0';
-                    return (val > 0 ? '+' : '') + scaleNumber(val, 0);
+                    return scaleNumber(Math.abs(val), 0);
                 },
             },
             splitLine: {
@@ -38,7 +40,7 @@ export class StormguardAdjustmentsGraph extends DashboardGraph {
             }
         };
 
-        // Add a zero line
+        // Initialize with zero line
         this.option.series = [
             {
                 name: 'Zero Line',
@@ -53,29 +55,7 @@ export class StormguardAdjustmentsGraph extends DashboardGraph {
                 silent: true,
                 animation: false,
                 z: 1
-            },
-            {
-                name: 'Increases',
-                data: [],
-                type: 'bar',
-                barWidth: '60%',
-                itemStyle: {
-                    color: window.graphPalette[0],
-                },
-                animationDuration: 300,
-                animationEasing: 'cubicOut'
-            },
-            {
-                name: 'Decreases',
-                data: [],
-                type: 'bar',
-                barWidth: '60%',
-                itemStyle: {
-                    color: window.graphPalette[3],
-                },
-                animationDuration: 300,
-                animationEasing: 'cubicOut'
-            },
+            }
         ];
 
         this.option.legend = {
@@ -83,22 +63,7 @@ export class StormguardAdjustmentsGraph extends DashboardGraph {
             right: 10,
             top: "bottom",
             selectMode: false,
-            data: [
-                {
-                    name: "Bandwidth Increases",
-                    icon: 'rect',
-                    itemStyle: {
-                        color: window.graphPalette[0]
-                    }
-                },
-                {
-                    name: "Bandwidth Decreases", 
-                    icon: 'rect',
-                    itemStyle: {
-                        color: window.graphPalette[3]
-                    }
-                }
-            ],
+            data: [],
             textStyle: {
                 color: '#aaa'
             },
@@ -108,7 +73,8 @@ export class StormguardAdjustmentsGraph extends DashboardGraph {
         this.option.tooltip = {
             trigger: 'axis',
             axisPointer: {
-                type: 'shadow',
+                type: 'cross',
+                link: [{ xAxisIndex: 'all' }],
                 label: {
                     backgroundColor: '#6a7985'
                 }
@@ -117,88 +83,147 @@ export class StormguardAdjustmentsGraph extends DashboardGraph {
                 if (!params || params.length === 0) return '';
                 const idx = params[0].dataIndex;
                 const ts = this.ringbuffer.getTimestamp(idx);
-                const data = this.ringbuffer.getDataAt(idx);
-                
                 let s = `<div><b>Time:</b> ${formatTime(ts)}</div>`;
-                s += `<div><b>Sites Evaluated:</b> ${data.evaluated}</div>`;
                 
-                if (data.adjustmentsUp > 0) {
-                    s += `<div><span style="display:inline-block;margin-right:5px;border-radius:10px;width:9px;height:9px;background-color:${window.graphPalette[0]};"></span>Increases: <b>+${data.adjustmentsUp}</b></div>`;
-                }
-                if (data.adjustmentsDown > 0) {
-                    s += `<div><span style="display:inline-block;margin-right:5px;border-radius:10px;width:9px;height:9px;background-color:${window.graphPalette[3]};"></span>Decreases: <b>-${data.adjustmentsDown}</b></div>`;
+                // Group by site to show download/upload together
+                const siteData = new Map();
+                for (const p of params) {
+                    if (p.seriesName.includes('Zero Line')) continue;
+                    
+                    const match = p.seriesName.match(/^(.+) (Download|Upload)$/);
+                    if (match) {
+                        const siteName = match[1];
+                        const type = match[2];
+                        
+                        if (!siteData.has(siteName)) {
+                            siteData.set(siteName, {});
+                        }
+                        siteData.get(siteName)[type.toLowerCase()] = Math.abs(p.value);
+                        siteData.get(siteName).color = p.color;
+                    }
                 }
                 
-                const netChange = data.adjustmentsUp - data.adjustmentsDown;
-                s += `<div><b>Net Change:</b> ${netChange > 0 ? '+' : ''}${netChange}</div>`;
+                // Display site data
+                for (const [site, data] of siteData) {
+                    s += `<div><span style="display:inline-block;margin-right:5px;border-radius:10px;width:9px;height:9px;background-color:${data.color};"></span><b>${site}:</b></div>`;
+                    if (data.download !== undefined) {
+                        s += `<div style="padding-left:15px;">Download (solid): ${scaleNumber(data.download)}</div>`;
+                    }
+                    if (data.upload !== undefined) {
+                        s += `<div style="padding-left:15px;">Upload (dashed): ${scaleNumber(data.upload)}</div>`;
+                    }
+                }
                 
                 return s;
             }
         };
-
-        // Animation on data change
-        this.option.animation = true;
-        this.option.animationDuration = 500;
-        this.option.animationEasing = 'elasticOut';
 
         this.option && this.chart.setOption(this.option);
     }
 
     onThemeChange() {
         super.onThemeChange();
-        this.option.series[1].itemStyle.color = window.graphPalette[0];
-        this.option.series[2].itemStyle.color = window.graphPalette[3];
-        this.option.legend.data[0].itemStyle.color = window.graphPalette[0];
-        this.option.legend.data[1].itemStyle.color = window.graphPalette[3];
+        // Update colors for all series
+        for (let i = 1; i < this.option.series.length; i++) {
+            const series = this.option.series[i];
+            const siteInfo = this.getSiteFromSeriesName(series.name);
+            if (siteInfo) {
+                const color = this.getColorForSite(siteInfo.site);
+                series.lineStyle.color = color;
+            }
+        }
+        
+        // Update legend colors
+        for (const legendItem of this.option.legend.data) {
+            const siteInfo = this.getSiteFromSeriesName(legendItem.name);
+            if (siteInfo) {
+                legendItem.itemStyle.color = this.getColorForSite(siteInfo.site);
+            }
+        }
         
         this.chart.setOption(this.option);
     }
 
+    getSiteFromSeriesName(seriesName) {
+        const match = seriesName.match(/^(.+) (Download|Upload)$/);
+        if (match) {
+            return { site: match[1], type: match[2] };
+        }
+        return null;
+    }
+
+    getColorForSite(siteName) {
+        if (!this.siteColorMap.has(siteName)) {
+            this.siteColorMap.set(siteName, window.graphPalette[this.colorIndex % window.graphPalette.length]);
+            this.colorIndex++;
+        }
+        return this.siteColorMap.get(siteName);
+    }
+
     update(sites) {
         this.chart.hideLoading();
-        this.ringbuffer.push(adjustmentsUp, adjustmentsDown, sitesEvaluated, Date.now());
-
-        let data = this.ringbuffer.series();
         
-        // Update bar data
-        this.option.series[1].data = data.increases;
-        this.option.series[2].data = data.decreases;
-
-        // Add animation emphasis on new data
-        if (adjustmentsUp > 0 || adjustmentsDown > 0) {
-            this.option.series[1].markPoint = {
-                animation: true,
-                animationDuration: 1000,
-                animationEasing: 'bounceOut',
-                data: adjustmentsUp > 0 ? [
-                    {
-                        coord: [RING_SIZE - 1, adjustmentsUp],
-                        symbol: 'arrow',
-                        symbolSize: 20,
-                        itemStyle: {
-                            color: window.graphPalette[0]
-                        }
-                    }
-                ] : []
-            };
-            this.option.series[2].markPoint = {
-                animation: true,
-                animationDuration: 1000,
-                animationEasing: 'bounceOut',
-                data: adjustmentsDown > 0 ? [
-                    {
-                        coord: [RING_SIZE - 1, -adjustmentsDown],
-                        symbol: 'arrow',
-                        symbolSize: 20,
-                        symbolRotate: 180,
-                        itemStyle: {
-                            color: window.graphPalette[3]
-                        }
-                    }
-                ] : []
-            };
+        // sites is Vec<(String, u64, u64)> = [(siteName, download, upload), ...]
+        if (!Array.isArray(sites)) {
+            console.warn("StormguardAdjustmentsGraph: Expected array of sites, got:", sites);
+            return;
         }
 
+        // Push to ringbuffer
+        this.ringbuffer.push(sites, Date.now());
+
+        // Get all unique sites from the ringbuffer
+        const allSites = this.ringbuffer.getAllSites();
+        
+        // Rebuild series based on current sites
+        const newSeries = [this.option.series[0]]; // Keep zero line
+        const newLegendData = [];
+
+        // Create series for each site
+        for (const siteName of allSites) {
+            const color = this.getColorForSite(siteName);
+            
+            // Download series (positive line)
+            newSeries.push({
+                name: `${siteName} Download`,
+                data: this.ringbuffer.getSeriesForSite(siteName, 'download'),
+                type: 'line',
+                lineStyle: {
+                    width: 2,
+                    color: color,
+                },
+                symbol: 'none',
+                smooth: true
+            });
+
+            // Upload series (negative line)
+            newSeries.push({
+                name: `${siteName} Upload`,
+                data: this.ringbuffer.getSeriesForSite(siteName, 'upload'),
+                type: 'line',
+                lineStyle: {
+                    width: 2,
+                    color: color,
+                    type: 'dashed'
+                },
+                symbol: 'none',
+                smooth: true
+            });
+
+            // Add to legend (one entry per site showing both download and upload)
+            if (!newLegendData.find(item => item.name === siteName)) {
+                newLegendData.push({
+                    name: siteName,
+                    icon: 'rect',
+                    itemStyle: {
+                        color: color
+                    }
+                });
+            }
+        }
+
+        this.option.series = newSeries;
+        this.option.legend.data = newLegendData;
         this.chart.setOption(this.option);
     }
 }
@@ -206,53 +231,89 @@ export class StormguardAdjustmentsGraph extends DashboardGraph {
 class StormguardRingBuffer {
     constructor(size) {
         this.size = size;
-        let data = [];
-        for (let i=0; i<size; i++) {
-            data.push({
-                adjustmentsUp: 0,
-                adjustmentsDown: 0,
-                evaluated: 0,
+        this.data = [];
+        for (let i = 0; i < size; i++) {
+            this.data.push({
+                sites: new Map(), // Map<siteName, {download: u64, upload: u64}>
                 timestamp: 0
             });
         }
         this.head = 0;
-        this.data = data;
+        this.allSites = new Set(); // Track all sites we've seen
     }
 
-    push(adjustmentsUp, adjustmentsDown, evaluated, timestamp) {
+    push(sites, timestamp) {
+        // sites is an array of [siteName, download, upload]
+        // Values are in Mbps, need to convert to bps
+        const siteMap = new Map();
+        
+        for (const site of sites) {
+            if (Array.isArray(site) && site.length === 3) {
+                const [name, downloadMbps, uploadMbps] = site;
+                // Convert from Mbps to bps
+                siteMap.set(name, { 
+                    download: downloadMbps * 1000000, 
+                    upload: uploadMbps * 1000000 
+                });
+                this.allSites.add(name);
+            }
+        }
+        
         this.data[this.head] = {
-            adjustmentsUp: adjustmentsUp || 0,
-            adjustmentsDown: adjustmentsDown || 0,
-            evaluated: evaluated || 0,
+            sites: siteMap,
             timestamp: timestamp || Date.now()
         };
-        this.head += 1;
-        this.head %= this.size;
+        
+        this.head = (this.head + 1) % this.size;
     }
 
     getTimestamp(idx) {
-        let physical = (this.head + idx) % this.size;
+        const physical = (this.head + idx) % this.size;
         return this.data[physical].timestamp;
     }
 
     getDataAt(idx) {
-        let physical = (this.head + idx) % this.size;
+        const physical = (this.head + idx) % this.size;
         return this.data[physical];
     }
 
-    series() {
-        let increases = [];
-        let decreases = [];
+    getAllSites() {
+        return Array.from(this.allSites).sort();
+    }
+
+    getSeriesForSite(siteName, type) {
+        const series = [];
         
-        for (let i=this.head; i<this.size; i++) {
-            increases.push(this.data[i].adjustmentsUp);
-            decreases.push(-this.data[i].adjustmentsDown); // Negative for display
-        }
-        for (let i=0; i<this.head; i++) {
-            increases.push(this.data[i].adjustmentsUp);
-            decreases.push(-this.data[i].adjustmentsDown); // Negative for display
+        // Start from head and wrap around to get chronological order
+        for (let i = this.head; i < this.size; i++) {
+            const siteData = this.data[i].sites.get(siteName);
+            if (siteData) {
+                if (type === 'download') {
+                    series.push(siteData.download || 0);
+                } else if (type === 'upload') {
+                    // Invert upload values (negative)
+                    series.push(-(siteData.upload || 0));
+                }
+            } else {
+                series.push(0);
+            }
         }
         
-        return { increases, decreases };
+        // Continue from beginning to head
+        for (let i = 0; i < this.head; i++) {
+            const siteData = this.data[i].sites.get(siteName);
+            if (siteData) {
+                if (type === 'download') {
+                    series.push(siteData.download || 0);
+                } else if (type === 'upload') {
+                    // Invert upload values (negative)
+                    series.push(-(siteData.upload || 0));
+                }
+            } else {
+                series.push(0);
+            }
+        }
+        
+        return series;
     }
 }

@@ -13,7 +13,7 @@ export class StormguardStatusDashlet extends DashletBaseInsight {
     }
 
     tooltip() {
-        return "<h5>Stormguard Bandwidth</h5><p>Real-time visualization of bandwidth optimization decisions over the last 5 minutes. Shows increases (positive) and decreases (negative) with animated indicators for new adjustments.</p>";
+        return "<h5>Stormguard Bandwidth</h5><p>Real-time visualization of bandwidth limits for monitored sites over the last 5 minutes. Shows download bandwidth (solid lines above zero) and upload bandwidth (dashed lines below zero) for each site.</p>";
     }
 
     subscribeTo() {
@@ -39,7 +39,7 @@ export class StormguardStatusDashlet extends DashletBaseInsight {
     onMessage(msg) {
         if (msg.event === "StormguardStatus") {
             this.lastUpdate = msg.data;
-            if (msg.data && msg.data.perCycle) {
+            if (msg.data && Array.isArray(msg.data)) {
                 this.graph.update(msg.data);
             }
         }
