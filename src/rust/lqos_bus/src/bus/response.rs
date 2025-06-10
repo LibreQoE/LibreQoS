@@ -30,21 +30,7 @@ pub struct StormguardStatsSnapshot {
 /// Serializable snapshot of BakeryStats for bus transmission
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BakeryStatsSnapshot {
-    // Per-cycle counters
-    pub queues_created: u64,
-    pub queues_expired: u64,
-    pub lazy_queues_activated: u64,
-    pub tc_commands_executed: u64,
-    
-    // Current state counters
-    pub total_sites: u64,
-    pub total_circuits: u64,
     pub active_circuits: u64,
-    pub lazy_circuits: u64,
-    
-    // Performance metrics
-    pub last_batch_duration_ms: u64,
-    pub pending_commands: u64,
 }
 
 /// A `BusResponse` object represents a single
@@ -216,5 +202,5 @@ pub enum BusResponse {
     StormguardStats(StormguardStatsSnapshot),
     
     /// Bakery statistics
-    BakeryStats(BakeryStatsSnapshot),
+    BakeryActiveCircuits(usize),
 }

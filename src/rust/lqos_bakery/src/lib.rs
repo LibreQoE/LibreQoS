@@ -24,7 +24,7 @@ mod diff;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use crossbeam_channel::{Receiver, Sender};
 use tracing::{debug, error, info, warn};
 use utils::current_timestamp;
@@ -37,55 +37,7 @@ use crate::diff::{diff_sites, SiteDiffResult};
 use crate::queue_math::format_rate_for_tc_f32;
 use crate::utils::{execute_in_memory, write_command_file};
 
-/// Statistics structure for Bakery monitoring
-#[derive(Debug, Default)]
-pub struct BakeryStats {
-    // Per-cycle counters (reset each tick)
-    pub queues_created: AtomicU64,
-    pub queues_expired: AtomicU64,
-    pub lazy_queues_activated: AtomicU64,
-    pub tc_commands_executed: AtomicU64,
-    
-    // Current state counters
-    pub total_sites: AtomicU64,
-    pub total_circuits: AtomicU64,
-    pub active_circuits: AtomicU64,
-    pub lazy_circuits: AtomicU64,
-    
-    // Performance metrics
-    pub last_batch_duration_ms: AtomicU64,
-    pub pending_commands: AtomicU64,
-}
-
-
-impl BakeryStats {
-    pub fn reset_per_cycle_counters(&self) {
-        self.queues_created.store(0, Ordering::Relaxed);
-        self.queues_expired.store(0, Ordering::Relaxed);
-        self.lazy_queues_activated.store(0, Ordering::Relaxed);
-        self.tc_commands_executed.store(0, Ordering::Relaxed);
-    }
-    
-    pub fn snapshot(&self) -> BakeryStatsSnapshot {
-        BakeryStatsSnapshot {
-            queues_created: self.queues_created.load(Ordering::Relaxed),
-            queues_expired: self.queues_expired.load(Ordering::Relaxed),
-            lazy_queues_activated: self.lazy_queues_activated.load(Ordering::Relaxed),
-            tc_commands_executed: self.tc_commands_executed.load(Ordering::Relaxed),
-            total_sites: self.total_sites.load(Ordering::Relaxed),
-            total_circuits: self.total_circuits.load(Ordering::Relaxed),
-            active_circuits: self.active_circuits.load(Ordering::Relaxed),
-            lazy_circuits: self.lazy_circuits.load(Ordering::Relaxed),
-            last_batch_duration_ms: self.last_batch_duration_ms.load(Ordering::Relaxed),
-            pending_commands: self.pending_commands.load(Ordering::Relaxed),
-        }
-    }
-}
-
-// Global instance of statistics
-pub static BAKERY_STATS: once_cell::sync::Lazy<Arc<BakeryStats>> = once_cell::sync::Lazy::new(|| {
-    Arc::new(BakeryStats::default())
-});
+pub static ACTIVE_CIRCUITS: AtomicUsize = AtomicUsize::new(0);
 
 pub static BAKERY_SENDER: OnceLock<Sender<BakeryCommands>> = OnceLock::new();
 static MQ_CREATED: AtomicBool = AtomicBool::new(false);
@@ -125,9 +77,6 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
     while let Ok(command) = rx.recv() {
         debug!("Bakery received command: {:?}", command);
         
-        // Update pending commands counter
-        BAKERY_STATS.pending_commands.store(rx.len() as u64, Ordering::Relaxed);
-
         match command {
             BakeryCommands::StartBatch => {
                 batch = Some(Vec::new());
@@ -161,7 +110,6 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
             }
             BakeryCommands::Tick => {
                 // Reset per-cycle counters at the start of tick
-                BAKERY_STATS.reset_per_cycle_counters();
                 handle_tick(&circuits, &mut live_circuits);
             }
             BakeryCommands::ChangeSiteSpeedLive { 
@@ -192,8 +140,6 @@ fn handle_commit_batch(
     live_circuits: &mut HashMap<i64, u64>,
     tx: &Sender<BakeryCommands>,
 ) {
-    let batch_start = std::time::Instant::now();
-    
     let Ok(config) = lqos_config::load_config() else {
         error!("Failed to load configuration, exiting Bakery thread.");
         return;
@@ -227,11 +173,6 @@ fn handle_commit_batch(
     if matches!(site_change_mode, SiteDiffResult::NoChange) && matches!(circuit_change_mode, diff::CircuitDiffResult::NoChange) {
         // No changes detected, skip processing
         info!("No changes detected in batch, skipping processing.");
-        // Update statistics
-        BAKERY_STATS.total_sites.store(sites.len() as u64, Ordering::Relaxed);
-        BAKERY_STATS.total_circuits.store(circuits.len() as u64, Ordering::Relaxed);
-        BAKERY_STATS.active_circuits.store(live_circuits.len() as u64, Ordering::Relaxed);
-        BAKERY_STATS.lazy_circuits.store((circuits.len() - live_circuits.len()) as u64, Ordering::Relaxed);
         return;
     }
 
@@ -254,11 +195,6 @@ fn handle_commit_batch(
     if let SiteDiffResult::SpeedChanges { changes } = site_change_mode {
         if changes.is_empty() {
             debug!("No speed changes detected, skipping processing.");
-            // Update statistics
-            BAKERY_STATS.total_sites.store(sites.len() as u64, Ordering::Relaxed);
-            BAKERY_STATS.total_circuits.store(circuits.len() as u64, Ordering::Relaxed);
-            BAKERY_STATS.active_circuits.store(live_circuits.len() as u64, Ordering::Relaxed);
-            BAKERY_STATS.lazy_circuits.store((circuits.len() - live_circuits.len()) as u64, Ordering::Relaxed);
             return;
         }
 
@@ -325,8 +261,6 @@ fn handle_commit_batch(
                 for command in newly_added {
                     if let BakeryCommands::AddCircuit { circuit_hash, .. } = command {
                         circuits.insert(circuit_hash, command);
-                        // Track queue creation
-                        BAKERY_STATS.queues_created.fetch_add(1, Ordering::Relaxed);
                     } else {
                         warn!("AddCircuit received a non-circuit command: {:?}", command);
                     }
@@ -334,16 +268,6 @@ fn handle_commit_batch(
             }
         }
     }
-    
-    // Update statistics
-    BAKERY_STATS.total_sites.store(sites.len() as u64, Ordering::Relaxed);
-    BAKERY_STATS.total_circuits.store(circuits.len() as u64, Ordering::Relaxed);
-    BAKERY_STATS.active_circuits.store(live_circuits.len() as u64, Ordering::Relaxed);
-    BAKERY_STATS.lazy_circuits.store((circuits.len() - live_circuits.len()) as u64, Ordering::Relaxed);
-    
-    // Record batch duration
-    let batch_duration = batch_start.elapsed();
-    BAKERY_STATS.last_batch_duration_ms.store(batch_duration.as_millis() as u64, Ordering::Relaxed);
 }
 
 fn handle_circuit_activity(
@@ -373,8 +297,6 @@ fn handle_circuit_activity(
             };
             live_circuits.insert(circuit_id, current_timestamp());
             commands.extend(cmd);
-            // Track lazy queue activation
-            BAKERY_STATS.lazy_queues_activated.fetch_add(1, Ordering::Relaxed);
         }
     }
     if commands.is_empty() {
@@ -393,8 +315,13 @@ fn handle_tick(
         return;
     };
     match config.queues.lazy_queues.as_ref() {
-        None | Some(LazyQueueMode::No) => return,
-        _ => {}
+        None | Some(LazyQueueMode::No) => {
+            ACTIVE_CIRCUITS.store(circuits.len(), Ordering::Relaxed);
+            return
+        },
+        _ => {
+            ACTIVE_CIRCUITS.store(live_circuits.len(), Ordering::Relaxed);
+        }
     }
 
     // Now we know that lazy queues are enabled, we can expire them!
@@ -424,8 +351,6 @@ fn handle_tick(
             };
             live_circuits.remove(&circuit_id);
             commands.extend(cmd);
-            // Track queue expiration
-            BAKERY_STATS.queues_expired.fetch_add(1, Ordering::Relaxed);
         }
     }
 
@@ -501,12 +426,6 @@ fn full_reload(batch: &mut Option<Vec<BakeryCommands>>, sites: &mut HashMap<i64,
     live_circuits.clear();
     process_batch(new_batch, &config, sites, circuits);
     *batch = None;
-    
-    // Update statistics after full reload
-    BAKERY_STATS.total_sites.store(sites.len() as u64, Ordering::Relaxed);
-    BAKERY_STATS.total_circuits.store(circuits.len() as u64, Ordering::Relaxed);
-    BAKERY_STATS.active_circuits.store(live_circuits.len() as u64, Ordering::Relaxed);
-    BAKERY_STATS.lazy_circuits.store((circuits.len() - live_circuits.len()) as u64, Ordering::Relaxed);
 }
 
 fn process_batch(
@@ -536,9 +455,6 @@ fn process_batch(
         .flatten()
         .flatten()
         .collect::<Vec<Vec<String>>>();
-
-    // Track queue creation
-    BAKERY_STATS.queues_created.fetch_add(circuit_count, Ordering::Relaxed);
 
     let path = Path::new(&config.lqos_directory).join("linux_tc_rust.txt");
     write_command_file(&path, &commands);

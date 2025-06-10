@@ -508,7 +508,7 @@ fn handle_bus_requests(
                 BusResponse::StormguardStats(lqos_stormguard::STORMGUARD_STATS.snapshot())
             }
             BusRequest::GetBakeryStats => {
-                BusResponse::BakeryStats(lqos_bakery::BAKERY_STATS.snapshot())
+                BusResponse::BakeryActiveCircuits(lqos_bakery::ACTIVE_CIRCUITS.load(std::sync::atomic::Ordering::Relaxed))
             }
         });
     }

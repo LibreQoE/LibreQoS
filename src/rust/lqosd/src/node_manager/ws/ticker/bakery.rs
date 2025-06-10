@@ -19,27 +19,14 @@ pub async fn bakery_ticker(
     if let Ok(_) = bus_tx.send((tx, request)).await {
         if let Ok(replies) = rx.await {
             for response in replies.responses {
-                if let BusResponse::BakeryStats(stats) = response {
+                if let BusResponse::BakeryActiveCircuits(stats) = response {
                     // Format as JSON
                     let msg = json!({
                         "event": "BakeryStatus",
                         "data": {
-                            "perCycle": {
-                                "queuesCreated": stats.queues_created,
-                                "queuesExpired": stats.queues_expired,
-                                "lazyQueuesActivated": stats.lazy_queues_activated,
-                                "tcCommandsExecuted": stats.tc_commands_executed,
-                            },
                             "currentState": {
-                                "totalSites": stats.total_sites,
-                                "totalCircuits": stats.total_circuits,
-                                "activeCircuits": stats.active_circuits,
-                                "lazyCircuits": stats.lazy_circuits,
+                                "activeCircuits": stats,
                             },
-                            "performance": {
-                                "lastBatchDurationMs": stats.last_batch_duration_ms,
-                                "pendingCommands": stats.pending_commands,
-                            }
                         }
                     });
                     

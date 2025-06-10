@@ -52,7 +52,7 @@ pub enum BakeryCommands {
         class_major: u16,
         up_class_major: u16,
         ip_addresses: String, // Concatenated list of all IPs for this circuit
-    }
+    },
 }
 
 impl BakeryCommands {
