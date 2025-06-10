@@ -42,7 +42,6 @@ export class BakeryStatusDashlet extends DashletBaseInsight {
             if (msg.data && msg.data.currentState) {
                 this.graph.update(
                     msg.data.currentState.activeCircuits,
-                    msg.data.currentState.lazyCircuits
                 );
             }
         }

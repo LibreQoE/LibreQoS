@@ -30,12 +30,6 @@ export class BakeryCircuitsGraph extends DashboardGraph {
                     itemStyle: {
                         color: window.graphPalette[0]
                     }
-                }, {
-                    name: "Lazy Circuits",
-                    icon: 'circle',
-                    itemStyle: {
-                        color: window.graphPalette[2]
-                    }
                 }
             ],
             textStyle: {
@@ -43,20 +37,6 @@ export class BakeryCircuitsGraph extends DashboardGraph {
             },
         };
         this.option.series = [
-            {
-                name: 'Lazy Circuits',
-                data: [],
-                type: 'line',
-                stack: 'circuits',
-                lineStyle: {
-                    opacity: 0,
-                    color: window.graphPalette[2],
-                },
-                symbol: 'none',
-                areaStyle: {
-                    color: window.graphPalette[2]
-                },
-            },
             {
                 name: 'Active Circuits',
                 data: [],
@@ -111,13 +91,12 @@ export class BakeryCircuitsGraph extends DashboardGraph {
         this.chart.setOption(this.option);
     }
 
-    update(active, lazy) {
+    update(active) {
         this.chart.hideLoading();
-        this.ringbuffer.push(active, lazy, Date.now());
+        this.ringbuffer.push(active, Date.now());
 
         let data = this.ringbuffer.series();
-        this.option.series[0].data = data[0]; // Lazy
-        this.option.series[1].data = data[1]; // Active
+        this.option.series[0].data = data[0];
 
         this.chart.setOption(this.option);
     }
@@ -128,16 +107,15 @@ class BakeryRingBuffer {
         this.size = size;
         let data = [];
         for (let i=0; i<size; i++) {
-            data.push([0, 0, 0]); // lazy, active, timestamp
+            data.push([0, 0]); // active, timestamp
         }
         this.head = 0;
         this.data = data;
     }
 
-    push(active, lazy, timestamp) {
-        this.data[this.head][0] = lazy;
-        this.data[this.head][1] = active;
-        this.data[this.head][2] = timestamp || Date.now();
+    push(active, timestamp) {
+        this.data[this.head][0] = active;
+        this.data[this.head][1] = timestamp || Date.now();
         this.head += 1;
         this.head %= this.size;
     }
@@ -146,18 +124,16 @@ class BakeryRingBuffer {
         // idx is the logical index in the chart (0 = oldest)
         // Map to physical index in ring buffer
         let physical = (this.head + idx) % this.size;
-        return this.data[physical][2];
+        return this.data[physical][1];
     }
 
     series() {
         let result = [[], []]; // lazy, active
         for (let i=this.head; i<this.size; i++) {
             result[0].push(this.data[i][0]);
-            result[1].push(this.data[i][1]);
         }
         for (let i=0; i<this.head; i++) {
             result[0].push(this.data[i][0]);
-            result[1].push(this.data[i][1]);
         }
         return result;
     }
