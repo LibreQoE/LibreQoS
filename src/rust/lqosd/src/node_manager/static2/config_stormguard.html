@@ -1,0 +1,65 @@
+<div id="configMenuContainer"></div>
+<div class="row">
+    <div class="col-12">
+        <form>
+            <!-- Enable/Disable StormGuard -->
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="enabled">
+                <label class="form-check-label" for="enabled">Enable StormGuard</label>
+                <div class="form-text">Enable automatic rate adjustment based on network conditions</div>
+            </div>
+
+            <!-- Monitored Sites Section -->
+            <div class="mb-3">
+                <label class="form-label">Monitored Sites</label>
+                <div class="form-text">Select sites to monitor for automatic rate adjustment</div>
+                
+                <!-- Site Selection Dropdown + Add Button -->
+                <div class="input-group mb-2">
+                    <select class="form-select" id="siteSelector">
+                        <option value="">Select a site...</option>
+                    </select>
+                    <button class="btn btn-outline-primary" type="button" id="addSiteBtn">
+                        <i class="fa fa-plus"></i> Add Site
+                    </button>
+                </div>
+                
+                <!-- List of Selected Sites -->
+                <div id="selectedSitesList" class="list-group">
+                    <!-- Dynamically populated list with remove buttons -->
+                </div>
+            </div>
+
+            <!-- Minimum Percentages -->
+            <div class="mb-3">
+                <label for="minDownloadPct" class="form-label">Minimum Download Percentage (%)</label>
+                <input type="number" class="form-control" id="minDownloadPct" min="1" max="100" step="1" value="50">
+                <div class="form-text">Minimum percentage of advertised download speed (e.g., 50 for 50%)</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="minUploadPct" class="form-label">Minimum Upload Percentage (%)</label>
+                <input type="number" class="form-control" id="minUploadPct" min="1" max="100" step="1" value="50">
+                <div class="form-text">Minimum percentage of advertised upload speed (e.g., 50 for 50%)</div>
+            </div>
+
+            <!-- Dry Run Mode -->
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="dryRun">
+                <label class="form-check-label" for="dryRun">Dry Run Mode</label>
+                <div class="form-text">Test mode - log changes without applying them</div>
+            </div>
+
+            <!-- Log File Path -->
+            <div class="mb-3">
+                <label for="logFile" class="form-label">Log File Path (Optional)</label>
+                <input type="text" class="form-control" id="logFile" placeholder="/var/log/stormguard.csv">
+                <div class="form-text">Path to CSV file for logging site rates (leave empty to disable)</div>
+            </div>
+
+            <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
+        </form>
+    </div>
+</div>
+
+<script src="config_stormguard.js%CACHEBUSTERS%"></script>

@@ -133,3 +133,52 @@ export function validNodeList(network_json) {
 
     return nodes;
 }
+
+export function renderConfigMenu(currentPage) {
+    const menuItems = [
+        { href: "config_general.html", icon: "fa-server", text: "General", id: "general" },
+        { href: "config_anon.html", icon: "fa-user-secret", text: "Anonymous Usage Stats", id: "anon" },
+        { href: "config_tuning.html", icon: "fa-warning", text: "Tuning", id: "tuning" },
+        { href: "config_interface.html", icon: "fa-chain", text: "Network Mode", id: "interface" },
+        { href: "config_queues.html", icon: "fa-car", text: "Queues", id: "queues" },
+        { href: "config_stormguard.html", icon: "fa-bolt", text: "StormGuard", id: "stormguard" },
+        { href: "config_lts.html", icon: "fa-line-chart", text: "Long-Term Stats", id: "lts" },
+        { href: "config_iprange.html", icon: "fa-address-card", text: "IP Ranges", id: "iprange" },
+        { href: "config_flows.html", icon: "fa-arrow-circle-down", text: "Flow Tracking", id: "flows" },
+        { href: "config_integration.html", icon: "fa-link", text: "Integration - Common", id: "integration" },
+        { href: "config_spylnx.html", icon: "fa-link", text: "Splynx", id: "spylnx" },
+        { href: "config_uisp.html", icon: "fa-link", text: "UISP", id: "uisp" },
+        { href: "config_powercode.html", icon: "fa-link", text: "Powercode", id: "powercode" },
+        { href: "config_sonar.html", icon: "fa-link", text: "Sonar", id: "sonar" },
+        { href: "config_wispgate.html", icon: "fa-link", text: "WispGate", id: "wispgate" },
+        { href: "config_network.html", icon: "fa-map", text: "Network Layout", id: "network" },
+        { href: "config_devices.html", icon: "fa-table", text: "Shaped Devices", id: "devices" },
+        { href: "config_users.html", icon: "fa-users", text: "LibreQoS Users", id: "users" }
+    ];
+
+    const menuHtml = `
+        <div class="row">
+            <div class="col-12">
+                <ul class="config-menu">
+                ${menuItems.map(item => `
+                    <li class="config-menu-item${item.id === currentPage ? ' active' : ''}">
+                        <a href="${item.href}" class="text-decoration-none">
+                            <i class="fa ${item.icon}"></i> ${item.text}
+                        </a>
+                    </li>
+                `).join('')}
+                </ul>
+                <hr class="mt-3 mb-3" />
+            </div>
+        </div>
+    `;
+
+    // Find the container element and inject the menu
+    const container = document.getElementById('configMenuContainer');
+    if (container) {
+        container.innerHTML = menuHtml;
+    } else {
+        // If no specific container, inject at the beginning of the body
+        document.body.insertAdjacentHTML('afterbegin', menuHtml);
+    }
+}

@@ -42,6 +42,8 @@ dry_run = false
 sudo = false
 #override_available_queues = 12 # This can be omitted and be 0 for Python
 use_binpacking = false
+lazy_queues = "No"
+lazy_expire_seconds = 0
 
 [long_term_stats]
 gather_stats = true
@@ -110,3 +112,10 @@ url = "http://localhost:8086"
 org = "libreqos"
 bucket = "Your ISP Name Here"
 token = ""
+
+[stormguard]
+enabled = false
+targets = [ ]
+dry_run = false
+minimum_download_percentage = 0.25
+minimum_upload_percentage = 0.25

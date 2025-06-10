@@ -37,11 +37,11 @@ pub fn configure() -> anyhow::Result<StormguardConfig> {
     }
 
     let Some(sg_config) = &config.stormguard else {
-        error!("StormGuard is not enabled in the configuration.");
+        tracing::info!("StormGuard is not enabled in the configuration.");
         return Err(anyhow::anyhow!("StormGuard is not enabled in the configuration."));
     };
     if !sg_config.enabled {
-        error!("StormGuard is not enabled in the configuration.");
+        tracing::info!("StormGuard is not enabled in the configuration.");
         return Err(anyhow::anyhow!("StormGuard is not enabled in the configuration."));
     }
 

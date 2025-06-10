@@ -1,4 +1,4 @@
-import {saveConfig, loadConfig} from "./config/config_helper";
+import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
 
 function validateConfig() {
     // Validate server address format if provided
@@ -18,6 +18,9 @@ function updateConfig() {
     window.config.usage_stats.send_anonymous = document.getElementById("sendAnonymous").checked;
     window.config.usage_stats.anonymous_server = document.getElementById("anonymousServer").value.trim();
 }
+
+// Render the configuration menu
+renderConfigMenu('anon');
 
 loadConfig(() => {
     // window.config now contains the configuration.

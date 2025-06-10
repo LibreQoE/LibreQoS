@@ -25,12 +25,22 @@ from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping,
 	check_config, sqm, upstream_bandwidth_capacity_download_mbps, upstream_bandwidth_capacity_upload_mbps, \
 	interface_a, interface_b, enable_actual_shell_commands, use_bin_packing_to_balance_cpu, monitor_mode_only, \
 	run_shell_commands_as_sudo, generated_pn_download_mbps, generated_pn_upload_mbps, queues_available_override, \
-	on_a_stick, get_tree_weights, get_weights, is_network_flat, get_libreqos_directory, enable_insight_topology
+	on_a_stick, get_tree_weights, get_weights, is_network_flat, get_libreqos_directory, enable_insight_topology, \
+	Bakery
 
 R2Q = 10
 #MAX_R2Q = 200_000
 MAX_R2Q = 60_000 # See https://lartc.vger.kernel.narkive.com/NKaH1ZNG/htb-quantum-of-class-100001-is-small-consider-r2q-change
 MIN_QUANTUM = 1522
+
+# Gap after each node's circuits for future additions
+# Can be overridden by setting CIRCUIT_PADDING in ispConfig.py
+# Setting to 0 disables padding (not recommended for production)
+# Higher values provide more room for growth but reduce total capacity
+try:
+	from ispConfig import CIRCUIT_PADDING
+except ImportError:
+	CIRCUIT_PADDING = 8  # Default value if not configured
 
 def get_shaped_devices_path():
 	base_dir = get_libreqos_directory()
@@ -77,6 +87,20 @@ def quantum(rateInMbps):
 	#print("R2Q=" + str(R2Q) + ", quantum: " + str(quantum))
 	quantrumString = " quantum " + str(quantum)
 	return quantrumString
+
+def format_rate_for_tc(rate_mbps):
+	"""
+	Format a rate in Mbps for TC commands with smart unit selection.
+	- Rates >= 1000 Mbps use 'gbit' 
+	- Rates >= 1 Mbps use 'mbit'
+	- Rates < 1 Mbps use 'kbit'
+	"""
+	if rate_mbps >= 1000:
+		return f"{rate_mbps/1000:.1f}gbit"
+	elif rate_mbps >= 1:
+		return f"{rate_mbps:.1f}mbit"
+	else:
+		return f"{rate_mbps*1000:.0f}kbit"
 
 def shell(command):
 	if enable_actual_shell_commands():
@@ -270,44 +294,44 @@ def validateNetworkAndDevices():
 						warnings.warn("Provided IPv6 '" + ipv6_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.", stacklevel=2)
 						devicesValidatedOrNot = False
 			try:
-				a = int(downloadMin)
-				if a < 1:
-					warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 1 Mbps.", stacklevel=2)
+				a = float(downloadMin)
+				if a < 0.1:
+					warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 0.1 Mbps.", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
-				warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.", stacklevel=2)
+				warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid number.", stacklevel=2)
 				devicesValidatedOrNot = False
 			try:
-				a = int(uploadMin)
-				if a < 1:
-					warnings.warn("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 1 Mbps.", stacklevel=2)
+				a = float(uploadMin)
+				if a < 0.1:
+					warnings.warn("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 0.1 Mbps.", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
-				warnings.warn("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.", stacklevel=2)
+				warnings.warn("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid number.", stacklevel=2)
 				devicesValidatedOrNot = False
 			try:
-				a = int(downloadMax)
-				if a < 2:
-					warnings.warn("Provided downloadMax '" + downloadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 2 Mbps.", stacklevel=2)
+				a = float(downloadMax)
+				if a < 0.2:
+					warnings.warn("Provided downloadMax '" + downloadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 0.2 Mbps.", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
-				warnings.warn("Provided downloadMax '" + downloadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.", stacklevel=2)
+				warnings.warn("Provided downloadMax '" + downloadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid number.", stacklevel=2)
 				devicesValidatedOrNot = False
 			try:
-				a = int(uploadMax)
-				if a < 2:
-					warnings.warn("Provided uploadMax '" + uploadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 2 Mbps.", stacklevel=2)
+				a = float(uploadMax)
+				if a < 0.2:
+					warnings.warn("Provided uploadMax '" + uploadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is < 0.2 Mbps.", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
-				warnings.warn("Provided uploadMax '" + uploadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid integer.", stacklevel=2)
+				warnings.warn("Provided uploadMax '" + uploadMax + "' in ShapedDevices.csv at row " + str(rowNum) + " is not a valid number.", stacklevel=2)
 				devicesValidatedOrNot = False
 			
 			try:
-				if int(downloadMin) > int(downloadMax):
+				if float(downloadMin) > float(downloadMax):
 					warnings.warn("Provided downloadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is greater than downloadMax", stacklevel=2)
 					devicesValidatedOrNot = False
-				if int(uploadMin) > int(uploadMax):
-					warnings.warn("Provided uploadMin '" + downloadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is greater than uploadMax", stacklevel=2)
+				if float(uploadMin) > float(uploadMax):
+					warnings.warn("Provided uploadMin '" + uploadMin + "' in ShapedDevices.csv at row " + str(rowNum) + " is greater than uploadMax", stacklevel=2)
 					devicesValidatedOrNot = False
 			except:
 				devicesValidatedOrNot = False
@@ -380,10 +404,10 @@ def loadSubscriberCircuits(shapedDevicesFile):
 									raise ValueError(errorMessageString)
 							# Check if bandwidth parameters match other cdevices of this same circuit ID, but only check if monitorOnlyMode is Off
 							if monitor_mode_only() == False:
-								if ((circuit['minDownload'] != int(downloadMin))
-									or (circuit['minUpload'] != int(uploadMin))
-									or (circuit['maxDownload'] != int(downloadMax))
-									or (circuit['maxUpload'] != int(uploadMax))):
+								if ((circuit['minDownload'] != float(downloadMin))
+									or (circuit['minUpload'] != float(uploadMin))
+									or (circuit['maxDownload'] != float(downloadMax))
+									or (circuit['maxUpload'] != float(uploadMax))):
 									warnings.warn("Device " + deviceName + " with ID " + deviceID + " had different bandwidth parameters than other devices on this circuit. Will instead use the bandwidth parameters defined by the first device added to its circuit.", stacklevel=2)
 							devicesListForCircuit = circuit['devices']
 							thisDevice = 	{
@@ -417,16 +441,16 @@ def loadSubscriberCircuits(shapedDevicesFile):
 					  "circuitName": circuitName,
 					  "ParentNode": ParentNode,
 					  "devices": deviceListForCircuit,
-					  "minDownload": int(downloadMin),
-					  "minUpload": int(uploadMin),
-					  "maxDownload": int(downloadMax),
-					  "maxUpload": int(uploadMax),
+					  "minDownload": float(downloadMin),
+					  "minUpload": float(uploadMin),
+					  "maxDownload": float(downloadMax),
+					  "maxUpload": float(uploadMax),
 					  "classid": '',
 					  "comment": comment
 					}
 					if thisCircuit['ParentNode'] == 'none':
 						thisCircuit['idForCircuitsWithoutParentNodes'] = counterForCircuitsWithoutParentNodes
-						dictForCircuitsWithoutParentNodes[counterForCircuitsWithoutParentNodes] = ((int(downloadMax))+(int(uploadMax))) 
+						dictForCircuitsWithoutParentNodes[counterForCircuitsWithoutParentNodes] = ((float(downloadMax))+(float(uploadMax))) 
 						counterForCircuitsWithoutParentNodes += 1
 					subscriberCircuits.append(thisCircuit)
 			# If there is nothing in the circuit ID field
@@ -451,16 +475,16 @@ def loadSubscriberCircuits(shapedDevicesFile):
 				  "circuitName": circuitName,
 				  "ParentNode": ParentNode,
 				  "devices": deviceListForCircuit,
-				  "minDownload": int(downloadMin),
-				  "minUpload": int(uploadMin),
-				  "maxDownload": int(downloadMax),
-				  "maxUpload": int(uploadMax),
+				  "minDownload": float(downloadMin),
+				  "minUpload": float(uploadMin),
+				  "maxDownload": float(downloadMax),
+				  "maxUpload": float(uploadMax),
 				  "classid": '',
 				  "comment": comment
 				}
 				if thisCircuit['ParentNode'] == 'none':
 					thisCircuit['idForCircuitsWithoutParentNodes'] = counterForCircuitsWithoutParentNodes
-					dictForCircuitsWithoutParentNodes[counterForCircuitsWithoutParentNodes] = ((int(downloadMax))+(int(uploadMax)))
+					dictForCircuitsWithoutParentNodes[counterForCircuitsWithoutParentNodes] = ((float(downloadMax))+(float(uploadMax)))
 					counterForCircuitsWithoutParentNodes += 1
 				subscriberCircuits.append(thisCircuit)
 	return (subscriberCircuits,	dictForCircuitsWithoutParentNodes)
@@ -694,10 +718,19 @@ def refreshShapers():
 		knownClassIDs = []
 		nodes_requiring_min_squashing = {}
 		# Track minor counter by CPU. This way we can have > 32000 hosts (htb has u16 limit to minor handle)
+		# Minor numbers start at 3 to reserve 1 for root qdisc and 2 for default class
+		# With CIRCUIT_PADDING, we leave gaps between nodes to allow future circuit additions
+		# without disrupting existing ClassID assignments. This maintains stability across reloads.
 		for x in range(queuesAvailable):
 			minorByCPUpreloaded[x+1] = 3
 		def traverseNetwork(data, depth, major, minorByCPU, queue, parentClassID, upParentClassID, parentMaxDL, parentMaxUL, parentMinDL, parentMinUL):
-			for node in data:
+			# ClassID Assignment Strategy:
+			# - Nodes and circuits are processed in alphabetical order for stability
+			# - Each node gets a unique minor number that increments sequentially
+			# - After processing all circuits for a node, we add CIRCUIT_PADDING to the minor counter
+			# - This creates gaps that allow adding new circuits without affecting other ClassIDs
+			# - Children are also sorted before recursive processing to ensure deterministic traversal
+			for node in sorted(data.keys()):
 				#if data[node]['type'] == "virtual":
 				#	print(node + " is a virtual node. Skipping.")
 				#	if depth == 0:
@@ -749,6 +782,10 @@ def refreshShapers():
 									}
 				parentNodes.append(thisParentNode)
 				minorByCPU[queue] = minorByCPU[queue] + 1
+				# Check for overflow - TC uses u16 for minor class ID (max 65535)
+				if minorByCPU[queue] > 0xFFFF:
+					logging.error(f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds TC's u16 limit (65535). Consider increasing queue count or restructuring network hierarchy.")
+					raise ValueError(f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds limit of 65535")
 				# If a device from ShapedDevices.csv lists this node as its Parent Node, attach it as a leaf to this node HTB
 				if node in circuits_by_parent_node:
 					# If mins of circuits combined exceed min of parent node - set to 1
@@ -762,7 +799,10 @@ def refreshShapers():
 							if ((override_min_down * len(circuits_by_parent_node[node])) > data[node]['downloadBandwidthMbpsMin']) or ((override_min_up * len(circuits_by_parent_node[node])) > data[node]['uploadBandwidthMbpsMin']):
 								logging.info("Even with this change, minimums will exceed the min rate of the parent node. Using 10 kbps as the minimum for these circuits instead.", stacklevel=2)
 								nodes_requiring_min_squashing[node] = True
-					for circuit in circuits_by_parent_node[node]:
+					# Sort circuits by name for stable ordering
+					sorted_circuits = sorted(circuits_by_parent_node[node], 
+					                       key=lambda c: c.get('circuitName', c.get('circuitID', '')))
+					for circuit in sorted_circuits:
 						if node == circuit['ParentNode']:
 							if monitor_mode_only() == False:
 								if circuit['maxDownload'] > data[node]['downloadBandwidthMbps']:
@@ -806,11 +846,22 @@ def refreshShapers():
 							minorByCPU[queue] = minorByCPU[queue] + 1
 				if len(circuitsForThisNetworkNode) > 0:
 					data[node]['circuits'] = circuitsForThisNetworkNode
+				
+				# Add padding for future circuit additions (applies to all nodes)
+				# This ensures space is reserved even for nodes without circuits
+				minorByCPU[queue] = minorByCPU[queue] + CIRCUIT_PADDING
+				
 				# Recursive call this function for children nodes attached to this node
 				if 'children' in data[node]:
+					# Sort children to ensure consistent traversal order
+					sorted_children = dict(sorted(data[node]['children'].items()))
 					# We need to keep tabs on the minor counter, because we can't have repeating class IDs. Here, we bring back the minor counter from the recursive function
 					minorByCPU[queue] = minorByCPU[queue] + 1
-					minorByCPU = traverseNetwork(data[node]['children'], depth+1, major, minorByCPU, queue, nodeClassID, upNodeClassID, data[node]['downloadBandwidthMbps'], data[node]['uploadBandwidthMbps'], data[node]['downloadBandwidthMbpsMin'], data[node]['uploadBandwidthMbpsMin'])
+					# Check for overflow - TC uses u16 for minor class ID (max 65535)
+					if minorByCPU[queue] > 0xFFFF:
+						logging.error(f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds TC's u16 limit (65535). Consider increasing queue count or restructuring network hierarchy.")
+						raise ValueError(f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds limit of 65535")
+					minorByCPU = traverseNetwork(sorted_children, depth+1, major, minorByCPU, queue, nodeClassID, upNodeClassID, data[node]['downloadBandwidthMbps'], data[node]['uploadBandwidthMbps'], data[node]['downloadBandwidthMbpsMin'], data[node]['uploadBandwidthMbpsMin'])
 				# If top level node, increment to next queue / cpu core
 				if depth == 0:
 					if queue >= queuesAvailable:
@@ -856,7 +907,9 @@ def refreshShapers():
 		
 		# Here is the actual call to the recursive traverseNetwork() function. finalMinor is not used.
 		minorByCPU = traverseNetwork(network, 0, major=1, minorByCPU=minorByCPUpreloaded, queue=1, parentClassID=None, upParentClassID=None, parentMaxDL=upstream_bandwidth_capacity_download_mbps(), parentMaxUL=upstream_bandwidth_capacity_upload_mbps(), parentMinDL=upstream_bandwidth_capacity_download_mbps(), parentMinUL=upstream_bandwidth_capacity_upload_mbps())
-		
+
+		bakery = Bakery()
+		bakery.start_batch() # Initializes the bakery transaction
 		linuxTCcommands = []
 		devicesShaped = []
 		# Root HTB Setup
@@ -864,20 +917,21 @@ def refreshShapers():
 		thisInterface = interface_a()
 		logging.info("# MQ Setup for " + thisInterface)
 		command = 'qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq'
+		bakery.setup_mq(queuesAvailable, stickOffset)
 		linuxTCcommands.append(command)
 		maxBandwidth = max(upstream_bandwidth_capacity_upload_mbps(), upstream_bandwidth_capacity_download_mbps())
 		calculateR2q(maxBandwidth)
 		for queue in range(queuesAvailable):
 			command = 'qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+1) + ' handle ' + hex(queue+1) + ': htb default 2'
 			linuxTCcommands.append(command)
-			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ str(upstream_bandwidth_capacity_download_mbps()) + 'mbit ceil ' + str(upstream_bandwidth_capacity_download_mbps()) + 'mbit' + quantum(upstream_bandwidth_capacity_download_mbps())
+			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ': classid ' + hex(queue+1) + ':1 htb rate '+ format_rate_for_tc(upstream_bandwidth_capacity_download_mbps()) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_download_mbps()) + quantum(upstream_bandwidth_capacity_download_mbps())
 			linuxTCcommands.append(command)
 			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 ' + sqm()
 			linuxTCcommands.append(command)
 			# Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
 			# Technically, that should not even happen. So don't expect much if any traffic in this default class.
 			# Only 1/4 of defaultClassCapacity is guaranteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
-			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + str(round((upstream_bandwidth_capacity_download_mbps()-1)/4)) + 'mbit ceil ' + str(upstream_bandwidth_capacity_download_mbps()-1) + 'mbit prio 5' + quantum(upstream_bandwidth_capacity_download_mbps())
+			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':1 classid ' + hex(queue+1) + ':2 htb rate ' + format_rate_for_tc(round((upstream_bandwidth_capacity_download_mbps()-1)/4)) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_download_mbps()-1) + ' prio 5' + quantum(upstream_bandwidth_capacity_download_mbps())
 			linuxTCcommands.append(command)
 			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+1) + ':2 ' + sqm()
 			linuxTCcommands.append(command)
@@ -891,14 +945,14 @@ def refreshShapers():
 		for queue in range(queuesAvailable):
 			command = 'qdisc add dev ' + thisInterface + ' parent 7FFF:' + hex(queue+stickOffset+1) + ' handle ' + hex(queue+stickOffset+1) + ': htb default 2'
 			linuxTCcommands.append(command)
-			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ': classid ' + hex(queue+stickOffset+1) + ':1 htb rate '+ str(upstream_bandwidth_capacity_upload_mbps()) + 'mbit ceil ' + str(upstream_bandwidth_capacity_upload_mbps()) + 'mbit' + quantum(upstream_bandwidth_capacity_upload_mbps())
+			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ': classid ' + hex(queue+stickOffset+1) + ':1 htb rate '+ format_rate_for_tc(upstream_bandwidth_capacity_upload_mbps()) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_upload_mbps()) + quantum(upstream_bandwidth_capacity_upload_mbps())
 			linuxTCcommands.append(command)
 			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 ' + sqm()
 			linuxTCcommands.append(command)
 			# Default class - traffic gets passed through this limiter with lower priority if it enters the top HTB without a specific class.
 			# Technically, that should not even happen. So don't expect much if any traffic in this default class.
 			# Only 1/4 of defaultClassCapacity is guarenteed (to prevent hitting ceiling of upstream), for the most part it serves as an "up to" ceiling.
-			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 classid ' + hex(queue+stickOffset+1) + ':2 htb rate ' + str(round((upstream_bandwidth_capacity_upload_mbps()-1)/4)) + 'mbit ceil ' + str(upstream_bandwidth_capacity_upload_mbps()-1) + 'mbit prio 5' + quantum(upstream_bandwidth_capacity_upload_mbps())
+			command = 'class add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':1 classid ' + hex(queue+stickOffset+1) + ':2 htb rate ' + format_rate_for_tc(round((upstream_bandwidth_capacity_upload_mbps()-1)/4)) + ' ceil ' + format_rate_for_tc(upstream_bandwidth_capacity_upload_mbps()-1) + ' prio 5' + quantum(upstream_bandwidth_capacity_upload_mbps())
 			linuxTCcommands.append(command)
 			command = 'qdisc add dev ' + thisInterface + ' parent ' + hex(queue+stickOffset+1) + ':2 ' + sqm()
 			linuxTCcommands.append(command)
@@ -929,15 +983,29 @@ def refreshShapers():
 					case 4: return sqm + " rtt 120"
 					case _: return sqm
 
-			for node in data:
-				command = 'class add dev ' + interface_a() + ' parent ' + data[node]['parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ str(data[node]['downloadBandwidthMbpsMin']) + 'mbit ceil '+ str(data[node]['downloadBandwidthMbps']) + 'mbit prio 3' + quantum(data[node]['downloadBandwidthMbps'])
+			for node in sorted(data.keys()):
+				site_name = data[node]['name'] if 'name' in data[node] else "root"
+				bakery.add_site(
+					site_name,
+					data[node]['parentClassID'],
+					data[node]['up_parentClassID'],
+					int(data[node]['classMinor'], 16),
+					data[node]['downloadBandwidthMbpsMin'],
+					data[node]['uploadBandwidthMbpsMin'],
+					data[node]['downloadBandwidthMbps'],
+					data[node]['uploadBandwidthMbps'],
+				)
+				command = 'class add dev ' + interface_a() + ' parent ' + data[node]['parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ format_rate_for_tc(data[node]['downloadBandwidthMbpsMin']) + ' ceil '+ format_rate_for_tc(data[node]['downloadBandwidthMbps']) + ' prio 3' + quantum(data[node]['downloadBandwidthMbps'])
 				linuxTCcommands.append(command)
 				logging.info("Up ParentClassID: " + data[node]['up_parentClassID'])
 				logging.info("ClassMinor: " + data[node]['classMinor'])
-				command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ str(data[node]['uploadBandwidthMbpsMin']) + 'mbit ceil '+ str(data[node]['uploadBandwidthMbps']) + 'mbit prio 3' + quantum(data[node]['uploadBandwidthMbps'])
+				command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ format_rate_for_tc(data[node]['uploadBandwidthMbpsMin']) + ' ceil '+ format_rate_for_tc(data[node]['uploadBandwidthMbps']) + ' prio 3' + quantum(data[node]['uploadBandwidthMbps'])
 				linuxTCcommands.append(command)
 				if 'circuits' in data[node]:
-					for circuit in data[node]['circuits']:
+					# Sort circuits by name for stable ordering
+					sorted_circuits = sorted(data[node]['circuits'], 
+					                       key=lambda c: c.get('circuitName', c.get('circuitID', '')))
+					for circuit in sorted_circuits:
 						# If circuit mins exceed node mins - handle low min rates of 1 to mean 10 kbps.
 						# Avoid changing minDownload or minUpload because they are used in queuingStructure.json, and must remain integers.
 						min_down = circuit['minDownload']
@@ -955,7 +1023,31 @@ def refreshShapers():
 							if 'comment' in circuit['devices'][0]:
 								tcComment = '' # tcComment + '| Comment: ' + circuit['devices'][0]['comment']
 						tcComment = tcComment.replace("\n", "")
-						command = 'class add dev ' + interface_a() + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ str(min_down) + 'mbit ceil '+ str(circuit['maxDownload']) + 'mbit prio 3' + quantum(circuit['maxDownload']) + tcComment
+						circuit_name = circuit['circuitID'] if 'circuitID' in circuit else "unknown"
+						# Collect all IP addresses for this circuit
+						ip_list = []
+						for device in circuit['devices']:
+							if device['ipv4s']:
+								ip_list.extend(device['ipv4s'])
+							if device['ipv6s']:
+								ip_list.extend(device['ipv6s'])
+						# Concatenate IPs with comma separator
+						ip_addresses_str = ','.join(ip_list)
+						
+						bakery.add_circuit(
+							circuit_name,
+							data[node]['classid'],
+							data[node]['up_classid'],
+							int(circuit['classMinor'], 16),
+							min_down,
+							min_up,
+							circuit['maxDownload'],
+							circuit['maxUpload'],
+							int(circuit['classMajor'], 16),
+							int(circuit['up_classMajor'], 16),
+							ip_addresses_str,
+						)
+						command = 'class add dev ' + interface_a() + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ format_rate_for_tc(min_down) + ' ceil '+ format_rate_for_tc(circuit['maxDownload']) + ' prio 3' + quantum(circuit['maxDownload']) + tcComment
 						linuxTCcommands.append(command)
 						# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
 						if monitor_mode_only() == False:
@@ -963,7 +1055,7 @@ def refreshShapers():
 							useSqm = sqmFixupRate(circuit['maxDownload'], sqm())
 							command = 'qdisc add dev ' + interface_a() + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
 							linuxTCcommands.append(command)
-						command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ str(min_up) + 'mbit ceil '+ str(circuit['maxUpload']) + 'mbit prio 3' + quantum(circuit['maxUpload'])
+						command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ format_rate_for_tc(min_up) + ' ceil '+ format_rate_for_tc(circuit['maxUpload']) + ' prio 3' + quantum(circuit['maxUpload'])
 						linuxTCcommands.append(command)
 						# Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
 						if monitor_mode_only() == False:
@@ -991,7 +1083,9 @@ def refreshShapers():
 								devicesShaped.append(device['deviceName'])
 				# Recursive call this function for children nodes attached to this node
 				if 'children' in data[node]:
-					traverseNetwork(data[node]['children'])
+					# Sort children to ensure consistent traversal order
+					sorted_children = dict(sorted(data[node]['children'].items()))
+					traverseNetwork(sorted_children)
 		# Here is the actual call to the recursive traverseNetwork() function.
 		traverseNetwork(network)
 		
@@ -1032,19 +1126,19 @@ def refreshShapers():
 		
 		# Execute actual Linux TC commands
 		tcStartTime = datetime.now()
-		print("Executing linux TC class/qdisc commands")
+		# print("Executing linux TC class/qdisc commands")
 		with open('linux_tc.txt', 'w') as f:
 			for command in linuxTCcommands:
 				logging.info(command)
 				f.write(f"{command}\n")
-		if logging.DEBUG <= logging.root.level:
-			# Do not --force in debug mode, so we can see any errors 
-			shell("/sbin/tc -b linux_tc.txt")
-		else:
-			shell("/sbin/tc -f -b linux_tc.txt")
+		# if logging.DEBUG <= logging.root.level:
+		# 	# Do not --force in debug mode, so we can see any errors
+		# 	shell("/sbin/tc -b linux_tc.txt")
+		# else:
+		# 	shell("/sbin/tc -f -b linux_tc.txt")
+		bakery.commit()
 		tcEndTime = datetime.now()
-		print("Executed " + str(len(linuxTCcommands)) + " linux TC class/qdisc commands")
-		
+		# print("Executed " + str(len(linuxTCcommands)) + " linux TC class/qdisc commands")
 		
 		# Execute actual XDP-CPUMAP-TC filter commands
 		xdpFilterStartTime = datetime.now()

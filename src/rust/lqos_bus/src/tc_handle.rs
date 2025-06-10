@@ -66,6 +66,17 @@ impl TcHandle {
     pub fn zero() -> Self {
         Self(0)
     }
+
+    /// Formats as a TC-style hex string, e.g. "0x1:0x2".
+    pub fn as_tc_string(&self) -> String {
+        let (major, minor) = self.get_major_minor();
+        if minor != 0 {
+            format!("0x{major:x}:0x{minor:x}")
+        } else {
+            // If minor is zero, we don't need to show it.
+            format!("0x{major:x}:")
+        }
+    }
 }
 
 impl ToString for TcHandle {

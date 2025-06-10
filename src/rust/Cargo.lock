@@ -669,7 +669,6 @@ dependencies = [
  "ciborium",
  "clap",
  "criterion-plot",
- "futures",
  "is-terminal",
  "itertools 0.10.5",
  "num-traits",
@@ -682,7 +681,6 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "tinytemplate",
- "tokio",
  "walkdir",
 ]
 
@@ -1113,20 +1111,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "76ee7a02da4d231650c7cea31349b889be2f45ddb3ef3032d2ec8185f6313fd2"
 dependencies = [
  "libc",
-]
-
-[[package]]
-name = "futures"
-version = "0.3.31"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65bc07b1a8bc7c85c5f2e110c476c7389b4554ba72af57d8445ea63a576b0876"
-dependencies = [
- "futures-channel",
- "futures-core",
- "futures-io",
- "futures-sink",
- "futures-task",
- "futures-util",
 ]
 
 [[package]]
@@ -1925,13 +1909,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "lqos_bakery"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "crossbeam-channel",
+ "lqos_bus",
+ "lqos_config",
+ "once_cell",
+ "tracing",
+]
+
+[[package]]
 name = "lqos_bus"
 version = "0.1.0"
 dependencies = [
  "allocative",
  "allocative_derive",
  "bincode",
- "criterion",
  "lqos_config",
  "lqos_utils",
  "lts_client",
@@ -2021,6 +2016,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 1.0.69",
+ "timerfd",
  "tracing",
 ]
 
@@ -2043,14 +2039,16 @@ name = "lqos_stormguard"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "crossbeam-channel",
+ "lqos_bakery",
  "lqos_bus",
  "lqos_config",
  "lqos_queue_tracker",
  "lqos_utils",
+ "once_cell",
  "timerfd",
  "tokio",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -2127,6 +2125,7 @@ dependencies = [
  "ip_network",
  "ip_network_table",
  "itertools 0.13.0",
+ "lqos_bakery",
  "lqos_bus",
  "lqos_config",
  "lqos_heimdall",

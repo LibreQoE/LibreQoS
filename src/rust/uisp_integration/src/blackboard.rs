@@ -25,7 +25,7 @@ pub async fn blackboard_blob<T: Serialize>(key: &str, value: T) -> anyhow::Resul
         return Ok(());
     }
     let blob = serde_cbor::to_vec(&value)?;
-    let chunks = blob.chunks(1024 * 16);
+    let chunks = blob.chunks(1024 * 128);
     info!(
         "Blob {key} is {} bytes long, split into {} chunks",
         blob.len(),

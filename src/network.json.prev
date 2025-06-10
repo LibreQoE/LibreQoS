@@ -1,0 +1,3311 @@
+{
+  "DNS VM": {
+    "children": {},
+    "downloadBandwidthMbps": 10000,
+    "name": "DNS VM",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "a7ba09d5-6ec4-4907-a134-bdd4b87dd1e3",
+    "uploadBandwidthMbps": 10000
+  },
+  "Medusa East": {
+    "children": {
+      "Ashland Manor PMP450b": {
+        "children": {
+          "ASHMANOR": {
+            "children": {
+              "ASH-CB1 103 104 105 106": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "ASH-CB1 103 104 105 106",
+                "parent_site": "ASHMANOR",
+                "type": "AP",
+                "uisp_device": "b3a69fb7-c855-4c62-b263-a28b88f3774d",
+                "uploadBandwidthMbps": 10000
+              },
+              "ASH-CB2 107 108 109 110 111 112 113": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "ASH-CB2 107 108 109 110 111 112 113",
+                "parent_site": "ASHMANOR",
+                "type": "AP",
+                "uisp_device": "93ee8fd1-74cf-4519-8a3a-3bbcc5474cd1",
+                "uploadBandwidthMbps": 10000
+              },
+              "ASH-CB4 116 117 117a": {
+                "children": {},
+                "downloadBandwidthMbps": 112,
+                "name": "ASH-CB4 116 117 117a",
+                "parent_site": "ASHMANOR",
+                "type": "AP",
+                "uisp_device": "949e7aa5-110d-4893-97db-ddc9f491b059",
+                "uploadBandwidthMbps": 93
+              },
+              "ASH-CB5 114 115": {
+                "children": {},
+                "downloadBandwidthMbps": 112,
+                "name": "ASH-CB5 114 115",
+                "parent_site": "ASHMANOR",
+                "type": "AP",
+                "uisp_device": "8983610c-4e92-4a4d-861d-0d9ec691cc0c",
+                "uploadBandwidthMbps": 75
+              },
+              "ASH-CB6 121 122": {
+                "children": {},
+                "downloadBandwidthMbps": 112,
+                "name": "ASH-CB6 121 122",
+                "parent_site": "ASHMANOR",
+                "type": "AP",
+                "uisp_device": "99983704-db11-4206-942a-af03e3b574e8",
+                "uploadBandwidthMbps": 83
+              },
+              "ASH-CB7 123 124 125 126": {
+                "children": {},
+                "downloadBandwidthMbps": 112,
+                "name": "ASH-CB7 123 124 125 126",
+                "parent_site": "ASHMANOR",
+                "type": "AP",
+                "uisp_device": "9e42dad3-754c-4f47-8dda-1a51f0812ec6",
+                "uploadBandwidthMbps": 25
+              },
+              "ASH-CB8 118 119 120": {
+                "children": {},
+                "downloadBandwidthMbps": 124,
+                "name": "ASH-CB8 118 119 120",
+                "parent_site": "ASHMANOR",
+                "type": "AP",
+                "uisp_device": "29660f07-cb0d-4230-9f83-5960e7df0b16",
+                "uploadBandwidthMbps": 50
+              },
+              "ASHMANOR MT Router": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "ASHMANOR MT Router",
+                "parent_site": "ASHMANOR",
+                "type": "AP",
+                "uisp_device": "6febf7d5-ef63-4998-af6e-47f880c2679b",
+                "uploadBandwidthMbps": 10000
+              },
+              "ASHMANOR s1  u58 Omni": {
+                "children": {},
+                "downloadBandwidthMbps": 79,
+                "name": "ASHMANOR s1  u58 Omni",
+                "parent_site": "ASHMANOR",
+                "type": "AP",
+                "uisp_device": "1f91a5d7-fb40-4a8d-b7a6-adac3c0b9837",
+                "uploadBandwidthMbps": 80
+              }
+            },
+            "downloadBandwidthMbps": 10000,
+            "name": "ASHMANOR",
+            "parent_site": "ASHMANOR",
+            "type": "Site",
+            "uisp_site": "123805fa-e756-425c-b3a3-434bf41107e6",
+            "uploadBandwidthMbps": 10000
+          }
+        },
+        "downloadBandwidthMbps": 10000,
+        "name": "Ashland Manor PMP450b",
+        "parent_site": "ASHMANOR",
+        "type": "AP",
+        "uisp_device": "900e1437-5c1b-4a5b-a6a1-06330164865a",
+        "uploadBandwidthMbps": 10000
+      }
+    },
+    "downloadBandwidthMbps": 10000,
+    "name": "Medusa East",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "062a7c9c-2ea0-4899-8c95-bc31235b4baf",
+    "uploadBandwidthMbps": 10000
+  },
+  "Medusa North": {
+    "children": {
+      "DOGMASTER BH": {
+        "children": {
+          "DOGMASTER": {
+            "children": {
+              "DOGMASTER s1 u58 Omni": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "DOGMASTER s1 u58 Omni",
+                "parent_site": "DOGMASTER",
+                "type": "AP",
+                "uisp_device": "445b6971-19bb-4202-9302-42a8fc5109f0",
+                "uploadBandwidthMbps": 10000
+              }
+            },
+            "downloadBandwidthMbps": 10000,
+            "name": "DOGMASTER",
+            "parent_site": "DOGMASTER",
+            "type": "Site",
+            "uisp_site": "2e0c21bf-2719-4777-863c-363c230cad78",
+            "uploadBandwidthMbps": 10000
+          }
+        },
+        "downloadBandwidthMbps": 10000,
+        "name": "DOGMASTER BH",
+        "parent_site": "DOGMASTER",
+        "type": "AP",
+        "uisp_device": "7dd350e5-da67-4137-b804-e0a7117dd4ab",
+        "uploadBandwidthMbps": 10000
+      },
+      "Gutwein BH": {
+        "children": {
+          "GUTWEIN": {
+            "children": {
+              "GUTWEIN s1 u24 Omni": {
+                "children": {},
+                "downloadBandwidthMbps": 110,
+                "name": "GUTWEIN s1 u24 Omni",
+                "parent_site": "GUTWEIN",
+                "type": "AP",
+                "uisp_device": "ae4d368b-2cbc-4f25-bac2-b4a2fbde3b2c",
+                "uploadBandwidthMbps": 73
+              },
+              "Gutwein-ER": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "Gutwein-ER",
+                "parent_site": "GUTWEIN",
+                "type": "AP",
+                "uisp_device": "8050d499-8723-40da-beaf-d64f7695b363",
+                "uploadBandwidthMbps": 10000
+              }
+            },
+            "downloadBandwidthMbps": 10000,
+            "name": "GUTWEIN",
+            "parent_site": "GUTWEIN",
+            "type": "Site",
+            "uisp_site": "abe5557e-db3a-4ea2-8a6f-327ef6245842",
+            "uploadBandwidthMbps": 10000
+          }
+        },
+        "downloadBandwidthMbps": 10000,
+        "name": "Gutwein BH",
+        "parent_site": "GUTWEIN",
+        "type": "AP",
+        "uisp_device": "856da983-ddcc-4ee5-a26c-6e94289e8bb1",
+        "uploadBandwidthMbps": 10000
+      },
+      "Kurt Bock 450b": {
+        "children": {
+          "FLOATINGAXE": {
+            "children": {
+              "FLOATINGAXE Omni DISABLED": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "FLOATINGAXE Omni DISABLED",
+                "parent_site": "FLOATINGAXE",
+                "type": "AP",
+                "uisp_device": "c53552cc-11d0-408c-8a13-9ed8f9aa2910",
+                "uploadBandwidthMbps": 10000
+              }
+            },
+            "downloadBandwidthMbps": 10000,
+            "name": "FLOATINGAXE",
+            "parent_site": "FLOATINGAXE",
+            "type": "Site",
+            "uisp_site": "37da9f52-6921-4838-884d-f1b546b0d258",
+            "uploadBandwidthMbps": 10000
+          }
+        },
+        "downloadBandwidthMbps": 10000,
+        "name": "Kurt Bock 450b",
+        "parent_site": "FLOATINGAXE",
+        "type": "AP",
+        "uisp_device": "82138148-415a-48cc-a8cc-c49655ac5816",
+        "uploadBandwidthMbps": 10000
+      }
+    },
+    "downloadBandwidthMbps": 10000,
+    "name": "Medusa North",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "8bdeb3d8-1975-4b05-b0a4-890d973ce03a",
+    "uploadBandwidthMbps": 10000
+  },
+  "Medusa S": {
+    "children": {
+      "Twaddle PMP450b": {
+        "children": {
+          "GLP": {
+            "children": {
+              "GLP to PAQUIN": {
+                "children": {},
+                "downloadBandwidthMbps": 60,
+                "name": "GLP to PAQUIN",
+                "parent_site": "GLP",
+                "type": "AP",
+                "uisp_device": "d32ce36c-8da0-47b9-867e-b3740ff8d9bc",
+                "uploadBandwidthMbps": 65
+              },
+              "GLP-AP2": {
+                "children": {},
+                "downloadBandwidthMbps": 85,
+                "name": "GLP-AP2",
+                "parent_site": "GLP",
+                "type": "AP",
+                "uisp_device": "6565b2c3-8511-42c0-a8bf-e705b10d387b",
+                "uploadBandwidthMbps": 92
+              },
+              "GLPTowerER": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "GLPTowerER",
+                "parent_site": "GLP",
+                "type": "AP",
+                "uisp_device": "2ea4211f-5f55-4ba6-b25f-d8f37f80a5f4",
+                "uploadBandwidthMbps": 10000
+              }
+            },
+            "downloadBandwidthMbps": 10000,
+            "name": "GLP",
+            "parent_site": "GLP",
+            "type": "Site",
+            "uisp_site": "2df21742-3387-49f1-8047-2c522b6cf17d",
+            "uploadBandwidthMbps": 10000
+          }
+        },
+        "downloadBandwidthMbps": 10000,
+        "name": "Twaddle PMP450b",
+        "parent_site": "GLP",
+        "type": "AP",
+        "uisp_device": "fc46c061-ec63-4e6a-86c6-79dfdaa33266",
+        "uploadBandwidthMbps": 10000
+      }
+    },
+    "downloadBandwidthMbps": 10000,
+    "name": "Medusa S",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "fcb0929f-58fa-4d51-aae3-86c06c5f3939",
+    "uploadBandwidthMbps": 10000
+  },
+  "Medusa West": {
+    "children": {
+      "HOLIDAYINN BH Medusa": {
+        "children": {
+          "HOLIDAYINN": {
+            "children": {
+              "HOLIDAYINN MT": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "HOLIDAYINN MT",
+                "parent_site": "HOLIDAYINN",
+                "type": "AP",
+                "uisp_device": "da1f1e12-96b5-4e59-9a6e-67567afa83e5",
+                "uploadBandwidthMbps": 10000
+              },
+              "HOLIDAYINN s1 u58 90S": {
+                "children": {},
+                "downloadBandwidthMbps": 64,
+                "name": "HOLIDAYINN s1 u58 90S",
+                "parent_site": "HOLIDAYINN",
+                "type": "AP",
+                "uisp_device": "cb9054ec-7dfe-4266-8ee9-4151c65a6f3b",
+                "uploadBandwidthMbps": 64
+              },
+              "HOLIDAYINN s2 u58 90SE": {
+                "children": {},
+                "downloadBandwidthMbps": 92,
+                "name": "HOLIDAYINN s2 u58 90SE",
+                "parent_site": "HOLIDAYINN",
+                "type": "AP",
+                "uisp_device": "e1e82064-a38f-48c0-84fb-105d3d9299e5",
+                "uploadBandwidthMbps": 89
+              },
+              "HOLIDAYINN to Elizabeth Allemann": {
+                "children": {},
+                "downloadBandwidthMbps": 76,
+                "name": "HOLIDAYINN to Elizabeth Allemann",
+                "parent_site": "HOLIDAYINN",
+                "type": "AP",
+                "uisp_device": "3eaa46db-53ba-40a2-825e-0855828335c4",
+                "uploadBandwidthMbps": 79
+              }
+            },
+            "downloadBandwidthMbps": 10000,
+            "name": "HOLIDAYINN",
+            "parent_site": "HOLIDAYINN",
+            "type": "Site",
+            "uisp_site": "afd0345f-2b9b-41cd-80ba-b09c330061c3",
+            "uploadBandwidthMbps": 10000
+          }
+        },
+        "downloadBandwidthMbps": 10000,
+        "name": "HOLIDAYINN BH Medusa",
+        "parent_site": "HOLIDAYINN",
+        "type": "AP",
+        "uisp_device": "27d19a93-9e90-4124-b789-a1f77b1a9896",
+        "uploadBandwidthMbps": 10000
+      },
+      "STEPHENSLAKE BH MFA": {
+        "children": {
+          "STEPHENSLAKE": {
+            "children": {
+              "Gordon to STEPHENSLAKE": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "Gordon to STEPHENSLAKE",
+                "parent_site": "STEPHENSLAKE",
+                "type": "AP",
+                "uisp_device": "e1c6a50a-02c0-4840-8de0-a48e7989d191",
+                "uploadBandwidthMbps": 10000
+              },
+              "STEPHENSLAKE s1 u900 90W": {
+                "children": {},
+                "downloadBandwidthMbps": 100,
+                "name": "STEPHENSLAKE s1 u900 90W",
+                "parent_site": "STEPHENSLAKE",
+                "type": "AP",
+                "uisp_device": "c637c11d-627d-4635-8c0c-c2333c08dd41",
+                "uploadBandwidthMbps": 100
+              },
+              "StephensLakeRouter": {
+                "children": {},
+                "downloadBandwidthMbps": 100,
+                "name": "StephensLakeRouter",
+                "parent_site": "STEPHENSLAKE",
+                "type": "AP",
+                "uisp_device": "d95772b4-ad1d-4769-99c5-ab2aef06eba0",
+                "uploadBandwidthMbps": 100
+              }
+            },
+            "downloadBandwidthMbps": 10000,
+            "name": "STEPHENSLAKE",
+            "parent_site": "STEPHENSLAKE",
+            "type": "Site",
+            "uisp_site": "e77d3d85-c877-4ab5-8e48-879dedc76aec",
+            "uploadBandwidthMbps": 10000
+          }
+        },
+        "downloadBandwidthMbps": 10000,
+        "name": "STEPHENSLAKE BH MFA",
+        "parent_site": "STEPHENSLAKE",
+        "type": "AP",
+        "uisp_device": "41ecabf3-b3fe-4caf-874c-714fe834ed04",
+        "uploadBandwidthMbps": 10000
+      },
+      "Woolwater PMP450b": {
+        "children": {
+          "WOOLWATER": {
+            "children": {
+              "172.16.31.1": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "172.16.31.1",
+                "parent_site": "WOOLWATER",
+                "type": "AP",
+                "uisp_device": "b202ce13-c63d-4dcf-9312-946b5c7e5dda",
+                "uploadBandwidthMbps": 10000
+              },
+              "WOOLWATER MT": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "WOOLWATER MT",
+                "parent_site": "WOOLWATER",
+                "type": "AP",
+                "uisp_device": "812c783c-d03b-4926-b041-422615c3d96e",
+                "uploadBandwidthMbps": 10000
+              },
+              "WOOLWATER TO TIGER": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "WOOLWATER TO TIGER",
+                "parent_site": "WOOLWATER",
+                "type": "AP",
+                "uisp_device": "9071ea5c-c9cb-4849-95b2-c4da60c847f7",
+                "uploadBandwidthMbps": 10000
+              },
+              "WOOLWATER TO TIGER2": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "WOOLWATER TO TIGER2",
+                "parent_site": "WOOLWATER",
+                "type": "AP",
+                "uisp_device": "9e07acbe-768d-49d5-8bdc-0861ff97a035",
+                "uploadBandwidthMbps": 10000
+              },
+              "WOOLWATER s1 u58 120N": {
+                "children": {},
+                "downloadBandwidthMbps": 27,
+                "name": "WOOLWATER s1 u58 120N",
+                "parent_site": "WOOLWATER",
+                "type": "AP",
+                "uisp_device": "e4e8460b-4a81-439e-821f-db2429e2c901",
+                "uploadBandwidthMbps": 5
+              },
+              "WOOLWATER s2 u58 120SE": {
+                "children": {
+                  "SCHNEIDER BH WOOLWATER": {
+                    "children": {
+                      "SCHNEIDER": {
+                        "children": {
+                          "SCHNEIDER s1 u24 Omni": {
+                            "children": {},
+                            "downloadBandwidthMbps": 22,
+                            "name": "SCHNEIDER s1 u24 Omni",
+                            "parent_site": "SCHNEIDER",
+                            "type": "AP",
+                            "uisp_device": "e0d0986a-1dd0-4de1-9d66-02f3468d5495",
+                            "uploadBandwidthMbps": 22
+                          }
+                        },
+                        "downloadBandwidthMbps": 22,
+                        "name": "SCHNEIDER",
+                        "parent_site": "SCHNEIDER",
+                        "type": "Site",
+                        "uisp_site": "76580367-6f5d-462e-b5e4-55c530bc1321",
+                        "uploadBandwidthMbps": 22
+                      }
+                    },
+                    "downloadBandwidthMbps": 22,
+                    "name": "SCHNEIDER BH WOOLWATER",
+                    "parent_site": "SCHNEIDER",
+                    "type": "AP",
+                    "uisp_device": "ec38ef85-e13c-4591-a018-b635b17a3d3f",
+                    "uploadBandwidthMbps": 22
+                  }
+                },
+                "downloadBandwidthMbps": 22,
+                "name": "WOOLWATER s2 u58 120SE",
+                "parent_site": "WOOLWATER",
+                "type": "AP",
+                "uisp_device": "c324e272-f047-4f82-8e7c-321035e75725",
+                "uploadBandwidthMbps": 22
+              },
+              "WOOLWATER s3 u58 120SW": {
+                "children": {
+                  "MARK to WOOLWATER": {
+                    "children": {
+                      "MARK": {
+                        "children": {
+                          "Mark Tower M2 Omni": {
+                            "children": {},
+                            "downloadBandwidthMbps": 22,
+                            "name": "Mark Tower M2 Omni",
+                            "parent_site": "MARK",
+                            "type": "AP",
+                            "uisp_device": "d8349965-6031-400e-bf2c-198c1d6efb45",
+                            "uploadBandwidthMbps": 63
+                          },
+                          "Mark Tower Router": {
+                            "children": {},
+                            "downloadBandwidthMbps": 29,
+                            "name": "Mark Tower Router",
+                            "parent_site": "MARK",
+                            "type": "AP",
+                            "uisp_device": "2e3d75f1-14b5-4ea2-959d-25bccc2aa38a",
+                            "uploadBandwidthMbps": 63
+                          }
+                        },
+                        "downloadBandwidthMbps": 29,
+                        "name": "MARK",
+                        "parent_site": "MARK",
+                        "type": "Site",
+                        "uisp_site": "2a7554ec-becb-447a-803f-cd738582683c",
+                        "uploadBandwidthMbps": 63
+                      }
+                    },
+                    "downloadBandwidthMbps": 29,
+                    "name": "MARK to WOOLWATER",
+                    "parent_site": "MARK",
+                    "type": "AP",
+                    "uisp_device": "213629e0-eb5a-4f12-bb24-d874849a64df",
+                    "uploadBandwidthMbps": 63
+                  }
+                },
+                "downloadBandwidthMbps": 6499,
+                "name": "WOOLWATER s3 u58 120SW",
+                "parent_site": "WOOLWATER",
+                "type": "AP",
+                "uisp_device": "ed6cff1b-c981-4ed5-865c-ded296b86ba3",
+                "uploadBandwidthMbps": 6499
+              },
+              "WOOLWATER to GRAINLEG": {
+                "children": {
+                  "GRAINLEG to WOOLWATER": {
+                    "children": {
+                      "GRAINLEG": {
+                        "children": {
+                          "GRAINLEG Omni Elevate": {
+                            "children": {},
+                            "downloadBandwidthMbps": 76,
+                            "name": "GRAINLEG Omni Elevate",
+                            "parent_site": "GRAINLEG",
+                            "type": "AP",
+                            "uisp_device": "4f4034f6-41b3-4463-b7bf-9a6e74809cc1",
+                            "uploadBandwidthMbps": 80
+                          },
+                          "GRAINLEG to DOUGLAS": {
+                            "children": {},
+                            "downloadBandwidthMbps": 64,
+                            "name": "GRAINLEG to DOUGLAS",
+                            "parent_site": "GRAINLEG",
+                            "type": "AP",
+                            "uisp_device": "8c62c07e-e85d-45f2-a7aa-62e6f9572682",
+                            "uploadBandwidthMbps": 64
+                          },
+                          "GRAINLEG to PERKINS": {
+                            "children": {},
+                            "downloadBandwidthMbps": 76,
+                            "name": "GRAINLEG to PERKINS",
+                            "parent_site": "GRAINLEG",
+                            "type": "AP",
+                            "uisp_device": "34f42e6d-9bc0-4bd5-81e5-b8947ec264de",
+                            "uploadBandwidthMbps": 80
+                          },
+                          "Grain Leg Router": {
+                            "children": {},
+                            "downloadBandwidthMbps": 76,
+                            "name": "Grain Leg Router",
+                            "parent_site": "GRAINLEG",
+                            "type": "AP",
+                            "uisp_device": "ac4010f7-4a45-40a7-948d-ecff03e09339",
+                            "uploadBandwidthMbps": 80
+                          }
+                        },
+                        "downloadBandwidthMbps": 76,
+                        "name": "GRAINLEG",
+                        "parent_site": "GRAINLEG",
+                        "type": "Site",
+                        "uisp_site": "4e283150-d866-41b9-84c5-af1eccb61fb3",
+                        "uploadBandwidthMbps": 80
+                      }
+                    },
+                    "downloadBandwidthMbps": 76,
+                    "name": "GRAINLEG to WOOLWATER",
+                    "parent_site": "GRAINLEG",
+                    "type": "AP",
+                    "uisp_device": "cc526bc6-cf88-4312-8dd6-146490b81075",
+                    "uploadBandwidthMbps": 80
+                  }
+                },
+                "downloadBandwidthMbps": 76,
+                "name": "WOOLWATER to GRAINLEG",
+                "parent_site": "WOOLWATER",
+                "type": "AP",
+                "uisp_device": "108dc0cd-0d35-428f-a468-a312c8566b0a",
+                "uploadBandwidthMbps": 80
+              },
+              "WOOLWATER to PRAIRIEHOME DISABLED": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "WOOLWATER to PRAIRIEHOME DISABLED",
+                "parent_site": "WOOLWATER",
+                "type": "AP",
+                "uisp_device": "b95f11a6-9d13-48c4-a16a-21a9e97e991f",
+                "uploadBandwidthMbps": 10000
+              },
+              "WOOLWATER to Wooldridge Office": {
+                "children": {},
+                "downloadBandwidthMbps": 40,
+                "name": "WOOLWATER to Wooldridge Office",
+                "parent_site": "WOOLWATER",
+                "type": "AP",
+                "uisp_device": "13f45450-e729-4f59-951e-9428c6e68aec",
+                "uploadBandwidthMbps": 38
+              },
+              "WooldridgeSectorER": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "WooldridgeSectorER",
+                "parent_site": "WOOLWATER",
+                "type": "AP",
+                "uisp_device": "e7af60c9-99aa-4f5d-ad44-6d55a2ae1a39",
+                "uploadBandwidthMbps": 10000
+              }
+            },
+            "downloadBandwidthMbps": 10000,
+            "name": "WOOLWATER",
+            "parent_site": "WOOLWATER",
+            "type": "Site",
+            "uisp_site": "4de347cb-6513-4d54-acc1-b7df0802789e",
+            "uploadBandwidthMbps": 10000
+          }
+        },
+        "downloadBandwidthMbps": 10000,
+        "name": "Woolwater PMP450b",
+        "parent_site": "WOOLWATER",
+        "type": "AP",
+        "uisp_device": "51ff7bd4-8340-429a-a667-7646caf474d5",
+        "uploadBandwidthMbps": 10000
+      }
+    },
+    "downloadBandwidthMbps": 10000,
+    "name": "Medusa West",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "68f2dc2e-267a-4e82-b58f-63be354ff45b",
+    "uploadBandwidthMbps": 10000
+  },
+  "Orphans": {
+    "children": {
+      "BIGGS": {
+        "children": {},
+        "downloadBandwidthMbps": 10000,
+        "name": "BIGGS",
+        "parent_site": "BIGGS",
+        "type": "Site",
+        "uisp_site": "e0f092df-fb11-4a59-9a10-b30d449bf3d8",
+        "uploadBandwidthMbps": 10000
+      },
+      "FRY": {
+        "children": {
+          "BH Home 2 Syrca": {
+            "children": {},
+            "downloadBandwidthMbps": 10000,
+            "name": "BH Home 2 Syrca",
+            "parent_site": "FRY",
+            "type": "AP",
+            "uisp_device": "b50f602f-35a3-4fd5-8703-49000bca728a",
+            "uploadBandwidthMbps": 10000
+          },
+          "Fry 2 Syrcuse": {
+            "children": {},
+            "downloadBandwidthMbps": 10000,
+            "name": "Fry 2 Syrcuse",
+            "parent_site": "FRY",
+            "type": "AP",
+            "uisp_device": "14d3994e-5127-487e-8d1a-d82fd67cbc09",
+            "uploadBandwidthMbps": 10000
+          }
+        },
+        "downloadBandwidthMbps": 10000,
+        "name": "FRY",
+        "parent_site": "FRY",
+        "type": "Site",
+        "uisp_site": "2ebd934b-5683-497a-aa9f-60ffa2ecdfa3",
+        "uploadBandwidthMbps": 10000
+      },
+      "HUDDLESTON": {
+        "children": {},
+        "downloadBandwidthMbps": 10000,
+        "name": "HUDDLESTON",
+        "parent_site": "HUDDLESTON",
+        "type": "Site",
+        "uisp_site": "1d740e30-ae4b-4182-9293-0593755acae5",
+        "uploadBandwidthMbps": 10000
+      },
+      "PERKINS": {
+        "children": {
+          "PERKINS to GRAINLEG": {
+            "children": {},
+            "downloadBandwidthMbps": 6499,
+            "name": "PERKINS to GRAINLEG",
+            "parent_site": "PERKINS",
+            "type": "AP",
+            "uisp_device": "858735a0-41a7-4f2e-8e3c-7e81a86f7391",
+            "uploadBandwidthMbps": 6499
+          },
+          "PERKINS to JUSTIN": {
+            "children": {},
+            "downloadBandwidthMbps": 10000,
+            "name": "PERKINS to JUSTIN",
+            "parent_site": "PERKINS",
+            "type": "AP",
+            "uisp_device": "c3b3cd12-3936-4b78-8286-a5f758330ef1",
+            "uploadBandwidthMbps": 10000
+          },
+          "Perkins to Surdahl": {
+            "children": {
+              "Jake Surdal": {
+                "children": {
+                  "SURDAHL": {
+                    "children": {},
+                    "downloadBandwidthMbps": 6499,
+                    "name": "SURDAHL",
+                    "parent_site": "SURDAHL",
+                    "type": "Site",
+                    "uisp_site": "c98569ac-bc17-4588-b042-6301830a2aff",
+                    "uploadBandwidthMbps": 6499
+                  }
+                },
+                "downloadBandwidthMbps": 6499,
+                "name": "Jake Surdal",
+                "parent_site": "SURDAHL",
+                "type": "AP",
+                "uisp_device": "3117e1e6-7fe5-4c05-8678-3e9c9577220a",
+                "uploadBandwidthMbps": 6499
+              }
+            },
+            "downloadBandwidthMbps": 6499,
+            "name": "Perkins to Surdahl",
+            "parent_site": "PERKINS",
+            "type": "AP",
+            "uisp_device": "a81bcd50-ead0-495f-bd21-184dc8fb336c",
+            "uploadBandwidthMbps": 6499
+          },
+          "PerkinsER": {
+            "children": {},
+            "downloadBandwidthMbps": 10000,
+            "name": "PerkinsER",
+            "parent_site": "PERKINS",
+            "type": "AP",
+            "uisp_device": "0ec6def9-5478-4249-97d1-f8ee75be4d8b",
+            "uploadBandwidthMbps": 10000
+          },
+          "Perkins_EPMP1000": {
+            "children": {},
+            "downloadBandwidthMbps": 10000,
+            "name": "Perkins_EPMP1000",
+            "parent_site": "PERKINS",
+            "type": "AP",
+            "uisp_device": "7c586795-6896-4cb8-80cc-68663879c7e7",
+            "uploadBandwidthMbps": 10000
+          }
+        },
+        "downloadBandwidthMbps": 10000,
+        "name": "PERKINS",
+        "parent_site": "PERKINS",
+        "type": "Site",
+        "uisp_site": "4f0e94cd-ff2f-4e8e-a626-ef5e1969cf37",
+        "uploadBandwidthMbps": 10000
+      },
+      "PETER": {
+        "children": {
+          "PETER s1 u24 Omni": {
+            "children": {},
+            "downloadBandwidthMbps": 10000,
+            "name": "PETER s1 u24 Omni",
+            "parent_site": "PETER",
+            "type": "AP",
+            "uisp_device": "0ccc2721-9ca1-473d-8343-d8f7ef24c893",
+            "uploadBandwidthMbps": 10000
+          },
+          "PETER to GRAFF": {
+            "children": {
+              "GRAFF to PETER": {
+                "children": {
+                  "GRAFF": {
+                    "children": {
+                      "BH JTown 2 Syrc": {
+                        "children": {},
+                        "downloadBandwidthMbps": 10000,
+                        "name": "BH JTown 2 Syrc",
+                        "parent_site": "GRAFF",
+                        "type": "AP",
+                        "uisp_device": "a499f8af-22dd-4423-8c84-76c70db81b60",
+                        "uploadBandwidthMbps": 10000
+                      },
+                      "GRAFF s1 u24 Omni": {
+                        "children": {},
+                        "downloadBandwidthMbps": 10000,
+                        "name": "GRAFF s1 u24 Omni",
+                        "parent_site": "GRAFF",
+                        "type": "AP",
+                        "uisp_device": "c232ba17-001d-40c6-8016-65d00c83fa37",
+                        "uploadBandwidthMbps": 10000
+                      },
+                      "GRAFF to JHWY": {
+                        "children": {
+                          "JHWY to GRAFF": {
+                            "children": {
+                              "JHWY??": {
+                                "children": {
+                                  "JHWY AP": {
+                                    "children": {},
+                                    "downloadBandwidthMbps": 10000,
+                                    "name": "JHWY AP",
+                                    "parent_site": "JHWY??",
+                                    "type": "AP",
+                                    "uisp_device": "f85833f0-8ac3-4af7-934a-5179084d51c2",
+                                    "uploadBandwidthMbps": 10000
+                                  },
+                                  "PRAIRIEHOME to WOOLWATER": {
+                                    "children": {},
+                                    "downloadBandwidthMbps": 100,
+                                    "name": "PRAIRIEHOME to WOOLWATER",
+                                    "parent_site": "JHWY??",
+                                    "type": "AP",
+                                    "uisp_device": "7d4c063d-6daa-4200-8f3b-971867f6f09f",
+                                    "uploadBandwidthMbps": 100
+                                  }
+                                },
+                                "downloadBandwidthMbps": 10000,
+                                "name": "JHWY??",
+                                "parent_site": "JHWY??",
+                                "type": "Site",
+                                "uisp_site": "89ccd3ff-535c-4829-b15b-8e91ca9a9730",
+                                "uploadBandwidthMbps": 10000
+                              }
+                            },
+                            "downloadBandwidthMbps": 10000,
+                            "name": "JHWY to GRAFF",
+                            "parent_site": "JHWY??",
+                            "type": "AP",
+                            "uisp_device": "fa255ec6-4262-4a99-8ddb-37615bba5745",
+                            "uploadBandwidthMbps": 10000
+                          }
+                        },
+                        "downloadBandwidthMbps": 10000,
+                        "name": "GRAFF to JHWY",
+                        "parent_site": "GRAFF",
+                        "type": "AP",
+                        "uisp_device": "7b330ff6-a90d-4f49-8da6-c379583bd2a9",
+                        "uploadBandwidthMbps": 10000
+                      }
+                    },
+                    "downloadBandwidthMbps": 10000,
+                    "name": "GRAFF",
+                    "parent_site": "GRAFF",
+                    "type": "Site",
+                    "uisp_site": "d2f9ae9f-7349-45af-8b1c-896cbac1fd23",
+                    "uploadBandwidthMbps": 10000
+                  }
+                },
+                "downloadBandwidthMbps": 10000,
+                "name": "GRAFF to PETER",
+                "parent_site": "GRAFF",
+                "type": "AP",
+                "uisp_device": "80b01338-61b9-4b5f-8343-457ab90f80d1",
+                "uploadBandwidthMbps": 10000
+              }
+            },
+            "downloadBandwidthMbps": 10000,
+            "name": "PETER to GRAFF",
+            "parent_site": "PETER",
+            "type": "AP",
+            "uisp_device": "f509b59b-9b53-420c-8b0e-de65ede2def6",
+            "uploadBandwidthMbps": 10000
+          }
+        },
+        "downloadBandwidthMbps": 10000,
+        "name": "PETER",
+        "parent_site": "PETER",
+        "type": "Site",
+        "uisp_site": "b3c7993a-19d9-428b-9e16-5534cfd7d795",
+        "uploadBandwidthMbps": 10000
+      },
+      "PRAIREHOME": {
+        "children": {
+          "PRAIRIEHOME s1 u24 Omni": {
+            "children": {},
+            "downloadBandwidthMbps": 10000,
+            "name": "PRAIRIEHOME s1 u24 Omni",
+            "parent_site": "PRAIREHOME",
+            "type": "AP",
+            "uisp_device": "154f0dbc-6b0b-4bfa-842f-276d2115b714",
+            "uploadBandwidthMbps": 10000
+          }
+        },
+        "downloadBandwidthMbps": 10000,
+        "name": "PRAIREHOME",
+        "parent_site": "PRAIREHOME",
+        "type": "Site",
+        "uisp_site": "4d7dfbf2-250b-49be-bdb0-a23573f72070",
+        "uploadBandwidthMbps": 10000
+      },
+      "SYRACEUSE": {
+        "children": {
+          "BH Syrc 2 JHwy": {
+            "children": {},
+            "downloadBandwidthMbps": 10000,
+            "name": "BH Syrc 2 JHwy",
+            "parent_site": "SYRACEUSE",
+            "type": "AP",
+            "uisp_device": "c6716a9a-cb61-42f5-80db-66ac1a84330f",
+            "uploadBandwidthMbps": 10000
+          },
+          "Syrcuse 2 Fry": {
+            "children": {},
+            "downloadBandwidthMbps": 10000,
+            "name": "Syrcuse 2 Fry",
+            "parent_site": "SYRACEUSE",
+            "type": "AP",
+            "uisp_device": "30f358ce-26ee-4247-8c0d-83c6d1afc659",
+            "uploadBandwidthMbps": 10000
+          }
+        },
+        "downloadBandwidthMbps": 10000,
+        "name": "SYRACEUSE",
+        "parent_site": "SYRACEUSE",
+        "type": "Site",
+        "uisp_site": "c4ccaf23-0008-4067-92dc-2a68c4913c03",
+        "uploadBandwidthMbps": 10000
+      },
+      "TRANQUILITY": {
+        "children": {},
+        "downloadBandwidthMbps": 10000,
+        "name": "TRANQUILITY",
+        "parent_site": "TRANQUILITY",
+        "type": "Site",
+        "uisp_site": "24c03458-3086-47e9-8fc6-d617fd4a479d",
+        "uploadBandwidthMbps": 10000
+      },
+      "UMCWEST": {
+        "children": {},
+        "downloadBandwidthMbps": 10000,
+        "name": "UMCWEST",
+        "parent_site": "UMCWEST",
+        "type": "Site",
+        "uisp_site": "2e5b072e-ed77-4cd1-b5ca-ab261ab20620",
+        "uploadBandwidthMbps": 10000
+      }
+    },
+    "downloadBandwidthMbps": 10000,
+    "name": "Orphans",
+    "type": "Site",
+    "uploadBandwidthMbps": 10000
+  },
+  "PAQUIN s2 f58 30NE": {
+    "children": {},
+    "downloadBandwidthMbps": 10000,
+    "name": "PAQUIN s2 f58 30NE",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "0be729e4-d8a8-4dce-be1d-55b0a4a3e0ba",
+    "uploadBandwidthMbps": 10000
+  },
+  "PAQUIN to CALVIN 2": {
+    "children": {},
+    "downloadBandwidthMbps": 10000,
+    "name": "PAQUIN to CALVIN 2",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "31e02a39-2b6c-4e81-935f-799e626e5473",
+    "uploadBandwidthMbps": 10000
+  },
+  "PAQUIN to KOPN": {
+    "children": {
+      "KOPN to PAQUIN": {
+        "children": {
+          "KOPNTower": {
+            "children": {
+              "KOPN": {
+                "children": {},
+                "downloadBandwidthMbps": 77,
+                "name": "KOPN",
+                "parent_site": "KOPNTower",
+                "type": "AP",
+                "uisp_device": "5139a635-ae2b-40c2-ae2d-fc0f8b5f9336",
+                "uploadBandwidthMbps": 57
+              },
+              "KOPN Cambium epmp1000": {
+                "children": {},
+                "downloadBandwidthMbps": 77,
+                "name": "KOPN Cambium epmp1000",
+                "parent_site": "KOPNTower",
+                "type": "AP",
+                "uisp_device": "e035ffbb-9eda-4f76-83e9-12d2af44f135",
+                "uploadBandwidthMbps": 57
+              },
+              "KOPN Hex Router": {
+                "children": {},
+                "downloadBandwidthMbps": 77,
+                "name": "KOPN Hex Router",
+                "parent_site": "KOPNTower",
+                "type": "AP",
+                "uisp_device": "c6b0e5e5-4a34-4605-9436-ff62145ab50e",
+                "uploadBandwidthMbps": 57
+              },
+              "KOPN s1 u58 90N": {
+                "children": {},
+                "downloadBandwidthMbps": 69,
+                "name": "KOPN s1 u58 90N",
+                "parent_site": "KOPNTower",
+                "type": "AP",
+                "uisp_device": "ac89c0fb-3d94-4897-8ce0-879ea723ee5b",
+                "uploadBandwidthMbps": 26
+              },
+              "KOPN s2 u58 90E": {
+                "children": {},
+                "downloadBandwidthMbps": 77,
+                "name": "KOPN s2 u58 90E",
+                "parent_site": "KOPNTower",
+                "type": "AP",
+                "uisp_device": "9e0cc505-8442-40b7-8a88-467834810b8a",
+                "uploadBandwidthMbps": 57
+              },
+              "KOPN s3 u58 90S": {
+                "children": {
+                  "STATLER BH KOPN": {
+                    "children": {
+                      "STATLER": {
+                        "children": {
+                          "STATLER s1 u24 Omni": {
+                            "children": {},
+                            "downloadBandwidthMbps": 32,
+                            "name": "STATLER s1 u24 Omni",
+                            "parent_site": "STATLER",
+                            "type": "AP",
+                            "uisp_device": "843ffa92-7532-4aa4-835c-2caef23f4dcb",
+                            "uploadBandwidthMbps": 57
+                          },
+                          "StatlerStitcherMKT": {
+                            "children": {},
+                            "downloadBandwidthMbps": 77,
+                            "name": "StatlerStitcherMKT",
+                            "parent_site": "STATLER",
+                            "type": "AP",
+                            "uisp_device": "ae362bce-2984-478f-baa5-41cc927d58aa",
+                            "uploadBandwidthMbps": 57
+                          }
+                        },
+                        "downloadBandwidthMbps": 77,
+                        "name": "STATLER",
+                        "parent_site": "STATLER",
+                        "type": "Site",
+                        "uisp_site": "48945845-e7c6-4397-90b0-9c6c7414a487",
+                        "uploadBandwidthMbps": 57
+                      }
+                    },
+                    "downloadBandwidthMbps": 51,
+                    "name": "STATLER BH KOPN",
+                    "parent_site": "STATLER",
+                    "type": "AP",
+                    "uisp_device": "fe247a43-d3ee-42bd-81c6-58158826b3a2",
+                    "uploadBandwidthMbps": 57
+                  }
+                },
+                "downloadBandwidthMbps": 77,
+                "name": "KOPN s3 u58 90S",
+                "parent_site": "KOPNTower",
+                "type": "AP",
+                "uisp_device": "53fb0f98-7799-4f1c-851a-ea5116fc6ad7",
+                "uploadBandwidthMbps": 57
+              },
+              "KOPN s4 u58 90W": {
+                "children": {},
+                "downloadBandwidthMbps": 77,
+                "name": "KOPN s4 u58 90W",
+                "parent_site": "KOPNTower",
+                "type": "AP",
+                "uisp_device": "10c9a168-4688-4e48-88c5-5a36b2d4937b",
+                "uploadBandwidthMbps": 57
+              }
+            },
+            "downloadBandwidthMbps": 77,
+            "name": "KOPNTower",
+            "parent_site": "KOPNTower",
+            "type": "Site",
+            "uisp_site": "40188565-6ac7-4338-b86c-ab63ac7e9fd2",
+            "uploadBandwidthMbps": 57
+          }
+        },
+        "downloadBandwidthMbps": 77,
+        "name": "KOPN to PAQUIN",
+        "parent_site": "KOPNTower",
+        "type": "AP",
+        "uisp_device": "af046992-8631-4e10-889e-93435fa64f77",
+        "uploadBandwidthMbps": 57
+      }
+    },
+    "downloadBandwidthMbps": 77,
+    "name": "PAQUIN to KOPN",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "0a9f199c-861e-4bc8-ba22-bb04c64de0b7",
+    "uploadBandwidthMbps": 57
+  },
+  "PAQUIN to ROB": {
+    "children": {
+      "Rob to Paquin": {
+        "children": {
+          "ROBS": {
+            "children": {
+              "ROB s1 u58 Omni": {
+                "children": {},
+                "downloadBandwidthMbps": 76,
+                "name": "ROB s1 u58 Omni",
+                "parent_site": "ROBS",
+                "type": "AP",
+                "uisp_device": "683aa645-3700-4718-8b90-027485d2ee2a",
+                "uploadBandwidthMbps": 48
+              },
+              "Rob Mikrotik": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "Rob Mikrotik",
+                "parent_site": "ROBS",
+                "type": "AP",
+                "uisp_device": "2d417db1-6b17-4a87-9bb6-cf30104c49cf",
+                "uploadBandwidthMbps": 10000
+              }
+            },
+            "downloadBandwidthMbps": 10000,
+            "name": "ROBS",
+            "parent_site": "ROBS",
+            "type": "Site",
+            "uisp_site": "5889ec4e-a171-41ba-ad63-e0370f900f6b",
+            "uploadBandwidthMbps": 10000
+          }
+        },
+        "downloadBandwidthMbps": 10000,
+        "name": "Rob to Paquin",
+        "parent_site": "ROBS",
+        "type": "AP",
+        "uisp_device": "86d5a41f-930c-4fb2-994b-287e51dc47b1",
+        "uploadBandwidthMbps": 10000
+      }
+    },
+    "downloadBandwidthMbps": 10000,
+    "name": "PAQUIN to ROB",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "7c9858c6-6a0a-4cc5-973b-f92097d21764",
+    "uploadBandwidthMbps": 10000
+  },
+  "PAQUIN to SWIFT": {
+    "children": {
+      "SWIFT to PAQUIN": {
+        "children": {
+          "SWIFT": {
+            "children": {
+              "SWIFT s1 u58 Omni": {
+                "children": {},
+                "downloadBandwidthMbps": 60,
+                "name": "SWIFT s1 u58 Omni",
+                "parent_site": "SWIFT",
+                "type": "AP",
+                "uisp_device": "976e2cbc-4532-4e2d-b557-01024b03b74a",
+                "uploadBandwidthMbps": 46
+              }
+            },
+            "downloadBandwidthMbps": 60,
+            "name": "SWIFT",
+            "parent_site": "SWIFT",
+            "type": "Site",
+            "uisp_site": "ca73d611-2c1b-4cc4-8cf5-8760507f0e05",
+            "uploadBandwidthMbps": 46
+          }
+        },
+        "downloadBandwidthMbps": 60,
+        "name": "SWIFT to PAQUIN",
+        "parent_site": "SWIFT",
+        "type": "AP",
+        "uisp_device": "24ff7958-409c-442f-9950-1af9c126c1f1",
+        "uploadBandwidthMbps": 46
+      }
+    },
+    "downloadBandwidthMbps": 60,
+    "name": "PAQUIN to SWIFT",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "19d09e00-946c-487a-82e0-fcc1e2fc9801",
+    "uploadBandwidthMbps": 46
+  },
+  "PAQUIN to TIGER": {
+    "children": {
+      "TIGER to PAQUIN": {
+        "children": {
+          "TIGER": {
+            "children": {
+              "MT-TIGERBR": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "MT-TIGERBR",
+                "parent_site": "TIGER",
+                "type": "AP",
+                "uisp_device": "dbb2e80f-dfff-4d17-836d-a4063eae2e4d",
+                "uploadBandwidthMbps": 10000
+              },
+              "TIGER TO CALVIN2": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "TIGER TO CALVIN2",
+                "parent_site": "TIGER",
+                "type": "AP",
+                "uisp_device": "4aacc121-e5b2-4808-bf5b-222ac2a634cf",
+                "uploadBandwidthMbps": 10000
+              },
+              "TIGER TO WOOLWATER": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "TIGER TO WOOLWATER",
+                "parent_site": "TIGER",
+                "type": "AP",
+                "uisp_device": "79bbb99c-628f-47c5-8f0f-fc96f15051d1",
+                "uploadBandwidthMbps": 10000
+              },
+              "TIGER TO WOOLWATER2": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "TIGER TO WOOLWATER2",
+                "parent_site": "TIGER",
+                "type": "AP",
+                "uisp_device": "068f7eca-5993-4d81-a7a5-84e6984a03ec",
+                "uploadBandwidthMbps": 10000
+              },
+              "TIGER to CALVIN": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "TIGER to CALVIN",
+                "parent_site": "TIGER",
+                "type": "AP",
+                "uisp_device": "a5810a11-1ac0-4d55-97a7-8b09ac31aace",
+                "uploadBandwidthMbps": 10000
+              },
+              "Tiger Downtown DISABLED": {
+                "children": {},
+                "downloadBandwidthMbps": 6499,
+                "name": "Tiger Downtown DISABLED",
+                "parent_site": "TIGER",
+                "type": "AP",
+                "uisp_device": "83768453-b8a9-45c0-8f97-97c5088237c6",
+                "uploadBandwidthMbps": 6499
+              },
+              "Tiger Hotel Park Ave": {
+                "children": {},
+                "downloadBandwidthMbps": 131,
+                "name": "Tiger Hotel Park Ave",
+                "parent_site": "TIGER",
+                "type": "AP",
+                "uisp_device": "44982d92-851a-43fa-a34f-e4a0c9385b4b",
+                "uploadBandwidthMbps": 93
+              },
+              "Tiger Hotel to Park Ave Relay": {
+                "children": {},
+                "downloadBandwidthMbps": 51,
+                "name": "Tiger Hotel to Park Ave Relay",
+                "parent_site": "TIGER",
+                "type": "AP",
+                "uisp_device": "2d256021-8007-4476-9373-cd73a2213bdb",
+                "uploadBandwidthMbps": 77
+              },
+              "Tiger North": {
+                "children": {},
+                "downloadBandwidthMbps": 6499,
+                "name": "Tiger North",
+                "parent_site": "TIGER",
+                "type": "AP",
+                "uisp_device": "dd5d782b-a745-4270-86cc-443de51b1aae",
+                "uploadBandwidthMbps": 6499
+              },
+              "Tiger to GLP": {
+                "children": {},
+                "downloadBandwidthMbps": 649,
+                "name": "Tiger to GLP",
+                "parent_site": "TIGER",
+                "type": "AP",
+                "uisp_device": "cd2146a3-3b5b-4f11-83fb-c3b01169569b",
+                "uploadBandwidthMbps": 649
+              },
+              "Tiger to Paquin 60 Ghz": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "Tiger to Paquin 60 Ghz",
+                "parent_site": "TIGER",
+                "type": "AP",
+                "uisp_device": "61f36b9e-0130-4f44-b4c2-d1e7c5292b5e",
+                "uploadBandwidthMbps": 10000
+              },
+              "TigerParkER": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "TigerParkER",
+                "parent_site": "TIGER",
+                "type": "AP",
+                "uisp_device": "3213915b-1e36-4339-8e2f-57053e325cc8",
+                "uploadBandwidthMbps": 10000
+              }
+            },
+            "downloadBandwidthMbps": 10000,
+            "name": "TIGER",
+            "parent_site": "TIGER",
+            "type": "Site",
+            "uisp_site": "46283ad6-282c-4b14-808e-582872dcc988",
+            "uploadBandwidthMbps": 10000
+          }
+        },
+        "downloadBandwidthMbps": 10000,
+        "name": "TIGER to PAQUIN",
+        "parent_site": "TIGER",
+        "type": "AP",
+        "uisp_device": "4f8bd2fe-2a33-4c1f-8d5c-b4b3542516fb",
+        "uploadBandwidthMbps": 10000
+      }
+    },
+    "downloadBandwidthMbps": 10000,
+    "name": "PAQUIN to TIGER",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "b6e21c3e-bf89-4467-9f9f-6884bd29c7f3",
+    "uploadBandwidthMbps": 10000
+  },
+  "PAQUIN2 to ZIMMER2": {
+    "children": {
+      "ZIMMER2-to-PAQUIN2": {
+        "children": {
+          "ZIMMER": {
+            "children": {
+              "Z": {
+                "children": {},
+                "downloadBandwidthMbps": 1951,
+                "name": "Z",
+                "parent_site": "ZIMMER",
+                "type": "AP",
+                "uisp_device": "35359e27-68ad-4c9a-b95a-7d1289fd21e4",
+                "uploadBandwidthMbps": 1951
+              },
+              "ZIMMER to ASPEN": {
+                "children": {},
+                "downloadBandwidthMbps": 1951,
+                "name": "ZIMMER to ASPEN",
+                "parent_site": "ZIMMER",
+                "type": "AP",
+                "uisp_device": "3710e288-1dcf-44ca-b7a2-29d6c9fafb8d",
+                "uploadBandwidthMbps": 1951
+              },
+              "ZIMMER to PAQUIN": {
+                "children": {},
+                "downloadBandwidthMbps": 1000,
+                "name": "ZIMMER to PAQUIN",
+                "parent_site": "ZIMMER",
+                "type": "AP",
+                "uisp_device": "bab963bc-9734-4c3f-9bbb-4b8e81e72fe5",
+                "uploadBandwidthMbps": 1000
+              },
+              "ZIMMER2 to ASPEN2": {
+                "children": {},
+                "downloadBandwidthMbps": 100,
+                "name": "ZIMMER2 to ASPEN2",
+                "parent_site": "ZIMMER",
+                "type": "AP",
+                "uisp_device": "612f2116-44fb-46ff-9d18-24f18ce92d69",
+                "uploadBandwidthMbps": 100
+              },
+              "ZIMMER3-to-ASPEN3": {
+                "children": {},
+                "downloadBandwidthMbps": 1951,
+                "name": "ZIMMER3-to-ASPEN3",
+                "parent_site": "ZIMMER",
+                "type": "AP",
+                "uisp_device": "d2cb9083-6a38-49c0-aeeb-0ca7c93d93dd",
+                "uploadBandwidthMbps": 1951
+              },
+              "Zimmer HEX": {
+                "children": {},
+                "downloadBandwidthMbps": 1000,
+                "name": "Zimmer HEX",
+                "parent_site": "ZIMMER",
+                "type": "AP",
+                "uisp_device": "16cd264a-03fb-4a62-a23b-e8cb6fb936f1",
+                "uploadBandwidthMbps": 1000
+              },
+              "Zimmer IP": {
+                "children": {},
+                "downloadBandwidthMbps": 1951,
+                "name": "Zimmer IP",
+                "parent_site": "ZIMMER",
+                "type": "AP",
+                "uisp_device": "67494669-f439-4803-9740-45b209907835",
+                "uploadBandwidthMbps": 1951
+              }
+            },
+            "downloadBandwidthMbps": 1951,
+            "name": "ZIMMER",
+            "parent_site": "ZIMMER",
+            "type": "Site",
+            "uisp_site": "87fb93da-624c-46d4-a1fb-b26fa86e9098",
+            "uploadBandwidthMbps": 1951
+          }
+        },
+        "downloadBandwidthMbps": 1951,
+        "name": "ZIMMER2-to-PAQUIN2",
+        "parent_site": "ZIMMER",
+        "type": "AP",
+        "uisp_device": "c69687c8-f19c-42ab-a707-f08aa34994ab",
+        "uploadBandwidthMbps": 1951
+      }
+    },
+    "downloadBandwidthMbps": 1951,
+    "name": "PAQUIN2 to ZIMMER2",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "618a41de-0cef-482a-98c0-d77503b1ab38",
+    "uploadBandwidthMbps": 1951
+  },
+  "Paquin Edge MT": {
+    "children": {},
+    "downloadBandwidthMbps": 10000,
+    "name": "Paquin Edge MT",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "fbd9f77b-84e5-4644-b832-19c9a42e269a",
+    "uploadBandwidthMbps": 10000
+  },
+  "Paquin Exterior CHR VM": {
+    "children": {},
+    "downloadBandwidthMbps": 10000,
+    "name": "Paquin Exterior CHR VM",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "636dd435-9be5-44eb-8be0-8648241752ed",
+    "uploadBandwidthMbps": 10000
+  },
+  "Paquin External 10G Switch": {
+    "children": {},
+    "downloadBandwidthMbps": 10000,
+    "name": "Paquin External 10G Switch",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "0e5dce98-3cc8-4858-b94a-1bbf1a473dba",
+    "uploadBandwidthMbps": 10000
+  },
+  "Paquin Interior CHR VM": {
+    "children": {},
+    "downloadBandwidthMbps": 10000,
+    "name": "Paquin Interior CHR VM",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "16c4e92e-915c-4712-a3b0-423cc885022e",
+    "uploadBandwidthMbps": 10000
+  },
+  "Paquin Procurve": {
+    "children": {},
+    "downloadBandwidthMbps": 10000,
+    "name": "Paquin Procurve",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "fc7f6357-41be-4f84-b906-f3f173715e0a",
+    "uploadBandwidthMbps": 10000
+  },
+  "Paquin Sector NW2 AC": {
+    "children": {
+      "ATKINS BH PAQUIN": {
+        "children": {
+          "ATKINS": {
+            "children": {
+              "ATKINS s1 u58 Omni": {
+                "children": {
+                  "SENIORCENTER BH ATKINS": {
+                    "children": {
+                      "SENIORCENTER": {
+                        "children": {
+                          "SENIORCENTER s1 u58 Omni": {
+                            "children": {},
+                            "downloadBandwidthMbps": 48,
+                            "name": "SENIORCENTER s1 u58 Omni",
+                            "parent_site": "SENIORCENTER",
+                            "type": "AP",
+                            "uisp_device": "f86c3427-1929-4fce-8d1c-488a7f35d20f",
+                            "uploadBandwidthMbps": 19
+                          }
+                        },
+                        "downloadBandwidthMbps": 48,
+                        "name": "SENIORCENTER",
+                        "parent_site": "SENIORCENTER",
+                        "type": "Site",
+                        "uisp_site": "c531bb81-b787-45e4-9a71-f3c8f7cfa42a",
+                        "uploadBandwidthMbps": 19
+                      }
+                    },
+                    "downloadBandwidthMbps": 48,
+                    "name": "SENIORCENTER BH ATKINS",
+                    "parent_site": "SENIORCENTER",
+                    "type": "AP",
+                    "uisp_device": "f489ae8a-f86b-4fa3-bded-59c1c09be266",
+                    "uploadBandwidthMbps": 19
+                  }
+                },
+                "downloadBandwidthMbps": 48,
+                "name": "ATKINS s1 u58 Omni",
+                "parent_site": "ATKINS",
+                "type": "AP",
+                "uisp_device": "70bbcc9c-d377-4afe-8c10-c1931e4c63a9",
+                "uploadBandwidthMbps": 19
+              }
+            },
+            "downloadBandwidthMbps": 48,
+            "name": "ATKINS",
+            "parent_site": "ATKINS",
+            "type": "Site",
+            "uisp_site": "74929b74-973a-4b51-8a76-675e0dbacdb8",
+            "uploadBandwidthMbps": 19
+          }
+        },
+        "downloadBandwidthMbps": 3,
+        "name": "ATKINS BH PAQUIN",
+        "parent_site": "ATKINS",
+        "type": "AP",
+        "uisp_device": "c1ceaf36-ebd1-4589-82fe-e2f2fc97a44b",
+        "uploadBandwidthMbps": 1
+      },
+      "Guitar Building": {
+        "children": {
+          "GUITAR": {
+            "children": {},
+            "downloadBandwidthMbps": 48,
+            "name": "GUITAR",
+            "parent_site": "GUITAR",
+            "type": "Site",
+            "uisp_site": "f00dcdb3-718f-4375-b437-04fe3c030c25",
+            "uploadBandwidthMbps": 19
+          }
+        },
+        "downloadBandwidthMbps": 48,
+        "name": "Guitar Building",
+        "parent_site": "GUITAR",
+        "type": "AP",
+        "uisp_device": "9ff9a5b7-eb1d-49b8-8eb1-041fd26e994b",
+        "uploadBandwidthMbps": 19
+      }
+    },
+    "downloadBandwidthMbps": 6499,
+    "name": "Paquin Sector NW2 AC",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "5d834728-8a03-4c78-b02e-fd0626e1d0c6",
+    "uploadBandwidthMbps": 6499
+  },
+  "Paquin Sector SE AC": {
+    "children": {
+      "Bass Ave Apts": {
+        "children": {
+          "1411 BASS": {
+            "children": {
+              "Bass Avenue Mikrotik": {
+                "children": {},
+                "downloadBandwidthMbps": 74,
+                "name": "Bass Avenue Mikrotik",
+                "parent_site": "1411 BASS",
+                "type": "AP",
+                "uisp_device": "f3c0b97d-4ad0-4b2a-b77d-95fdaaf849a9",
+                "uploadBandwidthMbps": 59
+              },
+              "BassAvePower": {
+                "children": {},
+                "downloadBandwidthMbps": 74,
+                "name": "BassAvePower",
+                "parent_site": "1411 BASS",
+                "type": "AP",
+                "uisp_device": "6ce3c008-b65b-4f81-9c35-36405dfbba80",
+                "uploadBandwidthMbps": 59
+              }
+            },
+            "downloadBandwidthMbps": 74,
+            "name": "1411 BASS",
+            "parent_site": "1411 BASS",
+            "type": "Site",
+            "uisp_site": "850e1ecb-a9dc-41bb-a311-b80842ec9aed",
+            "uploadBandwidthMbps": 59
+          }
+        },
+        "downloadBandwidthMbps": 74,
+        "name": "Bass Ave Apts",
+        "parent_site": "1411 BASS",
+        "type": "AP",
+        "uisp_device": "00cc079b-894c-413b-b3d7-746d4c101146",
+        "uploadBandwidthMbps": 55
+      }
+    },
+    "downloadBandwidthMbps": 74,
+    "name": "Paquin Sector SE AC",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "78c3aff2-03aa-4c71-8564-8077be02e93c",
+    "uploadBandwidthMbps": 59
+  },
+  "Paquin TO FSW": {
+    "children": {
+      "FSW Roof": {
+        "children": {
+          "FSW": {
+            "children": {
+              "172.16.10.193": {
+                "children": {},
+                "downloadBandwidthMbps": 66,
+                "name": "172.16.10.193",
+                "parent_site": "FSW",
+                "type": "AP",
+                "uisp_device": "ee2f6a58-effd-4dda-944b-afc31e6e7ea0",
+                "uploadBandwidthMbps": 41
+              },
+              "172.16.10.194": {
+                "children": {},
+                "downloadBandwidthMbps": 66,
+                "name": "172.16.10.194",
+                "parent_site": "FSW",
+                "type": "AP",
+                "uisp_device": "b8bef2b6-17cd-45cd-b114-46527d159729",
+                "uploadBandwidthMbps": 41
+              },
+              "172.16.10.195": {
+                "children": {},
+                "downloadBandwidthMbps": 66,
+                "name": "172.16.10.195",
+                "parent_site": "FSW",
+                "type": "AP",
+                "uisp_device": "ed8ca1c9-d3fc-4e44-bff7-53593b7c4461",
+                "uploadBandwidthMbps": 41
+              },
+              "172.16.10.200": {
+                "children": {},
+                "downloadBandwidthMbps": 66,
+                "name": "172.16.10.200",
+                "parent_site": "FSW",
+                "type": "AP",
+                "uisp_device": "1b5985f1-4427-417a-b34d-4e3a3ce52d0e",
+                "uploadBandwidthMbps": 41
+              },
+              "172.16.10.201": {
+                "children": {},
+                "downloadBandwidthMbps": 66,
+                "name": "172.16.10.201",
+                "parent_site": "FSW",
+                "type": "AP",
+                "uisp_device": "aa966f73-5f64-4675-a090-743ed7db7e92",
+                "uploadBandwidthMbps": 41
+              },
+              "172.16.10.202": {
+                "children": {},
+                "downloadBandwidthMbps": 66,
+                "name": "172.16.10.202",
+                "parent_site": "FSW",
+                "type": "AP",
+                "uisp_device": "b850c158-5a38-485b-a14e-cb8c23f7cfbe",
+                "uploadBandwidthMbps": 41
+              },
+              "172.16.10.211": {
+                "children": {},
+                "downloadBandwidthMbps": 66,
+                "name": "172.16.10.211",
+                "parent_site": "FSW",
+                "type": "AP",
+                "uisp_device": "65710cea-cebc-4d66-8fc1-5046dde2961e",
+                "uploadBandwidthMbps": 41
+              },
+              "172.16.10.212": {
+                "children": {},
+                "downloadBandwidthMbps": 66,
+                "name": "172.16.10.212",
+                "parent_site": "FSW",
+                "type": "AP",
+                "uisp_device": "e5719bab-1c0b-4a7f-9e19-1bf7bf4c090a",
+                "uploadBandwidthMbps": 41
+              },
+              "172.16.10.22": {
+                "children": {},
+                "downloadBandwidthMbps": 66,
+                "name": "172.16.10.22",
+                "parent_site": "FSW",
+                "type": "AP",
+                "uisp_device": "086d470e-003b-4bd3-a874-a388e6f81fd1",
+                "uploadBandwidthMbps": 41
+              },
+              "172.16.10.25": {
+                "children": {},
+                "downloadBandwidthMbps": 66,
+                "name": "172.16.10.25",
+                "parent_site": "FSW",
+                "type": "AP",
+                "uisp_device": "df580e85-f667-4717-9be3-5b5b32cce866",
+                "uploadBandwidthMbps": 41
+              },
+              "172.16.10.252": {
+                "children": {},
+                "downloadBandwidthMbps": 66,
+                "name": "172.16.10.252",
+                "parent_site": "FSW",
+                "type": "AP",
+                "uisp_device": "9953c191-c32c-46dc-8a70-cd7245e719be",
+                "uploadBandwidthMbps": 41
+              },
+              "172.16.10.27": {
+                "children": {},
+                "downloadBandwidthMbps": 66,
+                "name": "172.16.10.27",
+                "parent_site": "FSW",
+                "type": "AP",
+                "uisp_device": "e774dcef-d117-4319-8b76-483b49814f87",
+                "uploadBandwidthMbps": 41
+              },
+              "172.16.10.30": {
+                "children": {},
+                "downloadBandwidthMbps": 66,
+                "name": "172.16.10.30",
+                "parent_site": "FSW",
+                "type": "AP",
+                "uisp_device": "9ee67a8f-ab57-4ff5-81a7-aa0b7b6f1dbd",
+                "uploadBandwidthMbps": 41
+              },
+              "172.16.10.40": {
+                "children": {},
+                "downloadBandwidthMbps": 66,
+                "name": "172.16.10.40",
+                "parent_site": "FSW",
+                "type": "AP",
+                "uisp_device": "eab82e00-a4da-4efb-a3dc-ef0b8e8fffa3",
+                "uploadBandwidthMbps": 41
+              },
+              "172.16.10.44": {
+                "children": {},
+                "downloadBandwidthMbps": 66,
+                "name": "172.16.10.44",
+                "parent_site": "FSW",
+                "type": "AP",
+                "uisp_device": "8e216c3f-f9a8-4597-813d-b45553472336",
+                "uploadBandwidthMbps": 41
+              },
+              "172.16.10.46": {
+                "children": {},
+                "downloadBandwidthMbps": 66,
+                "name": "172.16.10.46",
+                "parent_site": "FSW",
+                "type": "AP",
+                "uisp_device": "2f11d781-1854-40a7-9c7f-a19647b3957f",
+                "uploadBandwidthMbps": 41
+              },
+              "172.16.10.47": {
+                "children": {},
+                "downloadBandwidthMbps": 66,
+                "name": "172.16.10.47",
+                "parent_site": "FSW",
+                "type": "AP",
+                "uisp_device": "48ee9bc8-f4f0-4c55-9491-8ef6bedc729e",
+                "uploadBandwidthMbps": 41
+              },
+              "172.16.10.51": {
+                "children": {},
+                "downloadBandwidthMbps": 66,
+                "name": "172.16.10.51",
+                "parent_site": "FSW",
+                "type": "AP",
+                "uisp_device": "69f5d715-81e4-4058-aa44-d79b8861a680",
+                "uploadBandwidthMbps": 41
+              },
+              "Billing Server": {
+                "children": {},
+                "downloadBandwidthMbps": 66,
+                "name": "Billing Server",
+                "parent_site": "FSW",
+                "type": "AP",
+                "uisp_device": "f4a6710f-12d4-4ed9-9287-41203bfa00ce",
+                "uploadBandwidthMbps": 41
+              },
+              "DNS1-VM": {
+                "children": {},
+                "downloadBandwidthMbps": 66,
+                "name": "DNS1-VM",
+                "parent_site": "FSW",
+                "type": "AP",
+                "uisp_device": "c472b819-f480-452b-82cb-0c08fa81ab5a",
+                "uploadBandwidthMbps": 41
+              },
+              "FSW PBX": {
+                "children": {},
+                "downloadBandwidthMbps": 66,
+                "name": "FSW PBX",
+                "parent_site": "FSW",
+                "type": "AP",
+                "uisp_device": "85d2c4c7-b08e-45d2-8513-279f91e415b7",
+                "uploadBandwidthMbps": 41
+              },
+              "FSW Roof Pole": {
+                "children": {},
+                "downloadBandwidthMbps": 66,
+                "name": "FSW Roof Pole",
+                "parent_site": "FSW",
+                "type": "AP",
+                "uisp_device": "961624dd-1c37-4c10-aa02-4ef21252388f",
+                "uploadBandwidthMbps": 41
+              },
+              "FSW Tower Router": {
+                "children": {},
+                "downloadBandwidthMbps": 66,
+                "name": "FSW Tower Router",
+                "parent_site": "FSW",
+                "type": "AP",
+                "uisp_device": "191b04e7-5e8a-49e7-9123-6eb1086d0c69",
+                "uploadBandwidthMbps": 41
+              },
+              "FSW West Clients Mikrotik": {
+                "children": {},
+                "downloadBandwidthMbps": 66,
+                "name": "FSW West Clients Mikrotik",
+                "parent_site": "FSW",
+                "type": "AP",
+                "uisp_device": "82e64fcb-6b16-4631-92a8-9c02eb849fbb",
+                "uploadBandwidthMbps": 41
+              },
+              "VMWare": {
+                "children": {},
+                "downloadBandwidthMbps": 66,
+                "name": "VMWare",
+                "parent_site": "FSW",
+                "type": "AP",
+                "uisp_device": "f4270cdb-e084-4360-b97c-efa0c2ff0647",
+                "uploadBandwidthMbps": 41
+              },
+              "Wave Long-Range": {
+                "children": {},
+                "downloadBandwidthMbps": 66,
+                "name": "Wave Long-Range",
+                "parent_site": "FSW",
+                "type": "AP",
+                "uisp_device": "64accba2-3cca-4ff2-9197-200f33765e12",
+                "uploadBandwidthMbps": 41
+              }
+            },
+            "downloadBandwidthMbps": 66,
+            "name": "FSW",
+            "parent_site": "FSW",
+            "type": "Site",
+            "uisp_site": "8ee239d8-5d39-4d8d-bf9a-9216b21a1493",
+            "uploadBandwidthMbps": 41
+          }
+        },
+        "downloadBandwidthMbps": 66,
+        "name": "FSW Roof",
+        "parent_site": "FSW",
+        "type": "AP",
+        "uisp_device": "5107479f-f313-4c54-8f21-bab496c5280c",
+        "uploadBandwidthMbps": 27
+      }
+    },
+    "downloadBandwidthMbps": 66,
+    "name": "Paquin TO FSW",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "c5975e76-4a4f-47a0-9a6f-2ac93df69404",
+    "uploadBandwidthMbps": 41
+  },
+  "Paquin WISP Switch": {
+    "children": {},
+    "downloadBandwidthMbps": 10000,
+    "name": "Paquin WISP Switch",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "0c8b796f-1c76-49ad-82e4-0890d217d3e2",
+    "uploadBandwidthMbps": 10000
+  },
+  "Paquin Wave North": {
+    "children": {},
+    "downloadBandwidthMbps": 10000,
+    "name": "Paquin Wave North",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "11eebbe4-5a2c-45d6-ace7-ba74fe9a179c",
+    "uploadBandwidthMbps": 10000
+  },
+  "Paquin to GLP": {
+    "children": {},
+    "downloadBandwidthMbps": 57,
+    "name": "Paquin to GLP",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "37e92c22-7c1a-493b-8a81-69ee18e3f9f6",
+    "uploadBandwidthMbps": 72
+  },
+  "Paquin to Midway AC": {
+    "children": {
+      "ANTIQUE to PAQUIN": {
+        "children": {
+          "MIDWAY ANTIQUE RELAY": {
+            "children": {
+              "ANTIQUE s1 u58 90E": {
+                "children": {},
+                "downloadBandwidthMbps": 5,
+                "name": "ANTIQUE s1 u58 90E",
+                "parent_site": "MIDWAY ANTIQUE RELAY",
+                "type": "AP",
+                "uisp_device": "dfa4eb86-b4b2-4d7b-9aff-f546765d4d49",
+                "uploadBandwidthMbps": 18
+              }
+            },
+            "downloadBandwidthMbps": 79,
+            "name": "MIDWAY ANTIQUE RELAY",
+            "parent_site": "MIDWAY ANTIQUE RELAY",
+            "type": "Site",
+            "uisp_site": "1605fdbf-28f2-4d19-a59b-5263a9b2ba43",
+            "uploadBandwidthMbps": 80
+          }
+        },
+        "downloadBandwidthMbps": 79,
+        "name": "ANTIQUE to PAQUIN",
+        "parent_site": "MIDWAY ANTIQUE RELAY",
+        "type": "AP",
+        "uisp_device": "4d34e443-6d9d-4389-8ede-c615af41c3da",
+        "uploadBandwidthMbps": 73
+      },
+      "MIDWAY to PAQUIN": {
+        "children": {
+          "MIDWAY": {
+            "children": {
+              "MIDWAY s1 u58 Omni": {
+                "children": {},
+                "downloadBandwidthMbps": 79,
+                "name": "MIDWAY s1 u58 Omni",
+                "parent_site": "MIDWAY",
+                "type": "AP",
+                "uisp_device": "dca59150-36f4-4e5c-aaed-6f3e0ea9a2db",
+                "uploadBandwidthMbps": 80
+              },
+              "Midway Travel Center": {
+                "children": {},
+                "downloadBandwidthMbps": 79,
+                "name": "Midway Travel Center",
+                "parent_site": "MIDWAY",
+                "type": "AP",
+                "uisp_device": "227b56f9-d594-4500-9603-019fc644c3f4",
+                "uploadBandwidthMbps": 80
+              },
+              "MidwayTravelCenterER2": {
+                "children": {},
+                "downloadBandwidthMbps": 79,
+                "name": "MidwayTravelCenterER2",
+                "parent_site": "MIDWAY",
+                "type": "AP",
+                "uisp_device": "99ba6bb2-69c2-4417-ab0f-0e356d8361cc",
+                "uploadBandwidthMbps": 80
+              }
+            },
+            "downloadBandwidthMbps": 79,
+            "name": "MIDWAY",
+            "parent_site": "MIDWAY",
+            "type": "Site",
+            "uisp_site": "e83a4e64-356f-44c2-b091-2bc863e3ec27",
+            "uploadBandwidthMbps": 80
+          }
+        },
+        "downloadBandwidthMbps": 79,
+        "name": "MIDWAY to PAQUIN",
+        "parent_site": "MIDWAY",
+        "type": "AP",
+        "uisp_device": "af63c08d-4438-4e69-b66b-999a2840e088",
+        "uploadBandwidthMbps": 77
+      }
+    },
+    "downloadBandwidthMbps": 79,
+    "name": "Paquin to Midway AC",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "e78793d8-bae5-4376-89d5-3161e9b45ab5",
+    "uploadBandwidthMbps": 80
+  },
+  "Paquin to Tiger 60 Ghz": {
+    "children": {},
+    "downloadBandwidthMbps": 5,
+    "name": "Paquin to Tiger 60 Ghz",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "b338988d-4b58-48de-b1c6-8bab30d3bb45",
+    "uploadBandwidthMbps": 5
+  },
+  "Paquin-Edge": {
+    "children": {},
+    "downloadBandwidthMbps": 10000,
+    "name": "Paquin-Edge",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "9da1c156-455a-462b-b5ba-48db66e13667",
+    "uploadBandwidthMbps": 10000
+  },
+  "Paquin-to-Calvin": {
+    "children": {
+      "Calvin-to-Paquin": {
+        "children": {
+          "CALVIN": {
+            "children": {
+              "CALVIN 1": {
+                "children": {},
+                "downloadBandwidthMbps": 69,
+                "name": "CALVIN 1",
+                "parent_site": "CALVIN",
+                "type": "AP",
+                "uisp_device": "d79f04af-b2b3-47d0-80f1-40d27c8b2715",
+                "uploadBandwidthMbps": 48
+              },
+              "CALVIN 2": {
+                "children": {
+                  "GIESSMANN BH CALVIN": {
+                    "children": {
+                      "GIESSMANN": {
+                        "children": {
+                          "GIESSMANN s1 u58 Omni": {
+                            "children": {},
+                            "downloadBandwidthMbps": 18,
+                            "name": "GIESSMANN s1 u58 Omni",
+                            "parent_site": "GIESSMANN",
+                            "type": "AP",
+                            "uisp_device": "e7883946-4553-4287-a1f2-50b543c8d851",
+                            "uploadBandwidthMbps": 19
+                          }
+                        },
+                        "downloadBandwidthMbps": 18,
+                        "name": "GIESSMANN",
+                        "parent_site": "GIESSMANN",
+                        "type": "Site",
+                        "uisp_site": "62b2dcda-c3e8-41a4-a74d-24c9dacf7815",
+                        "uploadBandwidthMbps": 19
+                      }
+                    },
+                    "downloadBandwidthMbps": 18,
+                    "name": "GIESSMANN BH CALVIN",
+                    "parent_site": "GIESSMANN",
+                    "type": "AP",
+                    "uisp_device": "1d49566a-c143-417c-9847-c2381af33176",
+                    "uploadBandwidthMbps": 19
+                  }
+                },
+                "downloadBandwidthMbps": 100,
+                "name": "CALVIN 2",
+                "parent_site": "CALVIN",
+                "type": "AP",
+                "uisp_device": "0c466fee-13a7-47b2-a1ca-3ea896fc0645",
+                "uploadBandwidthMbps": 100
+              },
+              "CALVIN 3": {
+                "children": {},
+                "downloadBandwidthMbps": 61,
+                "name": "CALVIN 3",
+                "parent_site": "CALVIN",
+                "type": "AP",
+                "uisp_device": "a8699d56-3f32-4354-a0ff-c81e1f6c3234",
+                "uploadBandwidthMbps": 24
+              },
+              "CALVIN 4": {
+                "children": {},
+                "downloadBandwidthMbps": 79,
+                "name": "CALVIN 4",
+                "parent_site": "CALVIN",
+                "type": "AP",
+                "uisp_device": "40639f0a-319a-48a3-8aaf-892ee3704205",
+                "uploadBandwidthMbps": 80
+              },
+              "CALVIN EdgePower": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "CALVIN EdgePower",
+                "parent_site": "CALVIN",
+                "type": "AP",
+                "uisp_device": "8c55ea50-3e39-4269-b111-09c60bca2579",
+                "uploadBandwidthMbps": 10000
+              },
+              "CALVIN s5 u58 120SE": {
+                "children": {},
+                "downloadBandwidthMbps": 50,
+                "name": "CALVIN s5 u58 120SE",
+                "parent_site": "CALVIN",
+                "type": "AP",
+                "uisp_device": "51a0b277-aece-44ca-bca4-439ed5e0482c",
+                "uploadBandwidthMbps": 14
+              },
+              "CALVIN s6-120": {
+                "children": {},
+                "downloadBandwidthMbps": 649,
+                "name": "CALVIN s6-120",
+                "parent_site": "CALVIN",
+                "type": "AP",
+                "uisp_device": "bda32a3a-467f-4b6b-a164-7b5056ada36d",
+                "uploadBandwidthMbps": 649
+              },
+              "CALVIN s7 v58 LOW-120N": {
+                "children": {},
+                "downloadBandwidthMbps": 21,
+                "name": "CALVIN s7 v58 LOW-120N",
+                "parent_site": "CALVIN",
+                "type": "AP",
+                "uisp_device": "3aa50bbb-6404-4b9f-b509-60573e47a541",
+                "uploadBandwidthMbps": 10000
+              },
+              "CALVIN s8 u58 LOW-120N": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "CALVIN s8 u58 LOW-120N",
+                "parent_site": "CALVIN",
+                "type": "AP",
+                "uisp_device": "37eb4828-b5f9-4395-88c9-803beddb443d",
+                "uploadBandwidthMbps": 10000
+              },
+              "CALVIN s9 u58 LOW-120W": {
+                "children": {},
+                "downloadBandwidthMbps": 46,
+                "name": "CALVIN s9 u58 LOW-120W",
+                "parent_site": "CALVIN",
+                "type": "AP",
+                "uisp_device": "7622bc04-84e7-40fc-80a6-1d6ae9979a22",
+                "uploadBandwidthMbps": 68
+              },
+              "CALVIN to PAQUIN": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "CALVIN to PAQUIN",
+                "parent_site": "CALVIN",
+                "type": "AP",
+                "uisp_device": "7da0610a-e89e-4585-a4a2-2f69bcd48338",
+                "uploadBandwidthMbps": 10000
+              },
+              "CALVIN to PAQUIN 2": {
+                "children": {},
+                "downloadBandwidthMbps": 1000,
+                "name": "CALVIN to PAQUIN 2",
+                "parent_site": "CALVIN",
+                "type": "AP",
+                "uisp_device": "c2fe578e-7f07-4978-998f-77a993469d31",
+                "uploadBandwidthMbps": 1000
+              },
+              "CALVIN to WHITWORTH": {
+                "children": {
+                  "WHITWORTH to CALVIN": {
+                    "children": {
+                      "WHITTWORTH": {
+                        "children": {
+                          "WHITWORTH s1 u58 120N": {
+                            "children": {},
+                            "downloadBandwidthMbps": 2,
+                            "name": "WHITWORTH s1 u58 120N",
+                            "parent_site": "WHITTWORTH",
+                            "type": "AP",
+                            "uisp_device": "546d0015-66d8-4be9-8e01-bf577a82afaa",
+                            "uploadBandwidthMbps": 7
+                          },
+                          "WHITWORTH s2 u58 120SE": {
+                            "children": {},
+                            "downloadBandwidthMbps": 29,
+                            "name": "WHITWORTH s2 u58 120SE",
+                            "parent_site": "WHITTWORTH",
+                            "type": "AP",
+                            "uisp_device": "68785b17-b103-4717-ac23-5b26e32a6ee2",
+                            "uploadBandwidthMbps": 31
+                          },
+                          "WHITWORTH s3 u58 120SW": {
+                            "children": {},
+                            "downloadBandwidthMbps": 29,
+                            "name": "WHITWORTH s3 u58 120SW",
+                            "parent_site": "WHITTWORTH",
+                            "type": "AP",
+                            "uisp_device": "2ea0a3b0-2fb3-4118-8159-eb3ac5690dac",
+                            "uploadBandwidthMbps": 31
+                          },
+                          "Whitworth Dumb Switch": {
+                            "children": {},
+                            "downloadBandwidthMbps": 29,
+                            "name": "Whitworth Dumb Switch",
+                            "parent_site": "WHITTWORTH",
+                            "type": "AP",
+                            "uisp_device": "af640323-336d-4c16-89cd-fdeb1a484bfd",
+                            "uploadBandwidthMbps": 31
+                          }
+                        },
+                        "downloadBandwidthMbps": 29,
+                        "name": "WHITTWORTH",
+                        "parent_site": "WHITTWORTH",
+                        "type": "Site",
+                        "uisp_site": "4830b01f-2f34-49b9-8ede-e46268f96ebb",
+                        "uploadBandwidthMbps": 31
+                      }
+                    },
+                    "downloadBandwidthMbps": 29,
+                    "name": "WHITWORTH to CALVIN",
+                    "parent_site": "WHITTWORTH",
+                    "type": "AP",
+                    "uisp_device": "83a8b9dc-8034-4db1-83da-f8c6979419e9",
+                    "uploadBandwidthMbps": 31
+                  }
+                },
+                "downloadBandwidthMbps": 29,
+                "name": "CALVIN to WHITWORTH",
+                "parent_site": "CALVIN",
+                "type": "AP",
+                "uisp_device": "0ec5ae8c-daf4-4288-8ae4-df4d6392e45d",
+                "uploadBandwidthMbps": 31
+              },
+              "CALVIN-Edgepoint": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "CALVIN-Edgepoint",
+                "parent_site": "CALVIN",
+                "type": "AP",
+                "uisp_device": "daeffd3e-abac-4ce2-b5dc-db08cb4fb7e7",
+                "uploadBandwidthMbps": 10000
+              },
+              "Calvin HEX Router": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "Calvin HEX Router",
+                "parent_site": "CALVIN",
+                "type": "AP",
+                "uisp_device": "a7a57b0a-b0fc-4aac-82d5-6e920145a412",
+                "uploadBandwidthMbps": 10000
+              },
+              "Calvin Medusa": {
+                "children": {
+                  "BUCKNER BH": {
+                    "children": {
+                      "BUCKNER": {
+                        "children": {
+                          "BUCKNER s1 u58 360": {
+                            "children": {},
+                            "downloadBandwidthMbps": 31,
+                            "name": "BUCKNER s1 u58 360",
+                            "parent_site": "BUCKNER",
+                            "type": "AP",
+                            "uisp_device": "b85ae361-a2d0-4f15-bc63-670b66ea3c7a",
+                            "uploadBandwidthMbps": 41
+                          }
+                        },
+                        "downloadBandwidthMbps": 10000,
+                        "name": "BUCKNER",
+                        "parent_site": "BUCKNER",
+                        "type": "Site",
+                        "uisp_site": "df7291ee-e710-4158-ae1e-1dc7e3cb054b",
+                        "uploadBandwidthMbps": 10000
+                      }
+                    },
+                    "downloadBandwidthMbps": 10000,
+                    "name": "BUCKNER BH",
+                    "parent_site": "BUCKNER",
+                    "type": "AP",
+                    "uisp_device": "0f87b054-9110-489a-816b-e894d24deba8",
+                    "uploadBandwidthMbps": 10000
+                  },
+                  "TONY BH Medusa": {
+                    "children": {
+                      "TONY": {
+                        "children": {
+                          "TONY Hex Router": {
+                            "children": {},
+                            "downloadBandwidthMbps": 10000,
+                            "name": "TONY Hex Router",
+                            "parent_site": "TONY",
+                            "type": "AP",
+                            "uisp_device": "77d7afb1-92e0-425e-bd21-438f978be39d",
+                            "uploadBandwidthMbps": 10000
+                          },
+                          "TONY s1 u58 Omni AC": {
+                            "children": {},
+                            "downloadBandwidthMbps": 79,
+                            "name": "TONY s1 u58 Omni AC",
+                            "parent_site": "TONY",
+                            "type": "AP",
+                            "uisp_device": "8c97459f-4741-46eb-9cd2-092b1369c620",
+                            "uploadBandwidthMbps": 64
+                          },
+                          "Tony Omni AC": {
+                            "children": {},
+                            "downloadBandwidthMbps": 32,
+                            "name": "Tony Omni AC",
+                            "parent_site": "TONY",
+                            "type": "AP",
+                            "uisp_device": "c44bab4e-07a0-43d9-8e7b-e3e0486c026d",
+                            "uploadBandwidthMbps": 32
+                          }
+                        },
+                        "downloadBandwidthMbps": 10000,
+                        "name": "TONY",
+                        "parent_site": "TONY",
+                        "type": "Site",
+                        "uisp_site": "966e34ab-6093-4dde-997b-a466acb9912c",
+                        "uploadBandwidthMbps": 10000
+                      }
+                    },
+                    "downloadBandwidthMbps": 10000,
+                    "name": "TONY BH Medusa",
+                    "parent_site": "TONY",
+                    "type": "AP",
+                    "uisp_device": "df09b05e-5c41-40b2-8e26-8399b6a7ba2b",
+                    "uploadBandwidthMbps": 10000
+                  }
+                },
+                "downloadBandwidthMbps": 10000,
+                "name": "Calvin Medusa",
+                "parent_site": "CALVIN",
+                "type": "AP",
+                "uisp_device": "dd9a24df-e814-4408-9c57-532bffbf58bd",
+                "uploadBandwidthMbps": 10000
+              },
+              "Calvin Mikrotik Switch": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "Calvin Mikrotik Switch",
+                "parent_site": "CALVIN",
+                "type": "AP",
+                "uisp_device": "d18102e7-68f3-4347-ab93-cc82552386e9",
+                "uploadBandwidthMbps": 10000
+              },
+              "Calvin Netonix": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "Calvin Netonix",
+                "parent_site": "CALVIN",
+                "type": "AP",
+                "uisp_device": "ffa1b3b2-a70c-4bb9-ade6-ada45f2b91e1",
+                "uploadBandwidthMbps": 10000
+              },
+              "Calvin PMP450b": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "Calvin PMP450b",
+                "parent_site": "CALVIN",
+                "type": "AP",
+                "uisp_device": "f5cd5dcd-ec07-45c7-b304-607b3fce36ab",
+                "uploadBandwidthMbps": 10000
+              },
+              "Calvin s3 c3KL 120": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "Calvin s3 c3KL 120",
+                "parent_site": "CALVIN",
+                "type": "AP",
+                "uisp_device": "37649b99-b073-40cd-a0ed-e359c8b6e61c",
+                "uploadBandwidthMbps": 10000
+              },
+              "VL-COLAIRPORT": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "VL-COLAIRPORT",
+                "parent_site": "CALVIN",
+                "type": "AP",
+                "uisp_device": "17fddff2-af9d-4639-92bb-91b89272046f",
+                "uploadBandwidthMbps": 10000
+              }
+            },
+            "downloadBandwidthMbps": 10000,
+            "name": "CALVIN",
+            "parent_site": "CALVIN",
+            "type": "Site",
+            "uisp_site": "582536d2-ebc9-449d-bb40-c513fcc5bea6",
+            "uploadBandwidthMbps": 10000
+          }
+        },
+        "downloadBandwidthMbps": 10000,
+        "name": "Calvin-to-Paquin",
+        "parent_site": "CALVIN",
+        "type": "AP",
+        "uisp_device": "0be862e8-382e-4845-a328-17a0f42187f7",
+        "uploadBandwidthMbps": 10000
+      }
+    },
+    "downloadBandwidthMbps": 10000,
+    "name": "Paquin-to-Calvin",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "240f1eb9-3570-4f2c-81b3-821d33c87b16",
+    "uploadBandwidthMbps": 10000
+  },
+  "Paquin-to-Douglas": {
+    "children": {
+      "DOUGLAS-to-PAQUIN": {
+        "children": {
+          "DOUGLAS": {
+            "children": {
+              "DOUGLAS MT Router": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "DOUGLAS MT Router",
+                "parent_site": "DOUGLAS",
+                "type": "AP",
+                "uisp_device": "e47f237c-7296-4097-a556-c5599108b99f",
+                "uploadBandwidthMbps": 10000
+              },
+              "DOUGLAS s1 u24 Nanobridge": {
+                "children": {},
+                "downloadBandwidthMbps": 5,
+                "name": "DOUGLAS s1 u24 Nanobridge",
+                "parent_site": "DOUGLAS",
+                "type": "AP",
+                "uisp_device": "35597bec-c765-42bb-b116-9079c94e9d5d",
+                "uploadBandwidthMbps": 5
+              },
+              "DOUGLAS to ALAN": {
+                "children": {
+                  "ALAN to DOUGLAS": {
+                    "children": {
+                      "ALAN": {
+                        "children": {
+                          "ALAN TO JEREMY": {
+                            "children": {
+                              "JEREMY to ALAN": {
+                                "children": {
+                                  "JEREMY": {
+                                    "children": {
+                                      "JEREMY s1 u24 Omni": {
+                                        "children": {},
+                                        "downloadBandwidthMbps": 54,
+                                        "name": "JEREMY s1 u24 Omni",
+                                        "parent_site": "JEREMY",
+                                        "type": "AP",
+                                        "uisp_device": "e4d50ecf-c948-473e-9011-683ce55cdf09",
+                                        "uploadBandwidthMbps": 46
+                                      },
+                                      "Jeremy Router": {
+                                        "children": {},
+                                        "downloadBandwidthMbps": 79,
+                                        "name": "Jeremy Router",
+                                        "parent_site": "JEREMY",
+                                        "type": "AP",
+                                        "uisp_device": "33cc46fe-c937-42a1-9246-4fb495befcab",
+                                        "uploadBandwidthMbps": 80
+                                      }
+                                    },
+                                    "downloadBandwidthMbps": 79,
+                                    "name": "JEREMY",
+                                    "parent_site": "JEREMY",
+                                    "type": "Site",
+                                    "uisp_site": "30c6371b-453f-4fae-873e-72aeb988de6b",
+                                    "uploadBandwidthMbps": 80
+                                  }
+                                },
+                                "downloadBandwidthMbps": 79,
+                                "name": "JEREMY to ALAN",
+                                "parent_site": "JEREMY",
+                                "type": "AP",
+                                "uisp_device": "f57d98b2-fea5-43a0-87a7-b7f092438931",
+                                "uploadBandwidthMbps": 80
+                              }
+                            },
+                            "downloadBandwidthMbps": 79,
+                            "name": "ALAN TO JEREMY",
+                            "parent_site": "ALAN",
+                            "type": "AP",
+                            "uisp_device": "cda6a63a-298c-49e6-aa8e-b326a46450a7",
+                            "uploadBandwidthMbps": 80
+                          },
+                          "ALAN s1 c24 90N": {
+                            "children": {},
+                            "downloadBandwidthMbps": 372,
+                            "name": "ALAN s1 c24 90N",
+                            "parent_site": "ALAN",
+                            "type": "AP",
+                            "uisp_device": "24777ec5-afa3-449c-a672-b63305c43557",
+                            "uploadBandwidthMbps": 121
+                          },
+                          "ALAN to AGLER": {
+                            "children": {
+                              "AGLER to ALAN": {
+                                "children": {
+                                  "AGLER": {
+                                    "children": {
+                                      "AGLER s4 u58 Omni": {
+                                        "children": {
+                                          "BRILHART Tower": {
+                                            "children": {
+                                              "BRILHART": {
+                                                "children": {
+                                                  "BRILHART s1 u58 Omni": {
+                                                    "children": {
+                                                      "Marc Hess Tower RL": {
+                                                        "children": {
+                                                          "Marc Hess": {
+                                                            "children": {
+                                                              "Marc Hess Tower to Marc Hess": {
+                                                                "children": {},
+                                                                "downloadBandwidthMbps": 42,
+                                                                "name": "Marc Hess Tower to Marc Hess",
+                                                                "parent_site": "Marc Hess",
+                                                                "type": "AP",
+                                                                "uisp_device": "8fc5fb78-a6df-4c82-a689-384698490e0f",
+                                                                "uploadBandwidthMbps": 50
+                                                              }
+                                                            },
+                                                            "downloadBandwidthMbps": 42,
+                                                            "name": "Marc Hess",
+                                                            "parent_site": "Marc Hess",
+                                                            "type": "Site",
+                                                            "uisp_site": "ee429f79-2038-4c14-8293-e47a3410055f",
+                                                            "uploadBandwidthMbps": 50
+                                                          }
+                                                        },
+                                                        "downloadBandwidthMbps": 42,
+                                                        "name": "Marc Hess Tower RL",
+                                                        "parent_site": "Marc Hess",
+                                                        "type": "AP",
+                                                        "uisp_device": "21a17f11-05fc-4b9f-85b4-3c637937a852",
+                                                        "uploadBandwidthMbps": 50
+                                                      }
+                                                    },
+                                                    "downloadBandwidthMbps": 42,
+                                                    "name": "BRILHART s1 u58 Omni",
+                                                    "parent_site": "BRILHART",
+                                                    "type": "AP",
+                                                    "uisp_device": "b0825706-26d1-4009-b95c-fa23ae225ea8",
+                                                    "uploadBandwidthMbps": 50
+                                                  },
+                                                  "Brilhart Router": {
+                                                    "children": {},
+                                                    "downloadBandwidthMbps": 42,
+                                                    "name": "Brilhart Router",
+                                                    "parent_site": "BRILHART",
+                                                    "type": "AP",
+                                                    "uisp_device": "20643d9c-2290-414a-ab7a-e1e7085f624b",
+                                                    "uploadBandwidthMbps": 50
+                                                  }
+                                                },
+                                                "downloadBandwidthMbps": 42,
+                                                "name": "BRILHART",
+                                                "parent_site": "BRILHART",
+                                                "type": "Site",
+                                                "uisp_site": "8df9ccd1-b5ed-4fa5-a551-8632cc285977",
+                                                "uploadBandwidthMbps": 50
+                                              }
+                                            },
+                                            "downloadBandwidthMbps": 42,
+                                            "name": "BRILHART Tower",
+                                            "parent_site": "BRILHART",
+                                            "type": "AP",
+                                            "uisp_device": "829563af-6dd4-483c-84df-1be00780834a",
+                                            "uploadBandwidthMbps": 50
+                                          }
+                                        },
+                                        "downloadBandwidthMbps": 42,
+                                        "name": "AGLER s4 u58 Omni",
+                                        "parent_site": "AGLER",
+                                        "type": "AP",
+                                        "uisp_device": "6708db92-aace-4f49-a63e-fc2a92312ae6",
+                                        "uploadBandwidthMbps": 50
+                                      },
+                                      "AGLER to HESS": {
+                                        "children": {
+                                          "HESS to AGLER": {
+                                            "children": {
+                                              "HESS": {
+                                                "children": {
+                                                  "HESS s1 u24 Omni": {
+                                                    "children": {
+                                                      "SUTHERLAND BH HESS": {
+                                                        "children": {
+                                                          "SUTHERLAND": {
+                                                            "children": {
+                                                              "SUTHERLAND s1 58 OMNI": {
+                                                                "children": {},
+                                                                "downloadBandwidthMbps": 51,
+                                                                "name": "SUTHERLAND s1 58 OMNI",
+                                                                "parent_site": "SUTHERLAND",
+                                                                "type": "AP",
+                                                                "uisp_device": "58a5efa6-8a1b-4420-8282-488e27511a39",
+                                                                "uploadBandwidthMbps": 52
+                                                              }
+                                                            },
+                                                            "downloadBandwidthMbps": 51,
+                                                            "name": "SUTHERLAND",
+                                                            "parent_site": "SUTHERLAND",
+                                                            "type": "Site",
+                                                            "uisp_site": "858276df-7c35-499f-b648-ac646ae7f043",
+                                                            "uploadBandwidthMbps": 52
+                                                          }
+                                                        },
+                                                        "downloadBandwidthMbps": 51,
+                                                        "name": "SUTHERLAND BH HESS",
+                                                        "parent_site": "SUTHERLAND",
+                                                        "type": "AP",
+                                                        "uisp_device": "a8975c3c-c6ea-4533-8781-baf10ce9d764",
+                                                        "uploadBandwidthMbps": 52
+                                                      }
+                                                    },
+                                                    "downloadBandwidthMbps": 51,
+                                                    "name": "HESS s1 u24 Omni",
+                                                    "parent_site": "HESS",
+                                                    "type": "AP",
+                                                    "uisp_device": "e14dfb5b-c221-46f2-8128-70aa34eefb9b",
+                                                    "uploadBandwidthMbps": 52
+                                                  },
+                                                  "HESS to SUTHERLAND": {
+                                                    "children": {},
+                                                    "downloadBandwidthMbps": 51,
+                                                    "name": "HESS to SUTHERLAND",
+                                                    "parent_site": "HESS",
+                                                    "type": "AP",
+                                                    "uisp_device": "05443c1e-f536-4805-9265-3e763f8be2ec",
+                                                    "uploadBandwidthMbps": 52
+                                                  },
+                                                  "HESS-ER": {
+                                                    "children": {},
+                                                    "downloadBandwidthMbps": 51,
+                                                    "name": "HESS-ER",
+                                                    "parent_site": "HESS",
+                                                    "type": "AP",
+                                                    "uisp_device": "f23174e4-3228-4ea9-a4c9-883ed8db5a03",
+                                                    "uploadBandwidthMbps": 52
+                                                  }
+                                                },
+                                                "downloadBandwidthMbps": 51,
+                                                "name": "HESS",
+                                                "parent_site": "HESS",
+                                                "type": "Site",
+                                                "uisp_site": "44530172-01ae-4381-bddb-44d857badfde",
+                                                "uploadBandwidthMbps": 52
+                                              }
+                                            },
+                                            "downloadBandwidthMbps": 51,
+                                            "name": "HESS to AGLER",
+                                            "parent_site": "HESS",
+                                            "type": "AP",
+                                            "uisp_device": "8e8df791-4d8a-49fe-86b6-7083ef6be40a",
+                                            "uploadBandwidthMbps": 51
+                                          }
+                                        },
+                                        "downloadBandwidthMbps": 51,
+                                        "name": "AGLER to HESS",
+                                        "parent_site": "AGLER",
+                                        "type": "AP",
+                                        "uisp_device": "72f46ab4-fc13-45c5-85c7-32e74165e386",
+                                        "uploadBandwidthMbps": 52
+                                      },
+                                      "Agler Router": {
+                                        "children": {},
+                                        "downloadBandwidthMbps": 152,
+                                        "name": "Agler Router",
+                                        "parent_site": "AGLER",
+                                        "type": "AP",
+                                        "uisp_device": "b29447d1-00c6-4497-bb50-14900cc76629",
+                                        "uploadBandwidthMbps": 121
+                                      }
+                                    },
+                                    "downloadBandwidthMbps": 152,
+                                    "name": "AGLER",
+                                    "parent_site": "AGLER",
+                                    "type": "Site",
+                                    "uisp_site": "610214a1-e84d-4531-8f94-a96d1e9e3864",
+                                    "uploadBandwidthMbps": 121
+                                  }
+                                },
+                                "downloadBandwidthMbps": 152,
+                                "name": "AGLER to ALAN",
+                                "parent_site": "AGLER",
+                                "type": "AP",
+                                "uisp_device": "022c0ac5-7c36-4e74-ace0-f9b367d081b3",
+                                "uploadBandwidthMbps": 121
+                              }
+                            },
+                            "downloadBandwidthMbps": 152,
+                            "name": "ALAN to AGLER",
+                            "parent_site": "ALAN",
+                            "type": "AP",
+                            "uisp_device": "db86bb76-f95a-4058-8108-4a2d8b2ff774",
+                            "uploadBandwidthMbps": 121
+                          },
+                          "ALAN to DJBRILL": {
+                            "children": {
+                              "DJBRILL to ALAN": {
+                                "children": {
+                                  "DJBRILL": {
+                                    "children": {
+                                      "DJ Brill Router": {
+                                        "children": {},
+                                        "downloadBandwidthMbps": 147,
+                                        "name": "DJ Brill Router",
+                                        "parent_site": "DJBRILL",
+                                        "type": "AP",
+                                        "uisp_device": "1534e498-75c8-46eb-b8da-6b1e0873ed5b",
+                                        "uploadBandwidthMbps": 48
+                                      },
+                                      "DJBRILL s1 u24 Omni": {
+                                        "children": {},
+                                        "downloadBandwidthMbps": 25,
+                                        "name": "DJBRILL s1 u24 Omni",
+                                        "parent_site": "DJBRILL",
+                                        "type": "AP",
+                                        "uisp_device": "9176d0e7-fa71-43ba-9db6-c97421d095c2",
+                                        "uploadBandwidthMbps": 33
+                                      },
+                                      "DJBRILL s2 u58 Omni DISABLED": {
+                                        "children": {},
+                                        "downloadBandwidthMbps": 147,
+                                        "name": "DJBRILL s2 u58 Omni DISABLED",
+                                        "parent_site": "DJBRILL",
+                                        "type": "AP",
+                                        "uisp_device": "7d3a732c-0eba-4439-9437-b999a2f56144",
+                                        "uploadBandwidthMbps": 48
+                                      },
+                                      "DJBRILL s2 u58 Omni LOW ISO": {
+                                        "children": {},
+                                        "downloadBandwidthMbps": 147,
+                                        "name": "DJBRILL s2 u58 Omni LOW ISO",
+                                        "parent_site": "DJBRILL",
+                                        "type": "AP",
+                                        "uisp_device": "37c83dad-d086-4dc2-b695-c936274bfcb9",
+                                        "uploadBandwidthMbps": 48
+                                      },
+                                      "DJBRILL s3 u58 60LOW": {
+                                        "children": {},
+                                        "downloadBandwidthMbps": 147,
+                                        "name": "DJBRILL s3 u58 60LOW",
+                                        "parent_site": "DJBRILL",
+                                        "type": "AP",
+                                        "uisp_device": "23ffdfa4-45dc-4071-afe4-1c249e079c58",
+                                        "uploadBandwidthMbps": 48
+                                      },
+                                      "DJBRILL to  STURGEON": {
+                                        "children": {
+                                          "STURGEON to DJBRILL": {
+                                            "children": {
+                                              "STURGEON": {
+                                                "children": {
+                                                  "Mimosa A5": {
+                                                    "children": {},
+                                                    "downloadBandwidthMbps": 57,
+                                                    "name": "Mimosa A5",
+                                                    "parent_site": "STURGEON",
+                                                    "type": "AP",
+                                                    "uisp_device": "e93873e0-1fe0-457a-bb17-942035f5ec02",
+                                                    "uploadBandwidthMbps": 48
+                                                  }
+                                                },
+                                                "downloadBandwidthMbps": 57,
+                                                "name": "STURGEON",
+                                                "parent_site": "STURGEON",
+                                                "type": "Site",
+                                                "uisp_site": "a3712960-bd22-4d24-a9af-c7545fb7505a",
+                                                "uploadBandwidthMbps": 48
+                                              }
+                                            },
+                                            "downloadBandwidthMbps": 57,
+                                            "name": "STURGEON to DJBRILL",
+                                            "parent_site": "STURGEON",
+                                            "type": "AP",
+                                            "uisp_device": "fcd30176-4676-48a7-b00a-3cd8c688d5e2",
+                                            "uploadBandwidthMbps": 48
+                                          }
+                                        },
+                                        "downloadBandwidthMbps": 57,
+                                        "name": "DJBRILL to  STURGEON",
+                                        "parent_site": "DJBRILL",
+                                        "type": "AP",
+                                        "uisp_device": "784021cf-d265-4ca8-9508-3c8659d25438",
+                                        "uploadBandwidthMbps": 48
+                                      },
+                                      "DJBRILL to JUSTIN": {
+                                        "children": {
+                                          "JUSTIN to DJBRILL": {
+                                            "children": {
+                                              "JUSTIN": {
+                                                "children": {
+                                                  "JUSTIN Switch": {
+                                                    "children": {},
+                                                    "downloadBandwidthMbps": 74,
+                                                    "name": "JUSTIN Switch",
+                                                    "parent_site": "JUSTIN",
+                                                    "type": "AP",
+                                                    "uisp_device": "d77cdaa5-ac3b-460f-8194-5b37ceb86dff",
+                                                    "uploadBandwidthMbps": 48
+                                                  },
+                                                  "JUSTIN s1 u24 Omni": {
+                                                    "children": {},
+                                                    "downloadBandwidthMbps": 50,
+                                                    "name": "JUSTIN s1 u24 Omni",
+                                                    "parent_site": "JUSTIN",
+                                                    "type": "AP",
+                                                    "uisp_device": "5ef51264-0fdd-46e1-a6f9-50ff5cb29a37",
+                                                    "uploadBandwidthMbps": 48
+                                                  },
+                                                  "JUSTIN to David Stephens": {
+                                                    "children": {},
+                                                    "downloadBandwidthMbps": 34,
+                                                    "name": "JUSTIN to David Stephens",
+                                                    "parent_site": "JUSTIN",
+                                                    "type": "AP",
+                                                    "uisp_device": "0ffb4c56-52b6-4338-a8ba-72283795ead6",
+                                                    "uploadBandwidthMbps": 48
+                                                  }
+                                                },
+                                                "downloadBandwidthMbps": 74,
+                                                "name": "JUSTIN",
+                                                "parent_site": "JUSTIN",
+                                                "type": "Site",
+                                                "uisp_site": "f860e217-09df-41eb-931d-a92b97b327c2",
+                                                "uploadBandwidthMbps": 48
+                                              }
+                                            },
+                                            "downloadBandwidthMbps": 74,
+                                            "name": "JUSTIN to DJBRILL",
+                                            "parent_site": "JUSTIN",
+                                            "type": "AP",
+                                            "uisp_device": "419de362-0683-429f-b85a-68bbe4ad3007",
+                                            "uploadBandwidthMbps": 48
+                                          }
+                                        },
+                                        "downloadBandwidthMbps": 74,
+                                        "name": "DJBRILL to JUSTIN",
+                                        "parent_site": "DJBRILL",
+                                        "type": "AP",
+                                        "uisp_device": "209196f2-4ff3-4904-89ef-f39d22b3da8d",
+                                        "uploadBandwidthMbps": 48
+                                      },
+                                      "DJBRILL to TERRY": {
+                                        "children": {
+                                          "TERRY to DJBRILL": {
+                                            "children": {
+                                              "TERRY": {
+                                                "children": {
+                                                  "Terry Router": {
+                                                    "children": {},
+                                                    "downloadBandwidthMbps": 54,
+                                                    "name": "Terry Router",
+                                                    "parent_site": "TERRY",
+                                                    "type": "AP",
+                                                    "uisp_device": "79abe37a-20da-4db1-a0a4-b9ecfd37dc3b",
+                                                    "uploadBandwidthMbps": 27
+                                                  },
+                                                  "Terry s1 u24 Omni": {
+                                                    "children": {},
+                                                    "downloadBandwidthMbps": 54,
+                                                    "name": "Terry s1 u24 Omni",
+                                                    "parent_site": "TERRY",
+                                                    "type": "AP",
+                                                    "uisp_device": "c03edf04-3625-47e3-a97c-4d61006b7fd5",
+                                                    "uploadBandwidthMbps": 27
+                                                  }
+                                                },
+                                                "downloadBandwidthMbps": 54,
+                                                "name": "TERRY",
+                                                "parent_site": "TERRY",
+                                                "type": "Site",
+                                                "uisp_site": "cc66addf-0cac-4f01-b453-71a1829bc675",
+                                                "uploadBandwidthMbps": 27
+                                              }
+                                            },
+                                            "downloadBandwidthMbps": 54,
+                                            "name": "TERRY to DJBRILL",
+                                            "parent_site": "TERRY",
+                                            "type": "AP",
+                                            "uisp_device": "fa747998-e4f0-4317-8ddf-6f44e9fc35ba",
+                                            "uploadBandwidthMbps": 27
+                                          }
+                                        },
+                                        "downloadBandwidthMbps": 54,
+                                        "name": "DJBRILL to TERRY",
+                                        "parent_site": "DJBRILL",
+                                        "type": "AP",
+                                        "uisp_device": "e6de9c6c-a21b-41a9-a067-215ed9d4e9f9",
+                                        "uploadBandwidthMbps": 27
+                                      }
+                                    },
+                                    "downloadBandwidthMbps": 147,
+                                    "name": "DJBRILL",
+                                    "parent_site": "DJBRILL",
+                                    "type": "Site",
+                                    "uisp_site": "c850747b-f48a-46b2-8283-7fbf4a153b70",
+                                    "uploadBandwidthMbps": 48
+                                  }
+                                },
+                                "downloadBandwidthMbps": 147,
+                                "name": "DJBRILL to ALAN",
+                                "parent_site": "DJBRILL",
+                                "type": "AP",
+                                "uisp_device": "6d034985-8ace-43bb-a316-9c392bc612d1",
+                                "uploadBandwidthMbps": 48
+                              }
+                            },
+                            "downloadBandwidthMbps": 147,
+                            "name": "ALAN to DJBRILL",
+                            "parent_site": "ALAN",
+                            "type": "AP",
+                            "uisp_device": "3c9eb8bb-d1c2-495e-b1f0-58d979d31607",
+                            "uploadBandwidthMbps": 48
+                          },
+                          "ALAN to SCOTT": {
+                            "children": {
+                              "SCOTT to ALAN": {
+                                "children": {
+                                  "SCOTT": {
+                                    "children": {
+                                      "SCOTT s1 u24 Omni": {
+                                        "children": {},
+                                        "downloadBandwidthMbps": 25,
+                                        "name": "SCOTT s1 u24 Omni",
+                                        "parent_site": "SCOTT",
+                                        "type": "AP",
+                                        "uisp_device": "ebfd77ca-87a0-479e-92b0-93a7eb911afb",
+                                        "uploadBandwidthMbps": 27
+                                      },
+                                      "Scott HEX Router": {
+                                        "children": {},
+                                        "downloadBandwidthMbps": 63,
+                                        "name": "Scott HEX Router",
+                                        "parent_site": "SCOTT",
+                                        "type": "AP",
+                                        "uisp_device": "6c0c28b1-18c6-4de3-8688-4222d9ff0cd4",
+                                        "uploadBandwidthMbps": 57
+                                      }
+                                    },
+                                    "downloadBandwidthMbps": 63,
+                                    "name": "SCOTT",
+                                    "parent_site": "SCOTT",
+                                    "type": "Site",
+                                    "uisp_site": "5df43e41-65e9-4e61-9cdc-8f442026a943",
+                                    "uploadBandwidthMbps": 57
+                                  }
+                                },
+                                "downloadBandwidthMbps": 63,
+                                "name": "SCOTT to ALAN",
+                                "parent_site": "SCOTT",
+                                "type": "AP",
+                                "uisp_device": "24498481-0998-46e0-8a8a-56108e487147",
+                                "uploadBandwidthMbps": 57
+                              }
+                            },
+                            "downloadBandwidthMbps": 63,
+                            "name": "ALAN to SCOTT",
+                            "parent_site": "ALAN",
+                            "type": "AP",
+                            "uisp_device": "a6418dbc-0481-4cd3-9c0f-864d5594a6c2",
+                            "uploadBandwidthMbps": 57
+                          },
+                          "ALAN to YATES": {
+                            "children": {
+                              "YATES to ALAN": {
+                                "children": {
+                                  "YATES": {
+                                    "children": {
+                                      "Yates Router": {
+                                        "children": {},
+                                        "downloadBandwidthMbps": 22,
+                                        "name": "Yates Router",
+                                        "parent_site": "YATES",
+                                        "type": "AP",
+                                        "uisp_device": "20c9caf6-2927-485e-b048-505e16f43972",
+                                        "uploadBandwidthMbps": 6
+                                      },
+                                      "Yates s1 u24 Omni": {
+                                        "children": {},
+                                        "downloadBandwidthMbps": 22,
+                                        "name": "Yates s1 u24 Omni",
+                                        "parent_site": "YATES",
+                                        "type": "AP",
+                                        "uisp_device": "a1a9d539-b0a5-4545-a1a7-5d604b3e7836",
+                                        "uploadBandwidthMbps": 6
+                                      }
+                                    },
+                                    "downloadBandwidthMbps": 22,
+                                    "name": "YATES",
+                                    "parent_site": "YATES",
+                                    "type": "Site",
+                                    "uisp_site": "a7563147-e6d7-42da-8d34-4b1c2da5e8cf",
+                                    "uploadBandwidthMbps": 6
+                                  }
+                                },
+                                "downloadBandwidthMbps": 22,
+                                "name": "YATES to ALAN",
+                                "parent_site": "YATES",
+                                "type": "AP",
+                                "uisp_device": "920fb275-404f-4b29-bd6a-f118b63e29b1",
+                                "uploadBandwidthMbps": 6
+                              }
+                            },
+                            "downloadBandwidthMbps": 22,
+                            "name": "ALAN to YATES",
+                            "parent_site": "ALAN",
+                            "type": "AP",
+                            "uisp_device": "826c7d70-a8af-4249-b174-0154eab09a60",
+                            "uploadBandwidthMbps": 6
+                          },
+                          "Alan Medusa Omni": {
+                            "children": {
+                              "Huddleston Huber RL": {
+                                "children": {
+                                  "Huddleston Tower Relay Cappi Stone": {
+                                    "children": {
+                                      "Cappi Stone Pole to Huber": {
+                                        "children": {},
+                                        "downloadBandwidthMbps": 83,
+                                        "name": "Cappi Stone Pole to Huber",
+                                        "parent_site": "Huddleston Tower Relay Cappi Stone",
+                                        "type": "AP",
+                                        "uisp_device": "7a850c86-84f1-4c8f-a595-0071368a0a8c",
+                                        "uploadBandwidthMbps": 83
+                                      },
+                                      "Cappi Stone Pole to Huddleston Tower": {
+                                        "children": {},
+                                        "downloadBandwidthMbps": 83,
+                                        "name": "Cappi Stone Pole to Huddleston Tower",
+                                        "parent_site": "Huddleston Tower Relay Cappi Stone",
+                                        "type": "AP",
+                                        "uisp_device": "3f76ffde-b44a-4876-8140-5f3f6281603a",
+                                        "uploadBandwidthMbps": 83
+                                      }
+                                    },
+                                    "downloadBandwidthMbps": 372,
+                                    "name": "Huddleston Tower Relay Cappi Stone",
+                                    "parent_site": "Huddleston Tower Relay Cappi Stone",
+                                    "type": "Site",
+                                    "uisp_site": "0a26c5ac-bfed-4466-91d8-285ee06604f7",
+                                    "uploadBandwidthMbps": 121
+                                  }
+                                },
+                                "downloadBandwidthMbps": 372,
+                                "name": "Huddleston Huber RL",
+                                "parent_site": "Huddleston Tower Relay Cappi Stone",
+                                "type": "AP",
+                                "uisp_device": "889f6bef-17d2-4b8a-9d00-8f06923d165b",
+                                "uploadBandwidthMbps": 121
+                              },
+                              "Mittendorf Barn": {
+                                "children": {
+                                  "MITTENDORF": {
+                                    "children": {
+                                      "MITTENDORF s1 u24 Omni": {
+                                        "children": {},
+                                        "downloadBandwidthMbps": 38,
+                                        "name": "MITTENDORF s1 u24 Omni",
+                                        "parent_site": "MITTENDORF",
+                                        "type": "AP",
+                                        "uisp_device": "53e40d45-c188-46d9-b26e-310f8895ae9b",
+                                        "uploadBandwidthMbps": 51
+                                      },
+                                      "Middendorf Trailer 2": {
+                                        "children": {},
+                                        "downloadBandwidthMbps": 76,
+                                        "name": "Middendorf Trailer 2",
+                                        "parent_site": "MITTENDORF",
+                                        "type": "AP",
+                                        "uisp_device": "39df2a95-7c1f-48f6-a23c-cb43c56cb24e",
+                                        "uploadBandwidthMbps": 82
+                                      }
+                                    },
+                                    "downloadBandwidthMbps": 372,
+                                    "name": "MITTENDORF",
+                                    "parent_site": "MITTENDORF",
+                                    "type": "Site",
+                                    "uisp_site": "00dc9fe2-bd9a-4573-b13f-946cd67a53b8",
+                                    "uploadBandwidthMbps": 121
+                                  }
+                                },
+                                "downloadBandwidthMbps": 372,
+                                "name": "Mittendorf Barn",
+                                "parent_site": "MITTENDORF",
+                                "type": "AP",
+                                "uisp_device": "0ea78f78-2ae7-4370-b387-41e9324ec0f4",
+                                "uploadBandwidthMbps": 121
+                              }
+                            },
+                            "downloadBandwidthMbps": 372,
+                            "name": "Alan Medusa Omni",
+                            "parent_site": "ALAN",
+                            "type": "AP",
+                            "uisp_device": "89a3d298-cd04-46d8-bb0f-9f3c8227bedf",
+                            "uploadBandwidthMbps": 121
+                          },
+                          "AlanTowerRouter": {
+                            "children": {},
+                            "downloadBandwidthMbps": 372,
+                            "name": "AlanTowerRouter",
+                            "parent_site": "ALAN",
+                            "type": "AP",
+                            "uisp_device": "c8ac9cee-5739-4e51-92bb-e052c22e71ea",
+                            "uploadBandwidthMbps": 121
+                          }
+                        },
+                        "downloadBandwidthMbps": 372,
+                        "name": "ALAN",
+                        "parent_site": "ALAN",
+                        "type": "Site",
+                        "uisp_site": "c4c00689-d97b-45b7-917a-ec92edfb04e1",
+                        "uploadBandwidthMbps": 121
+                      }
+                    },
+                    "downloadBandwidthMbps": 372,
+                    "name": "ALAN to DOUGLAS",
+                    "parent_site": "ALAN",
+                    "type": "AP",
+                    "uisp_device": "154bc059-e9c9-4d9d-955c-1988e0527a83",
+                    "uploadBandwidthMbps": 121
+                  }
+                },
+                "downloadBandwidthMbps": 372,
+                "name": "DOUGLAS to ALAN",
+                "parent_site": "DOUGLAS",
+                "type": "AP",
+                "uisp_device": "3d3e111f-6935-4fe2-a05e-41bec71c3e80",
+                "uploadBandwidthMbps": 121
+              },
+              "DOUGLAS to GRAINLEG": {
+                "children": {},
+                "downloadBandwidthMbps": 6499,
+                "name": "DOUGLAS to GRAINLEG",
+                "parent_site": "DOUGLAS",
+                "type": "AP",
+                "uisp_device": "28c2ec03-335a-4078-ae5b-47bde2059419",
+                "uploadBandwidthMbps": 6499
+              }
+            },
+            "downloadBandwidthMbps": 10000,
+            "name": "DOUGLAS",
+            "parent_site": "DOUGLAS",
+            "type": "Site",
+            "uisp_site": "bb5a8f42-e71c-41f6-bcb9-e54712265b80",
+            "uploadBandwidthMbps": 10000
+          }
+        },
+        "downloadBandwidthMbps": 10000,
+        "name": "DOUGLAS-to-PAQUIN",
+        "parent_site": "DOUGLAS",
+        "type": "AP",
+        "uisp_device": "0e53a112-b886-4deb-bea3-bbabb2c126e8",
+        "uploadBandwidthMbps": 10000
+      }
+    },
+    "downloadBandwidthMbps": 10000,
+    "name": "Paquin-to-Douglas",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "690dbce6-17c3-4ff0-9898-757b1f02f9a1",
+    "uploadBandwidthMbps": 10000
+  },
+  "PaquinCore3": {
+    "children": {},
+    "downloadBandwidthMbps": 10000,
+    "name": "PaquinCore3",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "57f4c479-7d86-4c30-bee6-0a055143bcb5",
+    "uploadBandwidthMbps": 10000
+  },
+  "PaquinCoreSwitch": {
+    "children": {
+      "Paquin Apts Head Switch": {
+        "children": {
+          "PAQUIN APTS": {
+            "children": {
+              "Paqiom F11": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "Paqiom F11",
+                "parent_site": "PAQUIN APTS",
+                "type": "AP",
+                "uisp_device": "b83fac79-ba1b-4755-ae7f-cf5d032b61ae",
+                "uploadBandwidthMbps": 10000
+              },
+              "Paquin F02": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "Paquin F02",
+                "parent_site": "PAQUIN APTS",
+                "type": "AP",
+                "uisp_device": "65c18eae-4230-4fa8-aad6-e90e8b9c6815",
+                "uploadBandwidthMbps": 10000
+              },
+              "Paquin F03": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "Paquin F03",
+                "parent_site": "PAQUIN APTS",
+                "type": "AP",
+                "uisp_device": "e85bb3d1-1c0d-4677-a680-e6d1ec9a5f77",
+                "uploadBandwidthMbps": 10000
+              },
+              "Paquin F04": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "Paquin F04",
+                "parent_site": "PAQUIN APTS",
+                "type": "AP",
+                "uisp_device": "9499f0ff-aa75-4cd3-bfb1-874a186d0a5b",
+                "uploadBandwidthMbps": 10000
+              },
+              "Paquin F05": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "Paquin F05",
+                "parent_site": "PAQUIN APTS",
+                "type": "AP",
+                "uisp_device": "f230c839-8d3c-4ec2-9b63-fd1e669657a8",
+                "uploadBandwidthMbps": 10000
+              },
+              "Paquin F06": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "Paquin F06",
+                "parent_site": "PAQUIN APTS",
+                "type": "AP",
+                "uisp_device": "848ab196-3672-4949-be2c-43330f88a3dd",
+                "uploadBandwidthMbps": 10000
+              },
+              "Paquin F07": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "Paquin F07",
+                "parent_site": "PAQUIN APTS",
+                "type": "AP",
+                "uisp_device": "6fe9a5fa-695a-4f86-b990-8e515d8f30f6",
+                "uploadBandwidthMbps": 10000
+              },
+              "Paquin F08": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "Paquin F08",
+                "parent_site": "PAQUIN APTS",
+                "type": "AP",
+                "uisp_device": "3817beda-3943-4e33-a3cf-44d4e10c39f0",
+                "uploadBandwidthMbps": 10000
+              },
+              "Paquin F09": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "Paquin F09",
+                "parent_site": "PAQUIN APTS",
+                "type": "AP",
+                "uisp_device": "9a1f4f41-888c-41ea-84f1-c8be3847700b",
+                "uploadBandwidthMbps": 10000
+              },
+              "Paquin F10": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "Paquin F10",
+                "parent_site": "PAQUIN APTS",
+                "type": "AP",
+                "uisp_device": "24e1f509-31aa-4e29-ac36-95cfee297cec",
+                "uploadBandwidthMbps": 10000
+              },
+              "Paquin F12": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "Paquin F12",
+                "parent_site": "PAQUIN APTS",
+                "type": "AP",
+                "uisp_device": "1599ab72-009c-426f-a5b7-55f69dc221a5",
+                "uploadBandwidthMbps": 10000
+              },
+              "Paquin F13": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "Paquin F13",
+                "parent_site": "PAQUIN APTS",
+                "type": "AP",
+                "uisp_device": "3f2c312d-30b8-4281-8f4f-ded7451985b3",
+                "uploadBandwidthMbps": 10000
+              },
+              "Paquin F14": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "Paquin F14",
+                "parent_site": "PAQUIN APTS",
+                "type": "AP",
+                "uisp_device": "64522680-cb29-4e9e-9d06-dcd03369ce7f",
+                "uploadBandwidthMbps": 10000
+              },
+              "Paquin F15": {
+                "children": {},
+                "downloadBandwidthMbps": 10000,
+                "name": "Paquin F15",
+                "parent_site": "PAQUIN APTS",
+                "type": "AP",
+                "uisp_device": "abc2ffae-3fc0-4b0f-898a-7706a477331d",
+                "uploadBandwidthMbps": 10000
+              }
+            },
+            "downloadBandwidthMbps": 10000,
+            "name": "PAQUIN APTS",
+            "parent_site": "PAQUIN APTS",
+            "type": "Site",
+            "uisp_site": "1bb7c9f0-182b-4102-833f-8e517a281e73",
+            "uploadBandwidthMbps": 10000
+          }
+        },
+        "downloadBandwidthMbps": 10000,
+        "name": "Paquin Apts Head Switch",
+        "parent_site": "PAQUIN APTS",
+        "type": "AP",
+        "uisp_device": "5f1a2d70-b09b-4a1d-8e6d-29423848ff0d",
+        "uploadBandwidthMbps": 10000
+      }
+    },
+    "downloadBandwidthMbps": 10000,
+    "name": "PaquinCoreSwitch",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "29ff6aaa-5e3f-4d43-8129-d38d78bf35ea",
+    "uploadBandwidthMbps": 10000
+  },
+  "ProxMox VM Server": {
+    "children": {},
+    "downloadBandwidthMbps": 10000,
+    "name": "ProxMox VM Server",
+    "parent_site": "PAQUIN",
+    "type": "AP",
+    "uisp_device": "1b7d7145-aae8-41f2-96e9-d9f9bc35668d",
+    "uploadBandwidthMbps": 10000
+  }
+}

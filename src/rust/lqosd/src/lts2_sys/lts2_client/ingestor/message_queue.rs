@@ -373,7 +373,7 @@ impl MessageQueue {
                 }
             }
 
-            if !topology_blob.is_empty() {
+            if !topology_blob.is_empty() && config.long_term_stats.enable_insight_topology.unwrap_or_default() {
                 // Save the topology blob
                 // Decompress it
                 if let Ok(decompressed_bytes) = miniz_oxide::inflate::decompress_to_vec(&topology_blob) {
@@ -419,7 +419,7 @@ impl MessageQueue {
             return Ok(());
         }
         drop(socket);
-        println!("Finished sending messages to {}", remote_host);
+        info!("Finished sending messages to {}", remote_host);
         Ok(())
     }
 

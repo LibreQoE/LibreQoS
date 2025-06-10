@@ -115,6 +115,10 @@ impl Config {
         if self.node_id.is_empty() {
             return Err("Node ID must be set".to_string());
         }
+        // Validate that default_sqm is not empty to prevent incomplete TC commands
+        if self.queues.default_sqm.trim().is_empty() {
+            return Err("default_sqm cannot be empty. Please specify a qdisc type (e.g., 'cake diffserv4' or 'fq_codel')".to_string());
+        }
         Ok(())
     }
 

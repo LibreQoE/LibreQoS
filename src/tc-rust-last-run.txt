@@ -1,0 +1,13 @@
+qdisc replace dev veth_tointernal root handle 7FFF: mq
+qdisc add dev veth_toexternal parent 7FFF:3 handle 3: htb default 2
+class add dev veth_toexternal parent 3: classid 3:1 htb rate 10.0gbit ceil 10.0gbit quantum 59998
+qdisc add dev veth_toexternal parent 3:1 cake diffserv4
+class add dev veth_toexternal parent 3:1 classid 3:2 htb rate 2.5gbit ceil 10.0gbit prio 5 quantum 59998
+qdisc add dev veth_toexternal parent 3:2 cake diffserv4
+qdisc add dev veth_toexternal parent 7FFF:4 handle 4: htb default 2
+class add dev veth_toexternal parent 4: classid 4:1 htb rate 10.0gbit ceil 10.0gbit quantum 59998
+qdisc add dev veth_toexternal parent 4:1 cake diffserv4
+class add dev veth_toexternal parent 4:1 classid 4:2 htb rate 2.5gbit ceil 10.0gbit prio 5 quantum 59998
+qdisc add dev veth_toexternal parent 4:2 cake diffserv4
+class add dev eth0 parent 1: classid 1:10 htb rate 100.0mbit ceil 1.0gbit prio 3 quantum 12500000
+class add dev eth0 parent 1: classid 1:10 htb rate 100.0mbit ceil 1.0gbit prio 3 quantum 12500000

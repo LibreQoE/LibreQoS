@@ -208,7 +208,7 @@ pub struct Circuit {
     /// The device name
     pub device_name: Option<String>,
     /// The current plan for this circuit.
-    pub plan: DownUpOrder<u32>,
+    pub plan: DownUpOrder<f32>,
     /// The last time this host was seen, in nanoseconds since boot.
     pub last_seen_nanos: u64,
 }

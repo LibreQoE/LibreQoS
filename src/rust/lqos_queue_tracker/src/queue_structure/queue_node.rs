@@ -37,10 +37,18 @@ pub struct QueueNode {
 }
 
 /// Provides a convenient wrapper that attempts to decode a u64 from a JSON
-/// value, and returns an error if decoding fails.
+/// value, and returns an error if decoding fails. Supports fractional values.
 macro_rules! grab_u64 {
     ($target: expr, $key: expr, $value: expr) => {
-        let tmp = $value.as_u64().ok_or(QueueStructureError::U64Parse(format!("{} => {:?}", $key, $value)));
+        let tmp = if let Some(int_val) = $value.as_u64() {
+            // Integer value - use directly
+            Ok(int_val)
+        } else if let Some(float_val) = $value.as_f64() {
+            // Fractional value - round to nearest integer
+            Ok(float_val.round() as u64)
+        } else {
+            Err(QueueStructureError::U64Parse(format!("{} => {:?}", $key, $value)))
+        };
         match tmp {
             Err(e) => {
                 error!("Error decoding JSON. Key: {}, Value: {:?} is not readily convertible to a u64.", $key, $value);

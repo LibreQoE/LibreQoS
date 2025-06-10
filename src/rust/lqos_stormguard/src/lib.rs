@@ -6,8 +6,11 @@
 //!
 //! Copyright (C) 2025 LibreQoS. GPLv2 licensed.
 
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
+use std::sync::Mutex;
 use tracing::{debug, info};
 
 mod config;
@@ -18,9 +21,11 @@ mod datalog;
 const READING_ACCUMULATOR_SIZE: usize = 15;
 const MOVING_AVERAGE_BUFFER_SIZE: usize = 15;
 
+pub static STORMGUARD_STATS: Mutex<Vec<(String, u64, u64)>> = Mutex::new(Vec::new());
+
 /// Launches the StormGuard component. Will exit if there's
 /// nothing to do.
-pub async fn start_stormguard() -> anyhow::Result<()> {
+pub async fn start_stormguard(bakery_sender: crossbeam_channel::Sender<lqos_bakery::BakeryCommands>) -> anyhow::Result<()> {
     let _ = tokio::time::sleep(Duration::from_secs(1)).await;
 
     info!("Starting LibreQoS StormGuard...");
@@ -44,16 +49,15 @@ pub async fn start_stormguard() -> anyhow::Result<()> {
         site_state_tracker.read_new_tick_data().await;
 
         // Check for state changes
-        site_state_tracker.check_state();
         let recommendations = site_state_tracker.recommendations();
         if !recommendations.is_empty() {
-            site_state_tracker.apply_recommendations(recommendations, &config, log_sender.clone());
+            site_state_tracker.apply_recommendations(recommendations, &config, log_sender.clone(), bakery_sender.clone());
         }
-
+        
         // Sleep until the next second
         let missed_ticks = tfd.read();
         if missed_ticks > 1 {
-            debug!("Missed {} ticks", missed_ticks);
+            debug!("StormGuard Missed {} ticks", missed_ticks);
         }
     }
 }

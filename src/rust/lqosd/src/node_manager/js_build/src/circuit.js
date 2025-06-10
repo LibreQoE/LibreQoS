@@ -1,7 +1,7 @@
 // Obtain URL parameters
 import {DirectChannel} from "./pubsub/direct_channels";
 import {clearDiv, formatLastSeen, simpleRow, simpleRowHtml, theading} from "./helpers/builders";
-import {formatRetransmit, formatRtt, formatThroughput, lerpGreenToRedViaOrange} from "./helpers/scaling";
+import {formatRetransmit, formatRtt, formatThroughput, lerpGreenToRedViaOrange, formatMbps} from "./helpers/scaling";
 import {BitsPerSecondGauge} from "./graphs/bits_gauge";
 import {CircuitTotalGraph} from "./graphs/circuit_throughput_graph";
 import {CircuitRetransmitGraph} from "./graphs/circuit_retransmit_graph";
@@ -840,8 +840,8 @@ function loadInitial() {
             let circuit = circuits[0];
             $("#circuitName").text(circuit.circuit_name);
             $("#parentNode").text(circuit.parent_node);
-            $("#bwMax").text(circuit.download_max_mbps + " / " + circuit.upload_max_mbps + " Mbps");
-            $("#bwMin").text(circuit.download_min_mbps + " / " + circuit.upload_min_mbps + " Mbps");
+            $("#bwMax").text(formatMbps(circuit.download_max_mbps) + " / " + formatMbps(circuit.upload_max_mbps));
+            $("#bwMin").text(formatMbps(circuit.download_min_mbps) + " / " + formatMbps(circuit.upload_min_mbps));
             plan = {
                 down: circuit.download_max_mbps,
                 up: circuit.upload_max_mbps,

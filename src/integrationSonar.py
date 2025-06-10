@@ -235,8 +235,8 @@ def getAccounts(sonar_active_status_ids):
       for item in account['addresses']['entities'][0]['inventory_items']['entities']:
         devices.append({'id': item['id'], 'name': item['inventory_model']['name'], 'ips': findIPs(item), 'mac': item['inventory_model_field_data']['entities'][0]['value']})
       if account['account_services']['entities'] and devices: # Make sure there is a data plan and devices on the account.
-        download = int(account['account_services']['entities'][0]['service']['data_service_detail']['download_speed_kilobits_per_second']/1000)
-        upload = int(account['account_services']['entities'][0]['service']['data_service_detail']['upload_speed_kilobits_per_second']/1000)
+        download = float(account['account_services']['entities'][0]['service']['data_service_detail']['download_speed_kilobits_per_second'])/1000
+        upload = float(account['account_services']['entities'][0]['service']['data_service_detail']['upload_speed_kilobits_per_second'])/1000
         if download < 2:
            download = 2
         if upload < 2:

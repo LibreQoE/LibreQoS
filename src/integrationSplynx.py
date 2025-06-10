@@ -44,11 +44,11 @@ def getTariffs(headers):
 	try:
 		for tariff in data:
 			tariffID = tariff['id']
-			speed_download = round((int(tariff['speed_download']) / 1024))
-			speed_upload = round((int(tariff['speed_upload']) / 1024))
+			speed_download = float(tariff['speed_download']) / 1024
+			speed_upload = float(tariff['speed_upload']) / 1024
 			if ('burst_limit_fixed_down' in tariff) and ('burst_limit_fixed_up' in tariff):
-				burstable_down = round((int(tariff['burst_limit_fixed_down']) / 1024))
-				burstable_up = round((int(tariff['burst_limit_fixed_up']) / 1024))
+				burstable_down = float(tariff['burst_limit_fixed_down']) / 1024
+				burstable_up = float(tariff['burst_limit_fixed_up']) / 1024
 				if burstable_down > speed_download:
 					speed_download = burstable_down
 				if burstable_up > speed_upload:
