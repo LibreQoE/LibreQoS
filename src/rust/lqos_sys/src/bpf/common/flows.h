@@ -258,6 +258,50 @@ static __always_inline void detect_retries(
     data->last_sequence[rate_index] = sequence;
 }
 
+
+// Passively infer TCP RTT by matching ACKs to previous TCP segments using TCP
+// timestamps (TSval/TSecr).
+// Stores previous TSval value and checks if TSecr of current packet matches a
+// previously sent TSval in the reverse direction and calculate the RTT as
+// the time since the original TSval was sent. The approach is based on Kathleen
+// Nichols' pping (https://pollere.net/pping.html), but modified to store
+// TSvals as part of the flow state (the data argument).
+static __always_inline void infer_tcp_rtt(
+    struct dissector_t *dissector,
+    struct flow_key_t *key,
+    struct flow_data_t *data,
+    u_int8_t rate_index,
+    u_int8_t other_rate_index
+) {
+    if (dissector->tsval == 0)
+        return;
+
+    //bpf_debug("[FLOWS][%d] TSVAL: %u, TSECR: %u", direction, tsval, tsecr);
+    if (dissector->tsval != data->tsval[rate_index] && dissector->tsecr != data->tsecr[rate_index]) {
+
+        if (
+            dissector->tsecr == data->tsval[other_rate_index] &&
+            (data->rate_estimate_bps[rate_index] > 0 ||
+             data->rate_estimate_bps[other_rate_index] > 0 )
+        ) {
+            __u64 elapsed = dissector->now - data->ts_change_time[other_rate_index];
+            if (elapsed < TWO_SECONDS_IN_NANOS) {
+                struct flowbee_event event = { 0 };
+                event.key = *key;
+                event.round_trip_time = elapsed;
+                event.effective_direction = rate_index;
+                bpf_ringbuf_output(&flowbee_events, &event, sizeof(event), 0);
+            }
+        }
+
+        data->ts_change_time[rate_index] = dissector->now;
+        data->tsval[rate_index] = dissector->tsval;
+        data->tsecr[rate_index] = dissector->tsecr;
+    }
+
+    return;
+}
+
 // Handle Per-Flow TCP Analysis
 static __always_inline void process_tcp(
     struct dissector_t *dissector,
@@ -301,31 +345,8 @@ static __always_inline void process_tcp(
     // Sequence and Acknowledgement numbers
     detect_retries(dissector, rate_index, data);
 
-    // Timestamps to calculate RTT
-    if (dissector->tsval != 0) {
-        //bpf_debug("[FLOWS][%d] TSVAL: %u, TSECR: %u", direction, tsval, tsecr);
-        if (dissector->tsval != data->tsval[rate_index] && dissector->tsecr != data->tsecr[rate_index]) {
-
-            if (
-                dissector->tsecr == data->tsval[other_rate_index] &&
-                (data->rate_estimate_bps[rate_index] > 0 ||
-                data->rate_estimate_bps[other_rate_index] > 0 )
-            ) {
-                __u64 elapsed = dissector->now - data->ts_change_time[other_rate_index];
-                if (elapsed < TWO_SECONDS_IN_NANOS) {
-                    struct flowbee_event event = { 0 };
-                    event.key = key;
-                    event.round_trip_time = elapsed;
-                    event.effective_direction = rate_index;
-                    bpf_ringbuf_output(&flowbee_events, &event, sizeof(event), 0);
-                }
-            }
-
-            data->ts_change_time[rate_index] = dissector->now;
-            data->tsval[rate_index] = dissector->tsval;
-            data->tsecr[rate_index] = dissector->tsecr;
-        }
-    }
+    // Check TCP timestamps and attempt to calculate RTT
+    infer_tcp_rtt(dissector, &key, data, rate_index, other_rate_index);
 
     // Has the connection ended?
     if (BITCHECK(DIS_TCP_FIN)) {
