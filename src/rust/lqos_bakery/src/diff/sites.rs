@@ -26,6 +26,7 @@ pub(crate) fn diff_sites(
     if old_sites.len() != new_sites.len() {
         // There is a difference in the number of sites.
         // Therefore, we must rebuild the entire site configuration.
+        warn!("Site count mismatch: old {} vs new {}", old_sites.len(), new_sites.len());
         return SiteDiffResult::RebuildRequired;
     }
 
@@ -35,14 +36,17 @@ pub(crate) fn diff_sites(
         if let Some(new_cmd) = new_sites.get(site_hash) {
             // If the commands are structurally different, we need to rebuild.
             if is_structurally_different(old_cmd, new_cmd) {
+                warn!("Structural difference detected for site hash: {}", site_hash);
                 return SiteDiffResult::RebuildRequired;
             }
             // If the speeds have changed, we need to store the change.
             if let Some(speed_change) = site_speeds_changed(old_cmd, new_cmd) {
+                warn!("Speed change detected for site hash: {}", site_hash);
                 speed_changes.push(speed_change);
             }
         } else {
             // If a site is missing in the new batch, we need to rebuild.
+            warn!("Site hash {} is missing in the new batch", site_hash);
             return SiteDiffResult::RebuildRequired;
         }
     }

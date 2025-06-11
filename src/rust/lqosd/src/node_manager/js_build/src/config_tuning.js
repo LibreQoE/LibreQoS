@@ -1,4 +1,4 @@
-import {saveConfig, loadConfig} from "./config/config_helper";
+import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
 
 function validateConfig() {
     // Validate numeric fields
@@ -45,6 +45,9 @@ function updateConfig() {
             .filter(s => s.length > 0)
     };
 }
+
+// Render the configuration menu
+renderConfigMenu('tuning');
 
 loadConfig(() => {
     // window.config now contains the configuration.

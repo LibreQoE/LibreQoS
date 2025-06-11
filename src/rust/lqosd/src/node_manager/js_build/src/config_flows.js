@@ -1,4 +1,4 @@
-import {saveConfig, loadConfig} from "./config/config_helper";
+import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
 
 function populateDoNotTrackList(selectId, subnets) {
     const select = document.getElementById(selectId);
@@ -59,6 +59,9 @@ function getSubnetsFromList(listId) {
     const select = document.getElementById(listId);
     return Array.from(select.options).map(option => option.value);
 }
+
+// Render the configuration menu
+renderConfigMenu('flows');
 
 loadConfig(() => {
     // window.config now contains the configuration.

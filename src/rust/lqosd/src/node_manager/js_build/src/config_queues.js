@@ -1,4 +1,4 @@
-import {saveConfig, loadConfig} from "./config/config_helper";
+import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
 
 function validateConfig() {
     // Validate numeric fields
@@ -56,11 +56,14 @@ function updateConfig() {
         override_available_queues: document.getElementById("overrideQueues").value ? 
             parseInt(document.getElementById("overrideQueues").value) : null,
         use_binpacking: document.getElementById("useBinpacking").checked,
-        lazy_queues: document.getElementById("lazyQueues").checked ? true : null,
+        lazy_queues: document.getElementById("lazyQueues").value === "No" ? null : document.getElementById("lazyQueues").value,
         lazy_expire_seconds: document.getElementById("lazyExpireSeconds").value ? 
             parseInt(document.getElementById("lazyExpireSeconds").value) : null
     };
 }
+
+// Render the configuration menu
+renderConfigMenu('queues');
 
 loadConfig(() => {
     // window.config now contains the configuration.
@@ -76,7 +79,7 @@ loadConfig(() => {
         document.getElementById("dryRun").checked = queues.dry_run ?? false;
         document.getElementById("sudo").checked = queues.sudo ?? false;
         document.getElementById("useBinpacking").checked = queues.use_binpacking ?? false;
-        document.getElementById("lazyQueues").checked = queues.lazy_queues ?? false;
+        document.getElementById("lazyQueues").value = queues.lazy_queues ?? "No";
 
         // Numeric fields
         document.getElementById("uplinkBandwidth").value = queues.uplink_bandwidth_mbps ?? 1000;

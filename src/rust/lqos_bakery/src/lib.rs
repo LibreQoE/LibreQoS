@@ -22,18 +22,22 @@ mod queue_math;
 mod diff;
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::sync::{Arc, OnceLock};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use crossbeam_channel::{Receiver, Sender};
 use tracing::{debug, error, info, warn};
 use utils::current_timestamp;
+use lqos_bus::BakeryStatsSnapshot;
 pub (crate) const CHANNEL_CAPACITY: usize = 65536; // 64k capacity for Bakery commands
 pub use commands::BakeryCommands;
 use lqos_config::{Config, LazyQueueMode};
 use crate::commands::ExecutionMode;
 use crate::diff::{diff_sites, SiteDiffResult};
 use crate::queue_math::format_rate_for_tc_f32;
-use crate::utils::execute_in_memory;
+use crate::utils::{execute_in_memory, write_command_file};
+
+pub static ACTIVE_CIRCUITS: AtomicUsize = AtomicUsize::new(0);
 
 pub static BAKERY_SENDER: OnceLock<Sender<BakeryCommands>> = OnceLock::new();
 static MQ_CREATED: AtomicBool = AtomicBool::new(false);
@@ -72,7 +76,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
 
     while let Ok(command) = rx.recv() {
         debug!("Bakery received command: {:?}", command);
-
+        
         match command {
             BakeryCommands::StartBatch => {
                 batch = Some(Vec::new());
@@ -105,6 +109,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                 handle_circuit_activity(circuit_ids, &circuits, &mut live_circuits);
             }
             BakeryCommands::Tick => {
+                // Reset per-cycle counters at the start of tick
                 handle_tick(&circuits, &mut live_circuits);
             }
             BakeryCommands::ChangeSiteSpeedLive { 
@@ -171,11 +176,18 @@ fn handle_commit_batch(
         return;
     }
 
-    // TEST CODE.
-    if matches!(circuit_change_mode, diff::CircuitDiffResult::CircuitsChanged {..} ) {
-        warn!("Circuit changes detected, but Bakery is not yet fully implemented to handle them. Full rebuild required.");
-        full_reload(batch, sites, circuits, live_circuits, &config, new_batch);
-        return; // Skip the rest of this CommitBatch processing
+    // Check if we should do a full reload based on the number of circuit changes
+    if let diff::CircuitDiffResult::CircuitsChanged { newly_added, removed_circuits, updated_circuits } = &circuit_change_mode {
+        let total_changes = newly_added.len() + removed_circuits.len() + updated_circuits.len();
+        
+        if total_changes > 50 {
+            warn!("Large number of circuit changes detected ({}), performing full rebuild to prevent churning", total_changes);
+            full_reload(batch, sites, circuits, live_circuits, &config, new_batch);
+            return; // Skip the rest of this CommitBatch processing
+        } else {
+            info!("Processing {} circuit changes incrementally", total_changes);
+            // Continue with incremental processing below
+        }
     }
 
     // Declare any site speed changes that need to be applied. We're sending them
@@ -303,8 +315,13 @@ fn handle_tick(
         return;
     };
     match config.queues.lazy_queues.as_ref() {
-        None | Some(LazyQueueMode::No) => return,
-        _ => {}
+        None | Some(LazyQueueMode::No) => {
+            ACTIVE_CIRCUITS.store(circuits.len(), Ordering::Relaxed);
+            return
+        },
+        _ => {
+            ACTIVE_CIRCUITS.store(live_circuits.len(), Ordering::Relaxed);
+        }
     }
 
     // Now we know that lazy queues are enabled, we can expire them!
@@ -418,6 +435,7 @@ fn process_batch(
     circuits: &mut HashMap<i64, BakeryCommands>,
 ) {
     info!("Bakery: Processing batch of {} commands", batch.len());
+    let mut circuit_count = 0u64;
     let commands = batch
         .into_iter()
         .map(|b| {
@@ -428,6 +446,7 @@ fn process_batch(
                 }
                 BakeryCommands::AddCircuit { circuit_hash, .. } => {
                     circuits.insert(*circuit_hash, b.clone());
+                    circuit_count += 1;
                 }
                 _ => {}
             }
@@ -437,6 +456,8 @@ fn process_batch(
         .flatten()
         .collect::<Vec<Vec<String>>>();
 
+    let path = Path::new(&config.lqos_directory).join("linux_tc_rust.txt");
+    write_command_file(&path, &commands);
     execute_in_memory(&commands, "processing batch");
 }
 

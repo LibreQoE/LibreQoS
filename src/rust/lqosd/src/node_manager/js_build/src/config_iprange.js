@@ -1,4 +1,4 @@
-import {saveConfig, loadConfig} from "./config/config_helper";
+import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
 
 function isValidCIDR(cidr) {
     try {
@@ -87,6 +87,9 @@ function updateConfig() {
         unknown_ip_honors_allow: document.getElementById('unknownHonorsAllow').checked
     };
 }
+
+// Render the configuration menu
+renderConfigMenu('iprange');
 
 loadConfig(() => {
     // window.config now contains the configuration.

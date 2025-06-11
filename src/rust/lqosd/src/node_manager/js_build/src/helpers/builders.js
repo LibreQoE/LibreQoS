@@ -118,6 +118,14 @@ export function topNTableHeader() {
     return th;
 }
 
+function formatPlanValue(value) {
+    // Format plan value to max 3 decimal places, removing trailing zeros
+    let formatted = parseFloat(value).toFixed(3);
+    // Remove trailing zeros after decimal point
+    formatted = formatted.replace(/\.?0+$/, '');
+    return formatted;
+}
+
 export function topNTableRow(r) {
     let row = document.createElement("tr");
     row.classList.add("small");
@@ -141,7 +149,7 @@ export function topNTableRow(r) {
     }
 
     let shaped = document.createElement("td");
-    shaped.innerText = r.plan.down + " / " + r.plan.up;
+    shaped.innerText = formatPlanValue(r.plan.down) + " / " + formatPlanValue(r.plan.up);
     row.append(shaped);
 
     let dl = document.createElement("td");

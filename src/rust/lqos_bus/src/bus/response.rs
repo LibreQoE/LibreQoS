@@ -8,6 +8,12 @@ use lts_client::transport_data::{StatsHost, StatsTotals, StatsTreeNode};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
+/// Serializable snapshot of BakeryStats for bus transmission
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BakeryStatsSnapshot {
+    pub active_circuits: u64,
+}
+
 /// A `BusResponse` object represents a single
 /// reply generated from a `BusRequest`, and batched
 /// inside a `BusReply`.
@@ -172,4 +178,10 @@ pub enum BusResponse {
 
     /// Summary of IP Protocols
     IpProtocols(Vec<(String, DownUpOrder<u64>)>),
+    
+    /// Stormguard statistics
+    StormguardStats(Vec<(String, u64, u64)>),
+    
+    /// Bakery statistics
+    BakeryActiveCircuits(usize),
 }

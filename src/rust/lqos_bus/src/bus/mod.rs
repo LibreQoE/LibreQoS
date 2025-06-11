@@ -2,7 +2,7 @@ mod client;
 mod queue_data;
 mod reply;
 mod request;
-mod response;
+pub mod response;
 mod session;
 mod unix_socket_server;
 pub use client::{bus_request, LibreqosBusClient};

@@ -1,3 +1,7 @@
+use std::fs::File;
+use std::io::{BufWriter, Write};
+use std::path::Path;
+use std::process::Stdio;
 use tracing::{error, info};
 
 /// Get the current Unix timestamp in seconds
@@ -11,7 +15,28 @@ pub(crate) fn current_timestamp() -> u64 {
 pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str) {
     info!("Bakery: Executing in-memory commands: {} lines, for {purpose}", command_buffer.len());
 
-    for line in command_buffer {
+    let path = Path::new("/tmp/lqos_bakery_commands.txt");
+    write_command_file(path, command_buffer);
+
+    let Ok(output) = std::process::Command::new("/sbin/tc")
+            .args(&["-f", "-batch", path.to_str().unwrap()])
+            .output()
+    else {
+        error!("Failed to execute tc batch command for {purpose}");
+        return;
+    };
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    if !output_str.is_empty() {
+        error!("Command output for ({purpose}): {:?}", output_str.trim());
+    }
+
+    let error_str = String::from_utf8_lossy(&output.stderr);
+    if !error_str.is_empty() {
+        error!("Command error for ({purpose}): {:?}", error_str.trim());
+    }
+
+    /*for line in command_buffer {
         let Ok(output) = std::process::Command::new("/sbin/tc")
             .args(line)
             .output() else {
@@ -29,9 +54,8 @@ pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str
             error!("Executing command: ({purpose}) {:?}", line);
             error!("Command error: {:?}", error_str.trim());
         }
-    }
+    }*/
 
-    // Commented out because it didn't appear to be faster, and you lose the ability to see individual command errors
     /*let mut commands = String::new();
     for line in command_buffer {
         for (idx, entry) in line.iter().enumerate() {
@@ -45,6 +69,7 @@ pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str
     }
 
     let Ok(mut child) = std::process::Command::new("/sbin/tc")
+        .arg("-f")
         .arg("-batch")  // or "-force" if you want it to continue after errors
         .arg("-")       // read from stdin
         .stdin(Stdio::piped())
@@ -74,30 +99,34 @@ pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str
     }*/
 }
 
-// pub(crate) fn write_command_file(path: &Path, commands: Vec<Vec<String>>) -> bool {
-//     let Ok(f) = File::create(path) else {
-//         error!("Failed to create output file: {}", path.display());
-//         return true;
-//     };
-//     let mut f = BufWriter::new(f);
-//     for line in commands {
-//         for (idx, entry) in line.iter().enumerate() {
-//             if let Err(e) = f.write_all(entry.as_bytes()) {
-//                 error!("Failed to write to output file: {}", e);
-//                 return true;
-//             }
-//             if idx < line.len() - 1 {
-//                 if let Err(e) = f.write_all(b" ") {
-//                     error!("Failed to write space to output file: {}", e);
-//                     return true;
-//                 }
-//             }
-//         }
-//         let newline = "\n";
-//         if let Err(e) = f.write_all(newline.as_bytes()) {
-//             error!("Failed to write newline to output file: {}", e);
-//             return true;
-//         }
-//     }
-//     false
-// }
+pub(crate) fn write_command_file(path: &Path, commands: &Vec<Vec<String>>) -> bool {
+    let Ok(file) = File::create(path) else {
+        error!("Failed to create output file: {}", path.display());
+        return true;
+    };
+    let mut f = BufWriter::new(file);
+    for line in commands {
+        for (idx, entry) in line.iter().enumerate() {
+            if let Err(e) = f.write_all(entry.as_bytes()) {
+                error!("Failed to write to output file: {}", e);
+                return true;
+            }
+            if idx < line.len() - 1 {
+                if let Err(e) = f.write_all(b" ") {
+                    error!("Failed to write space to output file: {}", e);
+                    return true;
+                }
+            }
+        }
+        let newline = "\n";
+        if let Err(e) = f.write_all(newline.as_bytes()) {
+            error!("Failed to write newline to output file: {}", e);
+            return true;
+        }
+    }
+    if let Err(e) = f.flush() {
+        error!("Failed to flush output file: {}", e);
+        return true;
+    }
+    false
+}

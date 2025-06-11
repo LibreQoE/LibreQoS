@@ -12,7 +12,7 @@ use lqos_bakery::BakeryCommands;
 use lqos_utils::hash_to_i64;
 use crate::config::StormguardConfig;
 use crate::datalog::LogCommand;
-use crate::{MOVING_AVERAGE_BUFFER_SIZE, READING_ACCUMULATOR_SIZE};
+use crate::{MOVING_AVERAGE_BUFFER_SIZE, READING_ACCUMULATOR_SIZE, STORMGUARD_STATS};
 use crate::site_state::recommendation::{Recommendation, RecommendationAction, RecommendationDirection};
 use crate::site_state::ring_buffer::RingBuffer;
 use crate::site_state::site::SiteState;
@@ -26,6 +26,11 @@ impl<'a> SiteStateTracker<'a> {
     pub fn from_config(config: &'a StormguardConfig) -> Self {
         let mut sites = HashMap::new();
         for (name, site) in &config.sites {
+            {
+                // Initialize the stats for this site
+                let mut lock = STORMGUARD_STATS.lock().unwrap();
+                lock.push((name.clone(), site.max_download_mbps, site.max_upload_mbps));
+            }
             sites.insert(
                 name.clone(),
                 SiteState {
@@ -104,10 +109,6 @@ impl<'a> SiteStateTracker<'a> {
                 }
             }
         }
-    }
-
-    pub fn check_state(&mut self) {
-        self.sites.iter_mut().for_each(|(_,s)| s.check_state());
     }
 
     pub fn recommendations(&mut self) -> Vec<(Recommendation, String)> {
@@ -252,6 +253,14 @@ impl<'a> SiteStateTracker<'a> {
                     (site.queue_download_mbps as f32 - 1.0, new_rate as f32 - 1.0, site.queue_download_mbps as f32, new_rate as f32)
                 },
             };
+            {
+                // Update the stats for this site
+                let mut lock = STORMGUARD_STATS.lock().unwrap();
+                if let Some(entry) = lock.iter_mut().find(|e| e.0 == recommendation.site) {
+                    entry.1 = site.queue_download_mbps;
+                    entry.2 = site.queue_upload_mbps;
+                }
+            }
             if let Err(e) = bakery_sender.try_send(BakeryCommands::ChangeSiteSpeedLive {
                 site_hash,
                 download_bandwidth_min: download_min,

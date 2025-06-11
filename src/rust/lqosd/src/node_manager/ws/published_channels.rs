@@ -25,4 +25,6 @@ pub enum PublishedChannels {
     NetworkTreeClients,
     CircuitCapacity,
     TreeCapacity,
+    StormguardStatus,
+    BakeryStatus,
 }

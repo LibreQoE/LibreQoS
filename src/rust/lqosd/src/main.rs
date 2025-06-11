@@ -61,6 +61,8 @@ use crate::throughput_tracker::THROUGHPUT_TRACKER;
 #[cfg(feature = "flamegraphs")]
 use crate::throughput_tracker::flow_data::{ALL_FLOWS, RECENT_FLOWS};
 use tracing::level_filters::LevelFilter;
+use lqos_stormguard::STORMGUARD_STATS;
+
 // Use JemAllocator only on supported platforms
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[global_allocator]
@@ -483,7 +485,7 @@ fn handle_bus_requests(
                     BusResponse::Fail("Bakery not initialized".to_string())
                 }
             }
-            BusRequest::BakeryAddCircuit { circuit_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, class_major, up_class_major} => {
+            BusRequest::BakeryAddCircuit { circuit_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, class_major, up_class_major, ip_addresses} => {
                 if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
                     let sender = sender.clone();
                     let _ = sender.send(lqos_bakery::BakeryCommands::AddCircuit {
@@ -497,11 +499,22 @@ fn handle_bus_requests(
                         upload_bandwidth_max: upload_bandwidth_max.clone(),
                         class_major: class_major.clone(),
                         up_class_major: up_class_major.clone(),
+                        ip_addresses: ip_addresses.clone(),
                    });
                     BusResponse::Ack
                 } else {
                     BusResponse::Fail("Bakery not initialized".to_string())
                 }
+            }
+            BusRequest::GetStormguardStats => {
+                let cloned = {
+                    let lock = STORMGUARD_STATS.lock().unwrap();
+                    (*lock).clone()
+                };
+                BusResponse::StormguardStats(cloned)
+            }
+            BusRequest::GetBakeryStats => {
+                BusResponse::BakeryActiveCircuits(lqos_bakery::ACTIVE_CIRCUITS.load(std::sync::atomic::Ordering::Relaxed))
             }
         });
     }

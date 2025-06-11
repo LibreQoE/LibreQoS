@@ -1,4 +1,4 @@
-import {saveConfig, loadConfig} from "./config/config_helper";
+import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
 
 function validateConfig() {
     // Validate required fields when enabled
@@ -39,6 +39,9 @@ function updateConfig() {
         url: document.getElementById("spylnxUrl").value.trim()
     };
 }
+
+// Render the configuration menu
+renderConfigMenu('spylnx');
 
 loadConfig(() => {
     // window.config now contains the configuration.

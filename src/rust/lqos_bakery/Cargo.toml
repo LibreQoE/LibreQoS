@@ -9,3 +9,4 @@ lqos_bus = { path = "../lqos_bus" }
 anyhow.workspace = true
 tracing.workspace = true
 crossbeam-channel.workspace = true
+once_cell.workspace = true

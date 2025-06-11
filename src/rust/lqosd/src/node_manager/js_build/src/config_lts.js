@@ -1,4 +1,4 @@
-import {saveConfig, loadConfig} from "./config/config_helper";
+import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
 
 function validateConfig() {
     // Validate numeric fields
@@ -39,6 +39,9 @@ function updateConfig() {
         use_insight: document.getElementById("useInsight").checked
     };
 }
+
+// Render the configuration menu
+renderConfigMenu('lts');
 
 loadConfig(() => {
     // window.config now contains the configuration.

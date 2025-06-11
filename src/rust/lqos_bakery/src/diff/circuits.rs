@@ -68,11 +68,11 @@ fn has_circuit_changed(
     circuit_a: &BakeryCommands,
     circuit_b: &BakeryCommands,
 ) -> bool {
-    let BakeryCommands::AddCircuit { circuit_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, class_major, up_class_major } = circuit_a else {
+    let BakeryCommands::AddCircuit { circuit_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, class_major, up_class_major, ip_addresses } = circuit_a else {
         warn!("circuit_changed called on non-circuit command: {:?}", circuit_a);
         return false; // Not a circuit command
     };
-    let BakeryCommands::AddCircuit { circuit_hash: other_circuit_hash, parent_class_id: other_parent_class_id, up_parent_class_id: other_up_parent_class_id, class_minor: other_class_minor, download_bandwidth_min: other_download_bandwidth_min, upload_bandwidth_min: other_upload_bandwidth_min, download_bandwidth_max: other_download_bandwidth_max, upload_bandwidth_max: other_upload_bandwidth_max, class_major: other_class_major, up_class_major: other_up_class_major } = circuit_b else {
+    let BakeryCommands::AddCircuit { circuit_hash: other_circuit_hash, parent_class_id: other_parent_class_id, up_parent_class_id: other_up_parent_class_id, class_minor: other_class_minor, download_bandwidth_min: other_download_bandwidth_min, upload_bandwidth_min: other_upload_bandwidth_min, download_bandwidth_max: other_download_bandwidth_max, upload_bandwidth_max: other_upload_bandwidth_max, class_major: other_class_major, up_class_major: other_up_class_major, ip_addresses: other_ip_addresses } = circuit_b else {
         warn!("circuit_changed called on non-circuit command: {:?}", circuit_b);
         return false; // Not a circuit command
     };
@@ -90,5 +90,6 @@ fn has_circuit_changed(
     download_bandwidth_max != other_download_bandwidth_max ||
     upload_bandwidth_max != other_upload_bandwidth_max ||
     class_major != other_class_major ||
-    up_class_major != other_up_class_major
+    up_class_major != other_up_class_major ||
+    ip_addresses != other_ip_addresses
 }

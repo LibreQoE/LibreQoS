@@ -282,7 +282,15 @@ pub enum BusRequest {
         class_major: u16,
         /// The upload class major version for the circuit
         up_class_major: u16,
+        /// Concatenated list of IP addresses for the circuit
+        ip_addresses: String,
     },
+    
+    /// Get current Stormguard statistics
+    GetStormguardStats,
+    
+    /// Get current Bakery statistics
+    GetBakeryStats,
 }
 
 /// Defines the parts of the blackboard
