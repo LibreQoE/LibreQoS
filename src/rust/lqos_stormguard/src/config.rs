@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use tracing::{debug, error};
 use lqos_bus::TcHandle;
 use crate::queue_structure::{find_queue_bandwidth, find_queue_dependents};
+use crate::STORMGUARD_STATS;
 
 pub struct WatchingSite {
     pub name: String,
@@ -37,11 +38,11 @@ pub fn configure() -> anyhow::Result<StormguardConfig> {
     }
 
     let Some(sg_config) = &config.stormguard else {
-        tracing::info!("StormGuard is not enabled in the configuration.");
+        error!("StormGuard is not enabled in the configuration.");
         return Err(anyhow::anyhow!("StormGuard is not enabled in the configuration."));
     };
     if !sg_config.enabled {
-        tracing::info!("StormGuard is not enabled in the configuration.");
+        error!("StormGuard is not enabled in the configuration.");
         return Err(anyhow::anyhow!("StormGuard is not enabled in the configuration."));
     }
 
@@ -64,6 +65,10 @@ pub fn configure() -> anyhow::Result<StormguardConfig> {
             dependent_nodes: dependencies,
         };
         sites.insert(target.to_owned(), site);
+        {
+            let mut lock = STORMGUARD_STATS.lock().unwrap();
+            lock.push((target.to_owned(), max_down, max_up));
+        }
     }
 
     let result = StormguardConfig {
