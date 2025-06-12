@@ -289,7 +289,7 @@ static __always_inline void infer_tcp_rtt(
                 struct flowbee_event event = { 0 };
                 event.key = *key;
                 event.round_trip_time = elapsed;
-                event.effective_direction = rate_index;
+                event.effective_direction = other_rate_index; // direction of the origial TCP segment we matched against
                 bpf_ringbuf_output(&flowbee_events, &event, sizeof(event), 0);
             }
         }
