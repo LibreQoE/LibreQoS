@@ -50,6 +50,7 @@ pub async fn spawn_webserver(
         .route("/", get(redirect_to_index))
         .route("/doLogin", post(auth::try_login))
         .route("/firstLogin", post(auth::first_user))
+        .route("/health", get(health_check))
         .nest(
             "/websocket/",
             websocket_router(bus_tx.clone(), system_usage_tx.clone()),
@@ -68,4 +69,9 @@ pub async fn spawn_webserver(
 /// to the index.html page.
 async fn redirect_to_index() -> Redirect {
     Redirect::permanent("/index.html")
+}
+
+/// Provides a simple OK status
+async fn health_check() -> &'static str {
+    "OK"
 }
