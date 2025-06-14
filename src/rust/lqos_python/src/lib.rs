@@ -1,14 +1,12 @@
 #![allow(non_local_definitions)] // Temporary: rewrite required for much of this, for newer PyO3.
 #![allow(unsafe_op_in_unsafe_fn)]
 use lqos_bus::{BlackboardSystem, BusRequest, BusResponse, TcHandle};
-use lqos_utils::{hex_string::read_hex_string};
+use lqos_utils::hex_string::read_hex_string;
 use nix::libc::getpid;
-use pyo3::{
-    PyResult, Python, exceptions::PyOSError, pyclass, pyfunction, pymethods, pymodule,
-    types::PyModule, wrap_pyfunction,
-};
+use pyo3::prelude::*;
+use pyo3::exceptions::PyOSError;
 use std::{
-    fs::{read_to_string, remove_file, File},
+    fs::{File, read_to_string, remove_file},
     io::Write,
     path::Path,
 };
@@ -23,87 +21,87 @@ const LOCK_FILE: &str = "/run/lqos/libreqos.lock";
 /// Defines the Python module exports.
 /// All exported functions have to be listed here.
 #[pymodule]
-fn liblqos_python(_py: Python, m: &PyModule) -> PyResult<()> {
+fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyIpMapping>()?;
     m.add_class::<BatchedCommands>()?;
     m.add_class::<PyExceptionCpe>()?;
     m.add_class::<device_weights::DeviceWeightResponse>()?;
-    m.add_wrapped(wrap_pyfunction!(is_lqosd_alive))?;
-    m.add_wrapped(wrap_pyfunction!(list_ip_mappings))?;
-    m.add_wrapped(wrap_pyfunction!(clear_ip_mappings))?;
-    m.add_wrapped(wrap_pyfunction!(delete_ip_mapping))?;
-    m.add_wrapped(wrap_pyfunction!(add_ip_mapping))?;
-    m.add_wrapped(wrap_pyfunction!(validate_shaped_devices))?;
-    m.add_wrapped(wrap_pyfunction!(is_libre_already_running))?;
-    m.add_wrapped(wrap_pyfunction!(create_lock_file))?;
-    m.add_wrapped(wrap_pyfunction!(free_lock_file))?;
+    m.add_function(wrap_pyfunction!(is_lqosd_alive, m)?)?;
+    m.add_function(wrap_pyfunction!(list_ip_mappings, m)?)?;
+    m.add_function(wrap_pyfunction!(clear_ip_mappings, m)?)?;
+    m.add_function(wrap_pyfunction!(delete_ip_mapping, m)?)?;
+    m.add_function(wrap_pyfunction!(add_ip_mapping, m)?)?;
+    m.add_function(wrap_pyfunction!(validate_shaped_devices, m)?)?;
+    m.add_function(wrap_pyfunction!(is_libre_already_running, m)?)?;
+    m.add_function(wrap_pyfunction!(create_lock_file, m)?)?;
+    m.add_function(wrap_pyfunction!(free_lock_file, m)?)?;
     // Unified configuration items
-    m.add_wrapped(wrap_pyfunction!(check_config))?;
-    m.add_wrapped(wrap_pyfunction!(sqm))?;
-    m.add_wrapped(wrap_pyfunction!(upstream_bandwidth_capacity_download_mbps))?;
-    m.add_wrapped(wrap_pyfunction!(upstream_bandwidth_capacity_upload_mbps))?;
-    m.add_wrapped(wrap_pyfunction!(interface_a))?;
-    m.add_wrapped(wrap_pyfunction!(interface_b))?;
-    m.add_wrapped(wrap_pyfunction!(enable_actual_shell_commands))?;
-    m.add_wrapped(wrap_pyfunction!(use_bin_packing_to_balance_cpu))?;
-    m.add_wrapped(wrap_pyfunction!(monitor_mode_only))?;
-    m.add_wrapped(wrap_pyfunction!(run_shell_commands_as_sudo))?;
-    m.add_wrapped(wrap_pyfunction!(generated_pn_download_mbps))?;
-    m.add_wrapped(wrap_pyfunction!(generated_pn_upload_mbps))?;
-    m.add_wrapped(wrap_pyfunction!(queues_available_override))?;
-    m.add_wrapped(wrap_pyfunction!(on_a_stick))?;
-    m.add_wrapped(wrap_pyfunction!(overwrite_network_json_always))?;
-    m.add_wrapped(wrap_pyfunction!(allowed_subnets))?;
-    m.add_wrapped(wrap_pyfunction!(ignore_subnets))?;
-    m.add_wrapped(wrap_pyfunction!(circuit_name_use_address))?;
-    m.add_wrapped(wrap_pyfunction!(find_ipv6_using_mikrotik))?;
-    m.add_wrapped(wrap_pyfunction!(exclude_sites))?;
-    m.add_wrapped(wrap_pyfunction!(bandwidth_overhead_factor))?;
-    m.add_wrapped(wrap_pyfunction!(committed_bandwidth_multiplier))?;
-    m.add_wrapped(wrap_pyfunction!(exception_cpes))?;
-    m.add_wrapped(wrap_pyfunction!(uisp_site))?;
-    m.add_wrapped(wrap_pyfunction!(uisp_strategy))?;
-    m.add_wrapped(wrap_pyfunction!(uisp_suspended_strategy))?;
-    m.add_wrapped(wrap_pyfunction!(airmax_capacity))?;
-    m.add_wrapped(wrap_pyfunction!(ltu_capacity))?;
-    m.add_wrapped(wrap_pyfunction!(use_ptmp_as_parent))?;
-    m.add_wrapped(wrap_pyfunction!(uisp_base_url))?;
-    m.add_wrapped(wrap_pyfunction!(uisp_auth_token))?;
-    m.add_wrapped(wrap_pyfunction!(splynx_api_key))?;
-    m.add_wrapped(wrap_pyfunction!(splynx_api_secret))?;
-    m.add_wrapped(wrap_pyfunction!(splynx_api_url))?;
-    m.add_wrapped(wrap_pyfunction!(automatic_import_uisp))?;
-    m.add_wrapped(wrap_pyfunction!(automatic_import_splynx))?;
-    m.add_wrapped(wrap_pyfunction!(queue_refresh_interval_mins))?;
-    m.add_wrapped(wrap_pyfunction!(automatic_import_powercode))?;
-    m.add_wrapped(wrap_pyfunction!(powercode_api_key))?;
-    m.add_wrapped(wrap_pyfunction!(powercode_api_url))?;
-    m.add_wrapped(wrap_pyfunction!(automatic_import_sonar))?;
-    m.add_wrapped(wrap_pyfunction!(sonar_api_url))?;
-    m.add_wrapped(wrap_pyfunction!(sonar_api_key))?;
-    m.add_wrapped(wrap_pyfunction!(snmp_community))?;
-    m.add_wrapped(wrap_pyfunction!(sonar_airmax_ap_model_ids))?;
-    m.add_wrapped(wrap_pyfunction!(sonar_ltu_ap_model_ids))?;
-    m.add_wrapped(wrap_pyfunction!(sonar_active_status_ids))?;
-    m.add_wrapped(wrap_pyfunction!(influx_db_enabled))?;
-    m.add_wrapped(wrap_pyfunction!(influx_db_bucket))?;
-    m.add_wrapped(wrap_pyfunction!(influx_db_org))?;
-    m.add_wrapped(wrap_pyfunction!(influx_db_token))?;
-    m.add_wrapped(wrap_pyfunction!(influx_db_url))?;
-    m.add_wrapped(wrap_pyfunction!(get_weights))?;
-    m.add_wrapped(wrap_pyfunction!(get_tree_weights))?;
-    m.add_wrapped(wrap_pyfunction!(get_libreqos_directory))?;
-    m.add_wrapped(wrap_pyfunction!(is_network_flat))?;
-    m.add_wrapped(wrap_pyfunction!(blackboard_finish))?;
-    m.add_wrapped(wrap_pyfunction!(blackboard_submit))?;
-    m.add_wrapped(wrap_pyfunction!(automatic_import_wispgate))?;
-    m.add_wrapped(wrap_pyfunction!(wispgate_api_token))?;
-    m.add_wrapped(wrap_pyfunction!(wispgate_api_url))?;
-    m.add_wrapped(wrap_pyfunction!(enable_insight_topology))?;
-    m.add_wrapped(wrap_pyfunction!(insight_topology_role))?;
-    m.add_wrapped(wrap_pyfunction!(promote_to_root_list))?;
-    m.add_wrapped(wrap_pyfunction!(client_bandwidth_multiplier))?;
-    m.add_wrapped(wrap_pyfunction!(calculate_hash))?;
+    m.add_function(wrap_pyfunction!(check_config, m)?)?;
+    m.add_function(wrap_pyfunction!(sqm, m)?)?;
+    m.add_function(wrap_pyfunction!(upstream_bandwidth_capacity_download_mbps, m)?)?;
+    m.add_function(wrap_pyfunction!(upstream_bandwidth_capacity_upload_mbps, m)?)?;
+    m.add_function(wrap_pyfunction!(interface_a, m)?)?;
+    m.add_function(wrap_pyfunction!(interface_b, m)?)?;
+    m.add_function(wrap_pyfunction!(enable_actual_shell_commands, m)?)?;
+    m.add_function(wrap_pyfunction!(use_bin_packing_to_balance_cpu, m)?)?;
+    m.add_function(wrap_pyfunction!(monitor_mode_only, m)?)?;
+    m.add_function(wrap_pyfunction!(run_shell_commands_as_sudo, m)?)?;
+    m.add_function(wrap_pyfunction!(generated_pn_download_mbps, m)?)?;
+    m.add_function(wrap_pyfunction!(generated_pn_upload_mbps, m)?)?;
+    m.add_function(wrap_pyfunction!(queues_available_override, m)?)?;
+    m.add_function(wrap_pyfunction!(on_a_stick, m)?)?;
+    m.add_function(wrap_pyfunction!(overwrite_network_json_always, m)?)?;
+    m.add_function(wrap_pyfunction!(allowed_subnets, m)?)?;
+    m.add_function(wrap_pyfunction!(ignore_subnets, m)?)?;
+    m.add_function(wrap_pyfunction!(circuit_name_use_address, m)?)?;
+    m.add_function(wrap_pyfunction!(find_ipv6_using_mikrotik, m)?)?;
+    m.add_function(wrap_pyfunction!(exclude_sites, m)?)?;
+    m.add_function(wrap_pyfunction!(bandwidth_overhead_factor, m)?)?;
+    m.add_function(wrap_pyfunction!(committed_bandwidth_multiplier, m)?)?;
+    m.add_function(wrap_pyfunction!(exception_cpes, m)?)?;
+    m.add_function(wrap_pyfunction!(uisp_site, m)?)?;
+    m.add_function(wrap_pyfunction!(uisp_strategy, m)?)?;
+    m.add_function(wrap_pyfunction!(uisp_suspended_strategy, m)?)?;
+    m.add_function(wrap_pyfunction!(airmax_capacity, m)?)?;
+    m.add_function(wrap_pyfunction!(ltu_capacity, m)?)?;
+    m.add_function(wrap_pyfunction!(use_ptmp_as_parent, m)?)?;
+    m.add_function(wrap_pyfunction!(uisp_base_url, m)?)?;
+    m.add_function(wrap_pyfunction!(uisp_auth_token, m)?)?;
+    m.add_function(wrap_pyfunction!(splynx_api_key, m)?)?;
+    m.add_function(wrap_pyfunction!(splynx_api_secret, m)?)?;
+    m.add_function(wrap_pyfunction!(splynx_api_url, m)?)?;
+    m.add_function(wrap_pyfunction!(automatic_import_uisp, m)?)?;
+    m.add_function(wrap_pyfunction!(automatic_import_splynx, m)?)?;
+    m.add_function(wrap_pyfunction!(queue_refresh_interval_mins, m)?)?;
+    m.add_function(wrap_pyfunction!(automatic_import_powercode, m)?)?;
+    m.add_function(wrap_pyfunction!(powercode_api_key, m)?)?;
+    m.add_function(wrap_pyfunction!(powercode_api_url, m)?)?;
+    m.add_function(wrap_pyfunction!(automatic_import_sonar, m)?)?;
+    m.add_function(wrap_pyfunction!(sonar_api_url, m)?)?;
+    m.add_function(wrap_pyfunction!(sonar_api_key, m)?)?;
+    m.add_function(wrap_pyfunction!(snmp_community, m)?)?;
+    m.add_function(wrap_pyfunction!(sonar_airmax_ap_model_ids, m)?)?;
+    m.add_function(wrap_pyfunction!(sonar_ltu_ap_model_ids, m)?)?;
+    m.add_function(wrap_pyfunction!(sonar_active_status_ids, m)?)?;
+    m.add_function(wrap_pyfunction!(influx_db_enabled, m)?)?;
+    m.add_function(wrap_pyfunction!(influx_db_bucket, m)?)?;
+    m.add_function(wrap_pyfunction!(influx_db_org, m)?)?;
+    m.add_function(wrap_pyfunction!(influx_db_token, m)?)?;
+    m.add_function(wrap_pyfunction!(influx_db_url, m)?)?;
+    m.add_function(wrap_pyfunction!(get_weights, m)?)?;
+    m.add_function(wrap_pyfunction!(get_tree_weights, m)?)?;
+    m.add_function(wrap_pyfunction!(get_libreqos_directory, m)?)?;
+    m.add_function(wrap_pyfunction!(is_network_flat, m)?)?;
+    m.add_function(wrap_pyfunction!(blackboard_finish, m)?)?;
+    m.add_function(wrap_pyfunction!(blackboard_submit, m)?)?;
+    m.add_function(wrap_pyfunction!(automatic_import_wispgate, m)?)?;
+    m.add_function(wrap_pyfunction!(wispgate_api_token, m)?)?;
+    m.add_function(wrap_pyfunction!(wispgate_api_url, m)?)?;
+    m.add_function(wrap_pyfunction!(enable_insight_topology, m)?)?;
+    m.add_function(wrap_pyfunction!(insight_topology_role, m)?)?;
+    m.add_function(wrap_pyfunction!(promote_to_root_list, m)?)?;
+    m.add_function(wrap_pyfunction!(client_bandwidth_multiplier, m)?)?;
+    m.add_function(wrap_pyfunction!(calculate_hash, m)?)?;
 
     m.add_class::<Bakery>()?;
     Ok(())
@@ -793,18 +791,28 @@ fn promote_to_root_list() -> PyResult<Vec<String>> {
 #[pyfunction]
 fn client_bandwidth_multiplier() -> PyResult<f32> {
     let config = lqos_config::load_config().unwrap();
-    Ok(config.integration_common.client_bandwidth_multiplier.unwrap_or(1.0))
+    Ok(config
+        .integration_common
+        .client_bandwidth_multiplier
+        .unwrap_or(1.0))
 }
 #[pyfunction]
 fn enable_insight_topology() -> PyResult<bool> {
     let config = lqos_config::load_config().unwrap();
-    Ok(config.long_term_stats.enable_insight_topology.unwrap_or(false))
+    Ok(config
+        .long_term_stats
+        .enable_insight_topology
+        .unwrap_or(false))
 }
 
 #[pyfunction]
 fn insight_topology_role() -> PyResult<String> {
     let config = lqos_config::load_config().unwrap();
-    Ok(config.long_term_stats.insight_topology_role.clone().unwrap_or("None".to_string()))
+    Ok(config
+        .long_term_stats
+        .insight_topology_role
+        .clone()
+        .unwrap_or("None".to_string()))
 }
 
 #[pyfunction]
@@ -833,7 +841,10 @@ fn calculate_hash() -> PyResult<i64> {
 enum BakeryCommands {
     StartBatch,
     Commit,
-    MqSetup { queues_available: usize, stick_offset: usize },
+    MqSetup {
+        queues_available: usize,
+        stick_offset: usize,
+    },
     AddSite {
         site_hash: i64,
         parent_class_id: TcHandle,
@@ -856,7 +867,7 @@ enum BakeryCommands {
         class_major: u16,
         up_class_major: u16,
         ip_addresses: String,
-    }
+    },
 }
 
 #[pyclass]
@@ -868,9 +879,7 @@ pub struct Bakery {
 impl Bakery {
     #[new]
     pub fn new() -> PyResult<Self> {
-        Ok(Self {
-            queue: Vec::new(),
-        })
+        Ok(Self { queue: Vec::new() })
     }
 
     pub fn start_batch(&mut self) -> PyResult<()> {
@@ -886,7 +895,8 @@ impl Bakery {
         let handle = std::thread::spawn(move || {
             tokio::runtime::Builder::new_current_thread()
                 .enable_all()
-                .build().unwrap()
+                .build()
+                .unwrap()
                 .block_on(async {
                     let mut bus = lqos_bus::LibreqosBusClient::new().await.unwrap();
                     let chunks = queue.chunks(1024);
@@ -894,15 +904,29 @@ impl Bakery {
                         let mut requests = Vec::new();
                         for msg in chunk {
                             match msg {
-                                BakeryCommands::StartBatch => requests.push(BusRequest::BakeryStart),
+                                BakeryCommands::StartBatch => {
+                                    requests.push(BusRequest::BakeryStart)
+                                }
                                 BakeryCommands::Commit => requests.push(BusRequest::BakeryCommit),
-                                BakeryCommands::MqSetup { queues_available, stick_offset } => {
+                                BakeryCommands::MqSetup {
+                                    queues_available,
+                                    stick_offset,
+                                } => {
                                     requests.push(BusRequest::BakeryMqSetup {
                                         queues_available: *queues_available,
                                         stick_offset: *stick_offset,
                                     });
-                                },
-                                BakeryCommands::AddSite { site_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max } => {
+                                }
+                                BakeryCommands::AddSite {
+                                    site_hash,
+                                    parent_class_id,
+                                    up_parent_class_id,
+                                    class_minor,
+                                    download_bandwidth_min,
+                                    upload_bandwidth_min,
+                                    download_bandwidth_max,
+                                    upload_bandwidth_max,
+                                } => {
                                     let command = BusRequest::BakeryAddSite {
                                         site_hash: *site_hash,
                                         parent_class_id: *parent_class_id,
@@ -915,7 +939,19 @@ impl Bakery {
                                     };
                                     requests.push(command);
                                 }
-                                BakeryCommands::AddCircuit { circuit_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, class_major, up_class_major, ip_addresses } => {
+                                BakeryCommands::AddCircuit {
+                                    circuit_hash,
+                                    parent_class_id,
+                                    up_parent_class_id,
+                                    class_minor,
+                                    download_bandwidth_min,
+                                    upload_bandwidth_min,
+                                    download_bandwidth_max,
+                                    upload_bandwidth_max,
+                                    class_major,
+                                    up_class_major,
+                                    ip_addresses,
+                                } => {
                                     let command = BusRequest::BakeryAddCircuit {
                                         circuit_hash: *circuit_hash,
                                         parent_class_id: *parent_class_id,
@@ -947,7 +983,10 @@ impl Bakery {
     }
 
     pub fn setup_mq(&mut self, queues_available: usize, stick_offset: usize) -> PyResult<()> {
-        self.queue.push(BakeryCommands::MqSetup { queues_available, stick_offset });
+        self.queue.push(BakeryCommands::MqSetup {
+            queues_available,
+            stick_offset,
+        });
         Ok(())
     }
 
