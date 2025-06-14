@@ -102,7 +102,7 @@ function connectPingers(circuits) {
             if (target != null) {
                 let myPing = devicePings[msg.ip];
                 if (myPing.count === myPing.timeout) {
-                    target.innerHTML = "<i class='fa fa-ban text-danger'></i>";
+                    target.innerHTML = "<i class='fa fa-minus-circle text-secondary' data-bs-toggle='tooltip' data-bs-placement='top' title='No ping response - this is normal for many ISPs'></i>";
                 } else {
                     let loss = ((myPing.timeout / myPing.count) * 100);
                     let lossStr = loss.toFixed(1);
@@ -119,8 +119,11 @@ function connectPingers(circuits) {
                     }
                     let pingRamp = Math.min(avg / 200, 1);
                     let pingColor = lerpGreenToRedViaOrange(pingRamp, 1);
-                    target.innerHTML = "<i class='fa fa-check text-success'></i> <span class='tiny'><span class='" + lossColor + "'>" + lossStr + "%</span> / <span style='color: " + pingColor + "'>" + scaleNanos(avg) + "</span></span>";
+                    target.innerHTML = "<i class='fa fa-check text-success' data-bs-toggle='tooltip' data-bs-placement='top' title='Device is responding to pings'></i> <span class='tiny'><span class='" + lossColor + "'>" + lossStr + "%</span> / <span style='color: " + pingColor + "'>" + scaleNanos(avg) + "</span></span>";
                 }
+                // Initialize Bootstrap tooltips
+                const tooltipTriggerList = target.querySelectorAll('[data-bs-toggle="tooltip"]');
+                const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
             }
         }
     });
