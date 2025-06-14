@@ -8,6 +8,7 @@ use crate::node_manager::{
 use crate::system_stats::SystemStats;
 use anyhow::{Result, bail};
 use axum::Router;
+use axum::http::StatusCode;
 use axum::response::Redirect;
 use axum::routing::{get, post};
 use lqos_bus::BusRequest;
@@ -72,6 +73,6 @@ async fn redirect_to_index() -> Redirect {
 }
 
 /// Provides a simple OK status
-async fn health_check() -> &'static str {
-    "OK"
+async fn health_check() -> (StatusCode, &'static str) {
+    (StatusCode::OK, "OK")
 }
