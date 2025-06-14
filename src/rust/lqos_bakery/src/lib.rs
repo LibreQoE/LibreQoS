@@ -24,11 +24,10 @@ mod diff;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use crossbeam_channel::{Receiver, Sender};
 use tracing::{debug, error, info, warn};
 use utils::current_timestamp;
-use lqos_bus::BakeryStatsSnapshot;
 pub (crate) const CHANNEL_CAPACITY: usize = 65536; // 64k capacity for Bakery commands
 pub use commands::BakeryCommands;
 use lqos_config::{Config, LazyQueueMode};
@@ -127,6 +126,41 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     upload_bandwidth_max,
                     &mut sites,
                 );
+            }
+            BakeryCommands::StormGuardAdjustment { dry_run, interface_name, class_id, new_rate } => {
+                // Build the HTB command
+                let args = vec![
+                    "class".to_string(),
+                    "change".to_string(),
+                    "dev".to_string(),
+                    interface_name.to_string(),
+                    "classid".to_string(),
+                    class_id.to_string(),
+                    "htb".to_string(),
+                    "rate".to_string(),
+                    format!("{}mbit", new_rate - 1),
+                    "ceil".to_string(),
+                    format!("{}mbit", new_rate),
+                ];
+                if dry_run {
+                    warn!("DRY RUN: /sbin/tc {}", args.join(" "));
+                } else {
+                    let output = std::process::Command::new("/sbin/tc")
+                        .args(&args)
+                        .output();
+                    match output {
+                        Err(e) => {
+                            warn!("Failed to run tc command: {}", e);
+                        }
+                        Ok(out) => {
+                            if !out.status.success() {
+                                warn!("tc command failed: {}", String::from_utf8_lossy(&out.stderr));
+                            } else {
+                                info!("tc command succeeded: {}", String::from_utf8_lossy(&out.stdout));
+                            }
+                        }
+                    }
+                }
             }
         }
     }

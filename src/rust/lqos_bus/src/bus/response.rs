@@ -11,6 +11,7 @@ use std::net::IpAddr;
 /// Serializable snapshot of BakeryStats for bus transmission
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BakeryStatsSnapshot {
+    /// The number of active circuits in the bakery
     pub active_circuits: u64,
 }
 

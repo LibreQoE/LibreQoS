@@ -1,7 +1,6 @@
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
-use std::process::Stdio;
 use tracing::{error, info};
 
 /// Get the current Unix timestamp in seconds

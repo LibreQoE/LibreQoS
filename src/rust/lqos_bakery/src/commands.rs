@@ -53,6 +53,12 @@ pub enum BakeryCommands {
         up_class_major: u16,
         ip_addresses: String, // Concatenated list of all IPs for this circuit
     },
+    StormGuardAdjustment {
+        dry_run: bool,
+        interface_name: String,
+        class_id: String,
+        new_rate: u64
+    }
 }
 
 impl BakeryCommands {
