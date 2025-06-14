@@ -65,7 +65,7 @@ zerocopy = {version = "0.8.5", features = [ "derive", "zerocopy-derive", "simd" 
 sysinfo = { version = "0", default-features = false, features = [ "system" ] }
 default-net = "0"
 reqwest = { version = "0", features = ["json", "blocking"] }
-pyo3 = "0.20.3"
+pyo3 = "0.25.1"
 colored = "2"
 miniz_oxide = "0.8"
 byteorder = "1"
