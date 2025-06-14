@@ -8,6 +8,7 @@ use crate::node_manager::{
 use crate::system_stats::SystemStats;
 use anyhow::{Result, bail};
 use axum::Router;
+use axum::http::StatusCode;
 use axum::response::Redirect;
 use axum::routing::{get, post};
 use lqos_bus::BusRequest;
@@ -50,6 +51,7 @@ pub async fn spawn_webserver(
         .route("/", get(redirect_to_index))
         .route("/doLogin", post(auth::try_login))
         .route("/firstLogin", post(auth::first_user))
+        .route("/health", get(health_check))
         .nest(
             "/websocket/",
             websocket_router(bus_tx.clone(), system_usage_tx.clone()),
@@ -68,4 +70,9 @@ pub async fn spawn_webserver(
 /// to the index.html page.
 async fn redirect_to_index() -> Redirect {
     Redirect::permanent("/index.html")
+}
+
+/// Provides a simple OK status
+async fn health_check() -> (StatusCode, &'static str) {
+    (StatusCode::OK, "OK")
 }
