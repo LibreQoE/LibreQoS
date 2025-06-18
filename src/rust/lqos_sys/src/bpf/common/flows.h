@@ -154,6 +154,14 @@ static __always_inline struct flow_key_t build_flow_key(
     };
 }
 
+// Checks if a < b considering u32 wraparound (logic from RFC 7323 Section 5.2)
+static __always_inline bool u32wrap_lt(
+    __u32 a,
+    __u32 b)
+{
+    return a != b && b - a < 1UL << 31;
+}
+
 // Update the flow data with the current packet's information.
 // * Update the timestamp of the last seen packet
 // * Update the bytes and packets sent
@@ -277,9 +285,27 @@ static __always_inline void infer_tcp_rtt(
         return;
 
     //bpf_debug("[FLOWS][%d] TSVAL: %u, TSECR: %u", direction, tsval, tsecr);
-    if (dissector->tsval != data->tsval[rate_index] && dissector->tsecr != data->tsecr[rate_index]) {
 
-        // Match check
+    // Update TSval in forward (rate_index) direction
+    if (
+        data->tsval[rate_index] == 0 || // No previous TSval
+        u32wrap_lt(data->tsval[rate_index], dissector->tsval) // New TSval
+    ) {
+        data->tsval[rate_index] = dissector->tsval;
+        data->ts_change_time[rate_index] = dissector->now;
+    }
+
+    if (dissector->tsecr == 0)
+        return;
+
+    // Update TSecr in forward direction + check match in reverse (other_rate_index) direction
+    if (
+        data->tsecr[rate_index] == 0 || // No previous TSecr
+        u32wrap_lt(data->tsecr[rate_index], dissector->tsecr) // New TSecr
+    ) {
+        data->tsecr[rate_index] = dissector->tsecr;
+
+        // Match TSecr against previous TSval in reverse direction
         if (dissector->tsecr == data->tsval[other_rate_index]) {
             __u64 elapsed = dissector->now - data->ts_change_time[other_rate_index];
             if (elapsed < TWO_SECONDS_IN_NANOS) {
@@ -290,10 +316,6 @@ static __always_inline void infer_tcp_rtt(
                 bpf_ringbuf_output(&flowbee_events, &event, sizeof(event), 0);
             }
         }
-
-        data->ts_change_time[rate_index] = dissector->now;
-        data->tsval[rate_index] = dissector->tsval;
-        data->tsecr[rate_index] = dissector->tsecr;
     }
 
     return;
