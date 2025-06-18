@@ -279,11 +279,8 @@ static __always_inline void infer_tcp_rtt(
     //bpf_debug("[FLOWS][%d] TSVAL: %u, TSECR: %u", direction, tsval, tsecr);
     if (dissector->tsval != data->tsval[rate_index] && dissector->tsecr != data->tsecr[rate_index]) {
 
-        if (
-            dissector->tsecr == data->tsval[other_rate_index] &&
-            (data->rate_estimate_bps[rate_index] > 0 ||
-             data->rate_estimate_bps[other_rate_index] > 0 )
-        ) {
+        // Match check
+        if (dissector->tsecr == data->tsval[other_rate_index]) {
             __u64 elapsed = dissector->now - data->ts_change_time[other_rate_index];
             if (elapsed < TWO_SECONDS_IN_NANOS) {
                 struct flowbee_event event = { 0 };
