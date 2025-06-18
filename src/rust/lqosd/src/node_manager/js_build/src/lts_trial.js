@@ -1,31 +1,713 @@
-const sections = [
-    "page1", "page2", "alreadyGotIt", "signMeUp"
+// Paddle-compatible countries (excluding embargoed nations)
+const ALLOWED_COUNTRIES = [
+    { code: 'ad', name: 'Andorra' },
+    { code: 'ae', name: 'United Arab Emirates' },
+    { code: 'ag', name: 'Antigua and Barbuda' },
+    { code: 'ai', name: 'Anguilla' },
+    { code: 'al', name: 'Albania' },
+    { code: 'am', name: 'Armenia' },
+    { code: 'ao', name: 'Angola' },
+    { code: 'ar', name: 'Argentina' },
+    { code: 'at', name: 'Austria' },
+    { code: 'au', name: 'Australia' },
+    { code: 'aw', name: 'Aruba' },
+    { code: 'ax', name: 'Åland Islands' },
+    { code: 'az', name: 'Azerbaijan' },
+    { code: 'ba', name: 'Bosnia and Herzegovina' },
+    { code: 'bb', name: 'Barbados' },
+    { code: 'bd', name: 'Bangladesh' },
+    { code: 'be', name: 'Belgium' },
+    { code: 'bf', name: 'Burkina Faso' },
+    { code: 'bg', name: 'Bulgaria' },
+    { code: 'bh', name: 'Bahrain' },
+    { code: 'bi', name: 'Burundi' },
+    { code: 'bj', name: 'Benin' },
+    { code: 'bl', name: 'Saint Barthélemy' },
+    { code: 'bm', name: 'Bermuda' },
+    { code: 'bn', name: 'Brunei' },
+    { code: 'bo', name: 'Bolivia' },
+    { code: 'bq', name: 'Caribbean Netherlands' },
+    { code: 'br', name: 'Brazil' },
+    { code: 'bs', name: 'Bahamas' },
+    { code: 'bt', name: 'Bhutan' },
+    { code: 'bw', name: 'Botswana' },
+    { code: 'bz', name: 'Belize' },
+    { code: 'ca', name: 'Canada' },
+    { code: 'cc', name: 'Cocos (Keeling) Islands' },
+    { code: 'cd', name: 'Congo (DRC)' },
+    { code: 'cf', name: 'Central African Republic' },
+    { code: 'cg', name: 'Congo' },
+    { code: 'ch', name: 'Switzerland' },
+    { code: 'ci', name: 'Côte d\'Ivoire' },
+    { code: 'ck', name: 'Cook Islands' },
+    { code: 'cl', name: 'Chile' },
+    { code: 'cm', name: 'Cameroon' },
+    { code: 'cn', name: 'China' },
+    { code: 'co', name: 'Colombia' },
+    { code: 'cr', name: 'Costa Rica' },
+    { code: 'cv', name: 'Cape Verde' },
+    { code: 'cw', name: 'Curaçao' },
+    { code: 'cx', name: 'Christmas Island' },
+    { code: 'cy', name: 'Cyprus' },
+    { code: 'cz', name: 'Czech Republic' },
+    { code: 'de', name: 'Germany' },
+    { code: 'dj', name: 'Djibouti' },
+    { code: 'dk', name: 'Denmark' },
+    { code: 'dm', name: 'Dominica' },
+    { code: 'do', name: 'Dominican Republic' },
+    { code: 'dz', name: 'Algeria' },
+    { code: 'ec', name: 'Ecuador' },
+    { code: 'ee', name: 'Estonia' },
+    { code: 'eg', name: 'Egypt' },
+    { code: 'er', name: 'Eritrea' },
+    { code: 'es', name: 'Spain' },
+    { code: 'et', name: 'Ethiopia' },
+    { code: 'fi', name: 'Finland' },
+    { code: 'fj', name: 'Fiji' },
+    { code: 'fk', name: 'Falkland Islands' },
+    { code: 'fm', name: 'Micronesia' },
+    { code: 'fo', name: 'Faroe Islands' },
+    { code: 'fr', name: 'France' },
+    { code: 'ga', name: 'Gabon' },
+    { code: 'gb', name: 'United Kingdom' },
+    { code: 'gd', name: 'Grenada' },
+    { code: 'ge', name: 'Georgia' },
+    { code: 'gf', name: 'French Guiana' },
+    { code: 'gg', name: 'Guernsey' },
+    { code: 'gh', name: 'Ghana' },
+    { code: 'gi', name: 'Gibraltar' },
+    { code: 'gl', name: 'Greenland' },
+    { code: 'gm', name: 'Gambia' },
+    { code: 'gn', name: 'Guinea' },
+    { code: 'gp', name: 'Guadeloupe' },
+    { code: 'gq', name: 'Equatorial Guinea' },
+    { code: 'gr', name: 'Greece' },
+    { code: 'gs', name: 'South Georgia' },
+    { code: 'gt', name: 'Guatemala' },
+    { code: 'gu', name: 'Guam' },
+    { code: 'gw', name: 'Guinea-Bissau' },
+    { code: 'gy', name: 'Guyana' },
+    { code: 'hk', name: 'Hong Kong' },
+    { code: 'hm', name: 'Heard Island' },
+    { code: 'hn', name: 'Honduras' },
+    { code: 'hr', name: 'Croatia' },
+    { code: 'ht', name: 'Haiti' },
+    { code: 'hu', name: 'Hungary' },
+    { code: 'id', name: 'Indonesia' },
+    { code: 'ie', name: 'Ireland' },
+    { code: 'il', name: 'Israel' },
+    { code: 'im', name: 'Isle of Man' },
+    { code: 'in', name: 'India' },
+    { code: 'io', name: 'British Indian Ocean Territory' },
+    { code: 'iq', name: 'Iraq' },
+    { code: 'is', name: 'Iceland' },
+    { code: 'it', name: 'Italy' },
+    { code: 'je', name: 'Jersey' },
+    { code: 'jm', name: 'Jamaica' },
+    { code: 'jo', name: 'Jordan' },
+    { code: 'jp', name: 'Japan' },
+    { code: 'ke', name: 'Kenya' },
+    { code: 'kg', name: 'Kyrgyzstan' },
+    { code: 'kh', name: 'Cambodia' },
+    { code: 'ki', name: 'Kiribati' },
+    { code: 'km', name: 'Comoros' },
+    { code: 'kn', name: 'Saint Kitts and Nevis' },
+    { code: 'kr', name: 'South Korea' },
+    { code: 'kw', name: 'Kuwait' },
+    { code: 'ky', name: 'Cayman Islands' },
+    { code: 'kz', name: 'Kazakhstan' },
+    { code: 'la', name: 'Laos' },
+    { code: 'lb', name: 'Lebanon' },
+    { code: 'lc', name: 'Saint Lucia' },
+    { code: 'li', name: 'Liechtenstein' },
+    { code: 'lk', name: 'Sri Lanka' },
+    { code: 'lr', name: 'Liberia' },
+    { code: 'ls', name: 'Lesotho' },
+    { code: 'lt', name: 'Lithuania' },
+    { code: 'lu', name: 'Luxembourg' },
+    { code: 'lv', name: 'Latvia' },
+    { code: 'ly', name: 'Libya' },
+    { code: 'ma', name: 'Morocco' },
+    { code: 'mc', name: 'Monaco' },
+    { code: 'md', name: 'Moldova' },
+    { code: 'me', name: 'Montenegro' },
+    { code: 'mf', name: 'Saint Martin' },
+    { code: 'mg', name: 'Madagascar' },
+    { code: 'mh', name: 'Marshall Islands' },
+    { code: 'mk', name: 'North Macedonia' },
+    { code: 'ml', name: 'Mali' },
+    { code: 'mm', name: 'Myanmar' },
+    { code: 'mn', name: 'Mongolia' },
+    { code: 'mo', name: 'Macao' },
+    { code: 'mp', name: 'Northern Mariana Islands' },
+    { code: 'mq', name: 'Martinique' },
+    { code: 'mr', name: 'Mauritania' },
+    { code: 'ms', name: 'Montserrat' },
+    { code: 'mt', name: 'Malta' },
+    { code: 'mu', name: 'Mauritius' },
+    { code: 'mv', name: 'Maldives' },
+    { code: 'mw', name: 'Malawi' },
+    { code: 'mx', name: 'Mexico' },
+    { code: 'my', name: 'Malaysia' },
+    { code: 'mz', name: 'Mozambique' },
+    { code: 'na', name: 'Namibia' },
+    { code: 'nc', name: 'New Caledonia' },
+    { code: 'ne', name: 'Niger' },
+    { code: 'nf', name: 'Norfolk Island' },
+    { code: 'ng', name: 'Nigeria' },
+    { code: 'ni', name: 'Nicaragua' },
+    { code: 'nl', name: 'Netherlands' },
+    { code: 'no', name: 'Norway' },
+    { code: 'np', name: 'Nepal' },
+    { code: 'nr', name: 'Nauru' },
+    { code: 'nu', name: 'Niue' },
+    { code: 'nz', name: 'New Zealand' },
+    { code: 'om', name: 'Oman' },
+    { code: 'pa', name: 'Panama' },
+    { code: 'pe', name: 'Peru' },
+    { code: 'pf', name: 'French Polynesia' },
+    { code: 'pg', name: 'Papua New Guinea' },
+    { code: 'ph', name: 'Philippines' },
+    { code: 'pk', name: 'Pakistan' },
+    { code: 'pl', name: 'Poland' },
+    { code: 'pm', name: 'Saint Pierre and Miquelon' },
+    { code: 'pn', name: 'Pitcairn Islands' },
+    { code: 'pr', name: 'Puerto Rico' },
+    { code: 'ps', name: 'Palestine' },
+    { code: 'pt', name: 'Portugal' },
+    { code: 'pw', name: 'Palau' },
+    { code: 'py', name: 'Paraguay' },
+    { code: 'qa', name: 'Qatar' },
+    { code: 're', name: 'Réunion' },
+    { code: 'ro', name: 'Romania' },
+    { code: 'rs', name: 'Serbia' },
+    { code: 'rw', name: 'Rwanda' },
+    { code: 'sa', name: 'Saudi Arabia' },
+    { code: 'sb', name: 'Solomon Islands' },
+    { code: 'sc', name: 'Seychelles' },
+    { code: 'se', name: 'Sweden' },
+    { code: 'sg', name: 'Singapore' },
+    { code: 'sh', name: 'Saint Helena' },
+    { code: 'si', name: 'Slovenia' },
+    { code: 'sj', name: 'Svalbard and Jan Mayen' },
+    { code: 'sk', name: 'Slovakia' },
+    { code: 'sl', name: 'Sierra Leone' },
+    { code: 'sm', name: 'San Marino' },
+    { code: 'sn', name: 'Senegal' },
+    { code: 'so', name: 'Somalia' },
+    { code: 'sr', name: 'Suriname' },
+    { code: 'ss', name: 'South Sudan' },
+    { code: 'st', name: 'São Tomé and Príncipe' },
+    { code: 'sv', name: 'El Salvador' },
+    { code: 'sx', name: 'Sint Maarten' },
+    { code: 'sz', name: 'Eswatini' },
+    { code: 'tc', name: 'Turks and Caicos Islands' },
+    { code: 'td', name: 'Chad' },
+    { code: 'tf', name: 'French Southern Territories' },
+    { code: 'tg', name: 'Togo' },
+    { code: 'th', name: 'Thailand' },
+    { code: 'tj', name: 'Tajikistan' },
+    { code: 'tk', name: 'Tokelau' },
+    { code: 'tl', name: 'Timor-Leste' },
+    { code: 'tm', name: 'Turkmenistan' },
+    { code: 'tn', name: 'Tunisia' },
+    { code: 'to', name: 'Tonga' },
+    { code: 'tr', name: 'Turkey' },
+    { code: 'tt', name: 'Trinidad and Tobago' },
+    { code: 'tv', name: 'Tuvalu' },
+    { code: 'tw', name: 'Taiwan' },
+    { code: 'tz', name: 'Tanzania' },
+    { code: 'ua', name: 'Ukraine' },
+    { code: 'ug', name: 'Uganda' },
+    { code: 'um', name: 'U.S. Outlying Islands' },
+    { code: 'us', name: 'United States' },
+    { code: 'uy', name: 'Uruguay' },
+    { code: 'uz', name: 'Uzbekistan' },
+    { code: 'va', name: 'Vatican City' },
+    { code: 'vc', name: 'Saint Vincent and the Grenadines' },
+    { code: 've', name: 'Venezuela' },
+    { code: 'vg', name: 'British Virgin Islands' },
+    { code: 'vi', name: 'U.S. Virgin Islands' },
+    { code: 'vn', name: 'Vietnam' },
+    { code: 'vu', name: 'Vanuatu' },
+    { code: 'wf', name: 'Wallis and Futuna' },
+    { code: 'ws', name: 'Samoa' },
+    { code: 'ye', name: 'Yemen' },
+    { code: 'yt', name: 'Mayotte' },
+    { code: 'za', name: 'South Africa' },
+    { code: 'zm', name: 'Zambia' },
+    { code: 'zw', name: 'Zimbabwe' }
+    // Note: Excluded embargoed countries: Cuba (cu), Iran (ir), North Korea (kp), Russia (ru), Syria (sy)
 ];
 
-for (let i=1; i<sections.length; i++) {
-    $("#"+sections[i]).hide();
+// Static placeholder teasers for testing
+const PLACEHOLDER_TEASERS = [
+    {
+        id: 'analytics',
+        title: 'Real-time Network Analytics',
+        description: 'Monitor bandwidth, latency, and packet loss in real-time with millisecond precision.',
+        imageUrl: 'https://www.chartgo.com/images/carousel/3/3.png',
+        features: [
+            'Live bandwidth monitoring per circuit',
+            'Historical trend analysis',
+            'Automatic anomaly detection'
+        ],
+        order: 1
+    },
+    {
+        id: 'reporting',
+        title: 'Advanced Reporting Suite',
+        description: 'Generate detailed insights and reports with historical trends and predictions.',
+        imageUrl: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"%3E%3Crect fill="%237cffb2" width="400" height="300"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" fill="black" font-size="24" font-family="Arial"%3EReporting Suite%3C/text%3E%3C/svg%3E',
+        features: [
+            'Customizable report templates',
+            'Scheduled email delivery',
+            'Export to PDF, CSV, or Excel'
+        ],
+        ctaText: 'Start Your Free Trial',
+        order: 2
+    },
+    {
+        id: 'alerts',
+        title: 'Proactive Alerts',
+        description: 'Get notified before issues impact your customers with intelligent monitoring.',
+        imageUrl: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"%3E%3Crect fill="%23fddd60" width="400" height="300"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" fill="black" font-size="24" font-family="Arial"%3EAlert System%3C/text%3E%3C/svg%3E',
+        features: [
+            'Customizable alert thresholds',
+            'Multi-channel notifications',
+            'Intelligent issue prediction'
+        ],
+        order: 3
+    },
+    {
+        id: 'breakfast',
+        title: 'It even makes breakfast',
+        description: 'Get notified before issues impact your customers with intelligent monitoring.',
+        imageUrl: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"%3E%3Crect fill="%23fddd60" width="400" height="300"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" fill="black" font-size="24" font-family="Arial"%3EAlert System%3C/text%3E%3C/svg%3E',
+        features: [
+            'Customizable alert thresholds',
+            'Multi-channel notifications',
+            'Intelligent issue prediction'
+        ],
+        order: 4
+    },
+    {
+        id: 'lunch',
+        title: 'And lunch too',
+        description: 'Get notified before issues impact your customers with intelligent monitoring.',
+        imageUrl: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"%3E%3Crect fill="%23fddd60" width="400" height="300"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" fill="black" font-size="24" font-family="Arial"%3EAlert System%3C/text%3E%3C/svg%3E',
+        features: [
+            'Customizable alert thresholds',
+            'Multi-channel notifications',
+            'Intelligent issue prediction'
+        ],
+        order: 4
+    },
+    {
+        id: 'dinner',
+        title: 'But it burns your dinner, sorry',
+        description: 'Get notified before issues impact your customers with intelligent monitoring.',
+        imageUrl: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"%3E%3Crect fill="%23fddd60" width="400" height="300"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" fill="black" font-size="24" font-family="Arial"%3EAlert System%3C/text%3E%3C/svg%3E',
+        features: [
+            'Customizable alert thresholds',
+            'Multi-channel notifications',
+            'Intelligent issue prediction'
+        ],
+        order: 4
+    }
+];
+
+// State management
+let currentTeasers = [];
+let nodeId = null;
+
+// Initialize the page
+$(document).ready(function() {
+    initializeCountrySelector();
+    loadTeasers();
+    fetchNodeId();
+    fetchCircuitCount();
+    attachEventHandlers();
+    
+    // Apply dark mode if needed
+    if (isDarkMode()) {
+        applyDarkMode();
+    }
+    
+    // Handle window resize for carousel
+    let resizeTimer;
+    $(window).on('resize', function() {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(function() {
+            if (currentTeasers.length > 0) {
+                displayTeasers();
+            }
+        }, 250);
+    });
+});
+
+// Dark mode detection
+function isDarkMode() {
+    const currentTheme = localStorage.getItem('theme');
+    if (currentTheme === null) {
+        return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+    return currentTheme === 'dark';
 }
 
-function hideAll() {
-    sections.forEach((s) => { $("#"+s).hide(); });
+// Apply dark mode styles
+function applyDarkMode() {
+    // Bootstrap 5 dark mode is handled by data-bs-theme attribute
+    // This should be set by the parent template, but we can add custom styles if needed
 }
 
-$("#btn1Forward").click(() => {
-    hideAll();
-    $("#page2").fadeIn();
-});
+// Initialize country selector
+function initializeCountrySelector() {
+    const countrySelect = $('#country');
+    
+    ALLOWED_COUNTRIES.forEach(country => {
+        countrySelect.append(`<option value="${country.code}">${country.name}</option>`);
+    });
+    
+    // Update flag when country changes
+    countrySelect.on('change', function() {
+        const selectedCode = $(this).val();
+        const flagPath = selectedCode ? `flags/${selectedCode}.svg` : 'flags/unknown.svg';
+        $('#selectedFlag').attr('src', flagPath);
+    });
+    
+    // Try to detect user's country from browser
+    detectUserCountry();
+}
 
-$("#btn2Backward").click(() => {
-    hideAll();
-    $("#page1").fadeIn();
-});
+// Detect user's country from browser locale
+function detectUserCountry() {
+    const userLang = navigator.language || navigator.userLanguage;
+    const countryCode = userLang.split('-')[1]?.toLowerCase();
+    
+    if (countryCode && ALLOWED_COUNTRIES.find(c => c.code === countryCode)) {
+        $('#country').val(countryCode).trigger('change');
+    }
+}
 
-$("#btn2GotIt").click(() => {
-    hideAll();
-    $("#alreadyGotIt").fadeIn();
-});
+// Load teasers (with fallback to placeholders)
+async function loadTeasers() {
+    try {
+        // TODO: Replace with actual API call when endpoint is ready
+        // const response = await $.get('https://insight.libreqos.com/signup-api/teasers');
+        // currentTeasers = response.teasers;
+        
+        // For now, use placeholder teasers
+        currentTeasers = PLACEHOLDER_TEASERS;
+        displayTeasers();
+    } catch (error) {
+        console.error('Failed to load teasers:', error);
+        currentTeasers = PLACEHOLDER_TEASERS;
+        displayTeasers();
+    }
+}
 
-$("#btn2Forward").click(() => {
-    hideAll();
-    $("#signMeUp").fadeIn();
-});
+// Display teaser cards in carousel
+function displayTeasers() {
+    const indicatorsContainer = $('#carouselIndicators');
+    const innerContainer = $('#carouselInner');
+    
+    indicatorsContainer.empty();
+    innerContainer.empty();
+    
+    currentTeasers.sort((a, b) => (a.order || 0) - (b.order || 0));
+    
+    // Group teasers into slides (3 per slide on desktop, 1 on mobile)
+    const itemsPerSlide = window.innerWidth >= 768 ? 3 : 1;
+    const slides = [];
+    
+    for (let i = 0; i < currentTeasers.length; i += itemsPerSlide) {
+        slides.push(currentTeasers.slice(i, i + itemsPerSlide));
+    }
+    
+    // Create carousel slides
+    slides.forEach((slideItems, slideIndex) => {
+        // Add indicator
+        const indicator = `<button type="button" data-bs-target="#teaserCarousel" data-bs-slide-to="${slideIndex}" 
+                          ${slideIndex === 0 ? 'class="active" aria-current="true"' : ''} 
+                          aria-label="Slide ${slideIndex + 1}"></button>`;
+        indicatorsContainer.append(indicator);
+        
+        // Create slide
+        const slideCards = slideItems.map(teaser => {
+            const featuresHtml = teaser.features ? 
+                `<ul class="list-unstyled">${teaser.features.map(f => `<li><i class="fas fa-check text-success"></i> ${f}</li>`).join('')}</ul>` : '';
+            
+            const ctaText = teaser.ctaText || 'Try Insight Free';
+            
+            return `
+                <div class="col-md-4">
+                    <div class="card h-100 shadow-sm teaser-card">
+                        <img src="${teaser.imageUrl}" class="card-img-top" alt="${teaser.title}" style="height: 200px; object-fit: contain; background-color: #f8f9fa;">
+                        <div class="card-body d-flex flex-column">
+                            <h5 class="card-title">${teaser.title}</h5>
+                            <p class="card-text">${teaser.description}</p>
+                            ${featuresHtml}
+                            <div class="mt-auto">
+                                <button class="btn btn-outline-primary w-100 btn-teaser-cta" data-action="signup">
+                                    <i class="fas fa-arrow-right"></i> ${ctaText}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        const slide = `
+            <div class="carousel-item ${slideIndex === 0 ? 'active' : ''}">
+                <div class="row g-4">
+                    ${slideCards}
+                </div>
+            </div>
+        `;
+        
+        innerContainer.append(slide);
+    });
+    
+    // Add click handlers to CTA buttons
+    $('.btn-teaser-cta').on('click', function() {
+        showSection('signupSection');
+    });
+    
+    // Reinitialize carousel if needed
+    if (slides.length > 1) {
+        $('#teaserCarousel').carousel();
+    } else {
+        // Hide controls if only one slide
+        $('.carousel-control-prev, .carousel-control-next, .carousel-indicators').hide();
+    }
+}
+
+// Fetch node ID from configuration
+async function fetchNodeId() {
+    try {
+        const response = await $.get('/api/config/general');
+        nodeId = response.node_id || null;
+    } catch (error) {
+        console.error('Failed to fetch node ID:', error);
+        nodeId = null;
+    }
+}
+
+// Fetch circuit count
+async function fetchCircuitCount() {
+    try {
+        // TODO: Add actual API endpoint for circuit count
+        // const response = await $.get('/api/circuits/count');
+        // const count = response.count || 0;
+        
+        // For now, use a placeholder
+        const count = 150; // Placeholder
+        
+        if (count > 0) {
+            $('#circuitNumber').text(count.toLocaleString());
+            const monthlyPrice = (count * 0.30).toFixed(2);
+            $('#monthlyPrice').text(monthlyPrice);
+            $('#circuitCount').fadeIn();
+        }
+    } catch (error) {
+        console.error('Failed to fetch circuit count:', error);
+    }
+}
+
+// Show/hide sections
+function showSection(sectionId) {
+    const sections = ['teaserSection', 'licenseKeySection', 'licenseRecoverySection', 'signupSection', 'successSection'];
+    sections.forEach(id => {
+        $(`#${id}`).hide();
+    });
+    $(`#${sectionId}`).fadeIn();
+}
+
+// Show loading modal
+function showLoading(message = 'Processing...') {
+    $('#loadingMessage').text(message);
+    $('#loadingModal').modal('show');
+}
+
+// Hide loading modal
+function hideLoading() {
+    $('#loadingModal').modal('hide');
+}
+
+// Show error modal
+function showError(message) {
+    $('#errorMessage').text(message);
+    $('#errorModal').modal('show');
+}
+
+// Validate license key format
+function validateLicenseKeyFormat(key) {
+    // Expected format: XXXX-XXXX-XXXX-XXXX
+    const pattern = /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
+    return pattern.test(key.toUpperCase());
+}
+
+// Attach event handlers
+function attachEventHandlers() {
+    // Navigation buttons
+    $('#btnExistingCustomer').on('click', () => {
+        // Analytics tracking for existing customer path
+        const trackingImg = new Image();
+        trackingImg.src = 'https://insight.libreqos.com/signup-api/signupPing?t=' + Date.now() + '&type=existing';
+        showSection('licenseKeySection');
+    });
+    $('#btnNewCustomer').on('click', () => {
+        // Analytics tracking for new customer path
+        const trackingImg = new Image();
+        trackingImg.src = 'https://insight.libreqos.com/signup-api/signupPing?t=' + Date.now() + '&type=new';
+        showSection('signupSection');
+    });
+    $('#btnBackFromLicense').on('click', () => showSection('teaserSection'));
+    $('#btnBackFromSignup').on('click', () => showSection('teaserSection'));
+    $('#btnForgotLicense').on('click', () => showSection('licenseRecoverySection'));
+    $('#btnBackFromRecovery').on('click', () => showSection('licenseKeySection'));
+    $('#btnDashboard').on('click', () => window.location.href = '/');
+    
+    // License key form
+    $('#licenseKeyForm').on('submit', async function(e) {
+        e.preventDefault();
+        
+        const licenseKey = $('#licenseKey').val().trim().toUpperCase();
+        
+        if (!validateLicenseKeyFormat(licenseKey)) {
+            $('#licenseKey').addClass('is-invalid');
+            return;
+        }
+        
+        $('#licenseKey').removeClass('is-invalid');
+        showLoading('Validating license key...');
+        
+        try {
+            const response = await $.ajax({
+                url: 'https://insight.libreqos.com/signup-api/validateLicense',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ licenseKey })
+            });
+            
+            hideLoading();
+            
+            if (response.valid) {
+                await configureLibreQoS(licenseKey);
+            } else {
+                showError(response.message || 'Invalid license key.');
+            }
+        } catch (error) {
+            hideLoading();
+            showError('Failed to validate license key. Please try again.');
+        }
+    });
+    
+    // License recovery form
+    $('#licenseRecoveryForm').on('submit', async function(e) {
+        e.preventDefault();
+        
+        const email = $('#recoveryEmail').val().trim();
+        
+        if (!email || !email.includes('@')) {
+            $('#recoveryEmail').addClass('is-invalid');
+            return;
+        }
+        
+        $('#recoveryEmail').removeClass('is-invalid');
+        showLoading('Sending recovery email...');
+        
+        try {
+            await $.ajax({
+                url: 'https://insight.libreqos.com/signup-api/recoverLicense',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ email })
+            });
+            
+            hideLoading();
+            showError('If a license key exists for this email, you will receive it shortly.');
+            $('#recoveryEmail').val('');
+            showSection('licenseKeySection');
+        } catch (error) {
+            hideLoading();
+            showError('Failed to send recovery email. Please try again.');
+        }
+    });
+    
+    // Signup form
+    $('#signupForm').on('submit', async function(e) {
+        e.preventDefault();
+        
+        const form = this;
+        if (!form.checkValidity()) {
+            e.stopPropagation();
+            form.classList.add('was-validated');
+            return;
+        }
+        
+        form.classList.add('was-validated');
+        
+        // Analytics tracking pixel
+        const trackingImg = new Image();
+        trackingImg.src = 'https://insight.libreqos.com/signup-api/signupPing?t=' + Date.now();
+        
+        const formData = {
+            nodeId: nodeId || 'unknown',
+            name: $('#customerName').val().trim(),
+            email: $('#customerEmail').val().trim(),
+            business_name: $('#businessName').val().trim(),
+            address1: $('#address1').val().trim(),
+            address2: $('#address2').val().trim(),
+            city: $('#city').val().trim(),
+            state: $('#state').val().trim(),
+            zip: $('#zip').val().trim(),
+            country: $('#country').val(),
+            phone: $('#phone').val().trim(),
+            website: $('#website').val().trim()
+        };
+        
+        showLoading('Creating your account...');
+        
+        try {
+            const response = await $.ajax({
+                url: 'https://insight.libreqos.com/signup-api/signupCustomer',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(formData)
+            });
+            
+            hideLoading();
+            
+            if (response.licenseKey) {
+                await configureLibreQoS(response.licenseKey);
+            } else {
+                showError('Failed to create account. Please try again.');
+            }
+        } catch (error) {
+            hideLoading();
+            showError('Failed to create account. Please check your information and try again.');
+        }
+    });
+}
+
+// Configure LibreQoS with license key
+async function configureLibreQoS(licenseKey) {
+    showSection('successSection');
+    $('#successMessage').html(`
+        <strong>License Key:</strong> ${licenseKey}<br>
+        <small>An email with your license key and portal access has been sent to your email address.</small>
+    `);
+    
+    $('#configStatus').text('Configuring LibreQoS...');
+    
+    // TODO: Call Rust function to configure lqos.conf
+    // For now, simulate a delay
+    setTimeout(() => {
+        $('#configSpinner').hide();
+        $('#configStatus').text('Configuration complete! You can now access Insight features.');
+        $('#btnDashboard').fadeIn();
+    }, 3000);
+}

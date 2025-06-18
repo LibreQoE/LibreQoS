@@ -1,76 +1,398 @@
-<div class="row">
-    <div class="col-12 text-secondary" id="page1">
-        <h5>Introducing LibreQoS Long-Term Statistics</h5>
-        <p>There will be a marketing spiel, here.</p>
-        <button class="btn btn-secondary" id="btn1Forward">Next <i class="fa fa-arrow-right"></i></button>
-    </div>
-    <div class="col-12 text-secondary" id="page2">
-        <h5>Long-Term Statistics Packages</h5>
-        <p>We'll tell you about what you can sign up for here</p>
-        <button class="btn btn-secondary mb-2" id="btn2Backward"><i class="fa fa-arrow-left"></i> Back</button>
-        <button class="btn btn-outline-info mb-2" id="btn2GotIt">I have an account, add this shaper to it <i class="fa fa-arrow-right"></i></button>
-        <button class="btn btn-success mb-2" id="btn2Forward">Sign me up <i class="fa fa-arrow-right"></i></button>
-    </div>
-    <div class="col-12 text-secondary" id="alreadyGotIt">
-        <p>Instructions to add this node.</p>
-    </div>
-    <div class="col-12 text-secondary" id="signMeUp">
-        <h5>Sign up for a 30-day free trial</h5>
-        <p>We won't ask for billing data until you are up and running. You can cancel at any time prior to the
-        end of the trial---or it will self-cancel if you didn't give us billing information.</p>
-        <p>We do need a bit of information from you:</p>
+<style>
+.teaser-card {
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.teaser-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 .5rem 1rem rgba(0,0,0,.15)!important;
+}
+.jumbotron {
+    background: 
+        url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.08'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E"),
+        linear-gradient(135deg, #0056b3 0%, #003d82 100%);
+}
+body.dark-mode .jumbotron {
+    background: 
+        url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.05'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E"),
+        linear-gradient(135deg, #003d82 0%, #002754 100%);
+}
+body.dark-mode .card {
+    background-color: var(--bs-dark);
+    color: var(--bs-light);
+}
+body.dark-mode .form-control,
+body.dark-mode .form-select {
+    background-color: var(--bs-dark);
+    color: var(--bs-light);
+    border-color: var(--bs-gray-700);
+}
+body.dark-mode .form-control:focus,
+body.dark-mode .form-select:focus {
+    background-color: var(--bs-dark);
+    color: var(--bs-light);
+    border-color: var(--bs-primary);
+}
+body.dark-mode .input-group-text {
+    background-color: var(--bs-gray-800);
+    color: var(--bs-light);
+    border-color: var(--bs-gray-700);
+}
+/* Carousel styling */
+#teaserCarousel {
+    padding: 0 50px; /* Space for arrows */
+}
+.carousel-control-prev,
+.carousel-control-next {
+    width: 40px;
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 50%;
+    height: 40px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+.carousel-control-prev:hover,
+.carousel-control-next:hover {
+    background-color: rgba(0, 0, 0, 0.4);
+}
+.carousel-control-prev {
+    left: 0;
+}
+.carousel-control-next {
+    right: 0;
+}
+.carousel-indicators {
+    bottom: -40px;
+}
+.carousel-indicators [data-bs-target] {
+    background-color: #6c757d;
+}
+.carousel-inner {
+    padding-bottom: 50px; /* Space for indicators */
+}
+/* Dark mode carousel controls */
+body.dark-mode .carousel-control-prev,
+body.dark-mode .carousel-control-next {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+body.dark-mode .carousel-control-prev:hover,
+body.dark-mode .carousel-control-next:hover {
+    background-color: rgba(255, 255, 255, 0.3);
+}
+body.dark-mode .carousel-control-prev-icon,
+body.dark-mode .carousel-control-next-icon {
+    filter: invert(0);
+}
+body.dark-mode .carousel-indicators [data-bs-target] {
+    background-color: #adb5bd;
+}
+/* Dark mode image background for letterboxing */
+body.dark-mode .teaser-card img {
+    background-color: #343a40 !important;
+}
+/* Dark mode modal headers */
+body.dark-mode .modal-content {
+    background-color: var(--bs-dark);
+    color: var(--bs-light);
+}
+body.dark-mode .modal-header,
+body.dark-mode .modal-footer {
+    border-color: var(--bs-gray-700);
+}
+body.dark-mode .card-header.bg-light {
+    background-color: var(--bs-gray-800) !important;
+    color: var(--bs-light) !important;
+}
+/* Mobile adjustments */
+@media (max-width: 768px) {
+    #teaserCarousel {
+        padding: 0 30px;
+    }
+    .carousel-control-prev,
+    .carousel-control-next {
+        width: 30px;
+        height: 30px;
+    }
+}
+</style>
 
-        <div class="row">
-            <div class="col-4">
-                <form method="post" action="local-api/ltsSignUp">
-                    <div class="mb-3">
-                        <label for="name" class="form-label">Name (Person)</label>
-                        <input type="text" class="form-control" id="name" name="name" required>
+<!-- Teaser Section -->
+<div id="teaserSection" class="container-fluid p-0">
+    <div class="row">
+        <div class="col-12">
+            <div class="jumbotron bg-primary text-white p-5 rounded-3 mb-4">
+                <div class="container">
+                    <h1 class="display-4 fw-bold"><i class="fas fa-chart-line"></i> LibreQoS Insight</h1>
+                    <p class="lead">Unlock the full potential of your network with advanced analytics, reporting, and monitoring.</p>
+                    <div id="circuitCount" class="mt-3 mb-4" style="display: none;">
+                        <h3>Your Network: <span id="circuitNumber">0</span> Active Circuits</h3>
+                        <p class="fs-5">Only $<span id="monthlyPrice">0.00</span>/month for comprehensive network insights!</p>
                     </div>
-                    <div class="mb-3">
-                        <label for="email" class="form-label">Email - Your key will be sent to this address</label>
-                        <input type="email" class="form-control" id="email" name="email" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="business_name" class="form-label">Business Name</label>
-                        <input type="text" class="form-control" id="business_name" name="business_name" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="address1" class="form-label">Address 1</label>
-                        <input type="text" class="form-control" id="address1" name="address1" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="address2" class="form-label">Address 2</label>
-                        <input type="text" class="form-control" id="address2" name="address2">
-                    </div>
-                    <div class="mb-3">
-                        <label for="city" class="form-label">City</label>
-                        <input type="text" class="form-control" id="city" name="city" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="state" class="form-label">State</label>
-                        <input type="text" class="form-control" id="state" name="state" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="zip" class="form-label">Zip</label>
-                        <input type="text" class="form-control" id="zip" name="zip" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="country" class="form-label">Country</label>
-                        <input type="text" class="form-control" id="country" name="country" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="phone" class="form-label">Phone</label>
-                        <input type="tel" class="form-control" id="phone" name="phone" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="website" class="form-label">Website</label>
-                        <input type="url" class="form-control" id="website" name="website">
-                    </div>
-                    <button type="submit" class="btn btn-primary"><i class="fa fa-area-chart"></i> Sign-Up for Long-Term Statistics Free Trial</button>
-                </form>
-            </div></div>
+                </div>
+            </div>
+        </div>
+    </div>
 
+    <!-- Teaser Carousel -->
+    <div class="container mb-5">
+        <div id="teaserCarousel" class="carousel slide" data-bs-ride="carousel">
+            <div class="carousel-indicators" id="carouselIndicators">
+                <!-- Indicators will be added dynamically -->
+            </div>
+            <div class="carousel-inner" id="carouselInner">
+                <!-- Slides will be added dynamically -->
+            </div>
+            <button class="carousel-control-prev" type="button" data-bs-target="#teaserCarousel" data-bs-slide="prev">
+                <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+                <span class="visually-hidden">Previous</span>
+            </button>
+            <button class="carousel-control-next" type="button" data-bs-target="#teaserCarousel" data-bs-slide="next">
+                <span class="carousel-control-next-icon" aria-hidden="true"></span>
+                <span class="visually-hidden">Next</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="row justify-content-center mb-5">
+        <div class="col-md-8 text-center">
+            <button id="btnExistingCustomer" class="btn btn-lg btn-outline-success me-3 mb-3">
+                <i class="fas fa-key"></i> I have a license key
+            </button>
+            <button id="btnNewCustomer" class="btn btn-lg btn-outline-primary mb-3">
+                <i class="fas fa-rocket"></i> Start my free trial
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- License Key Form -->
+<div id="licenseKeySection" class="container" style="display: none;">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card shadow">
+                <div class="card-header bg-light">
+                    <h4 class="mb-0"><i class="fas fa-key"></i> Enter Your License Key</h4>
+                </div>
+                <div class="card-body">
+                    <form id="licenseKeyForm">
+                        <div class="mb-3">
+                            <label for="licenseKey" class="form-label">License Key</label>
+                            <input type="text" class="form-control" id="licenseKey" placeholder="XXXX-XXXX-XXXX-XXXX" required>
+                            <div class="invalid-feedback">Please enter a valid license key.</div>
+                        </div>
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-outline-success">
+                                <i class="fas fa-check"></i> Validate License
+                            </button>
+                            <button type="button" id="btnForgotLicense" class="btn btn-outline-info">
+                                <i class="fas fa-question-circle"></i> Forgot your license key?
+                            </button>
+                            <button type="button" id="btnBackFromLicense" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left"></i> Back
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- License Recovery Form -->
+<div id="licenseRecoverySection" class="container" style="display: none;">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card shadow">
+                <div class="card-header bg-light">
+                    <h4 class="mb-0"><i class="fas fa-envelope"></i> Recover License Key</h4>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted">Enter your email address and we'll send your license key if one exists.</p>
+                    <form id="licenseRecoveryForm">
+                        <div class="mb-3">
+                            <label for="recoveryEmail" class="form-label">Email Address</label>
+                            <input type="email" class="form-control" id="recoveryEmail" placeholder="your@email.com" required>
+                            <div class="invalid-feedback">Please enter a valid email address.</div>
+                        </div>
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-outline-info">
+                                <i class="fas fa-paper-plane"></i> Send Recovery Email
+                            </button>
+                            <button type="button" id="btnBackFromRecovery" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left"></i> Back to License Entry
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- New Customer Signup Form -->
+<div id="signupSection" class="container" style="display: none;">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card shadow">
+                <div class="card-header bg-light">
+                    <h4 class="mb-0"><i class="fas fa-user-plus"></i> Start Your Free Trial</h4>
+                </div>
+                <div class="card-body">
+                    <form id="signupForm" class="needs-validation" novalidate>
+                        <div class="row g-3">
+                            <!-- Personal Information -->
+                            <div class="col-md-6">
+                                <label for="customerName" class="form-label">Full Name *</label>
+                                <input type="text" class="form-control" id="customerName" required>
+                                <div class="invalid-feedback">Please enter your full name.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="customerEmail" class="form-label">Email Address *</label>
+                                <input type="email" class="form-control" id="customerEmail" required>
+                                <div class="invalid-feedback">Please enter a valid email address.</div>
+                            </div>
+
+                            <!-- Business Information -->
+                            <div class="col-md-6">
+                                <label for="businessName" class="form-label">Business Name *</label>
+                                <input type="text" class="form-control" id="businessName" required>
+                                <div class="invalid-feedback">Please enter your business name.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="website" class="form-label">Website</label>
+                                <input type="url" class="form-control" id="website" placeholder="https://">
+                            </div>
+
+                            <!-- Address Information -->
+                            <div class="col-12">
+                                <label for="address1" class="form-label">Address Line 1 *</label>
+                                <input type="text" class="form-control" id="address1" required>
+                                <div class="invalid-feedback">Please enter your address.</div>
+                            </div>
+                            <div class="col-12">
+                                <label for="address2" class="form-label">Address Line 2</label>
+                                <input type="text" class="form-control" id="address2">
+                            </div>
+
+                            <div class="col-md-6">
+                                <label for="city" class="form-label">City *</label>
+                                <input type="text" class="form-control" id="city" required>
+                                <div class="invalid-feedback">Please enter your city.</div>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="state" class="form-label">State/Province *</label>
+                                <input type="text" class="form-control" id="state" required>
+                                <div class="invalid-feedback">Please enter your state.</div>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="zip" class="form-label">ZIP/Postal Code *</label>
+                                <input type="text" class="form-control" id="zip" required>
+                                <div class="invalid-feedback">Please enter your ZIP code.</div>
+                            </div>
+
+                            <!-- Country Selector with Flags -->
+                            <div class="col-md-6">
+                                <label for="country" class="form-label">Country *</label>
+                                <div class="input-group">
+                                    <span class="input-group-text" id="countryFlag">
+                                        <img src="flags/unknown.svg" width="24" height="18" id="selectedFlag">
+                                    </span>
+                                    <select class="form-select" id="country" required>
+                                        <option value="">Select your country...</option>
+                                        <!-- Countries will be populated by JavaScript -->
+                                    </select>
+                                    <div class="invalid-feedback">Please select your country.</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="phone" class="form-label">Phone Number *</label>
+                                <input type="tel" class="form-control" id="phone" required>
+                                <div class="invalid-feedback">Please enter your phone number.</div>
+                            </div>
+
+                            <!-- Terms and Submit -->
+                            <div class="col-12">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="agreeTerms" required>
+                                    <label class="form-check-label" for="agreeTerms">
+                                        I agree to the terms of service and privacy policy *
+                                    </label>
+                                    <div class="invalid-feedback">You must agree to the terms.</div>
+                                </div>
+                            </div>
+
+                            <div class="col-12 mt-4">
+                                <div class="d-grid gap-2">
+                                    <button type="submit" class="btn btn-outline-primary btn-lg">
+                                        <i class="fas fa-rocket"></i> Start Free Trial
+                                    </button>
+                                    <button type="button" id="btnBackFromSignup" class="btn btn-secondary">
+                                        <i class="fas fa-arrow-left"></i> Back
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Success Section -->
+<div id="successSection" class="container" style="display: none;">
+    <div class="row justify-content-center">
+        <div class="col-md-8 text-center">
+            <div class="card shadow border-success">
+                <div class="card-body p-5">
+                    <i class="fas fa-check-circle text-success" style="font-size: 5rem;"></i>
+                    <h2 class="mt-4 mb-3">Welcome to LibreQoS Insight!</h2>
+                    <p class="lead mb-4">Your license has been activated successfully.</p>
+                    <div id="successMessage" class="alert alert-success"></div>
+                    <p class="mb-4">LibreQoS is now being configured to connect to Insight. This process may take a few moments.</p>
+                    <div class="spinner-border text-primary mb-4" role="status" id="configSpinner">
+                        <span class="visually-hidden">Configuring...</span>
+                    </div>
+                    <p id="configStatus" class="text-muted"></p>
+                    <button class="btn btn-outline-primary btn-lg mt-3" id="btnDashboard" style="display: none;">
+                        <i class="fas fa-tachometer-alt"></i> Go to Dashboard
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modals -->
+<!-- Error Modal -->
+<div class="modal fade" id="errorModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-light border-danger">
+                <h5 class="modal-title"><i class="fas fa-exclamation-triangle"></i> Error</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p id="errorMessage"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Modal -->
+<div class="modal fade" id="loadingModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-body text-center p-4">
+                <div class="spinner-border text-primary mb-3" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p id="loadingMessage">Processing...</p>
+            </div>
+        </div>
     </div>
 </div>
 
