@@ -25,10 +25,6 @@ pub struct LongTermStats {
     /// development LTS server. It will be decorated with https:// and :443
     pub lts_url: Option<String>,
 
-    /// If enabled, Insight (LTS2) will be used in addition to the normal
-    /// LTS system. This system is in alpha and is invite only for now.
-    pub use_insight: Option<bool>,
-
     /// If enabled, the Insight topology will be used to determine the
     /// topology of the network. This is in alpha and may not work
     /// as expected. It is disabled by default. NONE and FALSE are
@@ -49,7 +45,6 @@ impl Default for LongTermStats {
             license_key: None,
             uisp_reporting_interval_seconds: Some(300),
             lts_url: None,
-            use_insight: None,
             enable_insight_topology: None,
             insight_topology_role: None,
         }

@@ -174,16 +174,12 @@ pub(crate) fn submit_throughput_stats(
         warn!("{:?}", metrics);
     }
 
-    // Check if we should be submitting to Insight
+    /////////////////////////////////////////////////////////////////
+    // Insight Block
     let Ok(config) = load_config() else {
         return;
     };
-    if config.long_term_stats.use_insight.unwrap_or(false) == false {
-        return;
-    }
 
-    /////////////////////////////////////////////////////////////////
-    // Insight Block
     if let Ok(now) = unix_now() {
         // LTS2 Shaped Devices
         if lts2_needs_shaped_devices() {
