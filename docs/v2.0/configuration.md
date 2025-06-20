@@ -51,43 +51,7 @@ If you plan to use the built-in UISP integration, it will create this automatica
 
 If you will not be using an integration, you can manually define the network.json following the template file - [network.example.json](https://github.com/LibreQoE/LibreQoS/blob/develop/src/network.example.json). Below is a table illustration of network.example.json. 
 
-<table><thead>
-  <tr>
-    <th colspan="5">Entire Network</th>
-  </tr></thead>
-<tbody>
-  <tr>
-    <td colspan="3">Site_1</td>
-    <td colspan="2">Site_2</td>
-  </tr>
-  <tr>
-    <td>AP_A</td>
-    <td colspan="2">Site_3</td>
-    <td>Pop_1</td>
-    <td>AP_1</td>
-  </tr>
-  <tr>
-    <td></td>
-    <td colspan="2">PoP_5</td>
-    <td>AP_7</td>
-    <td></td>
-  </tr>
-  <tr>
-    <td></td>
-    <td>AP_9</td>
-    <td>PoP_6</td>
-    <td></td>
-    <td></td>
-  </tr>
-  <tr>
-    <td></td>
-    <td></td>
-    <td>AP_11</td>
-    <td></td>
-    <td></td>
-  </tr>
-</tbody>
-</table>
+<table><thead><tr><th colspan="5">Entire Network</th></tr></thead><tbody><tr><td colspan="3">Site_1</td><td colspan="2">Site_2</td></tr><tr><td>AP_A</td><td colspan="2">Site_3</td><td>Pop_1</td><td>AP_1</td></tr><tr><td></td><td colspan="2">PoP_5</td><td>AP_7</td><td></td></tr><tr><td></td><td>AP_9</td><td>PoP_6</td><td></td><td></td></tr><tr><td></td><td></td><td>AP_11</td><td></td><td></td></tr></tbody></table>
 
 For networks with no Parent Nodes (no strictly defined Access Points or Sites) edit the network.json to use a Flat Network Topology with
 ```
