@@ -472,7 +472,7 @@ fn handle_change_site_speed_live(
         let to_internet = config.internet_interface();
         let to_isp = config.isp_interface();
         let class_id_str = class_id.as_tc_string();
-        let up_class_id_str = up_class_id.as_tc_string();
+        let up_class_id_str = format!("0x{:x}", class_minor);
         let commands = vec![vec![
             "class".to_string(),
             "change".to_string(),
