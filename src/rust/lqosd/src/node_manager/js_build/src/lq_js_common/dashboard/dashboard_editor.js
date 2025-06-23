@@ -163,6 +163,9 @@ export function openDashboardEditor(initialElements, availableElements, callback
             put: true
         },
         onAdd: function (evt) {
+            // Remove any placeholder before adding new content
+            $('#dashboardGrid .dashboard-item[data-name="placeholder"]').remove();
+            
             // When an item is dropped into the grid (from the available list),
             // replace it with a fully rendered dashboard item.
             var $item = $(evt.item);
@@ -204,6 +207,18 @@ export function openDashboardEditor(initialElements, availableElements, callback
     // Handle delete action for dashboard items.
     $('#dashboardGrid').on('click', '.delete-item', function() {
         $(this).closest('.dashboard-item').remove();
+        // If we removed the last item, add a placeholder
+        if ($('#dashboardGrid .dashboard-item').length === 0) {
+            $('#dashboardGrid').append(`
+                <div class="dashboard-item col-12" data-size="12" data-name="placeholder">
+                    <div class="card border-dashed h-100">
+                        <div class="card-body d-flex justify-content-center align-items-center">
+                            <span class="text-muted">Drag widgets here to start building your dashboard</span>
+                        </div>
+                    </div>
+                </div>
+            `);
+        }
     });
 
     // Handle clear all action

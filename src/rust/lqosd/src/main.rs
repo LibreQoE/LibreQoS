@@ -63,7 +63,7 @@ use crate::throughput_tracker::flow_data::{ALL_FLOWS, RECENT_FLOWS};
 use tracing::level_filters::LevelFilter;
 use lqos_stormguard::STORMGUARD_STATS;
 
-// Use JemAllocator only on supported platforms
+// Use MiMalloc only on supported platforms
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
