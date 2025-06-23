@@ -22,17 +22,17 @@ pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str
     let _guard = COMMAND_EXECUTION_MUTEX.lock().unwrap();
 
     let path = Path::new("/tmp/lqos_bakery_commands.txt");
-    if write_command_file(path, command_buffer) {
+    let Ok(lines) = write_command_file(path, command_buffer) else {
         error!("Failed to write command file for {purpose}");
         return;
-    }
+    };
 
     let Ok(output) = std::process::Command::new("/sbin/tc")
             .args(&["-f", "-batch", path.to_str().unwrap()])
             .output()
     else {
-        error!("Failed to execute tc batch command for {purpose}");
-        log_failed_commands(path, purpose);
+        let message = format!("Failed to execute tc batch command for {purpose}. Command output: \n{}", lines);
+        error!("{}", message);
         return;
     };
 
@@ -43,8 +43,8 @@ pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str
 
     let error_str = String::from_utf8_lossy(&output.stderr);
     if !error_str.is_empty() {
-        error!("Command error for ({purpose}): {:?}", error_str.trim());
-        log_failed_commands(path, purpose);
+        let message = format!("Failed to execute tc batch command for {purpose}. Command output: \n{}", lines);
+        error!("{}", message);
     }
 
     /*for line in command_buffer {
@@ -110,49 +110,38 @@ pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str
     }*/
 }
 
-pub(crate) fn write_command_file(path: &Path, commands: &Vec<Vec<String>>) -> bool {
+pub(crate) fn write_command_file(path: &Path, commands: &Vec<Vec<String>>) -> Option<String> {
+    let mut lines = String::new();
     let Ok(file) = File::create(path) else {
         error!("Failed to create output file: {}", path.display());
-        return true;
+        return None;
     };
     let mut f = BufWriter::new(file);
     for line in commands {
         for (idx, entry) in line.iter().enumerate() {
             if let Err(e) = f.write_all(entry.as_bytes()) {
                 error!("Failed to write to output file: {}", e);
-                return true;
+                return None;
             }
+            lines.push_str(entry);
             if idx < line.len() - 1 {
                 if let Err(e) = f.write_all(b" ") {
                     error!("Failed to write space to output file: {}", e);
-                    return true;
+                    return None;
                 }
+                lines.push(' '); // Add space between entries
             }
         }
         let newline = "\n";
         if let Err(e) = f.write_all(newline.as_bytes()) {
             error!("Failed to write newline to output file: {}", e);
-            return true;
+            return None;
         }
+        lines.push_str(newline); // Add new-line at the end of the line
     }
     if let Err(e) = f.flush() {
         error!("Failed to flush output file: {}", e);
-        return true;
+        return None;
     }
-    false
-}
-
-/// Log the failed commands for debugging
-fn log_failed_commands(path: &Path, purpose: &str) {
-    if let Ok(file) = File::open(path) {
-        let reader = BufReader::new(file);
-        error!("Failed commands for {purpose}:");
-        for (line_num, line) in reader.lines().enumerate() {
-            if let Ok(cmd) = line {
-                error!("  Line {}: {}", line_num + 1, cmd);
-            }
-        }
-    } else {
-        error!("Could not read command file to diagnose failure");
-    }
+    Some(lines)
 }
