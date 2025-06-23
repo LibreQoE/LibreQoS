@@ -115,14 +115,14 @@ export class PacketsPerSecondTimescale extends DashboardGraph {
 
             for (let x=0; x<data.length; x++) {
                 this.option.xAxis.data.push(data[x].time);
-                seriesTcpDown.data.push(data[x].median_tcp_down);
-                SeriesTcpUp.data.push((0.0 - data[x].median_tcp_up));
+                seriesTcpDown.data.push(data[x].max_tcp_down);
+                SeriesTcpUp.data.push((0.0 - data[x].max_tcp_up));
 
-                seriesUdpDown.data.push(data[x].median_udp_down);
-                SeriesUdpUp.data.push((0.0 - data[x].median_udp_up));
+                seriesUdpDown.data.push(data[x].max_udp_down);
+                SeriesUdpUp.data.push((0.0 - data[x].max_udp_up));
 
-                seriesIcmpDown.data.push(data[x].median_icmp_down);
-                SeriesIcmpUp.data.push((0.0 - data[x].median_icmp_up));
+                seriesIcmpDown.data.push(data[x].max_icmp_down);
+                SeriesIcmpUp.data.push((0.0 - data[x].max_icmp_up));
             }
 
             this.option.series.push(seriesTcpDown);
