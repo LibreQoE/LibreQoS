@@ -41,6 +41,13 @@ impl Netflow9 {
                         last_sent = std::time::Instant::now();
                     }
                 }
+                
+                // Handle any remaining flows when shutting down
+                if !accumulator.is_empty() {
+                    for chunk in accumulator.chunks(14) {
+                        Self::queue_handler(chunk, &socket, &target, &sequence);
+                    }
+                }
             })?;
 
         Ok(tx)
@@ -76,7 +83,11 @@ impl Netflow9 {
                 buffer.extend_from_slice(&packet2);
             }
         }
-        socket.send_to(&buffer, target).unwrap();
-        sequence.fetch_add(num_records as u32, std::sync::atomic::Ordering::Relaxed);
+        if let Err(e) = socket.send_to(&buffer, target) {
+            tracing::error!("Failed to send Netflow9 data to {}: {}", target, e);
+            // Don't increment sequence on failure to maintain consistency
+        } else {
+            sequence.fetch_add(num_records as u32, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 }

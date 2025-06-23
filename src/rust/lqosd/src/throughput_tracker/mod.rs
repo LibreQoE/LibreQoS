@@ -131,7 +131,13 @@ fn throughput_task(
     };
 
     let mut last_submitted_to_lts: Option<Instant> = None;
-    let mut tfd = TimerFd::new().unwrap();
+    let mut tfd = match TimerFd::new() {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::error!("Failed to create timer for throughput monitor: {}", e);
+            return;
+        }
+    };
     assert_eq!(tfd.get_state(), TimerState::Disarmed);
     tfd.set_state(
         TimerState::Periodic {

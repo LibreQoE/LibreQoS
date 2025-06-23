@@ -307,13 +307,21 @@ pub fn flowbee_rtt_map() -> FxHashMap<FlowbeeKey, [RttData; 2]> {
     if let Some(cmd_tx) = FLOW_COMMAND_SENDER.get() {
         if cmd_tx.try_send(FlowCommands::RttMap(tx)).is_err() {
             warn!("Could not submit flow command - buffer full");
+            return FxHashMap::default();
         }
     } else {
         warn!("Flow command arrived before the actor is ready. Dropping it.");
+        return FxHashMap::default();
     }
 
-    let result = tokio::runtime::Runtime::new().unwrap().block_on(rx);
-    result.unwrap_or_default()
+    // Use blocking_recv() which is designed for sync contexts
+    match rx.blocking_recv() {
+        Ok(result) => result,
+        Err(_) => {
+            warn!("Failed to receive RTT map from flow actor - channel closed");
+            FxHashMap::default()
+        }
+    }
 }
 
 pub fn get_rtt_events_per_second() -> u64 {
