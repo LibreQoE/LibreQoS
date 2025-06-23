@@ -61,10 +61,10 @@ pub fn start_bakery() -> anyhow::Result<crossbeam_channel::Sender<BakeryCommands
 
 fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
     // Current operation batch
-    let mut batch = None;
-    let mut sites = HashMap::new();
-    let mut circuits = HashMap::new();
-    let mut live_circuits = HashMap::new();
+    let mut batch: Option<Vec<Arc<BakeryCommands>>> = None;
+    let mut sites: HashMap<i64, Arc<BakeryCommands>> = HashMap::new();
+    let mut circuits: HashMap<i64, Arc<BakeryCommands>> = HashMap::new();
+    let mut live_circuits: HashMap<i64, u64> = HashMap::new();
 
     {
         let Ok(config) = lqos_config::load_config() else {
@@ -92,17 +92,17 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
             },
             BakeryCommands::MqSetup { .. } => {
                 if let Some(batch) = &mut batch {
-                    batch.push(command.clone());
+                    batch.push(Arc::new(command));
                 }
             },
             BakeryCommands::AddSite { .. } => {
                 if let Some(batch) = &mut batch {
-                    batch.push(command.clone());
+                    batch.push(Arc::new(command));
                 }
             }
             BakeryCommands::AddCircuit { .. } => {
                 if let Some(batch) = &mut batch {
-                    batch.push(command.clone());
+                    batch.push(Arc::new(command));
                 }
             }
             BakeryCommands::OnCircuitActivity { circuit_ids } => {
@@ -110,7 +110,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
             }
             BakeryCommands::Tick => {
                 // Reset per-cycle counters at the start of tick
-                handle_tick(&circuits, &mut live_circuits);
+                handle_tick(&mut circuits, &mut live_circuits, &mut sites);
             }
             BakeryCommands::ChangeSiteSpeedLive { 
                 site_hash, 
@@ -174,9 +174,9 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
 }
 
 fn handle_commit_batch(
-    batch: &mut Option<Vec<BakeryCommands>>,
-    sites: &mut HashMap<i64, BakeryCommands>,
-    circuits: &mut HashMap<i64, BakeryCommands>,
+    batch: &mut Option<Vec<Arc<BakeryCommands>>>,
+    sites: &mut HashMap<i64, Arc<BakeryCommands>>,
+    circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
     live_circuits: &mut HashMap<i64, u64>,
     tx: &Sender<BakeryCommands>,
 ) {
@@ -258,23 +258,23 @@ fn handle_commit_batch(
     }
 
     // Now we can process circuit changes
-    if let diff::CircuitDiffResult::CircuitsChanged { mut newly_added, mut removed_circuits, updated_circuits } = circuit_change_mode {
-        // And updated is annoying. Because it's really the other two steps,
-        // let's split the data and pass it to the other two commands.
+    if let diff::CircuitDiffResult::CircuitsChanged { newly_added, removed_circuits, updated_circuits } = circuit_change_mode {
+        // Process removed circuits (including those that are being updated)
+        let mut circuits_to_remove = removed_circuits;
         if !updated_circuits.is_empty() {
-            removed_circuits.extend(updated_circuits.clone());
-            newly_added.extend(updated_circuits);
+            // For updates, we need to remove the old version first
+            for cmd in &updated_circuits {
+                if let BakeryCommands::AddCircuit { circuit_hash, .. } = cmd.as_ref() {
+                    circuits_to_remove.push(*circuit_hash);
+                }
+            }
         }
 
         // Removing circuits.
-        if !removed_circuits.is_empty() {
-            for to_remove in removed_circuits {
-                let BakeryCommands::AddCircuit { circuit_hash, .. } = &to_remove else {
-                    warn!("RemoveCircuit received a non-circuit command: {:?}", to_remove);
-                    continue;
-                };
-                if let Some(circuit) = circuits.remove(circuit_hash) {
-                    let was_activated = live_circuits.contains_key(circuit_hash);
+        if !circuits_to_remove.is_empty() {
+            for circuit_hash in circuits_to_remove {
+                if let Some(circuit) = circuits.remove(&circuit_hash) {
+                    let was_activated = live_circuits.contains_key(&circuit_hash);
                     
                     // Only generate removal commands if appropriate for the mode
                     let commands = match config.queues.lazy_queues.as_ref() {
@@ -303,7 +303,7 @@ fn handle_commit_batch(
                     if let Some(cmd) = commands {
                         execute_in_memory(&cmd, "removing circuit");
                     }
-                    live_circuits.remove(circuit_hash);
+                    live_circuits.remove(&circuit_hash);
                 } else {
                     warn!("RemoveCircuit received for unknown circuit: {}", circuit_hash);
                     continue;
@@ -312,7 +312,11 @@ fn handle_commit_batch(
         }
         // Newly added is a little harder
         if !newly_added.is_empty() {
-            let commands: Vec<Vec<String>> = newly_added
+            // Collect both newly added and updated circuits
+            let mut all_new_circuits: Vec<&Arc<BakeryCommands>> = newly_added;
+            all_new_circuits.extend(updated_circuits);
+            
+            let commands: Vec<Vec<String>> = all_new_circuits
                 .iter()
                 .map(|c| c.to_commands(&config, ExecutionMode::Builder))
                 .flatten()
@@ -323,9 +327,9 @@ fn handle_commit_batch(
             } else {
                 execute_in_memory(&commands, "adding new circuits");
                 // Update the circuits map with the newly added circuits
-                for command in newly_added {
-                    if let BakeryCommands::AddCircuit { circuit_hash, .. } = command {
-                        circuits.insert(circuit_hash, command);
+                for command in all_new_circuits {
+                    if let BakeryCommands::AddCircuit { circuit_hash, .. } = command.as_ref() {
+                        circuits.insert(*circuit_hash, Arc::clone(command));
                     } else {
                         warn!("AddCircuit received a non-circuit command: {:?}", command);
                     }
@@ -337,7 +341,7 @@ fn handle_commit_batch(
 
 fn handle_circuit_activity(
     circuit_ids: HashSet<i64>,
-    circuits: &HashMap<i64, BakeryCommands>,
+    circuits: &HashMap<i64, Arc<BakeryCommands>>,
     live_circuits: &mut HashMap<i64, u64>,
 ) {
     let Ok(config) = lqos_config::load_config() else {
@@ -371,14 +375,37 @@ fn handle_circuit_activity(
 }
 
 fn handle_tick(
-    circuits: &HashMap<i64, BakeryCommands>,
+    circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
     live_circuits: &mut HashMap<i64, u64>,
+    sites: &mut HashMap<i64, Arc<BakeryCommands>>,
 ) {
     // This is a periodic tick to expire lazy queues
     let Ok(config) = lqos_config::load_config() else {
         error!("Failed to load configuration, exiting Bakery thread.");
         return;
     };
+    
+    // Periodically shrink HashMap capacity if it's much larger than needed
+    static mut TICK_COUNT: u64 = 0;
+    unsafe {
+        TICK_COUNT += 1;
+        if TICK_COUNT % 60 == 0 { // Every minute
+            // Shrink if capacity is more than 2x the size
+            if circuits.capacity() > circuits.len() * 2 && circuits.capacity() > 100 {
+                debug!("Shrinking circuits HashMap: {} entries, {} capacity", circuits.len(), circuits.capacity());
+                circuits.shrink_to_fit();
+            }
+            if live_circuits.capacity() > live_circuits.len() * 2 && live_circuits.capacity() > 100 {
+                debug!("Shrinking live_circuits HashMap: {} entries, {} capacity", live_circuits.len(), live_circuits.capacity());
+                live_circuits.shrink_to_fit();
+            }
+            if sites.capacity() > sites.len() * 2 && sites.capacity() > 100 {
+                debug!("Shrinking sites HashMap: {} entries, {} capacity", sites.len(), sites.capacity());
+                sites.shrink_to_fit();
+            }
+        }
+    }
+    
     match config.queues.lazy_queues.as_ref() {
         None | Some(LazyQueueMode::No) => {
             ACTIVE_CIRCUITS.store(circuits.len(), Ordering::Relaxed);
@@ -431,15 +458,15 @@ fn handle_change_site_speed_live(
     upload_bandwidth_min: f32,
     download_bandwidth_max: f32,
     upload_bandwidth_max: f32,
-    sites: &mut HashMap<i64, BakeryCommands>,
+    sites: &mut HashMap<i64, Arc<BakeryCommands>>,
 ) {
     let Ok(config) = lqos_config::load_config() else {
         error!("Failed to load configuration, exiting Bakery thread.");
         return;
     };
-    if let Some(site) = sites.get_mut(&site_hash) {
-        let BakeryCommands::AddSite { site_hash: _, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min: site_dl_min, upload_bandwidth_min: site_ul_min, download_bandwidth_max: site_dl_max, upload_bandwidth_max: site_ul_max } = site else {
-            warn!("ChangeSiteSpeedLive received a non-site command: {:?}", site);
+    if let Some(site_arc) = sites.get(&site_hash) {
+        let BakeryCommands::AddSite { site_hash: _, parent_class_id, up_parent_class_id, class_minor, .. } = site_arc.as_ref() else {
+            warn!("ChangeSiteSpeedLive received a non-site command: {:?}", site_arc);
             return;
         };
         let to_internet = config.internet_interface();
@@ -472,18 +499,25 @@ fn handle_change_site_speed_live(
             format_rate_for_tc_f32(download_bandwidth_max),
         ]];
         execute_in_memory(&commands, "changing site speed live");
-        // Update the site speeds in the site map
-        *site_dl_min = download_bandwidth_min;
-        *site_ul_min = upload_bandwidth_min;
-        *site_dl_max = download_bandwidth_max;
-        *site_ul_max = upload_bandwidth_max;
+        // Update the site speeds in the site map - create a new Arc with updated values
+        let new_site = Arc::new(BakeryCommands::AddSite {
+            site_hash,
+            parent_class_id: *parent_class_id,
+            up_parent_class_id: *up_parent_class_id,
+            class_minor: *class_minor,
+            download_bandwidth_min,
+            upload_bandwidth_min,
+            download_bandwidth_max,
+            upload_bandwidth_max,
+        });
+        sites.insert(site_hash, new_site);
     } else {
         warn!("ChangeSiteSpeedLive received for unknown site: {}", site_hash);
         return;
     }
 }
 
-fn full_reload(batch: &mut Option<Vec<BakeryCommands>>, sites: &mut HashMap<i64, BakeryCommands>, circuits: &mut HashMap<i64, BakeryCommands>, live_circuits: &mut HashMap<i64, u64>, config: &Arc<Config>, new_batch: Vec<BakeryCommands>) {
+fn full_reload(batch: &mut Option<Vec<Arc<BakeryCommands>>>, sites: &mut HashMap<i64, Arc<BakeryCommands>>, circuits: &mut HashMap<i64, Arc<BakeryCommands>>, live_circuits: &mut HashMap<i64, u64>, config: &Arc<Config>, new_batch: Vec<Arc<BakeryCommands>>) {
     sites.clear();
     circuits.clear();
     live_circuits.clear();
@@ -492,10 +526,10 @@ fn full_reload(batch: &mut Option<Vec<BakeryCommands>>, sites: &mut HashMap<i64,
 }
 
 fn process_batch(
-    batch: Vec<BakeryCommands>,
+    batch: Vec<Arc<BakeryCommands>>,
     config: &Arc<lqos_config::Config>,
-    sites: &mut HashMap<i64, BakeryCommands>,
-    circuits: &mut HashMap<i64, BakeryCommands>,
+    sites: &mut HashMap<i64, Arc<BakeryCommands>>,
+    circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
 ) {
     info!("Bakery: Processing batch of {} commands", batch.len());
     let mut circuit_count = 0u64;
@@ -503,12 +537,12 @@ fn process_batch(
         .into_iter()
         .map(|b| {
             // Ensure that our state map is up to date with the latest commands
-            match &b {
+            match b.as_ref() {
                 BakeryCommands::AddSite { site_hash, .. } => {
-                    sites.insert(*site_hash, b.clone());
+                    sites.insert(*site_hash, Arc::clone(&b));
                 }
                 BakeryCommands::AddCircuit { circuit_hash, .. } => {
-                    circuits.insert(*circuit_hash, b.clone());
+                    circuits.insert(*circuit_hash, Arc::clone(&b));
                     circuit_count += 1;
                 }
                 _ => {}
