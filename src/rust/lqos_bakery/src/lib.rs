@@ -473,6 +473,16 @@ fn handle_change_site_speed_live(
         let to_isp = config.isp_interface();
         let class_id = format!("0x{:x}:0x{:x}", parent_class_id.get_major_minor().0, class_minor);
         let up_class_id = format!("0x{:x}:0x{:x}", up_parent_class_id.get_major_minor().0, class_minor);
+        let upload_bandwidth_min = if upload_bandwidth_min >= (upload_bandwidth_max-0.5) {
+            upload_bandwidth_max - 1.0
+        } else {
+            upload_bandwidth_min
+        };
+        let download_bandwidth_min = if download_bandwidth_min >= (download_bandwidth_max-0.5) {
+            download_bandwidth_max - 1.0
+        } else {
+            download_bandwidth_min
+        };
         let commands = vec![vec![
             "class".to_string(),
             "change".to_string(),
