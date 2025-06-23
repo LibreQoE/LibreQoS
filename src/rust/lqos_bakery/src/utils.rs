@@ -22,7 +22,7 @@ pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str
     let _guard = COMMAND_EXECUTION_MUTEX.lock().unwrap();
 
     let path = Path::new("/tmp/lqos_bakery_commands.txt");
-    let Ok(lines) = write_command_file(path, command_buffer) else {
+    let Some(lines) = write_command_file(path, command_buffer) else {
         error!("Failed to write command file for {purpose}");
         return;
     };
