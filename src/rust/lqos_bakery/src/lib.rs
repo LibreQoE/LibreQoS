@@ -25,6 +25,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::Ordering::Relaxed;
 use crossbeam_channel::{Receiver, Sender};
 use tracing::{debug, error, info, warn};
 use utils::current_timestamp;
@@ -128,6 +129,11 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                 );
             }
             BakeryCommands::StormGuardAdjustment { dry_run, interface_name, class_id, new_rate } => {
+                let has_mq_run = MQ_CREATED.load(Relaxed);
+                if !has_mq_run {
+                    warn!("StormGuardAdjustment received before MQ setup, skipping.");
+                    continue;
+                }
                 // Build the HTB command
                 let args = vec![
                     "class".to_string(),
