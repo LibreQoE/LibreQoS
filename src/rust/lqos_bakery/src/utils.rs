@@ -1,7 +1,11 @@
 use std::fs::File;
-use std::io::{BufWriter, Write};
+use std::io::{BufWriter, Write, BufReader, BufRead};
 use std::path::Path;
+use std::sync::Mutex;
 use tracing::{error, info};
+
+/// Mutex to ensure exclusive command execution
+static COMMAND_EXECUTION_MUTEX: Mutex<()> = Mutex::new(());
 
 /// Get the current Unix timestamp in seconds
 pub(crate) fn current_timestamp() -> u64 {
@@ -14,14 +18,21 @@ pub(crate) fn current_timestamp() -> u64 {
 pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str) {
     info!("Bakery: Executing in-memory commands: {} lines, for {purpose}", command_buffer.len());
 
+    // Acquire the mutex to ensure exclusive execution
+    let _guard = COMMAND_EXECUTION_MUTEX.lock().unwrap();
+
     let path = Path::new("/tmp/lqos_bakery_commands.txt");
-    write_command_file(path, command_buffer);
+    if write_command_file(path, command_buffer) {
+        error!("Failed to write command file for {purpose}");
+        return;
+    }
 
     let Ok(output) = std::process::Command::new("/sbin/tc")
             .args(&["-f", "-batch", path.to_str().unwrap()])
             .output()
     else {
         error!("Failed to execute tc batch command for {purpose}");
+        log_failed_commands(path, purpose);
         return;
     };
 
@@ -33,6 +44,7 @@ pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str
     let error_str = String::from_utf8_lossy(&output.stderr);
     if !error_str.is_empty() {
         error!("Command error for ({purpose}): {:?}", error_str.trim());
+        log_failed_commands(path, purpose);
     }
 
     /*for line in command_buffer {
@@ -128,4 +140,19 @@ pub(crate) fn write_command_file(path: &Path, commands: &Vec<Vec<String>>) -> bo
         return true;
     }
     false
+}
+
+/// Log the failed commands for debugging
+fn log_failed_commands(path: &Path, purpose: &str) {
+    if let Ok(file) = File::open(path) {
+        let reader = BufReader::new(file);
+        error!("Failed commands for {purpose}:");
+        for (line_num, line) in reader.lines().enumerate() {
+            if let Ok(cmd) = line {
+                error!("  Line {}: {}", line_num + 1, cmd);
+            }
+        }
+    } else {
+        error!("Could not read command file to diagnose failure");
+    }
 }
