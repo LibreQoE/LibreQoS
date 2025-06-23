@@ -16,7 +16,7 @@ impl Netflow9 {
     ) -> anyhow::Result<Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>> {
         let (tx, rx) =
             crossbeam_channel::bounded::<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>(65535);
-        let socket = UdpSocket::bind("0.0.0.0:12212")?;
+        let socket = UdpSocket::bind("0.0.0.0:0")?;
 
         std::thread::Builder::new()
             .name("Netflow9".to_string())
