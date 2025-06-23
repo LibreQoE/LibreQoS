@@ -84,6 +84,9 @@ pub struct Config {
     
     /// Support for Tornado/Auto-rate.
     pub stormguard: Option<stormguard::StormguardConfig>,
+
+    /// Disable ICMP Ping Monitoring for Devices in the hosts view
+    pub disable_icmp_ping: Option<bool>,
 }
 
 impl Config {
@@ -159,6 +162,7 @@ impl Default for Config {
             disable_webserver: None,
             webserver_listen: None,
             stormguard: None,
+            disable_icmp_ping: Some(false),
         }
     }
 }
