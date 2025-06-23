@@ -416,7 +416,6 @@ fn handle_change_site_speed_live(
         let class_id = format!("0x{:x}:0x{:x}", parent_class_id.get_major_minor().0, class_minor);
         let up_class_id = format!("0x{:x}:0x{:x}", up_parent_class_id.get_major_minor().0, class_minor);
         let commands = vec![vec![
-            "tc".to_string(),
             "class".to_string(),
             "change".to_string(),
             "dev".to_string(),
@@ -429,7 +428,6 @@ fn handle_change_site_speed_live(
             "ceil".to_string(),
             format_rate_for_tc_f32(upload_bandwidth_max),
         ], vec![
-            "tc".to_string(),
             "class".to_string(),
             "change".to_string(),
             "dev".to_string(),
