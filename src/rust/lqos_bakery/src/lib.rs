@@ -268,7 +268,32 @@ fn handle_commit_batch(
                     continue;
                 };
                 if let Some(circuit) = circuits.remove(circuit_hash) {
-                    let commands = circuit.to_prune(&config, true);
+                    let was_activated = live_circuits.contains_key(circuit_hash);
+                    
+                    // Only generate removal commands if appropriate for the mode
+                    let commands = match config.queues.lazy_queues.as_ref() {
+                        None | Some(LazyQueueMode::No) => {
+                            // Non-lazy: everything was created, delete everything
+                            circuit.to_prune(&config, true)
+                        }
+                        Some(LazyQueueMode::Htb) => {
+                            // HTB mode: only delete CAKE if it was created
+                            if was_activated {
+                                circuit.to_prune(&config, false) // This will only delete CAKE, not HTB
+                            } else {
+                                None // CAKE was never created, nothing to delete
+                            }
+                        }
+                        Some(LazyQueueMode::Full) => {
+                            // Full lazy: only delete if activated
+                            if was_activated {
+                                circuit.to_prune(&config, true)
+                            } else {
+                                None // Nothing was created, nothing to delete
+                            }
+                        }
+                    };
+                    
                     if let Some(cmd) = commands {
                         execute_in_memory(&cmd, "removing circuit");
                     }
