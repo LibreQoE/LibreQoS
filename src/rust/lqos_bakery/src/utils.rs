@@ -43,7 +43,7 @@ pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str
 
     let error_str = String::from_utf8_lossy(&output.stderr);
     if !error_str.is_empty() {
-        let message = format!("Failed to execute tc batch command for {purpose}. Command output: \n{}", lines);
+        let message = format!("Failed to execute tc batch command for {purpose}. Error: {}\nCommands attempted:\n{}", error_str.trim(), lines);
         error!("{}", message);
     }
 
