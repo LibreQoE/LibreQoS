@@ -524,6 +524,7 @@ fn handle_change_site_speed_live(
 }
 
 fn full_reload(batch: &mut Option<Vec<Arc<BakeryCommands>>>, sites: &mut HashMap<i64, Arc<BakeryCommands>>, circuits: &mut HashMap<i64, Arc<BakeryCommands>>, live_circuits: &mut HashMap<i64, u64>, config: &Arc<Config>, new_batch: Vec<Arc<BakeryCommands>>) {
+    warn!("Bakery: Full reload triggered due to site or circuit changes.");
     sites.clear();
     circuits.clear();
     live_circuits.clear();
