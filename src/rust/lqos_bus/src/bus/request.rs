@@ -259,6 +259,10 @@ pub enum BusRequest {
         download_bandwidth_max: f32,
         /// The maximum upload bandwidth for the site
         upload_bandwidth_max: f32,
+        /// The class ID for the site
+        class_id: TcHandle,
+        /// The upload class ID for the site
+        up_class_id: TcHandle,
     },
     /// Add a circuit to the bakery
     BakeryAddCircuit {

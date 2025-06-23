@@ -39,6 +39,8 @@ pub enum BakeryCommands {
         upload_bandwidth_min: f32,
         download_bandwidth_max: f32,
         upload_bandwidth_max: f32,
+        class_id: TcHandle,
+        up_class_id: TcHandle,
     },
     AddCircuit {
         circuit_hash: i64,
@@ -74,11 +76,13 @@ impl BakeryCommands {
                 upload_bandwidth_min,
                 download_bandwidth_max,
                 upload_bandwidth_max,
+                class_id,
+                up_class_id,
             } => Self::add_site(
                 config, *site_hash, *parent_class_id, *up_parent_class_id,
                 *class_minor, *download_bandwidth_min,
                 *upload_bandwidth_min, *download_bandwidth_max,
-                *upload_bandwidth_max,
+                *upload_bandwidth_max, *class_id, *up_class_id,
             ),
             BakeryCommands::AddCircuit {
                 circuit_hash,
@@ -284,6 +288,8 @@ impl BakeryCommands {
         upload_bandwidth_min: f32,
         download_bandwidth_max: f32,
         upload_bandwidth_max: f32,
+        _class_id: TcHandle,
+        _up_class_id: TcHandle,
     ) -> Option<Vec<Vec<String>>> {
         let mut result = Vec::new();
 

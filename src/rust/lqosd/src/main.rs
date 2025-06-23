@@ -467,6 +467,8 @@ fn handle_bus_requests(
                 upload_bandwidth_min,
                 download_bandwidth_max,
                 upload_bandwidth_max,
+                class_id,
+                up_class_id,
             } => {
                 if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
                     let sender = sender.clone();
@@ -479,6 +481,8 @@ fn handle_bus_requests(
                         upload_bandwidth_min: *upload_bandwidth_min,
                         download_bandwidth_max: *download_bandwidth_max,
                         upload_bandwidth_max: *upload_bandwidth_max,
+                        class_id: class_id.clone(),
+                        up_class_id: up_class_id.clone(),
                     });
                     BusResponse::Ack
                 } else {

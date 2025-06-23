@@ -994,6 +994,8 @@ def refreshShapers():
 					data[node]['uploadBandwidthMbpsMin'],
 					data[node]['downloadBandwidthMbps'],
 					data[node]['uploadBandwidthMbps'],
+					data[node]['classid'],
+					data[node]['up_classid'],
 				)
 				command = 'class add dev ' + interface_a() + ' parent ' + data[node]['parentClassID'] + ' classid ' + data[node]['classMinor'] + ' htb rate '+ format_rate_for_tc(data[node]['downloadBandwidthMbpsMin']) + ' ceil '+ format_rate_for_tc(data[node]['downloadBandwidthMbps']) + ' prio 3' + quantum(data[node]['downloadBandwidthMbps'])
 				linuxTCcommands.append(command)

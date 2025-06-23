@@ -854,6 +854,8 @@ enum BakeryCommands {
         upload_bandwidth_min: f32,
         download_bandwidth_max: f32,
         upload_bandwidth_max: f32,
+        class_id: TcHandle,
+        up_class_id: TcHandle,
     },
     AddCircuit {
         circuit_hash: i64,
@@ -926,6 +928,8 @@ impl Bakery {
                                     upload_bandwidth_min,
                                     download_bandwidth_max,
                                     upload_bandwidth_max,
+                                    class_id,
+                                    up_class_id,
                                 } => {
                                     let command = BusRequest::BakeryAddSite {
                                         site_hash: *site_hash,
@@ -936,6 +940,8 @@ impl Bakery {
                                         upload_bandwidth_min: *upload_bandwidth_min,
                                         download_bandwidth_max: *download_bandwidth_max,
                                         upload_bandwidth_max: *upload_bandwidth_max,
+                                        class_id: *class_id,
+                                        up_class_id: *up_class_id,
                                     };
                                     requests.push(command);
                                 }
@@ -1000,6 +1006,8 @@ impl Bakery {
         upload_bandwidth_min: f32,
         download_bandwidth_max: f32,
         upload_bandwidth_max: f32,
+        class_id: String,
+        up_class_id: String,
     ) -> PyResult<()> {
         let site_hash = lqos_utils::hash_to_i64(&site_name);
         //println!("Name hash for site {site_name} is {site_hash}");
@@ -1012,6 +1020,8 @@ impl Bakery {
             upload_bandwidth_min,
             download_bandwidth_max,
             upload_bandwidth_max,
+            class_id: TcHandle::from_string(&class_id).unwrap(),
+            up_class_id: TcHandle::from_string(&up_class_id).unwrap(),
         };
         self.queue.push(command);
         Ok(())

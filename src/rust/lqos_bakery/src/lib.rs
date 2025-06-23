@@ -465,21 +465,21 @@ fn handle_change_site_speed_live(
         return;
     };
     if let Some(site_arc) = sites.get(&site_hash) {
-        let BakeryCommands::AddSite { site_hash: _, parent_class_id, up_parent_class_id, class_minor, .. } = site_arc.as_ref() else {
+        let BakeryCommands::AddSite { site_hash: _, parent_class_id, up_parent_class_id, class_minor, class_id, up_class_id, .. } = site_arc.as_ref() else {
             warn!("ChangeSiteSpeedLive received a non-site command: {:?}", site_arc);
             return;
         };
         let to_internet = config.internet_interface();
         let to_isp = config.isp_interface();
-        let class_id = format!("0x{:x}:0x{:x}", parent_class_id.get_major_minor().0, class_minor);
-        let up_class_id = format!("0x{:x}:0x{:x}", up_parent_class_id.get_major_minor().0, class_minor);
+        let class_id_str = class_id.as_tc_string();
+        let up_class_id_str = up_class_id.as_tc_string();
         let commands = vec![vec![
             "class".to_string(),
             "change".to_string(),
             "dev".to_string(),
             to_internet,
             "classid".to_string(),
-            up_class_id,
+            up_class_id_str,
             "htb".to_string(),
             "rate".to_string(),
             format_rate_for_tc_f32(upload_bandwidth_min),
@@ -491,7 +491,7 @@ fn handle_change_site_speed_live(
             "dev".to_string(),
             to_isp,
             "classid".to_string(),
-            class_id,
+            class_id_str,
             "htb".to_string(),
             "rate".to_string(),
             format_rate_for_tc_f32(download_bandwidth_min),
@@ -509,6 +509,8 @@ fn handle_change_site_speed_live(
             upload_bandwidth_min,
             download_bandwidth_max,
             upload_bandwidth_max,
+            class_id: *class_id,
+            up_class_id: *up_class_id,
         });
         sites.insert(site_hash, new_site);
     } else {

@@ -64,12 +64,12 @@ fn is_structurally_different(
     a: &BakeryCommands,
     b: &BakeryCommands,
 ) -> bool {
-    let BakeryCommands::AddSite { site_hash, parent_class_id, up_parent_class_id, class_minor, .. } = a else {
+    let BakeryCommands::AddSite { site_hash, parent_class_id, up_parent_class_id, class_minor, class_id, up_class_id, .. } = a else {
         warn!("is_structurally_different called with non-site command: {:?}", a);
         return false; // Not a site command
     };
 
-    let BakeryCommands::AddSite { site_hash: b_site_hash, parent_class_id: b_parent_class_id, up_parent_class_id: b_up_parent_class_id, class_minor: b_class_minor, .. } = b else {
+    let BakeryCommands::AddSite { site_hash: b_site_hash, parent_class_id: b_parent_class_id, up_parent_class_id: b_up_parent_class_id, class_minor: b_class_minor, class_id: b_class_id, up_class_id: b_up_class_id, .. } = b else {
         warn!("is_structurally_different called with non-site command: {:?}", b);
         return false; // Not a site command
     };
@@ -83,19 +83,21 @@ fn is_structurally_different(
     // If the classes are different, it's different.
     parent_class_id != b_parent_class_id ||
     up_parent_class_id != b_up_parent_class_id ||
-    class_minor != b_class_minor
+    class_minor != b_class_minor ||
+    class_id != b_class_id ||
+    up_class_id != b_up_class_id
 }
 
 fn site_speeds_changed(
     a: &BakeryCommands,
     b: &BakeryCommands,
 ) -> Option<BakeryCommands> {
-    let BakeryCommands::AddSite { site_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max } = a else {
+    let BakeryCommands::AddSite { site_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, class_id, up_class_id } = a else {
         warn!("site_speeds_changed called with non-site command: {:?}", a);
         return None; // Not a site command
     };
 
-    let BakeryCommands::AddSite { site_hash: b_site_hash, download_bandwidth_min: b_download_bandwidth_min, upload_bandwidth_min: b_upload_bandwidth_min, download_bandwidth_max: b_download_bandwidth_max, upload_bandwidth_max: b_upload_bandwidth_max, .. } = b else {
+    let BakeryCommands::AddSite { site_hash: b_site_hash, download_bandwidth_min: b_download_bandwidth_min, upload_bandwidth_min: b_upload_bandwidth_min, download_bandwidth_max: b_download_bandwidth_max, upload_bandwidth_max: b_upload_bandwidth_max, class_id: _b_class_id, up_class_id: _b_up_class_id, .. } = b else {
         warn!("site_speeds_changed called with non-site command: {:?}", b);
         return None; // Not a site command
     };
@@ -120,6 +122,8 @@ fn site_speeds_changed(
             upload_bandwidth_min: *b_upload_bandwidth_min,
             download_bandwidth_max: *b_download_bandwidth_max,
             upload_bandwidth_max: *b_upload_bandwidth_max,
+            class_id: *class_id,
+            up_class_id: *up_class_id,
         })
     } else {
         None
