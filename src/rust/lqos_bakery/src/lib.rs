@@ -233,11 +233,6 @@ fn handle_commit_batch(
     // Declare any site speed changes that need to be applied. We're sending them
     // to ourselves as future commands via the BakeryCommands channel.
     if let SiteDiffResult::SpeedChanges { changes } = site_change_mode {
-        if changes.is_empty() {
-            debug!("No speed changes detected, skipping processing.");
-            return;
-        }
-
         for change in &changes {
             let BakeryCommands::AddSite { site_hash, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, .. } = change else {
                 warn!("ChangeSiteSpeedLive received a non-site command: {:?}", change);
