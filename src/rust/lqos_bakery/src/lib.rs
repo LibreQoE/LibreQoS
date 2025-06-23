@@ -204,6 +204,7 @@ fn handle_commit_batch(
         // If the site structure has changed, we need to rebuild everything.
         info!("Site structure has changed, performing full reload.");
         full_reload(batch, sites, circuits, live_circuits, &config, new_batch);
+        MQ_CREATED.store(true, std::sync::atomic::Ordering::Relaxed);
         return;
     }
 
