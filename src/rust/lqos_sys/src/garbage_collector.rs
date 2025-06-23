@@ -26,12 +26,16 @@ pub fn bpf_garbage_collector() {
 /// Iterates through all throughput entries, building a list of any that
 /// haven't been seen for an hour. These are then bulk deleted.
 fn throughput_garbage_collect() {
-    //const EXPIRY_TIME: u64 = 60 * 60; // 1 Hour
-    const EXPIRY_TIME: u64 = 60 * 15; // 15 minutes
-    //const EXPIRY_TIME: u64 = 5 * 60; // 5 Minutes
+    let Ok(config) = lqos_config::load_config() else {
+        error!("Failed to load configuration for garbage collector");
+        return;
+    };
+    let expiry_time_seconds = config.queues.lazy_expire_seconds
+        .unwrap_or(60 * 15); // Default to 15 minutes if not set
+
     let Ok(now) = time_since_boot() else { return };
     let now = Duration::from(now).as_nanos() as u64;
-    let period_nanos = EXPIRY_TIME * 1_000_000_000;
+    let period_nanos = expiry_time_seconds * 1_000_000_000;
     let period_ago = now - period_nanos;
 
     let mut expired = Vec::new();
