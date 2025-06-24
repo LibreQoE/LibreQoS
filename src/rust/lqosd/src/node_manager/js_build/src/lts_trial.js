@@ -500,10 +500,16 @@ async function fetchCircuitCount() {
     try {
         const response = await $.get('/local-api/circuits/count');
         const count = response.count || 0;
+        const configuredCount = response.configured_count || 0;
         
-        if (count > 0) {
-            $('#circuitNumber').text(count.toLocaleString());
-            const monthlyPrice = (count * 0.30).toFixed(2);
+        // Always show circuit count if we have any circuits (active or configured)
+        if (count > 0 || configuredCount > 0) {
+            // If using configured count (no active circuits), show with note
+            const displayCount = count || configuredCount;
+            const isConfigured = count === 0 && configuredCount > 0;
+            
+            $('#circuitNumber').text(displayCount.toLocaleString() + (isConfigured ? ' Configured' : ' Active'));
+            const monthlyPrice = (displayCount * 0.30).toFixed(2);
             $('#monthlyPrice').text(monthlyPrice);
             $('#circuitCount').fadeIn();
         }
