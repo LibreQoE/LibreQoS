@@ -36,8 +36,19 @@ pub fn time_since_boot() -> Result<TimeSpec, TimeError> {
 pub fn boot_time_nanos_to_unix_now(start_time_nanos_since_boot: u64) -> Result<u64, TimeError> {
     let time_since_boot = time_since_boot()?;
     let since_boot = Duration::from(time_since_boot);
-    let boot_time = unix_now().unwrap() - since_boot.as_secs();
-    Ok(boot_time + Duration::from_nanos(start_time_nanos_since_boot).as_secs())
+    let current_unix_time = unix_now()?;
+    
+    // Use saturating_sub to prevent underflow panic
+    let boot_time = current_unix_time.saturating_sub(since_boot.as_secs());
+    
+    // Add additional validation to prevent overflow
+    let start_time_secs = Duration::from_nanos(start_time_nanos_since_boot).as_secs();
+    let result = boot_time.saturating_add(start_time_secs);
+    
+    tracing::debug!("Time conversion - current_unix: {}, since_boot: {}, boot_time: {}, start_time_secs: {}, result: {}",
+                   current_unix_time, since_boot.as_secs(), boot_time, start_time_secs, result);
+    
+    Ok(result)
 }
 
 /// Error type for time functions.
