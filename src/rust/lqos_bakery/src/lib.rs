@@ -216,10 +216,6 @@ fn handle_commit_batch(
         info!("No changes detected in batch, skipping processing.");
         return;
     }
-    
-    // Detect if this is a speed-only update
-    let is_speed_only_update = matches!(site_change_mode, SiteDiffResult::SpeedChanges { .. }) 
-        && matches!(circuit_change_mode, diff::CircuitDiffResult::NoChange);
 
     // Check if we should do a full reload based on the number of circuit changes
     if let diff::CircuitDiffResult::CircuitsChanged { newly_added, removed_circuits, updated_circuits } = &circuit_change_mode {
@@ -337,10 +333,6 @@ fn handle_commit_batch(
             }
         }
     }
-    
-    // Process the batch at the end, but skip MQ setup if this is a speed-only update
-    process_batch_with_options(new_batch, &config, sites, circuits, is_speed_only_update);
-    *batch = None;
 }
 
 fn handle_circuit_activity(
@@ -546,27 +538,11 @@ fn process_batch(
     sites: &mut HashMap<i64, Arc<BakeryCommands>>,
     circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
 ) {
-    process_batch_with_options(batch, config, sites, circuits, false);
-}
-
-fn process_batch_with_options(
-    batch: Vec<Arc<BakeryCommands>>,
-    config: &Arc<lqos_config::Config>,
-    sites: &mut HashMap<i64, Arc<BakeryCommands>>,
-    circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
-    skip_mq_setup: bool,
-) {
-    info!("Bakery: Processing batch of {} commands (skip_mq_setup: {})", batch.len(), skip_mq_setup);
+    info!("Bakery: Processing batch of {} commands", batch.len());
     let mut circuit_count = 0u64;
     let commands = batch
         .into_iter()
-        .filter_map(|b| {
-            // Skip MqSetup commands if we're in speed-only update mode
-            if skip_mq_setup && matches!(b.as_ref(), BakeryCommands::MqSetup { .. }) {
-                info!("Skipping MQ setup during speed-only update");
-                return None;
-            }
-            
+        .map(|b| {
             // Ensure that our state map is up to date with the latest commands
             match b.as_ref() {
                 BakeryCommands::AddSite { site_hash, .. } => {
@@ -578,7 +554,7 @@ fn process_batch_with_options(
                 }
                 _ => {}
             }
-            Some(b.to_commands(config, ExecutionMode::Builder))
+            b.to_commands(config, ExecutionMode::Builder)
         })
         .flatten()
         .flatten()
