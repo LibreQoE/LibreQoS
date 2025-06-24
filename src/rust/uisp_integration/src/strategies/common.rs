@@ -103,7 +103,7 @@ impl UispData {
                             if let Some(apdev) = self.find_device_by_id(ap_id) {
                                 //println!("AP Device: {:?}", apdev.get_name());
                                 if apdev.get_site_id().unwrap_or_default() != client.id {
-                                    parent = Some(("AP", apdev.get_name().unwrap_or_default()));
+                                    parent = Some(("AP", apdev.identification.id.clone()));
                                     found = true;
                                 }
                             }
@@ -112,16 +112,8 @@ impl UispData {
                 }
 
                 // Look in Site-DeviceSite
-                if !found {
-                    if let Some(device_site) = &device.identification.site {
-                        if let Some(apdev) = self.find_device_by_id(&device_site.id) {
-                            if apdev.get_site_id().unwrap_or_default() != client.id {
-                                parent = Some(("AP", apdev.get_name().unwrap_or_default()));
-                                found = true;
-                            }
-                        }
-                    }
-                }
+                // NOTE: This block was removed because device_site.id is a site ID, not a device ID
+                // and cannot be used with find_device_by_id()
 
                 // Look for data links with this device
                 if !found {
@@ -135,7 +127,7 @@ impl UispData {
                                     {
                                         if apdev.get_site_id().unwrap_or_default() != client.id {
                                             parent =
-                                                Some(("AP", apdev.get_name().unwrap_or_default()));
+                                                Some(("AP", apdev.identification.id.clone()));
                                             found = true;
                                         }
                                     }
@@ -151,7 +143,7 @@ impl UispData {
                                     {
                                         if apdev.get_site_id().unwrap_or_default() != client.id {
                                             parent =
-                                                Some(("AP", apdev.get_name().unwrap_or_default()));
+                                                Some(("AP", apdev.identification.id.clone()));
                                             found = true;
                                         }
                                     }
@@ -172,7 +164,7 @@ impl UispData {
                                     self.find_device_by_id(&to_device.identification.id)
                                 {
                                     if apdev.get_site_id().unwrap_or_default() != client.id {
-                                        parent = Some(("AP", apdev.get_name().unwrap_or_default()));
+                                        parent = Some(("AP", apdev.identification.id.clone()));
                                         found = true;
                                     }
                                 }
@@ -186,7 +178,7 @@ impl UispData {
                                     self.find_device_by_id(&from_device.identification.id)
                                 {
                                     if apdev.get_site_id().unwrap_or_default() != client.id {
-                                        parent = Some(("AP", apdev.get_name().unwrap_or_default()));
+                                        parent = Some(("AP", apdev.identification.id.clone()));
                                         found = true;
                                     }
                                 }

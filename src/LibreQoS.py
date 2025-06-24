@@ -1103,7 +1103,8 @@ def refreshShapers():
 		
 		
 		# Clear Prior Settings
-		clearPriorSettings(interface_a(), interface_b())
+		# We don't want to do this every time, with lqosd managing queues statefully.
+		# clearPriorSettings(interface_a(), interface_b())
 
 		
 		# Setup XDP and disable XPS regardless of whether it is first run or not (necessary to handle cases where systemctl stop was used)

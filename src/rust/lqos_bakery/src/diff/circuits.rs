@@ -1,24 +1,25 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use tracing::warn;
 use crate::BakeryCommands;
 
-pub(crate) enum CircuitDiffResult {
+pub(crate) enum CircuitDiffResult<'a> {
     NoChange,
     CircuitsChanged {
-        newly_added: Vec<BakeryCommands>,
-        removed_circuits: Vec<BakeryCommands>,
-        updated_circuits: Vec<BakeryCommands>,
+        newly_added: Vec<&'a Arc<BakeryCommands>>,
+        removed_circuits: Vec<i64>, // Just store the circuit hash for removal
+        updated_circuits: Vec<&'a Arc<BakeryCommands>>,
     }
 }
 
-pub(crate) fn diff_circuits(
-    batch: &[BakeryCommands],
-    old_circuits: &HashMap<i64, BakeryCommands>,
-) -> CircuitDiffResult {
-    let new_circuits: HashMap<i64, &BakeryCommands> = batch
+pub(crate) fn diff_circuits<'a>(
+    batch: &'a [Arc<BakeryCommands>],
+    old_circuits: &HashMap<i64, Arc<BakeryCommands>>,
+) -> CircuitDiffResult<'a> {
+    let new_circuits: HashMap<i64, &Arc<BakeryCommands>> = batch
         .iter()
         .filter_map(|cmd| {
-            if let BakeryCommands::AddCircuit{ circuit_hash, .. } = cmd {
+            if let BakeryCommands::AddCircuit{ circuit_hash, .. } = cmd.as_ref() {
                 Some((*circuit_hash, cmd))
             } else {
                 None
@@ -30,15 +31,15 @@ pub(crate) fn diff_circuits(
     let mut newly_added = Vec::new();
     for (circuit_hash, new_cmd) in &new_circuits {
         if !old_circuits.contains_key(circuit_hash) {
-            newly_added.push((*new_cmd).clone());
+            newly_added.push(*new_cmd);
         }
     }
 
     // Find any circuits that have been removed from `new_circuits`, but were in `old_circuits`
     let mut removed_circuits = Vec::new();
-    for (circuit_hash, old_cmd) in old_circuits {
+    for (circuit_hash, _) in old_circuits {
         if !new_circuits.contains_key(circuit_hash) {
-            removed_circuits.push((*old_cmd).clone());
+            removed_circuits.push(*circuit_hash);
         }
     }
 
@@ -46,8 +47,8 @@ pub(crate) fn diff_circuits(
     let mut updated_circuits = Vec::new();
     for (circuit_hash, old_cmd) in old_circuits {
         if let Some(new_cmd) = new_circuits.get(circuit_hash) {
-            if has_circuit_changed(old_cmd, new_cmd) {
-                updated_circuits.push((*new_cmd).clone());
+            if has_circuit_changed(old_cmd.as_ref(), new_cmd.as_ref()) {
+                updated_circuits.push(*new_cmd);
             }
         }
     }

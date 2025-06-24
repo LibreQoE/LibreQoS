@@ -269,7 +269,22 @@ impl TimeBuffer {
 
         buffer
             .iter()
-            .map(|f| Duration::from_nanos(f.data.1.last_seen - f.data.1.start_time)) // Duration in nanoseconds
+            .filter_map(|f| {
+                // Add bounds checking to prevent duration overflow
+                let start_time = f.data.1.start_time;
+                let last_seen = f.data.1.last_seen;
+                
+                if last_seen >= start_time {
+                    let duration_nanos = last_seen - start_time;
+                    tracing::debug!("Flow duration calculation - start: {}, end: {}, duration: {}",
+                                   start_time, last_seen, duration_nanos);
+                    Some(Duration::from_nanos(duration_nanos))
+                } else {
+                    tracing::warn!("Invalid flow timing - last_seen ({}) < start_time ({}), skipping",
+                                  last_seen, start_time);
+                    None
+                }
+            })
             .map(|nanos| nanos.as_secs())
             .sorted()
             .dedup_with_count() // Now we're (count, duration in seconds)
@@ -453,8 +468,31 @@ impl FinishedFlowAnalysis {
 
 fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
     debug!("Finished flow analysis");
-    let start_time = boot_time_nanos_to_unix_now(data.start_time).unwrap_or(0);
-    let last_seen = boot_time_nanos_to_unix_now(data.last_seen).unwrap_or(0);
+    
+    // Add diagnostic logging for time conversion issues
+    tracing::debug!("Flow timing - start_time: {}, last_seen: {}", data.start_time, data.last_seen);
+    
+    let start_time = match boot_time_nanos_to_unix_now(data.start_time) {
+        Ok(time) => {
+            tracing::debug!("Converted start_time to unix: {}", time);
+            time
+        },
+        Err(e) => {
+            tracing::error!("Failed to convert start_time {} to unix time: {:?}", data.start_time, e);
+            0
+        }
+    };
+    
+    let last_seen = match boot_time_nanos_to_unix_now(data.last_seen) {
+        Ok(time) => {
+            tracing::debug!("Converted last_seen to unix: {}", time);
+            time
+        },
+        Err(e) => {
+            tracing::error!("Failed to convert last_seen {} to unix time: {:?}", data.last_seen, e);
+            0
+        }
+    };
 
     let one_way = data.bytes_sent.down == 0 || data.bytes_sent.up == 0;
     let sd = SHAPED_DEVICES.load();

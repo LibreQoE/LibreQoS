@@ -39,6 +39,7 @@ function updateConfig() {
     window.config.packet_capture_time = parseInt(document.getElementById("packetCaptureTime").value);
     window.config.queue_check_period_ms = parseInt(document.getElementById("queueCheckPeriod").value);
     window.config.disable_webserver = document.getElementById("disableWebserver").checked;
+    window.config.disable_icmp_ping = document.getElementById("disableIcmpPing").checked;
     
     const webserverListen = document.getElementById("webserverListen").value.trim();
     window.config.webserver_listen = webserverListen ? webserverListen : null;
@@ -68,6 +69,7 @@ loadConfig(() => {
         // Optional fields with nullish coalescing
         document.getElementById("disableWebserver").checked = window.config.disable_webserver ?? false;
         document.getElementById("webserverListen").value = window.config.webserver_listen ?? "";
+        document.getElementById("disableIcmpPing").checked = window.config.disable_icmp_ping ?? false;
 
         // Add save button click handler
         document.getElementById('saveButton').addEventListener('click', () => {

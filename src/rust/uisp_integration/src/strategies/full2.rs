@@ -110,11 +110,11 @@ pub async fn build_full_network_v2(
 
     // Find the APs that have clients
     let mut aps_with_clients = HashSet::new();
-    for (ap_name, _client_ids) in client_mappings.iter() {
+    for (ap_id, _client_ids) in client_mappings.iter() {
         let Some(ap_device) = uisp_data
             .devices_raw
             .iter()
-            .find(|d| d.get_name().unwrap_or_default() == *ap_name)
+            .find(|d| d.identification.id == *ap_id)
         else {
             // Orphaning is already handled
             continue;
@@ -309,16 +309,17 @@ pub async fn build_full_network_v2(
 
     // Shaped Devices
     let mut shaped_devices = Vec::new();
-    let mut circuit_parents: HashMap<String, String> = HashMap::new();
 
     for (ap_id, client_sites) in client_mappings.iter() {
         for site_id in client_sites.iter() {
-            let Some(ap_device) = uisp_data.devices.iter().find(|d| d.name == *ap_id) else {
+            let Some(ap_device) = uisp_data.devices.iter().find(|d| d.id == *ap_id) else {
                 continue;
             };
             let Some(site) = uisp_data.sites.iter().find(|s| s.id == *site_id) else {
                 continue;
             };
+            info!("Processing site: {} (ID: {}) with AP: {} (ID: {})", 
+                  site.name, site.id, ap_device.name, ap_device.id);
             for device in uisp_data.devices.iter().filter(|d| d.site_id == *site_id) {
                 if !device.has_address() {
                     continue;
@@ -340,26 +341,21 @@ pub async fn build_full_network_v2(
                 let download_max = f32::max(0.2, download_f32);
                 let upload_max = f32::max(0.2, upload_f32);
 
-                let mut parent_node = {
+                let parent_node = {
                     if parents.get(&ap_device.name).is_some() {
                         ap_device.name.clone()
                     } else {
+                        warn!("AP device '{}' not found in parents HashMap, assigning to Orphans", ap_device.name);
                         "Orphans".to_string()
                     }
                 };
-
-                if let Some(previous) = circuit_parents.get(&site.name) {
-                    parent_node = previous.clone();
-                } else {
-                    circuit_parents.insert(site.name.clone(), parent_node.clone());
-                }
 
                 let shaped_device = ShapedDevice {
                     circuit_id: site.id.to_owned(),
                     circuit_name: site.name.to_owned(),
                     device_id: device.id.to_owned(),
                     device_name: device.name.to_owned(),
-                    parent_node,
+                    parent_node: parent_node.clone(),
                     mac: device.mac.to_owned(),
                     ipv4: device.ipv4_list(),
                     ipv6: device.ipv6_list(),
@@ -369,6 +365,8 @@ pub async fn build_full_network_v2(
                     upload_max,
                     comment: "".to_string(),
                 };
+                info!("Created shaped device for '{}' in site '{}' with parent '{}'", 
+                      device.name, site.name, parent_node);
                 shaped_devices.push(shaped_device);
             }
         }

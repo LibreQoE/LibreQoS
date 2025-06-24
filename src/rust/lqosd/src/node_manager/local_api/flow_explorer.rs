@@ -43,7 +43,10 @@ pub struct FlowTimeline {
 pub async fn flow_timeline(Path(asn_id): Path<u32>) -> Json<Vec<FlowTimeline>> {
     let time_since_boot = time_since_boot().unwrap();
     let since_boot = Duration::from(time_since_boot);
-    let boot_time = unix_now().unwrap() - since_boot.as_secs();
+    let current_unix_time = unix_now().unwrap();
+    
+    // Use saturating_sub to prevent underflow panic
+    let boot_time = current_unix_time.saturating_sub(since_boot.as_secs());
 
     let all_flows_for_asn = RECENT_FLOWS.all_flows_for_asn(asn_id);
 
@@ -104,7 +107,10 @@ fn all_flows_to_transport(
 pub async fn country_timeline(Path(iso_code): Path<String>) -> Json<Vec<FlowTimeline>> {
     let time_since_boot = time_since_boot().unwrap();
     let since_boot = Duration::from(time_since_boot);
-    let boot_time = unix_now().unwrap() - since_boot.as_secs();
+    let current_unix_time = unix_now().unwrap();
+    
+    // Use saturating_sub to prevent underflow panic
+    let boot_time = current_unix_time.saturating_sub(since_boot.as_secs());
 
     let all_flows_for_asn = RECENT_FLOWS.all_flows_for_country(&iso_code);
 
@@ -117,7 +123,10 @@ pub async fn protocol_timeline(Path(protocol_name): Path<String>) -> Json<Vec<Fl
     let protocol_name = protocol_name.replace("_", "/");
     let time_since_boot = time_since_boot().unwrap();
     let since_boot = Duration::from(time_since_boot);
-    let boot_time = unix_now().unwrap() - since_boot.as_secs();
+    let current_unix_time = unix_now().unwrap();
+    
+    // Use saturating_sub to prevent underflow panic
+    let boot_time = current_unix_time.saturating_sub(since_boot.as_secs());
 
     let all_flows_for_asn = RECENT_FLOWS.all_flows_for_protocol(&protocol_name);
 

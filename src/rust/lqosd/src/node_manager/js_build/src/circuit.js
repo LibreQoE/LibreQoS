@@ -102,7 +102,7 @@ function connectPingers(circuits) {
             if (target != null) {
                 let myPing = devicePings[msg.ip];
                 if (myPing.count === myPing.timeout) {
-                    target.innerHTML = "<i class='fa fa-ban text-danger'></i>";
+                    target.innerHTML = "<i class='fa fa-minus-circle text-secondary' data-bs-toggle='tooltip' data-bs-placement='top' title='No ping response - this is normal for many ISPs'></i>";
                 } else {
                     let loss = ((myPing.timeout / myPing.count) * 100);
                     let lossStr = loss.toFixed(1);
@@ -119,8 +119,11 @@ function connectPingers(circuits) {
                     }
                     let pingRamp = Math.min(avg / 200, 1);
                     let pingColor = lerpGreenToRedViaOrange(pingRamp, 1);
-                    target.innerHTML = "<i class='fa fa-check text-success'></i> <span class='tiny'><span class='" + lossColor + "'>" + lossStr + "%</span> / <span style='color: " + pingColor + "'>" + scaleNanos(avg) + "</span></span>";
+                    target.innerHTML = "<i class='fa fa-check text-success' data-bs-toggle='tooltip' data-bs-placement='top' title='Device is responding to pings'></i> <span class='tiny'><span class='" + lossColor + "'>" + lossStr + "%</span> / <span style='color: " + pingColor + "'>" + scaleNanos(avg) + "</span></span>";
                 }
+                // Initialize Bootstrap tooltips
+                const tooltipTriggerList = target.querySelectorAll('[data-bs-toggle="tooltip"]');
+                const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
             }
         }
     });
@@ -727,12 +730,72 @@ function subscribeToCake() {
     let traffic = new CakeTraffic("cakeTraffic");
     let marks = new CakeMarks("cakeMarks");
     let drops = new CakeDrops("cakeDrops");
+    let noDataTimeout = null;
+    let hasReceivedData = false;
+    
+    // Function to show "Queue not loaded" message
+    function showNoQueueMessage() {
+        const cakeTab = document.getElementById("cake");
+        if (cakeTab && !hasReceivedData) {
+            cakeTab.innerHTML = '<div class="row"><div class="col-12 text-center mt-5"><h4>Queue not loaded.</h4><p class="text-muted">The CAKE queue for this circuit has not been created yet.</p></div></div>';
+        }
+    }
+    
+    // Set a timeout to show the message if no data arrives within 3 seconds
+    noDataTimeout = setTimeout(showNoQueueMessage, 3000);
+    
     channelLink = new DirectChannel({
         CakeWatcher: {
             circuit: circuit_id
         }
     }, (msg) => {
         //console.log(msg);
+        
+        // Clear the timeout and set flag that we've received data
+        if (noDataTimeout) {
+            clearTimeout(noDataTimeout);
+            noDataTimeout = null;
+        }
+        
+        // If this is the first data received, restore the original HTML structure
+        if (!hasReceivedData) {
+            hasReceivedData = true;
+            const cakeTab = document.getElementById("cake");
+            if (cakeTab) {
+                cakeTab.innerHTML = `
+                    <div class="row">
+                        <div class="col-4">
+                            <div id="cakeBacklog" style="height: 250px"></div>
+                        </div>
+                        <div class="col-4">
+                            <div id="cakeDelays" style="height: 250px"></div>
+                        </div>
+                        <div class="col-4">
+                            <div id="cakeQueueLength" style="height: 250px"></div>
+                        </div>
+                        <div class="col-4">
+                            <div id="cakeTraffic" style="height: 250px"></div>
+                        </div>
+                        <div class="col-4">
+                            <div id="cakeMarks" style="height: 250px"></div>
+                        </div>
+                        <div class="col-4">
+                            <div id="cakeDrops" style="height: 250px"></div>
+                        </div>
+                        <div class="col-3">
+                            Queue Memory: <span id="cakeQueueMemory">?</span>
+                        </div>
+                    </div>
+                `;
+                // Reinitialize the graphs
+                backlogGraph = new CakeBacklog("cakeBacklog");
+                delaysGraph = new CakeDelays("cakeDelays");
+                queueLength = new CakeQueueLength("cakeQueueLength");
+                traffic = new CakeTraffic("cakeTraffic");
+                marks = new CakeMarks("cakeMarks");
+                drops = new CakeDrops("cakeDrops");
+            }
+        }
 
         // Cake Memory Usage
         $("#cakeQueueMemory").text(scaleNumber(msg.current_download.memory_used) + " / " + scaleNumber(msg.current_upload.memory_used));

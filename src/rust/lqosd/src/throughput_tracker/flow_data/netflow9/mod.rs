@@ -16,7 +16,7 @@ impl Netflow9 {
     ) -> anyhow::Result<Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>> {
         let (tx, rx) =
             crossbeam_channel::bounded::<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>(65535);
-        let socket = UdpSocket::bind("0.0.0.0:12212")?;
+        let socket = UdpSocket::bind("0.0.0.0:0")?;
 
         std::thread::Builder::new()
             .name("Netflow9".to_string())
@@ -39,6 +39,13 @@ impl Netflow9 {
                         }
                         accumulator.clear();
                         last_sent = std::time::Instant::now();
+                    }
+                }
+                
+                // Handle any remaining flows when shutting down
+                if !accumulator.is_empty() {
+                    for chunk in accumulator.chunks(14) {
+                        Self::queue_handler(chunk, &socket, &target, &sequence);
                     }
                 }
             })?;
@@ -76,7 +83,11 @@ impl Netflow9 {
                 buffer.extend_from_slice(&packet2);
             }
         }
-        socket.send_to(&buffer, target).unwrap();
-        sequence.fetch_add(num_records as u32, std::sync::atomic::Ordering::Relaxed);
+        if let Err(e) = socket.send_to(&buffer, target) {
+            tracing::error!("Failed to send Netflow9 data to {}: {}", target, e);
+            // Don't increment sequence on failure to maintain consistency
+        } else {
+            sequence.fetch_add(num_records as u32, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 }
