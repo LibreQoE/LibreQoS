@@ -1,4 +1,5 @@
 mod circuit;
+mod circuit_count;
 mod config;
 mod container_status;
 mod dashboard_themes;
@@ -55,6 +56,7 @@ pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) ->
         .route("/updateUser", post(config::update_user))
         .route("/deleteUser", post(config::delete_user))
         .route("/circuitById", post(circuit::get_circuit_by_id))
+        .route("/circuits/count", get(circuit_count::get_circuit_count))
         .route(
             "/requestAnalysis/:ip",
             get(packet_analysis::request_analysis),

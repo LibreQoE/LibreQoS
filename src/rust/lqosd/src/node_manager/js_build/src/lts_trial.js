@@ -487,7 +487,7 @@ function displayTeasers() {
 // Fetch node ID from configuration
 async function fetchNodeId() {
     try {
-        const response = await $.get('/api/config/general');
+        const response = await $.get('/local-api/getConfig');
         nodeId = response.node_id || null;
     } catch (error) {
         console.error('Failed to fetch node ID:', error);
@@ -498,12 +498,8 @@ async function fetchNodeId() {
 // Fetch circuit count
 async function fetchCircuitCount() {
     try {
-        // TODO: Add actual API endpoint for circuit count
-        // const response = await $.get('/api/circuits/count');
-        // const count = response.count || 0;
-        
-        // For now, use a placeholder
-        const count = 150; // Placeholder
+        const response = await $.get('/local-api/circuits/count');
+        const count = response.count || 0;
         
         if (count > 0) {
             $('#circuitNumber').text(count.toLocaleString());
