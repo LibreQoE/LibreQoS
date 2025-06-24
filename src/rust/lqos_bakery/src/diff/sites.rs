@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use tracing::warn;
 use crate::BakeryCommands;
 
@@ -9,13 +10,13 @@ pub(crate) enum SiteDiffResult {
 }
 
 pub(crate) fn diff_sites(
-    batch: &[BakeryCommands],
-    old_sites:  &HashMap<i64, BakeryCommands>,
+    batch: &[Arc<BakeryCommands>],
+    old_sites:  &HashMap<i64, Arc<BakeryCommands>>,
 ) -> SiteDiffResult {
-    let new_sites: HashMap<i64, &BakeryCommands> = batch
+    let new_sites: HashMap<i64, &Arc<BakeryCommands>> = batch
         .iter()
         .filter_map(|cmd| {
-            if let BakeryCommands::AddSite{ site_hash, .. } = cmd {
+            if let BakeryCommands::AddSite{ site_hash, .. } = cmd.as_ref() {
                 Some((*site_hash, cmd))
             } else {
                 None
@@ -35,12 +36,12 @@ pub(crate) fn diff_sites(
     for (site_hash, old_cmd) in old_sites {
         if let Some(new_cmd) = new_sites.get(site_hash) {
             // If the commands are structurally different, we need to rebuild.
-            if is_structurally_different(old_cmd, new_cmd) {
+            if is_structurally_different(old_cmd.as_ref(), new_cmd.as_ref()) {
                 warn!("Structural difference detected for site hash: {}", site_hash);
                 return SiteDiffResult::RebuildRequired;
             }
             // If the speeds have changed, we need to store the change.
-            if let Some(speed_change) = site_speeds_changed(old_cmd, new_cmd) {
+            if let Some(speed_change) = site_speeds_changed(old_cmd.as_ref(), new_cmd.as_ref()) {
                 warn!("Speed change detected for site hash: {}", site_hash);
                 speed_changes.push(speed_change);
             }

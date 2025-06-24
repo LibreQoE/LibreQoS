@@ -24,6 +24,10 @@ use std::sync::Mutex;
 use std::{sync::atomic::AtomicU64, time::Duration};
 use tracing::{debug, info, warn};
 
+// Maximum number of flows to track simultaneously
+// TODO: This should be made configurable via the config file
+const MAX_FLOWS: usize = 1_000_000;
+
 #[derive(Allocative)]
 pub struct ThroughputTracker {
     pub(crate) cycle: AtomicU64,
@@ -367,11 +371,26 @@ impl ThroughputTracker {
                             }
                         }
                     } else {
-                        // Insert it into the map
-                        let flow_analysis = FlowAnalysis::new(&key);
-                        all_flows_lock
-                            .flow_data
-                            .insert(key.clone(), (data.into(), flow_analysis));
+                        // Check if we've hit the flow limit
+                        if all_flows_lock.flow_data.len() >= MAX_FLOWS {
+                            // Log warning once per second to avoid spam
+                            static LAST_WARNING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                            let now = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs();
+                            let last = LAST_WARNING.load(std::sync::atomic::Ordering::Relaxed);
+                            if now > last {
+                                warn!("Flow limit of {} reached, dropping new flow", MAX_FLOWS);
+                                LAST_WARNING.store(now, std::sync::atomic::Ordering::Relaxed);
+                            }
+                        } else {
+                            // Insert it into the map
+                            let flow_analysis = FlowAnalysis::new(&key);
+                            all_flows_lock
+                                .flow_data
+                                .insert(key.clone(), (data.into(), flow_analysis));
+                        }
                     }
 
                     // TCP - we have RTT data? 6 is TCP
