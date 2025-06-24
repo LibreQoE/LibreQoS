@@ -320,6 +320,7 @@ const PLACEHOLDER_TEASERS = [
 // State management
 let currentTeasers = [];
 let nodeId = null;
+let ltsBaseUrl = 'https://insight.libreqos.com/';
 
 // Initialize the page
 $(document).ready(function() {
@@ -394,7 +395,7 @@ function detectUserCountry() {
 async function loadTeasers() {
     try {
         // TODO: Replace with actual API call when endpoint is ready
-        // const response = await $.get('https://insight.libreqos.com/signup-api/teasers');
+        // const response = await $.get(getLtsUrl('signup-api/teasers'));
         // currentTeasers = response.teasers;
         
         // For now, use placeholder teasers
@@ -484,11 +485,37 @@ function displayTeasers() {
     }
 }
 
-// Fetch node ID from configuration
+// Helper function to construct full LTS URLs
+function getLtsUrl(endpoint) {
+    // Ensure ltsBaseUrl starts with http:// or https://, otherwise prefix with https://
+    let baseUrl = ltsBaseUrl;
+    if (!/^https?:\/\//i.test(baseUrl)) {
+        baseUrl = 'https://' + baseUrl;
+    }
+    // Ensure baseUrl ends with a single slash
+    let base = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
+    // Ensure 'signup-api/' is appended exactly once
+    base += base.endsWith('signup-api/') ? '' : 'signup-api/';
+    // Remove any leading slash from endpoint
+    endpoint = endpoint.replace(/^\/+/, '');
+    console.log("Base: ", base, "Endpoint:", endpoint);
+    return base + endpoint;
+}
+
+// Fetch node ID and LTS URL from configuration
 async function fetchNodeId() {
     try {
         const response = await $.get('/local-api/getConfig');
         nodeId = response.node_id || null;
+        
+        // Extract LTS URL from config, defaulting to the standard URL
+        if (response.long_term_stats && response.long_term_stats.lts_url) {
+            ltsBaseUrl = response.long_term_stats.lts_url;
+            // Ensure the URL ends with a slash
+            if (!ltsBaseUrl.endsWith('/')) {
+                ltsBaseUrl += '/';
+            }
+        }
     } catch (error) {
         console.error('Failed to fetch node ID:', error);
         nodeId = null;
@@ -530,18 +557,34 @@ function showSection(sectionId) {
 // Show loading modal
 function showLoading(message = 'Processing...') {
     $('#loadingMessage').text(message);
-    $('#loadingModal').modal('show');
+    $('#creatingAccountModal').modal('show');
 }
 
 // Hide loading modal
 function hideLoading() {
-    $('#loadingModal').modal('hide');
+    console.log('[hideLoading] Hiding creatingAccountModal at', new Date().toISOString());
+    $('#creatingAccountModal').modal('hide');
 }
 
 // Show error modal
 function showError(message) {
-    $('#errorMessage').text(message);
-    $('#errorModal').modal('show');
+    console.log('[showError] Called with message:', message, 'at', new Date().toISOString());
+    // Ensure any loading modal is fully hidden first
+    $('#creatingAccountModal').modal('hide');
+
+    // Force remove lingering modal-backdrop and modal-open class after 200ms
+    setTimeout(() => {
+        if ($('#creatingAccountModal').hasClass('show')) {
+            console.log('[showError] Forcibly removing creatingAccountModal (still visible) at', new Date().toISOString());
+            $('#creatingAccountModal').removeClass('show').hide();
+        }
+        // Remove any lingering backdrops
+        $('.modal-backdrop').remove();
+        $('body').removeClass('modal-open');
+        console.log('[showError] Removed modal-backdrop and modal-open class at', new Date().toISOString());
+        $('#errorMessage').text(message);
+        $('#errorModal').modal('show');
+    }, 200);
 }
 
 // Validate license key format
@@ -557,13 +600,13 @@ function attachEventHandlers() {
     $('#btnExistingCustomer').on('click', () => {
         // Analytics tracking for existing customer path
         const trackingImg = new Image();
-        trackingImg.src = 'https://insight.libreqos.com/signup-api/signupPing?t=' + Date.now() + '&type=existing';
+        trackingImg.src = getLtsUrl('signupPing') + '?t=' + Date.now() + '&type=existing';
         showSection('licenseKeySection');
     });
     $('#btnNewCustomer').on('click', () => {
         // Analytics tracking for new customer path
         const trackingImg = new Image();
-        trackingImg.src = 'https://insight.libreqos.com/signup-api/signupPing?t=' + Date.now() + '&type=new';
+        trackingImg.src = getLtsUrl('signupPing') + '?t=' + Date.now() + '&type=new';
         showSection('signupSection');
     });
     $('#btnBackFromLicense').on('click', () => showSection('teaserSection'));
@@ -588,7 +631,7 @@ function attachEventHandlers() {
         
         try {
             const response = await $.ajax({
-                url: 'https://insight.libreqos.com/signup-api/validateLicense',
+                url: getLtsUrl('validateLicense'),
                 method: 'POST',
                 contentType: 'application/json',
                 data: JSON.stringify({ licenseKey })
@@ -597,8 +640,14 @@ function attachEventHandlers() {
             hideLoading();
             
             if (response.valid) {
-                await configureLibreQoS(licenseKey);
+                try {
+                    await configureLibreQoS(licenseKey);
+                } catch (error) {
+                    hideLoading();
+                    showError('Failed to configure LibreQoS. Please try again.');
+                }
             } else {
+                hideLoading();
                 showError(response.message || 'Invalid license key.');
             }
         } catch (error) {
@@ -623,7 +672,7 @@ function attachEventHandlers() {
         
         try {
             await $.ajax({
-                url: 'https://insight.libreqos.com/signup-api/recoverLicense',
+                url: getLtsUrl('recoverLicense'),
                 method: 'POST',
                 contentType: 'application/json',
                 data: JSON.stringify({ email })
@@ -642,20 +691,21 @@ function attachEventHandlers() {
     // Signup form
     $('#signupForm').on('submit', async function(e) {
         e.preventDefault();
-        
+        console.log('[signupForm] Submit handler triggered at', new Date().toISOString());
+
         const form = this;
         if (!form.checkValidity()) {
             e.stopPropagation();
             form.classList.add('was-validated');
             return;
         }
-        
+
         form.classList.add('was-validated');
-        
+
         // Analytics tracking pixel
         const trackingImg = new Image();
-        trackingImg.src = 'https://insight.libreqos.com/signup-api/signupPing?t=' + Date.now();
-        
+        trackingImg.src = getLtsUrl('signupPing') + '?t=' + Date.now();
+
         const formData = {
             nodeId: nodeId || 'unknown',
             name: $('#customerName').val().trim(),
@@ -670,25 +720,36 @@ function attachEventHandlers() {
             phone: $('#phone').val().trim(),
             website: $('#website').val().trim()
         };
-        
+
         showLoading('Creating your account...');
-        
+        console.log('[signupForm] showLoading called at', new Date().toISOString());
+
         try {
             const response = await $.ajax({
-                url: 'https://insight.libreqos.com/signup-api/signupCustomer',
+                url: getLtsUrl('signupCustomer'),
                 method: 'POST',
                 contentType: 'application/json',
                 data: JSON.stringify(formData)
             });
-            
+
+            console.log('[signupForm] AJAX success, hideLoading called at', new Date().toISOString());
             hideLoading();
-            
+
             if (response.licenseKey) {
-                await configureLibreQoS(response.licenseKey);
+                try {
+                    await configureLibreQoS(response.licenseKey);
+                } catch (error) {
+                    console.log('[signupForm] configureLibreQoS error at', new Date().toISOString(), error);
+                    hideLoading();
+                    showError('Failed to configure LibreQoS. Please try again.');
+                }
             } else {
+                console.log('[signupForm] No licenseKey in response, error at', new Date().toISOString());
+                hideLoading();
                 showError('Failed to create account. Please try again.');
             }
         } catch (error) {
+            console.log('[signupForm] AJAX error at', new Date().toISOString(), error);
             hideLoading();
             showError('Failed to create account. Please check your information and try again.');
         }
