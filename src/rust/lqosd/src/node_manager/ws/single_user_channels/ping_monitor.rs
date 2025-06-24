@@ -23,6 +23,16 @@ pub(super) async fn ping_monitor(
     ip_addresses: Vec<(String, String)>,
     tx: tokio::sync::mpsc::Sender<String>,
 ) {
+    {
+        let Ok(cfg) = lqos_config::load_config() else {
+            error!("Failed to load configuration for ping monitor");
+            return;
+        };
+        if cfg.disable_icmp_ping.unwrap_or(false) {
+            info!("ICMP ping is disabled in the configuration, not starting ping monitor");
+            return;
+        }
+    }
     let mut ticker = tokio::time::interval(Duration::from_secs(1));
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
     loop {
