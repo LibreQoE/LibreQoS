@@ -28,19 +28,21 @@ pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str
             .args(&["-f", "-batch", path.to_str().unwrap()])
             .output()
     else {
-        let message = format!("Failed to execute tc batch command for {purpose}. Command output:\n {}", lines);
+        let message = format!("Failed to execute tc batch command for {purpose}.");
         error!(message);
         return;
     };
 
-    let output_str = String::from_utf8_lossy(&output.stdout);
+    let output_str = String::from_utf8_lossy(&output.stdout)
+        .replace("Error: Exclusivity flag on, cannot modify.\n", "");
     if !output_str.is_empty() {
         error!("Command output for ({purpose}): {:?}", output_str.trim());
     }
 
-    let error_str = String::from_utf8_lossy(&output.stderr);
+    let error_str = String::from_utf8_lossy(&output.stderr)
+        .replace("Error: Exclusivity flag on, cannot modify.\n", "");
     if !error_str.is_empty() {
-        let message = format!("Command error for ({purpose}): {:?}. Command:\n{}", error_str.trim(), lines);
+        let message = format!("Command error for ({purpose}): {:?}.\n{lines}", error_str.trim());
         error!(message);
     }
 
