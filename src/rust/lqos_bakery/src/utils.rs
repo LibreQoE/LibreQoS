@@ -39,10 +39,9 @@ pub(crate) fn execute_in_memory(command_buffer: &Vec<Vec<String>>, purpose: &str
         error!("Command output for ({purpose}): {:?}", output_str.trim());
     }
 
-    let error_str = String::from_utf8_lossy(&output.stderr)
-        .replace("Error: Exclusivity flag on, cannot modify.\n", "");
+    let error_str = String::from_utf8_lossy(&output.stderr);
     if !error_str.is_empty() {
-        let message = format!("Command error for ({purpose}): {:?}.\n{lines}", error_str.trim());
+        let message = format!("Command error for ({purpose}): {:?}.Error: {error_str}\n{lines}", error_str.trim());
         error!(message);
     }
 
