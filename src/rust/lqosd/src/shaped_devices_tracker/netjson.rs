@@ -43,17 +43,9 @@ fn watch_for_network_json_changing() -> Result<()> {
 fn load_network_json() {
     let njs = NetworkJson::load();
     if let Ok(njs) = njs {
-        // Add error handling for mutex poisoning
-        match NETWORK_JSON.write() {
-            Ok(mut nj) => {
-                *nj = njs;
-                crate::throughput_tracker::THROUGHPUT_TRACKER.refresh_circuit_ids(&nj);
-            },
-            Err(e) => {
-                error!("Failed to acquire NETWORK_JSON write lock (possibly poisoned): {:?}", e);
-                warn!("Skipping network.json update due to lock poisoning");
-            }
-        }
+        let mut nj = NETWORK_JSON.write().unwrap();
+        *nj = njs;
+        crate::throughput_tracker::THROUGHPUT_TRACKER.refresh_circuit_ids(&nj);
     } else {
         warn!("Unable to load network.json");
     }
