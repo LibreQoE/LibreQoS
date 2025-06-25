@@ -18,31 +18,29 @@ First, set the relevant parameters for Splynx (splynx_api_key, splynx_api_secret
 
 The Splynx Integration uses Basic authentication. For using this type of authentication, please make sure you enable [Unsecure access](https://splynx.docs.apiary.io/#introduction/authentication) in your Splynx API key settings. Also the Splynx API key should be granted access to the necessary permissions.
 
-* Tariff Plans -> Internet -> view
-* Tariff Plans -> Bundle -> view
-* Tariff Plans -> One time -> view
-* Tariff Plans -> Recurring  -> view
-* FUP -> Counter -> view
-* FUP -> Compiler -> view
-* FUP -> Policies -> view
-* FUP -> Capped Data -> view
-* FUP -> CAP Tariff -> view
-* FUP -> FUP Limits -> view
-* FUP -> Traffic Usage -> view
-* Customers -> customer -> view
-* Customers -> customer information -> view
-* Customers -> Customers online -> view
-* Customers -> customer bundle services -> view
-* Customers -> customer internet services -> view
-* Customers -> traffic counter -> view
-* Customers -> customer recurring services -> view
-* Customers -> bonus traffic counter -> view
-* Customers -> CAP history -> view
-* Networking -> routers -> view
-* Networking -> network sites >view
-* Networking -> router contention -> view
-* Networking -> IPv4 networks -> view
-* Networking -> IPv4 networks IP -> view
+| Category       | Name                         | Permission |
+|----------------|------------------------------|------------|
+| Tariff Plans   | Internet                     | View       |
+| FUP            | Compiler                     | View       |
+| FUP            | Policies                     | View       |
+| FUP            | Capped Data                  | View       |
+| FUP            | CAP Tariff                   | View       |
+| FUP            | FUP Limits                   | View       |
+| Customers      | Customer                     | View       |
+| Customers      | Customers Online             | View       |
+| Customers      | Customer Internet services   | View       |
+| Networking     | Routers                      | View       |
+| Networking     | Router contention            | View       |
+| Networking     | MikroTik                     | View       |
+| Networking     | Monitoring                   | View       |
+| Networking     | Network Sites                | View       |
+| Networking     | IPv4 Networks                | View       |
+| Networking     | IPv4 Networks IP             | View       |
+| Networking     | CPE                          | View       |
+| Networking     | CPE AP                       | View       |
+| Networking     | IPv6 Networks                | View       |
+| Networking     | IPv6 Networks IP (Addresses) | View       |
+| Administration | Locations                    | View       |
 
 To test the Splynx Integration, use
 
