@@ -57,11 +57,11 @@ pub(crate) fn license_check_loop(license_status: Arc<Mutex<LicenseStatus>>) {
             .unwrap_or_default();
 
         if !license_key.is_empty() {
-            if let Ok(lic) = Uuid::parse_str(&license_key) {
+            if let Ok(lic) = Uuid::parse_str(&license_key.replace("-", "")) {
                 let remote_host = get_remote_host();
                 remote_license_check(remote_host, lic, license_status.clone());
             } else {
-                println!("Invalid license key: {}", license_key);
+                warn!("Invalid license key format: [{}]", license_key);
             }
         }
         tfd.read();

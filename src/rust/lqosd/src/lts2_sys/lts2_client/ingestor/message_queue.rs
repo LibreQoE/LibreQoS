@@ -207,7 +207,7 @@ impl MessageQueue {
                 lock.node_name.clone(),
             )
         };
-        let Ok(license_uuid) = Uuid::parse_str(&license_key) else {
+        let Ok(license_uuid) = Uuid::parse_str(&license_key.replace("-", "")) else {
             warn!("Failed to parse license key");
             return Ok(());
         };
