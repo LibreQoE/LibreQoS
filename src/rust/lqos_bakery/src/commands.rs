@@ -108,9 +108,27 @@ impl BakeryCommands {
         queues_available: usize,
         stick_offset: usize,
     ) -> Option<Vec<Vec<String>>> {
+        let mut result = Vec::new();
+        warn!("Clearing prior settings");
+        if config.on_a_stick_mode() {
+            // Clear just the MQ on the ISP-facing interface
+            result.push(vec![
+                "qdisc".to_string(), "del".to_string(), "dev".to_string(),
+                config.isp_interface(), "root".to_string()
+            ]);
+        } else {
+            result.push(vec![
+                "qdisc".to_string(), "del".to_string(), "dev".to_string(),
+                config.isp_interface(), "root".to_string()
+            ]);
+            result.push(vec![
+                "qdisc".to_string(), "del".to_string(), "dev".to_string(),
+                config.internet_interface(), "root".to_string()
+            ]);
+        }
+
         info!("Setting up MQ with {} queues and stick offset {}", queues_available, stick_offset);
         // command = 'qdisc replace dev ' + thisInterface + ' root handle 7FFF: mq'
-        let mut result = Vec::new();
         let sqm_strings = sqm_as_vec(config);
         let r2q = r2q(u64::max(config.queues.uplink_bandwidth_mbps, config.queues.downlink_bandwidth_mbps));
 
