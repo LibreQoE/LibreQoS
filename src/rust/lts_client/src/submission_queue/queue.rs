@@ -45,7 +45,7 @@ pub(crate) async fn enqueue_shaped_devices_if_allowed(
             info!("Temporary error finding license status. Will retry.");
         }
         LicenseState::Denied => {
-            error!("Your license is invalid. Please contact support.");
+            info!("Your license is invalid. Please contact support if you are still using LTS.");
         }
         LicenseState::Valid { .. } => {
             QUEUE.push(LtsCommand::Devices(devices)).await;
