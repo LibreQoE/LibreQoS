@@ -564,6 +564,12 @@ function showLoading(message = 'Processing...') {
 function hideLoading() {
     console.log('[hideLoading] Hiding creatingAccountModal at', new Date().toISOString());
     $('#creatingAccountModal').modal('hide');
+    // Force remove modal backdrop and modal-open class
+    setTimeout(() => {
+        $('.modal-backdrop').remove();
+        $('body').removeClass('modal-open');
+        $('#creatingAccountModal').removeClass('show').hide();
+    }, 100);
 }
 
 // Show error modal
@@ -637,15 +643,19 @@ function attachEventHandlers() {
                 data: JSON.stringify({ licenseKey })
             });
             
-            hideLoading();
-            
             if (response.valid) {
-                try {
-                    await configureLibreQoS(licenseKey);
-                } catch (error) {
-                    hideLoading();
-                    showError('Failed to configure LibreQoS. Please try again.');
-                }
+                // Show success with the validated license key
+                hideLoading();
+                showSection('successSection');
+                $('#successMessage').html(`
+                    <strong>License Key:</strong> ${licenseKey}<br>
+                    <small>Your license has been validated.</small>
+                `);
+                $('#configSpinner').hide();
+                $('#configStatus').html(`
+                    License validated! Please go to <a href="/config_lts.html">Configuration → Long-Term Stats</a> to activate your license.
+                `);
+                $('#btnDashboard').fadeIn();
             } else {
                 hideLoading();
                 showError(response.message || 'Invalid license key.');
@@ -732,20 +742,32 @@ function attachEventHandlers() {
                 data: JSON.stringify(formData)
             });
 
-            console.log('[signupForm] AJAX success, hideLoading called at', new Date().toISOString());
-            hideLoading();
-
+            console.log('[signupForm] AJAX success at', new Date().toISOString());
+            
             if (response.licenseKey) {
-                try {
-                    await configureLibreQoS(response.licenseKey);
-                } catch (error) {
-                    console.log('[signupForm] configureLibreQoS error at', new Date().toISOString(), error);
-                    hideLoading();
-                    showError('Failed to configure LibreQoS. Please try again.');
-                }
+                // Show success with the license key
+                hideLoading();
+                showSection('successSection');
+                $('#successMessage').html(`
+                    <strong>License Key:</strong> ${response.licenseKey}<br>
+                    <small>An email with your license key and portal access has been sent to your email address.</small>
+                `);
+                $('#configStatus').text('Saving configuration...');
+
+                let r = await $.ajax({
+                    type: "POST",
+                    url: "/local-api/ltsSignUp",
+                    data: JSON.stringify({
+                        license_key: response.licenseKey,
+                    }),
+                    contentType: 'application/json',
+                });
+                setTimeout(() => {
+                    $('#configStatus').html(`Account created! Your configuration has been updated - data will start going to Insight shortly.`);
+                    $('#btnDashboard').fadeIn();
+                }, 1000);
             } else {
                 console.log('[signupForm] No licenseKey in response, error at', new Date().toISOString());
-                hideLoading();
                 showError('Failed to create account. Please try again.');
             }
         } catch (error) {
@@ -756,21 +778,3 @@ function attachEventHandlers() {
     });
 }
 
-// Configure LibreQoS with license key
-async function configureLibreQoS(licenseKey) {
-    showSection('successSection');
-    $('#successMessage').html(`
-        <strong>License Key:</strong> ${licenseKey}<br>
-        <small>An email with your license key and portal access has been sent to your email address.</small>
-    `);
-    
-    $('#configStatus').text('Configuring LibreQoS...');
-    
-    // TODO: Call Rust function to configure lqos.conf
-    // For now, simulate a delay
-    setTimeout(() => {
-        $('#configSpinner').hide();
-        $('#configStatus').text('Configuration complete! You can now access Insight features.');
-        $('#btnDashboard').fadeIn();
-    }, 3000);
-}
