@@ -329,7 +329,7 @@ async fn send_hello(
     };
 
     let msg = WsMessage::Hello {
-        license_key: license_key.to_string(),
+        license_key: license_key.to_string().replace("-", ""),
         node_id: config.node_id.to_string(),
     }
     .to_bytes()?;

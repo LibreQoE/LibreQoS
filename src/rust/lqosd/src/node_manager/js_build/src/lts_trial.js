@@ -741,41 +741,40 @@ function attachEventHandlers() {
                 contentType: 'application/json',
                 data: JSON.stringify(formData)
             });
+
+            console.log('[signupForm] AJAX success at', new Date().toISOString());
+            
+            if (response.licenseKey) {
+                // Show success with the license key
+                hideLoading();
+                showSection('successSection');
+                $('#successMessage').html(`
+                    <strong>License Key:</strong> ${response.licenseKey}<br>
+                    <small>An email with your license key and portal access has been sent to your email address.</small>
+                `);
+                $('#configStatus').text('Saving configuration...');
+
+                $.ajax({
+                    type: "POST",
+                    url: "/local-api/ltsSignUp",
+                    data: JSON.stringify({
+                        license_key: response.licenseKey,
+                    }),
+                    contentType: 'application/json',
+                });
+                setTimeout(() => {
+                    $('#configStatus').html(`Account created! Your configuration has been updated - data will start going to Insight shortly.`);
+                    $('#btnDashboard').fadeIn();
+                }, 1000);
+            } else {
+                console.log('[signupForm] No licenseKey in response, error at', new Date().toISOString());
+                showError('Failed to create account. Please try again.');
+            }
         } catch (error) {
             console.log('[signupForm] AJAX error at', new Date().toISOString(), error);
             hideLoading();
             showError('Failed to create account. Please check your information and try again.');
         }
-
-        console.log('[signupForm] AJAX success at', new Date().toISOString());
-        
-        if (response.licenseKey) {
-            // Show success with the license key
-            hideLoading();
-            showSection('successSection');
-            $('#successMessage').html(`
-                <strong>License Key:</strong> ${response.licenseKey}<br>
-                <small>An email with your license key and portal access has been sent to your email address.</small>
-            `);
-            $('#configStatus').text('Saving configuration...');
-
-            let r = await $.ajax({
-                type: "POST",
-                url: "/local-api/ltsSignUp",
-                data: JSON.stringify({
-                    license_key: response.licenseKey,
-                }),
-                contentType: 'application/json',
-            });
-            setTimeout(() => {
-                $('#configStatus').html(`Account created! Your configuration has been updated - data will start going to Insight shortly.`);
-                $('#btnDashboard').fadeIn();
-            }, 1000);
-        } else {
-            console.log('[signupForm] No licenseKey in response, error at', new Date().toISOString());
-            showError('Failed to create account. Please try again.');
-        }
-        
     });
 }
 
