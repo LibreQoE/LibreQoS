@@ -27,19 +27,9 @@ fn load_shaped_devices() {
     if let Ok(new_file) = shaped_devices {
         debug!("ShapedDevices.csv loaded");
         SHAPED_DEVICES.store(Arc::new(new_file));
-        
-        // Add error handling for mutex poisoning
-        match NETWORK_JSON.read() {
-            Ok(nj) => {
-                crate::throughput_tracker::THROUGHPUT_TRACKER.refresh_circuit_ids(&nj);
-                STATS_NEEDS_NEW_SHAPED_DEVICES.store(true, std::sync::atomic::Ordering::Relaxed);
-            },
-            Err(e) => {
-                error!("Failed to acquire NETWORK_JSON read lock (possibly poisoned): {:?}", e);
-                // Continue operation without refreshing circuit IDs
-                STATS_NEEDS_NEW_SHAPED_DEVICES.store(true, std::sync::atomic::Ordering::Relaxed);
-            }
-        }
+        let nj = NETWORK_JSON.read().unwrap();
+        crate::throughput_tracker::THROUGHPUT_TRACKER.refresh_circuit_ids(&nj);
+        STATS_NEEDS_NEW_SHAPED_DEVICES.store(true, std::sync::atomic::Ordering::Relaxed);
     } else {
         warn!(
             "ShapedDevices.csv failed to load, see previous error messages. Reverting to empty set."
