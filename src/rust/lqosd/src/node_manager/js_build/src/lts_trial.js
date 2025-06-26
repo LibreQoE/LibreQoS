@@ -595,9 +595,12 @@ function showError(message) {
 
 // Validate license key format
 function validateLicenseKeyFormat(key) {
-    // Expected format: XXXX-XXXX-XXXX-XXXX
-    const pattern = /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
-    return pattern.test(key.toUpperCase());
+    // Accept any format with hexadecimal characters (0-9, A-F) and dashes
+    // Must have at least one dash and be between 16-40 characters total
+    const pattern = /^[A-F0-9\-]{16,40}$/;
+    const upperKey = key.toUpperCase();
+    // Ensure it has at least one dash and some hex characters
+    return pattern.test(upperKey) && upperKey.includes('-') && /[A-F0-9]/.test(upperKey);
 }
 
 // Attach event handlers
@@ -640,7 +643,7 @@ function attachEventHandlers() {
                 url: getLtsUrl('validateLicense'),
                 method: 'POST',
                 contentType: 'application/json',
-                data: JSON.stringify({ licenseKey })
+                data: JSON.stringify({ license_key: licenseKey })
             });
             
             if (response.valid) {
@@ -651,11 +654,20 @@ function attachEventHandlers() {
                     <strong>License Key:</strong> ${licenseKey}<br>
                     <small>Your license has been validated.</small>
                 `);
-                $('#configSpinner').hide();
-                $('#configStatus').html(`
-                    License validated! Please go to <a href="/config_lts.html">Configuration → Long-Term Stats</a> to activate your license.
-                `);
-                $('#btnDashboard').fadeIn();
+                $('#configStatus').text('Saving configuration...');
+
+                $.ajax({
+                    type: "POST",
+                    url: "/local-api/ltsSignUp",
+                    data: JSON.stringify({
+                        license_key: licenseKey,
+                    }),
+                    contentType: 'application/json',
+                });
+                setTimeout(() => {
+                    $('#configStatus').html(`License validated! Your configuration has been updated - data will start going to Insight shortly.`);
+                    $('#btnDashboard').fadeIn();
+                }, 1000);
             } else {
                 hideLoading();
                 showError(response.message || 'Invalid license key.');
