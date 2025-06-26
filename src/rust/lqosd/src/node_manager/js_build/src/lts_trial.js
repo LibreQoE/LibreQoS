@@ -323,10 +323,10 @@ let nodeId = null;
 let ltsBaseUrl = 'https://insight.libreqos.com/';
 
 // Initialize the page
-$(document).ready(function() {
+$(document).ready(async function() {
     initializeCountrySelector();
-    loadTeasers();
-    fetchNodeId();
+    await fetchNodeId();  // Fetch config first to get the correct URL
+    loadTeasers();        // Then load teasers with the correct URL
     fetchCircuitCount();
     attachEventHandlers();
     
@@ -394,12 +394,8 @@ function detectUserCountry() {
 // Load teasers (with fallback to placeholders)
 async function loadTeasers() {
     try {
-        // TODO: Replace with actual API call when endpoint is ready
-        // const response = await $.get(getLtsUrl('signup-api/teasers'));
-        // currentTeasers = response.teasers;
-        
-        // For now, use placeholder teasers
-        currentTeasers = PLACEHOLDER_TEASERS;
+        const response = await $.get(getLtsUrl('teasers'));
+        currentTeasers = response.teasers || PLACEHOLDER_TEASERS;
         displayTeasers();
     } catch (error) {
         console.error('Failed to load teasers:', error);
