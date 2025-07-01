@@ -54,8 +54,6 @@ struct flow_data_t {
     __u32 rate_estimate_bps[2];
     // Sequence number of the last packet
     __u32 last_sequence[2];
-    // Acknowledgement number of the last packet
-    __u32 last_ack[2];
     // Retransmit Counters (Also catches duplicates and out-of-order packets)
     __u16 tcp_retransmits[2];
     // Timestamp values
@@ -244,7 +242,6 @@ static __always_inline void detect_retries(
     struct flow_data_t *data
 ) {
     __u32 sequence = bpf_ntohl(dissector->sequence);
-    __u32 ack_seq = bpf_ntohl(dissector->ack_seq);
     if (
         data->last_sequence[rate_index] != 0 && // We have a previous sequence number
         sequence < data->last_sequence[rate_index] && // This is a retransmission
@@ -259,7 +256,6 @@ static __always_inline void detect_retries(
 
     // Store the sequence and ack numbers for the next packet
     data->last_sequence[rate_index] = sequence;
-    data->last_ack[rate_index] = ack_seq;
 }
 
 // Handle Per-Flow TCP Analysis

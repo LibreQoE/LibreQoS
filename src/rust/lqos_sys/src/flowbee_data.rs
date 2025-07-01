@@ -47,8 +47,6 @@ pub struct FlowbeeData {
     pub rate_estimate_bps: DownUpOrder<u32>,
     /// Sequence number of the last packet
     pub last_sequence: DownUpOrder<u32>,
-    /// Acknowledgement number of the last packet
-    pub last_ack: DownUpOrder<u32>,
     /// TCP Retransmission count (also counts duplicates)
     pub tcp_retransmits: DownUpOrder<u16>,
     /// Timestamp values
