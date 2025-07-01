@@ -2,6 +2,7 @@ use super::{
     RETIRE_AFTER_SECONDS,
     flow_data::{
         ALL_FLOWS, FlowAnalysis, FlowbeeLocalData, RttData, get_flowbee_event_count_and_reset,
+        MAX_RETRY_TIMESTAMPS,
     },
     throughput_entry::ThroughputEntry,
 };
@@ -343,10 +344,16 @@ impl ThroughputTracker {
                     if let Some(this_flow) = all_flows_lock.flow_data.get_mut(&key) {
                         // If retransmits have changed, add the time to the retry list
                         if data.tcp_retransmits.down != this_flow.0.tcp_retransmits.down {
-                            this_flow.0.retry_times_down.push(data.last_seen);
+                            if this_flow.0.retry_times_down.len() >= MAX_RETRY_TIMESTAMPS {
+                                this_flow.0.retry_times_down.pop_front();
+                            }
+                            this_flow.0.retry_times_down.push_back(data.last_seen);
                         }
                         if data.tcp_retransmits.up != this_flow.0.tcp_retransmits.up {
-                            this_flow.0.retry_times_up.push(data.last_seen);
+                            if this_flow.0.retry_times_up.len() >= MAX_RETRY_TIMESTAMPS {
+                                this_flow.0.retry_times_up.pop_front();
+                            }
+                            this_flow.0.retry_times_up.push_back(data.last_seen);
                         }
 
                         //let change_since_last_time = data.bytes_sent.checked_sub_or_zero(this_flow.0.bytes_sent);

@@ -9,6 +9,10 @@ use lqos_utils::units::DownUpOrder;
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::sync::Mutex;
+use std::collections::VecDeque;
+
+/// Maximum number of retry timestamps to keep per direction
+pub const MAX_RETRY_TIMESTAMPS: usize = 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Allocative)]
 pub struct AsnId(pub u32);
@@ -49,9 +53,9 @@ pub struct FlowbeeLocalData {
     /// Throughput Buffer
     //pub throughput_buffer: Vec<DownUpOrder<u64>>,
     /// When did the retries happen? In nanoseconds since kernel boot
-    pub retry_times_down: Vec<u64>,
+    pub retry_times_down: VecDeque<u64>,
     /// When did the retries happen? In nanoseconds since kernel boot
-    pub retry_times_up: Vec<u64>,
+    pub retry_times_up: VecDeque<u64>,
 }
 
 impl From<&FlowbeeData> for FlowbeeLocalData {
@@ -68,8 +72,8 @@ impl From<&FlowbeeData> for FlowbeeLocalData {
             flags: data.flags,
             rtt: [RttData::from_nanos(0); 2],
             //throughput_buffer: vec![ data.bytes_sent ],
-            retry_times_down: Vec::new(),
-            retry_times_up: Vec::new(),
+            retry_times_down: VecDeque::with_capacity(MAX_RETRY_TIMESTAMPS),
+            retry_times_up: VecDeque::with_capacity(MAX_RETRY_TIMESTAMPS),
         }
     }
 }
