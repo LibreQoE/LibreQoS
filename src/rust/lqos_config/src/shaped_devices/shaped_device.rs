@@ -1,4 +1,5 @@
 use super::ShapedDevicesError;
+use allocative::Allocative;
 use csv::StringRecord;
 use lqos_utils::hash_to_i64;
 use serde::{Deserialize, Serialize};
@@ -6,7 +7,7 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 use tracing::error;
 
 /// Represents a row in the `ShapedDevices.csv` file.
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq, Allocative)]
 pub struct ShapedDevice {
     // Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment
     /// The ID of the circuit to which the device belongs. Circuits are 1:many,

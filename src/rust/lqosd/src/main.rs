@@ -268,6 +268,10 @@ fn main() -> Result<()> {
 
 #[cfg(feature = "flamegraphs")]
 fn memory_debug() {
+    // To use this, install "inferno" with `cargo install inferno`.
+    // When you want to make the flamegraph, run:
+    // inferno-flamegraph /tmp/lqosd-mem.svg > output.svg
+    // You can then view output.svg in a web browser.
     std::thread::spawn(|| {
         loop {
             std::thread::sleep(std::time::Duration::from_secs(60));

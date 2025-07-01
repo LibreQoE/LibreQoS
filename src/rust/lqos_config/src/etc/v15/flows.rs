@@ -2,9 +2,10 @@
 //!
 //! You can enable them by adding a `[flows]` section to your configuration file.
 
+use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
 pub struct FlowConfig {
     pub flow_timeout_seconds: u64,
     pub netflow_enabled: bool,

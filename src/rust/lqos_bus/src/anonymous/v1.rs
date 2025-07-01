@@ -1,5 +1,6 @@
+use allocative::Allocative;
 use serde::{Deserialize, Serialize};
-#[derive(Default, Debug, Serialize, Deserialize)]
+#[derive(Default, Debug, Serialize, Deserialize, Allocative)]
 
 /// Defines data to be submitted if anonymous usage submission is
 /// enabled. This is protocol version 1.
@@ -67,7 +68,7 @@ pub struct AnonymousUsageV1 {
 }
 
 /// Description of installed NIC (version 1 data)
-#[derive(Default, Debug, Serialize, Deserialize)]
+#[derive(Default, Debug, Serialize, Deserialize, Allocative)]
 pub struct NicV1 {
     /// Description, usually "Ethernet"
     pub description: String,

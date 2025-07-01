@@ -6,7 +6,9 @@
 
 use std::net::IpAddr;
 
-#[derive(Debug)]
+use allocative::Allocative;
+
+#[derive(Debug, Allocative)]
 pub struct ThroughputSummary {
     pub bits_per_second: (u64, u64),
     pub shaped_bits_per_second: (u64, u64),
@@ -14,7 +16,7 @@ pub struct ThroughputSummary {
     pub hosts: Vec<HostSummary>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Allocative)]
 pub struct HostSummary {
     pub ip: IpAddr,
     pub circuit_id: Option<String>,

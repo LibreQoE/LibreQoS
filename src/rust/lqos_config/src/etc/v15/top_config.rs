@@ -2,6 +2,7 @@
 
 use super::anonymous_stats::UsageStats;
 use super::tuning::Tunables;
+use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use sha2::digest::Update;
@@ -9,7 +10,7 @@ use uuid::Uuid;
 use crate::etc::v15::stormguard;
 
 /// Top-level configuration file for LibreQoS.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct Config {
     /// Version number for the configuration file.
     /// This will be set to "1.5". Versioning will make

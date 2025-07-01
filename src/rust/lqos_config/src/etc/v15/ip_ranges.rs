@@ -1,9 +1,10 @@
+use allocative::Allocative;
 use ip_network::IpNetwork;
 use ip_network_table::IpNetworkTable;
 use serde::{Deserialize, Serialize};
 use std::net::{Ipv4Addr, Ipv6Addr};
 
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
 pub struct IpRanges {
     pub ignore_subnets: Vec<String>,
     pub allow_subnets: Vec<String>,

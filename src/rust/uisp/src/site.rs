@@ -1,7 +1,8 @@
+use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct Site {
     pub id: String,
     pub identification: Option<SiteId>,
@@ -102,13 +103,13 @@ impl Site {
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct SiteParent {
     pub id: Option<String>,
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct SiteId {
     pub name: Option<String>,
     #[serde(rename = "type")]
@@ -119,7 +120,7 @@ pub struct SiteId {
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Allocative)]
 pub struct Endpoint {
     pub id: Option<String>,
     pub name: Option<String>,
@@ -127,7 +128,7 @@ pub struct Endpoint {
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct Description {
     pub address: Option<String>,
     pub location: Option<Location>,
@@ -136,14 +137,14 @@ pub struct Description {
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct Location {
     pub longitude: f64,
     pub latitude: f64,
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct Qos {
     pub enabled: bool,
     pub downloadSpeed: Option<u64>,
@@ -151,21 +152,21 @@ pub struct Qos {
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct Ucrm {
     pub client: Option<UcrmClient>,
     pub service: Option<UcrmService>,
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct UcrmClient {
     pub id: String,
     pub name: String,
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct UcrmService {
     pub id: String,
     pub name: String,

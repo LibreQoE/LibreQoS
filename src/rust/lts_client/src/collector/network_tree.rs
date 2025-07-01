@@ -1,6 +1,7 @@
+use allocative::Allocative;
 use lqos_config::NetworkJsonNode;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Allocative)]
 pub struct NetworkTreeEntry {
     pub name: String,
     pub max_throughput: (u32, u32),
