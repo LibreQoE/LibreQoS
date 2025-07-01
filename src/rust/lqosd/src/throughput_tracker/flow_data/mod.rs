@@ -17,7 +17,7 @@ pub(crate) use flow_analysis::{
     flowbee_rtt_map, get_asn_name_and_country, get_flowbee_event_count_and_reset,
     get_rtt_events_per_second, setup_flow_analysis,
 };
-pub(crate) use flow_tracker::{ALL_FLOWS, AsnId, FlowbeeLocalData, MAX_RETRY_TIMESTAMPS};
+pub(crate) use flow_tracker::{ALL_FLOWS, AsnId, FlowbeeLocalData};
 use lqos_sys::flowbee_data::FlowbeeKey;
 use tracing::{debug, error, info};
 
