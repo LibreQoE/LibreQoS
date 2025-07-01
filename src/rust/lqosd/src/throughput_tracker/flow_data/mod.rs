@@ -67,7 +67,7 @@ pub fn setup_netflow_tracker() -> Result<Sender<(FlowbeeKey, (FlowbeeLocalData, 
             while let Ok((key, (value, analysis))) = rx.recv() {
                 endpoints.iter_mut().for_each(|f| {
                     //log::debug!("Enqueueing flow data for {key:?}");
-                    if let Err(e) = f.send((key.clone(), (value.clone(), analysis.clone()))) {
+                    if let Err(e) = f.try_send((key.clone(), (value.clone(), analysis.clone()))) {
                         tracing::warn!("Failed to send flow data to endpoint: {e}");
                     }
                 });
