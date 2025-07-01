@@ -21,17 +21,13 @@ use lqos_sys::{flowbee_data::FlowbeeKey, iterate_flows, throughput_for_each};
 use lqos_utils::units::{AtomicDownUp, DownUpOrder};
 use lqos_utils::{XdpIpAddress, unix_time::time_since_boot};
 use std::collections::{HashMap, HashSet};
-use std::sync::{Mutex, Arc};
+use std::sync::Mutex;
 use std::{sync::atomic::AtomicU64, time::Duration};
 use tracing::{debug, info, warn};
-use std::sync::atomic::Ordering;
 
 // Maximum number of flows to track simultaneously
 // TODO: This should be made configurable via the config file
 const MAX_FLOWS: usize = 1_000_000;
-
-/// Counter for flows discarded due to full expired flow channel
-static DISCARDED_EXPIRED_FLOWS: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Allocative)]
 pub struct ThroughputTracker {
@@ -317,7 +313,7 @@ impl ThroughputTracker {
         &self,
         timeout_seconds: u64,
         _netflow_enabled: bool,
-        sender: crossbeam_channel::Sender<(FlowbeeKey, Arc<Mutex<(FlowbeeLocalData, FlowAnalysis)>>)>,
+        sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
         net_json_calc: &mut NetworkJson,
         rtt_circuit_tracker: &mut FxHashMap<XdpIpAddress, [Vec<RttData>; 2]>,
         tcp_retries: &mut FxHashMap<XdpIpAddress, DownUpOrder<u64>>,
@@ -347,39 +343,38 @@ impl ThroughputTracker {
                     // We have a valid flow, so it needs to be tracked
                     if let Some(this_flow) = all_flows_lock.flow_data.get_mut(&key) {
                         // If retransmits have changed, add the time to the retry list
-                        let mut flow_data = this_flow.lock().unwrap();
-                        if data.tcp_retransmits.down != flow_data.0.tcp_retransmits.down {
-                            if flow_data.0.retry_times_down.len() >= MAX_RETRY_TIMESTAMPS {
-                                flow_data.0.retry_times_down.pop_front();
+                        if data.tcp_retransmits.down != this_flow.0.tcp_retransmits.down {
+                            if this_flow.0.retry_times_down.len() >= MAX_RETRY_TIMESTAMPS {
+                                this_flow.0.retry_times_down.pop_front();
                             }
-                            flow_data.0.retry_times_down.push_back(data.last_seen);
+                            this_flow.0.retry_times_down.push_back(data.last_seen);
                         }
-                        if data.tcp_retransmits.up != flow_data.0.tcp_retransmits.up {
-                            if flow_data.0.retry_times_up.len() >= MAX_RETRY_TIMESTAMPS {
-                                flow_data.0.retry_times_up.pop_front();
+                        if data.tcp_retransmits.up != this_flow.0.tcp_retransmits.up {
+                            if this_flow.0.retry_times_up.len() >= MAX_RETRY_TIMESTAMPS {
+                                this_flow.0.retry_times_up.pop_front();
                             }
-                            flow_data.0.retry_times_up.push_back(data.last_seen);
+                            this_flow.0.retry_times_up.push_back(data.last_seen);
                         }
 
                         //let change_since_last_time = data.bytes_sent.checked_sub_or_zero(this_flow.0.bytes_sent);
                         //this_flow.0.throughput_buffer.push(change_since_last_time);
                         //println!("{change_since_last_time:?}");
 
-                        flow_data.0.last_seen = data.last_seen;
-                        flow_data.0.bytes_sent = data.bytes_sent;
-                        flow_data.0.packets_sent = data.packets_sent;
-                        flow_data.0.rate_estimate_bps = data.rate_estimate_bps;
-                        flow_data.0.tcp_retransmits = data.tcp_retransmits;
-                        flow_data.0.end_status = data.end_status;
-                        flow_data.0.tos = data.tos;
-                        flow_data.0.flags = data.flags;
+                        this_flow.0.last_seen = data.last_seen;
+                        this_flow.0.bytes_sent = data.bytes_sent;
+                        this_flow.0.packets_sent = data.packets_sent;
+                        this_flow.0.rate_estimate_bps = data.rate_estimate_bps;
+                        this_flow.0.tcp_retransmits = data.tcp_retransmits;
+                        this_flow.0.end_status = data.end_status;
+                        this_flow.0.tos = data.tos;
+                        this_flow.0.flags = data.flags;
 
                         if let Some([up, down]) = rtt_samples.get(&key) {
                             if up.as_nanos() != 0 {
-                                flow_data.0.rtt[0] = *up;
+                                this_flow.0.rtt[0] = *up;
                             }
                             if down.as_nanos() != 0 {
-                                flow_data.0.rtt[1] = *down;
+                                this_flow.0.rtt[1] = *down;
                             }
                         }
                     } else {
@@ -401,7 +396,7 @@ impl ThroughputTracker {
                             let flow_analysis = FlowAnalysis::new(&key);
                             all_flows_lock
                                 .flow_data
-                                .insert(key.clone(), Arc::new(Mutex::new((data.into(), flow_analysis))));
+                                .insert(key.clone(), (data.into(), flow_analysis));
                         }
                     }
 
@@ -503,9 +498,7 @@ impl ThroughputTracker {
                 for key in expired_keys.iter() {
                     // Send it off to netperf for analysis if we are supporting doing so.
                     if let Some(d) = all_flows_lock.flow_data.remove(&key) {
-                        if sender.try_send((key.clone(), d)).is_err() {
-                            DISCARDED_EXPIRED_FLOWS.fetch_add(1, Ordering::Relaxed);
-                        }
+                        let _ = sender.send((key.clone(), (d.0.clone(), d.1.clone())));
                     }
                 }
 
@@ -518,7 +511,7 @@ impl ThroughputTracker {
             // Cleaning run
             all_flows_lock
                 .flow_data
-                .retain(|_k, v| v.lock().unwrap().0.last_seen >= expire);
+                .retain(|_k, v| v.0.last_seen >= expire);
             all_flows_lock.flow_data.shrink_to_fit();
             expire_rtt_flows();
         }

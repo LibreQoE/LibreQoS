@@ -1,22 +1,20 @@
 //! Support for the Netflow 5 protocol
 //! Mostly taken from: https://netflow.caligare.com/netflow_v5.htm
 mod protocol;
-use super::{FlowAnalysis, FlowbeeLocalData, FLOW_CHANNEL_CAPACITY};
+use super::{FlowAnalysis, FlowbeeLocalData};
 use crossbeam_channel::Sender;
 use lqos_sys::flowbee_data::FlowbeeKey;
 pub(crate) use protocol::*;
 use std::{net::UdpSocket, sync::atomic::AtomicU32};
-use std::sync::Arc;
-use std::sync::Mutex;
 
 pub(crate) struct Netflow5 {}
 
 impl Netflow5 {
     pub(crate) fn new(
         target: String,
-    ) -> anyhow::Result<Sender<(FlowbeeKey, Arc<Mutex<(FlowbeeLocalData, FlowAnalysis)>>)>> {
+    ) -> anyhow::Result<Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>> {
         let (tx, rx) =
-            crossbeam_channel::bounded::<(FlowbeeKey, Arc<Mutex<(FlowbeeLocalData, FlowAnalysis)>>)>(FLOW_CHANNEL_CAPACITY);
+            crossbeam_channel::bounded::<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>(65535);
 
         std::thread::Builder::new()
             .name("Netflow5".to_string())
@@ -33,15 +31,13 @@ impl Netflow5 {
                 let sequence = AtomicU32::new(0);
                 let mut accumulator = Vec::with_capacity(15);
                 let mut last_sent = std::time::Instant::now();
-                while let Ok((key, flow_arc)) = rx.recv() {
+                while let Ok((key, (data, analysis))) = rx.recv() {
                     // Exclude one-way flows
-                    let flow_ref = flow_arc.lock().unwrap();
-                    if (flow_ref.0.bytes_sent.sum()) == 0 {
+                    if (data.bytes_sent.sum()) == 0 {
                         continue;
                     }
-                    drop(flow_ref); // Release borrow before storing
 
-                    accumulator.push((key, flow_arc));
+                    accumulator.push((key, (data, analysis)));
 
                     // Send if there is more than 15 records AND it has been more than 1 second since the last send
                     if accumulator.len() >= 15 && last_sent.elapsed().as_secs() > 1 {
@@ -65,7 +61,7 @@ impl Netflow5 {
     }
 
     fn queue_handler(
-        accumulator: &[(FlowbeeKey, Arc<Mutex<(FlowbeeLocalData, FlowAnalysis)>>)],
+        accumulator: &[(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))],
         socket: &UdpSocket,
         target: &str,
         sequence: &AtomicU32,
@@ -85,9 +81,7 @@ impl Netflow5 {
         );
 
         buffer.extend_from_slice(header_bytes);
-        for (key, flow_arc) in accumulator {
-            let flow_ref = flow_arc.lock().unwrap();
-            let (data, _) = &*flow_ref;
+        for (key, (data, _)) in accumulator {
             if let Ok((packet1, packet2)) = to_netflow_5(key, data) {
                 let packet1_bytes = unsafe {
                     std::slice::from_raw_parts(

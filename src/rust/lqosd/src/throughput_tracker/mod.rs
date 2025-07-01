@@ -4,7 +4,6 @@ mod throughput_entry;
 mod tracking_data;
 
 use self::flow_data::{ALL_FLOWS, FlowAnalysis, FlowbeeLocalData, get_asn_name_and_country};
-use std::sync::{Arc, Mutex};
 use crate::system_stats::SystemStats;
 use crate::throughput_tracker::flow_data::RttData;
 use crate::{
@@ -42,7 +41,7 @@ pub static THROUGHPUT_TRACKER: Lazy<ThroughputTracker> = Lazy::new(ThroughputTra
 ///   collection thread that there is fresh data.
 pub fn spawn_throughput_monitor(
     long_term_stats_tx: Sender<StatsUpdateMessage>,
-    netflow_sender: crossbeam_channel::Sender<(FlowbeeKey, Arc<Mutex<(FlowbeeLocalData, FlowAnalysis)>>)>,
+    netflow_sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
     system_usage_actor: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
     bakery_sender: crossbeam_channel::Sender<lqos_bakery::BakeryCommands>,
 ) -> anyhow::Result<()> {
@@ -105,7 +104,7 @@ impl ThroughputTaskTimeMetrics {
 
 fn throughput_task(
     long_term_stats_tx: Sender<StatsUpdateMessage>,
-    netflow_sender: crossbeam_channel::Sender<(FlowbeeKey, Arc<Mutex<(FlowbeeLocalData, FlowAnalysis)>>)>,
+    netflow_sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
     system_usage_actor: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
     bakery_sender: crossbeam_channel::Sender<BakeryCommands>,
 ) {
@@ -731,8 +730,6 @@ pub fn dump_active_flows() -> BusResponse {
         .flow_data
         .iter()
         .map(|(key, row)| {
-            let flow_data = row.lock().unwrap();
-            let (local_data, analysis) = &*flow_data;
             let geo = get_asn_name_and_country(key.remote_ip.as_ip());
 
             let (circuit_id, circuit_name) = (String::new(), String::new());
@@ -743,20 +740,20 @@ pub fn dump_active_flows() -> BusResponse {
                 src_port: key.src_port,
                 dst_port: key.dst_port,
                 ip_protocol: FlowbeeProtocol::from(key.ip_protocol),
-                bytes_sent: local_data.bytes_sent,
-                packets_sent: local_data.packets_sent,
-                rate_estimate_bps: local_data.rate_estimate_bps,
-                tcp_retransmits: local_data.tcp_retransmits,
-                end_status: local_data.end_status,
-                tos: local_data.tos,
-                flags: local_data.flags,
-                remote_asn: analysis.asn_id.0,
+                bytes_sent: row.0.bytes_sent,
+                packets_sent: row.0.packets_sent,
+                rate_estimate_bps: row.0.rate_estimate_bps,
+                tcp_retransmits: row.0.tcp_retransmits,
+                end_status: row.0.end_status,
+                tos: row.0.tos,
+                flags: row.0.flags,
+                remote_asn: row.1.asn_id.0,
                 remote_asn_name: geo.name,
                 remote_asn_country: geo.country,
-                analysis: analysis.protocol_analysis.to_string(),
-                last_seen: local_data.last_seen,
-                start_time: local_data.start_time,
-                rtt_nanos: DownUpOrder::new(local_data.rtt[0].as_nanos(), local_data.rtt[1].as_nanos()),
+                analysis: row.1.protocol_analysis.to_string(),
+                last_seen: row.0.last_seen,
+                start_time: row.0.start_time,
+                rtt_nanos: DownUpOrder::new(row.0.rtt[0].as_nanos(), row.0.rtt[1].as_nanos()),
                 circuit_id,
                 circuit_name,
             }
@@ -775,7 +772,7 @@ pub fn count_active_flows() -> BusResponse {
 /// Top Flows Report
 pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
     let lock = ALL_FLOWS.lock().unwrap();
-    let mut table: Vec<(FlowbeeKey, Arc<Mutex<(FlowbeeLocalData, FlowAnalysis)>>)> = lock
+    let mut table: Vec<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))> = lock
         .flow_data
         .iter()
         .map(|(key, value)| (key.clone(), value.clone()))
@@ -785,46 +782,36 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
     match flow_type {
         TopFlowType::RateEstimate => {
             table.sort_by(|a, b| {
-                let a_lock = a.1.lock().unwrap();
-                let b_lock = b.1.lock().unwrap();
-                let a_total = a_lock.0.rate_estimate_bps.sum();
-                let b_total = b_lock.0.rate_estimate_bps.sum();
+                let a_total = a.1.0.rate_estimate_bps.sum();
+                let b_total = b.1.0.rate_estimate_bps.sum();
                 b_total.cmp(&a_total)
             });
         }
         TopFlowType::Bytes => {
             table.sort_by(|a, b| {
-                let a_lock = a.1.lock().unwrap();
-                let b_lock = b.1.lock().unwrap();
-                let a_total = a_lock.0.bytes_sent.sum();
-                let b_total = b_lock.0.bytes_sent.sum();
+                let a_total = a.1.0.bytes_sent.sum();
+                let b_total = b.1.0.bytes_sent.sum();
                 b_total.cmp(&a_total)
             });
         }
         TopFlowType::Packets => {
             table.sort_by(|a, b| {
-                let a_lock = a.1.lock().unwrap();
-                let b_lock = b.1.lock().unwrap();
-                let a_total = a_lock.0.packets_sent.sum();
-                let b_total = b_lock.0.packets_sent.sum();
+                let a_total = a.1.0.packets_sent.sum();
+                let b_total = b.1.0.packets_sent.sum();
                 b_total.cmp(&a_total)
             });
         }
         TopFlowType::Drops => {
             table.sort_by(|a, b| {
-                let a_lock = a.1.lock().unwrap();
-                let b_lock = b.1.lock().unwrap();
-                let a_total = a_lock.0.tcp_retransmits.sum();
-                let b_total = b_lock.0.tcp_retransmits.sum();
+                let a_total = a.1.0.tcp_retransmits.sum();
+                let b_total = b.1.0.tcp_retransmits.sum();
                 b_total.cmp(&a_total)
             });
         }
         TopFlowType::RoundTripTime => {
             table.sort_by(|a, b| {
-                let a_lock = a.1.lock().unwrap();
-                let b_lock = b.1.lock().unwrap();
-                let a_total = a_lock.0.rtt;
-                let b_total = b_lock.0.rtt;
+                let a_total = a.1.0.rtt;
+                let b_total = b.1.0.rtt;
                 a_total.cmp(&b_total)
             });
         }
@@ -836,8 +823,6 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
         .iter()
         .take(n as usize)
         .map(|(ip, flow)| {
-            let flow_data = flow.lock().unwrap();
-            let (local_data, analysis) = &*flow_data;
             let geo = get_asn_name_and_country(ip.remote_ip.as_ip());
 
             let (circuit_id, circuit_name) = sd
@@ -850,20 +835,20 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
                 src_port: ip.src_port,
                 dst_port: ip.dst_port,
                 ip_protocol: FlowbeeProtocol::from(ip.ip_protocol),
-                bytes_sent: local_data.bytes_sent,
-                packets_sent: local_data.packets_sent,
-                rate_estimate_bps: local_data.rate_estimate_bps,
-                tcp_retransmits: local_data.tcp_retransmits,
-                end_status: local_data.end_status,
-                tos: local_data.tos,
-                flags: local_data.flags,
-                remote_asn: analysis.asn_id.0,
+                bytes_sent: flow.0.bytes_sent,
+                packets_sent: flow.0.packets_sent,
+                rate_estimate_bps: flow.0.rate_estimate_bps,
+                tcp_retransmits: flow.0.tcp_retransmits,
+                end_status: flow.0.end_status,
+                tos: flow.0.tos,
+                flags: flow.0.flags,
+                remote_asn: flow.1.asn_id.0,
                 remote_asn_name: geo.name,
                 remote_asn_country: geo.country,
-                analysis: analysis.protocol_analysis.to_string(),
-                last_seen: local_data.last_seen,
-                start_time: local_data.start_time,
-                rtt_nanos: DownUpOrder::new(local_data.rtt[0].as_nanos(), local_data.rtt[1].as_nanos()),
+                analysis: flow.1.protocol_analysis.to_string(),
+                last_seen: flow.0.last_seen,
+                start_time: flow.0.start_time,
+                rtt_nanos: DownUpOrder::new(flow.0.rtt[0].as_nanos(), flow.0.rtt[1].as_nanos()),
                 circuit_id,
                 circuit_name,
             }
@@ -884,8 +869,6 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
             .iter()
             .filter(|(key, _)| key.local_ip == ip)
             .map(|(key, row)| {
-                let flow_data = row.lock().unwrap();
-                let (local_data, analysis) = &*flow_data;
                 let geo = get_asn_name_and_country(key.remote_ip.as_ip());
 
                 let (circuit_id, circuit_name) = sd
@@ -898,20 +881,20 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
                     src_port: key.src_port,
                     dst_port: key.dst_port,
                     ip_protocol: FlowbeeProtocol::from(key.ip_protocol),
-                    bytes_sent: local_data.bytes_sent,
-                    packets_sent: local_data.packets_sent,
-                    rate_estimate_bps: local_data.rate_estimate_bps,
-                    tcp_retransmits: local_data.tcp_retransmits,
-                    end_status: local_data.end_status,
-                    tos: local_data.tos,
-                    flags: local_data.flags,
-                    remote_asn: analysis.asn_id.0,
+                    bytes_sent: row.0.bytes_sent,
+                    packets_sent: row.0.packets_sent,
+                    rate_estimate_bps: row.0.rate_estimate_bps,
+                    tcp_retransmits: row.0.tcp_retransmits,
+                    end_status: row.0.end_status,
+                    tos: row.0.tos,
+                    flags: row.0.flags,
+                    remote_asn: row.1.asn_id.0,
                     remote_asn_name: geo.name,
                     remote_asn_country: geo.country,
-                    analysis: analysis.protocol_analysis.to_string(),
-                    last_seen: local_data.last_seen,
-                    start_time: local_data.start_time,
-                    rtt_nanos: DownUpOrder::new(local_data.rtt[0].as_nanos(), local_data.rtt[1].as_nanos()),
+                    analysis: row.1.protocol_analysis.to_string(),
+                    last_seen: row.0.last_seen,
+                    start_time: row.0.start_time,
+                    rtt_nanos: DownUpOrder::new(row.0.rtt[0].as_nanos(), row.0.rtt[1].as_nanos()),
                     circuit_id,
                     circuit_name,
                 }

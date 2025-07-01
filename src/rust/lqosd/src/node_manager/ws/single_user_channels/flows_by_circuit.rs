@@ -23,9 +23,7 @@ fn recent_flows_by_circuit(
             let result: Vec<(FlowbeeKeyTransit, FlowbeeLocalData, FlowAnalysis)> = all_flows
                 .flow_data
                 .iter()
-                .filter_map(|(key, flow_arc)| {
-                    let flow_lock = flow_arc.lock().unwrap();
-                    let (local, analysis) = &*flow_lock;
+                .filter_map(|(key, (local, analysis))| {
                     // Don't show older flows
                     if local.last_seen < five_minutes_ago {
                         return None;
