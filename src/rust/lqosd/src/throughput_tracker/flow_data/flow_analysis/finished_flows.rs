@@ -1,6 +1,6 @@
 use super::{FlowAnalysis, get_asn_lat_lon, get_asn_name_and_country, get_asn_name_by_id};
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
-use crate::throughput_tracker::flow_data::FlowbeeLocalData;
+use crate::throughput_tracker::flow_data::{FlowbeeLocalData, FLOW_CHANNEL_CAPACITY};
 use allocative_derive::Allocative;
 use crossbeam_channel::Sender;
 use fxhash::FxHashMap;
@@ -15,6 +15,7 @@ use serde::Serialize;
 use std::sync::Mutex;
 use std::time::Duration;
 use tracing::debug;
+use std::sync::Arc;
 
 #[derive(Allocative)]
 pub struct TimeBuffer {
@@ -24,7 +25,7 @@ pub struct TimeBuffer {
 #[derive(Clone, Debug, Allocative)]
 struct TimeEntry {
     time: u64,
-    data: (FlowbeeKey, FlowbeeLocalData, FlowAnalysis),
+    data: (FlowbeeKey, Arc<Mutex<(FlowbeeLocalData, FlowAnalysis)>>),
 }
 
 #[derive(Debug, Serialize)]
@@ -79,7 +80,9 @@ impl TimeBuffer {
         let mut my_buffer = buffer
             .iter()
             .map(|v| {
-                let (key, data, _analysis) = &v.data;
+                let (key, flow_arc) = &v.data;
+                let flow_ref = flow_arc.lock().unwrap();
+                let (data, _analysis) = &*flow_ref;
                 let (lat, lon) = get_asn_lat_lon(key.remote_ip.as_ip());
                 let geo = get_asn_name_and_country(key.remote_ip.as_ip());
                 (
@@ -107,7 +110,9 @@ impl TimeBuffer {
         let mut my_buffer = buffer
             .iter()
             .map(|v| {
-                let (key, data, _analysis) = &v.data;
+                let (key, flow_arc) = &v.data;
+                let flow_ref = flow_arc.lock().unwrap();
+                let (data, _analysis) = &*flow_ref;
                 let geo = get_asn_name_and_country(key.remote_ip.as_ip());
                 let rtt = [data.rtt[0].as_nanos() as f32, data.rtt[1].as_nanos() as f32];
                 (geo.country, data.bytes_sent, rtt, geo.flag)
@@ -206,7 +211,9 @@ impl TimeBuffer {
         let mut v6_rtt = [Vec::new(), Vec::new()];
 
         buffer.iter().for_each(|v| {
-            let (key, data, _analysis) = &v.data;
+            let (key, flow_arc) = &v.data;
+            let flow_ref = flow_arc.lock().unwrap();
+            let (data, _analysis) = &*flow_ref;
             if key.local_ip.is_v4() {
                 // It's V4
                 v4_bytes_sent.checked_add(data.bytes_sent);
@@ -249,7 +256,9 @@ impl TimeBuffer {
         let mut results = FxHashMap::default();
 
         buffer.iter().for_each(|v| {
-            let (_key, data, analysis) = &v.data;
+            let (_key, flow_arc) = &v.data;
+            let flow_ref = flow_arc.lock().unwrap();
+            let (data, analysis) = &*flow_ref;
             let proto = analysis.protocol_analysis.to_string();
             let entry = results.entry(proto).or_insert(DownUpOrder::zeroed());
             entry.checked_add(data.bytes_sent);
@@ -269,7 +278,10 @@ impl TimeBuffer {
 
         buffer
             .iter()
-            .map(|f| Duration::from_nanos(f.data.1.last_seen - f.data.1.start_time)) // Duration in nanoseconds
+            .map(|f| {
+                let flow_ref = f.data.1.lock().unwrap();
+                Duration::from_nanos(flow_ref.0.last_seen - flow_ref.0.start_time)
+            }) // Duration in nanoseconds
             .map(|nanos| nanos.as_secs())
             .sorted()
             .dedup_with_count() // Now we're (count, duration in seconds)
@@ -281,8 +293,15 @@ impl TimeBuffer {
         let buffer = self.buffer.lock().unwrap();
         buffer
             .iter()
-            .filter(|flow| flow.data.2.asn_id.0 == id)
-            .map(|flow| flow.data.clone())
+            .filter(|flow| {
+                let flow_ref = flow.data.1.lock().unwrap();
+                flow_ref.1.asn_id.0 == id
+            })
+            .map(|flow| {
+                let (key, arc) = flow.data.clone();
+                let flow_ref = arc.lock().unwrap();
+                (key, flow_ref.0.clone(), flow_ref.1.clone())
+            })
             .collect()
     }
 
@@ -297,7 +316,11 @@ impl TimeBuffer {
                 let country = get_asn_name_and_country(flow.data.0.remote_ip.as_ip());
                 country.flag == iso_code
             })
-            .map(|flow| flow.data.clone())
+            .map(|flow| {
+                let (key, arc) = flow.data.clone();
+                let flow_ref = arc.lock().unwrap();
+                (key, flow_ref.0.clone(), flow_ref.1.clone())
+            })
             .collect()
     }
 
@@ -308,8 +331,15 @@ impl TimeBuffer {
         let buffer = self.buffer.lock().unwrap();
         buffer
             .iter()
-            .filter(|flow| flow.data.2.protocol_analysis.to_string() == protocol_name)
-            .map(|flow| flow.data.clone())
+            .filter(|flow| {
+                let flow_ref = flow.data.1.lock().unwrap();
+                flow_ref.1.protocol_analysis.to_string() == protocol_name
+            })
+            .map(|flow| {
+                let (key, arc) = flow.data.clone();
+                let flow_ref = arc.lock().unwrap();
+                (key, flow_ref.0.clone(), flow_ref.1.clone())
+            })
             .collect()
     }
 
@@ -326,9 +356,13 @@ impl TimeBuffer {
             .into_iter()
             .filter(|flow| {
                 // Total flow time > 3 seconds
-                flow.data.1.last_seen - flow.data.1.start_time > 3_000_000_000
+                let flow_ref = flow.data.1.lock().unwrap();
+                flow_ref.0.last_seen - flow_ref.0.start_time > 3_000_000_000
             })
-            .map(|flow| flow.data.2.asn_id.0)
+            .map(|flow| {
+                let flow_ref = flow.data.1.lock().unwrap();
+                flow_ref.1.asn_id.0
+            })
             .collect();
 
         // Sort the buffer
@@ -360,7 +394,8 @@ impl TimeBuffer {
             .into_iter()
             .filter(|flow| {
                 // Total flow time > 3 seconds
-                flow.data.1.last_seen - flow.data.1.start_time > 3_000_000_000
+                let flow_ref = flow.data.1.lock().unwrap();
+                flow_ref.0.last_seen - flow_ref.0.start_time > 3_000_000_000
             })
             .map(|flow| {
                 let country = get_asn_name_and_country(flow.data.0.remote_ip.as_ip());
@@ -397,9 +432,13 @@ impl TimeBuffer {
             .into_iter()
             .filter(|flow| {
                 // Total flow time > 3 seconds
-                flow.data.1.last_seen - flow.data.1.start_time > 3_000_000_000
+                let flow_ref = flow.data.1.lock().unwrap();
+                flow_ref.0.last_seen - flow_ref.0.start_time > 3_000_000_000
             })
-            .map(|flow| flow.data.2.protocol_analysis.to_string())
+            .map(|flow| {
+                let flow_ref = flow.data.1.lock().unwrap();
+                flow_ref.1.protocol_analysis.to_string()
+            })
             .collect();
 
         // Sort the buffer
@@ -425,10 +464,10 @@ pub static RECENT_FLOWS: Lazy<TimeBuffer> = Lazy::new(|| TimeBuffer::new());
 pub struct FinishedFlowAnalysis {}
 
 impl FinishedFlowAnalysis {
-    pub fn new() -> Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))> {
+    pub fn new() -> Sender<(FlowbeeKey, Arc<Mutex<(FlowbeeLocalData, FlowAnalysis)>>)> {
         debug!("Created Flow Analysis Endpoint");
         let (tx, rx) =
-            crossbeam_channel::bounded::<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>(65535);
+            crossbeam_channel::bounded::<(FlowbeeKey, Arc<Mutex<(FlowbeeLocalData, FlowAnalysis)>>)>(FLOW_CHANNEL_CAPACITY);
 
         let _ = std::thread::Builder::new()
             .name("Flow Expiration".to_string())
@@ -441,8 +480,8 @@ impl FinishedFlowAnalysis {
         let _ = std::thread::Builder::new()
             .name("Flow Analysis".to_string())
             .spawn(move || {
-                while let Ok((key, (data, analysis))) = rx.recv() {
-                    enqueue(key, data, analysis);
+                while let Ok((key, flow_arc)) = rx.recv() {
+                    enqueue(key, flow_arc);
                 }
                 tracing::error!("Flow Analysis thread died");
             });
@@ -451,8 +490,12 @@ impl FinishedFlowAnalysis {
     }
 }
 
-fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
+fn enqueue(key: FlowbeeKey, flow_arc: Arc<Mutex<(FlowbeeLocalData, FlowAnalysis)>>) {
     debug!("Finished flow analysis");
+    let (data, analysis) = {
+        let flow_ref = flow_arc.lock().unwrap();
+        (flow_ref.0.clone(), flow_ref.1.clone())
+    };
     let start_time = boot_time_nanos_to_unix_now(data.start_time).unwrap_or(0);
     let last_seen = boot_time_nanos_to_unix_now(data.last_seen).unwrap_or(0);
 
@@ -495,7 +538,7 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_secs(),
-            data: (key, data, analysis),
+            data: (key, flow_arc),
         });
     } else {
         // We have a one-way flow!

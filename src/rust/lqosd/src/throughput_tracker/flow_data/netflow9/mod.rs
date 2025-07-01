@@ -1,11 +1,13 @@
 use self::protocol::to_netflow_9;
-use super::{FlowAnalysis, FlowbeeLocalData};
+use super::{FlowAnalysis, FlowbeeLocalData, FLOW_CHANNEL_CAPACITY};
 use crate::throughput_tracker::flow_data::netflow9::protocol::{
     header::Netflow9Header, template_ipv4::template_data_ipv4, template_ipv6::template_data_ipv6,
 };
 use crossbeam_channel::Sender;
 use lqos_sys::flowbee_data::FlowbeeKey;
 use std::{net::UdpSocket, sync::atomic::AtomicU32};
+use std::sync::Arc;
+use std::sync::Mutex;
 mod protocol;
 
 pub(crate) struct Netflow9 {}
@@ -13,9 +15,9 @@ pub(crate) struct Netflow9 {}
 impl Netflow9 {
     pub(crate) fn new(
         target: String,
-    ) -> anyhow::Result<Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>> {
+    ) -> anyhow::Result<Sender<(FlowbeeKey, Arc<Mutex<(FlowbeeLocalData, FlowAnalysis)>>)>> {
         let (tx, rx) =
-            crossbeam_channel::bounded::<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>(65535);
+            crossbeam_channel::bounded::<(FlowbeeKey, Arc<Mutex<(FlowbeeLocalData, FlowAnalysis)>>)>(FLOW_CHANNEL_CAPACITY);
         let socket = UdpSocket::bind("0.0.0.0:0")?;
 
         std::thread::Builder::new()
@@ -24,13 +26,15 @@ impl Netflow9 {
                 let mut accumulator = Vec::with_capacity(14);
                 let sequence = AtomicU32::new(0);
                 let mut last_sent = std::time::Instant::now();
-                while let Ok((key, (data, analysis))) = rx.recv() {
+                while let Ok((key, flow_arc)) = rx.recv() {
                     // Exclude one-way flows
-                    if (data.bytes_sent.sum()) == 0 {
+                    let flow_ref = flow_arc.lock().unwrap();
+                    if (flow_ref.0.bytes_sent.sum()) == 0 {
                         continue;
                     }
+                    drop(flow_ref); // Release borrow before storing
 
-                    accumulator.push((key, (data, analysis)));
+                    accumulator.push((key, flow_arc));
 
                     // Send if there is more than 15 records AND it has been more than 1 second since the last send
                     if accumulator.len() >= 14 && last_sent.elapsed().as_secs() > 1 {
@@ -54,7 +58,7 @@ impl Netflow9 {
     }
 
     fn queue_handler(
-        accumulator: &[(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))],
+        accumulator: &[(FlowbeeKey, Arc<Mutex<(FlowbeeLocalData, FlowAnalysis)>>)],
         socket: &UdpSocket,
         target: &str,
         sequence: &AtomicU32,
@@ -77,7 +81,9 @@ impl Netflow9 {
         buffer.extend_from_slice(&template1);
         buffer.extend_from_slice(&template2);
 
-        for (key, (data, _)) in accumulator {
+        for (key, flow_arc) in accumulator {
+            let flow_ref = flow_arc.lock().unwrap();
+            let (data, _) = &*flow_ref;
             if let Ok((packet1, packet2)) = to_netflow_9(key, data) {
                 buffer.extend_from_slice(&packet1);
                 buffer.extend_from_slice(&packet2);

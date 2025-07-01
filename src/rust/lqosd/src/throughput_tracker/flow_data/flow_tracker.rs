@@ -10,6 +10,7 @@ use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::sync::Mutex;
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 /// Maximum number of retry timestamps to keep per direction
 pub const MAX_RETRY_TIMESTAMPS: usize = 20;
@@ -21,7 +22,7 @@ pub static ALL_FLOWS: Lazy<Mutex<FlowTracker>> = Lazy::new(|| Mutex::new(FlowTra
 
 #[derive(Default, Allocative)]
 pub struct FlowTracker {
-    pub flow_data: FxHashMap<FlowbeeKey, (FlowbeeLocalData, FlowAnalysis)>,
+    pub flow_data: FxHashMap<FlowbeeKey, Arc<Mutex<(FlowbeeLocalData, FlowAnalysis)>>>,
 }
 
 /// Condensed representation of the FlowbeeData type. This contains

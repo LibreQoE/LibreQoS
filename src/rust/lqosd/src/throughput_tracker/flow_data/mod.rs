@@ -20,11 +20,19 @@ pub(crate) use flow_analysis::{
 pub(crate) use flow_tracker::{ALL_FLOWS, AsnId, FlowbeeLocalData, MAX_RETRY_TIMESTAMPS};
 use lqos_sys::flowbee_data::FlowbeeKey;
 use tracing::{debug, error, info};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+
+/// Maximum capacity for flow data channels
+pub const FLOW_CHANNEL_CAPACITY: usize = 65535;
+
+/// Counter for flows discarded due to full netflow channel
+static DISCARDED_NETFLOW_FLOWS: AtomicU64 = AtomicU64::new(0);
 
 // Creates the netflow tracker and returns the sender
-pub fn setup_netflow_tracker() -> Result<Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>> {
+pub fn setup_netflow_tracker() -> Result<Sender<(FlowbeeKey, Arc<Mutex<(FlowbeeLocalData, FlowAnalysis)>>)>> {
     let (tx, rx) =
-        crossbeam_channel::bounded::<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>(65535);
+        crossbeam_channel::bounded::<(FlowbeeKey, Arc<Mutex<(FlowbeeLocalData, FlowAnalysis)>>)>(FLOW_CHANNEL_CAPACITY);
     let config =
         lqos_config::load_config().inspect_err(|e| error!("Failed to load configuration: {e}"))?;
 
@@ -34,7 +42,7 @@ pub fn setup_netflow_tracker() -> Result<Sender<(FlowbeeKey, (FlowbeeLocalData, 
             debug!("Starting the network flow tracker back-end");
 
             // Build the endpoints list
-            let mut endpoints: Vec<Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>> =
+            let mut endpoints: Vec<Sender<(FlowbeeKey, Arc<Mutex<(FlowbeeLocalData, FlowAnalysis)>>)>> =
                 Vec::new();
             endpoints.push(FinishedFlowAnalysis::new());
 
@@ -64,11 +72,12 @@ pub fn setup_netflow_tracker() -> Result<Sender<(FlowbeeKey, (FlowbeeLocalData, 
             debug!("Flow Endpoints: {}", endpoints.len());
 
             // Send to all endpoints upon receipt
-            while let Ok((key, (value, analysis))) = rx.recv() {
+            while let Ok((key, value)) = rx.recv() {
                 endpoints.iter_mut().for_each(|f| {
                     //log::debug!("Enqueueing flow data for {key:?}");
-                    if let Err(e) = f.send((key.clone(), (value.clone(), analysis.clone()))) {
-                        tracing::warn!("Failed to send flow data to endpoint: {e}");
+                    if f.try_send((key.clone(), value.clone())).is_err() {
+                        DISCARDED_NETFLOW_FLOWS.fetch_add(1, Ordering::Relaxed);
+                        tracing::warn!("Failed to send flow data to endpoint: channel full");
                     }
                 });
             }
