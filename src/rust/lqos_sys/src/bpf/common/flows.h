@@ -8,12 +8,13 @@
 #include "debug.h"
 
 
-#define SECOND_IN_NANOS 1000000000
+#define SECOND_IN_NANOS 1000000000ULL
 #define TWO_SECONDS_IN_NANOS 2000000000
 #define MS_IN_NANOS_T10 10000
 #define HALF_MBPS_IN_BYTES_PER_SECOND 62500
 #define RTT_RING_SIZE 4
 //#define TIMESTAMP_INTERVAL_NANOS 10000000
+#define TIMEOUT_TSVAL_NS (10 * SECOND_IN_NANOS)
 
 // Some helpers to make understanding direction easier
 // for readability.
@@ -21,6 +22,10 @@
 #define FROM_INTERNET 1
 #define TO_LOCAL 1
 #define FROM_LOCAL 2
+
+#ifndef ARRAY_SIZE
+#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
+#endif
 
 // Defines a TCP connection flow key
 struct flow_key_t {
@@ -32,6 +37,15 @@ struct flow_key_t {
     __u8 pad;
     __u8 pad1;
     __u8 pad2;
+};
+
+struct tsval_record_buffer_t {
+    // Times when TSvals were observed
+    // If an entry is 0 is means the spot is free
+    __u64 timestamps[2];
+    // The corresponding TSvals that were observed
+    // tsval[i] is only valid if timestamp[i] > 0
+    __u32 tsvals[2];
 };
 
 // TCP connection flow entry
@@ -56,11 +70,16 @@ struct flow_data_t {
     __u32 last_sequence[2];
     // Retransmit Counters (Also catches duplicates and out-of-order packets)
     __u16 tcp_retransmits[2];
+    // Padding to avoid 4 byte hole and push TSval/TSecr data to its own cacheline
+    // Would probably be better to increase the tcp_retransmit counters to u32
+    // instead, but that requires additional changes to all the user-space Rust
+    // code that use them.
+    __u32 pad1;
     // Timestamp values
     __u32 tsval[2];
     __u32 tsecr[2];
     // When did the timestamp change?
-    __u64 ts_change_time[2];
+    struct tsval_record_buffer_t tsval_tstamps[2];
     // Has the connection ended?
     // 0 = Alive, 1 = FIN, 2 = RST
     __u8 end_status;
@@ -69,7 +88,7 @@ struct flow_data_t {
     // IP Flags
     __u8 ip_flags;
     // Padding
-    __u8 pad;
+    __u8 pad2[5];
 };
 
 // Map for tracking TCP flow progress.
@@ -127,7 +146,6 @@ static __always_inline struct flow_data_t *new_flow_data(
     data->next_count_time[0] = dissector->now + SECOND_IN_NANOS;
     data->next_count_time[1] = dissector->now + SECOND_IN_NANOS;
     data->tos = dissector->tos;
-
     return data;
 }
 
@@ -266,6 +284,59 @@ static __always_inline void detect_retries(
     data->last_sequence[rate_index] = sequence;
 }
 
+// Add a TSval <-> timestamp mapping to buf.
+// Will overwrite outdated (timed out) entries.
+// Will return 0 on success, or -1 if there was no free slot in buf.
+static __always_inline int record_tsval(
+    struct tsval_record_buffer_t *buf,
+    __u64 time,
+    __u32 tsval
+) {
+    int i;
+
+    for (i = 0; i < ARRAY_SIZE(buf->timestamps); i++) {
+        if (
+            buf->timestamps[i] == 0 || // This spot has no recorded TSval
+            buf->timestamps[i] + TIMEOUT_TSVAL_NS < time // This spot has an old/stale recorded TSval
+        ) {
+            buf->timestamps[i] = time;
+            buf->tsvals[i] = tsval;
+            return 0;
+        }
+    }
+
+    return -1;
+}
+
+// Check if tsval has any matching recorded entry in buf.
+// Will clear any outdated entries, as well as the entry it matches in buf
+// On success, return the time the matched TSval was recorded.
+// Return 0 if no matching entry was found.
+static __always_inline __u64 match_and_clear_recorded_tsval(
+    struct tsval_record_buffer_t *buf,
+    __u32 tsval
+) {
+    __u64 match_at_time = 0;
+    int i;
+
+    for (i = 0; i < ARRAY_SIZE(buf->timestamps); i++) {
+        if (buf->timestamps[i] == 0)
+            // Empty entry
+            continue;
+
+        if (buf->tsvals[i] == tsval) {
+            // Match - return time of match and clear out entry
+            match_at_time = buf->timestamps[i];
+            buf->timestamps[i] = 0;
+	    // No early return to let is also clear out old entries
+        } else if (u32wrap_lt(buf->tsvals[i], tsval)) {
+            // Old TSval which we've already passed - clear out
+            buf->timestamps[i] = 0;
+        }
+    }
+
+    return match_at_time;
+}
 
 // Passively infer TCP RTT by matching ACKs to previous TCP segments using TCP
 // timestamps (TSval/TSecr).
@@ -292,7 +363,7 @@ static __always_inline void infer_tcp_rtt(
         u32wrap_lt(data->tsval[rate_index], dissector->tsval) // New TSval
     ) {
         data->tsval[rate_index] = dissector->tsval;
-        data->ts_change_time[rate_index] = dissector->now;
+        record_tsval(&data->tsval_tstamps[rate_index], dissector->now, dissector->tsval);
     }
 
     if (dissector->tsecr == 0)
@@ -306,8 +377,10 @@ static __always_inline void infer_tcp_rtt(
         data->tsecr[rate_index] = dissector->tsecr;
 
         // Match TSecr against previous TSval in reverse direction
-        if (dissector->tsecr == data->tsval[other_rate_index]) {
-            __u64 elapsed = dissector->now - data->ts_change_time[other_rate_index];
+        __u64 match_at = match_and_clear_recorded_tsval(
+            &data->tsval_tstamps[other_rate_index], dissector->tsecr);
+        if (match_at > 0) {
+            __u64 elapsed = dissector->now - match_at;
             if (elapsed < TWO_SECONDS_IN_NANOS) {
                 struct flowbee_event event = { 0 };
                 event.key = *key;

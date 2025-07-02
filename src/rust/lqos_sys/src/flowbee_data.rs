@@ -49,12 +49,15 @@ pub struct FlowbeeData {
     pub last_sequence: DownUpOrder<u32>,
     /// TCP Retransmission count (also counts duplicates)
     pub tcp_retransmits: DownUpOrder<u16>,
+    /// Padding to avoid 4-byte hole and push TSval/TSecr entries to new cacheline
+    pub padding1: u32,
     /// Timestamp values
     pub tsval: DownUpOrder<u32>,
     /// Timestamp echo values
     pub tsecr: DownUpOrder<u32>,
     /// When did the timestamp change?
-    pub ts_change_time: DownUpOrder<u64>,
+    /// Dummy data type - just to match 24-byte size and 8-byte alignment
+    pub tsval_tstamps: DownUpOrder<[u64; 3]>,
     /// Has the connection ended?
     /// 0 = Alive, 1 = FIN, 2 = RST
     pub end_status: u8,
@@ -63,5 +66,5 @@ pub struct FlowbeeData {
     /// Raw TCP flags
     pub flags: u8,
     /// Padding.
-    pub padding: u8,
+    pub padding2: [u8; 5],
 }
