@@ -14,6 +14,7 @@
 #define RTT_RING_SIZE 4
 //#define TIMESTAMP_INTERVAL_NANOS 10000000
 #define TIMEOUT_TSVAL_NS (10 * SECOND_IN_NANOS)
+#define MIN_RTT_SAMPLE_INTERVAL (SECOND_IN_NANOS / 10)
 
 // Some helpers to make understanding direction easier
 // for readability.
@@ -79,6 +80,8 @@ struct flow_data_t {
     __u32 tsecr[2];
     // When did the timestamp change?
     struct tsval_record_buffer_t tsval_tstamps[2];
+    // Last time we pushed an RTT sample
+    __u64 last_rtt[2];
     // Has the connection ended?
     // 0 = Alive, 1 = FIN, 2 = RST
     __u8 end_status;
@@ -402,11 +405,14 @@ static __always_inline void infer_tcp_rtt(
         if (match_at > 0) {
             __u64 elapsed = dissector->now - match_at;
 
-            struct flowbee_event event = { 0 };
-            event.key = *key;
-            event.round_trip_time = elapsed;
-            event.effective_direction = other_rate_index; // direction of the origial TCP segment we matched against
-            bpf_ringbuf_output(&flowbee_events, &event, sizeof(event), 0);
+            if (data->last_rtt[other_rate_index] + MIN_RTT_SAMPLE_INTERVAL < dissector->now) {
+                struct flowbee_event event = {0};
+                event.key = *key;
+                event.round_trip_time = elapsed;
+                event.effective_direction = other_rate_index; // direction of the origial TCP segment we matched against
+                bpf_ringbuf_output(&flowbee_events, &event, sizeof(event), 0);
+                data->last_rtt[other_rate_index] = dissector->now;
+            }
         }
     }
 

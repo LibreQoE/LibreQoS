@@ -58,6 +58,8 @@ pub struct FlowbeeData {
     /// When did the timestamp change?
     /// Dummy data type - just to match 24-byte size and 8-byte alignment
     pub tsval_tstamps: DownUpOrder<[u64; 3]>,
+    /// Last time we pushed an RTT sample
+    pub last_rtt: DownUpOrder<u64>,
     /// Has the connection ended?
     /// 0 = Alive, 1 = FIN, 2 = RST
     pub end_status: u8,
