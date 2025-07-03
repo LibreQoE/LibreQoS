@@ -1,6 +1,8 @@
 //! Provides a globally accessible vector of all flows. This is used to store
 //! all flows for the purpose of tracking and data-services.
 
+use crate::throughput_tracker::tracking_data::MAX_RETRY_TIMES;
+
 use super::{RttData, flow_analysis::FlowAnalysis};
 use allocative_derive::Allocative;
 use fxhash::FxHashMap;
@@ -23,7 +25,7 @@ pub struct FlowTracker {
 /// Condensed representation of the FlowbeeData type. This contains
 /// only the information we want to keep locally for analysis purposes,
 /// adds RTT data, and uses Rust-friendly typing.
-#[derive(Debug, Clone, Serialize, Allocative)]
+#[derive(Debug, Clone, Copy, Serialize, Allocative)]
 pub struct FlowbeeLocalData {
     /// Time (nanos) when the connection was established
     pub start_time: u64,
@@ -49,9 +51,9 @@ pub struct FlowbeeLocalData {
     /// Throughput Buffer
     //pub throughput_buffer: Vec<DownUpOrder<u64>>,
     /// When did the retries happen? In nanoseconds since kernel boot
-    pub retry_times_down: Option<Vec<u64>>,
+    pub retry_times_down: Option<(usize, [u64; MAX_RETRY_TIMES])>,
     /// When did the retries happen? In nanoseconds since kernel boot
-    pub retry_times_up: Option<Vec<u64>>,
+    pub retry_times_up: Option<(usize, [u64; MAX_RETRY_TIMES])>,
 }
 
 impl From<&FlowbeeData> for FlowbeeLocalData {

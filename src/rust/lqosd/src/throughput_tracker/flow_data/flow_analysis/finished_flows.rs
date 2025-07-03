@@ -21,7 +21,7 @@ pub struct TimeBuffer {
     buffer: Mutex<Vec<TimeEntry>>,
 }
 
-#[derive(Clone, Debug, Allocative)]
+#[derive(Clone, Copy, Debug, Allocative)]
 struct TimeEntry {
     time: u64,
     data: (FlowbeeKey, FlowbeeLocalData, FlowAnalysis),
@@ -435,7 +435,7 @@ impl FinishedFlowAnalysis {
             .spawn(|| {
                 loop {
                     RECENT_FLOWS.expire_over_one_minutes();
-                    std::thread::sleep(std::time::Duration::from_secs(60));
+                    std::thread::sleep(std::time::Duration::from_secs(10));
                 }
             });
         let _ = std::thread::Builder::new()
@@ -466,14 +466,16 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
         //let tp_buf_up = data.throughput_buffer.iter().map(|v| v.up).collect();
 
         let retransmit_times_down = if let Some(v) = &data.retry_times_down {
-            v.iter()
+            v.1.iter()
+                .filter(|n| **n > 0)
                 .map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64)
                 .collect()
         } else {
             Vec::new()
         };
         let retransmit_times_up = if let Some(v) = &data.retry_times_up {
-            v.iter()
+            v.1.iter()
+                .filter(|n| **n > 0)
                 .map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64)
                 .collect()
         } else {

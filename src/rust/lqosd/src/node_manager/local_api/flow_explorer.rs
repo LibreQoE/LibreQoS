@@ -73,14 +73,16 @@ fn all_flows_to_transport(
             }
 
             let retransmit_times_down = if let Some(v) = &flow.1.retry_times_down {
-            v.iter()
+            v.1.iter()
+                .filter(|n| **n > 0)
                 .map(|t| boot_time + Duration::from_nanos(*t).as_secs())
                 .collect()
             } else {
                 Vec::new()
             };
             let retransmit_times_up = if let Some(v) = &flow.1.retry_times_up {
-                v.iter()
+                v.1.iter()
+                    .filter(|n| **n > 0)
                     .map(|t| boot_time + Duration::from_nanos(*t).as_secs())
                     .collect()
             } else {

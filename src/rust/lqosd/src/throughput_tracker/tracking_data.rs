@@ -28,7 +28,7 @@ use tracing::{debug, info, warn};
 // TODO: This should be made configurable via the config file
 const MAX_FLOWS: usize = 1_000_000;
 
-const MAX_RETRY_TIMES: usize = 32;
+pub const MAX_RETRY_TIMES: usize = 32;
 
 #[derive(Allocative)]
 pub struct ThroughputTracker {
@@ -346,24 +346,22 @@ impl ThroughputTracker {
                         // If retransmits have changed, add the time to the retry list
                         if data.tcp_retransmits.down != this_flow.0.tcp_retransmits.down {
                             if this_flow.0.retry_times_down.is_none() {
-                                this_flow.0.retry_times_down = Some(Vec::with_capacity(MAX_RETRY_TIMES));
+                                this_flow.0.retry_times_down = Some((0, [0; MAX_RETRY_TIMES]));
                             }
                             if let Some(retry_times) = &mut this_flow.0.retry_times_down {
-                                if retry_times.len() >= MAX_RETRY_TIMES {
-                                    retry_times.remove(0);
-                                }
-                                retry_times.push(data.last_seen);
+                                retry_times.1[retry_times.0] = data.last_seen;
+                                retry_times.0 += 1;
+                                retry_times.0 %= MAX_RETRY_TIMES;
                             }
                         }
                         if data.tcp_retransmits.up != this_flow.0.tcp_retransmits.up {
                             if this_flow.0.retry_times_up.is_none() {
-                                this_flow.0.retry_times_up = Some(Vec::with_capacity(MAX_RETRY_TIMES));
+                                this_flow.0.retry_times_up = Some((0, [0; MAX_RETRY_TIMES]));
                             }
                             if let Some(retry_times) = &mut this_flow.0.retry_times_up {
-                                if retry_times.len() >= MAX_RETRY_TIMES {
-                                    retry_times.remove(0);
-                                }
-                                retry_times.push(data.last_seen);
+                                retry_times.1[retry_times.0] = data.last_seen;
+                                retry_times.0 += 1;
+                                retry_times.0 %= MAX_RETRY_TIMES;
                             }
                         }
 
