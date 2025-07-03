@@ -1,9 +1,11 @@
 use crate::node_manager::ws::publish_subscribe::subscriber::Subscriber;
 use crate::node_manager::ws::published_channels::PublishedChannels;
+use allocative::Allocative;
 use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 
+#[derive(Allocative)]
 pub(super) struct PublisherChannel {
     pub(super) channel_type: PublishedChannels,
     subscribers: Vec<Subscriber>,
