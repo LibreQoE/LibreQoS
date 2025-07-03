@@ -42,7 +42,7 @@ pub fn load_config() -> Result<Arc<Config>, LibreQoSConfigError> {
         .as_ref()
         .as_ref()
         .cloned()
-        .ok_or(LibreQoSConfigError::FileNotFoud)
+        .ok_or(LibreQoSConfigError::FileNotFound)
 }
 
 fn actually_load_from_disk() -> Result<Arc<Config>, LibreQoSConfigError> {
@@ -56,13 +56,13 @@ fn actually_load_from_disk() -> Result<Arc<Config>, LibreQoSConfigError> {
     debug!("Loading configuration file {config_location}");
     migrate_if_needed(&config_location).map_err(|e| {
         error!("Unable to migrate configuration: {:?}", e);
-        LibreQoSConfigError::FileNotFoud
+        LibreQoSConfigError::FileNotFound
     })?;
 
     let file_result = std::fs::read_to_string(&config_location);
     if file_result.is_err() {
         error!("Unable to open {config_location}");
-        return Err(LibreQoSConfigError::FileNotFoud);
+        return Err(LibreQoSConfigError::FileNotFound);
     }
     let raw = file_result.unwrap();
 
@@ -83,7 +83,7 @@ fn actually_load_from_disk() -> Result<Arc<Config>, LibreQoSConfigError> {
     }
 
     debug!("Set cached version of config file");
-    let new_config = Arc::new(final_config.clone());
+    let new_config = Arc::new(final_config);
 
     Ok(new_config)
 }
@@ -163,7 +163,7 @@ pub enum LibreQoSConfigError {
     #[error(
         "Unable to locate (path to LibreQoS)/ispConfig.py. Check your path and that you have configured it."
     )]
-    FileNotFoud,
+    FileNotFound,
     #[error("Unable to read the contents of ispConfig.py. Check file permissions.")]
     CannotReadFile,
     #[error("Unable to parse ispConfig.py")]
