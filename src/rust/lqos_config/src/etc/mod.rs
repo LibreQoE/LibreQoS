@@ -8,8 +8,8 @@ use arc_swap::ArcSwap;
 pub use etclqos_migration::*;
 use once_cell::sync::Lazy;
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
+use std::sync::Once;
+use std::sync::Arc;
 use thiserror::Error;
 use tracing::{debug, error, info};
 
@@ -20,30 +20,32 @@ pub mod test_data;
 mod v15;
 pub use v15::{BridgeConfig, Tunables, LazyQueueMode};
 
-static CONFIG_LOADED: AtomicBool = AtomicBool::new(false);
-static CONFIG: Lazy<ArcSwap<Config>> = Lazy::new(|| match load_config() {
-    Ok(config) => {
-        CONFIG_LOADED.store(true, std::sync::atomic::Ordering::SeqCst);
-        ArcSwap::new(config)
-    }
-    Err(e) => {
-        error!("Unable to load configuration: {:?}", e);
-        ArcSwap::new(Arc::new(Config::default()))
-    }
-});
-
-static LOADER_MUTEX: Mutex<bool> = Mutex::new(false);
+static CONFIG: Lazy<ArcSwap<Option<Arc<Config>>>> = Lazy::new(|| ArcSwap::from_pointee(None));
+static INIT_ONCE: Once = Once::new();
 
 /// Load the configuration from `/etc/lqos.conf`.
 pub fn load_config() -> Result<Arc<Config>, LibreQoSConfigError> {
-    // If we have a cached version, return it
-    let mut lock = LOADER_MUTEX.lock().unwrap();
-    *lock = !(*lock); // Not actually useful, prevents it from being optimized away
-    if CONFIG_LOADED.load(std::sync::atomic::Ordering::SeqCst) {
-        let clone = CONFIG.load().clone();
-        return Ok(clone);
-    }
+    // Ensure first load happens only once
+    INIT_ONCE.call_once(|| {
+        match actually_load_from_disk() {
+            Ok(config) => {
+                CONFIG.store(Some(config).into());
+            }
+            Err(e) => {
+                error!("Initial config load failed: {:?}", e);
+            }
+        }
+    });
+    
+    // Fast path - just load the Arc
+    CONFIG.load()
+        .as_ref()
+        .as_ref()
+        .cloned()
+        .ok_or(LibreQoSConfigError::FileNotFoud)
+}
 
+fn actually_load_from_disk() -> Result<Arc<Config>, LibreQoSConfigError> {
     let config_location = if let Ok(lqos_config) = std::env::var("LQOS_CONFIG") {
         info!("Overriding lqos.conf location from environment variable.");
         lqos_config
@@ -111,7 +113,7 @@ pub fn enable_long_term_stats(license_key: String) -> Result<(), LibreQoSConfigE
 /// Update the configuration on disk
 pub fn update_config(new_config: &Config) -> Result<(), LibreQoSConfigError> {
     debug!("Updating stored configuration");
-    CONFIG.store(Arc::new(new_config.clone()));
+    CONFIG.store(Some(Arc::new(new_config.clone())).into());
 
     // Does the configuration exist?
     let config_path = Path::new("/etc/lqos.conf");
@@ -149,7 +151,7 @@ pub fn disable_xdp_bridge() -> Result<(), LibreQoSConfigError> {
     }
 
     // Write the lock
-    CONFIG.store(Arc::new(config));
+    CONFIG.store(Some(Arc::new(config)).into());
 
     Ok(())
 }
