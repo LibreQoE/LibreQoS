@@ -5,7 +5,7 @@ edition = "2024"
 license = "GPL-2.0-only"
 
 [features]
-default = ["equinix_tests", "flamegraphs"]
+default = ["equinix_tests"]
 equinix_tests = []
 flamegraphs = []
 
