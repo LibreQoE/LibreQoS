@@ -1889,6 +1889,8 @@ dependencies = [
 name = "lqos_bakery"
 version = "0.1.0"
 dependencies = [
+ "allocative",
+ "allocative_derive",
  "anyhow",
  "crossbeam-channel",
  "lqos_bus",
@@ -2015,6 +2017,8 @@ dependencies = [
 name = "lqos_stormguard"
 version = "0.1.0"
 dependencies = [
+ "allocative",
+ "allocative_derive",
  "anyhow",
  "crossbeam-channel",
  "lqos_bakery",
@@ -2185,6 +2189,8 @@ dependencies = [
 name = "lts_client"
 version = "0.1.0"
 dependencies = [
+ "allocative",
+ "allocative_derive",
  "bincode",
  "dashmap",
  "dryoc 0.5.4",
@@ -4065,6 +4071,8 @@ checksum = "1dccffe3ce07af9386bfd29e80c0ab1a8205a2fc34e4bcd40364df902cfa8f3f"
 name = "uisp"
 version = "0.1.0"
 dependencies = [
+ "allocative",
+ "allocative_derive",
  "anyhow",
  "lqos_config",
  "reqwest",

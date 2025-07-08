@@ -73,7 +73,7 @@ pub fn setup_flow_analysis() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Allocative)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Allocative)]
 pub struct FlowAnalysis {
     pub asn_id: AsnId,
     pub protocol_analysis: FlowProtocol,

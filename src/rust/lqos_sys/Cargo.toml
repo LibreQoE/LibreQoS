@@ -17,8 +17,8 @@ thiserror = { workspace = true }
 zerocopy = { workspace = true }
 
 # For memory debugging
-allocative = {  version = "0.3.3", features = [ "dashmap" ] }
-allocative_derive = "0.3.3"
+allocative.workspace = true
+allocative_derive.workspace = true
 
 [build-dependencies]
 bindgen = "0.71.1"

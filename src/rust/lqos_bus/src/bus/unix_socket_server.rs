@@ -16,6 +16,9 @@ use super::BUS_SOCKET_DIRECTORY;
 /// Requests are handled and then forwarded to the handler.
 pub struct UnixSocketServer {}
 
+static RECEIVE_BUFFER: tokio::sync::OnceCell<tokio::sync::Mutex<Vec<u8>>> = tokio::sync::OnceCell::const_new();
+const RECEIVE_BUFFER_SIZE: usize = 1024 * 1024 * 512; // 512 MiB
+
 impl UnixSocketServer {
     /// Creates a new `UnixSocketServer`. Will delete any pre-existing
     /// socket file.
@@ -88,6 +91,10 @@ impl UnixSocketServer {
             BusRequest,
         )>,
     ) -> Result<(), UnixSocketServerError> {
+        RECEIVE_BUFFER
+            .set(tokio::sync::Mutex::new(vec![0; RECEIVE_BUFFER_SIZE])) // 512 MiB
+            .map_err(|_| UnixSocketServerError::MkDirFail)?;
+
         // Set up the listener and grant permissions to it
         let listener = UnixListener::bind(BUS_SOCKET_PATH);
         if listener.is_err() {
@@ -155,10 +162,16 @@ impl UnixSocketServer {
                         let request_id = u64::from_le_bytes(id_buf[0..8].try_into().unwrap());
                         let request_size = u64::from_le_bytes(id_buf[8..16].try_into().unwrap());
                         debug!("Received request ID: {request_id}, Size: {request_size}");
+                        if request_size > RECEIVE_BUFFER_SIZE as u64 {
+                            warn!("Received request size ({request_size}) exceeds buffer size ({RECEIVE_BUFFER_SIZE}).");
+                            break; // Escape out of the thread
+                        }
 
                         // Read the request data
-                        let mut buf = vec![0; request_size as usize];
-                        let bytes_read = socket.read_exact(&mut buf).await;
+                        //let mut buf = vec![0; request_size as usize];
+                        let mut buf = RECEIVE_BUFFER.get().unwrap().lock().await;
+
+                        let bytes_read = socket.read_exact(&mut buf[0 .. request_size as usize]).await;
                         if bytes_read.is_err() {
                             debug!("Unable to read request data from client socket. Server remains alive.");
                             debug!("This is probably harmless.");
@@ -167,11 +180,12 @@ impl UnixSocketServer {
                         }
 
                         // Decode the request
-                        let Ok(request) = bincode::deserialize::<BusSession>(&buf) else {
+                        let Ok(request) = bincode::deserialize::<BusSession>(&buf[0..request_size as usize]) else {
                             warn!("Invalid data on local socket");
                             break;
                         };
                         debug!("Received request: {:?}", request);
+                        drop(buf); // Release the lock on the buffer
 
                         // Handle the request and build the response
                         let mut response = BusReply { responses: Vec::with_capacity(8) };

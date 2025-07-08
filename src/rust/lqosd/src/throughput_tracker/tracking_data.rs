@@ -28,6 +28,8 @@ use tracing::{debug, info, warn};
 // TODO: This should be made configurable via the config file
 const MAX_FLOWS: usize = 1_000_000;
 
+pub const MAX_RETRY_TIMES: usize = 32;
+
 #[derive(Allocative)]
 pub struct ThroughputTracker {
     pub(crate) cycle: AtomicU64,
@@ -343,10 +345,24 @@ impl ThroughputTracker {
                     if let Some(this_flow) = all_flows_lock.flow_data.get_mut(&key) {
                         // If retransmits have changed, add the time to the retry list
                         if data.tcp_retransmits.down != this_flow.0.tcp_retransmits.down {
-                            this_flow.0.retry_times_down.push(data.last_seen);
+                            if this_flow.0.retry_times_down.is_none() {
+                                this_flow.0.retry_times_down = Some((0, [0; MAX_RETRY_TIMES]));
+                            }
+                            if let Some(retry_times) = &mut this_flow.0.retry_times_down {
+                                retry_times.1[retry_times.0] = data.last_seen;
+                                retry_times.0 += 1;
+                                retry_times.0 %= MAX_RETRY_TIMES;
+                            }
                         }
                         if data.tcp_retransmits.up != this_flow.0.tcp_retransmits.up {
-                            this_flow.0.retry_times_up.push(data.last_seen);
+                            if this_flow.0.retry_times_up.is_none() {
+                                this_flow.0.retry_times_up = Some((0, [0; MAX_RETRY_TIMES]));
+                            }
+                            if let Some(retry_times) = &mut this_flow.0.retry_times_up {
+                                retry_times.1[retry_times.0] = data.last_seen;
+                                retry_times.0 += 1;
+                                retry_times.0 %= MAX_RETRY_TIMES;
+                            }
                         }
 
                         //let change_since_last_time = data.bytes_sent.checked_sub_or_zero(this_flow.0.bytes_sent);

@@ -3,13 +3,14 @@ use crate::{
     Circuit, IpMapping, IpStats, XdpPpingResult,
     ip_stats::{FlowbeeSummaryData, PacketHeader},
 };
+use allocative::Allocative;
 use lqos_utils::units::DownUpOrder;
 use lts_client::transport_data::{StatsHost, StatsTotals, StatsTreeNode};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
 /// Serializable snapshot of BakeryStats for bus transmission
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct BakeryStatsSnapshot {
     /// The number of active circuits in the bakery
     pub active_circuits: u64,
@@ -18,7 +19,7 @@ pub struct BakeryStatsSnapshot {
 /// A `BusResponse` object represents a single
 /// reply generated from a `BusRequest`, and batched
 /// inside a `BusReply`.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Allocative)]
 pub enum BusResponse {
     /// Yes, we're alive
     Ack,

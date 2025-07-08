@@ -5,9 +5,10 @@ use lqos_bus::TcHandle;
 use lqos_config::LazyQueueMode;
 use crate::MQ_CREATED;
 use crate::queue_math::{format_rate_for_tc, format_rate_for_tc_f32, quantum, r2q, sqm_as_vec, sqm_rate_fixup};
+use allocative::Allocative;
 
 /// Execution Mode
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Allocative)]
 pub enum ExecutionMode {
     /// We're constructing the tree
     Builder,
@@ -16,7 +17,7 @@ pub enum ExecutionMode {
 }
 
 /// List of commands that the Bakery system can handle.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Allocative)]
 pub enum BakeryCommands {
     OnCircuitActivity { circuit_ids: HashSet<i64> },
     Tick,

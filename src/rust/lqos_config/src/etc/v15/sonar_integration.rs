@@ -1,6 +1,7 @@
+use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct SonarIntegration {
     pub enable_sonar: bool,
     pub sonar_api_url: String,

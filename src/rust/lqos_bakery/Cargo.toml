@@ -10,3 +10,5 @@ anyhow.workspace = true
 tracing.workspace = true
 crossbeam-channel.workspace = true
 once_cell.workspace = true
+allocative.workspace = true
+allocative_derive.workspace = true

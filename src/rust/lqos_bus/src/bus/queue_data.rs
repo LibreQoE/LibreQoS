@@ -1,9 +1,10 @@
+use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 
 /// Type used for *displaying* the queue store data. It deliberately
 /// doesn't include data that we aren't going to display in a GUI.
 #[allow(missing_docs)]
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default, Allocative)]
 pub struct QueueStoreTransit {
     pub history: Vec<(CakeDiffTransit, CakeDiffTransit)>,
     pub history_head: usize,
@@ -13,7 +14,7 @@ pub struct QueueStoreTransit {
     pub current_upload: CakeTransit,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default, Allocative)]
 #[allow(missing_docs)]
 pub struct CakeDiffTransit {
     pub bytes: u64,
@@ -22,7 +23,7 @@ pub struct CakeDiffTransit {
     pub tins: Vec<CakeDiffTinTransit>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default, Allocative)]
 #[allow(missing_docs)]
 pub struct CakeDiffTinTransit {
     pub sent_bytes: u64,
@@ -32,7 +33,7 @@ pub struct CakeDiffTinTransit {
     pub base_delay_us: u32,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default, Allocative)]
 #[allow(missing_docs)]
 pub struct CakeTransit {
     //pub handle: TcHandle,
