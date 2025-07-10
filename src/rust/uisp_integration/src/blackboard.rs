@@ -8,9 +8,6 @@ pub async fn blackboard(subsystem: BlackboardSystem, key: &str, value: &str) {
     let Ok(config) = lqos_config::load_config() else {
         return;
     };
-    if !config.long_term_stats.use_insight.unwrap_or(false) {
-        return;
-    }
     let req = vec![lqos_bus::BusRequest::BlackboardData {
         subsystem,
         key: key.to_string(),
@@ -21,9 +18,6 @@ pub async fn blackboard(subsystem: BlackboardSystem, key: &str, value: &str) {
 
 pub async fn blackboard_blob<T: Serialize>(key: &str, value: T) -> anyhow::Result<()> {
     let config = lqos_config::load_config()?;
-    if !config.long_term_stats.use_insight.unwrap_or(false) {
-        return Ok(());
-    }
     let blob = serde_cbor::to_vec(&value)?;
     let chunks = blob.chunks(1024 * 128);
     info!(
