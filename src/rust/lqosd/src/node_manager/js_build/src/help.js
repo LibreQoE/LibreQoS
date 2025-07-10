@@ -1,5 +1,3 @@
-import {displayDaveMemorial} from "./dave";
-
 function gather() {
     let details = {
         name: $("#gatherName").val() + ", " + $("#gatherEmail").val(),
@@ -92,4 +90,3 @@ function sanity() {
 $("#btnSanity").click(sanity);
 $("#btnGather").click(gather);
 $("#btnClickSub").click(submit);
-$("#btnDave").click(displayDaveMemorial);
