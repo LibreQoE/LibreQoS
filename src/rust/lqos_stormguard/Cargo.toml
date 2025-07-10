@@ -15,3 +15,7 @@ lqos_queue_tracker = { path = "../lqos_queue_tracker" }
 lqos_utils = { path = "../lqos_utils" }
 lqos_bakery = { path = "../lqos_bakery" }
 crossbeam-channel.workspace = true
+
+# For memory debugging
+allocative.workspace = true
+allocative_derive.workspace = true

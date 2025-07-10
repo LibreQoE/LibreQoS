@@ -1,6 +1,8 @@
 use std::fmt::Display;
 
-#[derive(Debug)]
+use allocative::Allocative;
+
+#[derive(Debug, Allocative)]
 pub struct Recommendation {
     pub site: String,
     pub direction: RecommendationDirection,
@@ -8,7 +10,7 @@ pub struct Recommendation {
 }
 
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Allocative)]
 pub enum RecommendationDirection {
     Download,
     Upload,
@@ -23,7 +25,7 @@ impl Display for RecommendationDirection {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Allocative)]
 pub enum RecommendationAction {
     IncreaseFast,
     Increase,

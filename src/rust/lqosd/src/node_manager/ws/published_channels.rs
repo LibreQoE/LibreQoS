@@ -1,6 +1,7 @@
+use allocative::Allocative;
 use strum::{Display, EnumIter, EnumString};
 
-#[derive(PartialEq, Clone, Copy, Debug, EnumIter, Display, EnumString, Hash, Eq)]
+#[derive(PartialEq, Clone, Copy, Debug, EnumIter, Display, EnumString, Hash, Eq, Allocative)]
 pub enum PublishedChannels {
     /// Provides a 1-second tick notification to the client
     Cadence,

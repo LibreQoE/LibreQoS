@@ -21,7 +21,7 @@ pub struct TimeBuffer {
     buffer: Mutex<Vec<TimeEntry>>,
 }
 
-#[derive(Clone, Debug, Allocative)]
+#[derive(Clone, Copy, Debug, Allocative)]
 struct TimeEntry {
     time: u64,
     data: (FlowbeeKey, FlowbeeLocalData, FlowAnalysis),
@@ -269,22 +269,7 @@ impl TimeBuffer {
 
         buffer
             .iter()
-            .filter_map(|f| {
-                // Add bounds checking to prevent duration overflow
-                let start_time = f.data.1.start_time;
-                let last_seen = f.data.1.last_seen;
-                
-                if last_seen >= start_time {
-                    let duration_nanos = last_seen - start_time;
-                    tracing::debug!("Flow duration calculation - start: {}, end: {}, duration: {}",
-                                   start_time, last_seen, duration_nanos);
-                    Some(Duration::from_nanos(duration_nanos))
-                } else {
-                    tracing::warn!("Invalid flow timing - last_seen ({}) < start_time ({}), skipping",
-                                  last_seen, start_time);
-                    None
-                }
-            })
+            .map(|f| Duration::from_nanos(f.data.1.last_seen - f.data.1.start_time)) // Duration in nanoseconds
             .map(|nanos| nanos.as_secs())
             .sorted()
             .dedup_with_count() // Now we're (count, duration in seconds)
@@ -450,7 +435,7 @@ impl FinishedFlowAnalysis {
             .spawn(|| {
                 loop {
                     RECENT_FLOWS.expire_over_one_minutes();
-                    std::thread::sleep(std::time::Duration::from_secs(60));
+                    std::thread::sleep(std::time::Duration::from_secs(10));
                 }
             });
         let _ = std::thread::Builder::new()
@@ -468,31 +453,8 @@ impl FinishedFlowAnalysis {
 
 fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
     debug!("Finished flow analysis");
-    
-    // Add diagnostic logging for time conversion issues
-    tracing::debug!("Flow timing - start_time: {}, last_seen: {}", data.start_time, data.last_seen);
-    
-    let start_time = match boot_time_nanos_to_unix_now(data.start_time) {
-        Ok(time) => {
-            tracing::debug!("Converted start_time to unix: {}", time);
-            time
-        },
-        Err(e) => {
-            tracing::error!("Failed to convert start_time {} to unix time: {:?}", data.start_time, e);
-            0
-        }
-    };
-    
-    let last_seen = match boot_time_nanos_to_unix_now(data.last_seen) {
-        Ok(time) => {
-            tracing::debug!("Converted last_seen to unix: {}", time);
-            time
-        },
-        Err(e) => {
-            tracing::error!("Failed to convert last_seen {} to unix time: {:?}", data.last_seen, e);
-            0
-        }
-    };
+    let start_time = boot_time_nanos_to_unix_now(data.start_time).unwrap_or(0);
+    let last_seen = boot_time_nanos_to_unix_now(data.last_seen).unwrap_or(0);
 
     let one_way = data.bytes_sent.down == 0 || data.bytes_sent.up == 0;
     let sd = SHAPED_DEVICES.load();
@@ -502,6 +464,24 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
         //data.trim(); // Remove the trailing 30 seconds of zeroes
         //let tp_buf_dn = data.throughput_buffer.iter().map(|v| v.down).collect();
         //let tp_buf_up = data.throughput_buffer.iter().map(|v| v.up).collect();
+
+        let retransmit_times_down = if let Some(v) = &data.retry_times_down {
+            v.1.iter()
+                .filter(|n| **n > 0)
+                .map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let retransmit_times_up = if let Some(v) = &data.retry_times_up {
+            v.1.iter()
+                .filter(|n| **n > 0)
+                .map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64)
+                .collect()
+        } else {
+            Vec::new()
+        };
+
         if let Err(e) = crate::lts2_sys::two_way_flow(
             start_time,
             last_seen,
@@ -514,14 +494,8 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
             data.bytes_sent.up,
             data.packets_sent.down as i64,
             data.packets_sent.up as i64,
-            data.retry_times_down
-                .iter()
-                .map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64)
-                .collect(),
-            data.retry_times_up
-                .iter()
-                .map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64)
-                .collect(),
+            retransmit_times_down,
+            retransmit_times_up,
             data.rtt[0].as_micros() as f32,
             data.rtt[1].as_micros() as f32,
             circuit_hash,

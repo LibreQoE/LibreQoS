@@ -79,3 +79,7 @@ arc-swap = "1.7.1"
 # May have to change this one for ARM?
 #jemallocator = "0.5"
 mimalloc = "0.1.43"
+
+# For memory debugging
+allocative = {  version = "0.3.3", features = [ "dashmap" ] }
+allocative_derive = "0.3.3"

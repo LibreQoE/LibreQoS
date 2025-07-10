@@ -1,8 +1,9 @@
 //! Defines configuration for the LTS project
 
+use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Allocative)]
 pub struct LongTermStats {
     /// Should we store long-term stats at all?
     pub gather_stats: bool,

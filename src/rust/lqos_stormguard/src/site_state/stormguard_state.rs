@@ -1,6 +1,8 @@
 use std::time::Instant;
 
-#[derive(PartialEq, Debug)]
+use allocative::Allocative;
+
+#[derive(PartialEq, Debug, Allocative)]
 pub enum StormguardState {
     Warmup,
     Running,

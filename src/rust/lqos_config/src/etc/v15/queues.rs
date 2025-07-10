@@ -1,8 +1,9 @@
 //! Queue Generation definitions (originally from ispConfig.py)
 
+use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
 pub struct QueueConfig {
     /// Which SQM to use by default
     pub default_sqm: String,
@@ -43,7 +44,7 @@ pub struct QueueConfig {
 }
 
 /// Lazy queue creation modes
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Default)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Default, Allocative)]
 pub enum LazyQueueMode {
     /// No lazy queue creation
     #[default]

@@ -1,11 +1,12 @@
 use crate::TcHandle;
+use allocative::Allocative;
 use lqos_utils::units::DownUpOrder;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
 /// Transmission representation of IP statistics associated
 /// with a host.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Allocative)]
 pub struct IpStats {
     /// The host's IP address, as detected by the XDP program.
     pub ip_address: String,
@@ -31,7 +32,7 @@ pub struct IpStats {
 }
 
 /// Represents an IP Mapping in the XDP IP to TC/CPU mapping system.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Allocative)]
 pub struct IpMapping {
     /// The mapped IP address. May be IPv4, or IPv6.
     pub ip_address: String,
@@ -49,7 +50,7 @@ pub struct IpMapping {
 
 /// Provided for backwards compatibility with `xdp_pping`, with the intent
 /// to retire it eventually.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Allocative)]
 pub struct XdpPpingResult {
     /// The TC handle in text format. e.g. "1:12"
     pub tc: String,
@@ -84,7 +85,7 @@ pub fn tos_parser(tos: u8) -> (u8, u8) {
 }
 
 /// Packet header dump
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Allocative)]
 pub struct PacketHeader {
     /// Timestamp (ns since boot)
     pub timestamp: u64,
@@ -115,7 +116,7 @@ pub struct PacketHeader {
 }
 
 /// Flowbee protocol enumeration
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Allocative)]
 pub enum FlowbeeProtocol {
     /// TCP (type 6)
     TCP,
@@ -136,7 +137,7 @@ impl From<u8> for FlowbeeProtocol {
 }
 
 /// Flowbee: a complete flow data, combining key and data.
-#[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Allocative)]
 pub struct FlowbeeSummaryData {
     /// Mapped `XdpIpAddress` source for the flow.
     pub remote_ip: String,
@@ -185,7 +186,7 @@ pub struct FlowbeeSummaryData {
 }
 
 /// Circuit statistics for transmit
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Allocative)]
 pub struct Circuit {
     /// The IP address of the host.
     pub ip: IpAddr,

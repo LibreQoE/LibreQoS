@@ -4,10 +4,11 @@
 use lqos_config::ShapedDevice;
 use serde::{Deserialize, Serialize};
 use uisp::Device;
+use allocative::Allocative;
 
 /// Type that provides a minimum, maximum and average value
 /// for a given statistic within the associated time period.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Allocative)]
 pub struct StatsSummary {
     /// Minimum value
     pub min: (u64, u64),
@@ -19,7 +20,7 @@ pub struct StatsSummary {
 
 /// Type that provides a minimum, maximum and average value
 /// for a given RTT value within the associated time period.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Allocative)]
 pub struct StatsRttSummary {
     /// Minimum value
     pub min: u32,
@@ -30,7 +31,7 @@ pub struct StatsRttSummary {
 }
 
 /// Type that holds total traffic statistics for a given time period
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Allocative)]
 pub struct StatsTotals {
     /// Total number of packets
     pub packets: StatsSummary,
@@ -42,7 +43,7 @@ pub struct StatsTotals {
 
 /// Type that holds per-host statistics for a given stats collation
 /// period.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Allocative)]
 pub struct StatsHost {
     /// Host circuit_id as it appears in ShapedDevices.csv
     pub circuit_id: Option<String>,
@@ -55,7 +56,7 @@ pub struct StatsHost {
 }
 
 /// Node inside a traffic summary tree
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Allocative)]
 pub struct StatsTreeNode {
     /// Index in the tree vector
     pub index: usize,
@@ -76,7 +77,7 @@ pub struct StatsTreeNode {
 }
 
 /// Collation of all stats for a given time period
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Allocative)]
 pub struct StatsSubmission {
     /// Timestamp of the collation (UNIX time)
     pub timestamp: u64,
@@ -95,14 +96,14 @@ pub struct StatsSubmission {
 }
 
 /// Submission to the `lts_node` process
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Allocative)]
 pub enum LtsCommand {
     Submit(Box<StatsSubmission>),
     Devices(Vec<ShapedDevice>),
 }
 
 /// Extended data provided from UISP
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Allocative)]
 pub struct UispExtDevice {
     pub device_id: String,
     pub name: String,
@@ -120,7 +121,7 @@ pub struct UispExtDevice {
     pub interfaces: Vec<UispExtDeviceInterface>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Allocative)]
 pub struct UispExtDeviceInterface {
     pub name: String,
     pub mac: String,

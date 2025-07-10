@@ -8,3 +8,6 @@ lqos_config = { path = "../lqos_config" }
 serde = { workspace = true }
 reqwest = { workspace = true }
 anyhow = { workspace = true }
+# For memory debugging
+allocative.workspace = true
+allocative_derive.workspace = true

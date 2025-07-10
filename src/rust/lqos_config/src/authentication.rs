@@ -1,6 +1,7 @@
 //! The `authentication` module provides authorization for use of the
 //! local web UI on LibreQoS boxes. It maps to `/<install dir>/lqusers.toml`
 
+use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -14,7 +15,7 @@ use tracing::{error, warn};
 use uuid::Uuid;
 
 /// Access rights of a user
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Allocative)]
 pub enum UserRole {
     /// The user may view data but not change it.
     ReadOnly,
@@ -54,7 +55,7 @@ impl Display for UserRole {
 }
 
 /// A user of the web UI.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Allocative)]
 pub struct WebUser {
     /// The user's username.
     pub username: String,
@@ -67,7 +68,7 @@ pub struct WebUser {
 }
 
 /// Container holding the authorized web users.
-#[derive(Clone, Debug, Deserialize, Serialize, Default)]
+#[derive(Clone, Debug, Deserialize, Serialize, Default, Allocative)]
 pub struct WebUsers {
     allow_unauthenticated_to_view: bool,
     users: Vec<WebUser>,

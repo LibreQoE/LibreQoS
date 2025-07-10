@@ -48,8 +48,8 @@ use throughput_tracker::flow_data::get_rtt_events_per_second;
 use tracing::{error, info, warn};
 
 // Use MiMalloc only on supported platforms
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use mimalloc::MiMalloc;
+//#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+//use mimalloc::MiMalloc;
 
 use crate::blackboard::{BLACKBOARD_SENDER, BlackboardCommand};
 
@@ -64,9 +64,9 @@ use tracing::level_filters::LevelFilter;
 use lqos_stormguard::STORMGUARD_STATS;
 
 // Use MiMalloc only on supported platforms
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
+// #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+// #[global_allocator]
+// static GLOBAL: MiMalloc = MiMalloc;
 
 /// Configure a highly detailed logging system.
 pub fn set_console_logging() -> anyhow::Result<()> {
@@ -268,6 +268,10 @@ fn main() -> Result<()> {
 
 #[cfg(feature = "flamegraphs")]
 fn memory_debug() {
+    // To use this, install "inferno" with `cargo install inferno`.
+    // When you want to make the flamegraph, run:
+    // inferno-flamegraph /tmp/lqosd-mem.svg > output.svg
+    // You can then view output.svg in a web browser.
     std::thread::spawn(|| {
         loop {
             std::thread::sleep(std::time::Duration::from_secs(60));

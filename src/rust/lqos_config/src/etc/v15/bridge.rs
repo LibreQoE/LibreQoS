@@ -2,10 +2,11 @@
 //! A config file must contain EITHER this, or a `single_interface`
 //! section, but not both.
 
+use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 
 /// Represents a two-interface bridge configuration.
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
 pub struct BridgeConfig {
     /// Use the XDP-accelerated bridge?
     pub use_xdp_bridge: bool,
@@ -27,7 +28,7 @@ impl Default for BridgeConfig {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
 pub struct SingleInterfaceConfig {
     /// The name of the interface
     pub interface: String,

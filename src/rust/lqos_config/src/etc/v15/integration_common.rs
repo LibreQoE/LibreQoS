@@ -1,8 +1,9 @@
 //! Common integration variables, shared between integrations
 
+use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
 pub struct IntegrationConfig {
     /// Replace names with addresses?
     pub circuit_name_as_address: bool,

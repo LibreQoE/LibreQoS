@@ -43,10 +43,7 @@ pub struct FlowTimeline {
 pub async fn flow_timeline(Path(asn_id): Path<u32>) -> Json<Vec<FlowTimeline>> {
     let time_since_boot = time_since_boot().unwrap();
     let since_boot = Duration::from(time_since_boot);
-    let current_unix_time = unix_now().unwrap();
-    
-    // Use saturating_sub to prevent underflow panic
-    let boot_time = current_unix_time.saturating_sub(since_boot.as_secs());
+    let boot_time = unix_now().unwrap() - since_boot.as_secs();
 
     let all_flows_for_asn = RECENT_FLOWS.all_flows_for_asn(asn_id);
 
@@ -75,6 +72,23 @@ fn all_flows_to_transport(
                 circuit_name = flow.0.local_ip.as_ip().to_string();
             }
 
+            let retransmit_times_down = if let Some(v) = &flow.1.retry_times_down {
+            v.1.iter()
+                .filter(|n| **n > 0)
+                .map(|t| boot_time + Duration::from_nanos(*t).as_secs())
+                .collect()
+            } else {
+                Vec::new()
+            };
+            let retransmit_times_up = if let Some(v) = &flow.1.retry_times_up {
+                v.1.iter()
+                    .filter(|n| **n > 0)
+                    .map(|t| boot_time + Duration::from_nanos(*t).as_secs())
+                    .collect()
+            } else {
+                Vec::new()
+            };
+
             FlowTimeline {
                 start: boot_time + Duration::from_nanos(flow.1.start_time).as_secs(),
                 end: boot_time + Duration::from_nanos(flow.1.last_seen).as_secs(),
@@ -82,18 +96,8 @@ fn all_flows_to_transport(
                 tcp_retransmits: flow.1.tcp_retransmits.clone(),
                 throughput: vec![],
                 rtt: flow.1.rtt.clone(),
-                retransmit_times_down: flow
-                    .1
-                    .retry_times_down
-                    .iter()
-                    .map(|t| boot_time + Duration::from_nanos(*t).as_secs())
-                    .collect(),
-                retransmit_times_up: flow
-                    .1
-                    .retry_times_up
-                    .iter()
-                    .map(|t| boot_time + Duration::from_nanos(*t).as_secs())
-                    .collect(),
+                retransmit_times_down,
+                retransmit_times_up,
                 total_bytes: flow.1.bytes_sent.clone(),
                 protocol: flow.2.protocol_analysis.to_string(),
                 circuit_id,
@@ -107,10 +111,7 @@ fn all_flows_to_transport(
 pub async fn country_timeline(Path(iso_code): Path<String>) -> Json<Vec<FlowTimeline>> {
     let time_since_boot = time_since_boot().unwrap();
     let since_boot = Duration::from(time_since_boot);
-    let current_unix_time = unix_now().unwrap();
-    
-    // Use saturating_sub to prevent underflow panic
-    let boot_time = current_unix_time.saturating_sub(since_boot.as_secs());
+    let boot_time = unix_now().unwrap() - since_boot.as_secs();
 
     let all_flows_for_asn = RECENT_FLOWS.all_flows_for_country(&iso_code);
 
@@ -123,10 +124,7 @@ pub async fn protocol_timeline(Path(protocol_name): Path<String>) -> Json<Vec<Fl
     let protocol_name = protocol_name.replace("_", "/");
     let time_since_boot = time_since_boot().unwrap();
     let since_boot = Duration::from(time_since_boot);
-    let current_unix_time = unix_now().unwrap();
-    
-    // Use saturating_sub to prevent underflow panic
-    let boot_time = current_unix_time.saturating_sub(since_boot.as_secs());
+    let boot_time = unix_now().unwrap() - since_boot.as_secs();
 
     let all_flows_for_asn = RECENT_FLOWS.all_flows_for_protocol(&protocol_name);
 

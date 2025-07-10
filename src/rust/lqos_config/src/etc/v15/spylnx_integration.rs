@@ -1,6 +1,7 @@
+use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct SplynxIntegration {
     pub enable_spylnx: bool,
     pub api_key: String,

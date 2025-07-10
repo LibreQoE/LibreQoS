@@ -1,11 +1,12 @@
 use crate::TcHandle;
+use allocative::Allocative;
 use lqos_config::Tunables;
 use serde::{Deserialize, Serialize};
 
 /// One or more `BusRequest` objects must be included in a `BusSession`
 /// request. Each `BusRequest` represents a single request for action
 /// or data.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Allocative)]
 pub enum BusRequest {
     /// A generic "is it alive?" test. Returns an `Ack`.
     Ping,
@@ -294,7 +295,7 @@ pub enum BusRequest {
 }
 
 /// Defines the parts of the blackboard
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy, Allocative)]
 pub enum BlackboardSystem {
     /// The system as a whole
     System,
@@ -307,7 +308,7 @@ pub enum BlackboardSystem {
 }
 
 /// Defines the type of "top" flow being requested
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy, Allocative)]
 pub enum TopFlowType {
     /// Top flows by current estimated bandwidth use
     RateEstimate,
@@ -322,7 +323,7 @@ pub enum TopFlowType {
 }
 
 /// Specific requests from the long-term stats system
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Allocative)]
 pub enum StatsRequest {
     /// Retrieve the current totals for all hosts
     CurrentTotals,

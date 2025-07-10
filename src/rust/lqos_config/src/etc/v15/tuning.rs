@@ -1,10 +1,11 @@
 //! Interface tuning instructions
 
+use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 
 /// Represents a set of `sysctl` and `ethtool` tweaks that may be
 /// applied (in place of the previous version's offload service)
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
 pub struct Tunables {
     /// Should the `irq_balance` system service be stopped?
     pub stop_irq_balance: bool,

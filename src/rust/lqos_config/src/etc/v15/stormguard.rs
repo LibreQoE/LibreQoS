@@ -1,9 +1,10 @@
 //! StormGuard definitions (originally from ispConfig.py)
 
+use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 
 /// Configuration for the Tornado module (auto-rate)
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
 pub struct StormguardConfig {
     /// Whether Tornado is enabled or not
     pub enabled: bool,

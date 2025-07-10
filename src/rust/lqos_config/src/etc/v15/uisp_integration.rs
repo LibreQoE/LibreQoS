@@ -1,6 +1,7 @@
+use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct UispIntegration {
     pub enable_uisp: bool,
     pub token: String,
@@ -25,7 +26,7 @@ fn default_ignore_calculated_capacity() -> bool {
     false
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct ExceptionCpe {
     pub cpe: String,
     pub parent: String,
