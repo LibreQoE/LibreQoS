@@ -40,12 +40,11 @@ It is recommended to disable Hyper-Threading (Simultaneous Multi-Threading) in t
 
 | RAM (using CAKE) | Max Subscribers |
 | ---------------- | --------------- |
-| 4 GB             | 1,000           |
-| 8 GB             | 2,000           |
-| 16 GB            | 5,000           | 
-| 32 GB            | 10,000          |
-| 64 GB            | 20,000          |
-| 128 GB           | 40,000          |
+| 8 GB             | 1,000           |
+| 16 GB            | 2,500           | 
+| 32 GB            | 5,000           |
+| 64 GB            | 10,000          |
+| 128 GB           | 20,000          |
 
 ### Disk Space
 
