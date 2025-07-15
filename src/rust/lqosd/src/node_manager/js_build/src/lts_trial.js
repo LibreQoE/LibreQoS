@@ -243,79 +243,49 @@ const ALLOWED_COUNTRIES = [
 // Static placeholder teasers for testing
 const PLACEHOLDER_TEASERS = [
     {
-        id: 'analytics',
-        title: 'Real-time Network Analytics',
-        description: 'Monitor bandwidth, latency, and packet loss in real-time with millisecond precision.',
-        imageUrl: 'https://www.chartgo.com/images/carousel/3/3.png',
-        features: [
-            'Live bandwidth monitoring per circuit',
-            'Historical trend analysis',
-            'Automatic anomaly detection'
-        ],
+        id: 'ai',
+        title: 'AI Reports',
+        description: 'Diagnose problems quickly using AI-powered analyses of aggregated data.',
+        imageUrl: '01_ai_report.png',
         order: 1
     },
     {
-        id: 'reporting',
-        title: 'Advanced Reporting Suite',
-        description: 'Generate detailed insights and reports with historical trends and predictions.',
-        imageUrl: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"%3E%3Crect fill="%237cffb2" width="400" height="300"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" fill="black" font-size="24" font-family="Arial"%3EReporting Suite%3C/text%3E%3C/svg%3E',
-        features: [
-            'Customizable report templates',
-            'Scheduled email delivery',
-            'Export to PDF, CSV, or Excel'
-        ],
-        ctaText: 'Start Your Free Trial',
+        id: 'mapper',
+        title: 'Insight Network Mapper',
+        description: 'Configure and manage complex networks and multiple shaper boxes with ease.',
+        imageUrl: '02_mapper.png',
         order: 2
     },
     {
-        id: 'alerts',
-        title: 'Proactive Alerts',
-        description: 'Get notified before issues impact your customers with intelligent monitoring.',
-        imageUrl: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"%3E%3Crect fill="%23fddd60" width="400" height="300"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" fill="black" font-size="24" font-family="Arial"%3EAlert System%3C/text%3E%3C/svg%3E',
-        features: [
-            'Customizable alert thresholds',
-            'Multi-channel notifications',
-            'Intelligent issue prediction'
-        ],
+        id: 'long_term',
+        title: 'Long Term Data',
+        description: 'Flexible time windows ranging from 15 minutes to 28 days, giving you comprehensive network performance insights. ',
+        imageUrl: '03_long_term.png',
         order: 3
     },
     {
-        id: 'breakfast',
-        title: 'It even makes breakfast',
-        description: 'Get notified before issues impact your customers with intelligent monitoring.',
-        imageUrl: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"%3E%3Crect fill="%23fddd60" width="400" height="300"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" fill="black" font-size="24" font-family="Arial"%3EAlert System%3C/text%3E%3C/svg%3E',
-        features: [
-            'Customizable alert thresholds',
-            'Multi-channel notifications',
-            'Intelligent issue prediction'
-        ],
+        id: 'heatmap',
+        title: 'Heatmaps',
+        description: "Don't waste time going through charts - instantly spot performance trends on APs, OLTs, and Sites.",
+        imageUrl: '04_heatmap.png',
         order: 4
     },
     {
-        id: 'lunch',
-        title: 'And lunch too',
-        description: 'Get notified before issues impact your customers with intelligent monitoring.',
-        imageUrl: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"%3E%3Crect fill="%23fddd60" width="400" height="300"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" fill="black" font-size="24" font-family="Arial"%3EAlert System%3C/text%3E%3C/svg%3E',
-        features: [
-            'Customizable alert thresholds',
-            'Multi-channel notifications',
-            'Intelligent issue prediction'
-        ],
-        order: 4
+        id: 'alerts',
+        title: 'Alerts',
+        description: 'Get notified before issues impact your customers with intelligent alert monitoring.',
+        imageUrl: '05_alerts.png',
+        order: 5
     },
     {
-        id: 'dinner',
-        title: 'But it burns your dinner, sorry',
-        description: 'Get notified before issues impact your customers with intelligent monitoring.',
-        imageUrl: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"%3E%3Crect fill="%23fddd60" width="400" height="300"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" fill="black" font-size="24" font-family="Arial"%3EAlert System%3C/text%3E%3C/svg%3E',
-        features: [
-            'Customizable alert thresholds',
-            'Multi-channel notifications',
-            'Intelligent issue prediction'
-        ],
-        order: 4
+        id: 'endpoints',
+        title: 'Endpoints by Circuit',
+        description: 'Observe important endpoint information, even for individual circuits.',
+        imageUrl: '06_endpoints.png',
+        order: 6
     }
 ];
+
 
 // State management
 let currentTeasers = [];
