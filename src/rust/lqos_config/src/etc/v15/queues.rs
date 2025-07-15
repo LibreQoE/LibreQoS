@@ -41,6 +41,9 @@ pub struct QueueConfig {
 
     /// Expiration time in seconds for unused lazy queues (None = never expire)
     pub lazy_expire_seconds: Option<u64>,
+
+    /// Hold-off on creating lazy queues until this many bytes have been seen
+    pub lazy_threshold_bytes: Option<u64>,
 }
 
 /// Lazy queue creation modes
@@ -70,6 +73,7 @@ impl Default for QueueConfig {
             use_binpacking: false,
             lazy_queues: None, // Default to disabled for backward compatibility
             lazy_expire_seconds: Some(600), // 10 minutes default
+            lazy_threshold_bytes: None,
         }
     }
 }

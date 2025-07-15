@@ -228,7 +228,23 @@ impl ThroughputTracker {
                 let (circuit_id, circuit_hash) = Self::lookup_circuit_id(xdp_ip);
                 // Call the Bakery Queue Creation for new circuits
                 if let Some(circuit_hash) = circuit_hash {
-                    changed_circuits.insert(circuit_hash);
+                    if let Ok(config) = lqos_config::load_config() {
+                        if config.queues.lazy_queues.is_some() {
+                            let mut add = true;
+
+                            if config.queues.lazy_threshold_bytes.is_some() {
+                                let threshold = config.queues.lazy_threshold_bytes.unwrap();
+                                let total_bytes: u64 = counts.iter().map(|c| c.download_bytes + c.upload_bytes).sum();
+                                if total_bytes < threshold {
+                                    add = false;
+                                }
+                            }
+
+                            if add {
+                                changed_circuits.insert(circuit_hash);                    
+                            }
+                        }
+                    }
                 }
                 let mut entry = ThroughputEntry {
                     circuit_id: circuit_id.clone(),
