@@ -55,8 +55,8 @@ fn check_permission() {
         .license_key
         .clone()
         .unwrap_or_default();
-    let Ok(license_key) = Uuid::parse_str(&license_key) else {
-        warn!("Invalid license key: {license_key}");
+    let Ok(license_key) = Uuid::parse_str(&license_key.replace("-", "")) else {
+        warn!("Invalid license key format: [{license_key}]");
         return;
     };
     info!("Checking license key with remote host: {}", remote_host);

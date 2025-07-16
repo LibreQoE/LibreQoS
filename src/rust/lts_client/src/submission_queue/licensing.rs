@@ -69,7 +69,7 @@ async fn check_license(unix_time: u64) -> LicenseState {
                     Ok(state) => {
                         match state {
                             LicenseReply::Denied => {
-                                warn!("License is in state: DENIED.");
+                                info!("LTS1 License is in state: DENIED. This is only an issue if you are still using LTS1.");
                                 lock.state = LicenseState::Denied;
                             }
                             LicenseReply::Valid { expiry, stats_host } => {

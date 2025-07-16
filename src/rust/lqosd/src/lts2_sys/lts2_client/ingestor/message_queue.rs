@@ -120,10 +120,6 @@ impl MessageQueue {
 
     pub(crate) fn send(&mut self) -> Result<()> {
         let config = load_config()?;
-        if !config.long_term_stats.use_insight.unwrap_or(false) {
-            self.clear();
-            return Ok(());
-        }
 
         let remote_host = get_remote_host();
         let target = format!("wss://{}:443/ingest/ws", remote_host);
@@ -211,7 +207,7 @@ impl MessageQueue {
                 lock.node_name.clone(),
             )
         };
-        let Ok(license_uuid) = Uuid::parse_str(&license_key) else {
+        let Ok(license_uuid) = Uuid::parse_str(&license_key.replace("-", "")) else {
             warn!("Failed to parse license key");
             return Ok(());
         };
