@@ -365,6 +365,11 @@ function detectUserCountry() {
 async function loadTeasers() {
     try {
         const response = await $.get(getLtsUrl('teasers'));
+        if (response.teasers != null) {
+             response.teasers.forEach(teaser => {
+                  teaser.image = getLtsUrl(teaser.image.replace("signup-api/", ""));
+            });
+        }
         currentTeasers = response.teasers || PLACEHOLDER_TEASERS;
         displayTeasers();
     } catch (error) {
@@ -465,7 +470,7 @@ function getLtsUrl(endpoint) {
     base += base.endsWith('signup-api/') ? '' : 'signup-api/';
     // Remove any leading slash from endpoint
     endpoint = endpoint.replace(/^\/+/, '');
-    console.log("Base: ", base, "Endpoint:", endpoint);
+    //console.log("Base: ", base, "Endpoint:", endpoint);
     return base + endpoint;
 }
 
