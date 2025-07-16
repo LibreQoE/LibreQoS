@@ -4,7 +4,6 @@ import {sponsorTag} from "./toasts/sponsor_us";
 import {globalWarningToasts} from "./toasts/global_warnings";
 import {showTimeControls} from "./components/timescale";
 import {DashletMenu, widgetFactory} from "./dashlets/dashlet_index";
-import {inMemoriam} from "./dave";
 
 const defaultLayout = [
     {name: "Throughput Bits/Second", tag: "throughputBps", size:2},
@@ -38,4 +37,3 @@ sponsorTag("toasts");
 globalWarningToasts();
 const dashboard = new Dashboard("dashboard", "mainDashboard", defaultLayout, widgetFactory, DashletMenu, false, "");
 dashboard.build();
-inMemoriam();
