@@ -246,42 +246,42 @@ const PLACEHOLDER_TEASERS = [
         id: 'ai',
         title: 'AI Reports',
         description: 'Diagnose problems quickly using AI-powered analyses of aggregated data.',
-        imageUrl: '01_ai_report.png',
+        image: '01_ai_report.png',
         order: 1
     },
     {
         id: 'mapper',
         title: 'Insight Network Mapper',
         description: 'Configure and manage complex networks and multiple shaper boxes with ease.',
-        imageUrl: '02_mapper.png',
+        image: '02_mapper.png',
         order: 2
     },
     {
         id: 'long_term',
         title: 'Long Term Data',
         description: 'Flexible time windows ranging from 15 minutes to 28 days, giving you comprehensive network performance insights. ',
-        imageUrl: '03_long_term.png',
+        image: '03_long_term.png',
         order: 3
     },
     {
         id: 'heatmap',
         title: 'Heatmaps',
         description: "Don't waste time going through charts - instantly spot performance trends on APs, OLTs, and Sites.",
-        imageUrl: '04_heatmap.png',
+        image: '04_heatmap.png',
         order: 4
     },
     {
         id: 'alerts',
         title: 'Alerts',
         description: 'Get notified before issues impact your customers with intelligent alert monitoring.',
-        imageUrl: '05_alerts.png',
+        image: '05_alerts.png',
         order: 5
     },
     {
         id: 'endpoints',
         title: 'Endpoints by Circuit',
         description: 'Observe important endpoint information, even for individual circuits.',
-        imageUrl: '06_endpoints.png',
+        image: '06_endpoints.png',
         order: 6
     }
 ];
@@ -404,13 +404,14 @@ function displayTeasers() {
         const slideCards = slideItems.map(teaser => {
             const featuresHtml = teaser.features ? 
                 `<ul class="list-unstyled">${teaser.features.map(f => `<li><i class="fas fa-check text-success"></i> ${f}</li>`).join('')}</ul>` : '';
-            
+                
             const ctaText = teaser.ctaText || 'Try Insight Free';
-            
+            const imageSrc = teaser.image || teaser.imageUrl;
+                
             return `
                 <div class="col-md-4">
                     <div class="card h-100 shadow-sm teaser-card">
-                        <img src="${teaser.imageUrl}" class="card-img-top" alt="${teaser.title}" style="height: 200px; object-fit: contain; background-color: #f8f9fa;">
+                        <img src="${imageSrc}" class="card-img-top" alt="${teaser.title}" style="height: 200px; object-fit: contain; background-color: #f8f9fa;">
                         <div class="card-body d-flex flex-column">
                             <h5 class="card-title">${teaser.title}</h5>
                             <p class="card-text">${teaser.description}</p>
