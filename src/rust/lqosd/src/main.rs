@@ -48,10 +48,11 @@ use throughput_tracker::flow_data::get_rtt_events_per_second;
 use tracing::{error, info, warn};
 
 // Use MiMalloc only on supported platforms
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use mimalloc::MiMalloc;
+//#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+//use mimalloc::MiMalloc;
 
 use crate::blackboard::{BLACKBOARD_SENDER, BlackboardCommand};
+
 use crate::remote_commands::start_remote_commands;
 #[cfg(feature = "flamegraphs")]
 use crate::shaped_devices_tracker::NETWORK_JSON;
@@ -60,10 +61,12 @@ use crate::throughput_tracker::THROUGHPUT_TRACKER;
 #[cfg(feature = "flamegraphs")]
 use crate::throughput_tracker::flow_data::{ALL_FLOWS, RECENT_FLOWS};
 use tracing::level_filters::LevelFilter;
-// Use JemAllocator only on supported platforms
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
+use lqos_stormguard::STORMGUARD_STATS;
+
+// Use MiMalloc only on supported platforms
+// #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+// #[global_allocator]
+// static GLOBAL: MiMalloc = MiMalloc;
 
 /// Configure a highly detailed logging system.
 pub fn set_console_logging() -> anyhow::Result<()> {
@@ -145,6 +148,12 @@ fn main() -> Result<()> {
         )?
     };
 
+    // Start the Bakery for TC command execution
+    let Ok(bakery_sender) = lqos_bakery::start_bakery() else {
+        error!("Failed to start Bakery, exiting.");
+        std::process::exit(1);
+    };
+
     // Spawn tracking sub-systems
     if let Err(e) = lts2_sys::start_lts2() {
         error!("Failed to start Insight: {:?}", e);
@@ -166,6 +175,7 @@ fn main() -> Result<()> {
         long_term_stats_tx.clone(),
         flow_tx,
         system_usage_tx.clone(),
+        bakery_sender.clone(),
     )?;
     spawn_queue_monitor()?;
     lqos_sys::bpf_garbage_collector();
@@ -215,6 +225,7 @@ fn main() -> Result<()> {
     // Memory Debugging
     memory_debug();
 
+    let bakery_sender_for_async = bakery_sender.clone();
     let handle = std::thread::Builder::new()
         .name("Async Bus/Web".to_string())
         .spawn(move || {
@@ -223,8 +234,8 @@ fn main() -> Result<()> {
                 .build()
                 .unwrap()
                 .block_on(async {
-                    tokio::spawn(async {
-                        let _ = lqos_stormguard::start_stormguard().await;
+                    tokio::spawn(async move {
+                        let _ = lqos_stormguard::start_stormguard(bakery_sender_for_async).await;
                     });
 
                     let (bus_tx, bus_rx) = tokio::sync::mpsc::channel::<(
@@ -257,6 +268,10 @@ fn main() -> Result<()> {
 
 #[cfg(feature = "flamegraphs")]
 fn memory_debug() {
+    // To use this, install "inferno" with `cargo install inferno`.
+    // When you want to make the flamegraph, run:
+    // inferno-flamegraph /tmp/lqosd-mem.svg > output.svg
+    // You can then view output.svg in a web browser.
     std::thread::spawn(|| {
         loop {
             std::thread::sleep(std::time::Duration::from_secs(60));
@@ -281,12 +296,15 @@ fn memory_debug() {
 #[cfg(not(feature = "flamegraphs"))]
 fn memory_debug() {}
 
-fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>) {
+fn handle_bus_requests(
+    requests: &[BusRequest],
+    responses: &mut Vec<BusResponse>,
+) {
     for req in requests.iter() {
         //println!("Request: {:?}", req);
         BUS_REQUESTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         responses.push(match req {
-            BusRequest::Ping => lqos_bus::BusResponse::Ack,
+            BusRequest::Ping => BusResponse::Ack,
             BusRequest::GetCurrentThroughput => throughput_tracker::current_throughput(),
             BusRequest::GetHostCounter => throughput_tracker::host_counters(),
             BusRequest::GetTopNDownloaders { start, end } => {
@@ -413,6 +431,94 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                     });
                 }
                 BusResponse::Ack
+            }
+            BusRequest::BakeryStart => {
+                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                    let sender = sender.clone();
+                    let _ = sender.send(lqos_bakery::BakeryCommands::StartBatch);
+                    BusResponse::Ack
+                } else {
+                    BusResponse::Fail("Bakery not initialized".to_string())
+                }
+            }
+            BusRequest::BakeryCommit => {
+                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                    let sender = sender.clone();
+                    let _ = sender.send(lqos_bakery::BakeryCommands::CommitBatch);
+                    BusResponse::Ack
+                } else {
+                    BusResponse::Fail("Bakery not initialized".to_string())
+                }
+            }
+            BusRequest::BakeryMqSetup { queues_available, stick_offset } => {
+                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                    let sender = sender.clone();
+                    let _ = sender.send(lqos_bakery::BakeryCommands::MqSetup {
+                        queues_available: *queues_available,
+                        stick_offset: *stick_offset
+                    });
+                    BusResponse::Ack
+                } else {
+                    BusResponse::Fail("Bakery not initialized".to_string())
+                }
+            }
+            BusRequest::BakeryAddSite {
+                site_hash,
+                parent_class_id,
+                up_parent_class_id,
+                class_minor,
+                download_bandwidth_min,
+                upload_bandwidth_min,
+                download_bandwidth_max,
+                upload_bandwidth_max,
+            } => {
+                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                    let sender = sender.clone();
+                    let _ = sender.send(lqos_bakery::BakeryCommands::AddSite {
+                        site_hash: *site_hash,
+                        parent_class_id: parent_class_id.clone(),
+                        up_parent_class_id: up_parent_class_id.clone(),
+                        class_minor: class_minor.clone(),
+                        download_bandwidth_min: *download_bandwidth_min,
+                        upload_bandwidth_min: *upload_bandwidth_min,
+                        download_bandwidth_max: *download_bandwidth_max,
+                        upload_bandwidth_max: *upload_bandwidth_max,
+                    });
+                    BusResponse::Ack
+                } else {
+                    BusResponse::Fail("Bakery not initialized".to_string())
+                }
+            }
+            BusRequest::BakeryAddCircuit { circuit_hash, parent_class_id, up_parent_class_id, class_minor, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, class_major, up_class_major, ip_addresses} => {
+                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                    let sender = sender.clone();
+                    let _ = sender.send(lqos_bakery::BakeryCommands::AddCircuit {
+                        circuit_hash: *circuit_hash,
+                        parent_class_id: *parent_class_id,
+                        up_parent_class_id: *up_parent_class_id,
+                        class_minor: *class_minor,
+                        download_bandwidth_min: download_bandwidth_min.clone(),
+                        upload_bandwidth_min: upload_bandwidth_min.clone(),
+                        download_bandwidth_max: download_bandwidth_max.clone(),
+                        upload_bandwidth_max: upload_bandwidth_max.clone(),
+                        class_major: class_major.clone(),
+                        up_class_major: up_class_major.clone(),
+                        ip_addresses: ip_addresses.clone(),
+                   });
+                    BusResponse::Ack
+                } else {
+                    BusResponse::Fail("Bakery not initialized".to_string())
+                }
+            }
+            BusRequest::GetStormguardStats => {
+                let cloned = {
+                    let lock = STORMGUARD_STATS.lock().unwrap();
+                    (*lock).clone()
+                };
+                BusResponse::StormguardStats(cloned)
+            }
+            BusRequest::GetBakeryStats => {
+                BusResponse::BakeryActiveCircuits(lqos_bakery::ACTIVE_CIRCUITS.load(std::sync::atomic::Ordering::Relaxed))
             }
         });
     }

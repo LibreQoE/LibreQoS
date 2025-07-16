@@ -1,3 +1,6 @@
+use allocative::Allocative;
+
+#[derive(Allocative)]
 pub struct RingBuffer {
     data: Vec<Option<f64>>,
     index: usize,

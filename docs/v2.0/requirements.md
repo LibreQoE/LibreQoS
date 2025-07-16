@@ -40,12 +40,11 @@ It is recommended to disable Hyper-Threading (Simultaneous Multi-Threading) in t
 
 | RAM (using CAKE) | Max Subscribers |
 | ---------------- | --------------- |
-| 4 GB             | 1,000           |
-| 8 GB             | 2,000           |
-| 16 GB            | 5,000           | 
-| 32 GB            | 10,000          |
-| 64 GB            | 20,000          |
-| 128 GB           | 40,000          |
+| 8 GB             | 1,000           |
+| 16 GB            | 2,500           | 
+| 32 GB            | 5,000           |
+| 64 GB            | 10,000          |
+| 128 GB           | 20,000          |
 
 ### Disk Space
 
@@ -54,19 +53,18 @@ It is recommended to disable Hyper-Threading (Simultaneous Multi-Threading) in t
 ### Device Recommendations
 #### Small Form Factor (1G to 10G)
 
-|        Throughput       |                                              1 Gbps                                              |                                                 2.5 Gbps                                                |                                         10 Gbps                                        |
-|:-----------------------:|:------------------------------------------------------------------------------------------------:|:-------------------------------------------------------------------------------------------------------:|:--------------------------------------------------------------------------------------:|
-| Per Node / Per CPU Core | 1 Gbps                                                                                           | 2.5 Gbps                                                                                                | 5 Gbps                                                                                 |
-| Manufacturer            | Supermicro                                                                                       | Supermicro                                                                                              | Minisforum                                                                             |
-| Model                   | [SYS-E100-12T-H](https://store.supermicro.com/us_en/iot-edge-compact-system-sys-e100-12t-h.html) | [SYS-E102-13R-E](https://store.supermicro.com/us_en/compact-embedded-iot-i5-1350pe-sys-e102-13r-e.html) | [MS-01](https://store.minisforum.com/products/minisforum-ms-01?variant=46174128898293) |
-| CPU Option              | i7-1185GRE                                                                                       | Default                                                                                                 | i9-12900H                                                                              |
-| RAM Option              | 2x8GB                                                                                            | 2x8GB                                                                                                   | 1x32GB                                                                                 |
-| NIC Option              | Built-in                                                                                         | Built-in                                                                                                | Built-in                                                                               |
-| Extras                  | [USB-C RJ45](https://www.amazon.com/Anker-Ethernet-PowerExpand-Aluminum-Portable/dp/B08CK9X9Z8/) | [USB-C RJ45](https://www.amazon.com/Anker-Ethernet-PowerExpand-Aluminum-Portable/dp/B08CK9X9Z8/)        |                                                                                        |
-| Temp Range              | -30°C ~ 50°C                                                                                     | 0°C ~ 40°C                                                                                              | 0°C ~ 40°C                                                                             |
-| Temp Range              | (-22°F to 122°F)                                                                                 | (32°F ~ 104°F)                                                                                          | (32°F ~ 104°F)                                                                         |
-| ECC                     | No                                                                                               | No                                                                                                      | No                                                                                     |
-| Power                   | 12-24V DC                                                                                        | 12-24V DC                                                                                               | 19V DC                                                                                 |
+|        Throughput       |                                         10 Gbps                                        |
+|:-----------------------:|:--------------------------------------------------------------------------------------:|
+| Per Node / Per CPU Core | 5 Gbps                                                                                 |
+| Manufacturer            | Minisforum                                                                             |
+| Model                   | [MS-01](https://store.minisforum.com/products/minisforum-ms-01?variant=46174128898293) |
+| CPU Option              | i9-12900H                                                                              |
+| RAM Option              | 1x32GB                                                                                 |
+| NIC Option              | Built-in                                                                               |
+| Temp Range              | 0°C ~ 40°C                                                                             |
+| Temp Range              | (32°F ~ 104°F)                                                                         |
+| ECC                     | No                                                                                     |
+| Power                   | 19V DC                                                                                 |
 
 #### Rackmount Servers (10G to 100G)
 

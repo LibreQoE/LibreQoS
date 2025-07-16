@@ -1,8 +1,9 @@
 //! Queue Generation definitions (originally from ispConfig.py)
 
+use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
 pub struct QueueConfig {
     /// Which SQM to use by default
     pub default_sqm: String,
@@ -34,6 +35,27 @@ pub struct QueueConfig {
     /// Should we invoke the binpacking algorithm to optimize flat
     /// networks?
     pub use_binpacking: bool,
+
+    /// Enable lazy queue creation (only create circuit queues when traffic is detected)
+    pub lazy_queues: Option<LazyQueueMode>,
+
+    /// Expiration time in seconds for unused lazy queues (None = never expire)
+    pub lazy_expire_seconds: Option<u64>,
+
+    /// Hold-off on creating lazy queues until this many bytes have been seen
+    pub lazy_threshold_bytes: Option<u64>,
+}
+
+/// Lazy queue creation modes
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Default, Allocative)]
+pub enum LazyQueueMode {
+    /// No lazy queue creation
+    #[default]
+    No,
+    /// HTB queues for circuits are created on build, but CAKE classes are created on demand
+    Htb,
+    /// Full lazy queue creation, both HTB queues and CAKE classes are created on demand.
+    Full,
 }
 
 impl Default for QueueConfig {
@@ -49,6 +71,9 @@ impl Default for QueueConfig {
             sudo: false,
             override_available_queues: None,
             use_binpacking: false,
+            lazy_queues: None, // Default to disabled for backward compatibility
+            lazy_expire_seconds: Some(600), // 10 minutes default
+            lazy_threshold_bytes: None,
         }
     }
 }

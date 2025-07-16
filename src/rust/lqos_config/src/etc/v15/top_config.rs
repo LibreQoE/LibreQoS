@@ -2,6 +2,7 @@
 
 use super::anonymous_stats::UsageStats;
 use super::tuning::Tunables;
+use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use sha2::digest::Update;
@@ -9,7 +10,7 @@ use uuid::Uuid;
 use crate::etc::v15::stormguard;
 
 /// Top-level configuration file for LibreQoS.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct Config {
     /// Version number for the configuration file.
     /// This will be set to "1.5". Versioning will make
@@ -84,6 +85,9 @@ pub struct Config {
     
     /// Support for Tornado/Auto-rate.
     pub stormguard: Option<stormguard::StormguardConfig>,
+
+    /// Disable ICMP Ping Monitoring for Devices in the hosts view
+    pub disable_icmp_ping: Option<bool>,
 }
 
 impl Config {
@@ -114,6 +118,10 @@ impl Config {
         }
         if self.node_id.is_empty() {
             return Err("Node ID must be set".to_string());
+        }
+        // Validate that default_sqm is not empty to prevent incomplete TC commands
+        if self.queues.default_sqm.trim().is_empty() {
+            return Err("default_sqm cannot be empty. Please specify a qdisc type (e.g., 'cake diffserv4' or 'fq_codel')".to_string());
         }
         Ok(())
     }
@@ -155,6 +163,7 @@ impl Default for Config {
             disable_webserver: None,
             webserver_listen: None,
             stormguard: None,
+            disable_icmp_ping: Some(false),
         }
     }
 }

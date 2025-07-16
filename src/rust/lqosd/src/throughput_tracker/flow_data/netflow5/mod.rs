@@ -19,6 +19,15 @@ impl Netflow5 {
         std::thread::Builder::new()
             .name("Netflow5".to_string())
             .spawn(move || {
+                // Create socket once and reuse it
+                let socket = match UdpSocket::bind("0.0.0.0:0") {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::error!("Failed to create Netflow5 UDP socket: {}", e);
+                        return;
+                    }
+                };
+
                 let sequence = AtomicU32::new(0);
                 let mut accumulator = Vec::with_capacity(15);
                 let mut last_sent = std::time::Instant::now();
@@ -30,10 +39,6 @@ impl Netflow5 {
 
                     accumulator.push((key, (data, analysis)));
 
-                    let Ok(socket) = UdpSocket::bind("0.0.0.0:12212") else {
-                        tracing::error!("Failed to bind to UDP socket");
-                        continue;
-                    };
                     // Send if there is more than 15 records AND it has been more than 1 second since the last send
                     if accumulator.len() >= 15 && last_sent.elapsed().as_secs() > 1 {
                         for chunk in accumulator.chunks(15) {
@@ -41,6 +46,13 @@ impl Netflow5 {
                         }
                         accumulator.clear();
                         last_sent = std::time::Instant::now();
+                    }
+                }
+                
+                // Handle any remaining flows when shutting down
+                if !accumulator.is_empty() {
+                    for chunk in accumulator.chunks(15) {
+                        Self::queue_handler(chunk, &socket, &target, &sequence);
                     }
                 }
             })?;
@@ -88,7 +100,11 @@ impl Netflow5 {
             }
         }
 
-        socket.send_to(&buffer, target).unwrap();
-        sequence.fetch_add(num_records as u32, std::sync::atomic::Ordering::Relaxed);
+        if let Err(e) = socket.send_to(&buffer, target) {
+            tracing::error!("Failed to send Netflow5 data to {}: {}", target, e);
+            // Don't increment sequence on failure to maintain consistency
+        } else {
+            sequence.fetch_add(num_records as u32, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 }

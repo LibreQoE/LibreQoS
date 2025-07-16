@@ -1,9 +1,10 @@
+use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 
 /// A "transport-friendly" version of `NetworkJsonNode`. Designed
 /// to be quickly cloned from original nodes and efficiently
 /// transmitted/received.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct NetworkJsonTransport {
     /// Display name
     pub name: String,

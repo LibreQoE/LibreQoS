@@ -1,8 +1,9 @@
 use std::process::Command;
 
+use allocative::Allocative;
 use lqos_bus::anonymous::NicV1;
 
-#[derive(Default)]
+#[derive(Default, Allocative)]
 pub(crate) struct Nic {
     pub(crate) description: String,
     pub(crate) product: String,

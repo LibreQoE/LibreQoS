@@ -1,4 +1,4 @@
-import {saveConfig, loadConfig} from "./config/config_helper";
+import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
 
 function validateConfig() {
     // Validate required fields when enabled
@@ -32,6 +32,9 @@ function updateConfig() {
         wispgate_api_url: document.getElementById("wispgate_api_url").value.trim()
     };
 }
+
+// Render the configuration menu
+renderConfigMenu('wispgate');
 
 loadConfig(() => {
     // window.config now contains the configuration.

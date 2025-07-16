@@ -1,3 +1,4 @@
+use allocative::Allocative;
 use tracing::{debug, info};
 use crate::config::WatchingSite;
 use crate::site_state::analysis::{RetransmitState, RttState, SaturationLevel};
@@ -34,6 +35,7 @@ pub struct SiteState<'a> {
     pub ticks_since_last_probe_upload: u32,
 }
 
+#[derive(Allocative)]
 struct RecommendationParams {
     direction: RecommendationDirection,
     can_increase: bool,

@@ -11,6 +11,8 @@ use std::sync::{Arc, atomic::AtomicBool};
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
+// Removed rate_for_plan() function - no longer needed with f32 plan structures
+
 mod netjson;
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
 pub use netjson::*;
@@ -219,7 +221,7 @@ pub fn get_all_circuits() -> BusResponse {
                 let mut device_id = None;
                 let mut device_name = None;
                 let mut parent_node = None;
-                let mut plan = DownUpOrder::new(0, 0);
+                let mut plan = DownUpOrder { down: 0.0, up: 0.0 };
                 let lookup = match ip {
                     IpAddr::V4(ip) => ip.to_ipv6_mapped(),
                     IpAddr::V6(ip) => ip,
@@ -255,3 +257,5 @@ pub fn get_all_circuits() -> BusResponse {
         BusResponse::CircuitData(Vec::new())
     }
 }
+
+// Tests removed - rate_for_plan() function no longer needed with f32 plan structures

@@ -3,7 +3,8 @@ use crate::{
     tracking::reader::read_named_queue_from_interface,
 };
 use lqos_utils::fdtimer::periodic;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+use timerfd::{SetTimeFlags, TimerFd, TimerState};
 use tracing::{debug, warn};
 mod all_queue_data;
 mod reader;
@@ -85,12 +86,17 @@ fn connect_queues_to_circuit(structure: &[QueueNode], queues: &[QueueType]) -> V
         .iter()
         .filter_map(|q| {
             if let QueueType::Cake(cake) = q {
-                let (major, minor) = cake.parent.get_major_minor();
+                //println!("{}", cake.parent.as_tc_string());
+                //let (major, minor) = cake.parent.get_major_minor();
+                //println!("{major:?}, {minor:?}");
                 if let Some(s) = structure
                     .iter()
-                    .find(|s| s.class_major == major as u32 && s.class_minor == minor as u32)
+                    //.find(|s| s.class_major == major as u32 && s.class_minor == minor as u32)
+                    .find(|s| cake.parent.as_tc_string() == s.class_id.as_tc_string())
                 {
+                    //println!("It matched!");
                     if let Some(circuit_hash) = &s.circuit_hash {
+                        //println!("Circuit hash: {:?}", circuit_hash);
                         let marks: u32 = cake.tins.iter().map(|tin| tin.ecn_marks).sum();
                         if cake.drops > 0 || marks > 0 {
                             return Some(TrackedQueue {
@@ -212,9 +218,35 @@ pub fn spawn_queue_monitor() -> anyhow::Result<()> {
     std::thread::Builder::new()
         .name("All Queue Monitor".to_string())
         .spawn(|| {
-            periodic(2000, "All Queues", &mut || {
+            let mut interval_seconds = 2;
+            let mut tfd = TimerFd::new().unwrap();
+            assert_eq!(tfd.get_state(), TimerState::Disarmed);
+            tfd.set_state(
+                TimerState::Periodic {
+                    current: Duration::new(2, 0),
+                    interval: Duration::new(interval_seconds, 0),
+                },
+                SetTimeFlags::Default,
+            );
+            let _ = tfd.read(); // Initial pause
+
+            loop {
                 all_queue_reader();
-            })
+
+                // Sleep until the next second
+                let missed_ticks = tfd.read();
+                if missed_ticks > 1 {
+                    warn!("All Queue Reader: Missed {} ticks", missed_ticks - 1);
+                    interval_seconds = 2 + (missed_ticks - 1) as u64;
+                    tfd.set_state(
+                        TimerState::Periodic {
+                            current: Duration::new(interval_seconds, 0),
+                            interval: Duration::new(interval_seconds, 0),
+                        },
+                        SetTimeFlags::Default,
+                    );
+                }
+            }
         })?;
 
     Ok(())

@@ -1,9 +1,10 @@
 use crate::ShapedDevice;
+use allocative::Allocative;
 use serde::Serialize;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 // Example: StringRecord(["1", "968 Circle St., Gurnee, IL 60031", "1", "Device 1", "", "", "192.168.101.2", "", "25", "5", "10000", "10000", ""])
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Allocative)]
 pub(crate) struct SerializableShapedDevice {
     pub circuit_id: String,
     pub circuit_name: String,
@@ -13,10 +14,10 @@ pub(crate) struct SerializableShapedDevice {
     pub mac: String,
     pub ipv4: String,
     pub ipv6: String,
-    pub download_min_mbps: u32,
-    pub upload_min_mbps: u32,
-    pub download_max_mbps: u32,
-    pub upload_max_mbps: u32,
+    pub download_min_mbps: f32,
+    pub upload_min_mbps: f32,
+    pub download_max_mbps: f32,
+    pub upload_max_mbps: f32,
     pub comment: String,
 }
 
@@ -60,7 +61,7 @@ fn ipv4_list_to_string(ips: &[(Ipv4Addr, u32)]) -> String {
         buffer += &format!("{}, ", ipv4_to_string(i));
     }
     buffer += &ipv4_to_string(&ips[ips.len() - 1]);
-    String::new()
+    buffer
 }
 
 fn ipv6_to_string(ip: &(Ipv6Addr, u32)) -> String {
@@ -83,5 +84,5 @@ fn ipv6_list_to_string(ips: &[(Ipv6Addr, u32)]) -> String {
         buffer += &format!("{}, ", ipv6_to_string(i));
     }
     buffer += &ipv6_to_string(&ips[ips.len() - 1]);
-    String::new()
+    buffer
 }

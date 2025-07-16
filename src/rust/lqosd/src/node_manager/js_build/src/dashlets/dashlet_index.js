@@ -28,6 +28,8 @@ import {FlowDurationDash} from "./flow_durations_dash";
 import {LtsShaperStatus} from "./ltsShaperStatus";
 import {LtsLast24Hours} from "./ltsLast24Hours";
 import {TcpRetransmitsDash} from "./total_retransmits";
+import {StormguardStatusDashlet} from "./stormguard_status";
+import {BakeryStatusDashlet} from "./bakery_status";
 
 export const DashletMenu = [
     { name: "Throughput Bits/Second", tag: "throughputBps", size: 3, category: "Throughput" },
@@ -60,6 +62,8 @@ export const DashletMenu = [
     { name: "Round-Trip Time Histogram 3D", tag: "rttHistogram3D", size: 12, category: "RTT" },
     { name: "(Insight) Shaper Status", tag: "ltsShaperStatus", size: 3, category: "Insight" },
     { name: "(Insight) Last 24 Hours", tag: "ltsLast24", size: 3, category: "Insight" },
+    { name: "Stormguard Bandwidth Adjustments", tag: "stormguardStatus", size: 6, category: "Queue Management" },
+    { name: "Bakery Circuit Activity", tag: "bakeryStatus", size: 6, category: "Queue Management" },
 ];
 
 export function widgetFactory(widgetName, count) {
@@ -95,6 +99,8 @@ export function widgetFactory(widgetName, count) {
         case "networkTreeSankey": widget = new TopTreeSankey(count); break;
         case "ltsShaperStatus"  : widget = new LtsShaperStatus(count); break;
         case "ltsLast24"        : widget = new LtsLast24Hours(count); break;
+        case "stormguardStatus" : widget = new StormguardStatusDashlet(count); break;
+        case "bakeryStatus"     : widget = new BakeryStatusDashlet(count); break;
         default: {
             console.log("I don't know how to construct a widget of type [" + widgetName + "]");
             return null;

@@ -1,4 +1,5 @@
 use super::ShapedDevicesError;
+use allocative::Allocative;
 use csv::StringRecord;
 use lqos_utils::hash_to_i64;
 use serde::{Deserialize, Serialize};
@@ -6,7 +7,7 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 use tracing::error;
 
 /// Represents a row in the `ShapedDevices.csv` file.
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq, Allocative)]
 pub struct ShapedDevice {
     // Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment
     /// The ID of the circuit to which the device belongs. Circuits are 1:many,
@@ -41,17 +42,17 @@ pub struct ShapedDevice {
 
     /// Minimum download: this is the bandwidth level the shaper will try
     /// to ensure is always available.
-    pub download_min_mbps: u32,
+    pub download_min_mbps: f32,
 
     /// Minimum upload: this is the bandwidth level the shaper will try to
     /// ensure is always available.
-    pub upload_min_mbps: u32,
+    pub upload_min_mbps: f32,
 
     /// Maximum download speed, when possible.
-    pub download_max_mbps: u32,
+    pub download_max_mbps: f32,
 
     /// Maximum upload speed when possible.
-    pub upload_max_mbps: u32,
+    pub upload_max_mbps: f32,
 
     /// Generic comments field, does nothing.
     pub comment: String,
@@ -70,6 +71,40 @@ pub struct ShapedDevice {
 }
 
 impl ShapedDevice {
+    /// Creates a new `ShapedDevice` instance from a CSV string record.
+    ///
+    /// This function parses a CSV record containing device configuration data and constructs
+    /// a `ShapedDevice` with all necessary fields populated. The CSV record must contain
+    /// exactly 13 fields in the following order:
+    ///
+    /// 1. Circuit ID
+    /// 2. Circuit Name
+    /// 3. Device ID
+    /// 4. Device Name
+    /// 5. Parent Node
+    /// 6. MAC Address
+    /// 7. IPv4 Addresses (comma-separated, CIDR notation supported)
+    /// 8. IPv6 Addresses (comma-separated, CIDR notation supported)
+    /// 9. Download Min Mbps
+    /// 10. Upload Min Mbps
+    /// 11. Download Max Mbps
+    /// 12. Upload Max Mbps
+    /// 13. Comment
+    ///
+    /// # Arguments
+    ///
+    /// * `record` - A reference to a CSV `StringRecord` containing the device data
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(ShapedDevice)` - Successfully parsed device configuration
+    /// * `Err(ShapedDevicesError)` - If parsing fails due to invalid data format
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// * The bandwidth values (min/max upload/download) cannot be parsed as unsigned integers
+    /// * The CSV record doesn't contain the expected number of fields
     pub fn from_csv(record: &StringRecord) -> Result<Self, ShapedDevicesError> {
         Ok(Self {
             circuit_id: record[0].to_string(),
@@ -80,18 +115,42 @@ impl ShapedDevice {
             mac: record[5].to_string(),
             ipv4: ShapedDevice::parse_ipv4(&record[6]),
             ipv6: ShapedDevice::parse_ipv6(&record[7]),
-            download_min_mbps: record[8]
-                .parse()
-                .map_err(|_| ShapedDevicesError::CsvEntryParseError(record[8].to_string()))?,
-            upload_min_mbps: record[9]
-                .parse()
-                .map_err(|_| ShapedDevicesError::CsvEntryParseError(record[9].to_string()))?,
-            download_max_mbps: record[10]
-                .parse()
-                .map_err(|_| ShapedDevicesError::CsvEntryParseError(record[10].to_string()))?,
-            upload_max_mbps: record[11]
-                .parse()
-                .map_err(|_| ShapedDevicesError::CsvEntryParseError(record[11].to_string()))?,
+            download_min_mbps: {
+                let rate = record[8]
+                    .parse::<f32>()
+                    .map_err(|_| ShapedDevicesError::CsvEntryParseError(record[8].to_string()))?;
+                if rate < 0.01 {
+                    return Err(ShapedDevicesError::CsvEntryParseError(format!("Download min rate {} too small (minimum 0.01 Mbps)", rate)));
+                }
+                rate
+            },
+            upload_min_mbps: {
+                let rate = record[9]
+                    .parse::<f32>()
+                    .map_err(|_| ShapedDevicesError::CsvEntryParseError(record[9].to_string()))?;
+                if rate < 0.01 {
+                    return Err(ShapedDevicesError::CsvEntryParseError(format!("Upload min rate {} too small (minimum 0.01 Mbps)", rate)));
+                }
+                rate
+            },
+            download_max_mbps: {
+                let rate = record[10]
+                    .parse::<f32>()
+                    .map_err(|_| ShapedDevicesError::CsvEntryParseError(record[10].to_string()))?;
+                if rate < 0.01 {
+                    return Err(ShapedDevicesError::CsvEntryParseError(format!("Download max rate {} too small (minimum 0.01 Mbps)", rate)));
+                }
+                rate
+            },
+            upload_max_mbps: {
+                let rate = record[11]
+                    .parse::<f32>()
+                    .map_err(|_| ShapedDevicesError::CsvEntryParseError(record[11].to_string()))?;
+                if rate < 0.01 {
+                    return Err(ShapedDevicesError::CsvEntryParseError(format!("Upload max rate {} too small (minimum 0.01 Mbps)", rate)));
+                }
+                rate
+            },
             comment: record[12].to_string(),
             circuit_hash: hash_to_i64(&record[0]),
             device_hash: hash_to_i64(&record[2]),
@@ -196,5 +255,71 @@ impl ShapedDevice {
         result.extend_from_slice(&self.ipv6);
 
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use csv::StringRecord;
+
+    #[test]
+    fn test_fractional_rate_parsing() {
+        // Test parsing fractional rates
+        let record = StringRecord::from(vec![
+            "test1", "Test Circuit", "device1", "Test Device", "site1",
+            "00:00:00:00:00:01", "192.168.1.1", "", 
+            "0.5", "1.0", "2.5", "3.0", "Test fractional rates"
+        ]);
+        
+        let device = ShapedDevice::from_csv(&record).expect("Should parse fractional rates");
+        
+        assert_eq!(device.download_min_mbps, 0.5);
+        assert_eq!(device.upload_min_mbps, 1.0);
+        assert_eq!(device.download_max_mbps, 2.5);
+        assert_eq!(device.upload_max_mbps, 3.0);
+    }
+
+    #[test]
+    fn test_integer_rate_parsing() {
+        // Test parsing integer rates (backward compatibility)
+        let record = StringRecord::from(vec![
+            "test2", "Test Circuit 2", "device2", "Test Device 2", "site2",
+            "00:00:00:00:00:02", "192.168.1.2", "",
+            "10", "20", "100", "200", "Integer rates"
+        ]);
+        
+        let device = ShapedDevice::from_csv(&record).expect("Should parse integer rates");
+        
+        assert_eq!(device.download_min_mbps, 10.0);
+        assert_eq!(device.upload_min_mbps, 20.0);
+        assert_eq!(device.download_max_mbps, 100.0);
+        assert_eq!(device.upload_max_mbps, 200.0);
+    }
+
+    #[test]
+    fn test_rate_validation_too_small() {
+        // Test that rates below 0.01 are rejected
+        let record = StringRecord::from(vec![
+            "test3", "Test Circuit 3", "device3", "Test Device 3", "site3",
+            "00:00:00:00:00:03", "192.168.1.3", "",
+            "0.001", "1.0", "2.5", "3.0", "Rate too small"
+        ]);
+        
+        let result = ShapedDevice::from_csv(&record);
+        assert!(result.is_err(), "Should reject rates below 0.01 Mbps");
+    }
+
+    #[test]
+    fn test_invalid_rate_parsing() {
+        // Test that invalid rate strings are rejected
+        let record = StringRecord::from(vec![
+            "test4", "Test Circuit 4", "device4", "Test Device 4", "site4",
+            "00:00:00:00:00:04", "192.168.1.4", "",
+            "invalid", "1.0", "2.5", "3.0", "Invalid rate"
+        ]);
+        
+        let result = ShapedDevice::from_csv(&record);
+        assert!(result.is_err(), "Should reject invalid rate strings");
     }
 }

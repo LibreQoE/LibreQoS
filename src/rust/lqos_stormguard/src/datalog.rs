@@ -1,8 +1,10 @@
 use crate::config::StormguardConfig;
 use std::io::Write;
+use allocative::Allocative;
 use tracing::debug;
 use lqos_utils::unix_time::unix_now;
 
+#[derive(Allocative)]
 pub enum LogCommand {
     SpeedChange {
         site: String,

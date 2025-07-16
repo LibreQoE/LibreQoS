@@ -3,6 +3,8 @@ use lqos_bus::{IpStats, TcHandle};
 use lqos_utils::units::DownUpOrder;
 use serde::{Deserialize, Serialize};
 
+// Removed rate_for_plan() function - no longer needed with f32 plan structures
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct IpStatsWithPlan {
     pub ip_address: String,
@@ -11,7 +13,7 @@ pub struct IpStatsWithPlan {
     pub median_tcp_rtt: f32,
     pub tc_handle: TcHandle,
     pub circuit_id: String,
-    pub plan: DownUpOrder<u32>,
+    pub plan: DownUpOrder<f32>,
     pub tcp_retransmits: (f64, f64),
 }
 
@@ -24,7 +26,7 @@ impl From<&IpStats> for IpStatsWithPlan {
             median_tcp_rtt: i.median_tcp_rtt,
             tc_handle: i.tc_handle,
             circuit_id: i.circuit_id.clone(),
-            plan: DownUpOrder::zeroed(),
+            plan: DownUpOrder { down: 0.0, up: 0.0 },
             tcp_retransmits: i.tcp_retransmits,
         };
 
@@ -41,10 +43,12 @@ impl From<&IpStats> for IpStatsWithPlan {
                     &circuit.circuit_name
                 };
                 result.ip_address = format!("{}", name);
-                result.plan = DownUpOrder::new(circuit.download_max_mbps, circuit.upload_max_mbps);
+                result.plan = DownUpOrder { down: circuit.download_max_mbps as f32, up: circuit.upload_max_mbps as f32 };
             }
         }
 
         result
     }
 }
+
+// Tests removed - rate_for_plan() function no longer needed with f32 plan structures

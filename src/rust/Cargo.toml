@@ -36,6 +36,7 @@ members = [
     "uisp_integration", # UISP Integration in Rust
     "lqos_support_tool", # A Helper tool to make it easier to request/receive support
     "lqos_stormguard", # An implementation of CAKE AutoRotate using dynamic bus information. EXPERIMENTAL.
+    "lqos_bakery", # The bakery makes CAKEs - controls queue creation.
 ]
 
 [dependencies]
@@ -64,7 +65,7 @@ zerocopy = {version = "0.8.5", features = [ "derive", "zerocopy-derive", "simd" 
 sysinfo = { version = "0", default-features = false, features = [ "system" ] }
 default-net = "0"
 reqwest = { version = "0", features = ["json", "blocking"] }
-pyo3 = "0.20.3"
+pyo3 = "0.25.1"
 colored = "2"
 miniz_oxide = "0.8"
 byteorder = "1"
@@ -78,3 +79,7 @@ arc-swap = "1.7.1"
 # May have to change this one for ARM?
 #jemallocator = "0.5"
 mimalloc = "0.1.43"
+
+# For memory debugging
+allocative = {  version = "0.3.3", features = [ "dashmap" ] }
+allocative_derive = "0.3.3"

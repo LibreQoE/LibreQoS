@@ -21,7 +21,7 @@ pub struct TimeBuffer {
     buffer: Mutex<Vec<TimeEntry>>,
 }
 
-#[derive(Clone, Debug, Allocative)]
+#[derive(Clone, Copy, Debug, Allocative)]
 struct TimeEntry {
     time: u64,
     data: (FlowbeeKey, FlowbeeLocalData, FlowAnalysis),
@@ -435,7 +435,7 @@ impl FinishedFlowAnalysis {
             .spawn(|| {
                 loop {
                     RECENT_FLOWS.expire_over_one_minutes();
-                    std::thread::sleep(std::time::Duration::from_secs(60));
+                    std::thread::sleep(std::time::Duration::from_secs(10));
                 }
             });
         let _ = std::thread::Builder::new()
@@ -464,6 +464,24 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
         //data.trim(); // Remove the trailing 30 seconds of zeroes
         //let tp_buf_dn = data.throughput_buffer.iter().map(|v| v.down).collect();
         //let tp_buf_up = data.throughput_buffer.iter().map(|v| v.up).collect();
+
+        let retransmit_times_down = if let Some(v) = &data.retry_times_down {
+            v.1.iter()
+                .filter(|n| **n > 0)
+                .map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let retransmit_times_up = if let Some(v) = &data.retry_times_up {
+            v.1.iter()
+                .filter(|n| **n > 0)
+                .map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64)
+                .collect()
+        } else {
+            Vec::new()
+        };
+
         if let Err(e) = crate::lts2_sys::two_way_flow(
             start_time,
             last_seen,
@@ -476,14 +494,8 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
             data.bytes_sent.up,
             data.packets_sent.down as i64,
             data.packets_sent.up as i64,
-            data.retry_times_down
-                .iter()
-                .map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64)
-                .collect(),
-            data.retry_times_up
-                .iter()
-                .map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64)
-                .collect(),
+            retransmit_times_down,
+            retransmit_times_up,
             data.rtt[0].as_micros() as f32,
             data.rtt[1].as_micros() as f32,
             circuit_hash,

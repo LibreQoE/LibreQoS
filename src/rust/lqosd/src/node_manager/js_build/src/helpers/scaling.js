@@ -116,3 +116,15 @@ export function rttNanosAsSpan(rttNanos, precision=0) {
     let html = "<span class='muted' style='color: " + color + "'>■</span> " + scaleNanos(rttNanos, precision);
     return html;
 }
+
+export function formatMbps(mbps) {
+    // Format Mbps values with smart decimal display
+    // Whole numbers: no decimals (e.g., "100 Mbps")
+    // Fractional: show decimals with up to 2 decimal places (e.g., "2.5 Mbps", "0.25 Mbps")
+    if (mbps === Math.floor(mbps)) {
+        return mbps + " Mbps";
+    } else {
+        // Use up to 2 decimal places, removing trailing zeros
+        return parseFloat(mbps.toFixed(2)) + " Mbps";
+    }
+}

@@ -22,11 +22,21 @@ use std::sync::atomic::AtomicI64;
 use csv::ReaderBuilder;
 use tokio::sync::mpsc::Sender;
 use tokio::time::Instant;
-use tracing::{debug, error};
+use tracing::debug;
 use tracing::log::warn;
 
 fn scale_u64_by_f64(value: u64, scale: f64) -> u64 {
     (value as f64 * scale) as u64
+}
+
+/// Temporary conversion function for LTS/Insight compatibility
+/// TODO: Remove when LTS/Insight support fractional rates
+fn rate_for_submission(rate_mbps: f32) -> u32 {
+    if rate_mbps < 1.0 {
+        1  // Round up small fractional rates to 1 Mbps for now
+    } else {
+        rate_mbps.round() as u32  // Round to nearest integer
+    }
 }
 
 #[derive(Debug)]
@@ -108,11 +118,11 @@ pub(crate) fn submit_throughput_stats(
     metrics.total_throughput = metrics.start.elapsed().as_secs_f64();
 
     if let Ok(config) = load_config() {
-        if bits_per_second.down > (config.queues.downlink_bandwidth_mbps as u64 * 1_000_000) {
+        if bits_per_second.down > (config.queues.downlink_bandwidth_mbps * 1_000_000) {
             debug!("Spike detected - not submitting LTS");
             return; // Do not submit these stats
         }
-        if bits_per_second.up > (config.queues.uplink_bandwidth_mbps as u64 * 1_000_000) {
+        if bits_per_second.up > (config.queues.uplink_bandwidth_mbps * 1_000_000) {
             debug!("Spike detected - not submitting LTS");
             return; // Do not submit these stats
         }
@@ -177,7 +187,7 @@ pub(crate) fn submit_throughput_stats(
     if let Ok(now) = unix_now() {
         // LTS2 Shaped Devices
         if lts2_needs_shaped_devices() {
-            tracing::warn!("Sending topology to Insight");
+            tracing::info!("Sending topology to Insight");
             // Send the topology tree
             {
                 if let Ok(config) = load_config() {
@@ -228,10 +238,10 @@ pub(crate) fn submit_throughput_stats(
                                 circuit_id: device.circuit_id,
                                 circuit_name: device.circuit_name,
                                 circuit_hash,
-                                download_min_mbps: device.download_min_mbps,
-                                upload_min_mbps: device.upload_min_mbps,
-                                download_max_mbps: device.download_max_mbps,
-                                upload_max_mbps: device.upload_max_mbps,
+                                download_min_mbps: rate_for_submission(device.download_min_mbps),
+                                upload_min_mbps: rate_for_submission(device.upload_min_mbps),
+                                download_max_mbps: rate_for_submission(device.download_max_mbps),
+                                upload_max_mbps: rate_for_submission(device.upload_max_mbps),
                                 parent_node: device.parent_hash,
                                 parent_node_name: Some(device.parent_node),
                                 devices: vec![Lts2Device {
@@ -339,8 +349,8 @@ pub(crate) fn submit_throughput_stats(
                 (
                     d.circuit_hash,
                     (
-                        d.download_max_mbps as u64 * 1_000_000 * CRAZY_LIMIT,
-                        d.upload_max_mbps as u64 * 1_000_000 * CRAZY_LIMIT,
+                        d.download_max_mbps.round() as u64 * 1_000_000 * CRAZY_LIMIT,
+                        d.upload_max_mbps.round() as u64 * 1_000_000 * CRAZY_LIMIT,
                     ),
                 )
             })
@@ -648,7 +658,7 @@ fn combined_devices_network_hash() -> anyhow::Result<i64> {
 fn lts2_needs_shaped_devices() -> bool {
     let stored_hash = LTS2_HASH.load(std::sync::atomic::Ordering::Relaxed);
     let new_hash = combined_devices_network_hash().unwrap_or(-1);
-    tracing::info!("Stored Hash: {}, New Hash: {}", stored_hash, new_hash);
+    tracing::debug!("Stored Hash: {}, New Hash: {}", stored_hash, new_hash);
     LTS2_HASH.store(new_hash, std::sync::atomic::Ordering::Relaxed);
     stored_hash != new_hash
 }
@@ -678,4 +688,58 @@ fn load_local_shaped_devices() -> anyhow::Result<Vec<ShapedDevice>> {
         }
     }
     Ok(devices)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rate_for_submission_small_rates() {
+        // Small fractional rates should round up to 1
+        assert_eq!(rate_for_submission(0.1), 1);
+        assert_eq!(rate_for_submission(0.5), 1);
+        assert_eq!(rate_for_submission(0.9), 1);
+    }
+
+    #[test]
+    fn test_rate_for_submission_edge_case_one() {
+        // Exactly 1.0 should stay 1
+        assert_eq!(rate_for_submission(1.0), 1);
+    }
+
+    #[test]
+    fn test_rate_for_submission_normal_rates() {
+        // Normal rates should round to nearest integer
+        assert_eq!(rate_for_submission(1.1), 1);
+        assert_eq!(rate_for_submission(1.4), 1);
+        assert_eq!(rate_for_submission(1.5), 2);
+        assert_eq!(rate_for_submission(1.6), 2);
+        assert_eq!(rate_for_submission(2.3), 2);
+        assert_eq!(rate_for_submission(2.7), 3);
+    }
+
+    #[test]
+    fn test_rate_for_submission_large_rates() {
+        // Large rates should round normally
+        assert_eq!(rate_for_submission(100.4), 100);
+        assert_eq!(rate_for_submission(100.5), 101);
+        assert_eq!(rate_for_submission(1000.2), 1000);
+        assert_eq!(rate_for_submission(1000.8), 1001);
+    }
+
+    #[test]
+    fn test_rate_for_submission_prevents_zero() {
+        // Should never return 0, even for very small inputs
+        assert_eq!(rate_for_submission(0.01), 1);
+        assert_eq!(rate_for_submission(0.001), 1);
+    }
+
+    #[test]
+    fn test_rate_for_submission_preserves_integers() {
+        // Integer inputs should be preserved exactly
+        assert_eq!(rate_for_submission(5.0), 5);
+        assert_eq!(rate_for_submission(10.0), 10);
+        assert_eq!(rate_for_submission(100.0), 100);
+    }
 }

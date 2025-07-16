@@ -1,7 +1,7 @@
 // Obtain URL parameters
 import {DirectChannel} from "./pubsub/direct_channels";
 import {clearDiv, formatLastSeen, simpleRow, simpleRowHtml, theading} from "./helpers/builders";
-import {formatRetransmit, formatRtt, formatThroughput, lerpGreenToRedViaOrange} from "./helpers/scaling";
+import {formatRetransmit, formatRtt, formatThroughput, lerpGreenToRedViaOrange, formatMbps} from "./helpers/scaling";
 import {BitsPerSecondGauge} from "./graphs/bits_gauge";
 import {CircuitTotalGraph} from "./graphs/circuit_throughput_graph";
 import {CircuitRetransmitGraph} from "./graphs/circuit_retransmit_graph";
@@ -102,7 +102,7 @@ function connectPingers(circuits) {
             if (target != null) {
                 let myPing = devicePings[msg.ip];
                 if (myPing.count === myPing.timeout) {
-                    target.innerHTML = "<i class='fa fa-ban text-danger'></i>";
+                    target.innerHTML = "<i class='fa fa-minus-circle text-secondary' data-bs-toggle='tooltip' data-bs-placement='top' title='No ping response - this is normal for many ISPs'></i>";
                 } else {
                     let loss = ((myPing.timeout / myPing.count) * 100);
                     let lossStr = loss.toFixed(1);
@@ -119,8 +119,11 @@ function connectPingers(circuits) {
                     }
                     let pingRamp = Math.min(avg / 200, 1);
                     let pingColor = lerpGreenToRedViaOrange(pingRamp, 1);
-                    target.innerHTML = "<i class='fa fa-check text-success'></i> <span class='tiny'><span class='" + lossColor + "'>" + lossStr + "%</span> / <span style='color: " + pingColor + "'>" + scaleNanos(avg) + "</span></span>";
+                    target.innerHTML = "<i class='fa fa-check text-success' data-bs-toggle='tooltip' data-bs-placement='top' title='Device is responding to pings'></i> <span class='tiny'><span class='" + lossColor + "'>" + lossStr + "%</span> / <span style='color: " + pingColor + "'>" + scaleNanos(avg) + "</span></span>";
                 }
+                // Initialize Bootstrap tooltips
+                const tooltipTriggerList = target.querySelectorAll('[data-bs-toggle="tooltip"]');
+                const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
             }
         }
     });
@@ -143,26 +146,52 @@ function connectFlowChannel() {
 let movingAverages = new Map();
 let prevFlowBytes = new Map();
 let tickCount = 0;
+let trafficSortColumn = 'rate'; // Default sort by rate
+let trafficSortDirection = 'desc'; // 'asc' or 'desc'
 
 function updateTrafficTab(msg) {
     let target = document.getElementById("allTraffic");
 
     let table = document.createElement("table");
     table.classList.add("table", "table-sm", "table-striped");
-    let thead = document.createElement("thead");
-    thead.appendChild(theading("Protocol"));
-    thead.appendChild(theading("Current Rate (⬇️/⬆️)", 2));
-    thead.appendChild(theading("Total Bytes (⬇️/⬆️)", 2));
-    thead.appendChild(theading("Total Packets (⬇️/⬆️)", 2));
-    thead.appendChild(theading("TCP Retransmits (⬇️/⬆️)", 2));
-    thead.appendChild(theading("RTT (⬇️/⬆️)", 2));
-    thead.appendChild(theading("ASN"));
-    thead.appendChild(theading("Country"));
-    thead.appendChild(theading("Remote IP"));
+    let thead = document.createElement("thead", "small");
+    thead.style.fontSize = "0.8em";
+    
+    // Create clickable headers
+    const createSortableHeader = (text, sortKey, colspan = 1) => {
+        let th = theading(text, colspan);
+        th.style.cursor = "pointer";
+        th.onclick = () => {
+            if (trafficSortColumn === sortKey) {
+                trafficSortDirection = trafficSortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                trafficSortColumn = sortKey;
+                trafficSortDirection = 'desc';
+            }
+        };
+        // Add sort indicator
+        if (trafficSortColumn === sortKey) {
+            th.innerHTML += trafficSortDirection === 'asc' ? ' ▲' : ' ▼';
+        }
+        return th;
+    };
+    
+    thead.appendChild(createSortableHeader("Protocol", "protocol"));
+    thead.appendChild(createSortableHeader("Current Rate (d/u)", "rate", 2));
+    thead.appendChild(createSortableHeader("Total Bytes (d/u)", "bytes", 2));
+    thead.appendChild(createSortableHeader("Total Packets (d/u)", "packets", 2));
+    thead.appendChild(createSortableHeader("TCP Retransmits (d/u)", "retransmits", 2));
+    thead.appendChild(createSortableHeader("RTT (d/u)", "rtt", 2));
+    thead.appendChild(createSortableHeader("ASN", "asn"));
+    thead.appendChild(createSortableHeader("Country", "country"));
+    thead.appendChild(createSortableHeader("Remote IP", "ip"));
     table.appendChild(thead);
     let tbody = document.createElement("tbody");
     const thirty_seconds_in_nanos = 30000000000; // For display filtering
     tickCount++;
+    
+    let hideSmallFlows = document.getElementById("hideSmallFlows").checked;
+    let tableRows = [];
 
     msg.flows.forEach((flow) => {
         let flowKey = flow[0].protocol_name + flow[0].row_id;
@@ -184,15 +213,7 @@ function updateTrafficTab(msg) {
         }
     });
 
-    // Sort msg.flows by flows[0].rate_estimate_bps.down + flows[0].rate_estimate_bps.up descending
-    msg.flows.sort((a, b) => {
-        let flowKeyA = a[0].protocol_name + a[0].row_id;
-        let flowKeyB = b[0].protocol_name + b[0].row_id;
-        let aRate = movingAverages.get(flowKeyA).reduce((a, b) => a + b, 0) / movingAverages.get(flowKeyA).length;
-        let bRate = movingAverages.get(flowKeyB).reduce((a, b) => a + b, 0) / movingAverages.get(flowKeyB).length;
-        return bRate - aRate;
-    });
-
+    // Process flows and collect data
     msg.flows.forEach((flow) => {
         let flowKey = flow[0].protocol_name + flow[0].row_id;
         let down = flow[1].rate_estimate_bps.down;
@@ -216,35 +237,101 @@ function updateTrafficTab(msg) {
         prevFlowBytes.set(flowKey, [ flow[1].bytes_sent.down, flow[1].bytes_sent.up, tickCount ]);
 
         if (flow[0].last_seen_nanos > thirty_seconds_in_nanos) return;
-        let row = document.createElement("tr");
-        row.classList.add("small");
+        
         let opacity = Math.min(1, flow[0].last_seen_nanos / thirty_seconds_in_nanos);
-        row.style.opacity = 1.0 - opacity;
-        row.appendChild(simpleRow(flow[0].protocol_name));
-        row.appendChild(simpleRowHtml(formatThroughput(down, plan.down)));
-        row.appendChild(simpleRowHtml(formatThroughput(up, plan.up)));
-        row.appendChild(simpleRow(scaleNumber(flow[1].bytes_sent.down)));
-        row.appendChild(simpleRow(scaleNumber(flow[1].bytes_sent.up)));
-        row.appendChild(simpleRow(scaleNumber(flow[1].packets_sent.down)));
-        row.appendChild(simpleRow(scaleNumber(flow[1].packets_sent.up)));
+        let visible = !hideSmallFlows || (down > 1024*1024 || up > 1024*1024);
+        
+        // Calculate retransmit percentages
+        let retransmitDown = "-";
+        let retransmitUp = "-";
+        let retransmitDownPct = 0;
+        let retransmitUpPct = 0;
+        
         if (flow[1].tcp_retransmits.down > 0) {
-            let pct = flow[1].tcp_retransmits.down / flow[1].packets_sent.down;
-            row.appendChild(simpleRowHtml(formatRetransmit(pct)));
-        } else {
-            row.appendChild(simpleRow("-"));
+            retransmitDownPct = flow[1].tcp_retransmits.down / flow[1].packets_sent.down;
+            retransmitDown = formatRetransmit(retransmitDownPct);
         }
         if (flow[1].tcp_retransmits.up > 0) {
-            let pct = flow[1].tcp_retransmits.up / flow[1].packets_sent.up;
-            row.appendChild(simpleRowHtml(formatRetransmit(pct)));
-        } else {
-            row.appendChild(simpleRow("-"));
+            retransmitUpPct = flow[1].tcp_retransmits.up / flow[1].packets_sent.up;
+            retransmitUp = formatRetransmit(retransmitUpPct);
         }
-        row.appendChild(simpleRow(scaleNanos(flow[1].rtt[0].nanoseconds)));
-        row.appendChild(simpleRow(scaleNanos(flow[1].rtt[1].nanoseconds)));
-        row.appendChild(simpleRow(flow[0].asn_name));
-        row.appendChild(simpleRow(flow[0].asn_country));
-        row.appendChild(simpleRow(flow[0].remote_ip));
-
+        
+        // Get average rate for sorting
+        let avgRate = down + up;
+        if (movingAverages.has(flowKey)) {
+            avgRate = movingAverages.get(flowKey).reduce((a, b) => a + b, 0) / movingAverages.get(flowKey).length;
+        }
+        
+        // Collect row data
+        tableRows.push({
+            sortKeys: {
+                protocol: flow[0].protocol_name,
+                rate: avgRate,
+                bytes: flow[1].bytes_sent.down + flow[1].bytes_sent.up,
+                packets: flow[1].packets_sent.down + flow[1].packets_sent.up,
+                retransmits: retransmitDownPct + retransmitUpPct,
+                rtt: flow[1].rtt[0].nanoseconds + flow[1].rtt[1].nanoseconds,
+                asn: flow[0].asn_name || "",
+                country: flow[0].asn_country || "",
+                ip: flow[0].remote_ip
+            },
+            columns: [
+                flow[0].protocol_name,
+                formatThroughput(down, plan.down),
+                formatThroughput(up, plan.up),
+                scaleNumber(flow[1].bytes_sent.down),
+                scaleNumber(flow[1].bytes_sent.up),
+                scaleNumber(flow[1].packets_sent.down),
+                scaleNumber(flow[1].packets_sent.up),
+                retransmitDown,
+                retransmitUp,
+                scaleNanos(flow[1].rtt[0].nanoseconds),
+                scaleNanos(flow[1].rtt[1].nanoseconds),
+                flow[0].asn_name,
+                flow[0].asn_country,
+                flow[0].remote_ip
+            ],
+            opacity: 1.0 - opacity,
+            visible: visible
+        });
+    });
+    
+    // Sort tableRows based on current sort preferences
+    tableRows.sort((a, b) => {
+        let aVal = a.sortKeys[trafficSortColumn];
+        let bVal = b.sortKeys[trafficSortColumn];
+        
+        // Handle string vs number comparison
+        if (typeof aVal === 'string' && typeof bVal === 'string') {
+            aVal = aVal.toLowerCase();
+            bVal = bVal.toLowerCase();
+        }
+        
+        if (trafficSortDirection === 'asc') {
+            return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+        } else {
+            return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
+        }
+    });
+    
+    // Render the sorted table
+    tableRows.forEach((rowData) => {
+        if (!rowData.visible) return;
+        
+        let row = document.createElement("tr");
+        row.classList.add("small");
+        row.style.opacity = rowData.opacity;
+        
+        // Add columns
+        rowData.columns.forEach((col, index) => {
+            if (index === 1 || index === 2 || index === 7 || index === 8) {
+                // These columns have HTML formatting
+                row.appendChild(simpleRowHtml(col));
+            } else {
+                row.appendChild(simpleRow(col));
+            }
+        });
+        
         tbody.appendChild(row);
     });
 
@@ -643,12 +730,72 @@ function subscribeToCake() {
     let traffic = new CakeTraffic("cakeTraffic");
     let marks = new CakeMarks("cakeMarks");
     let drops = new CakeDrops("cakeDrops");
+    let noDataTimeout = null;
+    let hasReceivedData = false;
+    
+    // Function to show "Queue not loaded" message
+    function showNoQueueMessage() {
+        const cakeTab = document.getElementById("cake");
+        if (cakeTab && !hasReceivedData) {
+            cakeTab.innerHTML = '<div class="row"><div class="col-12 text-center mt-5"><h4>Queue not loaded.</h4><p class="text-muted">The CAKE queue for this circuit has not been created yet.</p></div></div>';
+        }
+    }
+    
+    // Set a timeout to show the message if no data arrives within 3 seconds
+    noDataTimeout = setTimeout(showNoQueueMessage, 3000);
+    
     channelLink = new DirectChannel({
         CakeWatcher: {
             circuit: circuit_id
         }
     }, (msg) => {
         //console.log(msg);
+        
+        // Clear the timeout and set flag that we've received data
+        if (noDataTimeout) {
+            clearTimeout(noDataTimeout);
+            noDataTimeout = null;
+        }
+        
+        // If this is the first data received, restore the original HTML structure
+        if (!hasReceivedData) {
+            hasReceivedData = true;
+            const cakeTab = document.getElementById("cake");
+            if (cakeTab) {
+                cakeTab.innerHTML = `
+                    <div class="row">
+                        <div class="col-4">
+                            <div id="cakeBacklog" style="height: 250px"></div>
+                        </div>
+                        <div class="col-4">
+                            <div id="cakeDelays" style="height: 250px"></div>
+                        </div>
+                        <div class="col-4">
+                            <div id="cakeQueueLength" style="height: 250px"></div>
+                        </div>
+                        <div class="col-4">
+                            <div id="cakeTraffic" style="height: 250px"></div>
+                        </div>
+                        <div class="col-4">
+                            <div id="cakeMarks" style="height: 250px"></div>
+                        </div>
+                        <div class="col-4">
+                            <div id="cakeDrops" style="height: 250px"></div>
+                        </div>
+                        <div class="col-3">
+                            Queue Memory: <span id="cakeQueueMemory">?</span>
+                        </div>
+                    </div>
+                `;
+                // Reinitialize the graphs
+                backlogGraph = new CakeBacklog("cakeBacklog");
+                delaysGraph = new CakeDelays("cakeDelays");
+                queueLength = new CakeQueueLength("cakeQueueLength");
+                traffic = new CakeTraffic("cakeTraffic");
+                marks = new CakeMarks("cakeMarks");
+                drops = new CakeDrops("cakeDrops");
+            }
+        }
 
         // Cake Memory Usage
         $("#cakeQueueMemory").text(scaleNumber(msg.current_download.memory_used) + " / " + scaleNumber(msg.current_upload.memory_used));
@@ -756,8 +903,8 @@ function loadInitial() {
             let circuit = circuits[0];
             $("#circuitName").text(circuit.circuit_name);
             $("#parentNode").text(circuit.parent_node);
-            $("#bwMax").text(circuit.download_max_mbps + " / " + circuit.upload_max_mbps + " Mbps");
-            $("#bwMin").text(circuit.download_min_mbps + " / " + circuit.upload_min_mbps + " Mbps");
+            $("#bwMax").text(formatMbps(circuit.download_max_mbps) + " / " + formatMbps(circuit.upload_max_mbps));
+            $("#bwMin").text(formatMbps(circuit.download_min_mbps) + " / " + formatMbps(circuit.upload_min_mbps));
             plan = {
                 down: circuit.download_max_mbps,
                 up: circuit.upload_max_mbps,

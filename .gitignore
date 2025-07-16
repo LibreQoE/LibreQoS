@@ -34,6 +34,7 @@ v1.3/queuingStructure.json
 v1.3/tinsStats.json
 
 src/ShapedDevices.csv
+src/ShapedDevices.csv.*
 src/ShapedDevices.lastLoaded.csv
 src/network.json
 src/ispConfig.py
@@ -124,3 +125,16 @@ src/rust/lqosd/lts_keys.bin
 src/rust/lqosd/src/node_manager/js_build/out
 src/bin/dashboards
 .aider*
+/src/geo2.bin
+src/bin/static2
+src/bin/static2/flags
+
+/src/rust/uisp_integration/graph.dot
+/src/rust/uisp_integration/graph.png
+/src/bin/lqos_support_tool
+/src/rust/lqosd/lqosd-output.log
+/src/bin/uisp_integration
+/src/xdp_iphash_output.log
+/src/linux_tc_rust.txt
+/src/linux_tc_rust_live.txt
+/src/linux_tc_rust_prune.txt

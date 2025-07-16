@@ -1,8 +1,9 @@
+use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct Device {
     pub identification: DeviceIdentification,
     pub ipAddress: Option<String>,
@@ -112,7 +113,7 @@ impl Device {
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct DeviceIdentification {
     pub id: String,
     pub hostname: Option<String>,
@@ -127,35 +128,35 @@ pub struct DeviceIdentification {
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct DeviceSite {
     pub id: String,
     pub parent: Option<DeviceParent>,
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct DeviceParent {
     pub id: String,
     pub name: String,
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct DeviceAttributes {
     pub ssid: Option<String>,
     pub apDevice: Option<DeviceAccessPoint>,
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct DeviceAccessPoint {
     pub id: Option<String>,
     pub name: Option<String>,
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct DeviceInterface {
     pub identification: Option<InterfaceIdentification>,
     pub addresses: Option<Vec<DeviceAddress>>,
@@ -165,27 +166,27 @@ pub struct DeviceInterface {
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct InterfaceIdentification {
     pub name: Option<String>,
     pub mac: Option<String>,
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct DeviceAddress {
     pub cidr: Option<String>,
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct InterfaceStatus {
     pub status: Option<String>,
     pub speed: Option<String>,
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct DeviceOverview {
     pub status: Option<String>,
     pub frequency: Option<f64>,
@@ -211,7 +212,7 @@ pub struct DeviceOverview {
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct DeviceLinkScore {
     pub score: Option<f64>,
     pub scoreMax: Option<f64>,
@@ -223,7 +224,7 @@ pub struct DeviceLinkScore {
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct DeviceAntenna {
     pub id: Option<String>,
     pub gain: Option<i64>,
@@ -233,13 +234,13 @@ pub struct DeviceAntenna {
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct DeviceWireless {
     pub noiseFloor: Option<i64>,
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct DeviceStation {
     connected: Option<bool>,
     connectedTime: Option<i64>,

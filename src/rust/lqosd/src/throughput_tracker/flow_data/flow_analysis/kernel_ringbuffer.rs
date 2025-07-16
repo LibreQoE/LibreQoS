@@ -1,5 +1,6 @@
 //! Connects to the "flowbee_events" ring buffer and processes the events.
 use crate::throughput_tracker::flow_data::flow_analysis::rtt_types::RttData;
+use allocative::Allocative;
 use fxhash::FxHashMap;
 use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::unix_time::time_since_boot;
@@ -20,6 +21,7 @@ static EVENTS_PER_SECOND: AtomicU64 = AtomicU64::new(0);
 
 const BUFFER_SIZE: usize = 1024;
 
+#[derive(Allocative)]
 struct RttBuffer {
     index: usize,
     buffer: [[RttData; BUFFER_SIZE]; 2],
@@ -307,13 +309,21 @@ pub fn flowbee_rtt_map() -> FxHashMap<FlowbeeKey, [RttData; 2]> {
     if let Some(cmd_tx) = FLOW_COMMAND_SENDER.get() {
         if cmd_tx.try_send(FlowCommands::RttMap(tx)).is_err() {
             warn!("Could not submit flow command - buffer full");
+            return FxHashMap::default();
         }
     } else {
         warn!("Flow command arrived before the actor is ready. Dropping it.");
+        return FxHashMap::default();
     }
 
-    let result = tokio::runtime::Runtime::new().unwrap().block_on(rx);
-    result.unwrap_or_default()
+    // Use blocking_recv() which is designed for sync contexts
+    match rx.blocking_recv() {
+        Ok(result) => result,
+        Err(_) => {
+            warn!("Failed to receive RTT map from flow actor - channel closed");
+            FxHashMap::default()
+        }
+    }
 }
 
 pub fn get_rtt_events_per_second() -> u64 {

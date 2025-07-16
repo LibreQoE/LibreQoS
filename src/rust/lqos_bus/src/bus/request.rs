@@ -1,11 +1,12 @@
 use crate::TcHandle;
+use allocative::Allocative;
 use lqos_config::Tunables;
 use serde::{Deserialize, Serialize};
 
 /// One or more `BusRequest` objects must be included in a `BusSession`
 /// request. Each `BusRequest` represents a single request for action
 /// or data.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Allocative)]
 pub enum BusRequest {
     /// A generic "is it alive?" test. Returns an `Ack`.
     Ping,
@@ -227,10 +228,74 @@ pub enum BusRequest {
 
     /// Finish a blackboard session
     BlackboardFinish,
+
+    // lqos_bakery requests
+
+    /// Start a bakery session
+    BakeryStart,
+    /// Request a bakery commit
+    BakeryCommit,
+    /// Setup the MQ top
+    BakeryMqSetup {
+        /// The number of queues available
+        queues_available: usize,
+        /// The "stick offset" calculated in LibreQoS.py
+        stick_offset: usize
+    },
+    /// Add a site to the bakery
+    BakeryAddSite {
+        /// The site hash, which is a unique identifier for the site
+        site_hash: i64,
+        /// The parent class ID for the site
+        parent_class_id: TcHandle,
+        /// The upload parent class ID for the site
+        up_parent_class_id: TcHandle,
+        /// The class minor version for the site
+        class_minor: u16,
+        /// The minimum download bandwidth for the site
+        download_bandwidth_min: f32,
+        /// The minimum upload bandwidth for the site
+        upload_bandwidth_min: f32,
+        /// The maximum download bandwidth for the site
+        download_bandwidth_max: f32,
+        /// The maximum upload bandwidth for the site
+        upload_bandwidth_max: f32,
+    },
+    /// Add a circuit to the bakery
+    BakeryAddCircuit {
+        /// The circuit hash, which is a unique identifier for the circuit
+        circuit_hash: i64,
+        /// The parent class ID for the circuit
+        parent_class_id: TcHandle,
+        /// The upload parent class ID for the circuit
+        up_parent_class_id: TcHandle,
+        /// The class minor version for the circuit
+        class_minor: u16,
+        /// The minimum download bandwidth for the circuit
+        download_bandwidth_min: f32,
+        /// The minimum upload bandwidth for the circuit
+        upload_bandwidth_min: f32,
+        /// The maximum download bandwidth for the circuit
+        download_bandwidth_max: f32,
+        /// The maximum upload bandwidth for the circuit
+        upload_bandwidth_max: f32,
+        /// The class major version for the circuit
+        class_major: u16,
+        /// The upload class major version for the circuit
+        up_class_major: u16,
+        /// Concatenated list of IP addresses for the circuit
+        ip_addresses: String,
+    },
+    
+    /// Get current Stormguard statistics
+    GetStormguardStats,
+    
+    /// Get current Bakery statistics
+    GetBakeryStats,
 }
 
 /// Defines the parts of the blackboard
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy, Allocative)]
 pub enum BlackboardSystem {
     /// The system as a whole
     System,
@@ -243,7 +308,7 @@ pub enum BlackboardSystem {
 }
 
 /// Defines the type of "top" flow being requested
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy, Allocative)]
 pub enum TopFlowType {
     /// Top flows by current estimated bandwidth use
     RateEstimate,
@@ -258,7 +323,7 @@ pub enum TopFlowType {
 }
 
 /// Specific requests from the long-term stats system
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Allocative)]
 pub enum StatsRequest {
     /// Retrieve the current totals for all hosts
     CurrentTotals,

@@ -1,19 +1,23 @@
-use crate::{BUS_SOCKET_PATH, BusReply, BusRequest, BusResponse, decode_request, encode_response};
+use crate::{
+    BUS_SOCKET_PATH, BusReply, BusRequest, BusResponse, BusSession,
+    bus::client::{MAGIC_NUMBER, MAGIC_RESPONSE},
+};
 use std::{ffi::CString, fs::remove_file};
 use thiserror::Error;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{UnixListener, UnixStream},
+    net::UnixListener,
 };
 use tracing::{debug, error, info, warn};
 
 use super::BUS_SOCKET_DIRECTORY;
 
-const READ_BUFFER_SIZE: usize = 200_480_000;
-
 /// Implements a Tokio-friendly server using Unix Sockets and the bus protocol.
 /// Requests are handled and then forwarded to the handler.
 pub struct UnixSocketServer {}
+
+static RECEIVE_BUFFER: tokio::sync::OnceCell<tokio::sync::Mutex<Vec<u8>>> = tokio::sync::OnceCell::const_new();
+const RECEIVE_BUFFER_SIZE: usize = 1024 * 1024 * 512; // 512 MiB
 
 impl UnixSocketServer {
     /// Creates a new `UnixSocketServer`. Will delete any pre-existing
@@ -87,6 +91,10 @@ impl UnixSocketServer {
             BusRequest,
         )>,
     ) -> Result<(), UnixSocketServerError> {
+        RECEIVE_BUFFER
+            .set(tokio::sync::Mutex::new(vec![0; RECEIVE_BUFFER_SIZE])) // 512 MiB
+            .map_err(|_| UnixSocketServerError::MkDirFail)?;
+
         // Set up the listener and grant permissions to it
         let listener = UnixListener::bind(BUS_SOCKET_PATH);
         if listener.is_err() {
@@ -118,31 +126,93 @@ impl UnixSocketServer {
                 }
                 let (mut socket, _) = ret.unwrap();
                 tokio::spawn(async move {
-                  loop {
-                    let mut buf = vec![0; READ_BUFFER_SIZE];
-
-                    let bytes_read = socket.read(&mut buf).await;
+                    // Listen for the magic number
+                    let mut magic_buf = [0; 4];
+                    let bytes_read = socket.read_exact(&mut magic_buf).await;
                     if bytes_read.is_err() {
-                      debug!("Unable to read from client socket. Server remains alive.");
-                      debug!("This is probably harmless.");
-                      debug!("{:?}", bytes_read);
-                      break; // Escape out of the thread
+                        debug!("Unable to read magic number from client socket. Server remains alive.");
+                        debug!("This is probably harmless.");
+                        debug!("{:?}", bytes_read);
+                        return;
+                    }
+                    if magic_buf != MAGIC_NUMBER {
+                        warn!("Received invalid magic number from client socket.");
+                        return;
                     }
 
-                    if let Ok(request) = decode_request(&buf) {
-                      let mut response = BusReply { responses: Vec::with_capacity(8) };
-                      handle_bus_requests(&request.requests, &mut response.responses);
-                      let _ =
-                        reply_unix(&encode_response(&response).unwrap(), &mut socket)
-                          .await;
-                      if !request.persist {
-                        break;
-                      }
-                    } else {
-                      warn!("Invalid data on local socket");
-                      break;
+                    // Send the magic number back to the client
+                    if let Err(e) = socket.write_all(&MAGIC_RESPONSE).await {
+                        debug!("Unable to write magic number to client socket. Server remains alive.");
+                        debug!("This is probably harmless.");
+                        debug!("{:?}", e);
+                        return;
                     }
-                  }
+
+                    loop {
+                        // Read the request ID (64 bits) and the Size (64 bits)
+                        // This is the size of the request in bytes, not the number of requests
+                        let mut id_buf = [0; 16];
+                        let bytes_read = socket.read_exact(&mut id_buf).await;
+                        if bytes_read.is_err() {
+                            debug!("Unable to read request ID from client socket. Server remains alive.");
+                            debug!("This is probably harmless.");
+                            debug!("{:?}", bytes_read);
+                            break; // Escape out of the thread
+                        }
+                        let request_id = u64::from_le_bytes(id_buf[0..8].try_into().unwrap());
+                        let request_size = u64::from_le_bytes(id_buf[8..16].try_into().unwrap());
+                        debug!("Received request ID: {request_id}, Size: {request_size}");
+                        if request_size > RECEIVE_BUFFER_SIZE as u64 {
+                            warn!("Received request size ({request_size}) exceeds buffer size ({RECEIVE_BUFFER_SIZE}).");
+                            break; // Escape out of the thread
+                        }
+
+                        // Read the request data
+                        //let mut buf = vec![0; request_size as usize];
+                        let mut buf = RECEIVE_BUFFER.get().unwrap().lock().await;
+
+                        let bytes_read = socket.read_exact(&mut buf[0 .. request_size as usize]).await;
+                        if bytes_read.is_err() {
+                            debug!("Unable to read request data from client socket. Server remains alive.");
+                            debug!("This is probably harmless.");
+                            debug!("{:?}", bytes_read);
+                            break; // Escape out of the thread
+                        }
+
+                        // Decode the request
+                        let Ok(request) = bincode::deserialize::<BusSession>(&buf[0..request_size as usize]) else {
+                            warn!("Invalid data on local socket");
+                            break;
+                        };
+                        debug!("Received request: {:?}", request);
+                        drop(buf); // Release the lock on the buffer
+
+                        // Handle the request and build the response
+                        let mut response = BusReply { responses: Vec::with_capacity(8) };
+                        handle_bus_requests(&request.requests, &mut response.responses);
+
+                        // Encode the response
+                        let Ok(encoded_response) = bincode::serialize(&response) else {
+                            warn!("Unable to encode response for request ID: {request_id}");
+                            break;
+                        };
+                        debug!("Sending response for request ID: {request_id}");
+
+                        // Send the response back to the client
+                        let response_size = encoded_response.len() as u64;
+                        let mut response_buf = vec![0; 16 + encoded_response.len()];
+                        response_buf[0..8].copy_from_slice(&request_id.to_le_bytes());
+                        response_buf[8..16].copy_from_slice(&response_size.to_le_bytes());
+                        response_buf[16..].copy_from_slice(&encoded_response);
+                        if let Err(e) = socket.write_all(&response_buf).await {
+                            debug!("Unable to write response to client socket. Server remains alive.");
+                            debug!("This is probably harmless.");
+                            debug!("{:?}", e);
+                            break; // Escape out of the thread
+                        }
+                        debug!("Response sent for request ID: {request_id}");
+
+                    } // End of request handling loop
                 });
               },
             );
@@ -155,18 +225,6 @@ impl Drop for UnixSocketServer {
     fn drop(&mut self) {
         let _ = UnixSocketServer::delete_local_socket(); // Ignore result
     }
-}
-
-async fn reply_unix(response: &[u8], socket: &mut UnixStream) -> Result<(), UnixSocketServerError> {
-    let ret = socket.write_all(response).await;
-    if ret.is_err() {
-        debug!(
-            "Unable to write to UNIX socket. This is usually harmless, meaning the client went away."
-        );
-        debug!("{:?}", ret);
-        return Err(UnixSocketServerError::WriteFail);
-    };
-    Ok(())
 }
 
 #[derive(Error, Debug)]

@@ -12,16 +12,23 @@ use crate::{
 };
 use allocative_derive::Allocative;
 use fxhash::FxHashMap;
+use lqos_bakery::BakeryCommands;
 use lqos_bus::TcHandle;
 use lqos_config::NetworkJson;
 use lqos_queue_tracker::ALL_QUEUE_SUMMARY;
 use lqos_sys::{flowbee_data::FlowbeeKey, iterate_flows, throughput_for_each};
 use lqos_utils::units::{AtomicDownUp, DownUpOrder};
 use lqos_utils::{XdpIpAddress, unix_time::time_since_boot};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use std::{sync::atomic::AtomicU64, time::Duration};
 use tracing::{debug, info, warn};
+
+// Maximum number of flows to track simultaneously
+// TODO: This should be made configurable via the config file
+const MAX_FLOWS: usize = 1_000_000;
+
+pub const MAX_RETRY_TIMES: usize = 32;
 
 #[derive(Allocative)]
 pub struct ThroughputTracker {
@@ -127,7 +134,13 @@ impl ThroughputTracker {
         });
     }
 
-    pub(crate) fn apply_new_throughput_counters(&self, net_json_calc: &mut NetworkJson) {
+    pub(crate) fn apply_new_throughput_counters(
+        &self, 
+        net_json_calc: &mut NetworkJson,
+        bakery_sender: crossbeam_channel::Sender<BakeryCommands>,
+    ) {
+        let mut changed_circuits = HashSet::new();
+
         let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
         let mut raw_data = self.raw_data.lock().unwrap();
         throughput_for_each(&mut |xdp_ip, counts| {
@@ -162,6 +175,10 @@ impl ThroughputTracker {
                 }
                 if entry.packets != entry.prev_packets {
                     entry.most_recent_cycle = self_cycle;
+                    // Call to Bakery Update for existing traffic
+                    if let Some(circuit_hash) = entry.circuit_hash {
+                        changed_circuits.insert(circuit_hash);
+                    }
 
                     if let Some(parents) = &entry.network_json_parents {
                         net_json_calc.add_throughput_cycle(
@@ -209,6 +226,26 @@ impl ThroughputTracker {
                 }
             } else {
                 let (circuit_id, circuit_hash) = Self::lookup_circuit_id(xdp_ip);
+                // Call the Bakery Queue Creation for new circuits
+                if let Some(circuit_hash) = circuit_hash {
+                    if let Ok(config) = lqos_config::load_config() {
+                        if config.queues.lazy_queues.is_some() {
+                            let mut add = true;
+
+                            if config.queues.lazy_threshold_bytes.is_some() {
+                                let threshold = config.queues.lazy_threshold_bytes.unwrap();
+                                let total_bytes: u64 = counts.iter().map(|c| c.download_bytes + c.upload_bytes).sum();
+                                if total_bytes < threshold {
+                                    add = false;
+                                }
+                            }
+
+                            if add {
+                                changed_circuits.insert(circuit_hash);                    
+                            }
+                        }
+                    }
+                }
                 let mut entry = ThroughputEntry {
                     circuit_id: circuit_id.clone(),
                     circuit_hash,
@@ -258,6 +295,15 @@ impl ThroughputTracker {
                 raw_data.insert(*xdp_ip, entry);
             }
         });
+
+        if !changed_circuits.is_empty() {
+            if let Err(e) = bakery_sender.send(BakeryCommands::OnCircuitActivity { circuit_ids: changed_circuits }) {
+                warn!("Failed to send BakeryCommands::OnCircuitActivity: {:?}", e);
+            }
+        }
+        if let Err(e) = bakery_sender.send(BakeryCommands::Tick) {
+            warn!("Failed to send BakeryCommands::Tick: {:?}", e);
+        }
     }
 
     pub(crate) fn apply_queue_stats(&self, net_json_calc: &mut NetworkJson) {
@@ -315,10 +361,24 @@ impl ThroughputTracker {
                     if let Some(this_flow) = all_flows_lock.flow_data.get_mut(&key) {
                         // If retransmits have changed, add the time to the retry list
                         if data.tcp_retransmits.down != this_flow.0.tcp_retransmits.down {
-                            this_flow.0.retry_times_down.push(data.last_seen);
+                            if this_flow.0.retry_times_down.is_none() {
+                                this_flow.0.retry_times_down = Some((0, [0; MAX_RETRY_TIMES]));
+                            }
+                            if let Some(retry_times) = &mut this_flow.0.retry_times_down {
+                                retry_times.1[retry_times.0] = data.last_seen;
+                                retry_times.0 += 1;
+                                retry_times.0 %= MAX_RETRY_TIMES;
+                            }
                         }
                         if data.tcp_retransmits.up != this_flow.0.tcp_retransmits.up {
-                            this_flow.0.retry_times_up.push(data.last_seen);
+                            if this_flow.0.retry_times_up.is_none() {
+                                this_flow.0.retry_times_up = Some((0, [0; MAX_RETRY_TIMES]));
+                            }
+                            if let Some(retry_times) = &mut this_flow.0.retry_times_up {
+                                retry_times.1[retry_times.0] = data.last_seen;
+                                retry_times.0 += 1;
+                                retry_times.0 %= MAX_RETRY_TIMES;
+                            }
                         }
 
                         //let change_since_last_time = data.bytes_sent.checked_sub_or_zero(this_flow.0.bytes_sent);
@@ -343,11 +403,26 @@ impl ThroughputTracker {
                             }
                         }
                     } else {
-                        // Insert it into the map
-                        let flow_analysis = FlowAnalysis::new(&key);
-                        all_flows_lock
-                            .flow_data
-                            .insert(key.clone(), (data.into(), flow_analysis));
+                        // Check if we've hit the flow limit
+                        if all_flows_lock.flow_data.len() >= MAX_FLOWS {
+                            // Log warning once per second to avoid spam
+                            static LAST_WARNING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                            let now = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs();
+                            let last = LAST_WARNING.load(std::sync::atomic::Ordering::Relaxed);
+                            if now > last {
+                                warn!("Flow limit of {} reached, dropping new flow", MAX_FLOWS);
+                                LAST_WARNING.store(now, std::sync::atomic::Ordering::Relaxed);
+                            }
+                        } else {
+                            // Insert it into the map
+                            let flow_analysis = FlowAnalysis::new(&key);
+                            all_flows_lock
+                                .flow_data
+                                .insert(key.clone(), (data.into(), flow_analysis));
+                        }
                     }
 
                     // TCP - we have RTT data? 6 is TCP

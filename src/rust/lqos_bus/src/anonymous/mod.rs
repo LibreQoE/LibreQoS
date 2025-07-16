@@ -1,10 +1,11 @@
 mod v1;
+use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::warn;
 pub use v1::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Allocative)]
 /// Header for stats submission
 pub struct StatsHeader {
     /// The version to use (should be 1)

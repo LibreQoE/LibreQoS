@@ -44,7 +44,7 @@ export class ThroughputBpsDash extends DashletBaseInsight{
 
         // Recent
         const recentWrapper = document.createElement("div");
-        recentWrapper.classList.add("mb-3");
+        //recentWrapper.classList.add("mb-3");
 
         const recentDlHeader = document.createElement("div");
         recentDlHeader.classList.add("stat-header");
@@ -113,14 +113,14 @@ export class ThroughputBpsDash extends DashletBaseInsight{
         if (!window.hasLts) {
             // No LTS for you
             const yestWrapper = document.createElement("div");
-            yestWrapper.classList.add("mb-3");
+            //yestWrapper.classList.add("mb-3");
 
             const yestHeader = document.createElement("div");
             yestHeader.classList.add("stat-header");
 
             const yestValue = document.createElement("span");
             yestValue.classList.add("fw-bold", "text-secondary");
-            yestValue.innerHTML = "<i class=\"fa fa-fw fa-centerline fa-line-chart nav-icon small\"></i> History<br />Requires Insight";
+            yestValue.innerHTML = "<i class=\"fa fa-fw fa-centerline fa-line-chart nav-icon small\"></i> History<br />Requires<br />Insight";
 
             yestWrapper.appendChild(yestHeader);
             yestWrapper.appendChild(yestValue);
@@ -129,11 +129,11 @@ export class ThroughputBpsDash extends DashletBaseInsight{
 
             // Yesterday
             const yestWrapper = document.createElement("div");
-            yestWrapper.classList.add("mb-3");
+            //yestWrapper.classList.add("mb-3");
 
             const yestHeader = document.createElement("div");
             yestHeader.classList.add("stat-header");
-            yestHeader.textContent = "This Time Yesterday:";
+            yestHeader.textContent = "Yesterday:";
 
             const yestValueDl = document.createElement("div");
             yestValueDl.classList.add("fw-bold", "text-secondary");
@@ -172,7 +172,7 @@ export class ThroughputBpsDash extends DashletBaseInsight{
 
             const lastWeekHeader = document.createElement("div");
             lastWeekHeader.classList.add("stat-header");
-            lastWeekHeader.textContent = "This Time Last Week:";
+            lastWeekHeader.textContent = "Last Week:";
 
             const lastWeekValueDl = document.createElement("div");
             lastWeekValueDl.classList.add("fw-bold", "text-secondary");
@@ -214,7 +214,7 @@ export class ThroughputBpsDash extends DashletBaseInsight{
         // ASSEMBLE
         // ---------------------
         row.appendChild(colLeft);
-        row.appendChild(colDivider);
+        //row.appendChild(colDivider);
         row.appendChild(colRight);
 
         // Add it all

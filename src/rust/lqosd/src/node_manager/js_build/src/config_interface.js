@@ -1,4 +1,4 @@
-import {saveConfig, loadConfig} from "./config/config_helper";
+import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
 
 function validateConfig() {
     if (document.getElementById('bridgeMode').checked) {
@@ -56,6 +56,9 @@ function updateConfig() {
         };
     }
 }
+
+// Render the configuration menu
+renderConfigMenu('interface');
 
 loadConfig(() => {
     // window.config now contains the configuration.

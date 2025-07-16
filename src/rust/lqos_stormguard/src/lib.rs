@@ -6,9 +6,11 @@
 //!
 //! Copyright (C) 2025 LibreQoS. GPLv2 licensed.
 
+use std::sync::Mutex;
 use std::time::Duration;
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
 use tracing::{debug, info};
+use lqos_bakery::BakeryCommands;
 
 mod config;
 mod queue_structure;
@@ -18,9 +20,11 @@ mod datalog;
 const READING_ACCUMULATOR_SIZE: usize = 15;
 const MOVING_AVERAGE_BUFFER_SIZE: usize = 15;
 
+pub static STORMGUARD_STATS: Mutex<Vec<(String, u64, u64)>> = Mutex::new(Vec::new());
+
 /// Launches the StormGuard component. Will exit if there's
 /// nothing to do.
-pub async fn start_stormguard() -> anyhow::Result<()> {
+pub async fn start_stormguard(bakery: crossbeam_channel::Sender<BakeryCommands>) -> anyhow::Result<()> {
     let _ = tokio::time::sleep(Duration::from_secs(1)).await;
 
     info!("Starting LibreQoS StormGuard...");
@@ -47,7 +51,7 @@ pub async fn start_stormguard() -> anyhow::Result<()> {
         site_state_tracker.check_state();
         let recommendations = site_state_tracker.recommendations();
         if !recommendations.is_empty() {
-            site_state_tracker.apply_recommendations(recommendations, &config, log_sender.clone());
+            site_state_tracker.apply_recommendations(recommendations, &config, log_sender.clone(), bakery.clone());
         }
 
         // Sleep until the next second

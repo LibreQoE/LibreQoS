@@ -1,7 +1,9 @@
 use std::fmt::Display;
+use allocative::Allocative;
+
 use crate::site_state::ring_buffer::RingBuffer;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Allocative)]
 pub enum SaturationLevel {
     Low,
     Medium,
@@ -30,7 +32,7 @@ impl SaturationLevel {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Allocative)]
 pub enum RetransmitState {
     RisingFast,
     Rising,
@@ -75,7 +77,7 @@ impl RetransmitState {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Allocative)]
 pub enum RttState {
     Rising{magnitude: f32},
     Flat,

@@ -5,7 +5,9 @@ mod site;
 mod analysis;
 
 use std::collections::HashMap;
+use crossbeam_channel::Sender;
 use tracing::{debug, info, warn};
+use lqos_bakery::BakeryCommands;
 use lqos_bus::{BusRequest, BusResponse};
 use lqos_queue_tracker::QUEUE_STRUCTURE;
 use crate::config::StormguardConfig;
@@ -119,6 +121,7 @@ impl<'a> SiteStateTracker<'a> {
         recommendations: Vec<(Recommendation, String)>,
         config: &StormguardConfig,
         log_sender: std::sync::mpsc::Sender<LogCommand>,
+        bakery_sender: Sender<BakeryCommands>,
     ) {
         // We'll need the queues to apply HTB commands
         let Some(queues) = &QUEUE_STRUCTURE.load().maybe_queues else {
@@ -212,10 +215,18 @@ impl<'a> SiteStateTracker<'a> {
                 RecommendationDirection::Download => {
                     site.queue_download_mbps = new_rate;
                     site.ticks_since_last_probe_download = 0;
+                    let mut lock = crate::STORMGUARD_STATS.lock().unwrap();
+                    if let Some(site) = lock.iter_mut().find(|(n, _, _)| n == &recommendation.site) {
+                        site.1 = new_rate;
+                    }
                 }
                 RecommendationDirection::Upload => {
                     site.queue_upload_mbps = new_rate;
                     site.ticks_since_last_probe_upload = 0;
+                    let mut lock = crate::STORMGUARD_STATS.lock().unwrap();
+                    if let Some(site) = lock.iter_mut().find(|(n, _, _)| n == &recommendation.site) {
+                        site.2 = new_rate;
+                    }
                 }
             }
 
@@ -230,11 +241,11 @@ impl<'a> SiteStateTracker<'a> {
                 }
                 let class_id = dependent.class_id.to_string();
                 info!("Applying rate change to dependent {}: {} -> {}", dependent.name, dependent.original_max_download_mbps, new_rate);
-                Self::apply_htb_change(config, &interface_name, class_id, new_rate);
+                Self::apply_htb_change(config, &interface_name, class_id, new_rate, bakery_sender.clone());
             }
 
             // Actually make the change
-            Self::apply_htb_change(config, &interface_name, class_id, new_rate);
+            Self::apply_htb_change(config, &interface_name, class_id, new_rate, bakery_sender.clone());
 
             // Finish Up by entering cooldown
             debug!("Recommendation applied: entering cooldown");
@@ -263,39 +274,55 @@ impl<'a> SiteStateTracker<'a> {
         }
     }
 
-    fn apply_htb_change(config: &StormguardConfig, interface_name: &str, class_id: String, new_rate: u64) {
-        // Build the HTB command
-        let args = vec![
-            "class".to_string(),
-            "change".to_string(),
-            "dev".to_string(),
-            interface_name.to_string(),
-            "classid".to_string(),
-            class_id.to_string(),
-            "htb".to_string(),
-            "rate".to_string(),
-            format!("{}mbit", new_rate - 1),
-            "ceil".to_string(),
-            format!("{}mbit", new_rate),
-        ];
-        if config.dry_run {
-            warn!("DRY RUN: /sbin/tc {}", args.join(" "));
-        } else {
-            let output = std::process::Command::new("/sbin/tc")
-                .args(&args)
-                .output();
-            match output {
-                Err(e) => {
-                    warn!("Failed to run tc command: {}", e);
-                }
-                Ok(out) => {
-                    if !out.status.success() {
-                        warn!("tc command failed: {}", String::from_utf8_lossy(&out.stderr));
-                    } else {
-                        info!("tc command succeeded: {}", String::from_utf8_lossy(&out.stdout));
-                    }
-                }
-            }
+    fn apply_htb_change(
+        config: &StormguardConfig,
+        interface_name: &str,
+        class_id: String,
+        new_rate: u64,
+        bakery_sender: Sender<BakeryCommands>,
+    ) {
+        if let Err(e) = bakery_sender.send(BakeryCommands::StormGuardAdjustment {
+            dry_run: config.dry_run,
+            interface_name: interface_name.to_owned(),
+            class_id,
+            new_rate,
+        }) {
+            warn!("Failed to send StormGuard adjustment command: {}", e);
+            return;
         }
+
+        // // Build the HTB command
+        // let args = vec![
+        //     "class".to_string(),
+        //     "change".to_string(),
+        //     "dev".to_string(),
+        //     interface_name.to_string(),
+        //     "classid".to_string(),
+        //     class_id.to_string(),
+        //     "htb".to_string(),
+        //     "rate".to_string(),
+        //     format!("{}mbit", new_rate - 1),
+        //     "ceil".to_string(),
+        //     format!("{}mbit", new_rate),
+        // ];
+        // if config.dry_run {
+        //     warn!("DRY RUN: /sbin/tc {}", args.join(" "));
+        // } else {
+        //     let output = std::process::Command::new("/sbin/tc")
+        //         .args(&args)
+        //         .output();
+        //     match output {
+        //         Err(e) => {
+        //             warn!("Failed to run tc command: {}", e);
+        //         }
+        //         Ok(out) => {
+        //             if !out.status.success() {
+        //                 warn!("tc command failed: {}", String::from_utf8_lossy(&out.stderr));
+        //             } else {
+        //                 info!("tc command succeeded: {}", String::from_utf8_lossy(&out.stdout));
+        //             }
+        //         }
+        //     }
+        // }
     }
 }

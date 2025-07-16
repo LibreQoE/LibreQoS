@@ -22,6 +22,7 @@ lqos_stormguard = { path = "../lqos_stormguard" }
 tokio = { version = "1", features = [ "full" ] }
 once_cell = { workspace = true}
 lqos_bus = { path = "../lqos_bus" }
+lqos_bakery = { path = "../lqos_bakery" }
 signal-hook = "0.3"
 serde_json = { workspace = true }
 serde = { workspace = true }
@@ -60,8 +61,8 @@ ureq = { version = "2.12.1", features = ["json", "native-tls"] }
 csv = { workspace = true }
 
 # For memory debugging
-allocative = {  version = "0.3.3", features = [ "dashmap" ] }
-allocative_derive = "0.3.3"
+allocative.workspace = true
+allocative_derive.workspace = true
 
 # Support JemAlloc on supported platforms
 #[target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]

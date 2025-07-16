@@ -1,8 +1,11 @@
 use std::collections::HashMap;
+use allocative::Allocative;
 use tracing::{debug, error};
 use lqos_bus::TcHandle;
 use crate::queue_structure::{find_queue_bandwidth, find_queue_dependents};
+use crate::STORMGUARD_STATS;
 
+#[derive(Allocative)]
 pub struct WatchingSite {
     pub name: String,
     pub max_download_mbps: u64,
@@ -12,6 +15,7 @@ pub struct WatchingSite {
     pub dependent_nodes: Vec<WatchingSiteDependency>,
 }
 
+#[derive(Allocative)]
 pub struct WatchingSiteDependency {
     pub name: String,
     pub class_id: TcHandle,
@@ -19,6 +23,7 @@ pub struct WatchingSiteDependency {
     pub original_max_upload_mbps: u64,
 }
 
+#[derive(Allocative)]
 pub struct StormguardConfig {
     pub sites: HashMap<String, WatchingSite>,
     pub download_interface: String,
@@ -64,6 +69,10 @@ pub fn configure() -> anyhow::Result<StormguardConfig> {
             dependent_nodes: dependencies,
         };
         sites.insert(target.to_owned(), site);
+        {
+            let mut lock = STORMGUARD_STATS.lock().unwrap();
+            lock.push((target.to_owned(), max_down, max_up));
+        }
     }
 
     let result = StormguardConfig {

@@ -1,11 +1,12 @@
 //! Message type to be sent to the long-term stats thread when
 //! data is available.
 
+use allocative::Allocative;
 use lqos_config::ShapedDevice;
 
 use super::{ThroughputSummary, network_tree::NetworkTreeEntry};
 
-#[derive(Debug)]
+#[derive(Debug, Allocative)]
 /// Messages to/from the stats collection thread
 pub enum StatsUpdateMessage {
     /// Fresh throughput stats have been collected
