@@ -4,7 +4,6 @@ Puedes descargar Ubuntu Server 24.04 LTS desde <a href="https://ubuntu.com/downl
 Por el momento, solo se admite Ubuntu Server 24.04. Asegúrate de no utilizar otras versiones.
 
 1. Arranca Ubuntu Server desde una USB.
-
 2. Sigue los pasos a continuación para instalar Ubuntu Server.
 
 <img width="1287" alt="01 select-language" src="https://github.com/user-attachments/assets/af33c525-129c-4ecc-9e35-0ca4fd69b192" /> 
