@@ -60,7 +60,7 @@ Esto ejecutará lqosd en modo debug y te proporcionará detalles sobre por qué 
 ### RTNETLINK answers: Invalid argument
 
 Este error suele aparecer cuando el qdisc tipo MQ no puede ser añadido correctamente a la interfaz de red (NIC).
-Esto sugiere que la tarjeta de red no tiene suficientes filas RX/TX. Asegurese de estar utilizando las [NICs recomendadas](requirements.md).
+Esto sugiere que la tarjeta de red no tiene suficientes filas RX/TX. Asegurese de estar utilizando las [NICs recomendadas](requirements-es.md).
 
 ### Error de Python ModuleNotFoundError en Ubuntu 24.04
 ```
