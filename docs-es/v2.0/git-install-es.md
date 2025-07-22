@@ -69,7 +69,7 @@ sudo cp lqos.example /etc/lqos.conf
 
 ## Configuración
 
-Proceda a configurar los parámetros [siguiendo esta guía:](configuration.md).
+Proceda a configurar los parámetros [siguiendo esta guía](configuration.md).
 
 ## Configuración de servicios (Daemons)
 
