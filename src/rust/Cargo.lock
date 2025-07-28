@@ -2100,6 +2100,7 @@ dependencies = [
  "allocative_derive",
  "arc-swap",
  "csv",
+ "encoding_rs",
  "ip_network",
  "ip_network_table",
  "lqos_utils",

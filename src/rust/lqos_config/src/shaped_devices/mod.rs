@@ -7,6 +7,7 @@ use serializable::SerializableShapedDevice;
 pub use shaped_device::ShapedDevice;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
+use encoding_rs::{ISO_8859_10, ISO_8859_15, UTF_8, WINDOWS_1252};
 use thiserror::Error;
 use tracing::{debug, error};
 
@@ -60,19 +61,82 @@ impl ConfigShapedDevices {
         }
     }
 
+    fn handle_encodings(bytes: &[u8]) -> Vec<u8> {
+        let mut result = Vec::new();
+        if let Some(bom) = encoding_rs::Encoding::for_bom(&bytes) {
+            bom.0.new_decoder().decode_to_utf8(&bytes, &mut result, true);
+        } else {
+            result.extend_from_slice(bytes);
+        }
+
+        // If already valid UTF-8, return as-is
+        if std::str::from_utf8(bytes).is_ok() {
+            return bytes.to_vec();
+        }
+
+        // Comprehensive European + Latin American encoding list
+        let encoding_labels = [
+            // Most common modern encodings
+            "windows-1252",    // Western Europe (English, French, German, Spanish, etc.)
+            "windows-1250",    // Central/Eastern Europe (Polish, Czech, Hungarian, etc.)
+            "windows-1251",    // Cyrillic (Russian, Bulgarian, Serbian, etc.)
+            "windows-1253",    // Greek
+            "windows-1254",    // Turkish
+            "windows-1257",    // Baltic (Lithuanian, Latvian, Estonian)
+
+            // ISO Latin series
+            "iso-8859-1",      // Latin-1: Western Europe
+            "iso-8859-2",      // Latin-2: Central/Eastern Europe
+            "iso-8859-3",      // Latin-3: Southern Europe (Turkish, Maltese)
+            "iso-8859-4",      // Latin-4: Northern Europe (Baltic)
+            "iso-8859-5",      // Cyrillic
+            "iso-8859-7",      // Greek
+            "iso-8859-9",      // Latin-5: Turkish
+            "iso-8859-13",     // Latin-7: Baltic
+            "iso-8859-15",     // Latin-9: Western Europe with Euro symbol
+            "iso-8859-16",     // Latin-10: Romanian
+
+            // Legacy but still encountered
+            "koi8-r",          // Russian Cyrillic
+            "koi8-u",          // Ukrainian Cyrillic
+            "cp437",           // Original DOS encoding
+            "cp850",           // DOS Latin-1
+            "cp852",           // DOS Latin-2
+            "cp866",           // DOS Cyrillic
+        ];
+
+        for label in &encoding_labels {
+            if let Some(encoding) = encoding_rs::Encoding::for_label(label.as_bytes()) {
+                let (decoded, _, had_errors) = encoding.decode(bytes);
+                if !had_errors {
+                    return decoded.as_bytes().to_vec();
+                }
+            }
+        }
+
+        // Fallback
+        String::from_utf8_lossy(bytes).as_bytes().to_vec()
+    }
+
     /// Loads `ShapedDevices.csv` and constructs a `ConfigShapedDevices`
     /// object containing the resulting data.
     pub fn load() -> Result<Self, ShapedDevicesError> {
         let final_path = ConfigShapedDevices::path()?;
-        let reader = ReaderBuilder::new()
-            .comment(Some(b'#'))
-            .trim(csv::Trim::All)
-            .from_path(final_path);
-        if reader.is_err() {
-            error!("Unable to read ShapedDevices.csv");
+
+        // Load the CSV file as a byte array
+        if !final_path.exists() {
+            error!("ShapedDevices.csv does not exist at {:?}", final_path);
             return Err(ShapedDevicesError::OpenFail);
         }
-        let mut reader = reader.unwrap();
+        debug!("Loading ShapedDevices.csv from {:?}", final_path);
+        let raw_bytes = std::fs::read(&final_path)
+            .map_err(|_| ShapedDevicesError::OpenFail)?;
+        let utf8_bytes = ConfigShapedDevices::handle_encodings(&raw_bytes);
+
+        let mut reader = ReaderBuilder::new()
+            .comment(Some(b'#'))
+            .trim(csv::Trim::All)
+            .from_reader(utf8_bytes.as_slice());
 
         // Example: StringRecord(["1", "968 Circle St., Gurnee, IL 60031", "1", "Device 1", "", "", "192.168.101.2", "", "25", "5", "10000", "10000", ""])
 
