@@ -37,11 +37,10 @@ impl From<&IpStats> for IpStatsWithPlan {
                 .iter()
                 .find(|sd| sd.circuit_id == result.circuit_id)
             {
-                let name = if circuit.circuit_name.chars().count() > 20 {
-                    let name_trimmed: String = circuit.circuit_name.chars().take(20).collect();
-                    name_trimmed
+                let name = if circuit.circuit_name.len() > 20 {
+                    &circuit.circuit_name[0..20]
                 } else {
-                    circuit.circuit_name.clone()
+                    &circuit.circuit_name
                 };
                 result.ip_address = format!("{}", name);
                 result.plan = DownUpOrder { down: circuit.download_max_mbps as f32, up: circuit.upload_max_mbps as f32 };
