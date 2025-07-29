@@ -3,6 +3,7 @@ from pythonCheck import checkPythonVersion
 checkPythonVersion()
 import csv
 import io
+import chardet
 import ipaddress
 import json
 import math
@@ -230,7 +231,32 @@ def validateNetworkAndDevices():
 			warnings.warn("network.json is an invalid JSON file", stacklevel=2) # in case json is invalid
 			networkValidatedOrNot = False
 	rowNum = 2
-	with open(get_shaped_devices_path()) as csv_file:
+
+	# Handle non-utf8 encoding in ShapedDevices.csv
+	with open(get_shaped_devices_path(), 'rb') as f:
+		raw_bytes = f.read()
+
+	# Handle BOM if present
+	if raw_bytes.startswith(b'\xef\xbb\xbf'):  # UTF-8 BOM
+		raw_bytes = raw_bytes[3:]
+		text_content = raw_bytes.decode('utf-8')
+	elif raw_bytes.startswith(b'\xff\xfe'):  # UTF-16 LE BOM
+		text_content = raw_bytes.decode('utf-16')
+	elif raw_bytes.startswith(b'\xfe\xff'):  # UTF-16 BE BOM
+		text_content = raw_bytes.decode('utf-16')
+	else:
+		# Try UTF-8 first
+		try:
+			text_content = raw_bytes.decode('utf-8')
+		except UnicodeDecodeError:
+			# Detect encoding
+			detected = chardet.detect(raw_bytes)
+			encoding = detected['encoding'] or 'utf-8'
+			text_content = raw_bytes.decode(encoding, errors='replace')
+
+	# Create a StringIO object to mimic a file
+	# And read from the sanitized byte stream
+	with io.StringIO(text_content) as csv_file:
 		csv_reader = csv.reader(csv_file, delimiter=',')
 		#Remove comments if any
 		commentsRemoved = []

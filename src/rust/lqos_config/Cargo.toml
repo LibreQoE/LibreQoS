@@ -23,3 +23,4 @@ once_cell = { workspace = true }
 # For memory debugging
 allocative.workspace = true
 allocative_derive.workspace = true
+encoding_rs = "0.8.35"
