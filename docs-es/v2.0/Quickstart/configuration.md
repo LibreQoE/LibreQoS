@@ -1,43 +1,43 @@
-# Configure LibreQoS
+# Configurar LibreQoS
 
-## Main Configuration File
+## Archivo de configuración principal
 ### /etc/lqos.conf
 
-The LibreQoS configuration for each shaper box is stored in the file `/etc/lqos.conf`.
+La configuración de LibreQoS para cada shaper box se almacena en el archivo `/etc/lqos.conf`.
 
-Edit the file to match your setup with
+Edite el archivo para que coincida con su configuración
 
 ```shell
 sudo nano /etc/lqos.conf
 ```
 
-In the ```[bridge]``` section, change `to_internet` and `to_network` to match your network interfaces.
+En la sección ```[bridge]``` , cambie `to_internet` y `to_network` para que coincida con sus interfaces de red.
 - `to_internet = "enp1s0f1"`
 - `to_network = "enp1s0f2"`
 
-Then, if using Bifrost/XDP set `use_xdp_bridge = true` under that same `[bridge]` section. If you're not sure whether you need this, we recommend to leave it as `false`.
+Luego, si usa Bifrost/XDP, configure `use_xdp_bridge = true` en la misma sección `[bridge]`. Si no está seguro de que lo necesite, le recomendamos dejarlo como `false`.
 
-- Set downlink_bandwidth_mbps and uplink_bandwidth_mbps to match the bandwidth in Mbps of your network's upstream / WAN internet connection. The same can be done for generated_pn_download_mbps and generated_pn_upload_mbps.
-- to_internet would be the interface facing your edge router and the broader internet
-- to_network would be the interface facing your core router (or bridged internal network if your network is bridged)
+- Configure downlink_bandwidth_mbps y uplink_bandwidth_mbps para que coincidan con el ancho de banda en Mbps de la conexión a internet de subida/WAN de su red. Puede hacer lo mismo con generated_pn_download_mbps y generated_pn_upload_mbps.
+- to_internet sería la interfaz que da a su enrutador de borde y a la red de Internet en generla
+- to_network sería la interfaz que da a su enrutador central (o red interna puenteada si su red está puenteada)
 
-Note: If you find that traffic is not being shaped when it should, please make sure to swap the interface order and restart lqosd as well as lqos_scheduler with ```sudo systemctl restart lqosd lqos_scheduler```.
+Nota: Si observa que el tráfico no se está modelando cuando debería, asegúrese de intercambiar el orden de las interfaces y reinicie lqosd, así como lqos_scheduler con ```sudo systemctl restart lqosd lqos_scheduler```.
 
-After changing any part of `/etc/lqos.conf` it is highly recommended to always restart lqosd, using `sudo systemctl restart lqosd`. This re-parses any new values in lqos.conf, making those new values accessible to both the Rust and Python sides of the code.
+Después de cambiar cualquier parte de `/etc/lqos.conf`, se recomienda encarecidamente reiniciar siempre lqosd, utilizando `sudo systemctl restart lqosd`. Esto vuelve a analizar cualquier nuevo valor en lqos.conf, haciendo que esos nuevos valores sean accesibles tanto para el lado Rust como para el lado Python del código.
 
-### Integrations
+### Integraciones
 
-Learn more about [configuring integrations here](../TechnicalDocs/integrations.md).
+Más información sobre cómo [configurar integraciones aquí](../TechnicalDocs/integrations.md).
 
-## Network Hierarchy
+## Jerarquía de red
 ### Network.json
 
-Network.json allows ISP operators to define a Hierarchical Network Topology, or Flat Network Topology.
+Network.json permite a los operadores de ISP definir una topología de red jerárquica o una topología de red plana.
 
-If you plan to use the built-in UISP or Splynx integrations, you do not need to create a network.json file quite yet.
-If you plan to use the built-in UISP integration, it will create this automatically on its first run (assuming network.json is not already present).
+Si planea utilizar las integraciones UISP o Splynx integradas, no es necesario que cree un archivo network.json todavía.
+Si planea utilizar la integración UISP integrada, esta se creará automáticamente la primera vez que se ejecute (suponiendo que network.json aún no exista).
 
-If you will not be using an integration, you can manually define the network.json following the template file - network.example.json
+Si no va a utilizar una integración, puede definir manualmente el archivo network.json siguiendo el archivo de plantilla: network.example.json
 
 ```text
 +-----------------------------------------------------------------------+
@@ -51,63 +51,63 @@ If you will not be using an integration, you can manually define the network.jso
 +-------+-------+-------+-----------------------+-------+-------+-------+
 ```
 
-For networks with no Parent Nodes (no strictly defined Access Points or Sites) edit the network.json to use a Flat Network Topology with
+Para redes sin nodos principales (sin puntos de acceso o sitios estrictamente definidos), edite el archivo network.json para utilizar una topología de red plana con
 ```nano network.json```
-setting the following file content:
+estableciendo el siguiente contenido del archivo:
 
 ```json
 {}
 ```
 
-#### CSV to JSON conversion helper
+#### Ayuda para la conversión de CSV a JSON
 
-You can use
+Puede utilizar
 
 ```shell
 python3 csvToNetworkJSON.py
 ```
 
-to convert manualNetwork.csv to a network.json file.
-manualNetwork.csv can be copied from the template file, manualNetwork.template.csv
+para convertir manualNetwork.csv en un archivo network.json.
+manualNetwork.csv se puede copiar desde el archivo de plantilla, manualNetwork.template.csv.
 
-Note: The parent node name must match that used for clients in ShapedDevices.csv
+Nota: El nombre del nodo principal debe coincidir con el utilizado para los clientes en ShapedDevices.csv.
 
-## Circuits
+## Circuitos
 
-LibreQoS shapes individual devices by their IP addresses, which are grouped into "circuits".
+LibreQoS configura los dispositivos individuales según sus direcciones IP, que se agrupan en «circuitos».
 
-A circuit represents an ISP subscriber's internet service, which may have just one associated IP (the subscriber's router may be assigned a single /32 IPv4 for example) or it might have multiple IPs associated (maybe their router has a /29 assigned, or multiple /32s).
+Un circuito representa el servicio de Internet de un suscriptor de ISP, que puede tener una sola IP asociada (por ejemplo, al enrutador del suscriptor se le puede asignar una sola IPv4 /32) o puede tener varias IP asociadas (tal vez su enrutador tenga asignada una /29 o varias /32)..
 
-LibreQoS knows how to shape these devices, and what Node (AP, Site, etc) they are contained by, with the ShapedDevices.csv file.
+LibreQoS sabe cómo configurar estos dispositivos y en qué nodo (AP, sitio, etc.) se encuentran, gracias al archivo ShapedDevices.csv.
 
 ### ShapedDevices.csv
 
-The ShapedDevices.csv file correlates device IP addresses to Circuits (each internet subscriber's unique service).
+El archivo ShapedDevices.csv correlaciona las direcciones IP de los dispositivos con los circuitos (el servicio exclusivo de cada suscriptor de Internet).
 
-Here is an example of an entry in the ShapedDevices.csv file:
+A continuación se muestra un ejemplo de una entrada en el archivo ShapedDevices.csv:
 | Circuit ID | Circuit Name | Device ID | Device Name | Parent Node | MAC | IPv4                      | IPv6                 | Download Min Mbps | Upload Min Mbps | Download Max Mbps | Upload Max Mbps | Comment |
 |------------|--------------|-----------|-------------|-------------|-----|---------------------------|----------------------|-------------------|-----------------|-------------------|-----------------|---------|
 | 10001      | Person Name  | 10001     | Device 1    | AP_A        |     | 100.64.0.2, 100.64.0.8/29 | fdd7:b724:0:100::/56 | 25                | 5               | 155               | 20              |         |
 
-If you are using one of our CRM integrations, this file will be automatically generated. If you are not using an integration, you can manually edit the file using either the WebUI or by directly editing the ShapedDevices.csv file through the CLI.
+Si utiliza una de nuestras integraciones CRM, este archivo se generará automáticamente. Si no utiliza una integración, puede editar el archivo manualmente utilizando la interfaz de usuario web o editando directamente el archivo ShapedDevices.csv a través de la CLI.
 
-#### Manual Editing by WebUI
-Navigate to the LibreQoS WebUI (http://a.b.c.d:9123) and select Configuration > Shaped Devices.
+#### Edición manual mediante  WebUI
+Navegue hasta el WebUI LibreQoS (http://a.b.c.d:9123) y seleccione Configuration > Shaped Devices.
 
-#### Manual Editing by CLI
+#### Edición manual mediante CLI
 
-- Modify the ShapedDevices.csv file using your preferred spreadsheet editor (LibreOffice Calc, Excel, etc), following the template file - ShapedDevices.example.csv
-- Circuit ID is required. Must be a string of some sort (int is fine, gets parsed as string). Must NOT include any number symbols (#). Every circuit needs a unique CircuitID - they cannot be reused. Here, circuit essentially means customer location. If a customer has multiple locations on different parts of your network, use a unique CircuitID for each of those locations.
-- At least one IPv4 address or IPv6 address is required for each entry.
-- The Access Point or Site name should be set in the Parent Node field. Parent Node can be left blank for flat networks.
-- The ShapedDevices.csv file allows you to set minimum guaranteed, and maximum allowed bandwidth per subscriber.
-- The minimum allowed plan rates for Circuits are 2Mbit. Bandwidth min and max should both be above that threshold.
-- Recommendation: set the min bandwidth to something like 25/10 and max to 1.15X advertised plan rate by using bandwidthOverheadFactor = 1.15
-  - This way, when an AP hits its ceiling, users have any remaining AP capacity fairly distributed between them.
-  - Ensure a reasonable minimum bandwidth minimum for every subscriber, allowing them to utilize up to the maximum provided when AP utilization is below 100%.
+- Modifique el archivo ShapedDevices.csv utilizando su editor de hojas de cálculo preferido (LibreOffice Calc, Excel, etc.), siguiendo la plantilla del archivo - ShapedDevices.example.csv
+- Se requiere el ID del circuito. Debe ser una cadena de algún tipo (int está bien, se analiza como cadena). NO debe incluir ningún símbolo numérico (#). Cada circuito necesita un CircuitID único, no se pueden reutilizar. Aquí, circuito significa esencialmente la ubicación del cliente. Si un cliente tiene varias ubicaciones en diferentes partes de su red, utilice un CircuitID único para cada una de esas ubicaciones.
+- Se requiere al menos una dirección IPv4 o IPv6 para cada entrada.
+- El nombre del punto de acceso o del sitio debe configurarse en el campo Nodo principal. El campo Nodo principal puede dejarse en blanco para redes planas.
+- El archivo ShapedDevices.csv le permite establecer el ancho de banda mínimo garantizado y máximo permitido por suscriptor.
+- Las tarifas mínimas permitidas para los Circuitos son de 2 Mbit. El ancho de banda mínimo y máximo deben estar por encima de ese umbral.
+- Recomendación: establezca el ancho de banda mínimo en algo así como 25/10 y el máximo en 1,15 veces la velocidad anunciada en el plan utilizando bandwidthOverheadFactor = 1,15
+  - De esta manera, cuando un punto de acceso alcanza su límite máximo, los usuarios disponen de la capacidad restante del punto de acceso distribuida de forma equitativa entre ellos.
+  - Garantizar un ancho de banda mínimo razonable para cada suscriptor, permitiéndoles utilizar hasta el máximo proporcionado cuando la utilización del punto de acceso sea inferior al 100 %.
 
-Note regarding SLAs: For customers with SLA contracts that guarantee them a minimum bandwidth, set their plan rate as the minimum bandwidth. That way when an AP approaches its ceiling, SLA customers will always get that amount.
+Nota sobre los SLA: para los clientes con contratos SLA que les garantizan un ancho de banda mínimo, establezca la tarifa de su plan como el ancho de banda mínimo. De esta forma, cuando un punto de acceso se acerque a su límite máximo, los clientes con SLA siempre obtendrán esa cantidad.
 
 ![image](https://user-images.githubusercontent.com/22501920/200134960-28709d0f-48fe-4129-b4fd-70b204cade2c.png)
 
-Once your configuration is complete. You're ready to run the application and start the [Deamons](./services-and-run.md)
+Una vez completada la configuración, ya está listo para ejecutar la aplicación e iniciar los [Deamons](./services-and-run.md)
