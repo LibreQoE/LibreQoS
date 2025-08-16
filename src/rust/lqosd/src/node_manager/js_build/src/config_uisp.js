@@ -83,6 +83,7 @@ function updateConfig() {
         commit_bandwidth_multiplier: parseFloat(document.getElementById("uispCommitMultiplier").value),
         use_ptmp_as_parent: document.getElementById("uispUsePtmpAsParent").checked,
         ignore_calculated_capacity: document.getElementById("uispIgnoreCalculatedCapacity").checked,
+        insecure_ssl: document.getElementById("uispInsecureSsl").checked,
         // Default values for fields not in the form
         exclude_sites: [],
         squash_sites: null,
