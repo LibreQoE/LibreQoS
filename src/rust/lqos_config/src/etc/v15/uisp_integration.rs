@@ -20,6 +20,7 @@ pub struct UispIntegration {
     pub use_ptmp_as_parent: bool,
     #[serde(default = "default_ignore_calculated_capacity")]
     pub ignore_calculated_capacity: bool,
+    pub insecure_ssl: Option<bool>,
 }
 
 fn default_ignore_calculated_capacity() -> bool {
@@ -51,6 +52,7 @@ impl Default for UispIntegration {
             exception_cpes: vec![],
             use_ptmp_as_parent: false,
             ignore_calculated_capacity: false,
+            insecure_ssl: None,
         }
     }
 }
