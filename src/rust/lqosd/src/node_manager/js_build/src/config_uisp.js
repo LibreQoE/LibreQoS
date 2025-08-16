@@ -105,6 +105,7 @@ loadConfig(() => {
         document.getElementById("uispIpv6WithMikrotik").checked = uisp.ipv6_with_mikrotik ?? false;
         document.getElementById("uispUsePtmpAsParent").checked = uisp.use_ptmp_as_parent ?? false;
         document.getElementById("uispIgnoreCalculatedCapacity").checked = uisp.ignore_calculated_capacity ?? false;
+        document.getElementById("uispInsecureSsl").checked = uisp.insecure_ssl ?? false;
 
         // String fields
         document.getElementById("uispToken").value = uisp.token ?? "";
