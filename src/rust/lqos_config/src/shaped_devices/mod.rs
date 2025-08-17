@@ -155,33 +155,38 @@ impl ConfigShapedDevices {
                 }
             } else {
                 error!("Error reading CSV record: {:?}", result);
-                if let csv::ErrorKind::UnequalLengths {
-                    pos,
-                    expected_len,
-                    len,
-                } = result.as_ref().err().as_ref().unwrap().kind()
-                {
-                    if let Some(pos) = &pos {
-                        let msg = format!(
-                            "At line {}, position {}. Expected {} fields, found {}",
-                            pos.line(),
-                            pos.byte(),
-                            expected_len,
-                            len
-                        );
-                        error!("CSV decode error: {msg}");
-                        return Err(ShapedDevicesError::UnequalLengths(msg));
-                    } else {
-                        let msg = format!(
-                            "Unknown position. Expected {expected_len} fields, found {len}"
-                        );
-                        error!("CSV decode error: {msg}");
-                        return Err(ShapedDevicesError::UnequalLengths(msg));
+                
+                // Safely extract error details if available
+                if let Err(ref csv_err) = result {
+                    match csv_err.kind() {
+                        csv::ErrorKind::UnequalLengths { pos, expected_len, len } => {
+                            let msg = if let Some(pos) = pos {
+                                format!(
+                                    "At line {}, position {}. Expected {} fields, found {}",
+                                    pos.line(),
+                                    pos.byte(),
+                                    expected_len,
+                                    len
+                                )
+                            } else {
+                                format!("Unknown position. Expected {expected_len} fields, found {len}")
+                            };
+                            error!("CSV decode error: {msg}");
+                            return Err(ShapedDevicesError::UnequalLengths(msg));
+                        }
+                        _ => {
+                            // Handle any other CSV error type safely
+                            return Err(ShapedDevicesError::GenericCsvError(format!(
+                                "CSV FILE: {result:?}"
+                            )));
+                        }
                     }
+                } else {
+                    // This shouldn't happen, but handle it gracefully
+                    return Err(ShapedDevicesError::GenericCsvError(
+                        "Unknown CSV error".to_string()
+                    ));
                 }
-                return Err(ShapedDevicesError::GenericCsvError(format!(
-                    "CSV FILE: {result:?}"
-                )));
             }
         }
         let trie = ConfigShapedDevices::make_trie(&devices);
