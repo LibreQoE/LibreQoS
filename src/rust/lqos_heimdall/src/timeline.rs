@@ -60,7 +60,7 @@ pub(crate) fn store_on_timeline(event: HeimdallEvent) {
 pub(crate) fn expire_timeline() {
     if let Ok(now) = time_since_boot() {
         let since_boot = Duration::from(now);
-        let Ok(expire) = since_boot.checked_sub(Duration::from_secs(TIMELINE_EXPIRE_SECS)) else {
+        let Some(expire) = since_boot.checked_sub(Duration::from_secs(TIMELINE_EXPIRE_SECS)) else {
             return;
         };
         let expire = expire.as_nanos() as u64;
@@ -130,7 +130,7 @@ pub fn hyperfocus_on_target(ip: XdpIpAddress) -> Option<(usize, usize)> {
 
                 if let Ok(now) = time_since_boot() {
                     let since_boot = Duration::from(now);
-                    if let Ok(expire) =
+                    if let Some(expire) =
                         since_boot.checked_sub(Duration::from_secs(SESSION_EXPIRE_SECONDS))
                     {
                         let expire = expire.as_nanos() as u64;
