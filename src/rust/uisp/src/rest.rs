@@ -71,6 +71,19 @@ mod tests {
     }
 }
 
+async fn get_client() -> Result<reqwest::Client, reqwest::Error> {
+    let mut ignore_ssl_errors = false;
+    if let Ok(cfg) = lqos_config::load_config() {
+        if let Some(ssl) = cfg.uisp_integration.insecure_ssl {
+            ignore_ssl_errors = ssl;
+        }
+    }
+    Ok(reqwest::Client::builder()
+        .danger_accept_invalid_certs(ignore_ssl_errors)
+        .danger_accept_invalid_hostnames(ignore_ssl_errors)
+        .build()?)
+}
+
 /// Submits a request to the UNMS API and returns the result as unprocessed text.
 /// This is a debug function: it doesn't do any parsing
 #[allow(dead_code)]
@@ -81,7 +94,7 @@ pub async fn nms_request_get_text(
 ) -> Result<String, reqwest::Error> {
     let full_url = format!("{}/{}", url_fixup(api), url);
     //println!("{full_url}");
-    let client = reqwest::Client::new();
+    let client = get_client().await?;
 
     let res = client
         .get(&full_url)
@@ -106,7 +119,7 @@ where
 {
     let full_url = format!("{}/{}", url_fixup(api), url);
     //println!("{full_url}");
-    let client = reqwest::Client::new();
+    let client = get_client().await?;
 
     let res = client
         .get(&full_url)
@@ -125,7 +138,7 @@ where
 {
     let full_url = format!("{}/{}", url_fixup(api), url);
     //println!("{full_url}");
-    let client = reqwest::Client::new();
+    let client = get_client().await?;
 
     let res = client
         .get(&full_url)
@@ -145,7 +158,7 @@ pub async fn crm_request_get_text(
     url: &str,
 ) -> Result<String, reqwest::Error> {
     let full_url = format!("{}/{}", url_fixup(api), url);
-    let client = reqwest::Client::new();
+    let client = get_client().await?;
 
     let res = client
         .get(&full_url)
@@ -167,7 +180,7 @@ where
     T: DeserializeOwned,
 {
     let full_url = format!("{}/{}", api, url);
-    let client = reqwest::Client::new();
+    let client = get_client().await?;
 
     let res = client
         .get(&full_url)
@@ -185,7 +198,7 @@ where
     T: DeserializeOwned,
 {
     let full_url = format!("{}/{}", api, url);
-    let client = reqwest::Client::new();
+    let client = get_client().await?;
 
     let res = client
         .get(&full_url)

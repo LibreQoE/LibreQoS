@@ -63,13 +63,39 @@ function validateConfig() {
             alert("Commit Bandwidth Multiplier must be a number greater than 0");
             return false;
         }
+
+        const exceptionCpes = document.getElementById("uispExceptionCpes").value.trim();
+        if (exceptionCpes) {
+            const entries = exceptionCpes.split(',');
+            for (const entry of entries) {
+                if (!entry.includes(':')) {
+                    alert(`Exception CPE entry "${entry}" must be in "cpe:parent" format`);
+                    return false;
+                }
+            }
+        }
     }
     return true;
 }
 
 function updateConfig() {
     // Update only the uisp_integration section
+    // Parse comma-separated strings into arrays
+    const excludeSites = document.getElementById("uispExcludeSites").value.trim();
+    const excludeSitesArray = excludeSites ? excludeSites.split(',').map(s => s.trim()) : [];
+
+    const squashSites = document.getElementById("uispSquashSites").value.trim();
+    const squashSitesArray = squashSites ? squashSites.split(',').map(s => s.trim()) : null;
+
+    const exceptionCpes = document.getElementById("uispExceptionCpes").value.trim();
+    const exceptionCpesArray = exceptionCpes ? exceptionCpes.split(',').map(s => {
+        const [cpe, parent] = s.split(':').map(part => part.trim());
+        return { cpe, parent };
+    }) : [];
+
+    // Update the config object
     window.config.uisp_integration = {
+        ...(window.config.uisp_integration || {}),  // Preserve existing values
         enable_uisp: document.getElementById("enableUisp").checked,
         token: document.getElementById("uispToken").value.trim(),
         url: document.getElementById("uispUrl").value.trim(),
@@ -83,10 +109,10 @@ function updateConfig() {
         commit_bandwidth_multiplier: parseFloat(document.getElementById("uispCommitMultiplier").value),
         use_ptmp_as_parent: document.getElementById("uispUsePtmpAsParent").checked,
         ignore_calculated_capacity: document.getElementById("uispIgnoreCalculatedCapacity").checked,
-        // Default values for fields not in the form
-        exclude_sites: [],
-        squash_sites: null,
-        exception_cpes: []
+        insecure_ssl: document.getElementById("uispInsecureSsl").checked,
+        exclude_sites: excludeSitesArray,
+        squash_sites: squashSitesArray && squashSitesArray.length > 0 ? squashSitesArray : null,
+        exception_cpes: exceptionCpesArray,
     };
 }
 
@@ -104,6 +130,7 @@ loadConfig(() => {
         document.getElementById("uispIpv6WithMikrotik").checked = uisp.ipv6_with_mikrotik ?? false;
         document.getElementById("uispUsePtmpAsParent").checked = uisp.use_ptmp_as_parent ?? false;
         document.getElementById("uispIgnoreCalculatedCapacity").checked = uisp.ignore_calculated_capacity ?? false;
+        document.getElementById("uispInsecureSsl").checked = uisp.insecure_ssl ?? false;
 
         // String fields
         document.getElementById("uispToken").value = uisp.token ?? "";
@@ -117,6 +144,11 @@ loadConfig(() => {
         document.getElementById("uispLtuCapacity").value = uisp.ltu_capacity ?? 0.0;
         document.getElementById("uispBandwidthOverhead").value = uisp.bandwidth_overhead_factor ?? 1.0;
         document.getElementById("uispCommitMultiplier").value = uisp.commit_bandwidth_multiplier ?? 1.0;
+
+        // New fields
+        document.getElementById("uispExcludeSites").value = uisp.exclude_sites?.join(", ") || "";
+        document.getElementById("uispSquashSites").value = uisp.squash_sites?.join(", ") || "";
+        document.getElementById("uispExceptionCpes").value = uisp.exception_cpes?.map(e => `${e.cpe}:${e.parent}`).join(", ") || "";
 
         // Add save button click handler
         document.getElementById('saveButton').addEventListener('click', () => {

@@ -80,6 +80,30 @@
                 <div class="form-text">Ignore capacity calculations from UISP</div>
             </div>
 
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="uispInsecureSsl">
+                <label class="form-check-label" for="uispInsecureSsl">Insecure SSL</label>
+                <div class="form-text">Disable SSL certificate validation (not recommended)</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="uispExcludeSites" class="form-label">Exclude Sites</label>
+                <input type="text" class="form-control" id="uispExcludeSites">
+                <div class="form-text">Comma-separated list of site IDs to exclude from synchronization</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="uispSquashSites" class="form-label">Squash Sites</label>
+                <input type="text" class="form-control" id="uispSquashSites">
+                <div class="form-text">Comma-separated list of site IDs to consolidate under a single parent</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="uispExceptionCpes" class="form-label">Exception CPEs</label>
+                <input type="text" class="form-control" id="uispExceptionCpes">
+                <div class="form-text">Comma-separated list of CPE exceptions in "cpe:parent" format</div>
+            </div>
+
             <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
         </form>
     </div>
