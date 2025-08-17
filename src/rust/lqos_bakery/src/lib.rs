@@ -1,41 +1,41 @@
 //! The Bakery is where CAKE is made!
-//! 
+//!
 //! More specifically, this crate provides a tracker of TC queues - described by the LibreQoS.py process,
 //! but tracked for changes. We're at phase 3.
-//! 
+//!
 //! In phase 1, the Bakery will build queues and a matching structure to track them. It will act exactly
 //! like the LibreQoS.py process.
-//! 
+//!
 //! In phase 2, the Bakery will *not* create CAKE queues - just the HTB hierarchy. When circuits are
 //! detected as having traffic, the associated queue will be created. Ideally, some form of timeout
 //! will be used to remove queues that are no longer in use. (Saving resources)
-//! 
+//!
 //! In phase 3, the Bakery will - after initial creation - track the queues and update them as needed.
 //! This will take a "diff" approach, finding differences and only applying those changes.
-//! 
+//!
 //! In phase 4, the Bakery will implement "live move" --- allowing queues to be moved losslessly. This will
 //! complete the NLNet project goals.
 
-mod utils;
 mod commands;
-mod queue_math;
 mod diff;
+mod queue_math;
+mod utils;
 
+use crossbeam_channel::{Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::sync::{Arc, OnceLock};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::atomic::Ordering::Relaxed;
-use crossbeam_channel::{Receiver, Sender};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, OnceLock};
 use tracing::{debug, error, info, warn};
 use utils::current_timestamp;
-pub (crate) const CHANNEL_CAPACITY: usize = 65536; // 64k capacity for Bakery commands
-pub use commands::BakeryCommands;
-use lqos_config::{Config, LazyQueueMode};
+pub(crate) const CHANNEL_CAPACITY: usize = 65536; // 64k capacity for Bakery commands
 use crate::commands::ExecutionMode;
-use crate::diff::{diff_sites, SiteDiffResult};
+use crate::diff::{SiteDiffResult, diff_sites};
 use crate::queue_math::format_rate_for_tc_f32;
 use crate::utils::{execute_in_memory, write_command_file};
+pub use commands::BakeryCommands;
+use lqos_config::{Config, LazyQueueMode};
 
 pub static ACTIVE_CIRCUITS: AtomicUsize = AtomicUsize::new(0);
 
@@ -58,7 +58,6 @@ pub fn start_bakery() -> anyhow::Result<crossbeam_channel::Sender<BakeryCommands
     Ok(tx)
 }
 
-
 fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
     // Current operation batch
     let mut batch: Option<Vec<Arc<BakeryCommands>>> = None;
@@ -71,16 +70,20 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
             error!("Failed to load configuration, exiting Bakery thread.");
             return;
         };
-        info!("Bakery thread starting. Mode: {:?}, expiration: {}s", config.queues.lazy_queues, config.queues.lazy_expire_seconds.unwrap_or(600));
+        info!(
+            "Bakery thread starting. Mode: {:?}, expiration: {}s",
+            config.queues.lazy_queues,
+            config.queues.lazy_expire_seconds.unwrap_or(600)
+        );
     }
 
     while let Ok(command) = rx.recv() {
         debug!("Bakery received command: {:?}", command);
-        
+
         match command {
             BakeryCommands::StartBatch => {
                 batch = Some(Vec::new());
-            },
+            }
             BakeryCommands::CommitBatch => {
                 handle_commit_batch(
                     &mut batch,
@@ -89,12 +92,12 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     &mut live_circuits,
                     &tx,
                 );
-            },
+            }
             BakeryCommands::MqSetup { .. } => {
                 if let Some(batch) = &mut batch {
                     batch.push(Arc::new(command));
                 }
-            },
+            }
             BakeryCommands::AddSite { .. } => {
                 if let Some(batch) = &mut batch {
                     batch.push(Arc::new(command));
@@ -112,12 +115,12 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                 // Reset per-cycle counters at the start of tick
                 handle_tick(&mut circuits, &mut live_circuits, &mut sites);
             }
-            BakeryCommands::ChangeSiteSpeedLive { 
-                site_hash, 
-                download_bandwidth_min, 
-                upload_bandwidth_min, 
-                download_bandwidth_max, 
-                upload_bandwidth_max 
+            BakeryCommands::ChangeSiteSpeedLive {
+                site_hash,
+                download_bandwidth_min,
+                upload_bandwidth_min,
+                download_bandwidth_max,
+                upload_bandwidth_max,
             } => {
                 handle_change_site_speed_live(
                     site_hash,
@@ -128,7 +131,12 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     &mut sites,
                 );
             }
-            BakeryCommands::StormGuardAdjustment { dry_run, interface_name, class_id, new_rate } => {
+            BakeryCommands::StormGuardAdjustment {
+                dry_run,
+                interface_name,
+                class_id,
+                new_rate,
+            } => {
                 let has_mq_run = MQ_CREATED.load(Relaxed);
                 if !has_mq_run {
                     warn!("StormGuardAdjustment received before MQ setup, skipping.");
@@ -151,18 +159,22 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                 if dry_run {
                     warn!("DRY RUN: /sbin/tc {}", args.join(" "));
                 } else {
-                    let output = std::process::Command::new("/sbin/tc")
-                        .args(&args)
-                        .output();
+                    let output = std::process::Command::new("/sbin/tc").args(&args).output();
                     match output {
                         Err(e) => {
                             warn!("Failed to run tc command: {}", e);
                         }
                         Ok(out) => {
                             if !out.status.success() {
-                                warn!("tc command failed: {}", String::from_utf8_lossy(&out.stderr));
+                                warn!(
+                                    "tc command failed: {}",
+                                    String::from_utf8_lossy(&out.stderr)
+                                );
                             } else {
-                                info!("tc command succeeded: {}", String::from_utf8_lossy(&out.stdout));
+                                info!(
+                                    "tc command succeeded: {}",
+                                    String::from_utf8_lossy(&out.stdout)
+                                );
                             }
                         }
                     }
@@ -211,32 +223,42 @@ fn handle_commit_batch(
     let circuit_change_mode = diff::diff_circuits(&new_batch, &circuits);
 
     // If neither has changed, there's nothing to do.
-    if matches!(site_change_mode, SiteDiffResult::NoChange) && matches!(circuit_change_mode, diff::CircuitDiffResult::NoChange) {
+    if matches!(site_change_mode, SiteDiffResult::NoChange)
+        && matches!(circuit_change_mode, diff::CircuitDiffResult::NoChange)
+    {
         // No changes detected, skip processing
         info!("No changes detected in batch, skipping processing.");
         return;
     }
 
     // Check if we should do a full reload based on the number of circuit changes
-    if let diff::CircuitDiffResult::CircuitsChanged { newly_added, removed_circuits, updated_circuits } = &circuit_change_mode {
-        let total_changes = newly_added.len() + removed_circuits.len() + updated_circuits.len();
-        
-        if total_changes > 50 {
-            warn!("Large number of circuit changes detected ({}), performing full rebuild to prevent churning", total_changes);
-            full_reload(batch, sites, circuits, live_circuits, &config, new_batch);
-            return; // Skip the rest of this CommitBatch processing
-        } else {
-            info!("Processing {} circuit changes incrementally", total_changes);
-            // Continue with incremental processing below
-        }
+    if let diff::CircuitDiffResult::CircuitsChanged {
+        newly_added,
+        removed_circuits,
+        updated_circuits,
+    } = &circuit_change_mode
+    {
+        full_reload(batch, sites, circuits, live_circuits, &config, new_batch);
+        return; // Skip the rest of this CommitBatch processing
     }
 
     // Declare any site speed changes that need to be applied. We're sending them
     // to ourselves as future commands via the BakeryCommands channel.
     if let SiteDiffResult::SpeedChanges { changes } = site_change_mode {
         for change in &changes {
-            let BakeryCommands::AddSite { site_hash, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max, .. } = change else {
-                warn!("ChangeSiteSpeedLive received a non-site command: {:?}", change);
+            let BakeryCommands::AddSite {
+                site_hash,
+                download_bandwidth_min,
+                upload_bandwidth_min,
+                download_bandwidth_max,
+                upload_bandwidth_max,
+                ..
+            } = change
+            else {
+                warn!(
+                    "ChangeSiteSpeedLive received a non-site command: {:?}",
+                    change
+                );
                 continue;
             };
             if let Err(e) = tx.try_send(BakeryCommands::ChangeSiteSpeedLive {
@@ -247,14 +269,26 @@ fn handle_commit_batch(
                 upload_bandwidth_max: *upload_bandwidth_max,
             }) {
                 error!("Channel full, falling back to full rebuild: {}", e);
-                full_reload(batch, sites, circuits, live_circuits, &config, new_batch.clone());
+                full_reload(
+                    batch,
+                    sites,
+                    circuits,
+                    live_circuits,
+                    &config,
+                    new_batch.clone(),
+                );
                 return; // Skip the rest of this CommitBatch processing
             }
         }
     }
 
     // Now we can process circuit changes
-    if let diff::CircuitDiffResult::CircuitsChanged { newly_added, removed_circuits, updated_circuits } = circuit_change_mode {
+    if let diff::CircuitDiffResult::CircuitsChanged {
+        newly_added,
+        removed_circuits,
+        updated_circuits,
+    } = circuit_change_mode
+    {
         // Process removed circuits (including those that are being updated)
         let mut circuits_to_remove = removed_circuits;
         if !updated_circuits.is_empty() {
@@ -271,7 +305,7 @@ fn handle_commit_batch(
             for circuit_hash in circuits_to_remove {
                 if let Some(circuit) = circuits.remove(&circuit_hash) {
                     let was_activated = live_circuits.contains_key(&circuit_hash);
-                    
+
                     // Only generate removal commands if appropriate for the mode
                     let commands = match config.queues.lazy_queues.as_ref() {
                         None | Some(LazyQueueMode::No) => {
@@ -295,13 +329,16 @@ fn handle_commit_batch(
                             }
                         }
                     };
-                    
+
                     if let Some(cmd) = commands {
                         execute_in_memory(&cmd, "removing circuit");
                     }
                     live_circuits.remove(&circuit_hash);
                 } else {
-                    warn!("RemoveCircuit received for unknown circuit: {}", circuit_hash);
+                    warn!(
+                        "RemoveCircuit received for unknown circuit: {}",
+                        circuit_hash
+                    );
                     continue;
                 }
             }
@@ -311,7 +348,7 @@ fn handle_commit_batch(
             // Collect both newly added and updated circuits
             let mut all_new_circuits: Vec<&Arc<BakeryCommands>> = newly_added;
             all_new_circuits.extend(updated_circuits);
-            
+
             let commands: Vec<Vec<String>> = all_new_circuits
                 .iter()
                 .map(|c| c.to_commands(&config, ExecutionMode::Builder))
@@ -380,33 +417,47 @@ fn handle_tick(
         error!("Failed to load configuration, exiting Bakery thread.");
         return;
     };
-    
+
     // Periodically shrink HashMap capacity if it's much larger than needed
     static mut TICK_COUNT: u64 = 0;
     unsafe {
         TICK_COUNT += 1;
-        if TICK_COUNT % 60 == 0 { // Every minute
+        if TICK_COUNT % 60 == 0 {
+            // Every minute
             // Shrink if capacity is more than 2x the size
             if circuits.capacity() > circuits.len() * 2 && circuits.capacity() > 100 {
-                debug!("Shrinking circuits HashMap: {} entries, {} capacity", circuits.len(), circuits.capacity());
+                debug!(
+                    "Shrinking circuits HashMap: {} entries, {} capacity",
+                    circuits.len(),
+                    circuits.capacity()
+                );
                 circuits.shrink_to_fit();
             }
-            if live_circuits.capacity() > live_circuits.len() * 2 && live_circuits.capacity() > 100 {
-                debug!("Shrinking live_circuits HashMap: {} entries, {} capacity", live_circuits.len(), live_circuits.capacity());
+            if live_circuits.capacity() > live_circuits.len() * 2 && live_circuits.capacity() > 100
+            {
+                debug!(
+                    "Shrinking live_circuits HashMap: {} entries, {} capacity",
+                    live_circuits.len(),
+                    live_circuits.capacity()
+                );
                 live_circuits.shrink_to_fit();
             }
             if sites.capacity() > sites.len() * 2 && sites.capacity() > 100 {
-                debug!("Shrinking sites HashMap: {} entries, {} capacity", sites.len(), sites.capacity());
+                debug!(
+                    "Shrinking sites HashMap: {} entries, {} capacity",
+                    sites.len(),
+                    sites.capacity()
+                );
                 sites.shrink_to_fit();
             }
         }
     }
-    
+
     match config.queues.lazy_queues.as_ref() {
         None | Some(LazyQueueMode::No) => {
             ACTIVE_CIRCUITS.store(circuits.len(), Ordering::Relaxed);
-            return
-        },
+            return;
+        }
         _ => {
             ACTIVE_CIRCUITS.store(live_circuits.len(), Ordering::Relaxed);
         }
@@ -461,49 +512,70 @@ fn handle_change_site_speed_live(
         return;
     };
     if let Some(site_arc) = sites.get(&site_hash) {
-        let BakeryCommands::AddSite { site_hash: _, parent_class_id, up_parent_class_id, class_minor, .. } = site_arc.as_ref() else {
-            warn!("ChangeSiteSpeedLive received a non-site command: {:?}", site_arc);
+        let BakeryCommands::AddSite {
+            site_hash: _,
+            parent_class_id,
+            up_parent_class_id,
+            class_minor,
+            ..
+        } = site_arc.as_ref()
+        else {
+            warn!(
+                "ChangeSiteSpeedLive received a non-site command: {:?}",
+                site_arc
+            );
             return;
         };
         let to_internet = config.internet_interface();
         let to_isp = config.isp_interface();
-        let class_id = format!("0x{:x}:0x{:x}", parent_class_id.get_major_minor().0, class_minor);
-        let up_class_id = format!("0x{:x}:0x{:x}", up_parent_class_id.get_major_minor().0, class_minor);
-        let upload_bandwidth_min = if upload_bandwidth_min >= (upload_bandwidth_max-0.5) {
+        let class_id = format!(
+            "0x{:x}:0x{:x}",
+            parent_class_id.get_major_minor().0,
+            class_minor
+        );
+        let up_class_id = format!(
+            "0x{:x}:0x{:x}",
+            up_parent_class_id.get_major_minor().0,
+            class_minor
+        );
+        let upload_bandwidth_min = if upload_bandwidth_min >= (upload_bandwidth_max - 0.5) {
             upload_bandwidth_max - 1.0
         } else {
             upload_bandwidth_min
         };
-        let download_bandwidth_min = if download_bandwidth_min >= (download_bandwidth_max-0.5) {
+        let download_bandwidth_min = if download_bandwidth_min >= (download_bandwidth_max - 0.5) {
             download_bandwidth_max - 1.0
         } else {
             download_bandwidth_min
         };
-        let commands = vec![vec![
-            "class".to_string(),
-            "change".to_string(),
-            "dev".to_string(),
-            to_internet,
-            "classid".to_string(),
-            up_class_id,
-            "htb".to_string(),
-            "rate".to_string(),
-            format_rate_for_tc_f32(upload_bandwidth_min),
-            "ceil".to_string(),
-            format_rate_for_tc_f32(upload_bandwidth_max),
-        ], vec![
-            "class".to_string(),
-            "change".to_string(),
-            "dev".to_string(),
-            to_isp,
-            "classid".to_string(),
-            class_id,
-            "htb".to_string(),
-            "rate".to_string(),
-            format_rate_for_tc_f32(download_bandwidth_min),
-            "ceil".to_string(),
-            format_rate_for_tc_f32(download_bandwidth_max),
-        ]];
+        let commands = vec![
+            vec![
+                "class".to_string(),
+                "change".to_string(),
+                "dev".to_string(),
+                to_internet,
+                "classid".to_string(),
+                up_class_id,
+                "htb".to_string(),
+                "rate".to_string(),
+                format_rate_for_tc_f32(upload_bandwidth_min),
+                "ceil".to_string(),
+                format_rate_for_tc_f32(upload_bandwidth_max),
+            ],
+            vec![
+                "class".to_string(),
+                "change".to_string(),
+                "dev".to_string(),
+                to_isp,
+                "classid".to_string(),
+                class_id,
+                "htb".to_string(),
+                "rate".to_string(),
+                format_rate_for_tc_f32(download_bandwidth_min),
+                "ceil".to_string(),
+                format_rate_for_tc_f32(download_bandwidth_max),
+            ],
+        ];
         execute_in_memory(&commands, "changing site speed live");
         // Update the site speeds in the site map - create a new Arc with updated values
         let new_site = Arc::new(BakeryCommands::AddSite {
@@ -518,12 +590,22 @@ fn handle_change_site_speed_live(
         });
         sites.insert(site_hash, new_site);
     } else {
-        warn!("ChangeSiteSpeedLive received for unknown site: {}", site_hash);
+        warn!(
+            "ChangeSiteSpeedLive received for unknown site: {}",
+            site_hash
+        );
         return;
     }
 }
 
-fn full_reload(batch: &mut Option<Vec<Arc<BakeryCommands>>>, sites: &mut HashMap<i64, Arc<BakeryCommands>>, circuits: &mut HashMap<i64, Arc<BakeryCommands>>, live_circuits: &mut HashMap<i64, u64>, config: &Arc<Config>, new_batch: Vec<Arc<BakeryCommands>>) {
+fn full_reload(
+    batch: &mut Option<Vec<Arc<BakeryCommands>>>,
+    sites: &mut HashMap<i64, Arc<BakeryCommands>>,
+    circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
+    live_circuits: &mut HashMap<i64, u64>,
+    config: &Arc<Config>,
+    new_batch: Vec<Arc<BakeryCommands>>,
+) {
     warn!("Bakery: Full reload triggered due to site or circuit changes.");
     sites.clear();
     circuits.clear();
@@ -564,4 +646,3 @@ fn process_batch(
     write_command_file(&path, &commands);
     execute_in_memory(&commands, "processing batch");
 }
-
