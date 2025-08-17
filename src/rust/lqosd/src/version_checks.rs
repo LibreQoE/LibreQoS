@@ -36,7 +36,7 @@ pub fn start_version_check() -> Result<()> {
                 let current_hash = env!("GIT_HASH");
                 let request = VersionCheckRequest {
                     current_git_hash: current_hash.to_string(),
-                    version_string: VERSION_STRING.to_string(),
+                    version_string: VERSION_STRING.trim().to_string(),
                     node_id: cfg.node_id.to_string(),
                 };
 
