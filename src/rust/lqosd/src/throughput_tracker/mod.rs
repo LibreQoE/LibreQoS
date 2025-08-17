@@ -680,7 +680,16 @@ pub fn all_unknown_ips() -> BusResponse {
         return BusResponse::NotReadyYet;
     }
     let boot_time = boot_time.unwrap();
-    let time_since_boot = Duration::from(boot_time);
+    
+    // Safely convert TimeSpec to Duration - handle potential negative values
+    let time_since_boot = match boot_time.tv_sec() {
+        sec if sec < 0 => {
+            warn!("Negative boot time detected: {:?}. Using 0 duration.", boot_time);
+            Duration::from_secs(0)
+        }
+        sec => Duration::from_secs(sec as u64) + Duration::from_nanos(boot_time.tv_nsec() as u64)
+    };
+    
     let five_minutes_ago = time_since_boot.saturating_sub(Duration::from_secs(300));
     let five_minutes_ago_nanoseconds = five_minutes_ago.as_nanos();
 
