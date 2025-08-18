@@ -17,10 +17,10 @@
 
 ```
 cd ~
-wget https://libreqos.io/wp-content/uploads/2025/03/libreqos_1.5-BETA10_amd64.zip
+wget https://libreqos.io/wp-content/uploads/2025/08/libreqos_1.5-RC1-1_amd64.zip
 sudo apt-get install unzip
-unzip libreqos_1.5-BETA10_amd64.zip
-sudo apt install ./libreqos_1.5-BETA10_amd64.deb
+unzip libreqos_1.5-RC1-1_amd64.zip
+sudo apt install ./libreqos_1.5-RC1-1_amd64.deb
 ```
 
 ### Git Install (For Developers Only - Not Recommended)
