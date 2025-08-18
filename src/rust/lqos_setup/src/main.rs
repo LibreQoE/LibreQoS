@@ -190,6 +190,16 @@ fn finalize(ui: &mut cursive::Cursive) {
         }
     }
     config.ip_ranges.allow_subnets = new_config.allow_subnets.clone();
+    if let Err(e) = lqos_config::update_config(&config) {
+        event_log.push(format!("ERROR: Unable to write configuration: {e:?}"));
+        let msg = format!("ERROR: Unable to write configuration: {e:?}");
+        ui.add_layer(
+            Dialog::around(TextView::new(msg))
+                .title("Error")
+                .button("OK", |s| { s.pop_layer(); }),
+        );
+        return;
+    }
     event_log.push("Configuration updated".to_string());
 
     // Does network.json exist?
