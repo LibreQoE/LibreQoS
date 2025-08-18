@@ -11,12 +11,14 @@
 - [Install Ubuntu Server 24.04](ubuntu-server.md)
 - [Configure Shaping Bridge](bridge.md)
 
-## Step 3 - Install LibreQoS v1.5
+## Step 3 - Install LibreQoS v1.5 / Upgrade to LibreQoS v1.5
 
 ### Use .DEB Package (Recommended Method)
 
 ```
 cd ~
+sudo apt-get update
+sudo apt-get upgrade
 wget https://libreqos.io/wp-content/uploads/2025/08/libreqos_1.5-RC1-1_amd64.zip
 sudo apt-get install unzip
 unzip libreqos_1.5-RC1-1_amd64.zip
