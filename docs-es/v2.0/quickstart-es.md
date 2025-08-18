@@ -8,7 +8,7 @@
 ## Paso 2 - Completar los Prerrequisitos de Instalación
 
 - [Configuración del Servidor - Prerrequisitos](docs-es/v2.0/prereq-es.md)
-- [Instalar Ubuntu Server 24.04](/ubuntu-server-es.md)
+- [Instalar Ubuntu Server 24.04](ubuntu-server-es.md)
 - [Configurar Puente de Regulación](docs-es/v2.0/bridge-es.md)
 
 ## Paso 3 - Instalar LibreQoS v1.5 / Actualizar a LibreQoS v1.5
