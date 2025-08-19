@@ -73,6 +73,19 @@ fn build_layout() -> LinearLayout {
     let bridge_mode = CURRENT_CONFIG.lock().unwrap().bridge_mode;
     match bridge_mode {
         BridgeMode::Linux | BridgeMode::XDP => {
+            let interfaces = get_interfaces().expect("Failed to get interfaces");
+            
+            // If the configuration has empty interface fields, set them to the first available interface
+            {
+                let mut config = CURRENT_CONFIG.lock().unwrap();
+                if config.to_internet.is_empty() && !interfaces.is_empty() {
+                    config.to_internet = interfaces[0].clone();
+                }
+                if config.to_network.is_empty() && !interfaces.is_empty() {
+                    config.to_network = interfaces[0].clone();
+                }
+            }
+            
             // Build up the Internet interface selection list
             let mut internet_group = RadioGroup::new()
                 .on_change(|_s, iface: &String| {
@@ -80,7 +93,7 @@ fn build_layout() -> LinearLayout {
                     config.to_internet = iface.to_string();
                 });
             let internet_buttons = build_interface_list(
-                &get_interfaces().expect("Failed to get interfaces"),
+                &interfaces,
                 &mut internet_group,
                 CURRENT_CONFIG.lock().unwrap().to_internet.clone(),
             );
@@ -97,7 +110,7 @@ fn build_layout() -> LinearLayout {
                     config.to_network = iface.to_string();
                 });
             let network_buttons = build_interface_list(
-                &get_interfaces().expect("Failed to get interfaces"),
+                &interfaces,
                 &mut network_group,
                 CURRENT_CONFIG.lock().unwrap().to_network.clone(),
             );
@@ -116,13 +129,23 @@ fn build_layout() -> LinearLayout {
                 .child(network_layout)
         }
         BridgeMode::Single => {
+            let interfaces = get_interfaces().expect("Failed to get interfaces");
+            
+            // If the configuration has empty interface field, set it to the first available interface
+            {
+                let mut config = CURRENT_CONFIG.lock().unwrap();
+                if config.to_internet.is_empty() && !interfaces.is_empty() {
+                    config.to_internet = interfaces[0].clone();
+                }
+            }
+            
             let mut internet_group = RadioGroup::new()
                 .on_change(|_s, iface: &String| {
                     let mut config = CURRENT_CONFIG.lock().unwrap();
                     config.to_internet = iface.to_string();
                 });
             let internet_buttons = build_interface_list(
-                &get_interfaces().expect("Failed to get interfaces"),
+                &interfaces,
                 &mut internet_group,
                 CURRENT_CONFIG.lock().unwrap().to_internet.clone(),
             );
