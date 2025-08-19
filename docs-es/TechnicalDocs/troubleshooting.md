@@ -1,42 +1,42 @@
-# Troubleshooting
+# Solución de Problemas
 
-## Common Issues
+## Problemas Comunes
 
-### LibreQoS Is Running, But Traffic Not Shaping
+### LibreQoS se está ejecutando, pero no está regulando el tráfico
 
-In ispConfig.py, make sure the edge and core interfaces correspond to correctly to the edge and core. Try swapping the interfaces to see if shaping starts to work.
+En ispConfig.py, asegúrese de que las interfaces edge y core correspondan correctamente a la interfaz de borde (edge) y núcleo (core). Pruebe intercambiando las interfaces para ver si el tráfico empieza a regularse correctamente.
 
-Make sure your services are running properly
+Asegúrese de que sus servicios se estén ejecutando correctamente:
 
 - `lqosd.service`
 - `lqos_node_manager`
 - `lqos_scheduler`
 
-Node manager and scheduler are dependent on the `lqos.service` being in a healthy, running state.
+Node manager y scheduler dependen de que el servicio `lqos.service` esté en buen estado y en ejecución.
 
-For example to check the status of lqosd, run:
+Por ejemplo, para verificar el estado de lqosd, ejecute:
 ```sudo systemctl status lqosd```
 
-### lqosd not running or failed to start
-At the command-line, type ```sudo RUST_LOG=info /opt/libreqos/src/bin/lqosd``` which will provide specifics regarding why it failed to start.
+### lqosd no se está ejecutando o falló al iniciar
+En la terminal, ejecute ```sudo RUST_LOG=info /opt/libreqos/src/bin/lqosd```. Esto proporcionará detalles sobre por qué falló al iniciar.
 
 ### RTNETLINK answers: Invalid argument
 
-This tends to show up when the MQ qdisc cannot be added correctly to the NIC interface. This would suggest the NIC has insufficient RX/TX queues. Please make sure you are using the [recommended NICs](../SystemRequirements/Compute.md#network-interface-requirements).
+Este error suele aparecer cuando el "MQ qdisc" no puede agregarse correctamente a la interfaz NIC. Esto sugiere que la NIC tiene un número insuficiente de filas RX/TX. Por favor asegúrese de estar utilizando las [NICs recomendadas](../SystemRequirements/Networking.md).
 
 ### InfluxDB "Failed to update bandwidth graphs"
 
-The scheduler (scheduler.py) runs the InfluxDB integration within a try/except statement. If it fails to update InfluxDB, it will report "Failed to update bandwidth graphs".
-To find the exact cause of the failure, please run ```python3 graphInfluxDB.py``` which will provde more specific errors.
+El scheduler (scheduler.py) ejecuta la integración con InfluxDB dentro de una instrucción try/except.
+Si falla al actualizar InfluxDB, mostrará "Failed to update bandwidth graphs".
+Para encontrar la causa exacta del error, ejecute: ```python3 graphInfluxDB.py``` lo cual mostrará errores más específicos.
 
-### All customer IPs are listed under Unknown IPs, rather than Shaped Devices in GUI
+### Todas las IPs de clientes aparecen bajo Unknown IPs en lugar de Shaped Devices en la Interfaz Gráfica
 ```
 cd /opt/libreqos/src
 sudo systemctl stop lqos_scheduler
 sudo python3 LibreQoS.py
 ```
 
-The console output from running LibreQoS.py directly provides more specific errors regarding issues with ShapedDevices.csv and network.json
-Once you have identified the error and fixed ShapedDevices.csv and/or Network.json, please then run
+La salida de consola al ejecutar LibreQoS.py directamente proporciona errores más específicos relacionados con ShapedDevices.csv y network.json. Una vez que haya identificado y corregido el error en ShapedDevices.csv y/o network.json, ejecute:
 
 ```sudo systemctl start lqos_scheduler```
