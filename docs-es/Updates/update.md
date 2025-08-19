@@ -1,17 +1,17 @@
-# Updating 1.4 To Latest Version
+# Actualizar 1.4 a la última versión
 
-```{warning}
-If you use the XDP bridge, traffic will stop passing through the bridge during the update (XDP bridge is only operating while lqosd runs).
+```{advertencia}
+Si utiliza el puente XDP, el tráfico dejará de pasar a través del puente durante la actualización (el puente XDP solo funciona mientras lqosd se esta ejecutando).
 ```
 
-## If you installed with Git
+## Si instalaste con Git
 
-1. Change to your `LibreQoS` directory (e.g. `cd /opt/LibreQoS`)
-2. Update from Git: `git pull`
+1. Cambie a su directorio LibreQoS (ejemplo: cd /opt/LibreQoS)
+2. Actualize desde Git: `git pull`
 3. Recompile: `./build-rust.sh`
 4. `sudo rust/remove_pinned_maps.sh`
 
-Run the following commands to reload the LibreQoS services.
+Ejecute los siguientes comandos para reiniciar los servicios de LibreQoS:
 
 ```shell
 sudo systemctl restart lqosd
@@ -19,6 +19,6 @@ sudo systemctl restart lqos_node_manager
 sudo systemctl restart lqos_scheduler
 ```
 
-## If you installed through the APT repository
+## Si instalaste mediante el repositorio APT
 
-All you should have to do in this case is run `sudo apt update && sudo apt upgrade` and LibreQoS should install the new package.
+En este caso, lo único que necesita hacer es ejecutar `sudo apt update && sudo apt upgrade` y LibreQoS debería instalar el nuevo paquete.
