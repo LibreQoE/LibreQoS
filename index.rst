@@ -29,20 +29,3 @@ Welcome to the LibreQoS documentation
    docs/v2.0/troubleshooting
    docs/v2.0/cake
    docs/v2.0/extras
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Legacy Documentation (v1.4):
-
-   docs/v1.4/Quickstart/quickstart-prereq
-   docs/v1.4/Quickstart/quickstart-libreqos-1.4
-   docs/v1.4/Quickstart/configuration
-   docs/v1.4/Quickstart/services-and-run
-   docs/v1.4/Quickstart/share
-
-   docs/v1.4/Updates/update
-
-   docs/v1.4/TechnicalDocs/complex-install
-   docs/v1.4/TechnicalDocs/troubleshooting
-   docs/v1.4/TechnicalDocs/integrations
-   docs/v1.4/TechnicalDocs/extras
