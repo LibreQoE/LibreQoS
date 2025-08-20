@@ -21,7 +21,6 @@ Bienvenido a la documentación de LibreQoS
    v2.0/configuration-es
    v2.0/components-es
    v2.0/integrations-es
-   v2.0/lts-es
    v2.0/Updates/update
    v2.0/troubleshooting-es
    v2.0/cake-es
