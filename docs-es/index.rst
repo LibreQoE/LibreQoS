@@ -47,50 +47,6 @@ Bienvenido a la documentación de LibreQoS
    v2.0/TechnicalDocs/extras
    v2.0/TechnicalDocs/performance-tuning
 
-.. toctree::
-   :maxdepth: 1
-   :caption: Documentación Heredada (v1.4):
-
-   Quickstart/quickstart-prereq
-   Quickstart/quickstart-libreqos-1.4
-   Quickstart/configuration
-   Quickstart/services-and-run
-   Quickstart/share
-   Quickstart/networkdesignassumptions
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Actualizaciones:
-
-   Updates/update
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Documentos Técnicos (v1.4):
-
-   TechnicalDocs/complex-install
-   TechnicalDocs/troubleshooting
-   TechnicalDocs/integrations
-   TechnicalDocs/extras
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Notas de Cambios:
-
-   ChangeNotes/v1.5
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Versiones Anteriores:
-
-   Legacy/v1.3.1
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Requisitos del Sistema:
-
-   SystemRequirements/Compute
-
 Índices y tablas
 ================
 
