@@ -1,7 +1,7 @@
-# Provides common functionality shared between
-# integrations.
+# Optimized version of integrationCommon.py for better performance with large datasets
+# Provides common functionality shared between integrations.
 
-from typing import List, Any
+from typing import List, Any, Dict, Set
 from liblqos_python import allowed_subnets, ignore_subnets, generated_pn_download_mbps, generated_pn_upload_mbps, \
 	circuit_name_use_address, upstream_bandwidth_capacity_download_mbps, upstream_bandwidth_capacity_upload_mbps, \
 	find_ipv6_using_mikrotik, exclude_sites, bandwidth_overhead_factor, committed_bandwidth_multiplier, \
@@ -120,16 +120,19 @@ class NetworkNode:
 
 
 class NetworkGraph:
-	# Defines a network as a graph topology
-	# allowing any integration to build the
-	# graph via a common API, emitting
-	# ShapedDevices and network.json files
-	# via a common interface.
-
+	# OPTIMIZED VERSION: Uses dictionaries and caching for O(1) lookups
+	# instead of O(n) linear searches
+	
 	nodes: List
 	ipv4ToIPv6: Any
 	excludeSites: List # Copied to allow easy in-test patching
 	exceptionCPEs: Any
+	
+	# Performance optimization: Index structures for O(1) lookups
+	_id_to_index: Dict[str, int]  # Maps node ID to index in nodes list
+	_name_to_index: Dict[str, int]  # Maps display name to index
+	_children_cache: Dict[int, List[int]]  # Cache parent->children mapping
+	_cache_valid: bool  # Flag to invalidate cache when nodes change
 
 	def __init__(self) -> None:
 		self.nodes = [
@@ -138,6 +141,13 @@ class NetworkGraph:
 		]
 		self.excludeSites = exclude_sites()
 		self.exceptionCPEs = exception_cpes()
+		
+		# Initialize optimization structures
+		self._id_to_index = {"FakeRoot": 0}
+		self._name_to_index = {"Shaper Root": 0}
+		self._children_cache = {}
+		self._cache_valid = False
+		
 		if find_ipv6_using_mikrotik():
 			from mikrotikFindIPv6 import pullMikrotikIPv6  
 			self.ipv4ToIPv6 = pullMikrotikIPv6()
@@ -149,18 +159,34 @@ class NetworkGraph:
 		# If a site is excluded (via excludedSites in lqos.conf)
 		# it won't be added
 		if not node.displayName in self.excludeSites:
-			# TODO: Fixup exceptionCPE handling
-			#print(self.excludeSites)
-			#if node.displayName in self.exceptionCPEs.keys():
-			#	node.parentId = self.exceptionCPEs[node.displayName]
+			# Add to main list
+			idx = len(self.nodes)
 			self.nodes.append(node)
+			
+			# Update indexes for O(1) lookup
+			self._id_to_index[node.id] = idx
+			self._name_to_index[node.displayName] = idx
+			
+			# Invalidate cache
+			self._cache_valid = False
 
 	def replaceRootNode(self, node: NetworkNode) -> None:
 		# Replaces the automatically generated root node
 		# with a new node. Useful when you have a top-level
 		# node specified (e.g. "uispSite" in the UISP
 		# integration)
+		old_node = self.nodes[0]
 		self.nodes[0] = node
+		
+		# Update indexes
+		if old_node.id in self._id_to_index:
+			del self._id_to_index[old_node.id]
+		if old_node.displayName in self._name_to_index:
+			del self._name_to_index[old_node.displayName]
+		
+		self._id_to_index[node.id] = 0
+		self._name_to_index[node.displayName] = 0
+		self._cache_valid = False
 
 	def addNodeAsChild(self, parent: str, node: NetworkNode) -> None:
 		# Searches the existing graph for a named parent,
@@ -171,68 +197,89 @@ class NetworkGraph:
 		# specifying the parent - we're assuming you really
 		# meant it.
 		if node.displayName in self.excludeSites: return
-		parentIdx = 0
-		for (i, node) in enumerate(self.nodes):
-			if node.id == parent:
-				parentIdx = i
+		
+		# O(1) lookup instead of O(n) search
+		parentIdx = self._id_to_index.get(parent, 0)
 		node.parentIndex = parentIdx
+		
+		idx = len(self.nodes)
 		self.nodes.append(node)
+		
+		# Update indexes
+		self._id_to_index[node.id] = idx
+		self._name_to_index[node.displayName] = idx
+		self._cache_valid = False
 
 	def __reparentById(self) -> None:
-		# Scans the entire node tree, searching for parents
-		# by name. Entries are re-mapped to match the named
-		# parents. You can use this to build a tree from a
-		# blob of raw data.
+		# OPTIMIZED: Uses dictionary lookups instead of nested O(n²) loops
 		cached_root_list = promote_to_root_list()
+		
+		# Build a set for O(1) membership testing
+		root_list_set = set(cached_root_list)
+		
 		for child in self.nodes:
 			if child.parentId != "":
-				for (i, node) in enumerate(self.nodes):
-					# If the node is in `promote_to_root_list`, the parent for
-					# the node is set to 0, which is the root node. Otherwise,
-					# the parent is set to the node with the same id as the
-					# parentId of the child node.
-					if self.nodes[self.findNodeIndexById(child.parentId)].displayName in cached_root_list:
+				# O(1) lookup instead of O(n) search
+				parent_idx = self._id_to_index.get(child.parentId, -1)
+				
+				if parent_idx != -1:
+					# Check if parent should be promoted to root
+					parent_node = self.nodes[parent_idx]
+					if parent_node.displayName in root_list_set:
 						child.parentIndex = 0
-					elif node.id == child.parentId:
-						child.parentIndex = i
+					else:
+						child.parentIndex = parent_idx
+		
+		# Invalidate children cache since parent relationships changed
+		self._cache_valid = False
 
 	def findNodeIndexById(self, id: str) -> int:
-		# Finds a single node by identity(id)
-		# Return -1 if not found
-		for (i, node) in enumerate(self.nodes):
-			if node.id == id:
-				return i
-		return -1
+		# OPTIMIZED: O(1) dictionary lookup instead of O(n) search
+		return self._id_to_index.get(id, -1)
 
 	def findNodeIndexByName(self, name: str) -> int:
-		# Finds a single node by identity(name)
-		# Return -1 if not found
-		for (i, node) in enumerate(self.nodes):
-			if node.displayName == name:
-				return i
-		return -1
+		# OPTIMIZED: O(1) dictionary lookup instead of O(n) search
+		return self._name_to_index.get(name, -1)
+
+	def _buildChildrenCache(self) -> None:
+		# Build parent->children mapping cache
+		self._children_cache = {}
+		for i, node in enumerate(self.nodes):
+			parent_idx = node.parentIndex
+			if parent_idx not in self._children_cache:
+				self._children_cache[parent_idx] = []
+			self._children_cache[parent_idx].append(i)
+		self._cache_valid = True
 
 	def findChildIndices(self, parentIndex: int) -> List:
-		# Returns the indices of all nodes with a
-		# parentIndex equal to the specified parameter
-		result = []
-		for (i, node) in enumerate(self.nodes):
-			if node.parentIndex == parentIndex:
-				result.append(i)
-		return result
+		# OPTIMIZED: O(1) cached lookup instead of O(n) search
+		if not self._cache_valid:
+			self._buildChildrenCache()
+		return self._children_cache.get(parentIndex, [])
 
 	def __promoteClientsWithChildren(self) -> None:
-		# Searches for client sites that have children,
-		# and changes their node type to clientWithChildren
-		for (i, node) in enumerate(self.nodes):
+		# OPTIMIZED: Single pass with cached children lookup
+		if not self._cache_valid:
+			self._buildChildrenCache()
+		
+		for i, node in enumerate(self.nodes):
 			if node.type == NodeType.client:
-				for child in self.findChildIndices(i):
-					if self.nodes[child].type != NodeType.device:
+				# O(1) lookup of children
+				children = self._children_cache.get(i, [])
+				for child_idx in children:
+					if self.nodes[child_idx].type != NodeType.device:
 						node.type = NodeType.clientWithChildren
+						break  # No need to check other children
 
 	def __clientsWithChildrenToSites(self) -> None:
+		# OPTIMIZED: Batch processing with deferred reparenting
 		toAdd = []
-		for (i, node) in enumerate(self.nodes):
+		reparent_map = {}  # Store reparenting operations
+		
+		if not self._cache_valid:
+			self._buildChildrenCache()
+		
+		for i, node in enumerate(self.nodes):
 			if node.type == NodeType.clientWithChildren:
 				siteNode = NetworkNode(
 					id=node.id + "_gen",
@@ -243,60 +290,88 @@ class NetworkGraph:
 				node.parentId = siteNode.id
 				if node.type == NodeType.clientWithChildren:
 					node.type = NodeType.client
-				for child in self.findChildIndices(i):
-					if self.nodes[child].type == NodeType.client or self.nodes[child].type == NodeType.clientWithChildren or self.nodes[child].type == NodeType.site:
-						self.nodes[child].parentId = siteNode.id
+				
+				# Store reparenting operations for batch processing
+				children = self._children_cache.get(i, [])
+				for child_idx in children:
+					child = self.nodes[child_idx]
+					if child.type in (NodeType.client, NodeType.clientWithChildren, NodeType.site):
+						reparent_map[child_idx] = siteNode.id
+				
 				toAdd.append(siteNode)
-
+		
+		# Batch add new nodes
 		for n in toAdd:
 			self.addRawNode(n)
-
+		
+		# Batch reparent
+		for child_idx, new_parent_id in reparent_map.items():
+			self.nodes[child_idx].parentId = new_parent_id
+		
 		self.__reparentById()
 
 	def __findUnconnectedNodes(self) -> List:
-		# Performs a tree-traversal and finds any nodes that
-		# aren't connected to the root. This is a "sanity check",
-		# and also an easy way to handle "flat" topologies and
-		# ensure that the unconnected nodes are re-connected to
-		# the root.
-		visited = []
+		# OPTIMIZED: Uses set for O(1) membership testing
+		visited = set()
 		next = [0]
-
-		while len(next) > 0:
-			nextTraversal = next.pop()
-			visited.append(nextTraversal)
-			for idx in self.findChildIndices(nextTraversal):
-				if idx not in visited:
-					next.append(idx)
-
-		result = []
-		for i, n in enumerate(self.nodes):
-			if i not in visited:
-				result.append(i)
-		return result
+		
+		if not self._cache_valid:
+			self._buildChildrenCache()
+		
+		while next:
+			current = next.pop()
+			if current in visited:
+				continue
+			visited.add(current)
+			
+			# O(1) lookup of children
+			children = self._children_cache.get(current, [])
+			for child_idx in children:
+				if child_idx not in visited:
+					next.append(child_idx)
+		
+		# Find unvisited nodes
+		all_indices = set(range(len(self.nodes)))
+		unconnected = list(all_indices - visited)
+		return unconnected
 
 	def __reconnectUnconnected(self):
-		# Finds any unconnected nodes and reconnects
-		# them to the root
-		for idx in self.__findUnconnectedNodes():
-			if self.nodes[idx].type == NodeType.site:
+		# OPTIMIZED: Single pass with type grouping
+		unconnected = self.__findUnconnectedNodes()
+		
+		# Group by type for batch processing
+		by_type = {
+			NodeType.site: [],
+			NodeType.clientWithChildren: [],
+			NodeType.client: []
+		}
+		
+		for idx in unconnected:
+			node_type = self.nodes[idx].type
+			if node_type in by_type:
+				by_type[node_type].append(idx)
+		
+		# Reconnect in priority order
+		for node_type in [NodeType.site, NodeType.clientWithChildren, NodeType.client]:
+			for idx in by_type[node_type]:
 				self.nodes[idx].parentIndex = 0
-		for idx in self.__findUnconnectedNodes():
-			if self.nodes[idx].type == NodeType.clientWithChildren:
-				self.nodes[idx].parentIndex = 0
-		for idx in self.__findUnconnectedNodes():
-			if self.nodes[idx].type == NodeType.client:
-				self.nodes[idx].parentIndex = 0
+		
+		self._cache_valid = False
 
 	def prepareTree(self) -> None:
 		# Helper function that calls all the cleanup and mapping
 		# functions in the right order. Unless you are doing
 		# something special, you can use this instead of
 		# calling the functions individually
+		print("PrepareTree: Starting reparenting...")
 		self.__reparentById()
+		print("PrepareTree: Promoting clients with children...")
 		self.__promoteClientsWithChildren()
+		print("PrepareTree: Converting clients with children to sites...")
 		self.__clientsWithChildrenToSites()
+		print("PrepareTree: Reconnecting unconnected nodes...")
 		self.__reconnectUnconnected()
+		print("PrepareTree: Complete")
 
 	def doesNetworkJsonExist(self):
 		# Returns true if "network.json" exists, false otherwise
@@ -311,10 +386,14 @@ class NetworkGraph:
 		topLevelNode = {}
 		self.__visited = []  # Protection against loops - never visit twice
 
-		for child in self.findChildIndices(0):
+		if not self._cache_valid:
+			self._buildChildrenCache()
+
+		# O(1) lookup of root's children
+		root_children = self._children_cache.get(0, [])
+		for child in root_children:
 			if child > 0 and self.__isSite(child):
-				topLevelNode[self.nodes[child].displayName] = self.__buildNetworkObject(
-					child)
+				topLevelNode[self.nodes[child].displayName] = self.__buildNetworkObject(child)
 
 		del self.__visited
 		
@@ -342,11 +421,14 @@ class NetworkGraph:
 		}
 		children = {}
 		hasChildren = False
-		for child in self.findChildIndices(idx):
+		
+		# O(1) lookup of children
+		child_indices = self._children_cache.get(idx, [])
+		for child in child_indices:
 			if child > 0 and self.__isSite(child) and child not in self.__visited:
-				children[self.nodes[child].displayName] = self.__buildNetworkObject(
-					child)
+				children[self.nodes[child].displayName] = self.__buildNetworkObject(child)
 				hasChildren = True
+		
 		if hasChildren:
 			node["children"] = children
 		return node
@@ -365,82 +447,93 @@ class NetworkGraph:
 				ipv6.append(self.ipv4ToIPv6[ip])
 
 	def createShapedDevices(self):
-			import csv
-			# Builds ShapedDevices.csv from the network tree.
-			circuits = []
-			for (i, node) in enumerate(self.nodes):
-				if node.type == NodeType.client:
-					parent = self.nodes[node.parentIndex].displayName
-					if parent == "Shaper Root": parent = ""
-					
-					if circuit_name_use_address():
-						displayNameToUse = node.address
-					else:
-						if node.type == NodeType.client:
-							displayNameToUse = node.displayName
-						else:
-							displayNameToUse = node.customerName + " (" + nodeTypeToString(node.type) + ")"
-					circuit = {
-						"id": node.id,
-						"name": displayNameToUse,
-						"parent": parent,
-						"download": node.downloadMbps,
-						"upload": node.uploadMbps,
-						"devices": []
-					}
-					for child in self.findChildIndices(i):
-						if self.nodes[child].type == NodeType.device and (len(self.nodes[child].ipv4)+len(self.nodes[child].ipv6)>0):
-							ipv4 = self.nodes[child].ipv4
-							ipv6 = self.nodes[child].ipv6
-							self.__addIpv6FromMap(ipv4, ipv6)
-							device = {
-								"id": self.nodes[child].id,
-								"name": self.nodes[child].displayName,
-								"mac": self.nodes[child].mac,
-								"ipv4": ipv4,
-								"ipv6": ipv6,
-							}
-							circuit["devices"].append(device)
-					if len(circuit["devices"]) > 0:
-						circuits.append(circuit)
-			with open('ShapedDevices.csv', 'w', newline='') as csvfile:
-				wr = csv.writer(csvfile, quoting=csv.QUOTE_ALL)
-				wr.writerow(['Circuit ID', 'Circuit Name', 'Device ID', 'Device Name', 'Parent Node', 'MAC',
-							 'IPv4', 'IPv6', 'Download Min', 'Upload Min', 'Download Max', 'Upload Max', 'Comment'])
-				for circuit in circuits:
-					for device in circuit["devices"]:
-						#Remove brackets and quotes of list so LibreQoS.py can parse it
-						device["ipv4"] = str(device["ipv4"]).replace('[','').replace(']','').replace("'",'')
-						device["ipv6"] = str(device["ipv6"]).replace('[','').replace(']','').replace("'",'')
-						if circuit["upload"] is None: 
-							circuit["upload"] = 0.0
-						if circuit["download"] is None: 
-							circuit["download"] = 0.0
-						row = [
-							circuit["id"],
-							circuit["name"],
-							device["id"],
-							device["name"],
-							circuit["parent"],
-							device["mac"],
-							device["ipv4"],
-							device["ipv6"],
-							int(1),
-							int(1),
-							int(float(circuit["download"]) * client_bandwidth_multiplier()),
-							int(float(circuit["upload"]) * client_bandwidth_multiplier()),
-							""
-						]
-						wr.writerow(row)
+		import csv
+		# Builds ShapedDevices.csv from the network tree.
+		circuits = []
+		
+		if not self._cache_valid:
+			self._buildChildrenCache()
+		
+		for i, node in enumerate(self.nodes):
+			if node.type == NodeType.client:
+				parent = self.nodes[node.parentIndex].displayName
+				if parent == "Shaper Root": parent = ""
 				
-				# If we have an "appendToShapedDevices.csv" file, it gets appended to the end of the file.
-				# This is useful for adding devices that are not in the network tree, such as a
-				# "default" device that gets all the traffic that doesn't match any other device.
-				if os.path.isfile('appendToShapedDevices.csv'):
-					with open('appendToShapedDevices.csv', 'r') as f:
-						reader = csv.reader(f)
-						for row in reader:
-							wr.writerow(row)
+				if circuit_name_use_address():
+					displayNameToUse = node.address
+				else:
+					if node.type == NodeType.client:
+						displayNameToUse = node.displayName
+					else:
+						displayNameToUse = node.customerName + " (" + nodeTypeToString(node.type) + ")"
+				
+				circuit = {
+					"id": node.id,
+					"name": displayNameToUse,
+					"parent": parent,
+					"download": node.downloadMbps,
+					"upload": node.uploadMbps,
+					"devices": []
+				}
+				
+				# O(1) lookup of children
+				child_indices = self._children_cache.get(i, [])
+				for child_idx in child_indices:
+					child = self.nodes[child_idx]
+					if child.type == NodeType.device and (len(child.ipv4) + len(child.ipv6) > 0):
+						ipv4 = child.ipv4
+						ipv6 = child.ipv6
+						self.__addIpv6FromMap(ipv4, ipv6)
+						device = {
+							"id": child.id,
+							"name": child.displayName,
+							"mac": child.mac,
+							"ipv4": ipv4,
+							"ipv6": ipv6,
+						}
+						circuit["devices"].append(device)
+				
+				if len(circuit["devices"]) > 0:
+					circuits.append(circuit)
+		
+		with open('ShapedDevices.csv', 'w', newline='') as csvfile:
+			wr = csv.writer(csvfile, quoting=csv.QUOTE_ALL)
+			wr.writerow(['Circuit ID', 'Circuit Name', 'Device ID', 'Device Name', 'Parent Node', 'MAC',
+						 'IPv4', 'IPv6', 'Download Min', 'Upload Min', 'Download Max', 'Upload Max', 'Comment'])
+			for circuit in circuits:
+				for device in circuit["devices"]:
+					#Remove brackets and quotes of list so LibreQoS.py can parse it
+					device["ipv4"] = str(device["ipv4"]).replace('[','').replace(']','').replace("'",'')
+					device["ipv6"] = str(device["ipv6"]).replace('[','').replace(']','').replace("'",'')
+					if circuit["upload"] is None: 
+						circuit["upload"] = 0.0
+					if circuit["download"] is None: 
+						circuit["download"] = 0.0
+					row = [
+						circuit["id"],
+						circuit["name"],
+						device["id"],
+						device["name"],
+						circuit["parent"],
+						device["mac"],
+						device["ipv4"],
+						device["ipv6"],
+						int(1),
+						int(1),
+						int(float(circuit["download"]) * client_bandwidth_multiplier()),
+						int(float(circuit["upload"]) * client_bandwidth_multiplier()),
+						""
+					]
+					wr.writerow(row)
+			
+			# If we have an "appendToShapedDevices.csv" file, it gets appended to the end of the file.
+			# This is useful for adding devices that are not in the network tree, such as a
+			# "default" device that gets all the traffic that doesn't match any other device.
+			if os.path.isfile('appendToShapedDevices.csv'):
+				with open('appendToShapedDevices.csv', 'r') as f:
+					reader = csv.reader(f)
+					for row in reader:
+						wr.writerow(row)
 
 	def plotNetworkGraph(self, showClients=False):
 		# Requires `pip install graphviz` to function.
@@ -458,7 +551,10 @@ class NetworkGraph:
 		dot = graphviz.Digraph(
 			'network', comment="Network Graph", engine="dot", graph_attr={'rankdir':'LR'})
 
-		for (i, node) in enumerate(self.nodes):
+		if not self._cache_valid:
+			self._buildChildrenCache()
+
+		for i, node in enumerate(self.nodes):
 			if ((node.type != NodeType.client and node.type != NodeType.device) or showClients):
 				color = "white"
 				match node.type:
@@ -469,11 +565,12 @@ class NetworkGraph:
 					case NodeType.device: color = "white"
 					case default: color = "grey"
 				dot.node("N" + str(i), node.displayName, color=color)
-				children = self.findChildIndices(i)
+				
+				# O(1) lookup of children
+				children = self._children_cache.get(i, [])
 				for child in children:
 					if child != i:
 						if (self.nodes[child].type != NodeType.client and self.nodes[child].type != NodeType.device) or showClients:
 							dot.edge("N" + str(i), "N" + str(child))
 		dot = dot.unflatten(stagger=3)#, fanout=True)
 		dot.render("network")
-
