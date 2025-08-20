@@ -24,10 +24,3 @@ Bienvenido a la documentación de LibreQoS
    v2.0/Updates/update
    v2.0/troubleshooting-es
    v2.0/cake-es
-
-Índices y tablas
-================
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
