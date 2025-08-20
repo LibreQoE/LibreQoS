@@ -1,4 +1,7 @@
-<a href="https://libreqos.io/"><img alt="LibreQoS" src="https://github.com/user-attachments/assets/6277d475-3d80-4e6c-adaa-6983b4b93348"></a>
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/a3675b5a-d109-4e9c-9511-ece7fe6825c1" width="500"/>
+</p>
+
 
 LibreQoS is software used by Internet Service Providers (ISPs) and Enterprises to improve the Quality of Experience (QoE) of end-users on their networks. 
 
