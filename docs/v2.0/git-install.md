@@ -10,7 +10,6 @@ cd /opt/
 sudo git clone https://github.com/LibreQoE/LibreQoS.git libreqos
 sudo chown -R $USER /opt/libreqos
 cd /opt/libreqos/
-git switch develop
 git pull
 ```
 
