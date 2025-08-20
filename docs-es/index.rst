@@ -25,27 +25,6 @@ Bienvenido a la documentación de LibreQoS
    v2.0/Updates/update
    v2.0/troubleshooting-es
    v2.0/cake-es
-   v2.0/git-install-es
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Inicio Rápido (v2.0):
-
-   v2.0/Quickstart/quickstart-prereq
-   v2.0/Quickstart/quickstart-libreqos-2.0
-   v2.0/Quickstart/configuration
-   v2.0/Quickstart/services-and-run
-   v2.0/Quickstart/share
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Documentos Técnicos (v2.0):
-
-   v2.0/TechnicalDocs/git-install
-   v2.0/TechnicalDocs/troubleshooting
-   v2.0/TechnicalDocs/integrations
-   v2.0/TechnicalDocs/extras
-   v2.0/TechnicalDocs/performance-tuning
 
 Índices y tablas
 ================
