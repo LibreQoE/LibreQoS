@@ -36,7 +36,10 @@ pub(crate) fn check_submit_permission() {
 
 fn check_permission() {
     //println!("Checking for permission to submit");
-    let config = load_config().unwrap();
+    let Ok(config) = load_config() else {
+        error!("Failed to load config");
+        return;
+    };
     if config.long_term_stats.gather_stats == false {
         info!("Long term stats are disabled. Not checking license.");
         ALLOWED_TO_SUBMIT.store(false, Ordering::Relaxed);
@@ -49,8 +52,7 @@ fn check_permission() {
             .clone()
             .unwrap_or("insight.libreqos.com".to_string())
     };
-    let license_key = load_config()
-        .unwrap()
+    let license_key = config
         .long_term_stats
         .license_key
         .clone()
@@ -95,11 +97,10 @@ fn check_permission() {
         return;
     };
     let response = response.into_json::<LicenseResponse>();
-    if response.is_err() {
-        warn!("Failed to receive license response from license server.");
+    let Ok(response) = response else {
+        warn!("Failed to parse license response from license server.");
         return;
-    }
-    let response = response.unwrap();
+    };
     info!("Received license response from license server: {response:?}");
     if response.valid {
         ALLOWED_TO_SUBMIT.store(true, Ordering::Relaxed);
