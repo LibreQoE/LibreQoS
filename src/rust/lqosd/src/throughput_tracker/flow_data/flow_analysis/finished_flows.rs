@@ -268,7 +268,7 @@ impl TimeBuffer {
 
         buffer
             .iter()
-            .map(|f| Duration::from_nanos(f.data.1.last_seen - f.data.1.start_time)) // Duration in nanoseconds
+            .map(|f| Duration::from_nanos(f.data.1.last_seen.saturating_sub(f.data.1.start_time))) // Duration in nanoseconds
             .map(|nanos| nanos.as_secs())
             .sorted()
             .dedup_with_count() // Now we're (count, duration in seconds)

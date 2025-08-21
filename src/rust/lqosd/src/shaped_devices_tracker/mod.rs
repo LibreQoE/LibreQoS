@@ -209,7 +209,7 @@ pub fn get_all_circuits() -> BusResponse {
                     let last_seen_nanos = v.last_seen as u128;
                     let since_boot = Duration::from(kernel_now).as_nanos();
                     //println!("since_boot: {:?}, last_seen: {:?}", since_boot, last_seen_nanos);
-                    (since_boot - last_seen_nanos) as u64
+                    since_boot.saturating_sub(last_seen_nanos) as u64
                 } else {
                     u64::MAX
                 };

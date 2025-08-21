@@ -57,7 +57,7 @@ pub fn get_unknown_ips() -> Vec<UnknownIp> {
         // Convert to UnknownIp
         .map(|(k, d)| UnknownIp {
             ip: k.as_ip().to_string(),
-            last_seen_nanos: now - d.last_seen,
+            last_seen_nanos: now.saturating_sub(d.last_seen),
             total_bytes: d.bytes,
             current_bytes: d.bytes_per_second,
         })

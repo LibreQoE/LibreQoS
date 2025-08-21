@@ -17,7 +17,7 @@ fn recent_flows_by_circuit(
     let device_reader = SHAPED_DEVICES.load();
     if let Ok(now) = time_since_boot() {
         let now_as_nanos = Duration::from(now).as_nanos() as u64;
-        let five_minutes_ago = now_as_nanos - FIVE_MINUTES_AS_NANOS;
+        let five_minutes_ago = now_as_nanos.saturating_sub(FIVE_MINUTES_AS_NANOS);
 
         {
             let all_flows = ALL_FLOWS.lock();

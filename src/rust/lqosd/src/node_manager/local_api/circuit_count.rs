@@ -25,7 +25,7 @@ pub async fn get_circuit_count() -> Json<CircuitCount> {
         // Only include shaped devices (non-zero tc_handle)
         .filter(|(_k, d)| d.tc_handle.as_u32() != 0)
         // Only include recently seen devices (within 5 minutes)
-        .filter(|(_k, d)| (now - d.last_seen) < FIVE_MINUTES_IN_NANOS)
+        .filter(|(_k, d)| now.saturating_sub(d.last_seen) < FIVE_MINUTES_IN_NANOS)
         // Extract circuit IDs where they exist
         .filter_map(|(_k, d)| d.circuit_id.clone())
         .collect();
