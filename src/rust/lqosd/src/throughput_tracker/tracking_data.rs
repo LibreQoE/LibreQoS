@@ -342,7 +342,7 @@ impl ThroughputTracker {
             let rtt_samples = flowbee_rtt_map();
             get_flowbee_event_count_and_reset();
             let since_boot = Duration::from(now);
-            let expire = (since_boot - Duration::from_secs(timeout_seconds)).as_nanos() as u64;
+            let expire = since_boot.saturating_sub(Duration::from_secs(timeout_seconds)).as_nanos() as u64;
 
             let mut all_flows_lock = ALL_FLOWS.lock();
             let mut raw_data = self.raw_data.lock();
@@ -621,7 +621,7 @@ impl ThroughputTracker {
         if let Ok(now) = time_since_boot() {
             let since_boot = Duration::from(now);
             let timeout_seconds = 5 * 60; // 5 minutes
-            let expire = (since_boot - Duration::from_secs(timeout_seconds)).as_nanos() as u64;
+            let expire = since_boot.saturating_sub(Duration::from_secs(timeout_seconds)).as_nanos() as u64;
             let mut keys_to_expire = Vec::new();
             let mut raw_data = self.raw_data.lock();
             raw_data.retain(|k, v| {
