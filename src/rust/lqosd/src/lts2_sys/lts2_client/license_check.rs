@@ -3,7 +3,7 @@ use lqos_config::load_config;
 use native_tls::TlsConnector;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use std::time::Duration;
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
 use tracing::{error, info, warn};
@@ -109,7 +109,7 @@ fn remote_license_check(remote_host: String, lic: Uuid, license_status: Arc<Mute
     }
     let response = response.unwrap();
     info!("Received license response from license server: {response:?}");
-    let mut license_lock = license_status.lock().unwrap();
+    let mut license_lock = license_status.lock();
     license_lock.valid = response.valid;
     license_lock.license_type = response.license_state;
     license_lock.trial_expires = response.expiration_date as i32;

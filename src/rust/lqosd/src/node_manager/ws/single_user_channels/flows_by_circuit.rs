@@ -19,7 +19,8 @@ fn recent_flows_by_circuit(
         let now_as_nanos = Duration::from(now).as_nanos() as u64;
         let five_minutes_ago = now_as_nanos - FIVE_MINUTES_AS_NANOS;
 
-        if let Ok(all_flows) = ALL_FLOWS.lock() {
+        {
+            let all_flows = ALL_FLOWS.lock();
             let result: Vec<(FlowbeeKeyTransit, FlowbeeLocalData, FlowAnalysis)> = all_flows
                 .flow_data
                 .iter()

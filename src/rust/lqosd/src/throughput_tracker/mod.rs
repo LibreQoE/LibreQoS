@@ -273,7 +273,6 @@ pub fn host_counters() -> BusResponse {
     THROUGHPUT_TRACKER
         .raw_data
         .lock()
-        .unwrap()
         .iter()
         .for_each(|(k, v)| {
             let ip = k.as_ip();
@@ -305,7 +304,6 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
         THROUGHPUT_TRACKER
             .raw_data
             .lock()
-            .unwrap()
             .iter()
             .filter(|(k, _v)| !k.as_ip().is_loopback())
             .filter(|(_k, d)| retire_check(tp_cycle, d.most_recent_cycle))
@@ -350,7 +348,6 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
         THROUGHPUT_TRACKER
             .raw_data
             .lock()
-            .unwrap()
             .iter()
             .filter(|(k, _v)| !k.as_ip().is_loopback())
             .filter(|(_k, d)| retire_check(tp_cycle, d.most_recent_cycle))
@@ -396,7 +393,6 @@ pub fn worst_n_retransmits(start: u32, end: u32) -> BusResponse {
         THROUGHPUT_TRACKER
             .raw_data
             .lock()
-            .unwrap()
             .iter()
             .filter(|(k, _v)| !k.as_ip().is_loopback())
             .filter(|(_k, d)| retire_check(tp_cycle, d.most_recent_cycle))
@@ -446,7 +442,6 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
         THROUGHPUT_TRACKER
             .raw_data
             .lock()
-            .unwrap()
             .iter()
             .filter(|(k, _v)| !k.as_ip().is_loopback())
             .filter(|(_k, d)| retire_check(tp_cycle, d.most_recent_cycle))
@@ -492,7 +487,6 @@ pub fn xdp_pping_compat() -> BusResponse {
     let result = THROUGHPUT_TRACKER
         .raw_data
         .lock()
-        .unwrap()
         .iter()
         .filter(|(_k, d)| retire_check(raw_cycle, d.most_recent_cycle))
         .filter_map(|(_k, data)| {
@@ -548,7 +542,6 @@ pub fn min_max_median_rtt() -> Option<MinMaxMedianRtt> {
     THROUGHPUT_TRACKER
         .raw_data
         .lock()
-        .unwrap()
         .iter()
         .filter(|(_k, d)| retire_check(reader_cycle, d.most_recent_cycle))
         .for_each(|(_k, d)| {
@@ -601,7 +594,6 @@ pub fn min_max_median_tcp_retransmits() -> TcpRetransmitTotal {
     THROUGHPUT_TRACKER
         .raw_data
         .lock()
-        .unwrap()
         .iter()
         .filter(|(_k, d)| retire_check(reader_cycle, d.most_recent_cycle))
         .for_each(|(_k, d)| {
@@ -620,7 +612,6 @@ pub fn rtt_histogram<const N: usize>() -> BusResponse {
     for (_k, data) in THROUGHPUT_TRACKER
         .raw_data
         .lock()
-        .unwrap()
         .iter()
         .filter(|(_k, d)| retire_check(reader_cycle, d.most_recent_cycle))
     {
@@ -651,7 +642,6 @@ pub fn host_counts() -> BusResponse {
     THROUGHPUT_TRACKER
         .raw_data
         .lock()
-        .unwrap()
         .iter()
         .filter(|(_k, d)| retire_check(tp_cycle, d.most_recent_cycle))
         .for_each(|(_k, d)| {
@@ -697,7 +687,6 @@ pub fn all_unknown_ips() -> BusResponse {
         THROUGHPUT_TRACKER
             .raw_data
             .lock()
-            .unwrap()
             .iter()
             .filter(|(k, _v)| !k.as_ip().is_loopback())
             .filter(|(_k, d)| d.tc_handle.as_u32() == 0)
@@ -734,7 +723,7 @@ pub fn all_unknown_ips() -> BusResponse {
 
 /// For debugging: dump all active flows!
 pub fn dump_active_flows() -> BusResponse {
-    let lock = ALL_FLOWS.lock().unwrap();
+    let lock = ALL_FLOWS.lock();
     let result: Vec<lqos_bus::FlowbeeSummaryData> = lock
         .flow_data
         .iter()
@@ -774,13 +763,13 @@ pub fn dump_active_flows() -> BusResponse {
 
 /// Count active flows
 pub fn count_active_flows() -> BusResponse {
-    let lock = ALL_FLOWS.lock().unwrap();
+    let lock = ALL_FLOWS.lock();
     BusResponse::CountActiveFlows(lock.flow_data.len() as u64)
 }
 
 /// Top Flows Report
 pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
-    let lock = ALL_FLOWS.lock().unwrap();
+    let lock = ALL_FLOWS.lock();
     let mut table: Vec<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))> = lock
         .flow_data
         .iter()
@@ -871,7 +860,7 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
 pub fn flows_by_ip(ip: &str) -> BusResponse {
     if let Ok(ip) = ip.parse::<IpAddr>() {
         let ip = XdpIpAddress::from_ip(ip);
-        let lock = ALL_FLOWS.lock().unwrap();
+        let lock = ALL_FLOWS.lock();
         let sd = SHAPED_DEVICES.load();
         let matching_flows: Vec<_> = lock
             .flow_data

@@ -35,7 +35,6 @@ pub async fn circuit_capacity(channels: Arc<PubSub>) {
     THROUGHPUT_TRACKER
         .raw_data
         .lock()
-        .unwrap()
         .iter()
         .for_each(|(_k, c)| {
             if let Some(circuit_id) = &c.circuit_id {

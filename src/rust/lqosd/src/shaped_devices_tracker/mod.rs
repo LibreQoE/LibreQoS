@@ -202,7 +202,6 @@ pub fn get_all_circuits() -> BusResponse {
         let data = THROUGHPUT_TRACKER
             .raw_data
             .lock()
-            .unwrap()
             .iter()
             .map(|(k, v)| {
                 let ip = k.as_ip();

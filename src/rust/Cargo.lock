@@ -2071,6 +2071,7 @@ dependencies = [
  "lqos_bus",
  "lqos_config",
  "once_cell",
+ "parking_lot",
  "tracing",
 ]
 
@@ -2168,6 +2169,7 @@ dependencies = [
  "lqos_sys",
  "lqos_utils",
  "once_cell",
+ "parking_lot",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
@@ -2189,6 +2191,7 @@ dependencies = [
  "lqos_config",
  "nix",
  "once_cell",
+ "parking_lot",
 ]
 
 [[package]]
@@ -2204,6 +2207,7 @@ dependencies = [
  "lqos_config",
  "lqos_queue_tracker",
  "lqos_utils",
+ "parking_lot",
  "timerfd",
  "tokio",
  "tracing",
@@ -2240,6 +2244,7 @@ dependencies = [
  "lqos_utils",
  "nix",
  "once_cell",
+ "parking_lot",
  "thiserror 1.0.69",
  "tracing",
  "zerocopy",
@@ -2299,6 +2304,7 @@ dependencies = [
  "native-tls",
  "nix",
  "once_cell",
+ "parking_lot",
  "rand 0.8.5",
  "reqwest",
  "serde",

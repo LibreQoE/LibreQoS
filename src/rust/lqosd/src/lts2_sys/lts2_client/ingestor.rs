@@ -7,7 +7,8 @@ use crate::lts2_sys::lts2_client::ingestor::message_queue::MessageQueue;
 use crate::lts2_sys::lts2_client::ingestor::permission::is_allowed_to_submit;
 pub(crate) use permission::check_submit_permission;
 use std::sync::mpsc::Sender;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 use std::time::Duration;
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
 use tracing::info;
@@ -27,7 +28,7 @@ fn ingestor_loop(rx: std::sync::mpsc::Receiver<IngestorCommand>) {
 
     info!("Starting ingestor loop");
     while let Ok(msg) = rx.recv() {
-        let mut message_queue_lock = message_queue.lock().unwrap();
+        let mut message_queue_lock = message_queue.lock();
         message_queue_lock.ingest(msg);
     }
     info!("Ingestor loop exited");
@@ -51,7 +52,7 @@ fn ticker_timer(message_queue: Arc<Mutex<MessageQueue>>) {
         }
 
         let permitted = is_allowed_to_submit();
-        let mut message_queue_lock = message_queue.lock().unwrap();
+        let mut message_queue_lock = message_queue.lock();
         if !message_queue_lock.is_empty() && permitted {
             let start = std::time::Instant::now();
             if let Err(e) = message_queue_lock.send() {

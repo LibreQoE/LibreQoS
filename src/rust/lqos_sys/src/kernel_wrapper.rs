@@ -4,7 +4,7 @@ use crate::lqos_kernel::{
     unload_xdp_from_interface,
 };
 use once_cell::sync::Lazy;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 /// Safer wrapper around pointers to `bpf::lqos_kern`. It really isn't
 /// a great idea to be passing mutable pointers around like this, but the C
@@ -72,7 +72,6 @@ impl LibreQoSKernels {
         )?;
         BPF_SKELETON
             .lock()
-            .unwrap()
             .replace(LqosKernBpfWrapper { ptr: skeleton });
         Ok(kernel)
     }
@@ -108,7 +107,6 @@ impl LibreQoSKernels {
         )?;
         BPF_SKELETON
             .lock()
-            .unwrap()
             .replace(LqosKernBpfWrapper { ptr: skeleton });
         Ok(kernel)
     }

@@ -18,7 +18,8 @@ use client_commands::LtsClientCommand;
 use lqos_config::load_config;
 use std::net::IpAddr;
 use std::sync::Arc;
-use std::sync::{Mutex, mpsc};
+use std::sync::mpsc;
+use parking_lot::Mutex;
 use tokio::sync::oneshot;
 use tracing::error;
 
@@ -65,11 +66,11 @@ pub fn spawn_lts2() -> anyhow::Result<()> {
                     }
                 }
                 LtsClientCommand::LicenseStatus(channel) => {
-                    let status = license_status.lock().unwrap();
+                    let status = license_status.lock();
                     let _ = channel.send(status.license_type);
                 }
                 LtsClientCommand::TrialDaysRemaining(channel) => {
-                    let status = license_status.lock().unwrap();
+                    let status = license_status.lock();
                     let _ = channel.send(status.trial_expires);
                 }
                 LtsClientCommand::IngestBatchComplete => {

@@ -31,7 +31,6 @@ pub fn get_unknown_ips() -> Vec<UnknownIp> {
     THROUGHPUT_TRACKER
         .raw_data
         .lock()
-        .unwrap()
         .iter()
         // Remove all loopback devices
         .filter(|(k, _v)| !k.as_ip().is_loopback())

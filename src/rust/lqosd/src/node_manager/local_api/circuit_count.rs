@@ -21,7 +21,6 @@ pub async fn get_circuit_count() -> Json<CircuitCount> {
     let active_circuits: HashSet<String> = THROUGHPUT_TRACKER
         .raw_data
         .lock()
-        .unwrap()
         .iter()
         // Only include shaped devices (non-zero tc_handle)
         .filter(|(_k, d)| d.tc_handle.as_u32() != 0)

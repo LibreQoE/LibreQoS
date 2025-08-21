@@ -75,6 +75,7 @@ timerfd = "1.6"
 crossbeam-channel = { version = "0.5" }
 crossbeam-queue = "0.3.11"
 arc-swap = "1.7.1"
+parking_lot = "0.12"
 
 # May have to change this one for ARM?
 #jemallocator = "0.5"
