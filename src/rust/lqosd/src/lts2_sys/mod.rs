@@ -1,5 +1,5 @@
 use std::net::IpAddr;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 pub(crate) mod lts2_client;
 pub mod shared_types;
 
@@ -240,7 +240,7 @@ pub fn remote_command_count() -> u64 {
 }
 
 fn command_callback(buffer: Vec<u8>) {
-    let mut lock = COMMANDS.lock().unwrap();
+    let mut lock = COMMANDS.lock();
     lock.clear();
     let commands: Vec<shared_types::RemoteCommand> = serde_cbor::from_slice(&buffer).unwrap();
     lock.extend(commands);
@@ -252,6 +252,6 @@ static COMMANDS: Lazy<Mutex<Vec<shared_types::RemoteCommand>>> =
 pub fn remote_commands() -> Vec<shared_types::RemoteCommand> {
     lts2_client::get_commands(command_callback);
 
-    let lock = COMMANDS.lock().unwrap();
+    let lock = COMMANDS.lock();
     lock.clone()
 }

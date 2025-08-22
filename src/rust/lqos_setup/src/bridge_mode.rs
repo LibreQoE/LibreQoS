@@ -3,13 +3,13 @@ use cursive::{view::Resizable, views::{Dialog, LinearLayout, RadioGroup, TextVie
 use crate::config_builder::{BridgeMode, CURRENT_CONFIG};
 
 pub fn bridge_mode(s: &mut Cursive) {
-    let mode = CURRENT_CONFIG.lock().unwrap().bridge_mode;
+    let mode = CURRENT_CONFIG.lock().bridge_mode;
 
     // create the group and buttons
     let mut group = RadioGroup::new()
     .on_change(|_s, mode| {
         // update the current config with the selected mode
-        let mut config = CURRENT_CONFIG.lock().unwrap();
+        let mut config = CURRENT_CONFIG.lock();
         config.bridge_mode = *mode;
     });
     let mut linux_btn  = group.button(BridgeMode::Linux,  "Linux Bridge (2 interfaces) - Please set up the bridge in your netplan");

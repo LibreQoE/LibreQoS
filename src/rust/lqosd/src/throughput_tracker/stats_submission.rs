@@ -131,7 +131,6 @@ pub(crate) fn submit_throughput_stats(
     let hosts = THROUGHPUT_TRACKER
         .raw_data
         .lock()
-        .unwrap()
         .iter()
         //.filter(|host| host.median_latency().is_some())
         .map(|(k, host)| HostSummary {
@@ -315,7 +314,7 @@ pub(crate) fn submit_throughput_stats(
             warn!("Error sending message to LTS2.");
         }
         if let Err(e) =
-            crate::lts2_sys::flow_count(now, ALL_FLOWS.lock().unwrap().flow_data.len() as u64)
+            crate::lts2_sys::flow_count(now, ALL_FLOWS.lock().flow_data.len() as u64)
         {
             debug!("Error sending message to LTS2. {e:?}");
         }
@@ -355,7 +354,6 @@ pub(crate) fn submit_throughput_stats(
         THROUGHPUT_TRACKER
             .raw_data
             .lock()
-            .unwrap()
             .iter()
             .filter(|(_k, h)| h.circuit_id.is_some() && h.bytes_per_second.not_zero())
             .for_each(|(_k, h)| {
@@ -396,7 +394,6 @@ pub(crate) fn submit_throughput_stats(
         THROUGHPUT_TRACKER
             .raw_data
             .lock()
-            .unwrap()
             .iter()
             .filter(|(_k, h)| {
                 h.circuit_id.is_some()
@@ -414,7 +411,6 @@ pub(crate) fn submit_throughput_stats(
         THROUGHPUT_TRACKER
             .raw_data
             .lock()
-            .unwrap()
             .iter()
             .filter(|(_k, h)| {
                 h.circuit_id.is_some()

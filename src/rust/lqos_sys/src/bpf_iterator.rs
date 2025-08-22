@@ -6,7 +6,8 @@ use crate::{
     lqos_kernel::bpf,
 };
 use lqos_utils::XdpIpAddress;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
+use parking_lot::Mutex;
 use std::{fmt::Debug, fs::File, io::Read, marker::PhantomData, os::fd::FromRawFd};
 use thiserror::Error;
 use tracing::error;
@@ -195,7 +196,7 @@ static FLOWBEE_TRACKER: OnceLock<Mutex<BpfMapIterator<FlowbeeKey, FlowbeeData>>>
 
 pub unsafe fn iterate_throughput(callback: &mut dyn FnMut(&XdpIpAddress, &[HostCounter])) {
     let traffic_map = MAP_TRAFFIC.get_or_init(|| {
-        let lock = BPF_SKELETON.lock().unwrap();
+        let lock = BPF_SKELETON.lock();
         let Some(skeleton) = lock.as_ref() else {
             panic!("Failed to create throughput iterator");
         };
@@ -211,7 +212,8 @@ pub unsafe fn iterate_throughput(callback: &mut dyn FnMut(&XdpIpAddress, &[HostC
         Mutex::new(iter)
     });
 
-    if let Ok(iter) = traffic_map.lock() {
+    {
+        let iter = traffic_map.lock();
         let _ = iter.for_each_per_cpu(callback);
     }
 }
@@ -219,7 +221,7 @@ pub unsafe fn iterate_throughput(callback: &mut dyn FnMut(&XdpIpAddress, &[HostC
 /// Iterate through the Flows 2 system tracker, retrieving all flows
 pub fn iterate_flows(callback: &mut dyn FnMut(&FlowbeeKey, &FlowbeeData)) {
     let flowbee_tracker = FLOWBEE_TRACKER.get_or_init(|| {
-        let lock = BPF_SKELETON.lock().unwrap();
+        let lock = BPF_SKELETON.lock();
         let Some(skeleton) = lock.as_ref() else {
             panic!("Failed to create flowbee iterator");
         };
@@ -232,7 +234,8 @@ pub fn iterate_flows(callback: &mut dyn FnMut(&FlowbeeKey, &FlowbeeData)) {
         Mutex::new(iter)
     });
 
-    if let Ok(iter) = flowbee_tracker.lock() {
+    {
+        let iter = flowbee_tracker.lock();
         let _ = iter.for_each(callback);
     }
 }

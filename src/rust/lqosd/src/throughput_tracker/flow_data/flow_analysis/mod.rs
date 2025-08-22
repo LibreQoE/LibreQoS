@@ -2,7 +2,8 @@ use allocative_derive::Allocative;
 use lqos_sys::flowbee_data::FlowbeeKey;
 use once_cell::sync::Lazy;
 use serde::Serialize;
-use std::{net::IpAddr, sync::Mutex};
+use std::net::IpAddr;
+use parking_lot::Mutex;
 use tracing::error;
 
 mod asn;
@@ -35,7 +36,7 @@ impl FlowAnalysisSystem {
                     let result = asn::GeoTable::load();
                     match result {
                         Ok(table) => {
-                            ANALYSIS.asn_table.lock().unwrap().replace(table);
+                            ANALYSIS.asn_table.lock().replace(table);
                         }
                         Err(e) => {
                             error!("Failed to update ASN table: {e}");
@@ -51,12 +52,9 @@ impl FlowAnalysisSystem {
     }
 
     pub fn len_and_capacity() -> (usize, usize, usize, usize) {
-        if let Ok(lock) = ANALYSIS.asn_table.lock() {
-            if let Some(table) = lock.as_ref() {
-                table.len()
-            } else {
-                (0, 0, 0, 0)
-            }
+        let lock = ANALYSIS.asn_table.lock();
+        if let Some(table) = lock.as_ref() {
+            table.len()
         } else {
             (0, 0, 0, 0)
         }
@@ -66,10 +64,7 @@ impl FlowAnalysisSystem {
 pub fn setup_flow_analysis() -> anyhow::Result<()> {
     // This is locking the table, which triggers lazy-loading of the
     // data. It's not actually doing nothing.
-    let e = ANALYSIS.asn_table.lock();
-    if e.is_err() {
-        anyhow::bail!("Failed to lock ASN table");
-    }
+    ANALYSIS.asn_table.lock();
     Ok(())
 }
 
@@ -91,37 +86,33 @@ impl FlowAnalysis {
 }
 
 pub fn lookup_asn_id(ip: IpAddr) -> Option<u32> {
-    if let Ok(table_lock) = ANALYSIS.asn_table.lock() {
-        if let Some(table) = table_lock.as_ref() {
-            return table.find_asn(ip);
-        }
+    let table_lock = ANALYSIS.asn_table.lock();
+    if let Some(table) = table_lock.as_ref() {
+        return table.find_asn(ip);
     }
     None
 }
 
 pub fn get_asn_name_and_country(ip: IpAddr) -> AsnNameCountryFlag {
-    if let Ok(table_lock) = ANALYSIS.asn_table.lock() {
-        if let Some(table) = table_lock.as_ref() {
-            return table.find_owners_by_ip(ip);
-        }
+    let table_lock = ANALYSIS.asn_table.lock();
+    if let Some(table) = table_lock.as_ref() {
+        return table.find_owners_by_ip(ip);
     }
     AsnNameCountryFlag::default()
 }
 
 pub fn get_asn_lat_lon(ip: IpAddr) -> (f64, f64) {
-    if let Ok(table_lock) = ANALYSIS.asn_table.lock() {
-        if let Some(table) = table_lock.as_ref() {
-            return table.find_lat_lon_by_ip(ip);
-        }
+    let table_lock = ANALYSIS.asn_table.lock();
+    if let Some(table) = table_lock.as_ref() {
+        return table.find_lat_lon_by_ip(ip);
     }
     (0.0, 0.0)
 }
 
 pub fn get_asn_name_by_id(id: u32) -> String {
-    if let Ok(table_lock) = ANALYSIS.asn_table.lock() {
-        if let Some(table) = table_lock.as_ref() {
-            return table.find_name_by_id(id);
-        }
+    let table_lock = ANALYSIS.asn_table.lock();
+    if let Some(table) = table_lock.as_ref() {
+        return table.find_name_by_id(id);
     }
     "Unknown".to_string()
 }
