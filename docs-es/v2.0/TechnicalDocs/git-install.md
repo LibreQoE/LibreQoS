@@ -10,6 +10,7 @@ cd /opt/
 sudo git clone https://github.com/LibreQoE/LibreQoS.git libreqos
 sudo chown -R $USER /opt/libreqos
 cd /opt/libreqos/
+git switch develop
 git pull
 ```
 
@@ -20,7 +21,7 @@ By specifying `libreqos` at the end, git will ensure the folder name is lowercas
 You need to have a few packages from `apt` installed:
 
 ```shell
-sudo apt-get install -y python3-pip clang mold esbuild gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname -r` libbpf-dev libssl-dev
+sudo apt-get install -y python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname -r` libbpf-dev libssl-dev
 ```
 
 Then you need to install some Python dependencies:
@@ -68,7 +69,7 @@ sudo cp lqos.example /etc/lqos.conf
 
 ## Configuration
 
-Proceed to configure settings [following this guide](configuration.md).
+Proceed to configure settings [following this guide](../Quickstart/configuration.md).
 
 ## Daemon setup
 

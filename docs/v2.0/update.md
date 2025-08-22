@@ -6,11 +6,14 @@ If you use the XDP bridge, traffic will briefly stop passing through the bridge 
 
 ## If you installed the .deb
 
-Donwload the latest .deb [here](quickstart.md).
-
-Unzip the .zip file and transfer the .deb to your LibreQoS box, installing with:
 ```
-sudo apt install ./[deb file name]
+cd ~
+sudo apt-get update
+sudo apt-get upgrade
+wget https://libreqos.io/wp-content/uploads/2025/08/libreqos_1.5-RC1.202508211229-1_amd64.zip
+sudo apt-get install unzip
+unzip libreqos_1.5-RC1.202508211229-1_amd64.zip
+sudo apt install ./libreqos_1.5-RC1.202508211229-1_amd64.deb
 ```
 
 Now reboot the LibreQoS box with:
