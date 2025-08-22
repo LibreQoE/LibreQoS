@@ -18,6 +18,15 @@ extensions = ["myst_parser"]
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
+rst_prolog = """
+.. |deb_file_zip_url| replace:: https://libreqos.io/wp-content/uploads/2025/08/libreqos_1.5-RC1.202508211229-1_amd64.zip
+"""
+rst_prolog = """
+.. |deb_file_zip_name| replace:: libreqos_1.5-RC1.202508211229-1_amd64.zip
+"""
+rst_prolog = """
+.. |deb_file_name| replace:: libreqos_1.5-RC1.202508211229-1_amd64.deb
+"""
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
