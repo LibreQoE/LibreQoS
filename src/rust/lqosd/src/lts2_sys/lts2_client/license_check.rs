@@ -49,10 +49,11 @@ pub(crate) fn license_check_loop(license_status: Arc<Mutex<LicenseStatus>>) {
     );
 
     loop {
-        let license_key = load_config()
-            .unwrap()
-            .long_term_stats
-            .license_key
+        let Ok(config) = load_config() else {
+            error!("Failed to load config");
+            continue;
+        };
+        let license_key = config.long_term_stats.license_key
             .clone()
             .unwrap_or_default();
 

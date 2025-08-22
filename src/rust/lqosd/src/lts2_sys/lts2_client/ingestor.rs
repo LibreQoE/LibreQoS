@@ -11,7 +11,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use std::time::Duration;
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
-use tracing::info;
+use tracing::{info, warn};
 
 pub fn start_ingestor() -> Sender<IngestorCommand> {
     println!("Starting ingestor");
@@ -31,7 +31,7 @@ fn ingestor_loop(rx: std::sync::mpsc::Receiver<IngestorCommand>) {
         let mut message_queue_lock = message_queue.lock();
         message_queue_lock.ingest(msg);
     }
-    info!("Ingestor loop exited");
+    warn!("Ingestor loop exited");
 }
 
 fn ticker_timer(message_queue: Arc<Mutex<MessageQueue>>) {
@@ -52,17 +52,20 @@ fn ticker_timer(message_queue: Arc<Mutex<MessageQueue>>) {
         }
 
         let permitted = is_allowed_to_submit();
-        let mut message_queue_lock = message_queue.lock();
-        if !message_queue_lock.is_empty() && permitted {
+
+        let mut session_data: MessageQueue = {
+            let mut message_queue_lock = message_queue.lock();
+            let data = message_queue_lock.clone();
+            message_queue_lock.clear();
+            data
+        };
+
+        if !session_data.is_empty() && permitted {
             let start = std::time::Instant::now();
-            if let Err(e) = message_queue_lock.send() {
+            if let Err(e) = session_data.send() {
                 info!("Failed to send queue: {e:?}");
             }
             info!("Queue send took: {:?}s", start.elapsed().as_secs_f32());
-        } else {
-            if !permitted {
-                message_queue_lock.clear();
-            }
         }
     }
 }

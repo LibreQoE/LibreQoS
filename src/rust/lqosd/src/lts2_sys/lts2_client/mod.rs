@@ -21,7 +21,7 @@ use std::sync::Arc;
 use std::sync::mpsc;
 use parking_lot::Mutex;
 use tokio::sync::oneshot;
-use tracing::error;
+use tracing::{error, warn};
 
 pub fn spawn_lts2() -> anyhow::Result<()> {
     // Convert the certificate into shared data for async land
@@ -62,7 +62,7 @@ pub fn spawn_lts2() -> anyhow::Result<()> {
                 }
                 LtsClientCommand::IngestData(data) => {
                     if let Err(e) = ingestor.send(data) {
-                        println!("Failed to send data to ingestor: {:?}", e);
+                        warn!("Failed to send data to ingestor: {:?}", e);
                     }
                 }
                 LtsClientCommand::LicenseStatus(channel) => {
@@ -78,7 +78,7 @@ pub fn spawn_lts2() -> anyhow::Result<()> {
                 }
             }
         }
-        println!("LTS2 Client message pump exited");
+        warn!("Insight Client message pump exited");
     });
 
     Ok(()) // Success
