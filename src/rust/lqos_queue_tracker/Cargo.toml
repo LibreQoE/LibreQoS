@@ -18,6 +18,7 @@ dashmap = { workspace = true }
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
 timerfd = {  workspace = true }
+parking_lot = { workspace = true }
 
 [dev-dependencies]
 criterion = { version = "0", features = [ "html_reports"] }

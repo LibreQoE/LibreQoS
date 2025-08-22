@@ -171,7 +171,7 @@ impl FlowActor {
                                 Ok(FlowCommands::ExpireRttFlows) => {
                                     if let Ok(now) = time_since_boot() {
                                         let since_boot = Duration::from(now);
-                                        let expire = (since_boot - Duration::from_secs(30)).as_nanos() as u64;
+                                        let expire = since_boot.saturating_sub(Duration::from_secs(30)).as_nanos() as u64;
                                         flows.flow_rtt.retain(|_, v| v.last_seen > expire);
                                     }
                                 }

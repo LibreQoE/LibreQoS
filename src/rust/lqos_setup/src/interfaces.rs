@@ -70,14 +70,14 @@ fn build_interface_list(interfaces: &[String], group: &mut RadioGroup<String>, a
 }
 
 fn build_layout() -> LinearLayout {
-    let bridge_mode = CURRENT_CONFIG.lock().unwrap().bridge_mode;
+    let bridge_mode = CURRENT_CONFIG.lock().bridge_mode;
     match bridge_mode {
         BridgeMode::Linux | BridgeMode::XDP => {
             let interfaces = get_interfaces().expect("Failed to get interfaces");
             
             // If the configuration has empty interface fields, set them to the first available interface
             {
-                let mut config = CURRENT_CONFIG.lock().unwrap();
+                let mut config = CURRENT_CONFIG.lock();
                 if config.to_internet.is_empty() && !interfaces.is_empty() {
                     config.to_internet = interfaces[0].clone();
                 }
@@ -89,13 +89,13 @@ fn build_layout() -> LinearLayout {
             // Build up the Internet interface selection list
             let mut internet_group = RadioGroup::new()
                 .on_change(|_s, iface: &String| {
-                    let mut config = CURRENT_CONFIG.lock().unwrap();
+                    let mut config = CURRENT_CONFIG.lock();
                     config.to_internet = iface.to_string();
                 });
             let internet_buttons = build_interface_list(
                 &interfaces,
                 &mut internet_group,
-                CURRENT_CONFIG.lock().unwrap().to_internet.clone(),
+                CURRENT_CONFIG.lock().to_internet.clone(),
             );
             let mut internet_layout = LinearLayout::vertical();
             internet_layout.add_child(TextView::new("To Internet:"));
@@ -106,13 +106,13 @@ fn build_layout() -> LinearLayout {
             // Build up the Network interface selection list
             let mut network_group = RadioGroup::new()
                 .on_change(|_s, iface: &String| {
-                    let mut config = CURRENT_CONFIG.lock().unwrap();
+                    let mut config = CURRENT_CONFIG.lock();
                     config.to_network = iface.to_string();
                 });
             let network_buttons = build_interface_list(
                 &interfaces,
                 &mut network_group,
-                CURRENT_CONFIG.lock().unwrap().to_network.clone(),
+                CURRENT_CONFIG.lock().to_network.clone(),
             );
             let mut network_layout = LinearLayout::vertical();
             network_layout.add_child(TextView::new("To Network:"));
@@ -133,7 +133,7 @@ fn build_layout() -> LinearLayout {
             
             // If the configuration has empty interface field, set it to the first available interface
             {
-                let mut config = CURRENT_CONFIG.lock().unwrap();
+                let mut config = CURRENT_CONFIG.lock();
                 if config.to_internet.is_empty() && !interfaces.is_empty() {
                     config.to_internet = interfaces[0].clone();
                 }
@@ -141,13 +141,13 @@ fn build_layout() -> LinearLayout {
             
             let mut internet_group = RadioGroup::new()
                 .on_change(|_s, iface: &String| {
-                    let mut config = CURRENT_CONFIG.lock().unwrap();
+                    let mut config = CURRENT_CONFIG.lock();
                     config.to_internet = iface.to_string();
                 });
             let internet_buttons = build_interface_list(
                 &interfaces,
                 &mut internet_group,
-                CURRENT_CONFIG.lock().unwrap().to_internet.clone(),
+                CURRENT_CONFIG.lock().to_internet.clone(),
             );
             let mut internet_layout = LinearLayout::vertical();
             internet_layout.add_child(TextView::new("To Internet:"));
@@ -156,7 +156,7 @@ fn build_layout() -> LinearLayout {
             }
 
             let (internet_vlan, network_vlan) = {
-                let config = CURRENT_CONFIG.lock().unwrap();
+                let config = CURRENT_CONFIG.lock();
                 (config.internet_vlan, config.network_vlan)
             };
             let vlan_layout = LinearLayout::vertical()
@@ -167,7 +167,7 @@ fn build_layout() -> LinearLayout {
                         .on_edit(|s, content, _cursor| {
                             if content.is_empty() { return; }
                             if let Ok(vlan) = content.parse::<u32>() {
-                                let mut config = CURRENT_CONFIG.lock().unwrap();
+                                let mut config = CURRENT_CONFIG.lock();
                                 config.internet_vlan = vlan;
                             } else {
                                 s.add_layer(Dialog::info("Invalid VLAN number"));
@@ -182,7 +182,7 @@ fn build_layout() -> LinearLayout {
                         .on_edit(|s, content, _cursor| {
                             if content.is_empty() { return; }
                             if let Ok(vlan) = content.parse::<u32>() {
-                                let mut config = CURRENT_CONFIG.lock().unwrap();
+                                let mut config = CURRENT_CONFIG.lock();
                                 config.network_vlan = vlan;
                             } else {
                                 s.add_layer(Dialog::info("Invalid VLAN number"));

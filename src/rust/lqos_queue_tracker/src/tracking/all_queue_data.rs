@@ -2,7 +2,7 @@ use crate::tracking::TrackedQueue;
 use lqos_utils::units::{AtomicDownUp, DownUpOrder};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 /// Holds all of the CAKE queue summaries being tracked by the system.
 pub static ALL_QUEUE_SUMMARY: Lazy<AllQueueData> = Lazy::new(|| AllQueueData::new());
@@ -51,12 +51,12 @@ impl AllQueueData {
     }
 
     pub fn clear(&self) {
-        let mut lock = self.data.lock().unwrap();
+        let mut lock = self.data.lock();
         lock.clear();
     }
 
     pub fn ingest_batch(&self, download: Vec<TrackedQueue>, upload: Vec<TrackedQueue>) {
-        let mut lock = self.data.lock().unwrap();
+        let mut lock = self.data.lock();
 
         // Roll through moving current to previous
         for (_, q) in lock.iter_mut() {
@@ -115,7 +115,7 @@ impl AllQueueData {
     }
 
     pub fn iterate_queues(&self, mut f: impl FnMut(i64, &DownUpOrder<u64>, &DownUpOrder<u64>)) {
-        let lock = self.data.lock().unwrap();
+        let lock = self.data.lock();
         for (circuit_id, q) in lock.iter() {
             if let Some(prev_drops) = q.prev_drops {
                 if let Some(prev_marks) = q.prev_marks {
@@ -131,7 +131,7 @@ impl AllQueueData {
 
     pub fn calculate_total_queue_stats(&self) {
         zero_total_queue_stats();
-        let lock = self.data.lock().unwrap();
+        let lock = self.data.lock();
 
         let mut drops = DownUpOrder::zeroed();
         let mut marks = DownUpOrder::zeroed();

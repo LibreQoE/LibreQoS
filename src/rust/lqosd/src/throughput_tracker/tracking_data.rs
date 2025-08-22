@@ -20,7 +20,7 @@ use lqos_sys::{flowbee_data::FlowbeeKey, iterate_flows, throughput_for_each};
 use lqos_utils::units::{AtomicDownUp, DownUpOrder};
 use lqos_utils::{XdpIpAddress, unix_time::time_since_boot};
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use std::{sync::atomic::AtomicU64, time::Duration};
 use tracing::{debug, info, warn};
 
@@ -30,7 +30,6 @@ const MAX_FLOWS: usize = 1_000_000;
 
 pub const MAX_RETRY_TIMES: usize = 32;
 
-#[derive(Allocative)]
 pub struct ThroughputTracker {
     pub(crate) cycle: AtomicU64,
     pub(crate) raw_data: Mutex<HashMap<XdpIpAddress, ThroughputEntry>>,
@@ -63,7 +62,7 @@ impl ThroughputTracker {
     pub(crate) fn copy_previous_and_reset_rtt(&self) {
         // Copy previous byte/packet numbers and reset RTT data
         let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
-        let mut raw_data = self.raw_data.lock().unwrap();
+        let mut raw_data = self.raw_data.lock();
         raw_data.iter_mut().for_each(|(_k, v)| {
             if v.first_cycle < self_cycle {
                 v.bytes_per_second = v.bytes.checked_sub_or_zero(v.prev_bytes);
@@ -125,7 +124,7 @@ impl ThroughputTracker {
     }
 
     pub(crate) fn refresh_circuit_ids(&self, lock: &NetworkJson) {
-        let mut raw_data = self.raw_data.lock().unwrap();
+        let mut raw_data = self.raw_data.lock();
         raw_data.iter_mut().for_each(|(key, data)| {
             let (circuit_id, circuit_hash) = Self::lookup_circuit_id(key);
             data.circuit_id = circuit_id;
@@ -142,7 +141,7 @@ impl ThroughputTracker {
         let mut changed_circuits = HashSet::new();
 
         let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
-        let mut raw_data = self.raw_data.lock().unwrap();
+        let mut raw_data = self.raw_data.lock();
         throughput_for_each(&mut |xdp_ip, counts| {
             if let Some(entry) = raw_data.get_mut(xdp_ip) {
                 // Zero the counter, we have to do a per-CPU sum
@@ -311,7 +310,7 @@ impl ThroughputTracker {
         ALL_QUEUE_SUMMARY.calculate_total_queue_stats();
 
         // Iterate through the queue data and find the matching circuit_id
-        let raw_data = self.raw_data.lock().unwrap();
+        let raw_data = self.raw_data.lock();
         ALL_QUEUE_SUMMARY.iterate_queues(|circuit_hash, drops, marks| {
             if let Some((_k, entry)) = raw_data.iter().find(|(_k, v)| match v.circuit_hash {
                 Some(ref id) => *id == circuit_hash,
@@ -343,10 +342,10 @@ impl ThroughputTracker {
             let rtt_samples = flowbee_rtt_map();
             get_flowbee_event_count_and_reset();
             let since_boot = Duration::from(now);
-            let expire = (since_boot - Duration::from_secs(timeout_seconds)).as_nanos() as u64;
+            let expire = since_boot.saturating_sub(Duration::from_secs(timeout_seconds)).as_nanos() as u64;
 
-            let mut all_flows_lock = ALL_FLOWS.lock().unwrap();
-            let mut raw_data = self.raw_data.lock().unwrap();
+            let mut all_flows_lock = ALL_FLOWS.lock();
+            let mut raw_data = self.raw_data.lock();
 
             // Track through all the flows
             iterate_flows(&mut |key, data| {
@@ -550,7 +549,7 @@ impl ThroughputTracker {
         self.udp_packets_per_second.set_to_zero();
         self.icmp_packets_per_second.set_to_zero();
         self.shaped_bytes_per_second.set_to_zero();
-        let raw_data = self.raw_data.lock().unwrap();
+        let raw_data = self.raw_data.lock();
         raw_data
             .iter()
             .filter(|(_k, v)| {
@@ -622,9 +621,9 @@ impl ThroughputTracker {
         if let Ok(now) = time_since_boot() {
             let since_boot = Duration::from(now);
             let timeout_seconds = 5 * 60; // 5 minutes
-            let expire = (since_boot - Duration::from_secs(timeout_seconds)).as_nanos() as u64;
+            let expire = since_boot.saturating_sub(Duration::from_secs(timeout_seconds)).as_nanos() as u64;
             let mut keys_to_expire = Vec::new();
-            let mut raw_data = self.raw_data.lock().unwrap();
+            let mut raw_data = self.raw_data.lock();
             raw_data.retain(|k, v| {
                 let keep_it = v.last_seen >= expire && v.last_seen > 0;
                 if !keep_it {
@@ -668,7 +667,7 @@ impl ThroughputTracker {
 
     #[allow(dead_code)]
     pub(crate) fn dump(&self) {
-        let raw_data = self.raw_data.lock().unwrap();
+        let raw_data = self.raw_data.lock();
         for (k, v) in raw_data.iter() {
             let ip = k.as_ip();
             info!("{:<34}{:?}", ip, v.tc_handle);

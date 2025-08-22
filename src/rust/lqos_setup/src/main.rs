@@ -125,7 +125,7 @@ fn main() {
                                     .child(
                                         EditView::new()
                                         .on_edit(|_s, content, _cursor| {
-                                            let mut config = CURRENT_CONFIG.lock().unwrap();
+                                            let mut config = CURRENT_CONFIG.lock();
                                             config.node_name = content.to_string();
                                         })
                                         .content(node_name)
@@ -157,7 +157,7 @@ fn finalize(ui: &mut cursive::Cursive) {
         lqos_config::Config::default()
     };
 
-    let new_config = CURRENT_CONFIG.lock().unwrap();
+    let new_config = CURRENT_CONFIG.lock();
     config.node_name = new_config.node_name.clone();
     config.queues.downlink_bandwidth_mbps = new_config.mbps_to_internet;
     config.queues.uplink_bandwidth_mbps = new_config.mbps_to_network;

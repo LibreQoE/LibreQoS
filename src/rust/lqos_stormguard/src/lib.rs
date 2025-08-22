@@ -6,7 +6,7 @@
 //!
 //! Copyright (C) 2025 LibreQoS. GPLv2 licensed.
 
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use std::time::Duration;
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
 use tracing::{debug, info};

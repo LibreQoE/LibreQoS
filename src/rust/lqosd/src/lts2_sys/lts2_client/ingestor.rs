@@ -7,7 +7,8 @@ use crate::lts2_sys::lts2_client::ingestor::message_queue::MessageQueue;
 use crate::lts2_sys::lts2_client::ingestor::permission::is_allowed_to_submit;
 pub(crate) use permission::check_submit_permission;
 use std::sync::mpsc::Sender;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 use std::time::Duration;
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
 use tracing::{info, warn};
@@ -27,7 +28,7 @@ fn ingestor_loop(rx: std::sync::mpsc::Receiver<IngestorCommand>) {
 
     info!("Starting ingestor loop");
     while let Ok(msg) = rx.recv() {
-        let mut message_queue_lock = message_queue.lock().unwrap();
+        let mut message_queue_lock = message_queue.lock();
         message_queue_lock.ingest(msg);
     }
     warn!("Ingestor loop exited");
@@ -53,20 +54,10 @@ fn ticker_timer(message_queue: Arc<Mutex<MessageQueue>>) {
         let permitted = is_allowed_to_submit();
 
         let mut session_data: MessageQueue = {
-            let message_queue_lock = message_queue.lock();
-            match message_queue_lock {
-                Ok(mut lock) => {
-                    let data = lock.clone();
-                    lock.clear();
-                    data
-                }
-                Err(_) => {
-                    warn!("Clearing message queue poisoned, skipping submission");
-                    message_queue.clear_poison();
-                    continue;
-                }
-            }
-            
+            let mut message_queue_lock = message_queue.lock();
+            let data = message_queue_lock.clone();
+            message_queue_lock.clear();
+            data
         };
 
         if !session_data.is_empty() && permitted {

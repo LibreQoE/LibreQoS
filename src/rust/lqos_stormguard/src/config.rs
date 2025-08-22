@@ -70,7 +70,7 @@ pub fn configure() -> anyhow::Result<StormguardConfig> {
         };
         sites.insert(target.to_owned(), site);
         {
-            let mut lock = STORMGUARD_STATS.lock().unwrap();
+            let mut lock = STORMGUARD_STATS.lock();
             lock.push((target.to_owned(), max_down, max_up));
         }
     }
