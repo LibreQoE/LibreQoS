@@ -19,10 +19,10 @@
 cd ~
 sudo apt-get update
 sudo apt-get upgrade
-wget https://libreqos.io/wp-content/uploads/2025/08/libreqos_1.5-RC1.202508211229-1_amd64.zip
+wget https://libreqos.io/wp-content/uploads/2025/08/libreqos_1.5-RC1.202508232013-1_amd64.zip
 sudo apt-get install unzip
-unzip libreqos_1.5-RC1.202508211229-1_amd64.zip
-sudo apt install ./libreqos_1.5-RC1.202508211229-1_amd64.deb
+unzip libreqos_1.5-RC1.202508232013-1_amd64.zip
+sudo apt install ./libreqos_1.5-RC1.202508232013-1_amd64.deb
 ```
 
 ### Instalación con Git (Solo para Desarrolladores - No Recomendado)

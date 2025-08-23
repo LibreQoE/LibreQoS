@@ -215,7 +215,7 @@ impl<'a> SiteStateTracker<'a> {
                 RecommendationDirection::Download => {
                     site.queue_download_mbps = new_rate;
                     site.ticks_since_last_probe_download = 0;
-                    let mut lock = crate::STORMGUARD_STATS.lock().unwrap();
+                    let mut lock = crate::STORMGUARD_STATS.lock();
                     if let Some(site) = lock.iter_mut().find(|(n, _, _)| n == &recommendation.site) {
                         site.1 = new_rate;
                     }
@@ -223,7 +223,7 @@ impl<'a> SiteStateTracker<'a> {
                 RecommendationDirection::Upload => {
                     site.queue_upload_mbps = new_rate;
                     site.ticks_since_last_probe_upload = 0;
-                    let mut lock = crate::STORMGUARD_STATS.lock().unwrap();
+                    let mut lock = crate::STORMGUARD_STATS.lock();
                     if let Some(site) = lock.iter_mut().find(|(n, _, _)| n == &recommendation.site) {
                         site.2 = new_rate;
                     }

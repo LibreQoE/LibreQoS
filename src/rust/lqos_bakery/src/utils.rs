@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use tracing::{error, info};
 
 /// Get the current Unix timestamp in seconds

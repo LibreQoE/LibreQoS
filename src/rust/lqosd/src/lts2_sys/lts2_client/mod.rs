@@ -18,9 +18,10 @@ use client_commands::LtsClientCommand;
 use lqos_config::load_config;
 use std::net::IpAddr;
 use std::sync::Arc;
-use std::sync::{Mutex, mpsc};
+use std::sync::mpsc;
+use parking_lot::Mutex;
 use tokio::sync::oneshot;
-use tracing::error;
+use tracing::{error, warn};
 
 pub fn spawn_lts2() -> anyhow::Result<()> {
     // Convert the certificate into shared data for async land
@@ -61,15 +62,15 @@ pub fn spawn_lts2() -> anyhow::Result<()> {
                 }
                 LtsClientCommand::IngestData(data) => {
                     if let Err(e) = ingestor.send(data) {
-                        println!("Failed to send data to ingestor: {:?}", e);
+                        warn!("Failed to send data to ingestor: {:?}", e);
                     }
                 }
                 LtsClientCommand::LicenseStatus(channel) => {
-                    let status = license_status.lock().unwrap();
+                    let status = license_status.lock();
                     let _ = channel.send(status.license_type);
                 }
                 LtsClientCommand::TrialDaysRemaining(channel) => {
-                    let status = license_status.lock().unwrap();
+                    let status = license_status.lock();
                     let _ = channel.send(status.trial_expires);
                 }
                 LtsClientCommand::IngestBatchComplete => {
@@ -77,7 +78,7 @@ pub fn spawn_lts2() -> anyhow::Result<()> {
                 }
             }
         }
-        println!("LTS2 Client message pump exited");
+        warn!("Insight Client message pump exited");
     });
 
     Ok(()) // Success

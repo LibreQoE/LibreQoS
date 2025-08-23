@@ -15,6 +15,7 @@ lqos_utils = { path = "../lqos_utils" }
 once_cell = { workspace = true}
 thiserror = { workspace = true }
 zerocopy = { workspace = true }
+parking_lot = { workspace = true }
 
 # For memory debugging
 allocative.workspace = true

@@ -12,11 +12,10 @@ use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::{boot_time_nanos_to_unix_now, unix_now};
 use once_cell::sync::Lazy;
 use serde::Serialize;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 use std::time::Duration;
 use tracing::debug;
 
-#[derive(Allocative)]
 pub struct TimeBuffer {
     buffer: Mutex<Vec<TimeEntry>>,
 }
@@ -63,19 +62,19 @@ impl TimeBuffer {
     fn expire_over_one_minutes(&self) {
         if let Ok(now) = unix_now() {
             let one_minute_ago = now - 60;
-            let mut buffer = self.buffer.lock().unwrap();
+            let mut buffer = self.buffer.lock();
             buffer.retain(|v| v.time > one_minute_ago);
             buffer.shrink_to_fit();
         }
     }
 
     fn push(&self, entry: TimeEntry) {
-        let mut buffer = self.buffer.lock().unwrap();
+        let mut buffer = self.buffer.lock();
         buffer.push(entry);
     }
 
     pub fn lat_lon_endpoints(&self) -> Vec<(f64, f64, String, u64, f32)> {
-        let buffer = self.buffer.lock().unwrap();
+        let buffer = self.buffer.lock();
         let mut my_buffer = buffer
             .iter()
             .map(|v| {
@@ -103,7 +102,7 @@ impl TimeBuffer {
     }
 
     pub fn country_summary(&self) -> Vec<(String, DownUpOrder<u64>, [f32; 2], String)> {
-        let buffer = self.buffer.lock().unwrap();
+        let buffer = self.buffer.lock();
         let mut my_buffer = buffer
             .iter()
             .map(|v| {
@@ -196,7 +195,7 @@ impl TimeBuffer {
     }
 
     pub fn ether_protocol_summary(&self) -> BusResponse {
-        let buffer = self.buffer.lock().unwrap();
+        let buffer = self.buffer.lock();
 
         let mut v4_bytes_sent = DownUpOrder::zeroed();
         let mut v4_packets_sent = DownUpOrder::zeroed();
@@ -244,7 +243,7 @@ impl TimeBuffer {
     }
 
     pub fn ip_protocol_summary(&self) -> Vec<(String, DownUpOrder<u64>)> {
-        let buffer = self.buffer.lock().unwrap();
+        let buffer = self.buffer.lock();
 
         let mut results = FxHashMap::default();
 
@@ -265,11 +264,11 @@ impl TimeBuffer {
     }
 
     pub fn flow_duration_summary(&self) -> Vec<FlowDurationSummary> {
-        let buffer = self.buffer.lock().unwrap();
+        let buffer = self.buffer.lock();
 
         buffer
             .iter()
-            .map(|f| Duration::from_nanos(f.data.1.last_seen - f.data.1.start_time)) // Duration in nanoseconds
+            .map(|f| Duration::from_nanos(f.data.1.last_seen.saturating_sub(f.data.1.start_time))) // Duration in nanoseconds
             .map(|nanos| nanos.as_secs())
             .sorted()
             .dedup_with_count() // Now we're (count, duration in seconds)
@@ -278,7 +277,7 @@ impl TimeBuffer {
     }
 
     pub fn all_flows_for_asn(&self, id: u32) -> Vec<(FlowbeeKey, FlowbeeLocalData, FlowAnalysis)> {
-        let buffer = self.buffer.lock().unwrap();
+        let buffer = self.buffer.lock();
         buffer
             .iter()
             .filter(|flow| flow.data.2.asn_id.0 == id)
@@ -290,7 +289,7 @@ impl TimeBuffer {
         &self,
         iso_code: &str,
     ) -> Vec<(FlowbeeKey, FlowbeeLocalData, FlowAnalysis)> {
-        let buffer = self.buffer.lock().unwrap();
+        let buffer = self.buffer.lock();
         buffer
             .iter()
             .filter(|flow| {
@@ -305,7 +304,7 @@ impl TimeBuffer {
         &self,
         protocol_name: &str,
     ) -> Vec<(FlowbeeKey, FlowbeeLocalData, FlowAnalysis)> {
-        let buffer = self.buffer.lock().unwrap();
+        let buffer = self.buffer.lock();
         buffer
             .iter()
             .filter(|flow| flow.data.2.protocol_analysis.to_string() == protocol_name)
@@ -317,7 +316,7 @@ impl TimeBuffer {
     pub fn asn_list(&self) -> Vec<AsnListEntry> {
         // 1: Clone: large operation, don't keep the buffer locked longer than we have to
         let buffer = {
-            let buffer = self.buffer.lock().unwrap();
+            let buffer = self.buffer.lock();
             buffer.clone()
         };
 
@@ -351,7 +350,7 @@ impl TimeBuffer {
     pub fn country_list(&self) -> Vec<AsnCountryListEntry> {
         // 1: Clone: large operation, don't keep the buffer locked longer than we have to
         let buffer = {
-            let buffer = self.buffer.lock().unwrap();
+            let buffer = self.buffer.lock();
             buffer.clone()
         };
 
@@ -388,7 +387,7 @@ impl TimeBuffer {
     pub fn protocol_list(&self) -> Vec<AsnProtocolListEntry> {
         // 1: Clone: large operation, don't keep the buffer locked longer than we have to
         let buffer = {
-            let buffer = self.buffer.lock().unwrap();
+            let buffer = self.buffer.lock();
             buffer.clone()
         };
 
@@ -415,7 +414,7 @@ impl TimeBuffer {
     }
 
     pub fn len_and_capacity(&self) -> (usize, usize) {
-        let buffer = self.buffer.lock().unwrap();
+        let buffer = self.buffer.lock();
         (buffer.len(), buffer.capacity())
     }
 }

@@ -35,6 +35,7 @@ static SHAPED_DEVICES_HASH: AtomicI64 = AtomicI64::new(0);
 /// Provides holders for messages that have been received from the ingestor,
 /// and not yet submitted to the LTS2 server. It divides many message types by
 /// the type, to maximize batching.
+#[derive(Clone)]
 pub(crate) struct MessageQueue {
     /// All messages of type `IngestorCommand::General` that have been received,
     /// that haven't been categorized for batching.
@@ -197,7 +198,10 @@ impl MessageQueue {
 
         // Send License
         let (license_key, node_id, node_name) = {
-            let lock = load_config().unwrap();
+            let Ok(lock) = load_config() else {
+                warn!("Failed to load config");
+                return Ok(());
+            };
             (
                 lock.long_term_stats
                     .license_key
@@ -380,7 +384,10 @@ impl MessageQueue {
                             SHAPED_DEVICES_HASH.store(data.shaped_devices_hash, Ordering::Relaxed);
 
                             // Grab the first network JSON (there should only be one)
-                            let (_, network_topology) = data.shapers.into_iter().next().unwrap();
+                            let Some((_, network_topology)) = data.shapers.into_iter().next() else {
+                                warn!("No network topology found in data");
+                                return Ok(());
+                            };
                             NETWORK_JSON_HASH.store(network_topology.hash, Ordering::Relaxed);
 
                             // Save the network JSON as network.insight.json
@@ -395,9 +402,15 @@ impl MessageQueue {
                                 .quote_style(csv::QuoteStyle::NonNumeric)
                                 .from_writer(sd);
                             for device in data.shaped_devices {
-                                writer.serialize(device)?;
+                                if let Err(e) = writer.serialize(device) {
+                                    warn!("Failed to serialize shaped device: {}", e);
+                                    return Ok(());
+                                }
                             }
-                            writer.flush()?;
+                            if let Err(e) = writer.flush() {
+                                warn!("Failed to flush shaped devices writer: {}", e);
+                                return Ok(());
+                            }
 
                             // Trigger a reload
                             info!("Triggering LibreQoS Reload");

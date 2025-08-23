@@ -12,3 +12,4 @@ crossbeam-channel.workspace = true
 once_cell.workspace = true
 allocative.workspace = true
 allocative_derive.workspace = true
+parking_lot.workspace = true

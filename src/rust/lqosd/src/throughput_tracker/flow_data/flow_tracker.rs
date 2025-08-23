@@ -10,7 +10,7 @@ use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
 use lqos_utils::units::DownUpOrder;
 use once_cell::sync::Lazy;
 use serde::Serialize;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Allocative)]
 pub struct AsnId(pub u32);

@@ -9,14 +9,14 @@ use crate::config_builder::CURRENT_CONFIG;
 /// Shows and manages the list of allowed IP ranges.
 pub fn ranges(s: &mut Cursive) {
     let initial_ranges = {
-        let config = CURRENT_CONFIG.lock().unwrap();
+        let config = CURRENT_CONFIG.lock();
         config.allow_subnets.clone()
     };
 
     let select_view = SelectView::<String>::new()
         .with_all(initial_ranges.iter().map(|range| (range.clone(), range.clone())))
         .on_submit(|_s, range: &str| {
-            let mut config = CURRENT_CONFIG.lock().unwrap();
+            let mut config = CURRENT_CONFIG.lock();
             config.allow_subnets.push(range.parse().unwrap());
         })
         .with_name("ip_ranges")
@@ -29,7 +29,7 @@ pub fn ranges(s: &mut Cursive) {
             .child(Button::new("Remove Selected", |s| {
                     s.call_on_name("ip_ranges", |view: &mut SelectView<String>| {
                         if let Some(selected) = view.selected_id() {
-                            let mut config = CURRENT_CONFIG.lock().unwrap();
+                            let mut config = CURRENT_CONFIG.lock();
                             config.allow_subnets.remove(selected);
                             view.remove_item(selected);
                         }
@@ -46,7 +46,7 @@ pub fn ranges(s: &mut Cursive) {
                         let parsed = content.parse::<IpNetwork>();
                         if parsed.is_ok() {
                             let range = content.to_string();
-                            let mut config = CURRENT_CONFIG.lock().unwrap();
+                            let mut config = CURRENT_CONFIG.lock();
                             config.allow_subnets.push(range);
                             s.call_on_name("ip_ranges", |view: &mut SelectView<String>| {
                                 view.add_item(content.to_string(), content.to_string());

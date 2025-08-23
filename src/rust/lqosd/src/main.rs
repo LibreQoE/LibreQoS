@@ -512,7 +512,7 @@ fn handle_bus_requests(
             }
             BusRequest::GetStormguardStats => {
                 let cloned = {
-                    let lock = STORMGUARD_STATS.lock().unwrap();
+                    let lock = STORMGUARD_STATS.lock();
                     (*lock).clone()
                 };
                 BusResponse::StormguardStats(cloned)
