@@ -8,30 +8,19 @@ export function sponsorTag(parentId) {
                 let div = document.createElement("div");
                 let random = Math.floor(Math.random() * 5) + 1;
                 if (random === 1) {
-                    let html = "We love working on LibreQoS to make the Internet better. If you love it too, please ";
-                    html += sponsorBtn;
-                    html += ". By the way, we'll stop asking if you sign up for LibreQoS Insight.";
+                    let html = "LibreQoS is free forever. Insight adds the dashboards, reports, and automation that save hours every week. Try it free for 30 days.";
                     div.innerHTML = html;
                 } else if (random === 2) {
-                    let cost = Math.max(100, counts.shaped_devices) * 0.6;
-                    let html = "Other QoS providers might be charging you as much as $" + cost.toFixed(2) + " per month. We like eating, too! Why not ";
-                    html += sponsorBtn;
-                    html += ". By the way, we'll stop asking if you sign up for LibreQoS Insight.";
+                    let html = "Want deeper insights, heatmaps, and AI-powered reports? Unlock LibreQoS Insight and take your network to the next level.";
                     div.innerHTML = html;
                 } else if (random === 3) {
-                    let html = "Open Source is a labor of love. If you love LibreQoS, please ";
-                    html += sponsorBtn;
-                    html += ". By the way, we'll stop asking if you sign up for LibreQoS Insight.";
+                    let html = "Ready to move beyond shaping into full network intelligence? Upgrade to LibreQoS Insight for real-time analytics and smart alerts.";
                     div.innerHTML = html;
                 } else if (random === 4) {
-                    let html = counts.shaped_devices + " devices on your network are using LibreQoS. If we're helping, please ";
-                    html += sponsorBtn;
-                    html += ". By the way, we'll stop asking if you sign up for LibreQoS Insight.";
+                    let html = "LibreQoS keeps your network fair. Insight helps you see everything — latency, retransmits, flows, and more. Start your free trial today.";
                     div.innerHTML = html;
                 } else if (random === 5) {
-                    let html = "$150 will keep a developer in Ramen for a month! ";
-                    html += sponsorBtn;
-                    html += ". By the way, we'll stop asking if you sign up for LibreQoS Insight.";
+                    let html = "Run LibreQoS like the pros. Insight gives you heatmaps, multi-site dashboards, and AI-powered reports — all in one place.";
                     div.innerHTML = html;
                 }
                 div.classList.add("alert", "alert-warning", "toasty");
