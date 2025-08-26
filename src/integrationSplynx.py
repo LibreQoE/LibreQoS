@@ -438,8 +438,8 @@ def createShaper():
 					type=NodeType.device,
 					parentId=circuit_id,
 					mac=serviceItem['mac'],
-					ipv4=[ipv4] if ipv4 else [],
-					ipv6=[ipv6] if ipv6 else []
+					ipv4=[ipv4] if ipv4 and ipv4.strip() else [],
+					ipv6=[ipv6] if ipv6 and ipv6.strip() else []
 				)
 				net.addRawNode(device)
 				device_counter = device_counter + 1
@@ -454,61 +454,74 @@ def createShaper():
 	ipv4sForService= {}
 	ipv6sForService= {}
 	for customerJson in customersOnline:
-		ipv4 = customerJson['ipv4']
-		ipv6 = customerJson['ipv6']
-		if customerJson['service_id'] in ipv4sForService:
-			temp = ipv4sForService[customerJson['service_id']]
-		else:
-			temp = []
-		if ipv4 not in temp:
-			temp.append(ipv4)
-		ipv4sForService[customerJson['service_id']] = temp
+		ipv4 = customerJson.get('ipv4', '')
+		ipv6 = customerJson.get('ipv6', '')
 		
-		if customerJson['service_id'] in ipv6sForService:
-			temp = ipv6sForService[customerJson['service_id']]
-		else:
-			temp = []
-		if ipv6 not in temp:
-			temp.append(ipv6)
-		ipv6sForService[customerJson['service_id']] = temp
+		# Only add non-empty IPv4 addresses
+		if ipv4 and ipv4.strip():
+			if customerJson['service_id'] in ipv4sForService:
+				temp = ipv4sForService[customerJson['service_id']]
+			else:
+				temp = []
+			if ipv4 not in temp:
+				temp.append(ipv4)
+			ipv4sForService[customerJson['service_id']] = temp
+		
+		# Only add non-empty IPv6 addresses
+		if ipv6 and ipv6.strip():
+			if customerJson['service_id'] in ipv6sForService:
+				temp = ipv6sForService[customerJson['service_id']]
+			else:
+				temp = []
+			if ipv6 not in temp:
+				temp.append(ipv6)
+			ipv6sForService[customerJson['service_id']] = temp
+	
+	# Track device IDs created for each service to enable supplementation
+	device_id_by_service = {}
 	
 	# Intermediate step: Supplement primary method results with IPs from customersOnline
 	matched_via_supplementation = 0
 	for serviceItem in allServices:
 		if serviceItem['id'] in service_ids_handled and serviceItem['status'] == 'active':
 			# Check if we can supplement missing IPs for already handled services
-			# Find the device node that was created for this service
+			# Find the device node that was created for this service using service ID in device counter range
+			target_device_id = None
+			customer_id = serviceItem['customer_id']
+			customer_name = cust_id_to_name.get(customer_id, str(customer_id))
+			
+			# Look for devices for this customer
 			for node in net.nodes:
 				if (node.type == NodeType.device and 
-					node.displayName == cust_id_to_name.get(serviceItem['customer_id'], '')):
-					needs_supplement = False
-					supplemented_ipv4 = []
-					supplemented_ipv6 = []
-					
-					# Check if IPv4 needs supplementation
-					if (not node.ipv4 or node.ipv4 == ['']) and serviceItem['id'] in ipv4sForService:
-						for ipv4 in ipv4sForService[serviceItem['id']]:
-							if ipv4 and ipv4 not in allocated_ipv4s:
-								supplemented_ipv4.append(ipv4)
-								allocated_ipv4s[ipv4] = True
-								needs_supplement = True
-					
-					# Check if IPv6 needs supplementation
-					if (not node.ipv6 or node.ipv6 == ['']) and serviceItem['id'] in ipv6sForService:
-						for ipv6 in ipv6sForService[serviceItem['id']]:
-							if ipv6 and ipv6 not in allocated_ipv6s:
-								supplemented_ipv6.append(ipv6)
-								allocated_ipv6s[ipv6] = True
-								needs_supplement = True
-					
-					if needs_supplement:
-						if supplemented_ipv4:
-							node.ipv4 = supplemented_ipv4
-						if supplemented_ipv6:
-							node.ipv6 = supplemented_ipv6
-						matched_via_supplementation += 1
-						print(f"Supplemented IPs for {cust_id_to_name.get(serviceItem['customer_id'], 'Unknown')} - IPv4: {supplemented_ipv4}, IPv6: {supplemented_ipv6}")
-					break
+					node.displayName == customer_name and
+					node.id >= 200000):  # Device ID range
+						needs_supplement = False
+						supplemented_ipv4 = []
+						supplemented_ipv6 = []
+						
+						# Check if IPv4 needs supplementation
+						if (not node.ipv4 or len(node.ipv4) == 0 or (len(node.ipv4) == 1 and not node.ipv4[0].strip())) and serviceItem['id'] in ipv4sForService:
+							for ipv4 in ipv4sForService[serviceItem['id']]:
+								if ipv4 and ipv4.strip() and ipv4 not in allocated_ipv4s:
+									supplemented_ipv4.append(ipv4)
+									allocated_ipv4s[ipv4] = True
+									needs_supplement = True
+						
+						# Check if IPv6 needs supplementation
+						if (not node.ipv6 or len(node.ipv6) == 0 or (len(node.ipv6) == 1 and not node.ipv6[0].strip())) and serviceItem['id'] in ipv6sForService:
+							for ipv6 in ipv6sForService[serviceItem['id']]:
+								if ipv6 and ipv6.strip() and ipv6 not in allocated_ipv6s:
+									supplemented_ipv6.append(ipv6)
+									allocated_ipv6s[ipv6] = True
+									needs_supplement = True
+						
+						if needs_supplement:
+							if supplemented_ipv4:
+								node.ipv4 = supplemented_ipv4
+							if supplemented_ipv6:
+								node.ipv6 = supplemented_ipv6
+							matched_via_supplementation += 1
+						break
 	
 	# For any services not correctly handled the way we just tried, try an alternative way
 	previously_unhandled_services = {}
@@ -536,11 +549,13 @@ def createShaper():
 		if service["id"] in previously_unhandled_services:
 			if service["id"] not in service_ids_handled:
 				if service["id"] in ipv4sForService:
-					ipv4 = ipv4sForService[service["id"]]
+					# Filter out empty strings and only keep valid IPs
+					ipv4 = [ip for ip in ipv4sForService[service["id"]] if ip and ip.strip()]
 				else:
 					ipv4 = []
 				if service["id"] in ipv6sForService:
-					ipv6 = ipv6sForService[service["id"]]
+					# Filter out empty strings and only keep valid IPs
+					ipv6 = [ip for ip in ipv6sForService[service["id"]] if ip and ip.strip()]
 				else:
 					ipv6 = []
 				
