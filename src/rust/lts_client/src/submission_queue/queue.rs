@@ -27,6 +27,14 @@ pub(crate) async fn enqueue_if_allowed(
         }
         LicenseState::Valid { .. } => {
             debug!("Sending data to the queue.");
+            let queue_length = QUEUE.queue.lock().await.len();
+            if queue_length > 50 {
+                // If there are more than 50 items in the queue, remove the oldest one.
+                // This prevents the queue from growing indefinitely if the server is unreachable.
+                let mut lock = QUEUE.queue.lock().await;
+                lock.remove(0);
+                debug!("Queue length exceeded 50 items. Dropping oldest item.");
+            }
             QUEUE.push(LtsCommand::Submit(Box::new(data))).await;
             if let Err(e) = comm_tx.send(SenderChannelMessage::QueueReady).await {
                 error!("Unable to send queue ready message: {}", e);
