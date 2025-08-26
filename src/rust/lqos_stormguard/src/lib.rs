@@ -6,6 +6,7 @@
 //!
 //! Copyright (C) 2025 LibreQoS. GPLv2 licensed.
 
+use lqos_queue_tracker::QUEUE_STRUCTURE_CHANGED_STORMGUARD;
 use parking_lot::Mutex;
 use std::time::Duration;
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
@@ -28,7 +29,7 @@ pub async fn start_stormguard(bakery: crossbeam_channel::Sender<BakeryCommands>)
     let _ = tokio::time::sleep(Duration::from_secs(1)).await;
 
     info!("Starting LibreQoS StormGuard...");
-    let config = config::configure()?;
+    let mut config = config::configure()?;
     let log_sender = datalog::start_datalog(&config)?;
     let mut site_state_tracker = site_state::SiteStateTracker::from_config(&config);
 
@@ -44,6 +45,19 @@ pub async fn start_stormguard(bakery: crossbeam_channel::Sender<BakeryCommands>)
     );
 
     loop {
+        if QUEUE_STRUCTURE_CHANGED_STORMGUARD.swap(false, std::sync::atomic::Ordering::Relaxed) {
+            debug!("Queue structure changed, resetting StormGuard state");
+            config.refresh_sites();
+            if !config.is_empty() {
+                // Reload the site state tracker
+                site_state_tracker = site_state::SiteStateTracker::from_config(&config);
+            }
+        }
+        if config.is_empty() {
+            debug!("No StormGuard sites configured and available.");
+            continue;
+        }
+
         // Update all the ring buffers
         site_state_tracker.read_new_tick_data().await;
 

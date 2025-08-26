@@ -18,7 +18,7 @@ mod python_migration;
 #[cfg(test)]
 pub mod test_data;
 mod v15;
-pub use v15::{BridgeConfig, Tunables, SingleInterfaceConfig, LazyQueueMode};
+pub use v15::{BridgeConfig, Tunables, SingleInterfaceConfig, LazyQueueMode, StormguardConfig};
 
 static CONFIG: Lazy<ArcSwap<Option<Arc<Config>>>> = Lazy::new(|| ArcSwap::from_pointee(None));
 static INIT_ONCE: Once = Once::new();

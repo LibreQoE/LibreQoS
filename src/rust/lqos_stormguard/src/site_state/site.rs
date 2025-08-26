@@ -6,8 +6,8 @@ use crate::site_state::recommendation::{Recommendation, RecommendationAction, Re
 use crate::site_state::ring_buffer::RingBuffer;
 use crate::site_state::stormguard_state::StormguardState;
 
-pub struct SiteState<'a> {
-    pub config: &'a WatchingSite,
+pub struct SiteState {
+    pub config: WatchingSite,
     pub download_state: StormguardState,
     pub upload_state: StormguardState,
 
@@ -53,7 +53,7 @@ impl RecommendationParams {
     }
 }
 
-impl<'a> SiteState<'a> {
+impl SiteState {
     pub fn check_state(&mut self) {
         match self.download_state {
             StormguardState::Warmup => {
