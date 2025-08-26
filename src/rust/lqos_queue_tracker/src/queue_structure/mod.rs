@@ -1,7 +1,7 @@
 mod queing_structure_json_monitor;
 mod queue_network;
 mod queue_node;
-pub use queing_structure_json_monitor::QUEUE_STRUCTURE;
+pub use queing_structure_json_monitor::{QUEUE_STRUCTURE, QUEUE_STRUCTURE_CHANGED_STORMGUARD};
 pub use queing_structure_json_monitor::spawn_queue_structure_monitor;
 use queue_network::QueueNetwork;
 pub(crate) use queue_node::QueueNode;
