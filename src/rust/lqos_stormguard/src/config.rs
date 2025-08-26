@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use allocative::Allocative;
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 use lqos_bus::TcHandle;
 use crate::queue_structure::{find_queue_bandwidth, find_queue_dependents};
 use crate::STORMGUARD_STATS;
@@ -37,16 +37,16 @@ pub fn configure() -> anyhow::Result<StormguardConfig> {
     let config = lqos_config::load_config()?;
 
     if config.on_a_stick_mode() {
-        error!("LibreQoS StormGuard is not supported in 'on-a-stick' mode.");
+        info!("LibreQoS StormGuard is not supported in 'on-a-stick' mode.");
         return Err(anyhow::anyhow!("LibreQoS StormGuard is not supported in 'on-a-stick' mode."));
     }
 
     let Some(sg_config) = &config.stormguard else {
-        error!("StormGuard is not enabled in the configuration.");
+        debug!("StormGuard is not enabled in the configuration.");
         return Err(anyhow::anyhow!("StormGuard is not enabled in the configuration."));
     };
     if !sg_config.enabled {
-        error!("StormGuard is not enabled in the configuration.");
+        debug!("StormGuard is not enabled in the configuration.");
         return Err(anyhow::anyhow!("StormGuard is not enabled in the configuration."));
     }
 
