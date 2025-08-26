@@ -169,6 +169,74 @@ def getAllIPs(headers):
 def getMonitoring(headers):
 	return spylnxRequest("admin/networking/monitoring", headers)
 
+def getNetworkSites(headers):
+	"""
+	Retrieve network sites data from Splynx API for better topology mapping.
+	"""
+	return spylnxRequest("admin/networking/network-sites", headers)
+
+def findBestParentNode(serviceItem, hardware_name, ipForRouter, sectorForRouter, networkSites):
+	"""
+	Find the best parent node for a service using multiple methods.
+	Returns tuple: (parent_node_id, assignment_method)
+	"""
+	parent_node_id = None
+	assignment_method = 'none'
+	
+	# Method 1: Direct access_device assignment (highest priority)
+	if 'access_device' in serviceItem and serviceItem['access_device'] != 0:
+		if serviceItem['access_device'] in hardware_name:
+			parent_node_id = serviceItem['access_device']
+			assignment_method = 'access_device'
+			return parent_node_id, assignment_method
+	
+	# Method 2: Router ID assignment
+	if 'router_id' in serviceItem and serviceItem['router_id'] != 0:
+		router_id = serviceItem['router_id']
+		if router_id in hardware_name:
+			parent_node_id = router_id
+			assignment_method = 'router_id'
+			return parent_node_id, assignment_method
+		# Check if router has sectors
+		if router_id in sectorForRouter:
+			sectors = sectorForRouter[router_id]
+			if sectors and len(sectors) > 0:
+				# Use first sector as parent
+				sector = sectors[0]
+				if 'id' in sector and sector['id'] in hardware_name:
+					parent_node_id = sector['id']
+					assignment_method = 'sector_id'
+					return parent_node_id, assignment_method
+	
+	# Method 3: Network Site assignment via location
+	if networkSites and 'geo' in serviceItem:
+		service_geo = serviceItem.get('geo', {})
+		if 'lat' in service_geo and 'lng' in service_geo:
+			service_lat = float(service_geo['lat'])
+			service_lng = float(service_geo['lng'])
+			
+			# Find nearest network site
+			min_distance = float('inf')
+			nearest_site = None
+			
+			for site in networkSites:
+				if 'geo' in site and 'lat' in site['geo'] and 'lng' in site['geo']:
+					site_lat = float(site['geo']['lat'])
+					site_lng = float(site['geo']['lng'])
+					# Simple Euclidean distance (good enough for small areas)
+					distance = ((service_lat - site_lat) ** 2 + (service_lng - site_lng) ** 2) ** 0.5
+					if distance < min_distance:
+						min_distance = distance
+						nearest_site = site
+			
+			if nearest_site and 'id' in nearest_site:
+				if nearest_site['id'] in hardware_name:
+					parent_node_id = nearest_site['id']
+					assignment_method = 'network_site'
+					return parent_node_id, assignment_method
+	
+	return parent_node_id, assignment_method
+
 def createShaper():
 	"""
 	Main function to fetch data from Splynx, build the network graph, and shape devices.
@@ -183,12 +251,23 @@ def createShaper():
 	customers = getCustomers(headers)
 	print("Fetching online customers from Spylnx")
 	customersOnline = getCustomersOnline(headers)
-	#ipForRouter, nameForRouterID, routerIdList = getRouters(headers)
-	#sectorForRouter = getSectors(headers)
+	print("Fetching routers from Spylnx")
+	ipForRouter, nameForRouterID, routerIdList = getRouters(headers)
+	print("Fetching sectors from Spylnx")
+	sectorForRouter = getSectors(headers)
 	print("Fetching services from Spylnx")
 	allServices = getAllServices(headers)
 	print("Fetching hardware monitoring from Spylnx")
 	monitoring = getMonitoring(headers)
+	# Try to fetch network sites, but continue if it fails (not all Splynx installations have this)
+	networkSites = []
+	try:
+		print("Fetching network sites from Spylnx")
+		networkSites = getNetworkSites(headers)
+		print(f"Found {len(networkSites)} network sites")
+	except Exception as e:
+		print(f"Warning: Could not fetch network sites (may not be available): {e}")
+		networkSites = []
 	#ipv4ByCustomerID, ipv6ByCustomerID = getAllIPs(headers)
 	siteBandwidth = buildSiteBandwidths()
 	print("Successfully fetched data from Spylnx")
@@ -199,6 +278,15 @@ def createShaper():
 	matched_via_primary_method = 0
 	matched_via_alternate_method = 0
 	matched_with_parent_node = 0
+	# Track parent node assignment methods
+	parent_assignment_methods = {
+		'access_device': 0,
+		'router_id': 0,
+		'sector_id': 0,
+		'network_site': 0,
+		'geographic': 0,
+		'none': 0
+	}
 	
 	print("Matching customer services to IPs")
 	# First priority - see if clients are associated with a Network Site via the access_device parameter
@@ -253,6 +341,12 @@ def createShaper():
 	service_ids_handled = []
 	allocated_ipv4s = {}
 	allocated_ipv6s = {}
+	# Track circuit IDs by customer+location to handle multiple locations per customer
+	# Key format: "customer_id:parent_node_id" or "customer_id:service_address"
+	circuit_id_by_customer_location = {}
+	# Track circuit bandwidth to handle aggregation for multiple services at same location
+	circuit_bandwidth = {}
+	device_counter = 200000
 	for serviceItem in allServices:
 		if serviceItem['status'] == 'active':
 			address = ''
@@ -270,38 +364,86 @@ def createShaper():
 					allocated_ipv6s[serviceItem['ipv6']] = True
 				else:
 					print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IP of " + serviceItem['ipv6'] + ". IP omitted.")
-			parent_node_id = None
-			if 'access_device' in serviceItem:
-				if serviceItem['access_device'] != 0:
-					if serviceItem['access_device'] in hardware_name:
-						parent_node_id = serviceItem['access_device']
+			# Find best parent node using enhanced logic
+			parent_node_id, assignment_method = findBestParentNode(
+				serviceItem, hardware_name, ipForRouter, sectorForRouter, networkSites
+			)
+			parent_assignment_methods[assignment_method] += 1
+			
 			#if 'geo' in serviceItem:
 			#	if 'address' in serviceItem['geo']:
 			#		address = serviceItem['geo']['address']
 			if (ipv4 != '') or (ipv6 != ''):
-				customer = NetworkNode(
-					type=NodeType.client,
-					id=parentNodeIDCounter,
-					parentId=parent_node_id,
-					displayName=cust_id_to_name[serviceItem['customer_id']],
-					address=cust_id_to_name[serviceItem['customer_id']],
-					customerName=cust_id_to_name[serviceItem['customer_id']],
-					download=downloadForTariffID[serviceItem['tariff_id']],
-					upload=uploadForTariffID[serviceItem['tariff_id']]
-				)
-				net.addRawNode(customer)
+				customer_id = serviceItem['customer_id']
+				customer_name = cust_id_to_name.get(customer_id, str(customer_id))
 				
+				# Get service bandwidth
+				service_download = downloadForTariffID[serviceItem['tariff_id']]
+				service_upload = uploadForTariffID[serviceItem['tariff_id']]
+				
+				# Create unique key for customer+location
+				# Use parent node if available, otherwise use service address or ID
+				location_key = str(parent_node_id) if parent_node_id else ""
+				if not location_key and 'geo' in serviceItem:
+					# Use geographic address if available
+					if 'address' in serviceItem['geo']:
+						location_key = serviceItem['geo']['address']
+				if not location_key:
+					# Fall back to service ID to ensure uniqueness
+					location_key = f"service_{serviceItem['id']}"
+				
+				circuit_key = f"{customer_id}:{location_key}"
+				
+				# Check if we already have a circuit ID for this customer+location
+				if circuit_key in circuit_id_by_customer_location:
+					circuit_id = circuit_id_by_customer_location[circuit_key]
+					# Circuit already exists, update bandwidth if this service has higher speeds
+					if circuit_id in circuit_bandwidth:
+						current_dl, current_ul = circuit_bandwidth[circuit_id]
+						if service_download > current_dl or service_upload > current_ul:
+							# Update to use the maximum bandwidth
+							new_download = max(service_download, current_dl)
+							new_upload = max(service_upload, current_ul)
+							circuit_bandwidth[circuit_id] = (new_download, new_upload)
+							# Update the existing circuit node with new bandwidth
+							for node in net.nodes:
+								if node.id == circuit_id and node.type == NodeType.client:
+									node.download = new_download
+									node.upload = new_upload
+									break
+				else:
+					# New customer+location combination, create circuit
+					circuit_id = parentNodeIDCounter
+					circuit_id_by_customer_location[circuit_key] = circuit_id
+					circuit_bandwidth[circuit_id] = (service_download, service_upload)
+					
+					# Create the customer circuit node
+					customer = NetworkNode(
+						type=NodeType.client,
+						id=circuit_id,
+						parentId=parent_node_id,
+						displayName=customer_name,
+						address=customer_name,
+						customerName=customer_name,
+						download=service_download,
+						upload=service_upload
+					)
+					net.addRawNode(customer)
+					parentNodeIDCounter = parentNodeIDCounter + 1
+				
+				# Always create a device for each service
 				device = NetworkNode(
-					id=100000 + parentNodeIDCounter,
-					displayName=cust_id_to_name[serviceItem['customer_id']],
+					id=device_counter,
+					displayName=customer_name,
 					type=NodeType.device,
-					parentId=parentNodeIDCounter,
+					parentId=circuit_id,
 					mac=serviceItem['mac'],
 					ipv4=[ipv4] if ipv4 else [],
 					ipv6=[ipv6] if ipv6 else []
 				)
 				net.addRawNode(device)
-				parentNodeIDCounter = parentNodeIDCounter + 1
+				device_counter = device_counter + 1
+				
 				if serviceItem['id'] not in service_ids_handled:
 					service_ids_handled.append(serviceItem['id'])
 				matched_via_primary_method += 1
@@ -401,30 +543,79 @@ def createShaper():
 					ipv6 = ipv6sForService[service["id"]]
 				else:
 					ipv6 = []
+				
+				# Get customer info
+				customer_id = service.get('customer_id', service["id"])
 				customer_name = ''
 				if service["id"] in customer_name_for_service:
 					customer_name = customer_name_for_service[service["id"]]
-				customer = NetworkNode(
-					type=NodeType.client,
-					id=service["id"],
-					parentId=None,
-					displayName=customer_name,
-					address=customer_name,
-					customerName=customer_name,
-					download=downloadForTariffID[service['tariff_id']],
-					upload=uploadForTariffID[service['tariff_id']]
-				)
-				net.addRawNode(customer)
+				elif customer_id in customer_name_for_id:
+					customer_name = customer_name_for_id[customer_id]
+				
+				# Get service bandwidth
+				service_download = downloadForTariffID[service['tariff_id']]
+				service_upload = uploadForTariffID[service['tariff_id']]
+				
+				# Create unique key for customer+location
+				# For alternate method, we don't have parent nodes, so use service-specific key
+				location_key = ""
+				if 'geo' in service and 'address' in service['geo']:
+					location_key = service['geo']['address']
+				if not location_key:
+					# Use service ID to ensure uniqueness for each service
+					location_key = f"service_{service['id']}"
+				
+				circuit_key = f"{customer_id}:{location_key}"
+				
+				# Check if we already have a circuit ID for this customer+location
+				if circuit_key in circuit_id_by_customer_location:
+					circuit_id = circuit_id_by_customer_location[circuit_key]
+					# Circuit already exists, update bandwidth if this service has higher speeds
+					if circuit_id in circuit_bandwidth:
+						current_dl, current_ul = circuit_bandwidth[circuit_id]
+						if service_download > current_dl or service_upload > current_ul:
+							# Update to use the maximum bandwidth
+							new_download = max(service_download, current_dl)
+							new_upload = max(service_upload, current_ul)
+							circuit_bandwidth[circuit_id] = (new_download, new_upload)
+							# Update the existing circuit node with new bandwidth
+							for node in net.nodes:
+								if node.id == circuit_id and node.type == NodeType.client:
+									node.download = new_download
+									node.upload = new_upload
+									break
+				else:
+					# New customer+location combination, create circuit
+					circuit_id = parentNodeIDCounter
+					circuit_id_by_customer_location[circuit_key] = circuit_id
+					circuit_bandwidth[circuit_id] = (service_download, service_upload)
+					
+					customer = NetworkNode(
+						type=NodeType.client,
+						id=circuit_id,
+						parentId=None,
+						displayName=customer_name,
+						address=customer_name,
+						customerName=customer_name,
+						download=service_download,
+						upload=service_upload
+					)
+					net.addRawNode(customer)
+					parentNodeIDCounter = parentNodeIDCounter + 1
+				
+				# Create device node
 				device = NetworkNode(
-					id=service["id"],
-					displayName=service["id"],
+					id=device_counter,
+					displayName=customer_name if customer_name else str(service["id"]),
 					type=NodeType.device,
-					parentId=service["id"],
+					parentId=circuit_id,
 					mac=service["mac"],
 					ipv4=ipv4,
 					ipv6=ipv6
 				)
 				net.addRawNode(device)
+				device_counter = device_counter + 1
+				
 				matched_via_alternate_method += 1
 				if service["id"] not in service_ids_handled:
 					service_ids_handled.append(service["id"])
@@ -434,6 +625,19 @@ def createShaper():
 		print("Supplemented " + "{:.0%}".format(matched_via_supplementation/matched_via_primary_method) + " of primary method services with additional IPs from CustomersOnline.")
 	print("Matched " + "{:.0%}".format(matched_via_alternate_method/len(service_ids_handled)) + " services via alternate method.")
 	print("Matched " + "{:.0%}".format(matched_with_parent_node/len(service_ids_handled)) + " of services found with their corresponding parent node.")
+	
+	# Report parent node assignment methods
+	print("\nParent Node Assignment Methods:")
+	total_assigned = sum(parent_assignment_methods.values()) - parent_assignment_methods['none']
+	for method, count in parent_assignment_methods.items():
+		if count > 0:
+			if method == 'none':
+				print(f"  No parent node: {count} ({count/sum(parent_assignment_methods.values()):.1%})")
+			else:
+				print(f"  {method}: {count} ({count/sum(parent_assignment_methods.values()):.1%})")
+	
+	if total_assigned > 0:
+		print(f"\nTotal with parent nodes: {total_assigned} ({total_assigned/sum(parent_assignment_methods.values()):.1%})")
 	
 	net.prepareTree()
 	net.plotNetworkGraph(False)
