@@ -18,18 +18,18 @@ use crate::site_state::ring_buffer::RingBuffer;
 use crate::site_state::site::SiteState;
 use crate::site_state::stormguard_state::StormguardState;
 
-pub struct SiteStateTracker<'a> {
-    sites: HashMap<String, SiteState<'a>>,
+pub struct SiteStateTracker {
+    sites: HashMap<String, SiteState>,
 }
 
-impl<'a> SiteStateTracker<'a> {
-    pub fn from_config(config: &'a StormguardConfig) -> Self {
+impl SiteStateTracker {
+    pub fn from_config(config: &StormguardConfig) -> Self {
         let mut sites = HashMap::new();
         for (name, site) in &config.sites {
             sites.insert(
                 name.clone(),
                 SiteState {
-                    config: site,
+                    config: site.clone(),
                     download_state: StormguardState::Warmup,
                     upload_state: StormguardState::Warmup,
                     throughput_down: RingBuffer::new(READING_ACCUMULATOR_SIZE),
