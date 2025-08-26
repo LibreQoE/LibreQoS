@@ -14,6 +14,7 @@ wget https://libreqos.io/wp-content/uploads/2025/08/libreqos_1.5-RC1.20250823201
 sudo apt-get install unzip
 unzip libreqos_1.5-RC1.202508232013-1_amd64.zip
 sudo apt install ./libreqos_1.5-RC1.202508232013-1_amd64.deb
+sudo systemctl restart lqosd lqos_scheduler
 ```
 
 Ahora reinicie el servidor LibreQoS con:
