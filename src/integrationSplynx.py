@@ -297,8 +297,8 @@ def createShaper():
 					type=NodeType.device,
 					parentId=parentNodeIDCounter,
 					mac=serviceItem['mac'],
-					ipv4=[ipv4],
-					ipv6=[ipv6]
+					ipv4=[ipv4] if ipv4 else [],
+					ipv6=[ipv6] if ipv6 else []
 				)
 				net.addRawNode(device)
 				parentNodeIDCounter = parentNodeIDCounter + 1
@@ -308,21 +308,7 @@ def createShaper():
 				if parent_node_id != None:
 					matched_with_parent_node += 1
 
-	# For any services not correctly handled the way we just tried, try an alternative way
-	previously_unhandled_services = {}
-	for serviceItem in allServices:
-		if serviceItem['id'] not in service_ids_handled:
-			#if serviceItem['status'] == 'active':
-			if serviceItem["id"] not in previously_unhandled_services:
-				previously_unhandled_services[serviceItem["id"]] = []
-			temp = previously_unhandled_services[serviceItem["id"]]
-			temp.append(serviceItem)
-			previously_unhandled_services[serviceItem["id"]] = temp
-	customerIDtoCustomerName = {}
-	for customer in customers:
-		customerIDtoCustomerName[customer['id']] = customer['name']
-	alreadyObservedIPv4s = []
-	alreadyObservedCombinedIDs = []
+	# Build IP mappings from customersOnline for supplementation
 	ipv4sForService= {}
 	ipv6sForService= {}
 	for customerJson in customersOnline:
@@ -343,6 +329,60 @@ def createShaper():
 		if ipv6 not in temp:
 			temp.append(ipv6)
 		ipv6sForService[customerJson['service_id']] = temp
+	
+	# Intermediate step: Supplement primary method results with IPs from customersOnline
+	matched_via_supplementation = 0
+	for serviceItem in allServices:
+		if serviceItem['id'] in service_ids_handled and serviceItem['status'] == 'active':
+			# Check if we can supplement missing IPs for already handled services
+			# Find the device node that was created for this service
+			for node in net.nodes:
+				if (node.type == NodeType.device and 
+					node.displayName == cust_id_to_name.get(serviceItem['customer_id'], '')):
+					needs_supplement = False
+					supplemented_ipv4 = []
+					supplemented_ipv6 = []
+					
+					# Check if IPv4 needs supplementation
+					if (not node.ipv4 or node.ipv4 == ['']) and serviceItem['id'] in ipv4sForService:
+						for ipv4 in ipv4sForService[serviceItem['id']]:
+							if ipv4 and ipv4 not in allocated_ipv4s:
+								supplemented_ipv4.append(ipv4)
+								allocated_ipv4s[ipv4] = True
+								needs_supplement = True
+					
+					# Check if IPv6 needs supplementation
+					if (not node.ipv6 or node.ipv6 == ['']) and serviceItem['id'] in ipv6sForService:
+						for ipv6 in ipv6sForService[serviceItem['id']]:
+							if ipv6 and ipv6 not in allocated_ipv6s:
+								supplemented_ipv6.append(ipv6)
+								allocated_ipv6s[ipv6] = True
+								needs_supplement = True
+					
+					if needs_supplement:
+						if supplemented_ipv4:
+							node.ipv4 = supplemented_ipv4
+						if supplemented_ipv6:
+							node.ipv6 = supplemented_ipv6
+						matched_via_supplementation += 1
+						print(f"Supplemented IPs for {cust_id_to_name.get(serviceItem['customer_id'], 'Unknown')} - IPv4: {supplemented_ipv4}, IPv6: {supplemented_ipv6}")
+					break
+	
+	# For any services not correctly handled the way we just tried, try an alternative way
+	previously_unhandled_services = {}
+	for serviceItem in allServices:
+		if serviceItem['id'] not in service_ids_handled:
+			#if serviceItem['status'] == 'active':
+			if serviceItem["id"] not in previously_unhandled_services:
+				previously_unhandled_services[serviceItem["id"]] = []
+			temp = previously_unhandled_services[serviceItem["id"]]
+			temp.append(serviceItem)
+			previously_unhandled_services[serviceItem["id"]] = temp
+	customerIDtoCustomerName = {}
+	for customer in customers:
+		customerIDtoCustomerName[customer['id']] = customer['name']
+	alreadyObservedIPv4s = []
+	alreadyObservedCombinedIDs = []
 	customer_name_for_id = {}
 	for customerJson in customers:
 		customer_name_for_id[customerJson['id']] = customerJson["name"]
@@ -390,6 +430,8 @@ def createShaper():
 					service_ids_handled.append(service["id"])
 	print("Matched " + "{:.0%}".format(len(service_ids_handled)/len(allServices)) + " of known services in Splynx.")
 	print("Matched " + "{:.0%}".format(matched_via_primary_method/len(service_ids_handled)) + " services via primary method.")
+	if matched_via_supplementation > 0:
+		print("Supplemented " + "{:.0%}".format(matched_via_supplementation/matched_via_primary_method) + " of primary method services with additional IPs from CustomersOnline.")
 	print("Matched " + "{:.0%}".format(matched_via_alternate_method/len(service_ids_handled)) + " services via alternate method.")
 	print("Matched " + "{:.0%}".format(matched_with_parent_node/len(service_ids_handled)) + " of services found with their corresponding parent node.")
 	
