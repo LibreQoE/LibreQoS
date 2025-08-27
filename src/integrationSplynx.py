@@ -238,7 +238,6 @@ def createShaper():
 	
 	allParentNodes = []
 	custIDtoParentNode = {}
-	parentNodeIDCounter = 100000
 	matched_via_primary_method = 0
 	matched_via_alternate_method = 0
 	matched_with_parent_node = 0
@@ -303,15 +302,10 @@ def createShaper():
 	service_ids_handled = []
 	allocated_ipv4s = {}
 	allocated_ipv6s = {}
-	# Track circuit IDs by customer+location to handle multiple locations per customer
-	# Key format: "customer_id:parent_node_id" or "customer_id:service_address"
-	circuit_id_by_customer_location = {}
-	# Track circuit bandwidth to handle aggregation for multiple services at same location
-	circuit_bandwidth = {}
+# Track unique services to prevent duplicates
 	device_counter = 200000
 	for serviceItem in allServices:
 		if serviceItem['status'] == 'active':
-			address = ''
 			ipv4_list = []
 			ipv6_list = []
 			
@@ -356,9 +350,6 @@ def createShaper():
 			)
 			parent_assignment_methods[assignment_method] += 1
 			
-			#if 'geo' in serviceItem:
-			#	if 'address' in serviceItem['geo']:
-			#		address = serviceItem['geo']['address']
 			if ipv4_list or ipv6_list:
 				customer_id = serviceItem['customer_id']
 				customer_name = cust_id_to_name.get(customer_id, str(customer_id))
@@ -367,55 +358,21 @@ def createShaper():
 				service_download = downloadForTariffID[serviceItem['tariff_id']]
 				service_upload = uploadForTariffID[serviceItem['tariff_id']]
 				
-				# Create unique key for customer+location
-				# Use parent node if available, otherwise use service address or ID
-				location_key = str(parent_node_id) if parent_node_id else ""
-				if not location_key and 'geo' in serviceItem:
-					# Use geographic address if available
-					if 'address' in serviceItem['geo']:
-						location_key = serviceItem['geo']['address']
-				if not location_key:
-					# Fall back to service ID to ensure uniqueness
-					location_key = f"service_{serviceItem['id']}"
+				# Use service ID as unique circuit ID to prevent merging services with different speed plans
+				circuit_id = serviceItem['id']
 				
-				circuit_key = f"{customer_id}:{location_key}"
-				
-				# Check if we already have a circuit ID for this customer+location
-				if circuit_key in circuit_id_by_customer_location:
-					circuit_id = circuit_id_by_customer_location[circuit_key]
-					# Circuit already exists, update bandwidth if this service has higher speeds
-					if circuit_id in circuit_bandwidth:
-						current_dl, current_ul = circuit_bandwidth[circuit_id]
-						if service_download > current_dl or service_upload > current_ul:
-							# Update to use the maximum bandwidth
-							new_download = max(service_download, current_dl)
-							new_upload = max(service_upload, current_ul)
-							circuit_bandwidth[circuit_id] = (new_download, new_upload)
-							# Update the existing circuit node with new bandwidth
-							for node in net.nodes:
-								if node.id == circuit_id and node.type == NodeType.client:
-									node.download = new_download
-									node.upload = new_upload
-									break
-				else:
-					# New customer+location combination, create circuit
-					circuit_id = parentNodeIDCounter
-					circuit_id_by_customer_location[circuit_key] = circuit_id
-					circuit_bandwidth[circuit_id] = (service_download, service_upload)
-					
-					# Create the customer circuit node
-					customer = NetworkNode(
-						type=NodeType.client,
-						id=circuit_id,
-						parentId=parent_node_id,
-						displayName=customer_name,
-						address=customer_name,
-						customerName=customer_name,
-						download=service_download,
-						upload=service_upload
-					)
-					net.addRawNode(customer)
-					parentNodeIDCounter = parentNodeIDCounter + 1
+				# Create the customer circuit node for each service
+				customer = NetworkNode(
+					type=NodeType.client,
+					id=circuit_id,
+					parentId=parent_node_id,
+					displayName=customer_name,
+					address=customer_name,
+					customerName=customer_name,
+					download=service_download,
+					upload=service_upload
+				)
+				net.addRawNode(customer)
 				
 				# Always create a device for each service
 				device = NetworkNode(
@@ -557,52 +514,21 @@ def createShaper():
 				service_download = downloadForTariffID[service['tariff_id']]
 				service_upload = uploadForTariffID[service['tariff_id']]
 				
-				# Create unique key for customer+location
-				# For alternate method, we don't have parent nodes, so use service-specific key
-				location_key = ""
-				if 'geo' in service and 'address' in service['geo']:
-					location_key = service['geo']['address']
-				if not location_key:
-					# Use service ID to ensure uniqueness for each service
-					location_key = f"service_{service['id']}"
+				# Use service ID as unique circuit ID to prevent merging services with different speed plans
+				circuit_id = service['id']
 				
-				circuit_key = f"{customer_id}:{location_key}"
-				
-				# Check if we already have a circuit ID for this customer+location
-				if circuit_key in circuit_id_by_customer_location:
-					circuit_id = circuit_id_by_customer_location[circuit_key]
-					# Circuit already exists, update bandwidth if this service has higher speeds
-					if circuit_id in circuit_bandwidth:
-						current_dl, current_ul = circuit_bandwidth[circuit_id]
-						if service_download > current_dl or service_upload > current_ul:
-							# Update to use the maximum bandwidth
-							new_download = max(service_download, current_dl)
-							new_upload = max(service_upload, current_ul)
-							circuit_bandwidth[circuit_id] = (new_download, new_upload)
-							# Update the existing circuit node with new bandwidth
-							for node in net.nodes:
-								if node.id == circuit_id and node.type == NodeType.client:
-									node.download = new_download
-									node.upload = new_upload
-									break
-				else:
-					# New customer+location combination, create circuit
-					circuit_id = parentNodeIDCounter
-					circuit_id_by_customer_location[circuit_key] = circuit_id
-					circuit_bandwidth[circuit_id] = (service_download, service_upload)
-					
-					customer = NetworkNode(
-						type=NodeType.client,
-						id=circuit_id,
-						parentId=None,
-						displayName=customer_name,
-						address=customer_name,
-						customerName=customer_name,
-						download=service_download,
-						upload=service_upload
-					)
-					net.addRawNode(customer)
-					parentNodeIDCounter = parentNodeIDCounter + 1
+				# Create the customer circuit node for each service
+				customer = NetworkNode(
+					type=NodeType.client,
+					id=circuit_id,
+					parentId=None,
+					displayName=customer_name,
+					address=customer_name,
+					customerName=customer_name,
+					download=service_download,
+					upload=service_upload
+				)
+				net.addRawNode(customer)
 				
 				# Create device node
 				device = NetworkNode(
