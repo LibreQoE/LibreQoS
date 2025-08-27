@@ -270,6 +270,31 @@ def createShaper():
 					allocated_ipv6s[serviceItem['ipv6']] = True
 				else:
 					print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IP of " + serviceItem['ipv6'] + ". IP omitted.")
+
+			# iterate and add ipv4 routes
+			for ipv4_route in serviceItem['ipv4_route'].split(', '):
+				if ipv4_route != '':
+					if ipv4_route not in allocated_ipv4s:
+						if ipv4 == '':
+							ipv4 = ipv4_route
+						else:
+							ipv4 = ipv4 + ', ' + ipv4_route
+						allocated_ipv4s[ipv4_route] = True
+					else:
+						print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IPv4 route of " + ipv4_route + ". IP omitted.")
+
+			# iterate and add ipv6 routes
+			for ipv6_route in serviceItem['ipv6_delegated'].split(', '):
+				if ipv6_route != '':
+					if ipv6_route not in allocated_ipv6s:
+						if ipv6 == '':
+							ipv6 = ipv6_route
+						else:
+							ipv6 = ipv6 + ', ' + ipv6_route
+						allocated_ipv6s[ipv6_route] = True
+					else:
+						print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IPv6 delegation of " + ipv6_route + ". IP omitted.")
+
 			parent_node_id = None
 			if 'access_device' in serviceItem:
 				if serviceItem['access_device'] != 0:
