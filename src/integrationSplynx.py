@@ -175,7 +175,7 @@ def getNetworkSites(headers):
 	"""
 	return spylnxRequest("admin/networking/network-sites", headers)
 
-def findBestParentNode(serviceItem, hardware_name, ipForRouter, sectorForRouter, networkSites):
+def findBestParentNode(serviceItem, hardware_name, ipForRouter, sectorForRouter):
 	"""
 	Find the best parent node for a service using multiple methods.
 	Returns tuple: (parent_node_id, assignment_method)
@@ -208,33 +208,6 @@ def findBestParentNode(serviceItem, hardware_name, ipForRouter, sectorForRouter,
 					assignment_method = 'sector_id'
 					return parent_node_id, assignment_method
 	
-	# Method 3: Network Site assignment via location
-	if networkSites and 'geo' in serviceItem:
-		service_geo = serviceItem.get('geo', {})
-		if 'lat' in service_geo and 'lng' in service_geo:
-			service_lat = float(service_geo['lat'])
-			service_lng = float(service_geo['lng'])
-			
-			# Find nearest network site
-			min_distance = float('inf')
-			nearest_site = None
-			
-			for site in networkSites:
-				if 'geo' in site and 'lat' in site['geo'] and 'lng' in site['geo']:
-					site_lat = float(site['geo']['lat'])
-					site_lng = float(site['geo']['lng'])
-					# Simple Euclidean distance (good enough for small areas)
-					distance = ((service_lat - site_lat) ** 2 + (service_lng - site_lng) ** 2) ** 0.5
-					if distance < min_distance:
-						min_distance = distance
-						nearest_site = site
-			
-			if nearest_site and 'id' in nearest_site:
-				if nearest_site['id'] in hardware_name:
-					parent_node_id = nearest_site['id']
-					assignment_method = 'network_site'
-					return parent_node_id, assignment_method
-	
 	return parent_node_id, assignment_method
 
 def createShaper():
@@ -259,15 +232,6 @@ def createShaper():
 	allServices = getAllServices(headers)
 	print("Fetching hardware monitoring from Spylnx")
 	monitoring = getMonitoring(headers)
-	# Try to fetch network sites, but continue if it fails (not all Splynx installations have this)
-	networkSites = []
-	try:
-		print("Fetching network sites from Spylnx")
-		networkSites = getNetworkSites(headers)
-		print(f"Found {len(networkSites)} network sites")
-	except Exception as e:
-		print(f"Warning: Could not fetch network sites (may not be available): {e}")
-		networkSites = []
 	#ipv4ByCustomerID, ipv6ByCustomerID = getAllIPs(headers)
 	siteBandwidth = buildSiteBandwidths()
 	print("Successfully fetched data from Spylnx")
@@ -283,8 +247,6 @@ def createShaper():
 		'access_device': 0,
 		'router_id': 0,
 		'sector_id': 0,
-		'network_site': 0,
-		'geographic': 0,
 		'none': 0
 	}
 	
@@ -350,30 +312,54 @@ def createShaper():
 	for serviceItem in allServices:
 		if serviceItem['status'] == 'active':
 			address = ''
-			ipv4 = ''
-			ipv6 = ''
+			ipv4_list = []
+			ipv6_list = []
+			
+			# Add primary IPv4
 			if serviceItem['ipv4'] != '':
 				if serviceItem['ipv4'] not in allocated_ipv4s:
-					ipv4 = serviceItem['ipv4']
+					ipv4_list.append(serviceItem['ipv4'])
 					allocated_ipv4s[serviceItem['ipv4']] = True
 				else:
 					print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IP of " + serviceItem['ipv4'] + ". IP omitted.")
+			
+			# Add IPv4 routes (additional IPs/subnets)
+			if 'ipv4_route' in serviceItem and serviceItem['ipv4_route']:
+				for ipv4_route in serviceItem['ipv4_route'].split(', '):
+					if ipv4_route and ipv4_route.strip():
+						if ipv4_route not in allocated_ipv4s:
+							ipv4_list.append(ipv4_route)
+							allocated_ipv4s[ipv4_route] = True
+						else:
+							print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IPv4 route of " + ipv4_route + ". IP omitted.")
+			
+			# Add primary IPv6
 			if serviceItem['ipv6'] != '':
 				if serviceItem['ipv6'] not in allocated_ipv6s:
-					ipv6 = serviceItem['ipv6']
+					ipv6_list.append(serviceItem['ipv6'])
 					allocated_ipv6s[serviceItem['ipv6']] = True
 				else:
 					print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IP of " + serviceItem['ipv6'] + ". IP omitted.")
+			
+			# Add IPv6 delegated prefixes
+			if 'ipv6_delegated' in serviceItem and serviceItem['ipv6_delegated']:
+				for ipv6_delegation in serviceItem['ipv6_delegated'].split(', '):
+					if ipv6_delegation and ipv6_delegation.strip():
+						if ipv6_delegation not in allocated_ipv6s:
+							ipv6_list.append(ipv6_delegation)
+							allocated_ipv6s[ipv6_delegation] = True
+						else:
+							print("Client " + cust_id_to_name[serviceItem['customer_id']] + " had duplicate IPv6 delegation of " + ipv6_delegation + ". IP omitted.")
 			# Find best parent node using enhanced logic
 			parent_node_id, assignment_method = findBestParentNode(
-				serviceItem, hardware_name, ipForRouter, sectorForRouter, networkSites
+				serviceItem, hardware_name, ipForRouter, sectorForRouter
 			)
 			parent_assignment_methods[assignment_method] += 1
 			
 			#if 'geo' in serviceItem:
 			#	if 'address' in serviceItem['geo']:
 			#		address = serviceItem['geo']['address']
-			if (ipv4 != '') or (ipv6 != ''):
+			if ipv4_list or ipv6_list:
 				customer_id = serviceItem['customer_id']
 				customer_name = cust_id_to_name.get(customer_id, str(customer_id))
 				
@@ -438,8 +424,8 @@ def createShaper():
 					type=NodeType.device,
 					parentId=circuit_id,
 					mac=serviceItem['mac'],
-					ipv4=[ipv4] if ipv4 and ipv4.strip() else [],
-					ipv6=[ipv6] if ipv6 and ipv6.strip() else []
+					ipv4=ipv4_list,
+					ipv6=ipv6_list
 				)
 				net.addRawNode(device)
 				device_counter = device_counter + 1
