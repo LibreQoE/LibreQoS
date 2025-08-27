@@ -107,6 +107,39 @@ impl UispDevice {
             }
         }
 
+        // Also process ipAddressList if available (for blackbox devices with multiple IPs)
+        if let Some(ip_list) = &device.ipAddressList {
+            for address in ip_list.iter() {
+                if address.contains(':') {
+                    // It's IPv6
+                    ipv6.insert(address.clone());
+                } else {
+                    // It's IPv4
+                    // We need to use /32 for consistency with the filtering logic
+                    if address.contains('/') {
+                        let splits: Vec<_> = address.split('/').collect();
+                        ipv4.insert(format!("{}/32", splits[0]));
+
+                        // Check for a Mikrotik Mapping
+                        if let Some(mapping) =
+                            ipv4_to_v6.iter().find(|m| m.ipv4 == splits[0])
+                        {
+                            ipv6.insert(mapping.ipv6.clone());
+                        }
+                    } else {
+                        ipv4.insert(format!("{address}/32"));
+
+                        // Check for a Mikrotik Mapping
+                        if let Some(mapping) =
+                            ipv4_to_v6.iter().find(|m| m.ipv4 == address.as_str())
+                        {
+                            ipv6.insert(mapping.ipv6.clone());
+                        }
+                    }
+                }
+            }
+        }
+
         // Remove IP addresses that are disallowed
         ipv4.retain(|ip| {
             let split: Vec<_> = ip.split('/').collect();
